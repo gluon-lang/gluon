@@ -34,14 +34,23 @@ let parser_tests =
             (parser.parse lisp.expr "123.45")
             (Ok (Float 123.45))
 
-let assert_leq2 =
-    assert_eq lisp.show lisp.eq
+let { (>>=) } = prelude.make_Monad prelude.monad_Result
+let eval_string s = parser.parse lisp.expr s >>= lisp.eval
 
 let eval_tests =
-    assert_leq2 (lisp.eval (Int 123)) (Int 123) *>
-        assert_leq2
+    assert_leq (lisp.eval (Int 123)) (Ok (Int 123)) *>
+        assert_leq
             (lisp.eval (List (Cons (Atom "+") (Cons (Int 1) (Cons (Int 2) Nil)))))
-            (Int 3)
+            (Ok (Int 3)) *>
+        assert_leq
+            (eval_string "()")
+            (Ok (List Nil)) *>
+        assert_leq
+            (eval_string "(+ 1 2 3 4)")
+            (Ok (Int (1 + 2 + 3 + 4))) *>
+        assert_leq
+            (eval_string "(+ 1.0 2.5 3.14)")
+            (Ok (Float (1.0 + 2.5 + 3.14)))
 
 let tests = parser_tests *> eval_tests
 

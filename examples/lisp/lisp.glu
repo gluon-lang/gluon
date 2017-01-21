@@ -12,6 +12,7 @@ let {
     between,
     lazy_parser,
     many,
+    one_of,
     satisfy,
     spaces,
     token,
@@ -76,9 +77,12 @@ let { (<|>) } = prelude.make_Alternative alternative
 let { (>>=) } = prelude.make_Monad monad
 
 let atom : Parser Expr =
+    let symbol = one_of "!#$%&|*+-/:<=>?@^_~"
+    let alpha = satisfy char.is_alphabetic
+    let alpha_num = satisfy char.is_alphanumeric
     functor.map
         (\x -> Atom x)
-        (take_string (satisfy char.is_alphabetic *> skip_many (satisfy char.is_alphanumeric)))
+        (take_string ((alpha <|> symbol) *> skip_many (alpha_num <|> symbol)))
 
 let parse_parser p f msg: Parser a -> (String -> Result () b) -> String -> Parser b =
     take_string p >>= (\s ->
@@ -109,20 +113,22 @@ let primitives = prim_map.singleton "+" (\l r ->
     match l with
     | Int li ->
         match r with
-        | Int ri -> Int (li + ri)
-        | _ -> error ("Cant add " <> show.show r)
+        | Int ri -> Ok (Int (li + ri))
+        | _ -> Err ("Cant add " <> show.show r)
     | Float lf ->
         match r with
-        | Float rf -> Float (lf + rf)
-        | _ -> error ("Cant add " <> show.show r)
-    | _ -> error ("Cant add " <> show.show l)
+        | Float rf -> Ok (Float (lf + rf))
+        | _ -> Err ("Cant add " <> show.show r)
+    | _ -> Err ("Cant add " <> show.show l)
     )
 
-let eval expr : Expr -> Expr =
+let { foldM } = prelude.make_Monad prelude.monad_Result
+
+let eval expr : Expr -> Result String Expr =
     match expr with
-    | Atom _ -> error "unimplemented"
-    | Int _ -> expr
-    | Float _ -> expr
+    | Atom _ -> Err "unimplemented"
+    | Int _ -> Ok expr
+    | Float _ -> Ok expr
     | List list ->
         match list with
         | Cons x xs ->
@@ -131,11 +137,11 @@ let eval expr : Expr -> Expr =
                 match prim_map.find name primitives with
                 | Some prim ->
                     match xs with
-                    | Cons y ys -> prelude.foldl prim y ys
-                    | Nil -> error "Expected arguments to primitive"
-                | None -> error ("Primitive `" <> name <> "` does not exist")
-            | _ -> error ("Cant apply" <> show.show x)
-        | Nil -> expr
+                    | Cons y ys -> foldM prim y ys
+                    | Nil -> Err "Expected arguments to primitive"
+                | None -> Err ("Primitive `" <> name <> "` does not exist")
+            | _ -> Err ("Cant apply" <> show.show x)
+        | Nil -> Ok expr
 
 {
     Expr,
