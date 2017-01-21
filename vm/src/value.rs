@@ -617,7 +617,7 @@ impl fmt::Debug for Value {
                 }
             }
         }
-        write!(f, "{:?}", Level(3, self))
+        write!(f, "{:?}", Level(7, self))
     }
 }
 
@@ -850,18 +850,18 @@ impl ValueArray {
 
         macro_rules! initialize_variants {
             ($($id: ident)+) => {
-                match self.repr {
+        match self.repr {
                     $(Repr::$id => {
-                        let iter = iter.map(|v| match v {
+                let iter = iter.map(|v| match v {
                             Value::$id(x) => x,
-                            _ => unreachable!(),
-                        });
-                        self.unsafe_array_mut().initialize(iter);
+                    _ => unreachable!(),
+                });
+                self.unsafe_array_mut().initialize(iter);
                     })+
-                    Repr::Unknown => {
-                        self.unsafe_array_mut().initialize(iter);
-                    }
-                }
+            Repr::Unknown => {
+                self.unsafe_array_mut().initialize(iter);
+            }
+            }
             }
         }
 
@@ -904,8 +904,9 @@ unsafe impl<'a> DataDef for &'a ValueArray {
         unsafe {
             let result = &mut *result.as_mut_ptr();
             result.repr = self.repr;
-            on_array!(self,
-                      |array: &Array<_>| { result.unsafe_array_mut().initialize(array.iter().cloned()) });
+            on_array!(self, |array: &Array<_>| {
+                result.unsafe_array_mut().initialize(array.iter().cloned())
+            });
             result
         }
     }

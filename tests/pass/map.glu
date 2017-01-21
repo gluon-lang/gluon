@@ -25,8 +25,9 @@ let assert_opt =
 let { singleton, find, insert, monoid, to_list } = map.make string.ord
 let { (<>), empty } = prelude.make_Monoid monoid
 
-let test_map = singleton "test" 1 <> singleton "asd" 2 <> singleton "a" 3
-let tests =
+let basic_tests =
+    let test_map = singleton "test" 1 <> singleton "asd" 2 <> singleton "a" 3
+
     assert_opt (find "test" test_map) (Some 1)
         *> assert_opt (find "asd" test_map) (Some 2)
         *> assert_opt (find "b" test_map) None
@@ -39,4 +40,10 @@ let tests =
         *> assert_list (to_list (test_map <> empty)) (to_list test_map)
         *> assert_list (to_list (empty <> test_map)) (to_list test_map)
 
-run tests
+let append_tests =
+    let test_map1 = singleton "a" 1 <> singleton "b" 2 <> singleton "c" 3
+    let test_map2 = singleton "+" 1 <> (singleton "-" 2 <> singleton "*" 3)
+    assert_opt (find "b" test_map1) (Some 2)
+        *> assert_opt (find "*" test_map2) (Some 3)
+
+run (basic_tests *> append_tests)

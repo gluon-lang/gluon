@@ -13,44 +13,39 @@ let singleton k v =
 and make ord =
     let find k m =
         match m with
-            | Bin k2 v l r ->
-                match ord.compare k k2 with
-                    | LT -> find k l
-                    | EQ -> Some v
-                    | GT -> find k r
-            | Tip -> None
+        | Bin k2 v l r ->
+            match ord.compare k k2 with
+            | LT -> find k l
+            | EQ -> Some v
+            | GT -> find k r
+        | Tip -> None
     and insert k v m =
         match m with
-            | Bin k2 v2 l r ->
-                match ord.compare k k2 with
-                    | LT -> Bin k2 v2 (insert k v l) r
-                    | EQ -> Bin k v l r
-                    | GT -> Bin k2 v2 l (insert k v r)
-            | Tip -> Bin k v empty empty
+        | Bin k2 v2 l r ->
+            match ord.compare k k2 with
+            | LT -> Bin k2 v2 (insert k v l) r
+            | EQ -> Bin k v l r
+            | GT -> Bin k2 v2 l (insert k v r)
+        | Tip -> Bin k v empty empty
     and to_list m =
         let (++) = prelude.monoid_List.append
         match m with
-            | Bin key value l r ->
-                to_list l ++ Cons { key, value } (to_list r)
-            | Tip -> Nil
+        | Bin key value l r ->
+            to_list l ++ Cons { key, value } (to_list r)
+        | Tip -> Nil
+    
+    let fold f x m =
+        match m with
+        | Bin k v l r ->
+            let y = f k v x
+            fold f (fold f y l) r
+        | Tip -> x
 
     let append l r =
-        match l with
-            | Bin lk lv ll lr ->
-                match r with
-                    | Bin rk rv rl rr ->
-                        match ord.compare lk rk with
-                            | LT -> Bin lk lv ll (append lr r)
-                            | EQ -> Bin lk lv (append ll rl) (append lr rr)
-                            | GT -> Bin lk lv (append ll r) lr
-                    | Tip -> l
-            | Tip ->
-                match r with
-                    | Bin a b c d -> r
-                    | Tip -> empty
+        fold insert l r
 
     let monoid = { append, empty }
 
-    { monoid, singleton, find, insert, to_list }
+    { monoid, singleton, find, fold, insert, to_list }
 
 { Map, make }
