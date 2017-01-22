@@ -234,19 +234,27 @@ impl Compiler {
     ///
     /// If at any point the function fails the resulting error is returned and nothing is added to
     /// the VM.
-    pub fn load_script<'vm>(&mut self,
-                            vm: &'vm Thread,
-                            filename: &str,
-                            input: &str)
-                            -> BoxFutureValue<'vm, (), Error> {
+    pub fn load_script(&mut self, vm: &Thread, filename: &str, input: &str) -> Result<()> {
+        self.load_script_async(vm, filename, input).wait()
+    }
+
+    pub fn load_script_async<'vm>(&mut self,
+                                  vm: &'vm Thread,
+                                  filename: &str,
+                                  input: &str)
+                                  -> BoxFutureValue<'vm, (), Error> {
         input.load_script(self, vm, filename, input, None)
     }
 
     /// Loads `filename` and compiles and runs its input by calling `load_script`
-    pub fn load_file<'vm>(&mut self,
-                          vm: &'vm Thread,
-                          filename: &str)
-                          -> BoxFutureValue<'vm, (), Error> {
+    pub fn load_file<'vm>(&mut self, vm: &'vm Thread, filename: &str) -> Result<()> {
+        self.load_file_async(vm, filename).wait()
+    }
+
+    pub fn load_file_async<'vm>(&mut self,
+                                vm: &'vm Thread,
+                                filename: &str)
+                                -> BoxFutureValue<'vm, (), Error> {
         use std::fs::File;
         use std::io::Read;
         let result = (|| {
@@ -259,7 +267,7 @@ impl Compiler {
         })();
         let name = filename_to_module(filename);
         match result {
-            Ok(buffer) => self.load_script(vm, &name, &buffer),
+            Ok(buffer) => self.load_script_async(vm, &name, &buffer),
             Err(err) => FutureValue::Value(Err(err)),
         }
     }
@@ -270,7 +278,17 @@ impl Compiler {
                             vm: &'vm Thread,
                             name: &str,
                             expr_str: &str)
-                            -> BoxFutureValue<'vm, (T, ArcType), Error>
+                            -> Result<(T, ArcType)>
+        where T: Getable<'vm> + VmType + Send + 'vm,
+    {
+        self.run_expr_async(vm, name, expr_str).wait()
+    }
+
+    pub fn run_expr_async<'vm, T>(&mut self,
+                                  vm: &'vm Thread,
+                                  name: &str,
+                                  expr_str: &str)
+                                  -> BoxFutureValue<'vm, (T, ArcType), Error>
         where T: Getable<'vm> + VmType + Send + 'vm,
     {
         let expected = T::make_type(vm);
@@ -293,7 +311,18 @@ impl Compiler {
                                vm: &'vm Thread,
                                name: &str,
                                expr_str: &str)
-                               -> BoxFutureValue<'vm, (T, ArcType), Error>
+                               -> Result<(T, ArcType)>
+        where T: Getable<'vm> + VmType + Send + 'vm,
+              T::Type: Sized,
+    {
+        self.run_io_expr_async(vm, name, expr_str).wait()
+    }
+
+    pub fn run_io_expr_async<'vm, T>(&mut self,
+                                     vm: &'vm Thread,
+                                     name: &str,
+                                     expr_str: &str)
+                                     -> BoxFutureValue<'vm, (T, ArcType), Error>
         where T: Getable<'vm> + VmType + Send + 'vm,
               T::Type: Sized,
     {
@@ -416,7 +445,7 @@ pub fn new_vm() -> RootedThread {
 
     Compiler::new()
         .implicit_prelude(false)
-        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "", r#" import "std/types.glu" "#)
+        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "", r#" import "std/types.glu" "#)
         .sync_or_error()
         .unwrap();
     ::vm::primitives::load(&vm).expect("Loaded primitives library");

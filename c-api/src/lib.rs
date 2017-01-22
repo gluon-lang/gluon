@@ -10,7 +10,7 @@ use gluon::vm::api::{Getable, Pushable, CPrimitive, Hole, OpaqueValue};
 use gluon::vm::types::{VmIndex, VmInt};
 use gluon::vm::thread::{RootedThread, Thread, ThreadInternal, Status};
 
-use gluon::{Compiler, Future};
+use gluon::Compiler;
 
 pub type Function = extern "C" fn(&Thread) -> Status;
 
@@ -46,7 +46,7 @@ pub unsafe extern "C" fn glu_run_expr(vm: &Thread,
         Ok(s) => s,
         Err(_) => return Error::Unknown,
     };
-    let result = Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, module, expr).wait();
+    let result = Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, module, expr);
     match result {
         Ok(_) => Error::Ok,
         Err(_) => Error::Unknown,
@@ -67,7 +67,7 @@ pub unsafe extern "C" fn glu_load_script(vm: &Thread,
         Ok(s) => s,
         Err(_) => return Error::Unknown,
     };
-    let result = Compiler::new().load_script(vm, module, expr).wait();
+    let result = Compiler::new().load_script(vm, module, expr);
     match result {
         Ok(_) => Error::Ok,
         Err(_) => Error::Unknown,

@@ -11,7 +11,7 @@ use gluon::Compiler;
 pub fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<()> {
     Compiler::new()
         .implicit_prelude(false)
-        .load_script(vm, filename, input)
+        .load_script_async(vm, filename, input)
         .sync_or_error()
 }
 
@@ -21,7 +21,7 @@ pub fn run_expr_<'vm, T>(vm: &'vm Thread, s: &str, implicit_prelude: bool) -> T
 {
     Compiler::new()
         .implicit_prelude(implicit_prelude)
-        .run_expr(vm, "<top>", s)
+        .run_expr_async(vm, "<top>", s)
         .sync_or_error()
         .unwrap_or_else(|err| panic!("{}", err))
         .0
@@ -62,14 +62,11 @@ macro_rules! test_expr {
     (io $name: ident, $expr: expr, $value: expr) => {
         #[test]
         fn $name() {
-            use $crate::support::futures::Future;
-
             let _ = ::env_logger::init();
             let mut vm = make_vm();
             let (value, _) = Compiler::new()
                 .implicit_prelude(false)
                 .run_io_expr(&mut vm, "<top>", $expr)
-                .wait()
                 .unwrap_or_else(|err| panic!("{}", err));
             match value {
                 IO::Value(value) => {

@@ -32,11 +32,9 @@ mod repl;
 fn run_files<'s, I>(vm: &Thread, files: I) -> Result<()>
     where I: Iterator<Item = &'s str>,
 {
-    use futures::Future;
-
     let mut compiler = Compiler::new();
     for file in files {
-        compiler.load_file(&vm, file).wait()?;
+        compiler.load_file(&vm, file)?;
     }
     Ok(())
 }

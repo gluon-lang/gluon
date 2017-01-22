@@ -17,7 +17,7 @@ use gluon::Compiler;
 use gluon::import::Import;
 
 fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<()> {
-    Compiler::new().load_script(vm, filename, input).sync_or_error()
+    Compiler::new().load_script_async(vm, filename, input).sync_or_error()
 }
 
 fn make_vm() -> RootedThread {
@@ -100,7 +100,6 @@ test "hello"
 
     let result = Compiler::new()
         .run_expr::<String>(&vm, "<top>", expr)
-        .wait()
         .unwrap();
     let expected = ("hello world".to_string(), Type::string());
 
@@ -123,7 +122,6 @@ sum_bytes [100b, 42b, 3b, 15b]
 
     let result = Compiler::new()
         .run_expr::<u8>(&vm, "<top>", expr)
-        .wait()
         .unwrap_or_else(|err| panic!("{}", err));
     let expected = (160, Type::byte());
 
@@ -147,7 +145,6 @@ fn return_finished_future() {
 
     let result = Compiler::new()
         .run_expr::<i32>(&vm, "<top>", expr)
-        .wait()
         .unwrap_or_else(|err| panic!("{}", err));
     let expected = (3, Type::int());
 
@@ -185,7 +182,6 @@ fn return_delayed_future() {
 
     let result = Compiler::new()
         .run_expr::<i32>(&vm, "<top>", expr)
-        .wait()
         .unwrap_or_else(|err| panic!("{}", err));
     let expected = (3, Type::int());
 
@@ -212,7 +208,6 @@ fn io_future() {
 
     let result = Compiler::new()
         .run_io_expr::<IO<i32>>(&vm, "<top>", expr)
-        .wait()
         .unwrap_or_else(|err| panic!("{}", err));
 
     assert_eq!(result.0, IO::Value(124));
