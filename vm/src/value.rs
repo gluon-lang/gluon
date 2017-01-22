@@ -1165,7 +1165,7 @@ impl<'t> Cloner<'t> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gc::Gc;
+    use gc::{Gc, Generation};
     use types::VmInt;
 
     use base::kind::{ArcKind, KindEnv};
@@ -1196,7 +1196,7 @@ mod tests {
 
     #[test]
     fn pretty_variant() {
-        let mut gc = Gc::new(0, usize::max_value());
+        let mut gc = Gc::new(Generation::default(), usize::max_value());
 
         let list = Symbol::from("List");
         let typ: ArcType = Type::variant(vec![Field {
@@ -1236,7 +1236,7 @@ mod tests {
 
     #[test]
     fn pretty_array() {
-        let mut gc = Gc::new(0, usize::max_value());
+        let mut gc = Gc::new(Generation::default(), usize::max_value());
 
         let typ = Type::array(Type::int());
 
