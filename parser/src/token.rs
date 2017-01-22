@@ -141,6 +141,9 @@ quick_error! {
         UnterminatedStringLiteral {
             description("unterminated string literal")
         }
+        NonParseableInt {
+            description("cannot parse integer, probable overflow")
+        }
     }
 }
 
@@ -398,10 +401,22 @@ impl<'input> Tokenizer<'input> {
             }
             Some((end, 'b')) => {
                 self.bump(); // Skip 'b'
-                (start, end.shift('b'), Token::ByteLiteral(int.parse().unwrap()))
+                if let Ok(val) = int.parse() {
+                    (start, end.shift('b'), Token::ByteLiteral(val))
+                }
+                else {
+                    return self.error(start, NonParseableInt);
+                }
             }
             Some((start, ch)) if is_ident_start(ch) => return self.error(start, UnexpectedChar(ch)),
-            None | Some(_) => (start, end, Token::IntLiteral(int.parse().unwrap())),
+            None | Some(_) => {
+                if let Ok(val) = int.parse() {
+                    (start, end, Token::IntLiteral(val))
+                }
+                else {
+                    return self.error(start, NonParseableInt);
+                }
+            }
         };
 
         Ok(pos::spanned2(start, end, token))
@@ -647,6 +662,12 @@ mod test {
             (r#"  ~~~~   "#, IntLiteral(1036)),
             (r#"       ~~"#, IntLiteral(45)),
         ]);
+    }
+
+    #[test]
+    fn int_literal_overflow() {
+        assert_eq!(Tokenizer::new(r#"12345678901234567890"#).last(),
+                   Some(error(loc(0), NonParseableInt)));
     }
 
     #[test]
