@@ -13,7 +13,7 @@ grammar<'input, 'env, Id>(src: &'input str, env: MutIdentEnv<'env, Id>, errors: 
 
 extern {
     type Location = BytePos;
-    type Error = Error;
+    type Error = Spanned<Error, BytePos>;
 
     enum Token<'input> {
         "Identifier" => Token::Identifier(<&'input str>),
@@ -100,7 +100,7 @@ AtomicKind: ArcKind = {
             "Type" => Ok(Kind::typ()),
             "Row" => Ok(Kind::row()),
             id => Err(ParseError::User {
-                error: Error::UnexpectedToken("Identifier".to_string()),
+                error: pos::spanned2(l.into(), r.into(), Error::UnexpectedToken("Identifier".to_string())),
             }),
         }
     },

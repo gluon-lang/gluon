@@ -933,7 +933,7 @@ unsafe impl<'a> DataDef for &'a ValueArray {
             let result = &mut *result.as_mut_ptr();
             result.repr = self.repr;
             on_array!(self,
-                      |array: &Array<_>| result.unsafe_array_mut().initialize(array.iter().cloned()));
+                      |array: &Array<_>| { result.unsafe_array_mut().initialize(array.iter().cloned()) });
             result
         }
     }
