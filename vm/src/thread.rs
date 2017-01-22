@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::usize;
 
 use base::metadata::Metadata;
+use base::pos::Line;
 use base::symbol::Symbol;
 use base::types::ArcType;
 use base::types;
@@ -20,9 +21,10 @@ use field_map::FieldMap;
 use interner::InternedStr;
 use macros::MacroEnv;
 use api::{Getable, Pushable, VmType};
-use compiler::CompiledFunction;
+use compiler::{CompiledFunction, UpvarInfo};
 use gc::{DataDef, Gc, GcPtr, Generation, Move};
-use stack::{Stack, StackFrame, State};
+use source_map::LocalIter;
+use stack::{Frame, Stack, StackFrame, State};
 use types::*;
 use vm::{GlobalVmState, VmEnv};
 use value::{Value, ClosureData, ClosureInitDef, ClosureDataDef, Def, ExternFunction, GcStr,
@@ -247,13 +249,7 @@ impl RootedThread {
         let thread = Thread {
             global_state: Arc::new(GlobalVmState::new()),
             parent: None,
-            context: Mutex::new(Context {
-                gc: Gc::new(Generation::default(), usize::MAX),
-                stack: Stack::new(),
-                record_map: FieldMap::new(),
-                hook: None,
-                max_stack_size: VmIndex::max_value(),
-            }),
+            context: Mutex::new(Context::new(Gc::new(Generation::default(), usize::MAX))),
             roots: RwLock::new(Vec::new()),
             rooted_values: RwLock::new(Vec::new()),
             child_threads: RwLock::new(Vec::new()),
@@ -293,13 +289,7 @@ impl Thread {
         let vm = Thread {
             global_state: self.global_state.clone(),
             parent: Some(self.root_thread()),
-            context: Mutex::new(Context {
-                gc: self.current_context().gc.new_child_gc(),
-                stack: Stack::new(),
-                record_map: FieldMap::new(),
-                hook: None,
-                max_stack_size: VmIndex::max_value(),
-            }),
+            context: Mutex::new(Context::new(self.current_context().gc.new_child_gc())),
             roots: RwLock::new(Vec::new()),
             rooted_values: RwLock::new(Vec::new()),
             child_threads: RwLock::new(Vec::new()),
@@ -573,7 +563,7 @@ impl ThreadInternal for Thread {
                     instructions: Vec<Instruction>)
                     -> Result<()> {
         let id = Symbol::from(name);
-        let mut compiled_fn = CompiledFunction::new(args, id.clone(), typ.clone());
+        let mut compiled_fn = CompiledFunction::new(args, id.clone(), typ.clone(), "".into());
         compiled_fn.instructions = instructions;
         let closure = self.global_env().new_global_thunk(compiled_fn)?;
         self.set_global(id, typ, Metadata::default(), Closure(closure)).unwrap();
@@ -655,7 +645,7 @@ impl ThreadInternal for Thread {
         let mut cloner = ::value::Cloner::new(self, &mut context.gc);
         if full_clone {
             cloner.force_full_clone();
-        }
+    }
         cloner.deep_clone(value)
     }
 
@@ -690,18 +680,145 @@ impl ThreadInternal for Thread {
     }
 }
 
-pub type HookFn = Box<FnMut(&Thread) -> Result<()> + Send + Sync>;
+pub type HookFn = Box<FnMut(&Thread, DebugInfo) -> Result<()> + Send + Sync>;
+
+pub struct DebugInfo<'a> {
+    stack: &'a Stack,
+    state: HookFlags,
+}
+
+pub struct StackInfo<'a> {
+    info: &'a DebugInfo<'a>,
+    index: usize,
+}
+
+impl<'a> DebugInfo<'a> {
+    /// Returns the reason for the hook being called
+    pub fn state(&self) -> HookFlags {
+        self.state
+    }
+
+    /// Returns a struct which can be queried about information about the stack
+    /// at a specific level where `0` is the currently executing frame.
+    pub fn stack_info(&self, level: usize) -> Option<StackInfo> {
+        let frames = self.stack.get_frames();
+        if level < frames.len() {
+            Some(StackInfo {
+                info: self,
+                index: frames.len() - level - 1,
+            })
+        } else {
+            None
+        }
+    }
+
+    pub fn stack_info_len(&self) -> usize {
+        self.stack.get_frames().len()
+    }
+}
+
+impl<'a> StackInfo<'a> {
+    fn frame(&self) -> &Frame {
+        &self.info.stack.get_frames()[self.index]
+    }
+
+    // For frames except the top we subtract one to account for the `Call` instruction adding one
+    fn instruction_index(&self) -> usize {
+        if self.info.stack.get_frames().len() - 1 == self.index {
+            self.frame().instruction_index
+        } else {
+            self.frame().instruction_index - 1
+        }
+    }
+
+    /// Returns the line which create the current instruction of this frame
+    pub fn line(&self) -> Option<Line> {
+        let frame = self.frame();
+        match frame.state {
+            State::Closure(ref closure) => {
+                closure.function.debug_info.source_map.line(self.instruction_index())
+            }
+            _ => None,
+        }
+    }
+
+    /// Returns the name of the source which defined the funtion executing at this frame
+    pub fn source_name(&self) -> &str {
+        match self.frame().state {
+            State::Closure(ref closure) => &closure.function.debug_info.source_name,
+            _ => "<unknown>",
+        }
+    }
+
+    /// Returns the name of the function executing at this frame
+    pub fn function_name(&self) -> Option<&str> {
+        match self.frame().state {
+            State::Unknown | State::Lock | State::Excess => None,
+            State::Closure(ref closure) => Some(closure.function.name.declared_name()),
+            State::Extern(ref function) => Some(function.id.declared_name()),
+        }
+    }
+
+    /// Returns an iterator over all locals available at the current executing instruction
+    pub fn locals(&self) -> LocalIter {
+        let frame = self.frame();
+        match frame.state {
+            State::Closure(ref closure) => {
+                closure.function.debug_info.local_map.locals(self.instruction_index())
+            }
+            _ => LocalIter::empty(),
+        }
+    }
+
+    /// Returns a slice with information about the values bound to this closure
+    pub fn upvars(&self) -> &[UpvarInfo] {
+        match self.frame().state {
+            State::Closure(ref closure) => &closure.function.debug_info.upvars,
+            _ => panic!("Attempted to access upvar in non closure function"),
+        }
+    }
+}
+
+bitflags! {
+    pub flags HookFlags: u8 {
+        /// Call the hook when execution moves to a new line
+        const LINE_FLAG = 0b01,
+        /// Call the hook when a function is called
+        const CALL_FLAG = 0b10,
+    }
+}
+
+struct Hook {
+    function: Option<HookFn>,
+    flags: HookFlags,
+    // The index of the last executed instruction
+    previous_instruction_index: usize,
+}
 
 pub struct Context {
     // FIXME It is dangerous to write to gc and stack
     pub stack: Stack,
     pub gc: Gc,
     record_map: FieldMap,
-    hook: Option<HookFn>,
+    hook: Hook,
     max_stack_size: VmIndex,
 }
 
 impl Context {
+    fn new(gc: Gc) -> Context {
+        Context {
+            gc: gc,
+            stack: Stack::new(),
+            record_map: FieldMap::new(),
+            hook: Hook {
+                function: None,
+                flags: HookFlags::empty(),
+                previous_instruction_index: usize::max_value(),
+            },
+            max_stack_size: VmIndex::max_value(),
+        }
+    }
+
     pub fn new_data(&mut self, thread: &Thread, tag: VmTag, fields: &[Value]) -> Result<Value> {
         self.alloc_with(thread,
                         Def {
@@ -726,7 +843,11 @@ impl Context {
     }
 
     pub fn set_hook(&mut self, hook: Option<HookFn>) -> Option<HookFn> {
-        mem::replace(&mut self.hook, hook)
+        mem::replace(&mut self.hook.function, hook)
+    }
+
+    pub fn set_hook_mask(&mut self, flags: HookFlags) {
+        self.hook.flags = flags;
     }
 
     pub fn set_max_stack_size(&mut self, limit: VmIndex) {
@@ -741,6 +862,13 @@ impl<'b> OwnedContext<'b> {
     {
         let Context { ref mut gc, ref stack, .. } = **self;
         alloc(gc, self.thread, &stack, data)
+    }
+
+    pub fn debug_info(&self) -> DebugInfo {
+        DebugInfo {
+            stack: &self.stack,
+            state: HookFlags::empty(),
+        }
     }
 }
 
@@ -788,18 +916,23 @@ impl<'b> OwnedContext<'b> {
             debug!("STACK\n{:?}", context.stack.get_frames());
             let state = context.borrow_mut().stack.frame.state;
 
-            // Before entering a function (or reentering one after returning from
-            // another function) run the hook which may interuppt the execution by
-            // returning an error
-
-            match state {
-                State::Extern(_) |
-                State::Closure(_) => {
-                    if let Some(ref mut hook) = context.hook {
-                        hook(context.thread)?
+            let instruction_index = context.borrow_mut().stack.frame.instruction_index;
+            if instruction_index == 0 && context.hook.flags.contains(CALL_FLAG) {
+                match state {
+                    State::Extern(_) |
+                    State::Closure(_) => {
+                        let thread = context.thread;
+                        let context = &mut *context;
+                        if let Some(ref mut hook) = context.hook.function {
+                            let info = DebugInfo {
+                                stack: &context.stack,
+                                state: CALL_FLAG,
+                            };
+                            hook(thread, info)?
+                        }
                     }
+                    _ => (),
                 }
-                _ => (),
             }
 
             maybe_context = match state {
@@ -913,6 +1046,7 @@ impl<'b> OwnedContext<'b> {
             gc: &mut context.gc,
             stack: StackFrame::current(&mut context.stack),
             record_map: &mut context.record_map,
+            hook: &mut context.hook,
         }
     }
 }
@@ -922,6 +1056,7 @@ struct ExecuteContext<'b> {
     stack: StackFrame<'b>,
     gc: &'b mut Gc,
     record_map: &'b mut FieldMap,
+    hook: &'b mut Hook,
 }
 
 impl<'b> ExecuteContext<'b> {
@@ -935,11 +1070,20 @@ impl<'b> ExecuteContext<'b> {
 
     fn enter_scope(&mut self, args: VmIndex, state: State) {
         self.stack.enter_scope(args, state);
+        self.hook.previous_instruction_index = usize::max_value();
     }
 
     fn exit_scope(&mut self) -> StdResult<(), ()> {
         match self.stack.exit_scope() {
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                if self.hook.flags.bits() != 0 {
+                    // Subtract 1 to compensate for the `Call` instruction adding one earlier
+                    // ensuring that the line hook runs after function calls
+                    self.hook.previous_instruction_index =
+                        self.stack.frame.instruction_index.saturating_sub(1);
+                }
+                Ok(())
+            }
             Err(_) => Err(()),
         }
     }
@@ -1048,6 +1192,26 @@ impl<'b> ExecuteContext<'b> {
         }
         while let Some(&instr) = instructions.get(index) {
             debug_instruction(&self.stack, index, instr, function);
+
+            if self.hook.flags.contains(LINE_FLAG) {
+                if let Some(ref mut hook) = self.hook.function {
+                    let current_line = function.debug_info.source_map.line(index);
+                    let previous_line = function.debug_info
+                        .source_map
+                        .line(self.hook.previous_instruction_index);
+                    self.hook.previous_instruction_index = index;
+                    if current_line != previous_line {
+                        self.stack.frame.instruction_index = index;
+                        self.stack.store_frame();
+                        let info = DebugInfo {
+                            stack: &self.stack.stack,
+                            state: LINE_FLAG,
+                        };
+                        hook(self.thread, info)?
+                    }
+                }
+            }
+
             match instr {
                 Push(i) => {
                     let v = self.stack[i].clone();

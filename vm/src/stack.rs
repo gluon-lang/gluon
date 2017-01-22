@@ -28,6 +28,15 @@ pub struct Frame {
     pub excess: bool,
 }
 
+impl Frame {
+    pub fn upvars(&self) -> &[Value] {
+        match self.state {
+            State::Closure(ref c) => &c.upvars,
+            _ => &[],
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Lock(VmIndex);
 
@@ -109,10 +118,13 @@ impl Stack {
             .filter_map(|frame| {
                 match frame.state {
                     State::Closure(ref closure) => {
-                        let line = closure.function.source_map.line(frame.instruction_index);
-                        Some(Some(StacktraceFrame {
-                            name: closure.function.name.clone(),
-                            line: line,
+                        let line =
+                            closure.function.debug_info.source_map.line(frame.instruction_index);
+                        Some(line.map(|line| {
+                            StacktraceFrame {
+                                name: closure.function.name.clone(),
+                                line: line,
+                            }
                         }))
                     }
                     State::Extern(ref ext) => {
@@ -165,7 +177,7 @@ pub struct StackFrame<'b> {
 impl<'b> Drop for StackFrame<'b> {
     fn drop(&mut self) {
         // Move the cached frame back to storage
-        *self.stack.frames.last_mut().unwrap() = self.frame;
+        self.store_frame()
     }
 }
 
@@ -232,11 +244,7 @@ impl<'a: 'b, 'b> StackFrame<'b> {
     }
 
     pub fn get_upvar(&self, index: VmIndex) -> Value {
-        let upvars = match self.frame.state {
-            State::Closure(ref c) => c,
-            _ => panic!("Attempted to access upvar in non closure function"),
-        };
-        upvars.upvars[index as usize]
+        self.frame.upvars()[index as usize]
     }
 
     pub fn excess_args(&self) -> Option<GcPtr<DataStruct>> {
@@ -319,6 +327,10 @@ impl<'a: 'b, 'b> StackFrame<'b> {
                frame,
                prev);
         frame
+    }
+
+    pub fn store_frame(&mut self) {
+        *self.stack.frames.last_mut().unwrap() = self.frame;
     }
 }
 

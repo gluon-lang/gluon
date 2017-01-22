@@ -10,6 +10,8 @@ extern crate quick_error;
 extern crate mopa;
 #[macro_use]
 extern crate collect_mac;
+#[macro_use]
+extern crate bitflags;
 extern crate itertools;
 extern crate pretty;
 

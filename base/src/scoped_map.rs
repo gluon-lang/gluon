@@ -34,8 +34,8 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
         self.scopes.push(None);
     }
 
-    /// Exits the current scope, removing anything inserted since the
-    /// matching enter_scope call
+    /// Exits the current scope, returning an iterator over the (key, value) pairs that are removed
+    /// When `ExitScopeIter` is dropped any remaining pairs of the scope is removed as well.
     pub fn exit_scope(&mut self) -> ExitScopeIter<K, V> {
         ExitScopeIter {
             map: self,
