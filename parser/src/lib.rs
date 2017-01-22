@@ -241,7 +241,21 @@ pub fn parse_partial_expr<Id>(symbols: &mut IdentEnv<Ident = Id>,
 
     let mut parse_errors = Errors::new();
 
-    match grammar::parse_TopExpr(input, symbols, &mut parse_errors, layout) {
+    let result = grammar::parse_TopExpr(input, symbols, &mut parse_errors, layout);
+
+    // If there is a tokenizer error it may still exist in the result iterator wrapper.
+    // If that is the case we return that error instead of the unexpected EOF error that lalrpop
+    // emitted
+    if let Err(err) = result_ok_iter.borrow_mut().result(()) {
+        parse_errors.pop();// Remove the EOF error
+        parse_errors.push(lalrpop_util::ParseError::User {
+            error: pos::spanned2(err.span.start.absolute,
+                                 err.span.end.absolute,
+                                 err.value.into()),
+        });
+    }
+
+    match result {
         Ok(mut expr) => {
             let mut errors = transform_errors(parse_errors);
             let mut reparser = Reparser::new(OpTable::default(), symbols);
