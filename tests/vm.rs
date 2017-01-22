@@ -659,7 +659,7 @@ fn get_binding_with_alias_type() {
 fn get_binding_with_generic_params() {
     let _ = ::env_logger::init();
 
-    let mut vm = make_vm();
+    let vm = make_vm();
     run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import "std/prelude.glu" "#);
     let mut id: FunctionRef<fn(String) -> String> = vm.get_global("std.prelude.id")
         .unwrap_or_else(|err| panic!("{}", err));
