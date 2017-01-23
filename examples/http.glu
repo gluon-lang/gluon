@@ -14,7 +14,8 @@ let {
     Handler,
     HttpState } = import! "examples/http_types.glu"
 
-/// Force the value to be a Handler. Used to make the the type inference work for higher-kinded types
+/// Force the value to be a Handler. Necessary to make the the type inference work for
+/// higher-kinded types
 let make: Handler a -> Handler a = id
 
 let functor: Functor Handler = {
@@ -83,6 +84,7 @@ let post : Handler () =
         | Post -> True
         | _ -> False)
 
+/// Processes this handler if `uri` matches the request's uri
 let path uri: String -> Handler () =
     test (\request -> request.uri == uri)
 
@@ -90,20 +92,26 @@ let path uri: String -> Handler () =
 let get_request : Handler Request =
     \success _ state -> success state.request state
 
+/// Retrieves the body of the http response
 let get_response_body : Handler ResponseBody =
     make (\success failure state -> success state.response state)
 
-let empty_response = { status = OK, body = "" }
+/// Returns `OK` with an empty body
+let empty_response = { status = OK }
 
+/// Converts an `IO` into a `Handler`
 let io_handler io: IO a -> Handler a =
     make (\success _ state -> prelude.monad_IO.flat_map (\a -> success a state) io)
 
+/// Write `bytes` to the http response
 let write_response bytes : Array Byte -> Handler () =
     get_response_body >>= (\response -> io_handler (http_prim.write_response response bytes))
 
+/// Throws an exception which aborts the current handler. Can be caught with `catch_error`
 let fail msg : String -> Handler a =
     make (\_ failure state -> failure (Error msg) state)
 
+/// Recovers from an exception thrown by `fail`
 let catch_error action catch : Handler a -> (String -> Handler a) -> Handler a =
     make (\success failure state ->
         let failure2 reason state2 =

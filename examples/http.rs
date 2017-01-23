@@ -1,3 +1,10 @@
+//! This example uses [hyper][] to create a http server which handles requests asynchronously in
+//! gluon. To do this we define a few types and functions in Rust with which we register in gluon
+//! so that we can communicate with `hyper`. The rest of the implementation is done in gluon,
+//! routing the requests and constructing the responses.
+//!
+//! [hyper]:https://hyper.rs
+
 extern crate gluon_base as base;
 #[macro_use]
 extern crate gluon_vm as vm;
@@ -45,7 +52,7 @@ use vm::internal::Value;
 use gluon::{Compiler, new_vm};
 
 // `Handler` is a type defined in http.glu but since we need to refer to it in the signature of
-// listen we define a phantom type to use with `OpaqueValue`
+// listen we define a phantom type which we can use with `OpaqueValue` to store a `Handler` in Rust
 struct Handler<T>(PhantomData<T>);
 
 impl<T: VmType + 'static> VmType for Handler<T> {
@@ -59,7 +66,9 @@ impl<T: VmType + 'static> VmType for Handler<T> {
     }
 }
 
-// Since we want to marshal types defined in hyper we use `Wrap` to implement the traits we need
+// Rust does not let us define traits on types defined in a different crate such as `hyper`. We can
+// however work around this by defining a wrapper type which we are then able to define the traits
+// on.
 struct Wrap<T>(T);
 
 macro_rules! define_vmtype {
@@ -115,28 +124,44 @@ impl<'vm> Getable<'vm> for Wrap<StatusCode> {
     }
 }
 
+// Representation of a http body that is in the prograss of being read
 pub struct Body(Arc<Mutex<BoxStream<PushAsRef<Chunk, [u8]>, VmError>>>);
 
+// By implementing `Userdata` on `Body` it can be automatically pushed and retrieved from gluon
+// threads
+impl Userdata for Body {}
+
+// Types implementing `Userdata` requires a `std::fmt::Debug` implementation so it can be displayed
 impl fmt::Debug for Body {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "hyper::Body")
     }
 }
 
-impl Userdata for Body {}
-
+// `Traverseable` is required by `Userdata` so that the garbage collector knows how to scan the
+// value for garbage collected references. Normally objects do not contain any references so this
+// can be empty
 impl Traverseable for Body {
     fn traverse(&self, _: &mut Gc) {}
 }
 
+// `VmType` is the last trait required for a type to implement `Userdata` and defines the type used
+// in gluon for this Rust type. For opaque `Userdata` values this minimal implementation is enough
+// as the default implementation of `make_type` will lookup `VmType::Type` from the virtual machine
+// which should have been registered earlier with `Thread::register_type`
 impl VmType for Body {
     type Type = Self;
 }
 
+// Since `Body` implements `Userdata` gluon will automatically marshal the gluon representation
+// into `&Body` argument
 fn read_chunk(body: &Body) -> FutureResult<BoxFuture<IO<Option<PushAsRef<Chunk, [u8]>>>, VmError>> {
     use futures::future::poll_fn;
 
     let body = body.0.clone();
+    // `FutureResult` is a wrapper type around `Future` which when returned to the interpreter is
+    // polled until completion. After `poll` returns `Ready` the value is then returned to the
+    // gluon function which called `read_chunk`
     FutureResult(poll_fn(move || {
             let mut stream = body.lock().unwrap();
             stream.poll().map(|async| async.map(IO::Value))
@@ -144,6 +169,7 @@ fn read_chunk(body: &Body) -> FutureResult<BoxFuture<IO<Option<PushAsRef<Chunk, 
         .boxed())
 }
 
+// A http body that is being written
 pub struct ResponseBody(Arc<Mutex<Option<Sender<Result<Chunk, hyper::Error>>>>>);
 
 impl fmt::Debug for ResponseBody {
@@ -168,6 +194,7 @@ fn write_response(response: &ResponseBody,
     use futures::future::poll_fn;
     use futures::AsyncSink;
 
+    // Turn `bytes´ into a `Chunk` which can be sent to the http body
     let mut unsent_chunk = Some(Ok(bytes.to_owned().into()));
     let response = response.0.clone();
     FutureResult(poll_fn(move || {
@@ -198,7 +225,8 @@ fn write_response(response: &ResponseBody,
         .boxed())
 }
 
-
+// Next we define some record types which are marshalled to and from gluon. These have equivalent
+// definitions in http_types.glu
 field_decl! { method, uri, status, body, request, response }
 
 type Request = record_type!{
@@ -223,6 +251,7 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
     use hyper::server::Request as HyperRequest;
     use hyper::server::Response as HyperResponse;
 
+    // Retrieve the `handle` function from the http module which we use to evaluate values of type // `Handler Response`
     type ListenFn = fn(OpaqueValue<RootedThread, Handler<Response>>, HttpState) -> IO<Response>;
     let handle: Function<RootedThread, ListenFn> = thread.get_global("examples.http.handle")
         .unwrap_or_else(|err| panic!("{}", err));
@@ -240,12 +269,15 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
 
         fn call(&self, request: HyperRequest) -> Self::Future {
             let gluon_request = record_no_decl! {
+                // Here we use to `Wrap` type to make `hyper::Request` into a type that can be
+                // pushed to gluon
                 method => Wrap(request.method().clone()),
                 uri => request.uri().to_string(),
+                // Since `Body` implements `Userdata` it can be directly pushed to gluon
                 body => Body(Arc::new(Mutex::new(request.body()
                     .map_err(|err| VmError::Message(format!("{}", err)))
-                    // This makes the `body` parameter act as a `&[u8]` meaning it is marshalled
-                    // into an `Array Byte` in gluon
+                    // `PushAsRef` makes the `body` parameter act as a `&[u8]` which means it is
+                    // marshalled to `Array Byte` in gluon
                     .map(PushAsRef::<_, [u8]>::new)
                     .boxed())))
             };
@@ -303,6 +335,8 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
     IO::Value(())
 }
 
+// To let the `http_types` module refer to `Body` and `ResponseBody` we register these types in a
+// separate function which is called before loading `http_types`
 pub fn load_types(vm: &Thread) -> VmResult<()> {
     vm.register_type::<Body>("Body", &[])?;
     vm.register_type::<ResponseBody>("ResponseBody", &[])?;
@@ -323,21 +357,26 @@ fn main() {
     let _ = env_logger::init();
     let port = env::args().nth(1).map(|port| port.parse::<i32>().expect("port")).unwrap_or(80);
 
-    let mut expr = String::new();
-    {
-        let mut file = File::open("examples/http_server.glu").unwrap();
-        file.read_to_string(&mut expr).unwrap();
-    }
     let thread = new_vm();
 
+    // First load all the http types so we can refer to them from gluon
     load_types(&thread).unwrap();
     Compiler::new()
         .run_expr::<()>(&thread,
                         "",
                         r#"let _ = import! "examples/http_types.glu" in () "#)
         .unwrap_or_else(|err| panic!("{}", err));
+
+    // Load the primitive functions we define in this module
     load(&thread).unwrap();
 
+    // Last we run our `http_server.glu` module which returns a function which starts listening
+    // on the port we passed from the command line
+    let mut expr = String::new();
+    {
+        let mut file = File::open("examples/http_server.glu").unwrap();
+        file.read_to_string(&mut expr).unwrap();
+    }
     let (mut listen, _) = Compiler::new()
         .run_expr::<FunctionRef<fn(i32) -> IO<()>>>(&thread, "http_test", &expr)
         .unwrap_or_else(|err| panic!("{}", err));
