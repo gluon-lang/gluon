@@ -103,3 +103,17 @@ fn tokenizer_error_at_eof_is_returned() {
 
     assert_eq!(result.map_err(|(_, err)| err), Err(errors));
 }
+
+#[test]
+fn no_infinite_loop_from_default_block() {
+    let _ = ::env_logger::init();
+
+    let result = parse(r#"
+let x = 1
+
+    x,
+    y = 1
+}
+"#);
+    assert!(result.is_err());
+}
