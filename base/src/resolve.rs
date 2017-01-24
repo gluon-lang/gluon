@@ -25,7 +25,7 @@ pub fn remove_aliases(env: &TypeEnv, mut typ: ArcType) -> ArcType {
 pub fn remove_aliases_cow<'t>(env: &TypeEnv, typ: &'t ArcType) -> Cow<'t, ArcType> {
     match remove_alias(env, typ) {
         Ok(Some(typ)) => Cow::Owned(remove_aliases(env, typ)),
-        _ => return Cow::Borrowed(typ),
+        _ => Cow::Borrowed(typ),
     }
 }
 
@@ -48,7 +48,7 @@ pub fn remove_alias(env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType>, Err
             let alias = match maybe_alias {
                 Some(alias) => alias,
                 None => {
-                    env.find_type_info(&id)
+                    env.find_type_info(id)
                         .map(|a| &**a)
                         .ok_or_else(|| Error::UndefinedType(id.clone()))?
                 }
@@ -84,11 +84,9 @@ pub fn type_of_alias(alias: &AliasData<Symbol, ArcType>, args: &[ArcType]) -> Op
             let allowed_missing_args = arg_types.iter()
                 .rev()
                 .zip(alias_args.iter().rev())
-                .take_while(|&(l, r)| {
-                    match **l {
-                        Type::Generic(ref g) => g == r,
-                        _ => false,
-                    }
+                .take_while(|&(l, r)| match **l {
+                    Type::Generic(ref g) => g == r,
+                    _ => false,
                 })
                 .count();
             if alias_args.len() - args.len() <= allowed_missing_args {

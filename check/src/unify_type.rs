@@ -230,7 +230,7 @@ fn do_zip_match<'a, U>(unifier: &mut UnifierState<'a, U>,
                                 |fields, rest| Type::extend_row(l_types.clone(), fields, rest)))
             } else if **l_rest == Type::EmptyRow && **r_rest == Type::EmptyRow {
                 for l_typ in expected.type_field_iter() {
-                    if let None = actual.type_field_iter().find(|r_typ| *r_typ == l_typ) {
+                    if actual.type_field_iter().find(|r_typ| *r_typ == l_typ).is_none() {
                         return Err(UnifyError::TypeMismatch(expected.clone(), actual.clone()));
                     }
                 }
@@ -264,7 +264,7 @@ fn do_zip_match<'a, U>(unifier: &mut UnifierState<'a, U>,
         (&Type::Alias(ref alias), &Type::Ident(ref id)) if *id == alias.name => Ok(None),
 
         // Successful unification!
-        (lhs, rhs) if lhs == rhs => return Ok(None),
+        (lhs, rhs) if lhs == rhs => Ok(None),
 
         // Last ditch attempt to unify the types expanding the aliases
         // (if the types are alias types).
@@ -451,7 +451,7 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>,
                 rest = subs.new_var();
                 let r_rest =
                     Type::extend_row(types_missing_from_left, missing_from_left, rest.clone());
-                unifier.try_match(&l_iter.current_type(), &r_rest);
+                unifier.try_match(l_iter.current_type(), &r_rest);
                 types.extend(r_rest.type_field_iter().cloned());
                 fields.extend(r_rest.row_iter().cloned());
             }
@@ -609,24 +609,22 @@ pub fn instantiate_generic_variables(named_variables: &mut FnvMap<Symbol, ArcTyp
     use std::collections::hash_map::Entry;
 
     types::walk_move_type(typ.clone(),
-                          &mut |typ| {
-        match *typ {
-            Type::Generic(ref generic) => {
-                let var = match named_variables.entry(generic.id.clone()) {
-                    Entry::Vacant(entry) => entry.insert(subs.new_var()).clone(),
-                    Entry::Occupied(entry) => entry.get().clone(),
-                };
+                          &mut |typ| match *typ {
+                              Type::Generic(ref generic) => {
+                                  let var = match named_variables.entry(generic.id.clone()) {
+                                      Entry::Vacant(entry) => entry.insert(subs.new_var()).clone(),
+                                      Entry::Occupied(entry) => entry.get().clone(),
+                                  };
 
-                let mut var = (*var).clone();
-                if let Type::Variable(ref mut var) = var {
-                    var.kind = generic.kind.clone();
-                }
+                                  let mut var = (*var).clone();
+                                  if let Type::Variable(ref mut var) = var {
+                                      var.kind = generic.kind.clone();
+                                  }
 
-                Some(ArcType::from(var))
-            }
-            _ => None,
-        }
-    })
+                                  Some(ArcType::from(var))
+                              }
+                              _ => None,
+                          })
 }
 
 pub fn merge_signature(subs: &Substitution<ArcType>,

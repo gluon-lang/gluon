@@ -1060,7 +1060,7 @@ impl<'vm> Getable<'vm> for RootStr<'vm> {
     }
 }
 
-/// NewType which can be used to push types implementating  `AsRef`
+/// Newtype which can be used to push types implementating  `AsRef`
 pub struct PushAsRef<T, R>(T, PhantomData<R>);
 
 impl<T, R> PushAsRef<T, R> {
@@ -1263,9 +1263,7 @@ pub mod record {
         fn from_value(vm: &'vm Thread, values: &[Value]) -> Option<Self> {
             let head = unsafe { H::from_value(vm, Variants::new(&values[0])) };
             head.and_then(|head| {
-                T::from_value(vm, &values[1..]).map(move |tail| {
-                    HList((F::default(), head), tail)
-                })
+                T::from_value(vm, &values[1..]).map(move |tail| HList((F::default(), head), tail))
             })
         }
     }

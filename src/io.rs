@@ -131,7 +131,7 @@ extern "C" fn catch_io(vm: &Thread) -> Status {
             {
                 let mut stack = StackFrame::current(&mut context.stack);
                 while stack.stack.get_frames().len() > frame_level {
-                    if let Err(_) = stack.exit_scope() {
+                    if stack.exit_scope().is_err() {
                         return Status::Error;
                     }
                 }
@@ -163,7 +163,7 @@ fn clear_frames(err: Error, frame_level: usize, mut stack: StackFrame) -> IO<Str
         _ => format!("{}", err),
     };
     while stack.stack.get_frames().len() > frame_level {
-        if let Err(_) = stack.exit_scope() {
+        if stack.exit_scope().is_err() {
             return IO::Exception(fmt);
         }
     }
@@ -198,12 +198,10 @@ pub fn load(vm: &Thread) -> Result<()> {
 
     // io_flat_map f m : (a -> IO b) -> IO a -> IO b
     //     = f (m ())
-    let io_flat_map = vec![
-                        // [f, m, ()]       Initial stack
-        Call(1),        // [f, m_ret]       Call m ()
-        PushInt(0),     // [f, m_ret, ()]   Add a dummy argument ()
-        TailCall(2),    // [f_ret]          Call f m_ret ()
-    ];
+    let io_flat_map = vec![// [f, m, ()]       Initial stack
+                           Call(1), // [f, m_ret]       Call m ()
+                           PushInt(0), // [f, m_ret, ()]   Add a dummy argument ()
+                           TailCall(2) /* [f_ret]          Call f m_ret () */];
     let io_flat_map_type = <fn (fn (A) -> IO<B>, IO<A>) -> IO<B> as VmType>::make_type(vm);
     vm.add_bytecode("io_flat_map", io_flat_map_type, 3, io_flat_map)?;
 

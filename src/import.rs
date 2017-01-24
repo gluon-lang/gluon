@@ -77,16 +77,16 @@ impl Importer for DefaultImporter {
               -> Result<(), MacroError> {
         use compiler_pipeline::*;
 
-        MacroValue { expr: expr }.load_script(compiler, vm, &modulename, input, None)?;
+        MacroValue { expr: expr }.load_script(compiler, vm, modulename, input, None)?;
         Ok(())
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct CheckImporter(pub Arc<Mutex<FnvMap<String, SpannedExpr<Symbol>>>>);
 impl CheckImporter {
     pub fn new() -> CheckImporter {
-        CheckImporter(Arc::new(Mutex::new(FnvMap::default())))
+        CheckImporter::default()
     }
 }
 impl Importer for CheckImporter {
@@ -219,13 +219,13 @@ impl<I> Macro for Import<I>
                         .import(&mut compiler,
                                 vm,
                                 &modulename,
-                                &file_contents,
+                                file_contents,
                                 macro_result.expr)?;
                 }
                 // FIXME Does not handle shadowing
                 Ok(pos::spanned(args[0].span, Expr::Ident(TypedIdent::new(name))))
             }
-            _ => return Err(Error::String("Expected a string literal to import".into()).into()),
+            _ => Err(Error::String("Expected a string literal to import".into()).into()),
         }
     }
 }

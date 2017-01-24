@@ -213,7 +213,7 @@ pub struct Field<Id, T = ArcType<Id>> {
     pub typ: T,
 }
 
-/// SmallVec used in the `Type::App` constructor to avoid alloacting a `Vec` for every applied
+/// `SmallVec` used in the `Type::App` constructor to avoid alloacting a `Vec` for every applied
 /// type. If `Type` is changed in a way that changes its size it is likely a good idea to change
 /// the number of elements in the `SmallVec` so that it fills out the entire `Type` enum while not
 /// increasing the size of `Type`.

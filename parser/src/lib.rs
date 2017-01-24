@@ -180,7 +180,7 @@ struct SharedIter<'a, I: 'a> {
 
 impl<'a, I> Clone for SharedIter<'a, I> {
     fn clone(&self) -> SharedIter<'a, I> {
-        SharedIter { iter: self.iter.clone() }
+        SharedIter { iter: self.iter }
     }
 }
 

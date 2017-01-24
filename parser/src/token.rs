@@ -333,7 +333,7 @@ impl<'input> Tokenizer<'input> {
             Some((_, 't')) => Ok('\t'),
             // TODO: Unicode escape codes
             Some((start, ch)) => self.error(start, UnexpectedEscapeCode(ch)),
-            None => return self.eof_error(),
+            None => self.eof_error(),
         }
     }
 

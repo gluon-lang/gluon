@@ -34,7 +34,7 @@ pub fn check_signature(env: &TypeEnv, signature: &ArcType, actual: &ArcType) -> 
     let subs = Substitution::new();
     let state = unify_type::State::new(env, &subs);
     let actual = unify_type::instantiate_generic_variables(&mut FnvMap::default(), &subs, actual);
-    unify_type::merge_signature(&subs, &mut ScopedMap::new(), 0, state, &signature, &actual).is_ok()
+    unify_type::merge_signature(&subs, &mut ScopedMap::new(), 0, state, signature, &actual).is_ok()
 }
 
 #[cfg(test)]
