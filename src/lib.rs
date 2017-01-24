@@ -18,6 +18,7 @@ pub extern crate gluon_check as check;
 pub mod compiler_pipeline;
 pub mod import;
 pub mod io;
+#[cfg(feature = "regex")]
 pub mod regex_bind;
 
 pub use vm::thread::{RootedThread, Thread};
@@ -390,9 +391,9 @@ pub fn new_vm() -> RootedThread {
     vm
 }
 
-#[cfg(feature="regex")]
+#[cfg(feature = "regex")]
 fn load_regex(vm: &Thread) {
     ::regex_bind::load(&vm).expect("Loaded regex library");
 }
-#[cfg(not(feature="regex"))]
+#[cfg(not(feature = "regex"))]
 fn load_regex(_: &Thread) {}

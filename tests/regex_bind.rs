@@ -1,3 +1,4 @@
+#![cfg(feature = "regex")]
 extern crate gluon;
 extern crate env_logger;
 
