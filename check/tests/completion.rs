@@ -8,7 +8,7 @@ extern crate gluon_check as check;
 
 use base::pos::BytePos;
 use base::types::{Field, Type, ArcType};
-use check::completion;
+use check::completion::{self, Suggestion};
 
 mod support;
 use support::{MockEnv, intern, typ};
@@ -22,19 +22,17 @@ fn find_type(s: &str, pos: BytePos) -> Result<ArcType, ()> {
     completion::find(&env, &mut expr, pos)
 }
 
-fn suggest(s: &str, pos: BytePos) -> Result<Vec<String>, ()> {
+fn suggest_types(s: &str, pos: BytePos) -> Result<Vec<Suggestion>, ()> {
     let env = MockEnv::new();
 
     let (mut expr, _result) = support::typecheck_partial_expr(s);
-    let mut vec: Vec<String> = {
-        completion::suggest(&env, &mut expr, pos)
-            .into_iter()
-            .map(|ident| ident.name)
-            .collect()
-    };
-    vec.sort();
-
+    let mut vec = completion::suggest(&env, &mut expr, pos);
+    vec.sort_by(|l, r| l.name.cmp(&r.name));
     Ok(vec)
+}
+
+fn suggest(s: &str, pos: BytePos) -> Result<Vec<String>, ()> {
+    suggest_types(s, pos).map(|vec| vec.into_iter().map(|suggestion| suggestion.name).collect())
 }
 
 #[test]
@@ -262,6 +260,23 @@ a
 "#,
                          BytePos::from(45));
     let expected = Ok(vec!["aa".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_from_record_unpack_unordered() {
+    let _ = env_logger::init();
+
+    let result = suggest_types(r#"
+let { c, aa } = { aa = 1, ab = 2.0, c = "" }
+a
+"#,
+                               BytePos::from(47));
+    let expected = Ok(vec![Suggestion {
+                               name: "aa".into(),
+                               typ: Type::int(),
+                           }]);
 
     assert_eq!(result, expected);
 }

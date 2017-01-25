@@ -51,6 +51,7 @@ impl<E: TypeEnv> OnFound for GetType<E> {
     }
 }
 
+#[derive(Debug, PartialEq)]
 pub struct Suggestion {
     pub name: String,
     pub typ: ArcType,
@@ -71,13 +72,15 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
         match pattern.value {
             Pattern::Record { ref typ, fields: ref field_ids, .. } => {
                 let unaliased = resolve::remove_aliases(&self.env, typ.clone());
-                if let Type::Record(ref row) = *unaliased {
-                    if let Type::ExtendRow { ref fields, .. } = **row {
-                        for (field, field_type) in field_ids.iter().zip(fields) {
-                            let f = field.1.as_ref().unwrap_or(&field.0).clone();
-                            self.stack.insert(f, field_type.typ.clone());
-                        }
-                    }
+                for field in field_ids {
+                    let name = field.1.as_ref().unwrap_or(&field.0).clone();
+                    let typ = unaliased.row_iter()
+                        .find(|f| f.name.name_eq(&name))
+                        .map(|f| f.typ.clone())
+                        // If we did not find a matching field in the type, default to a type hole
+                        // so that the user at least gets completion on the name
+                        .unwrap_or_else(|| Type::hole());
+                    self.stack.insert(name, typ);
                 }
             }
             Pattern::Ident(ref id) => {
