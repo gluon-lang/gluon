@@ -9,6 +9,8 @@ extern crate log;
 #[macro_use]
 extern crate quick_error;
 
+extern crate futures;
+
 #[macro_use]
 pub extern crate gluon_vm as vm;
 pub extern crate gluon_base as base;
@@ -23,6 +25,8 @@ pub mod regex_bind;
 
 pub use vm::thread::{RootedThread, Thread};
 
+pub use futures::Future;
+
 use std::result::Result as StdResult;
 use std::string::String as StdString;
 use std::env;
@@ -36,6 +40,7 @@ use check::typecheck::TypeError;
 use vm::Variants;
 use vm::api::{Getable, Hole, VmType, OpaqueValue};
 use vm::Error as VmError;
+use vm::future::{BoxFutureValue, FutureValue};
 use vm::compiler::CompiledFunction;
 use vm::thread::ThreadInternal;
 use vm::macros;
@@ -230,20 +235,41 @@ impl Compiler {
     /// If at any point the function fails the resulting error is returned and nothing is added to
     /// the VM.
     pub fn load_script(&mut self, vm: &Thread, filename: &str, input: &str) -> Result<()> {
+        self.load_script_async(vm, filename, input).wait()
+    }
+
+    pub fn load_script_async<'vm>(&mut self,
+                                  vm: &'vm Thread,
+                                  filename: &str,
+                                  input: &str)
+                                  -> BoxFutureValue<'vm, (), Error> {
         input.load_script(self, vm, filename, input, None)
     }
 
     /// Loads `filename` and compiles and runs its input by calling `load_script`
-    pub fn load_file(&mut self, vm: &Thread, filename: &str) -> Result<()> {
+    pub fn load_file<'vm>(&mut self, vm: &'vm Thread, filename: &str) -> Result<()> {
+        self.load_file_async(vm, filename).wait()
+    }
+
+    pub fn load_file_async<'vm>(&mut self,
+                                vm: &'vm Thread,
+                                filename: &str)
+                                -> BoxFutureValue<'vm, (), Error> {
         use std::fs::File;
         use std::io::Read;
-        let mut buffer = StdString::new();
-        {
-            let mut file = File::open(filename)?;
-            file.read_to_string(&mut buffer)?;
-        }
+        let result = (|| {
+            let mut buffer = StdString::new();
+            {
+                let mut file = File::open(filename)?;
+                file.read_to_string(&mut buffer)?;
+            }
+            Ok(buffer)
+        })();
         let name = filename_to_module(filename);
-        self.load_script(vm, &name, &buffer)
+        match result {
+            Ok(buffer) => self.load_script_async(vm, &name, &buffer),
+            Err(err) => FutureValue::Value(Err(err)),
+        }
     }
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
@@ -253,17 +279,30 @@ impl Compiler {
                             name: &str,
                             expr_str: &str)
                             -> Result<(T, ArcType)>
-        where T: Getable<'vm> + VmType,
+        where T: Getable<'vm> + VmType + Send + 'vm,
+    {
+        self.run_expr_async(vm, name, expr_str).wait()
+    }
+
+    pub fn run_expr_async<'vm, T>(&mut self,
+                                  vm: &'vm Thread,
+                                  name: &str,
+                                  expr_str: &str)
+                                  -> BoxFutureValue<'vm, (T, ArcType), Error>
+        where T: Getable<'vm> + VmType + Send + 'vm,
     {
         let expected = T::make_type(vm);
-        let ExecuteValue { typ: actual, value, .. } =
-            expr_str.run_expr(self, vm, name, expr_str, Some(&expected))?;
-        unsafe {
-            match T::from_value(vm, Variants::new(&value)) {
-                Some(value) => Ok((value, actual)),
-                None => Err(Error::from(VmError::WrongType(expected, actual))),
-            }
-        }
+        expr_str.run_expr(self, vm, name, expr_str, Some(&expected))
+            .and_then(move |v| {
+                let ExecuteValue { typ: actual, value, .. } = v;
+                unsafe {
+                    FutureValue::sync(match T::from_value(vm, Variants::new(&value)) {
+                        Some(value) => Ok((value, actual)),
+                        None => Err(Error::from(VmError::WrongType(expected, actual))),
+                    })
+                }
+            })
+            .boxed()
     }
 
     /// Compiles and runs `expr_str`. If the expression is of type `IO a` the action is evaluated
@@ -273,33 +312,49 @@ impl Compiler {
                                name: &str,
                                expr_str: &str)
                                -> Result<(T, ArcType)>
-        where T: Getable<'vm> + VmType,
+        where T: Getable<'vm> + VmType + Send + 'vm,
+              T::Type: Sized,
+    {
+        self.run_io_expr_async(vm, name, expr_str).wait()
+    }
+
+    pub fn run_io_expr_async<'vm, T>(&mut self,
+                                     vm: &'vm Thread,
+                                     name: &str,
+                                     expr_str: &str)
+                                     -> BoxFutureValue<'vm, (T, ArcType), Error>
+        where T: Getable<'vm> + VmType + Send + 'vm,
               T::Type: Sized,
     {
         let expected = T::make_type(vm);
-        let ExecuteValue { typ: actual, value, .. } =
-            expr_str.run_expr(self, vm, name, expr_str, Some(&expected))?;
-        let is_io = {
-            expected.alias_ident()
-                .and_then(|expected_ident| {
-                    let env = vm.get_env();
-                    env.find_type_info("IO")
-                        .ok()
-                        .map(|alias| *expected_ident == alias.name)
+        expr_str.run_expr(self, vm, name, expr_str, Some(&expected))
+            .and_then(move |v| {
+                let ExecuteValue { typ: actual, value, .. } = v;
+                let is_io = {
+                    expected.alias_ident()
+                        .and_then(|expected_ident| {
+                            let env = vm.get_env();
+                            env.find_type_info("IO")
+                                .ok()
+                                .map(|alias| *expected_ident == alias.name)
+                        })
+                        .unwrap_or(false)
+                };
+                if is_io {
+                    vm.execute_io(*value)
+                        .map(move |(_, value)| (value, expected, actual))
+                        .map_err(Error::from)
+                } else {
+                    FutureValue::Value(Ok((*value, expected, actual)))
+                }
+            })
+            .and_then(move |(value, expected, actual)| unsafe {
+                FutureValue::sync(match T::from_value(vm, Variants::new(&value)) {
+                    Some(value) => Ok((value, actual)),
+                    None => Err(Error::from(VmError::WrongType(expected, actual))),
                 })
-                .unwrap_or(false)
-        };
-        let value = if is_io {
-            vm.execute_io(*value)?
-        } else {
-            *value
-        };
-        unsafe {
-            match T::from_value(vm, Variants::new(&value)) {
-                Some(value) => Ok((value, actual)),
-                None => Err(Error::from(VmError::WrongType(expected, actual))),
-            }
-        }
+            })
+            .boxed()
     }
 
     fn include_implicit_prelude(&mut self, name: &str, expr: &mut SpannedExpr<Symbol>) {
@@ -390,7 +445,8 @@ pub fn new_vm() -> RootedThread {
 
     Compiler::new()
         .implicit_prelude(false)
-        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "", r#" import "std/types.glu" "#)
+        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "", r#" import "std/types.glu" "#)
+        .sync_or_error()
         .unwrap();
     ::vm::primitives::load(&vm).expect("Loaded primitives library");
     ::vm::channel::load(&vm).expect("Loaded channel library");

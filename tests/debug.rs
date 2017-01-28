@@ -2,14 +2,16 @@ extern crate env_logger;
 extern crate gluon;
 #[macro_use]
 extern crate collect_mac;
+extern crate futures;
 
 use std::sync::{Arc, Mutex};
 use std::collections::BTreeMap;
 
+use futures::{Async, Future};
+
 use gluon::base::pos::Line;
 use gluon::base::types::{ArcType, Type};
-use gluon::{Compiler, Error, new_vm};
-use gluon::vm;
+use gluon::{Compiler, new_vm};
 use gluon::vm::compiler::UpvarInfo;
 use gluon::vm::thread::{ThreadInternal, CALL_FLAG, LINE_FLAG};
 
@@ -38,7 +40,7 @@ fn function_hook() {
                     .function_name()
                     .expect("function_name")
                     .to_string());
-            Ok(())
+            Ok(Async::Ready(()))
         })));
         context.set_hook_mask(CALL_FLAG);
     }
@@ -55,26 +57,27 @@ fn line_hook() {
     let thread = new_vm();
     {
         let mut context = thread.context();
-        context.set_hook(Some(Box::new(move |_, _| Err(vm::Error::Yield))));
+        context.set_hook(Some(Box::new(move |_, _| Ok(Async::NotReady))));
         context.set_hook_mask(LINE_FLAG);
     }
-    let mut result = Compiler::new()
+    let mut execute = Compiler::new()
         .implicit_prelude(false)
-        .run_expr::<i32>(&thread, "test", SIMPLE_EXPR)
+        .run_expr_async::<i32>(&thread, "test", SIMPLE_EXPR)
         .map(|_| ());
+    let mut result = Ok(Async::NotReady);
 
     let mut lines = Vec::new();
     loop {
         match result {
-            Ok(_) => break,
-            Err(Error::VM(vm::Error::Yield)) => {
+            Ok(Async::Ready(())) => break,
+            Ok(Async::NotReady) => {
                 let context = thread.context();
                 let debug_info = context.debug_info();
                 lines.push(debug_info.stack_info(0).unwrap().line().unwrap());
             }
             Err(err) => panic!("{}", err),
         }
-        result = thread.resume().map_err(From::from);
+        result = execute.poll();
     }
 
     assert_eq!(lines,
@@ -88,7 +91,7 @@ fn line_hook_after_call() {
     let thread = new_vm();
     {
         let mut context = thread.context();
-        context.set_hook(Some(Box::new(move |_, _| Err(vm::Error::Yield))));
+        context.set_hook(Some(Box::new(move |_, _| Ok(Async::NotReady))));
         context.set_hook_mask(LINE_FLAG);
     }
 
@@ -97,23 +100,24 @@ fn line_hook_after_call() {
         id 0
         1
     "#;
-    let mut result = Compiler::new()
+    let mut execute = Compiler::new()
         .implicit_prelude(false)
-        .run_expr::<i32>(&thread, "test", expr)
+        .run_expr_async::<i32>(&thread, "test", expr)
         .map(|_| ());
+    let mut result = Ok(Async::NotReady);
 
     let mut lines = Vec::new();
     loop {
         match result {
-            Ok(_) => break,
-            Err(Error::VM(vm::Error::Yield)) => {
+            Ok(Async::Ready(())) => break,
+            Ok(Async::NotReady) => {
                 let context = thread.context();
                 let debug_info = context.debug_info();
                 lines.push(debug_info.stack_info(0).unwrap().line().unwrap());
             }
             Err(err) => panic!("{}", err),
         }
-        result = thread.resume().map_err(From::from);
+        result = execute.poll();
     }
 
     assert_eq!(lines,
@@ -127,24 +131,26 @@ fn implicit_prelude_lines_not_counted() {
     let thread = new_vm();
     {
         let mut context = thread.context();
-        context.set_hook(Some(Box::new(move |_, debug_info| {
-            if debug_info.stack_info(0).unwrap().source_name() == "test" {
-                Err(vm::Error::Yield)
-            } else {
-                Ok(())
-            }
+        context.set_hook(Some(Box::new(move |_, debug_info| if debug_info.stack_info(0)
+            .unwrap()
+            .source_name() ==
+                                                                    "test" {
+            Ok(Async::NotReady)
+        } else {
+            Ok(Async::Ready(()))
         })));
         context.set_hook_mask(LINE_FLAG);
     }
-    let mut result = Compiler::new()
-        .run_expr::<i32>(&thread, "test", "1")
+    let mut execute = Compiler::new()
+        .run_expr_async::<i32>(&thread, "test", "1")
         .map(|_| ());
+    let mut result = Ok(Async::NotReady);
 
     let mut lines = Vec::new();
     loop {
         match result {
-            Ok(_) => break,
-            Err(Error::VM(vm::Error::Yield)) => {
+            Ok(Async::Ready(())) => break,
+            Ok(Async::NotReady) => {
                 let context = thread.context();
                 let debug_info = context.debug_info();
                 let stack_info = debug_info.stack_info(0).unwrap();
@@ -152,7 +158,7 @@ fn implicit_prelude_lines_not_counted() {
             }
             Err(err) => panic!("{}", err),
         }
-        result = thread.resume().map_err(From::from);
+        result = execute.poll();
     }
 
     assert_eq!(lines, vec![Line::from(0)]);
@@ -175,7 +181,7 @@ fn read_variables() {
                                                   (local.name.declared_name().to_string(), local.typ.clone())
                                               })
                                               .collect::<Vec<_>>());
-            Ok(())
+            Ok(Async::Ready(()))
         })));
         context.set_hook_mask(LINE_FLAG);
     }
@@ -226,7 +232,7 @@ fn argument_types() {
                                                   local.typ.clone())
                                              })
                                              .collect::<Vec<_>>()));
-            Ok(())
+            Ok(Async::Ready(()))
         })));
         context.set_hook_mask(LINE_FLAG);
     }
@@ -268,7 +274,7 @@ fn source_name() {
         context.set_hook(Some(Box::new(move |_, debug_context| {
             let stack_info = debug_context.stack_info(0).unwrap();
             *result.lock().unwrap() = stack_info.source_name().to_string();
-            Ok(())
+            Ok(Async::Ready(()))
         })));
         context.set_hook_mask(LINE_FLAG);
     }
@@ -303,7 +309,7 @@ fn upvars() {
             if stack_info.source_name() == "test" {
                 result.lock().unwrap().push(stack_info.upvars().to_owned());
             }
-            Ok(())
+            Ok(Async::Ready(()))
         })));
         context.set_hook_mask(CALL_FLAG);
     }
@@ -355,7 +361,7 @@ fn implicit_prelude_variable_names() {
                 .extend(stack_info.locals()
                     .filter(|local| local.name.declared_name() == "__implicit_prelude")
                     .map(|local| local.typ.clone()));
-            Ok(())
+            Ok(Async::Ready(()))
         })));
         context.set_hook_mask(LINE_FLAG);
     }

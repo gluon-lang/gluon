@@ -1,5 +1,6 @@
 extern crate env_logger;
 extern crate gluon;
+pub extern crate futures;
 
 use gluon::vm::api::{Getable, VmType};
 use gluon::vm::thread::{RootedThread, Thread};
@@ -10,23 +11,25 @@ use gluon::Compiler;
 pub fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<()> {
     Compiler::new()
         .implicit_prelude(false)
-        .load_script(vm, filename, input)
+        .load_script_async(vm, filename, input)
+        .sync_or_error()
 }
 
 #[allow(dead_code)]
 pub fn run_expr_<'vm, T>(vm: &'vm Thread, s: &str, implicit_prelude: bool) -> T
-    where T: Getable<'vm> + VmType,
+    where T: Getable<'vm> + VmType + Send + 'vm,
 {
     Compiler::new()
         .implicit_prelude(implicit_prelude)
-        .run_expr(vm, "<top>", s)
+        .run_expr_async(vm, "<top>", s)
+        .sync_or_error()
         .unwrap_or_else(|err| panic!("{}", err))
         .0
 }
 
 #[allow(dead_code)]
 pub fn run_expr<'vm, T>(vm: &'vm Thread, s: &str) -> T
-    where T: Getable<'vm> + VmType,
+    where T: Getable<'vm> + VmType + Send + 'vm,
 {
     run_expr_(vm, s, false)
 }

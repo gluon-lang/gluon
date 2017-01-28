@@ -314,7 +314,7 @@ match A with
 | B -> True
 ";
     let mut vm = make_vm();
-    let result = Compiler::new().run_expr::<bool>(&mut vm, "<top>", text);
+    let result = Compiler::new().run_expr_async::<bool>(&mut vm, "<top>", text).sync_or_error();
     assert!(result.is_err());
 }
 
@@ -580,7 +580,10 @@ fn run_expr_int() {
 
     let text = r#"io.run_expr "123" "#;
     let mut vm = make_vm();
-    let (result, _) = Compiler::new().run_io_expr::<IO<String>>(&mut vm, "<top>", text).unwrap();
+    let (result, _) = Compiler::new()
+        .run_io_expr_async::<IO<String>>(&mut vm, "<top>", text)
+        .sync_or_error()
+        .unwrap();
     match result {
         IO::Value(result) => {
             let expected = "123 : Int";
@@ -608,7 +611,8 @@ in Cons 1 Nil == Nil
 "#;
     let mut vm = make_vm();
     let (result, _) = Compiler::new()
-        .run_expr::<bool>(&mut vm, "<top>", text)
+        .run_expr_async::<bool>(&mut vm, "<top>", text)
+        .sync_or_error()
         .unwrap_or_else(|err| panic!("{}", err));
     let expected = false;
 
@@ -621,7 +625,8 @@ fn test_implicit_prelude() {
     let text = r#"Ok (Some (1.0 + 3.0 - 2.0)) "#;
     let mut vm = make_vm();
     Compiler::new()
-        .run_expr::<OpaqueValue<&Thread, Hole>>(&mut vm, "<top>", text)
+        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&mut vm, "<top>", text)
+        .sync_or_error()
         .unwrap_or_else(|err| panic!("{}", err));
 }
 
@@ -642,7 +647,10 @@ fn access_operator_without_parentheses() {
     let _ = ::env_logger::init();
     let vm = make_vm();
     Compiler::new()
-        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", r#" import "std/prelude.glu" "#)
+        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm,
+                                                      "example",
+                                                      r#" import "std/prelude.glu" "#)
+        .sync_or_error()
         .unwrap();
     let result: Result<FunctionRef<fn(i32, i32) -> i32>, _> =
         vm.get_global("std.prelude.num_Int.+");
@@ -708,7 +716,8 @@ sender
 "#;
     let result = Compiler::new()
         .implicit_prelude(false)
-        .run_expr::<OpaqueValue<&Thread, Sender<f64>>>(&vm, "<top>", expr);
+        .run_expr_async::<OpaqueValue<&Thread, Sender<f64>>>(&vm, "<top>", expr)
+        .sync_or_error();
     match result {
         Err(Error::Typecheck(..)) => (),
         Err(err) => panic!("Unexpected error `{}`", err),
@@ -725,7 +734,7 @@ let s = "åäö"
 string.slice s 1 (string.length s)
 "#;
     let mut vm = make_vm();
-    let result = Compiler::new().run_expr::<String>(&mut vm, "<top>", text);
+    let result = Compiler::new().run_expr_async::<String>(&mut vm, "<top>", text).sync_or_error();
     match result {
         Err(Error::VM(..)) => (),
         Err(err) => panic!("Unexpected error `{}`", err),
@@ -734,7 +743,7 @@ string.slice s 1 (string.length s)
 }
 
 #[test]
-fn dont_execute_io_in_run_expr() {
+fn dont_execute_io_in_run_expr_async() {
     let _ = ::env_logger::init();
     let vm = make_vm();
     let expr = r#"
@@ -743,7 +752,8 @@ let { pure } = prelude.applicative_IO
 pure 123
 "#;
     let value = Compiler::new()
-        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr)
+        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr)
+        .sync_or_error()
         .unwrap_or_else(|err| panic!("{}", err));
     assert!(value.0.get_ref() != Value::Int(123),
             "Unexpected {:?}",
@@ -755,7 +765,9 @@ fn dont_panic_on_partially_applied_constructor() {
     let _ = ::env_logger::init();
     let vm = make_vm();
 
-    let result = Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "test", "Some");
+    let result = Compiler::new()
+        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "test", "Some")
+        .sync_or_error();
     assert!(result.is_err());
 }
 
@@ -774,7 +786,7 @@ and g x = 1 + f (x / 2)
 g 10
 "#;
     let mut vm = make_vm();
-    let result = Compiler::new().run_expr::<i32>(&mut vm, "<top>", text);
+    let result = Compiler::new().run_expr_async::<i32>(&mut vm, "<top>", text).sync_or_error();
     match result {
         Err(Error::VM(..)) => {
             let stacktrace = vm.context().stack.stacktrace(1);

@@ -14,6 +14,8 @@ extern crate collect_mac;
 extern crate bitflags;
 extern crate itertools;
 extern crate pretty;
+#[macro_use]
+extern crate futures;
 
 #[macro_use]
 extern crate gluon_base as base;
@@ -24,6 +26,8 @@ pub mod api;
 pub mod channel;
 pub mod compiler;
 pub mod debug;
+#[macro_use]
+pub mod future;
 pub mod gc;
 pub mod macros;
 pub mod thread;
@@ -70,8 +74,6 @@ quick_error! {
     /// Representation of all possible errors that can occur when interacting with the `vm` crate
     #[derive(Debug, PartialEq)]
     pub enum Error {
-        Yield {
-        }
         Dead {
         }
         UndefinedBinding(symbol: String) {

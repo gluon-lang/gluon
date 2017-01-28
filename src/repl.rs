@@ -31,9 +31,9 @@ fn find_kind(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     let args = args.value.trim();
     IO::Value(match vm.find_type_info(args) {
         Ok(ref alias) => {
-            let kind =
-                alias.args.iter().rev().fold(Kind::typ(),
-                                             |acc, arg| Kind::function(arg.kind.clone(), acc));
+            let kind = alias.args.iter().rev().fold(Kind::typ(), |acc, arg| {
+                Kind::function(arg.kind.clone(), acc)
+            });
             Ok(format!("{}", kind))
         }
         Err(err) => Err(format!("{}", err)),
@@ -176,8 +176,7 @@ fn compile_repl(vm: &Thread) -> Result<(), Box<StdError + Send + Sync>> {
         find_kind => primitive!(1 find_kind)
     ))?;
     let mut compiler = Compiler::new();
-    compiler.load_file(vm, "std/prelude.glu")?;
-    compiler.load_file(vm, "std/repl.glu")?;
+    compiler.load_file_async(vm, "std/repl.glu").sync_or_error()?;
     Ok(())
 }
 

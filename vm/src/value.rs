@@ -647,7 +647,7 @@ impl fmt::Debug for ExternFunction {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // read the v-table pointer of the Fn(..) type and print that
         let p: *const () = unsafe { ::std::mem::transmute(self.function) };
-        write!(f, "{:?}", p)
+        write!(f, "{} {:?}", self.id, p)
     }
 }
 

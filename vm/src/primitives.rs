@@ -4,7 +4,7 @@ use std::result::Result as StdResult;
 
 use {Variants, Error};
 use primitives as prim;
-use api::{generic, Generic, Getable, Pushable, Array, RuntimeResult, primitive, WithVM};
+use api::{generic, Generic, Getable, AsyncPushable, Array, RuntimeResult, primitive, WithVM};
 use api::generic::A;
 use gc::{Gc, Traverseable, DataDef, WriteOnly};
 use Result;

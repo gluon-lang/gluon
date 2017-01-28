@@ -18,7 +18,8 @@ fn parallel() {
 fn parallel_() -> Result<(), Error> {
     let vm = new_vm();
     let mut compiler = Compiler::new();
-    let (value, _) = compiler.run_expr(&vm, "<top>", " channel 0 ")?;
+    let (value, _) = compiler.run_expr_async(&vm, "<top>", " channel 0 ")
+        .sync_or_error()?;
     let value: ChannelRecord<OpaqueValue<RootedThread, Sender<i32>>,
                              OpaqueValue<RootedThread, Receiver<i32>>> = value;
     let (sender, receiver) = value.split();
@@ -34,7 +35,9 @@ fn parallel_() -> Result<(), Error> {
         "#;
         let mut compiler = Compiler::new();
         let mut f: FunctionRef<fn(OpaqueValue<RootedThread, Sender<i32>>)> =
-            compiler.run_expr(&child, "<top>", expr)?.0;
+            compiler.run_expr_async(&child, "<top>", expr)
+                .sync_or_error()?
+                .0;
         Ok(f.call(sender)?)
     });
 
@@ -53,7 +56,9 @@ fn parallel_() -> Result<(), Error> {
         "#;
         let mut compiler = Compiler::new();
         let mut f: FunctionRef<fn(OpaqueValue<RootedThread, Receiver<i32>>)> =
-            compiler.run_expr(&child2, "<top>", expr)?.0;
+            compiler.run_expr_async(&child2, "<top>", expr)
+                .sync_or_error()?
+                .0;
         Ok(f.call(receiver)?)
     });
 

@@ -264,6 +264,9 @@ impl<'a: 'b, 'b> StackFrame<'b> {
     }
 
     pub fn exit_scope(&mut self) -> Result<(), ()> {
+        if self.frame.state == State::Lock {
+            return Err(());
+        }
         let current_frame = self.stack.frames.pop().expect("Expected frame");
         // The root frame should always exist
         debug_assert!(!self.stack.frames.is_empty(), "Poped the last frame");
@@ -276,13 +279,8 @@ impl<'a: 'b, 'b> StackFrame<'b> {
         match frame {
             Some(frame) => {
                 self.frame = frame;
-                if frame.state == State::Lock {
-                    // Locks must be unlocked manually using release lock
-                    Err(())
-                } else {
-                    debug!("<---- Restore {} {:?}", self.stack.frames.len(), frame);
-                    Ok(())
-                }
+                debug!("<---- Restore {} {:?}", self.stack.frames.len(), frame);
+                Ok(())
             }
             None => Err(()),
         }
@@ -486,6 +484,22 @@ mod tests {
     }
 
     #[test]
+    #[should_panic]
+    fn attempt_pop_locked() {
+        let _ = ::env_logger::init();
+
+        let mut stack = Stack::new();
+        {
+            let mut frame = StackFrame::frame(&mut stack, 0, State::Unknown);
+            frame.push(Int(0));
+            frame.enter_scope(1, State::Unknown);
+            let _lock = frame.into_lock();
+        }
+        // Panic as it attempts to pop a locked value
+        stack.pop();
+    }
+
+    #[test]
     fn lock_unlock() {
         let _ = ::env_logger::init();
 
@@ -500,6 +514,7 @@ mod tests {
         {
             let mut frame = StackFrame::frame(&mut stack, 0, State::Unknown);
             frame.push(Int(2));
+            frame.exit_scope().unwrap();
             frame.exit_scope().unwrap_err();
         }
         stack.release_lock(lock);

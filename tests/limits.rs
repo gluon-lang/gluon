@@ -18,7 +18,9 @@ fn out_of_memory() {
     vm.set_memory_limit(10);
 
     let expr = " [1, 2, 3, 4] ";
-    let result = Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr);
+    let result = Compiler::new()
+        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr)
+        .sync_or_error();
 
     match result {
         // FIXME This should just need to match on the explicit out of memory error
@@ -36,7 +38,9 @@ fn stack_overflow() {
     vm.context().set_max_stack_size(3);
 
     let expr = " [1, 2, 3, 4] ";
-    let result = Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr);
+    let result = Compiler::new()
+        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr)
+        .sync_or_error();
 
     match result {
         Err(Error::VM(VMError::StackOverflow(3))) => (),

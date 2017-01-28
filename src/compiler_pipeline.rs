@@ -1,4 +1,3 @@
-
 //! Advanced compiler pipeline which ensures that the compilation phases are run in order even if
 //! not the entire compilation procedure is needed.
 //!
@@ -17,10 +16,11 @@ use base::source::Source;
 use base::symbol::{Name, NameBuf, Symbol, SymbolModule};
 
 use vm::compiler::CompiledFunction;
+use vm::future::{BoxFutureValue, FutureValue};
 use vm::macros::MacroExpander;
 use vm::thread::{RootedValue, Thread, ThreadInternal};
 
-use {Compiler, Result};
+use {Compiler, Error, Result};
 
 /// Result type of successful macro expansion
 pub struct MacroValue<E> {
@@ -237,91 +237,105 @@ pub struct ExecuteValue<'vm, E> {
     pub value: RootedValue<&'vm Thread>,
 }
 
-pub trait Executable<Extra> {
+pub trait Executable<'vm, Extra> {
     type Expr;
 
-    fn run_expr<'vm>(self,
-                     compiler: &mut Compiler,
-                     vm: &'vm Thread,
-                     name: &str,
-                     expr_str: &str,
-                     arg: Extra)
-                     -> Result<ExecuteValue<'vm, Self::Expr>>;
+    fn run_expr(self,
+                compiler: &mut Compiler,
+                vm: &'vm Thread,
+                name: &str,
+                expr_str: &str,
+                arg: Extra)
+                -> BoxFutureValue<'vm, ExecuteValue<'vm, Self::Expr>, Error>;
+
     fn load_script(self,
                    compiler: &mut Compiler,
-                   vm: &Thread,
+                   vm: &'vm Thread,
                    filename: &str,
                    expr_str: &str,
                    arg: Extra)
-                   -> Result<()>;
+                   -> BoxFutureValue<'vm, (), Error>;
 }
-impl<C, Extra> Executable<Extra> for C
+impl<'vm, C, Extra> Executable<'vm, Extra> for C
     where C: Compileable<Extra>,
-          C::Expr: BorrowMut<SpannedExpr<Symbol>>,
+          C::Expr: BorrowMut<SpannedExpr<Symbol>> + Send + 'vm,
 {
     type Expr = C::Expr;
 
-    fn run_expr<'vm>(self,
-                     compiler: &mut Compiler,
-                     vm: &'vm Thread,
-                     name: &str,
-                     expr_str: &str,
-                     arg: Extra)
-                     -> Result<ExecuteValue<'vm, Self::Expr>> {
+    fn run_expr(self,
+                compiler: &mut Compiler,
+                vm: &'vm Thread,
+                name: &str,
+                expr_str: &str,
+                arg: Extra)
+                -> BoxFutureValue<'vm, ExecuteValue<'vm, Self::Expr>, Error> {
 
-        self.compile(compiler, vm, name, expr_str, arg)
-            .and_then(|v| v.run_expr(compiler, vm, name, expr_str, ()))
+        match self.compile(compiler, vm, name, expr_str, arg) {
+            Ok(v) => v.run_expr(compiler, vm, name, expr_str, ()),
+            Err(err) => FutureValue::Value(Err(err)),
+        }
     }
     fn load_script(self,
                    compiler: &mut Compiler,
-                   vm: &Thread,
+                   vm: &'vm Thread,
                    filename: &str,
                    expr_str: &str,
                    arg: Extra)
-                   -> Result<()> {
+                   -> BoxFutureValue<'vm, (), Error> {
 
-        self.compile(compiler, vm, filename, expr_str, arg)
-            .and_then(|v| v.load_script(compiler, vm, filename, expr_str, ()))
+        match self.compile(compiler, vm, filename, expr_str, arg) {
+            Ok(v) => v.load_script(compiler, vm, filename, expr_str, ()),
+            Err(err) => FutureValue::Value(Err(err)),
+        }
     }
 }
-impl<E> Executable<()> for CompileValue<E>
-    where E: BorrowMut<SpannedExpr<Symbol>>,
+impl<'vm, E> Executable<'vm, ()> for CompileValue<E>
+    where E: BorrowMut<SpannedExpr<Symbol>> + Send + 'vm,
 {
     type Expr = E;
 
-    fn run_expr<'vm>(self,
-                     _compiler: &mut Compiler,
-                     vm: &'vm Thread,
-                     name: &str,
-                     _expr_str: &str,
-                     _: ())
-                     -> Result<ExecuteValue<'vm, Self::Expr>> {
+    fn run_expr(self,
+                _compiler: &mut Compiler,
+                vm: &'vm Thread,
+                name: &str,
+                _expr_str: &str,
+                _: ())
+                -> BoxFutureValue<'vm, ExecuteValue<'vm, Self::Expr>, Error> {
 
         let CompileValue { expr, typ, mut function } = self;
         function.id = Symbol::from(name);
-        let closure = vm.global_env().new_global_thunk(function)?;
-        let value = vm.call_thunk(closure)?;
-        Ok(ExecuteValue {
-            expr: expr,
-            typ: typ,
-            value: vm.root_value_ref(value),
-        })
+        let closure = try_future!(vm.global_env().new_global_thunk(function));
+        vm.call_thunk(closure)
+            .map(|(vm, value)| {
+                ExecuteValue {
+                    expr: expr,
+                    typ: typ,
+                    value: vm.root_value_ref(value),
+                }
+            })
+            .map_err(Error::from)
+            .boxed()
     }
     fn load_script(self,
                    _compiler: &mut Compiler,
-                   vm: &Thread,
+                   vm: &'vm Thread,
                    filename: &str,
                    _expr_str: &str,
                    _: ())
-                   -> Result<()> {
+                   -> BoxFutureValue<'vm, (), Error> {
         use check::metadata;
 
         let CompileValue { mut expr, typ, function } = self;
         let metadata = metadata::metadata(&*vm.get_env(), expr.borrow_mut());
-        let closure = vm.global_env().new_global_thunk(function)?;
-        let value = vm.call_thunk(closure)?;
-        vm.set_global(closure.function.name.clone(), typ, metadata, value)?;
-        info!("Loaded module `{}` filename", filename);
-        Ok(())
+        let closure = try_future!(vm.global_env().new_global_thunk(function));
+        let filename = filename.to_string();
+        vm.call_thunk(closure)
+            .map_err(Error::from)
+            .and_then(move |(_, value)| {
+                try_future!(vm.set_global(closure.function.name.clone(), typ, metadata, value));
+                info!("Loaded module `{}` filename", filename);
+                FutureValue::sync(Ok(()))
+            })
+            .boxed()
     }
 }

@@ -7,6 +7,7 @@ extern crate clap;
 extern crate quick_error;
 #[macro_use]
 extern crate lazy_static;
+extern crate futures;
 
 extern crate gluon_base as base;
 extern crate gluon;
@@ -14,7 +15,6 @@ extern crate gluon_check as check;
 extern crate gluon_parser as parser;
 #[macro_use]
 extern crate gluon_vm as vm;
-
 
 #[cfg(not(test))]
 use gluon::{new_vm, Compiler, Thread, Error, Result};

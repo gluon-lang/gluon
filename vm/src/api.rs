@@ -2,13 +2,14 @@
 use {Variants, Error, Result};
 use gc::{DataDef, Gc, Traverseable, Move};
 use base::symbol::Symbol;
-use stack::{State, StackFrame};
+use stack::StackFrame;
 use vm::{self, Thread, Status, RootStr, RootedValue, Root};
 use value::{ArrayRepr, Cloner, DataStruct, ExternFunction, GcStr, Value, ValueArray, Def};
 use thread::{self, Context, RootedThread};
 use thread::ThreadInternal;
 use base::types::{self, ArcType, Type};
 use types::{VmIndex, VmTag, VmInt};
+
 use std::any::Any;
 use std::cell::Ref;
 use std::cmp::Ordering;
@@ -16,6 +17,8 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::result::Result as StdResult;
+
+use futures::{Async, BoxFuture, Future};
 
 pub use value::Userdata;
 
@@ -304,19 +307,22 @@ pub trait VmType {
     }
 }
 
-
-/// Trait which allows a rust value to be pushed to the virtual machine
-pub trait Pushable<'vm> {
+/// Trait which allows a possibly asynchronous rust value to be pushed to the virtual machine
+pub trait AsyncPushable<'vm> {
     /// Pushes `self` to `stack`. If the call is successful a single element should have been added
     /// to the stack and `Ok(())` should be returned. If the call is unsuccessful `Status:Error`
-    /// should be returned and the stack should be left intact
-    fn push(self, vm: &'vm Thread, context: &mut Context) -> Result<()>;
+    /// should be returned and the stack should be left intact.
+    ///
+    /// If the value must be computed asynchronously `Async::NotReady` must be returned so that
+    /// the virtual machine knows it must do more work before the value is available.
+    fn async_push(self, vm: &'vm Thread, context: &mut Context) -> Result<Async<()>>;
 
     fn status_push(self, vm: &'vm Thread, context: &mut Context) -> Status
         where Self: Sized,
     {
-        match self.push(vm, context) {
-            Ok(()) => Status::Ok,
+        match self.async_push(vm, context) {
+            Ok(Async::Ready(())) => Status::Ok,
+            Ok(Async::NotReady) => Status::Yield,
             Err(err) => {
                 let msg = unsafe {
                     GcStr::from_utf8_unchecked(context.alloc_ignore_limit(format!("{}", err).as_bytes()))
@@ -326,6 +332,22 @@ pub trait Pushable<'vm> {
             }
         }
     }
+}
+
+impl<'vm, T> AsyncPushable<'vm> for T
+    where T: Pushable<'vm>,
+{
+    fn async_push(self, vm: &'vm Thread, context: &mut Context) -> Result<Async<()>> {
+        self.push(vm, context).map(Async::Ready)
+    }
+}
+
+/// Trait which allows a rust value to be pushed to the virtual machine
+pub trait Pushable<'vm>: AsyncPushable<'vm> {
+    /// Pushes `self` to `stack`. If the call is successful a single element should have been added
+    /// to the stack and `Ok(())` should be returned. If the call is unsuccessful `Status:Error`
+    /// should be returned and the stack should be left intact
+    fn push(self, vm: &'vm Thread, context: &mut Context) -> Result<()>;
 }
 
 /// Trait which allows rust values to be retrieved from the virtual machine
@@ -844,6 +866,35 @@ impl<'vm, T: Getable<'vm>, E: Getable<'vm>> Getable<'vm> for StdResult<T, E> {
             }
             _ => None,
         }
+    }
+}
+
+/// Wrapper around a `Future` which can be used as a return value to let the virtual machine know
+/// that it must resolve the `Future` to receive the value.
+pub struct FutureResult<F>(pub F);
+
+impl<F> VmType for FutureResult<F>
+    where F: Future,
+          F::Item: VmType,
+{
+    type Type = <F::Item as VmType>::Type;
+    fn make_type(vm: &Thread) -> ArcType {
+        <F::Item>::make_type(vm)
+    }
+    fn extra_args() -> VmIndex {
+        <F::Item>::extra_args()
+    }
+}
+
+impl<'vm, F> AsyncPushable<'vm> for FutureResult<F>
+    where F: Future<Error = Error> + Send + 'static,
+          F::Item: Pushable<'vm>,
+{
+    fn async_push(self, _: &'vm Thread, context: &mut Context) -> Result<Async<()>> {
+        unsafe {
+            context.return_future(self.0);
+        }
+        Ok(Async::NotReady)
     }
 }
 
@@ -1701,7 +1752,7 @@ impl <'vm, $($args,)* R: VmType> FunctionType for fn ($($args),*) -> R {
 
 impl <'vm, $($args,)* R> VmFunction<'vm> for fn ($($args),*) -> R
 where $($args: Getable<'vm> + 'vm,)*
-      R: Pushable<'vm> + VmType + 'vm
+      R: AsyncPushable<'vm> + VmType + 'vm
 {
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables, unused_unsafe)]
     fn unpack_and_call(&self, vm: &'vm Thread) -> Status {
@@ -1749,7 +1800,7 @@ impl <'s, $($args: VmType,)* R: VmType> VmType for Fn($($args),*) -> R + 's {
 
 impl <'vm, $($args,)* R> VmFunction<'vm> for Fn($($args),*) -> R + 'vm
 where $($args: Getable<'vm> + 'vm,)*
-      R: Pushable<'vm> + VmType + 'vm
+      R: AsyncPushable<'vm> + VmType + 'vm
 {
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables, unused_unsafe)]
     fn unpack_and_call(&self, vm: &'vm Thread) -> Status {
@@ -1782,28 +1833,73 @@ where $($args: Getable<'vm> + 'vm,)*
 impl<'vm, T, $($args,)* R> Function<T, fn($($args),*) -> R>
     where $($args: Pushable<'vm>,)*
           T: Deref<Target = Thread>,
-          R: VmType + Getable<'vm>
+          R: VmType + for<'x> Getable<'x>,
 {
     #[allow(non_snake_case)]
     pub fn call(&'vm mut self $(, $args: $args)*) -> Result<R> {
+        match self.call_first($($args),*)? {
+            Async::Ready(value) => Ok(value),
+            Async::NotReady => Err(Error::Message("Unexpected async".into())),
+        }
+    }
+
+    #[allow(non_snake_case)]
+    fn call_first(&'vm self $(, $args: $args)*) -> Result<Async<R>> {
         let vm = self.value.vm();
         let mut context = vm.context();
-        StackFrame::current(&mut context.stack).enter_scope(0, State::Unknown);
         context.stack.push(*self.value);
         $(
-            $args.push(vm, &mut context)?;
+            $args.push(&vm, &mut context)?;
         )*
         for _ in 0..R::extra_args() {
-            0.push(vm, &mut context).unwrap();
+            0.push(&vm, &mut context).unwrap();
         }
         let args = count!($($args),*) + R::extra_args();
-        let mut context = vm.call_function(context, args)?.unwrap();
-        let result = context.stack.pop();
-        R::from_value(vm, Variants(&result))
+        vm.call_function(context, args).and_then(|async|{
+            match async {
+                Async::Ready(context) => {
+                    let value = context.unwrap().stack.pop();
+                    Self::return_value(vm, value).map(Async::Ready)
+                }
+                Async::NotReady => Ok(Async::NotReady),
+            }
+        })
+    }
+
+    fn return_value(vm: &Thread, value: Value) -> Result<R> {
+        R::from_value(vm, Variants(&value))
             .ok_or_else(|| {
-                error!("Wrong type {:?}", result);
+                error!("Wrong type {:?}", value);
                 Error::Message("Wrong type".to_string())
             })
+    }
+}
+
+impl<'vm, T, $($args,)* R> Function<T, fn($($args),*) -> R>
+    where $($args: Pushable<'vm>,)*
+          T: Deref<Target = Thread> + Clone + Send + 'static,
+          R: VmType + for<'x> Getable<'x> + Send + 'static,
+{
+    #[allow(non_snake_case)]
+    pub fn call_async(&'vm mut self $(, $args: $args)*) -> BoxFuture<R, Error> {
+        use futures::{failed, finished};
+        use futures::future::Either;
+        use thread::Execute;
+
+        match self.call_first($($args),*) {
+            Ok(ok) => {
+                Either::A(match ok {
+                    Async::Ready(value) => Either::A(finished(value)),
+                    Async::NotReady => {
+                        Either::B(Execute::new(self.value.clone_vm())
+                            .and_then(|(vm, value)| Self::return_value(&vm, value)))
+                    }
+                })
+            }
+            Err(err) => {
+                Either::B(failed(err))
+            }
+        }.boxed()
     }
 }
     )

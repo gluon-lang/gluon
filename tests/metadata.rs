@@ -23,7 +23,7 @@ fn metadata_from_other_module() {
 let { List, id } = import "std/prelude.hs"
 { List, id }
 "#;
-    Compiler::new().load_script(&vm, "test", text).unwrap();
+    Compiler::new().load_script_async(&vm, "test", text).sync_or_error().unwrap();
 
     let env = vm.get_env();
     assert!(env.get_metadata("test.id").is_ok());
