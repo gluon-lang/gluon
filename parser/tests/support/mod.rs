@@ -5,7 +5,7 @@ use base::ast::{Alternative, Array, DisplayEnv, Expr, IdentEnv, Lambda, Literal,
 use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::kind::Kind;
-use base::types::{Alias, ArcType, Field, Generic, Type};
+use base::types::{AliasData, ArcType, Field, Generic, Type};
 use parser::{Error, ParseErrors, parse_string};
 use std::marker::PhantomData;
 
@@ -138,7 +138,8 @@ pub fn type_decl(name: String,
     type_decls(vec![TypeBinding {
                         comment: None,
                         name: name.clone(),
-                        alias: Alias::new(name, args, typ),
+                        alias: AliasData::new(name, args, typ),
+                        finalized_alias: None,
                     }],
                body)
 }

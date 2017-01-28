@@ -1,4 +1,4 @@
-use std::borrow::ToOwned;
+use std::borrow::{Cow, ToOwned};
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
@@ -22,7 +22,7 @@ pub trait TypeEnv: KindEnv {
 
     /// Returns a record which contains all `fields`. The first element is the record type and the
     /// second is the alias type.
-    fn find_record(&self, fields: &[Symbol]) -> Option<(&ArcType, &ArcType)>;
+    fn find_record(&self, fields: &[Symbol]) -> Option<(ArcType, ArcType)>;
 }
 
 impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
@@ -34,7 +34,7 @@ impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
         (**self).find_type_info(id)
     }
 
-    fn find_record(&self, fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
+    fn find_record(&self, fields: &[Symbol]) -> Option<(ArcType, ArcType)> {
         (**self).find_record(fields)
     }
 }
@@ -132,7 +132,7 @@ impl<Id> Generic<Id> {
 }
 
 /// An alias is wrapper around `Type::Alias`, allowing it to be cheaply converted to a type and dereferenced
-/// to `AliasData`
+/// to `AliasRef`
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Alias<Id, T> {
     _typ: T,
@@ -144,9 +144,9 @@ impl<Id, T> Deref for Alias<Id, T>
 {
     type Target = AliasData<Id, T>;
 
-    fn deref(&self) -> &AliasData<Id, T> {
+    fn deref(&self) -> &Self::Target {
         match *self._typ {
-            Type::Alias(ref alias) => alias,
+            Type::Alias(ref alias) => &alias.group[alias.index],
             _ => unreachable!(),
         }
     }
@@ -157,7 +157,7 @@ impl<Id, T> From<AliasData<Id, T>> for Alias<Id, T>
 {
     fn from(data: AliasData<Id, T>) -> Alias<Id, T> {
         Alias {
-            _typ: T::from(Type::Alias(data)),
+            _typ: Type::alias(data.name, data.args, data.typ),
             _marker: PhantomData,
         }
     }
@@ -179,15 +179,68 @@ impl<Id, T> Alias<Id, T>
         }
     }
 
+    pub fn group(group: Vec<AliasData<Id, T>>) -> Vec<Alias<Id, T>> {
+        let group = Arc::new(group);
+        (0..group.len())
+            .map(|index| {
+                Alias {
+                    _typ: T::from(Type::Alias(AliasRef {
+                        index: index,
+                        group: group.clone(),
+                    })),
+                    _marker: PhantomData,
+                }
+            })
+            .collect()
+    }
+
+    pub fn as_type(&self) -> &T {
+        &self._typ
+    }
+
     pub fn into_type(self) -> T {
         self._typ
+    }
+}
+
+impl<Id, T> Alias<Id, T>
+    where T: From<Type<Id, T>> + Deref<Target = Type<Id, T>> + Clone,
+          Id: Clone + PartialEq,
+{
+    /// Returns the actual type of the alias
+    pub fn typ(&self) -> Cow<T> {
+        let group = match *self._typ {
+            Type::Alias(ref alias) => &alias.group,
+            _ => unreachable!(),
+        };
+        let opt = walk_move_type_opt(&self.typ,
+                                     &mut |typ: &Type<_, _>| {
+            match *typ {
+                Type::Ident(ref id) => {
+                    // Replace `Ident` with the alias it resolves to so that a `TypeEnv` is not needed
+                    // to resolve the type later on
+                    let index = group.iter()
+                        .position(|alias| alias.name == *id)
+                        .expect("ICE: Alias group were not able to resolve an identifier");
+                    Some(T::from(Type::Alias(AliasRef {
+                        index: index,
+                        group: group.clone(),
+                    })))
+                }
+                _ => None,
+            }
+        });
+        match opt {
+            Some(typ) => Cow::Owned(typ),
+            None => Cow::Borrowed(&self.typ),
+        }
     }
 }
 
 impl<Id> Alias<Id, ArcType<Id>>
     where Id: Clone,
 {
-    pub fn make_mut(alias: &mut Alias<Id, ArcType<Id>>) -> &mut AliasData<Id, ArcType<Id>> {
+    pub fn make_mut(alias: &mut Alias<Id, ArcType<Id>>) -> &mut AliasRef<Id, ArcType<Id>> {
         match *Arc::make_mut(&mut alias._typ.typ) {
             Type::Alias(ref mut alias) => alias,
             _ => unreachable!(),
@@ -198,14 +251,50 @@ impl<Id> Alias<Id, ArcType<Id>>
 /// Data for a type alias. Probably you want to use `Alias` instead of this directly as Alias allows for
 /// cheap conversion back into a type as well.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct AliasData<Id, T> {
+pub struct AliasRef<Id, T> {
     /// Name of the Alias
+    index: usize,
+    /// The other aliases defined in this group
+    pub group: Arc<Vec<AliasData<Id, T>>>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct AliasData<Id, T> {
     pub name: Id,
     /// Arguments to the alias
     pub args: Vec<Generic<Id>>,
     /// The type that is being aliased
-    pub typ: T,
+    typ: T,
 }
+
+impl<Id, T> AliasData<Id, T> {
+    pub fn new(name: Id, args: Vec<Generic<Id>>, typ: T) -> AliasData<Id, T> {
+        AliasData {
+            name: name,
+            args: args,
+            typ: typ,
+        }
+    }
+
+    /// Returns the type aliased by `self` with out `Type::Ident` resolved to their actual
+    /// `Type::Alias` representation
+    pub fn unresolved_type(&self) -> &T {
+        &self.typ
+    }
+
+    pub fn unresolved_type_mut(&mut self) -> &mut T {
+        &mut self.typ
+    }
+}
+
+impl<Id, T> Deref for AliasRef<Id, T> {
+    type Target = AliasData<Id, T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.group[self.index]
+    }
+}
+
 
 #[derive(Clone, Hash, Eq, PartialEq, Debug)]
 pub struct Field<Id, T = ArcType<Id>> {
@@ -273,7 +362,7 @@ pub enum Type<Id, T = ArcType<Id>> {
     /// A variable that needs to be instantiated with a fresh type variable
     /// when the binding is refered to.
     Generic(Generic<Id>),
-    Alias(AliasData<Id, T>),
+    Alias(AliasRef<Id, T>),
 }
 
 impl<Id, T> Type<Id, T>
@@ -360,10 +449,13 @@ impl<Id, T> Type<Id, T>
     }
 
     pub fn alias(name: Id, args: Vec<Generic<Id>>, typ: T) -> T {
-        T::from(Type::Alias(AliasData {
-            name: name,
-            args: args,
-            typ: typ,
+        T::from(Type::Alias(AliasRef {
+            index: 0,
+            group: Arc::new(vec![AliasData {
+                                     name: name,
+                                     args: args,
+                                     typ: typ,
+                                 }]),
         }))
     }
 

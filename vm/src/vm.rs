@@ -145,7 +145,7 @@ impl TypeEnv for VmEnv {
                     .id_to_type
                     .values()
                     .filter_map(|alias| {
-                        match *alias.typ {
+                        match **alias.unresolved_type() {
                             Type::Variant(ref row) => {
                                 row.row_iter()
                                     .find(|field| *field.name == *id)
@@ -162,7 +162,7 @@ impl TypeEnv for VmEnv {
         self.type_infos
             .find_type_info(id)
     }
-    fn find_record(&self, fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
+    fn find_record(&self, fields: &[Symbol]) -> Option<(ArcType, ArcType)> {
         self.type_infos.find_record(fields)
     }
 }
@@ -171,7 +171,7 @@ impl PrimitiveEnv for VmEnv {
     fn get_bool(&self) -> &ArcType {
         self.find_type_info("std.types.Bool")
             .map(|alias| match alias {
-                Cow::Borrowed(alias) => &alias.typ,
+                Cow::Borrowed(alias) => alias.as_type(),
                 Cow::Owned(_) => panic!("Expected to be able to retrieve a borrowed bool type"),
             })
             .expect("std.types.Bool")
@@ -344,11 +344,9 @@ impl GlobalVmState {
             ids.insert(TypeId::of::<T>(), typ);
             // Insert aliases so that `find_info` can retrieve information about the primitives
             env.type_infos.id_to_type.insert(name.into(),
-                                             Alias::from(AliasData {
-                                                 name: Symbol::from(name),
-                                                 args: Vec::new(),
-                                                 typ: Type::opaque(),
-                                             }));
+                                             Alias::from(AliasData::new(Symbol::from(name),
+                                                                        Vec::new(),
+                                                                        Type::opaque())));
         }
 
         {
@@ -440,11 +438,7 @@ impl GlobalVmState {
                 .insert(id, typ.clone());
             let t = self.typeids.read().unwrap().get(&id).unwrap().clone();
             type_infos.id_to_type.insert(name.into(),
-                                         Alias::from(AliasData {
-                                             name: n,
-                                             args: args,
-                                             typ: Type::opaque(),
-                                         }));
+                                         Alias::from(AliasData::new(n, args, Type::opaque())));
             Ok(t)
         }
     }

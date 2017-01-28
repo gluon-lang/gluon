@@ -78,7 +78,7 @@ impl KindEnv for MockEnv {
 impl TypeEnv for MockEnv {
     fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
         match id.as_ref() {
-            "False" | "True" => Some(&self.bool.typ),
+            "False" | "True" => Some(&self.bool.as_type()),
             _ => None,
         }
     }
@@ -90,14 +90,14 @@ impl TypeEnv for MockEnv {
         }
     }
 
-    fn find_record(&self, _fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
+    fn find_record(&self, _fields: &[Symbol]) -> Option<(ArcType, ArcType)> {
         None
     }
 }
 
 impl PrimitiveEnv for MockEnv {
     fn get_bool(&self) -> &ArcType {
-        &self.bool.typ
+        &self.bool.as_type()
     }
 }
 

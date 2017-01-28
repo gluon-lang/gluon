@@ -2,7 +2,7 @@
 
 use pos::{BytePos, Spanned};
 use symbol::Symbol;
-use types::{self, Alias, ArcType, Type, TypeEnv};
+use types::{self, Alias, AliasData, ArcType, Type, TypeEnv};
 
 pub trait DisplayEnv {
     type Ident;
@@ -140,7 +140,8 @@ pub enum Expr<Id> {
 pub struct TypeBinding<Id> {
     pub comment: Option<String>,
     pub name: Id,
-    pub alias: Alias<Id, ArcType<Id>>,
+    pub alias: AliasData<Id, ArcType<Id>>,
+    pub finalized_alias: Option<Alias<Id, ArcType<Id>>>,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -458,7 +459,7 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
             .unwrap_or_else(|| panic!("Unexpected type {:?} is not a function", alias_type))
     };
 
-    let typ = types::walk_move_type(alias.typ.clone(),
+    let typ = types::walk_move_type(alias.typ().into_owned(),
                                     &mut |typ| {
         match *typ {
             Type::Generic(ref generic) => {

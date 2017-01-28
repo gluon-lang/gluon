@@ -66,7 +66,7 @@ impl<'a> TypeEnv for Environment<'a> {
             .or_else(|| self.env.find_type_info(id))
     }
 
-    fn find_record(&self, _fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
+    fn find_record(&self, _fields: &[Symbol]) -> Option<(ArcType, ArcType)> {
         None
     }
 }
@@ -143,7 +143,8 @@ pub fn rename(symbols: &mut SymbolModule,
 
         fn stack_type(&mut self, id: Symbol, span: Span<BytePos>, alias: &Alias<Symbol, ArcType>) {
             // Insert variant constructors into the local scope
-            if let Type::Variant(ref row) = *alias.typ {
+            let aliased_type = alias.typ();
+            if let Type::Variant(ref row) = **aliased_type {
                 for field in row.row_iter().cloned() {
                     self.env.stack.insert(field.name.clone(), (field.name, span, field.typ));
                 }
@@ -200,8 +201,9 @@ pub fn rename(symbols: &mut SymbolModule,
                 }
                 Expr::Record { ref mut typ, ref mut exprs, .. } => {
                     let field_types = self.find_fields(typ);
-                    for (field, &mut (ref id, ref mut maybe_expr)) in field_types.iter()
-                        .zip(exprs) {
+                    for (field, &mut (ref id, ref mut maybe_expr)) in
+                        field_types.iter()
+                            .zip(exprs) {
                         match *maybe_expr {
                             Some(ref mut expr) => self.visit_expr(expr),
                             None => {
@@ -274,7 +276,12 @@ pub fn rename(symbols: &mut SymbolModule,
                 Expr::TypeBindings(ref bindings, ref mut body) => {
                     self.env.stack_types.enter_scope();
                     for bind in bindings {
-                        self.stack_type(bind.name.clone(), expr.span, &bind.alias);
+                        self.stack_type(bind.name.clone(),
+                                        expr.span,
+                                        bind.finalized_alias
+                                            .as_ref()
+                                            .expect("ICE: Alias should have been finalized \
+                                                     before renaming"));
                     }
                     self.visit_expr(body);
                     self.env.stack_types.exit_scope();

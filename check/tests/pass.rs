@@ -9,7 +9,7 @@ extern crate gluon_check as check;
 use base::ast::{self, Expr, Pattern, Typed};
 use base::kind::Kind;
 use base::pos::{BytePos, Span};
-use base::types::{Alias, Field, Generic, Type};
+use base::types::{Alias, AliasData, ArcType, Field, Generic, Type};
 
 use support::{MockEnv, alias, intern, typ};
 
@@ -22,6 +22,20 @@ macro_rules! assert_pass {
         }
     }};
 }
+
+/// Converts `Type::Alias` into the easy to construct `Type::Ident` variants to make the expected
+/// types easier to write
+fn make_ident_type(typ: ArcType) -> ArcType {
+    use base::types::walk_move_type;
+    walk_move_type(typ,
+                   &mut |typ| {
+                       match *typ {
+                           Type::Alias(ref alias) => Some(Type::ident(alias.name.clone())),
+                           _ => None,
+                       }
+                   })
+}
+
 
 #[test]
 fn function_type_new() {
@@ -98,7 +112,17 @@ and Test2 = | Test2 Test
 in Test2 (\x -> x #Int+ 2)
 ";
     let result = support::typecheck(text);
-    let expected = Ok(typ("Test2"));
+    let test = AliasData::new(intern("Test"),
+                              vec![],
+                              Type::function(vec![typ("Int")], typ("Int")));
+    let test2 = AliasData::new(intern("Test2"),
+                               vec![],
+                               Type::variant(vec![Field {
+                                                      name: intern("Test2"),
+                                                      typ: Type::function(vec![typ("Test")],
+                                                                          typ("Test2")),
+                                                  }]));
+    let expected = Ok(Alias::group(vec![test, test2])[1].as_type().clone());
 
     assert_eq!(result, expected);
 }
@@ -237,7 +261,7 @@ in Some 1
     let result = support::typecheck(text);
     let expected = Ok(support::typ_a("Option", vec![typ("Int")]));
 
-    assert_eq!(result, expected);
+    assert_eq!(result.map(make_ident_type), expected);
 }
 
 #[test]
@@ -498,7 +522,7 @@ Test 1
     let result = support::typecheck(text);
     let expected = Ok(support::typ_a("Test", vec![typ("Int")]));
 
-    assert_eq!(result, expected);
+    assert_eq!(result.map(make_ident_type), expected);
 }
 
 #[test]
@@ -567,7 +591,7 @@ in Node { value = 1, tree = Empty } rhs
     let result = support::typecheck(text);
     let expected = Ok(support::typ_a("Tree", vec![typ("Int")]));
 
-    assert_eq!(result, expected);
+    assert_eq!(result.map(make_ident_type), expected);
 }
 
 #[test]
@@ -870,4 +894,23 @@ type Bar = Test Foo
 "#;
     let result = support::typecheck(text);
     assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+
+/// Check that after typechecking, the resulting types are `Alias`, not `Ident`. This is necessary
+/// so that when the type is later propagated it knows what its internal representation are without
+/// any extra information
+#[test]
+fn applied_constructor_returns_alias_type() {
+    let _ = ::env_logger::init();
+    let text = r#"
+type Test = | Test Int
+Test 0
+"#;
+    let result = support::typecheck(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+    match *result.unwrap() {
+        Type::Alias(_) => (),
+        ref typ => panic!("Expected alias, got {:?}", typ),
+    }
 }

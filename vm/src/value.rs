@@ -1141,7 +1141,7 @@ mod tests {
     use types::VmInt;
 
     use base::kind::{ArcKind, KindEnv};
-    use base::types::{Alias, AliasData, ArcType, Field, Type, TypeEnv};
+    use base::types::{Alias, ArcType, Field, Type, TypeEnv};
     use base::symbol::{Symbol, SymbolRef};
 
     struct MockEnv(Option<Alias<Symbol, ArcType>>);
@@ -1161,7 +1161,7 @@ mod tests {
             self.0.as_ref()
         }
 
-        fn find_record(&self, _fields: &[Symbol]) -> Option<(&ArcType, &ArcType)> {
+        fn find_record(&self, _fields: &[Symbol]) -> Option<(ArcType, ArcType)> {
             None
         }
     }
@@ -1182,11 +1182,7 @@ mod tests {
                                                   typ: Type::ident(list.clone()),
                                               }]);
 
-        let env = MockEnv(Some(Alias::from(AliasData {
-            name: list.clone(),
-            args: vec![],
-            typ: typ.clone(),
-        })));
+        let env = MockEnv(Some(Alias::new(list.clone(), vec![], typ.clone())));
 
         let nil = Value::Tag(1);
         assert_eq!(format!("{}", ValuePrinter::new(&env, &typ, nil)), "Nil");
