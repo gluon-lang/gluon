@@ -1,7 +1,7 @@
 [package]
 
 name = "gluon"
-version = "0.2.2"
+version = "0.3.0"
 authors = ["Markus <marwes91@gmail.com>"]
 build = "build.rs"
 
@@ -27,10 +27,10 @@ name = "gluon"
 path = "src/main.rs"
 
 [dependencies]
-gluon_base = { path = "base", version = "0.2.2" }
-gluon_check = { path = "check", version = "0.2.2" }
-gluon_parser = { path = "parser", version = "0.2.2" }
-gluon_vm = { path = "vm", version = "0.2.2" }
+gluon_base = { path = "base", version = "0.3.0" }
+gluon_check = { path = "check", version = "0.3.0" }
+gluon_parser = { path = "parser", version = "0.3.0" }
+gluon_vm = { path = "vm", version = "0.3.0" }
 
 clap = "2.2.5"
 log = "0.3.6"

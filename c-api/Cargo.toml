@@ -1,6 +1,6 @@
 [package]
 name = "gluon_c-api"
-version = "0.2.2"
+version = "0.3.0"
 authors = ["Markus Westerlind <marwes91@gmail.com>"]
 
 license = "MIT"
@@ -15,7 +15,7 @@ crate-type = ["staticlib"]
 
 [dependencies]
 libc = "0.2.14"
-gluon = { version = "0.2.2", path = ".." }
+gluon = { version = "0.3.0", path = ".." }
 
 [features]
 test = ["gluon/test"]
