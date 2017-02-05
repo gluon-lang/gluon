@@ -1,6 +1,10 @@
 <a name="v0.3.0"></a>
 ## v0.3.0 (2017-02-01)
 
+Version 0.3.0 improves the experience of writing gluon by a significant amount thanks to a few
+different improvements. The main reason for this is the rewrite of gluon's parser to use [LALRPOP][]
+which just started with the intent of making the parser easier to maintain but with [error recovery][]
+added to LALRPOP the parser is now able to typecheck broken code which is used to drive code completion.
 
 Another big addition to the usability of gluon is that an experimental debugger has been added to the
 visual code plugin! This initial implementation provides breakpoints, pausing and variable inspection.
@@ -8,12 +12,10 @@ visual code plugin! This initial implementation provides breakpoints, pausing an
 Lastly gluon has gotten support for asynchronous functions through tokio! It is now possible to write
 Rust functions which return a `Future` and gluon will automatically suspend the running gluon program
 and return a new future which drives the program until completion. As an example of this a [http server
-built on hyper](https://github.com/gluon-lang/gluon/pull/226) is currently in the PR queue just waiting
-for a tokio based release of hyper.
+built on hyper](https://github.com/gluon-lang/gluon/pull/226) is currently in the PR queue just waiting for a tokio based release of hyper.
 
 [LALRPOP]:https://github.com/nikomatsakis/lalrpop
 [error recovery]:https://github.com/nikomatsakis/lalrpop/blob/master/doc/tutorial.md#calculator6
-
 
 #### Bug Fixes
 
