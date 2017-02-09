@@ -170,13 +170,9 @@ impl TypeEnv for TypeInfos {
         let id = AsRef::<str>::as_ref(id);
         self.id_to_type
             .iter()
-            .filter_map(|(_, ref alias)| {
-                match **alias.unresolved_type() {
-                    Type::Variant(ref row) => {
-                        row.row_iter().find(|field| field.name.as_ref() == id)
-                    }
-                    _ => None,
-                }
+            .filter_map(|(_, ref alias)| match **alias.unresolved_type() {
+                Type::Variant(ref row) => row.row_iter().find(|field| field.name.as_ref() == id),
+                _ => None,
             })
             .next()
             .map(|field| &field.typ)
@@ -188,7 +184,7 @@ impl TypeEnv for TypeInfos {
             .get(id)
     }
 
-    fn find_record(&self, fields: &[Symbol]) -> Option<(ArcType, ArcType)> {
+    fn find_record(&self, _fields: &[Symbol]) -> Option<(ArcType, ArcType)> {
         None
     }
 }

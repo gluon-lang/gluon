@@ -1,7 +1,6 @@
 extern crate gluon_base as base;
 extern crate gluon_parser as parser;
 extern crate env_logger;
-#[macro_use]
 extern crate log;
 #[macro_use]
 extern crate collect_mac;

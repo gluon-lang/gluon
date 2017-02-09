@@ -1,5 +1,4 @@
 extern crate env_logger;
-#[macro_use]
 extern crate log;
 
 extern crate gluon_base as base;
