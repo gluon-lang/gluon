@@ -23,7 +23,7 @@ path = "src/lib.rs"
 
 [[bin]]
 
-name = "repl"
+name = "gluon"
 path = "src/main.rs"
 
 [dependencies]
