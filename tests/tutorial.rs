@@ -26,7 +26,7 @@ fn access_field_through_alias() {
     Compiler::new()
         .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm,
                                                       "example",
-                                                      " import \"std/prelude.glu\" ")
+                                                      r#" import! "std/prelude.glu" "#)
         .sync_or_error()
         .unwrap();
     let mut add: FunctionRef<fn(i32, i32) -> i32> = vm.get_global("std.prelude.num_Int.(+)")
@@ -62,7 +62,7 @@ fn use_string_module() {
     let result = Compiler::new()
         .run_expr_async::<String>(&vm,
                                   "example",
-                                  " let string = import \"std/string.glu\" in string.trim \"  \
+                                  " let string  = import! \"std/string.glu\" in string.trim \"  \
                                    Hello world  \t\" ")
         .sync_or_error()
         .unwrap();

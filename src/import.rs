@@ -1,4 +1,4 @@
-//! Implementation of the `import` macro.
+//! Implementation of the `import!` macro.
 
 use std::any::Any;
 use std::sync::{Arc, RwLock, Mutex};
@@ -110,7 +110,7 @@ impl Importer for CheckImporter {
     }
 }
 
-/// Macro which rewrites occurances of `import "filename"` to a load of that file if it is not
+/// Macro which rewrites occurances of `import! "filename"` to a load of that file if it is not
 /// already loaded and then a global access to the loaded module
 pub struct Import<I = DefaultImporter> {
     pub paths: RwLock<Vec<PathBuf>>,

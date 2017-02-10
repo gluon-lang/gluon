@@ -502,3 +502,11 @@ fn record_type_field() {
     assert_eq!(e,
                record_a(vec![("Test".into(), None)], vec![("x".into(), None)]))
 }
+
+#[test]
+fn parse_macro() {
+    let _ = ::env_logger::init();
+    let text = r#" import! "#;
+    let e = parse_new!(text);
+    assert_eq!(e, id("import!"));
+}

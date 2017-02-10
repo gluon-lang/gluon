@@ -105,8 +105,9 @@ impl<'a> MutVisitor for MacroExpander<'a> {
         let replacement = match expr.value {
             Expr::App(ref mut id, ref mut args) => {
                 match id.value {
-                    Expr::Ident(ref id) => {
-                        match self.macros.get(id.name.as_ref()) {
+                    Expr::Ident(ref id) if id.name.as_ref().ends_with('!') => {
+                        let name = id.name.as_ref();
+                        match self.macros.get(&name[..name.len() - 1]) {
                             Some(m) => {
                                 match m.expand(self, args) {
                                     Ok(e) => Some(e),

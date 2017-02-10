@@ -1,4 +1,4 @@
-let prelude = import "std/prelude.glu"
+let prelude  = import! "std/prelude.glu"
 let { Num, Option, Eq, Ord, Ordering, Monoid, Show } = prelude
 let { (==) } = prelude.eq_Int
 

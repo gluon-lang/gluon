@@ -1,6 +1,6 @@
-let { run, writer, assert_eq } = import "std/test.glu"
-let prelude = import "std/prelude.glu"
-let string = import "std/string.glu"
+let { run, writer, assert_eq }  = import! "std/test.glu"
+let prelude  = import! "std/prelude.glu"
+let string  = import! "std/string.glu"
 let { (*>) } = prelude.make_Applicative writer.applicative
 let { (>>=) } = prelude.make_Monad writer.monad
 

@@ -1,6 +1,6 @@
-let prelude = import "std/prelude.glu"
-let map = import "std/map.glu"
-let string = import "std/string.glu"
+let prelude = import! "std/prelude.glu"
+let map = import! "std/map.glu"
+let string = import! "std/string.glu"
 let { Map } = map
 let { pure, (*>) } = prelude.make_Applicative prelude.applicative_IO
 let { (>>=), forM_ } = prelude.make_Monad prelude.monad_IO

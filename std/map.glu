@@ -1,4 +1,4 @@
-let prelude = import "std/prelude.glu"
+let prelude = import! "std/prelude.glu"
 and { Ordering, Ord, Option, List, Monoid } = prelude
 
 type Map k a =
