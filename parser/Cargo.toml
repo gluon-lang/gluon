@@ -15,7 +15,7 @@ build = "build.rs"
 [dependencies]
 env_logger = { version = "0.3.4", optional = true }
 quick-error = "1.0.0"
-lalrpop-util = "0.12.4"
+lalrpop-util = "0.12.5"
 log = "0.3.6"
 gluon_base = { path = "../base", version = "0.2.2" }
 
@@ -23,7 +23,7 @@ gluon_base = { path = "../base", version = "0.2.2" }
 collect-mac = "0.1.0"
 
 [build-dependencies]
-lalrpop = "0.12.4"
+lalrpop = "0.12.5"
 
 [features]
 test = ["env_logger"]
