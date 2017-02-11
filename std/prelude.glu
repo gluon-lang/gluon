@@ -35,7 +35,7 @@ type Monoid m = {
 }
 
 let monoid_Function m : Monoid b -> (Monoid (a -> b)) = {
-    append = \f g -> \x -> m.append (f x) (g x),
+    append f g = \x -> m.append (f x) (g x),
     empty = \_ -> m.empty
 }
 
@@ -48,7 +48,7 @@ let monoid_List =
     { append, empty = Nil }
 
 let monoid_Option m : Monoid a -> Monoid (Option a) = {
-    append = \l r ->
+    append l r =
         match l with
             | Some x ->
                 match r with
@@ -59,22 +59,22 @@ let monoid_Option m : Monoid a -> Monoid (Option a) = {
 }
 
 let monoid_Int_Add = {
-    append = \x y -> x #Int+ y,
+    append x y = x #Int+ y,
     empty = 0
 }
 
 let monoid_Int_Mul = {
-    append = \x y -> x #Int* y,
+    append x y = x #Int* y,
     empty = 1
 }
 
 let monoid_Float_Add = {
-    append = \x y -> x #Float+ y,
+    append x y = x #Float+ y,
     empty = 0.0
 }
 
 let monoid_Float_Mul = {
-    append = \x y -> x #Float* y,
+    append x y = x #Float* y,
     empty = 1.0
 }
 
@@ -105,27 +105,27 @@ type Eq a = {
 }
 
 let eq_Unit : Eq () = {
-    (==) = \l r -> True
+    (==) l r = True
 }
 
 let eq_Bool : Eq Bool = {
-    (==) = \l r -> if l then r else not r
+    (==) l r = if l then r else not r
 }
 
 let eq_Int = {
-    (==) = \l r -> l #Int== r
+    (==) l r = l #Int== r
 }
 
 let eq_Float = {
-    (==) = \l r -> l #Float== r
+    (==) l r = l #Float== r
 }
 
 let eq_Char = {
-    (==) = \l r -> l #Char== r
+    (==) l r = l #Char== r
 }
 
 let eq_Option a : Eq a -> Eq (Option a) = {
-    (==) = \l r ->
+    (==) l r =
         match l with
             | Some l_val ->
                 (match r with
@@ -138,7 +138,7 @@ let eq_Option a : Eq a -> Eq (Option a) = {
 }
 
 let eq_Result e a : Eq e -> Eq a -> Eq (Result e a) = {
-    (==) = \l r ->
+    (==) l r =
         match l with
             | Ok l_val ->
                 (match r with
@@ -164,7 +164,7 @@ let eq_List a : Eq a -> Eq (List a) =
     { (==) }
 
 let monoid_Ordering = {
-    append = \x y ->
+    append x y =
         match x with
             | EQ -> y
             | _ -> x,
@@ -179,12 +179,12 @@ type Ord a = {
 
 let ord_Unit = {
     eq = eq_Unit,
-    compare = \l r -> EQ
+    compare l r = EQ
 }
 
 let ord_Bool = {
     eq = eq_Bool,
-    compare = \l r ->
+    compare l r =
         if l then
             if r then
                 EQ
@@ -196,7 +196,7 @@ let ord_Bool = {
 
 let ord_Int = {
     eq = eq_Int,
-    compare = \l r ->
+    compare l r =
         if l #Int< r
         then LT
         else if l #Int== r
@@ -206,7 +206,7 @@ let ord_Int = {
 
 let ord_Float = {
     eq = eq_Float,
-    compare = \l r ->
+    compare l r =
         if l #Float< r
         then LT
         else if l #Float== r
@@ -216,7 +216,7 @@ let ord_Float = {
 
 let ord_Char = {
     eq = eq_Char,
-    compare = \l r ->
+    compare l r =
         if l #Char< r
         then LT
         else if l #Char== r
@@ -226,7 +226,7 @@ let ord_Char = {
 
 let ord_Option a : Ord a -> Ord (Option a) = {
     eq = eq_Option a.eq,
-    compare = \l r ->
+    compare l r =
         match l with
             | Some l_val ->
                 match r with
@@ -240,7 +240,7 @@ let ord_Option a : Ord a -> Ord (Option a) = {
 
 let ord_Result e a : Ord e -> Ord a -> Ord (Result e a) = {
     eq = eq_Result e.eq a.eq,
-    compare = \l r ->
+    compare l r =
         match l with
             | Ok l_val ->
                 match r with
@@ -258,22 +258,22 @@ let make_Ord ord =
     {
         eq,
         compare,
-        (<=) = \l r ->
+        (<=) l r =
             match compare l r with
                 | LT -> True
                 | EQ -> True
                 | GT -> False,
-        (<) = \l r ->
+        (<) l r =
             match compare l r with
                 | LT -> True
                 | EQ -> False
                 | GT -> False,
-        (>) = \l r ->
+        (>) l r =
             match compare l r with
                 | LT -> False
                 | EQ -> False
                 | GT -> True,
-        (>=) = \l r ->
+        (>=) l r =
             match compare l r with
                 | LT -> False
                 | EQ -> True
@@ -296,18 +296,18 @@ type Num a = {
 let num_Int = {
     ord = ord_Int,
     (+) = monoid_Int_Add.append,
-    (-) = \l r -> l #Int- r,
+    (-) l r = l #Int- r,
     (*) = monoid_Int_Mul.append,
-    (/) = \l r -> l #Int/ r,
+    (/) l r = l #Int/ r,
     negate = \x -> 0 #Int- x
 }
 
 let num_Float : Num Float = {
     ord = ord_Float,
     (+) = monoid_Float_Add.append,
-    (-) = \l r -> l #Float- r,
+    (-) l r = l #Float- r,
     (*) = monoid_Float_Mul.append,
-    (/) = \l r -> l #Float/ r,
+    (/) l r = l #Float/ r,
     negate = \x -> 0.0 #Float- x
 }
 
@@ -366,15 +366,17 @@ let functor_Function : Functor ((->) a) = {
 }
 
 let functor_Option : Functor Option = {
-    map = \f x -> match x with
-                    | Some y -> Some (f y)
-                    | None -> None
+    map f x =
+        match x with
+            | Some y -> Some (f y)
+            | None -> None
 }
 
 let functor_Result : Functor (Result e) = {
-    map = \f x -> match x with
-                    | Ok y -> Ok (f y)
-                    | Err _ -> x
+    map f x =
+        match x with
+            | Ok y -> Ok (f y)
+            | Err _ -> x
 }
 
 let functor_List : Functor List =
@@ -385,7 +387,7 @@ let functor_List : Functor List =
     { map }
 
 let functor_IO : Functor IO = {
-    map = \f -> io_flat_map (\x -> io_pure (f x))
+    map f = io_flat_map (\x -> io_pure (f x))
 }
 
 type Applicative (f : Type -> Type) = {
@@ -396,8 +398,8 @@ type Applicative (f : Type -> Type) = {
 
 let applicative_Function : Applicative ((->) a) = {
     functor = functor_Function,
-    apply = \f g x -> f x (g x),
-    pure = \x -> \_ -> x
+    apply f g x = f x (g x),
+    pure x = \_ -> x
 }
 
 /// const `x` creates a function which always returns `x`
@@ -406,26 +408,26 @@ let const : a -> b -> a =
 
 let applicative_Option : Applicative Option = {
     functor = functor_Option,
-    apply = \f x ->
+    apply f x =
         match f with
             | Some g ->
                 match x with
                     | Some y -> Some (g y)
                     | None -> None
             | None -> None,
-    pure = \x -> Some x
+    pure x = Some x
 }
 
 let applicative_Result : Applicative (Result e) = {
     functor = functor_Result,
-    apply = \f x ->
+    apply f x =
         match f with
             | Ok g ->
                 match x with
                     | Ok y -> Ok (g y)
                     | Err _ -> x
             | Err x -> Err x,
-    pure = \x -> Ok x
+    pure x = Ok x
 }
 
 let applicative_List : Applicative List =
@@ -464,7 +466,7 @@ type Alternative f = {
 
 let alternative_Option : Alternative Option = {
     applicative = applicative_Option,
-    or = \x y ->
+    or x y =
         match x with
             | Some _ -> x
             | None -> y,
@@ -500,12 +502,12 @@ type Monad (m : Type -> Type) = {
 
 let monad_Function : Monad ((->) a) = {
     applicative = applicative_Function,
-    flat_map = \f m x -> f (m x) x
+    flat_map f m x = f (m x) x
 }
 
 let monad_Option : Monad Option = {
     applicative = applicative_Option,
-    flat_map = \f m ->
+    flat_map f m =
         match m with
             | Some x -> f x
             | None -> None
@@ -551,7 +553,7 @@ let show_Unit : Show () = {
 }
 
 let show_Bool : Show Bool = {
-    show = \x -> if x then "True" else "False"
+    show x = if x then "True" else "False"
 }
 
 let show_Int : Show Int = {

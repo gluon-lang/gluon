@@ -16,7 +16,7 @@ let make w : Monoid w -> Impl w =
     let { (<>), empty } = prelude.make_Monoid w
 
     let functor : Functor (Writer w) = {
-        map = \f m -> {
+        map f m = {
             value = f m.value,
             writer = m.writer
         }
@@ -24,11 +24,11 @@ let make w : Monoid w -> Impl w =
 
     let applicative : Applicative (Writer w) = {
         functor,
-        apply = \mf m -> {
+        apply mf m = {
             value = mf.value m.value,
             writer = mf.writer <> m.writer
         },
-        pure = \value -> {
+        pure value = {
             value,
             writer = empty
         }
