@@ -129,8 +129,7 @@ fn string_slice(s: &str, start: usize, end: usize) -> RuntimeResult<&str, String
     } else {
         // Limit the amount of characters to print in the error message
         let mut iter = s.chars();
-        for _ in iter.by_ref().take(256) {
-        }
+        for _ in iter.by_ref().take(256) {}
         RuntimeResult::Panic(format!("index {} and/or {} in `{}` does not lie on a character \
                                       boundary",
                                      start,
@@ -171,6 +170,19 @@ extern "C" fn from_utf8(thread: &Thread) -> Status {
         }
         _ => unreachable!(),
     }
+}
+
+fn char_at(s: &str, index: usize) -> RuntimeResult<char, String> {
+    if s.is_char_boundary(index) {
+        if let Some(c) = s[index..].chars().next() {
+            return RuntimeResult::Return(c);
+        }
+    }
+    let mut iter = s.chars();
+    for _ in iter.by_ref().take(256) {}
+    RuntimeResult::Panic(format!("index {} in `{}` does not lie on a character boundary",
+                                 index,
+                                 &s[..(s.len() - iter.as_str().len())]))
 }
 
 fn show_int(i: VmInt) -> String {
@@ -297,7 +309,8 @@ pub fn load(vm: &Thread) -> Result<()> {
         append => primitive!(2 prim::string_append),
         eq => primitive!(2 <str as PartialEq>::eq),
         slice => primitive!(3 prim::string_slice),
-        from_utf8 => primitive::<fn(Vec<u8>) -> StdResult<String, ()>>("from_utf8", prim::from_utf8)
+        from_utf8 => primitive::<fn(Vec<u8>) -> StdResult<String, ()>>("from_utf8", prim::from_utf8),
+        char_at => primitive!(2 prim::char_at)
     ))?;
     vm.define_global("char",
                        record!(
