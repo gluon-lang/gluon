@@ -6,6 +6,7 @@ use std::error::Error as StdError;
 use base::ast::{self, Expr, MutVisitor, SpannedExpr};
 use base::error::Errors;
 use base::fnv::FnvMap;
+use base::pos;
 use base::symbol::Symbol;
 
 use thread::Thread;
@@ -109,13 +110,13 @@ impl<'a> MutVisitor for MacroExpander<'a> {
                         let name = id.name.as_ref();
                         match self.macros.get(&name[..name.len() - 1]) {
                             Some(m) => {
-                                match m.expand(self, args) {
-                                    Ok(e) => Some(e),
+                                Some(match m.expand(self, args) {
+                                    Ok(e) => e,
                                     Err(err) => {
                                         self.errors.push(err);
-                                        None
+                                        pos::spanned(expr.span, Expr::Error)
                                     }
-                                }
+                                })
                             }
                             None => None,
                         }
