@@ -1,7 +1,6 @@
 extern crate gluon_base as base;
 extern crate gluon_parser as parser;
 extern crate env_logger;
-#[macro_use]
 extern crate log;
 #[macro_use]
 extern crate collect_mac;
@@ -502,4 +501,12 @@ fn record_type_field() {
     let e = parse_new!(text);
     assert_eq!(e,
                record_a(vec![("Test".into(), None)], vec![("x".into(), None)]))
+}
+
+#[test]
+fn parse_macro() {
+    let _ = ::env_logger::init();
+    let text = r#" import! "#;
+    let e = parse_new!(text);
+    assert_eq!(e, id("import!"));
 }

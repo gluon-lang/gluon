@@ -20,7 +20,7 @@ fn metadata_from_other_module() {
     let _ = ::env_logger::init();
     let vm = make_vm();
     let text = r#"
-let { List, id } = import "std/prelude.hs"
+let { List, id }  = import! "std/prelude.hs"
 { List, id }
 "#;
     Compiler::new().load_script_async(&vm, "test", text).sync_or_error().unwrap();

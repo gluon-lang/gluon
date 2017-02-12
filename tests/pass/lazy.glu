@@ -1,5 +1,5 @@
-let { run, writer, assert_ieq } = import "std/test.glu"
-let prelude = import "std/prelude.glu"
+let { run, writer, assert_ieq }  = import! "std/test.glu"
+let prelude  = import! "std/prelude.glu"
 let { Num } = prelude
 let { (*>), pure } = prelude.make_Applicative writer.applicative
 let { (+), (-), (*) } = prelude.num_Int

@@ -3,10 +3,6 @@ extern crate log;
 #[cfg(feature = "env_logger")]
 extern crate env_logger;
 extern crate clap;
-#[macro_use]
-extern crate quick_error;
-#[macro_use]
-extern crate lazy_static;
 extern crate futures;
 
 extern crate gluon_base as base;

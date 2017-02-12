@@ -27,7 +27,7 @@ Gluon is a small, statically-typed, functional programming language designed for
 
 ### Try online (WIP)
 
-You can try gluon in your browser at the [try_gluon](http://ec2-52-29-1-213.eu-central-1.compute.amazonaws.com/) server.
+You can try gluon in your browser at the [try_gluon](http://ec2-52-29-1-213.eu-central-1.compute.amazonaws.com/) server. ([Github](https://github.com/gluon-lang/try_gluon))
 
 ### Installation
 
@@ -49,7 +49,7 @@ Currently the easiest way to interact with the gluon virtual machine is through 
 
 ### Visual Studio Code Extension
 
-The [gluon extension][] for Visual Studio Code provides syntax highlighting and completion. To install it, search for `gluon` among the extensions.
+The [gluon extension][] for Visual Studio Code provides syntax highlighting and completion. To install it, search for `gluon` among the extensions. ([Github](https://github.com/gluon-lang/gluon_language-server)) 
 
 ![example](http://i.imgur.com/44bH0ww.gif)
 
@@ -74,6 +74,11 @@ REPL features:
 * Tab-completion of identifiers and record fields
     ![repl completion](http://i.imgur.com/IXLQFtV.gif)
 * Exit the REPL by writing `:q`
+
+### Vim plugin
+
+@salpalvv has created a vim plugin which provides syntax highlighting. You can find it here
+https://github.com/salpalvv/vim-gluon
 
 ## Documentation
 

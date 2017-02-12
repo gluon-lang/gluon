@@ -342,18 +342,18 @@ Unfortunately it would also succeed if a `String` (or any other) type were used 
 
 ## Importing modules
 
-As is often the case it is convenient to separate code into multiple files which can later be imported and used from multiple other files. To do this we can use the `import` macro which takes a single string literal as argument and loads and compiles that file at compile time before the importing module is compiled.
+As is often the case it is convenient to separate code into multiple files which can later be imported and used from multiple other files. To do this we can use the `import!` macro which takes a single string literal as argument and loads and compiles that file at compile time before the importing module is compiled.
 
 So say that we need the `assert` function from the `test` module which can be found at `std/test.glu`. Then we might write something like this.
 
 ```f#,rust
-let { assert } = import "std/test.glu"
+let { assert }  = import! "std/test.glu"
 assert (1 == 1)
 ```
 
 ## Writing modules
 
-Importing standard modules is all well and good but it is also necessary to write your own once a program starts getting to big for a single file. As it turns out, if you have been following along so far, you already know everything about writing a module! Creating and loading a module in gluon just entails writing creating a file containing an expression which is then loaded and evaluated using `import`. `import` is then just the value of evaluating the expression.
+Importing standard modules is all well and good but it is also necessary to write your own once a program starts getting to big for a single file. As it turns out, if you have been following along so far, you already know everything about writing a module! Creating and loading a module in gluon just entails writing creating a file containing an expression which is then loaded and evaluated using `import!`. `import!` is then just the value of evaluating the expression.
 
 ```f#
 // module.glu
@@ -362,7 +362,7 @@ let twice f x = f (f x)
 { twice, Named }
 
 //main.glu
-let { twice, Named } = import "module.glu"
+let { twice, Named }  = import! "module.glu"
 let addTwice = twice (\x -> x + 1)
 let namedFloat : Named Float = { name = "pi", value = 3.14 }
 addTwice 10
@@ -375,7 +375,7 @@ Though modules are most commonly a record this does not have to be the case. If 
 3.14
 
 //main.glu
-let pi = import "pi.glu"
+let pi  = import! "pi.glu"
 2 * pi * 10
 ```
 
@@ -405,7 +405,7 @@ Often it is either inconvenient or inefficient to compile and run code directly 
 let vm = new_vm();
 // Ensure that the prelude module is loaded before trying to access something from it
 Compiler::new()
-    .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", " import \"std/prelude.glu\" ")
+    .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", r#" import! "std/prelude.glu" "#)
     .unwrap();
 let mut add: FunctionRef<fn (i32, i32) -> i32> = vm.get_global("std.prelude.num_Int.(+)")
     .unwrap();
@@ -435,7 +435,7 @@ assert_eq!(result, 120);
 ```rust,ignore
 let vm = new_vm();
 let (result, _) = Compiler::new()
-    .run_expr::<String>(&vm, "example", " let string = import \"std/string.glu\" in string.trim \"  Hello world  \t\" ")
+    .run_expr::<String>(&vm, "example", " let string  = import! \"std/string.glu\" in string.trim \"  Hello world  \t\" ")
     .unwrap();
 assert_eq!(result, "Hello world");
 ```

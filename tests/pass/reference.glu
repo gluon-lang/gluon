@@ -1,5 +1,5 @@
-let { assert } = import "std/test.glu"
-let prelude = import "std/prelude.glu"
+let { assert }  = import! "std/test.glu"
+let prelude  = import! "std/prelude.glu"
 let { (==) } = prelude.eq_Int
 
 let ri = ref 0

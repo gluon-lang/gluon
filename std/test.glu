@@ -1,6 +1,6 @@
-let string = import "std/string.glu"
-and { Writer, make = make_Writer, tell } = import "std/writer.glu"
-and prelude = import "std/prelude.glu"
+let string  = import! "std/string.glu"
+and { Writer, make = make_Writer, tell }  = import! "std/writer.glu"
+and prelude  = import! "std/prelude.glu"
 and { Show, Num, Eq, Option, List, Applicative, Monad, Monoid, foldl } = prelude
 and { (+) } = prelude.num_Int
 and { (==) } = prelude.eq_Int

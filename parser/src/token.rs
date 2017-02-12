@@ -401,7 +401,16 @@ impl<'input> Tokenizer<'input> {
     }
 
     fn identifier(&mut self, start: Location) -> SpannedToken<'input> {
-        let (end, ident) = self.take_while(start, is_ident_continue);
+        let (mut end, mut ident) = self.take_while(start, is_ident_continue);
+        match self.lookahead {
+            Some((_, c)) if c == '!' => {
+                self.bump();
+                end.column += 1.into();
+                end.absolute += 1.into();
+                ident = self.slice(start, end);
+            }
+            _ => (),
+        }
 
         let token = match ident {
             "and" => Token::And,

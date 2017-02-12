@@ -1,6 +1,6 @@
-let prelude = import "std/prelude.glu"
-let { Writer } = import "std/writer.glu"
-let { Test, run, writer, assert, assert_ieq, assert_feq } = import "std/test.glu"
+let prelude  = import! "std/prelude.glu"
+let { Writer }  = import! "std/writer.glu"
+let { Test, run, writer, assert, assert_ieq, assert_feq }  = import! "std/test.glu"
 let { (*>) } = prelude.make_Applicative writer.applicative
 
 let tests =

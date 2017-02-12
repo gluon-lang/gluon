@@ -10,8 +10,8 @@ fn read_file() {
 
     let thread = new_vm();
     let text = r#"
-        let prelude = import "std/prelude.glu"
-        let { assert } = import "std/test.glu"
+        let prelude  = import! "std/prelude.glu"
+        let { assert }  = import! "std/test.glu"
         let { pure } = prelude.applicative_IO
         let { (>>=) } = prelude.make_Monad prelude.monad_IO
 

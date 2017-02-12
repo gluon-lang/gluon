@@ -603,7 +603,7 @@ fn rename_types_after_binding() {
     let _ = ::env_logger::init();
 
     let text = r#"
-let prelude = import "std/prelude.glu"
+let prelude  = import! "std/prelude.glu"
 in
 let { List } = prelude
 and { (==) }: Eq (List Int) = prelude.eq_List { (==) }
@@ -649,7 +649,7 @@ fn access_operator_without_parentheses() {
     Compiler::new()
         .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm,
                                                       "example",
-                                                      r#" import "std/prelude.glu" "#)
+                                                      r#" import! "std/prelude.glu" "#)
         .sync_or_error()
         .unwrap();
     let result: Result<FunctionRef<fn(i32, i32) -> i32>, _> =
@@ -676,7 +676,7 @@ fn get_binding_with_generic_params() {
     let _ = ::env_logger::init();
 
     let vm = make_vm();
-    run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import "std/prelude.glu" "#);
+    run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import! "std/prelude.glu" "#);
     let mut id: FunctionRef<fn(String) -> String> = vm.get_global("std.prelude.id")
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(id.call("test".to_string()), Ok("test".to_string()));
@@ -686,7 +686,7 @@ fn get_binding_with_generic_params() {
 fn test_prelude() {
     let _ = ::env_logger::init();
     let vm = make_vm();
-    run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import "std/prelude.glu" "#);
+    run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import! "std/prelude.glu" "#);
 }
 
 #[test]
@@ -694,7 +694,7 @@ fn access_types_by_path() {
     let _ = ::env_logger::init();
 
     let vm = make_vm();
-    run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import "std/prelude.glu" "#);
+    run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import! "std/prelude.glu" "#);
 
     assert!(vm.find_type_info("std.prelude.Option").is_ok());
     assert!(vm.find_type_info("std.prelude.Result").is_ok());
@@ -729,7 +729,7 @@ sender
 fn invalid_string_slice_dont_panic() {
     let _ = ::env_logger::init();
     let text = r#"
-let string = import "std/string.glu"
+let string  = import! "std/string.glu"
 let s = "åäö"
 string.slice s 1 (string.length s)
 "#;
@@ -747,7 +747,7 @@ fn dont_execute_io_in_run_expr_async() {
     let _ = ::env_logger::init();
     let vm = make_vm();
     let expr = r#"
-let prelude = import "std/prelude.glu"
+let prelude  = import! "std/prelude.glu"
 let { pure } = prelude.applicative_IO
 pure 123
 "#;
@@ -835,7 +835,7 @@ fn completion_with_prelude() {
     let vm = make_vm();
 
     let expr = r#"
-let prelude = import "std/prelude.glu"
+let prelude  = import! "std/prelude.glu"
 and { Option, Num } = prelude
 and { (+) } = prelude.num_Int
 
@@ -860,7 +860,7 @@ let from f : (Int -> Option a) -> Stream a =
         .typecheck_str(&vm, "example", expr, None)
         .unwrap_or_else(|err| panic!("{}", err));
 
-    let result = completion::find(&*vm.get_env(), &expr, BytePos::from(311));
+    let result = completion::find(&*vm.get_env(), &expr, BytePos::from(313));
     assert_eq!(result, Ok(Type::int()));
 }
 

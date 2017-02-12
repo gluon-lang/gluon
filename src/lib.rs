@@ -401,7 +401,7 @@ impl Compiler {
 }
 
 pub const PRELUDE: &'static str = r#"
-let __implicit_prelude = import "std/prelude.glu"
+let __implicit_prelude = import! "std/prelude.glu"
 and { Num, Eq, Ord, Show, Functor, Monad, Bool, Option, Result, not } = __implicit_prelude
 
 let { (+), (-), (*), (/) } = __implicit_prelude.num_Int
@@ -434,7 +434,7 @@ pub fn filename_to_module(filename: &str) -> StdString {
 /// Creates a new virtual machine with support for importing other modules and with all primitives
 /// loaded.
 pub fn new_vm() -> RootedThread {
-    use ::import::{DefaultImporter, Import};
+    use import::{DefaultImporter, Import};
 
     let vm = RootedThread::new();
     let gluon_path = env::var("GLUON_PATH").unwrap_or_else(|_| String::from("."));
@@ -445,7 +445,7 @@ pub fn new_vm() -> RootedThread {
 
     Compiler::new()
         .implicit_prelude(false)
-        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "", r#" import "std/types.glu" "#)
+        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "", r#" import! "std/types.glu" "#)
         .sync_or_error()
         .unwrap();
     ::vm::primitives::load(&vm).expect("Loaded primitives library");

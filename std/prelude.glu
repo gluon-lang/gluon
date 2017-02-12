@@ -1,4 +1,4 @@
-let { Bool, Option, Result, Ordering } = import "std/types.glu"
+let { Bool, Option, Result, Ordering } = import! "std/types.glu"
 /// A linked list type
 type List a = | Nil | Cons a (List a)
 
@@ -562,6 +562,10 @@ let show_Float : Show Float = {
     show = prim.show_Float
 }
 
+let show_Char : Show Char = {
+    show = prim.show_Char
+}
+
 let (++) = string_prim.append
 
 let show_List : Show a -> Show (List a) = \d ->
@@ -633,6 +637,6 @@ let show_Result : Show e -> Show t -> Show (Result e t) = \e t ->
     id, const, flip, (<|), (|>), (<<), (>>),
 
     Show,
-    show_Unit, show_Bool, show_Int, show_Float, show_List, show_Option, show_Result
+    show_Unit, show_Bool, show_Int, show_Float, show_Char, show_List, show_Option, show_Result
 }
 

@@ -1,4 +1,4 @@
-let prelude = import "std/prelude.glu"
+let prelude = import! "std/prelude.glu"
 and { Option, Num } = prelude
 and { (+) } = prelude.num_Int
 

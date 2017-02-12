@@ -31,9 +31,9 @@ fn find_kind(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     let args = args.value.trim();
     IO::Value(match vm.find_type_info(args) {
         Ok(ref alias) => {
-            let kind = alias.args.iter().rev().fold(Kind::typ(), |acc, arg| {
-                Kind::function(arg.kind.clone(), acc)
-            });
+            let kind =
+                alias.args.iter().rev().fold(Kind::typ(),
+                                             |acc, arg| Kind::function(arg.kind.clone(), acc));
             Ok(format!("{}", kind))
         }
         Err(err) => Err(format!("{}", err)),
@@ -185,6 +185,7 @@ pub fn run() -> Result<(), Box<StdError + Send + Sync>> {
     let vm = new_vm();
     compile_repl(&vm)?;
     let mut repl: Function<&Thread, fn(()) -> IO<()>> = vm.get_global("std.repl")?;
+    debug!("Starting repl");
     repl.call(())?;
     Ok(())
 }
