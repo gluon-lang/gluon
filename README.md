@@ -75,6 +75,11 @@ REPL features:
     ![repl completion](http://i.imgur.com/IXLQFtV.gif)
 * Exit the REPL by writing `:q`
 
+### Vim plugin
+
+@salpalvv has created a vim plugin which provides syntax highlighting. You can find it here
+https://github.com/salpalvv/vim-gluon
+
 ## Documentation
 
 [Tutorial (WIP)](https://github.com/gluon-lang/gluon/blob/master/TUTORIAL.md)
