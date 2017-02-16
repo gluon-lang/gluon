@@ -1,6 +1,6 @@
-let prelude = import "std/prelude.glu"
+let prelude = import! "std/prelude.glu"
 let { Functor, Applicative, Alternative, Monad, List, id, make_Monoid, show_Char = show } = prelude
-let string = import "std/string.glu"
+let string = import! "std/string.glu"
 let { (<>) } = make_Monoid string.monoid
 
 type OffsetString = { start: Int, end: Int, buffer: String }

@@ -1,13 +1,13 @@
-let prelude = import "std/prelude.glu"
+let prelude = import! "std/prelude.glu"
 let { List } = prelude
-let { Test, run, writer, assert_eq, assert_seq, assert_ieq } = import "std/test.glu"
+let { Test, run, writer, assert_eq, assert_seq, assert_ieq } = import! "std/test.glu"
 let { Ord, Num, List, Option, Monoid } = prelude
 let { (*>) } = prelude.make_Applicative writer.applicative
 
-let string = import "std/string.glu"
-let parser = import "std/parser.glu"
+let string = import! "std/string.glu"
+let parser = import! "std/parser.glu"
 
-let lisp = import "examples/lisp/lisp.glu"
+let lisp = import! "examples/lisp/lisp.glu"
 let { Expr } = lisp
 
 let assert_leq =

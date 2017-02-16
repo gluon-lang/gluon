@@ -1,10 +1,10 @@
-let prelude = import "std/prelude.glu"
+let prelude = import! "std/prelude.glu"
 let { List } = prelude
-let { show = show_String, eq = eq_String } = import "std/string.glu"
-let { Test, run, writer, assert, assert_eq } = import "std/test.glu"
-let { Writer } = import "std/writer.glu"
+let { show = show_String, eq = eq_String } = import! "std/string.glu"
+let { Test, run, writer, assert, assert_eq } = import! "std/test.glu"
+let { Writer } = import! "std/writer.glu"
 
-let { Parser, applicative, functor, alternative, monad, any, parse } = import "std/parser.glu"
+let { Parser, applicative, functor, alternative, monad, any, parse } = import! "std/parser.glu"
 let { (*>), pure } = prelude.make_Applicative applicative
 let { (<|>) } = prelude.make_Alternative alternative
 
