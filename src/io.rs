@@ -12,6 +12,7 @@ use vm::thread::{Thread, Status};
 use vm::api::{Array, Hole, VmType, Getable, OpaqueValue, Pushable, IO, WithVM, Userdata, primitive};
 use vm::api::generic::{A, B};
 use vm::stack::StackFrame;
+use vm::internal::ValuePrinter;
 
 use vm::internal::Value;
 
@@ -176,7 +177,14 @@ fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> IO<String> {
     let mut context = vm.context();
     let stack = StackFrame::current(&mut context.stack);
     match run_result {
-        Ok((value, typ)) => IO::Value(format!("{:?} : {}", value, typ)),
+        Ok((value, typ)) => {
+            let env = vm.global_env().get_env();
+            unsafe {
+                IO::Value(format!("{} : {}",
+                                  ValuePrinter::new(&*env, &typ, value.get_value()).width(80),
+                                  typ))
+            }
+        }
         Err(err) => clear_frames(err, frame_level, stack),
     }
 }
