@@ -95,7 +95,7 @@ let loop editor : Editor -> IO () =
             store (string.slice line 4 (string.length line))
         else
             io.catch (io.run_expr line) pure
-                >>= io.print
+                >>= io.println
                 *> pure True
 
     rustyline.readline editor "> " >>= \line_opt ->
