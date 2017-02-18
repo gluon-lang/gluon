@@ -311,6 +311,23 @@ impl Compiler {
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
     /// expression is returned
+    ///
+    /// # Examples
+    ///
+    /// Import from gluon's standard library and evaluate a string
+    ///
+    /// ```
+    /// # extern crate gluon;
+    /// # use gluon::{new_vm,Compiler};
+    /// # fn main() {
+    /// let vm = new_vm();
+    /// let (result, _) = Compiler::new()
+    ///     .run_expr::<String>(&vm, "example", " let string  = import! \"std/string.glu\" in string.trim \"  Hello world  \t\" ")
+    ///     .unwrap();
+    /// assert_eq!(result, "Hello world");
+    /// # }
+    /// ```
+    ///
     pub fn run_expr<'vm, T>(
         &mut self,
         vm: &'vm Thread,
@@ -323,6 +340,30 @@ impl Compiler {
         self.run_expr_async(vm, name, expr_str).wait()
     }
 
+    /// Compiles and runs the expression in `expr_str`. If successful the value from running the
+    /// expression is returned
+    ///
+    /// # Examples
+    ///
+    /// Import from gluon's standard library and evaluate a string
+    ///
+    /// ```
+    /// # extern crate gluon;
+    /// # use gluon::{new_vm,Compiler};
+    /// # use gluon::base::types::Type;
+    /// # fn main() {
+    /// let vm = new_vm();
+    /// let result = Compiler::new()
+    ///     .run_expr_async::<String>(&vm, "example",
+    ///         " let string  = import! \"std/string.glu\" in string.trim \"    Hello world  \t\" ")
+    ///     .sync_or_error()
+    ///     .unwrap();
+    /// let expected = ("Hello world".to_string(), Type::string());
+    /// 
+    /// assert_eq!(result, expected);
+    /// }
+    /// ```
+    ///
     pub fn run_expr_async<'vm, T>(
         &mut self,
         vm: &'vm Thread,
