@@ -98,7 +98,7 @@ quick_error! {
         }
         UnexpectedEof {
             description("unexpected end of file")
-            display("Undexpected end of file")
+            display("Unexpected end of file")
         }
         ExtraToken(token: String) {
             description("extra token")
