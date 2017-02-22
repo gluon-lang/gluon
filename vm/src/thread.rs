@@ -1057,7 +1057,9 @@ impl<'b> OwnedContext<'b> {
                         initial_call: bool,
                         function: &ExternFunction)
                         -> Result<Async<OwnedContext<'b>>> {
-        debug!("CALL EXTERN {} {:?}", function.id, self.stack);
+        info!("CALL EXTERN {} {:?}",
+              function.id,
+              &self.stack.current_frame()[..]);
         let mut status = Status::Ok;
         if initial_call {
             // Make sure that the stack is not borrowed during the external function call
@@ -1102,7 +1104,7 @@ impl<'b> OwnedContext<'b> {
                 .map_err(|_| {
                     Error::Message(StdString::from("Poped the last frame in execute_function"))
                 })?;
-        self.stack.pop();// Pop function
+        self.stack.pop(); // Pop function
         self.stack.push(result);
 
         match status {
@@ -1519,7 +1521,7 @@ impl<'b> ExecuteContext<'b> {
                                     *var = self.stack.pop();
                                 }
                             }
-                            self.stack.pop();//Remove the closure
+                            self.stack.pop(); //Remove the closure
                         }
                         x => panic!("Expected closure, got {:?}", x),
                     }

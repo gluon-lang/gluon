@@ -1,4 +1,3 @@
-use std::string::String as StdString;
 use std::io::{Read, stdin};
 use std::fmt;
 use std::fs::File;
@@ -8,8 +7,8 @@ use vm::{self, Result, Variants};
 use vm::gc::{Gc, Traverseable};
 use vm::types::*;
 use vm::thread::ThreadInternal;
-use vm::thread::{Thread, Status};
-use vm::api::{Array, Hole, VmType, Getable, OpaqueValue, Pushable, IO, WithVM, Userdata, primitive};
+use vm::thread::Thread;
+use vm::api::{Array, FunctionRef, Generic, Hole, VmType, Getable, OpaqueValue, IO, WithVM, Userdata};
 use vm::api::generic::{A, B};
 use vm::stack::StackFrame;
 use vm::internal::ValuePrinter;
@@ -119,37 +118,29 @@ fn read_line() -> IO<String> {
 }
 
 /// IO a -> (String -> IO a) -> IO a
-extern "C" fn catch_io(vm: &Thread) -> Status {
-    let mut context = vm.context();
-    let frame_level = context.stack.get_frames().len();
-    let action = StackFrame::current(&mut context.stack)[0];
-    context.stack.push(action);
-    0.push(vm, &mut context).unwrap();
-    match vm.call_function(context, 1) {
-        Ok(_) => Status::Ok,
+fn catch<'vm>(action: OpaqueValue<&'vm Thread, IO<A>>,
+              mut catch: FunctionRef<fn(String) -> IO<Generic<A>>>)
+              -> IO<Generic<A>> {
+    let vm = action.vm();
+    let frame_level = vm.context().stack.get_frames().len();
+    let mut action: FunctionRef<fn(()) -> Generic<A>> =
+        unsafe { Getable::from_value(vm, Variants::new(&action.get_value())).unwrap() };
+    let result = action.call(());
+    match result {
+        Ok(value) => IO::Value(value),
         Err(err) => {
-            let mut context = vm.context();
             {
+                let mut context = vm.context();
                 let mut stack = StackFrame::current(&mut context.stack);
                 while stack.stack.get_frames().len() > frame_level {
                     if stack.exit_scope().is_err() {
-                        return Status::Error;
+                        return IO::Exception("Unknown error".into());
                     }
                 }
-                let callback = stack[1];
-                stack.push(callback);
             }
-            let fmt = format!("{}", err);
-            let _ = fmt.push(vm, &mut context);
-            0.push(vm, &mut context).unwrap();
-            match vm.call_function(context, 2) {
-                Ok(_) => Status::Ok,
-                Err(err) => {
-                    context = vm.context();
-                    let fmt = format!("{}", err);
-                    let _ = fmt.push(vm, &mut context);
-                    Status::Error
-                }
+            match catch.call(format!("{}", err)) {
+                Ok(value) => value,
+                Err(err) => IO::Exception(format!("{}", err)),
             }
         }
     }
@@ -229,7 +220,7 @@ pub fn load(vm: &Thread) -> Result<()> {
         print => primitive!(1 print),
         println => primitive!(1 println),
         catch =>
-            primitive::<fn (IO<A>, fn (StdString) -> IO<A>) -> IO<A>>("io.catch", catch_io),
+            primitive!(2 catch),
         run_expr => primitive!(1 run_expr),
         load_script => primitive!(2 load_script)
     ))?;
