@@ -2,6 +2,7 @@
 extern crate log;
 #[cfg(feature = "env_logger")]
 extern crate env_logger;
+#[macro_use]
 extern crate clap;
 extern crate futures;
 
@@ -18,10 +19,10 @@ use gluon::{new_vm, Compiler, Thread, Error, Result};
 use gluon::vm::thread::ThreadInternal;
 #[cfg(not(test))]
 use gluon::vm::Error as VMError;
-#[cfg(not(test))]
-use clap::{Arg, App};
 
 mod repl;
+
+const GLUON_VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 
 #[cfg(not(test))]
@@ -52,16 +53,12 @@ fn main() {
         .spawn(|| {
             init_env_logger();
 
-            let matches = App::new("gluon")
-                .about("Executes gluon programs")
-                .arg(Arg::with_name("INPUT")
-                    .multiple(true)
-                    .help("Executes each file as a gluon program"))
-                .arg(Arg::with_name("REPL")
-                    .short("i")
-                    .long("interactive")
-                    .help("Starts the repl")
-                    .takes_value(false))
+            let matches = clap_app!(gluon =>
+                (version: GLUON_VERSION)
+                (about: "executes gluon programs")
+                (@arg REPL: -i --interactive "Starts the repl")
+                (@arg INPUT: ... "Executes each file as a gluon program")
+            )
                 .get_matches();
             if matches.is_present("REPL") {
                 if let Err(err) = repl::run() {
