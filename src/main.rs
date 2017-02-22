@@ -22,7 +22,7 @@ use gluon::vm::Error as VMError;
 
 mod repl;
 
-const GLUON_VERSION: &'static str = "0.3.0";
+const GLUON_VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
 
 #[cfg(not(test))]
@@ -58,7 +58,8 @@ fn main() {
                 (about: "executes gluon programs")
                 (@arg REPL: -i --interactive "Starts the repl")
                 (@arg INPUT: ... "Executes each file as a gluon program")
-            ).get_matches();
+            )
+                .get_matches();
             if matches.is_present("REPL") {
                 if let Err(err) = repl::run() {
                     println!("{}", err);
