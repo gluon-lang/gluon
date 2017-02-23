@@ -22,9 +22,6 @@ use gluon::vm::Error as VMError;
 
 mod repl;
 
-const GLUON_VERSION: &'static str = env!("CARGO_PKG_VERSION");
-
-
 #[cfg(not(test))]
 fn run_files<'s, I>(vm: &Thread, files: I) -> Result<()>
     where I: Iterator<Item = &'s str>,
@@ -36,7 +33,6 @@ fn run_files<'s, I>(vm: &Thread, files: I) -> Result<()>
     Ok(())
 }
 
-
 #[cfg(all(not(test), feature = "env_logger"))]
 fn init_env_logger() {
     ::env_logger::init().unwrap();
@@ -47,6 +43,8 @@ fn init_env_logger() {}
 
 #[cfg(not(test))]
 fn main() {
+    const GLUON_VERSION: &'static str = env!("CARGO_PKG_VERSION");
+
     // Need the extra stack size when compiling the program using the msvc compiler
     ::std::thread::Builder::new()
         .stack_size(2 * 1024 * 1024)

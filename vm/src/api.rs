@@ -982,6 +982,10 @@ impl<T, V> Clone for OpaqueValue<T, V>
 impl<T, V> OpaqueValue<T, V>
     where T: Deref<Target = Thread>,
 {
+    pub fn vm(&self) -> &Thread {
+        self.0.vm()
+    }
+
     /// Unsafe as `Value` are not rooted
     pub unsafe fn get_value(&self) -> Value {
         *self.0
@@ -1677,7 +1681,7 @@ impl<'vm, F> Getable<'vm> for Function<&'vm Thread, F> {
         Some(Function {
             value: vm.root_value_ref(*value.0),
             _marker: PhantomData,
-        })//TODO not type safe
+        }) //TODO not type safe
     }
 }
 
@@ -1686,7 +1690,7 @@ impl<'vm, F> Getable<'vm> for Function<RootedThread, F> {
         Some(Function {
             value: vm.root_value(*value.0),
             _marker: PhantomData,
-        })//TODO not type safe
+        }) //TODO not type safe
     }
 }
 
