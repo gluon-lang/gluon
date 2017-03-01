@@ -208,7 +208,7 @@ Type = {
 // Patterns
 
 FieldPattern : FieldPattern<Id> = {
-    <id: Ident> "=" <body: Ident> =>
+    <id: Ident> "=" <body: Sp<Pattern>> =>
         FieldPattern::Value(id, Some(body)),
 
     <IdentStr> => {
@@ -261,11 +261,8 @@ AtomicPattern: Pattern<Id> = {
 Pattern = {
     AtomicPattern,
 
-    <id: Ident> <args: Ident+> => {
+    <id: Ident> <args: Sp<AtomicPattern>+> => {
         let id = TypedIdent::new(id);
-        let args = args.into_iter()
-                       .map(TypedIdent::new)
-                       .collect();
 
         Pattern::Constructor(id, args)
     },

@@ -65,11 +65,11 @@ pub type SpannedPattern<Id> = Spanned<Pattern<Id>, BytePos>;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Pattern<Id> {
-    Constructor(TypedIdent<Id>, Vec<TypedIdent<Id>>),
+    Constructor(TypedIdent<Id>, Vec<SpannedPattern<Id>>),
     Record {
         typ: ArcType<Id>,
         types: Vec<(Id, Option<Id>)>,
-        fields: Vec<(Id, Option<Id>)>,
+        fields: Vec<(Id, Option<SpannedPattern<Id>>)>,
     },
     Ident(TypedIdent<Id>),
 }
@@ -257,7 +257,7 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::Id
         Pattern::Constructor(ref mut id, ref mut args) => {
             v.visit_typ(&mut id.typ);
             for arg in args {
-                v.visit_typ(&mut arg.typ);
+                v.visit_pattern(arg);
             }
         }
         Pattern::Record { ref mut typ, .. } => {
@@ -355,7 +355,7 @@ pub fn walk_pattern<V: ?Sized + Visitor>(v: &mut V, p: &Pattern<V::Ident>) {
         Pattern::Constructor(ref id, ref args) => {
             v.visit_typ(&id.typ);
             for arg in args {
-                v.visit_typ(&arg.typ);
+                v.visit_pattern(&arg);
             }
         }
         Pattern::Record { ref typ, .. } => {

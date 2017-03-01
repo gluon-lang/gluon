@@ -6,7 +6,7 @@ use std::mem;
 
 use base::scoped_map::ScopedMap;
 use base::ast::{DisplayEnv, Expr, Literal, MutVisitor, Pattern, SpannedExpr};
-use base::ast::{SpannedPattern, TypeBinding, Typed, TypedIdent, ValueBinding};
+use base::ast::{SpannedPattern, TypeBinding, TypedIdent, ValueBinding};
 use base::error::Errors;
 use base::fnv::{FnvMap, FnvSet};
 use base::resolve;
@@ -746,19 +746,23 @@ impl<'a> Typecheck<'a> {
             }
             Pattern::Record { typ: ref mut curr_typ,
                               types: ref mut associated_types,
-                              ref fields } => {
+                              ref mut fields } => {
                 *curr_typ = match_type.clone();
                 let mut match_type = self.remove_alias(match_type);
 
                 let mut pattern_fields = Vec::with_capacity(associated_types.len() + fields.len());
 
                 let mut duplicated_fields = FnvSet::default();
-                for field in associated_types.iter().chain(fields.iter()) {
-                    if 
-                        self.error_on_duplicated_field(&mut duplicated_fields,
-                                                       span,
-                                                       field.0.clone()) {
-                        pattern_fields.push(field.0.clone());
+                {
+                    let all_fields = associated_types.iter()
+                        .map(|field| &field.0)
+                        .chain(fields.iter().map(|field| &field.0));
+                    for field in all_fields {
+                        if self.error_on_duplicated_field(&mut duplicated_fields,
+                                                          span,
+                                                          field.clone()) {
+                            pattern_fields.push(field.clone());
+                        }
                     }
                 }
 
@@ -793,12 +797,21 @@ impl<'a> Typecheck<'a> {
                 match_type = actual_type;
 
                 for field in fields {
-                    let name = field.1.as_ref().unwrap_or(&field.0);
+                    let name = &field.0;
                     // The field should always exist since the type was constructed from the pattern
                     let field_type = match_type.row_iter()
-                        .find(|f| f.name.name_eq(&field.0))
-                        .expect("ICE: Expected field to exist in type");
-                    self.stack_var(name.clone(), field_type.typ.clone());
+                        .find(|f| f.name.name_eq(name))
+                        .expect("ICE: Expected field to exist in type")
+                        .typ
+                        .clone();
+                    match field.1 {
+                        Some(ref mut pattern) => {
+                            self.typecheck_pattern(pattern, field_type);
+                        }
+                        None => {
+                            self.stack_var(name.clone(), field_type);
+                        }
+                    }
                 }
 
                 // Check that all types declared in the pattern exists
@@ -832,16 +845,22 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn typecheck_pattern_rec(&mut self, args: &[TypedIdent], typ: ArcType) -> TcResult<ArcType> {
-        if args.len() == 0 {
-            return Ok(typ);
-        }
-        match typ.as_function() {
-            Some((arg, ret)) => {
-                self.stack_var(args[0].name.clone(), arg.clone());
-                self.typecheck_pattern_rec(&args[1..], ret.clone())
+    fn typecheck_pattern_rec(&mut self,
+                             args: &mut [SpannedPattern<Symbol>],
+                             typ: ArcType)
+                             -> TcResult<ArcType> {
+        let len = args.len();
+        match args.split_first_mut() {
+            Some((head, tail)) => {
+                match typ.as_function() {
+                    Some((arg, ret)) => {
+                        self.typecheck_pattern(head, arg.clone());
+                        self.typecheck_pattern_rec(tail, ret.clone())
+                    }
+                    None => Err(TypeError::PatternError(typ.clone(), len)),
+                }
             }
-            None => Err(TypeError::PatternError(typ.clone(), args.len())),
+            None => Ok(typ),
         }
     }
 
@@ -912,7 +931,7 @@ impl<'a> Typecheck<'a> {
             if let Some(typ) = self.finish_type(level, &bind.typ) {
                 bind.typ = typ;
             }
-            self.finish_binding(level, bind);
+            self.finish_pattern(level, &mut bind.name, &bind.typ);
         }
         debug!("Typecheck `in`");
         self.type_variables.exit_scope();
@@ -1000,8 +1019,8 @@ impl<'a> Typecheck<'a> {
         Ok(())
     }
 
-    fn finish_binding(&mut self, level: u32, bind: &mut ValueBinding<Symbol>) {
-        match bind.name.value {
+    fn finish_pattern(&mut self, level: u32, pattern: &mut SpannedPattern<Symbol>, typ: &ArcType) {
+        match pattern.value {
             Pattern::Ident(ref mut id) => {
                 if let Some(typ) = self.finish_type(level, &id.typ) {
                     id.typ = typ;
@@ -1012,25 +1031,29 @@ impl<'a> Typecheck<'a> {
                 self.intersect_type(level, &id.name, &id.typ);
             }
             Pattern::Record { ref mut typ, ref mut fields, .. } => {
-                debug!("{{ .. }}: {}",
-                       types::display_type(&self.symbols,
-                                           &bind.expr.env_type_of(&self.environment)));
+                debug!("{{ .. }}: {}", types::display_type(&self.symbols, typ));
                 if let Some(finished) = self.finish_type(level, typ) {
                     *typ = finished;
                 }
                 let record_type = self.remove_alias(typ.clone());
-                with_pattern_types(fields, &record_type, |field_name, binding, field_type| {
-                    let field_name = binding.as_ref().unwrap_or(field_name);
-                    self.intersect_type(level, field_name, field_type);
-                });
+                with_pattern_types(fields,
+                                   &record_type,
+                                   |field_name, binding, field_type| match *binding {
+                                       Some(ref mut pat) => {
+                                           self.finish_pattern(level, pat, field_type);
+                                       }
+                                       None => {
+                                           self.intersect_type(level, field_name, field_type);
+                                       }
+                                   });
             }
-            Pattern::Constructor(ref id, ref args) => {
+            Pattern::Constructor(ref id, ref mut args) => {
                 debug!("{}: {}",
                        self.symbols.string(&id.name),
-                       types::display_type(&self.symbols,
-                                           &bind.expr.env_type_of(&self.environment)));
-                for arg in args {
-                    self.intersect_type(level, &arg.name, &arg.typ);
+                       types::display_type(&self.symbols, typ));
+                for (arg, arg_type) in args.iter_mut()
+                    .zip(function_arg_iter(self, typ.clone()).collect::<Vec<_>>()) {
+                    self.finish_pattern(level, arg, &arg_type);
                 }
             }
         }
@@ -1296,15 +1319,17 @@ impl<'a> Typecheck<'a> {
     }
 }
 
-fn with_pattern_types<F>(fields: &[(Symbol, Option<Symbol>)], typ: &ArcType, mut f: F)
-    where F: FnMut(&Symbol, &Option<Symbol>, &ArcType),
+fn with_pattern_types<F>(fields: &mut [(Symbol, Option<SpannedPattern<Symbol>>)],
+                         typ: &ArcType,
+                         mut f: F)
+    where F: FnMut(&Symbol, &mut Option<SpannedPattern<Symbol>>, &ArcType),
 {
     for field in fields {
         // If the field in the pattern does not exist (undefined field error) then skip it as
         // the error itself will already have been reported
         let opt = typ.row_iter().find(|type_field| type_field.name.name_eq(&field.0));
         if let Some(associated_type) = opt {
-            f(&field.0, &field.1, &associated_type.typ);
+            f(&field.0, &mut field.1, &associated_type.typ);
         }
     }
 }

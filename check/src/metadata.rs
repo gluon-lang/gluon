@@ -38,7 +38,21 @@ pub fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
         fn new_pattern(&mut self, mut metadata: Metadata, pattern: &mut SpannedPattern<Symbol>) {
             match pattern.value {
                 Pattern::Record { ref mut fields, ref mut types, .. } => {
-                    for field in fields.iter_mut().chain(types) {
+                    for field in fields {
+                        if let Some(m) = metadata.module.remove(field.0.as_ref()) {
+                            let id = match field.1 {
+                                Some(ref mut pat) => {
+                                    match pat.value {
+                                        Pattern::Ident(ref id) => &id.name,
+                                        _ => return self.new_pattern(m, pat),
+                                    }
+                                }
+                                None => &field.0,
+                            };
+                            self.stack_var(id.clone(), m);
+                        }
+                    }
+                    for field in types {
                         if let Some(m) = metadata.module.remove(field.0.as_ref()) {
                             let id = field.1.as_ref().unwrap_or_else(|| &field.0).clone();
                             self.stack_var(id, m);
