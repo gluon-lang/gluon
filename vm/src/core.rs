@@ -8,7 +8,7 @@ use self::typed_arena::Arena;
 use self::smallvec::SmallVec;
 
 use base::ast::{self, Literal, SpannedExpr, TypedIdent, Typed};
-use base::pos::{BytePos, Span};
+use base::pos::{BytePos, ExpansionId, Span};
 use base::symbol::Symbol;
 use base::types::{ArcType, Type, TypeEnv, PrimitiveEnv, arg_iter};
 
@@ -50,7 +50,7 @@ pub enum Expr<'a> {
     Const(Literal, Span<BytePos>),
     Ident(TypedIdent<Symbol>, Span<BytePos>),
     Call(&'a Expr<'a>, &'a [Expr<'a>]),
-    Data(TypedIdent<Symbol>, &'a [Expr<'a>], BytePos),
+    Data(TypedIdent<Symbol>, &'a [Expr<'a>], BytePos, ExpansionId),
     Let(LetBinding<'a>, &'a Expr<'a>),
     Match(&'a Expr<'a>, &'a [Alternative<'a>]),
 }
@@ -58,18 +58,28 @@ pub enum Expr<'a> {
 impl<'a> Expr<'a> {
     pub fn span(&self) -> Span<BytePos> {
         match *self {
-            Expr::Call(expr, args) => Span::new(expr.span().start, args.last().unwrap().span().end),
+            Expr::Call(expr, args) => {
+                let span = expr.span();
+                Span::with_id(span.start,
+                              args.last().unwrap().span().end,
+                              span.expansion_id)
+            }
             Expr::Const(_, span) => span,
-            Expr::Data(_, args, span_start) => {
-                Span::new(span_start,
-                          args.last().map_or(span_start, |arg| arg.span().end))
+            Expr::Data(_, args, span_start, expansion_id) => {
+                let span_end = args.last()
+                    .map_or(span_start, |arg| arg.span().end);
+                Span::with_id(span_start, span_end, expansion_id)
             }
             Expr::Ident(_, span) => span,
             Expr::Let(ref let_binding, ref body) => {
-                Span::new(let_binding.span_start, body.span().end)
+                let span_end = body.span();
+                Span::with_id(let_binding.span_start, span_end.end, span_end.expansion_id)
             }
             Expr::Match(expr, alts) => {
-                Span::new(expr.span().start, alts.last().unwrap().expr.span().end)
+                let span_start = expr.span();
+                Span::with_id(span_start.start,
+                              alts.last().unwrap().expr.span().end,
+                              span_start.expansion_id)
             }
         }
     }
@@ -142,7 +152,8 @@ impl<'a, 'e> Allocator<'a, 'e> {
                                typ: array.typ.clone(),
                            },
                            arena.alloc_extend(exprs.into_iter()),
-                           expr.span.start)
+                           expr.span.start,
+                           expr.span.expansion_id)
             }
             ast::Expr::Block(ref exprs) => {
                 let (last, prefix) = exprs.split_last().unwrap();
@@ -236,7 +247,8 @@ impl<'a, 'e> Allocator<'a, 'e> {
                                typ: typ.clone(),
                            },
                            arena.alloc_extend(args.into_iter()),
-                           expr.span.start)
+                           expr.span.start,
+                           expr.span.expansion_id)
             }
             ast::Expr::Tuple(ref exprs) => {
                 assert!(exprs.len() == 0, "Only unit is handled at the moment");
@@ -248,7 +260,8 @@ impl<'a, 'e> Allocator<'a, 'e> {
                                typ: Type::unit(),
                            },
                            arena.alloc_extend(args.into_iter()),
-                           expr.span.start)
+                           expr.span.start,
+                           expr.span.expansion_id)
             }
             ast::Expr::TypeBindings(_, ref expr) => self.translate(expr),
             ast::Expr::Error => panic!("ICE: Error expression found in the compiler"),
@@ -375,7 +388,8 @@ impl<'a, 'e> Allocator<'a, 'e> {
                                   typ: data_type,
                               },
                               arena.alloc_extend(new_args.into_iter()),
-                              span.start);
+                              span.start,
+                              span.expansion_id);
         if unapplied_args.is_empty() {
             data
         } else {
@@ -416,7 +430,7 @@ impl<'a> Typed for Expr<'a> {
         match *self {
             Expr::Call(expr, args) => get_return_type(env, &expr.env_type_of(env), args.len()),
             Expr::Const(ref literal, _) => literal.env_type_of(env),
-            Expr::Data(ref id, _, _) => id.typ.clone(),
+            Expr::Data(ref id, _, _, _) => id.typ.clone(),
             Expr::Ident(ref id, _) => id.typ.clone(),
             Expr::Let(_, ref body) => body.env_type_of(env),
             Expr::Match(_, alts) => alts[0].expr.env_type_of(env),

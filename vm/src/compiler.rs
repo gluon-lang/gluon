@@ -710,7 +710,7 @@ impl<'a> Compiler<'a> {
                         Jump(function.function.instructions.len() as VmIndex);
                 }
             }
-            Expr::Data(ref id, exprs, _) => {
+            Expr::Data(ref id, exprs, _, _) => {
                 for expr in exprs {
                     self.compile(expr, function, false)?;
                 }
