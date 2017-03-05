@@ -374,6 +374,20 @@ impl<Id: Clone> Typed for TypedIdent<Id> {
     }
 }
 
+impl Typed for Literal {
+    type Ident = Symbol;
+
+    fn env_type_of(&self, _: &TypeEnv) -> ArcType {
+        match *self {
+            Literal::Int(_) => Type::int(),
+            Literal::Float(_) => Type::float(),
+            Literal::Byte(_) => Type::byte(),
+            Literal::String(_) => Type::string(),
+            Literal::Char(_) => Type::char(),
+        }
+    }
+}
+
 impl Typed for Expr<Symbol> {
     type Ident = Symbol;
 
@@ -382,15 +396,7 @@ impl Typed for Expr<Symbol> {
             Expr::Ident(ref id) => id.typ.clone(),
             Expr::Projection(_, _, ref typ) |
             Expr::Record { ref typ, .. } => typ.clone(),
-            Expr::Literal(ref lit) => {
-                match *lit {
-                    Literal::Int(_) => Type::int(),
-                    Literal::Float(_) => Type::float(),
-                    Literal::Byte(_) => Type::byte(),
-                    Literal::String(_) => Type::string(),
-                    Literal::Char(_) => Type::char(),
-                }
-            }
+            Expr::Literal(ref lit) => lit.env_type_of(env),
             Expr::IfElse(_, ref arm, _) => arm.env_type_of(env),
             Expr::Tuple(ref exprs) => {
                 assert!(exprs.is_empty());
@@ -480,4 +486,11 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
 
 pub fn is_operator_char(c: char) -> bool {
     "#+-*/&|=<>:.".chars().any(|x| x == c)
+}
+
+pub fn is_constructor(s: &str) -> bool {
+    s.rsplit('.')
+        .next()
+        .unwrap()
+        .starts_with(char::is_uppercase)
 }

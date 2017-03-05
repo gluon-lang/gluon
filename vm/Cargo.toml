@@ -20,6 +20,8 @@ pretty = "0.2.0"
 bitflags = "0.7.0"
 itertools = "0.5.6"
 futures = "0.1.0"
+typed-arena = "1.2.0"
+smallvec = "0.2.1"
 
 gluon_base = { path = "../base", version = "0.3.0" }
 gluon_check = { path = "../check", version = "0.3.0" }

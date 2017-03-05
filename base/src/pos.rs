@@ -144,12 +144,10 @@ impl<Pos> PartialOrd for Span<Pos>
     fn partial_cmp(&self, other: &Span<Pos>) -> Option<Ordering> {
         self.start
             .partial_cmp(&other.start)
-            .and_then(|ord| {
-                if ord == Ordering::Equal {
-                    self.end.partial_cmp(&self.end)
-                } else {
-                    Some(ord)
-                }
+            .and_then(|ord| if ord == Ordering::Equal {
+                self.end.partial_cmp(&self.end)
+            } else {
+                Some(ord)
             })
     }
 }
@@ -170,10 +168,14 @@ impl<Pos> Ord for Span<Pos>
 
 impl<Pos: Ord> Span<Pos> {
     pub fn new(start: Pos, end: Pos) -> Span<Pos> {
+        Span::with_id(start, end, NO_EXPANSION)
+    }
+
+    pub fn with_id(start: Pos, end: Pos, no_expansion: ExpansionId) -> Span<Pos> {
         Span {
             start: start,
             end: end,
-            expansion_id: NO_EXPANSION,
+            expansion_id: no_expansion,
         }
     }
 

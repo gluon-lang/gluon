@@ -592,8 +592,7 @@ impl<'vm> Getable<'vm> for bool {
 impl VmType for Ordering {
     type Type = Self;
     fn make_type(vm: &Thread) -> ArcType {
-        let symbol = vm.find_type_info("std.types.Ordering").unwrap().name.clone();
-        Type::app(Type::ident(symbol), collect![])
+        vm.find_type_info("std.types.Ordering").unwrap().clone().into_type()
     }
 }
 impl<'vm> Pushable<'vm> for Ordering {
@@ -783,8 +782,8 @@ impl<T: VmType> VmType for Option<T>
 {
     type Type = Option<T::Type>;
     fn make_type(vm: &Thread) -> ArcType {
-        let symbol = vm.find_type_info("std.types.Option").unwrap().name.clone();
-        Type::app(Type::ident(symbol), collect![T::make_type(vm)])
+        let option_alias = vm.find_type_info("std.types.Option").unwrap().clone().into_type();
+        Type::app(option_alias, collect![T::make_type(vm)])
     }
 }
 impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T> {
@@ -810,7 +809,7 @@ impl<'vm, T: Getable<'vm>> Getable<'vm> for Option<T> {
                 if data.tag == 0 {
                     Some(None)
                 } else {
-                    T::from_value(vm, Variants(&data.fields[1])).map(Some)
+                    T::from_value(vm, Variants(&data.fields[0])).map(Some)
                 }
             }
             Value::Tag(0) => Some(None),
@@ -825,9 +824,8 @@ impl<T: VmType, E: VmType> VmType for StdResult<T, E>
 {
     type Type = StdResult<T::Type, E::Type>;
     fn make_type(vm: &Thread) -> ArcType {
-        let symbol = vm.find_type_info("std.types.Result").unwrap().name.clone();
-        Type::app(Type::ident(symbol),
-                  collect![E::make_type(vm), T::make_type(vm)])
+        let result_alias = vm.find_type_info("std.types.Result").unwrap().clone().into_type();
+        Type::app(result_alias, collect![E::make_type(vm), T::make_type(vm)])
     }
 }
 
