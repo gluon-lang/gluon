@@ -13,16 +13,12 @@ extern crate gluon_parser as parser;
 #[macro_use]
 extern crate gluon_vm as vm;
 
-#[cfg(not(test))]
 use gluon::{new_vm, Compiler, Thread, Error, Result};
-#[cfg(not(test))]
 use gluon::vm::thread::ThreadInternal;
-#[cfg(not(test))]
 use gluon::vm::Error as VMError;
 
 mod repl;
 
-#[cfg(not(test))]
 fn run_files<'s, I>(vm: &Thread, files: I) -> Result<()>
     where I: Iterator<Item = &'s str>,
 {
@@ -33,15 +29,14 @@ fn run_files<'s, I>(vm: &Thread, files: I) -> Result<()>
     Ok(())
 }
 
-#[cfg(all(not(test), feature = "env_logger"))]
+#[cfg(feature = "env_logger")]
 fn init_env_logger() {
     ::env_logger::init().unwrap();
 }
 
-#[cfg(all(not(test), not(feature = "env_logger")))]
+#[cfg(not(feature = "env_logger"))]
 fn init_env_logger() {}
 
-#[cfg(not(test))]
 fn main() {
     const GLUON_VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
@@ -78,4 +73,14 @@ fn main() {
         .unwrap()
         .join()
         .unwrap();
+}
+
+
+#[cfg(test)]
+mod tests {
+    // If nothing else this suppresses the unused imports warnings when compiling in test mode
+    #[test]
+    fn execute_repl_help() {
+        super::main();
+    }
 }
