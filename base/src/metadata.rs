@@ -22,4 +22,14 @@ impl Metadata {
     pub fn has_data(&self) -> bool {
         self.comment.is_some() || !self.module.is_empty()
     }
+
+    pub fn merge(mut self, other: Metadata) -> Metadata {
+        if self.comment.is_none() {
+            self.comment = other.comment;
+        }
+        if self.module.is_empty() {
+            self.module = other.module;
+        }
+        self
+    }
 }

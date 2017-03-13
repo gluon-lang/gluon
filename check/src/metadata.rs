@@ -74,22 +74,33 @@ pub fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
                 }
                 Expr::Record { ref mut exprs, ref mut types, .. } => {
                     let mut module = BTreeMap::new();
-                    for &mut (ref id, ref mut maybe_expr) in exprs {
-                        let maybe_metadata = match *maybe_expr {
+                    for field in exprs {
+                        let maybe_metadata = match field.value {
                             Some(ref mut expr) => {
                                 let m = self.metadata_expr(expr);
                                 if m.has_data() { Some(m) } else { None }
                             }
-                            None => self.metadata(id).cloned(),
+                            None => self.metadata(&field.name).cloned(),
+                        };
+                        let field_metadata = field.comment.clone().map(|comment| {
+                            Metadata {
+                                comment: Some(comment),
+                                module: BTreeMap::new(),
+                            }
+                        });
+                        let maybe_metadata = match (field_metadata, maybe_metadata) {
+                            (Some(l), Some(r)) => Some(l.merge(r)),
+                            (None, Some(x)) | (Some(x), None) => Some(x),
+                            (None, None) => None,
                         };
                         if let Some(metadata) = maybe_metadata {
-                            module.insert(String::from(id.as_ref()), metadata);
+                            module.insert(String::from(field.name.as_ref()), metadata);
                         }
                     }
-                    for &mut (ref id, _) in types {
-                        let maybe_metadata = self.metadata(id).cloned();
+                    for field in types {
+                        let maybe_metadata = self.metadata(&field.name).cloned();
                         if let Some(metadata) = maybe_metadata {
-                            let name = Name::new(id.as_ref()).name().as_str();
+                            let name = Name::new(field.name.as_ref()).name().as_str();
                             module.insert(String::from(name), metadata);
                         }
                     }

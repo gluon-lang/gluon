@@ -173,14 +173,12 @@ impl<'a> TypeEnv for Environment<'a> {
     fn find_record(&self, fields: &[Symbol]) -> Option<(ArcType, ArcType)> {
         self.stack_types
             .iter()
-            .find(|&(_, &(_, ref alias))| {
-                match **alias.unresolved_type() {
-                    Type::Record(ref row) => {
-                        fields.iter()
-                            .all(|name| row.row_iter().any(|f| f.name.name_eq(name)))
-                    }
-                    _ => false,
+            .find(|&(_, &(_, ref alias))| match **alias.unresolved_type() {
+                Type::Record(ref row) => {
+                    fields.iter()
+                        .all(|name| row.row_iter().any(|f| f.name.name_eq(name)))
                 }
+                _ => false,
             })
             // FIXME Don't use unresolved_type
             .map(|t| ((t.1).0.clone(), (t.1).1.unresolved_type().clone()))
@@ -653,28 +651,28 @@ impl<'a> Typecheck<'a> {
                 let mut new_types: Vec<Field<_, _>> = Vec::with_capacity(types.len());
 
                 let mut duplicated_fields = FnvSet::default();
-                for &mut (ref mut symbol, ref mut typ) in types {
-                    if let Some(ref mut typ) = *typ {
+                for field in types {
+                    if let Some(ref mut typ) = field.value {
                         *typ = self.create_unifiable_signature(typ.clone());
                     }
-                    let alias = self.find_type_info(symbol)?.clone();
+                    let alias = self.find_type_info(&field.name)?.clone();
                     if self.error_on_duplicated_field(&mut duplicated_fields,
                                                       expr_span,
-                                                      symbol.clone()) {
-                        new_types.push(Field::new(symbol.clone(), alias));
+                                                      field.name.clone()) {
+                        new_types.push(Field::new(field.name.clone(), alias));
                     }
                 }
 
                 let mut new_fields: Vec<Field<_, _>> = Vec::with_capacity(fields.len());
                 for field in fields {
-                    let typ = match field.1 {
+                    let typ = match field.value {
                         Some(ref mut expr) => self.typecheck(expr),
-                        None => self.find(&field.0)?,
+                        None => self.find(&field.name)?,
                     };
                     if self.error_on_duplicated_field(&mut duplicated_fields,
                                                       expr_span,
-                                                      field.0.clone()) {
-                        new_fields.push(Field::new(field.0.clone(), typ));
+                                                      field.name.clone()) {
+                        new_fields.push(Field::new(field.name.clone(), typ));
                     }
                 }
                 let result = self.find_record(&new_fields.iter()

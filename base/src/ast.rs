@@ -97,6 +97,13 @@ pub type SpannedExpr<Id> = Spanned<Expr<Id>, BytePos>;
 
 pub type SpannedIdent<Id> = Spanned<TypedIdent<Id>, BytePos>;
 
+#[derive(Clone, PartialEq, Debug)]
+pub struct ExprField<Id, E> {
+    pub comment: Option<String>,
+    pub name: Id,
+    pub value: Option<E>,
+}
+
 /// The representation of gluon's expression syntax
 #[derive(Clone, PartialEq, Debug)]
 pub enum Expr<Id> {
@@ -121,8 +128,8 @@ pub enum Expr<Id> {
     /// Record construction
     Record {
         typ: ArcType<Id>,
-        types: Vec<(Id, Option<ArcType<Id>>)>,
-        exprs: Vec<(Id, Option<SpannedExpr<Id>>)>,
+        types: Vec<ExprField<Id, ArcType<Id>>>,
+        exprs: Vec<ExprField<Id, SpannedExpr<Id>>>,
     },
     /// Tuple construction
     Tuple(Vec<SpannedExpr<Id>>),
@@ -219,7 +226,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
         Expr::Record { ref mut typ, ref mut exprs, .. } => {
             v.visit_typ(typ);
             for field in exprs {
-                if let Some(ref mut expr) = field.1 {
+                if let Some(ref mut expr) = field.value {
                     v.visit_expr(expr);
                 }
             }
@@ -320,7 +327,7 @@ pub fn walk_expr<V: ?Sized + Visitor>(v: &mut V, e: &SpannedExpr<V::Ident>) {
         Expr::Record { ref typ, ref exprs, .. } => {
             v.visit_typ(typ);
             for field in exprs {
-                if let Some(ref expr) = field.1 {
+                if let Some(ref expr) = field.value {
                     v.visit_expr(expr);
                 }
             }

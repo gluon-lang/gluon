@@ -206,8 +206,8 @@ pub enum FieldPattern<Id> {
 }
 
 pub enum FieldExpr<Id> {
-    Type(Id, Option<ArcType<Id>>),
-    Value(Id, Option<SpannedExpr<Id>>),
+    Type(Option<String>, Id, Option<ArcType<Id>>),
+    Value(Option<String>, Id, Option<SpannedExpr<Id>>),
 }
 
 // Hack around LALRPOP's limited type syntax
@@ -247,7 +247,7 @@ pub fn parse_partial_expr<Id>(symbols: &mut IdentEnv<Ident = Id>,
     // If that is the case we return that error instead of the unexpected EOF error that lalrpop
     // emitted
     if let Err(err) = result_ok_iter.borrow_mut().result(()) {
-        parse_errors.pop();// Remove the EOF error
+        parse_errors.pop(); // Remove the EOF error
         parse_errors.push(lalrpop_util::ParseError::User {
             error: pos::spanned2(err.span.start.absolute,
                                  err.span.end.absolute,

@@ -201,19 +201,20 @@ pub fn rename(symbols: &mut SymbolModule,
                 }
                 Expr::Record { ref mut typ, ref mut exprs, .. } => {
                     let field_types = self.find_fields(typ);
-                    for (field, &mut (ref id, ref mut maybe_expr)) in
+                    for (field, expr_field) in
                         field_types.iter()
                             .zip(exprs) {
-                        match *maybe_expr {
+                        match expr_field.value {
                             Some(ref mut expr) => self.visit_expr(expr),
                             None => {
-                                if let Some(new_id) = self.rename(id, &field.typ)? {
-                                    debug!("Rename record field {} = {}", id, new_id);
-                                    *maybe_expr = Some(pos::spanned(expr.span,
-                                                                    Expr::Ident(TypedIdent {
-                                                                        name: new_id,
-                                                                        typ: field.typ.clone(),
-                                                                    })));
+                                if let Some(new_id) = self.rename(&expr_field.name, &field.typ)? {
+                                    debug!("Rename record field {} = {}", expr_field.name, new_id);
+                                    expr_field.value =
+                                        Some(pos::spanned(expr.span,
+                                                          Expr::Ident(TypedIdent {
+                                                              name: new_id,
+                                                              typ: field.typ.clone(),
+                                                          })));
                                 }
                             }
                         }

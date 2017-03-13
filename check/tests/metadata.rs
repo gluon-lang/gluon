@@ -82,3 +82,25 @@ type Test = Int
                    module: Default::default(),
                }));
 }
+
+#[test]
+fn propagate_metadata_record_field_comment() {
+    let _ = env_logger::init();
+
+    let text = r#"
+{
+    /// The identity function
+    id = \x -> x
+}
+"#;
+    let (mut expr, result) = support::typecheck_expr(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+
+    let metadata = metadata(&MockEnv, &mut expr);
+    assert_eq!(metadata.module.get("id"),
+               Some(&Metadata {
+                   comment: Some("The identity function".into()),
+                   module: Default::default(),
+               }));
+}
