@@ -234,12 +234,12 @@ impl<'a, 'e> Allocator<'a, 'e> {
             ast::Expr::Record { ref typ, ref exprs, .. } => {
                 let mut last_span = expr.span;
                 let args: SmallVec<[_; 16]> = exprs.iter()
-                    .map(|&(ref field, ref expr)| match *expr {
+                    .map(|field| match field.value {
                         Some(ref expr) => {
                             last_span = expr.span;
                             self.translate(expr)
                         }
-                        None => Expr::Ident(TypedIdent::new(field.clone()), last_span),
+                        None => Expr::Ident(TypedIdent::new(field.name.clone()), last_span),
                     })
                     .collect();
                 Expr::Data(TypedIdent {

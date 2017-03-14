@@ -1,4 +1,4 @@
-use base::ast::{Alternative, Array, Expr, Lambda, Literal, Pattern, SpannedExpr, TypeBinding, TypedIdent, ValueBinding};
+use base::ast::{Alternative, Array, Expr, ExprField, Lambda, Literal, Pattern, SpannedExpr, TypeBinding, TypedIdent, ValueBinding};
 use base::kind::{ArcKind, Kind};
 use base::pos::{self, BytePos, Spanned};
 use base::types::{AliasData, ArcType, BuiltinType, Field, Generic, Type};
@@ -290,16 +290,16 @@ Alternative: Alternative<Id> =
     };
 
 FieldExpr: FieldExpr<Id> = {
-    <id: Ident> "=" <body: SpExpr> => {
-        FieldExpr::Value(id, Some(body))
+    <comment: DocComment?> <id: Ident> "=" <body: SpExpr> => {
+        FieldExpr::Value(comment, id, Some(body))
     },
 
-    <IdentStr> => {
-        let id = env.from_str(<>);
-        if <>.starts_with(char::is_uppercase) {
-            FieldExpr::Type(id, None)
+    <comment: DocComment?> <id_str: IdentStr> => {
+        let id = env.from_str(id_str);
+        if id_str.starts_with(char::is_uppercase) {
+            FieldExpr::Type(comment, id, None)
         } else {
-            FieldExpr::Value(id, None)
+            FieldExpr::Value(comment, id, None)
         }
     },
 };
@@ -365,8 +365,16 @@ AtomicExpr: Expr<Id> = {
 
         for field in fields {
             match field {
-                FieldExpr::Type(id, typ) => types.push((id, typ)),
-                FieldExpr::Value(id, expr) => values.push((id, expr)),
+                FieldExpr::Type(comment, id, typ) => types.push(ExprField {
+                    comment: comment,
+                    name: id,
+                    value: typ
+                }),
+                FieldExpr::Value(comment, id, expr) => values.push(ExprField {
+                    comment: comment,
+                    name: id,
+                    value: expr
+                }),
             }
         }
 

@@ -271,7 +271,7 @@ impl<F> FindVisitor<F>
             }
             Expr::Array(ref array) => self.visit_one(&array.exprs),
             Expr::Record { ref exprs, .. } => {
-                let exprs = exprs.iter().filter_map(|tup| tup.1.as_ref());
+                let exprs = exprs.iter().filter_map(|tup| tup.value.as_ref());
                 if let (_, Some(expr)) = self.select_spanned(exprs, |e| e.span) {
                     self.visit_expr(expr);
                 }

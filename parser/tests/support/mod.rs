@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-use base::ast::{Alternative, Array, DisplayEnv, Expr, IdentEnv, Lambda, Literal, Pattern,
+use base::ast::{Alternative, Array, DisplayEnv, Expr, ExprField, IdentEnv, Lambda, Literal, Pattern,
                 SpannedExpr, TypeBinding, TypedIdent, ValueBinding};
 use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
@@ -157,8 +157,24 @@ pub fn record_a(types: Vec<(String, Option<ArcType<String>>)>,
                 -> SpExpr {
     no_loc(Expr::Record {
         typ: Type::hole(),
-        types: types,
-        exprs: fields,
+        types: types.into_iter()
+            .map(|(name, value)| {
+                ExprField {
+                    comment: None,
+                    name: name,
+                    value: value,
+                }
+            })
+            .collect(),
+        exprs: fields.into_iter()
+            .map(|(name, value)| {
+                ExprField {
+                    comment: None,
+                    name: name,
+                    value: value,
+                }
+            })
+            .collect(),
     })
 }
 

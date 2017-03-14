@@ -510,3 +510,26 @@ fn parse_macro() {
     let e = parse_new!(text);
     assert_eq!(e, id("import!"));
 }
+
+#[test]
+fn doc_comment_on_record_field() {
+    let _ = ::env_logger::init();
+    let text = r"{ /** test*/ Test,
+    /// x binding
+    x = 1 }";
+    let e = parse_new!(text);
+    assert_eq!(e,
+               no_loc(Expr::Record {
+                   typ: Type::hole(),
+                   types: vec![ExprField {
+                                   comment: Some("test".into()),
+                                   name: "Test".into(),
+                                   value: None,
+                               }],
+                   exprs: vec![ExprField {
+                                   comment: Some("x binding".into()),
+                                   name: "x".into(),
+                                   value: Some(int(1)),
+                               }],
+               }))
+}
