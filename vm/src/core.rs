@@ -1,11 +1,16 @@
 extern crate typed_arena;
 extern crate smallvec;
 
+use std::fmt;
 use std::iter::once;
+
+use itertools::Itertools;
 
 use self::typed_arena::Arena;
 
 use self::smallvec::SmallVec;
+
+use pretty::{self, DocAllocator};
 
 use base::ast::{self, Literal, SpannedExpr, SpannedPattern, TypedIdent, Typed};
 use base::pos::{BytePos, ExpansionId, Span, Spanned};
@@ -56,7 +61,107 @@ pub enum Expr<'a> {
     Match(&'a Expr<'a>, &'a [Alternative<'a>]),
 }
 
+impl<'a> fmt::Display for Expr<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let arena = pretty::Arena::new();
+        let mut s = Vec::new();
+        self.pretty(&arena).1.render(80, &mut s).unwrap();
+        write!(f, "{}", ::std::str::from_utf8(&s).expect("utf-8"))
+    }
+}
+
+const INDENT: usize = 4;
+
 impl<'a> Expr<'a> {
+    pub fn pretty(&'a self,
+                  arena: &'a pretty::Arena<'a>)
+                  -> pretty::DocBuilder<'a, pretty::Arena<'a>> {
+        match *self {
+            Expr::Call(f, args) => {
+                chain![arena;
+                    f.pretty(arena),
+                    arena.concat(args.iter().map(|arg| {
+                        arena.space().append(arg.pretty(arena))
+                    }))
+                ]
+                    .group()
+            }
+            Expr::Const(ref literal, _) => {
+                match *literal {
+                    Literal::Byte(b) => arena.text(format!("b{}", b)),
+                    Literal::Char(c) => arena.text(format!("{:?}", c)),
+                    Literal::Float(f) => arena.text(format!("{}", f)),
+                    Literal::Int(i) => arena.text(format!("{}", i)),
+                    Literal::String(ref s) => arena.text(format!("{:?}", s)),
+                }
+            }
+            Expr::Data(ref ctor, ref args, _, _) => {
+                chain![arena;
+                    ctor.as_ref(),
+                    arena.concat(args.iter().map(|arg| {
+                        arena.space().append(arg.pretty(arena))
+                    }))
+                ]
+                    .group()
+            }
+            Expr::Ident(ref id, _) => arena.text(id.as_ref()),
+            Expr::Let(ref bind, ref expr) => {
+                chain![arena;
+                    "let ",
+                    match bind.expr {
+                        Named::Expr(ref expr) => {
+                            chain![arena;
+                                bind.name.as_ref(),
+                                arena.space(),
+                                "=",
+                                arena.space(),
+                                chain![arena;
+                                    expr.pretty(arena),
+                                    arena.space()
+                                ].nest(INDENT).group()
+                            ].group().nest(INDENT)
+                        }
+                        Named::Recursive(ref closures) => {
+                            arena.concat(closures.iter().map(|closure| {
+                                chain![arena;
+                                    closure.name.as_ref(),
+                                    arena.concat(closure.args.iter()
+                                        .map(|arg| arena.space().append(arena.text(arg.as_ref())))),
+                                    arena.space(),
+                                    "=",
+                                    arena.space(),
+                                    chain![arena;
+                                        closure.expr.pretty(arena),
+                                        arena.space()
+                                    ].nest(INDENT).group()
+                                ].group()
+                            }))
+                        }
+                    },
+                    arena.newline(),
+                    expr.pretty(arena)
+                ]
+            }
+            Expr::Match(expr, alts) => {
+                chain![arena;
+                    "match ",
+                    expr.pretty(arena),
+                    " with",
+                    arena.newline(),
+                    arena.concat(alts.iter().map(|alt| {
+                        chain![arena;
+                            alt.pattern.pretty(arena),
+                            " ->",
+                            arena.space(),
+                            alt.expr.pretty(arena).nest(INDENT).group()
+                        ].nest(INDENT)
+                    }).intersperse(arena.newline()))
+                ]
+                    .group()
+            }
+        }
+    }
+
     pub fn span(&self) -> Span<BytePos> {
         match *self {
             Expr::Call(expr, args) => {
@@ -81,6 +186,47 @@ impl<'a> Expr<'a> {
                 Span::with_id(span_start.start,
                               alts.last().unwrap().expr.span().end,
                               span_start.expansion_id)
+            }
+        }
+    }
+}
+
+impl Pattern {
+    pub fn pretty<'a>(&'a self,
+                      arena: &'a pretty::Arena<'a>)
+                      -> pretty::DocBuilder<'a, pretty::Arena<'a>> {
+        match *self {
+            Pattern::Constructor(ref ctor, ref args) => {
+                chain![arena;
+                    ctor.as_ref(),
+                    arena.concat(args.iter().map(|arg| {
+                        arena.space().append(arg.as_ref())
+                    }))
+                ]
+            }
+            Pattern::Ident(ref id) => arena.text(id.as_ref()),
+            Pattern::Record(ref fields) => {
+                chain![arena;
+                    "{",
+                    arena.concat(fields.iter().map(|&(ref field, ref value)| {
+                        chain![arena;
+                            arena.space(),
+                            arena.text(field.as_ref()),
+                            match *value {
+                                Some(ref value) => {
+                                    chain![arena;
+                                        "=",
+                                        arena.space(),
+                                        value.as_ref()
+                                    ]
+                                }
+                                None => arena.nil(),
+                            }
+                        ]
+                    }).intersperse(arena.text(","))).nest(INDENT),
+                    arena.space(),
+                    "}"
+                ]
             }
         }
     }
@@ -483,7 +629,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         }
 
         let new_alts = groups.into_iter()
-            .map(|(id, alts)| {
+            .map(|(_, alts)| {
                 let (pattern_ident, patterns) = alts.iter()
                     .filter_map(|alt| match alt.0 {
                         MatchPattern::Pattern(&Spanned { value: ast::Pattern::Constructor(ref id, ref patterns), .. }) => {
@@ -493,11 +639,18 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     })
                     .next()
                     .expect("At least one constructor pattern should be in the group");
-                let pattern_idents: Vec<_> = patterns.iter()
-                    .map(|_| {
-                        TypedIdent {
-                            name: Symbol::from("<pattern>"),
-                            typ: Type::hole(),
+                let pattern_idents: Vec<_> = patterns.iter().enumerate()
+                    .map(|(i, pattern)| {
+                        match pattern.value {
+                            ast::Pattern::Ident(ref id) => {
+                                id.clone()
+                            }
+                            _ => {
+                                TypedIdent {
+                                    name: Symbol::from(format!("<pattern>:{}", i)),
+                                    typ: Type::hole(),
+                                }
+                            }
                         }
                     })
                     .collect();

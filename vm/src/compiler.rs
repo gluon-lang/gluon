@@ -491,6 +491,7 @@ impl<'a> Compiler<'a> {
                                  ArcType::from(expr.env_type_of(&self.globals).clone()));
 
         env.start_function(self, 0, id, typ);
+        debug!("COMPILING: {}", expr);
         self.compile(&expr, &mut env, true)?;
         let current_line = self.source.line_number_at_byte(expr.span().end);
         let FunctionEnv { function, .. } = env.end_function(self, current_line);
