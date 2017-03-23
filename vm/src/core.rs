@@ -763,12 +763,16 @@ fn pattern_identifiers<'a, I>(patterns: I) -> Pattern
 
 #[cfg(test)]
 mod tests {
+    extern crate gluon_parser as parser;
+
     use super::*;
 
-    use base::pos::{self, Span, Spanned};
-    use base::symbol::Symbols;
+    use std::collections::HashMap;
 
-    use parser::parse_expr;
+    use base::pos::{self, Span, Spanned};
+    use base::symbol::{SymbolModule, Symbols};
+
+    use self::parser::parse_expr;
 
     use vm::RootedThread;
 
@@ -816,6 +820,88 @@ mod tests {
         }
     }
 
+    #[derive(Debug)]
+    struct PatternEq<'a>(&'a Expr<'a>);
+
+    impl<'a> fmt::Display for PatternEq<'a> {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "{}", self.0)
+        }
+    }
+
+    impl<'a> PartialEq<Expr<'a>> for PatternEq<'a> {
+        fn eq(&self, other: &Expr<'a>) -> bool {
+            let mut map = HashMap::new();
+            expr_eq(&mut map, self.0, other)
+        }
+    }
+
+    fn check(map: &mut HashMap<Symbol, Symbol>, l: &Symbol, r: &Symbol) -> bool {
+        map.entry(l.clone()).or_insert_with(|| r.clone()) == r
+    }
+
+    fn expr_eq(map: &mut HashMap<Symbol, Symbol>, l: &Expr, r: &Expr) -> bool {
+        match (l, r) {
+            (&Expr::Match(_, l_alts), &Expr::Match(_, r_alts)) => {
+                for (l, r) in l_alts.iter().zip(r_alts) {
+                    let eq = match (&l.pattern, &r.pattern) {
+                        (&Pattern::Constructor(ref l, ref l_ids),
+                         &Pattern::Constructor(ref r, ref r_ids)) => {
+                            check(map, &l.name, &r.name) &&
+                            l_ids.iter().zip(r_ids).all(|(l, r)| check(map, &l.name, &r.name))
+                        }
+                        (&Pattern::Ident(ref l), &Pattern::Ident(ref r)) => {
+                            check(map, &l.name, &r.name)
+                        }
+                        (&Pattern::Record(ref l), &Pattern::Record(ref r)) => {
+                            l.iter()
+                                .zip(r)
+                                .all(|(l, r)| {
+                                    check(map, &l.0, &r.0) &&
+                                    match (&l.1, &r.1) {
+                                        (&Some(ref l), &Some(ref r)) => check(map, l, r),
+                                        (&None, &None) => true,
+                                        _ => false,
+                                    }
+                                })
+                        }
+                        _ => false,
+                    };
+                    if !eq || !expr_eq(map, &l.expr, &r.expr) {
+                        return false;
+                    }
+                }
+                true
+            }
+            (&Expr::Ident(ref l, _), &Expr::Ident(ref r, _)) => check(map, &l.name, &r.name),
+            _ => false,
+        }
+    }
+
+    macro_rules! assert_deq {
+        ($left:expr, $right:expr) => ({
+            match (&$left, &$right) {
+                (left_val, right_val) => {
+                    if !(*left_val == *right_val) {
+                        panic!("assertion failed: `(left == right)` \
+                            (left: `{}`, right: `{}`)", left_val, right_val)
+                    }
+                }
+            }
+        });
+        ($left:expr, $right:expr, $($arg:tt)+) => ({
+            match (&($left), &($right)) {
+                (left_val, right_val) => {
+                    if !(*left_val == *right_val) {
+                        panic!("assertion failed: `(left == right)` \
+                            (left: `{}`, right: `{}`): {}", left_val, right_val,
+                            format_args!($($arg)+))
+                    }
+                }
+            }
+        });
+    }
+
     #[test]
     fn match_expr() {
         let _ = ::env_logger::init();
@@ -840,7 +926,7 @@ mod tests {
                                                   pattern: Pattern::Ident(TypedIdent::new(x)),
                                                   expr: one.clone(),
                                               }]);
-        assert_eq!(core_expr, *expected_expr);
+        assert_deq!(core_expr, *expected_expr);
     }
 
     #[test]
@@ -857,20 +943,21 @@ mod tests {
             match test with
             | Ctor (Ctor x) -> x
         "#;
-        let expr = parse_expr(&mut symbols, expr_str);
+        let expr = parse_expr(&mut SymbolModule::new("".into(), &mut symbols), expr_str).unwrap();
         let core_expr = arena.translate(&expr);
+
+        let x = symbols.symbol("x");
+        let ctor = symbols.symbol("Ctor");
 
         let mut arena = CoreArena(&arena, &mut symbols);
 
         let test = arena.id("test");
-        let x = symbols.symbol("x");
-        let ctor = symbols.symbol("Ctor");
         let one = arena.int(1);
         let expected_expr = arena.match_(test,
                                          vec![Alternative {
                                                   pattern: Pattern::Ident(TypedIdent::new(x)),
                                                   expr: one.clone(),
                                               }]);
-        assert_eq!(core_expr, *expected_expr);
+        assert_deq!(PatternEq(&core_expr), *expected_expr);
     }
 }
