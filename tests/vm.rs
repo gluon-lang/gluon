@@ -544,6 +544,7 @@ f 0 (\r -> { x = r #Int+ 1 })
 
 test_expr!{ nested_pattern,
 r#"
+type Option a = | Some a | None
 match Some (Some 123) with
 | None -> 0
 | Some None -> 1
@@ -554,6 +555,7 @@ match Some (Some 123) with
 
 test_expr!{ nested_pattern2,
 r#"
+type Option a = | Some a | None
 match Some None with
 | None -> 0
 | Some None -> 1

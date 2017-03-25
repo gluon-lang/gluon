@@ -736,7 +736,6 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         match *pattern {
             ast::Pattern::Ident(ref id) => id.clone(),
             _ => {
-                println!("{:?}", pattern);
                 TypedIdent {
                     name: Symbol::from(format!("pattern_{}", index)),
                     typ: pattern.env_type_of(&self.0.env),

@@ -280,9 +280,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn find_type_info(&self, id: &Symbol) -> TcResult<&Alias<Symbol, ArcType>> {
-        self.environment
-            .find_type_info(id)
-            .ok_or_else(|| TypeError::UndefinedType(id.clone()))
+        self.environment.find_type_info(id).ok_or_else(|| TypeError::UndefinedType(id.clone()))
     }
 
     fn stack_var(&mut self, id: Symbol, typ: ArcType) {
@@ -299,14 +297,16 @@ impl<'a> Typecheck<'a> {
                 self.stack_var(field.name, field.typ);
             }
         }
-        let generic_args = alias.args.iter().cloned().map(Type::generic).collect();
+        let generic_args = alias.args
+            .iter()
+            .cloned()
+            .map(Type::generic)
+            .collect();
         let typ = Type::<_, ArcType>::app(alias.as_ref().clone(), generic_args);
         {
             // FIXME: Workaround so that both the types name in this module and its global
             // name are imported. Without this aliases may not be traversed properly
-            self.environment
-                .stack_types
-                .insert(alias.name.clone(), (typ.clone(), alias.clone()));
+            self.environment.stack_types.insert(alias.name.clone(), (typ.clone(), alias.clone()));
         }
         self.environment.stack_types.insert(id, (typ, alias.clone()));
     }
@@ -576,8 +576,7 @@ impl<'a> Typecheck<'a> {
                     }
                     expected_alt_type = Some(alt_type);
                 }
-                expected_alt_type.ok_or(TypeError::EmptyCase)
-                    .map(TailCall::Type)
+                expected_alt_type.ok_or(TypeError::EmptyCase).map(TailCall::Type)
             }
             Expr::LetBindings(ref mut bindings, _) => {
                 self.typecheck_bindings(bindings)?;
@@ -738,6 +737,7 @@ impl<'a> Typecheck<'a> {
                 }
                 // Find the enum constructor and return the types for its arguments
                 let ctor_type = self.find_at(span, &id.name);
+                id.typ = ctor_type.clone();
                 let return_type = match self.typecheck_pattern_rec(args, ctor_type) {
                     Ok(return_type) => return_type,
                     Err(err) => self.error(span, err),
@@ -816,7 +816,10 @@ impl<'a> Typecheck<'a> {
 
                 // Check that all types declared in the pattern exists
                 for field in associated_types.iter_mut() {
-                    let name = field.1.as_ref().unwrap_or(&field.0).clone();
+                    let name = field.1
+                        .as_ref()
+                        .unwrap_or(&field.0)
+                        .clone();
                     // The `types` in the record type should have a type matching the
                     // `name`
                     let field_type = match_type.type_field_iter()
@@ -825,8 +828,7 @@ impl<'a> Typecheck<'a> {
                         Some(field_type) => {
                             // This forces refresh_type to remap the name a type was given
                             // in this module to its actual name
-                            self.original_symbols
-                                .insert(name.clone(), field_type.typ.name.clone());
+                            self.original_symbols.insert(name.clone(), field_type.typ.name.clone());
                             self.stack_type(name, &field_type.typ);
                         }
                         None => {
@@ -970,7 +972,10 @@ impl<'a> Typecheck<'a> {
                 // and bind the same variables to the arguments of the type binding
                 // ('a' and 'b' in the example)
                 let mut id_kind = check.type_kind();
-                for generic in bind.alias.args.iter_mut().rev() {
+                for generic in bind.alias
+                    .args
+                    .iter_mut()
+                    .rev() {
                     check.instantiate_kinds(&mut generic.kind);
                     id_kind = Kind::function(generic.kind.clone(), id_kind);
                 }
@@ -1000,7 +1005,10 @@ impl<'a> Typecheck<'a> {
 
         // Finally insert the declared types into the global scope
         for bind in bindings {
-            if self.environment.stack_types.get(&bind.name).is_some() {
+            if self.environment
+                .stack_types
+                .get(&bind.name)
+                .is_some() {
                 self.errors.push(Spanned {
                     span: expr_check_span(expr),
                     value: TypeError::DuplicateTypeDefinition(bind.name.clone()),
@@ -1061,8 +1069,10 @@ impl<'a> Typecheck<'a> {
 
     fn intersect_type(&mut self, level: u32, symbol: &Symbol, symbol_type: &ArcType) {
         let typ = {
-            let existing_types =
-                self.environment.stack.get_all(symbol).expect("Symbol is not in scope");
+            let existing_types = self.environment
+                .stack
+                .get_all(symbol)
+                .expect("Symbol is not in scope");
             if existing_types.len() >= 2 {
                 let existing_type = &existing_types[existing_types.len() - 2];
                 debug!("Intersect `{}`\n{} ∩ {}",
@@ -1077,8 +1087,10 @@ impl<'a> Typecheck<'a> {
                 symbol_type.clone()
             }
         };
-        *self.environment.stack.get_mut(symbol).unwrap() = self.finish_type(level, &typ)
-            .unwrap_or(typ)
+        *self.environment
+            .stack
+            .get_mut(symbol)
+            .unwrap() = self.finish_type(level, &typ).unwrap_or(typ)
     }
 
     /// Generate a generic variable name which is not used in the current scope
@@ -1192,9 +1204,7 @@ impl<'a> Typecheck<'a> {
             match *typ {
                 Type::Ident(ref id) => {
                     // Substitute the Id by its alias if possible
-                    let new_id = self.original_symbols
-                        .get(id)
-                        .unwrap_or(id);
+                    let new_id = self.original_symbols.get(id).unwrap_or(id);
                     self.environment
                         .find_type_info(new_id)
                         .map(|alias| alias.clone().into_type())
@@ -1205,10 +1215,7 @@ impl<'a> Typecheck<'a> {
                         })
                 }
                 Type::Variant(ref row) => {
-                    let iter = || {
-                        row.row_iter()
-                            .map(|var| self.original_symbols.get(&var.name))
-                    };
+                    let iter = || row.row_iter().map(|var| self.original_symbols.get(&var.name));
                     if iter().any(|opt| opt.is_some()) {
                         // If any of the variants requires a symbol replacement
                         // we create a new type

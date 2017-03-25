@@ -649,7 +649,8 @@ impl<'a> Compiler<'a> {
                                     panic!("ICE: Could not find tag for {}::{} when matching on \
                                             expression `{}`",
                                            types::display_type(&self.symbols, &typ),
-                                           self.symbols.string(&id.name))
+                                           self.symbols.string(&id.name),
+                                           expr)
                                 });
                             function.emit(TestTag(tag));
                             start_jumps.push(function.function.instructions.len());
