@@ -248,6 +248,17 @@ fn nested_pattern() {
 }
 
 #[test]
+fn nested_pattern_parens() {
+    let _ = ::env_logger::init();
+    let e = parse_new!("match x with | (Some (Some z)) -> z");
+
+    let inner_pattern = no_loc(Pattern::Constructor(TypedIdent::new(intern("Some")), vec![no_loc(Pattern::Ident(TypedIdent::new(intern("z"))))]));
+    let pattern = Pattern::Constructor(TypedIdent::new(intern("Some")), vec![inner_pattern]);
+    assert_eq!(e, case(id("x"), vec![(pattern, id("z"))]));
+}
+
+
+#[test]
 fn span_identifier() {
     let _ = ::env_logger::init();
 
