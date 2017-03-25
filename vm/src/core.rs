@@ -13,7 +13,8 @@ use self::smallvec::SmallVec;
 use pretty::{self, DocAllocator};
 
 use base::ast::{self, Literal, SpannedExpr, SpannedPattern, TypedIdent, Typed};
-use base::pos::{BytePos, ExpansionId, Span};
+use base::pos::{BytePos, ExpansionId, Span, Spanned};
+use base::resolve::remove_aliases_cow;
 use base::symbol::Symbol;
 use base::types::{ArcType, Type, TypeEnv, PrimitiveEnv, arg_iter};
 
@@ -40,7 +41,7 @@ pub struct LetBinding<'a> {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Pattern {
     Constructor(TypedIdent<Symbol>, Vec<TypedIdent<Symbol>>),
-    Record(Vec<(Symbol, Option<Symbol>)>),
+    Record(Vec<(TypedIdent<Symbol>, Option<Symbol>)>),
     Ident(TypedIdent<Symbol>),
 }
 
@@ -65,7 +66,10 @@ impl<'a> fmt::Display for Expr<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let arena = pretty::Arena::new();
         let mut s = Vec::new();
-        self.pretty(&arena).1.render(80, &mut s).unwrap();
+        self.pretty(&arena)
+            .1
+            .render(80, &mut s)
+            .unwrap();
         write!(f, "{}", ::std::str::from_utf8(&s).expect("utf-8"))
     }
 }
@@ -167,13 +171,15 @@ impl<'a> Expr<'a> {
             Expr::Call(expr, args) => {
                 let span = expr.span();
                 Span::with_id(span.start,
-                              args.last().unwrap().span().end,
+                              args.last()
+                                  .unwrap()
+                                  .span()
+                                  .end,
                               span.expansion_id)
             }
             Expr::Const(_, span) => span,
             Expr::Data(_, args, span_start, expansion_id) => {
-                let span_end = args.last()
-                    .map_or(span_start, |arg| arg.span().end);
+                let span_end = args.last().map_or(span_start, |arg| arg.span().end);
                 Span::with_id(span_start, span_end, expansion_id)
             }
             Expr::Ident(_, span) => span,
@@ -184,7 +190,11 @@ impl<'a> Expr<'a> {
             Expr::Match(expr, alts) => {
                 let span_start = expr.span();
                 Span::with_id(span_start.start,
-                              alts.last().unwrap().expr.span().end,
+                              alts.last()
+                                  .unwrap()
+                                  .expr
+                                  .span()
+                                  .end,
                               span_start.expansion_id)
             }
         }
@@ -292,8 +302,10 @@ impl<'a, 'e> Allocator<'a, 'e> {
                 }
             }
             ast::Expr::Array(ref array) => {
-                let exprs: SmallVec<[_; 16]> =
-                    array.exprs.iter().map(|expr| self.translate(expr)).collect();
+                let exprs: SmallVec<[_; 16]> = array.exprs
+                    .iter()
+                    .map(|expr| self.translate(expr))
+                    .collect();
                 Expr::Data(TypedIdent {
                                name: self.dummy_symbol.name.clone(),
                                typ: array.typ.clone(),
@@ -365,7 +377,11 @@ impl<'a, 'e> Allocator<'a, 'e> {
             // | { projection } -> projection
             ast::Expr::Projection(ref projected_expr, ref projection, ref projected_type) => {
                 let alt = Alternative {
-                    pattern: Pattern::Record(vec![(projection.clone(), None)]),
+                    pattern: Pattern::Record(vec![(TypedIdent {
+                                                       name: projection.clone(),
+                                                       typ: projected_type.clone(),
+                                                   },
+                                                   None)]),
                     expr: Expr::Ident(TypedIdent {
                                           name: projection.clone(),
                                           typ: projected_type.clone(),
@@ -396,9 +412,8 @@ impl<'a, 'e> Allocator<'a, 'e> {
             }
             ast::Expr::Tuple(ref exprs) => {
                 assert!(exprs.len() == 0, "Only unit is handled at the moment");
-                let args: SmallVec<[_; 16]> = exprs.iter()
-                    .map(|expr| self.translate(expr))
-                    .collect();
+                let args: SmallVec<[_; 16]> =
+                    exprs.iter().map(|expr| self.translate(expr)).collect();
                 Expr::Data(TypedIdent {
                                name: self.dummy_symbol.name.clone(),
                                typ: Type::unit(),
@@ -476,7 +491,11 @@ impl<'a, 'e> Allocator<'a, 'e> {
                 match **alias.typ() {
                     Type::Variant(ref variants) => {
                         TypedIdent {
-                            name: variants.row_iter().nth(variant as usize).unwrap().name.clone(),
+                            name: variants.row_iter()
+                                .nth(variant as usize)
+                                .unwrap()
+                                .name
+                                .clone(),
                             typ: b.clone(),
                         }
                     }
@@ -513,8 +532,7 @@ impl<'a, 'e> Allocator<'a, 'e> {
                 .collect();
             data_type = args.typ.clone();
         }
-        new_args.extend(unapplied_args.iter()
-            .map(|arg| Expr::Ident(arg.clone(), span)));
+        new_args.extend(unapplied_args.iter().map(|arg| Expr::Ident(arg.clone(), span)));
         let data = Expr::Data(TypedIdent {
                                   name: id.name.clone(),
                                   typ: data_type,
@@ -586,7 +604,7 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
 
 pub struct PatternTranslator<'a, 'e: 'a>(&'a Allocator<'a, 'e>);
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum MatchPattern<'p> {
     Pattern(&'p SpannedPattern<Symbol>),
     Wildcard(TypedIdent<Symbol>),
@@ -633,48 +651,75 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
 
         let new_alts = groups.into_iter()
             .map(|(_, alts)| {
-                let pattern = pattern_identifiers(alts.iter()
+                let pattern = self.pattern_identifiers(alts.iter()
                     .filter_map(|alt| match alt.0 {
                         MatchPattern::Pattern(pattern) => Some(&pattern.value),
                         MatchPattern::Wildcard(_) => None,
                     }));
 
                 let mut expr: Option<&'a Expr<'a>> = None;
+                // Generate one nested match expression for each of the nested patterns in the
+                // alternative
                 for (i, expr_ident) in PatternIdentifiers(&pattern, 0).enumerate() {
                     let mut nest_expr = expr.take();
                     let patterns: Vec<_> = alts.iter()
-                        .map(|alt| {
-                            let pattern = match alt.0 {
+                        .filter_map(|alt| {
+                            // Wildcard/identifier bindings do not have any nested patterns
+                            // and thus get filtered out
+                            let opt_pattern = match alt.0 {
                                 MatchPattern::Pattern(ref pattern) => {
                                     match pattern.value { 
                                         ast::Pattern::Constructor(_, ref patterns) => {
-                                            MatchPattern::Pattern(&patterns[i])
+                                            Some(MatchPattern::Pattern(&patterns[i]))
                                         }
-                                        ast::Pattern::Record { ref fields, .. } => {
+                                        ast::Pattern::Record { ref typ, ref fields, .. } => {
+                                            let field_type = remove_aliases_cow(&self.0.env, typ)
+                                                .row_iter()
+                                                .find(|field| field.name.name_eq(&fields[i].0))
+                                                .unwrap_or_else(|| {
+                                                    panic!("ICE: Expected type to be resolve to a \
+                                                            record with field `{}`",
+                                                           fields[i].0)
+                                                })
+                                                .typ
+                                                .clone();
                                             match fields[i].1 {
-                                                Some(ref pattern) => MatchPattern::Pattern(pattern),
+                                                Some(ref pattern) => {
+                                                    Some(MatchPattern::Pattern(pattern))
+                                                }
                                                 None => {
-                                                    MatchPattern::Wildcard(TypedIdent {
-                                                        name: fields[i].0.clone(),
+                                                    Some(MatchPattern::Wildcard(TypedIdent {
+                                                        name: fields[i]
+                                                            .0
+                                                            .clone(),
                                                         // FIXME
-                                                        typ: Type::hole(),
-                                                    })
+                                                        typ: field_type,
+                                                    }))
                                                 }
                                             }
                                         }
-                                        ast::Pattern::Ident(..) => panic!(),
+                                        ast::Pattern::Ident(..) => None,
                                     }
                                 }
-                                MatchPattern::Wildcard(_) => panic!(),
+                                MatchPattern::Wildcard(_) => None,
                             };
-                            (pattern, nest_expr.take().unwrap_or(alt.1))
+                            opt_pattern.map(|pattern| (pattern, nest_expr.take().unwrap_or(alt.1)))
                         })
                         .collect();
-                    let next_expr =
-                        self.translate(Expr::Ident(expr_ident.clone(),
-                                                   Span::new(0.into(), 0.into())),
-                                       &patterns);
-                    expr = Some(self.0.arena.alloc(next_expr));
+                    match patterns[0].0 {
+                        // If the next match we generate would contain only a single identifier
+                        // pattern we can skip generating that match.
+                        // We create `<expr2>` instead of `match <expr1> with | x -> <expr2>`
+                        MatchPattern::Pattern(&Spanned { value: ast::Pattern::Ident(_), .. }) |
+                        MatchPattern::Wildcard(_) if patterns.len() == 1 => {}
+                        _ => {
+                            let next_expr = self.translate(Expr::Ident(expr_ident.clone(),
+                                                                       Span::new(0.into(),
+                                                                                 0.into())),
+                                                           &patterns);
+                            expr = Some(self.0.arena.alloc(next_expr));
+                        }
+                    }
                 }
                 Alternative {
                     pattern: pattern,
@@ -685,6 +730,70 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
 
         Expr::Match(self.0.arena.alloc(matched_expr),
                     self.0.alternative_arena.alloc_extend(new_alts.into_iter()))
+    }
+
+    fn extract_ident(&self, index: usize, pattern: &ast::Pattern<Symbol>) -> TypedIdent<Symbol> {
+        match *pattern {
+            ast::Pattern::Ident(ref id) => id.clone(),
+            _ => {
+                println!("{:?}", pattern);
+                TypedIdent {
+                    name: Symbol::from(format!("pattern_{}", index)),
+                    typ: pattern.env_type_of(&self.0.env),
+                }
+            }
+        }
+    }
+
+    fn pattern_identifiers<'p, I>(&self, patterns: I) -> Pattern
+        where I: IntoIterator<Item = &'p ast::Pattern<Symbol>>,
+    {
+
+        let mut identifiers = Vec::new();
+        let mut record_fields = Vec::new();
+        let mut ident = None;
+
+        for pattern in patterns {
+            match *pattern {
+                ast::Pattern::Constructor(ref id, ref patterns) => {
+                    identifiers.extend(patterns.iter()
+                        .enumerate()
+                        .map(|(i, pattern)| self.extract_ident(i, &pattern.value)));
+                    // Just extract the patterns of the first constructor found
+                    return Pattern::Constructor(id.clone(), identifiers);
+                }
+                ast::Pattern::Ident(ref id) => ident = Some(id.clone()),
+                ast::Pattern::Record { ref typ, ref fields, .. } => {
+                    for (i, field) in fields.iter().enumerate() {
+                        // Don't add one field twice
+                        if identifiers.iter().all(|id| id.name != field.0) {
+                            let x = field.1
+                                .as_ref()
+                                .map(|pattern| self.extract_ident(i, &pattern.value).name);
+                            let field_type = remove_aliases_cow(&self.0.env, typ)
+                                .row_iter()
+                                .find(|f| f.name.name_eq(&field.0))
+                                .unwrap_or_else(|| {
+                                    panic!("ICE: Expected type to be resolve to a record with \
+                                            field `{}`",
+                                           field.0)
+                                })
+                                .typ
+                                .clone();
+                            record_fields.push((TypedIdent {
+                                                    name: field.0.clone(),
+                                                    typ: field_type,
+                                                },
+                                                x));
+                        }
+                    }
+                }
+            }
+        }
+        match ident {
+            Some(ident) => Pattern::Ident(ident),
+            None => Pattern::Record(record_fields),
+        }
     }
 }
 
@@ -708,7 +817,15 @@ impl<'a> Iterator for PatternIdentifiers<'a> {
                 if self.1 < fields.len() {
                     let field = &fields[self.1];
                     self.1 += 1;
-                    Some(TypedIdent::new(field.1.as_ref().unwrap_or(&field.0).clone()))
+                    Some(field.1
+                        .as_ref()
+                        .map(|name| {
+                            TypedIdent {
+                                name: name.clone(),
+                                typ: field.0.typ.clone(),
+                            }
+                        })
+                        .unwrap_or_else(|| field.0.clone()))
                 } else {
                     None
                 }
@@ -718,55 +835,13 @@ impl<'a> Iterator for PatternIdentifiers<'a> {
     }
 }
 
-fn pattern_identifiers<'a, I>(patterns: I) -> Pattern
-    where I: IntoIterator<Item = &'a ast::Pattern<Symbol>>,
-{
-    fn extract_ident(index: usize, pattern: &ast::Pattern<Symbol>) -> TypedIdent<Symbol> {
-        match *pattern {
-            ast::Pattern::Ident(ref id) => id.clone(),
-            _ => TypedIdent::new(Symbol::from(format!("pattern_{}", index))),
-        }
-    }
-
-    let mut identifiers = Vec::new();
-    let mut record_fields: Vec<(Symbol, Option<Symbol>)> = Vec::new();
-    let mut ident = None;
-
-    for pattern in patterns {
-        match *pattern {
-            ast::Pattern::Constructor(ref id, ref patterns) => {
-                identifiers.extend(patterns.iter()
-                    .enumerate()
-                    .map(|(i, pattern)| extract_ident(i, &pattern.value)));
-                // Just extract the patterns of the first constructor found
-                return Pattern::Constructor(id.clone(), identifiers);
-            }
-            ast::Pattern::Ident(ref id) => ident = Some(id.clone()),
-            ast::Pattern::Record { ref fields, .. } => {
-                for (i, field) in fields.iter().enumerate() {
-                    // Don't add one field twice
-                    if identifiers.iter().all(|id| id.name != field.0) {
-                        let x = field.1
-                            .as_ref()
-                            .map(|pattern| extract_ident(i, &pattern.value).name);
-                        record_fields.push((field.0.clone(), x));
-                    }
-                }
-            }
-        }
-    }
-    match ident {
-        Some(ident) => Pattern::Ident(ident),
-        None => Pattern::Record(record_fields),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     extern crate gluon_parser as parser;
 
     use super::*;
 
+    use std::cell::RefCell;
     use std::collections::HashMap;
 
     use base::pos::{self, Span, Spanned};
@@ -802,20 +877,21 @@ mod tests {
                                     .collect()))
     }
 
-    struct CoreArena<'a, 'e: 'a, 'c>(&'a Allocator<'a, 'e>, &'c mut Symbols);
+    struct CoreArena<'a, 'e: 'a, 'c>(&'a Allocator<'a, 'e>, RefCell<&'c mut Symbols>);
 
     impl<'a, 'e, 'c> CoreArena<'a, 'e, 'c> {
-        fn id(&mut self, s: &str) -> &'a Expr<'a> {
-            self.0.arena.alloc(Expr::Ident(ast::TypedIdent::new(self.1.symbol(s)), Span::default()))
+        fn id(&self, s: &str) -> &'a Expr<'a> {
+            self.0.arena.alloc(Expr::Ident(ast::TypedIdent::new(self.1.borrow_mut().symbol(s)),
+                                           Span::default()))
         }
 
-        fn match_(&mut self, e: &'a Expr<'a>, alts: Vec<Alternative<'a>>) -> &'a Expr<'a> {
+        fn match_(&self, e: &'a Expr<'a>, alts: Vec<Alternative<'a>>) -> &'a Expr<'a> {
             self.0
                 .arena
                 .alloc(Expr::Match(e, self.0.alternative_arena.alloc_extend(alts.into_iter())))
         }
 
-        fn int(&mut self, i: i64) -> &'a Expr<'a> {
+        fn int(&self, i: i64) -> &'a Expr<'a> {
             self.0.arena.alloc(Expr::Const(ast::Literal::Int(i), Span::default()))
         }
     }
@@ -854,16 +930,14 @@ mod tests {
                             check(map, &l.name, &r.name)
                         }
                         (&Pattern::Record(ref l), &Pattern::Record(ref r)) => {
-                            l.iter()
-                                .zip(r)
-                                .all(|(l, r)| {
-                                    check(map, &l.0, &r.0) &&
-                                    match (&l.1, &r.1) {
-                                        (&Some(ref l), &Some(ref r)) => check(map, l, r),
-                                        (&None, &None) => true,
-                                        _ => false,
-                                    }
-                                })
+                            l.iter().zip(r).all(|(l, r)| {
+                                check(map, &l.0.name, &r.0.name) &&
+                                match (&l.1, &r.1) {
+                                    (&Some(ref l), &Some(ref r)) => check(map, l, r),
+                                    (&None, &None) => true,
+                                    _ => false,
+                                }
+                            })
                         }
                         _ => false,
                     };
@@ -873,6 +947,7 @@ mod tests {
                 }
                 true
             }
+            (&Expr::Const(ref l, _), &Expr::Const(ref r, _)) => l == r,
             (&Expr::Ident(ref l, _), &Expr::Ident(ref r, _)) => check(map, &l.name, &r.name),
             _ => false,
         }
@@ -917,7 +992,7 @@ mod tests {
                           vec![(ast::Pattern::Ident(TypedIdent::new(x.clone())), int(1))]);
         let core_expr = arena.translate(&expr);
 
-        let mut arena = CoreArena(&arena, &mut symbols);
+        let arena = CoreArena(&arena, RefCell::new(&mut symbols));
 
         let test = arena.id("test");
         let one = arena.int(1);
@@ -946,17 +1021,77 @@ mod tests {
         let expr = parse_expr(&mut SymbolModule::new("".into(), &mut symbols), expr_str).unwrap();
         let core_expr = arena.translate(&expr);
 
-        let x = symbols.symbol("x");
-        let ctor = symbols.symbol("Ctor");
+        let x = TypedIdent::new(symbols.symbol("x"));
+        let p1 = TypedIdent::new(symbols.symbol("p1"));
+        let ctor = TypedIdent::new(symbols.symbol("Ctor"));
 
-        let mut arena = CoreArena(&arena, &mut symbols);
+        let arena = CoreArena(&arena, RefCell::new(&mut symbols));
 
         let test = arena.id("test");
-        let one = arena.int(1);
+
+        let inner_match = arena.match_(arena.id("p1"),
+                                       vec![Alternative {
+                                                pattern: Pattern::Constructor(ctor.clone(),
+                                                                              vec![x.clone()]),
+                                                expr: Expr::Ident(x.clone(), Span::default()),
+                                            }]);
         let expected_expr = arena.match_(test,
                                          vec![Alternative {
-                                                  pattern: Pattern::Ident(TypedIdent::new(x)),
-                                                  expr: one.clone(),
+                                                  pattern: Pattern::Constructor(ctor.clone(),
+                                                                                vec![p1]),
+                                                  expr: inner_match.clone(),
+                                              }]);
+        assert_deq!(PatternEq(&core_expr), *expected_expr);
+    }
+
+    #[test]
+    fn multiple_alternatives_nested_match_expr() {
+        let _ = ::env_logger::init();
+
+        let mut symbols = Symbols::new();
+
+        let vm = RootedThread::new();
+        let env = vm.get_env();
+        let arena = Allocator::new(&*env);
+
+        let expr_str = r#"
+            match test with
+            | Ctor (Ctor x) -> 1
+            | Ctor y -> 2
+            | z -> 3
+        "#;
+        let expr = parse_expr(&mut SymbolModule::new("".into(), &mut symbols), expr_str).unwrap();
+        let core_expr = arena.translate(&expr);
+
+        let x = TypedIdent::new(symbols.symbol("x"));
+        let y = TypedIdent::new(symbols.symbol("y"));
+        let z = TypedIdent::new(symbols.symbol("z"));
+        let p1 = TypedIdent::new(symbols.symbol("p1"));
+        let ctor = TypedIdent::new(symbols.symbol("Ctor"));
+
+        let arena = CoreArena(&arena, RefCell::new(&mut symbols));
+
+        let test = arena.id("test");
+
+        let inner_match = arena.match_(arena.id("p1"),
+                                       vec![Alternative {
+                                                pattern: Pattern::Constructor(ctor.clone(),
+                                                                              vec![x.clone()]),
+                                                expr: arena.int(1).clone(),
+                                            },
+                                            Alternative {
+                                                pattern: Pattern::Ident(y.clone()),
+                                                expr: arena.int(2).clone(),
+                                            }]);
+        let expected_expr = arena.match_(test,
+                                         vec![Alternative {
+                                                  pattern: Pattern::Constructor(ctor.clone(),
+                                                                                vec![p1]),
+                                                  expr: inner_match.clone(),
+                                              },
+                                              Alternative {
+                                                  pattern: Pattern::Ident(z.clone()),
+                                                  expr: arena.int(3).clone(),
                                               }]);
         assert_deq!(PatternEq(&core_expr), *expected_expr);
     }

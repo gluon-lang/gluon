@@ -542,6 +542,26 @@ f 0 (\r -> { x = r #Int+ 1 })
 1i32
 }
 
+test_expr!{ nested_pattern,
+r#"
+match Some (Some 123) with
+| None -> 0
+| Some None -> 1
+| Some (Some x) -> x
+"#,
+123i32
+}
+
+test_expr!{ nested_pattern2,
+r#"
+match Some None with
+| None -> 0
+| Some None -> 1
+| Some (Some x) -> x
+"#,
+1i32
+}
+
 #[test]
 fn overloaded_bindings() {
     let _ = ::env_logger::init();
@@ -790,9 +810,21 @@ g 10
     match result {
         Err(Error::VM(..)) => {
             let stacktrace = vm.context().stack.stacktrace(1);
-            let g = stacktrace.frames[0].as_ref().unwrap().name.clone();
-            let f = stacktrace.frames[1].as_ref().unwrap().name.clone();
-            let end = stacktrace.frames[6].as_ref().unwrap().name.clone();
+            let g = stacktrace.frames[0]
+                .as_ref()
+                .unwrap()
+                .name
+                .clone();
+            let f = stacktrace.frames[1]
+                .as_ref()
+                .unwrap()
+                .name
+                .clone();
+            let end = stacktrace.frames[6]
+                .as_ref()
+                .unwrap()
+                .name
+                .clone();
             assert_eq!(stacktrace.frames,
                        vec![// Removed due to being a tail call
                             // Some(StacktraceFrame { name: f.clone(), line: 9 }),
@@ -903,9 +935,7 @@ fn dont_use_the_implicit_prelude_span_in_the_top_expr() {
 
     let expr = "1";
 
-    Compiler::new()
-        .typecheck_str(&vm, "example", expr, Some(&Type::float()))
-        .unwrap_err();
+    Compiler::new().typecheck_str(&vm, "example", expr, Some(&Type::float())).unwrap_err();
 }
 
 #[test]

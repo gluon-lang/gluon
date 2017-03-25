@@ -141,19 +141,20 @@ impl FunctionEnvs {
         compiler.stack_constructors.exit_scope();
         let instructions = self.function.instructions.len();
         if compiler.emit_debug_info {
-            self.function.debug_info.source_map.close(instructions, current_line);
+            self.function
+                .debug_info
+                .source_map
+                .close(instructions, current_line);
             let function = &mut **self;
             function.function
                 .debug_info
                 .upvars
-                .extend(function.free_vars
-                    .iter()
-                    .map(|&(ref name, ref typ)| {
-                        UpvarInfo {
-                            name: name.declared_name().to_string(),
-                            typ: typ.clone(),
-                        }
-                    }));
+                .extend(function.free_vars.iter().map(|&(ref name, ref typ)| {
+                    UpvarInfo {
+                        name: name.declared_name().to_string(),
+                        typ: typ.clone(),
+                    }
+                }));
         }
         self.envs.pop().expect("FunctionEnv in scope")
     }
@@ -231,7 +232,10 @@ impl FunctionEnv {
 
 
     fn add_record_map(&mut self, fields: Vec<Symbol>) -> VmIndex {
-        match self.function.records.iter().position(|t| *t == fields) {
+        match self.function
+            .records
+            .iter()
+            .position(|t| *t == fields) {
             Some(i) => i as VmIndex,
             None => {
                 self.function.records.push(fields);
@@ -241,7 +245,10 @@ impl FunctionEnv {
     }
 
     fn add_string_constant(&mut self, s: InternedStr) -> VmIndex {
-        match self.function.strings.iter().position(|t| *t == s) {
+        match self.function
+            .strings
+            .iter()
+            .position(|t| *t == s) {
             Some(i) => i as VmIndex,
             None => {
                 self.function.strings.push(s);
@@ -295,7 +302,10 @@ impl FunctionEnv {
             count += 1;
             debug!("Pop var: {:?}", x);
             if self.emit_debug_info && compiler.empty_symbol != x.0 {
-                self.function.debug_info.local_map.close(self.function.instructions.len());
+                self.function
+                    .debug_info
+                    .local_map
+                    .close(self.function.instructions.len());
             }
         }
         count
@@ -317,20 +327,16 @@ impl CompilerEnv for TypeInfos {
 
         self.id_to_type
             .iter()
-            .filter_map(|(_, ref alias)| {
-                match **alias.unresolved_type() {
-                    Type::Variant(ref row) => {
-                        row.row_iter()
-                            .enumerate()
-                            .find(|&(_, field)| field.name == *id)
-                    }
-                    _ => None,
-                }
-            })
+            .filter_map(|(_, ref alias)| match **alias.unresolved_type() {
+                            Type::Variant(ref row) => {
+                                row.row_iter().enumerate().find(|&(_, field)| field.name == *id)
+                            }
+                            _ => None,
+                        })
             .next()
             .map(|(tag, field)| {
-                Variable::Constructor(tag as VmTag, count_function_args(&field.typ))
-            })
+                     Variable::Constructor(tag as VmTag, count_function_args(&field.typ))
+                 })
     }
 }
 
@@ -358,8 +364,7 @@ impl<'a> TypeEnv for Compiler<'a> {
     }
 
     fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
-        self.stack_types
-            .get(id)
+        self.stack_types.get(id)
     }
 
     fn find_record(&self, _fields: &[Symbol]) -> Option<(ArcType, ArcType)> {
@@ -403,9 +408,7 @@ impl<'a> Compiler<'a> {
             .iter()
             .filter_map(|(_, typ)| match **typ {
                 Type::Variant(ref row) => {
-                    row.row_iter()
-                        .enumerate()
-                        .find(|&(_, field)| field.name == *id)
+                    row.row_iter().enumerate().find(|&(_, field)| field.name == *id)
                 }
                 _ => None,
             })
@@ -529,14 +532,12 @@ impl<'a> Compiler<'a> {
         // Don't update the current_line for macro expanded code as the lines in that code do not come
         // from this module
         if expr.span().expansion_id == NO_EXPANSION {
-            function.current_line = self.source
-                .line_number_at_byte(expr.span().start);
+            function.current_line = self.source.line_number_at_byte(expr.span().start);
         }
         while let Some(next) = self.compile_(expr, function, tail_position)? {
             expr = next;
             if expr.span().expansion_id == NO_EXPANSION {
-                function.current_line = self.source
-                    .line_number_at_byte(expr.span().start);
+                function.current_line = self.source.line_number_at_byte(expr.span().start);
             }
         }
         let count = function.exit_scope(self);
@@ -645,7 +646,8 @@ impl<'a> Compiler<'a> {
                         Pattern::Constructor(ref id, _) => {
                             let tag = self.find_tag(&typ, &id.name)
                                 .unwrap_or_else(|| {
-                                    panic!("Could not find tag for {}::{}",
+                                    panic!("ICE: Could not find tag for {}::{} when matching on \
+                                            expression `{}`",
                                            types::display_type(&self.symbols, &typ),
                                            self.symbols.string(&id.name))
                                 });
@@ -845,14 +847,14 @@ impl<'a> Compiler<'a> {
                             let record_index = function.stack_size();
                             for pattern_field in fields {
                                 function.emit(Push(record_index));
-                                function.emit_field(self, &typ, &pattern_field.0)?;
+                                function.emit_field(self, &typ, &pattern_field.0.name)?;
 
                                 let field = typ.row_iter()
-                                    .find(|field| field.name.name_eq(&pattern_field.0))
+                                    .find(|field| field.name.name_eq(&pattern_field.0.name))
                                     .expect("ICE: Record field does not exist");
                                 let field_name = pattern_field.1
                                     .as_ref()
-                                    .unwrap_or(&pattern_field.0)
+                                    .unwrap_or(&pattern_field.0.name)
                                     .clone();
                                 function.new_stack_var(self, field_name, field.typ.clone());
                             }
@@ -860,9 +862,10 @@ impl<'a> Compiler<'a> {
                             function.emit(Split);
                             for field in typ.row_iter() {
                                 let (name, typ) = match fields.iter()
-                                    .find(|tup| tup.0.name_eq(&field.name)) {
+                                    .find(|tup| tup.0.name.name_eq(&field.name)) {
                                     Some(&(ref name, ref bind)) => {
-                                        (bind.as_ref().unwrap_or(name).clone(), field.typ.clone())
+                                        (bind.as_ref().unwrap_or(&name.name).clone(),
+                                         field.typ.clone())
                                     }
                                     None => (self.empty_symbol.clone(), Type::hole()),
                                 };
