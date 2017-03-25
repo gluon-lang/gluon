@@ -453,7 +453,9 @@ impl Typed for Pattern<Symbol> {
 }
 
 fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> ArcType {
-    if arg_count == 0 {
+    // We don't want to panic if we attempt to get the return type of a hole so return a type hole
+    // as the return type
+    if arg_count == 0 || **alias_type == Type::Hole {
         return alias_type.clone();
     }
 
