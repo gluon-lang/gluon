@@ -564,6 +564,27 @@ match Some None with
 1i32
 }
 
+test_expr!{ nested_record_pattern,
+r#"
+type Test a = | A a | B
+match { x = A 1 } with
+| { x = A y } -> y
+| { x = B } -> 100
+"#,
+1i32
+}
+
+test_expr!{ nested_record_pattern2,
+r#"
+type Test a = | A a | B
+match { x = B } with
+| { x = A y } -> y
+| { x = B } -> 100
+"#,
+100i32
+}
+
+
 #[test]
 fn overloaded_bindings() {
     let _ = ::env_logger::init();

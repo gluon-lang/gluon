@@ -749,7 +749,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
     {
 
         let mut identifiers = Vec::new();
-        let mut record_fields = Vec::new();
+        let mut record_fields: Vec<(TypedIdent<Symbol>, _)> = Vec::new();
         let mut ident = None;
 
         for pattern in patterns {
@@ -765,7 +765,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 ast::Pattern::Record { ref typ, ref fields, .. } => {
                     for (i, field) in fields.iter().enumerate() {
                         // Don't add one field twice
-                        if identifiers.iter().all(|id| id.name != field.0) {
+                        if record_fields.iter().all(|id| id.0.name != field.0) {
                             let x = field.1
                                 .as_ref()
                                 .map(|pattern| self.extract_ident(i, &pattern.value).name);
