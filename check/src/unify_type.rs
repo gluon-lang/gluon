@@ -1,10 +1,9 @@
 use std::fmt;
 use std::mem;
 
-use smallvec::VecLike;
-
 use base::error::Errors;
 use base::fnv::FnvMap;
+use base::merge;
 use base::types::{self, AppVec, ArcType, Field, Type, TypeVariable, TypeEnv};
 use base::symbol::{Symbol, SymbolRef};
 use base::resolve::{self, Error as ResolveError};
@@ -219,11 +218,11 @@ fn do_zip_match<'a, U>(unifier: &mut UnifierState<'a, U>,
             if l_args.len() == r_args.len() &&
                l_args.iter().zip(r_args).all(|(l, r)| l.name.name_eq(&r.name)) &&
                l_types == r_types {
-                let new_args = walk_move_types(l_args.iter().zip(r_args), |l, r| {
+                let new_args = merge::merge_tuple_iter(l_args.iter().zip(r_args), |l, r| {
                     unifier.try_match(&l.typ, &r.typ).map(|typ| Field::new(l.name.clone(), typ))
                 });
                 let new_rest = unifier.try_match(l_rest, r_rest);
-                Ok(types::merge(l_args,
+                Ok(merge::merge(l_args,
                                 new_args,
                                 l_rest,
                                 new_rest,
@@ -238,7 +237,7 @@ fn do_zip_match<'a, U>(unifier: &mut UnifierState<'a, U>,
                 // HACK For non polymorphic records we need to care about field order as the
                 // compiler assumes the order the fields occur in the type determines how
                 // to access them
-                let new_args = walk_move_types(l_args.iter().zip(r_args.iter()), |l, r| {
+                let new_args = merge::merge_tuple_iter(l_args.iter().zip(r_args.iter()), |l, r| {
                     let opt_type = if !l.name.name_eq(&r.name) {
                         let err = TypeError::FieldMismatch(l.name.clone(), r.name.clone());
                         unifier.report_error(UnifyError::Other(err));
@@ -249,7 +248,7 @@ fn do_zip_match<'a, U>(unifier: &mut UnifierState<'a, U>,
                     opt_type.map(|typ| Field::new(l.name.clone(), typ))
                 });
                 let new_rest = unifier.try_match(l_rest, r_rest);
-                Ok(types::merge(l_args,
+                Ok(merge::merge(l_args,
                                 new_args,
                                 l_rest,
                                 new_rest,
@@ -309,9 +308,9 @@ fn unify_app<'a, U>(unifier: &mut UnifierState<'a, U>,
     match l_args.len().cmp(&r_args.len()) {
         Equal => {
             let new_type = unifier.try_match(l, r);
-            let new_args = walk_move_types(l_args.iter().zip(r_args),
-                                           |l, r| unifier.try_match(l, r));
-            types::merge(l, new_type, l_args, new_args, Type::app)
+            let new_args = merge::merge_tuple_iter(l_args.iter().zip(r_args),
+                                                   |l, r| unifier.try_match(l, r));
+            merge::merge(l, new_type, l_args, new_args, Type::app)
         }
         Less => {
             let offset = r_args.len() - l_args.len();
@@ -319,9 +318,9 @@ fn unify_app<'a, U>(unifier: &mut UnifierState<'a, U>,
             let reduced_r = Type::app(r.clone(), r_args[..offset].iter().cloned().collect());
             let new_type = unifier.try_match(l, &reduced_r);
 
-            let new_args = walk_move_types(l_args.iter().zip(&r_args[offset..]),
-                                           |l, r| unifier.try_match(l, r));
-            types::merge(l, new_type, l_args, new_args, Type::app)
+            let new_args = merge::merge_tuple_iter(l_args.iter().zip(&r_args[offset..]),
+                                                   |l, r| unifier.try_match(l, r));
+            merge::merge(l, new_type, l_args, new_args, Type::app)
         }
         Greater => {
             let offset = l_args.len() - r_args.len();
@@ -329,9 +328,9 @@ fn unify_app<'a, U>(unifier: &mut UnifierState<'a, U>,
             let reduced_l = Type::app(l.clone(), l_args[..offset].iter().cloned().collect());
             let new_type = unifier.try_match(&reduced_l, r);
 
-            let new_args = walk_move_types(l_args[offset..].iter().zip(r_args),
-                                           |l, r| unifier.try_match(l, r));
-            types::merge(r, new_type, r_args, new_args, Type::app)
+            let new_args = merge::merge_tuple_iter(l_args[offset..].iter().zip(r_args),
+                                                   |l, r| unifier.try_match(l, r));
+            merge::merge(r, new_type, r_args, new_args, Type::app)
         }
     }
 }
@@ -386,7 +385,7 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>,
     let mut types: Vec<_> = types_both.iter().map(|pair| pair.0.clone()).collect();
 
     // Unify the fields that exists in both records
-    let new_both = walk_move_types(both.iter().cloned(), |l, r| {
+    let new_both = merge::merge_tuple_iter(both.iter().cloned(), |l, r| {
         unifier.try_match(&l.typ, &r.typ).map(|typ| Field::new(l.name.clone(), typ))
     });
 
@@ -563,42 +562,6 @@ fn find_common_alias<'a, U>(unifier: &mut UnifierState<'a, U>,
         };
     }
     Ok((l, r))
-}
-
-fn walk_move_types<'a, I, F, T, R>(types: I, mut f: F) -> Option<R>
-    where I: Iterator<Item = (&'a T, &'a T)>,
-          F: FnMut(&'a T, &'a T) -> Option<T>,
-          T: Clone + 'a,
-          R: Default + VecLike<T>,
-{
-    let mut out = R::default();
-    walk_move_types2(types, false, &mut out, &mut f);
-    if out[..].is_empty() {
-        None
-    } else {
-        out[..].reverse();
-        Some(out)
-    }
-}
-fn walk_move_types2<'a, I, F, T, R>(mut types: I, replaced: bool, output: &mut R, f: &mut F)
-    where I: Iterator<Item = (&'a T, &'a T)>,
-          F: FnMut(&'a T, &'a T) -> Option<T>,
-          T: Clone + 'a,
-          R: VecLike<T>,
-{
-    if let Some((l, r)) = types.next() {
-        let new = f(l, r);
-        walk_move_types2(types, replaced || new.is_some(), output, f);
-        match new {
-            Some(typ) => {
-                output.push(typ);
-            }
-            None if replaced || !output[..].is_empty() => {
-                output.push(l.clone());
-            }
-            None => (),
-        }
-    }
 }
 
 /// Replaces all instances `Type::Generic` in `typ` with fresh type variables (`Type::Variable`)

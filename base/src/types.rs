@@ -1,4 +1,4 @@
-use std::borrow::{Cow, ToOwned};
+use std::borrow::Cow;
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
@@ -10,6 +10,7 @@ use smallvec::{SmallVec, VecLike};
 
 use ast::{self, DisplayEnv};
 use kind::{ArcKind, Kind, KindEnv};
+use merge::merge;
 use symbol::{Symbol, SymbolRef};
 
 /// Trait for values which contains typed values which can be refered by name
@@ -1120,26 +1121,6 @@ pub fn walk_move_type<F: ?Sized, I, T>(typ: T, f: &mut F) -> T
           I: Clone,
 {
     f.visit(&typ).unwrap_or(typ)
-}
-
-/// Merges two values using `f` if either or both them is `Some(..)`.
-/// If both are `None`, `None` is returned.
-pub fn merge<F, A: ?Sized, B: ?Sized, R>(a_original: &A,
-                                         a: Option<A::Owned>,
-                                         b_original: &B,
-                                         b: Option<B::Owned>,
-                                         f: F)
-                                         -> Option<R>
-    where A: ToOwned,
-          B: ToOwned,
-          F: FnOnce(A::Owned, B::Owned) -> R,
-{
-    match (a, b) {
-        (Some(a), Some(b)) => Some(f(a, b)),
-        (Some(a), None) => Some(f(a, b_original.to_owned())),
-        (None, Some(b)) => Some(f(a_original.to_owned(), b)),
-        (None, None) => None,
-    }
 }
 
 pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>

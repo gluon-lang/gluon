@@ -11,6 +11,7 @@ use base::error::Errors;
 use base::fnv::{FnvMap, FnvSet};
 use base::resolve;
 use base::kind::{Kind, KindEnv, ArcKind};
+use base::merge;
 use base::pos::{BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
 use base::types::{self, Alias, AliasData, AppVec, ArcType, Field, Generic};
@@ -1164,7 +1165,7 @@ impl<'a> Typecheck<'a> {
                             .map(|typ| Field::new(field.name.clone(), typ))
                     });
                     let new_rest = self.finish_type(level, rest);
-                    types::merge(fields,
+                    merge::merge(fields,
                                  new_fields,
                                  rest,
                                  new_rest,
