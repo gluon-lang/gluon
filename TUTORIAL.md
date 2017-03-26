@@ -149,9 +149,9 @@ type MyOption a = | Some a | None
 Some 1
 ```
 
-### Case expressions
+### Match expressions
 
-To allow variants to be unpacked so their contents can be retrieved, gluon has the `case` expression.
+To allow variants to be unpacked so their contents can be retrieved, gluon has the `match` expression.
 
 ```f#,rust
 match None with
@@ -161,18 +161,30 @@ match None with
 
 Here, we write out a pattern for each of the variant's constructors and the value we pass in (`None` in this case) is matched to each of these patterns. When a matching pattern is found, the expression on the right of `->` is evaluated with each of the constructor's arguments bound to variables.
 
-`case` expressions can also be used to unpack records.
+`match` expressions can also be used to unpack records.
 
 ```f#,rust
 match { x = 1.0, pi = 3.14 } with
 | { x = y, pi } -> y + pi
+
+// Patterns can be nested as well
+match { x = Some (Some 123) } with
+| { x = Some None } -> 0
+| { x = Some (Some x) } -> x
+| { x = None } -> -1
 ```
 
-`let` bindings can also unpack records allowing the expression above to be written as:
+`let` bindings can also match and unpack on data but only with irrefutable patterns. In other words, only with patterns which cannot fail.
 
-```f#,rust
+```f#
+// Matching on records will always succeed since they are the only variant
 let { x = y, pi } = { x = 1.0, pi = 3.14 }
 in y + pi
+
+// These will be rejected however as `let` can only handle one variant (`Some` in this example)
+let Some x = None
+let Some y = Some 123
+x + y
 ```
 
 ### Lambda expressions
