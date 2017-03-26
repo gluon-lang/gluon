@@ -1,8 +1,9 @@
 use base::ast::{Literal, TypedIdent};
 use base::pos::{BytePos, ExpansionId, Span};
 use base::symbol::{Symbol, Symbols};
+use base::types::{Field, Type};
 
-use core::{Allocator, Alternative, Expr, Pattern};
+use core::{Allocator, Alternative, Expr, LetBinding, Named, Pattern};
 
 grammar<'env, 'a>(symbols: &'env mut Symbols, allocator: &'a Allocator<'a>);
 
@@ -40,12 +41,32 @@ Alternative: Alternative<'a> = {
 
 AtomicExpr: Expr<'a> = {
     "(" <Expr> ")",
+    "{" <args: Comma<Identifier>> "}" => {
+        let id = TypedIdent {
+            name: symbols.symbol("<record>"),
+            typ: Type::record(vec![], args.iter()
+                .map(|arg| Field { name: arg.clone(), typ: Type::hole(), })
+                .collect()),
+        };
+        let args = args.into_iter()
+            .map(|id| Expr::Ident(TypedIdent::new(id), Span::default()));
+        let args = allocator.arena.alloc_extend(args);
+        Expr::Data(id, args, BytePos::default(), ExpansionId::default())
+    },
     <Identifier> => Expr::Ident(TypedIdent::new(<>), Span::default()),
     <r"[0-9]+"> => Expr::Const(Literal::Int(<>.parse().unwrap()), Span::default()),
 };
 
 AllocExpr: &'a Expr<'a> = {
     <Expr> => allocator.arena.alloc(<>)
+};
+
+LetBinding: LetBinding<'a> = {
+    <name: Identifier> "=" <expr: AllocExpr> => LetBinding {
+        name: TypedIdent::new(name),
+        expr: Named::Expr(expr),
+        span_start: BytePos::default(),
+    }
 };
 
 pub Expr: Expr<'a> = {
@@ -58,6 +79,9 @@ pub Expr: Expr<'a> = {
             f => Expr::Call(allocator.arena.alloc(f), args)
         }
     },
-    "match" <expr: AtomicExpr> "with" <alts: Alternative+> "end" =>
-        Expr::Match(allocator.arena.alloc(expr), allocator.alternative_arena.alloc_extend(alts.into_iter())),
+    "let" <bind: LetBinding> "in" <expr: AllocExpr> => {
+        Expr::Let(bind, expr)
+    },
+    "match" <expr: AllocExpr> "with" <alts: Alternative+> "end" =>
+        Expr::Match(expr, allocator.alternative_arena.alloc_extend(alts.into_iter())),
 };

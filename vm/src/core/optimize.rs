@@ -1,13 +1,71 @@
+use base::ast::TypedIdent;
 use base::merge::{merge, merge_iter};
+use base::pos;
 
-use core::{Allocator, Alternative, Closure, Expr, Named, LetBinding};
+use core::{Allocator, Alternative, Closure, Expr, Named, LetBinding, Pattern};
 
 pub trait Visitor<'a> {
-    fn visit_expr(&mut self, &'a Expr<'a>) -> Option<&'a Expr<'a>>;
-    fn allocator<'e>(&self) -> &'a Allocator<'a, 'e>;
+    fn visit_expr(&mut self, expr: &'a Expr<'a>) -> Option<&'a Expr<'a>>;
+    fn allocator(&self) -> &'a Allocator<'a>;
 }
 
-pub fn optimize<'a, 'e, V>(visitor: &mut V, expr: &'a Expr<'a>) -> &'a Expr<'a>
+struct RecognizeUnnecessaryAllocation<'a> {
+    allocator: &'a Allocator<'a>,
+}
+
+impl<'a> Visitor<'a> for RecognizeUnnecessaryAllocation<'a> {
+    fn visit_expr(&mut self, expr: &'a Expr<'a>) -> Option<&'a Expr<'a>> {
+        // Avoids boxing data which are destructured immediately after creation
+        // match { l, r } with
+        // | { l, r } -> ...
+        //
+        // to
+        //
+        // let l = x
+        // let l = y
+        // ...
+        match *expr {
+            Expr::Match(&Expr::Data(ref id, exprs, ..), alts) if alts.len() == 1 => {
+                match alts[0].pattern {
+                    Pattern::Record(ref fields) => {
+                        debug_assert!(id.typ.row_iter().len() >= fields.len());
+                        let next_expr = alts[0].expr;
+                        Some(id.typ
+                            .row_iter()
+                            .zip(exprs)
+                            .collect::<Vec<_>>()
+                            .into_iter()
+                            .rev()
+                            .fold(next_expr, |next_expr, (field, expr)| {
+                                let pattern_field =
+                                    fields.iter().find(|f| f.0.name.name_eq(&field.name)).unwrap();
+                                let pattern_field =
+                                    pattern_field.1.as_ref().unwrap_or(&pattern_field.0.name);
+                                let new_expr = Expr::Let(LetBinding {
+                                                             name: TypedIdent {
+                                                                 name: pattern_field.clone(),
+                                                                 typ: field.typ.clone(),
+                                                             },
+                                                             expr: Named::Expr(expr),
+                                                             span_start: pos::BytePos::default(),
+                                                         },
+                                                         next_expr);
+                                &*self.allocator().arena.alloc(new_expr)
+                            }))
+                    }
+                    _ => walk_expr_alloc(self, expr),
+                }
+            }
+            _ => walk_expr_alloc(self, expr),
+        }
+    }
+
+    fn allocator(&self) -> &'a Allocator<'a> {
+        self.allocator
+    }
+}
+
+pub fn optimize<'a, V>(visitor: &mut V, expr: &'a Expr<'a>) -> &'a Expr<'a>
     where V: ?Sized + Visitor<'a>,
 {
     visitor.visit_expr(expr).unwrap_or(expr)
@@ -98,4 +156,41 @@ fn walk_alt<'a, V>(visitor: &mut V, alt: &'a Alternative<'a>) -> Option<Alternat
             expr: expr,
         }
     })
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use base::symbol::Symbols;
+
+    use core;
+    use core::grammar::parse_Expr as parse_core_expr;
+
+    #[test]
+    fn unnecessary_allocation() {
+        let mut symbols = Symbols::new();
+        let allocator = core::Allocator::new();
+
+        let initial_str = r#"
+            match { l, r } with
+            | { l, r } -> l
+            end
+            "#;
+        let initial_expr = allocator.arena
+            .alloc(parse_core_expr(&mut symbols, &allocator, initial_str).unwrap());
+
+        let optimized_expr = optimize(&allocator, initial_expr);
+
+        let expected_str = r#"
+            let l = l
+            in
+            let r = r
+            in
+            l
+            "#;
+        let expected_expr = parse_core_expr(&mut symbols, &allocator, expected_str).unwrap();
+        assert_deq!(*optimized_expr, expected_expr);
+    }
 }

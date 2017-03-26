@@ -679,6 +679,32 @@ impl<'a, Id: 'a, T> Iterator for RowIterator<'a, T>
             _ => None,
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.len();
+        (len, Some(len))
+    }
+}
+
+impl<'a, Id: 'a, T> ExactSizeIterator for RowIterator<'a, T>
+    where T: Deref<Target = Type<Id, T>>,
+{
+    fn len(&self) -> usize {
+        let mut typ = self.typ;
+        let mut size = 0;
+        loop {
+            typ = match **typ {
+                Type::Record(ref row) |
+                Type::Variant(ref row) => row,
+                Type::ExtendRow { ref fields, ref rest, .. } => {
+                    size += fields.len();
+                    rest
+                }
+                _ => break,
+            };
+        }
+        size
+    }
 }
 
 pub struct ArgIterator<'a, T: 'a> {
