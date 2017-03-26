@@ -260,8 +260,13 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::Id
                 v.visit_pattern(arg);
             }
         }
-        Pattern::Record { ref mut typ, .. } => {
+        Pattern::Record { ref mut typ, ref mut fields, .. } => {
             v.visit_typ(typ);
+            for field in fields {
+                if let Some(ref mut pattern) = field.1 {
+                    v.visit_pattern(pattern);
+                }
+            }
         }
         Pattern::Ident(ref mut id) => v.visit_typ(&mut id.typ),
     }
@@ -358,8 +363,13 @@ pub fn walk_pattern<V: ?Sized + Visitor>(v: &mut V, p: &Pattern<V::Ident>) {
                 v.visit_pattern(&arg);
             }
         }
-        Pattern::Record { ref typ, .. } => {
+        Pattern::Record { ref typ, ref fields, .. } => {
             v.visit_typ(typ);
+            for field in fields {
+                if let Some(ref pattern) = field.1 {
+                    v.visit_pattern(pattern);
+                }
+            }
         }
         Pattern::Ident(ref id) => v.visit_typ(&id.typ),
     }
