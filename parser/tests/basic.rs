@@ -164,7 +164,7 @@ match None with
     assert_eq!(e,
                Ok(case(id("None"),
                        vec![(Pattern::Constructor(TypedIdent::new(intern("Some")),
-                                                  vec![TypedIdent::new(intern("x"))]),
+                                                  vec![no_loc(Pattern::Ident(TypedIdent::new(intern("x"))))]),
                              id("x")),
                             (Pattern::Constructor(TypedIdent::new(intern("None")), vec![]),
                              int(0))])));
@@ -207,7 +207,8 @@ fn record_pattern() {
     let pattern = Pattern::Record {
         typ: Type::hole(),
         types: Vec::new(),
-        fields: vec![(intern("y"), None), (intern("x"), Some(intern("z")))],
+        fields: vec![(intern("y"), None),
+                     (intern("x"), Some(no_loc(Pattern::Ident(TypedIdent::new(intern("z"))))))],
     };
     assert_eq!(e, case(id("x"), vec![(pattern, id("z"))]));
 }
@@ -230,6 +231,32 @@ fn let_pattern() {
                                              }],
                                         Box::new(id("x")))));
 }
+
+#[test]
+fn nested_pattern() {
+    let _ = ::env_logger::init();
+    let e = parse_new!("match x with | { y = Some x } -> z");
+    let nested =
+        no_loc(Pattern::Constructor(TypedIdent::new(intern("Some")),
+                                    vec![no_loc(Pattern::Ident(TypedIdent::new(intern("x"))))]));
+    let pattern = Pattern::Record {
+        typ: Type::hole(),
+        types: Vec::new(),
+        fields: vec![(intern("y"), Some(nested))],
+    };
+    assert_eq!(e, case(id("x"), vec![(pattern, id("z"))]));
+}
+
+#[test]
+fn nested_pattern_parens() {
+    let _ = ::env_logger::init();
+    let e = parse_new!("match x with | (Some (Some z)) -> z");
+
+    let inner_pattern = no_loc(Pattern::Constructor(TypedIdent::new(intern("Some")), vec![no_loc(Pattern::Ident(TypedIdent::new(intern("z"))))]));
+    let pattern = Pattern::Constructor(TypedIdent::new(intern("Some")), vec![inner_pattern]);
+    assert_eq!(e, case(id("x"), vec![(pattern, id("z"))]));
+}
+
 
 #[test]
 fn span_identifier() {

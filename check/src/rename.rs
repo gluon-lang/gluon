@@ -1,6 +1,6 @@
 use std::fmt;
 
-use base::ast::{self, DisplayEnv, Expr, SpannedExpr, MutVisitor, Typed, TypedIdent};
+use base::ast::{self, DisplayEnv, Expr, Pattern, SpannedExpr, MutVisitor, Typed, TypedIdent};
 use base::error::Errors;
 use base::fnv::FnvMap;
 use base::kind::{ArcKind, KindEnv};
@@ -94,14 +94,22 @@ pub fn rename(symbols: &mut SymbolModule,
             match pattern.value {
                 ast::Pattern::Record { ref mut fields, ref types, .. } => {
                     let field_types = self.find_fields(typ);
-                    for field in fields.iter_mut() {
-                        let field_type = field_types.iter()
+                    for field in fields {
+                        let field_type = &field_types.iter()
                             .find(|field_type| field_type.name.name_eq(&field.0))
                             .expect("ICE: Existing field")
-                            .typ
-                            .clone();
-                        let id = field.1.as_ref().unwrap_or_else(|| &field.0).clone();
-                        field.1 = Some(self.stack_var(id, pattern.span, field_type));
+                            .typ;
+                        match field.1 {
+                            Some(ref mut pat) => self.new_pattern(field_type, pat),
+                            None => {
+                                let id = field.0.clone();
+                                let pat = Pattern::Ident(TypedIdent {
+                                    name: self.stack_var(id, pattern.span, field_type.clone()),
+                                    typ: field_type.clone(),
+                                });
+                                field.1 = Some(pos::spanned(pattern.span, pat));
+                            }
+                        }
                     }
 
                     let record_type = resolve::remove_aliases(&self.env, typ.clone()).clone();
@@ -122,7 +130,7 @@ pub fn rename(symbols: &mut SymbolModule,
                         .expect("ICE: Expected constructor")
                         .clone();
                     for (arg_type, arg) in types::arg_iter(&typ).zip(args) {
-                        arg.name = self.stack_var(arg.name.clone(), pattern.span, arg_type.clone());
+                        self.new_pattern(arg_type, arg);
                     }
                 }
             }

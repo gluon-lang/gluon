@@ -11,7 +11,7 @@ extern crate lalrpop_util;
 
 use std::cell::RefCell;
 
-use base::ast::{Expr, IdentEnv, SpannedExpr};
+use base::ast::{Expr, IdentEnv, SpannedExpr, SpannedPattern};
 use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::symbol::Symbol;
@@ -202,7 +202,7 @@ impl<'a, I> Iterator for SharedIter<'a, I>
 
 pub enum FieldPattern<Id> {
     Type(Id, Option<Id>),
-    Value(Id, Option<Id>),
+    Value(Id, Option<SpannedPattern<Id>>),
 }
 
 pub enum FieldExpr<Id> {

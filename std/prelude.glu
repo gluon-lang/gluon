@@ -127,47 +127,47 @@ let eq_Char = {
 let eq_Option a : Eq a -> Eq (Option a) = {
     (==) = \l r ->
         match l with
-            | Some l_val ->
-                (match r with
-                    | Some r_val -> a.(==) l_val r_val
-                    | None -> False)
-            | None ->
-                (match r with
-                    | Some _ -> False
-                    | None -> True)
+        | Some l_val ->
+            match r with
+            | Some r_val -> a.(==) l_val r_val
+            | None -> False
+        | None ->
+            match r with
+            | Some _ -> False
+            | None -> True
 }
 
 let eq_Result e a : Eq e -> Eq a -> Eq (Result e a) = {
     (==) = \l r ->
         match l with
-            | Ok l_val ->
-                (match r with
-                    | Ok r_val -> a.(==) l_val r_val
-                    | Err _ -> False)
-            | Err l_val ->
-                (match r with
-                    | Ok _ -> False
-                    | Err r_val -> e.(==) l_val r_val)
+        | Ok l_val ->
+            match r with
+            | Ok r_val -> a.(==) l_val r_val
+            | Err _ -> False
+        | Err l_val ->
+            match r with
+            | Ok _ -> False
+            | Err r_val -> e.(==) l_val r_val
 }
 
 let eq_List a : Eq a -> Eq (List a) =
     let (==) l r =
         match l with
-            | Nil ->
-                match r with
-                    | Nil -> True
-                    | Cons x y -> False
-            | Cons x xs ->
-                match r with
-                    | Nil -> False
-                    | Cons y ys -> a.(==) x y && xs == ys
+        | Nil ->
+            match r with
+            | Nil -> True
+            | Cons x y -> False
+        | Cons x xs ->
+            match r with
+            | Nil -> False
+            | Cons y ys -> a.(==) x y && xs == ys
     { (==) }
 
 let monoid_Ordering = {
     append = \x y ->
         match x with
-            | EQ -> y
-            | _ -> x,
+        | EQ -> y
+        | _ -> x,
     empty = EQ
 }
 

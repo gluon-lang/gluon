@@ -73,14 +73,20 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
             Pattern::Record { ref typ, fields: ref field_ids, .. } => {
                 let unaliased = resolve::remove_aliases(&self.env, typ.clone());
                 for field in field_ids {
-                    let name = field.1.as_ref().unwrap_or(&field.0).clone();
-                    let typ = unaliased.row_iter()
-                        .find(|f| f.name.name_eq(&name))
-                        .map(|f| f.typ.clone())
-                        // If we did not find a matching field in the type, default to a type hole
-                        // so that the user at least gets completion on the name
-                        .unwrap_or_else(|| Type::hole());
-                    self.stack.insert(name, typ);
+                    match field.1 {
+                        Some(ref pat) => self.on_pattern(pat),
+                        None => {
+
+                            let name = field.0.clone();
+                            let typ = unaliased.row_iter()
+                                .find(|f| f.name.name_eq(&name))
+                                .map(|f| f.typ.clone())
+                                // If we did not find a matching field in the type, default to a type hole
+                                // so that the user at least gets completion on the name
+                                .unwrap_or_else(|| Type::hole());
+                            self.stack.insert(name, typ);
+                        }
+                    }
                 }
             }
             Pattern::Ident(ref id) => {
@@ -88,7 +94,7 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
             }
             Pattern::Constructor(_, ref args) => {
                 for arg in args {
-                    self.stack.insert(arg.name.clone(), arg.typ.clone());
+                    self.on_pattern(arg);
                 }
             }
         }
