@@ -1,0 +1,63 @@
+use base::ast::{Literal, TypedIdent};
+use base::pos::{BytePos, ExpansionId, Span};
+use base::symbol::{Symbol, Symbols};
+
+use core::{Allocator, Alternative, Expr, Pattern};
+
+grammar<'env, 'a>(symbols: &'env mut Symbols, allocator: &'a Allocator<'a>);
+
+Comma<Rule>: Vec<Rule> =
+    <rules: (<Rule> ",")*> <last: Rule?> => {
+        let mut rules = rules;
+        rules.extend(last);
+        rules
+    };
+
+
+Identifier: Symbol = {
+    <r"[A-Za-z_][A-Za-z0-9_]*"> => symbols.symbol(<>)
+};
+
+Pattern: Pattern = {
+    <id: Identifier> => {
+        if id.as_ref().starts_with(char::is_uppercase) {
+            Pattern::Constructor(TypedIdent::new(id), Vec::new())
+        } else {
+            Pattern::Ident(TypedIdent::new(id))
+        }
+    },
+    <id: Identifier> <args: Identifier+> =>
+        Pattern::Constructor(TypedIdent::new(id), args.into_iter().map(TypedIdent::new).collect()),
+    "{" <Comma<Identifier>> "}" => Pattern::Record(<>.into_iter().map(|field| (TypedIdent::new(field), None)).collect()),
+};
+
+Alternative: Alternative<'a> = {
+    "|" <pattern: Pattern> "->" <expr: AllocExpr> => Alternative {
+        pattern: pattern,
+        expr: expr,
+    },
+};
+
+AtomicExpr: Expr<'a> = {
+    "(" <Expr> ")",
+    <Identifier> => Expr::Ident(TypedIdent::new(<>), Span::default()),
+    <r"[0-9]+"> => Expr::Const(Literal::Int(<>.parse().unwrap()), Span::default()),
+};
+
+AllocExpr: &'a Expr<'a> = {
+    <Expr> => allocator.arena.alloc(<>)
+};
+
+pub Expr: Expr<'a> = {
+    AtomicExpr,
+    <f: AtomicExpr> <args: AtomicExpr+> => {
+        let args = allocator.arena.alloc_extend(args.into_iter());
+        match f {
+            Expr::Ident(ref id, _) if id.name.as_ref().starts_with(char::is_uppercase) => 
+                Expr::Data(id.clone(), args, BytePos::default(), ExpansionId::default()),
+            f => Expr::Call(allocator.arena.alloc(f), args)
+        }
+    },
+    "match" <expr: AtomicExpr> "with" <alts: Alternative+> "end" =>
+        Expr::Match(allocator.arena.alloc(expr), allocator.alternative_arena.alloc_extend(alts.into_iter())),
+};

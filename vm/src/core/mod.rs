@@ -1,6 +1,8 @@
 extern crate typed_arena;
 extern crate smallvec;
 
+#[cfg(test)]
+mod grammar;
 pub mod optimize;
 
 use std::fmt;
@@ -841,13 +843,13 @@ mod tests {
 
     use super::*;
 
-    use std::cell::RefCell;
     use std::collections::HashMap;
 
     use base::pos::{self, Span, Spanned};
     use base::symbol::{SymbolModule, Symbols};
 
     use self::parser::parse_expr;
+    use core::grammar::parse_Expr as parse_core_expr;
 
     use vm::RootedThread;
 
@@ -875,25 +877,6 @@ mod tests {
                                         }
                                     })
                                     .collect()))
-    }
-
-    struct CoreArena<'a, 'e: 'a, 'c>(&'a Allocator<'a, 'e>, RefCell<&'c mut Symbols>);
-
-    impl<'a, 'e, 'c> CoreArena<'a, 'e, 'c> {
-        fn id(&self, s: &str) -> &'a Expr<'a> {
-            self.0.arena.alloc(Expr::Ident(ast::TypedIdent::new(self.1.borrow_mut().symbol(s)),
-                                           Span::default()))
-        }
-
-        fn match_(&self, e: &'a Expr<'a>, alts: Vec<Alternative<'a>>) -> &'a Expr<'a> {
-            self.0
-                .arena
-                .alloc(Expr::Match(e, self.0.alternative_arena.alloc_extend(alts.into_iter())))
-        }
-
-        fn int(&self, i: i64) -> &'a Expr<'a> {
-            self.0.arena.alloc(Expr::Const(ast::Literal::Int(i), Span::default()))
-        }
     }
 
     #[derive(Debug)]
@@ -992,16 +975,14 @@ mod tests {
                           vec![(ast::Pattern::Ident(TypedIdent::new(x.clone())), int(1))]);
         let core_expr = arena.translate(&expr);
 
-        let arena = CoreArena(&arena, RefCell::new(&mut symbols));
-
-        let test = arena.id("test");
-        let one = arena.int(1);
-        let expected_expr = arena.match_(test,
-                                         vec![Alternative {
-                                                  pattern: Pattern::Ident(TypedIdent::new(x)),
-                                                  expr: one,
-                                              }]);
-        assert_deq!(core_expr, *expected_expr);
+        let expected_str = r#"
+            match test with
+            | x -> 1
+            end
+            "#;
+        let expected_expr = parse_core_expr(&mut symbols, &translator.allocator, expected_str)
+            .unwrap();
+        assert_deq!(core_expr, expected_expr);
     }
 
     #[test]
@@ -1021,27 +1002,17 @@ mod tests {
         let expr = parse_expr(&mut SymbolModule::new("".into(), &mut symbols), expr_str).unwrap();
         let core_expr = arena.translate(&expr);
 
-        let x = TypedIdent::new(symbols.symbol("x"));
-        let p1 = TypedIdent::new(symbols.symbol("p1"));
-        let ctor = TypedIdent::new(symbols.symbol("Ctor"));
-
-        let arena = CoreArena(&arena, RefCell::new(&mut symbols));
-
-        let test = arena.id("test");
-
-        let inner_match = arena.match_(arena.id("p1"),
-                                       vec![Alternative {
-                                                pattern: Pattern::Constructor(ctor.clone(),
-                                                                              vec![x.clone()]),
-                                                expr: arena.id("x"),
-                                            }]);
-        let expected_expr = arena.match_(test,
-                                         vec![Alternative {
-                                                  pattern: Pattern::Constructor(ctor.clone(),
-                                                                                vec![p1]),
-                                                  expr: inner_match,
-                                              }]);
-        assert_deq!(PatternEq(&core_expr), *expected_expr);
+        let expected_str = r#"
+            match test with
+            | Ctor p1 ->
+                match p1 with
+                | Ctor x -> x
+                end
+            end
+            "#;
+        let expected_expr = parse_core_expr(&mut symbols, &translator.allocator, expected_str)
+            .unwrap();
+        assert_deq!(PatternEq(&core_expr), expected_expr);
     }
 
     #[test]
@@ -1063,36 +1034,19 @@ mod tests {
         let expr = parse_expr(&mut SymbolModule::new("".into(), &mut symbols), expr_str).unwrap();
         let core_expr = arena.translate(&expr);
 
-        let x = TypedIdent::new(symbols.symbol("x"));
-        let y = TypedIdent::new(symbols.symbol("y"));
-        let z = TypedIdent::new(symbols.symbol("z"));
-        let p1 = TypedIdent::new(symbols.symbol("p1"));
-        let ctor = TypedIdent::new(symbols.symbol("Ctor"));
+        let expected_str = r#"
+            match test with
+            | Ctor p1 ->
+                match p1 with
+                | Ctor x -> 1
+                | y -> 2
+                end
+            | z -> 3
+            end
+            "#;
+        let expected_expr = parse_core_expr(&mut symbols, &translator.allocator, expected_str)
+            .unwrap();
 
-        let arena = CoreArena(&arena, RefCell::new(&mut symbols));
-
-        let test = arena.id("test");
-
-        let inner_match = arena.match_(arena.id("p1"),
-                                       vec![Alternative {
-                                                pattern: Pattern::Constructor(ctor.clone(),
-                                                                              vec![x.clone()]),
-                                                expr: arena.int(1),
-                                            },
-                                            Alternative {
-                                                pattern: Pattern::Ident(y.clone()),
-                                                expr: arena.int(2),
-                                            }]);
-        let expected_expr = arena.match_(test,
-                                         vec![Alternative {
-                                                  pattern: Pattern::Constructor(ctor.clone(),
-                                                                                vec![p1]),
-                                                  expr: inner_match,
-                                              },
-                                              Alternative {
-                                                  pattern: Pattern::Ident(z.clone()),
-                                                  expr: arena.int(3),
-                                              }]);
-        assert_deq!(PatternEq(&core_expr), *expected_expr);
+        assert_deq!(PatternEq(&core_expr), expected_expr);
     }
 }
