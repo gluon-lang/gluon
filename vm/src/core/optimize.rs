@@ -65,10 +65,9 @@ impl<'a> Visitor<'a> for RecognizeUnnecessaryAllocation<'a> {
     }
 }
 
-pub fn optimize<'a, V>(visitor: &mut V, expr: &'a Expr<'a>) -> &'a Expr<'a>
-    where V: ?Sized + Visitor<'a>,
-{
-    visitor.visit_expr(expr).unwrap_or(expr)
+pub fn optimize<'a>(allocator: &'a Allocator<'a>, expr: &'a Expr<'a>) -> &'a Expr<'a> {
+    let mut optimizer = RecognizeUnnecessaryAllocation { allocator: allocator };
+    optimizer.visit_expr(expr).unwrap_or(expr)
 }
 
 pub fn walk_expr_alloc<'a, V>(visitor: &mut V, expr: &'a Expr<'a>) -> Option<&'a Expr<'a>>

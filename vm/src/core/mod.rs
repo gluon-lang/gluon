@@ -294,7 +294,7 @@ impl<'a> Allocator<'a> {
 }
 
 pub struct Translator<'a, 'e> {
-    allocator: Allocator<'a>,
+    pub allocator: Allocator<'a>,
     env: &'e PrimitiveEnv,
     dummy_symbol: TypedIdent<Symbol>,
 }
