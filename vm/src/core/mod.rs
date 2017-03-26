@@ -1,6 +1,8 @@
 extern crate typed_arena;
 extern crate smallvec;
 
+pub mod optimize;
+
 use std::fmt;
 use std::iter::once;
 
@@ -250,8 +252,8 @@ fn is_constructor(s: &Symbol) -> bool {
 }
 
 pub struct Allocator<'a, 'e> {
-    arena: Arena<Expr<'a>>,
-    alternative_arena: Arena<Alternative<'a>>,
+    pub arena: Arena<Expr<'a>>,
+    pub alternative_arena: Arena<Alternative<'a>>,
     env: &'e PrimitiveEnv,
     dummy_symbol: TypedIdent<Symbol>,
 }
