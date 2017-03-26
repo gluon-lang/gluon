@@ -48,8 +48,7 @@ pub enum Pattern {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Alternative<'a> {
     pub pattern: Pattern,
-    // FIXME hold a &'a Expr<'a>
-    pub expr: Expr<'a>,
+    pub expr: &'a Expr<'a>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -337,12 +336,12 @@ impl<'a, 'e> Allocator<'a, 'e> {
                 let alts: SmallVec<[_; 2]> = collect![Alternative {
                                  pattern: Pattern::Constructor(self.bool_constructor(true),
                                                                vec![]),
-                                 expr: self.translate(if_true),
+                                 expr: self.translate_alloc(if_true),
                              },
                              Alternative {
                                  pattern: Pattern::Constructor(self.bool_constructor(false),
                                                                vec![]),
-                                 expr: self.translate(if_false),
+                                 expr: self.translate_alloc(if_false),
                              }];
                 Expr::Match(self.translate_alloc(pred),
                             self.alternative_arena.alloc_extend(alts.into_iter()))
@@ -382,11 +381,11 @@ impl<'a, 'e> Allocator<'a, 'e> {
                                                        typ: projected_type.clone(),
                                                    },
                                                    None)]),
-                    expr: Expr::Ident(TypedIdent {
-                                          name: projection.clone(),
-                                          typ: projected_type.clone(),
-                                      },
-                                      expr.span),
+                    expr: arena.alloc(Expr::Ident(TypedIdent {
+                                                      name: projection.clone(),
+                                                      typ: projected_type.clone(),
+                                                  },
+                                                  expr.span)),
                 };
                 Expr::Match(self.translate_alloc(projected_expr),
                             self.alternative_arena.alloc_extend(once(alt)))
@@ -723,7 +722,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 }
                 Alternative {
                     pattern: pattern,
-                    expr: expr.unwrap_or(alts[0].1).clone(),
+                    expr: expr.unwrap_or(alts[0].1),
                 }
             })
             .collect::<Vec<_>>();
@@ -998,7 +997,7 @@ mod tests {
         let expected_expr = arena.match_(test,
                                          vec![Alternative {
                                                   pattern: Pattern::Ident(TypedIdent::new(x)),
-                                                  expr: one.clone(),
+                                                  expr: one,
                                               }]);
         assert_deq!(core_expr, *expected_expr);
     }
@@ -1032,13 +1031,13 @@ mod tests {
                                        vec![Alternative {
                                                 pattern: Pattern::Constructor(ctor.clone(),
                                                                               vec![x.clone()]),
-                                                expr: Expr::Ident(x.clone(), Span::default()),
+                                                expr: arena.id("x"),
                                             }]);
         let expected_expr = arena.match_(test,
                                          vec![Alternative {
                                                   pattern: Pattern::Constructor(ctor.clone(),
                                                                                 vec![p1]),
-                                                  expr: inner_match.clone(),
+                                                  expr: inner_match,
                                               }]);
         assert_deq!(PatternEq(&core_expr), *expected_expr);
     }
@@ -1076,21 +1075,21 @@ mod tests {
                                        vec![Alternative {
                                                 pattern: Pattern::Constructor(ctor.clone(),
                                                                               vec![x.clone()]),
-                                                expr: arena.int(1).clone(),
+                                                expr: arena.int(1),
                                             },
                                             Alternative {
                                                 pattern: Pattern::Ident(y.clone()),
-                                                expr: arena.int(2).clone(),
+                                                expr: arena.int(2),
                                             }]);
         let expected_expr = arena.match_(test,
                                          vec![Alternative {
                                                   pattern: Pattern::Constructor(ctor.clone(),
                                                                                 vec![p1]),
-                                                  expr: inner_match.clone(),
+                                                  expr: inner_match,
                                               },
                                               Alternative {
                                                   pattern: Pattern::Ident(z.clone()),
-                                                  expr: arena.int(3).clone(),
+                                                  expr: arena.int(3),
                                               }]);
         assert_deq!(PatternEq(&core_expr), *expected_expr);
     }
