@@ -374,6 +374,11 @@ in y
 1i32
 }
 
+test_expr!{ return_unit,
+"()",
+()
+}
+
 test_expr!{ let_not_in_tail_position,
 r#"
 1 #Int+ (let x = 2 in x)

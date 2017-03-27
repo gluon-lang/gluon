@@ -171,7 +171,7 @@ impl<'a> KindCheck<'a> {
     fn builtin_kind(&self, typ: BuiltinType) -> ArcKind {
         match typ {
             BuiltinType::String | BuiltinType::Byte | BuiltinType::Char | BuiltinType::Int |
-            BuiltinType::Float | BuiltinType::Unit => self.type_kind(),
+            BuiltinType::Float => self.type_kind(),
             BuiltinType::Array => self.function1_kind(),
             BuiltinType::Function => self.function2_kind(),
         }

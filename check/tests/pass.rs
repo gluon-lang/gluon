@@ -962,3 +962,16 @@ fn field_access_tuple() {
 
     assert_eq!(result, Ok(Type::int()));
 }
+
+
+#[test]
+fn unit_tuple_match() {
+    let _ = ::env_logger::init();
+    let text = r#"
+match () with
+| () -> ()
+"#;
+    let result = support::typecheck(text);
+
+    assert_eq!(result, Ok(Type::unit()));
+}

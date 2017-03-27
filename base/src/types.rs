@@ -65,8 +65,6 @@ pub enum BuiltinType {
     Int,
     /// Floating point number
     Float,
-    /// The unit type
-    Unit,
     /// Type constructor for arrays, `Array a : Type -> Type`
     Array,
     /// Type constructor for functions, `(->) a b : Type -> Type -> Type`
@@ -104,7 +102,6 @@ impl BuiltinType {
             BuiltinType::Char => "Char",
             BuiltinType::Int => "Int",
             BuiltinType::Float => "Float",
-            BuiltinType::Unit => "()",
             BuiltinType::Array => "Array",
             BuiltinType::Function => "->",
         }
@@ -511,7 +508,7 @@ impl<Id, T> Type<Id, T>
     }
 
     pub fn unit() -> T {
-        Type::builtin(BuiltinType::Unit)
+        Type::record(vec![], vec![])
     }
 }
 
