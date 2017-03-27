@@ -61,7 +61,7 @@ fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
         Expr::Infix(_, _, _) |
         Expr::Array(_) |
         Expr::Record { .. } |
-        Expr::Tuple(_) |
+        Expr::Tuple { .. } |
         Expr::Error => (),
     }
     expr

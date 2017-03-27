@@ -229,14 +229,11 @@ AtomicPattern: Pattern<Id> = {
             Pattern::Ident(TypedIdent::new(id))
         },
 
-    "(" <elems: Comma<Pattern>> ")" =>
+    "(" <elems: Comma<Sp<Pattern>>> ")" =>
         match elems.len() {
-            // Unit pattern
-            0 => unimplemented!(),
             // Parenthesized pattern
-            1 => elems.into_iter().next().unwrap(),
-            // TODO: Tuples
-            _ => unimplemented!(),
+            1 => elems.into_iter().next().unwrap().value,
+            _ => Pattern::Tuple { typ: Type::hole(), elems: elems },
         },
 
     "{" <fields: Comma<FieldPattern>> "}" => {
@@ -342,13 +339,10 @@ AtomicExpr: Expr<Id> = {
 
     "(" <elems: Comma<SpExpr>> ")" =>
         match elems.len() {
-            // Unit expression
-            0 => Expr::Tuple(vec![]),
             // Parenthesized expression - wrap in a block to ensure
             // that it survives operator reparsing
             1 => Expr::Block(elems),
-            // TODO: Tuples
-            _ => unimplemented!(),
+            _ => Expr::Tuple { typ: Type::hole(), elems: elems },
         },
 
     "[" <elems: Comma<SpExpr>> "]" => Expr::Array(Array {

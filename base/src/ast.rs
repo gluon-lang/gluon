@@ -71,6 +71,10 @@ pub enum Pattern<Id> {
         types: Vec<(Id, Option<Id>)>,
         fields: Vec<(Id, Option<SpannedPattern<Id>>)>,
     },
+    Tuple {
+        typ: ArcType<Id>,
+        elems: Vec<SpannedPattern<Id>>,
+    },
     Ident(TypedIdent<Id>),
 }
 
@@ -132,7 +136,10 @@ pub enum Expr<Id> {
         exprs: Vec<ExprField<Id, SpannedExpr<Id>>>,
     },
     /// Tuple construction
-    Tuple(Vec<SpannedExpr<Id>>),
+    Tuple {
+        typ: ArcType<Id>,
+        elems: Vec<SpannedExpr<Id>>,
+    },
     /// Declare a series of value bindings
     LetBindings(Vec<ValueBinding<Id>>, Box<SpannedExpr<Id>>),
     /// Declare a series of type aliases
@@ -231,7 +238,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
                 }
             }
         }
-        Expr::Tuple(ref mut exprs) |
+        Expr::Tuple { elems: ref mut exprs, .. } |
         Expr::Block(ref mut exprs) => {
             for expr in exprs {
                 v.visit_expr(expr);
@@ -266,6 +273,12 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::Id
                 if let Some(ref mut pattern) = field.1 {
                     v.visit_pattern(pattern);
                 }
+            }
+        }
+        Pattern::Tuple { ref mut typ, ref mut elems } => {
+            v.visit_typ(typ);
+            for elem in elems {
+                v.visit_pattern(elem);
             }
         }
         Pattern::Ident(ref mut id) => v.visit_typ(&mut id.typ),
@@ -337,7 +350,7 @@ pub fn walk_expr<V: ?Sized + Visitor>(v: &mut V, e: &SpannedExpr<V::Ident>) {
                 }
             }
         }
-        Expr::Tuple(ref exprs) |
+        Expr::Tuple { elems: ref exprs, .. } |
         Expr::Block(ref exprs) => {
             for expr in exprs {
                 v.visit_expr(expr);
@@ -369,6 +382,12 @@ pub fn walk_pattern<V: ?Sized + Visitor>(v: &mut V, p: &Pattern<V::Ident>) {
                 if let Some(ref pattern) = field.1 {
                     v.visit_pattern(pattern);
                 }
+            }
+        }
+        Pattern::Tuple { ref typ, ref elems } => {
+            v.visit_typ(typ);
+            for elem in elems {
+                v.visit_pattern(elem);
             }
         }
         Pattern::Ident(ref id) => v.visit_typ(&id.typ),
@@ -412,13 +431,10 @@ impl Typed for Expr<Symbol> {
         match *self {
             Expr::Ident(ref id) => id.typ.clone(),
             Expr::Projection(_, _, ref typ) |
-            Expr::Record { ref typ, .. } => typ.clone(),
+            Expr::Record { ref typ, .. } |
+            Expr::Tuple { ref typ, .. } => typ.clone(),
             Expr::Literal(ref lit) => lit.env_type_of(env),
             Expr::IfElse(_, ref arm, _) => arm.env_type_of(env),
-            Expr::Tuple(ref exprs) => {
-                assert!(exprs.is_empty());
-                Type::unit()
-            }
             Expr::Infix(_, ref op, _) => {
                 if let Type::App(_, ref args) = *op.value.typ.clone() {
                     if let Type::App(_, ref args) = *args[1] {
@@ -457,6 +473,7 @@ impl Typed for Pattern<Symbol> {
         match *self {
             Pattern::Ident(ref id) => id.typ.clone(),
             Pattern::Record { ref typ, .. } => typ.clone(),
+            Pattern::Tuple { ref typ, .. } => typ.clone(),
             Pattern::Constructor(ref id, ref args) => get_return_type(env, &id.typ, args.len()),
         }
     }

@@ -178,6 +178,7 @@ impl<'input, Tokens> Layout<'input, Tokens>
 
             match (&token.value, offside.context) {
                 (&Token::Comma, Context::Brace) |
+                (&Token::Comma, Context::Paren) |
                 (&Token::Comma, Context::Bracket) => return Ok(token),
 
                 // If it is closing token we remove contexts until a context for that token is found

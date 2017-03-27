@@ -8,7 +8,7 @@ use pretty::{DocAllocator, Arena, DocBuilder};
 
 use smallvec::{SmallVec, VecLike};
 
-use ast::{self, DisplayEnv};
+use ast::{self, IdentEnv, DisplayEnv};
 use kind::{ArcKind, Kind, KindEnv};
 use merge::merge;
 use symbol::{Symbol, SymbolRef};
@@ -404,6 +404,23 @@ impl<Id, T> Type<Id, T>
 
     pub fn poly_variant(fields: Vec<Field<Id, T>>, rest: T) -> T {
         T::from(Type::Variant(Type::extend_row(Vec::new(), fields, rest)))
+    }
+
+    pub fn tuple<S, I>(symbols: &mut S, elems: I) -> T
+        where S: ?Sized + IdentEnv<Ident = Id>,
+              I: IntoIterator<Item = T>,
+              Id: From<String>,
+    {
+        Type::record(vec![],
+                     elems.into_iter()
+                         .enumerate()
+                         .map(|(i, typ)| {
+                             Field {
+                                 name: symbols.from_str(&format!("_{}", i)),
+                                 typ: typ,
+                             }
+                         })
+                         .collect())
     }
 
     pub fn record(types: Vec<Field<Id, Alias<Id, T>>>, fields: Vec<Field<Id, T>>) -> T {

@@ -92,6 +92,7 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
             Pattern::Ident(ref id) => {
                 self.stack.insert(id.name.clone(), id.typ.clone());
             }
+            Pattern::Tuple { elems: ref args, .. } |
             Pattern::Constructor(_, ref args) => {
                 for arg in args {
                     self.on_pattern(arg);
@@ -288,7 +289,7 @@ impl<F> FindVisitor<F>
                 }
                 self.visit_expr(&lambda.body)
             }
-            Expr::Tuple(ref args) => self.visit_one(args),
+            Expr::Tuple { elems: ref exprs, .. } |
             Expr::Block(ref exprs) => self.visit_one(exprs),
             Expr::Error => (),
         };

@@ -355,6 +355,12 @@ impl DisplayEnv for Symbols {
     }
 }
 
+impl IdentEnv for Symbols {
+    fn from_str(&mut self, s: &str) -> Symbol {
+        self.symbol(s)
+    }
+}
+
 impl<'s> DisplayEnv for SymbolModule<'s> {
     type Ident = Symbol;
 

@@ -455,13 +455,12 @@ impl<'a, 'e> Translator<'a, 'e> {
                            expr.span.start,
                            expr.span.expansion_id)
             }
-            ast::Expr::Tuple(ref exprs) => {
-                assert!(exprs.len() == 0, "Only unit is handled at the moment");
+            ast::Expr::Tuple { ref elems, .. } => {
                 let args: SmallVec<[_; 16]> =
-                    exprs.iter().map(|expr| self.translate(expr)).collect();
+                    elems.iter().map(|expr| self.translate(expr)).collect();
                 Expr::Data(TypedIdent {
                                name: self.dummy_symbol.name.clone(),
-                               typ: Type::unit(),
+                               typ: expr.env_type_of(&self.env),
                            },
                            arena.alloc_extend(args.into_iter()),
                            expr.span.start,
@@ -737,6 +736,11 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                                         })
                                         .collect::<Vec<_>>()
                                 }
+                                ast::Pattern::Tuple { ref elems, .. } => {
+                                    elems.iter()
+                                        .map(Cow::Borrowed)
+                                        .collect::<Vec<_>>()
+                                }
                                 _ => unreachable!(),
                             } })
                             .collect::<Vec<_>>();
@@ -783,7 +787,8 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                                 })
                                 .push(equation);
                         }
-                        ast::Pattern::Record { .. } => panic!(),
+                        ast::Pattern::Tuple { .. } |
+                        ast::Pattern::Record { .. } |
                         ast::Pattern::Ident(_) => unreachable!(),
                     }
                 }
@@ -943,7 +948,8 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         fn varcon(equation: &Equation) -> CType {
             match equation.patterns.first().expect("Pattern").value {
                 ast::Pattern::Ident(_) => CType::Variable,
-                ast::Pattern::Record { .. } => CType::Record,
+                ast::Pattern::Record { .. } |
+                ast::Pattern::Tuple { .. } => CType::Record,
                 ast::Pattern::Constructor(_, _) => CType::Constructor,
             }
         }
@@ -1002,6 +1008,18 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     if ident.is_none() {
                         ident = Some(id.clone())
                     }
+                }
+                ast::Pattern::Tuple { ref typ, ref elems } => {
+                    record_fields.extend(elems.iter()
+                        .zip(typ.row_iter())
+                        .enumerate()
+                        .map(|(i, (elem, field_type))| {
+                            (TypedIdent {
+                                 name: field_type.name.clone(),
+                                 typ: field_type.typ.clone(),
+                             },
+                             Some(self.extract_ident(i, &elem.value).name))
+                        }));
                 }
                 ast::Pattern::Record { ref typ, ref fields, .. } => {
                     for (i, field) in fields.iter().enumerate() {
