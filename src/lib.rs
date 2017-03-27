@@ -274,6 +274,29 @@ impl Compiler {
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
     /// expression is returned
+    ///
+    /// # Examples
+    ///
+    /// Evaluate the expression `"1 + 2"` in gluon
+    ///
+    /// ```
+    /// let vm = new_vm();
+    /// let (result, _) = Compiler::new()
+    ///     .run_expr::<i32>(&vm, "example", "1 + 2")
+    ///     .ok();
+    /// assert_eq!(result, Some(3));
+    /// ```
+    ///
+    /// Import from gluon's standard library and evaluate a string
+    ///
+    /// ```
+    /// let vm = new_vm();
+    /// let (result, _) = Compiler::new()
+    ///     .run_expr::<String>(&vm, "example", " let string  = import! \"std/string.glu\" in string.trim \"  Hello world  \t\" ")
+    ///     .unwrap();
+    /// assert_eq!(result, "Hello world");
+    /// ```
+    ///
     pub fn run_expr<'vm, T>(&mut self,
                             vm: &'vm Thread,
                             name: &str,

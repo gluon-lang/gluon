@@ -356,6 +356,24 @@ impl Thread {
 
     /// Creates a new global value at `name`.
     /// Fails if a global called `name` already exists.
+    ///
+    /// # Examples
+    ///
+    /// Load the `factorial` rust function into gluon and evaluate `factorial 5`
+    ///
+    /// ```
+    /// fn factorial(x: i32) -> i32 {
+    ///     if x <= 1 { 1 } else { x * factorial(x - 1) }
+    /// }
+    /// let vm = new_vm();
+    /// vm.define_global("factorial", factorial as fn (_) -> _)
+    ///     .unwrap();
+    /// let (result, _) = Compiler::new()
+    ///     .run_expr::<i32>(&vm, "example", "factorial 5")
+    ///     .unwrap();
+    /// assert_eq!(result, 120);
+    /// ```
+    ///
     pub fn define_global<'vm, T>(&'vm self, name: &str, value: T) -> Result<()>
         where T: Pushable<'vm> + VmType,
     {
@@ -371,7 +389,28 @@ impl Thread {
     }
 
     /// Retrieves the global called `name`.
-    /// Fails if the global does not exist or it does not have the correct type.
+    ///
+    /// # Examples
+    ///
+    /// Bind the `(+)` function in gluon's prelude standard library
+    /// to an `add` function in rust
+    ///
+    /// ```rust
+    /// let vm = new_vm();
+    /// // Ensure that the prelude module is loaded before trying to access something from it
+    /// Compiler::new()
+    ///     .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", r#" import! "std/prelude.glu" "#)
+    ///     .unwrap();
+    /// let mut add: FunctionRef<fn (i32, i32) -> i32> = vm.get_global("std.prelude.num_Int.(+)")
+    ///     .unwrap();
+    /// let result = add.call(1, 2);
+    /// assert_eq!(result, Ok(3));
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// if the global does not exist or it does not have the correct type.
+    ///
     pub fn get_global<'vm, T>(&'vm self, name: &str) -> Result<T>
         where T: Getable<'vm> + VmType,
     {
