@@ -406,7 +406,6 @@ impl<Id, T> Type<Id, T>
     pub fn tuple<S, I>(symbols: &mut S, elems: I) -> T
         where S: ?Sized + IdentEnv<Ident = Id>,
               I: IntoIterator<Item = T>,
-              Id: From<String>,
     {
         Type::record(vec![],
                      elems.into_iter()
