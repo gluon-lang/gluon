@@ -49,12 +49,11 @@ let monoid_List =
 
 let monoid_Option m : Monoid a -> Monoid (Option a) = {
     append = \l r ->
-        match l with
-        | Some x ->
-            match r with
-            | Some y -> Some (m.append x y)
-            | None -> l
-        | None -> r,
+        match (l, r) with
+        | (Some x, Some y) -> Some (m.append x y)
+        | (Some _, None) -> l
+        | (None, Some _) -> r
+        | (None, None) -> None,
     empty = None
 }
 
@@ -126,41 +125,26 @@ let eq_Char = {
 
 let eq_Option a : Eq a -> Eq (Option a) = {
     (==) = \l r ->
-        match l with
-        | Some l_val ->
-            match r with
-            | Some r_val -> a.(==) l_val r_val
-            | None -> False
-        | None ->
-            match r with
-            | Some _ -> False
-            | None -> True
+        match (l, r) with
+        | (Some l_val, Some r_val) -> a.(==) l_val r_val
+        | (None, None) -> True
+        | _ -> False
 }
 
 let eq_Result e a : Eq e -> Eq a -> Eq (Result e a) = {
     (==) = \l r ->
-        match l with
-        | Ok l_val ->
-            match r with
-            | Ok r_val -> a.(==) l_val r_val
-            | Err _ -> False
-        | Err l_val ->
-            match r with
-            | Ok _ -> False
-            | Err r_val -> e.(==) l_val r_val
+        match (l, r) with
+        | (Ok l_val, Ok r_val) -> a.(==) l_val r_val
+        | (Err l_val, Err r_val) -> e.(==) l_val r_val
+        | _ -> False
 }
 
 let eq_List a : Eq a -> Eq (List a) =
     let (==) l r =
-        match l with
-        | Nil ->
-            match r with
-            | Nil -> True
-            | Cons x y -> False
-        | Cons x xs ->
-            match r with
-            | Nil -> False
-            | Cons y ys -> a.(==) x y && xs == ys
+        match (l, r) with
+        | (Nil, Nil) -> True
+        | (Cons x xs, Cons y ys) -> a.(==) x y && xs == ys
+        | _ -> False
     { (==) }
 
 let monoid_Ordering = {
@@ -227,29 +211,21 @@ let ord_Char = {
 let ord_Option a : Ord a -> Ord (Option a) = {
     eq = eq_Option a.eq,
     compare = \l r ->
-        match l with
-            | Some l_val ->
-                match r with
-                    | Some r_val -> a.compare l_val r_val
-                    | None -> LT
-            | None ->
-                match r with
-                    | Some r_val -> GT
-                    | None -> EQ
+        match (l, r) with
+        | (Some l_val, Some r_val) -> a.compare l_val r_val
+        | (None, Some _) -> LT
+        | (Some _, None) -> GT
+        | (None, None) -> EQ
 }
 
 let ord_Result e a : Ord e -> Ord a -> Ord (Result e a) = {
     eq = eq_Result e.eq a.eq,
     compare = \l r ->
-        match l with
-            | Ok l_val ->
-                match r with
-                    | Ok r_val -> a.compare l_val r_val
-                    | Err _ -> GT
-            | Err l_val ->
-                match r with
-                    | Ok _ -> LT
-                    | Err r_val -> e.compare l_val r_val
+        match (l, r) with
+        | (Ok l_val, Ok r_val) -> a.compare l_val r_val
+        | (Err l_val, Err r_val) -> e.compare l_val r_val
+        | (Ok _, Err _) -> LT
+        | (Err _, Ok _) -> GT
 }
 
 /// Creates the `<=`, `<`, `>` and `>=` operators from an instance with `Ord`
@@ -409,24 +385,19 @@ let const : a -> b -> a =
 let applicative_Option : Applicative Option = {
     functor = functor_Option,
     apply = \f x ->
-        match f with
-        | Some g ->
-            match x with
-            | Some y -> Some (g y)
-            | None -> None
-        | None -> None,
+        match (f, x) with
+        | (Some g, Some y) -> Some (g y)
+        | _ -> None,
     pure = \x -> Some x
 }
 
 let applicative_Result : Applicative (Result e) = {
     functor = functor_Result,
     apply = \f x ->
-        match f with
-        | Ok g ->
-            match x with
-            | Ok y -> Ok (g y)
-            | Err _ -> x
-        | Err x -> Err x,
+        match (f, x) with
+        | (Ok g, Ok y) -> Ok (g y)
+        | (Ok _, Err _) -> x
+        | (Err x, _) -> Err x,
     pure = \x -> Ok x
 }
 

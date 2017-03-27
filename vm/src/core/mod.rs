@@ -1020,6 +1020,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                              },
                              Some(self.extract_ident(i, &elem.value).name))
                         }));
+                    break;
                 }
                 ast::Pattern::Record { ref typ, ref fields, .. } => {
                     for (i, field) in fields.iter().enumerate() {
