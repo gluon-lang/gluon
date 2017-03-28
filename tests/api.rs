@@ -163,10 +163,10 @@ fn return_delayed_future() {
         let (pong_c, pong_p) = channel();
         spawn(move || {
             ping_p.wait().unwrap();
-            pong_c.complete(i);
+            pong_c.send(i).unwrap();
         });
         FutureResult(lazy(move || {
-                ping_c.complete(());
+                ping_c.send(()).unwrap();
                 Ok(())
             })
             .and_then(|_| pong_p.map_err(|err| Error::Message(format!("{}", err))))
