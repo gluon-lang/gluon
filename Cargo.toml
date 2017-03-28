@@ -25,6 +25,7 @@ path = "src/lib.rs"
 
 name = "gluon"
 path = "src/main.rs"
+doc = false
 
 [dependencies]
 gluon_base = { path = "base", version = "0.3.0" }

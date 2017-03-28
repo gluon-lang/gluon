@@ -356,6 +356,33 @@ impl Thread {
 
     /// Creates a new global value at `name`.
     /// Fails if a global called `name` already exists.
+    ///
+    /// # Examples
+    ///
+    /// Load the `factorial` rust function into gluon and evaluate `factorial 5`
+    ///
+    /// ```
+    /// # extern crate gluon;
+    /// # #[macro_use] extern crate gluon_vm;
+    /// # use gluon::{new_vm,Compiler};
+    /// # use gluon::base::types::Type;
+    /// fn factorial(x: i32) -> i32 {
+    ///     if x <= 1 { 1 } else { x * factorial(x - 1) }
+    /// }
+    /// # fn main() {
+    /// let vm = new_vm();
+    /// vm.define_global("factorial", primitive!(1 factorial)).unwrap();
+    ///
+    /// let result = Compiler::new()
+    ///     .run_expr_async::<i32>(&vm, "example", "factorial 5")
+    ///     .sync_or_error()
+    ///     .unwrap();
+    /// let expected = (120, Type::int());
+    ///
+    /// assert_eq!(result, expected);
+    /// # }
+    /// ```
+    ///
     pub fn define_global<'vm, T>(&'vm self, name: &str, value: T) -> Result<()>
         where T: Pushable<'vm> + VmType,
     {
@@ -371,7 +398,34 @@ impl Thread {
     }
 
     /// Retrieves the global called `name`.
-    /// Fails if the global does not exist or it does not have the correct type.
+    ///
+    /// # Examples
+    ///
+    /// Bind the `(+)` function in gluon's prelude standard library
+    /// to an `add` function in rust
+    ///
+    /// ```rust
+    /// # extern crate gluon;
+    /// # use gluon::{new_vm,Compiler,RootedThread, Thread};
+    /// # use gluon::vm::api::{FunctionRef, Hole, OpaqueValue};
+    /// # fn main() {
+    /// let vm = new_vm();
+    /// Compiler::new()
+    ///     .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example",
+    ///         r#" import! "std/prelude.glu" "#)
+    ///     .sync_or_error()
+    ///     .unwrap();
+    /// let mut add: FunctionRef<fn(i32, i32) -> i32> =
+    ///     vm.get_global("std.prelude.num_Int.(+)").unwrap();
+    /// let result = add.call(1, 2);
+    /// assert_eq!(result, Ok(3));
+    /// # }
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// if the global does not exist or it does not have the correct type.
+    ///
     pub fn get_global<'vm, T>(&'vm self, name: &str) -> Result<T>
         where T: Getable<'vm> + VmType,
     {
