@@ -326,21 +326,15 @@ impl Compiler {
         where T: Getable<'vm> + VmType + Send + 'vm,
               T::Type: Sized,
     {
+        use check::check_signature;
+        use vm::api::IO;
+        use vm::api::generic::A;
+
         let expected = T::make_type(vm);
         expr_str.run_expr(self, vm, name, expr_str, Some(&expected))
             .and_then(move |v| {
                 let ExecuteValue { typ: actual, value, .. } = v;
-                let is_io = {
-                    expected.alias_ident()
-                        .and_then(|expected_ident| {
-                            let env = vm.get_env();
-                            env.find_type_info("IO")
-                                .ok()
-                                .map(|alias| *expected_ident == alias.name)
-                        })
-                        .unwrap_or(false)
-                };
-                if is_io {
+                if check_signature(&*vm.get_env(), &actual, &IO::<A>::make_type(vm)) {
                     vm.execute_io(*value)
                         .map(move |(_, value)| (value, expected, actual))
                         .map_err(Error::from)
