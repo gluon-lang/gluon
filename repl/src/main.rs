@@ -6,12 +6,13 @@ extern crate env_logger;
 extern crate clap;
 extern crate futures;
 
-extern crate gluon_base as base;
-extern crate gluon;
-extern crate gluon_check as check;
-extern crate gluon_parser as parser;
 #[macro_use]
-extern crate gluon_vm as vm;
+extern crate gluon_vm;
+extern crate gluon;
+
+use gluon::base;
+use gluon::check;
+use gluon::vm;
 
 use gluon::{new_vm, Compiler, Thread, Error, Result};
 use gluon::vm::thread::ThreadInternal;

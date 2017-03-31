@@ -31,9 +31,9 @@ fn find_kind(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     let args = args.value.trim();
     IO::Value(match vm.find_type_info(args) {
         Ok(ref alias) => {
-            let kind =
-                alias.args.iter().rev().fold(Kind::typ(),
-                                             |acc, arg| Kind::function(arg.kind.clone(), acc));
+            let kind = alias.args.iter().rev().fold(Kind::typ(), |acc, arg| {
+                Kind::function(arg.kind.clone(), acc)
+            });
             Ok(format!("{}", kind))
         }
         Err(err) => Err(format!("{}", err)),
@@ -192,9 +192,20 @@ pub fn run() -> Result<(), Box<StdError + Send + Sync>> {
 
 #[cfg(test)]
 mod tests {
-    use gluon::new_vm;
     use super::compile_repl;
     use vm::api::{IO, FunctionRef};
+    use gluon::{self, RootedThread};
+    use gluon::import::Import;
+
+    fn new_vm() -> RootedThread {
+        let vm = gluon::new_vm();
+        let import = vm.get_macros().get("import");
+        import.as_ref()
+            .and_then(|import| import.downcast_ref::<Import>())
+            .expect("Import macro")
+            .add_path("..");
+        vm
+    }
 
     #[test]
     fn compile_repl_test() {
