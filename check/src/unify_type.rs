@@ -405,8 +405,7 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>,
 
     // This default `rest` value will only be used on errors, or if both fields has the same fields
     let mut r_iter = r.row_iter();
-    for _ in r_iter.by_ref() {
-    }
+    for _ in r_iter.by_ref() {}
     let mut rest = r_iter.current_type().clone();
 
     // No need to do anything of no fields are missing
@@ -436,8 +435,7 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>,
     // No need to do anything of no fields are missing
     if !missing_from_left.is_empty() {
         let mut l_iter = l.row_iter();
-        for _ in l_iter.by_ref() {
-        }
+        for _ in l_iter.by_ref() {}
 
         match **l_iter.current_type() {
             Type::EmptyRow => {
@@ -529,7 +527,8 @@ fn find_alias_<'a, U>(unifier: &mut UnifierState<'a, U>,
 /// either the same types that were passed in or two types which have the same alias in their spine
 ///
 /// Example:
-/// ```
+///
+/// ```f#
 /// type Test a = | Test a Int
 /// type Test2 = Test String
 ///
@@ -778,8 +777,7 @@ mod tests {
             Ok(result) => {
                 // Get the row variable at the end of the resulting type so we can compare the types
                 let mut iter = result.row_iter();
-                for _ in iter.by_ref() {
-                }
+                for _ in iter.by_ref() {}
                 let row_variable = iter.current_type().clone();
                 let expected = Type::poly_record(vec![], vec![x.clone(), y.clone()], row_variable);
                 assert_eq!(result, expected);
