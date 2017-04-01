@@ -527,7 +527,8 @@ fn find_alias_<'a, U>(unifier: &mut UnifierState<'a, U>,
 /// either the same types that were passed in or two types which have the same alias in their spine
 ///
 /// Example:
-/// ```
+///
+/// ```f#
 /// type Test a = | Test a Int
 /// type Test2 = Test String
 ///

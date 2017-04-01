@@ -1,6 +1,7 @@
 //! Implementation of the `import!` macro.
 
 use std::any::Any;
+use std::borrow::Cow;
 use std::sync::{Arc, RwLock, Mutex};
 use std::fs::File;
 use std::io;
@@ -130,6 +131,42 @@ impl<I> Import<I> {
     pub fn add_path<P: Into<PathBuf>>(&self, path: P) {
         self.paths.write().unwrap().push(path.into());
     }
+
+    pub fn read_file<P>(&self, filename: P) -> Result<Cow<'static, str>, MacroError>
+        where P: AsRef<Path>,
+    {
+        self.read_file_(filename.as_ref())
+    }
+    fn read_file_(&self, filename: &Path) -> Result<Cow<'static, str>, MacroError> {
+        let mut buffer = String::new();
+
+        // Retrieve the source, first looking in the standard library included in the
+        // binary
+        let std_file = filename.to_str()
+            .and_then(|filename| STD_LIBS.iter().find(|tup| tup.0 == filename));
+        Ok(match std_file {
+            Some(tup) => Cow::Borrowed(tup.1),
+            None => {
+                let file = self.paths
+                    .read()
+                    .unwrap()
+                    .iter()
+                    .filter_map(|p| {
+                        let base = p.join(filename);
+                        match File::open(&base) {
+                            Ok(file) => Some(file),
+                            Err(_) => None,
+                        }
+                    })
+                    .next();
+                let mut file = file.ok_or_else(|| {
+                        Error::String(format!("Could not find file '{}'", filename.display()))
+                    })?;
+                file.read_to_string(&mut buffer)?;
+                Cow::Owned(buffer)
+            }
+        })
+    }
 }
 
 fn get_state<'m>(macros: &'m mut MacroExpander) -> &'m mut State {
@@ -162,7 +199,6 @@ impl<I> Macro for Import<I>
                 let vm = macros.vm;
 
                 let modulename = filename_to_module(filename);
-                let path = Path::new(&filename[..]);
                 // Only load the script if it is not already loaded
                 let name = Symbol::from(&*modulename);
                 debug!("Import '{}' {:?}", modulename, get_state(macros).visited);
@@ -174,33 +210,10 @@ impl<I> Macro for Import<I>
                         }
                         state.visited.push(filename.clone());
                     }
-                    let mut buffer = String::new();
 
                     // Retrieve the source, first looking in the standard library included in the
                     // binary
-                    let file_contents = match STD_LIBS.iter().find(|tup| tup.0 == filename) {
-                        Some(tup) => tup.1,
-                        None => {
-                            let file = self.paths
-                                .read()
-                                .unwrap()
-                                .iter()
-                                .filter_map(|p| {
-                                    let mut base = p.clone();
-                                    base.push(path);
-                                    match File::open(&base) {
-                                        Ok(file) => Some(file),
-                                        Err(_) => None,
-                                    }
-                                })
-                                .next();
-                            let mut file = file.ok_or_else(|| {
-                                    Error::String(format!("Could not find file '{}'", filename))
-                                })?;
-                            file.read_to_string(&mut buffer)?;
-                            &*buffer
-                        }
-                    };
+                    let file_contents = self.read_file(filename)?;
 
                     let mut compiler = Compiler::new().implicit_prelude(modulename != "std.types");
                     let errors = macros.errors.len();
@@ -220,7 +233,7 @@ impl<I> Macro for Import<I>
                         .import(&mut compiler,
                                 vm,
                                 &modulename,
-                                file_contents,
+                                &file_contents,
                                 macro_result.expr)?;
                 }
                 // FIXME Does not handle shadowing

@@ -45,6 +45,7 @@ use vm::compiler::CompiledFunction;
 use vm::thread::ThreadInternal;
 use vm::macros;
 use compiler_pipeline::*;
+use import::{DefaultImporter, Import};
 
 quick_error! {
     /// Error type wrapping all possible errors that can be generated from gluon
@@ -255,15 +256,26 @@ impl Compiler {
                                 vm: &'vm Thread,
                                 filename: &str)
                                 -> BoxFutureValue<'vm, (), Error> {
+        use std::borrow::Cow;
         use std::fs::File;
         use std::io::Read;
-        let result = (|| {
-            let mut buffer = StdString::new();
-            {
-                let mut file = File::open(filename)?;
-                file.read_to_string(&mut buffer)?;
+
+        let result = (|| -> Result<_> {
+            // Use the import macro's path resolution if it exists so that we mimick the import
+            // macro as close as possible
+            let opt_macro = vm.get_macros().get("import");
+            match opt_macro.as_ref().and_then(|mac| mac.downcast_ref::<Import>()) {
+                Some(import) => Ok(import.read_file(filename)?),
+                None => {
+
+                    let mut buffer = StdString::new();
+                    {
+                        let mut file = File::open(filename)?;
+                        file.read_to_string(&mut buffer)?;
+                    }
+                    Ok(Cow::Owned(buffer))
+                }
             }
-            Ok(buffer)
         })();
         let name = filename_to_module(filename);
         match result {
@@ -428,8 +440,6 @@ pub fn filename_to_module(filename: &str) -> StdString {
 /// Creates a new virtual machine with support for importing other modules and with all primitives
 /// loaded.
 pub fn new_vm() -> RootedThread {
-    use import::{DefaultImporter, Import};
-
     let vm = RootedThread::new();
     let gluon_path = env::var("GLUON_PATH").unwrap_or_else(|_| String::from("."));
     let import = Import::new(DefaultImporter);
