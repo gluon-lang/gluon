@@ -759,6 +759,7 @@ impl<'a> Compiler<'a> {
                          function: &mut FunctionEnvs,
                          tail_position: bool)
                          -> Result<()> {
+        assert!(args.len() == 2, "Invalid primitive application: {}", op);
         let lhs = &args[0];
         let rhs = &args[1];
         if op.as_ref() == "&&" {
