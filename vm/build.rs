@@ -1,5 +1,5 @@
 
-#[cfg(test)]
+#[cfg(feature = "test")]
 mod build {
     extern crate lalrpop;
     pub fn main() {
@@ -10,7 +10,7 @@ mod build {
     }
 }
 
-#[cfg(not(test))]
+#[cfg(not(feature = "test"))]
 mod build {
     pub fn main() {}
 }
