@@ -14,6 +14,7 @@ pub mod error;
 pub mod fixed;
 pub mod fnv;
 pub mod kind;
+pub mod merge;
 pub mod metadata;
 pub mod pos;
 pub mod resolve;

@@ -486,8 +486,11 @@ impl<'a> Compiler<'a> {
     /// interpreter
     pub fn compile_expr(&mut self, expr: &SpannedExpr<Symbol>) -> Result<CompiledFunction> {
         let env = self.vm.get_env();
-        let allocator = core::Allocator::new(&*env);
-        let expr = allocator.translate(expr);
+        let translator = core::Translator::new(&*env);
+        let expr = {
+            let expr = translator.allocator.arena.alloc(translator.translate(expr));
+            core::optimize::optimize(&translator.allocator, expr)
+        };
         let mut env = FunctionEnvs::new();
         let id = self.empty_symbol.clone();
         let typ = Type::function(vec![],

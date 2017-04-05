@@ -3,6 +3,7 @@ use std::result::Result as StdResult;
 
 use base::ast;
 use base::kind::{self, ArcKind, Kind, KindEnv};
+use base::merge;
 use base::symbol::Symbol;
 use base::types::{self, AppVec, ArcType, BuiltinType, Field, Generic, Type, Walker};
 
@@ -50,7 +51,7 @@ fn walk_move_kind2<F>(kind: &ArcKind, f: &mut F) -> Option<ArcKind>
             Kind::Function(ref arg, ref ret) => {
                 let arg_new = walk_move_kind2(arg, f);
                 let ret_new = walk_move_kind2(ret, f);
-                types::merge(arg, arg_new, ret, ret_new, Kind::function)
+                merge::merge(arg, arg_new, ret, ret_new, Kind::function)
             }
             Kind::Hole |
             Kind::Type |
@@ -358,7 +359,7 @@ impl<S> Unifiable<S> for ArcKind {
             (&Kind::Function(ref l1, ref l2), &Kind::Function(ref r1, ref r2)) => {
                 let a = unifier.try_match(l1, r1);
                 let r = unifier.try_match(l2, r2);
-                Ok(types::merge(l1, a, l2, r, Kind::function))
+                Ok(merge::merge(l1, a, l2, r, Kind::function))
             }
             (l, r) => {
                 if l == r {

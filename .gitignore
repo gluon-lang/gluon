@@ -8,3 +8,4 @@ target
 Cargo.lock
 
 parser/src/grammar.rs
+vm/src/core/grammar.rs
