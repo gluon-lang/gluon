@@ -4,18 +4,18 @@ type List a = | Nil | Cons a (List a)
 
 let unwrap opt : Option a -> a =
     match opt with
-        | Some x -> x
-        | None -> error "Option was None"
+    | Some x -> x
+    | None -> error "Option was None"
 
 let unwrap_ok res : Result e a -> a =
     match res with
-        | Ok x -> x
-        | Err _ -> error "Result was an Err"
+    | Ok x -> x
+    | Err _ -> error "Result was an Err"
 
 let unwrap_err res : Result e a -> e =
     match res with
-        | Ok _ -> error "Result was an Ok"
-        | Err x -> x
+    | Ok _ -> error "Result was an Ok"
+    | Err x -> x
 
 /**
 
@@ -42,19 +42,19 @@ let monoid_Function m : Monoid b -> (Monoid (a -> b)) = {
 let monoid_List =
     let append xs ys =
         match xs with
-            | Cons x zs -> Cons x (append zs ys)
-            | Nil -> ys
+        | Cons x zs -> Cons x (append zs ys)
+        | Nil -> ys
 
     { append, empty = Nil }
 
 let monoid_Option m : Monoid a -> Monoid (Option a) = {
     append = \l r ->
         match l with
-            | Some x ->
-                match r with
-                    | Some y -> Some (m.append x y)
-                    | None -> l
-            | None -> r,
+        | Some x ->
+            match r with
+            | Some y -> Some (m.append x y)
+            | None -> l
+        | None -> r,
     empty = None
 }
 
@@ -90,14 +90,14 @@ let not x = if x then False else True
 /// Folds a lift from the left
 let foldl f x xs =
     match xs with
-        | Cons y ys -> foldl f (f x y) ys
-        | Nil -> x
+    | Cons y ys -> foldl f (f x y) ys
+    | Nil -> x
 
 /// Folds a lift from the right
 let foldr f x xs =
     match xs with
-        | Cons y ys -> f y (foldr f x ys)
-        | Nil -> x
+    | Cons y ys -> f y (foldr f x ys)
+    | Nil -> x
 
 /// `Eq a` defines equality (==) on `a`
 type Eq a = {
@@ -260,24 +260,24 @@ let make_Ord ord =
         compare,
         (<=) = \l r ->
             match compare l r with
-                | LT -> True
-                | EQ -> True
-                | GT -> False,
+            | LT -> True
+            | EQ -> True
+            | GT -> False,
         (<) = \l r ->
             match compare l r with
-                | LT -> True
-                | EQ -> False
-                | GT -> False,
+            | LT -> True
+            | EQ -> False
+            | GT -> False,
         (>) = \l r ->
             match compare l r with
-                | LT -> False
-                | EQ -> False
-                | GT -> True,
+            | LT -> False
+            | EQ -> False
+            | GT -> True,
         (>=) = \l r ->
             match compare l r with
-                | LT -> False
-                | EQ -> True
-                | GT -> True
+            | LT -> False
+            | EQ -> True
+            | GT -> True
     }
 
 /**
@@ -366,22 +366,24 @@ let functor_Function : Functor ((->) a) = {
 }
 
 let functor_Option : Functor Option = {
-    map = \f x -> match x with
-                    | Some y -> Some (f y)
-                    | None -> None
+    map = \f x ->
+        match x with
+        | Some y -> Some (f y)
+        | None -> None
 }
 
 let functor_Result : Functor (Result e) = {
-    map = \f x -> match x with
-                    | Ok y -> Ok (f y)
-                    | Err _ -> x
+    map = \f x ->
+        match x with
+        | Ok y -> Ok (f y)
+        | Err _ -> x
 }
 
 let functor_List : Functor List =
     let map f xs =
         match xs with
-            | Cons y ys -> Cons (f y) (map f ys)
-            | Nil -> Nil
+        | Cons y ys -> Cons (f y) (map f ys)
+        | Nil -> Nil
     { map }
 
 let functor_IO : Functor IO = {
@@ -408,11 +410,11 @@ let applicative_Option : Applicative Option = {
     functor = functor_Option,
     apply = \f x ->
         match f with
-            | Some g ->
-                match x with
-                    | Some y -> Some (g y)
-                    | None -> None
-            | None -> None,
+        | Some g ->
+            match x with
+            | Some y -> Some (g y)
+            | None -> None
+        | None -> None,
     pure = \x -> Some x
 }
 
@@ -420,11 +422,11 @@ let applicative_Result : Applicative (Result e) = {
     functor = functor_Result,
     apply = \f x ->
         match f with
-            | Ok g ->
-                match x with
-                    | Ok y -> Ok (g y)
-                    | Err _ -> x
-            | Err x -> Err x,
+        | Ok g ->
+            match x with
+            | Ok y -> Ok (g y)
+            | Err _ -> x
+        | Err x -> Err x,
     pure = \x -> Ok x
 }
 
@@ -433,8 +435,8 @@ let applicative_List : Applicative List =
 
     let apply f xs =
         match f with
-            | Cons g gs -> (functor_List.map g xs) <> (apply gs xs)
-            | Nil -> Nil
+        | Cons g gs -> (functor_List.map g xs) <> (apply gs xs)
+        | Nil -> Nil
     let pure x = Cons x Nil
 
     { functor = functor_List, apply, pure }
@@ -466,8 +468,8 @@ let alternative_Option : Alternative Option = {
     applicative = applicative_Option,
     or = \x y ->
         match x with
-            | Some _ -> x
-            | None -> y,
+        | Some _ -> x
+        | None -> y,
     empty = None
 }
 
@@ -507,8 +509,8 @@ let monad_Option : Monad Option = {
     applicative = applicative_Option,
     flat_map = \f m ->
         match m with
-            | Some x -> f x
-            | None -> None
+        | Some x -> f x
+        | None -> None
 }
 
 let monad_List : Monad List =
@@ -516,8 +518,8 @@ let monad_List : Monad List =
 
     let flat_map f xs =
         match xs with
-            | Cons x ys -> (f x) <> (flat_map f ys)
-            | Nil -> Nil
+        | Cons x ys -> (f x) <> (flat_map f ys)
+        | Nil -> Nil
 
     { applicative = applicative_List, flat_map }
 
@@ -536,8 +538,8 @@ let make_Monad m =
     let join mm /* : m (m a) -> m a */ = mm >>= id
     let forM_ xs f /* : List a -> (a -> m b) -> m () */ =
         match xs with
-            | Cons y ys -> f y *> forM_ ys f
-            | Nil -> pure ()
+        | Cons y ys -> f y *> forM_ ys f
+        | Nil -> pure ()
 
     { applicative, flat_map, (=<<), (>>=), join, forM_ }
 
@@ -572,26 +574,26 @@ let show_List : Show a -> Show (List a) = \d ->
     let show xs =
         let show2 ys =
             match ys with
-                | Cons y ys2 ->
-                    match ys2 with
-                        | Cons z zs -> d.show y ++ ", " ++ show2 ys2
-                        | Nil -> d.show y ++ "]"
-                | Nil -> "]"
+            | Cons y ys2 ->
+                match ys2 with
+                | Cons z zs -> d.show y ++ ", " ++ show2 ys2
+                | Nil -> d.show y ++ "]"
+            | Nil -> "]"
         "[" ++ show2 xs
     { show }
 
 let show_Option : Show a -> Show (Option a) = \d ->
     let show o =
         match o with
-            | Some x -> "Some (" ++ d.show x ++ ")"
-            | None -> "None"
+        | Some x -> "Some (" ++ d.show x ++ ")"
+        | None -> "None"
     { show }
 
 let show_Result : Show e -> Show t -> Show (Result e t) = \e t ->
     let show o =
         match o with
-            | Ok x -> "Ok (" ++ t.show x ++ ")"
-            | Err x -> "Err (" ++ e.show x ++ ")"
+        | Ok x -> "Ok (" ++ t.show x ++ ")"
+        | Err x -> "Err (" ++ e.show x ++ ")"
     { show }
 
 {
