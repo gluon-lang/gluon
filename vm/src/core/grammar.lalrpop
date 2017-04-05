@@ -19,6 +19,10 @@ Identifier: Symbol = {
     <r"[A-Za-z_][A-Za-z0-9_]*"> => symbols.symbol(<>)
 };
 
+Field: (Symbol, Option<Symbol>) = {
+    <field: Identifier> <binding: ("=" <Identifier>)?> => (field, binding)
+};
+
 Pattern: Pattern = {
     <id: Identifier> => {
         if id.as_ref().starts_with(char::is_uppercase) {
@@ -29,7 +33,9 @@ Pattern: Pattern = {
     },
     <id: Identifier> <args: Identifier+> =>
         Pattern::Constructor(TypedIdent::new(id), args.into_iter().map(TypedIdent::new).collect()),
-    "{" <Comma<Identifier>> "}" => Pattern::Record(<>.into_iter().map(|field| (TypedIdent::new(field), None)).collect()),
+    "{" <Comma<Field>> "}" => Pattern::Record(<>.into_iter()
+        .map(|(field, binding)| (TypedIdent::new(field), binding))
+        .collect()),
 };
 
 Alternative: Alternative<'a> = {
@@ -53,7 +59,13 @@ AtomicExpr: Expr<'a> = {
         let args = allocator.arena.alloc_extend(args);
         Expr::Data(id, args, BytePos::default(), ExpansionId::default())
     },
-    <Identifier> => Expr::Ident(TypedIdent::new(<>), Span::default()),
+    <id: Identifier> => {
+        if id.as_ref().starts_with(char::is_uppercase) {
+            Expr::Data(TypedIdent::new(id), &[], BytePos::default(), ExpansionId::default())
+        } else {
+            Expr::Ident(TypedIdent::new(id), Span::default())
+        }
+    },
     <r"[0-9]+"> => Expr::Const(Literal::Int(<>.parse().unwrap()), Span::default()),
 };
 
