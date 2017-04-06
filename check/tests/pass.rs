@@ -28,11 +28,9 @@ macro_rules! assert_pass {
 fn make_ident_type(typ: ArcType) -> ArcType {
     use base::types::walk_move_type;
     walk_move_type(typ,
-                   &mut |typ| {
-                       match *typ {
-                           Type::Alias(ref alias) => Some(Type::ident(alias.name.clone())),
-                           _ => None,
-                       }
+                   &mut |typ| match *typ {
+                       Type::Alias(ref alias) => Some(Type::ident(alias.name.clone())),
+                       _ => None,
                    })
 }
 
@@ -913,4 +911,67 @@ Test 0
         Type::Alias(_) => (),
         ref typ => panic!("Expected alias, got {:?}", typ),
     }
+}
+
+#[test]
+fn simple_tuple_type() {
+    let _ = ::env_logger::init();
+    let text = r#"
+("test", 123)
+"#;
+    let result = support::typecheck(text);
+
+    let interner = support::get_local_interner();
+    let mut interner = interner.borrow_mut();
+    assert_eq!(result, Ok(Type::tuple(&mut *interner, vec![Type::string(), Type::int()])));
+}
+
+#[test]
+fn match_tuple_type() {
+    let _ = ::env_logger::init();
+    let text = r#"
+match (1, "test") with
+| (x, y) -> (y, x)
+"#;
+    let result = support::typecheck(text);
+
+    let interner = support::get_local_interner();
+    let mut interner = interner.borrow_mut();
+    assert_eq!(result, Ok(Type::tuple(&mut *interner, vec![Type::string(), Type::int()])));
+}
+
+#[test]
+fn match_tuple_record() {
+    let _ = ::env_logger::init();
+    let text = r#"
+match (1, "test") with
+| { _1, _0 } -> _1
+"#;
+    let result = support::typecheck(text);
+
+    assert_eq!(result, Ok(Type::string()));
+}
+
+#[test]
+fn field_access_tuple() {
+    let _ = ::env_logger::init();
+    let text = r#"
+(1, "test")._0
+"#;
+    let result = support::typecheck(text);
+
+    assert_eq!(result, Ok(Type::int()));
+}
+
+
+#[test]
+fn unit_tuple_match() {
+    let _ = ::env_logger::init();
+    let text = r#"
+match () with
+| () -> ()
+"#;
+    let result = support::typecheck(text);
+
+    assert_eq!(result, Ok(Type::unit()));
 }

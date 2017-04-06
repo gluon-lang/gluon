@@ -62,6 +62,7 @@ pub fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
                 Pattern::Ident(ref mut id) => {
                     self.stack_var(id.name.clone(), metadata);
                 }
+                Pattern::Tuple { .. } |
                 Pattern::Constructor(..) => (),
             }
         }

@@ -114,6 +114,16 @@ fn type_mutually_recursive() {
 }
 
 #[test]
+fn tuple_type() {
+    let _ = ::env_logger::init();
+
+    let expr = r#"
+        let _: (Int, String, Option Int) = (1, "", None)
+        1"#;
+    parse_new!(expr);
+}
+
+#[test]
 fn field_access_test() {
     let _ = ::env_logger::init();
     let e = parse_new!("{ x = 1 }.x");

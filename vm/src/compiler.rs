@@ -735,9 +735,6 @@ impl<'a> Compiler<'a> {
                     Type::App(ref array, _) if **array == Type::Builtin(BuiltinType::Array) => {
                         function.emit(ConstructArray(exprs.len() as VmIndex));
                     }
-                    Type::Builtin(BuiltinType::Unit) => {
-                        function.emit(Construct { tag: 0, args: 0 })
-                    }
                     Type::Variant(ref variants) => {
                         function.emit(Construct {
                             tag: variants.row_iter()

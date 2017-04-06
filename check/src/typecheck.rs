@@ -558,9 +558,23 @@ impl<'a> Typecheck<'a> {
                 };
                 Ok(TailCall::Type(return_type))
             }
-            Expr::Tuple(ref mut exprs) => {
-                assert!(exprs.len() == 0);
-                Ok(TailCall::Type(Type::unit()))
+            Expr::Tuple { ref mut typ, elems: ref mut exprs } => {
+                *typ = if exprs.is_empty() {
+                    Type::unit()
+                } else {
+                    let fields = exprs.iter_mut()
+                        .enumerate()
+                        .map(|(i, expr)| {
+                            let typ = self.typecheck(expr);
+                            Field {
+                                name: self.symbols.symbol(format!("_{}", i)),
+                                typ: typ,
+                            }
+                        })
+                        .collect();
+                    Type::record(vec![], fields)
+                };
+                Ok(TailCall::Type(typ.clone()))
             }
             Expr::Match(ref mut expr, ref mut alts) => {
                 let typ = self.typecheck(&mut **expr);
@@ -840,6 +854,17 @@ impl<'a> Typecheck<'a> {
 
                 match_type
             }
+            Pattern::Tuple { ref mut typ, ref mut elems } => {
+                let tuple_type = {
+                    let subs = &mut self.subs;
+                    Type::tuple(&mut self.symbols, (0..elems.len()).map(|_| subs.new_var()))
+                };
+                *typ = self.unify_span(span, &tuple_type, match_type);
+                for (elem, field) in elems.iter_mut().zip(tuple_type.row_iter()) {
+                    self.typecheck_pattern(elem, field.typ.clone());
+                }
+                tuple_type
+            }
             Pattern::Ident(ref mut id) => {
                 self.stack_var(id.name.clone(), match_type.clone());
                 id.typ = match_type.clone();
@@ -1055,6 +1080,11 @@ impl<'a> Typecheck<'a> {
                                            self.intersect_type(level, field_name, field_type);
                                        }
                                    });
+            }
+            Pattern::Tuple { ref typ, ref mut elems } => {
+                for (elem, field) in elems.iter_mut().zip(typ.row_iter()) {
+                    self.finish_pattern(level, elem, &field.typ);
+                }
             }
             Pattern::Constructor(ref id, ref mut args) => {
                 debug!("{}: {}",

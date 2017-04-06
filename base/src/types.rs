@@ -8,7 +8,7 @@ use pretty::{DocAllocator, Arena, DocBuilder};
 
 use smallvec::{SmallVec, VecLike};
 
-use ast::{self, DisplayEnv};
+use ast::{self, IdentEnv, DisplayEnv};
 use kind::{ArcKind, Kind, KindEnv};
 use merge::merge;
 use symbol::{Symbol, SymbolRef};
@@ -65,8 +65,6 @@ pub enum BuiltinType {
     Int,
     /// Floating point number
     Float,
-    /// The unit type
-    Unit,
     /// Type constructor for arrays, `Array a : Type -> Type`
     Array,
     /// Type constructor for functions, `(->) a b : Type -> Type -> Type`
@@ -104,7 +102,6 @@ impl BuiltinType {
             BuiltinType::Char => "Char",
             BuiltinType::Int => "Int",
             BuiltinType::Float => "Float",
-            BuiltinType::Unit => "()",
             BuiltinType::Array => "Array",
             BuiltinType::Function => "->",
         }
@@ -406,6 +403,22 @@ impl<Id, T> Type<Id, T>
         T::from(Type::Variant(Type::extend_row(Vec::new(), fields, rest)))
     }
 
+    pub fn tuple<S, I>(symbols: &mut S, elems: I) -> T
+        where S: ?Sized + IdentEnv<Ident = Id>,
+              I: IntoIterator<Item = T>,
+    {
+        Type::record(vec![],
+                     elems.into_iter()
+                         .enumerate()
+                         .map(|(i, typ)| {
+                             Field {
+                                 name: symbols.from_str(&format!("_{}", i)),
+                                 typ: typ,
+                             }
+                         })
+                         .collect())
+    }
+
     pub fn record(types: Vec<Field<Id, Alias<Id, T>>>, fields: Vec<Field<Id, T>>) -> T {
         Type::poly_record(types, fields, Type::empty_row())
     }
@@ -494,7 +507,7 @@ impl<Id, T> Type<Id, T>
     }
 
     pub fn unit() -> T {
-        Type::builtin(BuiltinType::Unit)
+        Type::record(vec![], vec![])
     }
 }
 

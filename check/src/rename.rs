@@ -124,6 +124,11 @@ pub fn rename(symbols: &mut SymbolModule,
                     let new_name = self.stack_var(id.name.clone(), pattern.span, id.typ.clone());
                     id.name = new_name;
                 }
+                ast::Pattern::Tuple { ref typ, ref mut elems } => {
+                    for (field, elem) in typ.row_iter().zip(elems) {
+                        self.new_pattern(&field.typ, elem);
+                    }
+                }
                 ast::Pattern::Constructor(ref mut id, ref mut args) => {
                     let typ = self.env
                         .find_type(&id.name)
