@@ -194,7 +194,7 @@ fn write_response(response: &ResponseBody,
     use futures::future::poll_fn;
     use futures::AsyncSink;
 
-    // Turn `bytes´ into a `Chunk` which can be sent to the http body
+    // Turn `bytesÂ´ into a `Chunk` which can be sent to the http body
     let mut unsent_chunk = Some(Ok(bytes.to_owned().into()));
     let response = response.0.clone();
     FutureResult(poll_fn(move || {
@@ -247,9 +247,7 @@ type HttpState = record_type!{
 fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>) -> IO<()> {
     let WithVM { value: handler, vm: thread } = value;
 
-    use hyper::Server;
-    use hyper::server::Request as HyperRequest;
-    use hyper::server::Response as HyperResponse;
+    use hyper::server::{Http, Request as HyperRequest, Response as HyperResponse};
 
     // Retrieve the `handle` function from the http module which we use to evaluate values of type // `Handler Response`
     type ListenFn = fn(OpaqueValue<RootedThread, Handler<Response>>, HttpState) -> IO<Response>;
@@ -318,21 +316,19 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
     }
 
     let addr = format!("127.0.0.1:{}", port).parse().unwrap();
-    let (_listening, server) = Server::standalone(move |tokio| {
-            Server::http(&addr, tokio)
-                ?
-                .handle(move || {
-                            Ok(Listen {
-                                handle: handle.clone(),
-                                handler: handler.clone(),
-                            })
-                        },
-                        tokio)
+    let result = Http::new()
+        .bind(&addr, move || {
+            Ok(Listen {
+                handle: handle.clone(),
+                handler: handler.clone(),
+            })
         })
-        .unwrap();
-    server.run();
+        .and_then(|server| server.run());
 
-    IO::Value(())
+    match result {
+        Ok(()) => IO::Value(()),
+        Err(err) => IO::Exception(format!("{}", err)),
+    }
 }
 
 // To let the `http_types` module refer to `Body` and `ResponseBody` we register these types in a

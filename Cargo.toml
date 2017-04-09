@@ -46,7 +46,7 @@ skeptic = { version = "0.6", optional = true }
 collect-mac = "0.1.0"
 env_logger = "0.3.4"
 
-hyper = { git = "https://github.com/hyperium/hyper", default-features = false }
+hyper = { git = "https://github.com/hyperium/hyper", default-features = false, rev = "5c1cfa2bce93a57db2f720cd04436a5f92e80634" }
 curl = "0.4.1"
 
 [features]

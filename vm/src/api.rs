@@ -892,7 +892,7 @@ impl<'vm, F> AsyncPushable<'vm> for FutureResult<F>
         unsafe {
             context.return_future(self.0);
         }
-        Ok(Async::NotReady)
+        Ok(Async::Ready(()))
     }
 }
 
