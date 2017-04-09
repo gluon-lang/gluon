@@ -6,7 +6,7 @@ mod build {
         lalrpop::Configuration::new()
             .process_current_dir()
             .unwrap();
-        println!("cargo:rerun-if-changed=src/grammar.lalrpop");
+        println!("cargo:rerun-if-changed=src/core/grammar.lalrpop");
     }
 }
 
