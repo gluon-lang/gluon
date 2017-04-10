@@ -3,6 +3,9 @@ name = "gluon_repl"
 version = "0.3.0"
 authors = ["Markus Westerlind <marwes91@gmail.com>"]
 
+[[bin]]
+name = "gluon"
+
 [dependencies]
 
 gluon_vm = { version = "0.3.0", path = "../vm" }
