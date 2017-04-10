@@ -162,8 +162,8 @@ fn return_delayed_future() {
         let (ping_c, ping_p) = channel();
         let (pong_c, pong_p) = channel();
         spawn(move || {
-            ping_p.wait().unwrap();
-            pong_c.send(i).unwrap();
+            ping_p.wait().expect("wait");
+            pong_c.send(i).expect("send");
         });
         FutureResult(lazy(move || {
                 ping_c.send(()).unwrap();

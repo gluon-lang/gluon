@@ -176,11 +176,18 @@ impl<'a> TypeEnv for Environment<'a> {
             .iter()
             .find(|&(_, &(_, ref alias))| match **alias.unresolved_type() {
                 Type::Record(ref row) => {
-                    fields.iter()
-                        .all(|name| row.row_iter().any(|f| f.name.name_eq(name)))
+                        // Check that all of `fields` exist in the record
+                        fields.iter()
+                            .all(|name| {
+                                row.row_iter()
+                                    .map(|f| &f.name)
+                                    .chain(row.type_field_iter().map(|f| &f.name))
+                                    .any(|other| other.name_eq(name))
+                            })
+                    }
+                    _ => false,
                 }
-                _ => false,
-            })
+            )
             // FIXME Don't use unresolved_type
             .map(|t| ((t.1).0.clone(), (t.1).1.unresolved_type().clone()))
             .or_else(|| self.environment.find_record(fields))
@@ -275,9 +282,16 @@ impl<'a> Typecheck<'a> {
     }
 
     fn find_record(&self, fields: &[Symbol]) -> TcResult<(ArcType, ArcType)> {
-        self.environment
-            .find_record(fields)
-            .ok_or(TypeError::UndefinedRecord { fields: fields.to_owned() })
+        // If fields is empty it is going to match any record which means this function probably
+        // returns the wrong record as the record we expect can still contain type fields.
+        // Just return an error so that inference continues without any guessed record type.
+        if fields.is_empty() {
+            Err(TypeError::UndefinedRecord { fields: fields.to_owned() })
+        } else {
+            self.environment
+                .find_record(fields)
+                .ok_or(TypeError::UndefinedRecord { fields: fields.to_owned() })
+        }
     }
 
     fn find_type_info(&self, id: &Symbol) -> TcResult<&Alias<Symbol, ArcType>> {
@@ -689,9 +703,11 @@ impl<'a> Typecheck<'a> {
                         new_fields.push(Field::new(field.name.clone(), typ));
                     }
                 }
-                let result = self.find_record(&new_fields.iter()
-                        .map(|f| f.name.clone())
-                        .collect::<Vec<_>>())
+                let record_fields = new_fields.iter()
+                    .map(|f| f.name.clone())
+                    .chain(new_types.iter().map(|f| f.name.clone()))
+                    .collect::<Vec<_>>();
+                let result = self.find_record(&record_fields)
                     .map(|t| (t.0.clone(), t.1.clone()));
                 let (id_type, record_type) = match result {
                     Ok(x) => x,

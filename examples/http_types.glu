@@ -1,0 +1,45 @@
+
+/// HTTP method
+type Method = | Get | Post | Delete | Update
+
+/// Type used by handlers to indicate why they could not process a request
+type Failure = | DontProcess | Error String
+
+/// HTTP server request
+type Request = {
+    method : Method,
+    uri : String,
+    body: Body
+}
+
+type StatusCode = | OK | NotFound | InternalServerError
+
+/// HTTP server response
+type Response = {
+    status : StatusCode
+}
+
+type HttpState = {
+    request: Request,
+    response : ResponseBody
+}
+
+/// The main type of this micro http framework. A handler takes two continuations and a `Request` and
+/// cakks one of the continuations depending on if it can successfully handle the request or not
+type Handler a =
+    // Success continuation
+    (a -> HttpState -> IO Response) ->
+    // Failure continuation
+    (Failure -> HttpState -> IO Response) ->
+    HttpState ->
+    IO Response
+
+{
+    Method,
+    Failure,
+    Request,
+    StatusCode,
+    Response,
+    Handler,
+    HttpState,
+}

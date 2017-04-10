@@ -894,7 +894,6 @@ type Bar = Test Foo
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
 
-
 /// Check that after typechecking, the resulting types are `Alias`, not `Ident`. This is necessary
 /// so that when the type is later propagated it knows what its internal representation are without
 /// any extra information
@@ -911,6 +910,18 @@ Test 0
         Type::Alias(_) => (),
         ref typ => panic!("Expected alias, got {:?}", typ),
     }
+}
+#[test]
+fn dont_guess_a_record_when_the_construction_has_no_fields() {
+    let _ = ::env_logger::init();
+    let text = r#"
+type Test = { x : Int }
+type Test2 = Int
+
+{ Test2 }
+"#;
+    let result = support::typecheck(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
 }
 
 #[test]
@@ -975,3 +986,4 @@ match () with
 
     assert_eq!(result, Ok(Type::unit()));
 }
+

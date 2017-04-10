@@ -37,5 +37,6 @@ let show : Show String = {
     ends_with = string_prim.ends_with,
     from_utf8 = string_prim.from_utf8,
     char_at = string_prim.char_at,
+    as_bytes = string_prim.as_bytes,
     monoid
 }

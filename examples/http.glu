@@ -1,0 +1,154 @@
+let prelude = import! "std/prelude.glu"
+let string = import! "std/string.glu"
+let { (==) } = string.eq
+let { Functor, Applicative, Alternative, Monad } = prelude
+let { (<<), id } = prelude.make_Category prelude.category_Function
+let { pure } = prelude.applicative_IO
+
+let {
+    Method,
+    Failure,
+    Request,
+    StatusCode,
+    Response,
+    Handler,
+    HttpState } = import! "examples/http_types.glu"
+
+/// Force the value to be a Handler. Necessary to make the the type inference work for
+/// higher-kinded types
+let make: Handler a -> Handler a = id
+
+let functor: Functor Handler = {
+    map = \f handler ->
+        // FIXME type inference fails without this
+        let handler = make handler
+        make (\success failure state -> handler (success << f) failure state)
+}
+
+let flat_map f handler: (a -> Handler b) -> Handler a -> Handler b =
+    // FIXME type inference fails without this
+    let handler = make handler
+    make (\success failure state ->
+        let success2 a r = make (f a) success failure state
+        handler success2 failure state)
+
+
+let applicative: Applicative Handler = {
+    functor,
+    apply = \a m ->
+        let m = make m
+        flat_map (\f -> functor.map f m) a,
+    pure = \a -> make (\success _ state -> success a state)
+}
+let { (*>) } = prelude.make_Applicative applicative
+
+let alternative: Alternative Handler = {
+    applicative,
+    // Tries to handle the request with `l`, if it fails with `DontProcess` then `r` is tried instead
+    or = \l r -> make (\success failure state ->
+        let failure2 reason state2 =
+            match reason with
+            | DontProcess -> make r success failure state2
+            | Error _ -> failure reason state2
+
+        make l success failure2 state),
+    empty = make (\_ failure state -> failure DontProcess state)
+}
+let { or, empty, (<|>) } = prelude.make_Alternative alternative
+
+let monad: Monad Handler = {
+    applicative,
+    flat_map
+}
+let { (>>=) } = prelude.make_Monad monad
+
+/// Handles the request if `predicate` returns `True
+let test predicate: (Request -> Bool) -> Handler () =
+    \success failure state ->
+        if predicate state.request then
+            success () state
+        else
+            failure DontProcess state
+
+/// Handles `Get` requests
+let get : Handler () =
+    test (\request ->
+        match request.method with
+        | Get -> True
+        | _ -> False)
+
+/// Handles `Post` requests
+let post : Handler () =
+    test (\request ->
+        match request.method with
+        | Post -> True
+        | _ -> False)
+
+/// Processes this handler if `uri` matches the request's uri
+let path uri: String -> Handler () =
+    test (\request -> request.uri == uri)
+
+/// Retrieves the HTTP request
+let get_request : Handler Request =
+    \success _ state -> success state.request state
+
+/// Retrieves the body of the http response
+let get_response_body : Handler ResponseBody =
+    make (\success failure state -> success state.response state)
+
+/// Returns `OK` with an empty body
+let empty_response = { status = OK }
+
+/// Converts an `IO` into a `Handler`
+let io_handler io: IO a -> Handler a =
+    make (\success _ state -> prelude.monad_IO.flat_map (\a -> success a state) io)
+
+/// Write `bytes` to the http response
+let write_response bytes : Array Byte -> Handler () =
+    get_response_body >>= (\response -> io_handler (http_prim.write_response response bytes))
+
+/// Throws an exception which aborts the current handler. Can be caught with `catch_error`
+let fail msg : String -> Handler a =
+    make (\_ failure state -> failure (Error msg) state)
+
+/// Recovers from an exception thrown by `fail`
+let catch_error action catch : Handler a -> (String -> Handler a) -> Handler a =
+    make (\success failure state ->
+        let failure2 reason state2 =
+            match reason with
+            | DontProcess -> failure reason state2
+            | Error msg -> catch msg success failure state2
+        action success failure2 state)
+
+/// Takes a `Handler` and a `Request` tries to process the request
+let handle handler state : Handler Response -> HttpState -> IO Response =
+    let not_found _ _ =
+        pure { status = NotFound, body = "Page not found" }
+    handler (\response _ -> pure response) not_found state
+
+{
+    Method,
+    Failure,
+    Request,
+    StatusCode,
+    Response,
+    Handler,
+
+    functor,
+    applicative,
+    alternative,
+    monad,
+
+    empty_response,
+    get_request,
+    handle,
+    get,
+    post,
+    path,
+    listen = http_prim.listen,
+    read_chunk = http_prim.read_chunk,
+    write_response,
+    io_handler,
+    fail,
+    catch_error
+}

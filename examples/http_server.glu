@@ -1,0 +1,40 @@
+let prelude = import! "std/prelude.glu"
+let { show } = prelude.show_Int
+let string = import! "std/string.glu"
+let { (<>) } = prelude.make_Monoid string.monoid
+
+let { (*>) } = prelude.make_Applicative prelude.applicative_IO
+
+let {
+    Request, Response, Handler, StatusCode,
+    handle, io_handler, empty_response, get, post, get_request, path, listen, read_chunk, write_response, fail,
+    catch_error, functor, applicative, alternative, monad } = import! "examples/http.glu"
+
+let { map } = functor
+let { (*>), pure } = prelude.make_Applicative applicative
+let { (<|>) } = prelude.make_Alternative alternative
+let { (>>=) } = prelude.make_Monad monad
+
+let hello_world : Handler Response =
+    write_response (string.as_bytes "Hello World") *> (pure { status = OK })
+
+let echo_body request : Request -> Handler () =
+    io_handler (read_chunk request.body) >>= (\chunk ->
+        match chunk with
+        | Some chunk -> write_response chunk *> echo_body request
+        | None -> pure ()
+        )
+
+let echo: Handler Response =
+    get_request >>= echo_body *> pure { status = OK }
+
+let handler =
+    (get *> path "/" *> hello_world) <|>
+        (post *> path "/echo" *> echo) <|>
+        (get *> path "/error" *> (pure { status = InternalServerError }))
+
+let print_error h = catch_error h (\msg -> io_handler (io.println msg))
+
+\port ->
+    io.println ("Opened server on port " <> show port) *>
+        listen port handler
