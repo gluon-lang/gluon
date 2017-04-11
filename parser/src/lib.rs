@@ -2,7 +2,7 @@
 //! avoid a recompilation every time a later part of the compiler is changed. Due to this the
 //! string interner and therefore also garbage collector needs to compiled before the parser.
 
-#[macro_use]
+#[macro_use] 
 extern crate log;
 #[macro_use]
 extern crate quick_error;
@@ -12,7 +12,7 @@ extern crate lalrpop_util;
 use std::cell::RefCell;
 use std::fmt;
 
-use base::ast::{Expr, IdentEnv, SpannedExpr, SpannedPattern, TypedIdent};
+use base::ast::{Expr, IdentEnv, ValueBinding, SpannedExpr, SpannedPattern, TypedIdent};
 use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::symbol::Symbol;
@@ -263,30 +263,35 @@ type ErrorEnv<'err, 'input> = &'err mut Errors<LalrpopError<'input>>;
 
 pub type ParseErrors = Errors<Spanned<Error, BytePos>>;
 
+macro_rules! layout {
+    ($result_ok_iter: ident, $input: expr) => { {
+        let tokenizer = Tokenizer::new($input);
+        $result_ok_iter = RefCell::new(ResultOkIter::new(tokenizer));
+
+        Layout::new(SharedIter::new(&$result_ok_iter)).map(|token| {
+            /// Return the tokenizer error if one exists
+            $result_ok_iter.borrow_mut()
+                .result(())
+                .map_err(|err| {
+                    pos::spanned2(err.span.start.absolute,
+                                err.span.end.absolute,
+                                err.value.into())
+                })?;
+            let token = token.map_err(|err| pos::spanned2(0.into(), 0.into(), err.into()))?;
+            debug!("Lex {:?}", token.value);
+            let Span { start, end, .. } = token.span;
+            Ok((start.absolute, token.value, end.absolute))
+        })
+    } }
+}
+
 pub fn parse_partial_expr<Id>(symbols: &mut IdentEnv<Ident = Id>,
                               input: &str)
                               -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, ParseErrors)>
     where Id: Clone
 {
-    let tokenizer = Tokenizer::new(input);
-    let result_ok_iter = RefCell::new(ResultOkIter::new(tokenizer));
-
-    let layout = Layout::new(SharedIter::new(&result_ok_iter)).map(|token| {
-        /// Return the tokenizer error if one exists
-        result_ok_iter
-            .borrow_mut()
-            .result(())
-            .map_err(|err| {
-                         pos::spanned2(err.span.start.absolute,
-                                       err.span.end.absolute,
-                                       err.value.into())
-                     })?;
-        let token = token
-            .map_err(|err| pos::spanned2(0.into(), 0.into(), err.into()))?;
-        debug!("Lex {:?}", token.value);
-        let Span { start, end, .. } = token.span;
-        Ok((start.absolute, token.value, end.absolute))
-    });
+    let result_ok_iter;
+    let layout = layout!(result_ok_iter, input);
 
     let mut parse_errors = Errors::new();
 
@@ -333,6 +338,60 @@ pub fn parse_expr(symbols: &mut IdentEnv<Ident = Symbol>,
                   input: &str)
                   -> Result<SpannedExpr<Symbol>, ParseErrors> {
     parse_partial_expr(symbols, input).map_err(|t| t.1)
+}
+
+pub type LetOrExpr<Id> = Result<SpannedExpr<Id>, ValueBinding<Id>>;
+
+pub fn parse_partial_let_or_expr<Id>
+    (symbols: &mut IdentEnv<Ident = Id>,
+     input: &str)
+     -> Result<LetOrExpr<Id>, (Option<LetOrExpr<Id>>, ParseErrors)>
+    where Id: Clone,
+{
+    let result_ok_iter;
+    let layout = layout!(result_ok_iter, input);
+
+    let mut parse_errors = Errors::new();
+
+    let type_cache = TypeCache::new();
+
+    let result = grammar::parse_LetOrExpr(input, &type_cache, symbols, &mut parse_errors, layout);
+
+    // If there is a tokenizer error it may still exist in the result iterator wrapper.
+    // If that is the case we return that error instead of the unexpected EOF error that lalrpop
+    // emitted
+    if let Err(err) = result_ok_iter.borrow_mut().result(()) {
+        parse_errors.pop(); // Remove the EOF error
+        parse_errors.push(lalrpop_util::ParseError::User {
+            error: pos::spanned2(err.span.start.absolute,
+                                 err.span.end.absolute,
+                                 err.value.into()),
+        });
+    }
+
+    match result {
+        Ok(mut let_or_expr) => {
+            let mut errors = transform_errors(parse_errors);
+            let mut reparser = Reparser::new(OpTable::default(), symbols);
+            let result = match let_or_expr {
+                Ok(ref mut expr) => reparser.reparse(expr),
+                Err(ref mut let_binding) => reparser.reparse(&mut let_binding.expr),
+            };
+            if let Err(reparse_errors) = result {
+                errors.extend(reparse_errors.into_iter().map(|err| err.map(Error::Infix)));
+            }
+
+            if errors.has_errors() {
+                Err((Some(let_or_expr), errors))
+            } else {
+                Ok(let_or_expr)
+            }
+        }
+        Err(err) => {
+            parse_errors.push(err);
+            Err((None, transform_errors(parse_errors)))
+        }
+    }
 }
 
 #[cfg(feature = "test")]
