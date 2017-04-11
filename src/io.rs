@@ -8,7 +8,8 @@ use vm::gc::{Gc, Traverseable};
 use vm::types::*;
 use vm::thread::ThreadInternal;
 use vm::thread::Thread;
-use vm::api::{Array, FunctionRef, Generic, Hole, VmType, Getable, OpaqueValue, IO, WithVM, Userdata};
+use vm::api::{Array, FunctionRef, Generic, Hole, VmType, Getable, OpaqueValue, IO, WithVM,
+              Userdata};
 use vm::api::generic::{A, B};
 use vm::stack::StackFrame;
 use vm::internal::ValuePrinter;
@@ -182,7 +183,9 @@ fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> IO<String> {
 
 fn load_script(WithVM { vm, value: name }: WithVM<&str>, expr: &str) -> IO<String> {
     let frame_level = vm.context().stack.get_frames().len();
-    let run_result = Compiler::new().load_script_async(vm, name, expr).sync_or_error();
+    let run_result = Compiler::new()
+        .load_script_async(vm, name, expr)
+        .sync_or_error();
     let mut context = vm.context();
     let stack = StackFrame::current(&mut context.stack);
     match run_result {
@@ -201,7 +204,8 @@ pub fn load(vm: &Thread) -> Result<()> {
                            Call(1), // [f, m_ret]       Call m ()
                            PushInt(0), // [f, m_ret, ()]   Add a dummy argument ()
                            TailCall(2) /* [f_ret]          Call f m_ret () */];
-    let io_flat_map_type = <fn (fn (A) -> IO<B>, IO<A>) -> IO<B> as VmType>::make_type(vm);
+    let io_flat_map_type =
+        <fn(fn(A) -> IO<B>, IO<A>) -> IO<B> as VmType>::make_type(vm);
     vm.add_bytecode("io_flat_map", io_flat_map_type, 3, io_flat_map)?;
 
 

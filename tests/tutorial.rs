@@ -12,7 +12,8 @@ use gluon::Compiler;
 fn new_vm() -> RootedThread {
     let vm = ::gluon::new_vm();
     let import = vm.get_macros().get("import");
-    import.as_ref()
+    import
+        .as_ref()
         .and_then(|import| import.downcast_ref::<Import>())
         .expect("Import macro")
         .add_path("..");
@@ -43,7 +44,8 @@ fn call_rust_from_gluon() {
         if x <= 1 { 1 } else { x * factorial(x - 1) }
     }
     let vm = new_vm();
-    vm.define_global("factorial", primitive!(1 factorial)).unwrap();
+    vm.define_global("factorial", primitive!(1 factorial))
+        .unwrap();
 
     let result = Compiler::new()
         .run_expr_async::<i32>(&vm, "example", "factorial 5")

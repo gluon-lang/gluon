@@ -58,8 +58,10 @@ struct Handler<T>(PhantomData<T>);
 impl<T: VmType + 'static> VmType for Handler<T> {
     type Type = Self;
     fn make_type(vm: &Thread) -> ArcType {
-        let typ =
-            (*vm.global_env().get_env().find_type_info("examples.http_types.Handler").unwrap())
+        let typ = (*vm.global_env()
+                        .get_env()
+                        .find_type_info("examples.http_types.Handler")
+                        .unwrap())
                 .clone()
                 .into_type();
         Type::app(typ, collect![T::make_type(vm)])
@@ -91,16 +93,18 @@ define_vmtype! { Method }
 impl<'vm> Pushable<'vm> for Wrap<Method> {
     fn push(self, _: &'vm Thread, context: &mut Context) -> VmResult<()> {
         use hyper::Method::*;
-        context.stack.push(Value::Tag(match self.0 {
-            Get => 0,
-            Post => 1,
-            Delete => 2,
-            _ => {
+        context
+            .stack
+            .push(Value::Tag(match self.0 {
+                                 Get => 0,
+                                 Post => 1,
+                                 Delete => 2,
+                                 _ => {
                 return Err(VmError::Message(format!("Method `{:?}` does not exist in gluon",
                                                     self.0))
                     .into())
             }
-        }));
+                             }));
         Ok(())
     }
 }
@@ -113,11 +117,11 @@ impl<'vm> Getable<'vm> for Wrap<StatusCode> {
         match value.as_ref() {
             ValueRef::Tag(tag) => {
                 Some(Wrap(match tag {
-                    0 => Ok,
-                    1 => NotFound,
-                    2 => InternalServerError,
-                    _ => panic!("Unexpected tag"),
-                }))
+                              0 => Ok,
+                              1 => NotFound,
+                              2 => InternalServerError,
+                              _ => panic!("Unexpected tag"),
+                          }))
             }
             _ => panic!(),
         }
@@ -163,10 +167,10 @@ fn read_chunk(body: &Body) -> FutureResult<BoxFuture<IO<Option<PushAsRef<Chunk, 
     // polled until completion. After `poll` returns `Ready` the value is then returned to the
     // gluon function which called `read_chunk`
     FutureResult(poll_fn(move || {
-            let mut stream = body.lock().unwrap();
-            stream.poll().map(|async| async.map(IO::Value))
-        })
-        .boxed())
+                             let mut stream = body.lock().unwrap();
+                             stream.poll().map(|async| async.map(IO::Value))
+                         })
+                         .boxed())
 }
 
 // A http body that is being written
@@ -198,31 +202,33 @@ fn write_response(response: &ResponseBody,
     let mut unsent_chunk = Some(Ok(bytes.to_owned().into()));
     let response = response.0.clone();
     FutureResult(poll_fn(move || {
-            info!("Starting response send");
-            let mut sender = response.lock().unwrap();
-            let mut sender = sender.as_mut().expect("Sender has been dropped while still in use");
-            if let Some(chunk) = unsent_chunk.take() {
-                match sender.start_send(chunk) {
-                    Ok(AsyncSink::NotReady(chunk)) => {
-                        unsent_chunk = Some(chunk);
-                        return Ok(Async::NotReady);
-                    }
-                    Ok(AsyncSink::Ready) => (),
-                    Err(_) => {
-                        info!("Could not send http response");
-                        return Ok(Async::Ready(IO::Value(())));
-                    }
+        info!("Starting response send");
+        let mut sender = response.lock().unwrap();
+        let mut sender = sender
+            .as_mut()
+            .expect("Sender has been dropped while still in use");
+        if let Some(chunk) = unsent_chunk.take() {
+            match sender.start_send(chunk) {
+                Ok(AsyncSink::NotReady(chunk)) => {
+                    unsent_chunk = Some(chunk);
+                    return Ok(Async::NotReady);
                 }
-            }
-            match sender.poll_complete() {
-                Ok(async) => Ok(async.map(IO::Value)),
+                Ok(AsyncSink::Ready) => (),
                 Err(_) => {
                     info!("Could not send http response");
-                    Ok(Async::Ready(IO::Value(())))
+                    return Ok(Async::Ready(IO::Value(())));
                 }
             }
-        })
-        .boxed())
+        }
+        match sender.poll_complete() {
+            Ok(async) => Ok(async.map(IO::Value)),
+            Err(_) => {
+                info!("Could not send http response");
+                Ok(Async::Ready(IO::Value(())))
+            }
+        }
+    })
+                         .boxed())
 }
 
 // Next we define some record types which are marshalled to and from gluon. These have equivalent
@@ -245,13 +251,17 @@ type HttpState = record_type!{
 };
 
 fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>) -> IO<()> {
-    let WithVM { value: handler, vm: thread } = value;
+    let WithVM {
+        value: handler,
+        vm: thread,
+    } = value;
 
     use hyper::server::{Http, Request as HyperRequest, Response as HyperResponse};
 
     // Retrieve the `handle` function from the http module which we use to evaluate values of type // `Handler Response`
     type ListenFn = fn(OpaqueValue<RootedThread, Handler<Response>>, HttpState) -> IO<Response>;
-    let handle: Function<RootedThread, ListenFn> = thread.get_global("examples.http.handle")
+    let handle: Function<RootedThread, ListenFn> = thread
+        .get_global("examples.http.handle")
         .unwrap_or_else(|err| panic!("{}", err));
 
     struct Listen {
@@ -289,28 +299,27 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
                 .clone()
                 .call_async(self.handler.clone(), http_state)
                 .then(move |result| match result {
-                    Ok(value) => {
-                        match value {
-                            IO::Value(record_p!{ status }) => {
-                                // Drop the sender to so that it the receiver stops waiting for
-                                // more chunks
-                                *response_sender.lock().unwrap() = None;
-                                Ok(HyperResponse::new()
-                                    .with_status(status.0)
-                                    .with_body(response_body))
-                            }
-                            IO::Exception(err) => {
-                                let _ = stderr().write(err.as_bytes());
-                                Ok(HyperResponse::new()
-                                    .with_status(StatusCode::InternalServerError))
-                            }
+                          Ok(value) => {
+                    match value {
+                        IO::Value(record_p!{ status }) => {
+                            // Drop the sender to so that it the receiver stops waiting for
+                            // more chunks
+                            *response_sender.lock().unwrap() = None;
+                            Ok(HyperResponse::new()
+                                   .with_status(status.0)
+                                   .with_body(response_body))
+                        }
+                        IO::Exception(err) => {
+                            let _ = stderr().write(err.as_bytes());
+                            Ok(HyperResponse::new().with_status(StatusCode::InternalServerError))
                         }
                     }
-                    Err(err) => {
-                        let _ = stderr().write(format!("{}", err).as_bytes());
-                        Ok(HyperResponse::new().with_status(StatusCode::InternalServerError))
-                    }
-                })
+                }
+                          Err(err) => {
+                    let _ = stderr().write(format!("{}", err).as_bytes());
+                    Ok(HyperResponse::new().with_status(StatusCode::InternalServerError))
+                }
+                      })
                 .boxed()
         }
     }
@@ -319,9 +328,9 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
     let result = Http::new()
         .bind(&addr, move || {
             Ok(Listen {
-                handle: handle.clone(),
-                handler: handler.clone(),
-            })
+                   handle: handle.clone(),
+                   handler: handler.clone(),
+               })
         })
         .and_then(|server| server.run());
 
@@ -351,7 +360,10 @@ pub fn load(vm: &Thread) -> VmResult<()> {
 
 fn main() {
     let _ = env_logger::init();
-    let port = env::args().nth(1).map(|port| port.parse::<i32>().expect("port")).unwrap_or(80);
+    let port = env::args()
+        .nth(1)
+        .map(|port| port.parse::<i32>().expect("port"))
+        .unwrap_or(80);
 
     let thread = new_vm();
 
@@ -377,6 +389,5 @@ fn main() {
         .run_expr::<FunctionRef<fn(i32) -> IO<()>>>(&thread, "http_test", &expr)
         .unwrap_or_else(|err| panic!("{}", err));
 
-    listen.call(port)
-        .unwrap_or_else(|err| panic!("{}", err));
+    listen.call(port).unwrap_or_else(|err| panic!("{}", err));
 }

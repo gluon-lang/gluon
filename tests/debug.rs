@@ -33,18 +33,23 @@ fn function_hook() {
         let functions = functions.clone();
         let mut context = thread.context();
         context.set_hook(Some(Box::new(move |_, debug_context| {
-            functions.lock()
+            functions
+                .lock()
                 .unwrap()
-                .push(debug_context.stack_info(0)
-                    .unwrap()
-                    .function_name()
-                    .expect("function_name")
-                    .to_string());
+                .push(debug_context
+                          .stack_info(0)
+                          .unwrap()
+                          .function_name()
+                          .expect("function_name")
+                          .to_string());
             Ok(Async::Ready(()))
         })));
         context.set_hook_mask(CALL_FLAG);
     }
-    Compiler::new().implicit_prelude(false).run_expr::<i32>(&thread, "test", SIMPLE_EXPR).unwrap();
+    Compiler::new()
+        .implicit_prelude(false)
+        .run_expr::<i32>(&thread, "test", SIMPLE_EXPR)
+        .unwrap();
 
     assert_eq!(*functions.lock().unwrap(),
                vec!["test".to_string(), "g".to_string(), "f".to_string()]);
@@ -81,7 +86,10 @@ fn line_hook() {
     }
 
     assert_eq!(lines,
-               vec![1, 3, 4, 3, 1].into_iter().map(Line::from).collect::<Vec<_>>());
+               vec![1, 3, 4, 3, 1]
+                   .into_iter()
+                   .map(Line::from)
+                   .collect::<Vec<_>>());
 }
 
 #[test]
@@ -121,7 +129,10 @@ fn line_hook_after_call() {
     }
 
     assert_eq!(lines,
-               vec![1, 2, 1, 3].into_iter().map(Line::from).collect::<Vec<_>>());
+               vec![1, 2, 1, 3]
+                   .into_iter()
+                   .map(Line::from)
+                   .collect::<Vec<_>>());
 }
 
 #[test]
@@ -131,14 +142,15 @@ fn implicit_prelude_lines_not_counted() {
     let thread = new_vm();
     {
         let mut context = thread.context();
-        context.set_hook(Some(Box::new(move |_, debug_info| if debug_info.stack_info(0)
-            .unwrap()
-            .source_name() ==
-                                                                    "test" {
-            Ok(Async::NotReady)
-        } else {
-            Ok(Async::Ready(()))
-        })));
+        context.set_hook(Some(Box::new(move |_, debug_info| if debug_info
+                                              .stack_info(0)
+                                              .unwrap()
+                                              .source_name() ==
+                                                               "test" {
+                                           Ok(Async::NotReady)
+                                       } else {
+                                           Ok(Async::Ready(()))
+                                       })));
         context.set_hook_mask(LINE_FLAG);
     }
     let mut execute = Compiler::new()
@@ -175,12 +187,16 @@ fn read_variables() {
         let mut context = thread.context();
         context.set_hook(Some(Box::new(move |_, debug_context| {
             let stack_info = debug_context.stack_info(0).unwrap();
-            result.lock().unwrap().insert(stack_info.line().unwrap().to_usize(),
-                                          stack_info.locals()
-                                              .map(|local| {
-                                                  (local.name.declared_name().to_string(), local.typ.clone())
-                                              })
-                                              .collect::<Vec<_>>());
+            result
+                .lock()
+                .unwrap()
+                .insert(stack_info.line().unwrap().to_usize(),
+                        stack_info
+                            .locals()
+                            .map(|local| {
+                                     (local.name.declared_name().to_string(), local.typ.clone())
+                                 })
+                            .collect::<Vec<_>>());
             Ok(Async::Ready(()))
         })));
         context.set_hook_mask(LINE_FLAG);
@@ -195,7 +211,10 @@ fn read_variables() {
     let z = 1.0
     1
     "#;
-    Compiler::new().implicit_prelude(false).run_expr::<i32>(&thread, "test", expr).unwrap();
+    Compiler::new()
+        .implicit_prelude(false)
+        .run_expr::<i32>(&thread, "test", expr)
+        .unwrap();
 
     let map = result.lock().unwrap();
     assert_eq!(*map,
@@ -205,9 +224,11 @@ fn read_variables() {
                          vec![("x".to_string(), Type::int()),
                               ("y2".to_string(), Type::string())]),
                         (6,
-                         vec![("x".to_string(), Type::int()), ("y".to_string(), Type::unit())]),
+                         vec![("x".to_string(), Type::int()),
+                              ("y".to_string(), Type::unit())]),
                         (7,
-                         vec![("x".to_string(), Type::int()), ("y".to_string(), Type::unit())]),
+                         vec![("x".to_string(), Type::int()),
+                              ("y".to_string(), Type::unit())]),
                         (8,
                          vec![("x".to_string(), Type::int()),
                               ("y".to_string(), Type::unit()),
@@ -225,13 +246,16 @@ fn argument_types() {
         let mut context = thread.context();
         context.set_hook(Some(Box::new(move |_, debug_context| {
             let stack_info = debug_context.stack_info(0).unwrap();
-            result.lock().unwrap().push((stack_info.line().unwrap().to_usize(),
-                                         stack_info.locals()
-                                             .map(|local| {
-                                                 (local.name.declared_name().to_string(),
-                                                  local.typ.clone())
-                                             })
-                                             .collect::<Vec<_>>()));
+            result
+                .lock()
+                .unwrap()
+                .push((stack_info.line().unwrap().to_usize(),
+                       stack_info
+                           .locals()
+                           .map(|local| {
+                                    (local.name.declared_name().to_string(), local.typ.clone())
+                                })
+                           .collect::<Vec<_>>()));
             Ok(Async::Ready(()))
         })));
         context.set_hook_mask(LINE_FLAG);
@@ -242,7 +266,10 @@ fn argument_types() {
     let f z = g z
     f 1
     "#;
-    Compiler::new().implicit_prelude(false).run_expr::<i32>(&thread, "test", expr).unwrap();
+    Compiler::new()
+        .implicit_prelude(false)
+        .run_expr::<i32>(&thread, "test", expr)
+        .unwrap();
 
     let int_function: ArcType = Type::function(vec![Type::int()], Type::int());
 
@@ -272,10 +299,11 @@ fn source_name() {
         let result = result.clone();
         let mut context = thread.context();
         context.set_hook(Some(Box::new(move |_, debug_context| {
-            let stack_info = debug_context.stack_info(0).unwrap();
-            *result.lock().unwrap() = stack_info.source_name().to_string();
-            Ok(Async::Ready(()))
-        })));
+                                           let stack_info = debug_context.stack_info(0).unwrap();
+                                           *result.lock().unwrap() =
+                                               stack_info.source_name().to_string();
+                                           Ok(Async::Ready(()))
+                                       })));
         context.set_hook_mask(LINE_FLAG);
     }
     let expr = r#"
@@ -288,7 +316,10 @@ fn source_name() {
     let z = { x }
     1
     "#;
-    Compiler::new().implicit_prelude(false).run_expr::<i32>(&thread, "test", expr).unwrap();
+    Compiler::new()
+        .implicit_prelude(false)
+        .run_expr::<i32>(&thread, "test", expr)
+        .unwrap();
 
     let name = result.lock().unwrap();
     assert_eq!(*name, "test");
@@ -307,7 +338,10 @@ fn upvars() {
         context.set_hook(Some(Box::new(move |_, debug_info| {
             let stack_info = debug_info.stack_info(0).unwrap();
             if stack_info.source_name() == "test" {
-                result.lock().unwrap().push(stack_info.upvars().to_owned());
+                result
+                    .lock()
+                    .unwrap()
+                    .push(stack_info.upvars().to_owned());
             }
             Ok(Async::Ready(()))
         })));
@@ -356,21 +390,29 @@ fn implicit_prelude_variable_names() {
         let mut context = thread.context();
         context.set_hook(Some(Box::new(move |_, debug_context| {
             let stack_info = debug_context.stack_info(0).unwrap();
-            functions.lock()
+            functions
+                .lock()
                 .unwrap()
-                .extend(stack_info.locals()
-                    .filter(|local| local.name.declared_name() == "__implicit_prelude")
-                    .map(|local| local.typ.clone()));
+                .extend(stack_info
+                            .locals()
+                            .filter(|local| {
+                                        local.name.declared_name() == "__implicit_prelude"
+                                    })
+                            .map(|local| local.typ.clone()));
             Ok(Async::Ready(()))
         })));
         context.set_hook_mask(LINE_FLAG);
     }
-    Compiler::new().run_expr::<i32>(&thread, "test", "\n1").unwrap();
+    Compiler::new()
+        .run_expr::<i32>(&thread, "test", "\n1")
+        .unwrap();
     let f = functions.lock().unwrap();
     match *f[0] {
         Type::Record(ref row) => {
-            assert!(row.row_iter().any(|field| field.name.declared_name() == "id"));
-            assert!(row.row_iter().any(|field| field.name.declared_name() == "not"));
+            assert!(row.row_iter()
+                        .any(|field| field.name.declared_name() == "id"));
+            assert!(row.row_iter()
+                        .any(|field| field.name.declared_name() == "not"));
         }
         _ => panic!(),
     }

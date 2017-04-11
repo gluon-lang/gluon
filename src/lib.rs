@@ -97,12 +97,13 @@ impl From<Errors<macros::Error>> for Error {
                 Err(err) => Error::Macro(err),
             }
         } else {
-            Error::Multiple(errors.into_iter()
-                .map(|err| match err.downcast::<Error>() {
-                    Ok(err) => *err,
-                    Err(err) => Error::Macro(err),
-                })
-                .collect())
+            Error::Multiple(errors
+                                .into_iter()
+                                .map(|err| match err.downcast::<Error>() {
+                                         Ok(err) => *err,
+                                         Err(err) => Error::Macro(err),
+                                     })
+                                .collect())
         }
     }
 }
@@ -175,7 +176,7 @@ impl Compiler {
          -> StdResult<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, InFile<parser::Error>)> {
         Ok(parser::parse_partial_expr(&mut SymbolModule::new(file.into(), &mut self.symbols),
                                       expr_str)
-            .map_err(|(expr, err)| (expr, InFile::new(file, expr_str, err)))?)
+                   .map_err(|(expr, err)| (expr, InFile::new(file, expr_str, err)))?)
     }
 
     /// Parse and typecheck `expr_str` returning the typechecked expression and type of the
@@ -186,7 +187,8 @@ impl Compiler {
                           expr_str: &str,
                           expr: &mut SpannedExpr<Symbol>)
                           -> Result<ArcType> {
-        expr.typecheck_expected(self, vm, file, expr_str, None).map(|result| result.typ)
+        expr.typecheck_expected(self, vm, file, expr_str, None)
+            .map(|result| result.typ)
     }
 
     pub fn typecheck_str(&mut self,
@@ -196,7 +198,8 @@ impl Compiler {
                          expected_type: Option<&ArcType>)
                          -> Result<(SpannedExpr<Symbol>, ArcType)> {
         let TypecheckValue { expr, typ } =
-            expr_str.typecheck_expected(self, vm, file, expr_str, expected_type)?;
+            expr_str
+                .typecheck_expected(self, vm, file, expr_str, expected_type)?;
         Ok((expr, typ))
     }
 
@@ -263,7 +266,9 @@ impl Compiler {
             // Use the import macro's path resolution if it exists so that we mimick the import
             // macro as close as possible
             let opt_macro = vm.get_macros().get("import");
-            match opt_macro.as_ref().and_then(|mac| mac.downcast_ref::<Import>()) {
+            match opt_macro
+                      .as_ref()
+                      .and_then(|mac| mac.downcast_ref::<Import>()) {
                 Some(import) => Ok(import.read_file(filename)?),
                 None => {
 
@@ -290,7 +295,7 @@ impl Compiler {
                             name: &str,
                             expr_str: &str)
                             -> Result<(T, ArcType)>
-        where T: Getable<'vm> + VmType + Send + 'vm,
+        where T: Getable<'vm> + VmType + Send + 'vm
     {
         self.run_expr_async(vm, name, expr_str).wait()
     }
@@ -300,17 +305,20 @@ impl Compiler {
                                   name: &str,
                                   expr_str: &str)
                                   -> BoxFutureValue<'vm, (T, ArcType), Error>
-        where T: Getable<'vm> + VmType + Send + 'vm,
+        where T: Getable<'vm> + VmType + Send + 'vm
     {
         let expected = T::make_type(vm);
-        expr_str.run_expr(self, vm, name, expr_str, Some(&expected))
+        expr_str
+            .run_expr(self, vm, name, expr_str, Some(&expected))
             .and_then(move |v| {
                 let ExecuteValue { typ: actual, value, .. } = v;
                 unsafe {
                     FutureValue::sync(match T::from_value(vm, Variants::new(&value)) {
-                        Some(value) => Ok((value, actual)),
-                        None => Err(Error::from(VmError::WrongType(expected, actual))),
-                    })
+                                          Some(value) => Ok((value, actual)),
+                                          None => {
+                                              Err(Error::from(VmError::WrongType(expected, actual)))
+                                          }
+                                      })
                 }
             })
             .boxed()
@@ -324,7 +332,7 @@ impl Compiler {
                                expr_str: &str)
                                -> Result<(T, ArcType)>
         where T: Getable<'vm> + VmType + Send + 'vm,
-              T::Type: Sized,
+              T::Type: Sized
     {
         self.run_io_expr_async(vm, name, expr_str).wait()
     }
@@ -335,7 +343,7 @@ impl Compiler {
                                      expr_str: &str)
                                      -> BoxFutureValue<'vm, (T, ArcType), Error>
         where T: Getable<'vm> + VmType + Send + 'vm,
-              T::Type: Sized,
+              T::Type: Sized
     {
         use check::check_signature;
         use vm::api::IO;
@@ -443,8 +451,7 @@ pub fn new_vm() -> RootedThread {
     let gluon_path = env::var("GLUON_PATH").unwrap_or_else(|_| String::from("."));
     let import = Import::new(DefaultImporter);
     import.add_path(gluon_path);
-    vm.get_macros()
-        .insert(String::from("import"), import);
+    vm.get_macros().insert(String::from("import"), import);
 
     Compiler::new()
         .implicit_prelude(false)

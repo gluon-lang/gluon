@@ -35,7 +35,7 @@ pub trait MacroExpandable {
                     thread: &Thread,
                     file: &str)
                     -> Result<MacroValue<Self::Expr>>
-        where Self: Sized,
+        where Self: Sized
     {
         let mut macros = MacroExpander::new(thread);
         let expr = self.expand_macro_with(compiler, &mut macros, file)?;
@@ -59,12 +59,13 @@ impl<'s> MacroExpandable for &'s str {
                          file: &str)
                          -> Result<MacroValue<Self::Expr>> {
 
-        compiler.parse_expr(file, self)
+        compiler
+            .parse_expr(file, self)
             .map_err(From::from)
             .and_then(|mut expr| {
-                expr.expand_macro_with(compiler, macros, file)?;
-                Ok(MacroValue { expr: expr })
-            })
+                          expr.expand_macro_with(compiler, macros, file)?;
+                          Ok(MacroValue { expr: expr })
+                      })
     }
 }
 
@@ -111,7 +112,7 @@ pub trait Typecheckable: Sized {
 }
 
 impl<T> Typecheckable for T
-    where T: MacroExpandable,
+    where T: MacroExpandable
 {
     type Expr = T::Expr;
 
@@ -125,13 +126,13 @@ impl<T> Typecheckable for T
 
         self.expand_macro(compiler, thread, file)
             .and_then(|expr| {
-                expr.typecheck_expected(compiler, thread, file, expr_str, expected_type)
-            })
+                          expr.typecheck_expected(compiler, thread, file, expr_str, expected_type)
+                      })
     }
 }
 
 impl<E> Typecheckable for MacroValue<E>
-    where E: BorrowMut<SpannedExpr<Symbol>>,
+    where E: BorrowMut<SpannedExpr<Symbol>>
 {
     type Expr = E;
 
@@ -151,9 +152,9 @@ impl<E> Typecheckable for MacroValue<E>
             .map_err(|err| InFile::new(file, expr_str, err))?;
 
         Ok(TypecheckValue {
-            expr: self.expr,
-            typ: typ,
-        })
+               expr: self.expr,
+               typ: typ,
+           })
     }
 }
 
@@ -176,7 +177,7 @@ pub trait Compileable<Extra> {
                -> Result<CompileValue<Self::Expr>>;
 }
 impl<'a, 'b, T> Compileable<Option<&'b ArcType>> for T
-    where T: Typecheckable,
+    where T: Typecheckable
 {
     type Expr = T::Expr;
 
@@ -193,7 +194,7 @@ impl<'a, 'b, T> Compileable<Option<&'b ArcType>> for T
     }
 }
 impl<E, Extra> Compileable<Extra> for TypecheckValue<E>
-    where E: Borrow<SpannedExpr<Symbol>>,
+    where E: Borrow<SpannedExpr<Symbol>>
 {
     type Expr = E;
 
@@ -223,10 +224,10 @@ impl<E, Extra> Compileable<Extra> for TypecheckValue<E>
         };
         function.id = Symbol::from(filename);
         Ok(CompileValue {
-            expr: self.expr,
-            typ: self.typ,
-            function: function,
-        })
+               expr: self.expr,
+               typ: self.typ,
+               function: function,
+           })
     }
 }
 
@@ -258,7 +259,7 @@ pub trait Executable<'vm, Extra> {
 }
 impl<'vm, C, Extra> Executable<'vm, Extra> for C
     where C: Compileable<Extra>,
-          C::Expr: BorrowMut<SpannedExpr<Symbol>> + Send + 'vm,
+          C::Expr: BorrowMut<SpannedExpr<Symbol>> + Send + 'vm
 {
     type Expr = C::Expr;
 
@@ -290,7 +291,7 @@ impl<'vm, C, Extra> Executable<'vm, Extra> for C
     }
 }
 impl<'vm, E> Executable<'vm, ()> for CompileValue<E>
-    where E: BorrowMut<SpannedExpr<Symbol>> + Send + 'vm,
+    where E: BorrowMut<SpannedExpr<Symbol>> + Send + 'vm
 {
     type Expr = E;
 
@@ -302,17 +303,21 @@ impl<'vm, E> Executable<'vm, ()> for CompileValue<E>
                 _: ())
                 -> BoxFutureValue<'vm, ExecuteValue<'vm, Self::Expr>, Error> {
 
-        let CompileValue { expr, typ, mut function } = self;
+        let CompileValue {
+            expr,
+            typ,
+            mut function,
+        } = self;
         function.id = Symbol::from(name);
         let closure = try_future!(vm.global_env().new_global_thunk(function));
         vm.call_thunk(closure)
             .map(|(vm, value)| {
-                ExecuteValue {
-                    expr: expr,
-                    typ: typ,
-                    value: vm.root_value_ref(value),
-                }
-            })
+                     ExecuteValue {
+                         expr: expr,
+                         typ: typ,
+                         value: vm.root_value_ref(value),
+                     }
+                 })
             .map_err(Error::from)
             .boxed()
     }
@@ -325,17 +330,24 @@ impl<'vm, E> Executable<'vm, ()> for CompileValue<E>
                    -> BoxFutureValue<'vm, (), Error> {
         use check::metadata;
 
-        let CompileValue { mut expr, typ, function } = self;
+        let CompileValue {
+            mut expr,
+            typ,
+            function,
+        } = self;
         let metadata = metadata::metadata(&*vm.get_env(), expr.borrow_mut());
         let closure = try_future!(vm.global_env().new_global_thunk(function));
         let filename = filename.to_string();
         vm.call_thunk(closure)
             .map_err(Error::from)
             .and_then(move |(_, value)| {
-                try_future!(vm.set_global(closure.function.name.clone(), typ, metadata, value));
-                info!("Loaded module `{}` filename", filename);
-                FutureValue::sync(Ok(()))
-            })
+                          try_future!(vm.set_global(closure.function.name.clone(),
+                                                    typ,
+                                                    metadata,
+                                                    value));
+                          info!("Loaded module `{}` filename", filename);
+                          FutureValue::sync(Ok(()))
+                      })
             .boxed()
     }
 }
