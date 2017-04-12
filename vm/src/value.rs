@@ -186,9 +186,10 @@ mod gc_str {
     impl GcStr {
         pub fn from_utf8(array: GcPtr<ValueArray>) -> Result<GcStr, ()> {
             unsafe {
-                if array.as_slice::<u8>()
-                    .and_then(|bytes| str::from_utf8(bytes).ok())
-                    .is_some() {
+                if array
+                       .as_slice::<u8>()
+                       .and_then(|bytes| str::from_utf8(bytes).ok())
+                       .is_some() {
                     Ok(GcStr::from_utf8_unchecked(array))
                 } else {
                     Err(())
@@ -312,7 +313,8 @@ impl<'a> fmt::Display for ValuePrinter<'a> {
                 arena: &arena,
                 prec: Top,
                 level: self.max_level,
-            }.pretty(self.value)
+            }
+            .pretty(self.value)
             .group()
             .1
             .render(self.width, &mut s)
@@ -377,7 +379,7 @@ impl<'a, 't> InternalPrinter<'a, 't> {
     }
 
     fn pretty_data<I>(&self, tag: VmTag, fields: I) -> DocBuilder<'a, Arena<'a>>
-        where I: IntoIterator<Item = Value>,
+        where I: IntoIterator<Item = Value>
     {
         fn enclose<'a>(p: Prec,
                        limit: Prec,
@@ -844,7 +846,7 @@ impl ValueArray {
     }
 
     pub unsafe fn initialize<I>(&mut self, iter: I)
-        where I: IntoIterator<Item = Value>,
+        where I: IntoIterator<Item = Value>
     {
         let iter = iter.into_iter();
 
@@ -905,7 +907,9 @@ unsafe impl<'a> DataDef for &'a ValueArray {
             let result = &mut *result.as_mut_ptr();
             result.repr = self.repr;
             on_array!(self, |array: &Array<_>| {
-                result.unsafe_array_mut().initialize(array.iter().cloned())
+                result
+                    .unsafe_array_mut()
+                    .initialize(array.iter().cloned())
             });
             result
         }
@@ -981,7 +985,8 @@ impl<'t> Cloner<'t> {
     pub fn deep_clone(&mut self, value: Value) -> Result<Value> {
         // Only need to clone values which belong to a younger generation than the gc that the new
         // value will live in
-        if self.receiver_generation.can_contain_values_from(value.generation()) {
+        if self.receiver_generation
+               .can_contain_values_from(value.generation()) {
             return Ok(value);
         }
         match value {
@@ -990,7 +995,11 @@ impl<'t> Cloner<'t> {
             Value::Array(data) => self.deep_clone_array(data).map(Value::Array),
             Closure(data) => self.deep_clone_closure(data).map(Value::Closure),
             PartialApplication(data) => self.deep_clone_app(data).map(Value::PartialApplication),
-            Function(f) => self.gc.alloc(Move(ExternFunction::clone(&f))).map(Value::Function),
+            Function(f) => {
+                self.gc
+                    .alloc(Move(ExternFunction::clone(&f)))
+                    .map(Value::Function)
+            }
             Value::Tag(i) => Ok(Value::Tag(i)),
             Value::Byte(i) => Ok(Value::Byte(i)),
             Int(i) => Ok(Int(i)),
@@ -1001,51 +1010,51 @@ impl<'t> Cloner<'t> {
     }
 
     fn deep_clone_ptr<T, A, R>(&mut self, value: GcPtr<T>, alloc: A) -> Result<StdResult<Value, R>>
-        where A: FnOnce(&mut Gc, &T) -> Result<(Value, R)>,
+        where A: FnOnce(&mut Gc, &T) -> Result<(Value, R)>
     {
-    let key = &*value as *const T as *const ();
+        let key = &*value as *const T as *const ();
         let new_ptr = match self.visited.entry(key) {
-        Entry::Occupied(entry) => return Ok(Ok(*entry.get())),
-        Entry::Vacant(entry) => {
-            // FIXME Should allocate the real `Value` and possibly fill it later
+            Entry::Occupied(entry) => return Ok(Ok(*entry.get())),
+            Entry::Vacant(entry) => {
+                // FIXME Should allocate the real `Value` and possibly fill it later
                 let (value, new_ptr) = alloc(self.gc, &value)?;
-            entry.insert(value);
-            new_ptr
-        }
-    };
-    Ok(Err(new_ptr))
+                entry.insert(value);
+                new_ptr
+            }
+        };
+        Ok(Err(new_ptr))
     }
 
     fn deep_clone_str(&mut self, data: GcStr) -> Result<Value> {
         unsafe {
             Ok(self.deep_clone_ptr(data.into_inner(), |gc, data| {
                     let ptr = GcStr::from_utf8_unchecked(gc.alloc(data)?);
-            Ok((String(ptr), ptr))
+                    Ok((String(ptr), ptr))
                 })?
-        .unwrap_or_else(String))
+                   .unwrap_or_else(String))
         }
     }
     fn deep_clone_data(&mut self, data: GcPtr<DataStruct>) -> Result<GcPtr<DataStruct>> {
         let result = self.deep_clone_ptr(data, |gc, data| {
-        let ptr = gc.alloc(Def {
-                tag: data.tag,
-                elems: &data.fields,
+                let ptr = gc.alloc(Def {
+                                       tag: data.tag,
+                                       elems: &data.fields,
+                                   })?;
+                Ok((Value::Data(ptr), ptr))
             })?;
-        Ok((Value::Data(ptr), ptr))
-    })?;
-    match result {
-        Ok(Value::Data(ptr)) => Ok(ptr),
-        Ok(_) => unreachable!(),
-        Err(mut new_data) => {
-            {
-                let new_fields = unsafe { &mut new_data.as_mut().fields };
-                for (new, old) in new_fields.iter_mut().zip(&data.fields) {
+        match result {
+            Ok(Value::Data(ptr)) => Ok(ptr),
+            Ok(_) => unreachable!(),
+            Err(mut new_data) => {
+                {
+                    let new_fields = unsafe { &mut new_data.as_mut().fields };
+                    for (new, old) in new_fields.iter_mut().zip(&data.fields) {
                         *new = self.deep_clone(*old)?;
+                    }
                 }
+                Ok(new_data)
             }
-            Ok(new_data)
         }
-    }
     }
 
     fn deep_clone_userdata(&mut self, ptr: GcPtr<Box<Userdata>>) -> Result<GcPtr<Box<Userdata>>> {
@@ -1057,81 +1066,80 @@ impl<'t> Cloner<'t> {
                                          mut deep_clone: F)
                                          -> Result<()>
             where T: Copy,
-                  F: FnMut(T) -> Result<T>,
+                  F: FnMut(T) -> Result<T>
         {
-        let new_array = new_array.as_mut().unsafe_array_mut::<T>();
-        for field in new_array.iter_mut() {
+            let new_array = new_array.as_mut().unsafe_array_mut::<T>();
+            for field in new_array.iter_mut() {
                 *field = deep_clone(*field)?;
+            }
+            Ok(())
         }
-        Ok(())
-    }
 
         let result = self.deep_clone_ptr(array, |gc, array| {
-        let ptr = gc.alloc(array)?;
-        Ok((Value::Array(ptr), ptr))
-    })?;
-    match result {
-        Ok(Value::Array(ptr)) => Ok(ptr),
-        Ok(_) => unreachable!(),
-        Err(new_array) => {
-            unsafe {
-                match new_array.repr() {
-                    Repr::Byte | Repr::Int | Repr::Float | Repr::String => Ok(()),
+                let ptr = gc.alloc(array)?;
+                Ok((Value::Array(ptr), ptr))
+            })?;
+        match result {
+            Ok(Value::Array(ptr)) => Ok(ptr),
+            Ok(_) => unreachable!(),
+            Err(new_array) => {
+                unsafe {
+                    match new_array.repr() {
+                        Repr::Byte | Repr::Int | Repr::Float | Repr::String => Ok(()),
                         Repr::Array => deep_clone_elems(new_array, |e| self.deep_clone_array(e)),
                         Repr::Unknown => deep_clone_elems(new_array, |e| self.deep_clone(e)),
-                    Repr::Userdata => {
+                        Repr::Userdata => {
                             deep_clone_elems(new_array, |e| self.deep_clone_userdata(e))
-                    }
-                    Repr::Thread => {
-                        return Err(Error::Message("Threads cannot be deep cloned yet".into()))
-                    }
-                }?;
+                        }
+                        Repr::Thread => {
+                            return Err(Error::Message("Threads cannot be deep cloned yet".into()))
+                        }
+                    }?;
+                }
+                Ok(new_array)
             }
-            Ok(new_array)
         }
-    }
     }
 
     fn deep_clone_closure(&mut self, data: GcPtr<ClosureData>) -> Result<GcPtr<ClosureData>> {
         let result = self.deep_clone_ptr(data, |gc, data| {
-        let ptr = gc.alloc(ClosureDataDef(data.function, &data.upvars))?;
-        Ok((Closure(ptr), ptr))
-    })?;
-    match result {
-        Ok(Value::Closure(ptr)) => Ok(ptr),
-        Ok(_) => unreachable!(),
-        Err(mut new_data) => {
-            {
-                let new_upvars = unsafe { &mut new_data.as_mut().upvars };
-                for (new, old) in new_upvars.iter_mut().zip(&data.upvars) {
+                let ptr = gc.alloc(ClosureDataDef(data.function, &data.upvars))?;
+                Ok((Closure(ptr), ptr))
+            })?;
+        match result {
+            Ok(Value::Closure(ptr)) => Ok(ptr),
+            Ok(_) => unreachable!(),
+            Err(mut new_data) => {
+                {
+                    let new_upvars = unsafe { &mut new_data.as_mut().upvars };
+                    for (new, old) in new_upvars.iter_mut().zip(&data.upvars) {
                         *new = self.deep_clone(*old)?;
+                    }
                 }
+                Ok(new_data)
             }
-            Ok(new_data)
         }
-    }
     }
     fn deep_clone_app(&mut self,
                       data: GcPtr<PartialApplicationData>)
-                  -> Result<GcPtr<PartialApplicationData>> {
+                      -> Result<GcPtr<PartialApplicationData>> {
         let result = self.deep_clone_ptr(data, |gc, data| {
-        let ptr = gc.alloc(PartialApplicationDataDef(data.function, &data.args))?;
-        Ok((PartialApplication(ptr), ptr))
-    })?;
-    match result {
-        Ok(Value::PartialApplication(ptr)) => Ok(ptr),
-        Ok(_) => unreachable!(),
-        Err(mut new_data) => {
-            {
-                let new_args = unsafe { &mut new_data.as_mut().args };
-                for (new, old) in new_args.iter_mut()
-                    .zip(&data.args) {
+                let ptr = gc.alloc(PartialApplicationDataDef(data.function, &data.args))?;
+                Ok((PartialApplication(ptr), ptr))
+            })?;
+        match result {
+            Ok(Value::PartialApplication(ptr)) => Ok(ptr),
+            Ok(_) => unreachable!(),
+            Err(mut new_data) => {
+                {
+                    let new_args = unsafe { &mut new_data.as_mut().args };
+                    for (new, old) in new_args.iter_mut().zip(&data.args) {
                         *new = self.deep_clone(*old)?;
+                    }
                 }
+                Ok(new_data)
             }
-            Ok(new_data)
         }
-    }
     }
 }
 
@@ -1150,13 +1158,13 @@ mod tests {
     impl KindEnv for MockEnv {
         fn find_kind(&self, _type_name: &SymbolRef) -> Option<ArcKind> {
             None
-    }
         }
+    }
 
     impl TypeEnv for MockEnv {
         fn find_type(&self, _id: &SymbolRef) -> Option<&ArcType> {
             None
-    }
+        }
 
         fn find_type_info(&self, _id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
             self.0.as_ref()
@@ -1188,17 +1196,17 @@ mod tests {
         let nil = Value::Tag(1);
         assert_eq!(format!("{}", ValuePrinter::new(&env, &typ, nil)), "Nil");
         let list1 = Value::Data(gc.alloc(Def {
-                tag: 0,
-                elems: &[Value::Int(123), nil],
-            })
-            .unwrap());
+                                             tag: 0,
+                                             elems: &[Value::Int(123), nil],
+                                         })
+                                    .unwrap());
         assert_eq!(format!("{}", ValuePrinter::new(&env, &typ, list1)),
                    "Cons 123 Nil");
         let list2 = Value::Data(gc.alloc(Def {
-                tag: 0,
-                elems: &[Value::Int(0), list1],
-            })
-            .unwrap());
+                                             tag: 0,
+                                             elems: &[Value::Int(0), list1],
+                                         })
+                                    .unwrap());
         assert_eq!(format!("{}", ValuePrinter::new(&env, &typ, list2)),
                    "Cons 0 (Cons 123 Nil)");
     }

@@ -42,7 +42,7 @@ pub struct Execute<T> {
 }
 
 impl<T> Execute<T>
-    where T: Deref<Target = Thread>,
+    where T: Deref<Target = Thread>
 {
     pub fn new(thread: T) -> Execute<T> {
         Execute { thread: Some(thread) }
@@ -50,7 +50,7 @@ impl<T> Execute<T>
 }
 
 impl<T> Future for Execute<T>
-    where T: Deref<Target = Thread>,
+    where T: Deref<Target = Thread>
 {
     type Item = (T, Value);
     type Error = Error;
@@ -81,14 +81,14 @@ pub enum Status {
 /// A rooted value
 #[derive(Clone, PartialEq)]
 pub struct RootedValue<T>
-    where T: Deref<Target = Thread>,
+    where T: Deref<Target = Thread>
 {
     vm: T,
     value: Value,
 }
 
 impl<T> Drop for RootedValue<T>
-    where T: Deref<Target = Thread>,
+    where T: Deref<Target = Thread>
 {
     fn drop(&mut self) {
         // TODO not safe if the root changes order of being dropped with another root
@@ -97,7 +97,7 @@ impl<T> Drop for RootedValue<T>
 }
 
 impl<T> fmt::Debug for RootedValue<T>
-    where T: Deref<Target = Thread>,
+    where T: Deref<Target = Thread>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self.value)
@@ -105,7 +105,7 @@ impl<T> fmt::Debug for RootedValue<T>
 }
 
 impl<T> Deref for RootedValue<T>
-    where T: Deref<Target = Thread>,
+    where T: Deref<Target = Thread>
 {
     type Target = Value;
     fn deref(&self) -> &Value {
@@ -114,14 +114,14 @@ impl<T> Deref for RootedValue<T>
 }
 
 impl<T> RootedValue<T>
-    where T: Deref<Target = Thread>,
+    where T: Deref<Target = Thread>
 {
     pub fn vm(&self) -> &Thread {
         &self.vm
     }
 
     pub fn clone_vm(&self) -> T
-        where T: Clone,
+        where T: Clone
     {
         self.vm.clone()
     }
@@ -214,7 +214,12 @@ impl VmType for Thread {
 impl Traverseable for Thread {
     fn traverse(&self, gc: &mut Gc) {
         self.traverse_fields_except_stack(gc);
-        self.context.lock().unwrap().stack.get_values().traverse(gc);
+        self.context
+            .lock()
+            .unwrap()
+            .stack
+            .get_values()
+            .traverse(gc);
         self.child_threads.read().unwrap().traverse(gc);
     }
 }
@@ -245,7 +250,8 @@ impl Drop for RootedThread {
     fn drop(&mut self) {
         let is_empty = {
             let mut roots = self.parent_threads();
-            let index = roots.iter()
+            let index = roots
+                .iter()
                 .position(|p| &**p as *const Thread == &*self.0 as *const Thread)
                 .expect("VM ptr");
             roots.swap_remove(index);
@@ -295,8 +301,9 @@ impl RootedThread {
             child_threads: RwLock::new(Vec::new()),
         };
         let mut gc = Gc::new(Generation::default(), usize::MAX);
-        let vm =
-            gc.alloc(Move(thread)).expect("Not enough memory to allocate thread").root_thread();
+        let vm = gc.alloc(Move(thread))
+            .expect("Not enough memory to allocate thread")
+            .root_thread();
         *vm.global_state.gc.lock().unwrap() = gc;
         // Enter the top level scope
         {
@@ -357,7 +364,7 @@ impl Thread {
     /// Creates a new global value at `name`.
     /// Fails if a global called `name` already exists.
     pub fn define_global<'vm, T>(&'vm self, name: &str, value: T) -> Result<()>
-        where T: Pushable<'vm> + VmType,
+        where T: Pushable<'vm> + VmType
     {
         let value = {
             let mut context = self.context();
@@ -373,7 +380,7 @@ impl Thread {
     /// Retrieves the global called `name`.
     /// Fails if the global does not exist or it does not have the correct type.
     pub fn get_global<'vm, T>(&'vm self, name: &str) -> Result<T>
-        where T: Getable<'vm> + VmType,
+        where T: Getable<'vm> + VmType
     {
         use check::check_signature;
         let env = self.get_env();
@@ -392,8 +399,7 @@ impl Thread {
     /// using dot notation (std.prelude.Option)
     pub fn find_type_info(&self, name: &str) -> Result<types::Alias<Symbol, ArcType>> {
         let env = self.get_env();
-        env.find_type_info(name)
-            .map(|alias| alias.into_owned())
+        env.find_type_info(name).map(|alias| alias.into_owned())
     }
 
     /// Returns the gluon type that was bound to `T`
@@ -426,7 +432,7 @@ impl Thread {
 
     /// Pushes a value to the top of the stack
     pub fn push<'vm, T>(&'vm self, v: T) -> Result<()>
-        where T: Pushable<'vm>,
+        where T: Pushable<'vm>
     {
         let mut context = self.current_context();
         v.push(self, &mut context)
@@ -434,9 +440,7 @@ impl Thread {
 
     /// Removes the top value from the stack
     pub fn pop(&self) {
-        self.current_context()
-            .stack
-            .pop();
+        self.current_context().stack.pop();
     }
 
     pub fn set_memory_limit(&self, memory_limit: usize) {
@@ -464,14 +468,14 @@ impl Thread {
     }
 
     fn with_roots<F, R>(&self, context: &mut Context, f: F) -> R
-        where F: for<'b> FnOnce(&mut Gc, Roots<'b>) -> R,
+        where F: for<'b> FnOnce(&mut Gc, Roots<'b>) -> R
     {
         // For this to be safe we require that the received stack is the same one that is in this
         // VM
         assert!(unsafe {
-            context as *const _ as usize >= &self.context as *const _ as usize &&
-            context as *const _ as usize <= (&self.context as *const _).offset(1) as usize
-        });
+                    context as *const _ as usize >= &self.context as *const _ as usize &&
+                    context as *const _ as usize <= (&self.context as *const _).offset(1) as usize
+                });
         let roots = Roots {
             vm: unsafe {
                 // Threads must only be on the garbage collectors heap which makes this safe
@@ -486,7 +490,7 @@ impl Thread {
 /// Internal functions for interacting with threads. These functions should be considered both
 /// unsafe and unstable.
 pub trait ThreadInternal
-    where for<'a> &'a Self: Deref<Target = Thread>,
+    where for<'a> &'a Self: Deref<Target = Thread>
 {
     /// Locks and retrives this threads stack
     fn context(&self) -> OwnedContext;
@@ -552,21 +556,24 @@ impl ThreadInternal for Thread {
     fn root<'vm, T: Userdata>(&'vm self, v: GcPtr<Box<Userdata>>) -> Option<Root<'vm, T>> {
         v.downcast_ref::<T>()
             .map(|ptr| {
-                self.roots.write().unwrap().push(v.as_traverseable());
-                Root {
-                    roots: &self.roots,
-                    ptr: ptr,
-                }
-            })
+                     self.roots.write().unwrap().push(v.as_traverseable());
+                     Root {
+                         roots: &self.roots,
+                         ptr: ptr,
+                     }
+                 })
     }
 
     /// Roots a string
     fn root_string<'vm>(&'vm self, ptr: GcStr) -> RootStr<'vm> {
-        self.roots.write().unwrap().push(ptr.into_inner().as_traverseable());
+        self.roots
+            .write()
+            .unwrap()
+            .push(ptr.into_inner().as_traverseable());
         RootStr(Root {
-            roots: &self.roots,
-            ptr: &*ptr,
-        })
+                    roots: &self.roots,
+                    ptr: &*ptr,
+                })
     }
 
     /// Roots a value
@@ -597,14 +604,17 @@ impl ThreadInternal for Thread {
         let mut compiled_fn = CompiledFunction::new(args, id.clone(), typ.clone(), "".into());
         compiled_fn.instructions = instructions;
         let closure = self.global_env().new_global_thunk(compiled_fn)?;
-        self.set_global(id, typ, Metadata::default(), Closure(closure)).unwrap();
+        self.set_global(id, typ, Metadata::default(), Closure(closure))
+            .unwrap();
         Ok(())
     }
 
     fn call_thunk(&self, closure: GcPtr<ClosureData>) -> FutureValue<Execute<&Thread>> {
         let mut context = self.current_context();
         context.stack.push(Closure(closure));
-        context.borrow_mut().enter_scope(0, State::Closure(closure));
+        context
+            .borrow_mut()
+            .enter_scope(0, State::Closure(closure));
         let async = try_future!(context.execute(false));
         match async {
             Async::Ready(context) => FutureValue::Value(Ok((self, context.unwrap().stack.pop()))),
@@ -672,7 +682,8 @@ impl ThreadInternal for Thread {
                   metadata: Metadata,
                   value: Value)
                   -> Result<()> {
-        let value = ::value::Cloner::new(self, &mut self.global_env().gc.lock().unwrap()).deep_clone(value)?;
+        let value = ::value::Cloner::new(self, &mut self.global_env().gc.lock().unwrap())
+            .deep_clone(value)?;
         self.global_env().set_global(name, typ, metadata, value)
     }
 
@@ -741,9 +752,9 @@ impl<'a> DebugInfo<'a> {
         let frames = self.stack.get_frames();
         if level < frames.len() {
             Some(StackInfo {
-                info: self,
-                index: frames.len() - level - 1,
-            })
+                     info: self,
+                     index: frames.len() - level - 1,
+                 })
         } else {
             None
         }
@@ -773,7 +784,11 @@ impl<'a> StackInfo<'a> {
         let frame = self.frame();
         match frame.state {
             State::Closure(ref closure) => {
-                closure.function.debug_info.source_map.line(self.instruction_index())
+                closure
+                    .function
+                    .debug_info
+                    .source_map
+                    .line(self.instruction_index())
             }
             _ => None,
         }
@@ -801,7 +816,11 @@ impl<'a> StackInfo<'a> {
         let frame = self.frame();
         match frame.state {
             State::Closure(ref closure) => {
-                closure.function.debug_info.local_map.locals(self.instruction_index())
+                closure
+                    .function
+                    .debug_info
+                    .local_map
+                    .locals(self.instruction_index())
             }
             _ => LocalIter::empty(),
         }
@@ -870,14 +889,14 @@ impl Context {
 
     pub fn alloc_with<D>(&mut self, thread: &Thread, data: D) -> Result<GcPtr<D::Value>>
         where D: DataDef + Traverseable,
-              D::Value: Sized + Any,
+              D::Value: Sized + Any
     {
         alloc(&mut self.gc, thread, &self.stack, data)
     }
 
     pub fn alloc_ignore_limit<D>(&mut self, data: D) -> GcPtr<D::Value>
         where D: DataDef + Traverseable,
-              D::Value: Sized + Any,
+              D::Value: Sized + Any
     {
         self.gc.alloc_ignore_limit(data)
     }
@@ -903,23 +922,27 @@ impl Context {
     /// `Thread`
     pub unsafe fn return_future<'vm, F>(&mut self, mut future: F)
         where F: Future<Error = Error> + Send + 'static,
-              F::Item: Pushable<'vm>,
+              F::Item: Pushable<'vm>
     {
         use std::mem::transmute;
         self.poll_fn = Some(Box::new(move |vm, context| {
-            let vm = transmute::<&Thread, &'vm Thread>(vm);
-            let value = try_ready!(future.poll());
-            value.push(vm, context).map(Async::Ready)
-        }));
+                                         let vm = transmute::<&Thread, &'vm Thread>(vm);
+                                         let value = try_ready!(future.poll());
+                                         value.push(vm, context).map(Async::Ready)
+                                     }));
     }
 }
 
 impl<'b> OwnedContext<'b> {
     pub fn alloc<D>(&mut self, data: D) -> Result<GcPtr<D::Value>>
         where D: DataDef + Traverseable,
-              D::Value: Sized + Any,
+              D::Value: Sized + Any
     {
-        let Context { ref mut gc, ref stack, .. } = **self;
+        let Context {
+            ref mut gc,
+            ref stack,
+            ..
+        } = **self;
         alloc(gc, self.thread, &stack, data)
     }
 
@@ -933,7 +956,7 @@ impl<'b> OwnedContext<'b> {
 
 pub fn alloc<D>(gc: &mut Gc, thread: &Thread, stack: &Stack, def: D) -> Result<GcPtr<D::Value>>
     where D: DataDef + Traverseable,
-          D::Value: Sized + Any,
+          D::Value: Sized + Any
 {
     let roots = Roots {
         vm: unsafe {
@@ -1031,10 +1054,10 @@ impl<'b> OwnedContext<'b> {
                                    instruction_index,
                                    closure.function.instructions.len());
 
-                            let new_context = try_ready!(context.execute_(instruction_index,
-                                                                          &closure.function
-                                                                              .instructions,
-                                                                          &closure.function));
+                            let new_context =
+                                try_ready!(context.execute_(instruction_index,
+                                                            &closure.function.instructions,
+                                                            &closure.function));
                             if new_context.is_some() {
                                 State::Exists
                             } else {
@@ -1154,8 +1177,10 @@ impl<'b> ExecuteContext<'b> {
         self.record_map
             .get_offset(tag, index)
             .ok_or_else(|| {
-                Error::Message(format!("Internal error: Undefined record field {} {}", tag, index))
-            })
+                            Error::Message(format!("Internal error: Undefined record field {} {}",
+                                                   tag,
+                                                   index))
+                        })
     }
 
     fn enter_scope(&mut self, args: VmIndex, state: State) {
@@ -1286,7 +1311,8 @@ impl<'b> ExecuteContext<'b> {
             if self.hook.flags.contains(LINE_FLAG) {
                 if let Some(ref mut hook) = self.hook.function {
                     let current_line = function.debug_info.source_map.line(index);
-                    let previous_line = function.debug_info
+                    let previous_line = function
+                        .debug_info
                         .source_map
                         .line(self.hook.previous_instruction_index);
                     self.hook.previous_instruction_index = index;
@@ -1314,7 +1340,8 @@ impl<'b> ExecuteContext<'b> {
                     self.stack.push(Value::Byte(b));
                 }
                 PushString(string_index) => {
-                    self.stack.push(String(function.strings[string_index as usize].inner()));
+                    self.stack
+                        .push(String(function.strings[string_index as usize].inner()));
                 }
                 PushGlobal(i) => {
                     let x = function.globals[i as usize];
@@ -1393,11 +1420,11 @@ impl<'b> ExecuteContext<'b> {
                                 let field_names = &function.records[record as usize];
                                 let tag = self.record_map.get_map(&field_names);
                                 Data(self.gc
-                                    .alloc_and_collect(roots,
-                                                       Def {
-                                                           tag: tag,
-                                                           elems: fields,
-                                                       })?)
+                                         .alloc_and_collect(roots,
+                                                            Def {
+                                                                tag: tag,
+                                                                elems: fields,
+                                                            })?)
                             }
                         }
                     };
@@ -1445,10 +1472,11 @@ impl<'b> ExecuteContext<'b> {
                         Value::Tag(tag) => tag,
                         _ => {
                             return Err(Error::Message("Op TestTag called on non data type"
-                                .to_string()))
+                                                          .to_string()))
                         }
                     };
-                    self.stack.push(Value::Tag(if data_tag == tag { 1 } else { 0 }));
+                    self.stack
+                        .push(Value::Tag(if data_tag == tag { 1 } else { 0 }));
                 }
                 Split => {
                     match self.stack.pop() {
@@ -1461,7 +1489,7 @@ impl<'b> ExecuteContext<'b> {
                         Value::Tag(_) => (),
                         _ => {
                             return Err(Error::Message("Op Split called on non data type"
-                                .to_string()))
+                                                          .to_string()))
                         }
                     }
                 }
@@ -1491,7 +1519,10 @@ impl<'b> ExecuteContext<'b> {
                     }
                     self.stack.push(v);
                 }
-                MakeClosure { function_index, upvars } => {
+                MakeClosure {
+                    function_index,
+                    upvars,
+                } => {
                     let closure = {
                         let args = &self.stack[self.stack.len() - upvars..];
                         let func = function.inner_functions[function_index as usize];
@@ -1505,7 +1536,10 @@ impl<'b> ExecuteContext<'b> {
                     }
                     self.stack.push(closure);
                 }
-                NewClosure { function_index, upvars } => {
+                NewClosure {
+                    function_index,
+                    upvars,
+                } => {
                     let closure = {
                         // Use dummy variables until it is filled
                         let func = function.inner_functions[function_index as usize];
@@ -1592,7 +1626,8 @@ impl<'b> ExecuteContext<'b> {
                     for value in &excess.fields {
                         self.stack.push(*value);
                     }
-                    self.do_call(excess.fields.len() as VmIndex).map(|x| Async::Ready(Some(x)))
+                    self.do_call(excess.fields.len() as VmIndex)
+                        .map(|x| Async::Ready(Some(x)))
                 }
                 x => panic!("Expected excess arguments found {:?}", x),
             }
@@ -1605,7 +1640,7 @@ impl<'b> ExecuteContext<'b> {
 #[inline]
 fn binop_int<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
     where F: FnOnce(T, T) -> VmInt,
-          T: Getable<'b> + fmt::Debug,
+          T: Getable<'b> + fmt::Debug
 {
     binop(vm, stack, |l, r| Value::Int(f(l, r)))
 }
@@ -1613,7 +1648,7 @@ fn binop_int<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
 #[inline]
 fn binop_f64<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
     where F: FnOnce(T, T) -> f64,
-          T: Getable<'b> + fmt::Debug,
+          T: Getable<'b> + fmt::Debug
 {
     binop(vm, stack, |l, r| Value::Float(f(l, r)))
 }
@@ -1621,7 +1656,7 @@ fn binop_f64<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
 #[inline]
 fn binop_byte<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
     where F: FnOnce(T, T) -> u8,
-          T: Getable<'b> + fmt::Debug,
+          T: Getable<'b> + fmt::Debug
 {
     binop(vm, stack, |l, r| Value::Byte(f(l, r)))
 }
@@ -1629,7 +1664,7 @@ fn binop_byte<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
 #[inline]
 fn binop_bool<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
     where F: FnOnce(T, T) -> bool,
-          T: Getable<'b> + fmt::Debug,
+          T: Getable<'b> + fmt::Debug
 {
     binop(vm, stack, |l, r| Value::Tag(if f(l, r) { 1 } else { 0 }))
 }
@@ -1638,7 +1673,7 @@ fn binop_bool<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
 #[inline]
 fn binop<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
     where F: FnOnce(T, T) -> Value,
-          T: Getable<'b> + fmt::Debug,
+          T: Getable<'b> + fmt::Debug
 {
     let r = stack.pop();
     let l = stack.pop();
@@ -1662,12 +1697,12 @@ fn debug_instruction(stack: &StackFrame,
            stack.len(),
            match instr {
                Push(i) => {
-                   let x = stack.get(i as usize).cloned();
-                   if x.is_none() {
-                       debug!("{:?}", &stack[..])
-                   }
-                   x
-               }
+        let x = stack.get(i as usize).cloned();
+        if x.is_none() {
+            debug!("{:?}", &stack[..])
+        }
+        x
+    }
                PushGlobal(i) => function.globals.get(i as usize).cloned(),
                NewClosure { .. } |
                MakeClosure { .. } => Some(Int(stack.len() as isize)),

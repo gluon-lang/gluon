@@ -142,7 +142,8 @@ impl<E: fmt::Display> InFile<E> {
         InFile {
             source_name: source_name.to_string(),
             error: Errors {
-                errors: error.errors
+                errors: error
+                    .errors
                     .into_iter()
                     .map(|error| SourceContext::new(&source, error))
                     .collect(),
@@ -151,7 +152,13 @@ impl<E: fmt::Display> InFile<E> {
     }
 
     pub fn errors(self) -> Errors<Spanned<E, Location>> {
-        Errors { errors: self.error.errors.into_iter().map(|err| err.error).collect() }
+        Errors {
+            errors: self.error
+                .errors
+                .into_iter()
+                .map(|err| err.error)
+                .collect(),
+        }
     }
 }
 

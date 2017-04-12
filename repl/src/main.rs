@@ -21,7 +21,7 @@ use gluon::vm::Error as VMError;
 mod repl;
 
 fn run_files<'s, I>(vm: &Thread, files: I) -> Result<()>
-    where I: Iterator<Item = &'s str>,
+    where I: Iterator<Item = &'s str>
 {
     let mut compiler = Compiler::new();
     for file in files {
@@ -53,7 +53,7 @@ fn main() {
                 (@arg REPL: -i --interactive "Starts the repl")
                 (@arg INPUT: ... "Executes each file as a gluon program")
             )
-                .get_matches();
+                    .get_matches();
             if matches.is_present("REPL") {
                 if let Err(err) = repl::run() {
                     println!("{}", err);

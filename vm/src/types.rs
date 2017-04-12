@@ -159,9 +159,13 @@ impl KindEnv for TypeInfos {
         self.id_to_type
             .get(type_name)
             .map(|alias| {
-                alias.args.iter().rev().fold(Kind::typ(),
-                                             |acc, arg| Kind::function(arg.kind.clone(), acc))
-            })
+                     alias
+                         .args
+                         .iter()
+                         .rev()
+                         .fold(Kind::typ(),
+                               |acc, arg| Kind::function(arg.kind.clone(), acc))
+                 })
     }
 }
 
@@ -171,17 +175,18 @@ impl TypeEnv for TypeInfos {
         self.id_to_type
             .iter()
             .filter_map(|(_, ref alias)| match **alias.unresolved_type() {
-                Type::Variant(ref row) => row.row_iter().find(|field| field.name.as_ref() == id),
-                _ => None,
-            })
+                            Type::Variant(ref row) => {
+                                row.row_iter().find(|field| field.name.as_ref() == id)
+                            }
+                            _ => None,
+                        })
             .next()
             .map(|field| &field.typ)
     }
 
     fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
         let id = AsRef::<str>::as_ref(id);
-        self.id_to_type
-            .get(id)
+        self.id_to_type.get(id)
     }
 
     fn find_record(&self, _fields: &[Symbol]) -> Option<(ArcType, ArcType)> {

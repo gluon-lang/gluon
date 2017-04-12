@@ -84,17 +84,19 @@ pub fn type_of_alias(env: &TypeEnv,
     // Test == ??? (Impossible to do a sane substitution)
     match *typ.clone() {
         Type::App(ref d, ref arg_types) => {
-            let allowed_missing_args = arg_types.iter()
+            let allowed_missing_args = arg_types
+                .iter()
                 .rev()
                 .zip(alias_args.iter().rev())
                 .take_while(|&(l, r)| match **l {
-                    Type::Generic(ref g) => g == r,
-                    _ => false,
-                })
+                                Type::Generic(ref g) => g == r,
+                                _ => false,
+                            })
                 .count();
             if alias_args.len() - args.len() <= allowed_missing_args {
                 // Remove the args at the end of the aliased type
-                let arg_types: AppVec<_> = arg_types.iter()
+                let arg_types: AppVec<_> = arg_types
+                    .iter()
                     .take(arg_types.len() - (alias_args.len() - args.len()))
                     .cloned()
                     .collect();
@@ -116,7 +118,8 @@ pub fn type_of_alias(env: &TypeEnv,
             Type::Generic(ref generic) => {
                 // Replace the generic variable with the type from the list
                 // or if it is not found the make a fresh variable
-                alias_args.iter()
+                alias_args
+                    .iter()
                     .zip(args)
                     .find(|&(arg, _)| arg.id == generic.id)
                     .map(|(_, typ)| typ.clone())
@@ -124,8 +127,7 @@ pub fn type_of_alias(env: &TypeEnv,
             Type::Ident(ref id) => {
                 // Replace `Ident` with the alias it resolves to so that a `TypeEnv` is not needed
                 // to resolve the type later on
-                env.find_type_info(id)
-                    .map(|a| a.clone().into_type())
+                env.find_type_info(id).map(|a| a.clone().into_type())
             }
             _ => None,
         }

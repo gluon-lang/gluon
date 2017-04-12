@@ -44,7 +44,7 @@ impl<Id> TypedIdent<Id> {
 }
 
 impl<Id> AsRef<str> for TypedIdent<Id>
-    where Id: AsRef<str>,
+    where Id: AsRef<str>
 {
     fn as_ref(&self) -> &str {
         self.name.as_ref()
@@ -230,7 +230,11 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
                 v.visit_expr(expr);
             }
         }
-        Expr::Record { ref mut typ, ref mut exprs, .. } => {
+        Expr::Record {
+            ref mut typ,
+            ref mut exprs,
+            ..
+        } => {
             v.visit_typ(typ);
             for field in exprs {
                 if let Some(ref mut expr) = field.value {
@@ -267,7 +271,11 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::Id
                 v.visit_pattern(arg);
             }
         }
-        Pattern::Record { ref mut typ, ref mut fields, .. } => {
+        Pattern::Record {
+            ref mut typ,
+            ref mut fields,
+            ..
+        } => {
             v.visit_typ(typ);
             for field in fields {
                 if let Some(ref mut pattern) = field.1 {
@@ -275,7 +283,10 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::Id
                 }
             }
         }
-        Pattern::Tuple { ref mut typ, ref mut elems } => {
+        Pattern::Tuple {
+            ref mut typ,
+            ref mut elems,
+        } => {
             v.visit_typ(typ);
             for elem in elems {
                 v.visit_pattern(elem);
@@ -376,7 +387,11 @@ pub fn walk_pattern<V: ?Sized + Visitor>(v: &mut V, p: &Pattern<V::Ident>) {
                 v.visit_pattern(&arg);
             }
         }
-        Pattern::Record { ref typ, ref fields, .. } => {
+        Pattern::Record {
+            ref typ,
+            ref fields,
+            ..
+        } => {
             v.visit_typ(typ);
             for field in fields {
                 if let Some(ref pattern) = field.1 {
@@ -490,16 +505,17 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
         return get_return_type(env, ret, arg_count - 1);
     }
 
-    let alias = {
-        let alias_ident = alias_type.alias_ident().unwrap_or_else(|| {
+    let alias =
+        {
+            let alias_ident = alias_type.alias_ident().unwrap_or_else(|| {
             panic!("ICE: Expected function with {} more arguments, found {:?}",
                    arg_count,
                    alias_type)
         });
 
-        env.find_type_info(alias_ident)
-            .unwrap_or_else(|| panic!("Unexpected type {:?} is not a function", alias_type))
-    };
+            env.find_type_info(alias_ident)
+                .unwrap_or_else(|| panic!("Unexpected type {:?} is not a function", alias_type))
+        };
 
     let typ = types::walk_move_type(alias.typ().into_owned(),
                                     &mut |typ| {
@@ -507,7 +523,8 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
             Type::Generic(ref generic) => {
                 // Replace the generic variable with the type from the list
                 // or if it is not found the make a fresh variable
-                alias.args
+                alias
+                    .args
                     .iter()
                     .zip(alias_type.unapplied_args())
                     .find(|&(arg, _)| arg.id == generic.id)

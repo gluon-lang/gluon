@@ -21,10 +21,10 @@ pub struct Sender<T> {
     queue: Arc<Mutex<VecDeque<T>>>,
 }
 
-impl<T> Userdata for Sender<T> where T: Any + Send + Sync + fmt::Debug + Traverseable, {}
+impl<T> Userdata for Sender<T> where T: Any + Send + Sync + fmt::Debug + Traverseable {}
 
 impl<T> fmt::Debug for Sender<T>
-    where T: fmt::Debug,
+    where T: fmt::Debug
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", *self.queue.lock().unwrap())
@@ -54,10 +54,10 @@ pub struct Receiver<T> {
     queue: Arc<Mutex<VecDeque<T>>>,
 }
 
-impl<T> Userdata for Receiver<T> where T: Any + Send + Sync + fmt::Debug + Traverseable, {}
+impl<T> Userdata for Receiver<T> where T: Any + Send + Sync + fmt::Debug + Traverseable {}
 
 impl<T> fmt::Debug for Receiver<T>
-    where T: fmt::Debug,
+    where T: fmt::Debug
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", *self.queue.lock().unwrap())
@@ -66,30 +66,36 @@ impl<T> fmt::Debug for Receiver<T>
 
 impl<T> Receiver<T> {
     fn try_recv(&self) -> Result<T, ()> {
-        self.queue
-            .lock()
-            .unwrap()
-            .pop_front()
-            .ok_or(())
+        self.queue.lock().unwrap().pop_front().ok_or(())
     }
 }
 
 impl<T: VmType> VmType for Sender<T>
-    where T::Type: Sized,
+    where T::Type: Sized
 {
     type Type = Sender<T::Type>;
     fn make_type(vm: &Thread) -> ArcType {
-        let symbol = vm.global_env().get_env().find_type_info("Sender").unwrap().name.clone();
+        let symbol = vm.global_env()
+            .get_env()
+            .find_type_info("Sender")
+            .unwrap()
+            .name
+            .clone();
         Type::app(Type::ident(symbol), collect![T::make_type(vm)])
     }
 }
 
 impl<T: VmType> VmType for Receiver<T>
-    where T::Type: Sized,
+    where T::Type: Sized
 {
     type Type = Receiver<T::Type>;
     fn make_type(vm: &Thread) -> ArcType {
-        let symbol = vm.global_env().get_env().find_type_info("Receiver").unwrap().name.clone();
+        let symbol = vm.global_env()
+            .get_env()
+            .find_type_info("Receiver")
+            .unwrap()
+            .name
+            .clone();
         Type::app(Type::ident(symbol), collect![T::make_type(vm)])
     }
 }
@@ -112,12 +118,14 @@ fn channel(WithVM { vm, .. }: WithVM<Generic<A>>)
 }
 
 fn recv(receiver: &Receiver<Generic<A>>) -> Result<Generic<A>, ()> {
-    receiver.try_recv()
-        .map_err(|_| ())
+    receiver.try_recv().map_err(|_| ())
 }
 
 fn send(sender: &Sender<Generic<A>>, value: Generic<A>) -> Result<(), ()> {
-    let value = sender.thread.deep_clone_value(&sender.thread, value.0).map_err(|_| ())?;
+    let value = sender
+        .thread
+        .deep_clone_value(&sender.thread, value.0)
+        .map_err(|_| ())?;
     Ok(sender.send(Generic::from(value)))
 }
 

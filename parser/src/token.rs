@@ -176,16 +176,18 @@ impl<'input> Iterator for CharLocations<'input> {
     type Item = (Location, char);
 
     fn next(&mut self) -> Option<(Location, char)> {
-        self.chars.next().map(|ch| {
-            let location = self.location;
-            self.location = self.location.shift(ch);
-            // HACK: The layout algorithm expects `1` indexing for columns -
-            // this could be altered in the future though
-            if self.location.column == Column::from(0) {
-                self.location.column = Column::from(1);
-            }
-            (location, ch)
-        })
+        self.chars
+            .next()
+            .map(|ch| {
+                let location = self.location;
+                self.location = self.location.shift(ch);
+                // HACK: The layout algorithm expects `1` indexing for columns -
+                // this could be altered in the future though
+                if self.location.column == Column::from(0) {
+                    self.location.column = Column::from(1);
+                }
+                (location, ch)
+            })
     }
 }
 
@@ -242,13 +244,13 @@ impl<'input> Tokenizer<'input> {
     }
 
     fn take_while<F>(&mut self, start: Location, mut keep_going: F) -> (Location, &'input str)
-        where F: FnMut(char) -> bool,
+        where F: FnMut(char) -> bool
     {
         self.take_until(start, |c| !keep_going(c))
     }
 
     fn take_until<F>(&mut self, start: Location, mut terminate: F) -> (Location, &'input str)
-        where F: FnMut(char) -> bool,
+        where F: FnMut(char) -> bool
     {
         while let Some((end, ch)) = self.lookahead {
             if terminate(ch) {
@@ -261,7 +263,7 @@ impl<'input> Tokenizer<'input> {
     }
 
     fn test_lookahead<F>(&self, mut test: F) -> bool
-        where F: FnMut(char) -> bool,
+        where F: FnMut(char) -> bool
     {
         self.lookahead.map_or(false, |(_, ch)| test(ch))
     }
@@ -435,39 +437,39 @@ impl<'input> Iterator for Tokenizer<'input> {
     fn next(&mut self) -> Option<Result<SpannedToken<'input>, SpError>> {
         while let Some((start, ch)) = self.bump() {
             return match ch {
-                ',' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::Comma))),
-                '\\' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::Lambda))),
-                '{' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::LBrace))),
-                '[' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::LBracket))),
-                '(' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::LParen))),
-                '}' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::RBrace))),
-                ']' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::RBracket))),
-                ')' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::RParen))),
+                       ',' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::Comma))),
+                       '\\' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::Lambda))),
+                       '{' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::LBrace))),
+                       '[' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::LBracket))),
+                       '(' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::LParen))),
+                       '}' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::RBrace))),
+                       ']' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::RBracket))),
+                       ')' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::RParen))),
 
-                '"' => Some(self.string_literal(start)),
-                '\'' => Some(self.char_literal(start)),
+                       '"' => Some(self.string_literal(start)),
+                       '\'' => Some(self.char_literal(start)),
 
-                '/' if self.test_lookahead(|ch| ch == '/') => {
-                    match self.line_comment(start) {
-                        Some(token) => Some(Ok(token)),
-                        None => continue,
-                    }
-                }
-                '/' if self.test_lookahead(|ch| ch == '*') => {
-                    match self.block_comment(start) {
-                        Ok(Some(token)) => Some(Ok(token)),
-                        Ok(None) => continue,
-                        Err(err) => Some(Err(err)),
-                    }
-                }
+                       '/' if self.test_lookahead(|ch| ch == '/') => {
+                           match self.line_comment(start) {
+                               Some(token) => Some(Ok(token)),
+                               None => continue,
+                           }
+                       }
+                       '/' if self.test_lookahead(|ch| ch == '*') => {
+                           match self.block_comment(start) {
+                               Ok(Some(token)) => Some(Ok(token)),
+                               Ok(None) => continue,
+                               Err(err) => Some(Err(err)),
+                           }
+                       }
 
-                ch if is_ident_start(ch) => Some(Ok(self.identifier(start))),
-                ch if is_digit(ch) => Some(self.numeric_literal(start)), // TODO: negative numbers?
-                ch if is_operator_char(ch) => Some(Ok(self.operator(start))),
-                ch if ch.is_whitespace() => continue,
+                       ch if is_ident_start(ch) => Some(Ok(self.identifier(start))),
+                       ch if is_digit(ch) => Some(self.numeric_literal(start)), // TODO: negative numbers?
+                       ch if is_operator_char(ch) => Some(Ok(self.operator(start))),
+                       ch if ch.is_whitespace() => continue,
 
-                ch => Some(self.error(start, UnexpectedChar(ch))),
-            };
+                       ch => Some(self.error(start, UnexpectedChar(ch))),
+                   };
         }
         None
     }

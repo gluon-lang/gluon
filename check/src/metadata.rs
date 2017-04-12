@@ -37,7 +37,11 @@ pub fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
 
         fn new_pattern(&mut self, mut metadata: Metadata, pattern: &mut SpannedPattern<Symbol>) {
             match pattern.value {
-                Pattern::Record { ref mut fields, ref mut types, .. } => {
+                Pattern::Record {
+                    ref mut fields,
+                    ref mut types,
+                    ..
+                } => {
                     for field in fields {
                         if let Some(m) = metadata.module.remove(field.0.as_ref()) {
                             let id = match field.1 {
@@ -85,9 +89,15 @@ pub fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
         fn metadata_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> Metadata {
             match expr.value {
                 Expr::Ident(ref mut id) => {
-                    self.metadata(&id.name).cloned().unwrap_or_else(Metadata::default)
+                    self.metadata(&id.name)
+                        .cloned()
+                        .unwrap_or_else(Metadata::default)
                 }
-                Expr::Record { ref mut exprs, ref mut types, .. } => {
+                Expr::Record {
+                    ref mut exprs,
+                    ref mut types,
+                    ..
+                } => {
                     let mut module = BTreeMap::new();
                     for field in exprs {
                         let maybe_metadata = match field.value {
@@ -97,12 +107,15 @@ pub fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
                             }
                             None => self.metadata(&field.name).cloned(),
                         };
-                        let field_metadata = field.comment.clone().map(|comment| {
-                            Metadata {
-                                comment: Some(comment),
-                                module: BTreeMap::new(),
-                            }
-                        });
+                        let field_metadata = field
+                            .comment
+                            .clone()
+                            .map(|comment| {
+                                     Metadata {
+                                         comment: Some(comment),
+                                         module: BTreeMap::new(),
+                                     }
+                                 });
                         let maybe_metadata = match (field_metadata, maybe_metadata) {
                             (Some(l), Some(r)) => Some(l.merge(r)),
                             (None, Some(x)) | (Some(x), None) => Some(x),
@@ -149,12 +162,14 @@ pub fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
                 Expr::TypeBindings(ref mut bindings, ref mut expr) => {
                     self.env.stack.enter_scope();
                     for bind in bindings.iter_mut() {
-                        let maybe_metadata = bind.comment.as_ref().map(|comment| {
-                            Metadata {
-                                comment: Some(comment.clone()),
-                                module: BTreeMap::new(),
-                            }
-                        });
+                        let maybe_metadata = bind.comment
+                            .as_ref()
+                            .map(|comment| {
+                                     Metadata {
+                                         comment: Some(comment.clone()),
+                                         module: BTreeMap::new(),
+                                     }
+                                 });
                         if let Some(metadata) = maybe_metadata {
                             self.stack_var(bind.name.clone(), metadata);
                         }

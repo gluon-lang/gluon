@@ -56,7 +56,7 @@ pub trait Substitutable: Sized {
 }
 
 fn occurs<T>(typ: &T, subs: &Substitution<T>, var: &T::Variable) -> bool
-    where T: Substitutable,
+    where T: Substitutable
 {
     struct Occurs<'a, T: Substitutable + 'a> {
         occurs: bool,
@@ -64,7 +64,7 @@ fn occurs<T>(typ: &T, subs: &Substitution<T>, var: &T::Variable) -> bool
         subs: &'a Substitution<T>,
     }
     impl<'a, T> Walker<T> for Occurs<'a, T>
-        where T: Substitutable,
+        where T: Substitutable
     {
         fn walk(&mut self, typ: &T) {
             if self.occurs {
@@ -119,31 +119,31 @@ impl Union for UnionByLevel {
         let (rank_result, rank) = match Union::union(left.rank, right.rank) {
             UnionResult::Left(l) => {
                 (UnionResult::Left(UnionByLevel {
-                    rank: l,
-                    level: left.level,
-                }),
+                                       rank: l,
+                                       level: left.level,
+                                   }),
                  l)
             }
             UnionResult::Right(r) => {
                 (UnionResult::Right(UnionByLevel {
-                    rank: r,
-                    level: left.level,
-                }),
+                                        rank: r,
+                                        level: left.level,
+                                    }),
                  r)
             }
         };
         match left.level.cmp(&right.level) {
             Ordering::Less => {
                 UnionResult::Left(UnionByLevel {
-                    rank: rank,
-                    level: left.level,
-                })
+                                      rank: rank,
+                                      level: left.level,
+                                  })
             }
             Ordering::Greater => {
                 UnionResult::Right(UnionByLevel {
-                    rank: rank,
-                    level: right.level,
-                })
+                                       rank: rank,
+                                       level: right.level,
+                                   })
             }
             Ordering::Equal => rank_result,
         }
@@ -196,7 +196,7 @@ impl<T: Substitutable> Substitution<T> {
 
     /// Creates a new variable
     pub fn new_var(&self) -> T
-        where T: Clone,
+        where T: Clone
     {
         let var_id = self.variables.len() as u32;
         let id = self.union.borrow_mut().insert(UnionByLevel::default());
@@ -226,13 +226,11 @@ impl<T: Substitutable> Substitution<T> {
         let index = self.union.borrow_mut().find(var as usize) as u32;
         self.types
             .get(&index)
-            .or_else(|| {
-                if var == index {
-                    None
-                } else {
-                    Some(&self.variables[index as usize])
-                }
-            })
+            .or_else(|| if var == index {
+                         None
+                     } else {
+                         Some(&self.variables[index as usize])
+                     })
     }
 
     /// Updates the level of `other` to be the minimum level value of `var` and `other`
@@ -256,10 +254,7 @@ impl<T: Substitutable> Substitution<T> {
 impl Substitution<ArcType> {
     pub fn replace_variable(&self, typ: &Type<Symbol>) -> Option<ArcType> {
         match *typ {
-            Type::Variable(ref id) => {
-                self.find_type_for_var(id.id)
-                    .cloned()
-            }
+            Type::Variable(ref id) => self.find_type_for_var(id.id).cloned(),
             _ => None,
         }
     }
@@ -288,11 +283,12 @@ impl<T: Substitutable + Clone> Substitution<T> {
 impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
     /// Takes `id` and updates the substitution to say that it should have the same type as `typ`
     pub fn union(&self, id: &T::Variable, typ: &T) -> Result<(), ()>
-        where T::Variable: Clone,
+        where T::Variable: Clone
     {
         // Nothing needs to be done if both are the same variable already (also prevents the occurs
         // check from failing)
-        if typ.get_var().map_or(false, |other| other.get_id() == id.get_id()) {
+        if typ.get_var()
+               .map_or(false, |other| other.get_id() == id.get_id()) {
             return Ok(());
         }
         if occurs(typ, self, id) {
@@ -308,7 +304,9 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
         }
         match typ.get_var() {
             Some(other_id) => {
-                self.union.borrow_mut().union(id.get_id() as usize, other_id.get_id() as usize);
+                self.union
+                    .borrow_mut()
+                    .union(id.get_id() as usize, other_id.get_id() as usize);
                 self.update_level(id.get_id(), other_id.get_id());
                 self.update_level(other_id.get_id(), id.get_id());
             }

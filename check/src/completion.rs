@@ -70,7 +70,11 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
 
     fn on_pattern(&mut self, pattern: &SpannedPattern<Symbol>) {
         match pattern.value {
-            Pattern::Record { ref typ, fields: ref field_ids, .. } => {
+            Pattern::Record {
+                ref typ,
+                fields: ref field_ids,
+                ..
+            } => {
                 let unaliased = resolve::remove_aliases(&self.env, typ.clone());
                 for field in field_ids {
                     match field.1 {
@@ -105,10 +109,11 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
         if let Expr::Ident(ref ident) = expr.value {
             for (k, typ) in self.stack.iter() {
                 if k.declared_name().starts_with(ident.name.declared_name()) {
-                    self.result.push(Suggestion {
-                        name: k.declared_name().into(),
-                        typ: typ.clone(),
-                    });
+                    self.result
+                        .push(Suggestion {
+                                  name: k.declared_name().into(),
+                                  typ: typ.clone(),
+                              });
                 }
             }
         }
@@ -120,22 +125,26 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
             let id = ident.as_ref();
             for field in typ.row_iter() {
                 if field.name.as_ref().starts_with(id) {
-                    self.result.push(Suggestion {
-                        name: field.name.declared_name().into(),
-                        typ: field.typ.clone(),
-                    });
+                    self.result
+                        .push(Suggestion {
+                                  name: field.name.declared_name().into(),
+                                  typ: field.typ.clone(),
+                              });
                 }
             }
         }
     }
 
     fn nothing(&mut self) {
-        self.result.extend(self.stack.iter().map(|(name, typ)| {
-            Suggestion {
-                name: name.declared_name().into(),
-                typ: typ.clone(),
-            }
-        }));
+        self.result
+            .extend(self.stack
+                        .iter()
+                        .map(|(name, typ)| {
+                                 Suggestion {
+                                     name: name.declared_name().into(),
+                                     typ: typ.clone(),
+                                 }
+                             }));
     }
 
     fn found(&self) -> bool {
@@ -151,7 +160,7 @@ struct FindVisitor<F> {
 impl<F> FindVisitor<F> {
     fn select_spanned<'e, I, S, T>(&self, iter: I, mut span: S) -> (bool, Option<&'e T>)
         where I: IntoIterator<Item = &'e T>,
-              S: FnMut(&T) -> Span<BytePos>,
+              S: FnMut(&T) -> Span<BytePos>
     {
         let mut iter = iter.into_iter().peekable();
         let mut prev = None;
@@ -180,7 +189,7 @@ impl<F> FindVisitor<F> {
 struct VisitUnExpanded<'e, F: 'e>(&'e mut FindVisitor<F>);
 
 impl<'e, F> Visitor for VisitUnExpanded<'e, F>
-    where F: OnFound,
+    where F: OnFound
 {
     type Ident = Symbol;
 
@@ -206,10 +215,10 @@ impl<'e, F> Visitor for VisitUnExpanded<'e, F>
 }
 
 impl<F> FindVisitor<F>
-    where F: OnFound,
+    where F: OnFound
 {
     fn visit_one<'e, I>(&mut self, iter: I)
-        where I: IntoIterator<Item = &'e SpannedExpr<Symbol>>,
+        where I: IntoIterator<Item = &'e SpannedExpr<Symbol>>
     {
         let (_, expr) = self.select_spanned(iter, |e| e.span);
         self.visit_expr(expr.unwrap());
@@ -237,9 +246,7 @@ impl<F> FindVisitor<F>
                 self.visit_one(once(&**func).chain(args));
             }
             Expr::IfElse(ref pred, ref if_true, ref if_false) => {
-                self.visit_one([pred, if_true, if_false]
-                    .iter()
-                    .map(|x| &***x))
+                self.visit_one([pred, if_true, if_false].iter().map(|x| &***x))
             }
             Expr::Match(ref expr, ref alts) => {
                 self.visit_one(once(&**expr).chain(alts.iter().map(|alt| &alt.expr)))
@@ -247,7 +254,8 @@ impl<F> FindVisitor<F>
             Expr::Infix(ref l, ref op, ref r) => {
                 match (l.span.containment(&self.pos), r.span.containment(&self.pos)) {
                     (Ordering::Greater, Ordering::Less) => {
-                        self.on_found.ident(current, &op.value.name, &op.value.typ)
+                        self.on_found
+                            .ident(current, &op.value.name, &op.value.typ)
                     }
                     (_, Ordering::Greater) |
                     (_, Ordering::Equal) => self.visit_expr(r),
@@ -297,7 +305,7 @@ impl<F> FindVisitor<F>
 }
 
 pub fn find<T>(env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Result<ArcType, ()>
-    where T: TypeEnv,
+    where T: TypeEnv
 {
     let mut visitor = FindVisitor {
         pos: pos,
@@ -311,7 +319,7 @@ pub fn find<T>(env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Result<ArcT
 }
 
 pub fn suggest<T>(env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Vec<Suggestion>
-    where T: TypeEnv,
+    where T: TypeEnv
 {
     let mut visitor = FindVisitor {
         pos: pos,
