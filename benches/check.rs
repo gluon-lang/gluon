@@ -19,8 +19,12 @@ fn typecheck_prelude(b: &mut ::test::Bencher) {
     let mut compiler = Compiler::new();
     let MacroValue { expr } = {
         let mut text = String::new();
-        File::open("std/prelude.glu").unwrap().read_to_string(&mut text).unwrap();
-        text.expand_macro(&mut compiler, &vm, "std.prelude").unwrap_or_else(|err| panic!("{}", err))
+        File::open("std/prelude.glu")
+            .unwrap()
+            .read_to_string(&mut text)
+            .unwrap();
+        text.expand_macro(&mut compiler, &vm, "std.prelude")
+            .unwrap_or_else(|err| panic!("{}", err))
     };
     b.iter(|| {
         let result = MacroValue { expr: expr.clone() }.typecheck(&mut compiler, &vm, "<top>", "");
@@ -38,7 +42,10 @@ fn clone_prelude(b: &mut ::test::Bencher) {
     let mut compiler = Compiler::new();
     let TypecheckValue { expr, .. } = {
         let mut text = String::new();
-        File::open("std/prelude.glu").unwrap().read_to_string(&mut text).unwrap();
+        File::open("std/prelude.glu")
+            .unwrap()
+            .read_to_string(&mut text)
+            .unwrap();
         text.typecheck(&mut compiler, &vm, "std.prelude", &text)
             .unwrap_or_else(|err| panic!("{}", err))
     };

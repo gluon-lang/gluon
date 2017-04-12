@@ -17,13 +17,16 @@ use gluon::Compiler;
 use gluon::import::Import;
 
 fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<()> {
-    Compiler::new().load_script_async(vm, filename, input).sync_or_error()
+    Compiler::new()
+        .load_script_async(vm, filename, input)
+        .sync_or_error()
 }
 
 fn make_vm() -> RootedThread {
     let vm = ::gluon::new_vm();
     let import = vm.get_macros().get("import");
-    import.as_ref()
+    import
+        .as_ref()
         .and_then(|import| import.downcast_ref::<Import>())
         .expect("Import macro")
         .add_path("..");
@@ -43,8 +46,7 @@ let mul : Float -> Float -> Float = \x y -> x #Float* y in mul
     load_script(&mut vm, "add10", &add10).unwrap_or_else(|err| panic!("{}", err));
     load_script(&mut vm, "mul", &mul).unwrap_or_else(|err| panic!("{}", err));
     {
-        let mut f: FunctionRef<fn(VmInt) -> VmInt> = vm.get_global("add10")
-            .unwrap();
+        let mut f: FunctionRef<fn(VmInt) -> VmInt> = vm.get_global("add10").unwrap();
         let result = f.call(2).unwrap();
         assert_eq!(result, 12);
     }
@@ -77,8 +79,7 @@ fn root_data() {
     vm.define_global("test", primitive!(2 test)).unwrap();
     load_script(&vm, "script_fn", expr).unwrap_or_else(|err| panic!("{}", err));
     let mut script_fn: FunctionRef<fn(Test) -> VmInt> = vm.get_global("script_fn").unwrap();
-    let result = script_fn.call(Test(123))
-        .unwrap();
+    let result = script_fn.call(Test(123)).unwrap();
     assert_eq!(result, 124);
 }
 
@@ -118,7 +119,8 @@ sum_bytes [100b, 42b, 3b, 15b]
     }
 
     let vm = make_vm();
-    vm.define_global("sum_bytes", primitive!(1 sum_bytes)).unwrap();
+    vm.define_global("sum_bytes", primitive!(1 sum_bytes))
+        .unwrap();
 
     let result = Compiler::new()
         .run_expr::<u8>(&vm, "<top>", expr)
@@ -162,15 +164,17 @@ fn return_delayed_future() {
         let (ping_c, ping_p) = channel();
         let (pong_c, pong_p) = channel();
         spawn(move || {
-            ping_p.wait().expect("wait");
-            pong_c.send(i).expect("send");
-        });
+                  ping_p.wait().expect("wait");
+                  pong_c.send(i).expect("send");
+              });
         FutureResult(lazy(move || {
-                ping_c.send(()).unwrap();
-                Ok(())
-            })
-            .and_then(|_| pong_p.map_err(|err| Error::Message(format!("{}", err))))
-            .boxed())
+                              ping_c.send(()).unwrap();
+                              Ok(())
+                          })
+                             .and_then(|_| {
+                                           pong_p.map_err(|err| Error::Message(format!("{}", err)))
+                                       })
+                             .boxed())
     }
 
     let expr = r#"

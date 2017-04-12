@@ -63,7 +63,9 @@ fn record() {
     let vm = make_vm();
     let value = run_expr::<OpaqueValue<&Thread, Hole>>(&vm, text);
     assert_eq!(value.get_ref(),
-               vm.context().new_data(&vm, 0, &mut [Int(0), Float(1.0), Value::Tag(0)]).unwrap());
+               vm.context()
+                   .new_data(&vm, 0, &mut [Int(0), Float(1.0), Value::Tag(0)])
+                   .unwrap());
 }
 
 #[test]
@@ -77,7 +79,9 @@ add { x = 0, y = 1 } { x = 1, y = 1 }
     let vm = make_vm();
     let value = run_expr::<OpaqueValue<&Thread, Hole>>(&vm, text);
     assert_eq!(value.get_ref(),
-               vm.context().new_data(&vm, 0, &mut [Int(1), Int(2)]).unwrap());
+               vm.context()
+                   .new_data(&vm, 0, &mut [Int(1), Int(2)])
+                   .unwrap());
 }
 #[test]
 fn script() {
@@ -314,7 +318,9 @@ match A with
 | B -> True
 ";
     let mut vm = make_vm();
-    let result = Compiler::new().run_expr_async::<bool>(&mut vm, "<top>", text).sync_or_error();
+    let result = Compiler::new()
+        .run_expr_async::<bool>(&mut vm, "<top>", text)
+        .sync_or_error();
     assert!(result.is_err());
 }
 
@@ -603,7 +609,9 @@ in
     let vm = make_vm();
     let result = run_expr::<OpaqueValue<&Thread, Hole>>(&vm, text);
     assert_eq!(result.get_ref(),
-               vm.context().new_data(&vm, 0, &mut [Int(3), Float(3.0)]).unwrap());
+               vm.context()
+                   .new_data(&vm, 0, &mut [Int(3), Float(3.0)])
+                   .unwrap());
 }
 
 test_expr!{ through_overloaded_alias,
@@ -782,7 +790,9 @@ let s = "åäö"
 string.slice s 1 (string.length s)
 "#;
     let mut vm = make_vm();
-    let result = Compiler::new().run_expr_async::<String>(&mut vm, "<top>", text).sync_or_error();
+    let result = Compiler::new()
+        .run_expr_async::<String>(&mut vm, "<top>", text)
+        .sync_or_error();
     match result {
         Err(Error::VM(..)) => (),
         Err(err) => panic!("Unexpected error `{}`", err),
@@ -813,8 +823,8 @@ fn partially_applied_constructor_is_lambda() {
     let _ = ::env_logger::init();
     let vm = make_vm();
 
-    let result = Compiler::new()
-        .run_expr::<FunctionRef<fn(i32) -> Option<i32>>>(&vm, "test", "Some");
+    let result =
+        Compiler::new().run_expr::<FunctionRef<fn(i32) -> Option<i32>>>(&vm, "test", "Some");
     assert!(result.is_ok(), "{}", result.err().unwrap());
     assert_eq!(result.unwrap().0.call(123), Ok(Some(123)));
 }
@@ -834,56 +844,46 @@ and g x = 1 + f (x / 2)
 g 10
 "#;
     let mut vm = make_vm();
-    let result = Compiler::new().run_expr_async::<i32>(&mut vm, "<top>", text).sync_or_error();
+    let result = Compiler::new()
+        .run_expr_async::<i32>(&mut vm, "<top>", text)
+        .sync_or_error();
     match result {
         Err(Error::VM(..)) => {
             let stacktrace = vm.context().stack.stacktrace(1);
-            let g = stacktrace.frames[0]
-                .as_ref()
-                .unwrap()
-                .name
-                .clone();
-            let f = stacktrace.frames[1]
-                .as_ref()
-                .unwrap()
-                .name
-                .clone();
-            let end = stacktrace.frames[6]
-                .as_ref()
-                .unwrap()
-                .name
-                .clone();
+            let g = stacktrace.frames[0].as_ref().unwrap().name.clone();
+            let f = stacktrace.frames[1].as_ref().unwrap().name.clone();
+            let end = stacktrace.frames[6].as_ref().unwrap().name.clone();
             assert_eq!(stacktrace.frames,
                        vec![// Removed due to being a tail call
                             // Some(StacktraceFrame { name: f.clone(), line: 9 }),
                             Some(StacktraceFrame {
-                                name: g.clone(),
-                                line: 7.into(),
-                            }),
+                                     name: g.clone(),
+                                     line: 7.into(),
+                                 }),
                             Some(StacktraceFrame {
-                                name: f.clone(),
-                                line: 6.into(),
-                            }),
+                                     name: f.clone(),
+                                     line: 6.into(),
+                                 }),
                             Some(StacktraceFrame {
-                                name: g.clone(),
-                                line: 7.into(),
-                            }),
+                                     name: g.clone(),
+                                     line: 7.into(),
+                                 }),
                             Some(StacktraceFrame {
-                                name: f.clone(),
-                                line: 6.into(),
-                            }),
+                                     name: f.clone(),
+                                     line: 6.into(),
+                                 }),
                             Some(StacktraceFrame {
-                                name: g.clone(),
-                                line: 7.into(),
-                            }),
+                                     name: g.clone(),
+                                     line: 7.into(),
+                                 }),
                             Some(StacktraceFrame {
-                                name: f.clone(),
-                                line: 4.into(),
-                            }),
+                                     name: f.clone(),
+                                     line: 4.into(),
+                                 }),
                             Some(StacktraceFrame {
-                                name: end.clone(),
-                                line: 1.into(),
-                            })]);
+                                     name: end.clone(),
+                                     line: 1.into(),
+                                 })]);
         }
         Err(err) => panic!("Unexpected error `{}`", err),
         Ok(_) => panic!("Expected an error"),
@@ -963,7 +963,9 @@ fn dont_use_the_implicit_prelude_span_in_the_top_expr() {
 
     let expr = "1";
 
-    Compiler::new().typecheck_str(&vm, "example", expr, Some(&Type::float())).unwrap_err();
+    Compiler::new()
+        .typecheck_str(&vm, "example", expr, Some(&Type::float()))
+        .unwrap_err();
 }
 
 #[test]
