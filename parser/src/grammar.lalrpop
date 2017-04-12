@@ -1,12 +1,11 @@
-use std::str::FromStr;
-
 use itertools::Itertools;
 
 use base::ast::{Alternative, Array, AstType, Do, Comment, Expr, ExprField, Lambda, Literal, Pattern,
     PatternField, SpannedExpr, SpannedIdent, TypeBinding, TypedIdent, ValueBinding};
 use base::kind::{ArcKind, Kind};
 use base::pos::{self, BytePos, Spanned};
-use base::types::{AliasData, ArcType, BuiltinType, Field, Generic, Type, TypeCache};
+use base::types::{AliasData, ArcType, ArgType, BuiltinType, Field, Generic, Type, TypeCache};
+use std::str::FromStr;
 
 use ::new_ident;
 use token::Token;
@@ -53,6 +52,7 @@ extern {
         "\\" => Token::Lambda,
         "|" => Token::Pipe,
         "->" => Token::RArrow,
+        "?" => Token::QuestionMark,
 
         "{" => Token::LBrace,
         "[" => Token::LBracket,
@@ -273,15 +273,21 @@ Type_ = {
                      ty,
                      None),
 
-    <lhs: AppType> <f: Sp<"->">> <rhs: Type> =>
-        Type::App(
-            AstType::from(pos::spanned(f.span, Type::Builtin(BuiltinType::Function))),
-            collect![lhs, rhs]
+    <lhs: ArgType> <f: Sp<"->">> <rhs: Type> =>
+        Type::Function(
+            lhs.0,
+            lhs.1,
+            rhs,
         )
 };
 
 Type : AstType<Id> = {
     <typ: Sp<Type_>> => AstType::from(typ),
+};
+
+ArgType: (ArgType, AstType<Id>) = {
+    <AppType> => (ArgType::Explicit, <>),
+    "[" <Type> "]" => (ArgType::Implicit, <>),
 };
 
 // Patterns
@@ -500,11 +506,15 @@ SpAtomicExpr: SpannedExpr<Id> = {
     <Sp<AtomicExpr>> => super::shrink_hidden_spans(<>)
 };
 
+ImplicitArg: SpannedExpr<Id> = {
+    <arg: Sp<AtomicExpr>> "?" => arg
+};
+
 AppExpr = {
     AtomicExpr,
 
-    <expr: SpAtomicExpr> <args: SpAtomicExpr+> =>
-        Expr::App(Box::new(expr), args),
+    <expr: SpAtomicExpr> <implicit_args: ImplicitArg*> <args: SpAtomicExpr+> =>
+        Expr::App { func: Box::new(expr), implicit_args, args },
 };
 
 InfixExpr = {

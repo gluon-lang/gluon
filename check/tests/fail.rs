@@ -12,6 +12,7 @@ use base::symbol::Symbol;
 use base::types::{ArcType, Type};
 
 use check::typecheck::TypeError;
+use check::rename::RenameError;
 
 #[macro_use]
 mod support;
@@ -158,6 +159,18 @@ let f x = x #Float+ 1.0
     let result = support::typecheck(text);
 
     assert_unify_err!(result, Substitution(Constraint(..)));
+}
+
+#[test]
+fn unable_to_resolve_implicit() {
+    let _ = env_logger::init();
+    let text = r#"
+let f x y : [a] -> a -> a = x
+f 1
+"#;
+    let result = support::typecheck(text);
+
+    assert_err!(result, Rename(RenameError::UnableToResolveImplicit(..)));
 }
 
 #[test]

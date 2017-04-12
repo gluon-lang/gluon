@@ -1,13 +1,14 @@
 use std::fmt;
+use std::mem;
 
-use base::ast::{self, DisplayEnv, Do, Expr, MutVisitor, Pattern, SpannedExpr, Typed, TypedIdent};
+use base::ast::{self, DisplayEnv, Do, Expr, Literal, MutVisitor, Pattern, SpannedExpr, Typed, TypedIdent};
 use base::error::Errors;
 use base::fnv::FnvMap;
 use base::kind::{ArcKind, Kind, KindEnv};
 use base::pos::{self, BytePos, Span, Spanned};
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolModule, SymbolRef};
-use base::types::{self, Alias, ArcType, RecordSelector, Type, TypeEnv};
+use base::types::{self, Alias, ArcType, ArgType, RecordSelector, Type, TypeEnv};
 use unify_type::{State, TypeError};
 use unify::{Error as UnifyError, Unifiable, Unifier, UnifierState};
 
@@ -20,6 +21,8 @@ pub enum RenameError {
         expected: ArcType,
         possible_types: Vec<(Option<Span<BytePos>>, ArcType)>,
     },
+    /// An implicit paramter were not possible to resolve
+    UnableToResolveImplicit(ArcType<Symbol>),
 }
 
 impl fmt::Display for RenameError {
@@ -44,6 +47,11 @@ impl fmt::Display for RenameError {
                 }
                 Ok(())
             }
+            RenameError::UnableToResolveImplicit(ref typ) => write!(
+                f,
+                "Implicit parameter with type `{}` could not be resolved",
+                typ
+            ),
         }
     }
 }
@@ -375,6 +383,26 @@ pub fn rename(
             }
             Ok(())
         }
+
+        fn find_implicit(
+            &mut self,
+            implicit_type: &ArcType,
+        ) -> Result<TypedIdent<Symbol>, RenameError> {
+            let found = self.env
+                .stack
+                .iter()
+                .find(|&(_, &(_, _, ref typ))| {
+                    equivalent(&self.env, typ, implicit_type)
+                })
+                .map(|(x, _)| x.clone());
+            match found {
+                Some(id) => Ok(TypedIdent {
+                    name: id,
+                    typ: implicit_type.clone(),
+                }),
+                None => Err(RenameError::UnableToResolveImplicit(implicit_type.clone())),
+            }
+        }
     }
 
     impl<'a, 'b> MutVisitor for RenameVisitor<'a, 'b> {
@@ -386,6 +414,36 @@ pub fn rename(
                     span: expr.span,
                     value: err,
                 });
+            }
+
+            // Resolve implicit arguments
+            let mut args = Vec::new();
+            let mut typ = expr.env_type_of(&self.env);
+            loop {
+                typ = match *typ {
+                    Type::Function(arg_type, ref arg, ref ret) if arg_type == ArgType::Implicit => {
+                        match self.find_implicit(arg) {
+                            Ok(implicit_id) => {
+                                args.push(pos::spanned(expr.span, Expr::Ident(implicit_id)));
+                                ret.clone()
+                            }
+                            Err(err) => {
+                                self.errors.push(pos::spanned(expr.span, err));
+                                break;
+                            }
+                        }
+                    }
+                    _ => break,
+                };
+            }
+            if !args.is_empty() {
+                let dummy = Expr::Literal(Literal::Int(0));
+                let func = mem::replace(&mut expr.value, dummy);
+                expr.value = Expr::App {
+                    func: Box::new(pos::spanned(expr.span, func)),
+                    implicit_args: Vec::new(),
+                    args,
+                }
             }
         }
     }

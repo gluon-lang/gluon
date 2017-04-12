@@ -435,7 +435,7 @@ where
                     MatchState::Empty
                 };
             }
-            Expr::App(ref func, ref args) => {
+            Expr::App {ref func, ref args, .. } => {
                 self.visit_one(once(&**func).chain(args));
             }
             Expr::IfElse(ref pred, ref if_true, ref if_false) => {

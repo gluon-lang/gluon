@@ -5,6 +5,8 @@
 //! internal compiler error.
 #![doc(html_root_url = "https://docs.rs/gluon_check/0.7.1")] // # GLUON
 
+#[macro_use]
+extern crate collect_mac;
 #[cfg(test)]
 extern crate env_logger;
 extern crate itertools;
@@ -12,6 +14,7 @@ extern crate itertools;
 extern crate log;
 extern crate pretty;
 extern crate strsim;
+extern crate smallvec;
 extern crate union_find;
 
 #[macro_use]

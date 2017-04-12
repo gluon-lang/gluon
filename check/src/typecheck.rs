@@ -20,8 +20,9 @@ use base::kind::{ArcKind, Kind, KindCache, KindEnv};
 use base::merge;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
-use base::types::{self, Alias, AliasRef, AppVec, ArcType, Field, Filter, Generic, PrimitiveEnv,
-                  RecordSelector, Skolem, Type, TypeCache, TypeEnv, TypeFormatter, TypeVariable};
+use base::types::{self, Alias, AliasRef, AppVec, ArcType, ArgType, Field, Filter, Generic,
+                  PrimitiveEnv, RecordSelector, Skolem, Type, TypeCache, TypeEnv, TypeFormatter,
+                  TypeVariable};
 
 use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
 use substitution::{self, Constraints, Substitution};
@@ -61,6 +62,8 @@ pub enum TypeError<I> {
     /// Found a case expression without any alternatives
     EmptyCase,
     Message(String),
+    /// An implicit paramter were not possible to resolve
+    UnableToResolveImplicit(ArcType<I>),
 }
 
 impl<I> From<KindCheckError<I>> for TypeError<I> {
@@ -176,6 +179,11 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
             }
             EmptyCase => write!(f, "`case` expression with no alternatives"),
             Message(ref msg) => write!(f, "{}", msg),
+            UnableToResolveImplicit(ref typ) => write!(
+                f,
+                "Implicit parameter with type `{}` could not be resolved",
+                typ
+            ),
         }
     }
 }
@@ -547,7 +555,8 @@ impl<'a> Typecheck<'a> {
                 NotAFunction(ref mut typ)
                 | UndefinedField(ref mut typ, _)
                 | PatternError(ref mut typ, _)
-                | InvalidProjection(ref mut typ) => {
+                | InvalidProjection(ref mut typ)
+                | UnableToResolveImplicit(ref mut typ) => {
                     self.generalize_type(0, typ);
                 }
                 Unification(ref mut expected, ref mut actual, ref mut errors) => {
@@ -682,7 +691,17 @@ impl<'a> Typecheck<'a> {
                             };
                             scope_count += 1;
                         }
-                        TailCall::Type(typ) => {
+                        TailCall::Type(mut typ) => {
+                            loop {
+                                typ = match *typ {
+                                    Type::Function(arg_type, _, ref ret)
+                                        if arg_type == ArgType::Implicit =>
+                                    {
+                                        ret.clone()
+                                    }
+                                    _ => break,
+                                };
+                            }
                             returned_type = match expected_type {
                                 Some(expected_type) => {
                                     let level = self.subs.var_id();
@@ -732,7 +751,11 @@ impl<'a> Typecheck<'a> {
                 Literal::String(_) => self.type_cache.string(),
                 Literal::Char(_) => self.type_cache.char(),
             })),
-            Expr::App(ref mut func, ref mut args) => {
+            Expr::App {
+                ref mut func,
+                ref mut implicit_args,
+                ref mut args,
+            } => {
                 let func_type = self.infer_expr(func);
                 self.typecheck_application(func_type, args)
             }
@@ -2368,7 +2391,6 @@ fn get_alias_app<'a>(
         }),
     }
 }
-
 struct FunctionArgIter<'a, 'b: 'a> {
     tc: &'a mut Typecheck<'b>,
     span: Span<BytePos>,

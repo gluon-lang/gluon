@@ -5,8 +5,8 @@ use base::error::Errors;
 use base::fnv::FnvMap;
 use base::merge;
 use base::kind::ArcKind;
-use base::types::{self, AppVec, ArcType, Field, Filter, Generic, Skolem, Type, TypeEnv,
-                  TypeFormatter, TypeVariable};
+use base::types::{self, AppVec, ArcType, ArgType, BuiltinType, Field, Filter, Generic, Skolem,
+                  Type, TypeEnv, TypeFormatter, TypeVariable};
 use base::symbol::{Symbol, SymbolRef};
 use base::resolve::{self, Error as ResolveError};
 use base::scoped_map::ScopedMap;
@@ -329,6 +329,42 @@ where
 {
     debug!("Unifying:\n{} <=> {}", expected, actual);
     match (&**expected, &**actual) {
+        (
+            &Type::Function(l_arg_type, ref l_arg, ref l_ret),
+            &Type::Function(r_arg_type, ref r_arg, ref r_ret),
+        ) => {
+            // If arg types are not the same, fallback to explicit
+            let arg_type = if l_arg_type == r_arg_type {
+                l_arg_type
+            } else {
+                ArgType::Explicit
+            };
+            let arg = unifier.try_match(l_arg, r_arg);
+            let ret = unifier.try_match(l_ret, r_ret);
+            Ok(merge::merge(l_arg, arg, l_ret, ret, |arg, ret| {
+                ArcType::from(Type::Function(arg_type, arg, ret))
+            }))
+        }
+        (&Type::Function(_, ref l_arg, ref l_ret), &Type::App(ref r, ref r_args)) => {
+            let l_args = collect![l_arg.clone(), l_ret.clone()];
+            Ok(unify_app(
+                unifier,
+                &Type::builtin(BuiltinType::Function),
+                &l_args,
+                r,
+                r_args,
+            ))
+        }
+        (&Type::App(ref l, ref l_args), &Type::Function(_, ref r_arg, ref r_ret)) => {
+            let r_args = collect![r_arg.clone(), r_ret.clone()];
+            Ok(unify_app(
+                unifier,
+                l,
+                l_args,
+                &Type::builtin(BuiltinType::Function),
+                &r_args,
+            ))
+        }
         (&Type::App(ref l, ref l_args), &Type::App(ref r, ref r_args)) => {
             Ok(unify_app(unifier, l, l_args, r, r_args))
         }

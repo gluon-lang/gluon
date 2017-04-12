@@ -164,7 +164,11 @@ pub fn generic(s: &str) -> Generic<String> {
 }
 
 pub fn app(e: SpExpr, args: Vec<SpExpr>) -> SpExpr {
-    no_loc(Expr::App(Box::new(e), args))
+    no_loc(Expr::App {
+        func: Box::new(e),
+        implicit_args: Vec::new(),
+        args,
+    })
 }
 
 pub fn if_else(p: SpExpr, if_true: SpExpr, if_false: SpExpr) -> SpExpr {

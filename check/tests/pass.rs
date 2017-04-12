@@ -224,11 +224,11 @@ in test2 1";
     assert_req!(result, expected);
     assert_match!(expr.value, ast::Expr::LetBindings(ref binds, _) => {
         assert_eq!(binds.len(), 2);
-        assert_match!(**binds[0].resolved_type.remove_forall(), Type::App(_, ref args) => {
-            assert_match!(*args[0], Type::Generic(_) => ())
+        assert_match!(**binds[0].resolved_type.remove_forall(), Type::Function(_, ref arg, _) => {
+            assert_match!(**arg, Type::Generic(_) => ())
         });
-        assert_match!(**binds[1].resolved_type.remove_forall(), Type::App(_, ref args) => {
-            assert_match!(*args[0], Type::Generic(_) => ())
+        assert_match!(**binds[1].resolved_type.remove_forall(), Type::Function(_, ref arg, _) => {
+            assert_match!(**arg, Type::Generic(_) => ())
         });
     });
 }
@@ -411,7 +411,10 @@ let f x: ((->) Int Int) = x #Int+ 1
 f
 ";
     let result = support::typecheck(text);
-    let expected = Ok(Type::function(vec![typ("Int")], typ("Int")));
+    let expected = Ok(Type::app(
+        Type::function_builtin(),
+        collect![typ("Int"), typ("Int")],
+    ));
 
     assert_eq!(result, expected);
 }
@@ -450,7 +453,7 @@ in f
     let args = collect![typ("String"), typ("Int")];
     let expected = Ok(Type::app(function, args));
 
-    assert_eq!(result, expected);
+    assert_req!(result, expected);
 }
 
 #[test]
@@ -865,4 +868,64 @@ match Test { x = 1 } with
     let result = support::typecheck(text);
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn implicit_arg() {
+    let _ = ::env_logger::init();
+    let text = r#"
+
+let f x y: [Int] -> Int -> Int = x
+let i = 123
+f 42
+"#;
+    let result = support::typecheck(text);
+
+    assert_eq!(result, Ok(Type::int()));
+}
+
+#[test]
+fn multiple_implicit_args() {
+    let _ = ::env_logger::init();
+    let text = r#"
+
+let f x y z w: [Int] -> [String] -> String -> Int -> Int = x
+let i = 123
+let x = "abc"
+f x 42
+"#;
+    let result = support::typecheck(text);
+
+    assert_eq!(result, Ok(Type::int()));
+}
+
+#[test]
+fn single_arg_implicit() {
+    let _ = ::env_logger::init();
+    let text = r#"
+
+let f x: [Int] -> Int = x
+let i = 123
+f
+"#;
+    let result = support::typecheck(text);
+
+    assert_eq!(result, Ok(Type::int()));
+}
+
+#[test]
+fn function_implicit_arg() {
+    let _ = ::env_logger::init();
+    let text = r#"
+
+let f eq l r: [a -> a -> Bool] -> a -> a -> Bool = eq l r
+let eq_int l r : Int -> Int -> Bool = True
+let eq_string l r : String -> String -> Bool = True
+f 1 2
+f "" ""
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert_eq!(result, Ok(Type::unit()));
 }

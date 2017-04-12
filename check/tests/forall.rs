@@ -89,7 +89,7 @@ test 1
         _ => panic!(),
     };
     let call_id = match call.value {
-        Expr::App(ref f, _) => match f.value {
+        Expr::App { ref func, .. } => match func.value {
             Expr::Ident(ref id) => id,
             _ => panic!(),
         },

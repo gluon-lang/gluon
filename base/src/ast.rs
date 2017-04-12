@@ -277,7 +277,11 @@ pub enum Expr<Id> {
     /// Literal values
     Literal(Literal),
     /// Function application, eg. `f x`
-    App(Box<SpannedExpr<Id>>, Vec<SpannedExpr<Id>>),
+    App {
+        func: Box<SpannedExpr<Id>>,
+        implicit_args: Vec<SpannedExpr<Id>>,
+        args: Vec<SpannedExpr<Id>>,
+    },
     /// Lambda abstraction, eg. `\x y -> x * y`
     Lambda(Lambda<Id>),
     /// If-then-else conditional
@@ -407,8 +411,15 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
             }
             v.visit_expr(body);
         }
-        Expr::App(ref mut func, ref mut args) => {
+        Expr::App {
+            ref mut func,
+            ref mut implicit_args,
+            ref mut args,
+        } => {
             v.visit_expr(func);
+            for arg in implicit_args {
+                v.visit_expr(arg);
+            }
             for arg in args {
                 v.visit_expr(arg);
             }
@@ -548,6 +559,10 @@ pub fn walk_mut_ast_type<V: ?Sized + MutVisitor>(v: &mut V, s: &mut SpannedAstTy
                 }
             }
         }
+        Type::Function(_, ref mut arg, ref mut ret) => {
+            v.visit_ast_type(&mut arg._typ.1);
+            v.visit_ast_type(&mut ret._typ.1);
+        }
         Type::App(ref mut ast_type, ref mut ast_types) => {
             for ast_type in ast_types.iter_mut() {
                 v.visit_ast_type(&mut ast_type._typ.1);
@@ -608,8 +623,15 @@ pub fn walk_expr<'a, V: ?Sized + Visitor<'a>>(v: &mut V, e: &'a SpannedExpr<V::I
             }
             v.visit_expr(body);
         }
-        Expr::App(ref func, ref args) => {
+        Expr::App {
+            ref func,
+            ref implicit_args,
+            ref args,
+        } => {
             v.visit_expr(func);
+            for arg in implicit_args {
+                v.visit_expr(arg);
+            }
             for arg in args {
                 v.visit_expr(arg);
             }
@@ -762,14 +784,14 @@ impl Typed for Expr<Symbol> {
             Expr::LetBindings(_, ref expr)
             | Expr::TypeBindings(_, ref expr)
             | Expr::Do(Do { body: ref expr, .. }) => expr.try_type_of(env),
-            Expr::App(ref func, ref args) => {
-                get_return_type(env, &func.try_type_of(env)?, args.len())
-            }
+            Expr::App {
+                ref func, ref args, ..
+            } => get_return_type(env, &func.try_type_of(env)?, args.len()),
             Expr::Match(_, ref alts) => alts[0].expr.try_type_of(env),
             Expr::Array(ref array) => Ok(array.typ.clone()),
             Expr::Lambda(ref lambda) => Ok(lambda.id.typ.clone()),
             Expr::Block(ref exprs) => exprs.last().expect("Expr in block").try_type_of(env),
-            Expr::Error(ref typ) => typ.clone().ok_or_else(|| "Error has not type".to_string()),
+            Expr::Error(ref typ) => Ok(typ.clone().unwrap_or_else(|| Type::hole())),
         }
     }
 }

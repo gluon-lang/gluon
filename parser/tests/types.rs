@@ -20,8 +20,8 @@ fn function_type() {
             assert_eq!(
                 bindings[0].typ,
                 Some(Type::function(
-                    vec![typ("Int")],
-                    Type::function(vec![typ("Float")], typ("String")),
+                    vec![typ("Int"), typ("Float")],
+                    typ("String"),
                 ),)
             );
         }

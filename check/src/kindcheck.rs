@@ -203,6 +203,16 @@ impl<'a> KindCheck<'a> {
 
                 Ok(ret_kind)
             }
+            Type::Function(_, ref mut arg, ref mut ret) => {
+                let arg_kind = self.kindcheck(arg)?;
+                let ret_kind = self.kindcheck(ret)?;
+
+                let type_kind = self.type_kind();
+                self.unify(span, &type_kind, arg_kind)?;
+                self.unify(span, &type_kind, ret_kind)?;
+
+                Ok(type_kind)
+            }
             Type::App(ref mut ctor, ref mut args) => {
                 let mut kind = self.kindcheck(ctor)?;
                 for arg in args {
