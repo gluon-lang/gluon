@@ -2,6 +2,7 @@
 //! etc. Only checks which need to be aware of expressions are handled here the actual unifying and
 //! checking of types are done in the `unify_type` and `kindcheck` modules.
 use std::fmt;
+use std::iter::once;
 use std::mem;
 
 use base::scoped_map::ScopedMap;
@@ -15,7 +16,7 @@ use base::merge;
 use base::pos::{BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
 use base::types::{self, Alias, AliasData, AppVec, ArcType, Field, Generic};
-use base::types::{PrimitiveEnv, Type, TypeEnv, TypeVariable};
+use base::types::{PrimitiveEnv, Type, TypeEnv, TypeVariable, TypeCache};
 
 use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
 use substitution::Substitution;
@@ -223,6 +224,7 @@ pub struct Typecheck<'a> {
     errors: Errors<SpannedTypeError<Symbol>>,
     /// Type variables `let test: a -> b` (`a` and `b`)
     type_variables: ScopedMap<Symbol, ArcType>,
+    type_cache: TypeCache<Symbol>,
 }
 
 /// Error returned when unsuccessfully typechecking an expression
@@ -247,6 +249,7 @@ impl<'a> Typecheck<'a> {
             named_variables: FnvMap::default(),
             errors: Errors::new(),
             type_variables: ScopedMap::new(),
+            type_cache: TypeCache::new(),
         }
     }
 
@@ -519,7 +522,8 @@ impl<'a> Typecheck<'a> {
             Expr::App(ref mut func, ref mut args) => {
                 let mut func_type = self.typecheck(&mut **func);
                 for arg in args.iter_mut() {
-                    let f = Type::function(vec![self.subs.new_var()], self.subs.new_var());
+                    let f = self.type_cache
+                        .function(once(self.subs.new_var()), self.subs.new_var());
                     func_type = self.unify(&f, func_type)?;
                     func_type = match func_type.as_function() {
                         Some((arg_ty, ret_ty)) => {
@@ -557,21 +561,24 @@ impl<'a> Typecheck<'a> {
                         "==" | "<" => self.bool(),
                         _ => return Err(TypeError::UndefinedVariable(op.value.name.clone())),
                     };
-                    op.value.typ = Type::function(vec![prim_type.clone(), prim_type.clone()],
-                                                  return_type.clone());
+                    op.value.typ = self.type_cache
+                        .function(vec![prim_type.clone(), prim_type.clone()],
+                                  return_type.clone());
                     return_type
                 } else {
                     match &*op_name {
                         "&&" | "||" => {
                             self.unify(&lhs_type, rhs_type.clone())?;
-                            op.value.typ = Type::function(vec![self.bool(), self.bool()],
-                                                          self.bool());
+                            op.value.typ =
+                                self.type_cache
+                                    .function(vec![self.bool(), self.bool()], self.bool());
                             self.unify(&self.bool(), lhs_type)?
                         }
                         _ => {
                             op.value.typ = self.find(&op.value.name)?;
-                            let func_type = Type::function(vec![lhs_type, rhs_type],
-                                                           self.subs.new_var());
+                            let func_type =
+                                self.type_cache
+                                    .function(vec![lhs_type, rhs_type], self.subs.new_var());
                             let ret = self.unify(&op.value.typ, func_type)?
                                 .as_function()
                                 .and_then(|(_, ret)| ret.as_function())
@@ -777,7 +784,7 @@ impl<'a> Typecheck<'a> {
         }
         let body_type = self.typecheck(body);
         self.exit_scope();
-        Type::function(arg_types, body_type)
+        self.type_cache.function(arg_types, body_type)
     }
 
     fn typecheck_pattern(&mut self,
@@ -907,7 +914,8 @@ impl<'a> Typecheck<'a> {
             } => {
                 let tuple_type = {
                     let subs = &mut self.subs;
-                    Type::tuple(&mut self.symbols, (0..elems.len()).map(|_| subs.new_var()))
+                    self.type_cache
+                        .tuple(&mut self.symbols, (0..elems.len()).map(|_| subs.new_var()))
                 };
                 *typ = self.unify_span(span, &tuple_type, match_type);
                 for (elem, field) in elems.iter_mut().zip(tuple_type.row_iter()) {

@@ -1,14 +1,17 @@
+use std::iter::once;
+use std::str::FromStr;
+
 use base::ast::{Alternative, Array, Expr, ExprField, Lambda, Literal, Pattern, SpannedExpr, TypeBinding, TypedIdent, ValueBinding};
 use base::kind::{ArcKind, Kind};
 use base::pos::{self, BytePos, Spanned};
-use base::types::{AliasData, ArcType, BuiltinType, Field, Generic, Type};
-use std::str::FromStr;
+use base::types::{AliasData, ArcType, BuiltinType, Field, Generic, Type, TypeCache};
 
+use ::new_ident;
 use token::Token;
 
 use {Error, ErrorEnv, FieldExpr, FieldPattern, MutIdentEnv};
 
-grammar<'input, 'env, Id>(src: &'input str, env: MutIdentEnv<'env, Id>, errors: ErrorEnv<'env, 'input>)
+grammar<'input, 'env, Id>(src: &'input str, type_cache: &TypeCache<Id>, env: MutIdentEnv<'env, Id>, errors: ErrorEnv<'env, 'input>)
     where Id: Clone;
 
 extern {
@@ -84,7 +87,7 @@ Ident: Id =
     IdentStr => env.from_str(<>);
 
 Operator: TypedIdent<Id> =
-    "Operator" => TypedIdent::new(env.from_str(<>));
+    "Operator" => new_ident(type_cache, env.from_str(<>));
 
 DocComment: String =
     "DocComment"+ => <>.join("\n");
@@ -137,7 +140,7 @@ TypeBinding: TypeBinding<Id> = {
         let typ: ArcType<Id> = Type::app(Type::ident(id.clone()), typ_args);
 
         let row = row.into_iter()
-            .map(|(id, params)| Field::new(id, Type::function(params, typ.clone())))
+            .map(|(id, params)| Field::new(id, type_cache.function(params, typ.clone())))
             .collect();
 
         TypeBinding {
@@ -160,11 +163,11 @@ TypeBinding: TypeBinding<Id> = {
 
 AtomicType: ArcType<Id> = {
     "(" "->" ")" =>
-        Type::builtin(BuiltinType::Function),
+        type_cache.function_builtin(),
 
     IdentStr =>
         if <> == "_" {
-            Type::hole()
+            type_cache.hole()
         } else {
             match BuiltinType::from_str(<>) {
                 Ok(ty) => Type::builtin(ty),
@@ -199,7 +202,7 @@ Type = {
     AppType,
 
     <lhs: AppType> "->" <rhs: Type> =>
-        Type::function(vec![lhs], rhs),
+        type_cache.function(once(lhs), rhs),
 };
 
 // Patterns
@@ -221,16 +224,16 @@ FieldPattern : FieldPattern<Id> = {
 AtomicPattern: Pattern<Id> = {
     <id: Ident> =>
         if env.string(&id).starts_with(char::is_uppercase) {
-            Pattern::Constructor(TypedIdent::new(id), Vec::new())
+            Pattern::Constructor(new_ident(type_cache, id), Vec::new())
         } else {
-            Pattern::Ident(TypedIdent::new(id))
+            Pattern::Ident(new_ident(type_cache, id))
         },
 
     "(" <elems: Comma<Sp<Pattern>>> ")" =>
         match elems.len() {
             // Parenthesized pattern
             1 => elems.into_iter().next().unwrap().value,
-            _ => Pattern::Tuple { typ: Type::hole(), elems: elems },
+            _ => Pattern::Tuple { typ: type_cache.hole(), elems: elems },
         },
 
     "{" <fields: Comma<FieldPattern>> "}" => {
@@ -245,7 +248,7 @@ AtomicPattern: Pattern<Id> = {
         }
 
         Pattern::Record {
-            typ: Type::hole(),
+            typ: type_cache.hole(),
             types: types,
             fields: values,
         }
@@ -256,7 +259,7 @@ Pattern = {
     AtomicPattern,
 
     <id: Ident> <args: Sp<AtomicPattern>+> => {
-        let id = TypedIdent::new(id);
+        let id = new_ident(type_cache, id);
 
         Pattern::Constructor(id, args)
     },
@@ -300,7 +303,7 @@ ValueBinding: ValueBinding<Id> = {
         ValueBinding {
             comment: comment,
             name: name,
-            typ: typ.unwrap_or_else(Type::hole),
+            typ: typ.unwrap_or_else(|| type_cache.hole()),
             args: vec![],
             expr: body,
         },
@@ -308,16 +311,16 @@ ValueBinding: ValueBinding<Id> = {
     <comment: DocComment?> <name: Sp<Ident>> <args: Ident+> <typ: (":" <Type>)?> "=" <body: SpExpr> =>
         ValueBinding {
             comment: comment,
-            name: name.map(TypedIdent::new).map(Pattern::Ident),
-            typ: typ.unwrap_or_else(Type::hole),
-            args: args.into_iter().map(TypedIdent::new).collect(),
+            name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
+            typ: typ.unwrap_or_else(|| type_cache.hole()),
+            args: args.into_iter().map(|name| new_ident(type_cache, name)).collect(),
             expr: body,
         },
 };
 
 AtomicExpr: Expr<Id> = {
     <id: Ident> =>
-        Expr::Ident(TypedIdent::new(id)),
+        Expr::Ident(new_ident(type_cache, id)),
 
     <lit: Literal> =>
         Expr::Literal(lit),
@@ -327,11 +330,11 @@ AtomicExpr: Expr<Id> = {
     //     Expr::Getter(id),
 
     <expr: Sp<AtomicExpr>> "." <id: Ident> =>
-        Expr::Projection(Box::new(expr), id, Type::hole()),
+        Expr::Projection(Box::new(expr), id, type_cache.hole()),
 
     <expr: Sp<AtomicExpr>> "." <err: !> => {
         errors.push(err.error);
-        Expr::Projection(Box::new(expr), env.from_str(""), Type::hole())
+        Expr::Projection(Box::new(expr), env.from_str(""), type_cache.hole())
     },
 
     "(" <elems: Comma<SpExpr>> ")" =>
@@ -339,11 +342,11 @@ AtomicExpr: Expr<Id> = {
             // Parenthesized expression - wrap in a block to ensure
             // that it survives operator reparsing
             1 => Expr::Block(elems),
-            _ => Expr::Tuple { typ: Type::hole(), elems: elems },
+            _ => Expr::Tuple { typ: type_cache.hole(), elems: elems },
         },
 
     "[" <elems: Comma<SpExpr>> "]" => Expr::Array(Array {
-            typ: Type::hole(),
+            typ: type_cache.hole(),
             exprs: elems,
         }),
 
@@ -367,7 +370,7 @@ AtomicExpr: Expr<Id> = {
         }
 
         Expr::Record {
-            typ: Type::hole(),
+            typ: type_cache.hole(),
             types: types,
             exprs: values,
         }
@@ -386,8 +389,8 @@ InfixExpr = {
 
     "\\" <args: Ident+> "->" <body: SpExpr> =>
         Expr::Lambda(Lambda {
-            id: TypedIdent::new(env.from_str("")),
-            args: args.into_iter().map(TypedIdent::new).collect(),
+            id: new_ident(type_cache, env.from_str("")),
+            args: args.into_iter().map(|name| new_ident(type_cache, name)).collect(),
             body: Box::new(body),
         }),
 
