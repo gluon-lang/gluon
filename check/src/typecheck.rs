@@ -238,6 +238,7 @@ impl<'a> Typecheck<'a> {
                environment: &'a (PrimitiveEnv + 'a))
                -> Typecheck<'a> {
         let symbols = SymbolModule::new(module, symbols);
+        let kind_cache = KindCache::new();
         Typecheck {
             environment: Environment {
                 environment: environment,
@@ -246,12 +247,12 @@ impl<'a> Typecheck<'a> {
             },
             symbols: symbols,
             original_symbols: ScopedMap::new(),
-            subs: Substitution::new(),
+            subs: Substitution::new(kind_cache.typ()),
             named_variables: FnvMap::default(),
             errors: Errors::new(),
             type_variables: ScopedMap::new(),
             type_cache: TypeCache::new(),
-            kind_cache: KindCache::new(),
+            kind_cache: kind_cache,
         }
     }
 

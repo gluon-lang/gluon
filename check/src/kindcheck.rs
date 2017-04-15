@@ -71,7 +71,7 @@ impl<'a> KindCheck<'a> {
             locals: Vec::new(),
             info: info,
             idents: idents,
-            subs: Substitution::new(),
+            subs: Substitution::new(()),
             function1_kind: function1_kind.clone(),
             function2_kind: Kind::function(typ, function1_kind),
             kind_cache: kind_cache,
@@ -327,10 +327,7 @@ pub fn fmt_kind_error<I>(error: &Error<I>, f: &mut fmt::Formatter) -> fmt::Resul
 
 impl Substitutable for ArcKind {
     type Variable = u32;
-
-    fn new(x: u32) -> ArcKind {
-        Kind::variable(x)
-    }
+    type Factory = ();
 
     fn from_variable(x: u32) -> ArcKind {
         Kind::variable(x)

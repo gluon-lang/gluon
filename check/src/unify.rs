@@ -180,7 +180,9 @@ pub fn intersection<S, T>(subs: &Substitution<T>, state: S, l: &T, r: &T) -> T
     unifier.try_match(l, r).unwrap_or_else(|| l.clone())
 }
 
-struct Intersect<'m, T: 'm> {
+struct Intersect<'m, T: 'm>
+    where T: Substitutable
+{
     mismatch_map: FnvMap<(T, T), T>,
     subs: &'m Substitution<T>,
 }
@@ -238,7 +240,9 @@ mod test {
 
     impl Substitutable for TType {
         type Variable = u32;
-        fn new(var: u32) -> TType {
+        type Factory = ();
+
+        fn from_variable(var: u32) -> TType {
             TType(Box::new(Type::Variable(var)))
         }
         fn get_var(&self) -> Option<&u32> {
@@ -297,7 +301,7 @@ mod test {
 
     #[test]
     fn unify_test() {
-        let subs = Substitution::new();
+        let subs = Substitution::new(());
         let var1 = subs.new_var();
         let var2 = subs.new_var();
 
@@ -315,7 +319,7 @@ mod test {
 
     #[test]
     fn unify_function() {
-        let subs = Substitution::<TType>::new();
+        let subs = Substitution::<TType>::new(());
         let var1 = subs.new_var();
 
         let string = TType(Box::new(Type::Ident("String".into())));
@@ -331,7 +335,7 @@ mod test {
 
     #[test]
     fn unify_real_type() {
-        let subs = Substitution::<TType>::new();
+        let subs = Substitution::<TType>::new(());
         let var1 = subs.new_var();
 
         let string = TType(Box::new(Type::Ident("String".into())));
@@ -347,7 +351,7 @@ mod test {
 
     #[test]
     fn occurs() {
-        let subs = Substitution::<TType>::new();
+        let subs = Substitution::<TType>::new(());
         let var1 = subs.new_var();
 
         let string = TType(Box::new(Type::Ident("String".into())));
@@ -363,7 +367,7 @@ mod test {
             super::intersection(subs, (), l, r)
         }
 
-        let subs = Substitution::<TType>::new();
+        let subs = Substitution::<TType>::new(());
         let var1 = subs.new_var();
         let string = TType(Box::new(Type::Ident("String".into())));
         let int = TType(Box::new(Type::Ident("Int".into())));
@@ -371,10 +375,12 @@ mod test {
         let string_fun = mk_fn(&string, &string);
         let int_fun = mk_fn(&int, &int);
         let result = intersection(&subs, &int_fun, &string_fun);
-        assert_eq!(result, mk_fn(&TType::new(1), &TType::new(1)));
+        assert_eq!(result,
+                   mk_fn(&TType::from_variable(1), &TType::from_variable(1)));
 
         let var_fun = mk_fn(&var1, &var1);
         let result = intersection(&subs, &int_fun, &var_fun);
-        assert_eq!(result, mk_fn(&TType::new(2), &TType::new(2)));
+        assert_eq!(result,
+                   mk_fn(&TType::from_variable(2), &TType::from_variable(2)));
     }
 }

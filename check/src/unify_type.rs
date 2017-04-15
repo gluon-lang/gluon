@@ -4,6 +4,7 @@ use std::mem;
 use base::error::Errors;
 use base::fnv::FnvMap;
 use base::merge;
+use base::kind::ArcKind;
 use base::types::{self, AppVec, ArcType, Field, Type, TypeVariable, TypeEnv};
 use base::symbol::{Symbol, SymbolRef};
 use base::resolve::{self, Error as ResolveError};
@@ -11,7 +12,17 @@ use base::scoped_map::ScopedMap;
 
 use unify;
 use unify::{Error as UnifyError, Unifier, Unifiable};
-use substitution::{Variable, Substitutable, Substitution};
+use substitution::{Variable, Substitutable, Substitution, VariableFactory};
+
+impl VariableFactory for ArcKind {
+    type Variable = TypeVariable;
+    fn new(&self, id: u32) -> TypeVariable {
+        TypeVariable {
+            id: id,
+            kind: self.clone(),
+        }
+    }
+}
 
 pub type Error<I> = UnifyError<ArcType<I>, TypeError<I>>;
 
@@ -131,10 +142,7 @@ impl Variable for TypeVariable {
 
 impl<I> Substitutable for ArcType<I> {
     type Variable = TypeVariable;
-
-    fn new(id: u32) -> ArcType<I> {
-        Type::variable(TypeVariable::new(id))
-    }
+    type Factory = ArcKind;
 
     fn from_variable(var: TypeVariable) -> ArcType<I> {
         Type::variable(var)
@@ -746,6 +754,7 @@ mod tests {
     use unify::Error::*;
     use unify::unify;
     use substitution::Substitution;
+    use base::kind::Kind;
     use base::types::{ArcType, Field, Type};
     use tests::*;
 
@@ -759,7 +768,7 @@ mod tests {
         let r = Type::record(vec![],
                              vec![Field::new(x.clone(), Type::string()),
                                   Field::new(y.clone(), Type::int())]);
-        let subs = Substitution::new();
+        let subs = Substitution::new(Kind::typ());
         let env = MockEnv;
         let state = State::new(&env, &subs);
         let result = unify(&subs, state, &l, &r);
@@ -773,7 +782,7 @@ mod tests {
         let _ = ::env_logger::init();
 
         let env = MockEnv;
-        let subs = Substitution::new();
+        let subs = Substitution::new(Kind::typ());
         let state = State::new(&env, &subs);
 
         let x = Field::new(intern("x"), Type::int());

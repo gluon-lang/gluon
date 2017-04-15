@@ -3,7 +3,7 @@ use std::fmt;
 use base::ast::{self, DisplayEnv, Expr, Pattern, SpannedExpr, MutVisitor, Typed, TypedIdent};
 use base::error::Errors;
 use base::fnv::FnvMap;
-use base::kind::{ArcKind, KindEnv};
+use base::kind::{ArcKind, Kind, KindEnv};
 use base::pos::{self, BytePos, Span, Spanned};
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolRef, SymbolModule};
@@ -370,7 +370,7 @@ pub fn rename(symbols: &mut SymbolModule,
 pub fn equivalent(env: &TypeEnv, actual: &ArcType, inferred: &ArcType) -> bool {
     use substitution::Substitution;
     // FIXME This Substitution is unnecessary for equivalence unification
-    let subs = Substitution::new();
+    let subs = Substitution::new(Kind::typ());
     let mut unifier = UnifierState {
         state: State::new(env, &subs),
         unifier: Equivalent {

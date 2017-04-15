@@ -6,7 +6,7 @@ extern crate gluon_base as base;
 extern crate gluon_parser as parser;
 extern crate gluon_check as check;
 
-use base::kind::Kind;
+use base::kind::{Kind, KindCache};
 use base::types::{Field, Type};
 use check::kindcheck::KindCheck;
 
@@ -232,7 +232,7 @@ let { Test3 } = { Test, Test2, x = 2 }
 fn row_kinds() {
     let env = MockEnv::new();
     let ident_env = MockIdentEnv::new();
-    let mut kindcheck = KindCheck::new(&env, &ident_env);
+    let mut kindcheck = KindCheck::new(&env, &ident_env, KindCache::new());
 
     let mut typ = Type::empty_row();
     let result = kindcheck.kindcheck_expected(&mut typ, &Kind::row());
@@ -250,7 +250,7 @@ fn row_kinds() {
 fn row_kinds_error() {
     let env = MockEnv::new();
     let ident_env = MockIdentEnv::new();
-    let mut kindcheck = KindCheck::new(&env, &ident_env);
+    let mut kindcheck = KindCheck::new(&env, &ident_env, KindCache::new());
 
     let mut typ = Type::extend_row(vec![],
                                    vec![Field::new(intern("x"), Type::int())],
