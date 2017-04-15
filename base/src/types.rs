@@ -52,68 +52,42 @@ impl<'a, T: ?Sized + PrimitiveEnv> PrimitiveEnv for &'a T {
     }
 }
 
-macro_rules! type_cache {
-    ($( $id: ident )+) => {
-        pub struct TypeCache<Id> {
-            $(pub $id : ArcType<Id>),+
-        }
+type_cache! { TypeCache(Id) { ArcType<Id>, Type }
+    hole int byte float string char function_builtin unit
+}
 
-        impl<Id> Default for TypeCache<Id> {
-            fn default() -> TypeCache<Id> {
-                TypeCache::new()
-            }
-        }
+impl<Id> TypeCache<Id> {
+    pub fn function<I>(&self, args: I, ret: ArcType<Id>) -> ArcType<Id>
+        where I: IntoIterator<Item = ArcType<Id>>,
+              I::IntoIter: DoubleEndedIterator<Item = ArcType<Id>>
+    {
+        args.into_iter()
+            .rev()
+            .fold(ret,
+                  |body, arg| Type::app(self.function_builtin(), collect![arg, body]))
+    }
 
-        impl<Id> TypeCache<Id> {
-            pub fn new() -> TypeCache<Id> {
-                TypeCache {
-                    $(
-                        $id : Type::$id(),
-                    )+
-                }
-            }
-
-            $(
-                pub fn $id(&self) -> ArcType<Id> {
-                    self.$id.clone()
-                }
-            )+
-
-            pub fn function<I>(&self, args: I, ret: ArcType<Id>) -> ArcType<Id>
-                where I: IntoIterator<Item = ArcType<Id>>,
-                      I::IntoIter: DoubleEndedIterator<Item = ArcType<Id>>,
-            {
-                args.into_iter()
-                    .rev()
-                    .fold(ret,
-                        |body, arg| Type::app(self.function_builtin(), collect![arg, body]))
-            }
-
-            pub fn tuple<S, I>(&self, symbols: &mut S, elems: I) -> ArcType<Id>
-                where S: ?Sized + IdentEnv<Ident = Id>,
-                    I: IntoIterator<Item = ArcType<Id>>
-            {
-                let fields: Vec<_> = elems
-                        .into_iter()
-                        .enumerate()
-                        .map(|(i, typ)| {
-                                Field {
-                                    name: symbols.from_str(&format!("_{}", i)),
-                                    typ: typ,
-                                }
-                            })
-                        .collect();
-                if fields.is_empty() {
-                    self.unit.clone()
-                } else {
-                    Type::record(vec![], fields)
-                }
-            }
+    pub fn tuple<S, I>(&self, symbols: &mut S, elems: I) -> ArcType<Id>
+        where S: ?Sized + IdentEnv<Ident = Id>,
+              I: IntoIterator<Item = ArcType<Id>>
+    {
+        let fields: Vec<_> = elems
+            .into_iter()
+            .enumerate()
+            .map(|(i, typ)| {
+                     Field {
+                         name: symbols.from_str(&format!("_{}", i)),
+                         typ: typ,
+                     }
+                 })
+            .collect();
+        if fields.is_empty() {
+            self.unit.clone()
+        } else {
+            Type::record(vec![], fields)
         }
     }
 }
-
-type_cache! { hole int byte float string char function_builtin unit }
 
 /// All the builtin types of gluon
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]

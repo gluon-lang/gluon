@@ -11,7 +11,7 @@ use base::ast::{SpannedPattern, TypeBinding, TypedIdent, ValueBinding};
 use base::error::Errors;
 use base::fnv::{FnvMap, FnvSet};
 use base::resolve;
-use base::kind::{Kind, KindEnv, ArcKind};
+use base::kind::{Kind, KindEnv, ArcKind, KindCache};
 use base::merge;
 use base::pos::{BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
@@ -225,6 +225,7 @@ pub struct Typecheck<'a> {
     /// Type variables `let test: a -> b` (`a` and `b`)
     type_variables: ScopedMap<Symbol, ArcType>,
     type_cache: TypeCache<Symbol>,
+    kind_cache: KindCache,
 }
 
 /// Error returned when unsuccessfully typechecking an expression
@@ -250,6 +251,7 @@ impl<'a> Typecheck<'a> {
             errors: Errors::new(),
             type_variables: ScopedMap::new(),
             type_cache: TypeCache::new(),
+            kind_cache: KindCache::new(),
         }
     }
 
@@ -1047,7 +1049,8 @@ impl<'a> Typecheck<'a> {
         }
 
         {
-            let mut check = KindCheck::new(&self.environment, &self.symbols);
+            let mut check =
+                KindCheck::new(&self.environment, &self.symbols, self.kind_cache.clone());
 
             // Setup kind variables for all holes and insert the types in the
             // the type expression into the kindcheck environment
@@ -1102,7 +1105,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn kindcheck(&self, typ: &mut ArcType) -> TcResult<()> {
-        let mut check = KindCheck::new(&self.environment, &self.symbols);
+        let mut check = KindCheck::new(&self.environment, &self.symbols, self.kind_cache.clone());
         check.kindcheck_type(typ)?;
         Ok(())
     }

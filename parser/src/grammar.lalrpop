@@ -184,7 +184,7 @@ AtomicType: ArcType<Id> = {
         match elems.len() {
             // Parenthesized type
             1 => elems.into_iter().next().unwrap(),
-            _ => Type::tuple(env, elems),
+            _ => type_cache.tuple(env, elems),
         },
 
     "{" <row: Comma<RecordField>> "}" =>
