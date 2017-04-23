@@ -18,10 +18,10 @@ unsafe fn allocate(size: usize) -> *mut u8 {
     // Allocate an extra element if it does not fit exactly
     let cap = size / mem::size_of::<f64>() +
               (if size % mem::size_of::<f64>() != 0 {
-        1
-    } else {
-        0
-    });
+                   1
+               } else {
+                   0
+               });
     ptr_from_vec(Vec::<f64>::with_capacity(cap))
 }
 
@@ -37,10 +37,10 @@ fn ptr_from_vec(mut buf: Vec<f64>) -> *mut u8 {
 unsafe fn deallocate(ptr: *mut u8, old_size: usize) {
     let cap = old_size / mem::size_of::<f64>() +
               (if old_size % mem::size_of::<f64>() != 0 {
-        1
-    } else {
-        0
-    });
+                   1
+               } else {
+                   0
+               });
     Vec::<f64>::from_raw_parts(ptr as *mut f64, 0, cap);
 }
 
@@ -351,7 +351,7 @@ impl<T: ?Sized + PartialOrd> PartialOrd for GcPtr<T> {
 
 impl<T: ?Sized + Hash> Hash for GcPtr<T> {
     fn hash<H>(&self, state: &mut H)
-        where H: Hasher,
+        where H: Hasher
     {
         (**self).hash(state)
     }
@@ -422,7 +422,7 @@ pub trait Traverseable {
 }
 
 impl<T> Traverseable for Move<T>
-    where T: Traverseable,
+    where T: Traverseable
 {
     fn traverse(&self, gc: &mut Gc) {
         self.0.traverse(gc)
@@ -430,7 +430,7 @@ impl<T> Traverseable for Move<T>
 }
 
 impl<T: ?Sized> Traverseable for Box<T>
-    where T: Traverseable,
+    where T: Traverseable
 {
     fn traverse(&self, gc: &mut Gc) {
         (**self).traverse(gc)
@@ -438,7 +438,7 @@ impl<T: ?Sized> Traverseable for Box<T>
 }
 
 impl<'a, T: ?Sized> Traverseable for &'a T
-    where T: Traverseable,
+    where T: Traverseable
 {
     fn traverse(&self, gc: &mut Gc) {
         (**self).traverse(gc);
@@ -446,7 +446,7 @@ impl<'a, T: ?Sized> Traverseable for &'a T
 }
 
 impl<'a, T: ?Sized> Traverseable for &'a mut T
-    where T: Traverseable,
+    where T: Traverseable
 {
     fn traverse(&self, gc: &mut Gc) {
         (**self).traverse(gc);
@@ -493,7 +493,7 @@ impl<T: ?Sized> Traverseable for *mut T {
 }
 
 impl<T> Traverseable for Cell<T>
-    where T: Traverseable + Copy,
+    where T: Traverseable + Copy
 {
     fn traverse(&self, f: &mut Gc) {
         self.get().traverse(f);
@@ -501,7 +501,7 @@ impl<T> Traverseable for Cell<T>
 }
 
 impl<U> Traverseable for [U]
-    where U: Traverseable,
+    where U: Traverseable
 {
     fn traverse(&self, f: &mut Gc) {
         for x in self.iter() {
@@ -511,7 +511,7 @@ impl<U> Traverseable for [U]
 }
 
 impl<T> Traverseable for Vec<T>
-    where T: Traverseable,
+    where T: Traverseable
 {
     fn traverse(&self, gc: &mut Gc) {
         (**self).traverse(gc);
@@ -519,7 +519,7 @@ impl<T> Traverseable for Vec<T>
 }
 
 impl<T> Traverseable for VecDeque<T>
-    where T: Traverseable,
+    where T: Traverseable
 {
     fn traverse(&self, gc: &mut Gc) {
         self.as_slices().traverse(gc);
@@ -528,7 +528,7 @@ impl<T> Traverseable for VecDeque<T>
 
 /// When traversing a `GcPtr` we need to mark it
 impl<T: ?Sized> Traverseable for GcPtr<T>
-    where T: Traverseable,
+    where T: Traverseable
 {
     fn traverse(&self, gc: &mut Gc) {
         if !gc.mark(*self) {
@@ -570,7 +570,7 @@ impl Gc {
     pub unsafe fn alloc_and_collect<R, D>(&mut self, roots: R, def: D) -> Result<GcPtr<D::Value>>
         where R: Traverseable,
               D: DataDef + Traverseable,
-              D::Value: Sized + Any,
+              D::Value: Sized + Any
     {
         self.check_collect((roots, &def));
         self.alloc(def)
@@ -579,29 +579,29 @@ impl Gc {
     /// Allocates a new object.
     pub fn alloc<D>(&mut self, def: D) -> Result<GcPtr<D::Value>>
         where D: DataDef,
-              D::Value: Sized + Any,
+              D::Value: Sized + Any
     {
         let size = def.size();
         let needed = self.allocated_memory.saturating_add(size);
         if needed >= self.memory_limit {
             return Err(Error::OutOfMemory {
-                limit: self.memory_limit,
-                needed: needed,
-            });
+                           limit: self.memory_limit,
+                           needed: needed,
+                       });
         }
         Ok(self.alloc_ignore_limit_(size, def))
     }
 
     pub fn alloc_ignore_limit<D>(&mut self, def: D) -> GcPtr<D::Value>
         where D: DataDef,
-              D::Value: Sized + Any,
+              D::Value: Sized + Any
     {
         self.alloc_ignore_limit_(def.size(), def)
     }
 
     fn alloc_ignore_limit_<D>(&mut self, size: usize, def: D) -> GcPtr<D::Value>
         where D: DataDef,
-              D::Value: Sized + Any,
+              D::Value: Sized + Any
     {
         unsafe fn drop<T>(t: *mut ()) {
             ptr::drop_in_place(t as *mut T);
@@ -610,9 +610,9 @@ impl Gc {
             Entry::Occupied(entry) => &**entry.get(),
             Entry::Vacant(entry) => {
                 &**entry.insert(Box::new(TypeInfo {
-                    drop: drop::<D::Value>,
-                    generation: self.generation,
-                }))
+                                             drop: drop::<D::Value>,
+                                             generation: self.generation,
+                                         }))
             }
         };
         let mut ptr = AllocPtr::new::<D::Value>(type_info, size);
@@ -630,7 +630,7 @@ impl Gc {
     }
 
     pub unsafe fn check_collect<R>(&mut self, roots: R) -> bool
-        where R: Traverseable,
+        where R: Traverseable
     {
         if self.allocated_memory >= self.collect_limit {
             self.collect(roots);
@@ -643,7 +643,7 @@ impl Gc {
     /// Does a mark and sweep collection by walking from `roots`. This function is unsafe since
     /// roots need to cover all reachable object.
     pub unsafe fn collect<R>(&mut self, roots: R)
-        where R: Traverseable,
+        where R: Traverseable
     {
         info!("Start collect {:?}", self.generation);
         roots.traverse(self);
@@ -853,7 +853,8 @@ mod tests {
         let dropped = Rc::new(Cell::new(false));
         let mut gc = Gc::new(Generation::default(), usize::MAX);
         {
-            let ptr = gc.alloc(Move(Dropable { dropped: dropped.clone() })).unwrap();
+            let ptr = gc.alloc(Move(Dropable { dropped: dropped.clone() }))
+                .unwrap();
             assert_eq!(false, ptr.dropped.get());
         }
         assert_eq!(false, dropped.get());

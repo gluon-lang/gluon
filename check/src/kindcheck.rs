@@ -34,7 +34,7 @@ pub struct KindCheck<'a> {
 }
 
 fn walk_move_kind<F>(kind: ArcKind, f: &mut F) -> ArcKind
-    where F: FnMut(&Kind) -> Option<ArcKind>,
+    where F: FnMut(&Kind) -> Option<ArcKind>
 {
     match walk_move_kind2(&kind, f) {
         Some(kind) => kind,
@@ -42,7 +42,7 @@ fn walk_move_kind<F>(kind: ArcKind, f: &mut F) -> ArcKind
     }
 }
 fn walk_move_kind2<F>(kind: &ArcKind, f: &mut F) -> Option<ArcKind>
-    where F: FnMut(&Kind) -> Option<ArcKind>,
+    where F: FnMut(&Kind) -> Option<ArcKind>
 {
     let new = f(kind);
     let new2 = {
@@ -128,11 +128,11 @@ impl<'a> KindCheck<'a> {
             .find(|var| var.id == *id)
             .map(|t| t.kind.clone())
             .or_else(|| {
-                self.locals
-                    .iter()
-                    .find(|t| t.0 == *id)
-                    .map(|t| t.1.clone())
-            })
+                         self.locals
+                             .iter()
+                             .find(|t| t.0 == *id)
+                             .map(|t| t.1.clone())
+                     })
             .or_else(|| self.info.find_kind(id))
             .map_or_else(|| {
                 let id_str = self.idents.string(id);
@@ -212,11 +212,11 @@ impl<'a> KindCheck<'a> {
             Type::Variant(ref row) => {
                 let row: StdResult<_, _> = row.row_iter()
                     .map(|field| {
-                        let (kind, typ) = self.kindcheck(&field.typ)?;
-                        let type_kind = self.type_kind();
-                        self.unify(&type_kind, kind)?;
-                        Ok(Field::new(field.name.clone(), typ))
-                    })
+                             let (kind, typ) = self.kindcheck(&field.typ)?;
+                             let type_kind = self.type_kind();
+                             self.unify(&type_kind, kind)?;
+                             Ok(Field::new(field.name.clone(), typ))
+                         })
                     .collect();
 
                 Ok((self.type_kind(), Type::variant(row?)))
@@ -227,14 +227,19 @@ impl<'a> KindCheck<'a> {
                 self.unify(&row_kind, kind)?;
                 Ok((self.type_kind(), ArcType::from(Type::Record(row))))
             }
-            Type::ExtendRow { ref types, ref fields, ref rest } => {
-                let fields: StdResult<_, _> = fields.iter()
+            Type::ExtendRow {
+                ref types,
+                ref fields,
+                ref rest,
+            } => {
+                let fields: StdResult<_, _> = fields
+                    .iter()
                     .map(|field| {
-                        let (kind, typ) = self.kindcheck(&field.typ)?;
-                        let type_kind = self.type_kind();
-                        self.unify(&type_kind, kind)?;
-                        Ok(Field::new(field.name.clone(), typ))
-                    })
+                             let (kind, typ) = self.kindcheck(&field.typ)?;
+                             let type_kind = self.type_kind();
+                             self.unify(&type_kind, kind)?;
+                             Ok(Field::new(field.name.clone(), typ))
+                         })
                     .collect();
 
                 let (kind, rest) = self.kindcheck(rest)?;
@@ -267,19 +272,19 @@ impl<'a> KindCheck<'a> {
         let default = Some(&self.type_kind);
         types::walk_move_type(typ,
                               &mut |typ| match *typ {
-                                  Type::Variable(ref var) => {
-                                      let mut kind = var.kind.clone();
-                                      kind = update_kind(&self.subs, kind, default);
-                                      Some(Type::variable(types::TypeVariable {
-                                          id: var.id,
-                                          kind: kind,
-                                      }))
-                                  }
-                                  Type::Generic(ref var) => {
-                                      Some(Type::generic(self.finalize_generic(var)))
-                                  }
-                                  _ => None,
-                              })
+                                       Type::Variable(ref var) => {
+            let mut kind = var.kind.clone();
+            kind = update_kind(&self.subs, kind, default);
+            Some(Type::variable(types::TypeVariable {
+                                    id: var.id,
+                                    kind: kind,
+                                }))
+        }
+                                       Type::Generic(ref var) => {
+                                           Some(Type::generic(self.finalize_generic(var)))
+                                       }
+                                       _ => None,
+                                   })
     }
     pub fn finalize_generic(&self, var: &Generic<Symbol>) -> Generic<Symbol> {
         let mut kind = var.kind.clone();
@@ -291,11 +296,13 @@ impl<'a> KindCheck<'a> {
 fn update_kind(subs: &Substitution<ArcKind>, kind: ArcKind, default: Option<&ArcKind>) -> ArcKind {
     walk_move_kind(kind,
                    &mut |kind| match *kind {
-                       Kind::Variable(id) => {
-                           subs.find_type_for_var(id).cloned().or_else(|| default.cloned())
-                       }
-                       _ => None,
-                   })
+                            Kind::Variable(id) => {
+                                subs.find_type_for_var(id)
+                                    .cloned()
+                                    .or_else(|| default.cloned())
+                            }
+                            _ => None,
+                        })
 }
 
 /// Enumeration possible errors other than mismatch and occurs when kindchecking
@@ -306,7 +313,7 @@ pub enum KindError<I> {
 }
 
 pub fn fmt_kind_error<I>(error: &Error<I>, f: &mut fmt::Formatter) -> fmt::Result
-    where I: fmt::Display,
+    where I: fmt::Display
 {
     use unify::Error::*;
     match *error {
@@ -340,7 +347,7 @@ impl Substitutable for ArcKind {
     }
 
     fn traverse<F>(&self, f: &mut F)
-        where F: Walker<ArcKind>,
+        where F: Walker<ArcKind>
     {
         kind::walk_kind(self, f);
     }
@@ -353,7 +360,7 @@ impl<S> Unifiable<S> for ArcKind {
                     other: &Self,
                     unifier: &mut UnifierState<S, U>)
                     -> StdResult<Option<Self>, Error<Symbol>>
-        where U: Unifier<S, Self>,
+        where U: Unifier<S, Self>
     {
         match (&**self, &**other) {
             (&Kind::Function(ref l1, ref l2), &Kind::Function(ref r1, ref r2)) => {

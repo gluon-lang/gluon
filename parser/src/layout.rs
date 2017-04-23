@@ -109,7 +109,7 @@ pub struct Layout<'input, Tokens> {
 }
 
 impl<'input, Tokens> Layout<'input, Tokens>
-    where Tokens: Iterator<Item = SpannedToken<'input>>,
+    where Tokens: Iterator<Item = SpannedToken<'input>>
 {
     pub fn new(tokens: Tokens) -> Layout<'input, Tokens> {
         Layout {
@@ -120,17 +120,21 @@ impl<'input, Tokens> Layout<'input, Tokens>
     }
 
     fn next_token(&mut self) -> SpannedToken<'input> {
-        self.unprocessed_tokens.pop().unwrap_or_else(|| {
-            self.tokens.next().unwrap_or_else(|| {
-                // Blegh
-                let location = Location {
-                    line: Line::from(0),
-                    column: Column::from(1),
-                    absolute: BytePos::from(0),
-                };
-                pos::spanned2(location, location, Token::EOF)
+        self.unprocessed_tokens
+            .pop()
+            .unwrap_or_else(|| {
+                self.tokens
+                    .next()
+                    .unwrap_or_else(|| {
+                        // Blegh
+                        let location = Location {
+                            line: Line::from(0),
+                            column: Column::from(1),
+                            absolute: BytePos::from(0),
+                        };
+                        pos::spanned2(location, location, Token::EOF)
+                    })
             })
-        })
     }
 
     fn layout_token(&mut self,
@@ -147,9 +151,11 @@ impl<'input, Tokens> Layout<'input, Tokens>
         let span = next.span;
         self.unprocessed_tokens.push(next);
         if let Context::Block { .. } = context {
-            self.unprocessed_tokens.push(pos::spanned(span, Token::OpenBlock));
+            self.unprocessed_tokens
+                .push(pos::spanned(span, Token::OpenBlock));
         }
-        self.indent_levels.push(Offside::new(span.start, context))
+        self.indent_levels
+            .push(Offside::new(span.start, context))
     }
 
     fn layout_next_token(&mut self) -> Result<SpannedToken<'input>, Error> {
@@ -196,9 +202,11 @@ impl<'input, Tokens> Layout<'input, Tokens>
                     // infinite loop caused by repeatedly inserting a default block and removing
                     // it.
                     if self.indent_levels
-                        .stack
-                        .iter()
-                        .all(|offside| !token_closes_context(&token.value, offside.context)) {
+                           .stack
+                           .iter()
+                           .all(|offside| {
+                                    !token_closes_context(&token.value, offside.context)
+                                }) {
                         return Ok(token);
                     }
 
@@ -313,8 +321,9 @@ impl<'input, Tokens> Layout<'input, Tokens>
                     // Insert an `in` token
                     self.indent_levels.pop();
                     let location = {
-                        let offside =
-                            self.indent_levels.last_mut().expect("No top level block found");
+                        let offside = self.indent_levels
+                            .last_mut()
+                            .expect("No top level block found");
                         // The enclosing block should not emit a block separator for the next
                         // expression
                         if let Context::Block { ref mut emit_semi, .. } = offside.context {
@@ -334,7 +343,8 @@ impl<'input, Tokens> Layout<'input, Tokens>
                     // `let x = 1 in {{ a; b }}` and not `{{ (let x = 1 in a) ; b }}`
                     let offside = Offside::new(location, Context::Block { emit_semi: false });
                     self.indent_levels.push(offside)?;
-                    self.unprocessed_tokens.push(pos::spanned(span, Token::OpenBlock));
+                    self.unprocessed_tokens
+                        .push(pos::spanned(span, Token::OpenBlock));
 
                     return result;
                 }
@@ -424,7 +434,7 @@ fn token_closes_context(token: &Token, context: Context) -> bool {
 }
 
 impl<'input, Tokens> Iterator for Layout<'input, Tokens>
-    where Tokens: Iterator<Item = SpannedToken<'input>>,
+    where Tokens: Iterator<Item = SpannedToken<'input>>
 {
     type Item = Result<SpannedToken<'input>, Error>;
 

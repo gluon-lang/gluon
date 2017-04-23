@@ -82,7 +82,7 @@ impl From<ResolveError> for TypeError<Symbol> {
 }
 
 impl<I> fmt::Display for TypeError<I>
-    where I: fmt::Display + AsRef<str>,
+    where I: fmt::Display + AsRef<str>
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
@@ -148,7 +148,7 @@ impl<I> Substitutable for ArcType<I> {
     }
 
     fn traverse<F>(&self, f: &mut F)
-        where F: types::Walker<ArcType<I>>,
+        where F: types::Walker<ArcType<I>>
     {
         types::walk_type_(self, f)
     }
@@ -161,7 +161,7 @@ impl<'a> Unifiable<State<'a>> for ArcType {
                     other: &Self,
                     unifier: &mut UnifierState<'a, U>)
                     -> Result<Option<Self>, Error<Symbol>>
-        where U: Unifier<State<'a>, Self>,
+        where U: Unifier<State<'a>, Self>
     {
         let reduced_aliases = unifier.state.reduced_aliases.len();
         debug!("{:?} <=> {:?}", self, other);
@@ -195,7 +195,7 @@ fn do_zip_match<'a, U>(unifier: &mut UnifierState<'a, U>,
                        expected: &ArcType,
                        actual: &ArcType)
                        -> Result<Option<ArcType>, Error<Symbol>>
-    where U: Unifier<State<'a>, ArcType>,
+    where U: Unifier<State<'a>, ArcType>
 {
     debug!("Unifying:\n{:?} <=> {:?}", expected, actual);
     match (&**expected, &**actual) {
@@ -206,20 +206,33 @@ fn do_zip_match<'a, U>(unifier: &mut UnifierState<'a, U>,
             // Store the current records so that they can be used when displaying field errors
             let previous = mem::replace(&mut unifier.state.record_context,
                                         Some((expected.clone(), actual.clone())));
-            let result = unifier.try_match(l_row, r_row)
+            let result = unifier
+                .try_match(l_row, r_row)
                 .map(|row| ArcType::from(Type::Record(row)));
             unifier.state.record_context = previous;
             Ok(result)
         }
-        (&Type::ExtendRow { types: ref l_types, fields: ref l_args, rest: ref l_rest },
-         &Type::ExtendRow { types: ref r_types, fields: ref r_args, rest: ref r_rest }) => {
+        (&Type::ExtendRow {
+              types: ref l_types,
+              fields: ref l_args,
+              rest: ref l_rest,
+          },
+         &Type::ExtendRow {
+              types: ref r_types,
+              fields: ref r_args,
+              rest: ref r_rest,
+          }) => {
             // When the field names of both rows match exactly we special case
             // unification to maximize sharing through `merge` and `walk_move_type`
             if l_args.len() == r_args.len() &&
-               l_args.iter().zip(r_args).all(|(l, r)| l.name.name_eq(&r.name)) &&
-               l_types == r_types {
+               l_args
+                   .iter()
+                   .zip(r_args)
+                   .all(|(l, r)| l.name.name_eq(&r.name)) && l_types == r_types {
                 let new_args = merge::merge_tuple_iter(l_args.iter().zip(r_args), |l, r| {
-                    unifier.try_match(&l.typ, &r.typ).map(|typ| Field::new(l.name.clone(), typ))
+                    unifier
+                        .try_match(&l.typ, &r.typ)
+                        .map(|typ| Field::new(l.name.clone(), typ))
                 });
                 let new_rest = unifier.try_match(l_rest, r_rest);
                 Ok(merge::merge(l_args,
@@ -229,7 +242,10 @@ fn do_zip_match<'a, U>(unifier: &mut UnifierState<'a, U>,
                                 |fields, rest| Type::extend_row(l_types.clone(), fields, rest)))
             } else if **l_rest == Type::EmptyRow && **r_rest == Type::EmptyRow {
                 for l_typ in expected.type_field_iter() {
-                    if actual.type_field_iter().find(|r_typ| *r_typ == l_typ).is_none() {
+                    if actual
+                           .type_field_iter()
+                           .find(|r_typ| *r_typ == l_typ)
+                           .is_none() {
                         return Err(UnifyError::TypeMismatch(expected.clone(), actual.clone()));
                     }
                 }
@@ -268,8 +284,14 @@ fn do_zip_match<'a, U>(unifier: &mut UnifierState<'a, U>,
         // Last ditch attempt to unify the types expanding the aliases
         // (if the types are alias types).
         (_, _) => {
-            let lhs = unifier.state.remove_aliases(expected).map_err(UnifyError::Other)?;
-            let rhs = unifier.state.remove_aliases(actual).map_err(UnifyError::Other)?;
+            let lhs = unifier
+                .state
+                .remove_aliases(expected)
+                .map_err(UnifyError::Other)?;
+            let rhs = unifier
+                .state
+                .remove_aliases(actual)
+                .map_err(UnifyError::Other)?;
 
             match (&lhs, &rhs) {
                 (&None, &None) => {
@@ -294,7 +316,7 @@ fn unify_app<'a, U>(unifier: &mut UnifierState<'a, U>,
                     r: &ArcType,
                     r_args: &AppVec<ArcType>)
                     -> Option<ArcType>
-    where U: Unifier<State<'a>, ArcType>,
+    where U: Unifier<State<'a>, ArcType>
 {
     use std::cmp::Ordering::*;
     // Applications are curried `a b c d` == `((a b) c) d` we need to unify the last
@@ -338,10 +360,12 @@ fn unify_app<'a, U>(unifier: &mut UnifierState<'a, U>,
 fn gather_fields<'a, I, J, T>
     (l: I,
      r: J)
-     -> (Vec<Field<Symbol, T>>, Vec<(&'a Field<Symbol, T>, &'a Field<Symbol, T>)>, Vec<Field<Symbol, T>>)
+     -> (Vec<Field<Symbol, T>>,
+         Vec<(&'a Field<Symbol, T>, &'a Field<Symbol, T>)>,
+         Vec<Field<Symbol, T>>)
     where I: Clone + IntoIterator<Item = &'a Field<Symbol, T>>,
           J: Clone + IntoIterator<Item = &'a Field<Symbol, T>>,
-          T: Clone + 'a,
+          T: Clone + 'a
 {
     let mut both = Vec::new();
     let mut missing_from_right = Vec::new();
@@ -354,7 +378,8 @@ fn gather_fields<'a, I, J, T>
     }
 
     let mut r_iter = r.into_iter();
-    let missing_from_left: Vec<_> = r_iter.by_ref()
+    let missing_from_left: Vec<_> = r_iter
+        .by_ref()
         .filter(|r| l.clone().into_iter().all(|l| !l.name.name_eq(&r.name)))
         .cloned()
         .collect();
@@ -370,7 +395,7 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>,
                      l: &ArcType,
                      r: &ArcType)
                      -> Result<Option<ArcType>, Error<Symbol>>
-    where U: Unifier<State<'a>, ArcType>,
+    where U: Unifier<State<'a>, ArcType>
 {
     let subs = unifier.state.subs;
     let (types_missing_from_left, types_both, types_missing_from_right) =
@@ -386,7 +411,9 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>,
 
     // Unify the fields that exists in both records
     let new_both = merge::merge_tuple_iter(both.iter().cloned(), |l, r| {
-        unifier.try_match(&l.typ, &r.typ).map(|typ| Field::new(l.name.clone(), typ))
+        unifier
+            .try_match(&l.typ, &r.typ)
+            .map(|typ| Field::new(l.name.clone(), typ))
     });
 
     // Pack all fields from both records into a single `Type::ExtendRow` value
@@ -413,9 +440,15 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>,
         // display a better error message
         match *rest {
             Type::EmptyRow => {
-                let context = unifier.state.record_context.as_ref().map_or(r, |p| &p.1).clone();
+                let context = unifier
+                    .state
+                    .record_context
+                    .as_ref()
+                    .map_or(r, |p| &p.1)
+                    .clone();
                 let err = TypeError::MissingFields(context,
-                                                   missing_from_right.into_iter()
+                                                   missing_from_right
+                                                       .into_iter()
                                                        .map(|field| field.name.clone())
                                                        .collect());
                 unifier.report_error(UnifyError::Other(err));
@@ -438,9 +471,15 @@ fn unify_rows<'a, U>(unifier: &mut UnifierState<'a, U>,
 
         match **l_iter.current_type() {
             Type::EmptyRow => {
-                let context = unifier.state.record_context.as_ref().map_or(l, |p| &p.0).clone();
+                let context = unifier
+                    .state
+                    .record_context
+                    .as_ref()
+                    .map_or(l, |p| &p.0)
+                    .clone();
                 let err = TypeError::MissingFields(context,
-                                                   missing_from_left.into_iter()
+                                                   missing_from_left
+                                                       .into_iter()
                                                        .map(|field| field.name.clone())
                                                        .collect());
                 unifier.report_error(UnifyError::Other(err));
@@ -466,7 +505,7 @@ fn find_alias<'a, U>(unifier: &mut UnifierState<'a, U>,
                      l: ArcType,
                      r_id: &SymbolRef)
                      -> Result<Option<ArcType>, ()>
-    where U: Unifier<State<'a>, ArcType>,
+    where U: Unifier<State<'a>, ArcType>
 {
     let reduced_aliases = unifier.state.reduced_aliases.len();
     let result = find_alias_(unifier, l, r_id);
@@ -484,14 +523,18 @@ fn find_alias_<'a, U>(unifier: &mut UnifierState<'a, U>,
                       mut l: ArcType,
                       r_id: &SymbolRef)
                       -> Result<Option<ArcType>, ()>
-    where U: Unifier<State<'a>, ArcType>,
+    where U: Unifier<State<'a>, ArcType>
 {
     let mut did_alias = false;
     loop {
         l = match l.name() {
             Some(l_id) => {
                 if let Some(l_id) = l.alias_ident() {
-                    if unifier.state.reduced_aliases.iter().any(|id| id == l_id) {
+                    if unifier
+                           .state
+                           .reduced_aliases
+                           .iter()
+                           .any(|id| id == l_id) {
                         return Err(());
                     }
                 }
@@ -504,7 +547,8 @@ fn find_alias_<'a, U>(unifier: &mut UnifierState<'a, U>,
                 did_alias = true;
                 match resolve::remove_alias(unifier.state.env, &l) {
                     Ok(Some(typ)) => {
-                        unifier.state
+                        unifier
+                            .state
                             .reduced_aliases
                             .push(l.alias_ident().expect("Alias").clone());
                         typ
@@ -539,7 +583,7 @@ fn find_common_alias<'a, U>(unifier: &mut UnifierState<'a, U>,
                             actual: &ArcType,
                             through_alias: &mut bool)
                             -> Result<(ArcType, ArcType), ()>
-    where U: Unifier<State<'a>, ArcType>,
+    where U: Unifier<State<'a>, ArcType>
 {
     let mut l = expected.clone();
     if let Some(r_id) = actual.name() {
@@ -573,21 +617,21 @@ pub fn instantiate_generic_variables(named_variables: &mut FnvMap<Symbol, ArcTyp
 
     types::walk_move_type(typ.clone(),
                           &mut |typ| match *typ {
-                              Type::Generic(ref generic) => {
-                                  let var = match named_variables.entry(generic.id.clone()) {
-                                      Entry::Vacant(entry) => entry.insert(subs.new_var()).clone(),
-                                      Entry::Occupied(entry) => entry.get().clone(),
-                                  };
+                                   Type::Generic(ref generic) => {
+        let var = match named_variables.entry(generic.id.clone()) {
+            Entry::Vacant(entry) => entry.insert(subs.new_var()).clone(),
+            Entry::Occupied(entry) => entry.get().clone(),
+        };
 
-                                  let mut var = (*var).clone();
-                                  if let Type::Variable(ref mut var) = var {
-                                      var.kind = generic.kind.clone();
-                                  }
+        let mut var = (*var).clone();
+        if let Type::Variable(ref mut var) = var {
+            var.kind = generic.kind.clone();
+        }
 
-                                  Some(ArcType::from(var))
-                              }
-                              _ => None,
-                          })
+        Some(ArcType::from(var))
+    }
+                                   _ => None,
+                               })
 }
 
 pub fn merge_signature(subs: &Substitution<ArcType>,

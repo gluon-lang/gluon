@@ -50,9 +50,12 @@ impl MacroEnv {
 
     /// Inserts a `Macro` which acts on any occurance of `symbol` when applied to an expression.
     pub fn insert<M>(&self, name: String, mac: M)
-        where M: Macro + 'static,
+        where M: Macro + 'static
     {
-        self.macros.write().unwrap().insert(name, Arc::new(mac));
+        self.macros
+            .write()
+            .unwrap()
+            .insert(name, Arc::new(mac));
     }
 
     /// Retrieves the macro bound to `symbol`
@@ -111,12 +114,12 @@ impl<'a> MutVisitor for MacroExpander<'a> {
                         match self.macros.get(&name[..name.len() - 1]) {
                             Some(m) => {
                                 Some(match m.expand(self, args) {
-                                    Ok(e) => e,
-                                    Err(err) => {
-                                        self.errors.push(err);
-                                        pos::spanned(expr.span, Expr::Error)
-                                    }
-                                })
+                                         Ok(e) => e,
+                                         Err(err) => {
+                                    self.errors.push(err);
+                                    pos::spanned(expr.span, Expr::Error)
+                                }
+                                     })
                             }
                             None => None,
                         }

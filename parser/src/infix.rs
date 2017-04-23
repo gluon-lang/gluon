@@ -75,10 +75,12 @@ pub struct OpTable {
 
 impl OpTable {
     fn new<I>(ops: I) -> OpTable
-        where I: IntoIterator<Item = (&'static str, OpMeta)>,
+        where I: IntoIterator<Item = (&'static str, OpMeta)>
     {
         OpTable {
-            operators: ops.into_iter().map(|(name, op)| (name.to_string(), op)).collect(),
+            operators: ops.into_iter()
+                .map(|(name, op)| (name.to_string(), op))
+                .collect(),
             default_meta: OpMeta::new(9, Fixity::Left),
         }
     }
@@ -114,11 +116,13 @@ impl<'a> Index<&'a str> for OpTable {
     type Output = OpMeta;
 
     fn index(&self, name: &'a str) -> &OpMeta {
-        self.operators.get(name).unwrap_or_else(|| if name.starts_with('#') {
-            &self[name[1..].trim_left_matches(char::is_alphanumeric)]
-        } else {
-            &self.default_meta
-        })
+        self.operators
+            .get(name)
+            .unwrap_or_else(|| if name.starts_with('#') {
+                                &self[name[1..].trim_left_matches(char::is_alphanumeric)]
+                            } else {
+                                &self.default_meta
+                            })
     }
 }
 
@@ -270,8 +274,8 @@ pub fn reparse<Id>(expr: SpannedExpr<Id>,
                             (Fixity::Left, Fixity::Right) |
                             (Fixity::Right, Fixity::Left) => {
                                 let next_op_name = symbols.string(&next_op.value.name).to_string();
-                                let stack_op_name = symbols.string(&stack_op.value.name)
-                                    .to_string();
+                                let stack_op_name =
+                                    symbols.string(&stack_op.value.name).to_string();
                                 let span = pos::span(stack_op.span.start, next_op.span.end);
                                 let error = ConflictingFixities((stack_op_name, stack_op_meta),
                                                                 (next_op_name, next_op_meta));
@@ -351,17 +355,19 @@ impl<Id> Iterator for Infixes<Id> {
             return Some(InfixToken::Op(op));
         }
 
-        self.remaining_expr.take().map(|expr| {
-            let expr = *expr; // Workaround for http://stackoverflow.com/questions/28466809/
-            match expr.value {
-                Expr::Infix(lhs, op, rhs) => {
-                    self.remaining_expr = Some(rhs);
-                    self.next_op = Some(op);
-                    InfixToken::Arg(lhs)
+        self.remaining_expr
+            .take()
+            .map(|expr| {
+                let expr = *expr; // Workaround for http://stackoverflow.com/questions/28466809/
+                match expr.value {
+                    Expr::Infix(lhs, op, rhs) => {
+                        self.remaining_expr = Some(rhs);
+                        self.next_op = Some(op);
+                        InfixToken::Arg(lhs)
+                    }
+                    _ => InfixToken::Arg(Box::new(expr)), // FIXME: remove reallocation?
                 }
-                _ => InfixToken::Arg(Box::new(expr)), // FIXME: remove reallocation?
-            }
-        })
+            })
     }
 }
 
@@ -391,7 +397,7 @@ mod tests {
     }
 
     impl<T> IdentEnv for MockEnv<T>
-        where T: AsRef<str> + for<'a> From<&'a str>,
+        where T: AsRef<str> + for<'a> From<&'a str>
     {
         fn from_str(&mut self, s: &str) -> Self::Ident {
             T::from(s)

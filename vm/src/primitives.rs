@@ -69,9 +69,9 @@ fn array_append<'vm>(lhs: Array<'vm, Generic<generic::A>>,
     let value = {
         let mut context = vm.context();
         let result = context.alloc(Append {
-            lhs: &lhs,
-            rhs: &rhs,
-        });
+                                       lhs: &lhs,
+                                       rhs: &rhs,
+                                   });
         match result {
             Ok(x) => x,
             Err(err) => return RuntimeResult::Panic(err),
@@ -100,8 +100,13 @@ fn string_append(lhs: WithVM<&str>, rhs: &str) -> RuntimeResult<String, Error> {
             unsafe {
                 let result = &mut *result.as_mut_ptr();
                 result.set_repr(Repr::Byte);
-                result.unsafe_array_mut::<u8>()
-                    .initialize(self.lhs.as_bytes().iter().chain(self.rhs.as_bytes()).cloned());
+                result
+                    .unsafe_array_mut::<u8>()
+                    .initialize(self.lhs
+                                    .as_bytes()
+                                    .iter()
+                                    .chain(self.rhs.as_bytes())
+                                    .cloned());
                 result
             }
         }
@@ -111,10 +116,7 @@ fn string_append(lhs: WithVM<&str>, rhs: &str) -> RuntimeResult<String, Error> {
     let lhs = lhs.value;
     let value = unsafe {
         let mut context = vm.context();
-        let result = context.alloc(StrAppend {
-            lhs: lhs,
-            rhs: rhs,
-        });
+        let result = context.alloc(StrAppend { lhs: lhs, rhs: rhs });
         match result {
             Ok(x) => GcStr::from_utf8_unchecked(x),
             Err(err) => return RuntimeResult::Panic(err),

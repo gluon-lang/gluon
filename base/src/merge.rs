@@ -10,7 +10,7 @@ pub fn merge<F, A: ?Sized, B: ?Sized, R>(a_original: &A,
                                          -> Option<R>
     where A: ToOwned,
           B: ToOwned,
-          F: FnOnce(A::Owned, B::Owned) -> R,
+          F: FnOnce(A::Owned, B::Owned) -> R
 {
     match (a, b) {
         (Some(a), Some(b)) => Some(f(a, b)),
@@ -24,7 +24,7 @@ pub fn merge_tuple_iter<'a, I, F, T, R>(types: I, mut f: F) -> Option<R>
     where I: IntoIterator<Item = (&'a T, &'a T)>,
           F: FnMut(&'a T, &'a T) -> Option<T>,
           T: Clone + 'a,
-          R: Default + VecLike<T>,
+          R: Default + VecLike<T>
 {
     merge_iter(types, |(l, r)| f(l, r), |(l, _)| l.clone())
 }
@@ -34,7 +34,7 @@ pub fn merge_iter<'a, I, F, G, U, R>(types: I, mut action: F, mut converter: G) 
           F: FnMut(I::Item) -> Option<U>,
           G: FnMut(I::Item) -> U,
           I::Item: Copy,
-          R: Default + VecLike<U>,
+          R: Default + VecLike<U>
 {
     let mut out = R::default();
     merge_iter_(types.into_iter(),
@@ -59,7 +59,7 @@ fn merge_iter_<'a, I, F, G, U, R>(mut types: I,
           F: FnMut(I::Item) -> Option<U>,
           G: FnMut(I::Item) -> U,
           I::Item: Copy,
-          R: Default + VecLike<U>,
+          R: Default + VecLike<U>
 {
     if let Some(l) = types.next() {
         let new = f(l);

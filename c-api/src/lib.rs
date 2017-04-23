@@ -183,7 +183,9 @@ pub unsafe extern "C" fn glu_get_string(vm: &Thread,
                                         -> Error {
     let mut context = vm.context();
     let stack = context.stack.current_frame();
-    match stack.get_variants(index).and_then(|value| <&str>::from_value(vm, value)) {
+    match stack
+              .get_variants(index)
+              .and_then(|value| <&str>::from_value(vm, value)) {
         Some(value) => {
             *out = &*value.as_ptr();
             *out_len = value.len();
@@ -206,11 +208,13 @@ pub extern "C" fn glu_get_light_userdata(vm: &Thread,
 }
 
 fn get_value<T>(vm: &Thread, index: VmIndex, out: &mut T) -> Error
-    where T: for<'vm> Getable<'vm>,
+    where T: for<'vm> Getable<'vm>
 {
     let mut context = vm.context();
     let stack = context.stack.current_frame();
-    match stack.get_variants(index).and_then(|value| T::from_value(vm, value)) {
+    match stack
+              .get_variants(index)
+              .and_then(|value| T::from_value(vm, value)) {
         Some(value) => {
             *out = value;
             Error::Ok

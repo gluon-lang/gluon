@@ -131,7 +131,7 @@ pub struct Span<Pos> {
 }
 
 impl<Pos> PartialEq for Span<Pos>
-    where Pos: PartialEq,
+    where Pos: PartialEq
 {
     fn eq(&self, other: &Span<Pos>) -> bool {
         self.start == other.start && self.end == other.end
@@ -139,21 +139,21 @@ impl<Pos> PartialEq for Span<Pos>
 }
 
 impl<Pos> PartialOrd for Span<Pos>
-    where Pos: PartialOrd,
+    where Pos: PartialOrd
 {
     fn partial_cmp(&self, other: &Span<Pos>) -> Option<Ordering> {
         self.start
             .partial_cmp(&other.start)
             .and_then(|ord| if ord == Ordering::Equal {
-                self.end.partial_cmp(&self.end)
-            } else {
-                Some(ord)
-            })
+                          self.end.partial_cmp(&self.end)
+                      } else {
+                          Some(ord)
+                      })
     }
 }
 
 impl<Pos> Ord for Span<Pos>
-    where Pos: Ord,
+    where Pos: Ord
 {
     fn cmp(&self, other: &Span<Pos>) -> Ordering {
         let ord = self.start.cmp(&other.start);
@@ -206,10 +206,10 @@ impl<Pos: Ord> Span<Pos> {
         if (self.start <= other.start && self.end > other.start) ||
            (self.start >= other.start && self.start < other.end) {
             Some(Span {
-                start: cmp::min(self.start, other.start),
-                end: cmp::max(self.end, other.end),
-                expansion_id: self.expansion_id,
-            })
+                     start: cmp::min(self.start, other.start),
+                     end: cmp::max(self.end, other.end),
+                     expansion_id: self.expansion_id,
+                 })
         } else {
             None
         }
@@ -224,7 +224,7 @@ pub struct Spanned<T, Pos> {
 
 impl<T, Pos> Spanned<T, Pos> {
     pub fn map<U, F>(self, mut f: F) -> Spanned<U, Pos>
-        where F: FnMut(T) -> U,
+        where F: FnMut(T) -> U
     {
         Spanned {
             span: self.span,

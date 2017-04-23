@@ -24,7 +24,7 @@ use lazy::Lazy;
 use value::{BytecodeFunction, ClosureData};
 
 pub use value::{ClosureDataDef, Userdata};
-pub use value::Value;//FIXME Value should not be exposed
+pub use value::Value; //FIXME Value should not be exposed
 pub use thread::{Thread, RootedThread, Status, Root, RootStr, RootedValue};
 
 
@@ -32,44 +32,54 @@ fn new_bytecode(gc: &mut Gc,
                 vm: &GlobalVmState,
                 f: CompiledFunction)
                 -> Result<GcPtr<BytecodeFunction>> {
-    let CompiledFunction { id,
-                           args,
-                           max_stack_size,
-                           instructions,
-                           inner_functions,
-                           strings,
-                           module_globals,
-                           records,
-                           debug_info,
-                           .. } = f;
+    let CompiledFunction {
+        id,
+        args,
+        max_stack_size,
+        instructions,
+        inner_functions,
+        strings,
+        module_globals,
+        records,
+        debug_info,
+        ..
+    } = f;
 
-    let fs: StdResult<_, _> = inner_functions.into_iter()
+    let fs: StdResult<_, _> = inner_functions
+        .into_iter()
         .map(|inner| new_bytecode(gc, vm, inner))
         .collect();
 
-    let globals = module_globals.into_iter()
+    let globals = module_globals
+        .into_iter()
         .map(|index| vm.env.read().unwrap().globals[index.as_ref()].value)
         .collect();
 
-    let records: StdResult<_, _> = records.into_iter()
+    let records: StdResult<_, _> = records
+        .into_iter()
         .map(|vec| {
             vec.into_iter()
-                .map(|field| Ok(vm.interner.write().unwrap().intern(gc, field.as_ref())?))
+                .map(|field| {
+                         Ok(vm.interner
+                                .write()
+                                .unwrap()
+                                .intern(gc, field.as_ref())?)
+                     })
                 .collect::<Result<_>>()
         })
         .collect();
 
     gc.alloc(Move(BytecodeFunction {
-        name: id,
-        args: args,
-        max_stack_size: max_stack_size,
-        instructions: instructions,
-        inner_functions: fs?,
-        strings: strings,
-        globals: globals,
-        records: records?,
-        debug_info: debug_info,
-    }))
+                      name: id,
+                      args: args,
+                      max_stack_size: max_stack_size,
+                      instructions: instructions,
+                      inner_functions: fs?,
+                      strings: strings,
+                      globals: globals,
+                      records: records?,
+                      debug_info: debug_info,
+                  }))
 }
 
 
@@ -131,8 +141,7 @@ impl CompilerEnv for VmEnv {
 
 impl KindEnv for VmEnv {
     fn find_kind(&self, type_name: &SymbolRef) -> Option<ArcKind> {
-        self.type_infos
-            .find_kind(type_name)
+        self.type_infos.find_kind(type_name)
     }
 }
 impl TypeEnv for VmEnv {
@@ -144,23 +153,20 @@ impl TypeEnv for VmEnv {
                 self.type_infos
                     .id_to_type
                     .values()
-                    .filter_map(|alias| {
-                        match **alias.unresolved_type() {
-                            Type::Variant(ref row) => {
-                                row.row_iter()
-                                    .find(|field| *field.name == *id)
-                                    .map(|field| &field.typ)
-                            }
-                            _ => None,
-                        }
-                    })
+                    .filter_map(|alias| match **alias.unresolved_type() {
+                                    Type::Variant(ref row) => {
+                                        row.row_iter()
+                                            .find(|field| *field.name == *id)
+                                            .map(|field| &field.typ)
+                                    }
+                                    _ => None,
+                                })
                     .next()
                     .map(|ctor| ctor)
             })
     }
     fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
-        self.type_infos
-            .find_type_info(id)
+        self.type_infos.find_type_info(id)
     }
     fn find_record(&self, fields: &[Symbol]) -> Option<(ArcType, ArcType)> {
         self.type_infos.find_record(fields)
@@ -189,7 +195,7 @@ impl MetadataEnv for VmEnv {
 fn map_cow_option<T, U, F>(cow: Cow<T>, f: F) -> Option<Cow<U>>
     where T: Clone,
           U: Clone,
-          F: FnOnce(&T) -> Option<&U>,
+          F: FnOnce(&T) -> Option<&U>
 {
     match cow {
         Cow::Borrowed(b) => f(b).map(Cow::Borrowed),
@@ -203,9 +209,9 @@ impl VmEnv {
         let module_str = name.module().as_str();
         if module_str == "" {
             return match self.type_infos.id_to_type.get(name.as_str()) {
-                Some(alias) => Ok(Cow::Borrowed(alias)),
-                None => Err(Error::UndefinedBinding(name.as_str().into())),
-            };
+                       Some(alias) => Ok(Cow::Borrowed(alias)),
+                       None => Err(Error::UndefinedBinding(name.as_str().into())),
+                   };
         }
         let (_, typ) = self.get_binding(name.module().as_str())?;
         let maybe_type_info = map_cow_option(typ.clone(), |typ| {
@@ -215,8 +221,9 @@ impl VmEnv {
                 .map(|field| &field.typ)
         });
         maybe_type_info.ok_or_else(move || {
-            Error::UndefinedField(typ.into_owned(), name.name().as_str().into())
-        })
+                                       Error::UndefinedField(typ.into_owned(),
+                                                             name.name().as_str().into())
+                                   })
     }
 
     pub fn get_binding(&self, name: &str) -> Result<(Value, Cow<ArcType>)> {
@@ -241,7 +248,7 @@ impl VmEnv {
             }
             module = module.module();
         }
-        let remaining_offset = module.as_str().len() + 1;//Add 1 byte for the '.'
+        let remaining_offset = module.as_str().len() + 1; //Add 1 byte for the '.'
         if remaining_offset >= name.len() {
             // No fields left
             return Ok((global.value, Cow::Borrowed(&global.typ)));
@@ -270,15 +277,13 @@ impl VmEnv {
                 typ.row_iter()
                     .enumerate()
                     .find(|&(_, field)| field.name.as_ref() == field_name)
-                    .map(|(index, field)| {
-                        match value {
-                            Value::Data(data) => {
-                                value = data.fields[index];
-                                &field.typ
-                            }
-                            _ => panic!("Unexpected value {:?}", value),
-                        }
-                    })
+                    .map(|(index, field)| match value {
+                             Value::Data(data) => {
+                        value = data.fields[index];
+                        &field.typ
+                    }
+                             _ => panic!("Unexpected value {:?}", value),
+                         })
             });
             typ =
                 next_type.ok_or_else(move || {
@@ -294,11 +299,12 @@ impl VmEnv {
         let mut components = name.components();
         let global = match components.next() {
             Some(comp) => {
-                globals.get(comp)
+                globals
+                    .get(comp)
                     .or_else(|| {
-                        components = name.name().components();
-                        globals.get(name.module().as_str())
-                    })
+                                 components = name.name().components();
+                                 globals.get(name.module().as_str())
+                             })
                     .ok_or_else(|| Error::MetadataDoesNotExist(name_str.into()))?
             }
             None => return Err(Error::MetadataDoesNotExist(name_str.into())),
@@ -306,7 +312,8 @@ impl VmEnv {
 
         let mut metadata = &global.metadata;
         for field_name in components {
-            metadata = metadata.module
+            metadata = metadata
+                .module
                 .get(field_name)
                 .ok_or_else(|| Error::MetadataDoesNotExist(name_str.into()))?;
         }
@@ -319,9 +326,9 @@ impl GlobalVmState {
     pub fn new() -> GlobalVmState {
         let mut vm = GlobalVmState {
             env: RwLock::new(VmEnv {
-                globals: FnvMap::default(),
-                type_infos: TypeInfos::new(),
-            }),
+                                 globals: FnvMap::default(),
+                                 type_infos: TypeInfos::new(),
+                             }),
             generics: RwLock::new(FnvMap::default()),
             typeids: RwLock::new(FnvMap::default()),
             interner: RwLock::new(Interner::new()),
@@ -329,8 +336,7 @@ impl GlobalVmState {
             macros: MacroEnv::new(),
             generation_0_threads: RwLock::new(Vec::new()),
         };
-        vm.add_types()
-            .unwrap();
+        vm.add_types().unwrap();
         vm
     }
 
@@ -343,10 +349,12 @@ impl GlobalVmState {
                             typ: ArcType) {
             ids.insert(TypeId::of::<T>(), typ);
             // Insert aliases so that `find_info` can retrieve information about the primitives
-            env.type_infos.id_to_type.insert(name.into(),
-                                             Alias::from(AliasData::new(Symbol::from(name),
-                                                                        Vec::new(),
-                                                                        Type::opaque())));
+            env.type_infos
+                .id_to_type
+                .insert(name.into(),
+                        Alias::from(AliasData::new(Symbol::from(name),
+                                                   Vec::new(),
+                                                   Type::opaque())));
         }
 
         {
@@ -359,8 +367,10 @@ impl GlobalVmState {
             add_type::<::std::string::String>(ids, env, "String", Type::string());
             add_type::<char>(ids, env, "Char", Type::char());
         }
-        self.register_type::<IO<Generic<A>>>("IO", &["a"]).unwrap();
-        self.register_type::<Lazy<Generic<A>>>("Lazy", &["a"]).unwrap();
+        self.register_type::<IO<Generic<A>>>("IO", &["a"])
+            .unwrap();
+        self.register_type::<Lazy<Generic<A>>>("Lazy", &["a"])
+            .unwrap();
         self.register_type::<Thread>("Thread", &[]).unwrap();
         Ok(())
     }
@@ -424,21 +434,26 @@ impl GlobalVmState {
         } else {
             let id = TypeId::of::<T>();
             let arg_types: AppVec<_> = args.iter().map(|g| self.get_generic(g)).collect();
-            let args = arg_types.iter()
+            let args = arg_types
+                .iter()
                 .map(|g| match **g {
-                    Type::Generic(ref g) => g.clone(),
-                    _ => unreachable!(),
-                })
+                         Type::Generic(ref g) => g.clone(),
+                         _ => unreachable!(),
+                     })
                 .collect();
             let n = Symbol::from(name);
             let typ: ArcType = Type::app(Type::ident(n.clone()), arg_types);
-            self.typeids
-                .write()
+            self.typeids.write().unwrap().insert(id, typ.clone());
+            let t = self.typeids
+                .read()
                 .unwrap()
-                .insert(id, typ.clone());
-            let t = self.typeids.read().unwrap().get(&id).unwrap().clone();
-            type_infos.id_to_type.insert(name.into(),
-                                         Alias::from(AliasData::new(n, args, Type::opaque())));
+                .get(&id)
+                .unwrap()
+                .clone();
+            type_infos
+                .id_to_type
+                .insert(name.into(),
+                        Alias::from(AliasData::new(n, args, Type::opaque())));
             Ok(t)
         }
     }
@@ -448,7 +463,10 @@ impl GlobalVmState {
     }
 
     pub fn intern(&self, s: &str) -> Result<InternedStr> {
-        self.interner.write().unwrap().intern(&mut *self.gc.lock().unwrap(), s)
+        self.interner
+            .write()
+            .unwrap()
+            .intern(&mut *self.gc.lock().unwrap(), s)
     }
 
     /// Returns a borrowed structure which implements `CompilerEnv`

@@ -18,26 +18,29 @@ fn type_of_expr(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     let WithVM { vm, value: args } = args;
     let mut compiler = Compiler::new();
     IO::Value(match compiler.typecheck_str(vm, "<repl>", &args, None) {
-        Ok((expr, _)) => {
-            let env = vm.get_env();
-            Ok(format!("{}", expr.env_type_of(&*env)))
-        }
-        Err(msg) => Err(format!("{}", msg)),
-    })
+                  Ok((expr, _)) => {
+        let env = vm.get_env();
+        Ok(format!("{}", expr.env_type_of(&*env)))
+    }
+                  Err(msg) => Err(format!("{}", msg)),
+              })
 }
 
 fn find_kind(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     let vm = args.vm;
     let args = args.value.trim();
     IO::Value(match vm.find_type_info(args) {
-        Ok(ref alias) => {
-            let kind =
-                alias.args.iter().rev().fold(Kind::typ(),
-                                             |acc, arg| Kind::function(arg.kind.clone(), acc));
-            Ok(format!("{}", kind))
-        }
-        Err(err) => Err(format!("{}", err)),
-    })
+                  Ok(ref alias) => {
+        let kind = alias
+            .args
+            .iter()
+            .rev()
+            .fold(Kind::typ(),
+                  |acc, arg| Kind::function(arg.kind.clone(), acc));
+        Ok(format!("{}", kind))
+    }
+                  Err(err) => Err(format!("{}", err)),
+              })
 }
 
 fn find_info(args: WithVM<RootStr>) -> IO<Result<String, String>> {
@@ -100,12 +103,13 @@ fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonRe
     // Only need the typechecker to fill infer the types as best it can regardless of errors
     let _ = compiler.typecheck_expr(thread, &name, fileinput, &mut expr);
     let suggestions = completion::suggest(&*thread.get_env(), &expr, BytePos::from(pos));
-    Ok(suggestions.into_iter()
-        .map(|ident| {
-            let s: &str = ident.name.as_ref();
-            s.to_string()
-        })
-        .collect())
+    Ok(suggestions
+           .into_iter()
+           .map(|ident| {
+                    let s: &str = ident.name.as_ref();
+                    s.to_string()
+                })
+           .collect())
 }
 
 struct Completer(RootedThread);
@@ -115,8 +119,9 @@ impl rustyline::completion::Completer for Completer {
         let result = complete(&self.0, "<repl>", line, pos);
 
         // Get the start of the completed identifier
-        let ident_start =
-            line[..pos].rfind(|c: char| c.is_whitespace() || c == '.').map_or(0, |i| i + 1);
+        let ident_start = line[..pos]
+            .rfind(|c: char| c.is_whitespace() || c == '.')
+            .map_or(0, |i| i + 1);
         Ok((ident_start, result.unwrap_or(Vec::new())))
     }
 }
@@ -179,7 +184,9 @@ fn compile_repl(vm: &Thread) -> Result<(), Box<StdError + Send + Sync>> {
     const REPL_SOURCE: &'static str = include_str!("../../std/repl.glu");
 
     let mut compiler = Compiler::new();
-    compiler.load_script_async(vm, "std.repl", REPL_SOURCE).sync_or_error()?;
+    compiler
+        .load_script_async(vm, "std.repl", REPL_SOURCE)
+        .sync_or_error()?;
     Ok(())
 }
 
@@ -203,7 +210,8 @@ mod tests {
     fn new_vm() -> RootedThread {
         let vm = gluon::new_vm();
         let import = vm.get_macros().get("import");
-        import.as_ref()
+        import
+            .as_ref()
             .and_then(|import| import.downcast_ref::<Import>())
             .expect("Import macro")
             .add_path("..");

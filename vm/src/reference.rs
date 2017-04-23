@@ -19,16 +19,17 @@ pub struct Reference<T> {
 }
 
 impl<T> Userdata for Reference<T>
-    where T: Any + Send + Sync,
+    where T: Any + Send + Sync
 {
     fn deep_clone(&self, deep_cloner: &mut Cloner) -> Result<GcPtr<Box<Userdata>>> {
         let value = self.value.lock().unwrap();
         let cloned_value = deep_cloner.deep_clone(*value)?;
-        let data: Box<Userdata> = Box::new(Reference {
-            value: Mutex::new(cloned_value),
-            thread: unsafe { GcPtr::from_raw(deep_cloner.thread()) },
-            _marker: PhantomData::<A>,
-        });
+        let data: Box<Userdata> =
+            Box::new(Reference {
+                         value: Mutex::new(cloned_value),
+                         thread: unsafe { GcPtr::from_raw(deep_cloner.thread()) },
+                         _marker: PhantomData::<A>,
+                     });
         deep_cloner.gc().alloc(Move(data))
     }
 }
@@ -47,7 +48,7 @@ impl<T> Traverseable for Reference<T> {
 
 impl<T> VmType for Reference<T>
     where T: VmType,
-          T::Type: Sized,
+          T::Type: Sized
 {
     type Type = Reference<T::Type>;
 
