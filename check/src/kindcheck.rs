@@ -2,7 +2,7 @@ use std::fmt;
 use std::result::Result as StdResult;
 
 use base::ast;
-use base::kind::{self, ArcKind, Kind, KindEnv};
+use base::kind::{self, ArcKind, Kind, KindEnv, KindCache};
 use base::merge;
 use base::symbol::Symbol;
 use base::types::{self, AppVec, ArcType, BuiltinType, Field, Generic, Type, Walker};
@@ -23,14 +23,11 @@ pub struct KindCheck<'a> {
     info: &'a (KindEnv + 'a),
     idents: &'a (ast::IdentEnv<Ident = Symbol> + 'a),
     pub subs: Substitution<ArcKind>,
-    /// A cached type kind, `Type`
-    type_kind: ArcKind,
+    kind_cache: KindCache,
     /// A cached one argument kind function, `Type -> Type`
     function1_kind: ArcKind,
     /// A cached two argument kind function, `Type -> Type -> Type`
     function2_kind: ArcKind,
-    /// A cached row kind: `Row`
-    row_kind: ArcKind,
 }
 
 fn walk_move_kind<F>(kind: ArcKind, f: &mut F) -> ArcKind
@@ -64,20 +61,20 @@ fn walk_move_kind2<F>(kind: &ArcKind, f: &mut F) -> Option<ArcKind>
 
 impl<'a> KindCheck<'a> {
     pub fn new(info: &'a (KindEnv + 'a),
-               idents: &'a (ast::IdentEnv<Ident = Symbol> + 'a))
+               idents: &'a (ast::IdentEnv<Ident = Symbol> + 'a),
+               kind_cache: KindCache)
                -> KindCheck<'a> {
-        let typ = Kind::typ();
+        let typ = kind_cache.typ();
         let function1_kind = Kind::function(typ.clone(), typ.clone());
         KindCheck {
             variables: Vec::new(),
             locals: Vec::new(),
             info: info,
             idents: idents,
-            subs: Substitution::new(),
-            type_kind: typ.clone(),
+            subs: Substitution::new(()),
             function1_kind: function1_kind.clone(),
             function2_kind: Kind::function(typ, function1_kind),
-            row_kind: Kind::row(),
+            kind_cache: kind_cache,
         }
     }
 
@@ -91,7 +88,7 @@ impl<'a> KindCheck<'a> {
     }
 
     pub fn type_kind(&self) -> ArcKind {
-        self.type_kind.clone()
+        self.kind_cache.typ()
     }
 
     pub fn function1_kind(&self) -> ArcKind {
@@ -103,7 +100,7 @@ impl<'a> KindCheck<'a> {
     }
 
     pub fn row_kind(&self) -> ArcKind {
-        self.row_kind.clone()
+        self.kind_cache.row()
     }
 
     pub fn instantiate_kinds(&mut self, kind: &mut ArcKind) {
@@ -269,7 +266,7 @@ impl<'a> KindCheck<'a> {
     }
 
     pub fn finalize_type(&self, typ: ArcType) -> ArcType {
-        let default = Some(&self.type_kind);
+        let default = Some(&self.kind_cache.typ);
         types::walk_move_type(typ,
                               &mut |typ| match *typ {
                                        Type::Variable(ref var) => {
@@ -288,7 +285,7 @@ impl<'a> KindCheck<'a> {
     }
     pub fn finalize_generic(&self, var: &Generic<Symbol>) -> Generic<Symbol> {
         let mut kind = var.kind.clone();
-        kind = update_kind(&self.subs, kind, Some(&self.type_kind));
+        kind = update_kind(&self.subs, kind, Some(&self.kind_cache.typ));
         Generic::new(var.id.clone(), kind)
     }
 }
@@ -330,10 +327,7 @@ pub fn fmt_kind_error<I>(error: &Error<I>, f: &mut fmt::Formatter) -> fmt::Resul
 
 impl Substitutable for ArcKind {
     type Variable = u32;
-
-    fn new(x: u32) -> ArcKind {
-        Kind::variable(x)
-    }
+    type Factory = ();
 
     fn from_variable(x: u32) -> ArcKind {
         Kind::variable(x)

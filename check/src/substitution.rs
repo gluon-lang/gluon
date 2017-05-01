@@ -11,7 +11,9 @@ use base::symbol::Symbol;
 
 use typecheck::unroll_typ;
 
-pub struct Substitution<T> {
+pub struct Substitution<T>
+    where T: Substitutable
+{
     /// Union-find data structure used to store the relationships of all variables in the
     /// substitution
     union: RefCell<QuickFindUf<UnionByLevel>>,
@@ -22,11 +24,15 @@ pub struct Substitution<T> {
     /// stored here. As the type stored will never changed we use a `FixedMap` lets `real` return
     /// `&T` from this map safely.
     types: FixedMap<u32, T>,
+    factory: T::Factory,
 }
 
-impl<T: Substitutable> Default for Substitution<T> {
+impl<T> Default for Substitution<T>
+    where T: Substitutable,
+          T::Factory: Default
+{
     fn default() -> Substitution<T> {
-        Substitution::new()
+        Substitution::new(Default::default())
     }
 }
 
@@ -42,14 +48,26 @@ impl Variable for u32 {
     }
 }
 
+pub trait VariableFactory {
+    type Variable: Variable;
+
+    fn new(&self, x: u32) -> Self::Variable;
+}
+
+impl VariableFactory for () {
+    type Variable = u32;
+
+    fn new(&self, x: u32) -> Self::Variable {
+        x
+    }
+}
+
 /// Trait implemented on types which may contain substitutable variables
 pub trait Substitutable: Sized {
     type Variable: Variable;
-    fn new(x: u32) -> Self;
+    type Factory: VariableFactory<Variable = Self::Variable>;
     /// Constructs a new object from its variable type
-    fn from_variable(x: Self::Variable) -> Self {
-        Self::new(x.get_id())
-    }
+    fn from_variable(x: Self::Variable) -> Self;
     /// Retrieves the variable if `self` is a variable otherwise returns `None`
     fn get_var(&self) -> Option<&Self::Variable>;
     fn traverse<F>(&self, f: &mut F) where F: Walker<Self>;
@@ -150,7 +168,9 @@ impl Union for UnionByLevel {
     }
 }
 
-impl<T: fmt::Debug> fmt::Debug for Substitution<T> {
+impl<T> fmt::Debug for Substitution<T>
+    where T: fmt::Debug + Substitutable
+{
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f,
                "Substitution {{ map: {:?}, var_id: {:?} }}",
@@ -159,19 +179,18 @@ impl<T: fmt::Debug> fmt::Debug for Substitution<T> {
     }
 }
 
-impl<T> Substitution<T> {
-    pub fn var_id(&self) -> u32 {
-        self.variables.borrow().len() as u32
-    }
-}
-
 impl<T: Substitutable> Substitution<T> {
-    pub fn new() -> Substitution<T> {
+    pub fn new(factory: T::Factory) -> Substitution<T> {
         Substitution {
             union: RefCell::new(QuickFindUf::new(0)),
             variables: FixedVec::new(),
             types: FixedMap::new(),
+            factory: factory,
         }
+    }
+
+    pub fn var_id(&self) -> u32 {
+        self.variables.borrow().len() as u32
     }
 
     pub fn clear(&mut self) {
@@ -202,7 +221,7 @@ impl<T: Substitutable> Substitution<T> {
         let id = self.union.borrow_mut().insert(UnionByLevel::default());
         assert!(id == self.variables.len());
 
-        let var = T::new(var_id);
+        let var = T::from_variable(self.factory.new(var_id));
         self.variables.push(var.clone());
         var
     }

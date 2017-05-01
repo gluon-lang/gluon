@@ -129,6 +129,8 @@ impl fmt::Display for ArcKind {
     }
 }
 
+type_cache! { KindCache() { ArcKind, Kind } row hole typ }
+
 impl<F: ?Sized> Walker<ArcKind> for F
     where F: FnMut(&ArcKind)
 {

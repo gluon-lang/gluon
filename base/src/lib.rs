@@ -9,6 +9,39 @@ extern crate smallvec;
 #[macro_use]
 extern crate collect_mac;
 
+macro_rules! type_cache {
+    ($name: ident ($($args: ident),*) { $typ: ty, $inner_type: ident } $( $id: ident )+) => {
+
+        #[derive(Debug, Clone)]
+        pub struct $name<$($args),*> {
+            $(pub $id : $typ),+
+        }
+
+        impl<$($args),*> Default for $name<$($args),*> {
+            fn default() -> Self {
+                $name::new()
+            }
+        }
+
+        impl<$($args),*> $name<$($args),*> {
+            pub fn new() -> Self {
+                $name {
+                    $(
+                        $id : $inner_type::$id(),
+                    )+
+                }
+            }
+
+            $(
+                pub fn $id(&self) -> $typ {
+                    self.$id.clone()
+                }
+            )+
+        }
+    }
+}
+
+
 pub mod ast;
 pub mod error;
 pub mod fixed;

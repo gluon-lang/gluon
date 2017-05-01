@@ -11,11 +11,11 @@ extern crate lalrpop_util;
 
 use std::cell::RefCell;
 
-use base::ast::{Expr, IdentEnv, SpannedExpr, SpannedPattern};
+use base::ast::{Expr, IdentEnv, SpannedExpr, SpannedPattern, TypedIdent};
 use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::symbol::Symbol;
-use base::types::ArcType;
+use base::types::{ArcType, TypeCache};
 
 use infix::{OpTable, Reparser};
 use layout::Layout;
@@ -29,6 +29,13 @@ mod grammar;
 mod infix;
 mod layout;
 mod token;
+
+fn new_ident<Id>(type_cache: &TypeCache<Id>, name: Id) -> TypedIdent<Id> {
+    TypedIdent {
+        name: name,
+        typ: type_cache.hole(),
+    }
+}
 
 type LalrpopError<'input> = lalrpop_util::ParseError<BytePos,
                                                      Token<'input>,
@@ -68,11 +75,9 @@ fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
 }
 
 fn transform_errors<'a, Iter>(errors: Iter) -> Errors<Spanned<Error, BytePos>>
-    where Iter: IntoIterator<Item = LalrpopError<'a>>,
+    where Iter: IntoIterator<Item = LalrpopError<'a>>
 {
-    errors.into_iter()
-        .map(Error::from_lalrpop)
-        .collect()
+    errors.into_iter().map(Error::from_lalrpop).collect()
 }
 
 quick_error! {
@@ -157,7 +162,7 @@ impl<I, E> ResultOkIter<I, E> {
 
 impl<I, T, E> Iterator for ResultOkIter<I, E>
     where I: Iterator<Item = Result<T, E>>,
-          E: ::std::fmt::Debug,
+          E: ::std::fmt::Debug
 {
     type Item = T;
 
@@ -191,7 +196,7 @@ impl<'a, I> SharedIter<'a, I> {
 }
 
 impl<'a, I> Iterator for SharedIter<'a, I>
-    where I: Iterator,
+    where I: Iterator
 {
     type Item = I::Item;
 
@@ -219,21 +224,23 @@ pub type ParseErrors = Errors<Spanned<Error, BytePos>>;
 pub fn parse_partial_expr<Id>(symbols: &mut IdentEnv<Ident = Id>,
                               input: &str)
                               -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, ParseErrors)>
-    where Id: Clone,
+    where Id: Clone
 {
     let tokenizer = Tokenizer::new(input);
     let result_ok_iter = RefCell::new(ResultOkIter::new(tokenizer));
 
     let layout = Layout::new(SharedIter::new(&result_ok_iter)).map(|token| {
         /// Return the tokenizer error if one exists
-        result_ok_iter.borrow_mut()
+        result_ok_iter
+            .borrow_mut()
             .result(())
             .map_err(|err| {
-                pos::spanned2(err.span.start.absolute,
-                              err.span.end.absolute,
-                              err.value.into())
-            })?;
-        let token = token.map_err(|err| pos::spanned2(0.into(), 0.into(), err.into()))?;
+                         pos::spanned2(err.span.start.absolute,
+                                       err.span.end.absolute,
+                                       err.value.into())
+                     })?;
+        let token = token
+            .map_err(|err| pos::spanned2(0.into(), 0.into(), err.into()))?;
         debug!("Lex {:?}", token.value);
         let Span { start, end, .. } = token.span;
         Ok((start.absolute, token.value, end.absolute))
@@ -241,7 +248,9 @@ pub fn parse_partial_expr<Id>(symbols: &mut IdentEnv<Ident = Id>,
 
     let mut parse_errors = Errors::new();
 
-    let result = grammar::parse_TopExpr(input, symbols, &mut parse_errors, layout);
+    let type_cache = TypeCache::new();
+
+    let result = grammar::parse_TopExpr(input, &type_cache, symbols, &mut parse_errors, layout);
 
     // If there is a tokenizer error it may still exist in the result iterator wrapper.
     // If that is the case we return that error instead of the unexpected EOF error that lalrpop
@@ -249,10 +258,10 @@ pub fn parse_partial_expr<Id>(symbols: &mut IdentEnv<Ident = Id>,
     if let Err(err) = result_ok_iter.borrow_mut().result(()) {
         parse_errors.pop(); // Remove the EOF error
         parse_errors.push(lalrpop_util::ParseError::User {
-            error: pos::spanned2(err.span.start.absolute,
-                                 err.span.end.absolute,
-                                 err.value.into()),
-        });
+                              error: pos::spanned2(err.span.start.absolute,
+                                                   err.span.end.absolute,
+                                                   err.value.into()),
+                          });
     }
 
     match result {
@@ -260,7 +269,9 @@ pub fn parse_partial_expr<Id>(symbols: &mut IdentEnv<Ident = Id>,
             let mut errors = transform_errors(parse_errors);
             let mut reparser = Reparser::new(OpTable::default(), symbols);
             if let Err(reparse_errors) = reparser.reparse(&mut expr) {
-                errors.extend(reparse_errors.into_iter().map(|err| err.map(Error::Infix)));
+                errors.extend(reparse_errors
+                                  .into_iter()
+                                  .map(|err| err.map(Error::Infix)));
             }
 
             if errors.has_errors() {

@@ -26,12 +26,13 @@ use base::types::{ArcType, TypeEnv};
 
 /// Checks if `actual` can be assigned to a binding with the type signature `signature`
 pub fn check_signature(env: &TypeEnv, signature: &ArcType, actual: &ArcType) -> bool {
+    use base::kind::Kind;
     use base::scoped_map::ScopedMap;
     use base::fnv::FnvMap;
 
     use substitution::Substitution;
 
-    let subs = Substitution::new();
+    let subs = Substitution::new(Kind::typ());
     let state = unify_type::State::new(env, &subs);
     let actual = unify_type::instantiate_generic_variables(&mut FnvMap::default(), &subs, actual);
     unify_type::merge_signature(&subs, &mut ScopedMap::new(), 0, state, signature, &actual).is_ok()
