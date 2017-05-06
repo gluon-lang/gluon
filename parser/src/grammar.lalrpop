@@ -19,14 +19,14 @@ extern {
     type Error = Spanned<Error, BytePos>;
 
     enum Token<'input> {
-        "Identifier" => Token::Identifier(<&'input str>),
-        "Operator" => Token::Operator(<&'input str>),
-        "StringLiteral" => Token::StringLiteral(<String>),
-        "CharLiteral" => Token::CharLiteral(<char>),
-        "IntLiteral" => Token::IntLiteral(<i64>),
-        "ByteLiteral" => Token::ByteLiteral(<u8>),
-        "FloatLiteral" => Token::FloatLiteral(<f64>),
-        "DocComment" => Token::DocComment(<String>),
+        "identifier" => Token::Identifier(<&'input str>),
+        "operator" => Token::Operator(<&'input str>),
+        "string literal" => Token::StringLiteral(<String>),
+        "char literal" => Token::CharLiteral(<char>),
+        "int literal" => Token::IntLiteral(<i64>),
+        "byte literal" => Token::ByteLiteral(<u8>),
+        "float literal" => Token::FloatLiteral(<f64>),
+        "documentation comment" => Token::DocComment(<String>),
 
         "and" => Token::And,
         "else" => Token::Else,
@@ -54,9 +54,9 @@ extern {
         "]" => Token::RBracket,
         ")" => Token::RParen,
 
-        "OpenBlock" => Token::OpenBlock,
-        "CloseBlock" => Token::CloseBlock,
-        "Semi" => Token::Semi,
+        "block open" => Token::OpenBlock,
+        "block close" => Token::CloseBlock,
+        "block separator" => Token::Semi,
     }
 }
 
@@ -74,8 +74,8 @@ Sp<Rule>: Spanned<Rule, BytePos> =
         pos::spanned2(l, r, rule);
 
 IdentStr: &'input str = {
-    "Identifier" => <>,
-    "(" <"Operator"> ")" => <>,
+    "identifier" => <>,
+    "(" <"operator"> ")" => <>,
 };
 
 SkipExtraTokens: () = {
@@ -87,15 +87,15 @@ Ident: Id =
     IdentStr => env.from_str(<>);
 
 Operator: TypedIdent<Id> =
-    "Operator" => new_ident(type_cache, env.from_str(<>));
+    "operator" => new_ident(type_cache, env.from_str(<>));
 
 DocComment: String =
-    "DocComment"+ => <>.join("\n");
+    "documentation comment"+ => <>.join("\n");
 
 // Kinds
 
 AtomicKind: ArcKind = {
-    <l: @L> <id: "Identifier"> <r: @R> =>? {
+    <l: @L> <id: "identifier"> <r: @R> =>? {
         use lalrpop_util::ParseError;
 
         match id {
@@ -103,7 +103,12 @@ AtomicKind: ArcKind = {
             "Type" => Ok(Kind::typ()),
             "Row" => Ok(Kind::row()),
             id => Err(ParseError::User {
-                error: pos::spanned2(l.into(), r.into(), Error::UnexpectedToken("Identifier".to_string())),
+                error: pos::spanned2(
+                    l.into(),
+                    r.into(),
+                    Error::UnexpectedToken(
+                        "identifier".to_string(),
+                        ["_", "Row", "Type"].iter().map(|s| s.to_string()).collect())),
             }),
         }
     },
@@ -268,11 +273,11 @@ Pattern = {
 // Expressions
 
 Literal: Literal = {
-    "StringLiteral" => Literal::String(<>),
-    "CharLiteral" => Literal::Char(<>),
-    "IntLiteral" => Literal::Int(<>),
-    "ByteLiteral" => Literal::Byte(<>),
-    "FloatLiteral" => Literal::Float(<>),
+    "string literal" => Literal::String(<>),
+    "char literal" => Literal::Char(<>),
+    "int literal" => Literal::Int(<>),
+    "byte literal" => Literal::Byte(<>),
+    "float literal" => Literal::Float(<>),
 };
 
 Alternative: Alternative<Id> =
@@ -448,7 +453,7 @@ Expr: Expr<Id> = {
 };
 
 BlockExpr: Expr<Id> = {
-    "OpenBlock" <exprs: (<SpExpr> "Semi")*> <last: SpExpr> "CloseBlock" => {
+    "block open" <exprs: (<SpExpr> "block separator")*> <last: SpExpr> "block close" => {
         let mut exprs = exprs;
         exprs.push(last);
         Expr::Block(exprs)
