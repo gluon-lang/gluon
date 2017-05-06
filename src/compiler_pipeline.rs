@@ -315,7 +315,7 @@ impl<'vm, E> Executable<'vm, ()> for CompileValue<E>
                      ExecuteValue {
                          expr: expr,
                          typ: typ,
-                         value: vm.root_value_ref(value),
+                         value: vm.root_value(value),
                      }
                  })
             .map_err(Error::from)

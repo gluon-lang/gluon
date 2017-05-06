@@ -26,6 +26,7 @@ pub mod api;
 pub mod channel;
 pub mod compiler;
 pub mod debug;
+pub mod dynamic;
 #[macro_use]
 pub mod future;
 pub mod gc;

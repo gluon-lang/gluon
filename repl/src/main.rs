@@ -11,6 +11,7 @@ extern crate gluon_vm;
 extern crate gluon;
 
 use gluon::base;
+use gluon::parser;
 use gluon::check;
 use gluon::vm;
 
