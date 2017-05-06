@@ -10,6 +10,7 @@ extern crate gluon_base as base;
 extern crate lalrpop_util;
 
 use std::cell::RefCell;
+use std::fmt;
 
 use base::ast::{Expr, IdentEnv, SpannedExpr, SpannedPattern, TypedIdent};
 use base::error::Errors;
@@ -80,6 +81,27 @@ fn transform_errors<'a, Iter>(errors: Iter) -> Errors<Spanned<Error, BytePos>>
     errors.into_iter().map(Error::from_lalrpop).collect()
 }
 
+struct Expected<'a>(&'a [String]);
+
+impl<'a> fmt::Display for Expected<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.0.len() {
+            0 => (),
+            1 => write!(f, "\nExpected ")?,
+            _ => write!(f, "\nExpected one of ")?,
+        }
+        for (i, token) in self.0.iter().enumerate() {
+            let sep = match i {
+                0 => "",
+                i if i + 1 < self.0.len() => ",",
+                _ => " or",
+            };
+            write!(f, "{} {}", sep, token)?;
+        }
+        Ok(())
+    }
+}
+
 quick_error! {
     #[derive(Debug, PartialEq)]
     pub enum Error {
@@ -97,13 +119,13 @@ quick_error! {
             description("invalid token")
             display("Invalid token")
         }
-        UnexpectedToken(token: String) {
+        UnexpectedToken(token: String, expected: Vec<String>) {
             description("unexpected token")
-            display("Unexpected token: {}", token)
+            display("Unexpected token: {}{}", token, Expected(&expected))
         }
-        UnexpectedEof {
+        UnexpectedEof(expected: Vec<String>) {
             description("unexpected end of file")
-            display("Unexpected end of file")
+            display("Unexpected end of file{}", Expected(&expected))
         }
         ExtraToken(token: String) {
             description("extra token")
@@ -117,17 +139,37 @@ quick_error! {
     }
 }
 
+/// LALRPOP currently has an unnecessary set of `"` around each expected token
+fn remove_extra_quotes(tokens: &mut [String]) {
+    for token in tokens {
+        if token.starts_with('"') && token.ends_with('"') {
+            token.remove(0);
+            token.pop();
+        }
+    }
+}
+
 impl Error {
     fn from_lalrpop(err: LalrpopError) -> Spanned<Error, BytePos> {
         use lalrpop_util::ParseError::*;
 
         match err {
             InvalidToken { location } => pos::spanned2(location, location, Error::InvalidToken),
-            UnrecognizedToken { token: Some((lpos, token, rpos)), .. } => {
-                pos::spanned2(lpos, rpos, Error::UnexpectedToken(token.to_string()))
+            UnrecognizedToken {
+                token: Some((lpos, token, rpos)),
+                mut expected,
+            } => {
+                remove_extra_quotes(&mut expected);
+                pos::spanned2(lpos,
+                              rpos,
+                              Error::UnexpectedToken(token.to_string(), expected))
             }
-            UnrecognizedToken { token: None, .. } => {
-                pos::spanned2(0.into(), 0.into(), Error::UnexpectedEof)
+            UnrecognizedToken {
+                token: None,
+                mut expected,
+            } => {
+                remove_extra_quotes(&mut expected);
+                pos::spanned2(0.into(), 0.into(), Error::UnexpectedEof(expected))
             }
             ExtraToken { token: (lpos, token, rpos) } => {
                 pos::spanned2(lpos, rpos, Error::ExtraToken(token.to_string()))

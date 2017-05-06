@@ -103,7 +103,12 @@ AtomicKind: ArcKind = {
             "Type" => Ok(Kind::typ()),
             "Row" => Ok(Kind::row()),
             id => Err(ParseError::User {
-                error: pos::spanned2(l.into(), r.into(), Error::UnexpectedToken("Identifier".to_string())),
+                error: pos::spanned2(
+                    l.into(),
+                    r.into(),
+                    Error::UnexpectedToken(
+                        "Identifier".to_string(),
+                        ["_", "Row", "Type"].iter().map(|s| s.to_string()).collect())),
             }),
         }
     },
