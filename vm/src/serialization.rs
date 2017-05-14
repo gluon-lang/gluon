@@ -42,6 +42,15 @@ pub struct Seed<T> {
     _marker: PhantomData<T>,
 }
 
+impl<T> Clone for Seed<T> {
+    fn clone(&self) -> Seed<T> {
+        Seed {
+            state: self.state.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
 impl<T> From<DeSeed> for Seed<T> {
     fn from(value: DeSeed) -> Self {
         Seed {
@@ -68,8 +77,8 @@ pub mod gc {
     use super::*;
     use base::symbol::Symbol;
     use serde::{Deserialize, Deserializer};
-    use serde::de::{DeserializeSeed, SeqSeed};
-    use value::{GcStr, ValueArray};
+    use serde::de::{DeserializeSeed, Error, SeqSeed};
+    use value::{GcStr, Value, ValueArray, ValueTag};
 
     impl<'de, T> GcSerialize<'de> for GcPtr<T>
         where T: GcSerialize<'de> + ::gc::Traverseable + 'static
@@ -111,7 +120,6 @@ pub mod gc {
         Seed::<GcPtrTag<T>>::from(seed.state.clone()).deserialize(deserializer)
     }
 
-    /*
     #[derive(Default)]
     pub struct GcPtrArraySeed;
 
@@ -122,16 +130,26 @@ pub mod gc {
             where D: Deserializer<'de>
         {
             use value::ArrayDef;
-            SeqSeed::new(Seed {
-                             state: self.state.clone(),
-                             _marker: ValueSeed,
-                         },
+            SeqSeed::new(Seed::<ValueTag>::from(self.state.clone()),
                          Vec::with_capacity)
                     .deserialize(deserializer)
-                    .map(|s| self.state.thread.context().alloc(ArrayDef(&s)))
+                    .and_then(|s: Vec<Value>| {
+                                  self.state
+                                      .thread
+                                      .context()
+                                      .alloc(ArrayDef(&s))
+                                      .map_err(D::Error::custom)
+                              })
         }
     }
-    */
+
+    pub fn deserialize_array<'de, D, T>(seed: &mut Seed<T>,
+                                        deserializer: D)
+                                        -> Result<GcPtr<ValueArray>, D::Error>
+        where D: Deserializer<'de>
+    {
+        Seed::<GcPtrArraySeed>::from(seed.state.clone()).deserialize(deserializer)
+    }
 
     pub fn deserialize_str<'de, D, T>(seed: &mut Seed<T>,
                                       deserializer: D)
@@ -198,6 +216,26 @@ mod tests {
         let value: Value = DeSeed::new(thread).deserialize(&mut de).unwrap();
         match value {
             Value::String(s) => assert_eq!(&*s, "test"),
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn int_array() {
+        let thread = RootedThread::new();
+        let mut de = serde_json::Deserializer::from_str(r#" {
+            "Array": [
+                { "Int": 1 },
+                { "Int": 2 },
+                { "Int": 3 }
+            ]
+        } "#);
+        let value: Value = DeSeed::new(thread).deserialize(&mut de).unwrap();
+        match value {
+            Value::Array(s) => {
+                assert_eq!(s.iter().collect::<Vec<_>>(),
+                           [Value::Int(1), Value::Int(2), Value::Int(3)])
+            }
             _ => panic!(),
         }
     }

@@ -248,8 +248,8 @@ pub enum Value {
     Tag(VmTag),
     #[serde(skip_deserializing)]
     Data(GcPtr<DataStruct>),
-    #[serde(skip_deserializing)]
-    Array(GcPtr<ValueArray>),
+    Array(#[serde(deserialize_seed_with = "::serialization::gc::deserialize_array")]
+          GcPtr<ValueArray>),
     #[serde(skip_deserializing)]
     Function(GcPtr<ExternFunction>),
     #[serde(skip_deserializing)]
