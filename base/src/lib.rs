@@ -2,7 +2,7 @@
 //! AST and some basic containers.
 #![doc(html_root_url="https://docs.rs/gluon_base/0.5.0")] // # GLUON
 
-extern crate log
+extern crate log;
 #[macro_use]
 extern crate quick_error;
 extern crate pretty;

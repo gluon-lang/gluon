@@ -50,6 +50,7 @@ mod core;
 mod field_map;
 mod interner;
 mod lazy;
+mod serialization;
 mod source_map;
 mod value;
 mod vm;

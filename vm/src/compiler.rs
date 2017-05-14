@@ -39,7 +39,7 @@ pub struct UpvarInfo {
     pub typ: ArcType,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct DebugInfo {
     /// Maps instruction indexes to the line that spawned them
     pub source_map: SourceMap,

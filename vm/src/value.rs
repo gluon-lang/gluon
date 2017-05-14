@@ -19,6 +19,7 @@ use thread::{Thread, Status};
 use {Error, Result, Variants};
 
 use self::Value::{Int, Float, String, Function, PartialApplication, Closure};
+use serialization::*;
 
 mopafy!(Userdata);
 pub trait Userdata: ::mopa::Any + Traverseable + fmt::Debug + Send + Sync {
@@ -233,19 +234,31 @@ mod gc_str {
 }
 pub use self::gc_str::GcStr;
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Default)]
+pub struct ValueTag;
+
+#[derive(Copy, Clone, PartialEq, DeserializeSeed)]
+#[serde(deserialize_seed = "::serialization::Seed<ValueTag>")]
 pub enum Value {
     Byte(u8),
     Int(VmInt),
     Float(f64),
-    String(GcStr),
+    String(#[serde(deserialize_seed_with = "::serialization::gc::deserialize_str")]
+           GcStr),
     Tag(VmTag),
+    #[serde(skip_deserializing)]
     Data(GcPtr<DataStruct>),
+    #[serde(skip_deserializing)]
     Array(GcPtr<ValueArray>),
+    #[serde(skip_deserializing)]
     Function(GcPtr<ExternFunction>),
+    #[serde(skip_deserializing)]
     Closure(GcPtr<ClosureData>),
+    #[serde(skip_deserializing)]
     PartialApplication(GcPtr<PartialApplicationData>),
+    #[serde(skip_deserializing)]
     Userdata(GcPtr<Box<Userdata>>),
+    #[serde(skip_deserializing)]
     Thread(GcPtr<Thread>),
 }
 

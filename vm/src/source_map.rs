@@ -6,7 +6,7 @@ use base::types::ArcType;
 
 use types::VmIndex;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct SourceMap {
     /// The index of the first instruction for each line
     map: Vec<(usize, Line)>,
@@ -60,7 +60,7 @@ pub struct Local {
     pub typ: ArcType,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct LocalMap {
     // Instruction indexes marking [start, end) where the local variable `Symbol` exists
     map: Vec<Local>,
