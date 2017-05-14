@@ -78,7 +78,8 @@ pub mod gc {
     use base::symbol::Symbol;
     use serde::{Deserialize, Deserializer};
     use serde::de::{DeserializeSeed, Error, SeqSeed};
-    use value::{GcStr, Value, ValueArray, ValueTag};
+    use value::{DataStruct, GcStr, Value, ValueArray, ValueTag};
+    use types::VmTag;
 
     impl<'de, T> GcSerialize<'de> for GcPtr<T>
         where T: GcSerialize<'de> + ::gc::Traverseable + 'static
@@ -149,6 +150,48 @@ pub mod gc {
         where D: Deserializer<'de>
     {
         Seed::<GcPtrArraySeed>::from(seed.state.clone()).deserialize(deserializer)
+    }
+
+    fn deserialize_vec<'de, D, T, U>(seed: &mut Seed<T>,
+                                     deserializer: D)
+                                     -> Result<Vec<U>, D::Error>
+        where D: Deserializer<'de>,
+              U: GcSerialize<'de>,
+              U::Seed: Clone
+    {
+        SeqSeed::new(U::Seed::from(seed.state.clone()), Vec::with_capacity)
+            .deserialize(deserializer)
+    }
+
+    #[derive(Default)]
+    pub struct GcPtrDataStructTag;
+    #[derive(DeserializeSeed)]
+    #[serde(deserialize_seed = "::serialization::Seed<GcPtrDataStructTag>")]
+    struct Data {
+        tag: VmTag,
+        #[serde(deserialize_seed_with = "deserialize_vec")]
+        elems: Vec<Value>,
+    }
+
+    pub fn deserialize_data<'de, D, T>(seed: &mut Seed<T>,
+                                       deserializer: D)
+                                       -> Result<GcPtr<DataStruct>, D::Error>
+        where D: Deserializer<'de>
+    {
+        use value::Def;
+
+        Seed::<GcPtrDataStructTag>::from(seed.state.clone())
+            .deserialize(deserializer)
+            .and_then(|data| {
+                seed.state
+                    .thread
+                    .context()
+                    .alloc(Def {
+                               tag: data.tag,
+                               elems: &data.elems,
+                           })
+                    .map_err(D::Error::custom)
+            })
     }
 
     pub fn deserialize_str<'de, D, T>(seed: &mut Seed<T>,

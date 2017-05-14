@@ -246,8 +246,8 @@ pub enum Value {
     String(#[serde(deserialize_seed_with = "::serialization::gc::deserialize_str")]
            GcStr),
     Tag(VmTag),
-    #[serde(skip_deserializing)]
-    Data(GcPtr<DataStruct>),
+    Data(#[serde(deserialize_seed_with = "::serialization::gc::deserialize_data")]
+         GcPtr<DataStruct>),
     Array(#[serde(deserialize_seed_with = "::serialization::gc::deserialize_array")]
           GcPtr<ValueArray>),
     #[serde(skip_deserializing)]
