@@ -41,10 +41,10 @@ pub struct UpvarInfo {
     pub typ: ArcType,
 }
 
-gc_serialize! { DebugInfo, DebugInfoTag }
+gc_serialize! { DebugInfo }
 
 #[derive(Debug, Default, DeserializeSeed)]
-#[serde(deserialize_seed = "::serialization::Seed<DebugInfoTag>")]
+#[serde(deserialize_seed = "::serialization::Seed<DebugInfo>")]
 pub struct DebugInfo {
     /// Maps instruction indexes to the line that spawned them
     pub source_map: SourceMap,

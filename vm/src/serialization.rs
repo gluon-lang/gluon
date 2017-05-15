@@ -65,13 +65,10 @@ pub trait GcSerialize<'de>: Sized {
 
 #[macro_export]
 macro_rules! gc_serialize {
-    ($value: ty, $tag: ident) => {
-
-        #[derive(Default)]
-        pub struct $tag;
+    ($value: ty) => {
 
         impl<'de> $crate::serialization::GcSerialize<'de> for $value {
-            type Seed = $crate::serialization::Seed<$tag>;
+            type Seed = $crate::serialization::Seed<$value>;
         }
     }
 }
@@ -80,20 +77,17 @@ pub mod gc {
     use super::*;
     use serde::{Deserialize, Deserializer};
     use serde::de::{DeserializeSeed, Error, SeqSeed};
-    use value::{DataStruct, GcStr, Value, ValueArray, ValueTag};
+    use value::{DataStruct, GcStr, Value, ValueArray};
     use thread::ThreadInternal;
     use types::VmTag;
 
     impl<'de, T> GcSerialize<'de> for GcPtr<T>
         where T: GcSerialize<'de> + ::gc::Traverseable + 'static
     {
-        type Seed = Seed<GcPtrTag<T>>;
+        type Seed = Seed<GcPtr<T>>;
     }
 
-    #[derive(Default)]
-    pub struct GcPtrTag<T>(PhantomData<T>);
-
-    impl<'de, T> DeserializeSeed<'de> for Seed<GcPtrTag<T>>
+    impl<'de, T> DeserializeSeed<'de> for Seed<GcPtr<T>>
         where T: GcSerialize<'de> + ::gc::Traverseable + 'static,
               T::Seed: DeserializeSeed<'de>
     {
@@ -124,16 +118,15 @@ pub mod gc {
             where D: Deserializer<'de>
         {
             use value::ArrayDef;
-            SeqSeed::new(Seed::<ValueTag>::from(self.state.clone()),
-                         Vec::with_capacity)
-                    .deserialize(deserializer)
-                    .and_then(|s: Vec<Value>| {
-                                  self.state
-                                      .thread
-                                      .context()
-                                      .alloc(ArrayDef(&s))
-                                      .map_err(D::Error::custom)
-                              })
+            SeqSeed::new(Seed::<Value>::from(self.state.clone()), Vec::with_capacity)
+                .deserialize(deserializer)
+                .and_then(|s: Vec<Value>| {
+                              self.state
+                                  .thread
+                                  .context()
+                                  .alloc(ArrayDef(&s))
+                                  .map_err(D::Error::custom)
+                          })
         }
     }
 
@@ -145,10 +138,8 @@ pub mod gc {
         Seed::<GcPtrArraySeed>::from(seed.state.clone()).deserialize(deserializer)
     }
 
-    #[derive(Default)]
-    pub struct GcPtrDataStructTag;
     #[derive(DeserializeSeed)]
-    #[serde(deserialize_seed = "::serialization::Seed<GcPtrDataStructTag>")]
+    #[serde(deserialize_seed = "::serialization::Seed<Data>")]
     pub struct Data {
         tag: VmTag,
         #[serde(deserialize_seed_with = "::serialization::deserialize")]
@@ -162,7 +153,7 @@ pub mod gc {
     {
         use value::Def;
 
-        Seed::<GcPtrDataStructTag>::from(seed.state.clone())
+        Seed::<Data>::from(seed.state.clone())
             .deserialize(deserializer)
             .and_then(|data| {
                 seed.state
@@ -176,13 +167,11 @@ pub mod gc {
             })
     }
 
-    #[derive(Default)]
-    pub struct GcStrTag;
     impl<'de> GcSerialize<'de> for GcStr {
-        type Seed = Seed<GcStrTag>;
+        type Seed = Seed<GcStr>;
     }
 
-    impl<'de> DeserializeSeed<'de> for Seed<GcStrTag> {
+    impl<'de> DeserializeSeed<'de> for Seed<GcStr> {
         type Value = GcStr;
 
         fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
@@ -205,13 +194,11 @@ pub mod symbol {
     use base::symbol::Symbol;
     use serde::{Deserialize, Deserializer};
 
-    #[derive(Default)]
-    pub struct SymbolTag;
     impl<'de> GcSerialize<'de> for Symbol {
-        type Seed = Seed<SymbolTag>;
+        type Seed = Seed<Symbol>;
     }
 
-    impl<'de> DeserializeSeed<'de> for Seed<SymbolTag> {
+    impl<'de> DeserializeSeed<'de> for Seed<Symbol> {
         type Value = Symbol;
 
         fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
@@ -230,13 +217,11 @@ pub mod intern {
     use serde::{Deserialize, Deserializer};
     use serde::de::{DeserializeSeed, SeqSeed};
 
-    #[derive(Default)]
-    pub struct InternedStrTag;
     impl<'de> GcSerialize<'de> for InternedStr {
-        type Seed = Seed<InternedStrTag>;
+        type Seed = Seed<InternedStr>;
     }
 
-    impl<'de> DeserializeSeed<'de> for Seed<InternedStrTag> {
+    impl<'de> DeserializeSeed<'de> for Seed<InternedStr> {
         type Value = InternedStr;
 
         fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
@@ -253,16 +238,14 @@ pub mod intern {
     }
 }
 
-#[derive(Default)]
-pub struct VecTag<T>(PhantomData<T>);
 impl<'de, T> GcSerialize<'de> for Vec<T>
     where T: GcSerialize<'de>,
           T::Seed: Clone
 {
-    type Seed = Seed<VecTag<T>>;
+    type Seed = Seed<Vec<T>>;
 }
 
-impl<'de, T> DeserializeSeed<'de> for Seed<VecTag<T>>
+impl<'de, T> DeserializeSeed<'de> for Seed<Vec<T>>
     where T: GcSerialize<'de>,
           T::Seed: Clone
 {

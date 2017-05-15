@@ -8,13 +8,9 @@ use base::fnv::FnvMap;
 use gc::{Gc, Traverseable};
 use value::GcStr;
 
-#[derive(Default)]
-struct InternedStrTag;
 /// Interned strings which allow for fast equality checks and hashing
-#[derive(Copy, Clone, Eq, DeserializeSeed)]
-#[serde(deserialize_seed = "::serialization::Seed<InternedStrTag>")]
-pub struct InternedStr(#[serde(deserialize_seed_with = "::serialization::deserialize")]
-                       GcStr);
+#[derive(Copy, Clone, Eq)]
+pub struct InternedStr(GcStr);
 
 impl PartialEq<InternedStr> for InternedStr {
     fn eq(&self, other: &InternedStr) -> bool {

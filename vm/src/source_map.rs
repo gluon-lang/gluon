@@ -52,10 +52,10 @@ impl SourceMap {
     }
 }
 
-gc_serialize!{ Local, LocalTag }
+gc_serialize!{ Local }
 
 #[derive(Debug, DeserializeSeed)]
-#[serde(deserialize_seed = "::serialization::Seed<LocalTag>")]
+#[serde(deserialize_seed = "::serialization::Seed<Local>")]
 pub struct Local {
     start: usize,
     end: usize,
@@ -67,10 +67,10 @@ pub struct Local {
     pub typ: ArcType,
 }
 
-gc_serialize!{ LocalMap, LocalMapTag }
+gc_serialize!{ LocalMap }
 
 #[derive(Debug, Default, DeserializeSeed)]
-#[serde(deserialize_seed = "::serialization::Seed<LocalMapTag>")]
+#[serde(deserialize_seed = "::serialization::Seed<LocalMap>")]
 pub struct LocalMap {
     // Instruction indexes marking [start, end) where the local variable `Symbol` exists
     #[serde(deserialize_seed_with = "::serialization::deserialize")]

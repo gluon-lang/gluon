@@ -105,10 +105,10 @@ unsafe impl DataDef for ClosureInitDef {
     }
 }
 
-gc_serialize!{ BytecodeFunction, BytecodeFunctionTag }
+gc_serialize!{ BytecodeFunction }
 
 #[derive(Debug, DeserializeSeed)]
-#[serde(deserialize_seed = "::serialization::Seed<BytecodeFunctionTag>")]
+#[serde(deserialize_seed = "::serialization::Seed<BytecodeFunction>")]
 pub struct BytecodeFunction {
     #[serde(deserialize_seed_with = "::serialization::deserialize")]
     pub name: Symbol,
@@ -241,10 +241,10 @@ mod gc_str {
 }
 pub use self::gc_str::GcStr;
 
-gc_serialize!{ Value, ValueTag }
+gc_serialize!{ Value }
 
 #[derive(Copy, Clone, PartialEq, DeserializeSeed)]
-#[serde(deserialize_seed = "::serialization::Seed<ValueTag>")]
+#[serde(deserialize_seed = "::serialization::Seed<Value>")]
 pub enum Value {
     Byte(u8),
     Int(VmInt),
