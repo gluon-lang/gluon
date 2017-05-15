@@ -106,17 +106,31 @@ unsafe impl DataDef for ClosureInitDef {
     }
 }
 
+#[derive(Default)]
+pub struct BytecodeFunctionTag;
 
-#[derive(Debug)]
+impl<'de> ::serialization::GcSerialize<'de> for BytecodeFunction {
+    type Seed = ::serialization::Seed<BytecodeFunctionTag>;
+}
+
+#[derive(Debug, DeserializeSeed)]
+#[serde(deserialize_seed = "::serialization::Seed<BytecodeFunctionTag>")]
 pub struct BytecodeFunction {
+    #[serde(deserialize_seed_with = "::serialization::symbol::deserialize")]
     pub name: Symbol,
     pub args: VmIndex,
     pub max_stack_size: VmIndex,
+    #[serde(skip_deserializing)]
     pub instructions: Vec<Instruction>,
+    #[serde(skip_deserializing)]
     pub inner_functions: Vec<GcPtr<BytecodeFunction>>,
+    #[serde(deserialize_seed_with = "::serialization::gc::deserialize_vec")]
     pub strings: Vec<InternedStr>,
+    #[serde(deserialize_seed_with = "::serialization::gc::deserialize_vec")]
     pub globals: Vec<Value>,
+    #[serde(deserialize_seed_with = "::serialization::deserialize")]
     pub records: Vec<Vec<InternedStr>>,
+    #[serde(skip_deserializing)]
     pub debug_info: DebugInfo,
 }
 
