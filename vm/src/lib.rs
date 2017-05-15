@@ -30,6 +30,9 @@ extern crate gluon_base as base;
 extern crate gluon_check as check;
 
 #[macro_use]
+mod serialization;
+
+#[macro_use]
 pub mod api;
 pub mod channel;
 pub mod compiler;
@@ -50,7 +53,6 @@ mod core;
 mod field_map;
 mod interner;
 mod lazy;
-mod serialization;
 mod source_map;
 mod value;
 mod vm;

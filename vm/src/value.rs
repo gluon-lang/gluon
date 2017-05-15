@@ -19,7 +19,6 @@ use thread::{Thread, Status};
 use {Error, Result, Variants};
 
 use self::Value::{Int, Float, String, Function, PartialApplication, Closure};
-use serialization::*;
 
 mopafy!(Userdata);
 pub trait Userdata: ::mopa::Any + Traverseable + fmt::Debug + Send + Sync {
@@ -106,12 +105,7 @@ unsafe impl DataDef for ClosureInitDef {
     }
 }
 
-#[derive(Default)]
-pub struct BytecodeFunctionTag;
-
-impl<'de> ::serialization::GcSerialize<'de> for BytecodeFunction {
-    type Seed = ::serialization::Seed<BytecodeFunctionTag>;
-}
+gc_serialize!{ BytecodeFunction, BytecodeFunctionTag }
 
 #[derive(Debug, DeserializeSeed)]
 #[serde(deserialize_seed = "::serialization::Seed<BytecodeFunctionTag>")]
@@ -120,9 +114,8 @@ pub struct BytecodeFunction {
     pub name: Symbol,
     pub args: VmIndex,
     pub max_stack_size: VmIndex,
-    #[serde(skip_deserializing)]
     pub instructions: Vec<Instruction>,
-    #[serde(skip_deserializing)]
+    #[serde(deserialize_seed_with = "::serialization::deserialize")]
     pub inner_functions: Vec<GcPtr<BytecodeFunction>>,
     #[serde(deserialize_seed_with = "::serialization::deserialize")]
     pub strings: Vec<InternedStr>,
@@ -130,7 +123,7 @@ pub struct BytecodeFunction {
     pub globals: Vec<Value>,
     #[serde(deserialize_seed_with = "::serialization::deserialize")]
     pub records: Vec<Vec<InternedStr>>,
-    #[serde(skip_deserializing)]
+    #[serde(deserialize_seed_with = "::serialization::deserialize")]
     pub debug_info: DebugInfo,
 }
 
@@ -248,8 +241,7 @@ mod gc_str {
 }
 pub use self::gc_str::GcStr;
 
-#[derive(Default)]
-pub struct ValueTag;
+gc_serialize!{ Value, ValueTag }
 
 #[derive(Copy, Clone, PartialEq, DeserializeSeed)]
 #[serde(deserialize_seed = "::serialization::Seed<ValueTag>")]

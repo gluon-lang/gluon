@@ -7,7 +7,7 @@ use serde::de::{DeserializeSeed, SeqSeed};
 
 use base::symbol::Symbols;
 use gc::GcPtr;
-use thread::{RootedThread, ThreadInternal};
+use thread::RootedThread;
 
 #[derive(Clone)]
 pub struct DeSeed {
@@ -63,22 +63,25 @@ pub trait GcSerialize<'de>: Sized {
     type Seed: DeserializeSeed<'de, Value = Self> + From<DeSeed>;
 }
 
-pub mod value {
-    use super::*;
-    use value::{Value, ValueTag};
-    use interner::InternedStr;
+#[macro_export]
+macro_rules! gc_serialize {
+    ($value: ty, $tag: ident) => {
 
-    impl<'de> GcSerialize<'de> for Value {
-        type Seed = Seed<ValueTag>;
+        #[derive(Default)]
+        pub struct $tag;
+
+        impl<'de> $crate::serialization::GcSerialize<'de> for $value {
+            type Seed = $crate::serialization::Seed<$tag>;
+        }
     }
 }
 
 pub mod gc {
     use super::*;
-    use base::symbol::Symbol;
     use serde::{Deserialize, Deserializer};
     use serde::de::{DeserializeSeed, Error, SeqSeed};
     use value::{DataStruct, GcStr, Value, ValueArray, ValueTag};
+    use thread::ThreadInternal;
     use types::VmTag;
 
     impl<'de, T> GcSerialize<'de> for GcPtr<T>
@@ -146,7 +149,7 @@ pub mod gc {
     pub struct GcPtrDataStructTag;
     #[derive(DeserializeSeed)]
     #[serde(deserialize_seed = "::serialization::Seed<GcPtrDataStructTag>")]
-    struct Data {
+    pub struct Data {
         tag: VmTag,
         #[serde(deserialize_seed_with = "::serialization::deserialize")]
         elems: Vec<Value>,

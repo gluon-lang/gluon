@@ -6,9 +6,10 @@ use base::types::ArcType;
 
 use types::VmIndex;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Deserialize)]
 pub struct SourceMap {
     /// The index of the first instruction for each line
+    #[serde(skip_deserializing)]
     map: Vec<(usize, Line)>,
 }
 
@@ -51,18 +52,28 @@ impl SourceMap {
     }
 }
 
-#[derive(Debug)]
+gc_serialize!{ Local, LocalTag }
+
+#[derive(Debug, DeserializeSeed)]
+#[serde(deserialize_seed = "::serialization::Seed<LocalTag>")]
 pub struct Local {
     start: usize,
     end: usize,
     pub index: VmIndex,
+    #[serde(deserialize_seed_with = "::serialization::deserialize")]
     pub name: Symbol,
+    #[serde(skip_deserializing)]
+    #[serde(default = "::base::types::Type::hole")]
     pub typ: ArcType,
 }
 
-#[derive(Debug, Default)]
+gc_serialize!{ LocalMap, LocalMapTag }
+
+#[derive(Debug, Default, DeserializeSeed)]
+#[serde(deserialize_seed = "::serialization::Seed<LocalMapTag>")]
 pub struct LocalMap {
     // Instruction indexes marking [start, end) where the local variable `Symbol` exists
+    #[serde(deserialize_seed_with = "::serialization::deserialize")]
     map: Vec<Local>,
 }
 
