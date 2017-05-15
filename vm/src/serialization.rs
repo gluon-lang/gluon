@@ -111,16 +111,6 @@ pub mod gc {
         }
     }
 
-    pub fn deserialize<'de, D, T, U>(seed: &mut Seed<U>,
-                                     deserializer: D)
-                                     -> Result<GcPtr<T>, D::Error>
-        where D: Deserializer<'de>,
-              T: GcSerialize<'de> + ::gc::Traverseable + 'static,
-              T::Seed: DeserializeSeed<'de>
-    {
-        Seed::<GcPtrTag<T>>::from(seed.state.clone()).deserialize(deserializer)
-    }
-
     #[derive(Default)]
     pub struct GcPtrArraySeed;
 
@@ -152,24 +142,13 @@ pub mod gc {
         Seed::<GcPtrArraySeed>::from(seed.state.clone()).deserialize(deserializer)
     }
 
-    pub fn deserialize_vec<'de, D, T, U>(seed: &mut Seed<T>,
-                                         deserializer: D)
-                                         -> Result<Vec<U>, D::Error>
-        where D: Deserializer<'de>,
-              U: GcSerialize<'de>,
-              U::Seed: Clone
-    {
-        SeqSeed::new(U::Seed::from(seed.state.clone()), Vec::with_capacity)
-            .deserialize(deserializer)
-    }
-
     #[derive(Default)]
     pub struct GcPtrDataStructTag;
     #[derive(DeserializeSeed)]
     #[serde(deserialize_seed = "::serialization::Seed<GcPtrDataStructTag>")]
     struct Data {
         tag: VmTag,
-        #[serde(deserialize_seed_with = "deserialize_vec")]
+        #[serde(deserialize_seed_with = "::serialization::deserialize")]
         elems: Vec<Value>,
     }
 
@@ -194,19 +173,27 @@ pub mod gc {
             })
     }
 
-    pub fn deserialize_str<'de, D, T>(seed: &mut Seed<T>,
-                                      deserializer: D)
-                                      -> Result<GcStr, D::Error>
-        where D: Deserializer<'de>
-    {
-        String::deserialize(deserializer)
-            .map(|s| unsafe {
-                     GcStr::from_utf8_unchecked(seed.state
-                                                    .thread
-                                                    .context()
-                                                    .alloc(s.as_bytes())
-                                                    .unwrap())
-                 })
+    #[derive(Default)]
+    pub struct GcStrTag;
+    impl<'de> GcSerialize<'de> for GcStr {
+        type Seed = Seed<GcStrTag>;
+    }
+
+    impl<'de> DeserializeSeed<'de> for Seed<GcStrTag> {
+        type Value = GcStr;
+
+        fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where D: Deserializer<'de>
+        {
+            String::deserialize(deserializer)
+                .map(|s| unsafe {
+                         GcStr::from_utf8_unchecked(self.state
+                                                        .thread
+                                                        .context()
+                                                        .alloc(s.as_bytes())
+                                                        .unwrap())
+                     })
+        }
     }
 }
 
@@ -215,10 +202,20 @@ pub mod symbol {
     use base::symbol::Symbol;
     use serde::{Deserialize, Deserializer};
 
-    pub fn deserialize<'de, D, T>(seed: &mut Seed<T>, deserializer: D) -> Result<Symbol, D::Error>
-        where D: Deserializer<'de>
-    {
-        String::deserialize(deserializer).map(|s| seed.state.symbols.borrow_mut().symbol(s))
+    #[derive(Default)]
+    pub struct SymbolTag;
+    impl<'de> GcSerialize<'de> for Symbol {
+        type Seed = Seed<SymbolTag>;
+    }
+
+    impl<'de> DeserializeSeed<'de> for Seed<SymbolTag> {
+        type Value = Symbol;
+
+        fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where D: Deserializer<'de>
+        {
+            String::deserialize(deserializer).map(|s| self.state.symbols.borrow_mut().symbol(s))
+        }
     }
 }
 
@@ -250,14 +247,6 @@ pub mod intern {
                                                           .unwrap()
                                                   })
         }
-    }
-
-    pub fn deserialize<'de, D, T>(seed: &mut Seed<T>,
-                                  deserializer: D)
-                                  -> Result<InternedStr, D::Error>
-        where D: Deserializer<'de>
-    {
-        Seed::<InternedStrTag>::from(seed.state.clone()).deserialize(deserializer)
     }
 }
 

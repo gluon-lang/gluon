@@ -13,7 +13,7 @@ struct InternedStrTag;
 /// Interned strings which allow for fast equality checks and hashing
 #[derive(Copy, Clone, Eq, DeserializeSeed)]
 #[serde(deserialize_seed = "::serialization::Seed<InternedStrTag>")]
-pub struct InternedStr(#[serde(deserialize_seed_with = "::serialization::gc::deserialize_str")]
+pub struct InternedStr(#[serde(deserialize_seed_with = "::serialization::deserialize")]
                        GcStr);
 
 impl PartialEq<InternedStr> for InternedStr {

@@ -116,7 +116,7 @@ impl<'de> ::serialization::GcSerialize<'de> for BytecodeFunction {
 #[derive(Debug, DeserializeSeed)]
 #[serde(deserialize_seed = "::serialization::Seed<BytecodeFunctionTag>")]
 pub struct BytecodeFunction {
-    #[serde(deserialize_seed_with = "::serialization::symbol::deserialize")]
+    #[serde(deserialize_seed_with = "::serialization::deserialize")]
     pub name: Symbol,
     pub args: VmIndex,
     pub max_stack_size: VmIndex,
@@ -124,9 +124,9 @@ pub struct BytecodeFunction {
     pub instructions: Vec<Instruction>,
     #[serde(skip_deserializing)]
     pub inner_functions: Vec<GcPtr<BytecodeFunction>>,
-    #[serde(deserialize_seed_with = "::serialization::gc::deserialize_vec")]
+    #[serde(deserialize_seed_with = "::serialization::deserialize")]
     pub strings: Vec<InternedStr>,
-    #[serde(deserialize_seed_with = "::serialization::gc::deserialize_vec")]
+    #[serde(deserialize_seed_with = "::serialization::deserialize")]
     pub globals: Vec<Value>,
     #[serde(deserialize_seed_with = "::serialization::deserialize")]
     pub records: Vec<Vec<InternedStr>>,
@@ -257,7 +257,7 @@ pub enum Value {
     Byte(u8),
     Int(VmInt),
     Float(f64),
-    String(#[serde(deserialize_seed_with = "::serialization::gc::deserialize_str")]
+    String(#[serde(deserialize_seed_with = "::serialization::deserialize")]
            GcStr),
     Tag(VmTag),
     Data(#[serde(deserialize_seed_with = "::serialization::gc::deserialize_data")]
