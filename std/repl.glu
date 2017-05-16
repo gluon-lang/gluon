@@ -91,10 +91,8 @@ let loop editor : Editor -> IO () =
             pure True
         else if string.starts_with line ":" then
             do_command line
-        else if string.starts_with line "def " then
-            store (string.slice line 4 (string.length line))
         else
-            io.catch (io.run_expr line) pure
+            io.catch (repl_prim.eval_line line) pure
                 >>= io.println
                 *> pure True
 

@@ -159,6 +159,10 @@ impl Compiler {
         self
     }
 
+    pub fn mut_symbols(&mut self) -> &mut Symbols {
+        &mut self.symbols
+    }
+
     /// Parse `expr_str`, returning an expression if successful
     pub fn parse_expr(&mut self,
                       file: &str,

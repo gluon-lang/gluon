@@ -467,3 +467,8 @@ SpExpr: SpannedExpr<Id> = {
 pub TopExpr: SpannedExpr<Id> = {
     <expr: SpExpr> => expr,
 };
+
+pub LetOrExpr: Result<SpannedExpr<Id>, ValueBinding<Id>> = {
+    <TopExpr> => Ok(<>),
+    "block open" "let" <ValueBinding> SkipExtraTokens => Err(<>)
+};

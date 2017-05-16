@@ -1042,7 +1042,7 @@ impl<'vm, T, V> Pushable<'vm> for OpaqueValue<T, V>
 
 impl<'vm, V> Getable<'vm> for OpaqueValue<&'vm Thread, V> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<OpaqueValue<&'vm Thread, V>> {
-        Some(OpaqueValue(vm.root_value_ref(*value.0), PhantomData))
+        Some(OpaqueValue(vm.root_value(*value.0), PhantomData))
     }
 }
 
@@ -1104,7 +1104,7 @@ impl<'vm, T: VmType> Pushable<'vm> for Array<'vm, T>
 
 impl<'vm, T> Getable<'vm> for Array<'vm, T> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<Array<'vm, T>> {
-        Some(Array(vm.root_value_ref(*value.0), PhantomData))
+        Some(Array(vm.root_value(*value.0), PhantomData))
     }
 }
 
@@ -1705,7 +1705,7 @@ impl<'vm, T, F: Any> Pushable<'vm> for Function<T, F>
 impl<'vm, F> Getable<'vm> for Function<&'vm Thread, F> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<Function<&'vm Thread, F>> {
         Some(Function {
-                 value: vm.root_value_ref(*value.0),
+                 value: vm.root_value(*value.0),
                  _marker: PhantomData,
              }) //TODO not type safe
     }

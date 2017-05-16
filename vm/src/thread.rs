@@ -125,6 +125,19 @@ impl<T> RootedValue<T>
     {
         self.vm.clone()
     }
+
+    pub fn get<'vm>(&'vm self, index: usize) -> Option<RootedValue<T>>
+        where T: VmRoot<'vm>
+    {
+        match self.value {
+            Value::Data(ref v) => {
+                v.fields
+                    .get(index)
+                    .map(|value| self.vm.root_value(*value))
+            }
+            _ => None,
+        }
+    }
 }
 
 impl<'vm> RootedValue<&'vm Thread> {
@@ -487,6 +500,23 @@ impl Thread {
     }
 }
 
+pub trait VmRoot<'a>: Deref<Target = Thread> {
+    fn root(thread: &'a Thread) -> Self;
+}
+
+impl<'a> VmRoot<'a> for &'a Thread {
+    fn root(thread: &'a Thread) -> Self {
+        thread
+    }
+}
+
+impl<'a> VmRoot<'a> for RootedThread {
+    fn root(thread: &'a Thread) -> Self {
+        thread.root_thread()
+    }
+}
+
+
 /// Internal functions for interacting with threads. These functions should be considered both
 /// unsafe and unstable.
 pub trait ThreadInternal
@@ -502,10 +532,8 @@ pub trait ThreadInternal
     fn root_string<'vm>(&'vm self, ptr: GcStr) -> RootStr<'vm>;
 
     /// Roots a value
-    fn root_value(&self, value: Value) -> RootedValue<RootedThread>;
+    fn root_value<'vm, T>(&'vm self, value: Value) -> RootedValue<T> where T: VmRoot<'vm>;
 
-    /// Roots a value
-    fn root_value_ref(&self, value: Value) -> RootedValue<&Thread>;
 
     fn add_bytecode(&self,
                     name: &str,
@@ -543,6 +571,8 @@ pub trait ThreadInternal
     fn deep_clone_value(&self, owner: &Thread, value: Value) -> Result<Value>;
 
     fn can_share_values_with(&self, gc: &mut Gc, other: &Thread) -> bool;
+
+    fn lookup_field(&self, value: Value, field: &str) -> Result<Value>;
 }
 
 impl ThreadInternal for Thread {
@@ -577,19 +607,12 @@ impl ThreadInternal for Thread {
     }
 
     /// Roots a value
-    fn root_value(&self, value: Value) -> RootedValue<RootedThread> {
+    fn root_value<'vm, T>(&'vm self, value: Value) -> RootedValue<T>
+        where T: VmRoot<'vm>
+    {
         self.rooted_values.write().unwrap().push(value);
         RootedValue {
-            vm: self.root_thread(),
-            value: value,
-        }
-    }
-
-    /// Roots a value
-    fn root_value_ref(&self, value: Value) -> RootedValue<&Thread> {
-        self.rooted_values.write().unwrap().push(value);
-        RootedValue {
-            vm: self,
+            vm: T::root(self),
             value: value,
         }
     }
@@ -725,6 +748,22 @@ impl ThreadInternal for Thread {
             child = next;
         }
         false
+    }
+
+    fn lookup_field(&self, value: Value, field: &str) -> Result<Value> {
+        let context = self.context.lock().unwrap();
+        let str_index = self.global_env().intern(field)?;
+        context
+            .record_map
+            .get_offset(0, str_index)
+            .and_then(|index| match value {
+                          Data(data) => data.fields.get(index as usize).cloned(),
+                          _ => None,
+                      })
+            .ok_or_else(|| {
+                            Error::Message(format!("Internal error: Undefined record field {}",
+                                                   str_index))
+                        })
     }
 }
 
@@ -1054,8 +1093,7 @@ impl<'b> OwnedContext<'b> {
                                    instruction_index,
                                    closure.function.instructions.len());
 
-                            let new_context =
-                                try_ready!(context.execute_(instruction_index,
+                            let new_context = try_ready!(context.execute_(instruction_index,
                                                             &closure.function.instructions,
                                                             &closure.function));
                             if new_context.is_some() {

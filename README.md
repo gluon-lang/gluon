@@ -61,6 +61,13 @@ Gluon has a small executable which can be used to run gluon programs directly or
 
 REPL features:
 * Evaluating expressions (expressions of type IO will be evaluated in the IO context).
+* Bind variables by writing `let <pattern> <identifier>* = <expr>` (omitting `in <expr>` from a normal let binding)
+    Example:
+
+         let f x = x + 1
+         let { x, y = z } = { x = 1, y = 2 }
+         f z
+
 * Printing help about available commands with `:h`
 * Loading files with `:l path_to_file` the result of evaluating the expression in the loaded file is stored in a variable named after the filename without an extension.
 * Checking the types of expressions with `:t expression`
