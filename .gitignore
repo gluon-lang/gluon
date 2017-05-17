@@ -4,6 +4,8 @@
 # rustfmt backup files
 *.bk
 
+*.bak
+
 target
 Cargo.lock
 
