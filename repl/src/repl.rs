@@ -287,7 +287,8 @@ fn compile_repl(vm: &Thread) -> Result<(), Box<StdError + Send + Sync>> {
         eval_line => primitive!(1 eval_line)
     ))?;
 
-    const REPL_SOURCE: &'static str = include_str!("../../std/repl.glu");
+    const REPL_SOURCE: &'static str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"),
+                                                           "/src/repl.glu"));
 
     let mut compiler = Compiler::new();
     compiler

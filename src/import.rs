@@ -47,10 +47,9 @@ macro_rules! std_libs {
     }
 }
 // Include the standard library distribution in the binary
-static STD_LIBS: [(&'static str, &'static str); 8] = std_libs!("prelude",
+static STD_LIBS: [(&'static str, &'static str); 7] = std_libs!("prelude",
                                                                "types",
                                                                "map",
-                                                               "repl",
                                                                "string",
                                                                "state",
                                                                "test",
