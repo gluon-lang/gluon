@@ -17,6 +17,25 @@ impl<'a, T: ?Sized + KindEnv> KindEnv for &'a T {
     }
 }
 
+#[derive(Clone)]
+pub struct KindSeed(pub ::serialization::NodeMap<ArcKind>);
+
+impl AsMut<::serialization::NodeMap<ArcKind>> for KindSeed {
+    fn as_mut(&mut self) -> &mut ::serialization::NodeMap<ArcKind> {
+        &mut self.0
+    }
+}
+
+impl KindSeed {
+    fn deserialize<'de, D>(seed: &mut KindSeed, deserializer: D) -> Result<ArcKind, D::Error>
+        where D: ::serde::Deserializer<'de>
+    {
+        let seed = ::serialization::SharedSeed(::serialization::MapSeed::<_, fn (_) -> _>::new(seed.clone(),
+                                                                             ArcKind::new));
+        ::serde::de::DeserializeSeed::deserialize(seed, deserializer)
+    }
+}
+
 /// Kind representation
 ///
 /// All types in gluon has a kind. Most types encountered are of the `Type` kind which
@@ -24,7 +43,8 @@ impl<'a, T: ?Sized + KindEnv> KindEnv for &'a T {
 /// which are said to be "higher kinded" and these use the `Function` (a -> b) variant.
 /// These types include `Option` and `(->)` which both have the kind `Type -> Type -> Type`
 /// as well as `Functor` which has the kind `Type -> Type -> Type`.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, DeserializeSeed)]
+#[serde(deserialize_seed = "KindSeed")]
 pub enum Kind {
     Hole,
     /// Representation for a kind which is yet to be inferred.
@@ -34,7 +54,10 @@ pub enum Kind {
     /// Kinds of rows (for polymorphic records).
     Row,
     /// Constructor which takes two kinds, taking the first as argument and returning the second.
-    Function(ArcKind, ArcKind),
+    Function(#[serde(deserialize_seed_with = "KindSeed::deserialize")]
+             ArcKind,
+             #[serde(deserialize_seed_with = "KindSeed::deserialize")]
+             ArcKind),
 }
 
 impl Kind {

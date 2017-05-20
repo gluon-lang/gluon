@@ -126,7 +126,7 @@ impl<Id> TypeCache<Id> {
 }
 
 /// All the builtin types of gluon
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash, Deserialize)]
 pub enum BuiltinType {
     /// Unicode string
     String,
@@ -181,8 +181,33 @@ impl BuiltinType {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct TypeVariableSeed(::serialization::NodeMap<ArcKind>);
+
+impl TypeVariableSeed {
+    fn deserialize<'de, Id, T, D>(seed: &mut TypeSeed<Id, T>,
+                                  deserializer: D)
+                                  -> Result<TypeVariable, D::Error>
+        where D: ::serde::Deserializer<'de>
+    {
+
+        ::serde::de::DeserializeSeed::deserialize(TypeVariableSeed(seed.kind_map.clone()),
+                                                  deserializer)
+    }
+
+    fn deserialize_kind<'de, D>(&mut self, deserializer: D) -> Result<ArcKind, D::Error>
+        where D: ::serde::Deserializer<'de>
+    {
+        use serialization::{MapSeed, SharedSeed};
+        let seed = SharedSeed(MapSeed::<_, fn(_) -> _>::new(::kind::KindSeed(self.0.clone()),
+                                                            ArcKind::new));
+        ::serde::de::DeserializeSeed::deserialize(seed, deserializer)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash, DeserializeSeed)]
+#[serde(deserialize_seed = "TypeVariableSeed")]
 pub struct TypeVariable {
+    #[serde(deserialize_seed_with = "TypeVariableSeed::deserialize_kind")]
     pub kind: ArcKind,
     pub id: u32,
 }
@@ -399,13 +424,32 @@ impl<Id, T> Field<Id, T> {
     }
 }
 
+pub struct TypeSeed<Id, T> {
+    type_map: ::serialization::NodeMap<T>,
+    kind_map: ::serialization::NodeMap<ArcKind>,
+    _marker: PhantomData<(Id, T)>,
+}
+
+impl<Id, T> TypeSeed<Id, T> {
+    pub fn new(type_map: ::serialization::NodeMap<T>,
+               kind_map: ::serialization::NodeMap<ArcKind>)
+               -> TypeSeed<Id, T> {
+        TypeSeed {
+            type_map: type_map,
+            kind_map: kind_map,
+            _marker: PhantomData,
+        }
+    }
+}
+
 /// The representation of gluon's types.
 ///
 /// For efficency this enum is not stored directly but instead a pointer wrapper which derefs to
 /// `Type` is used to enable types to be shared. It is recommended to use the static functions on
 /// `Type` such as `Type::app` and `Type::record` when constructing types as those will construct
 /// the pointer wrapper directly.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, DeserializeSeed)]
+#[serde(deserialize_seed = "TypeSeed<Id, T>")]
 pub enum Type<Id, T = ArcType<Id>> {
     /// An unbound type `_`, awaiting ascription.
     Hole,
@@ -415,14 +459,18 @@ pub enum Type<Id, T = ArcType<Id>> {
     Builtin(BuiltinType),
     /// A type application with multiple arguments. For example,
     /// `Map String Int` would be represented as `App(Map, [String, Int])`.
+    #[serde(skip_deserializing)]
     App(T, AppVec<T>),
     /// Record constructor, of kind `Row -> Type`
+    #[serde(skip_deserializing)]
     Record(T),
     /// Variant constructor, of kind `Row -> Type`
+    #[serde(skip_deserializing)]
     Variant(T),
     /// The empty row, of kind `Row`
     EmptyRow,
     /// Row extension, of kind `... -> Row -> Row`
+    #[serde(skip_deserializing)]
     ExtendRow {
         /// The associated types of this record type
         types: Vec<Field<Id, Alias<Id, T>>>,
@@ -437,13 +485,17 @@ pub enum Type<Id, T = ArcType<Id>> {
     /// Identifiers are also sometimes used inside aliased types to avoid cycles
     /// in reference counted pointers. This is a bit of a wart at the moment and
     /// _may_ cause spurious unification failures.
+    #[serde(skip_deserializing)]
     Ident(Id),
     /// An unbound type variable that may be unified with other types. These
     /// will eventually be converted into `Type::Generic`s during generalization.
-    Variable(TypeVariable),
+    Variable(#[serde(deserialize_seed_with = "TypeVariableSeed::deserialize")]
+             TypeVariable),
     /// A variable that needs to be instantiated with a fresh type variable
     /// when the binding is refered to.
+    #[serde(skip_deserializing)]
     Generic(Generic<Id>),
+    #[serde(skip_deserializing)]
     Alias(AliasRef<Id, T>),
 }
 
