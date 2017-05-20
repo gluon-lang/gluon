@@ -67,6 +67,7 @@ pub mod pretty_print;
 pub mod pos;
 pub mod resolve;
 pub mod scoped_map;
+pub mod serialization;
 pub mod source;
 pub mod symbol;
 pub mod types;
