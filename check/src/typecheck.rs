@@ -16,7 +16,7 @@ use base::merge;
 use base::pos::{BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
 use base::types::{self, Alias, AliasData, AppVec, ArcType, Field, Generic};
-use base::types::{PrimitiveEnv, Type, TypeEnv, TypeVariable, TypeCache};
+use base::types::{PrimitiveEnv, RecordSelector, Type, TypeEnv, TypeVariable, TypeCache};
 
 use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
 use substitution::Substitution;
@@ -174,26 +174,25 @@ impl<'a> TypeEnv for Environment<'a> {
             .or_else(|| self.environment.find_type_info(id))
     }
 
-    fn find_record(&self, fields: &[Symbol]) -> Option<(ArcType, ArcType)> {
+    fn find_record(&self,
+                   fields: &[Symbol],
+                   selector: RecordSelector)
+                   -> Option<(ArcType, ArcType)> {
         self.stack_types
             .iter()
             .find(|&(_, &(_, ref alias))| match **alias.unresolved_type() {
                 Type::Record(ref row) => {
-                        // Check that all of `fields` exist in the record
-                        fields.iter()
-                            .all(|name| {
-                                row.row_iter()
-                                    .map(|f| &f.name)
-                                    .chain(row.type_field_iter().map(|f| &f.name))
-                                    .any(|other| other.name_eq(name))
-                            })
+                        let record_fields = || row.row_iter()
+                            .map(|f| f.name.name())
+                            .chain(row.type_field_iter ().map(|f| f.name.name()));
+                        selector.matches(record_fields, fields.iter().map(|field| field.name()))
                     }
                     _ => false,
                 }
             )
             // FIXME Don't use unresolved_type
             .map(|t| ((t.1).0.clone(), (t.1).1.unresolved_type().clone()))
-            .or_else(|| self.environment.find_record(fields))
+            .or_else(|| self.environment.find_record(fields, selector))
     }
 }
 
@@ -290,7 +289,10 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn find_record(&self, fields: &[Symbol]) -> TcResult<(ArcType, ArcType)> {
+    fn find_record(&self,
+                   fields: &[Symbol],
+                   selector: RecordSelector)
+                   -> TcResult<(ArcType, ArcType)> {
         // If fields is empty it is going to match any record which means this function probably
         // returns the wrong record as the record we expect can still contain type fields.
         // Just return an error so that inference continues without any guessed record type.
@@ -298,7 +300,7 @@ impl<'a> Typecheck<'a> {
             Err(TypeError::UndefinedRecord { fields: fields.to_owned() })
         } else {
             self.environment
-                .find_record(fields)
+                .find_record(fields, selector)
                 .ok_or(TypeError::UndefinedRecord { fields: fields.to_owned() })
         }
     }
@@ -649,7 +651,8 @@ impl<'a> Typecheck<'a> {
                     // Eagerly attempt to find a record with `field_access` since infering to just
                     // a polymorphic record may cause some code to fail to infer such as
                     // the test `row_polymorphism::late_merge_with_signature`
-                    if let Ok(record_type) = self.find_record(&[field_id.clone()])
+                    if let Ok(record_type) = self.find_record(&[field_id.clone()],
+                                                              RecordSelector::Subset)
                            .map(|t| t.0.clone()) {
                         let record_type = self.instantiate(&record_type);
                         expr_typ = self.unify(&record_type, expr_typ)?;
@@ -741,7 +744,7 @@ impl<'a> Typecheck<'a> {
                     .map(|f| f.name.clone())
                     .chain(new_types.iter().map(|f| f.name.clone()))
                     .collect::<Vec<_>>();
-                let result = self.find_record(&record_fields)
+                let result = self.find_record(&record_fields, RecordSelector::Exact)
                     .map(|t| (t.0.clone(), t.1.clone()));
                 let (id_type, record_type) = match result {
                     Ok(x) => x,
@@ -815,7 +818,6 @@ impl<'a> Typecheck<'a> {
                 ref mut fields,
             } => {
                 *curr_typ = match_type.clone();
-                let mut match_type = self.remove_alias(match_type);
 
                 let mut pattern_fields = Vec::with_capacity(associated_types.len() + fields.len());
 
@@ -835,15 +837,24 @@ impl<'a> Typecheck<'a> {
                 }
 
                 // actual_type is the record (not hidden behind an alias)
-                let (mut typ, mut actual_type) = match self.find_record(&pattern_fields)
-                          .map(|t| (t.0.clone(), t.1.clone())) {
-                    Ok(typ) => typ,
-                    Err(_) => {
+                let record_guess = match *match_type {
+                    // If the type we are matching on already an alias we don't guess as it is
+                    // possible that we guess the wrong type (and we already have an alias anyway)
+                    Type::Alias(_) => None,
+                    _ => {
+                        self.find_record(&pattern_fields, RecordSelector::Subset)
+                            .map(|t| (t.0.clone(), t.1.clone()))
+                            .ok()
+                    }
+                };
+                let (mut typ, mut actual_type) = match record_guess {
+                    Some(typ) => typ,
+                    None => {
                         // HACK Since there is no way to unify just the name of the 'type field's we
                         // need to take the types from the matched type. This leaves the `types`
                         // list incomplete however since it may miss some fields defined in the
                         // pattern. These are catched later in this function.
-                        let types = match_type
+                        let types = self.remove_alias(match_type.clone())
                             .type_field_iter()
                             .filter(|field| {
                                         associated_types
@@ -866,7 +877,7 @@ impl<'a> Typecheck<'a> {
                                                             &self.subs,
                                                             &actual_type);
                 self.unify_span(span, &match_type, typ);
-                match_type = actual_type;
+                let match_type = actual_type;
 
                 for field in fields {
                     let name = &field.0;
@@ -995,6 +1006,7 @@ impl<'a> Typecheck<'a> {
                    types::display_type(&self.symbols, &typ));
 
             typ = self.merge_signature(bind.name.span, level, &bind.typ, typ);
+
 
             if !is_recursive {
                 // Merge the type declaration and the actual type

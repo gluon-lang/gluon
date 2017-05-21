@@ -3,7 +3,7 @@ use interner::InternedStr;
 use base::ast::{Literal, TypedIdent, Typed, DisplayEnv, SpannedExpr};
 use base::resolve;
 use base::kind::{ArcKind, KindEnv};
-use base::types::{self, Alias, ArcType, BuiltinType, Type, TypeEnv};
+use base::types::{self, Alias, ArcType, BuiltinType, RecordSelector, Type, TypeEnv};
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolRef, SymbolModule};
 use base::pos::{Line, NO_EXPANSION};
@@ -369,7 +369,10 @@ impl<'a> TypeEnv for Compiler<'a> {
         self.stack_types.get(id)
     }
 
-    fn find_record(&self, _fields: &[Symbol]) -> Option<(ArcType, ArcType)> {
+    fn find_record(&self,
+                   _fields: &[Symbol],
+                   _selector: RecordSelector)
+                   -> Option<(ArcType, ArcType)> {
         None
     }
 }
