@@ -6,11 +6,14 @@ use std::marker::PhantomData;
 
 use pretty::{DocAllocator, Arena, DocBuilder};
 
+use serde::de::{Deserializer, DeserializeSeed};
+
 use smallvec::{SmallVec, VecLike};
 
 use ast::IdentEnv;
 use kind::{ArcKind, Kind, KindEnv};
 use merge::merge;
+use serialization::NodeMap;
 use symbol::{Symbol, SymbolRef};
 
 /// Trait for values which contains typed values which can be refered by name
@@ -184,14 +187,14 @@ impl BuiltinType {
 pub struct TypeVariableSeed(::serialization::NodeMap<ArcKind>);
 
 impl TypeVariableSeed {
-    fn deserialize<'de, Id, T, D>(seed: &mut TypeSeed<Id, T>,
-                                  deserializer: D)
-                                  -> Result<TypeVariable, D::Error>
-        where D: ::serde::Deserializer<'de>
+    fn deserialize<'de, Id, T, U, D>(seed: &mut TypeSeed<'de, Id, T, U>,
+                                     deserializer: D)
+                                     -> Result<TypeVariable, D::Error>
+        where D: ::serde::Deserializer<'de>,
+              T: DeserializeSeed<'de>
     {
 
-        ::serde::de::DeserializeSeed::deserialize(TypeVariableSeed(seed.kind_map.clone()),
-                                                  deserializer)
+        DeserializeSeed::deserialize(TypeVariableSeed(seed.kind_map.clone()), deserializer)
     }
 
     fn deserialize_kind<'de, D>(&mut self, deserializer: D) -> Result<ArcKind, D::Error>
@@ -200,7 +203,7 @@ impl TypeVariableSeed {
         use serialization::{MapSeed, SharedSeed};
         let seed = SharedSeed(MapSeed::<_, fn(_) -> _>::new(::kind::KindSeed(self.0.clone()),
                                                             ArcKind::new));
-        ::serde::de::DeserializeSeed::deserialize(seed, deserializer)
+        DeserializeSeed::deserialize(seed, deserializer)
     }
 }
 
@@ -424,22 +427,128 @@ impl<Id, T> Field<Id, T> {
     }
 }
 
-pub struct TypeSeed<Id, T> {
-    type_map: ::serialization::NodeMap<T>,
+pub struct TypeSeed<'de, Id, T, U>
+    where T: DeserializeSeed<'de>
+{
+    type_map: ::serialization::NodeMap<T::Value>,
     kind_map: ::serialization::NodeMap<ArcKind>,
-    _marker: PhantomData<(Id, T)>,
+    _marker: PhantomData<(&'de (), Id, T, U)>,
 }
 
-impl<Id, T> TypeSeed<Id, T> {
-    pub fn new(type_map: ::serialization::NodeMap<T>,
+impl<'de, Id, T, U> Clone for TypeSeed<'de, Id, T, U>
+    where T: DeserializeSeed<'de>
+{
+    fn clone(&self) -> Self {
+        TypeSeed::new(self.type_map.clone(), self.kind_map.clone())
+    }
+}
+
+impl<'de, Id, T, U> AsMut<::serialization::NodeMap<T::Value>> for TypeSeed<'de, Id, T, U>
+    where T: DeserializeSeed<'de>
+{
+    fn as_mut(&mut self) -> &mut ::serialization::NodeMap<T::Value> {
+        &mut self.type_map
+    }
+}
+
+impl<'de, Id, T, U> From<(NodeMap<T::Value>, NodeMap<ArcKind>)> for TypeSeed<'de, Id, T, U>
+    where T: DeserializeSeed<'de>
+{
+    fn from((type_map, kind_map): (NodeMap<T::Value>, NodeMap<ArcKind>))
+            -> TypeSeed<'de, Id, T, U> {
+        TypeSeed::new(type_map, kind_map)
+    }
+}
+
+
+impl<'de, Id, T, U> TypeSeed<'de, Id, T, U>
+    where T: DeserializeSeed<'de>
+{
+    pub fn new(type_map: ::serialization::NodeMap<T::Value>,
                kind_map: ::serialization::NodeMap<ArcKind>)
-               -> TypeSeed<Id, T> {
+               -> TypeSeed<'de, Id, T, U> {
         TypeSeed {
             type_map: type_map,
             kind_map: kind_map,
             _marker: PhantomData,
         }
     }
+}
+
+impl<'de, Id, T> TypeSeed<'de, Id, T, Type<Id, T>>
+    where T: DeserializeSeed<'de>
+{
+    fn deserialize<D>(&mut self, deserializer: D) -> Result<T::Value, D::Error>
+        where D: ::serde::Deserializer<'de>,
+              Id: DeserializeSeed<'de>,
+              T: DeserializeSeed<'de>,
+              T::Value: Clone + From<Type<Id::Value, T::Value>>
+    {
+        use serialization::{MapSeed, SharedSeed};
+        let seed = SharedSeed(MapSeed::<_, fn(_) -> _>::new(self.clone(), T::Value::from));
+        DeserializeSeed::deserialize(seed, deserializer)
+    }
+
+    fn deserialize_type_vec<D>(&mut self, deserializer: D) -> Result<AppVec<T::Value>, D::Error>
+        where D: ::serde::Deserializer<'de>,
+              Id: DeserializeSeed<'de>,
+              T: DeserializeSeed<'de>,
+              T::Value: Clone + From<Type<Id::Value, T::Value>>
+    {
+        use serialization::{MapSeed, SharedSeed};
+        let seed = SharedSeed(MapSeed::<_, fn(_) -> _>::new(self.clone(), T::Value::from));
+        DeserializeSeed::deserialize(::serde::de::SeqSeed::new(seed, |_| AppVec::default()),
+                                     deserializer)
+    }
+}
+
+pub trait TypeSerialize<'de, Id, T>: Sized
+    where T: DeserializeSeed<'de>
+{
+    type Seed: DeserializeSeed<'de> + From<(::serialization::NodeMap<T::Value>, ::serialization::NodeMap<ArcKind>)>;
+}
+
+impl<'de, Id, T, S, V> TypeSerialize<'de, Id, T> for SeqSeed<S, V>
+    where V: TypeSerialize<'de, Id, T>,
+          V::Seed: Clone,
+          T: DeserializeSeed<'de>,
+          S: Default + Extend<<V::Seed as DeserializeSeed<'de>>::Value>
+{
+    type Seed = TypeSeed<'de, Id, T, Self>;
+}
+
+pub struct SeqSeed<S, V>(PhantomData<(S, V)>);
+
+impl<'de, Id, T, S, V> DeserializeSeed<'de> for TypeSeed<'de, Id, T, SeqSeed<S, V>>
+    where V: TypeSerialize<'de, Id, T>,
+          V::Seed: Clone,
+          T: DeserializeSeed<'de>,
+          S: Default + Extend<<V::Seed as DeserializeSeed<'de>>::Value>
+{
+    type Value = S;
+
+    fn deserialize<D>(mut self, deserializer: D) -> Result<Self::Value, D::Error>
+        where D: Deserializer<'de>
+    {
+        fn default<S2>(_: usize) -> S2
+            where S2: Default
+        {
+            S2::default()
+        }
+        let seed = V::Seed::from((self.type_map, self.kind_map));
+        ::serde::de::SeqSeed::<S, fn(_) -> _, _>::new(seed, default).deserialize(deserializer)
+    }
+}
+
+fn deserialize<'de, Id, T, S, S2, D>
+    (seed: &mut TypeSeed<'de, Id, T, S>,
+     deserializer: D)
+     -> Result<<TypeSeed<'de, Id, T, S2> as DeserializeSeed<'de>>::Value, D::Error>
+    where D: Deserializer<'de>,
+          T: DeserializeSeed<'de>,
+          TypeSeed<'de, Id, T, S2>: DeserializeSeed<'de>
+{
+    TypeSeed::new(seed.type_map.clone(), seed.kind_map.clone()).deserialize(deserializer)
 }
 
 /// The representation of gluon's types.
@@ -449,7 +558,8 @@ impl<Id, T> TypeSeed<Id, T> {
 /// `Type` such as `Type::app` and `Type::record` when constructing types as those will construct
 /// the pointer wrapper directly.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, DeserializeSeed)]
-#[serde(deserialize_seed = "TypeSeed<Id, T>")]
+#[serde(deserialize_seed = "TypeSeed<'de, Id, T, Type<Id, T>>")]
+#[serde(bound = "T: DeserializeSeed<'de>, T::Value: Clone + From<Type<Id::Value, T::Value>>, Id: DeserializeSeed<'de>")]
 pub enum Type<Id, T = ArcType<Id>> {
     /// An unbound type `_`, awaiting ascription.
     Hole,
@@ -459,14 +569,17 @@ pub enum Type<Id, T = ArcType<Id>> {
     Builtin(BuiltinType),
     /// A type application with multiple arguments. For example,
     /// `Map String Int` would be represented as `App(Map, [String, Int])`.
-    #[serde(skip_deserializing)]
-    App(T, AppVec<T>),
+    App(#[serde(deserialize_seed_with = "TypeSeed::deserialize")]
+        T,
+        #[serde(deserialize_seed_with = "TypeSeed::deserialize_type_vec")]
+        AppVec<T>),
     /// Record constructor, of kind `Row -> Type`
-    #[serde(skip_deserializing)]
-    Record(T),
+    Record(#[serde(deserialize_seed_with = "TypeSeed::deserialize")]
+           T),
     /// Variant constructor, of kind `Row -> Type`
     #[serde(skip_deserializing)]
-    Variant(T),
+    Variant(#[serde(deserialize_seed_with = "TypeSeed::deserialize")]
+            T),
     /// The empty row, of kind `Row`
     EmptyRow,
     /// Row extension, of kind `... -> Row -> Row`
@@ -477,6 +590,7 @@ pub enum Type<Id, T = ArcType<Id>> {
         /// The fields of this record type
         fields: Vec<Field<Id, T>>,
         /// The rest of the row
+        #[serde(deserialize_seed_with = "TypeSeed::deserialize")]
         rest: T,
     },
     /// An identifier type. These are created during parsing, but should all be
