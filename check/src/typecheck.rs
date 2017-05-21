@@ -1167,9 +1167,13 @@ impl<'a> Typecheck<'a> {
                 debug!("{}: {}",
                        self.symbols.string(&id.name),
                        types::display_type(&self.symbols, typ));
-                for (arg, arg_type) in
-                    args.iter_mut()
-                        .zip(function_arg_iter(self, typ.clone()).collect::<Vec<_>>()) {
+
+                let len = args.len();
+                let iter = args.iter_mut()
+                    .zip(function_arg_iter(self, typ.clone())
+                             .take(len)
+                             .collect::<Vec<_>>());
+                for (arg, arg_type) in iter {
                     self.finish_pattern(level, arg, &arg_type);
                 }
             }
