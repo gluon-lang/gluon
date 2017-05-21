@@ -818,7 +818,6 @@ impl<'a> Typecheck<'a> {
                 ref mut fields,
             } => {
                 *curr_typ = match_type.clone();
-                let mut match_type = self.remove_alias(match_type);
 
                 let mut pattern_fields = Vec::with_capacity(associated_types.len() + fields.len());
 
@@ -838,16 +837,24 @@ impl<'a> Typecheck<'a> {
                 }
 
                 // actual_type is the record (not hidden behind an alias)
-                let (mut typ, mut actual_type) = match self.find_record(&pattern_fields,
-                                                                        RecordSelector::Subset)
-                          .map(|t| (t.0.clone(), t.1.clone())) {
-                    Ok(typ) => typ,
-                    Err(_) => {
+                let record_guess = match *match_type {
+                    // If the type we are matching on already an alias we don't guess as it is
+                    // possible that we guess the wrong type (and we already have an alias anyway)
+                    Type::Alias(_) => None,
+                    _ => {
+                        self.find_record(&pattern_fields, RecordSelector::Subset)
+                            .map(|t| (t.0.clone(), t.1.clone()))
+                            .ok()
+                    }
+                };
+                let (mut typ, mut actual_type) = match record_guess {
+                    Some(typ) => typ,
+                    None => {
                         // HACK Since there is no way to unify just the name of the 'type field's we
                         // need to take the types from the matched type. This leaves the `types`
                         // list incomplete however since it may miss some fields defined in the
                         // pattern. These are catched later in this function.
-                        let types = match_type
+                        let types = self.remove_alias(match_type.clone())
                             .type_field_iter()
                             .filter(|field| {
                                         associated_types
@@ -870,7 +877,7 @@ impl<'a> Typecheck<'a> {
                                                             &self.subs,
                                                             &actual_type);
                 self.unify_span(span, &match_type, typ);
-                match_type = actual_type;
+                let match_type = actual_type;
 
                 for field in fields {
                     let name = &field.0;
@@ -999,6 +1006,7 @@ impl<'a> Typecheck<'a> {
                    types::display_type(&self.symbols, &typ));
 
             typ = self.merge_signature(bind.name.span, level, &bind.typ, typ);
+
 
             if !is_recursive {
                 // Merge the type declaration and the actual type

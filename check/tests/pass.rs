@@ -1,6 +1,8 @@
 #[macro_use]
 extern crate collect_mac;
 extern crate env_logger;
+#[macro_use]
+extern crate pretty_assertions;
 
 extern crate gluon_base as base;
 extern crate gluon_parser as parser;
@@ -1008,4 +1010,23 @@ type Test2 = {
                                name: intern("x"),
                                typ: Type::int()
                            }]))));
+}
+
+#[test]
+fn alias_selection_on_pattern_match() {
+    let _ = ::env_logger::init();
+    let text = r#"
+type Test = {
+    x : Float,
+    y : Float
+}
+type Test2 = {
+    x : Int
+}
+let { x } = { x = 1 }
+x
+"#;
+    let result = support::typecheck(text);
+
+    assert_eq!(result, Ok(Type::int()));
 }
