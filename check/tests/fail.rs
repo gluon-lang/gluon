@@ -378,7 +378,6 @@ type Bar = Test Int
     assert_err!(result, KindError(TypeMismatch(..)));
 }
 
-
 #[test]
 fn type_alias_with_explicit_function_kind() {
     let _ = ::env_logger::init();
@@ -405,4 +404,15 @@ y
     assert_eq!(errors.len(), 1);
     assert_eq!(errors[0].span.map(|loc| loc.absolute),
                Span::new(13.into(), 14.into()));
+}
+
+#[test]
+fn issue_286() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let Test = 1
+1
+"#;
+    let result = support::typecheck(text);
+    assert_err!(result, UndefinedVariable(..));
 }
