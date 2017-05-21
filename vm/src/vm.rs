@@ -10,7 +10,8 @@ use base::fnv::FnvMap;
 use base::kind::{ArcKind, Kind, KindEnv};
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Name, Symbol, SymbolRef};
-use base::types::{Alias, AliasData, AppVec, ArcType, Generic, PrimitiveEnv, Type, TypeEnv};
+use base::types::{Alias, AliasData, AppVec, ArcType, Generic, PrimitiveEnv, RecordSelector, Type,
+                  TypeEnv};
 
 use macros::MacroEnv;
 use {Error, Result};
@@ -165,11 +166,16 @@ impl TypeEnv for VmEnv {
                     .map(|ctor| ctor)
             })
     }
+
     fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
         self.type_infos.find_type_info(id)
     }
-    fn find_record(&self, fields: &[Symbol]) -> Option<(ArcType, ArcType)> {
-        self.type_infos.find_record(fields)
+
+    fn find_record(&self,
+                   fields: &[Symbol],
+                   selector: RecordSelector)
+                   -> Option<(ArcType, ArcType)> {
+        self.type_infos.find_record(fields, selector)
     }
 }
 

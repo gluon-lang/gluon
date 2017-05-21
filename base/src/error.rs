@@ -107,7 +107,7 @@ impl<T: fmt::Display + fmt::Debug + Any> StdError for Errors<T> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct SourceContext<E> {
     line: String,
     error: Spanned<E, Location>,
@@ -127,7 +127,7 @@ impl<E> SourceContext<E> {
 }
 
 /// Error type which contains information of which file and where in the file the error occured
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct InFile<E> {
     pub source_name: String,
     error: Errors<SourceContext<E>>,

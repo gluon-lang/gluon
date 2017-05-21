@@ -7,7 +7,7 @@ use base::kind::{ArcKind, Kind, KindEnv};
 use base::pos::{self, BytePos, Span, Spanned};
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolRef, SymbolModule};
-use base::types::{self, Alias, ArcType, Type, TypeEnv};
+use base::types::{self, Alias, ArcType, RecordSelector, Type, TypeEnv};
 use unify_type::{TypeError, State};
 use unify::{Error as UnifyError, Unifier, Unifiable, UnifierState};
 
@@ -73,7 +73,10 @@ impl<'a> TypeEnv for Environment<'a> {
             .or_else(|| self.env.find_type_info(id))
     }
 
-    fn find_record(&self, _fields: &[Symbol]) -> Option<(ArcType, ArcType)> {
+    fn find_record(&self,
+                   _fields: &[Symbol],
+                   _selector: RecordSelector)
+                   -> Option<(ArcType, ArcType)> {
         None
     }
 }

@@ -23,7 +23,8 @@ macro_rules! assert_err {
         match $e {
             Ok(x) => assert!(false, "Expected error, got {}",
                              types::display_type(&*symbols.borrow(), &x)),
-            Err(errors) => {
+            Err(err) => {
+                let errors = err.errors();
                 let mut iter = (&errors).into_iter();
                 $(
                 match iter.next() {
@@ -51,8 +52,8 @@ macro_rules! assert_unify_err {
         match $e {
             Ok(x) => assert!(false, "Expected error, got {}",
                              types::display_type(&*symbols.borrow(), &x)),
-            Err(errors) => {
-                for error in errors {
+            Err(err) => {
+                for error in err.errors() {
                     match error {
                         Spanned { value: Unification(_, _, ref errors), .. } => {
                             let mut iter = errors.iter();
@@ -400,7 +401,8 @@ let y = 1.0
 y
 "#;
     let result = support::typecheck_expr_expected(text, Some(&Type::int())).1;
-    let errors: Vec<_> = result.unwrap_err().into();
+    let errors: Vec<_> = result.unwrap_err().errors().into();
     assert_eq!(errors.len(), 1);
-    assert_eq!(errors[0].span, Span::new(13.into(), 14.into()));
+    assert_eq!(errors[0].span.map(|loc| loc.absolute),
+               Span::new(13.into(), 14.into()));
 }

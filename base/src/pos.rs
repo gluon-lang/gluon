@@ -214,6 +214,16 @@ impl<Pos: Ord> Span<Pos> {
             None
         }
     }
+
+    pub fn map<Pos2, F>(self, mut f: F) -> Span<Pos2>
+        where F: FnMut(Pos) -> Pos2
+    {
+        Span {
+            start: f(self.start),
+            end: f(self.end),
+            expansion_id: self.expansion_id,
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug)]

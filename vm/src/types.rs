@@ -1,7 +1,7 @@
 use base::fnv::FnvMap;
 use base::kind::{ArcKind, Kind, KindEnv};
 use base::symbol::{Symbol, SymbolRef};
-use base::types::{Alias, ArcType, TypeEnv, Type};
+use base::types::{Alias, ArcType, RecordSelector, TypeEnv, Type};
 
 pub use self::Instruction::*;
 
@@ -189,7 +189,10 @@ impl TypeEnv for TypeInfos {
         self.id_to_type.get(id)
     }
 
-    fn find_record(&self, _fields: &[Symbol]) -> Option<(ArcType, ArcType)> {
+    fn find_record(&self,
+                   _fields: &[Symbol],
+                   _selector: RecordSelector)
+                   -> Option<(ArcType, ArcType)> {
         None
     }
 }

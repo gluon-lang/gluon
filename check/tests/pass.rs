@@ -29,9 +29,9 @@ fn make_ident_type(typ: ArcType) -> ArcType {
     use base::types::walk_move_type;
     walk_move_type(typ,
                    &mut |typ| match *typ {
-                       Type::Alias(ref alias) => Some(Type::ident(alias.name.clone())),
-                       _ => None,
-                   })
+                            Type::Alias(ref alias) => Some(Type::ident(alias.name.clone())),
+                            _ => None,
+                        })
 }
 
 
@@ -706,9 +706,9 @@ in f "123"
     let result = support::typecheck(text);
 
     assert!(result.is_err());
-    let errors: Vec<_> = result.unwrap_err().into();
+    let errors: Vec<_> = result.unwrap_err().errors().into();
     assert_eq!(errors.len(), 1);
-    assert_eq!(errors[0].span, Span::new(BytePos::from(26), BytePos::from(31)));
+    assert_eq!(errors[0].span.map(|loc| loc.absolute), Span::new(BytePos::from(26), BytePos::from(31)));
 }
 
 /// Test that overload resolution selects the closest implementation that matches even if another
@@ -987,3 +987,25 @@ match () with
     assert_eq!(result, Ok(Type::unit()));
 }
 
+#[test]
+fn precise_alias_selection_on_record_construction() {
+    let _ = ::env_logger::init();
+    let text = r#"
+type Test = {
+    x : Int,
+    y : Float
+}
+type Test2 = {
+    x : Int
+}
+{ x = 1 }
+"#;
+    let result = support::typecheck(text);
+
+    assert_eq!(result, Ok(Type::alias(intern("Test2"),
+                           vec![],
+                           Type::record(vec![], vec![Field {
+                               name: intern("x"),
+                               typ: Type::int()
+                           }]))));
+}
