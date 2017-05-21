@@ -9,6 +9,27 @@ use std::rc::Rc;
 use serde::de::{Deserialize, DeserializeSeed, Deserializer, Error};
 use serde::ser::{Serialize, SerializeSeed, Serializer};
 
+use symbol::Symbol;
+
+impl<'de, Id> DeserializeSeed<'de> for NodeMap<Id>
+    where Id: Deserialize<'de>
+{
+    type Value = Id;
+
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where D: Deserializer<'de>
+    {
+        Id::deserialize(deserializer)
+    }
+}
+
+impl<Id> AsMut<NodeMap<Id>> for NodeMap<Id> {
+    fn as_mut(&mut self) -> &mut NodeMap<Id> {
+        self
+    }
+}
+
+
 #[derive(Clone)]
 pub struct MapSeed<S, F> {
     seed: S,
