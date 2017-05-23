@@ -1,3 +1,6 @@
+//! REPL for the gluon programming language
+#![doc(html_root_url="https://docs.rs/gluon_repl/0.4.1/gluon_repl")] // # GLUON
+
 #[macro_use]
 extern crate log;
 #[cfg(feature = "env_logger")]

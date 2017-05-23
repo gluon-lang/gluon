@@ -1,0 +1,15 @@
+let prelude  = import! "std/prelude.glu"
+let { Monad, Monoid, Option, List, Eq, Show, list } = prelude
+let { Test, run, writer, assert, assert_eq }  = import! "std/test.glu"
+let { (*>) } = prelude.make_Applicative writer.applicative
+
+let assert_list show eq =
+    assert_eq (prelude.show_List show)
+              (prelude.eq_List eq)
+
+let test_list =
+    let assert_int_list = assert_list prelude.show_Int prelude.eq_Int
+    assert_int_list (list []) Nil *>
+        assert_int_list (list [1, 2, 3]) (Cons 1 (Cons 2 (Cons 3 Nil)))
+
+run test_list
