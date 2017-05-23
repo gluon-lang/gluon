@@ -39,14 +39,6 @@ let monoid_Function m : Monoid b -> (Monoid (a -> b)) = {
     empty = \_ -> m.empty
 }
 
-let monoid_List =
-    let append xs ys =
-        match xs with
-        | Cons x zs -> Cons x (append zs ys)
-        | Nil -> ys
-
-    { append, empty = Nil }
-
 let monoid_Option m : Monoid a -> Monoid (Option a) = {
     append = \l r ->
         match (l, r) with
@@ -85,18 +77,6 @@ let make_Monoid m =
     { append, empty, (<>) }
 
 let not x = if x then False else True
-
-/// Folds a lift from the left
-let foldl f x xs =
-    match xs with
-    | Cons y ys -> foldl f (f x y) ys
-    | Nil -> x
-
-/// Folds a lift from the right
-let foldr f x xs =
-    match xs with
-    | Cons y ys -> f y (foldr f x ys)
-    | Nil -> x
 
 /// `Eq a` defines equality (==) on `a`
 type Eq a = {
@@ -138,14 +118,6 @@ let eq_Result e a : Eq e -> Eq a -> Eq (Result e a) = {
         | (Err l_val, Err r_val) -> e.(==) l_val r_val
         | _ -> False
 }
-
-let eq_List a : Eq a -> Eq (List a) =
-    let (==) l r =
-        match (l, r) with
-        | (Nil, Nil) -> True
-        | (Cons x xs, Cons y ys) -> a.(==) x y && xs == ys
-        | _ -> False
-    { (==) }
 
 let monoid_Ordering = {
     append = \x y ->
@@ -355,13 +327,6 @@ let functor_Result : Functor (Result e) = {
         | Err _ -> x
 }
 
-let functor_List : Functor List =
-    let map f xs =
-        match xs with
-        | Cons y ys -> Cons (f y) (map f ys)
-        | Nil -> Nil
-    { map }
-
 let functor_IO : Functor IO = {
     map = \f -> io_flat_map (\x -> io_pure (f x))
 }
@@ -401,17 +366,6 @@ let applicative_Result : Applicative (Result e) = {
     pure = \x -> Ok x
 }
 
-let applicative_List : Applicative List =
-    let { (<>) } = make_Monoid monoid_List
-
-    let apply f xs =
-        match f with
-        | Cons g gs -> (functor_List.map g xs) <> (apply gs xs)
-        | Nil -> Nil
-    let pure x = Cons x Nil
-
-    { functor = functor_List, apply, pure }
-
 let applicative_IO : Applicative IO =
     let pure = io_pure
     let apply f x = io_flat_map (\g -> io_flat_map (\y -> pure (g y)) x) f
@@ -442,12 +396,6 @@ let alternative_Option : Alternative Option = {
         | Some _ -> x
         | None -> y,
     empty = None
-}
-
-let alternative_List : Alternative List = {
-    applicative = applicative_List,
-    or = monoid_List.append,
-    empty = Nil
 }
 
 let make_Alternative f =
@@ -483,16 +431,6 @@ let monad_Option : Monad Option = {
         | Some x -> f x
         | None -> None
 }
-
-let monad_List : Monad List =
-    let { (<>) } = make_Monoid monoid_List
-
-    let flat_map f xs =
-        match xs with
-        | Cons x ys -> (f x) <> (flat_map f ys)
-        | Nil -> Nil
-
-    { applicative = applicative_List, flat_map }
 
 let monad_IO : Monad IO = {
     applicative = applicative_IO,
@@ -541,18 +479,6 @@ let show_Char : Show Char = {
 
 let (++) = string_prim.append
 
-let show_List : Show a -> Show (List a) = \d ->
-    let show xs =
-        let show2 ys =
-            match ys with
-            | Cons y ys2 ->
-                match ys2 with
-                | Cons z zs -> d.show y ++ ", " ++ show2 ys2
-                | Nil -> d.show y ++ "]"
-            | Nil -> "]"
-        "[" ++ show2 xs
-    { show }
-
 let show_Option : Show a -> Show (Option a) = \d ->
     let show o =
         match o with
@@ -567,6 +493,98 @@ let show_Result : Show e -> Show t -> Show (Result e t) = \e t ->
         | Err x -> "Err (" ++ e.show x ++ ")"
     { show }
 
+let monoid_List =
+    let append xs ys =
+        match xs with
+        | Cons x zs -> Cons x (append zs ys)
+        | Nil -> ys
+
+    { append, empty = Nil }
+
+let eq_List a : Eq a -> Eq (List a) =
+    let (==) l r =
+        match (l, r) with
+        | (Nil, Nil) -> True
+        | (Cons x xs, Cons y ys) -> a.(==) x y && xs == ys
+        | _ -> False
+    { (==) }
+
+let functor_List : Functor List =
+    let map f xs =
+        match xs with
+        | Cons y ys -> Cons (f y) (map f ys)
+        | Nil -> Nil
+    { map }
+
+let applicative_List : Applicative List =
+    let { (<>) } = make_Monoid monoid_List
+
+    let apply f xs =
+        match f with
+        | Cons g gs -> (functor_List.map g xs) <> (apply gs xs)
+        | Nil -> Nil
+    let pure x = Cons x Nil
+
+    { functor = functor_List, apply, pure }
+
+let alternative_List : Alternative List = {
+    applicative = applicative_List,
+    or = monoid_List.append,
+    empty = Nil
+}
+
+let monad_List : Monad List =
+    let { (<>) } = make_Monoid monoid_List
+
+    let flat_map f xs =
+        match xs with
+        | Cons x ys -> (f x) <> (flat_map f ys)
+        | Nil -> Nil
+
+    { applicative = applicative_List, flat_map }
+
+let show_List : Show a -> Show (List a) = \d ->
+    let show xs =
+        let show2 ys =
+            match ys with
+            | Cons y ys2 ->
+                match ys2 with
+                | Cons z zs -> d.show y ++ ", " ++ show2 ys2
+                | Nil -> d.show y ++ "]"
+            | Nil -> "]"
+        "[" ++ show2 xs
+    { show }
+
+let (==) = eq_Int.(==)
+let (-) = num_Int.(-)
+
+/// Constructs a list from an array. Useful to emulate list literals
+///
+/// ```
+/// list [1, 2, 3]
+/// ```
+let list xs : Array a -> List a =
+    let len = array.length xs
+    let list_ i ys =
+        if i == 0 then
+            ys
+        else
+            let x = array.index xs (i - 1)
+            list_ (i - 1) (Cons x ys)
+    list_ len Nil
+
+/// Folds a lift from the left
+let foldl f x xs =
+    match xs with
+    | Cons y ys -> foldl f (f x y) ys
+    | Nil -> x
+
+/// Folds a lift from the right
+let foldr f x xs =
+    match xs with
+    | Cons y ys -> f y (foldr f x ys)
+    | Nil -> x
+
 {
     Bool,
     Ordering,
@@ -577,7 +595,7 @@ let show_Result : Show e -> Show t -> Show (Result e t) = \e t ->
     unwrap, unwrap_ok, unwrap_err,
 
     not,
-    foldl, foldr,
+    list, foldl, foldr,
 
     Monoid, make_Monoid,
     monoid_Function, monoid_List, monoid_Option,
