@@ -1,3 +1,13 @@
+<a name="v0.4.1"></a>
+##  v0.4.1 (2017-05-23)
+
+
+#### Features
+
+*   Add the list function for simple Array to List conversion ([89019cef](https://github.com/gluon-lang/gluon/commit/89019cef90f167c46f15db9d43566b1ccb63549e), closes [#284](https://github.com/gluon-lang/gluon/issues/284))
+
+
+
 <a name="v0.4.0"></a>
 ## v0.4.0 (2017-05-16)
 
