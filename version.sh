@@ -29,3 +29,6 @@ perl -p -i -e 's/version *= *"[0-9.]+"([^#]+)# GLUON/version = "'$1'"$1# GLUON/'
 
 perl -p -i -e 's/^gluon *= *"[0-9.]+"/gluon = "'$1'"/' \
      README.md
+
+perl -p -i -e 's/[0-9][0-9.]+([^#]+)# GLUON/'$1'$1# GLUON/' \
+     $(ls **/src/lib.rs src/lib.rs)
