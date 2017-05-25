@@ -25,9 +25,9 @@ Gluon is a small, statically-typed, functional programming language designed for
 
 ## Usage
 
-### Try online (WIP)
+### Try online
 
-You can try gluon in your browser at the [try_gluon](http://ec2-52-29-1-213.eu-central-1.compute.amazonaws.com/) server. ([Github](https://github.com/gluon-lang/try_gluon))
+You can try gluon in your browser at the [try_gluon](http://52.28.135.57:8080/) server. ([Github](https://github.com/gluon-lang/try_gluon))
 
 ### Installation
 
@@ -37,7 +37,7 @@ Gluon requires a recent Rust compiler to build (1.9.0 or later) and is available
 
 ```toml
 [dependencies]
-gluon = "0.4.1"
+gluon = "0.4.2"
 ```
 
 #### Other languages
