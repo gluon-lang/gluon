@@ -1,5 +1,5 @@
 //! A (WIP) C API allowing use of gluon in other langauges than Rust.
-#![doc(html_root_url="https://docs.rs/gluon_c-api/0.4.1/gluon_c-api")] // # GLUON
+#![doc(html_root_url="https://docs.rs/gluon_c-api/0.4.1")] // # GLUON
 
 extern crate libc;
 extern crate gluon;

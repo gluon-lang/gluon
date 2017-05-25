@@ -1,5 +1,5 @@
 //! Crate which contain the virtual machine which executes gluon programs
-#![doc(html_root_url="https://docs.rs/gluon_vm/0.4.1/gluon_vm")] // # GLUON
+#![doc(html_root_url="https://docs.rs/gluon_vm/0.4.1")] // # GLUON
 
 #[macro_use]
 extern crate log;
