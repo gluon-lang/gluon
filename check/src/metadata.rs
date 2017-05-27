@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use base::ast::{self, Expr, Pattern, SpannedExpr, SpannedPattern, ValueBinding};
-use base::ast::MutVisitor;
+use base::ast::Visitor;
 use base::fnv::FnvMap;
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Name, Symbol};
@@ -13,16 +13,16 @@ struct Environment<'b> {
 
 /// Queries `expr` for the metadata which it contains.
 pub fn metadata(env: &MetadataEnv,
-                expr: &mut SpannedExpr<Symbol>)
+                expr: &SpannedExpr<Symbol>)
                 -> (Metadata, FnvMap<Symbol, Metadata>) {
     struct MetadataVisitor<'b> {
         env: Environment<'b>,
     }
 
     impl<'b> MetadataVisitor<'b> {
-        fn new_binding(&mut self, metadata: Metadata, bind: &mut ValueBinding<Symbol>) {
+        fn new_binding(&mut self, metadata: Metadata, bind: &ValueBinding<Symbol>) {
             match bind.name.value {
-                Pattern::Ident(ref mut id) => {
+                Pattern::Ident(ref id) => {
                     let metadata = bind.comment
                         .as_ref()
                         .map_or(metadata, |comment| {
@@ -33,21 +33,21 @@ pub fn metadata(env: &MetadataEnv,
                         });
                     self.stack_var(id.name.clone(), metadata);
                 }
-                _ => self.new_pattern(metadata, &mut bind.name),
+                _ => self.new_pattern(metadata, &bind.name),
             }
         }
 
-        fn new_pattern(&mut self, mut metadata: Metadata, pattern: &mut SpannedPattern<Symbol>) {
+        fn new_pattern(&mut self, mut metadata: Metadata, pattern: &SpannedPattern<Symbol>) {
             match pattern.value {
                 Pattern::Record {
-                    ref mut fields,
-                    ref mut types,
+                    ref fields,
+                    ref types,
                     ..
                 } => {
                     for field in fields {
                         if let Some(m) = metadata.module.remove(field.0.as_ref()) {
                             let id = match field.1 {
-                                Some(ref mut pat) => {
+                                Some(ref pat) => {
                                     match pat.value {
                                         Pattern::Ident(ref id) => &id.name,
                                         _ => return self.new_pattern(m, pat),
@@ -65,7 +65,7 @@ pub fn metadata(env: &MetadataEnv,
                         }
                     }
                 }
-                Pattern::Ident(ref mut id) => {
+                Pattern::Ident(ref id) => {
                     self.stack_var(id.name.clone(), metadata);
                 }
                 Pattern::Tuple { .. } |
@@ -92,22 +92,22 @@ pub fn metadata(env: &MetadataEnv,
                 .or_else(|| self.env.env.get_metadata(id))
         }
 
-        fn metadata_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> Metadata {
+        fn metadata_expr(&mut self, expr: &SpannedExpr<Symbol>) -> Metadata {
             match expr.value {
-                Expr::Ident(ref mut id) => {
+                Expr::Ident(ref id) => {
                     self.metadata(&id.name)
                         .cloned()
                         .unwrap_or_else(Metadata::default)
                 }
                 Expr::Record {
-                    ref mut exprs,
-                    ref mut types,
+                    ref exprs,
+                    ref types,
                     ..
                 } => {
                     let mut module = BTreeMap::new();
                     for field in exprs {
                         let maybe_metadata = match field.value {
-                            Some(ref mut expr) => {
+                            Some(ref expr) => {
                                 let m = self.metadata_expr(expr);
                                 if m.has_data() { Some(m) } else { None }
                             }
@@ -143,26 +143,26 @@ pub fn metadata(env: &MetadataEnv,
                         module: module,
                     }
                 }
-                Expr::LetBindings(ref mut bindings, ref mut expr) => {
+                Expr::LetBindings(ref bindings, ref expr) => {
                     let is_recursive = bindings.iter().all(|bind| !bind.args.is_empty());
                     if is_recursive {
-                        for bind in bindings.iter_mut() {
+                        for bind in bindings {
                             self.new_binding(Metadata::default(), bind);
                         }
                         for bind in bindings {
-                            self.metadata_expr(&mut bind.expr);
+                            self.metadata_expr(&bind.expr);
                         }
                     } else {
                         for bind in bindings {
-                            let metadata = self.metadata_expr(&mut bind.expr);
+                            let metadata = self.metadata_expr(&bind.expr);
                             self.new_binding(metadata, bind);
                         }
                     }
                     let result = self.metadata_expr(expr);
                     result
                 }
-                Expr::TypeBindings(ref mut bindings, ref mut expr) => {
-                    for bind in bindings.iter_mut() {
+                Expr::TypeBindings(ref bindings, ref expr) => {
+                    for bind in bindings {
                         let maybe_metadata = bind.comment
                             .as_ref()
                             .map(|comment| {
@@ -179,17 +179,17 @@ pub fn metadata(env: &MetadataEnv,
                     result
                 }
                 _ => {
-                    ast::walk_mut_expr(self, expr);
+                    ast::walk_expr(self, expr);
                     Metadata::default()
                 }
             }
         }
     }
 
-    impl<'b> MutVisitor for MetadataVisitor<'b> {
+    impl<'b> Visitor for MetadataVisitor<'b> {
         type Ident = Symbol;
 
-        fn visit_expr(&mut self, expr: &mut SpannedExpr<Symbol>) {
+        fn visit_expr(&mut self, expr: &SpannedExpr<Symbol>) {
             self.metadata_expr(expr);
         }
     }
