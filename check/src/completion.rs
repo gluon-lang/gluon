@@ -5,6 +5,8 @@ use std::cmp::Ordering;
 
 use base::ast::{Expr, SpannedExpr, SpannedPattern, Pattern, TypedIdent, Typed, Visitor, walk_expr,
                 walk_pattern};
+use base::fnv::FnvMap;
+use base::metadata::Metadata;
 use base::resolve;
 use base::pos::{BytePos, Span, NO_EXPANSION};
 use base::scoped_map::ScopedMap;
@@ -149,6 +151,41 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
 
     fn found(&self) -> bool {
         !self.result.is_empty()
+    }
+}
+
+struct GetMetadata<'a> {
+    env: &'a FnvMap<Symbol, Metadata>,
+    result: Option<&'a Metadata>,
+}
+
+impl<'a> OnFound for GetMetadata<'a> {
+    fn expr(&mut self, expr: &SpannedExpr<Symbol>) {
+        if let Expr::Ident(ref id) = expr.value {
+            self.result = self.env.get(&id.name);
+        }
+    }
+
+    fn ident(&mut self, context: &SpannedExpr<Symbol>, id: &Symbol, _typ: &ArcType) {
+        match context.value {
+            Expr::Projection(ref expr, _, _) => {
+                if let Expr::Ident(ref expr_id) = expr.value {
+                    self.result = self.env
+                        .get(&expr_id.name)
+                        .and_then(|metadata| metadata.module.get(id.as_ref()));
+                }
+            }
+            Expr::Infix(..) => {
+                self.result = self.env.get(id);
+            }
+            _ => (),
+        }
+    }
+
+    fn nothing(&mut self) {}
+
+    fn found(&self) -> bool {
+        self.result.is_some()
     }
 }
 
@@ -327,6 +364,21 @@ pub fn suggest<T>(env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Vec<Sugg
             env: env,
             stack: ScopedMap::new(),
             result: Vec::new(),
+        },
+    };
+    visitor.visit_expr(expr);
+    visitor.on_found.result
+}
+
+pub fn get_metadata<'a>(env: &'a FnvMap<Symbol, Metadata>,
+                        expr: &SpannedExpr<Symbol>,
+                        pos: BytePos)
+                        -> Option<&'a Metadata> {
+    let mut visitor = FindVisitor {
+        pos: pos,
+        on_found: GetMetadata {
+            env: env,
+            result: None,
         },
     };
     visitor.visit_expr(expr);

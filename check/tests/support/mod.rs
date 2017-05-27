@@ -1,6 +1,7 @@
 use base::ast::{DisplayEnv, IdentEnv, SpannedExpr};
 use base::error::InFile;
 use base::kind::{ArcKind, Kind, KindEnv};
+use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Symbols, SymbolModule, Symbol, SymbolRef};
 use base::types::{self, Alias, ArcType, Generic, PrimitiveEnv, RecordSelector, Type, TypeEnv};
 use check::typecheck::{self, Typecheck};
@@ -104,6 +105,13 @@ impl PrimitiveEnv for MockEnv {
         &self.bool.as_type()
     }
 }
+
+impl MetadataEnv for MockEnv {
+    fn get_metadata(&self, _id: &Symbol) -> Option<&Metadata> {
+        None
+    }
+}
+
 
 #[allow(dead_code)]
 pub struct MockIdentEnv<T>(PhantomData<T>);

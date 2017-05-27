@@ -6,9 +6,13 @@ extern crate gluon_base as base;
 extern crate gluon_parser as parser;
 extern crate gluon_check as check;
 
+use base::ast::SpannedExpr;
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::Symbol;
-use check::metadata::metadata;
+
+fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
+    check::metadata::metadata(env, expr).0
+}
 
 mod support;
 
@@ -57,9 +61,9 @@ let id x = x
     let metadata = metadata(&MockEnv, &mut expr);
     assert_eq!(metadata.module.get("id"),
                Some(&Metadata {
-                   comment: Some("The identity function".into()),
-                   module: Default::default(),
-               }));
+                         comment: Some("The identity function".into()),
+                         module: Default::default(),
+                     }));
 }
 
 #[test]
@@ -78,9 +82,9 @@ type Test = Int
     let metadata = metadata(&MockEnv, &mut expr);
     assert_eq!(metadata.module.get("Test"),
                Some(&Metadata {
-                   comment: Some("A test type".into()),
-                   module: Default::default(),
-               }));
+                         comment: Some("A test type".into()),
+                         module: Default::default(),
+                     }));
 }
 
 #[test]
@@ -100,7 +104,7 @@ fn propagate_metadata_record_field_comment() {
     let metadata = metadata(&MockEnv, &mut expr);
     assert_eq!(metadata.module.get("id"),
                Some(&Metadata {
-                   comment: Some("The identity function".into()),
-                   module: Default::default(),
-               }));
+                         comment: Some("The identity function".into()),
+                         module: Default::default(),
+                     }));
 }

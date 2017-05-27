@@ -2,17 +2,19 @@ use std::collections::BTreeMap;
 
 use base::ast::{self, Expr, Pattern, SpannedExpr, SpannedPattern, ValueBinding};
 use base::ast::MutVisitor;
+use base::fnv::FnvMap;
 use base::metadata::{Metadata, MetadataEnv};
-use base::scoped_map::ScopedMap;
 use base::symbol::{Name, Symbol};
 
 struct Environment<'b> {
     env: &'b MetadataEnv,
-    stack: ScopedMap<Symbol, Metadata>,
+    stack: FnvMap<Symbol, Metadata>,
 }
 
 /// Queries `expr` for the metadata which it contains.
-pub fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
+pub fn metadata(env: &MetadataEnv,
+                expr: &mut SpannedExpr<Symbol>)
+                -> (Metadata, FnvMap<Symbol, Metadata>) {
     struct MetadataVisitor<'b> {
         env: Environment<'b>,
     }
@@ -74,6 +76,10 @@ pub fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
         fn stack_var(&mut self, id: Symbol, metadata: Metadata) {
             if metadata.has_data() {
                 debug!("Insert {}", id);
+                // All symbols should have been renamed to unique ones
+                debug_assert!(!self.env.stack.contains_key(&id),
+                              "Symbol {:?}, appears twice in the source",
+                              id);
                 self.env.stack.insert(id, metadata);
             }
         }
@@ -138,16 +144,13 @@ pub fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
                     }
                 }
                 Expr::LetBindings(ref mut bindings, ref mut expr) => {
-                    self.env.stack.enter_scope();
                     let is_recursive = bindings.iter().all(|bind| !bind.args.is_empty());
                     if is_recursive {
                         for bind in bindings.iter_mut() {
                             self.new_binding(Metadata::default(), bind);
                         }
                         for bind in bindings {
-                            self.env.stack.enter_scope();
                             self.metadata_expr(&mut bind.expr);
-                            self.env.stack.exit_scope();
                         }
                     } else {
                         for bind in bindings {
@@ -156,11 +159,9 @@ pub fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
                         }
                     }
                     let result = self.metadata_expr(expr);
-                    self.env.stack.exit_scope();
                     result
                 }
                 Expr::TypeBindings(ref mut bindings, ref mut expr) => {
-                    self.env.stack.enter_scope();
                     for bind in bindings.iter_mut() {
                         let maybe_metadata = bind.comment
                             .as_ref()
@@ -175,7 +176,6 @@ pub fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
                         }
                     }
                     let result = self.metadata_expr(expr);
-                    self.env.stack.exit_scope();
                     result
                 }
                 _ => {
@@ -197,8 +197,9 @@ pub fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
     let mut visitor = MetadataVisitor {
         env: Environment {
             env: env,
-            stack: ScopedMap::new(),
+            stack: FnvMap::default(),
         },
     };
-    visitor.metadata_expr(expr)
+    let metadata = visitor.metadata_expr(expr);
+    (metadata, visitor.env.stack)
 }
