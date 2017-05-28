@@ -65,6 +65,37 @@ struct Suggest<E> {
     result: Vec<Suggestion>,
 }
 
+fn expr_iter<'e>(stack: &'e ScopedMap<Symbol, ArcType>,
+                 expr: &'e SpannedExpr<Symbol>)
+                 -> Box<Iterator<Item = (&'e Symbol, &'e ArcType)> + 'e> {
+    if let Expr::Ident(ref ident) = expr.value {
+        Box::new(stack
+                     .iter()
+                     .filter(move |&(k, _)| {
+                                 k.declared_name().starts_with(ident.name.declared_name())
+                             }))
+    } else {
+        Box::new(None.into_iter())
+    }
+}
+
+impl<E> Suggest<E>
+    where E: TypeEnv
+{
+    fn ident_iter(&self, context: &SpannedExpr<Symbol>, ident: &Symbol) -> Vec<(Symbol, ArcType)> {
+        if let Expr::Projection(ref expr, _, _) = context.value {
+            let typ = resolve::remove_aliases(&self.env, expr.env_type_of(&self.env));
+            let id = ident.as_ref();
+            typ.row_iter()
+                .filter(move |field| field.name.as_ref().starts_with(id))
+                .map(|field| (field.name.clone(), field.typ.clone()))
+                .collect()
+        } else {
+            vec![]
+        }
+    }
+}
+
 impl<E: TypeEnv> OnFound for Suggest<E> {
     fn on_ident(&mut self, ident: &TypedIdent) {
         self.stack.insert(ident.name.clone(), ident.typ.clone());
@@ -108,33 +139,26 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
     }
 
     fn expr(&mut self, expr: &SpannedExpr<Symbol>) {
-        if let Expr::Ident(ref ident) = expr.value {
-            for (k, typ) in self.stack.iter() {
-                if k.declared_name().starts_with(ident.name.declared_name()) {
-                    self.result
-                        .push(Suggestion {
-                                  name: k.declared_name().into(),
-                                  typ: typ.clone(),
-                              });
-                }
-            }
-        }
+        self.result
+            .extend(expr_iter(&self.stack, expr).map(|(k, typ)| {
+
+                                                         Suggestion {
+                                                             name: k.declared_name().into(),
+                                                             typ: typ.clone(),
+                                                         }
+                                                     }));
     }
 
     fn ident(&mut self, context: &SpannedExpr<Symbol>, ident: &Symbol, _: &ArcType) {
-        if let Expr::Projection(ref expr, _, _) = context.value {
-            let typ = resolve::remove_aliases(&self.env, expr.env_type_of(&self.env));
-            let id = ident.as_ref();
-            for field in typ.row_iter() {
-                if field.name.as_ref().starts_with(id) {
-                    self.result
-                        .push(Suggestion {
-                                  name: field.name.declared_name().into(),
-                                  typ: field.typ.clone(),
-                              });
-                }
-            }
-        }
+        let iter = self.ident_iter(context, ident);
+        self.result
+            .extend(iter.into_iter()
+                        .map(|(name, typ)| {
+                                 Suggestion {
+                                     name: name.declared_name().into(),
+                                     typ: typ,
+                                 }
+                             }));
     }
 
     fn nothing(&mut self) {
@@ -183,6 +207,58 @@ impl<'a> OnFound for GetMetadata<'a> {
     }
 
     fn nothing(&mut self) {}
+
+    fn found(&self) -> bool {
+        self.result.is_some()
+    }
+}
+
+struct MetadataSuggest<'a, E> {
+    env: &'a FnvMap<Symbol, Metadata>,
+    suggest: Suggest<E>,
+    ident: &'a str,
+    result: Option<&'a Metadata>,
+}
+
+impl<'a, E: TypeEnv> OnFound for MetadataSuggest<'a, E> {
+    fn on_ident(&mut self, ident: &TypedIdent) {
+        self.suggest.on_ident(ident)
+    }
+
+    fn on_pattern(&mut self, pattern: &SpannedPattern<Symbol>) {
+        self.suggest.on_pattern(pattern)
+    }
+
+    fn expr(&mut self, expr: &SpannedExpr<Symbol>) {
+        let suggestion = expr_iter(&self.suggest.stack, expr).find(|&(name, _)| {
+                                                                       name.declared_name() ==
+                                                                       self.ident
+                                                                   });
+        if let Some((name, _)) = suggestion {
+            self.result = self.env.get(name);
+        }
+    }
+
+    fn ident(&mut self, context: &SpannedExpr<Symbol>, _: &Symbol, _typ: &ArcType) {
+        match context.value {
+            Expr::Projection(ref expr, _, _) => {
+                if let Expr::Ident(ref expr_ident) = expr.value {
+                    self.result = self.env
+                        .get(&expr_ident.name)
+                        .and_then(|metadata| metadata.module.get(self.ident));
+                }
+            }
+            _ => (),
+        }
+    }
+
+    fn nothing(&mut self) {
+        self.result = self.suggest
+            .stack
+            .iter()
+            .find(|&(ref name, _)| name.declared_name() == self.ident)
+            .and_then(|t| self.env.get(t.0));
+    }
 
     fn found(&self) -> bool {
         self.result.is_some()
@@ -378,6 +454,31 @@ pub fn get_metadata<'a>(env: &'a FnvMap<Symbol, Metadata>,
         pos: pos,
         on_found: GetMetadata {
             env: env,
+            result: None,
+        },
+    };
+    visitor.visit_expr(expr);
+    visitor.on_found.result
+}
+
+pub fn suggest_metadata<'a, T>(env: &'a FnvMap<Symbol, Metadata>,
+                               type_env: &T,
+                               expr: &SpannedExpr<Symbol>,
+                               pos: BytePos,
+                               name: &'a str)
+                               -> Option<&'a Metadata>
+    where T: TypeEnv
+{
+    let mut visitor = FindVisitor {
+        pos: pos,
+        on_found: MetadataSuggest {
+            env: env,
+            suggest: Suggest {
+                env: type_env,
+                stack: ScopedMap::new(),
+                result: Vec::new(),
+            },
+            ident: name,
             result: None,
         },
     };
