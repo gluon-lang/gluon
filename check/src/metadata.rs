@@ -76,10 +76,6 @@ pub fn metadata(env: &MetadataEnv,
         fn stack_var(&mut self, id: Symbol, metadata: Metadata) {
             if metadata.has_data() {
                 debug!("Insert {}", id);
-                // All symbols should have been renamed to unique ones
-                debug_assert!(!self.env.stack.contains_key(&id),
-                              "Symbol {:?}, appears twice in the source",
-                              id);
                 self.env.stack.insert(id, metadata);
             }
         }
@@ -177,6 +173,14 @@ pub fn metadata(env: &MetadataEnv,
                     }
                     let result = self.metadata_expr(expr);
                     result
+                }
+                Expr::Projection(ref expr, ref field, _) => {
+                    let metadata = self.metadata_expr(expr);
+                    metadata
+                        .module
+                        .get(field.as_ref())
+                        .cloned()
+                        .unwrap_or_default()
                 }
                 _ => {
                     ast::walk_expr(self, expr);

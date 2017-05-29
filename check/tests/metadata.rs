@@ -108,3 +108,27 @@ fn propagate_metadata_record_field_comment() {
                          module: Default::default(),
                      }));
 }
+
+#[test]
+fn projection_has_metadata() {
+    let _ = env_logger::init();
+
+    let text = r#"
+let x = {
+    /// The identity function
+    id = \x -> x
+}
+x.id
+"#;
+    let (mut expr, result) = support::typecheck_expr(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+
+    let metadata = metadata(&MockEnv, &mut expr);
+    assert_eq!(metadata,
+               Metadata {
+                   comment: Some("The identity function".into()),
+                   module: Default::default(),
+               });
+
+}
