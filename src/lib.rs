@@ -233,7 +233,7 @@ impl Compiler {
         use check::metadata;
         let (mut expr, typ) = self.typecheck_str(vm, file, expr_str, None)?;
 
-        let metadata = metadata::metadata(&*vm.get_env(), &mut expr);
+        let (metadata, _) = metadata::metadata(&*vm.get_env(), &mut expr);
         Ok((expr, typ, metadata))
     }
 

@@ -6,6 +6,7 @@ extern crate gluon_base as base;
 extern crate gluon_parser as parser;
 extern crate gluon_check as check;
 
+use base::metadata::Metadata;
 use base::pos::BytePos;
 use base::types::{Field, Type, ArcType};
 use check::completion::{self, Suggestion};
@@ -32,8 +33,32 @@ fn suggest_types(s: &str, pos: BytePos) -> Result<Vec<Suggestion>, ()> {
 }
 
 fn suggest(s: &str, pos: BytePos) -> Result<Vec<String>, ()> {
-    suggest_types(s, pos).map(|vec| vec.into_iter().map(|suggestion| suggestion.name).collect())
+    suggest_types(s, pos).map(|vec| {
+                                  vec.into_iter()
+                                      .map(|suggestion| suggestion.name)
+                                      .collect()
+                              })
 }
+
+fn get_metadata(s: &str, pos: BytePos) -> Option<Metadata> {
+    let env = MockEnv::new();
+
+    let (mut expr, result) = support::typecheck_expr(s);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+
+    let (_, metadata_map) = check::metadata::metadata(&env, &mut expr);
+    completion::get_metadata(&metadata_map, &mut expr, pos).cloned()
+}
+
+fn suggest_metadata(s: &str, pos: BytePos, name: &str) -> Option<Metadata> {
+    let env = MockEnv::new();
+
+    let (mut expr, _result) = support::typecheck_expr(s);
+
+    let (_, metadata_map) = check::metadata::metadata(&env, &mut expr);
+    completion::suggest_metadata(&metadata_map, &env, &mut expr, pos, name).cloned()
+}
+
 
 #[test]
 fn identifier() {
@@ -343,5 +368,110 @@ test  test1
     let result = suggest(text, BytePos::from(40));
     let expected = Ok(vec!["abb".into(), "abc".into()]);
 
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn metadata_at_variable() {
+    let _ = env_logger::init();
+
+    let text = r#"
+/// test
+let abc = 1
+let abb = 2
+abb
+abc
+"#;
+    let result = get_metadata(text, BytePos::from(37));
+
+    let expected = None;
+    assert_eq!(result, expected);
+
+    let result = get_metadata(text, BytePos::from(41));
+
+    let expected = Some(Metadata {
+                            comment: Some("test".to_string()),
+                            ..Metadata::default()
+                        });
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn metadata_at_binop() {
+    let _ = env_logger::init();
+
+    let text = r#"
+/// test
+let (+++) x y = 1
+1 +++ 3
+"#;
+    let result = get_metadata(text, BytePos::from(32));
+
+    let expected = Some(Metadata {
+                            comment: Some("test".to_string()),
+                            ..Metadata::default()
+                        });
+    assert_eq!(result, expected);
+}
+
+
+#[test]
+fn metadata_at_field_access() {
+    let _ = env_logger::init();
+
+    let text = r#"
+let module = {
+        /// test
+        abc = 1,
+        abb = 2
+    }
+module.abc
+"#;
+    let result = get_metadata(text, BytePos::from(81));
+
+    let expected = Some(Metadata {
+                            comment: Some("test".to_string()),
+                            ..Metadata::default()
+                        });
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_metadata_at_variable() {
+    let _ = env_logger::init();
+
+    let text = r#"
+/// test
+let abc = 1
+let abb = 2
+ab
+"#;
+    let result = suggest_metadata(text, BytePos::from(36), "abc");
+
+    let expected = Some(Metadata {
+                            comment: Some("test".to_string()),
+                            ..Metadata::default()
+                        });
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_metadata_at_field_access() {
+    let _ = env_logger::init();
+
+    let text = r#"
+let module = {
+        /// test
+        abc = 1,
+        abb = 2
+    }
+module.ab
+"#;
+    let result = suggest_metadata(text, BytePos::from(81), "abc");
+
+    let expected = Some(Metadata {
+                            comment: Some("test".to_string()),
+                            ..Metadata::default()
+                        });
     assert_eq!(result, expected);
 }

@@ -335,7 +335,7 @@ impl<'vm, E> Executable<'vm, ()> for CompileValue<E>
             typ,
             function,
         } = self;
-        let metadata = metadata::metadata(&*vm.get_env(), expr.borrow_mut());
+        let (metadata, _) = metadata::metadata(&*vm.get_env(), expr.borrow_mut());
         let closure = try_future!(vm.global_env().new_global_thunk(function));
         let filename = filename.to_string();
         vm.call_thunk(closure)

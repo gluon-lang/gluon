@@ -785,7 +785,7 @@ sender
 fn invalid_string_slice_dont_panic() {
     let _ = ::env_logger::init();
     let text = r#"
-let string  = import! "std/string.glu"
+let string = import! "std/string.glu"
 let s = "åäö"
 string.slice s 1 (string.length s)
 "#;
