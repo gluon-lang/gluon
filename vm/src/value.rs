@@ -258,8 +258,8 @@ pub enum Value {
           GcPtr<ValueArray>),
     #[serde(skip_deserializing)]
     Function(GcPtr<ExternFunction>),
-    #[serde(skip_deserializing)]
-    Closure(GcPtr<ClosureData>),
+    Closure(#[serde(deserialize_seed_with = "::serialization::deserialize_closure")]
+            GcPtr<ClosureData>),
     #[serde(skip_deserializing)]
     PartialApplication(GcPtr<PartialApplicationData>),
     #[serde(skip_deserializing)]

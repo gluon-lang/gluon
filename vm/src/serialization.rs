@@ -3,11 +3,12 @@ use std::marker::PhantomData;
 use std::rc::Rc;
 
 use serde::Deserializer;
-use serde::de::{DeserializeSeed, SeqSeed};
+use serde::de::{DeserializeSeed, SeqSeed, Error};
 
 use base::symbol::Symbols;
-use gc::GcPtr;
-use thread::RootedThread;
+use gc::{DataDef, GcPtr, Traverseable, WriteOnly};
+use thread::{RootedThread, ThreadInternal};
+use value::{BytecodeFunction, ClosureData, ClosureDataDef, Value};
 
 #[derive(Clone)]
 pub struct DeSeed {
@@ -37,7 +38,7 @@ pub struct SeSeed {
 }
 
 pub struct Seed<T> {
-    state: DeSeed,
+    pub state: DeSeed,
     _marker: PhantomData<T>,
 }
 
@@ -237,6 +238,61 @@ pub mod intern {
         }
     }
 }
+
+#[derive(DeserializeSeed)]
+#[serde(deserialize_seed = "Seed<ClosureDataModel>")]
+struct ClosureDataModel {
+    #[serde(deserialize_seed_with = "deserialize")]
+    function: GcPtr<BytecodeFunction>,
+    #[serde(deserialize_seed_with = "deserialize")]
+    upvars: Vec<Value>,
+}
+
+gc_serialize!{ ClosureDataModel }
+
+unsafe impl DataDef for ClosureDataModel {
+    type Value = ClosureData;
+
+    fn size(&self) -> usize {
+        ClosureDataDef(self.function, &self.upvars).size()
+    }
+
+    fn initialize<'w>(self, result: WriteOnly<'w, Self::Value>) -> &'w mut Self::Value {
+        ClosureDataDef(self.function, &self.upvars).initialize(result)
+    }
+}
+
+pub fn deserialize_closure<'de, T, D>(seed: &mut Seed<T>,
+                                      deserializer: D)
+                                      -> Result<GcPtr<ClosureData>, D::Error>
+    where D: Deserializer<'de>
+{
+    DeserializeSeed::deserialize(Seed::<DataDefSeed<ClosureDataModel>>::from(seed.state.clone()),
+                                 deserializer)
+}
+
+struct DataDefSeed<T>(PhantomData<T>);
+
+impl<'de, T> DeserializeSeed<'de> for ::serialization::Seed<DataDefSeed<T>>
+    where T: DataDef + GcSerialize<'de> + 'static,
+          <T as DataDef>::Value: Sized,
+          T::Seed: DeserializeSeed<'de>
+{
+    type Value = GcPtr<<T as DataDef>::Value>;
+
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where D: Deserializer<'de>
+    {
+        let def = DeserializeSeed::deserialize(T::Seed::from(self.state.clone()), deserializer)?;
+        self.state
+            .thread
+            .context()
+            .gc
+            .alloc(def)
+            .map_err(D::Error::custom)
+    }
+}
+
 
 impl<'de, T> GcSerialize<'de> for Vec<T>
     where T: GcSerialize<'de>,
