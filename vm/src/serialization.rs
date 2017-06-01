@@ -5,15 +5,18 @@ use std::rc::Rc;
 use serde::Deserializer;
 use serde::de::{DeserializeSeed, SeqSeed, Error};
 
-use base::symbol::Symbols;
+use base::fnv::FnvMap;
+use base::symbol::{Symbol, Symbols};
 use gc::{DataDef, GcPtr, Traverseable, WriteOnly};
-use thread::{RootedThread, ThreadInternal};
-use value::{BytecodeFunction, ClosureData, ClosureDataDef, Value};
+use thread::{RootedThread, Status, Thread, ThreadInternal};
+use types::VmIndex;
+use value::{BytecodeFunction, ClosureData, ClosureDataDef, ExternFunction, Value};
 
 #[derive(Clone)]
 pub struct DeSeed {
     thread: RootedThread,
     symbols: Rc<RefCell<Symbols>>,
+    extern_functions: Rc<FnvMap<Symbol, extern "C" fn(&Thread) -> Status>>,
 }
 
 impl DeSeed {
@@ -21,6 +24,7 @@ impl DeSeed {
         DeSeed {
             thread: thread,
             symbols: Default::default(),
+            extern_functions: Default::default(),
         }
     }
 
@@ -293,6 +297,37 @@ impl<'de, T> DeserializeSeed<'de> for ::serialization::Seed<DataDefSeed<T>>
     }
 }
 
+gc_serialize!{ ExternFunction }
+
+impl<'de> DeserializeSeed<'de> for Seed<ExternFunction> {
+    type Value = ExternFunction;
+
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where D: Deserializer<'de>
+    {
+        #[derive(DeserializeSeed)]
+        #[serde(deserialize_seed = "Seed<ExternFunction_>")]
+        struct ExternFunction_ {
+            #[serde(deserialize_seed_with = "deserialize")]
+            id: Symbol,
+            args: VmIndex,
+        }
+        let partial = Seed::<ExternFunction_>::from(self.state.clone())
+            .deserialize(deserializer)?;
+        let function = self.state
+            .extern_functions
+            .get(&partial.id)
+            .ok_or_else(|| {
+                            D::Error::custom(format!("Extern function `{}` is not defined",
+                                                     partial.id))
+                        })?;
+        Ok(ExternFunction {
+               id: partial.id,
+               args: partial.args,
+               function: *function,
+           })
+    }
+}
 
 impl<'de, T> GcSerialize<'de> for Vec<T>
     where T: GcSerialize<'de>,
