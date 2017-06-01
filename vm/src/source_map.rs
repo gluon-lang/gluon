@@ -9,7 +9,6 @@ use types::VmIndex;
 #[derive(Debug, Default, Deserialize)]
 pub struct SourceMap {
     /// The index of the first instruction for each line
-    #[serde(skip_deserializing)]
     map: Vec<(usize, Line)>,
 }
 
