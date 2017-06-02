@@ -18,6 +18,10 @@ extern crate pretty;
 #[macro_use]
 extern crate futures;
 
+#[cfg(all(feature = "serde", test))]
+#[macro_use]
+extern crate serde_derive;
+
 #[macro_use]
 extern crate gluon_base as base;
 extern crate gluon_check as check;

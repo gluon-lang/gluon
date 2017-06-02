@@ -22,6 +22,9 @@ use futures::{Async, BoxFuture, Future};
 
 pub use value::Userdata;
 
+#[cfg(feature = "serde")]
+mod serde;
+
 macro_rules! count {
     () => { 0 };
     ($_e: ident) => { 1 };

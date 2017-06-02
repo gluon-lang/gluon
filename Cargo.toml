@@ -52,5 +52,7 @@ curl = "0.4.1"
 [features]
 default = ["regex"]
 
+serde = ["gluon_vm/serde"]
+
 test = ["gluon_vm/test", "gluon_check/test", "gluon_parser/test"]
 nightly = ["compiletest_rs"]
