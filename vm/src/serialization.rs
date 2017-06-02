@@ -243,6 +243,10 @@ pub mod intern {
     }
 }
 
+pub mod typ {
+    fn deserialize(deserializer: D) -> Result<ArcType, D::Error> where D: Deserializer<'de> {}
+}
+
 #[derive(DeserializeSeed)]
 #[serde(deserialize_seed = "Seed<ClosureDataModel>")]
 struct ClosureDataModel {
