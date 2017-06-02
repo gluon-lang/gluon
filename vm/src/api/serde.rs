@@ -277,7 +277,9 @@ impl<'a, 'vm> ser::SerializeSeq for RecordSerializer<'a, 'vm> {
     fn serialize_element<T>(&mut self, value: &T) -> Result<()>
         where T: ?Sized + Serialize
     {
-        value.serialize(&mut **self)
+        value.serialize(&mut **self)?;
+        self.values += 1;
+        Ok(())
     }
 
     fn end(self) -> Result<Self::Ok> {
@@ -292,7 +294,9 @@ impl<'a, 'vm> ser::SerializeTuple for RecordSerializer<'a, 'vm> {
     fn serialize_element<T>(&mut self, value: &T) -> Result<()>
         where T: ?Sized + Serialize
     {
-        value.serialize(&mut **self)
+        value.serialize(&mut **self)?;
+        self.values += 1;
+        Ok(())
     }
 
     fn end(self) -> Result<Self::Ok> {
@@ -307,7 +311,9 @@ impl<'a, 'vm> ser::SerializeTupleStruct for RecordSerializer<'a, 'vm> {
     fn serialize_field<T>(&mut self, value: &T) -> Result<()>
         where T: ?Sized + Serialize
     {
-        value.serialize(&mut **self)
+        value.serialize(&mut **self)?;
+        self.values += 1;
+        Ok(())
     }
 
     fn end(self) -> Result<Self::Ok> {
@@ -322,7 +328,9 @@ impl<'a, 'vm> ser::SerializeTupleVariant for RecordSerializer<'a, 'vm> {
     fn serialize_field<T>(&mut self, value: &T) -> Result<()>
         where T: ?Sized + Serialize
     {
-        value.serialize(&mut **self)
+        value.serialize(&mut **self)?;
+        self.values += 1;
+        Ok(())
     }
 
     fn end(self) -> Result<Self::Ok> {
@@ -343,7 +351,9 @@ impl<'a, 'vm> ser::SerializeMap for RecordSerializer<'a, 'vm> {
     fn serialize_value<T>(&mut self, value: &T) -> Result<()>
         where T: ?Sized + Serialize
     {
-        value.serialize(&mut **self)
+        value.serialize(&mut **self)?;
+        self.values += 1;
+        Ok(())
     }
 
     fn end(self) -> Result<Self::Ok> {
@@ -358,7 +368,9 @@ impl<'a, 'vm> ser::SerializeStruct for RecordSerializer<'a, 'vm> {
     fn serialize_field<T>(&mut self, _key: &'static str, value: &T) -> Result<()>
         where T: ?Sized + Serialize
     {
-        value.serialize(&mut **self)
+        value.serialize(&mut **self)?;
+        self.values += 1;
+        Ok(())
     }
 
     fn end(self) -> Result<Self::Ok> {
@@ -390,17 +402,11 @@ mod tests {
     use super::*;
     use thread::{RootedThread, ThreadInternal};
 
-    #[derive(Serialize)]
-    struct Test {
-        test: i32,
-        string: String,
-    }
-
     fn make_value<'vm, T>(thread: &'vm Thread, value: T) -> Value
         where T: Pushable<'vm>
     {
         let mut context = thread.context();
-        value.push(thread, &mut context);
+        value.push(thread, &mut context).unwrap();
         context.stack.pop()
     }
 
@@ -408,5 +414,62 @@ mod tests {
     fn bool() {
         let thread = RootedThread::new();
         assert_eq!(to_value(&thread, &true).unwrap(), Value::Tag(1));
+    }
+
+    #[derive(Serialize)]
+    struct Record {
+        test: i32,
+        string: String,
+    }
+
+    #[test]
+    fn record() {
+        let thread = RootedThread::new();
+        let actual = to_value(&thread,
+                              &Record {
+                                   test: 123,
+                                   string: "abc".to_string(),
+                               })
+                .unwrap();
+        assert_eq!(actual,
+                   make_value(&thread,
+                              record! {
+                       test => 123,
+                       string => "abc"
+                   }));
+    }
+
+    #[derive(Serialize)]
+    enum Enum {
+        A(String),
+        B(i32),
+    }
+
+    #[test]
+    fn enum_() {
+        let thread = RootedThread::new();
+
+        let actual = to_value(&thread, &Enum::A("abc".to_string())).unwrap();
+        let s = make_value(&thread, "abc");
+        assert_eq!(actual,
+                   Value::Data(thread
+                                   .context()
+                                   .gc
+                                   .alloc(Def {
+                                              tag: 0,
+                                              elems: &[s],
+                                          })
+                                   .unwrap()));
+
+        let actual = to_value(&thread, &Enum::B(1232)).unwrap();
+        assert_eq!(actual,
+                   Value::Data(thread
+                                   .context()
+                                   .gc
+                                   .alloc(Def {
+                                              tag: 1,
+                                              elems: &[Value::Int(1232)],
+                                          })
+                                   .unwrap()));
     }
 }
