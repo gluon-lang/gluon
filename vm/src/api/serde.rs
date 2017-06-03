@@ -11,15 +11,25 @@ use value::{Def, Value};
 use self::serde::ser::{self, Serialize};
 
 pub fn to_value<T>(thread: &Thread, value: &T) -> Result<Value>
-    where T: Serialize
+    where T: ?Sized + Serialize
 {
     let mut context = thread.context();
-    let mut serializer = Serializer {
-        thread: thread,
-        context: &mut context,
-    };
-    value.serialize(&mut serializer)?;
-    Ok(serializer.context.stack.pop())
+    Ser(value).push(thread, &mut context)?;
+    Ok(context.stack.pop())
+}
+
+pub struct Ser<T>(pub T);
+
+impl<'vm, T> Pushable<'vm> for Ser<T>
+    where T: Serialize
+{
+    fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
+        let mut serializer = Serializer {
+            thread: thread,
+            context: context,
+        };
+        self.0.serialize(&mut serializer)
+    }
 }
 
 impl ser::Error for Error {
