@@ -28,6 +28,7 @@ extern crate serde;
 #[macro_use]
 extern crate gluon_base as base;
 extern crate gluon_check as check;
+extern crate gluon_parser as parser;
 
 #[macro_use]
 mod serialization;

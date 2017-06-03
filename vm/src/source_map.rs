@@ -61,7 +61,7 @@ pub struct Local {
     pub index: VmIndex,
     #[serde(deserialize_seed_with = "::serialization::deserialize")]
     pub name: Symbol,
-    #[serde(with = "::serialization::typ")]
+    #[serde(seed_with = "::serialization::typ")]
     pub typ: ArcType,
 }
 

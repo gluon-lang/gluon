@@ -244,7 +244,24 @@ pub mod intern {
 }
 
 pub mod typ {
-    fn deserialize(deserializer: D) -> Result<ArcType, D::Error> where D: Deserializer<'de> {}
+    use serde::de::{Deserialize, Deserializer, Error};
+
+    use super::*;
+    use base::types::ArcType;
+
+    pub fn deserialize<'de, D, T>(seed: &mut Seed<T>, deserializer: D) -> Result<ArcType, D::Error>
+        where D: Deserializer<'de>
+    {
+        let expr_str = String::deserialize(deserializer)?;
+        let expr = ::parser::parse_expr(&mut *seed.state.symbols.borrow_mut(), &expr_str)
+            .map_err(D::Error::custom)?;
+        match expr.value {
+            ::base::ast::Expr::TypeBindings(ref bindings, _) => {
+                Ok(bindings[0].alias.unresolved_type().clone())
+            }
+            _ => Err(D::Error::custom("Invalid type")),
+        }
+    }
 }
 
 #[derive(DeserializeSeed)]
