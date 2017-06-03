@@ -198,6 +198,7 @@ pub mod symbol {
     use super::*;
     use base::symbol::Symbol;
     use serde::{Deserialize, Deserializer};
+    use serde::ser::{Serialize, Serializer};
 
     impl<'de> GcSerialize<'de> for Symbol {
         type Seed = Seed<Symbol>;
@@ -211,6 +212,13 @@ pub mod symbol {
         {
             String::deserialize(deserializer).map(|s| self.state.symbols.borrow_mut().symbol(s))
         }
+    }
+
+    pub fn serialize<S>(symbol: &Symbol, serializer: S, _seed: &SeSeed) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        let s: &str = symbol.as_ref();
+        s.serialize(serializer)
     }
 }
 
@@ -245,6 +253,7 @@ pub mod intern {
 
 pub mod typ {
     use serde::de::{Deserialize, Deserializer, Error};
+    use serde::ser::{Serialize, Serializer};
 
     use super::*;
     use base::types::ArcType;
@@ -261,6 +270,12 @@ pub mod typ {
             }
             _ => Err(D::Error::custom("Invalid type")),
         }
+    }
+
+    pub fn serialize<S>(typ: &ArcType, serializer: S, _seed: &SeSeed) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        format!("type __T = {} in 0", typ).serialize(serializer)
     }
 }
 
