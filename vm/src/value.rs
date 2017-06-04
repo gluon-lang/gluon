@@ -773,6 +773,16 @@ macro_rules! impl_repr {
                 }
             }
         }
+
+        unsafe impl DataDef for Vec<$id> {
+            type Value = ValueArray;
+            fn size(&self) -> usize {
+                DataDef::size(&&self[..])
+            }
+            fn initialize<'w>(self, result: WriteOnly<'w, ValueArray>) -> &'w mut ValueArray {
+                DataDef::initialize(&self[..], result)
+            }
+        }
         )*
         impl Repr {
             fn size_of(self) -> usize {

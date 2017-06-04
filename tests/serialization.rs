@@ -34,3 +34,17 @@ fn roundtrip_module() {
         .unwrap();
     roundtrip(&thread, value);
 }
+
+#[test]
+fn roundtrip_recursive_closure() {
+    let thread = new_vm();
+    let expr = r#"
+        let f x = g x
+        and g x = f x 
+        { f, g }
+        "#;
+    let (value, _) = Compiler::new()
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "test", expr)
+        .unwrap();
+    roundtrip(&thread, value);
+}
