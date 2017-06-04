@@ -82,6 +82,7 @@ pub mod gc {
     use super::*;
     use serde::{Deserialize, Deserializer};
     use serde::de::{DeserializeSeed, Error, SeqSeed};
+    use serde::ser::{SerializeSeed, Serialize, Serializer};
     use value::{DataStruct, GcStr, Value, ValueArray};
     use thread::ThreadInternal;
     use types::VmTag;
@@ -110,6 +111,22 @@ pub mod gc {
                              .alloc_with(&self.state.thread, ::gc::Move(s))
                              .unwrap()
                      })
+        }
+    }
+
+    impl SerializeSeed for ValueArray {
+        type Seed = SeSeed;
+
+        fn serialize_seed<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+            where S: Serializer
+        {
+            use serde::ser::{SerializeSeq, Seeded};
+            let iter = self.iter();
+            let mut serializer = serializer.serialize_seq(iter.size_hint().1)?;
+            for item in iter {
+                serializer.serialize_element(&Seeded::new(seed, &item))?;
+            }
+            serializer.end()
         }
     }
 
@@ -192,6 +209,19 @@ pub mod gc {
                      })
         }
     }
+
+    impl<T> SerializeSeed for GcPtr<T>
+        where T: SerializeSeed
+    {
+        type Seed = T::Seed;
+
+        #[inline]
+        fn serialize_seed<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+            where S: Serializer
+        {
+            (**self).serialize_seed(serializer, seed)
+        }
+    }
 }
 
 pub mod symbol {
@@ -229,6 +259,7 @@ pub mod intern {
 
     use serde::{Deserialize, Deserializer};
     use serde::de::{DeserializeSeed, SeqSeed};
+    use serde::ser::{SerializeSeed, Serialize, Serializer};
 
     impl<'de> GcSerialize<'de> for InternedStr {
         type Seed = Seed<InternedStr>;
@@ -247,6 +278,18 @@ pub mod intern {
                                                           .intern(&s)
                                                           .unwrap()
                                                   })
+        }
+    }
+
+    impl SerializeSeed for InternedStr {
+        type Seed = SeSeed;
+
+        #[inline]
+        fn serialize_seed<S>(&self, serializer: S, _seed: &Self::Seed) -> Result<S::Ok, S::Error>
+            where S: Serializer
+        {
+            let s: &str = self;
+            s.serialize(serializer)
         }
     }
 }

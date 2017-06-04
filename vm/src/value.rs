@@ -34,9 +34,12 @@ impl PartialEq for Userdata {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, SerializeSeed)]
+#[serde(serialize_seed = "::serialization::SeSeed")]
 pub struct ClosureData {
+    #[serde(serialize_seed)]
     pub function: GcPtr<BytecodeFunction>,
+    #[serde(serialize_seed)]
     pub upvars: Array<Value>,
 }
 
@@ -107,23 +110,30 @@ unsafe impl DataDef for ClosureInitDef {
 
 gc_serialize!{ BytecodeFunction }
 
-#[derive(Debug, DeserializeSeed)]
+#[derive(Debug, DeserializeSeed, SerializeSeed)]
 #[serde(deserialize_seed = "::serialization::Seed<BytecodeFunction>")]
+#[serde(serialize_seed = "::serialization::SeSeed")]
 pub struct BytecodeFunction {
     #[serde(deserialize_seed_with = "::serialization::deserialize")]
+    #[serde(serialize_seed_with = "::serialization::symbol::serialize")]
     pub name: Symbol,
     pub args: VmIndex,
     pub max_stack_size: VmIndex,
     pub instructions: Vec<Instruction>,
     #[serde(deserialize_seed_with = "::serialization::deserialize")]
+    #[serde(serialize_seed)]
     pub inner_functions: Vec<GcPtr<BytecodeFunction>>,
     #[serde(deserialize_seed_with = "::serialization::deserialize")]
+    #[serde(serialize_seed)]
     pub strings: Vec<InternedStr>,
     #[serde(deserialize_seed_with = "::serialization::deserialize")]
+    #[serde(serialize_seed)]
     pub globals: Vec<Value>,
     #[serde(deserialize_seed_with = "::serialization::deserialize")]
+    #[serde(serialize_seed)]
     pub records: Vec<Vec<InternedStr>>,
     #[serde(deserialize_seed_with = "::serialization::deserialize")]
+    #[serde(serialize_seed)]
     pub debug_info: DebugInfo,
 }
 
@@ -134,9 +144,11 @@ impl Traverseable for BytecodeFunction {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, SerializeSeed)]
+#[serde(serialize_seed = "::serialization::SeSeed")]
 pub struct DataStruct {
     pub tag: VmTag,
+    #[serde(serialize_seed)]
     pub fields: Array<Value>,
 }
 
@@ -187,6 +199,8 @@ mod gc_str {
     use std::str;
     use std::ops::Deref;
 
+    use serde::ser::{Serialize, Serializer};
+
     #[derive(Copy, Clone, PartialEq)]
     pub struct GcStr(GcPtr<ValueArray>);
 
@@ -197,6 +211,14 @@ mod gc_str {
     }
 
     impl Eq for GcStr {}
+
+    impl Serialize for GcStr {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where S: Serializer
+        {
+            (**self).serialize(serializer)
+        }
+    }
 
     impl GcStr {
         pub fn from_utf8(array: GcPtr<ValueArray>) -> Result<GcStr, ()> {
@@ -243,8 +265,9 @@ pub use self::gc_str::GcStr;
 
 gc_serialize!{ Value }
 
-#[derive(Copy, Clone, PartialEq, DeserializeSeed)]
+#[derive(Copy, Clone, PartialEq, DeserializeSeed, SerializeSeed)]
 #[serde(deserialize_seed = "::serialization::Seed<Value>")]
+#[serde(serialize_seed = "::serialization::SeSeed")]
 pub enum Value {
     Byte(u8),
     Int(VmInt),
@@ -253,18 +276,25 @@ pub enum Value {
            GcStr),
     Tag(VmTag),
     Data(#[serde(deserialize_seed_with = "::serialization::gc::deserialize_data")]
+         #[serde(serialize_seed)]
          GcPtr<DataStruct>),
     Array(#[serde(deserialize_seed_with = "::serialization::gc::deserialize_array")]
+          #[serde(serialize_seed)]
           GcPtr<ValueArray>),
     Function(#[serde(deserialize_seed_with = "::serialization::deserialize")]
+             #[serde(serialize_seed)]
              GcPtr<ExternFunction>),
     Closure(#[serde(deserialize_seed_with = "::serialization::deserialize_closure")]
+            #[serde(serialize_seed)]
             GcPtr<ClosureData>),
     #[serde(skip_deserializing)]
+    #[serde(skip_serializing)]
     PartialApplication(GcPtr<PartialApplicationData>),
     #[serde(skip_deserializing)]
+    #[serde(skip_serializing)]
     Userdata(GcPtr<Box<Userdata>>),
     #[serde(skip_deserializing)]
+    #[serde(skip_serializing)]
     Thread(GcPtr<Thread>),
 }
 
@@ -654,9 +684,13 @@ impl fmt::Debug for Value {
     }
 }
 
+#[derive(SerializeSeed)]
+#[serde(serialize_seed = "::serialization::SeSeed")]
 pub struct ExternFunction {
+    #[serde(serialize_seed_with = "::serialization::symbol::serialize")]
     pub id: Symbol,
     pub args: VmIndex,
+    #[serde(skip_serializing)]
     pub function: extern "C" fn(&Thread) -> Status,
 }
 

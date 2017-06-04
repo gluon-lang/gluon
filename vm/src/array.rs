@@ -5,6 +5,8 @@ use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::slice;
 
+use serde::ser::{SerializeSeed, Serialize, Serializer};
+
 use gc::{Gc, Traverseable};
 
 enum Void {}
@@ -16,6 +18,18 @@ pub struct Array<T: Copy> {
     array_start: [T; 0],
     /// Prevents the array from being instantiated directly
     _void: Void,
+}
+
+impl<T> SerializeSeed for Array<T>
+    where T: Copy + SerializeSeed
+{
+    type Seed = T::Seed;
+
+    fn serialize_seed<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        (**self).serialize_seed(serializer, seed)
+    }
 }
 
 impl<T: Copy> AsRef<[T]> for Array<T> {
