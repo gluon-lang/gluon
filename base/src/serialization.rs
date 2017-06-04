@@ -1,3 +1,6 @@
+extern crate anymap;
+
+use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -45,8 +48,34 @@ impl<'de, S, F, R> DeserializeSeed<'de> for MapSeed<S, F>
 type Id = u32;
 type IdToShared<T> = HashMap<Id, T>;
 
-#[derive(Clone, Default)]
-pub struct NodeMap<T>(Rc<RefCell<IdToShared<T>>>);
+#[derive(Clone)]
+pub struct NodeMap(Rc<RefCell<anymap::Map>>);
+
+impl Default for NodeMap {
+    fn default() -> Self {
+        NodeMap(Rc::new(RefCell::new(anymap::Map::new())))
+    }
+}
+
+impl NodeMap {
+    fn insert<T>(&self, id: Id, value: T)
+        where T: Any
+    {
+        self.0
+            .borrow_mut()
+            .get_mut::<IdToShared<T>>()
+            .and_then(|map| map.insert(id, value));
+    }
+
+    fn get<T>(&self, id: &Id) -> Option<T>
+        where T: Any + Clone
+    {
+        self.0
+            .borrow()
+            .get::<IdToShared<T>>()
+            .and_then(|map| map.get(id).cloned())
+    }
+}
 
 pub struct SharedSeed<T>(pub T);
 
@@ -75,8 +104,8 @@ enum Variant<T> {
 
 impl<'de, T> DeserializeSeed<'de> for SharedSeed<T>
     where T: DeserializeSeed<'de> + Clone,
-          T: AsMut<NodeMap<<T as DeserializeSeed<'de>>::Value>>,
-          T::Value: Clone
+          T: AsMut<NodeMap>,
+          T::Value: Any + Clone
 {
     type Value = T::Value;
 
@@ -86,17 +115,13 @@ impl<'de, T> DeserializeSeed<'de> for SharedSeed<T>
 
         match VariantSeed(self.0.clone()).deserialize(deserializer)? {
             Variant::Marked(id, node) => {
-                self.0
-                    .as_mut()
-                    .0
-                    .borrow_mut()
-                    .insert(id, node.clone());
+                self.0.as_mut().insert(id, node.clone());
                 Ok(node)
             }
             Variant::Plain(value) => Ok(value),
             Variant::Reference(id) => {
-                match self.0.as_mut().0.borrow_mut().get(&id) {
-                    Some(rc) => Ok(rc.clone()),
+                match self.0.as_mut().get(&id) {
+                    Some(rc) => Ok(rc),
                     None => Err(D::Error::custom(format_args!("missing id {}", id))),
                 }
             }
