@@ -3,9 +3,11 @@ extern crate anymap;
 use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::ops::Deref;
 use std::rc::Rc;
 
 use serde::de::{Deserialize, DeserializeSeed, Deserializer, Error};
+use serde::ser::{Serialize, SerializeSeed, Serializer};
 
 #[derive(Clone)]
 pub struct MapSeed<S, F> {
@@ -90,14 +92,18 @@ fn deserialize_t<'de, D, T>(seed: &mut VariantSeed<T>,
     seed.0.clone().deserialize(deserializer)
 }
 
-#[derive(DeserializeSeed)]
+#[derive(DeserializeSeed, SerializeSeed)]
 #[serde(deserialize_seed = "VariantSeed<T>")]
-#[serde(bound = "T: DeserializeSeed<'de> + Clone")]
+#[serde(bound(deserialize  = "T: DeserializeSeed<'de> + Clone"))]
+#[serde(bound(serialize = "T: SerializeSeed"))]
+#[serde(serialize_seed = "T::Seed")]
 enum Variant<T> {
     Marked(Id,
            #[serde(deserialize_seed_with = "deserialize_t")]
+           #[serde(serialize_seed)]
            T),
     Plain(#[serde(deserialize_seed_with = "deserialize_t")]
+          #[serde(serialize_seed)]
           T),
     Reference(Id),
 }
@@ -127,4 +133,50 @@ impl<'de, T> DeserializeSeed<'de> for SharedSeed<T>
             }
         }
     }
+}
+
+pub trait Shared {
+    fn unique(&self) -> bool;
+    fn as_ptr(&self) -> *const ();
+}
+
+pub type NodeToId = RefCell<HashMap<*const (), Id>>;
+
+enum Lookup {
+    Unique,
+    Found(Id),
+    Inserted(Id),
+}
+
+fn node_to_id<T>(map: &NodeToId, node: &T) -> Lookup
+    where T: Shared
+{
+    if Shared::unique(node) {
+        return Lookup::Unique;
+    }
+    let mut map = map.borrow_mut();
+    if let Some(id) = map.get(&node.as_ptr()) {
+        return Lookup::Found(*id);
+    }
+    let id = map.len() as Id;
+    map.insert(node.as_ptr(), id);
+    Lookup::Inserted(id)
+}
+
+
+pub fn serialize_shared<S, T>(self_: &T,
+                              serializer: S,
+                              seed: &<T::Target as SerializeSeed>::Seed)
+                              -> Result<S::Ok, S::Error>
+    where S: Serializer,
+          T: Shared + Deref,
+          T::Target: SerializeSeed,
+          <T::Target as SerializeSeed>::Seed: AsRef<NodeToId>
+{
+    let node = match node_to_id(seed.as_ref(), self_) {
+        Lookup::Unique => Variant::Plain(&**self_),
+        Lookup::Found(id) => Variant::Reference(id),
+        Lookup::Inserted(id) => Variant::Marked(id, &**self_),
+    };
+    node.serialize_seed(serializer, seed)
 }

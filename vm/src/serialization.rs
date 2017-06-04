@@ -6,7 +6,7 @@ use serde::Deserializer;
 use serde::de::{DeserializeSeed, SeqSeed, Error};
 
 use base::fnv::FnvMap;
-use base::serialization::NodeMap;
+use base::serialization::{NodeMap, NodeToId};
 use base::symbol::{Symbol, Symbols};
 use gc::{DataDef, GcPtr, Traverseable, WriteOnly};
 use thread::{RootedThread, Status, Thread, ThreadInternal};
@@ -43,6 +43,13 @@ impl DeSeed {
 #[derive(Default)]
 pub struct SeSeed {
     interner: Symbols,
+    node_to_id: NodeToId,
+}
+
+impl AsRef<NodeToId> for SeSeed {
+    fn as_ref(&self) -> &NodeToId {
+        &self.node_to_id
+    }
 }
 
 impl SeSeed {
@@ -187,6 +194,8 @@ pub mod gc {
                                      deserializer)
     }
 
+    gc_serialize!{ Data }
+
     #[derive(DeserializeSeed)]
     #[serde(deserialize_seed = "::serialization::Seed<Data>")]
     pub struct Data {
@@ -195,25 +204,35 @@ pub mod gc {
         fields: Vec<Value>,
     }
 
+    unsafe impl DataDef for Data {
+        type Value = DataStruct;
+
+        fn size(&self) -> usize {
+            use value::Def;
+            Def {
+                    tag: self.tag,
+                    elems: &self.fields,
+                }
+                .size()
+        }
+
+        fn initialize<'w>(self, result: WriteOnly<'w, Self::Value>) -> &'w mut Self::Value {
+            use value::Def;
+            Def {
+                    tag: self.tag,
+                    elems: &self.fields,
+                }
+                .initialize(result)
+        }
+    }
+
     pub fn deserialize_data<'de, D, T>(seed: &mut Seed<T>,
                                        deserializer: D)
                                        -> Result<GcPtr<DataStruct>, D::Error>
         where D: Deserializer<'de>
     {
-        use value::Def;
-
-        Seed::<Data>::from(seed.state.clone())
-            .deserialize(deserializer)
-            .and_then(|data| {
-                seed.state
-                    .thread
-                    .context()
-                    .alloc(Def {
-                               tag: data.tag,
-                               elems: &data.fields,
-                           })
-                    .map_err(D::Error::custom)
-            })
+        DeserializeSeed::deserialize(Seed::<DataDefSeed<Data>>::from(seed.state.clone()),
+                                     deserializer)
     }
 
     impl<'de> GcSerialize<'de> for GcStr {
@@ -237,8 +256,19 @@ pub mod gc {
         }
     }
 
+    impl<T> ::base::serialization::Shared for GcPtr<T> {
+        fn unique(&self) -> bool {
+            false
+        }
+        fn as_ptr(&self) -> *const () {
+            let t: *const T = &**self;
+            t as *const ()
+        }
+    }
+
     impl<T> SerializeSeed for GcPtr<T>
-        where T: SerializeSeed
+        where T: SerializeSeed,
+              T::Seed: AsRef<NodeToId>
     {
         type Seed = T::Seed;
 
@@ -246,7 +276,7 @@ pub mod gc {
         fn serialize_seed<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
             where S: Serializer
         {
-            (**self).serialize_seed(serializer, seed)
+            ::base::serialization::serialize_shared(self, serializer, seed)
         }
     }
 }
