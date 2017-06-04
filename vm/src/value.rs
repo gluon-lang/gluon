@@ -287,9 +287,9 @@ pub enum Value {
     Closure(#[serde(deserialize_seed_with = "::serialization::deserialize_closure")]
             #[serde(serialize_seed)]
             GcPtr<ClosureData>),
-    #[serde(skip_deserializing)]
-    #[serde(skip_serializing)]
-    PartialApplication(GcPtr<PartialApplicationData>),
+    PartialApplication(#[serde(deserialize_seed_with = "::serialization::deserialize_application")]
+                       #[serde(serialize_seed)]
+                       GcPtr<PartialApplicationData>),
     #[serde(skip_deserializing)]
     #[serde(skip_serializing)]
     Userdata(GcPtr<Box<Userdata>>),
@@ -516,10 +516,18 @@ impl<'a, 't> InternalPrinter<'a, 't> {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+gc_serialize!{ Callable }
+
+#[derive(Copy, Clone, Debug, DeserializeSeed, SerializeSeed)]
+#[serde(deserialize_seed = "::serialization::Seed<Callable>")]
+#[serde(serialize_seed = "::serialization::SeSeed")]
 pub enum Callable {
-    Closure(GcPtr<ClosureData>),
-    Extern(GcPtr<ExternFunction>),
+    Closure(#[serde(deserialize_seed_with = "::serialization::deserialize_closure")]
+            #[serde(serialize_seed)]
+            GcPtr<ClosureData>),
+    Extern(#[serde(deserialize_seed_with = "::serialization::deserialize")]
+           #[serde(serialize_seed)]
+           GcPtr<ExternFunction>),
 }
 
 impl Callable {
@@ -553,9 +561,12 @@ impl Traverseable for Callable {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, SerializeSeed)]
+#[serde(serialize_seed = "::serialization::SeSeed")]
 pub struct PartialApplicationData {
+    #[serde(serialize_seed)]
     pub function: Callable,
+    #[serde(serialize_seed)]
     pub args: Array<Value>,
 }
 

@@ -10,7 +10,8 @@ use base::symbol::{Symbol, Symbols};
 use gc::{DataDef, GcPtr, Traverseable, WriteOnly};
 use thread::{RootedThread, Status, Thread, ThreadInternal};
 use types::VmIndex;
-use value::{BytecodeFunction, ClosureData, ClosureDataDef, ExternFunction, Value};
+use value::{BytecodeFunction, Callable, ClosureData, ClosureDataDef, ExternFunction,
+            PartialApplicationData, PartialApplicationDataDef, Value};
 
 #[derive(Clone)]
 pub struct DeSeed {
@@ -353,6 +354,39 @@ pub fn deserialize_closure<'de, T, D>(seed: &mut Seed<T>,
     DeserializeSeed::deserialize(Seed::<DataDefSeed<ClosureDataModel>>::from(seed.state.clone()),
                                  deserializer)
 }
+
+#[derive(DeserializeSeed)]
+#[serde(deserialize_seed = "Seed<PartialApplicationModel>")]
+struct PartialApplicationModel {
+    #[serde(deserialize_seed_with = "deserialize")]
+    function: Callable,
+    #[serde(deserialize_seed_with = "deserialize")]
+    upvars: Vec<Value>,
+}
+
+gc_serialize!{ PartialApplicationModel }
+
+unsafe impl DataDef for PartialApplicationModel {
+    type Value = PartialApplicationData;
+
+    fn size(&self) -> usize {
+        PartialApplicationDataDef(self.function, &self.upvars).size()
+    }
+
+    fn initialize<'w>(self, result: WriteOnly<'w, Self::Value>) -> &'w mut Self::Value {
+        PartialApplicationDataDef(self.function, &self.upvars).initialize(result)
+    }
+}
+
+pub fn deserialize_application<'de, T, D>(seed: &mut Seed<T>,
+                                          deserializer: D)
+                                          -> Result<GcPtr<PartialApplicationData>, D::Error>
+    where D: Deserializer<'de>
+{
+    DeserializeSeed::deserialize(Seed::<DataDefSeed<PartialApplicationModel>>::from(seed.state.clone()),
+                                 deserializer)
+}
+
 
 struct DataDefSeed<T>(PhantomData<T>);
 
