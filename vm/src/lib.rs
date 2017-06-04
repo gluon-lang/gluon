@@ -31,7 +31,7 @@ extern crate gluon_check as check;
 extern crate gluon_parser as parser;
 
 #[macro_use]
-mod serialization;
+pub mod serialization;
 
 #[macro_use]
 pub mod api;

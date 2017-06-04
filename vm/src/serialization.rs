@@ -29,7 +29,6 @@ impl DeSeed {
         }
     }
 
-    #[cfg(test)]
     pub fn deserialize<'de, D, T>(self, deserializer: D) -> Result<T, D::Error>
         where D: Deserializer<'de>,
               T: GcSerialize<'de>
@@ -38,8 +37,15 @@ impl DeSeed {
     }
 }
 
+#[derive(Default)]
 pub struct SeSeed {
     interner: Symbols,
+}
+
+impl SeSeed {
+    pub fn new() -> SeSeed {
+        SeSeed::default()
+    }
 }
 
 pub struct Seed<T> {
@@ -166,7 +172,7 @@ pub mod gc {
     pub struct Data {
         tag: VmTag,
         #[serde(deserialize_seed_with = "::serialization::deserialize")]
-        elems: Vec<Value>,
+        fields: Vec<Value>,
     }
 
     pub fn deserialize_data<'de, D, T>(seed: &mut Seed<T>,
@@ -184,7 +190,7 @@ pub mod gc {
                     .context()
                     .alloc(Def {
                                tag: data.tag,
-                               elems: &data.elems,
+                               elems: &data.fields,
                            })
                     .map_err(D::Error::custom)
             })
