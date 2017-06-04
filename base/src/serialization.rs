@@ -4,13 +4,51 @@ use std::rc::Rc;
 
 use serde::de::{Deserialize, DeserializeSeed, Deserializer, Error};
 
+#[derive(Clone)]
+pub struct MapSeed<S, F> {
+    seed: S,
+    map: F,
+}
+
+impl<S, F> MapSeed<S, F> {
+    pub fn new(seed: S, map: F) -> MapSeed<S, F> {
+        MapSeed {
+            seed: seed,
+            map: map,
+        }
+    }
+}
+
+impl<S, T, F> AsMut<T> for MapSeed<S, F>
+    where S: AsMut<T>
+{
+    fn as_mut(&mut self) -> &mut T {
+        self.seed.as_mut()
+    }
+}
+
+
+impl<'de, S, F, R> DeserializeSeed<'de> for MapSeed<S, F>
+    where S: DeserializeSeed<'de>,
+          F: FnOnce(S::Value) -> R
+{
+    type Value = R;
+
+    fn deserialize<D>(mut self, deserializer: D) -> Result<Self::Value, D::Error>
+        where D: Deserializer<'de>
+    {
+        self.seed.deserialize(deserializer).map(self.map)
+    }
+}
+
+
 type Id = u32;
 type IdToShared<T> = HashMap<Id, T>;
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct NodeMap<T>(Rc<RefCell<IdToShared<T>>>);
 
-pub struct SharedSeed<T>(T);
+pub struct SharedSeed<T>(pub T);
 
 struct VariantSeed<T>(T);
 
@@ -36,7 +74,7 @@ enum Variant<T> {
 }
 
 impl<'de, T> DeserializeSeed<'de> for SharedSeed<T>
-    where T: DeserializeSeed<'de> + Deserialize<'de> + Clone,
+    where T: DeserializeSeed<'de> + Clone,
           T: AsMut<NodeMap<<T as DeserializeSeed<'de>>::Value>>,
           T::Value: Clone
 {
