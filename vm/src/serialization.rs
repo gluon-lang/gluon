@@ -110,6 +110,27 @@ pub mod gc {
         type Seed = Seed<GcPtr<T>>;
     }
 
+    impl<'de, T> GcSerialize<'de> for ::gc::Move<T>
+        where T: GcSerialize<'de> + ::gc::Traverseable
+    {
+        type Seed = Seed<::gc::Move<T>>;
+    }
+
+    impl<'de, T> DeserializeSeed<'de> for Seed<::gc::Move<T>>
+        where T: GcSerialize<'de> + ::gc::Traverseable,
+              T::Seed: DeserializeSeed<'de>
+    {
+        type Value = ::gc::Move<T>;
+
+        fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where D: Deserializer<'de>
+        {
+            T::Seed::from(self.state)
+                .deserialize(deserializer)
+                .map(::gc::Move)
+        }
+    }
+
     impl<'de, T> DeserializeSeed<'de> for Seed<GcPtr<T>>
         where T: GcSerialize<'de> + ::gc::Traverseable + 'static,
               T::Seed: DeserializeSeed<'de>
@@ -119,53 +140,9 @@ pub mod gc {
         fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
             where D: Deserializer<'de>
         {
-            use base::serialization::SharedSeed;
-
-            struct GcSeed<T> {
-                _marker: PhantomData<T>,
-                state: DeSeed,
-            }
-            impl<T> Clone for GcSeed<T> {
-                fn clone(&self) -> Self {
-                    GcSeed {
-                        _marker: PhantomData,
-                        state: self.state.clone(),
-                    }
-                }
-            }
-            impl<T> AsMut<NodeMap> for GcSeed<T> {
-                fn as_mut(&mut self) -> &mut NodeMap {
-                    &mut self.state.gc_map
-                }
-            }
-
-            impl<'de, T> DeserializeSeed<'de> for GcSeed<T>
-                where T: GcSerialize<'de> + ::gc::Traverseable + 'static,
-                      T::Seed: DeserializeSeed<'de>
-            {
-                type Value = GcPtr<T>;
-
-                fn deserialize<D>(mut self, deserializer: D) -> Result<Self::Value, D::Error>
-                    where D: Deserializer<'de>
-                {
-                    <T::Seed>::from(self.state.clone())
-                        .deserialize(deserializer)
-                        .map(|s| {
-                                 self.state
-                                     .thread
-                                     .context()
-                                     .alloc_with(&self.state.thread, ::gc::Move(s))
-                                     .unwrap()
-                             })
-                }
-            }
-
-            let seed = GcSeed {
-                _marker: PhantomData,
-                state: self.state,
-            };
-
-            SharedSeed(seed).deserialize(deserializer)
+            use gc::Move;
+            DeserializeSeed::deserialize(Seed::<DataDefSeed<Move<T>>>::from(self.state.clone()),
+                                         deserializer)
         }
     }
 
@@ -175,13 +152,9 @@ pub mod gc {
         fn serialize_seed<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
             where S: Serializer
         {
-            use serde::ser::{SerializeSeq, Seeded};
-            let iter = self.iter();
-            let mut serializer = serializer.serialize_seq(iter.size_hint().1)?;
-            for item in iter {
-                serializer.serialize_element(&Seeded::new(seed, &item))?;
-            }
-            serializer.end()
+            use serde::ser::Seeded;
+
+            serializer.collect_seq(self.iter().map(|value| Seeded::new(seed, value)))
         }
     }
 
