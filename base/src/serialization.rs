@@ -3,6 +3,7 @@ extern crate anymap;
 use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::marker::PhantomData;
 use std::ops::Deref;
 use std::rc::Rc;
 
@@ -11,7 +12,16 @@ use serde::ser::{Serialize, SerializeSeed, Serializer};
 
 use symbol::Symbol;
 
-impl<'de, Id> DeserializeSeed<'de> for NodeMap<Id>
+#[derive(Clone)]
+pub struct IdSeed<Id>(NodeMap, PhantomData<Id>);
+
+impl<Id> IdSeed<Id> {
+    pub fn new(map: NodeMap) -> Self {
+        IdSeed(map, PhantomData)
+    }
+}
+
+impl<'de, Id> DeserializeSeed<'de> for IdSeed<Id>
     where Id: Deserialize<'de>
 {
     type Value = Id;
@@ -23,12 +33,11 @@ impl<'de, Id> DeserializeSeed<'de> for NodeMap<Id>
     }
 }
 
-impl<Id> AsMut<NodeMap<Id>> for NodeMap<Id> {
-    fn as_mut(&mut self) -> &mut NodeMap<Id> {
-        self
+impl<Id> AsMut<NodeMap> for IdSeed<Id> {
+    fn as_mut(&mut self) -> &mut NodeMap {
+        &mut self.0
     }
 }
-
 
 #[derive(Clone)]
 pub struct MapSeed<S, F> {
@@ -101,6 +110,7 @@ impl NodeMap {
     }
 }
 
+#[derive(Clone)]
 pub struct SharedSeed<T>(pub T);
 
 pub struct VariantSeed<T>(pub T);

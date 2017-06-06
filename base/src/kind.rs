@@ -18,10 +18,10 @@ impl<'a, T: ?Sized + KindEnv> KindEnv for &'a T {
 }
 
 #[derive(Clone)]
-pub struct KindSeed(pub ::serialization::NodeMap<ArcKind>);
+pub struct KindSeed(pub ::serialization::NodeMap);
 
-impl AsMut<::serialization::NodeMap<ArcKind>> for KindSeed {
-    fn as_mut(&mut self) -> &mut ::serialization::NodeMap<ArcKind> {
+impl AsMut<::serialization::NodeMap> for KindSeed {
+    fn as_mut(&mut self) -> &mut ::serialization::NodeMap {
         &mut self.0
     }
 }
