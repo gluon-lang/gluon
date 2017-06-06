@@ -960,26 +960,54 @@ fn top<'a, I, T>(typ: &'a Type<I, T>) -> DisplayType<'a, I, T> {
     dt(Prec::Top, typ)
 }
 
+pub fn display_type<'a, I, T>(typ: &'a Type<I, T>) -> TypeFormatter<'a, I, T> {
+    TypeFormatter {
+        width: 80,
+        typ: typ,
+    }
+}
+
 pub struct DisplayType<'a, I: 'a, T: 'a> {
     prec: Prec,
     typ: &'a Type<I, T>,
 }
 
-impl<'a, I, T> fmt::Display for DisplayType<'a, I, T>
-where
-    T: Deref<Target = Type<I, T>> + 'a,
-    I: AsRef<str>,
+pub struct TypeFormatter<'a, I, T>
+    where I: 'a,
+          T: 'a
+{
+    width: usize,
+    typ: &'a Type<I, T>,
+}
+
+impl<'a, I, T> TypeFormatter<'a, I, T> {
+    pub fn new(typ: &'a Type<I, T>) -> Self {
+        TypeFormatter {
+            width: 80,
+            typ: typ,
+        }
+    }
+}
+
+impl<'a, I, T> TypeFormatter<'a, I, T> {
+    pub fn width(mut self, width: usize) -> Self {
+        self.width = width;
+        self
+    }
+}
+
+impl<'a, I, T> fmt::Display for TypeFormatter<'a, I, T>
+    where T: Deref<Target = Type<I, T>> + 'a,
+          I: AsRef<str>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // Standard width for terminals are 80 characters
-        const WIDTH: usize = 80;
-
         let arena = Arena::new();
         let mut s = Vec::new();
-        self.pretty(&arena)
+        dt(Prec::Top, self.typ)
+            .pretty(&arena)
             .group()
             .1
-            .render(WIDTH, &mut s)
+            .render(self.width, &mut s)
             .map_err(|_| fmt::Error)?;
         write!(f, "{}", ::std::str::from_utf8(&s).expect("utf-8"))
     }
@@ -1180,7 +1208,7 @@ where
     T: Deref<Target = Type<I, T>>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        top(self).fmt(f)
+        write!(f, "{}", TypeFormatter::new(self))
     }
 }
 

@@ -355,7 +355,9 @@ pub mod typ {
     pub fn serialize<S>(typ: &ArcType, serializer: S, _seed: &SeSeed) -> Result<S::Ok, S::Error>
         where S: Serializer
     {
-        format!("type __T = {} in 0", typ).serialize(serializer)
+        format!("type __T = {} in 0",
+                ::base::types::TypeFormatter::new(typ).width(4000000))
+                .serialize(serializer)
     }
 }
 
