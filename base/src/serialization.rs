@@ -47,7 +47,7 @@ impl<'de, S, F, R> DeserializeSeed<'de> for MapSeed<S, F>
 }
 
 
-type Id = u32;
+pub type Id = u32;
 type IdToShared<T> = HashMap<Id, T>;
 
 #[derive(Clone)]
@@ -60,16 +60,17 @@ impl Default for NodeMap {
 }
 
 impl NodeMap {
-    fn insert<T>(&self, id: Id, value: T)
+    pub fn insert<T>(&self, id: Id, value: T)
         where T: Any
     {
         self.0
             .borrow_mut()
-            .get_mut::<IdToShared<T>>()
-            .and_then(|map| map.insert(id, value));
+            .entry::<IdToShared<T>>()
+            .or_insert(IdToShared::new())
+            .insert(id, value);
     }
 
-    fn get<T>(&self, id: &Id) -> Option<T>
+    pub fn get<T>(&self, id: &Id) -> Option<T>
         where T: Any + Clone
     {
         self.0
@@ -81,7 +82,7 @@ impl NodeMap {
 
 pub struct SharedSeed<T>(pub T);
 
-struct VariantSeed<T>(T);
+pub struct VariantSeed<T>(pub T);
 
 fn deserialize_t<'de, D, T>(seed: &mut VariantSeed<T>,
                             deserializer: D)
@@ -97,7 +98,7 @@ fn deserialize_t<'de, D, T>(seed: &mut VariantSeed<T>,
 #[serde(bound(deserialize  = "T: DeserializeSeed<'de> + Clone"))]
 #[serde(bound(serialize = "T: SerializeSeed"))]
 #[serde(serialize_seed = "T::Seed")]
-enum Variant<T> {
+pub enum Variant<T> {
     Marked(Id,
            #[serde(deserialize_seed_with = "deserialize_t")]
            #[serde(serialize_seed)]
@@ -118,7 +119,6 @@ impl<'de, T> DeserializeSeed<'de> for SharedSeed<T>
     fn deserialize<D>(mut self, deserializer: D) -> Result<Self::Value, D::Error>
         where D: Deserializer<'de>
     {
-
         match VariantSeed(self.0.clone()).deserialize(deserializer)? {
             Variant::Marked(id, node) => {
                 self.0.as_mut().insert(id, node.clone());

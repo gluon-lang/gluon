@@ -6,6 +6,8 @@ use itertools::Itertools;
 
 use pretty::{Arena, DocAllocator, DocBuilder};
 
+use serde::ser::SerializeSeed;
+
 use base::symbol::Symbol;
 use base::types::{ArcType, Type, TypeEnv};
 use types::*;
@@ -34,12 +36,9 @@ impl PartialEq for Userdata {
     }
 }
 
-#[derive(Debug, SerializeSeed)]
-#[serde(serialize_seed = "::serialization::SeSeed")]
+#[derive(Debug)]
 pub struct ClosureData {
-    #[serde(serialize_seed)]
     pub function: GcPtr<BytecodeFunction>,
-    #[serde(serialize_seed)]
     pub upvars: Array<Value>,
 }
 
@@ -285,7 +284,7 @@ pub enum Value {
              #[serde(serialize_seed)]
              GcPtr<ExternFunction>),
     Closure(#[serde(deserialize_seed_with = "::serialization::deserialize_closure")]
-            #[serde(serialize_seed)]
+            #[serde(serialize_seed_with = "ClosureData::serialize_seed")]
             GcPtr<ClosureData>),
     PartialApplication(#[serde(deserialize_seed_with = "::serialization::deserialize_application")]
                        #[serde(serialize_seed)]
@@ -523,7 +522,7 @@ gc_serialize!{ Callable }
 #[serde(serialize_seed = "::serialization::SeSeed")]
 pub enum Callable {
     Closure(#[serde(deserialize_seed_with = "::serialization::deserialize_closure")]
-            #[serde(serialize_seed)]
+            #[serde(serialize_seed_with = "ClosureData::serialize_seed")]
             GcPtr<ClosureData>),
     Extern(#[serde(deserialize_seed_with = "::serialization::deserialize")]
            #[serde(serialize_seed)]

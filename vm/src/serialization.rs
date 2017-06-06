@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use serde::Deserializer;
 use serde::de::{DeserializeSeed, SeqSeed, Error};
+use serde::ser::{Serializer, SerializeSeed, SerializeSeq, Seeded};
 
 use base::fnv::FnvMap;
 use base::serialization::{NodeMap, NodeToId};
@@ -69,6 +70,12 @@ impl<T> Clone for Seed<T> {
             state: self.state.clone(),
             _marker: PhantomData,
         }
+    }
+}
+
+impl<T> AsMut<NodeMap> for Seed<T> {
+    fn as_mut(&mut self) -> &mut NodeMap {
+        &mut self.state.gc_map
     }
 }
 
@@ -352,26 +359,65 @@ pub mod typ {
     }
 }
 
-#[derive(DeserializeSeed)]
-#[serde(deserialize_seed = "Seed<ClosureDataModel>")]
 struct ClosureDataModel {
-    #[serde(deserialize_seed_with = "deserialize")]
     function: GcPtr<BytecodeFunction>,
-    #[serde(deserialize_seed_with = "deserialize")]
-    upvars: Vec<Value>,
+    upvars: usize,
 }
-
-gc_serialize!{ ClosureDataModel }
 
 unsafe impl DataDef for ClosureDataModel {
     type Value = ClosureData;
 
     fn size(&self) -> usize {
-        ClosureDataDef(self.function, &self.upvars).size()
+        use std::mem::size_of;
+        use array::Array;
+        size_of::<GcPtr<BytecodeFunction>>() + Array::<Value>::size_of(self.upvars)
     }
 
-    fn initialize<'w>(self, result: WriteOnly<'w, Self::Value>) -> &'w mut Self::Value {
-        ClosureDataDef(self.function, &self.upvars).initialize(result)
+    fn initialize<'w>(self, mut result: WriteOnly<'w, Self::Value>) -> &'w mut Self::Value {
+        unsafe {
+            let result = &mut *result.as_mut_ptr();
+            result.function = self.function;
+            result
+                .upvars
+                .initialize(::std::iter::repeat(Value::Int(0)).take(self.upvars));
+            result
+        }
+    }
+}
+
+#[derive(Deserialize, Serialize)]
+enum GraphVariant {
+    Marked(::base::serialization::Id),
+    Reference(::base::serialization::Id),
+}
+
+impl SerializeSeed for ClosureData {
+    type Seed = SeSeed;
+
+    #[inline]
+    fn serialize_seed<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        let mut serializer = serializer.serialize_seq(Some(3 + self.upvars.len()))?;
+        let self_id = self as *const _ as *const ();
+        if let Some(&id) = seed.node_to_id.borrow().get(&self_id) {
+            serializer
+                .serialize_element(&GraphVariant::Reference(id))?;
+            return serializer.end();
+        }
+        {
+            let mut node_to_id = seed.node_to_id.borrow_mut();
+            let len = node_to_id.len() as ::base::serialization::Id;
+            serializer.serialize_element(&GraphVariant::Marked(len))?;
+            node_to_id.insert(self_id, len);
+        }
+        serializer
+            .serialize_element(&Seeded::new(seed, self.function))?;
+        serializer.serialize_element(&self.upvars.len())?;
+        for item in self.upvars.iter() {
+            serializer.serialize_element(&Seeded::new(seed, item))?;
+        }
+        serializer.end()
     }
 }
 
@@ -380,8 +426,78 @@ pub fn deserialize_closure<'de, T, D>(seed: &mut Seed<T>,
                                       -> Result<GcPtr<ClosureData>, D::Error>
     where D: Deserializer<'de>
 {
-    DeserializeSeed::deserialize(Seed::<DataDefSeed<ClosureDataModel>>::from(seed.state.clone()),
-                                 deserializer)
+    use std::fmt;
+
+    use serde::de::{SeqAccess, Visitor};
+
+    impl<'de> DeserializeSeed<'de> for Seed<ClosureData> {
+        type Value = GcPtr<ClosureData>;
+
+        fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where D: Deserializer<'de>
+        {
+            impl<'de> Visitor<'de> for Seed<ClosureData> {
+                type Value = GcPtr<ClosureData>;
+
+                fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                    formatter.write_str("struct ClosureData")
+                }
+
+                fn visit_seq<V>(self, mut seq: V) -> Result<Self::Value, V::Error>
+                    where V: SeqAccess<'de>
+                {
+                    use base::serialization::{VariantSeed, Variant};
+
+                    let variant = seq.next_element()?
+                        .ok_or_else(|| V::Error::invalid_length(0, &self))?;
+                    unsafe {
+                        match variant {
+                            GraphVariant::Marked(id) => {
+                                let function =
+                                    seq.next_element_seed(Seed::<GcPtr<BytecodeFunction>>::from(self.state.clone()))?
+                                        .ok_or_else(|| V::Error::invalid_length(1, &self))?;
+                                let upvars =
+                                    seq.next_element()?
+                                        .ok_or_else(|| V::Error::invalid_length(2, &self))?;
+
+                                let mut closure: GcPtr<ClosureData> =
+                                    self.state
+                                        .thread
+                                        .context()
+                                        .gc
+                                        .alloc(ClosureDataModel {
+                                                   function: function,
+                                                   upvars: upvars,
+                                               })
+                                        .map_err(V::Error::custom)?;
+                                self.state.gc_map.insert(id, closure);
+
+                                for i in 0..upvars {
+                                    let value = seq.next_element_seed(Seed::<Value>::from(self.state.clone()))?
+                                        .ok_or_else(|| V::Error::invalid_length(i + 2, &self))?;
+                                    closure.as_mut().upvars[i] = value;
+                                }
+                                Ok(closure)
+                            }
+                            GraphVariant::Reference(id) => {
+                                match self.state.gc_map.get::<GcPtr<ClosureData>>(&id) {
+                                    Some(rc) => Ok(rc),
+                                    None => {
+                                        Err(V::Error::custom(format_args!("missing id {}", id)))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            deserializer.deserialize_seq(self)
+        }
+    }
+    use base::serialization::SharedSeed;
+
+    DeserializeSeed::deserialize(Seed::<ClosureData>::from(seed.state.clone()), deserializer)
 }
 
 #[derive(DeserializeSeed)]

@@ -83,13 +83,22 @@ pub enum Status {
 }
 
 /// A rooted value
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub struct RootedValue<T>
 where
     T: Deref<Target = Thread>,
 {
     vm: T,
     value: Value,
+}
+
+impl<T, U> PartialEq<RootedValue<U>> for RootedValue<T>
+    where T: Deref<Target = Thread>,
+          U: Deref<Target = Thread>
+{
+    fn eq(&self, other: &RootedValue<U>) -> bool {
+        self.value == other.value
+    }
 }
 
 impl<T> Drop for RootedValue<T>

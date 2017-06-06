@@ -981,6 +981,10 @@ impl<T, V> OpaqueValue<T, V>
         self.0.vm()
     }
 
+    pub fn into_inner(self) -> RootedValue<T> {
+        self.0
+    }
+
     /// Unsafe as `Value` are not rooted
     pub unsafe fn get_value(&self) -> Value {
         *self.0
