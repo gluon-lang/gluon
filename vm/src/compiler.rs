@@ -697,8 +697,13 @@ impl<'a> Compiler<'a> {
                         }
                     }
                 }
+                let constructors_in_type = resolve::remove_aliases_cow(self, &typ)
+                    .row_iter()
+                    .count();
                 // Create a catch all to prevent us from running into undefined behaviour
-                if !catch_all {
+                // If a catch all already exists or all constructors have been matched then we can
+                // skip it
+                if !catch_all && alts.len() != constructors_in_type {
                     let error_fn = self.symbols.symbol("#error");
                     self.load_identifier(&error_fn, function)?;
                     function.emit_string(self.intern("Non-exhaustive pattern")?);
