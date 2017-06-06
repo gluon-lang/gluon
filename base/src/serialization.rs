@@ -125,8 +125,9 @@ fn deserialize_t<'de, D, T>(seed: &mut VariantSeed<T>,
 }
 
 #[derive(DeserializeSeed, SerializeSeed)]
-#[serde(deserialize_seed = "VariantSeed<T>")]
-#[serde(bound(deserialize  = "T: DeserializeSeed<'de> + Clone"))]
+#[serde(deserialize_seed = "VariantSeed<S>")]
+#[serde(de_parameter = "S")]
+#[serde(bound(deserialize  = "S: DeserializeSeed<'de, Value = T> + Clone"))]
 #[serde(bound(serialize = "T: SerializeSeed"))]
 #[serde(serialize_seed = "T::Seed")]
 pub enum Variant<T> {
