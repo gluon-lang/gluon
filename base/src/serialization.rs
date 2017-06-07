@@ -6,11 +6,43 @@ use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use serde::de::{Deserialize, DeserializeSeed, Deserializer, Error};
 use serde::ser::{Serialize, SerializeSeed, Serializer};
 
 use symbol::Symbol;
+
+pub struct SeSeed {
+    node_to_id: NodeToId,
+}
+
+impl AsRef<NodeToId> for SeSeed {
+    fn as_ref(&self) -> &NodeToId {
+        &self.node_to_id
+    }
+}
+
+impl Shared for ::kind::ArcKind {
+    fn unique(&self) -> bool {
+        ::kind::ArcKind::strong_count(self) == 1
+    }
+
+    fn as_ptr(&self) -> *const () {
+        &**self as *const _ as *const ()
+    }
+}
+
+impl<T> Shared for Arc<T> {
+    fn unique(&self) -> bool {
+        Arc::strong_count(self) == 1
+    }
+
+    fn as_ptr(&self) -> *const () {
+        &**self as *const _ as *const ()
+    }
+}
+
 
 #[derive(Clone)]
 pub struct IdSeed<Id>(NodeMap, PhantomData<Id>);
@@ -211,4 +243,15 @@ pub fn serialize_shared<S, T>(self_: &T,
         Lookup::Inserted(id) => Variant::Marked(id, &**self_),
     };
     node.serialize_seed(serializer, seed)
+}
+
+pub fn serialize_seq<'a, S, T, V>(self_: &'a T,
+                                  serializer: S,
+                                  seed: &V::Seed)
+                                  -> Result<S::Ok, S::Error>
+    where S: Serializer,
+          T: Deref<Target = [V]>,
+          V: SerializeSeed
+{
+    (**self_).serialize_seed(serializer, seed)
 }

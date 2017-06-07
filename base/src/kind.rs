@@ -2,6 +2,9 @@ use std::fmt;
 use std::ops::Deref;
 use std::sync::Arc;
 
+use serde::ser::{SerializeSeed, Serializer};
+
+use serialization::SeSeed;
 use symbol::SymbolRef;
 use types::Walker;
 
@@ -43,7 +46,8 @@ impl KindSeed {
 /// which are said to be "higher kinded" and these use the `Function` (a -> b) variant.
 /// These types include `Option` and `(->)` which both have the kind `Type -> Type -> Type`
 /// as well as `Functor` which has the kind `Type -> Type -> Type`.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, DeserializeSeed)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, DeserializeSeed, SerializeSeed)]
+#[serde(serialize_seed = "SeSeed")]
 #[serde(deserialize_seed = "KindSeed")]
 pub enum Kind {
     Hole,
@@ -55,8 +59,10 @@ pub enum Kind {
     Row,
     /// Constructor which takes two kinds, taking the first as argument and returning the second.
     Function(#[serde(deserialize_seed_with = "KindSeed::deserialize")]
+             #[serde(serialize_seed)]
              ArcKind,
              #[serde(deserialize_seed_with = "KindSeed::deserialize")]
+             #[serde(serialize_seed)]
              ArcKind),
 }
 
@@ -122,6 +128,16 @@ impl<'a> fmt::Display for DisplayKind<'a> {
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct ArcKind(Arc<Kind>);
 
+impl SerializeSeed for ArcKind {
+    type Seed = SeSeed;
+
+    fn serialize_seed<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        ::serialization::serialize_shared(self, serializer, seed)
+    }
+}
+
 impl ArcKind {
     pub fn new(kind: Kind) -> ArcKind {
         ArcKind(Arc::new(kind))
@@ -129,6 +145,10 @@ impl ArcKind {
 
     pub fn make_mut(kind: &mut ArcKind) -> &mut Kind {
         Arc::make_mut(&mut kind.0)
+    }
+
+    pub fn strong_count(kind: &ArcKind) -> usize {
+        Arc::strong_count(&kind.0)
     }
 }
 

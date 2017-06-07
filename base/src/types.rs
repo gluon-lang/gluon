@@ -7,13 +7,14 @@ use std::marker::PhantomData;
 use pretty::{DocAllocator, Arena, DocBuilder};
 
 use serde::de::{Deserialize, Deserializer, DeserializeSeed};
+use serde::ser::{Serialize, Serializer, SerializeSeed};
 
 use smallvec::{SmallVec, VecLike};
 
 use ast::IdentEnv;
 use kind::{ArcKind, Kind, KindEnv};
 use merge::merge;
-use serialization::{IdSeed, NodeMap};
+use serialization::{IdSeed, NodeMap, SeSeed};
 use symbol::{Symbol, SymbolRef};
 
 /// Trait for values which contains typed values which can be refered by name
@@ -129,7 +130,7 @@ impl<Id> TypeCache<Id> {
 }
 
 /// All the builtin types of gluon
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash, Deserialize)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash, Deserialize, Serialize)]
 pub enum BuiltinType {
     /// Unicode string
     String,
@@ -206,10 +207,12 @@ impl TypeVariableSeed {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, DeserializeSeed)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, DeserializeSeed, SerializeSeed)]
+#[serde(serialize_seed = "SeSeed")]
 #[serde(deserialize_seed = "TypeVariableSeed")]
 pub struct TypeVariable {
     #[serde(deserialize_seed_with = "TypeVariableSeed::deserialize_kind")]
+    #[serde(serialize_seed)]
     pub kind: ArcKind,
     pub id: u32,
 }
@@ -243,13 +246,17 @@ fn test<T>() -> T {
     panic!()
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, DeserializeSeed)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, DeserializeSeed, SerializeSeed)]
 #[serde(deserialize_seed = "GenericSeed<'de, Id>")]
-#[serde(bound = "Id: Deserialize<'de> + Clone + ::std::any::Any")]
+#[serde(bound(deserialize = "Id: Deserialize<'de> + Clone + ::std::any::Any"))]
+#[serde(serialize_seed = "SeSeed")]
+#[serde(bound(serialize = "Id: SerializeSeed<Seed = SeSeed>"))]
 pub struct Generic<Id> {
     #[serde(deserialize_seed_with = "GenericSeed::deserialize_id")]
+    #[serde(serialize_seed)]
     pub id: Id,
     #[serde(deserialize_seed_with = "GenericSeed::deserialize_kind")]
+    #[serde(serialize_seed)]
     pub kind: ArcKind,
 }
 
@@ -270,8 +277,11 @@ impl<'de, Id, T> TypeSerialize<'de, Id, T> for Alias<Id, T>
 
 /// An alias is wrapper around `Type::Alias`, allowing it to be cheaply converted to a type and dereferenced
 /// to `AliasRef`
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, SerializeSeed)]
+#[serde(serialize_seed = "SeSeed")]
+#[serde(bound(serialize = "T: SerializeSeed<Seed = SeSeed>"))]
 pub struct Alias<Id, T> {
+    #[serde(serialize_seed)]
     _typ: T,
     _marker: PhantomData<Id>,
 }
@@ -371,14 +381,17 @@ where
 
 /// Data for a type alias. Probably you want to use `Alias` instead of this directly as Alias allows for
 /// cheap conversion back into a type as well.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, DeserializeSeed)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, DeserializeSeed, SerializeSeed)]
 #[serde(deserialize_seed = "TypeSeed<'de, Id, T, AliasRef<Id, T>>")]
-#[serde(bound = "T: Clone + From<Type<Id, T>> + ::std::any::Any + TypeSerialize<'de, Id, T>,
-                 Id: Deserialize<'de> + Clone + ::std::any::Any")]
+#[serde(bound(deserialize = "T: Clone + From<Type<Id, T>> + ::std::any::Any + TypeSerialize<'de, Id, T>,
+                 Id: Deserialize<'de> + Clone + ::std::any::Any"))]
+#[serde(serialize_seed = "SeSeed")]
+#[serde(bound(serialize = "T: SerializeSeed<Seed = SeSeed>, Id: SerializeSeed<Seed = SeSeed>"))]
 pub struct AliasRef<Id, T> {
     /// Name of the Alias
     index: usize,
     #[serde(deserialize_seed_with = "TypeSeed::deserialize_group")]
+    #[serde(serialize_seed_with = "::serialization::serialize_shared")]
     /// The other aliases defined in this group
     pub group: Arc<Vec<AliasData<Id, T>>>,
 }
@@ -413,18 +426,23 @@ where
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, DeserializeSeed)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, DeserializeSeed, SerializeSeed)]
 #[serde(deserialize_seed = "TypeSeed<'de, Id, T, AliasData<Id, T>>")]
-#[serde(bound = "T: Clone + From<Type<Id, T>> + ::std::any::Any + TypeSerialize<'de, Id, T>,
-                 Id: Deserialize<'de> + Clone + ::std::any::Any")]
+#[serde(bound(deserialize = "T: Clone + From<Type<Id, T>> + ::std::any::Any + TypeSerialize<'de, Id, T>,
+                             Id: Deserialize<'de> + Clone + ::std::any::Any"))]
+#[serde(serialize_seed = "SeSeed")]
+#[serde(bound(serialize = "T: SerializeSeed<Seed = SeSeed>, Id: SerializeSeed<Seed = SeSeed>"))]
 pub struct AliasData<Id, T> {
     #[serde(deserialize_seed_with = "TypeSeed::deserialize_id")]
+    #[serde(serialize_seed)]
     pub name: Id,
     /// Arguments to the alias
     #[serde(deserialize_seed_with = "TypeSeed::deserialize_generics")]
+    #[serde(serialize_seed)]
     pub args: Vec<Generic<Id>>,
     /// The type that is being aliased
     #[serde(deserialize_seed_with = "TypeSeed::deserialize")]
+    #[serde(serialize_seed)]
     typ: T,
 }
 
@@ -478,16 +496,20 @@ fn deserialize_field_type<'de, D, S, Id, T, V>(seed: &mut TypeSeed<'de, Id, S, F
     DeserializeSeed::deserialize(T::Seed::from(seed.seed.clone()), deserializer)
 }
 
-#[derive(Clone, Hash, Eq, PartialEq, Debug, DeserializeSeed)]
+#[derive(Clone, Hash, Eq, PartialEq, Debug, DeserializeSeed, SerializeSeed)]
 #[serde(deserialize_seed = "TypeSeed<'de, Id, S, FieldSeed<Id, U>>")]
 #[serde(de_parameters = "S, U")]
-#[serde(bound = "S: Clone + From<Type<Id, S>> + ::std::any::Any + TypeSerialize<'de, Id, S>,
-                 Id: Deserialize<'de> + Clone + ::std::any::Any,
-                 U: TypeSerialize<'de, Id, S>,
-                 U::Seed: DeserializeSeed<'de, Value = T>")]
+#[serde(bound(deserialize = "S: Clone + From<Type<Id, S>> + ::std::any::Any + TypeSerialize<'de, Id, S>,
+                             Id: Deserialize<'de> + Clone + ::std::any::Any,
+                             U: TypeSerialize<'de, Id, S>,
+                             U::Seed: DeserializeSeed<'de, Value = T>"))]
+#[serde(serialize_seed = "SeSeed")]
+#[serde(bound(serialize = "T: SerializeSeed<Seed = SeSeed>, Id: SerializeSeed<Seed = SeSeed>"))]
 pub struct Field<Id, T = ArcType<Id>> {
+    #[serde(serialize_seed)]
     pub name: Id,
     #[serde(deserialize_seed_with = "deserialize_field_type")]
+    #[serde(serialize_seed)]
     pub typ: T,
 }
 
@@ -762,10 +784,12 @@ fn deserialize<'de, Id, T, S, S2, D>
 /// `Type` is used to enable types to be shared. It is recommended to use the static functions on
 /// `Type` such as `Type::app` and `Type::record` when constructing types as those will construct
 /// the pointer wrapper directly.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, DeserializeSeed)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, DeserializeSeed, SerializeSeed)]
 #[serde(deserialize_seed = "TypeSeed<'de, Id, T, Type<Id, T>>")]
-#[serde(bound = "T: Clone + From<Type<Id, T>> + ::std::any::Any + TypeSerialize<'de, Id, T>,
-                 Id: Deserialize<'de> + Clone + ::std::any::Any")]
+#[serde(bound(deserialize = "T: Clone + From<Type<Id, T>> + ::std::any::Any + TypeSerialize<'de, Id, T>,
+                             Id: Deserialize<'de> + Clone + ::std::any::Any"))]
+#[serde(bound(serialize = "T: SerializeSeed<Seed = SeSeed>, Id: SerializeSeed<Seed = SeSeed>"))]
+#[serde(serialize_seed = "SeSeed")]
 pub enum Type<Id, T = ArcType<Id>> {
     /// An unbound type `_`, awaiting ascription.
     Hole,
@@ -776,14 +800,18 @@ pub enum Type<Id, T = ArcType<Id>> {
     /// A type application with multiple arguments. For example,
     /// `Map String Int` would be represented as `App(Map, [String, Int])`.
     App(#[serde(deserialize_seed_with = "TypeSeed::deserialize")]
+        #[serde(serialize_seed)]
         T,
         #[serde(deserialize_seed_with = "TypeSeed::deserialize_type_vec")]
+        #[serde(serialize_seed_with = "::serialization::serialize_seq")]
         AppVec<T>),
     /// Record constructor, of kind `Row -> Type`
     Record(#[serde(deserialize_seed_with = "TypeSeed::deserialize")]
+           #[serde(serialize_seed)]
            T),
     /// Variant constructor, of kind `Row -> Type`
     Variant(#[serde(deserialize_seed_with = "TypeSeed::deserialize")]
+            #[serde(serialize_seed)]
             T),
     /// The empty row, of kind `Row`
     EmptyRow,
@@ -791,12 +819,15 @@ pub enum Type<Id, T = ArcType<Id>> {
     ExtendRow {
         /// The associated types of this record type
         #[serde(deserialize_seed_with = "TypeSeed::deserialize_field_alias")]
+        #[serde(serialize_seed)]
         types: Vec<Field<Id, Alias<Id, T>>>,
         /// The fields of this record type
         #[serde(deserialize_seed_with = "TypeSeed::deserialize_field_type")]
+        #[serde(serialize_seed)]
         fields: Vec<Field<Id, T>>,
         /// The rest of the row
         #[serde(deserialize_seed_with = "TypeSeed::deserialize")]
+        #[serde(serialize_seed)]
         rest: T,
     },
     /// An identifier type. These are created during parsing, but should all be
@@ -806,16 +837,20 @@ pub enum Type<Id, T = ArcType<Id>> {
     /// in reference counted pointers. This is a bit of a wart at the moment and
     /// _may_ cause spurious unification failures.
     Ident(#[serde(deserialize_seed_with = "TypeSeed::deserialize_id")]
+          #[serde(serialize_seed)]
           Id),
     /// An unbound type variable that may be unified with other types. These
     /// will eventually be converted into `Type::Generic`s during generalization.
     Variable(#[serde(deserialize_seed_with = "TypeVariableSeed::deserialize")]
+             #[serde(serialize_seed)]
              TypeVariable),
     /// A variable that needs to be instantiated with a fresh type variable
     /// when the binding is refered to.
     Generic(#[serde(deserialize_seed_with = "TypeSeed::deserialize_generic")]
+            #[serde(serialize_seed)]
             Generic<Id>),
     Alias(#[serde(deserialize_seed_with = "TypeSeed::deserialize_alias_ref")]
+          #[serde(serialize_seed)]
           AliasRef<Id, T>),
 }
 
