@@ -6,6 +6,10 @@ use std::sync::Arc;
 use std::borrow::Borrow;
 use std::ops::Deref;
 
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
+use serde::ser::SerializeSeed;
+use serialization::SeSeed;
+
 use ast::{DisplayEnv, IdentEnv};
 use fnv::FnvMap;
 
@@ -13,6 +17,35 @@ use fnv::FnvMap;
 /// A symbol uniquely identifies something regardless of its name and which module it originated from
 #[derive(Clone, Eq)]
 pub struct Symbol(Arc<NameBuf>);
+
+impl<'de> Deserialize<'de> for Symbol {
+    fn deserialize<D>(deserializer: D) -> Result<Symbol, D::Error>
+        where D: Deserializer<'de>
+    {
+        use std::borrow::Cow;
+        Cow::<str>::deserialize(deserializer).map(Symbol::from)
+    }
+}
+
+impl Serialize for Symbol {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        let s: &str = self.as_ref();
+        s.serialize(serializer)
+    }
+}
+
+impl SerializeSeed for Symbol {
+    type Seed = SeSeed;
+
+    fn serialize_seed<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        ::serialization::serialize_shared(self, serializer, seed)
+    }
+}
+
 
 impl Deref for Symbol {
     type Target = SymbolRef;
@@ -71,20 +104,17 @@ impl Hash for Symbol {
     }
 }
 
-impl<'a> From<&'a str> for Symbol {
-    fn from(name: &'a str) -> Symbol {
-        Symbol::from(String::from(name))
-    }
-}
-
-impl From<String> for Symbol {
-    fn from(name: String) -> Symbol {
-        Symbol(Arc::new(NameBuf(name)))
+impl<S> From<S> for Symbol
+    where S: Into<String>
+{
+    fn from(name: S) -> Symbol {
+        Symbol(Arc::new(NameBuf(name.into())))
     }
 }
 
 
-#[derive(Eq)]
+#[derive(Eq, SerializeSeed)]
+#[serde(serialize_seed = "SeSeed")]
 pub struct SymbolRef(str);
 
 impl fmt::Debug for SymbolRef {
@@ -126,6 +156,12 @@ impl Hash for SymbolRef {
 impl AsRef<str> for SymbolRef {
     fn as_ref(&self) -> &str {
         &self.0
+    }
+}
+
+impl Symbol {
+    pub fn strong_count(sym: &Symbol) -> usize {
+        Arc::strong_count(&sym.0)
     }
 }
 

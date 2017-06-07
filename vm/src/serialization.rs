@@ -332,32 +332,25 @@ pub mod intern {
 }
 
 pub mod typ {
-    use serde::de::{Deserialize, Deserializer, Error};
-    use serde::ser::{Serialize, Serializer};
+    use serde::de::{Deserialize, Deserializer, DeserializeSeed, Error};
+    use serde::ser::{Seeded, Serialize, Serializer, SerializeSeed};
 
     use super::*;
-    use base::types::ArcType;
+    use base::types::{ArcType, Type};
 
     pub fn deserialize<'de, D, T>(seed: &mut Seed<T>, deserializer: D) -> Result<ArcType, D::Error>
         where D: Deserializer<'de>
     {
-        let expr_str = String::deserialize(deserializer)?;
-        let expr = ::parser::parse_expr(&mut *seed.state.symbols.borrow_mut(), &expr_str)
-            .map_err(D::Error::custom)?;
-        match expr.value {
-            ::base::ast::Expr::TypeBindings(ref bindings, _) => {
-                Ok(bindings[0].alias.unresolved_type().clone())
-            }
-            _ => Err(D::Error::custom("Invalid type")),
-        }
+        use base::types::{TypeSeed, Seed, SharedType};
+        TypeSeed::<Symbol, ArcType, ()>::new(Seed::new(seed.state.gc_map.clone()))
+            .deserialize(deserializer)
     }
 
-    pub fn serialize<S>(typ: &ArcType, serializer: S, _seed: &SeSeed) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(typ: &ArcType, serializer: S, seed: &SeSeed) -> Result<S::Ok, S::Error>
         where S: Serializer
     {
-        format!("type __T = {} in 0",
-                ::base::types::TypeFormatter::new(typ).width(4000000))
-                .serialize(serializer)
+        typ.serialize_seed(serializer,
+                           &::base::serialization::SeSeed::new(seed.node_to_id.clone()))
     }
 }
 

@@ -12,9 +12,16 @@ use serde::de::{Deserialize, DeserializeSeed, Deserializer, Error};
 use serde::ser::{Serialize, SerializeSeed, Serializer};
 
 use symbol::Symbol;
+use types::ArcType;
 
 pub struct SeSeed {
     node_to_id: NodeToId,
+}
+
+impl SeSeed {
+    pub fn new(node_to_id: NodeToId) -> Self {
+        SeSeed { node_to_id: node_to_id }
+    }
 }
 
 impl AsRef<NodeToId> for SeSeed {
@@ -36,6 +43,26 @@ impl Shared for ::kind::ArcKind {
 impl<T> Shared for Arc<T> {
     fn unique(&self) -> bool {
         Arc::strong_count(self) == 1
+    }
+
+    fn as_ptr(&self) -> *const () {
+        &**self as *const _ as *const ()
+    }
+}
+
+impl<T> Shared for ArcType<T> {
+    fn unique(&self) -> bool {
+        ArcType::strong_count(self) == 1
+    }
+
+    fn as_ptr(&self) -> *const () {
+        &**self as *const _ as *const ()
+    }
+}
+
+impl Shared for Symbol {
+    fn unique(&self) -> bool {
+        Symbol::strong_count(self) == 1
     }
 
     fn as_ptr(&self) -> *const () {

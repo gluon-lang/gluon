@@ -275,6 +275,25 @@ impl<'de, Id, T> TypeSerialize<'de, Id, T> for Alias<Id, T>
     type Seed = TypeSeed<'de, Id, T, Self>;
 }
 
+impl<'de, Id> TypeSerialize<'de, Id, ArcType<Id>> for ArcType<Id>
+    where Id: Deserialize<'de> + Clone + ::std::any::Any
+{
+    type Seed = TypeSeed<'de, Id, ArcType<Id>, Self>;
+}
+
+impl<'de, Id> DeserializeSeed<'de> for TypeSeed<'de, Id, ArcType<Id>, ArcType<Id>>
+    where Id: Deserialize<'de> + Clone + ::std::any::Any
+{
+    type Value = ArcType<Id>;
+
+    fn deserialize<D>(mut self, deserializer: D) -> Result<Self::Value, D::Error>
+        where D: Deserializer<'de>
+    {
+        TypeSeed::<Id, ArcType<Id>, SharedType>::new(self.seed.clone()).deserialize(deserializer)
+    }
+}
+
+
 /// An alias is wrapper around `Type::Alias`, allowing it to be cheaply converted to a type and dereferenced
 /// to `AliasRef`
 #[derive(Clone, Debug, Eq, PartialEq, Hash, SerializeSeed)]
@@ -533,6 +552,15 @@ pub struct Seed<Id, T> {
     _marker: PhantomData<(Id, T)>,
 }
 
+impl<Id, T> Seed<Id, T> {
+    pub fn new(nodes: ::serialization::NodeMap) -> Self {
+        Seed {
+            nodes: nodes,
+            _marker: PhantomData,
+        }
+    }
+}
+
 impl<Id, T> Clone for Seed<Id, T> {
     fn clone(&self) -> Self {
         Seed {
@@ -582,7 +610,7 @@ impl<'de, Id, T, U> TypeSeed<'de, Id, T, U>
     where Id: Deserialize<'de> + Clone + ::std::any::Any,
           T: Clone + From<Type<Id, T>> + ::std::any::Any + TypeSerialize<'de, Id, T>
 {
-    fn deserialize<D>(&mut self, deserializer: D) -> Result<T, D::Error>
+    pub fn deserialize<D>(&mut self, deserializer: D) -> Result<T, D::Error>
         where D: ::serde::Deserializer<'de>
     {
         use serialization::{MapSeed, SharedSeed};
@@ -720,7 +748,7 @@ impl<'de, Id, T, S, V> DeserializeSeed<'de> for TypeSeed<'de, Id, T, SeqSeed<S, 
     }
 }
 
-struct SharedType;
+pub struct SharedType;
 
 impl<'de, Id, T> TypeSerialize<'de, Id, T> for SharedType
     where Id: Deserialize<'de> + Clone + ::std::any::Any,
@@ -1086,6 +1114,18 @@ pub struct ArcType<Id = Symbol> {
     typ: Arc<Type<Id, ArcType<Id>>>,
 }
 
+impl<Id> SerializeSeed for ArcType<Id>
+    where Id: SerializeSeed<Seed = SeSeed>
+{
+    type Seed = SeSeed;
+
+    fn serialize_seed<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+        where S: Serializer
+    {
+        ::serialization::serialize_shared(self, serializer, seed)
+    }
+}
+
 impl<Id> Clone for ArcType<Id> {
     fn clone(&self) -> ArcType<Id> {
         ArcType { typ: self.typ.clone() }
@@ -1133,6 +1173,10 @@ impl<Id> ArcType<Id> {
             typ: self,
             current: 0,
         }
+    }
+
+    pub fn strong_count(typ: &ArcType<Id>) -> usize {
+        Arc::strong_count(&typ.typ)
     }
 }
 
