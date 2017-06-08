@@ -77,3 +77,26 @@ fn roundtrip_std_prelude() {
         .unwrap();
     roundtrip(&thread, &value);
 }
+
+#[test]
+fn roundtrip_std_libs() {
+    let thread = new_vm();
+    let mut expr = "{\n".to_string();
+    for entry in std::fs::read_dir("std").unwrap() {
+        let path = entry.unwrap().path();
+        // Can't check the extension since vim swap files ".glu.swp" will report ".glu" as the
+        // extension
+        if path.to_str().unwrap().ends_with(".glu") &&
+           path.file_stem().unwrap().to_str() != Some("repl") {
+            expr.push_str(&format!("    {} = import! {:?},\n",
+                                   path.file_stem().unwrap().to_str().unwrap(),
+                                   path.display()));
+        }
+    }
+    expr.push_str("}\n");
+    println!("{}", expr);
+    let (value, _) = Compiler::new()
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "test", &expr)
+        .unwrap_or_else(|err| panic!("{}", err));
+    roundtrip(&thread, &value);
+}

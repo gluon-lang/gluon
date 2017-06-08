@@ -3,6 +3,8 @@ use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
+use itertools::Itertools;
+
 use serde::Deserializer;
 use serde::de::{Deserialize, DeserializeSeed, SeqSeed, Error};
 use serde::ser::{Serializer, SerializeSeed, SerializeSeq, Seeded};
@@ -605,10 +607,23 @@ impl<'de> DeserializeSeed<'de> for Seed<ExternFunction> {
         }
 
         let partial = ExternFunction_::deserialize(deserializer)?;
+        // Wrap any operators with parens so that they are acceptable for `get_global`
+        let escaped_id: String = partial
+            .id
+            .split(|c: char| c == '.')
+            .map(|s| if s.chars()
+                        .next()
+                        .map_or(false, ::base::ast::is_operator_char) {
+                     Cow::Owned(format!("({})", s))
+                 } else {
+                     Cow::Borrowed(s)
+                 })
+            .intersperse(Cow::Borrowed("."))
+            .collect();
         let function = self.state
             .thread
             .get_global::<OpaqueValue<&Thread, Hole>>(&partial.id)
-            .map_err(|err| D::Error::custom(err.to_string()))?;
+            .map_err(|err| panic!("{}\n{}", partial.id, escaped_id))?;
         unsafe {
             match function.get_value() {
                 Value::Function(function) if partial.args == function.args => {

@@ -15,11 +15,13 @@ use thread::ThreadInternal;
 use types::VmInt;
 
 mod array {
-    fn length(array: Array<generic::A>) -> VmInt {
+    use super::*;
+
+    pub fn length(array: Array<generic::A>) -> VmInt {
         array.len() as VmInt
     }
 
-    fn index<'vm>(
+    pub fn index<'vm>(
         array: Array<'vm, Generic<generic::A>>,
         index: VmInt,
     ) -> RuntimeResult<Generic<generic::A>, String> {
@@ -30,7 +32,6 @@ mod array {
     }
 
     fn array_append<'vm>(
-        lhs: Array<'vm, Generic<generic::A>>,
         rhs: Array<'vm, Generic<generic::A>>,
     ) -> RuntimeResult<Array<'vm, Generic<generic::A>>, Error> {
         struct Append<'b> {
@@ -92,7 +93,9 @@ mod array {
 }
 
 mod string {
-    fn append(lhs: WithVM<&str>, rhs: &str) -> RuntimeResult<String, Error> {
+    use super::*;
+
+    pub fn append(lhs: WithVM<&str>, rhs: &str) -> RuntimeResult<String, Error> {
         struct StrAppend<'b> {
             lhs: &'b str,
             rhs: &'b str,
@@ -138,7 +141,7 @@ mod string {
         )
     }
 
-    fn slice(s: &str, start: usize, end: usize) -> RuntimeResult<&str, String> {
+    pub fn slice(s: &str, start: usize, end: usize) -> RuntimeResult<&str, String> {
         if s.is_char_boundary(start) && s.is_char_boundary(end) {
             RuntimeResult::Return(&s[start..end])
         } else {
@@ -155,7 +158,7 @@ mod string {
         }
     }
 
-    extern "C" fn from_utf8(thread: &Thread) -> Status {
+    pub extern "C" fn from_utf8(thread: &Thread) -> Status {
         let mut context = thread.context();
         let value = StackFrame::current(&mut context.stack)[0];
         match value {
@@ -191,7 +194,7 @@ mod string {
         }
     }
 
-    fn char_at(s: &str, index: usize) -> RuntimeResult<char, String> {
+    pub fn char_at(s: &str, index: usize) -> RuntimeResult<char, String> {
         if s.is_char_boundary(index) {
             if let Some(c) = s[index..].chars().next() {
                 return RuntimeResult::Return(c);
@@ -329,27 +332,27 @@ pub fn load(vm: &Thread) -> Result<()> {
     }
 
     type string_prim = str;
-    vm.define_global(
-        "string_prim",
-        record!(
+    use self::string;
+    vm.define_global("string_prim",
+                       record!(
         len => primitive!(1 string_prim::len),
         is_empty => primitive!(1 string_prim::is_empty),
         split_at => primitive!(2 string_prim::split_at),
-        find => primitive!(2 string_prim::find::<&str>),
-        rfind => primitive!(2 string_prim::rfind::<&str>),
-        starts_with => primitive!(2 string_prim::starts_with::<&str>),
-        ends_with => primitive!(2 string_prim::ends_with::<&str>),
+        find => named_primitive!(2, "string_prim.find", string_prim::find::<&str>),
+        rfind => named_primitive!(2, "string_prim.rfind", string_prim::rfind::<&str>),
+        starts_with => named_primitive!(2, "string_prim.starts_with", string_prim::starts_with::<&str>),
+        ends_with => named_primitive!(2, "string_prim.ends_with", string_prim::ends_with::<&str>),
         trim => primitive!(1 string_prim::trim),
         trim_left => primitive!(1 string_prim::trim_left),
         trim_right => primitive!(1 string_prim::trim_right),
-        compare => primitive!(2 string_prim::cmp),
-        append => named_primitive!(2, "string_prim.append", string_prim::string_append),
+        compare => named_primitive!(2, "string_prim.compare", string_prim::cmp),
+        append => named_primitive!(2, "string_prim.append", string::append),
         eq => named_primitive!(2, "string_prim.eq", <str as PartialEq>::eq),
-        slice => named_primitive!(3, "string_prim.slice", prim::string_slice),
+        slice => named_primitive!(3, "string_prim.slice", string::slice),
         from_utf8 =>
             primitive::<fn(Vec<u8>) -> StdResult<String, ()>>("string_prim.from_utf8",
-                                                              prim::from_utf8),
-        char_at => named_primitive!(2, "string_prim.char_at", prim::char_at),
+                                                              string::from_utf8),
+        char_at => named_primitive!(2, "string_prim.char_at", string::char_at),
         as_bytes => primitive!(1 string_prim::as_bytes)
     ),
     )?;
