@@ -296,10 +296,14 @@ impl<'de, Id> DeserializeSeed<'de> for TypeSeed<'de, Id, ArcType<Id>, ArcType<Id
 
 /// An alias is wrapper around `Type::Alias`, allowing it to be cheaply converted to a type and dereferenced
 /// to `AliasRef`
-#[derive(Clone, Debug, Eq, PartialEq, Hash, SerializeSeed)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, DeserializeSeed, SerializeSeed)]
+#[serde(deserialize_seed = "TypeSeed<'de, Id, T, Alias<Id, T>>")]
+#[serde(bound(deserialize = "T: Clone + From<Type<Id, T>> + ::std::any::Any + TypeSerialize<'de, Id, T>,
+                             Id: Deserialize<'de> + Clone + ::std::any::Any"))]
 #[serde(serialize_seed = "SeSeed")]
 #[serde(bound(serialize = "T: SerializeSeed<Seed = SeSeed>"))]
 pub struct Alias<Id, T> {
+    #[serde(deserialize_seed_with = "TypeSeed::deserialize")]
     #[serde(serialize_seed)]
     _typ: T,
     _marker: PhantomData<Id>,
@@ -525,6 +529,7 @@ fn deserialize_field_type<'de, D, S, Id, T, V>(seed: &mut TypeSeed<'de, Id, S, F
 #[serde(serialize_seed = "SeSeed")]
 #[serde(bound(serialize = "T: SerializeSeed<Seed = SeSeed>, Id: SerializeSeed<Seed = SeSeed>"))]
 pub struct Field<Id, T = ArcType<Id>> {
+    #[serde(deserialize_seed_with = "TypeSeed::deserialize_id")]
     #[serde(serialize_seed)]
     pub name: Id,
     #[serde(deserialize_seed_with = "deserialize_field_type")]
@@ -780,21 +785,6 @@ impl<'de, Id, T> TypeSerialize<'de, Id, T> for AliasData<Id, T>
 {
     type Seed = TypeSeed<'de, Id, T, Self>;
 }
-
-impl<'de, Id, T> DeserializeSeed<'de> for TypeSeed<'de, Id, T, Alias<Id, T>>
-    where Id: Deserialize<'de> + Clone + ::std::any::Any,
-          T: Clone + From<Type<Id, T>> + ::std::any::Any
-{
-    type Value = Alias<Id, T>;
-
-    fn deserialize<D>(mut self, deserializer: D) -> Result<Self::Value, D::Error>
-        where D: Deserializer<'de>
-    {
-        panic!("")
-    }
-}
-
-
 
 fn deserialize<'de, Id, T, S, S2, D>
     (seed: &mut TypeSeed<'de, Id, T, S>,
