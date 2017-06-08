@@ -225,6 +225,7 @@ extern "C" fn error(_: &Thread) -> Status {
 pub fn load(vm: &Thread) -> Result<()> {
     use std::f64;
     use std::char;
+    type float = f64;
     vm.define_global(
         "float",
         record!(
@@ -244,99 +245,103 @@ pub fn load(vm: &Thread) -> Result<()> {
         e => f64::consts::E,
         pi => f64::consts::PI,
         radix => f64::RADIX,
-        is_nan => primitive!(1 f64::is_nan),
-        is_infinite => primitive!(1 f64::is_infinite),
-        is_finite => primitive!(1 f64::is_finite),
-        is_normal => primitive!(1 f64::is_normal),
-        floor => primitive!(1 f64::floor),
-        ceil => primitive!(1 f64::ceil),
-        round => primitive!(1 f64::round),
-        trunc => primitive!(1 f64::trunc),
-        fract => primitive!(1 f64::fract),
-        abs => primitive!(1 f64::abs),
-        signum => primitive!(1 f64::signum),
-        is_sign_positive => primitive!(1 f64::is_sign_positive),
-        is_sign_negative => primitive!(1 f64::is_sign_negative),
-        mul_add => primitive!(3 f64::mul_add),
-        recip => primitive!(1 f64::recip),
-        powi => primitive!(2 f64::powi),
-        powf => primitive!(2 f64::powf),
-        sqrt => primitive!(1 f64::sqrt),
-        exp => primitive!(1 f64::exp),
-        exp2 => primitive!(1 f64::exp2),
-        ln => primitive!(1 f64::ln),
-        log2 => primitive!(1 f64::log2),
-        log10 => primitive!(1 f64::log10),
-        to_degrees => primitive!(1 f64::to_degrees),
-        to_radians => primitive!(1 f64::to_radians),
-        max => primitive!(2 f64::max),
-        min => primitive!(2 f64::min),
-        cbrt => primitive!(1 f64::cbrt),
-        hypot => primitive!(2 f64::hypot),
-        sin => primitive!(1 f64::sin),
-        cos => primitive!(1 f64::cos),
-        tan => primitive!(1 f64::tan),
-        acos => primitive!(1 f64::acos),
-        atan => primitive!(1 f64::atan),
-        atan2 => primitive!(2 f64::atan2),
-        sin_cos => primitive!(1 f64::sin_cos),
-        exp_m1 => primitive!(1 f64::exp_m1),
-        ln_1p => primitive!(1 f64::ln_1p),
-        sinh => primitive!(1 f64::sinh),
-        cosh => primitive!(1 f64::cosh),
-        tanh => primitive!(1 f64::tanh),
-        acosh => primitive!(1 f64::acosh),
-        atanh => primitive!(1 f64::atanh)
-    ),
-    )?;
-    vm.define_global(
-        "int",
-        record!(
-        min_value => VmInt::min_value(),
-        max_value => VmInt::max_value(),
-        count_ones => primitive!(1 VmInt::count_ones),
-        rotate_left => primitive!(2 VmInt::rotate_left),
-        rotate_right => primitive!(2 VmInt::rotate_right),
-        swap_bytes => primitive!(1 VmInt::swap_bytes),
-        from_be => primitive!(1 VmInt::from_be),
-        from_le => primitive!(1 VmInt::from_le),
-        to_be => primitive!(1 VmInt::to_be),
-        to_le => primitive!(1 VmInt::to_le),
-        pow => primitive!(2 VmInt::pow),
-        abs => primitive!(1 VmInt::abs),
-        signum => primitive!(1 VmInt::signum),
-        is_positive => primitive!(1 VmInt::is_positive),
-        is_negative => primitive!(1 VmInt::is_negative)
-    ),
-    )?;
-    vm.define_global(
-        "array",
-        record!(
-        length => primitive!(1 prim::array_length),
-        index => primitive!(2 prim::array_index),
-        append => primitive!(2 prim::array_append)
-    ),
-    )?;
+        is_nan => primitive!(1 float::is_nan),
+        is_infinite => primitive!(1 float::is_infinite),
+        is_finite => primitive!(1 float::is_finite),
+        is_normal => primitive!(1 float::is_normal),
+        floor => primitive!(1 float::floor),
+        ceil => primitive!(1 float::ceil),
+        round => primitive!(1 float::round),
+        trunc => primitive!(1 float::trunc),
+        fract => primitive!(1 float::fract),
+        abs => primitive!(1 float::abs),
+        signum => primitive!(1 float::signum),
+        is_sign_positive => primitive!(1 float::is_sign_positive),
+        is_sign_negative => primitive!(1 float::is_sign_negative),
+        mul_add => primitive!(3 float::mul_add),
+        recip => primitive!(1 float::recip),
+        powi => primitive!(2 float::powi),
+        powf => primitive!(2 float::powf),
+        sqrt => primitive!(1 float::sqrt),
+        exp => primitive!(1 float::exp),
+        exp2 => primitive!(1 float::exp2),
+        ln => primitive!(1 float::ln),
+        log2 => primitive!(1 float::log2),
+        log10 => primitive!(1 float::log10),
+        to_degrees => primitive!(1 float::to_degrees),
+        to_radians => primitive!(1 float::to_radians),
+        max => primitive!(2 float::max),
+        min => primitive!(2 float::min),
+        cbrt => primitive!(1 float::cbrt),
+        hypot => primitive!(2 float::hypot),
+        sin => primitive!(1 float::sin),
+        cos => primitive!(1 float::cos),
+        tan => primitive!(1 float::tan),
+        acos => primitive!(1 float::acos),
+        atan => primitive!(1 float::atan),
+        atan2 => primitive!(2 float::atan2),
+        sin_cos => primitive!(1 float::sin_cos),
+        exp_m1 => primitive!(1 float::exp_m1),
+        ln_1p => primitive!(1 float::ln_1p),
+        sinh => primitive!(1 float::sinh),
+        cosh => primitive!(1 float::cosh),
+        tanh => primitive!(1 float::tanh),
+        acosh => primitive!(1 float::acosh),
+        atanh => primitive!(1 float::atanh)
+    ))?;
 
+    use types::VmInt as int;
+    vm.define_global("int",
+                       record!(
+        min_value => int::min_value(),
+        max_value => int::max_value(),
+        count_ones => primitive!(1 int::count_ones),
+        rotate_left => primitive!(2 int::rotate_left),
+        rotate_right => primitive!(2 int::rotate_right),
+        swap_bytes => primitive!(1 int::swap_bytes),
+        from_be => primitive!(1 int::from_be),
+        from_le => primitive!(1 int::from_le),
+        to_be => primitive!(1 int::to_be),
+        to_le => primitive!(1 int::to_le),
+        pow => primitive!(2 int::pow),
+        abs => primitive!(1 int::abs),
+        signum => primitive!(1 int::signum),
+        is_positive => primitive!(1 int::is_positive),
+        is_negative => primitive!(1 int::is_negative)
+    ))?;
+
+    {
+        use self::prim as array;
+        vm.define_global("array",
+                           record!(
+            length => primitive!(1 array::array_length),
+            index => primitive!(2 array::array_index),
+            append => primitive!(2 array::array_append)
+        ))?;
+    }
+
+    type string_prim = str;
     vm.define_global("string_prim",
                        record!(
-        length => primitive!(1 str::len),
-        is_empty => primitive!(1 str::is_empty),
-        split_at => primitive!(2 str::split_at),
-        find => primitive!(2 str::find::<&str>),
-        rfind => primitive!(2 str::rfind::<&str>),
-        starts_with => primitive!(2 str::starts_with::<&str>),
-        ends_with => primitive!(2 str::ends_with::<&str>),
-        trim => primitive!(1 str::trim),
-        trim_left => primitive!(1 str::trim_left),
-        trim_right => primitive!(1 str::trim_right),
-        compare => primitive!(2 str::cmp),
-        append => primitive!(2 prim::string_append),
-        eq => primitive!(2 <str as PartialEq>::eq),
-        slice => primitive!(3 prim::string_slice),
-        from_utf8 => primitive::<fn(Vec<u8>) -> StdResult<String, ()>>("from_utf8", prim::from_utf8),
-        char_at => primitive!(2 prim::char_at),
-        as_bytes => primitive!(1 str::as_bytes)
+        length => primitive!(1 string_prim::len),
+        is_empty => primitive!(1 string_prim::is_empty),
+        split_at => primitive!(2 string_prim::split_at),
+        find => primitive!(2 string_prim::find::<&str>),
+        rfind => primitive!(2 string_prim::rfind::<&str>),
+        starts_with => primitive!(2 string_prim::starts_with::<&str>),
+        ends_with => primitive!(2 string_prim::ends_with::<&str>),
+        trim => primitive!(1 string_prim::trim),
+        trim_left => primitive!(1 string_prim::trim_left),
+        trim_right => primitive!(1 string_prim::trim_right),
+        compare => primitive!(2 string_prim::cmp),
+        append => named_primitive!(2, "string_prim.append", prim::string_append),
+        eq => named_primitive!(2, "string_prim.eq", <str as PartialEq>::eq),
+        slice => named_primitive!(3, "string_prim.slice", prim::string_slice),
+        from_utf8 =>
+            primitive::<fn(Vec<u8>) -> StdResult<String, ()>>("string_prim.from_utf8",
+                                                              prim::from_utf8),
+        char_at => named_primitive!(2, "string_prim.char_at", prim::char_at),
+        as_bytes => primitive!(1 string_prim::as_bytes)
     ))?;
     vm.define_global(
         "char",
@@ -352,16 +357,14 @@ pub fn load(vm: &Thread) -> Result<()> {
         is_alphanumeric => primitive!(1 char::is_alphanumeric),
         is_control => primitive!(1 char::is_control),
         is_numeric => primitive!(1 char::is_numeric)
-    ),
-    )?;
+    ))?;
     vm.define_global(
         "prim",
         record!(
-        show_Int => primitive!(1 prim::show_int),
-        show_Float => primitive!(1 prim::show_float),
-        show_Char => primitive!(1 prim::show_char)
-    ),
-    )?;
+        show_int => primitive!(1 prim::show_int),
+        show_float => primitive!(1 prim::show_float),
+        show_char => primitive!(1 prim::show_char)
+    ))?;
 
     vm.define_global(
         "#error",

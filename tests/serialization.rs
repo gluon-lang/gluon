@@ -22,10 +22,13 @@ fn roundtrip<'t>(thread: &'t RootedThread,
         let ser_seed = SeSeed::new();
         value.serialize_seed(&mut ser, &ser_seed).unwrap();
     }
+    let buffer = from_utf8(&buffer).unwrap();
 
-    let mut de = serde_json::Deserializer::from_slice(&buffer);
+    let mut de = serde_json::Deserializer::from_str(buffer);
 
-    let deserialize_value = DeSeed::new(thread.clone()).deserialize(&mut de).unwrap();
+    let deserialize_value = DeSeed::new(thread.clone())
+        .deserialize(&mut de)
+        .unwrap_or_else(|err| panic!("{}\n{}", err, buffer));
     let deserialize_value = thread.root_value_ref(deserialize_value);
 
     // We can't compare functions for equality so serialize again and check that for equality with
@@ -36,7 +39,7 @@ fn roundtrip<'t>(thread: &'t RootedThread,
         let ser_seed = SeSeed::new();
         value.serialize_seed(&mut ser, &ser_seed).unwrap();
     }
-    assert_eq!(from_utf8(&buffer).unwrap(), from_utf8(&buffer2).unwrap());
+    assert_eq!(buffer, from_utf8(&buffer2).unwrap());
 
     deserialize_value
 }
@@ -59,6 +62,16 @@ fn roundtrip_recursive_closure() {
         and g x = f x 
         { f, g }
         "#;
+    let (value, _) = Compiler::new()
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "test", expr)
+        .unwrap();
+    roundtrip(&thread, &value);
+}
+
+#[test]
+fn roundtrip_std_prelude() {
+    let thread = new_vm();
+    let expr = r#" import! "std/prelude.glu" "#;
     let (value, _) = Compiler::new()
         .run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "test", expr)
         .unwrap();

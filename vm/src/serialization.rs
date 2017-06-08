@@ -1,9 +1,10 @@
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
 use serde::Deserializer;
-use serde::de::{DeserializeSeed, SeqSeed, Error};
+use serde::de::{Deserialize, DeserializeSeed, SeqSeed, Error};
 use serde::ser::{Serializer, SerializeSeed, SerializeSeq, Seeded};
 
 use base::fnv::FnvMap;
@@ -20,7 +21,6 @@ pub struct DeSeed {
     thread: RootedThread,
     symbols: Rc<RefCell<Symbols>>,
     gc_map: NodeMap,
-    extern_functions: Rc<FnvMap<Symbol, extern "C" fn(&Thread) -> Status>>,
 }
 
 impl DeSeed {
@@ -29,7 +29,6 @@ impl DeSeed {
             thread: thread,
             symbols: Default::default(),
             gc_map: NodeMap::default(),
-            extern_functions: Default::default(),
         }
     }
 
@@ -225,7 +224,7 @@ pub mod gc {
         fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
             where D: Deserializer<'de>
         {
-            String::deserialize(deserializer)
+            Cow::<str>::deserialize(deserializer)
                 .map(|s| unsafe {
                          GcStr::from_utf8_unchecked(self.state
                                                         .thread
@@ -598,27 +597,30 @@ impl<'de> DeserializeSeed<'de> for Seed<ExternFunction> {
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
         where D: Deserializer<'de>
     {
-        #[derive(DeserializeSeed)]
-        #[serde(deserialize_seed = "Seed<ExternFunction_>")]
-        struct ExternFunction_ {
-            #[serde(deserialize_seed_with = "deserialize")]
-            id: Symbol,
+        use api::{Hole, OpaqueValue};
+        #[derive(Deserialize)]
+        struct ExternFunction_<'s> {
+            id: Cow<'s, str>,
             args: VmIndex,
         }
-        let partial = Seed::<ExternFunction_>::from(self.state.clone())
-            .deserialize(deserializer)?;
+
+        let partial = ExternFunction_::deserialize(deserializer)?;
         let function = self.state
-            .extern_functions
-            .get(&partial.id)
-            .ok_or_else(|| {
-                            D::Error::custom(format!("Extern function `{}` is not defined",
-                                                     partial.id))
-                        })?;
-        Ok(ExternFunction {
-               id: partial.id,
-               args: partial.args,
-               function: *function,
-           })
+            .thread
+            .get_global::<OpaqueValue<&Thread, Hole>>(&partial.id)
+            .map_err(|err| D::Error::custom(err.to_string()))?;
+        unsafe {
+            match function.get_value() {
+                Value::Function(function) if partial.args == function.args => {
+                    Ok(ExternFunction {
+                           id: function.id.clone(),
+                           args: function.args,
+                           function: function.function,
+                       })
+                }
+                _ => Err(D::Error::custom("Invalid type for extern function")),
+            }
+        }
     }
 }
 

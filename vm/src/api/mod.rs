@@ -1396,6 +1396,7 @@ impl<'vm, F> Pushable<'vm> for Primitive<F>
     where F: FunctionType + VmType
 {
     fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
+<<<<<<< HEAD:vm/src/api/mod.rs
         let id = Symbol::from(self.name);
         let value = Value::Function(context
                                         .alloc_with(thread,
@@ -1404,6 +1405,17 @@ impl<'vm, F> Pushable<'vm> for Primitive<F>
                                                              args: F::arguments(),
                                                              function: self.function,
                                                          }))?);
+=======
+        // Map rust modules into gluon modules
+        let id = Symbol::from(self.name.replace("::", "."));
+        let value = Value::Function(context
+                                        .alloc_with(thread,
+                                                    Move(ExternFunction {
+                                                             id: id,
+                                                             args: F::arguments(),
+                                                             function: self.function,
+                                                         }))?);
+>>>>>>> Rename primitive functions so they can be found during deserialization:vm/src/api.rs
         context.stack.push(value);
         Ok(())
     }

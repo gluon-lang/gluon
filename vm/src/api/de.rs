@@ -207,6 +207,22 @@ struct Deserializer<'de, 't> {
 }
 
 impl<'de, 't> Deserializer<'de, 't> {
+    fn from_value(
+        thread: &'de Thread,
+        env: &'de TypeEnv,
+        input: Variants<'de>,
+        typ: &'t ArcType,
+    ) -> Self {
+        Deserializer {
+            state: State {
+                thread: thread,
+                env: env,
+            },
+            input: input,
+            typ: typ,
+        }
+    }
+
     fn deserialize_builtin<T, F, R>(&self, expected: BuiltinType, visit: F) -> Result<R>
     where
         F: FnOnce(T) -> Result<R>,

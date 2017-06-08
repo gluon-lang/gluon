@@ -167,12 +167,12 @@ impl Compiler {
     }
 
     /// Parse `expr_str`, returning an expression if successful
-    pub fn parse_expr(
-        &mut self,
-        file: &str,
-        expr_str: &str,
-    ) -> StdResult<SpannedExpr<Symbol>, InFile<parser::Error>> {
-        self.parse_partial_expr(file, expr_str)
+    pub fn parse_expr(&mut self,
+                      type_cache: &TypeCache<Symbol>,
+                      file: &str,
+                      expr_str: &str)
+                      -> StdResult<SpannedExpr<Symbol>, InFile<parser::Error>> {
+        self.parse_partial_expr(type_cache, file, expr_str)
             .map_err(|(_, err)| err)
     }
 
