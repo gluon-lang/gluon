@@ -46,4 +46,4 @@ regex = "0.2.0"
 serde_json = { git = "https://github.com/Marwes/json" }
 
 [features]
-test = ["env_logger", "lalrpop", "gluon_parser", "serde"]
+test = ["env_logger", "lalrpop", "gluon_parser"]

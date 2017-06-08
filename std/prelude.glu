@@ -472,7 +472,7 @@ let (-) = num_Int.(-)
 /// list [1, 2, 3]
 /// ```
 let list xs : Array a -> List a =
-    let len = array.length xs
+    let len = array.len xs
     let list_ i ys =
         if i == 0 then
             ys
