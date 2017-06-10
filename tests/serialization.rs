@@ -30,7 +30,7 @@ fn roundtrip<'t>(
     let deserialize_value = DeSeed::new(thread.clone())
         .deserialize(&mut de)
         .unwrap_or_else(|err| panic!("{}\n{}", err, buffer));
-    let deserialize_value = thread.root_value_ref(deserialize_value);
+    let deserialize_value = thread.root_value(deserialize_value);
 
     // We can't compare functions for equality so serialize again and check that for equality with
     // the first serialization

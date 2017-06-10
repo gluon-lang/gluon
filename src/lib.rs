@@ -227,10 +227,9 @@ impl Compiler {
         expr: &SpannedExpr<Symbol>,
     ) -> Result<CompiledFunction> {
         TypecheckValue {
-                expr: expr,
-                typ: vm.global_env().type_cache().hole(),
-            }
-            .compile(self, vm, filename, expr_str, ())
+            expr: expr,
+            typ: vm.global_env().type_cache().hole(),
+        }.compile(self, vm, filename, expr_str, ())
             .map(|result| result.function)
     }
 

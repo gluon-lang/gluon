@@ -7,6 +7,7 @@ extern crate gluon_parser as parser;
 use bencher::{Bencher, black_box};
 
 use base::symbol::{Symbols, SymbolModule};
+use base::types::TypeCache;
 
 fn prelude(b: &mut Bencher) {
     use std::fs::File;
@@ -19,7 +20,7 @@ fn prelude(b: &mut Bencher) {
     b.iter(|| {
         let mut symbols = Symbols::new();
         let mut symbols = SymbolModule::new("".into(), &mut symbols);
-        let expr = parser::parse_expr(&mut symbols, &text)
+        let expr = parser::parse_expr(&mut symbols, &TypeCache::new(), &text)
             .unwrap_or_else(|err| panic!("{:?}", err));
         black_box(expr)
     })

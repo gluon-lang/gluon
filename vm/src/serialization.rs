@@ -634,21 +634,21 @@ impl<'de> DeserializeSeed<'de> for Seed<ExternFunction> {
 
         let partial = ExternFunction_::deserialize(deserializer)?;
         // Wrap any operators with parens so that they are acceptable for `get_global`
-        let escaped_id: String = partial
+        let mut escaped_id = Cow::Borrowed("");
+        let iter = partial
             .id
             .split(|c: char| c == '.')
-            .map(|s| {
-                if s.chars()
-                    .next()
-                    .map_or(false, ::base::ast::is_operator_char)
-                {
-                    Cow::Owned(format!("({})", s))
-                } else {
-                    Cow::Borrowed(s)
-                }
-            })
-            .intersperse(Cow::Borrowed("."))
-            .collect();
+            .map(|s| if s.chars()
+                        .next()
+                        .map_or(false, ::base::ast::is_operator_char) {
+                     Cow::Owned(format!("({})", s))
+                 } else {
+                     Cow::Borrowed(s)
+                 })
+            .intersperse(Cow::Borrowed("."));
+        for s in iter {
+            escaped_id += s;
+        }
         let function = self.state
             .thread
             .get_global::<OpaqueValue<&Thread, Hole>>(&escaped_id)
