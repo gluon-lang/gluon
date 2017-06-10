@@ -45,7 +45,7 @@ pub fn parse_new(
     let symbols = get_local_interner();
     let mut symbols = symbols.borrow_mut();
     let mut module = SymbolModule::new("test".into(), &mut symbols);
-    parse_partial_expr(&mut module, &s)
+    parse_partial_expr(&mut module, &TypeCache::new(), &s)
 }
 
 #[allow(dead_code)]

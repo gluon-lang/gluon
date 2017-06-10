@@ -4,7 +4,7 @@ use std::result::Result as StdResult;
 
 use {Variants, Error};
 use primitives as prim;
-use api::{generic, Generic, Getable, AsyncPushable, Array, RuntimeResult, primitive, WithVM};
+use api::{generic, Generic, Getable, Array, AsyncPushable, RuntimeResult, primitive, WithVM};
 use api::generic::A;
 use gc::{Gc, Traverseable, DataDef, WriteOnly};
 use Result;
@@ -17,7 +17,7 @@ use types::VmInt;
 mod array {
     use super::*;
 
-    pub fn length(array: Array<generic::A>) -> VmInt {
+    pub fn len(array: Array<generic::A>) -> VmInt {
         array.len() as VmInt
     }
 
@@ -31,7 +31,8 @@ mod array {
         }
     }
 
-    fn array_append<'vm>(
+    pub fn append<'vm>(
+        lhs: Array<'vm, Generic<generic::A>>,
         rhs: Array<'vm, Generic<generic::A>>,
     ) -> RuntimeResult<Array<'vm, Generic<generic::A>>, Error> {
         struct Append<'b> {
@@ -228,6 +229,7 @@ extern "C" fn error(_: &Thread) -> Status {
     Status::Error
 }
 
+#[allow(non_camel_cast_types)]
 pub fn load(vm: &Thread) -> Result<()> {
     use std::f64;
     use std::char;
@@ -324,7 +326,7 @@ pub fn load(vm: &Thread) -> Result<()> {
         vm.define_global(
             "array",
             record!(
-            length => primitive!(1 array::length),
+            len => primitive!(1 array::len),
             index => primitive!(2 array::index),
             append => primitive!(2 array::append)
         ),

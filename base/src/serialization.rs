@@ -81,12 +81,14 @@ impl<Id> IdSeed<Id> {
 }
 
 impl<'de, Id> DeserializeSeed<'de> for IdSeed<Id>
-    where Id: Deserialize<'de>
+where
+    Id: Deserialize<'de>,
 {
     type Value = Id;
 
     fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-        where D: Deserializer<'de>
+    where
+        D: Deserializer<'de>,
     {
         Id::deserialize(deserializer)
     }
@@ -114,7 +116,8 @@ impl<S, F> MapSeed<S, F> {
 }
 
 impl<S, T, F> AsMut<T> for MapSeed<S, F>
-    where S: AsMut<T>
+where
+    S: AsMut<T>,
 {
     fn as_mut(&mut self) -> &mut T {
         self.seed.as_mut()
@@ -123,13 +126,15 @@ impl<S, T, F> AsMut<T> for MapSeed<S, F>
 
 
 impl<'de, S, F, R> DeserializeSeed<'de> for MapSeed<S, F>
-    where S: DeserializeSeed<'de>,
-          F: FnOnce(S::Value) -> R
+where
+    S: DeserializeSeed<'de>,
+    F: FnOnce(S::Value) -> R,
 {
     type Value = R;
 
     fn deserialize<D>(mut self, deserializer: D) -> Result<Self::Value, D::Error>
-        where D: Deserializer<'de>
+    where
+        D: Deserializer<'de>,
     {
         self.seed.deserialize(deserializer).map(self.map)
     }
@@ -150,7 +155,8 @@ impl Default for NodeMap {
 
 impl NodeMap {
     pub fn insert<T>(&self, id: Id, value: T)
-        where T: Any
+    where
+        T: Any,
     {
         self.0
             .borrow_mut()
@@ -160,7 +166,8 @@ impl NodeMap {
     }
 
     pub fn get<T>(&self, id: &Id) -> Option<T>
-        where T: Any + Clone
+    where
+        T: Any + Clone,
     {
         self.0
             .borrow()
@@ -174,11 +181,13 @@ pub struct SharedSeed<T>(pub T);
 
 pub struct VariantSeed<T>(pub T);
 
-fn deserialize_t<'de, D, T>(seed: &mut VariantSeed<T>,
-                            deserializer: D)
-                            -> Result<T::Value, D::Error>
-    where D: Deserializer<'de>,
-          T: DeserializeSeed<'de> + Clone
+fn deserialize_t<'de, D, T>(
+    seed: &mut VariantSeed<T>,
+    deserializer: D,
+) -> Result<T::Value, D::Error>
+where
+    D: Deserializer<'de>,
+    T: DeserializeSeed<'de> + Clone,
 {
     seed.0.clone().deserialize(deserializer)
 }
@@ -186,29 +195,35 @@ fn deserialize_t<'de, D, T>(seed: &mut VariantSeed<T>,
 #[derive(DeserializeSeed, SerializeSeed)]
 #[serde(deserialize_seed = "VariantSeed<S>")]
 #[serde(de_parameters = "S")]
-#[serde(bound(deserialize  = "S: DeserializeSeed<'de, Value = T> + Clone"))]
+#[serde(bound(deserialize = "S: DeserializeSeed<'de, Value = T> + Clone"))]
 #[serde(bound(serialize = "T: SerializeSeed"))]
 #[serde(serialize_seed = "T::Seed")]
 pub enum Variant<T> {
-    Marked(Id,
-           #[serde(deserialize_seed_with = "deserialize_t")]
-           #[serde(serialize_seed)]
-           T),
-    Plain(#[serde(deserialize_seed_with = "deserialize_t")]
-          #[serde(serialize_seed)]
-          T),
+    Marked(
+        Id,
+        #[serde(deserialize_seed_with = "deserialize_t")]
+        #[serde(serialize_seed)]
+        T
+    ),
+    Plain(
+        #[serde(deserialize_seed_with = "deserialize_t")]
+        #[serde(serialize_seed)]
+        T
+    ),
     Reference(Id),
 }
 
 impl<'de, T> DeserializeSeed<'de> for SharedSeed<T>
-    where T: DeserializeSeed<'de> + Clone,
-          T: AsMut<NodeMap>,
-          T::Value: Any + Clone
+where
+    T: DeserializeSeed<'de> + Clone,
+    T: AsMut<NodeMap>,
+    T::Value: Any + Clone,
 {
     type Value = T::Value;
 
     fn deserialize<D>(mut self, deserializer: D) -> Result<Self::Value, D::Error>
-        where D: Deserializer<'de>
+    where
+        D: Deserializer<'de>,
     {
         match VariantSeed(self.0.clone()).deserialize(deserializer)? {
             Variant::Marked(id, node) => {
@@ -240,7 +255,8 @@ enum Lookup {
 }
 
 fn node_to_id<T>(map: &NodeToId, node: &T) -> Lookup
-    where T: Shared
+where
+    T: Shared,
 {
     if Shared::unique(node) {
         return Lookup::Unique;
@@ -255,14 +271,16 @@ fn node_to_id<T>(map: &NodeToId, node: &T) -> Lookup
 }
 
 
-pub fn serialize_shared<S, T>(self_: &T,
-                              serializer: S,
-                              seed: &<T::Target as SerializeSeed>::Seed)
-                              -> Result<S::Ok, S::Error>
-    where S: Serializer,
-          T: Shared + Deref,
-          T::Target: SerializeSeed,
-          <T::Target as SerializeSeed>::Seed: AsRef<NodeToId>
+pub fn serialize_shared<S, T>(
+    self_: &T,
+    serializer: S,
+    seed: &<T::Target as SerializeSeed>::Seed,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+    T: Shared + Deref,
+    T::Target: SerializeSeed,
+    <T::Target as SerializeSeed>::Seed: AsRef<NodeToId>,
 {
     let node = match node_to_id(seed.as_ref(), self_) {
         Lookup::Unique => Variant::Plain(&**self_),
@@ -272,13 +290,15 @@ pub fn serialize_shared<S, T>(self_: &T,
     node.serialize_seed(serializer, seed)
 }
 
-pub fn serialize_seq<'a, S, T, V>(self_: &'a T,
-                                  serializer: S,
-                                  seed: &V::Seed)
-                                  -> Result<S::Ok, S::Error>
-    where S: Serializer,
-          T: Deref<Target = [V]>,
-          V: SerializeSeed
+pub fn serialize_seq<'a, S, T, V>(
+    self_: &'a T,
+    serializer: S,
+    seed: &V::Seed,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+    T: Deref<Target = [V]>,
+    V: SerializeSeed,
 {
     (**self_).serialize_seed(serializer, seed)
 }

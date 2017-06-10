@@ -694,9 +694,8 @@ impl<'a> Compiler<'a> {
                         }
                     }
                 }
-                let constructors_in_type = resolve::remove_aliases_cow(self, &typ)
-                    .row_iter()
-                    .count();
+                let constructors_in_type =
+                    resolve::remove_aliases_cow(self, &typ).row_iter().count();
                 // Create a catch all to prevent us from running into undefined behaviour
                 // If a catch all already exists or all constructors have been matched then we can
                 // skip it

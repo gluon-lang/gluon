@@ -335,7 +335,7 @@ match A with
 test_expr!{ match_record_pattern,
 r#"
 match { x = 1, y = "abc" } with
-| { x, y = z } -> x #Int+ string_prim.length z
+| { x, y = z } -> x #Int+ string_prim.len z
 "#,
 4i32
 }
@@ -343,7 +343,7 @@ match { x = 1, y = "abc" } with
 test_expr!{ match_stack,
 r#"
 1 #Int+ (match string_prim with
-         | { length } -> length "abc")
+         | { len } -> len "abc")
 "#,
 4i32
 }
@@ -355,7 +355,7 @@ in
 let a = { x = 10, y = "abc" }
 in
 let {x, y = z} = a
-in x + string_prim.length z
+in x + string_prim.len z
 "#,
 13i32
 }
@@ -409,7 +409,7 @@ in (id { x = 1 }).x
 }
 
 test_expr!{ module_function,
-r#"let x = string_prim.length "test" in x"#,
+r#"let x = string_prim.len "test" in x"#,
 4i32
 }
 
@@ -422,8 +422,8 @@ r#"
 let arr = [1,2,3]
 
 array.index arr 0 #Int== 1
-    && array.length arr #Int== 3
-    && array.length (array.append arr arr) #Int== array.length arr #Int* 2"#,
+    && array.len arr #Int== 3
+    && array.len (array.append arr arr) #Int== array.len arr #Int* 2"#,
 true
 }
 
@@ -431,9 +431,9 @@ test_expr!{ array_byte,
 r#"
 let arr = [1b,2b,3b]
 
-let b = array.index arr 2 #Byte== 3b && array.length arr #Int== 3
+let b = array.index arr 2 #Byte== 3b && array.len arr #Int== 3
 let arr2 = array.append arr arr
-b && array.length arr2 #Int== array.length arr #Int* 2
+b && array.len arr2 #Int== array.len arr #Int* 2
   && array.index arr2 1 #Byte== array.index arr2 4
 "#,
 true
@@ -443,9 +443,9 @@ test_expr!{ array_float,
 r#"
 let arr = [1.0,2.0,3.0]
 
-let b = array.index arr 2 #Float== 3.0 && array.length arr #Int== 3
+let b = array.index arr 2 #Float== 3.0 && array.len arr #Int== 3
 let arr2 = array.append arr arr
-b && array.length arr2 #Int== array.length arr #Int* 2
+b && array.len arr2 #Int== array.len arr #Int* 2
   && array.index arr2 1 #Float== array.index arr2 4
 "#,
 true
@@ -455,9 +455,9 @@ test_expr!{ array_data,
 r#"
 let arr = [{x = 1, y = "a" }, { x = 2, y = "b" }]
 
-let b = (array.index arr 1).x #Int== 2 && array.length arr #Int== 2
+let b = (array.index arr 1).x #Int== 2 && array.len arr #Int== 2
 let arr2 = array.append arr arr
-b && array.length arr2 #Int== array.length arr #Int* 2
+b && array.len arr2 #Int== array.len arr #Int* 2
 "#,
 true
 }
@@ -466,9 +466,9 @@ test_expr!{ array_array,
 r#"
 let arr = [[], [1], [2, 3]]
 
-let b = array.length (array.index arr 1) #Int== 1 && array.length arr #Int== 3
+let b = array.len (array.index arr 1) #Int== 1 && array.len arr #Int== 3
 let arr2 = array.append arr arr
-b && array.length arr2 #Int== array.length arr #Int* 2
+b && array.len arr2 #Int== array.len arr #Int* 2
 "#,
 true
 }

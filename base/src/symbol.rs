@@ -20,7 +20,8 @@ pub struct Symbol(Arc<NameBuf>);
 
 impl<'de> Deserialize<'de> for Symbol {
     fn deserialize<D>(deserializer: D) -> Result<Symbol, D::Error>
-        where D: Deserializer<'de>
+    where
+        D: Deserializer<'de>,
     {
         use std::borrow::Cow;
         Cow::<str>::deserialize(deserializer).map(Symbol::from)
@@ -29,7 +30,8 @@ impl<'de> Deserialize<'de> for Symbol {
 
 impl Serialize for Symbol {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where S: Serializer
+    where
+        S: Serializer,
     {
         let s: &str = self.as_ref();
         s.serialize(serializer)
@@ -40,7 +42,8 @@ impl SerializeSeed for Symbol {
     type Seed = SeSeed;
 
     fn serialize_seed<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
-        where S: Serializer
+    where
+        S: Serializer,
     {
         ::serialization::serialize_shared(self, serializer, seed)
     }
@@ -105,7 +108,8 @@ impl Hash for Symbol {
 }
 
 impl<S> From<S> for Symbol
-    where S: Into<String>
+where
+    S: Into<String>,
 {
     fn from(name: S) -> Symbol {
         Symbol(Arc::new(NameBuf(name.into())))

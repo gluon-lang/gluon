@@ -1290,12 +1290,21 @@ mod tests {
 
     use std::collections::HashMap;
 
-    use base::symbol::{SymbolModule, Symbols};
+    use base::ast;
+    use base::symbol::{SymbolModule, Symbols, Symbol};
+    use base::types::TypeCache;
 
-    use self::parser::parse_expr;
     use core::grammar::parse_Expr as parse_core_expr;
 
     use vm::RootedThread;
+
+    fn parse_expr(symbols: &mut Symbols, expr_str: &str) -> ast::SpannedExpr<Symbol> {
+        self::parser::parse_expr(
+            &mut SymbolModule::new("".into(), symbols),
+            &TypeCache::new(),
+            expr_str,
+        ).unwrap()
+    }
 
     #[derive(Debug)]
     struct PatternEq<'a>(&'a Expr<'a>);
@@ -1390,7 +1399,7 @@ mod tests {
             match test with
             | x -> x
         "#;
-        let expr = parse_expr(&mut SymbolModule::new("".into(), &mut symbols), expr_str).unwrap();
+        let expr = parse_expr(&mut symbols, expr_str);
         let core_expr = translator.translate(&expr);
 
         let expected_str = " let y = 1 in y ";
@@ -1413,7 +1422,7 @@ mod tests {
             match test with
             | Ctor (Ctor x) -> x
         "#;
-        let expr = parse_expr(&mut SymbolModule::new("".into(), &mut symbols), expr_str).unwrap();
+        let expr = parse_expr(&mut symbols, expr_str);
         let core_expr = translator.translate(&expr);
 
         let expected_str = r#"
@@ -1445,7 +1454,7 @@ mod tests {
             | Ctor y -> 2
             | z -> 3
         "#;
-        let expr = parse_expr(&mut SymbolModule::new("".into(), &mut symbols), expr_str).unwrap();
+        let expr = parse_expr(&mut symbols, expr_str);
         let core_expr = translator.translate(&expr);
 
         let expected_str = r#"
@@ -1480,7 +1489,7 @@ mod tests {
             | { l = None, r = None } -> True
             | _ -> False
         "#;
-        let expr = parse_expr(&mut SymbolModule::new("".into(), &mut symbols), expr_str).unwrap();
+        let expr = parse_expr(&mut symbols, expr_str);
         let core_expr = translator.translate(&expr);
 
         let expected_str = r#"

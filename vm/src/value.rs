@@ -213,7 +213,8 @@ mod gc_str {
 
     impl Serialize for GcStr {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-            where S: Serializer
+        where
+            S: Serializer,
         {
             (**self).serialize(serializer)
         }
@@ -271,24 +272,36 @@ pub enum Value {
     Byte(u8),
     Int(VmInt),
     Float(f64),
-    String(#[serde(deserialize_seed_with = "::serialization::deserialize")]
-           GcStr),
+    String(
+        #[serde(deserialize_seed_with = "::serialization::deserialize")]
+        GcStr
+    ),
     Tag(VmTag),
-    Data(#[serde(deserialize_seed_with = "::serialization::gc::deserialize_data")]
-         #[serde(serialize_seed)]
-         GcPtr<DataStruct>),
-    Array(#[serde(deserialize_seed_with = "::serialization::gc::deserialize_array")]
-          #[serde(serialize_seed)]
-          GcPtr<ValueArray>),
-    Function(#[serde(deserialize_seed_with = "::serialization::deserialize")]
-             #[serde(serialize_seed)]
-             GcPtr<ExternFunction>),
-    Closure(#[serde(deserialize_seed_with = "::serialization::deserialize_closure")]
-            #[serde(serialize_seed_with = "ClosureData::serialize_seed")]
-            GcPtr<ClosureData>),
-    PartialApplication(#[serde(deserialize_seed_with = "::serialization::deserialize_application")]
-                       #[serde(serialize_seed)]
-                       GcPtr<PartialApplicationData>),
+    Data(
+        #[serde(deserialize_seed_with = "::serialization::gc::deserialize_data")]
+        #[serde(serialize_seed)]
+        GcPtr<DataStruct>
+    ),
+    Array(
+        #[serde(deserialize_seed_with = "::serialization::gc::deserialize_array")]
+        #[serde(serialize_seed)]
+        GcPtr<ValueArray>
+    ),
+    Function(
+        #[serde(deserialize_seed_with = "::serialization::deserialize")]
+        #[serde(serialize_seed)]
+        GcPtr<ExternFunction>
+    ),
+    Closure(
+        #[serde(deserialize_seed_with = "::serialization::deserialize_closure")]
+        #[serde(serialize_seed_with = "ClosureData::serialize_seed")]
+        GcPtr<ClosureData>
+    ),
+    PartialApplication(
+        #[serde(deserialize_seed_with = "::serialization::deserialize_application")]
+        #[serde(serialize_seed)]
+        GcPtr<PartialApplicationData>
+    ),
     #[serde(skip_deserializing)]
     #[serde(skip_serializing)]
     Userdata(GcPtr<Box<Userdata>>),
@@ -521,12 +534,16 @@ gc_serialize!{ Callable }
 #[serde(deserialize_seed = "::serialization::Seed<Callable>")]
 #[serde(serialize_seed = "::serialization::SeSeed")]
 pub enum Callable {
-    Closure(#[serde(deserialize_seed_with = "::serialization::deserialize_closure")]
-            #[serde(serialize_seed_with = "ClosureData::serialize_seed")]
-            GcPtr<ClosureData>),
-    Extern(#[serde(deserialize_seed_with = "::serialization::deserialize")]
-           #[serde(serialize_seed)]
-           GcPtr<ExternFunction>),
+    Closure(
+        #[serde(deserialize_seed_with = "::serialization::deserialize_closure")]
+        #[serde(serialize_seed_with = "ClosureData::serialize_seed")]
+        GcPtr<ClosureData>
+    ),
+    Extern(
+        #[serde(deserialize_seed_with = "::serialization::deserialize")]
+        #[serde(serialize_seed)]
+        GcPtr<ExternFunction>
+    ),
 }
 
 impl Callable {

@@ -21,12 +21,14 @@ pub struct Array<T: Copy> {
 }
 
 impl<T> SerializeSeed for Array<T>
-    where T: Copy + SerializeSeed
+where
+    T: Copy + SerializeSeed,
 {
     type Seed = T::Seed;
 
     fn serialize_seed<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
-        where S: Serializer
+    where
+        S: Serializer,
     {
         (**self).serialize_seed(serializer, seed)
     }

@@ -8,9 +8,10 @@ use gluon::vm::api::{Hole, OpaqueValue};
 use gluon::vm::thread::{RootedThread, RootedValue, Thread, ThreadInternal};
 use gluon::vm::serialization::{DeSeed, SeSeed};
 
-fn roundtrip<'t>(thread: &'t RootedThread,
-                 value: &OpaqueValue<&Thread, Hole>)
-                 -> RootedValue<&'t Thread> {
+fn roundtrip<'t>(
+    thread: &'t RootedThread,
+    value: &OpaqueValue<&Thread, Hole>,
+) -> RootedValue<&'t Thread> {
     use std::str::from_utf8;
 
     use serde::ser::SerializeSeed;
@@ -89,10 +90,13 @@ fn roundtrip_std_libs() {
         // Can't check the extension since vim swap files ".glu.swp" will report ".glu" as the
         // extension
         if path.to_str().unwrap().ends_with(".glu") &&
-           path.file_stem().unwrap().to_str() != Some("repl") {
-            expr.push_str(&format!("    {} = import! {:?},\n",
-                                   path.file_stem().unwrap().to_str().unwrap(),
-                                   path.display()));
+            path.file_stem().unwrap().to_str() != Some("repl")
+        {
+            expr.push_str(&format!(
+                "    {} = import! {:?},\n",
+                path.file_stem().unwrap().to_str().unwrap(),
+                path.display()
+            ));
         }
     }
     expr.push_str("}\n");

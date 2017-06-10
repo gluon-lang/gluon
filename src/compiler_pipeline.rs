@@ -156,10 +156,12 @@ where
         use check::typecheck::Typecheck;
 
         let env = thread.get_env();
-        let mut tc = Typecheck::new(file.into(),
-                                    &mut compiler.symbols,
-                                    &*env,
-                                    thread.global_env().type_cache().clone());
+        let mut tc = Typecheck::new(
+            file.into(),
+            &mut compiler.symbols,
+            &*env,
+            thread.global_env().type_cache().clone(),
+        );
 
         let typ = tc.typecheck_expr_expected(self.expr.borrow_mut(), expected_type)
             .map_err(|err| InFile::new(file, expr_str, err))?;

@@ -93,8 +93,9 @@ where
 }
 
 impl<T, U> PartialEq<RootedValue<U>> for RootedValue<T>
-    where T: Deref<Target = Thread>,
-          U: Deref<Target = Thread>
+where
+    T: Deref<Target = Thread>,
+    U: Deref<Target = Thread>,
 {
     fn eq(&self, other: &RootedValue<U>) -> bool {
         self.value == other.value

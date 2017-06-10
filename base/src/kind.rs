@@ -31,10 +31,13 @@ impl AsMut<::serialization::NodeMap> for KindSeed {
 
 impl KindSeed {
     fn deserialize<'de, D>(seed: &mut KindSeed, deserializer: D) -> Result<ArcKind, D::Error>
-        where D: ::serde::Deserializer<'de>
+    where
+        D: ::serde::Deserializer<'de>,
     {
-        let seed = ::serialization::SharedSeed(::serialization::MapSeed::<_, fn (_) -> _>::new(seed.clone(),
-                                                                             ArcKind::new));
+        let seed = ::serialization::SharedSeed(::serialization::MapSeed::<_, fn(_) -> _>::new(
+            seed.clone(),
+            ArcKind::new,
+        ));
         ::serde::de::DeserializeSeed::deserialize(seed, deserializer)
     }
 }
@@ -58,12 +61,14 @@ pub enum Kind {
     /// Kinds of rows (for polymorphic records).
     Row,
     /// Constructor which takes two kinds, taking the first as argument and returning the second.
-    Function(#[serde(deserialize_seed_with = "KindSeed::deserialize")]
-             #[serde(serialize_seed)]
-             ArcKind,
-             #[serde(deserialize_seed_with = "KindSeed::deserialize")]
-             #[serde(serialize_seed)]
-             ArcKind),
+    Function(
+        #[serde(deserialize_seed_with = "KindSeed::deserialize")]
+        #[serde(serialize_seed)]
+        ArcKind,
+        #[serde(deserialize_seed_with = "KindSeed::deserialize")]
+        #[serde(serialize_seed)]
+        ArcKind
+    ),
 }
 
 impl Kind {
@@ -132,7 +137,8 @@ impl SerializeSeed for ArcKind {
     type Seed = SeSeed;
 
     fn serialize_seed<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
-        where S: Serializer
+    where
+        S: Serializer,
     {
         ::serialization::serialize_shared(self, serializer, seed)
     }

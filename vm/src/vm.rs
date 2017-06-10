@@ -10,8 +10,8 @@ use base::fnv::FnvMap;
 use base::kind::{ArcKind, Kind, KindEnv};
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Name, Symbol, SymbolRef};
-use base::types::{Alias, AliasData, AppVec, ArcType, Generic, PrimitiveEnv, RecordSelector, Type, TypeCache,
-                  TypeEnv};
+use base::types::{Alias, AliasData, AppVec, ArcType, Generic, PrimitiveEnv, RecordSelector, Type,
+                  TypeCache, TypeEnv};
 
 use macros::MacroEnv;
 use {Error, Result};
