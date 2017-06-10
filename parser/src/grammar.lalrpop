@@ -186,7 +186,7 @@ AtomicType: ArcType<Id> = {
                 type_cache.hole()
             } else {
                 match BuiltinType::from_str(last) {
-                    Ok(ty) => Type::builtin(ty),
+                    Ok(ty) => type_cache.builtin_type(ty),
                     Err(_) if last.starts_with(char::is_uppercase) => {
                         Type::ident(env.from_str(last))
                     }

@@ -511,10 +511,7 @@ impl<'a> Compiler<'a> {
         };
         let mut env = FunctionEnvs::new();
         let id = self.empty_symbol.clone();
-        let typ = Type::function(
-            vec![],
-            ArcType::from(expr.env_type_of(&self.globals).clone()),
-        );
+        let typ = expr.env_type_of(&self.globals);
 
         env.start_function(self, 0, id, typ);
         debug!("COMPILING: {}", expr);

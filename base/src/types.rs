@@ -92,7 +92,7 @@ impl<'a, T: ?Sized + PrimitiveEnv> PrimitiveEnv for &'a T {
 }
 
 type_cache! { TypeCache(Id) { ArcType<Id>, Type }
-    hole int byte float string char function_builtin unit
+    hole int byte float string char function_builtin array_builtin unit
 }
 
 impl<Id> TypeCache<Id> {
@@ -125,6 +125,18 @@ impl<Id> TypeCache<Id> {
             self.unit.clone()
         } else {
             Type::record(vec![], fields)
+        }
+    }
+
+    pub fn builtin_type(&self, typ: BuiltinType) -> ArcType<Id> {
+        match typ {
+            BuiltinType::String => self.string(),
+            BuiltinType::Byte => self.byte(),
+            BuiltinType::Char => self.char(),
+            BuiltinType::Int => self.int(),
+            BuiltinType::Float => self.float(),
+            BuiltinType::Array => self.array_builtin(),
+            BuiltinType::Function => self.function_builtin(),
         }
     }
 }
@@ -885,7 +897,11 @@ where
     }
 
     pub fn array(typ: T) -> T {
-        Type::app(Type::builtin(BuiltinType::Array), collect![typ])
+        Type::app(Type::array_builtin(), collect![typ])
+    }
+
+    pub fn array_builtin() -> T {
+        Type::builtin(BuiltinType::Array)
     }
 
     pub fn app(id: T, args: AppVec<T>) -> T {

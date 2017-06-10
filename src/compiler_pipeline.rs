@@ -64,7 +64,7 @@ impl<'s> MacroExpandable for &'s str {
     ) -> Result<MacroValue<Self::Expr>> {
 
         compiler
-            .parse_expr(file, self)
+            .parse_expr(macros.vm.global_env().type_cache(), file, self)
             .map_err(From::from)
             .and_then(|mut expr| {
                 expr.expand_macro_with(compiler, macros, file)?;
@@ -83,7 +83,7 @@ impl<'s> MacroExpandable for &'s mut SpannedExpr<Symbol> {
         file: &str,
     ) -> Result<MacroValue<Self::Expr>> {
         if compiler.implicit_prelude {
-            compiler.include_implicit_prelude(file, self);
+            compiler.include_implicit_prelude(macros.vm.global_env().type_cache(), file, self);
         }
         macros.run(self);
         Ok(MacroValue { expr: self })
@@ -156,7 +156,10 @@ where
         use check::typecheck::Typecheck;
 
         let env = thread.get_env();
-        let mut tc = Typecheck::new(file.into(), &mut compiler.symbols, &*env);
+        let mut tc = Typecheck::new(file.into(),
+                                    &mut compiler.symbols,
+                                    &*env,
+                                    thread.global_env().type_cache().clone());
 
         let typ = tc.typecheck_expr_expected(self.expr.borrow_mut(), expected_type)
             .map_err(|err| InFile::new(file, expr_str, err))?;

@@ -35,7 +35,7 @@ use base::ast::{self, SpannedExpr};
 use base::error::{Errors, InFile};
 use base::metadata::Metadata;
 use base::symbol::{Symbol, Symbols, SymbolModule};
-use base::types::{ArcType, Type};
+use base::types::{ArcType, Type, TypeCache};
 use check::typecheck::TypeError;
 use vm::Variants;
 use vm::api::{Getable, Hole, VmType, OpaqueValue};
@@ -167,6 +167,7 @@ impl Compiler {
     }
 
     /// Parse `expr_str`, returning an expression if successful
+
     pub fn parse_expr(&mut self,
                       type_cache: &TypeCache<Symbol>,
                       file: &str,
@@ -177,17 +178,16 @@ impl Compiler {
     }
 
     /// Parse `input`, returning an expression if successful
-    pub fn parse_partial_expr(
-        &mut self,
-        file: &str,
-        expr_str: &str,
-    ) -> StdResult<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, InFile<parser::Error>)> {
-        Ok(parser::parse_partial_expr(
-            &mut SymbolModule::new(file.into(), &mut self.symbols),
-            expr_str,
-        ).map_err(
-            |(expr, err)| (expr, InFile::new(file, expr_str, err)),
-        )?)
+    pub fn parse_partial_expr
+        (&mut self,
+         type_cache: &TypeCache<Symbol>,
+         file: &str,
+         expr_str: &str)
+         -> StdResult<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, InFile<parser::Error>)> {
+        Ok(parser::parse_partial_expr(&mut SymbolModule::new(file.into(), &mut self.symbols),
+                                      type_cache,
+                                      expr_str)
+                   .map_err(|(expr, err)| (expr, InFile::new(file, expr_str, err)))?)
     }
 
     /// Parse and typecheck `expr_str` returning the typechecked expression and type of the
@@ -433,13 +433,16 @@ impl Compiler {
             .boxed()
     }
 
-    fn include_implicit_prelude(&mut self, name: &str, expr: &mut SpannedExpr<Symbol>) {
+    fn include_implicit_prelude(&mut self,
+                                type_cache: &TypeCache<Symbol>,
+                                name: &str,
+                                expr: &mut SpannedExpr<Symbol>) {
         use std::mem;
         if name == "std.prelude" {
             return;
         }
 
-        let prelude_expr = self.parse_expr("", PRELUDE).unwrap();
+        let prelude_expr = self.parse_expr(type_cache, "", PRELUDE).unwrap();
         let original_expr = mem::replace(expr, prelude_expr);
 
         // Set all spans in the prelude expression to -1 so that completion requests always

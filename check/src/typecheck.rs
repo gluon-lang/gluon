@@ -253,11 +253,11 @@ pub type Error = Errors<SpannedTypeError<Symbol>>;
 
 impl<'a> Typecheck<'a> {
     /// Create a new typechecker which typechecks expressions in `module`
-    pub fn new(
-        module: String,
-        symbols: &'a mut Symbols,
-        environment: &'a (PrimitiveEnv + 'a),
-    ) -> Typecheck<'a> {
+    pub fn new(module: String,
+               symbols: &'a mut Symbols,
+               environment: &'a (PrimitiveEnv + 'a),
+               type_cache: TypeCache<Symbol>)
+               -> Typecheck<'a> {
         let symbols = SymbolModule::new(module, symbols);
         let kind_cache = KindCache::new();
         Typecheck {
@@ -272,7 +272,7 @@ impl<'a> Typecheck<'a> {
             named_variables: FnvMap::default(),
             errors: Errors::new(),
             type_variables: ScopedMap::new(),
-            type_cache: TypeCache::new(),
+            type_cache: type_cache,
             kind_cache: kind_cache,
         }
     }

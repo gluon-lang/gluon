@@ -1611,8 +1611,8 @@ impl <$($args: VmType,)* R: VmType> VmType for fn ($($args),*) -> R {
     type Type = fn ($($args::Type),*) -> R::Type;
     #[allow(non_snake_case)]
     fn make_type(vm: &Thread) -> ArcType {
-        let args = collect![$(make_type::<$args>(vm)),*];
-        Type::function(args, make_type::<R>(vm))
+        let args = vec![$(make_type::<$args>(vm)),*];
+        vm.global_env().type_cache().function(args, make_type::<R>(vm))
     }
 }
 
@@ -1665,8 +1665,7 @@ impl <'s, $($args: VmType,)* R: VmType> VmType for Fn($($args),*) -> R + 's {
 
     #[allow(non_snake_case)]
     fn make_type(vm: &Thread) -> ArcType {
-        let args = vec![$(make_type::<$args>(vm)),*];
-        Type::function(args, make_type::<R>(vm))
+        <fn ($($args),*) -> R>::make_type(vm)
     }
 }
 

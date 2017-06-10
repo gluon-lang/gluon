@@ -799,7 +799,7 @@ fn invalid_string_slice_dont_panic() {
     let text = r#"
 let string = import! "std/string.glu"
 let s = "åäö"
-string.slice s 1 (string.length s)
+string.slice s 1 (string.len s)
 "#;
     let mut vm = make_vm();
     let result = Compiler::new()

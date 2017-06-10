@@ -3,7 +3,8 @@ use base::error::InFile;
 use base::kind::{ArcKind, Kind, KindEnv};
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Symbols, SymbolModule, Symbol, SymbolRef};
-use base::types::{self, Alias, ArcType, Generic, PrimitiveEnv, RecordSelector, Type, TypeEnv};
+use base::types::{self, Alias, ArcType, Generic, PrimitiveEnv, RecordSelector, Type, TypeCache,
+                  TypeEnv};
 use check::typecheck::{self, Typecheck};
 use parser::{parse_partial_expr, ParseErrors};
 
@@ -154,7 +155,7 @@ pub fn typecheck_expr_expected(
     let env = MockEnv::new();
     let interner = get_local_interner();
     let mut interner = interner.borrow_mut();
-    let mut tc = Typecheck::new("test".into(), &mut interner, &env);
+    let mut tc = Typecheck::new("test".into(), &mut interner, &env, TypeCache::new());
 
     let result = tc.typecheck_expr_expected(&mut expr, expected);
 
@@ -186,7 +187,7 @@ pub fn typecheck_partial_expr(
     let env = MockEnv::new();
     let interner = get_local_interner();
     let mut interner = interner.borrow_mut();
-    let mut tc = Typecheck::new("test".into(), &mut interner, &env);
+    let mut tc = Typecheck::new("test".into(), &mut interner, &env, TypeCache::new());
 
     let result = tc.typecheck_expr(&mut expr);
 

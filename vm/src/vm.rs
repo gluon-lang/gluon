@@ -10,7 +10,7 @@ use base::fnv::FnvMap;
 use base::kind::{ArcKind, Kind, KindEnv};
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Name, Symbol, SymbolRef};
-use base::types::{Alias, AliasData, AppVec, ArcType, Generic, PrimitiveEnv, RecordSelector, Type,
+use base::types::{Alias, AliasData, AppVec, ArcType, Generic, PrimitiveEnv, RecordSelector, Type, TypeCache,
                   TypeEnv};
 
 use macros::MacroEnv;
@@ -102,6 +102,7 @@ pub struct GlobalVmState {
     typeids: RwLock<FnvMap<TypeId, ArcType>>,
     interner: RwLock<Interner>,
     macros: MacroEnv,
+    type_cache: TypeCache<Symbol>,
     // FIXME These fields should not be public
     pub gc: Mutex<Gc>,
     // List of all generation 0 threads (ie, threads allocated by the global gc). when doing a
@@ -341,6 +342,7 @@ impl GlobalVmState {
             interner: RwLock::new(Interner::new()),
             gc: Mutex::new(Gc::new(Generation::default(), usize::MAX)),
             macros: MacroEnv::new(),
+            type_cache: TypeCache::new(),
             generation_0_threads: RwLock::new(Vec::new()),
         };
         vm.add_types().unwrap();
@@ -383,6 +385,10 @@ impl GlobalVmState {
             .unwrap();
         self.register_type::<Thread>("Thread", &[]).unwrap();
         Ok(())
+    }
+
+    pub fn type_cache(&self) -> &TypeCache<Symbol> {
+        &self.type_cache
     }
 
     pub fn new_global_thunk(&self, f: CompiledFunction) -> Result<GcPtr<ClosureData>> {
