@@ -92,7 +92,8 @@ impl<'a, T: ?Sized + PrimitiveEnv> PrimitiveEnv for &'a T {
 }
 
 type_cache! { TypeCache(Id) { ArcType<Id>, Type }
-    hole int byte float string char function_builtin array_builtin unit
+    hole opaque int byte float string char
+    function_builtin array_builtin unit empty_row
 }
 
 impl<Id> TypeCache<Id> {
@@ -124,8 +125,19 @@ impl<Id> TypeCache<Id> {
         if fields.is_empty() {
             self.unit.clone()
         } else {
-            Type::record(vec![], fields)
+            self.record(vec![], fields)
         }
+    }
+
+    pub fn variant(&self, fields: Vec<Field<Id, ArcType<Id>>>) -> ArcType<Id> {
+        Type::poly_variant(fields, self.empty_row())
+    }
+
+    pub fn record(&self,
+                  types: Vec<Field<Id, Alias<Id, ArcType<Id>>>>,
+                  fields: Vec<Field<Id, ArcType<Id>>>)
+                  -> ArcType<Id> {
+        Type::poly_record(types, fields, self.empty_row())
     }
 
     pub fn builtin_type(&self, typ: BuiltinType) -> ArcType<Id> {
@@ -138,6 +150,10 @@ impl<Id> TypeCache<Id> {
             BuiltinType::Array => self.array_builtin(),
             BuiltinType::Function => self.function_builtin(),
         }
+    }
+
+    pub fn array(&self, typ: ArcType<Id>) -> ArcType<Id> {
+        Type::app(self.array_builtin(), collect![typ])
     }
 }
 

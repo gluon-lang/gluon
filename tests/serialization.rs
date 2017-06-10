@@ -41,8 +41,6 @@ fn roundtrip<'t>(
         value.serialize_seed(&mut ser, &ser_seed).unwrap();
     }
     assert_eq!(buffer, from_utf8(&buffer2).unwrap());
-    let mut f = ::std::fs::File::create("../test2").unwrap();
-    ::std::io::Write::write_all(&mut f, &buffer2).unwrap();
 
     deserialize_value
 }

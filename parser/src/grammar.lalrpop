@@ -161,7 +161,7 @@ TypeBinding: TypeBinding<Id> = {
         TypeBinding {
             comment: None,
             name: id.clone(),
-            alias: pos::spanned(row_span, AliasData::new(id.value, params, Type::variant(row))),
+            alias: pos::spanned(row_span, AliasData::new(id.value, params, type_cache.variant(row))),
             finalized_alias: None,
         }
     },
@@ -214,7 +214,7 @@ AtomicType: ArcType<Id> = {
         },
 
     "{" <row: Comma<RecordField>> "}" =>
-        Type::record(vec![], row),
+        type_cache.record(vec![], row),
 };
 
 AppType = {

@@ -12,7 +12,7 @@ use serde::de::{Deserialize, DeserializeSeed, Deserializer, Error};
 use serde::ser::{Serialize, SerializeSeed, Serializer};
 
 use symbol::Symbol;
-use types::ArcType;
+use types::{ArcType, Type};
 
 pub struct SeSeed {
     node_to_id: NodeToId,
@@ -46,7 +46,7 @@ impl<T> Shared for Arc<T> {
     }
 
     fn as_ptr(&self) -> *const () {
-        &**self as *const _ as *const ()
+        &**self as *const T as *const ()
     }
 }
 
@@ -56,7 +56,7 @@ impl<T> Shared for ArcType<T> {
     }
 
     fn as_ptr(&self) -> *const () {
-        &**self as *const _ as *const ()
+        &**self as *const Type<_, _> as *const ()
     }
 }
 
@@ -246,7 +246,7 @@ pub trait Shared {
     fn as_ptr(&self) -> *const ();
 }
 
-pub type NodeToId = RefCell<HashMap<*const (), Id>>;
+pub type NodeToId = Rc<RefCell<HashMap<*const (), Id>>>;
 
 enum Lookup {
     Unique,

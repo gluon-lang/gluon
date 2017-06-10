@@ -350,14 +350,16 @@ impl GlobalVmState {
     }
 
     fn add_types(&mut self) -> StdResult<(), (TypeId, ArcType)> {
+        use base::types::BuiltinType;
         use api::generic::A;
         use api::Generic;
-        fn add_type<T: Any>(
-            ids: &mut FnvMap<TypeId, ArcType>,
-            env: &mut VmEnv,
-            name: &str,
-            typ: ArcType,
-        ) {
+        fn add_builtin_type<T: Any>(self_: &mut GlobalVmState, b: BuiltinType) {
+            let typ = self_.type_cache.builtin_type(b);
+            add_type::<T>(self_, b.to_str(), typ)
+        }
+        fn add_type<T: Any>(self_: &mut GlobalVmState, name: &str, typ: ArcType) {
+            let ids = self_.typeids.get_mut().unwrap();
+            let env = self_.env.get_mut().unwrap();
             ids.insert(TypeId::of::<T>(), typ);
             // Insert aliases so that `find_info` can retrieve information about the primitives
             env.type_infos.id_to_type.insert(
@@ -365,20 +367,19 @@ impl GlobalVmState {
                 Alias::from(AliasData::new(
                     Symbol::from(name),
                     Vec::new(),
-                    Type::opaque(),
+                    self_.type_cache.opaque(),
                 )),
             );
         }
 
         {
-            let ids = self.typeids.get_mut().unwrap();
-            let env = self.env.get_mut().unwrap();
-            add_type::<()>(ids, env, "()", Type::unit());
-            add_type::<VmInt>(ids, env, "Int", Type::int());
-            add_type::<u8>(ids, env, "Byte", Type::byte());
-            add_type::<f64>(ids, env, "Float", Type::float());
-            add_type::<::std::string::String>(ids, env, "String", Type::string());
-            add_type::<char>(ids, env, "Char", Type::char());
+            let unit = self.type_cache.unit();
+            add_type::<()>(self, "()", unit);
+            add_builtin_type::<VmInt>(self, BuiltinType::Int);
+            add_builtin_type::<u8>(self, BuiltinType::Byte);
+            add_builtin_type::<f64>(self, BuiltinType::Float);
+            add_builtin_type::<::std::string::String>(self, BuiltinType::String);
+            add_builtin_type::<char>(self, BuiltinType::Char)
         }
         self.register_type::<IO<Generic<A>>>("IO", &["a"]).unwrap();
         self.register_type::<Lazy<Generic<A>>>("Lazy", &["a"])
@@ -464,7 +465,7 @@ impl GlobalVmState {
             let t = self.typeids.read().unwrap().get(&id).unwrap().clone();
             type_infos.id_to_type.insert(
                 name.into(),
-                Alias::from(AliasData::new(n, args, Type::opaque())),
+                Alias::from(AliasData::new(n, args, self.type_cache.opaque())),
             );
             Ok(t)
         }

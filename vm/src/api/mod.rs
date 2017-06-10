@@ -150,8 +150,8 @@ pub struct Hole(());
 impl VmType for Hole {
     type Type = Hole;
 
-    fn make_type(_: &Thread) -> ArcType {
-        Type::hole()
+    fn make_type(vm: &Thread) -> ArcType {
+        vm.global_env().type_cache().hole()
     }
 }
 
@@ -682,7 +682,7 @@ impl<'s, T> VmType for &'s [T]
     type Type = &'static [T::Type];
 
     fn make_type(vm: &Thread) -> ArcType {
-        Type::array(T::make_type(vm))
+        vm.global_env().type_cache().array(T::make_type(vm))
     }
 }
 impl<'vm, 's, T> Pushable<'vm> for &'s [T]
@@ -1101,7 +1101,7 @@ impl<'vm, T: VmType> VmType for Array<'vm, T>
 {
     type Type = Array<'static, T::Type>;
     fn make_type(vm: &Thread) -> ArcType {
-        Type::array(T::make_type(vm))
+        vm.global_env().type_cache().array(T::make_type(vm))
     }
 }
 
@@ -1185,7 +1185,8 @@ macro_rules! define_tuple {
             type Type = ($($id::Type),+);
 
             fn make_type(vm: &Thread) -> ArcType {
-                Type::record(Vec::new(),
+                let type_cache = vm.global_env().type_cache();
+                type_cache.record(Vec::new(),
                              vec![$(types::Field::new(Symbol::from(stringify!($id)),
                                                       $id::make_type(vm))),+])
             }
@@ -1258,7 +1259,7 @@ pub mod record {
     use base::symbol::Symbol;
 
     use {Variants, Result};
-    use thread::{self, Context};
+    use thread::{self, Context, ThreadInternal};
     use types::VmIndex;
     use vm::Thread;
     use value::{Def, Value};
@@ -1347,7 +1348,8 @@ pub mod record {
             let len = T::static_len();
             let mut fields = Vec::with_capacity(len);
             T::field_types(vm, &mut fields);
-            Type::record(Vec::new(), fields)
+            let type_cache = vm.global_env().type_cache();
+            type_cache.record(Vec::new(), fields)
         }
     }
     impl<'vm, T> Pushable<'vm> for Record<T>
