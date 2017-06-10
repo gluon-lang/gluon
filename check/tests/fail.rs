@@ -1,6 +1,8 @@
 #[macro_use]
 extern crate collect_mac;
 extern crate env_logger;
+#[macro_use]
+extern crate pretty_assertions;
 
 extern crate gluon_base as base;
 extern crate gluon_parser as parser;
@@ -415,4 +417,25 @@ let Test = 1
 "#;
     let result = support::typecheck(text);
     assert_err!(result, UndefinedVariable(..));
+}
+
+#[test]
+fn no_inference_variable_in_error() {
+    let _ = ::env_logger::init();
+    let text = r#"
+() 1
+"#;
+    let result = support::typecheck(text);
+
+    assert_eq!(&*format!("{}", result.unwrap_err()).replace("\t", "        "),
+               r#"test:Line: 2, Column: 1: Expected the following types to be equal
+Expected: b0 -> b1
+Found: {}
+1 errors were found during unification:
+Types do not match:
+        Expected: b0 -> b1
+        Found: {}
+() 1
+^~~~
+"#);
 }

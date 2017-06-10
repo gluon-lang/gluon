@@ -6,15 +6,14 @@ use base::fnv::FnvMap;
 use substitution::{Substitution, Substitutable, Variable};
 
 #[derive(Debug, PartialEq)]
-pub enum Error<T: Substitutable, E> {
+pub enum Error<T, E> {
     TypeMismatch(T, T),
-    Occurs(T::Variable, T),
+    Occurs(T, T),
     Other(E),
 }
 
 impl<T, E> fmt::Display for Error<T, E>
-    where T: Substitutable + fmt::Display,
-          T::Variable: fmt::Display,
+    where T: fmt::Display,
           E: fmt::Display
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -135,13 +134,13 @@ impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
             (_, Some(r)) => {
                 match subs.union(r, l) {
                     Ok(()) => Ok(None),
-                    Err(()) => Err(Error::Occurs(r.clone(), l.clone())),
+                    Err(()) => Err(Error::Occurs(T::from_variable(r.clone()), l.clone())),
                 }
             }
             (Some(l), _) => {
                 match subs.union(l, r) {
                     Ok(()) => Ok(Some(r.clone())),
-                    Err(()) => Err(Error::Occurs(l.clone(), r.clone())),
+                    Err(()) => Err(Error::Occurs(T::from_variable(l.clone()), r.clone())),
                 }
             }
             (None, None) => {
@@ -358,7 +357,7 @@ mod test {
         let fun = TType(Box::new(Type::Arrow(string.clone(), var1.clone())));
         let result = unify(&subs, &fun, &var1);
         assert_eq!(result,
-                   Err(Errors::from(vec![Error::Occurs(*var1.get_var().unwrap(), fun.clone())])));
+                   Err(Errors::from(vec![Error::Occurs(var1, fun.clone())])));
     }
 
     #[test]
