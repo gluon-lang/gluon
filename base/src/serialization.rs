@@ -9,7 +9,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use serde::de::{Deserialize, DeserializeSeed, Deserializer, Error};
-use serde::ser::{Serialize, SerializeSeed, Serializer};
+use serde::ser::{SerializeSeed, Serializer};
 
 use symbol::Symbol;
 use types::{ArcType, Type};
@@ -132,7 +132,7 @@ where
 {
     type Value = R;
 
-    fn deserialize<D>(mut self, deserializer: D) -> Result<Self::Value, D::Error>
+    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
     where
         D: Deserializer<'de>,
     {

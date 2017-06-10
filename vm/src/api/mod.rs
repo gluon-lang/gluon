@@ -1255,7 +1255,7 @@ pub mod record {
     use frunk_core::hlist::{h_cons, HCons, HNil, HList, Plucker};
 
     use base::types;
-    use base::types::{Type, ArcType};
+    use base::types::ArcType;
     use base::symbol::Symbol;
 
     use {Variants, Result};

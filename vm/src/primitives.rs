@@ -4,18 +4,18 @@ use std::result::Result as StdResult;
 
 use {Variants, Error};
 use primitives as prim;
-use api::{generic, Generic, Getable, Array, AsyncPushable, RuntimeResult, primitive, WithVM};
+use api::{generic, Generic, Getable, Array, RuntimeResult, primitive, WithVM};
 use api::generic::A;
 use gc::{Gc, Traverseable, DataDef, WriteOnly};
 use Result;
 use vm::{Thread, Status};
 use value::{Def, GcStr, Repr, Value, ValueArray};
 use stack::StackFrame;
-use thread::ThreadInternal;
 use types::VmInt;
 
 mod array {
     use super::*;
+    use thread::ThreadInternal;
 
     pub fn len(array: Array<generic::A>) -> VmInt {
         array.len() as VmInt
@@ -95,6 +95,8 @@ mod array {
 
 mod string {
     use super::*;
+    use api::AsyncPushable;
+    use thread::ThreadInternal;
 
     pub fn append(lhs: WithVM<&str>, rhs: &str) -> RuntimeResult<String, Error> {
         struct StrAppend<'b> {
@@ -229,7 +231,7 @@ extern "C" fn error(_: &Thread) -> Status {
     Status::Error
 }
 
-#[allow(non_camel_cast_types)]
+#[allow(non_camel_case_types)]
 pub fn load(vm: &Thread) -> Result<()> {
     use std::f64;
     use std::char;

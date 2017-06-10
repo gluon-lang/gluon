@@ -9,14 +9,13 @@ use serde::Deserializer;
 use serde::de::{Deserialize, DeserializeSeed, SeqSeed, Error};
 use serde::ser::{Serializer, SerializeSeed, SerializeSeq, Seeded};
 
-use base::fnv::FnvMap;
 use base::serialization::{NodeMap, NodeToId};
 use base::symbol::{Symbol, Symbols};
-use gc::{DataDef, GcPtr, Traverseable, WriteOnly};
-use thread::{RootedThread, Status, Thread, ThreadInternal};
+use gc::{DataDef, GcPtr, WriteOnly};
+use thread::{RootedThread, Thread, ThreadInternal};
 use types::VmIndex;
-use value::{BytecodeFunction, Callable, ClosureData, ClosureDataDef, ExternFunction,
-            PartialApplicationData, PartialApplicationDataDef, Value};
+use value::{BytecodeFunction, Callable, ClosureData, ExternFunction, PartialApplicationData,
+            PartialApplicationDataDef, Value};
 
 #[derive(Clone)]
 pub struct DeSeed {
@@ -45,7 +44,6 @@ impl DeSeed {
 
 #[derive(Default)]
 pub struct SeSeed {
-    interner: Symbols,
     node_to_id: NodeToId,
 }
 
@@ -107,9 +105,9 @@ macro_rules! gc_serialize {
 pub mod gc {
     use super::*;
     use serde::{Deserialize, Deserializer};
-    use serde::de::{DeserializeSeed, Error, SeqSeed};
-    use serde::ser::{SerializeSeed, Serialize, Serializer};
-    use value::{ArrayDef, DataStruct, GcStr, Value, ValueArray};
+    use serde::de::DeserializeSeed;
+    use serde::ser::{SerializeSeed, Serializer};
+    use value::{DataStruct, GcStr, Value, ValueArray};
     use thread::ThreadInternal;
     use types::VmTag;
 
@@ -312,7 +310,7 @@ pub mod intern {
     use thread::ThreadInternal;
 
     use serde::{Deserialize, Deserializer};
-    use serde::de::{DeserializeSeed, SeqSeed};
+    use serde::de::DeserializeSeed;
     use serde::ser::{SerializeSeed, Serialize, Serializer};
 
     impl<'de> GcSerialize<'de> for InternedStr {
@@ -346,17 +344,17 @@ pub mod intern {
 }
 
 pub mod typ {
-    use serde::de::{Deserialize, Deserializer, DeserializeSeed, Error};
-    use serde::ser::{Seeded, Serialize, Serializer, SerializeSeed};
+    use serde::de::Deserializer;
+    use serde::ser::{Serializer, SerializeSeed};
 
     use super::*;
-    use base::types::{ArcType, Type};
+    use base::types::ArcType;
 
     pub fn deserialize<'de, D, T>(seed: &mut Seed<T>, deserializer: D) -> Result<ArcType, D::Error>
     where
         D: Deserializer<'de>,
     {
-        use base::types::{TypeSeed, Seed, SharedType};
+        use base::types::{TypeSeed, Seed};
         TypeSeed::<Symbol, ArcType, ()>::new(Seed::new(seed.state.gc_map.clone()))
             .deserialize(deserializer)
     }
@@ -463,8 +461,6 @@ where
                 where
                     V: SeqAccess<'de>,
                 {
-                    use base::serialization::{VariantSeed, Variant};
-
                     let variant = seq.next_element()?
                         .ok_or_else(|| V::Error::invalid_length(0, &self))?;
                     unsafe {
@@ -513,7 +509,6 @@ where
             deserializer.deserialize_seq(self)
         }
     }
-    use base::serialization::SharedSeed;
 
     DeserializeSeed::deserialize(Seed::<ClosureData>::from(seed.state.clone()), deserializer)
 }
@@ -597,7 +592,7 @@ where
         {
             type Value = GcPtr<<T as DataDef>::Value>;
 
-            fn deserialize<D>(mut self, deserializer: D) -> Result<Self::Value, D::Error>
+            fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
             where
                 D: Deserializer<'de>,
             {
@@ -656,8 +651,8 @@ impl<'de> DeserializeSeed<'de> for Seed<ExternFunction> {
             .collect();
         let function = self.state
             .thread
-            .get_global::<OpaqueValue<&Thread, Hole>>(&partial.id)
-            .map_err(|err| panic!("{}\n{}", partial.id, escaped_id))?;
+            .get_global::<OpaqueValue<&Thread, Hole>>(&escaped_id)
+            .map_err(|err| D::Error::custom(err))?;
         unsafe {
             match function.get_value() {
                 Value::Function(function) if partial.args == function.args => {

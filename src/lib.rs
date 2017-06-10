@@ -35,7 +35,7 @@ use base::ast::{self, SpannedExpr};
 use base::error::{Errors, InFile};
 use base::metadata::Metadata;
 use base::symbol::{Symbol, Symbols, SymbolModule};
-use base::types::{ArcType, Type, TypeCache};
+use base::types::{ArcType, TypeCache};
 use check::typecheck::TypeError;
 use vm::Variants;
 use vm::api::{Getable, Hole, VmType, OpaqueValue};

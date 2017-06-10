@@ -5,7 +5,7 @@ use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::slice;
 
-use serde::ser::{SerializeSeed, Serialize, Serializer};
+use serde::ser::{SerializeSeed, Serializer};
 
 use gc::{Gc, Traverseable};
 
