@@ -92,6 +92,16 @@ impl<'a, T> IntoIterator for &'a Errors<T> {
     }
 }
 
+impl<'a, T> IntoIterator for &'a mut Errors<T> {
+    type Item = &'a mut T;
+
+    type IntoIter = slice::IterMut<'a, T>;
+
+    fn into_iter(self) -> slice::IterMut<'a, T> {
+        self.errors.iter_mut()
+    }
+}
+
 impl<T: fmt::Display> fmt::Display for Errors<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for error in &self.errors {

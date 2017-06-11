@@ -394,7 +394,7 @@ impl GlobalVmState {
             .unwrap()
             .get(&id)
             .cloned()
-            .unwrap_or_else(|| panic!("Expected type to be inserted before get_type call"))
+            .unwrap_or_else(|| panic!("Expected type to be inserted before get_type call. Did you forget to call `Thread::register_type`?"))
     }
 
     /// Checks if a global exists called `name`

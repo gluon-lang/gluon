@@ -405,6 +405,61 @@ impl<'a> Typecheck<'a> {
         self.type_variables.exit_scope();
     }
 
+    fn generalize_type_errors(&mut self, errors: &mut Error) {
+        self.type_variables.enter_scope();
+
+        for err in errors {
+            use self::TypeError::*;
+
+            match err.value {
+                UndefinedVariable(_) |
+                UndefinedType(_) |
+                DuplicateTypeDefinition(_) |
+                DuplicateField(_) |
+                UndefinedRecord { .. } |
+                EmptyCase |
+                ErrorExpression |
+                Rename(_) |
+                KindError(_) => (),
+                NotAFunction(ref mut typ) |
+                UndefinedField(ref mut typ, _) |
+                PatternError(ref mut typ, _) |
+                InvalidProjection(ref mut typ) => {
+                    self.generalize_type(0, typ);
+                }
+                Unification(ref mut expected, ref mut actual, ref mut errors) => {
+                    self.generalize_type(0, expected);
+                    self.generalize_type(0, actual);
+                    for err in errors {
+                        match *err {
+                            unify::Error::TypeMismatch(ref mut l, ref mut r) => {
+                                self.generalize_type(0, l);
+                                self.generalize_type(0, r);
+                            }
+                            unify::Error::Occurs(ref mut var, ref mut typ) => {
+                                self.generalize_type(0, var);
+                                self.generalize_type(0, typ);
+                            }
+                            unify::Error::Other(ref mut err) => {
+                                if let unify_type::TypeError::MissingFields(ref mut typ, _) = *err {
+                                    self.generalize_type(0, typ);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        self.type_variables.exit_scope();
+    }
+
+    fn generalize_type(&mut self, level: u32, typ: &mut ArcType) {
+        if let Some(finished) = self.finish_type(level, typ) {
+            *typ = finished;
+        }
+    }
+
     /// Typecheck `expr`. If successful the type of the expression will be returned and all
     /// identifiers in `expr` will be filled with the inferred type
     pub fn typecheck_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> Result<ArcType, Error> {
@@ -437,7 +492,9 @@ impl<'a> Typecheck<'a> {
         self.generalize_variables(0, &mut [], tail_expr(expr));
 
         if self.errors.has_errors() {
-            Err(mem::replace(&mut self.errors, Errors::new()))
+            let mut errors = mem::replace(&mut self.errors, Errors::new());
+            self.generalize_type_errors(&mut errors);
+            Err(errors)
         } else {
             match ::rename::rename(&mut self.symbols, &self.environment, expr) {
                 Ok(()) => {

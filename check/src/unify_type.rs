@@ -713,20 +713,20 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
                 };
                 match subs.union(r_var, left) {
                     Ok(()) => Ok(None),
-                    Err(()) => Err(UnifyError::Occurs(r_var.clone(), left.clone())),
+                    Err(()) => Err(UnifyError::Occurs(ArcType::from_variable(r_var.clone()), left.clone())),
                 }
 
             }
             (_, &Type::Variable(ref r)) => {
                 match subs.union(r, l) {
                     Ok(()) => Ok(None),
-                    Err(()) => Err(UnifyError::Occurs(r.clone(), l.clone())),
+                    Err(()) => Err(UnifyError::Occurs(ArcType::from_variable(r.clone()), l.clone())),
                 }
             }
             (&Type::Variable(ref l), _) => {
                 match subs.union(l, r) {
                     Ok(()) => Ok(Some(r.clone())),
-                    Err(()) => Err(UnifyError::Occurs(l.clone(), r.clone())),
+                    Err(()) => Err(UnifyError::Occurs(ArcType::from_variable(l.clone()), r.clone())),
                 }
             }
             _ => {
