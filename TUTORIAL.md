@@ -140,6 +140,31 @@ let id x = x
 in { id }
 ```
 
+### Array expressions
+
+Arrays can be constructed with array literals.
+
+```f#,rust
+// Results in an `Array Int`
+[1, 2, 3, 4]
+```
+
+Since gluon is statically typed all values must be of the same type. This allows the gluon interpreter to avoid tagging each value individually which makes types such as `Array Byte` be convertible into Rust's `&[u8]` type without any allocations.
+
+```f#
+// ERROR:
+// Types do not match:
+//        Expected: Int
+//        Found: String
+[1, ""]
+```
+
+Functions to operate on arrays can be found on the `array` module.
+
+```f#
+array.len [1, 2, 3]
+```
+
 ### Variants
 
 While records are great for grouping related data together, there is often a need to have data which can be one of several variants. Unlike records, variants need to be defined before they can be used.
