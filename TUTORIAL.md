@@ -212,6 +212,42 @@ let Some y = Some 123
 x + y
 ```
 
+### Tuple expressions
+
+Gluon also have tuple expressions for when you don't have sensible names for your fields.
+
+```f#,rust
+(1, "", 3.14) // (Int, String, 3.14)
+```
+
+Similarily to records they can be unpacked with `match` and `let`.
+
+```f#,rust
+match (1, None) with
+| (x, Some y) -> x + y
+| (x, None) -> x
+
+let (a, b) = (1.0, 2.14)
+a + b
+```
+
+Infact, tuples are only syntax sugar over records with fields named after numbers (`_0`, `_1`, ...) which makes the above equivalent to the following code.
+
+```f#,rust
+match { _0 = 1, _1 = None } with
+| { _0 = x, _1 = Some y } -> x + y
+| { _0 = x, _1 = None } -> x
+
+let { _0 = a, _1 = b } = { _0 = 1.0, _1 = 2.14 }
+a + b
+```
+
+While that example is obviously less readable the tuple syntax, the important thing to note is that tuples equivalency with records allows one to access the fields of a tuple directly without unpacking.
+
+```f#,rust
+(0, 3.14)._1 // 3.14
+```
+
 ### Lambda expressions
 
 While we have seen that functions can be defined in let expressions it is often valuable to define a function without giving it an explicit name.
