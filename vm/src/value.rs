@@ -806,6 +806,7 @@ pub struct VariantIter<'a> {
     array: &'a ValueArray,
     index: usize,
 }
+
 impl<'a> Iterator for VariantIter<'a> {
     type Item = Variants<'a>;
     fn next(&mut self) -> Option<Self::Item> {

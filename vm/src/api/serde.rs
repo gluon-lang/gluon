@@ -1,4 +1,3 @@
-extern crate serde;
 
 use std::fmt;
 use std::ops::{Deref, DerefMut};
@@ -8,7 +7,7 @@ use api::Pushable;
 use thread::{Context, Thread, ThreadInternal};
 use types::{VmTag, VmIndex};
 use value::{Def, Value};
-use self::serde::ser::{self, Serialize};
+use serde::ser::{self, Serialize};
 
 pub fn to_value<T>(thread: &Thread, value: &T) -> Result<Value>
 where
@@ -424,6 +423,7 @@ impl<'a, 'vm> ser::SerializeStructVariant for RecordSerializer<'a, 'vm> {
         self.serializer.alloc(self.variant_index, self.values)
     }
 }
+
 
 #[cfg(test)]
 mod tests {

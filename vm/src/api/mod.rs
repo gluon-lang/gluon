@@ -1,5 +1,5 @@
 //! The marshalling api
-use {Variants, Error, Result};
+use {Variants, Error, Result, forget_lifetime};
 use gc::{DataDef, Gc, Traverseable, Move};
 use base::symbol::Symbol;
 use stack::StackFrame;
@@ -26,6 +26,8 @@ pub use value::Userdata;
 pub mod mac;
 #[cfg(feature = "serde")]
 pub mod serde;
+#[cfg(feature = "serde")]
+pub mod de;
 
 macro_rules! count {
     () => { 0 };
@@ -71,18 +73,22 @@ impl<'a> PartialEq<Value> for ValueRef<'a> {
 
 impl<'a> ValueRef<'a> {
     pub fn new(value: &'a Value) -> ValueRef<'a> {
-        match *value {
+        unsafe { ValueRef::rooted_new(*value) }
+    }
+
+    pub unsafe fn rooted_new(value: Value) -> ValueRef<'a> {
+        match value {
             Value::Byte(i) => ValueRef::Byte(i),
             Value::Int(i) => ValueRef::Int(i),
             Value::Float(f) => ValueRef::Float(f),
-            Value::String(ref s) => ValueRef::String(s),
-            Value::Data(ref data) => ValueRef::Data(Data(data)),
-            Value::Userdata(ref data) => ValueRef::Userdata(&***data),
+            Value::String(s) => ValueRef::String(forget_lifetime(&*s)),
+            Value::Data(data) => ValueRef::Data(Data(forget_lifetime(&*data))),
+            Value::Array(array) => ValueRef::Array(ArrayRef(forget_lifetime(&*array))),
+            Value::Userdata(data) => ValueRef::Userdata(forget_lifetime(&**data)),
             Value::Tag(tag) => ValueRef::Tag(tag),
             Value::Thread(_) |
             Value::Function(_) |
             Value::Closure(_) |
-            Value::Array(_) | // FIXME Expose arrays safely
             Value::PartialApplication(_) => ValueRef::Internal,
         }
     }
@@ -348,10 +354,6 @@ where
     fn from_value(_vm: &'vm Thread, _value: Variants) -> Option<Self> {
         None
     }
-}
-
-unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
-    ::std::mem::transmute(x)
 }
 
 impl<'vm> Getable<'vm> for &'vm str {
@@ -1043,7 +1045,14 @@ impl<'vm> ArrayRef<'vm> {
         }
     }
 
-    pub fn iter(&self) -> ::value::VariantIter {
+    pub fn as_slice<T>(&self) -> Option<&[T]>
+    where
+        T: ArrayRepr + Copy,
+    {
+        self.0.as_slice()
+    }
+
+    pub fn iter(&self) -> ::value::VariantIter<'vm> {
         self.0.variant_iter()
     }
 }
@@ -1757,13 +1766,15 @@ impl<'vm, T, $($args,)* R> Function<T, fn($($args),*) -> R>
             }
         })
     }
-
+    
     fn return_value(vm: &Thread, value: Value) -> Result<R> {
-        R::from_value(vm, Variants::new(&value))
-            .ok_or_else(|| {
-                error!("Wrong type {:?}", value);
-                Error::Message("Wrong type".to_string())
-            })
+        unsafe {
+            R::from_value(vm, Variants::new(&value))
+                .ok_or_else(|| {
+                    error!("Wrong type {:?}", value);
+                    Error::Message("Wrong type".to_string())
+                })
+        }
     }
 }
 

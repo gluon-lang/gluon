@@ -41,4 +41,4 @@ regex = "0.2.0"
 serde_derive = "1.0.0"
 
 [features]
-test = ["env_logger", "lalrpop", "gluon_parser"]
+test = ["env_logger", "lalrpop", "gluon_parser", "serde"]

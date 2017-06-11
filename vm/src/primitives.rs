@@ -79,9 +79,11 @@ fn array_append<'vm>(
             Err(err) => return RuntimeResult::Panic(err),
         }
     };
-    RuntimeResult::Return(
-        Getable::from_value(lhs.vm(), Variants::new(&Value::Array(value))).expect("Array"),
-    )
+    unsafe {
+        RuntimeResult::Return(
+            Getable::from_value(lhs.vm(), Variants::new(&Value::Array(value))).expect("Array"),
+        )
+    }
 }
 
 fn string_append(lhs: WithVM<&str>, rhs: &str) -> RuntimeResult<String, Error> {
@@ -117,17 +119,17 @@ fn string_append(lhs: WithVM<&str>, rhs: &str) -> RuntimeResult<String, Error> {
 
     let vm = lhs.vm;
     let lhs = lhs.value;
-    let value = unsafe {
+    unsafe {
         let mut context = vm.context();
         let result = context.alloc(StrAppend { lhs: lhs, rhs: rhs });
-        match result {
+        let value = match result {
             Ok(x) => GcStr::from_utf8_unchecked(x),
             Err(err) => return RuntimeResult::Panic(err),
-        }
-    };
-    RuntimeResult::Return(
-        Getable::from_value(vm, Variants::new(&Value::String(value))).expect("Array"),
-    )
+        };
+        RuntimeResult::Return(
+            Getable::from_value(vm, Variants::new(&Value::String(value))).expect("Array"),
+        )
+    }
 }
 
 fn string_slice(s: &str, start: usize, end: usize) -> RuntimeResult<&str, String> {
