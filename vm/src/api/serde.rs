@@ -11,7 +11,8 @@ use value::{Def, Value};
 use self::serde::ser::{self, Serialize};
 
 pub fn to_value<T>(thread: &Thread, value: &T) -> Result<Value>
-    where T: ?Sized + Serialize
+where
+    T: ?Sized + Serialize,
 {
     let mut context = thread.context();
     Ser(value).push(thread, &mut context)?;
@@ -21,7 +22,8 @@ pub fn to_value<T>(thread: &Thread, value: &T) -> Result<Value>
 pub struct Ser<T>(pub T);
 
 impl<'vm, T> Pushable<'vm> for Ser<T>
-    where T: Serialize
+where
+    T: Serialize,
 {
     fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
         let mut serializer = Serializer {
@@ -34,7 +36,8 @@ impl<'vm, T> Pushable<'vm> for Ser<T>
 
 impl ser::Error for Error {
     fn custom<T>(msg: T) -> Self
-        where T: fmt::Display
+    where
+        T: fmt::Display,
     {
         Error::Message(format!("{}", msg))
     }
@@ -47,18 +50,17 @@ struct Serializer<'t> {
 
 impl<'t> Serializer<'t> {
     fn to_value<T>(&mut self, value: T) -> Result<()>
-        where T: Pushable<'t>
+    where
+        T: Pushable<'t>,
     {
         value.push(self.thread, self.context)
     }
 
     fn alloc(&mut self, tag: VmTag, values: VmIndex) -> Result<()> {
-        let value = self.context
-            .gc
-            .alloc(Def {
-                       tag: tag,
-                       elems: &self.context.stack[self.context.stack.len() - values..],
-                   })?;
+        let value = self.context.gc.alloc(Def {
+            tag: tag,
+            elems: &self.context.stack[self.context.stack.len() - values..],
+        })?;
         for _ in 0..values {
             self.context.stack.pop();
         }
@@ -190,7 +192,8 @@ impl<'a, 'vm> ser::Serializer for &'a mut Serializer<'vm> {
     // what people expect when working with JSON. Other formats are encouraged
     // to behave more intelligently if possible.
     fn serialize_some<T>(self, value: &T) -> Result<Self::Ok>
-        where T: ?Sized + Serialize
+    where
+        T: ?Sized + Serialize,
     {
         value.serialize(self)
     }
@@ -204,11 +207,12 @@ impl<'a, 'vm> ser::Serializer for &'a mut Serializer<'vm> {
         self.serialize_unit()
     }
 
-    fn serialize_unit_variant(self,
-                              _name: &'static str,
-                              variant_index: u32,
-                              _variant: &'static str)
-                              -> Result<Self::Ok> {
+    fn serialize_unit_variant(
+        self,
+        _name: &'static str,
+        variant_index: u32,
+        _variant: &'static str,
+    ) -> Result<Self::Ok> {
         self.context.stack.push(Value::Tag(variant_index));
         Ok(())
     }
@@ -216,7 +220,8 @@ impl<'a, 'vm> ser::Serializer for &'a mut Serializer<'vm> {
     // As is done here, serializers are encouraged to treat newtype structs as
     // insignificant wrappers around the data they contain.
     fn serialize_newtype_struct<T>(self, _name: &'static str, value: &T) -> Result<Self::Ok>
-        where T: ?Sized + Serialize
+    where
+        T: ?Sized + Serialize,
     {
         value.serialize(self)
     }
@@ -226,13 +231,15 @@ impl<'a, 'vm> ser::Serializer for &'a mut Serializer<'vm> {
     // representation.
     //
     // Serialize this to JSON in externally tagged form as `{ NAME: VALUE }`.
-    fn serialize_newtype_variant<T>(self,
-                                    _name: &'static str,
-                                    variant_index: u32,
-                                    _variant: &'static str,
-                                    value: &T)
-                                    -> Result<Self::Ok>
-        where T: ?Sized + Serialize
+    fn serialize_newtype_variant<T>(
+        self,
+        _name: &'static str,
+        variant_index: u32,
+        _variant: &'static str,
+        value: &T,
+    ) -> Result<Self::Ok>
+    where
+        T: ?Sized + Serialize,
     {
         value.serialize(&mut *self)?;
         self.alloc(variant_index, 1)
@@ -246,19 +253,21 @@ impl<'a, 'vm> ser::Serializer for &'a mut Serializer<'vm> {
         self.serialize_seq(Some(len))
     }
 
-    fn serialize_tuple_struct(self,
-                              _name: &'static str,
-                              len: usize)
-                              -> Result<Self::SerializeTupleStruct> {
+    fn serialize_tuple_struct(
+        self,
+        _name: &'static str,
+        len: usize,
+    ) -> Result<Self::SerializeTupleStruct> {
         self.serialize_seq(Some(len))
     }
 
-    fn serialize_tuple_variant(self,
-                               _name: &'static str,
-                               variant_index: u32,
-                               _variant: &'static str,
-                               _len: usize)
-                               -> Result<Self::SerializeTupleVariant> {
+    fn serialize_tuple_variant(
+        self,
+        _name: &'static str,
+        variant_index: u32,
+        _variant: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeTupleVariant> {
         Ok(RecordSerializer::new(self, variant_index))
     }
 
@@ -270,12 +279,13 @@ impl<'a, 'vm> ser::Serializer for &'a mut Serializer<'vm> {
         self.serialize_map(Some(len))
     }
 
-    fn serialize_struct_variant(self,
-                                _name: &'static str,
-                                variant_index: u32,
-                                _variant: &'static str,
-                                _len: usize)
-                                -> Result<Self::SerializeStructVariant> {
+    fn serialize_struct_variant(
+        self,
+        _name: &'static str,
+        variant_index: u32,
+        _variant: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeStructVariant> {
         Ok(RecordSerializer::new(self, variant_index))
     }
 }
@@ -285,7 +295,8 @@ impl<'a, 'vm> ser::SerializeSeq for RecordSerializer<'a, 'vm> {
     type Error = Error;
 
     fn serialize_element<T>(&mut self, value: &T) -> Result<()>
-        where T: ?Sized + Serialize
+    where
+        T: ?Sized + Serialize,
     {
         value.serialize(&mut **self)?;
         self.values += 1;
@@ -302,7 +313,8 @@ impl<'a, 'vm> ser::SerializeTuple for RecordSerializer<'a, 'vm> {
     type Error = Error;
 
     fn serialize_element<T>(&mut self, value: &T) -> Result<()>
-        where T: ?Sized + Serialize
+    where
+        T: ?Sized + Serialize,
     {
         value.serialize(&mut **self)?;
         self.values += 1;
@@ -319,7 +331,8 @@ impl<'a, 'vm> ser::SerializeTupleStruct for RecordSerializer<'a, 'vm> {
     type Error = Error;
 
     fn serialize_field<T>(&mut self, value: &T) -> Result<()>
-        where T: ?Sized + Serialize
+    where
+        T: ?Sized + Serialize,
     {
         value.serialize(&mut **self)?;
         self.values += 1;
@@ -336,7 +349,8 @@ impl<'a, 'vm> ser::SerializeTupleVariant for RecordSerializer<'a, 'vm> {
     type Error = Error;
 
     fn serialize_field<T>(&mut self, value: &T) -> Result<()>
-        where T: ?Sized + Serialize
+    where
+        T: ?Sized + Serialize,
     {
         value.serialize(&mut **self)?;
         self.values += 1;
@@ -353,13 +367,15 @@ impl<'a, 'vm> ser::SerializeMap for RecordSerializer<'a, 'vm> {
     type Error = Error;
 
     fn serialize_key<T>(&mut self, _key: &T) -> Result<()>
-        where T: ?Sized + Serialize
+    where
+        T: ?Sized + Serialize,
     {
         Ok(())
     }
 
     fn serialize_value<T>(&mut self, value: &T) -> Result<()>
-        where T: ?Sized + Serialize
+    where
+        T: ?Sized + Serialize,
     {
         value.serialize(&mut **self)?;
         self.values += 1;
@@ -376,7 +392,8 @@ impl<'a, 'vm> ser::SerializeStruct for RecordSerializer<'a, 'vm> {
     type Error = Error;
 
     fn serialize_field<T>(&mut self, _key: &'static str, value: &T) -> Result<()>
-        where T: ?Sized + Serialize
+    where
+        T: ?Sized + Serialize,
     {
         value.serialize(&mut **self)?;
         self.values += 1;
@@ -395,7 +412,8 @@ impl<'a, 'vm> ser::SerializeStructVariant for RecordSerializer<'a, 'vm> {
     type Error = Error;
 
     fn serialize_field<T>(&mut self, _key: &'static str, value: &T) -> Result<()>
-        where T: ?Sized + Serialize
+    where
+        T: ?Sized + Serialize,
     {
         value.serialize(&mut **self)?;
         self.values += 1;
@@ -413,7 +431,8 @@ mod tests {
     use thread::{RootedThread, ThreadInternal};
 
     fn make_value<'vm, T>(thread: &'vm Thread, value: T) -> Value
-        where T: Pushable<'vm>
+    where
+        T: Pushable<'vm>,
     {
         let mut context = thread.context();
         value.push(thread, &mut context).unwrap();
@@ -435,18 +454,23 @@ mod tests {
     #[test]
     fn record() {
         let thread = RootedThread::new();
-        let actual = to_value(&thread,
-                              &Record {
-                                   test: 123,
-                                   string: "abc".to_string(),
-                               })
-                .unwrap();
-        assert_eq!(actual,
-                   make_value(&thread,
-                              record! {
+        let actual = to_value(
+            &thread,
+            &Record {
+                test: 123,
+                string: "abc".to_string(),
+            },
+        ).unwrap();
+        assert_eq!(
+            actual,
+            make_value(
+                &thread,
+                record! {
                        test => 123,
                        string => "abc"
-                   }));
+                   },
+            )
+        );
     }
 
     #[derive(Serialize)]
@@ -461,25 +485,33 @@ mod tests {
 
         let actual = to_value(&thread, &Enum::A("abc".to_string())).unwrap();
         let s = make_value(&thread, "abc");
-        assert_eq!(actual,
-                   Value::Data(thread
-                                   .context()
-                                   .gc
-                                   .alloc(Def {
-                                              tag: 0,
-                                              elems: &[s],
-                                          })
-                                   .unwrap()));
+        assert_eq!(
+            actual,
+            Value::Data(
+                thread
+                    .context()
+                    .gc
+                    .alloc(Def {
+                        tag: 0,
+                        elems: &[s],
+                    })
+                    .unwrap(),
+            )
+        );
 
         let actual = to_value(&thread, &Enum::B(1232)).unwrap();
-        assert_eq!(actual,
-                   Value::Data(thread
-                                   .context()
-                                   .gc
-                                   .alloc(Def {
-                                              tag: 1,
-                                              elems: &[Value::Int(1232)],
-                                          })
-                                   .unwrap()));
+        assert_eq!(
+            actual,
+            Value::Data(
+                thread
+                    .context()
+                    .gc
+                    .alloc(Def {
+                        tag: 1,
+                        elems: &[Value::Int(1232)],
+                    })
+                    .unwrap(),
+            )
+        );
     }
 }

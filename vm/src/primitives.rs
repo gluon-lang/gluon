@@ -80,7 +80,7 @@ fn array_append<'vm>(
         }
     };
     RuntimeResult::Return(
-        Getable::from_value(lhs.vm(), Variants(&Value::Array(value))).expect("Array"),
+        Getable::from_value(lhs.vm(), Variants::new(&Value::Array(value))).expect("Array"),
     )
 }
 
@@ -126,7 +126,7 @@ fn string_append(lhs: WithVM<&str>, rhs: &str) -> RuntimeResult<String, Error> {
         }
     };
     RuntimeResult::Return(
-        Getable::from_value(vm, Variants(&Value::String(value))).expect("Array"),
+        Getable::from_value(vm, Variants::new(&Value::String(value))).expect("Array"),
     )
 }
 

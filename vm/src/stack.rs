@@ -213,10 +213,12 @@ impl<'a: 'b, 'b> StackFrame<'b> {
     }
 
     pub fn get_variants(&self, index: VmIndex) -> Option<Variants> {
-        if index < self.len() {
-            Some(Variants(&self[index]))
-        } else {
-            None
+        unsafe {
+            if index < self.len() {
+                Some(Variants::new(&self[index]))
+            } else {
+                None
+            }
         }
     }
 

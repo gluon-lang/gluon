@@ -40,6 +40,7 @@ pub enum ValueRef<'a> {
     Float(f64),
     String(&'a str),
     Data(Data<'a>),
+    Array(ArrayRef<'a>),
     Tag(VmTag),
     Userdata(&'a vm::Userdata),
     Internal,
@@ -101,6 +102,10 @@ impl<'a> Data<'a> {
 
     pub fn get(&self, index: usize) -> Option<ValueRef<'a>> {
         self.0.fields.get(index).map(ValueRef::new)
+    }
+
+    pub fn get_variants(&self, index: usize) -> Option<Variants<'a>> {
+        unsafe { self.0.fields.get(index).map(|v| Variants::new(v)) }
     }
 }
 
@@ -198,7 +203,7 @@ impl<'vm, T: VmType> Pushable<'vm> for Generic<T> {
 }
 impl<'vm, T> Getable<'vm> for Generic<T> {
     fn from_value(_: &'vm Thread, value: Variants) -> Option<Generic<T>> {
-        Some(Generic::from(*value.0))
+        Some(Generic::from(value.0))
     }
 }
 
@@ -321,7 +326,7 @@ impl<'vm, T: vm::Userdata> Pushable<'vm> for T {
 
 impl<'vm> Getable<'vm> for Value {
     fn from_value(_vm: &'vm Thread, value: Variants) -> Option<Self> {
-        Some(*value.0)
+        Some(value.0)
     }
 }
 
@@ -675,8 +680,8 @@ where
 }
 impl<'s, 'vm, T: Copy + ArrayRepr> Getable<'vm> for &'s [T] {
     unsafe fn from_value_unsafe(_: &'vm Thread, value: Variants) -> Option<Self> {
-        match *value.0 {
-            Value::Array(ptr) => ptr.as_slice().map(|s| &*(s as *const _)),
+        match value.as_ref() {
+            ValueRef::Array(ptr) => ptr.0.as_slice().map(|s| &*(s as *const _)),
             _ => None,
         }
     }
@@ -781,15 +786,15 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T> {
 }
 impl<'vm, T: Getable<'vm>> Getable<'vm> for Option<T> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<Option<T>> {
-        match *value.0 {
-            Value::Data(data) => {
-                if data.tag == 0 {
+        match value.as_ref() {
+            ValueRef::Data(data) => {
+                if data.tag() == 0 {
                     Some(None)
                 } else {
-                    T::from_value(vm, Variants(&data.fields[0])).map(Some)
+                    T::from_value(vm, data.get_variants(0).unwrap()).map(Some)
                 }
             }
-            Value::Tag(0) => Some(None),
+            ValueRef::Tag(0) => Some(None),
             _ => None,
         }
     }
@@ -837,11 +842,11 @@ impl<'vm, T: Pushable<'vm>, E: Pushable<'vm>> Pushable<'vm> for StdResult<T, E> 
 
 impl<'vm, T: Getable<'vm>, E: Getable<'vm>> Getable<'vm> for StdResult<T, E> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<StdResult<T, E>> {
-        match *value.0 {
-            Value::Data(data) => {
-                match data.tag {
-                    0 => E::from_value(vm, Variants(&data.fields[0])).map(Err),
-                    1 => T::from_value(vm, Variants(&data.fields[0])).map(Ok),
+        match value.as_ref() {
+            ValueRef::Data(data) => {
+                match data.tag() {
+                    0 => E::from_value(vm, data.get_variants(0).unwrap()).map(Err),
+                    1 => T::from_value(vm, data.get_variants(0).unwrap()).map(Ok),
                     _ => None,
                 }
             }
@@ -1016,13 +1021,30 @@ where
 
 impl<'vm, V> Getable<'vm> for OpaqueValue<&'vm Thread, V> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<OpaqueValue<&'vm Thread, V>> {
-        Some(OpaqueValue(vm.root_value(*value.0), PhantomData))
+        Some(OpaqueValue(vm.root_value(value.0), PhantomData))
     }
 }
 
 impl<'vm, V> Getable<'vm> for OpaqueValue<RootedThread, V> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<OpaqueValue<RootedThread, V>> {
-        Some(OpaqueValue(vm.root_value(*value.0), PhantomData))
+        Some(OpaqueValue(vm.root_value(value.0), PhantomData))
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct ArrayRef<'vm>(&'vm ValueArray);
+
+impl<'vm> ArrayRef<'vm> {
+    pub fn get(&self, index: usize) -> Option<Variants> {
+        if index < self.0.len() {
+            unsafe { Some(Variants::with_root(self.0.get(index), self)) }
+        } else {
+            None
+        }
+    }
+
+    pub fn iter(&self) -> ::value::VariantIter {
+        self.0.variant_iter()
     }
 }
 
@@ -1047,12 +1069,14 @@ impl<'vm, T> Array<'vm, T> {
 
 impl<'vm, T: for<'vm2> Getable<'vm2>> Array<'vm, T> {
     pub fn get(&self, index: VmInt) -> Option<T> {
-        match *self.0 {
-            Value::Array(data) => {
-                let v = data.get(index as usize);
-                T::from_value(self.0.vm(), Variants(&v))
+        unsafe {
+            match Variants::new(&self.0).as_ref() {
+                ValueRef::Array(data) => {
+                    let v = data.get(index as usize).unwrap();
+                    T::from_value(self.0.vm(), v)
+                }
+                _ => None,
             }
-            _ => None,
         }
     }
 }
@@ -1080,7 +1104,7 @@ where
 
 impl<'vm, T> Getable<'vm> for Array<'vm, T> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<Array<'vm, T>> {
-        Some(Array(vm.root_value(*value.0), PhantomData))
+        Some(Array(vm.root_value(value.0), PhantomData))
     }
 }
 
@@ -1089,7 +1113,7 @@ impl<'vm, T: Any> VmType for Root<'vm, T> {
 }
 impl<'vm, T: vm::Userdata> Getable<'vm> for Root<'vm, T> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<Root<'vm, T>> {
-        match *value.0 {
+        match value.0 {
             Value::Userdata(data) => vm.root::<T>(data).map(From::from),
             _ => None,
         }
@@ -1101,7 +1125,7 @@ impl<'vm> VmType for RootStr<'vm> {
 }
 impl<'vm> Getable<'vm> for RootStr<'vm> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<RootStr<'vm>> {
-        match *value.0 {
+        match value.0 {
             Value::String(v) => Some(vm.root_string(v)),
             _ => None,
         }
@@ -1160,9 +1184,10 @@ macro_rules! define_tuple {
             fn from_value(vm: &'vm Thread, value: Variants) -> Option<($($id),+)> {
                 match value.as_ref() {
                     ValueRef::Data(v) => {
+                        assert!(v.len() == count!($($id),+));
                         let mut i = 0;
                         let x = ( $(
-                            { let a = $id::from_value(vm, Variants(&v.0.fields[i])); i += 1; a }
+                            { let a = $id::from_value(vm, v.get_variants(i).unwrap()); i += 1; a }
                         ),+ );
                         match x {
                             ($(Some($id)),+) => Some(( $($id),+ )),
@@ -1367,7 +1392,7 @@ pub mod record {
         T: GetableFieldList<'vm>,
     {
         fn from_value(vm: &'vm Thread, value: Variants) -> Option<Self> {
-            match *value.0 {
+            match value.0 {
                 Value::Data(ref data) => {
                     HList::<(F, A), T>::from_value(vm, &data.fields).map(
                         |fields| {
@@ -1539,7 +1564,7 @@ where
 impl<'vm, F> Getable<'vm> for Function<&'vm Thread, F> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<Function<&'vm Thread, F>> {
         Some(Function {
-            value: vm.root_value(*value.0),
+            value: vm.root_value(value.0),
             _marker: PhantomData,
         }) //TODO not type safe
     }
@@ -1548,7 +1573,7 @@ impl<'vm, F> Getable<'vm> for Function<&'vm Thread, F> {
 impl<'vm, F> Getable<'vm> for Function<RootedThread, F> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<Self> {
         Some(Function {
-            value: vm.root_value(*value.0),
+            value: vm.root_value(value.0),
             _marker: PhantomData,
         }) //TODO not type safe
     }
@@ -1630,7 +1655,7 @@ where $($args: Getable<'vm> + 'vm,)*
             let (lock, ($($args,)*)) = {
                 let stack = StackFrame::current(&mut context.stack);
                 $(let $args = {
-                    let x = $args::from_value_unsafe(vm, Variants(&stack[i]))
+                    let x = $args::from_value_unsafe(vm, Variants::new(&stack[i]))
                         .expect(stringify!(Argument $args));
                     i += 1;
                     x
@@ -1678,7 +1703,7 @@ where $($args: Getable<'vm> + 'vm,)*
             let (lock, ($($args,)*)) = {
                 let stack = StackFrame::current(&mut context.stack);
                 $(let $args = {
-                    let x = $args::from_value_unsafe(vm, Variants(&stack[i]))
+                    let x = $args::from_value_unsafe(vm, Variants::new(&stack[i]))
                         .expect(stringify!(Argument $args));
                     i += 1;
                     x
@@ -1734,7 +1759,7 @@ impl<'vm, T, $($args,)* R> Function<T, fn($($args),*) -> R>
     }
 
     fn return_value(vm: &Thread, value: Value) -> Result<R> {
-        R::from_value(vm, Variants(&value))
+        R::from_value(vm, Variants::new(&value))
             .ok_or_else(|| {
                 error!("Wrong type {:?}", value);
                 Error::Message("Wrong type".to_string())

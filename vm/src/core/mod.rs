@@ -377,7 +377,8 @@ impl<'a, 'e> Translator<'a, 'e> {
                 }
             }
             ast::Expr::IfElse(ref pred, ref if_true, ref if_false) => {
-                let alts: SmallVec<[_; 2]> = collect![
+                let alts: SmallVec<[_; 2]> =
+                    collect![
                     Alternative {
                         pattern: Pattern::Constructor(self.bool_constructor(true), vec![]),
                         expr: self.translate_alloc(if_true),

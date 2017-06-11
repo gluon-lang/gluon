@@ -16,7 +16,7 @@ use compiler::DebugInfo;
 use gc::{Gc, GcPtr, Generation, Traverseable, DataDef, Move, WriteOnly};
 use array::Array;
 use thread::{Thread, Status};
-use {Error, Result};
+use {Error, Result, Variants};
 
 use self::Value::{Int, Float, String, Function, PartialApplication, Closure};
 
@@ -802,6 +802,28 @@ impl<'a> Iterator for Iter<'a> {
     }
 }
 
+pub struct VariantIter<'a> {
+    array: &'a ValueArray,
+    index: usize,
+}
+impl<'a> Iterator for VariantIter<'a> {
+    type Item = Variants<'a>;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.array.len() {
+            let value = self.array.get(self.index);
+            self.index += 1;
+            Some(unsafe { Variants::with_root(value, self.array) })
+        } else {
+            None
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let i = self.array.len() - self.index;
+        (i, Some(i))
+    }
+}
+
 impl Traverseable for ValueArray {
     fn traverse(&self, gc: &mut Gc) {
         on_array!(*self, |array: &Array<_>| array.traverse(gc))
@@ -834,6 +856,13 @@ impl ValueArray {
 
     pub fn iter(&self) -> Iter {
         Iter {
+            array: self,
+            index: 0,
+        }
+    }
+
+    pub fn variant_iter(&self) -> VariantIter {
+        VariantIter {
             array: self,
             index: 0,
         }

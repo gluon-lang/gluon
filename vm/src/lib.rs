@@ -64,13 +64,17 @@ impl<'a> Variants<'a> {
     /// Creates a new `Variants` value which assumes that `value` is alive for the lifetime of the
     /// value
     pub unsafe fn new(value: &Value) -> Variants {
-        Variants(value)
+        Variants::with_root(*value, value)
+    }
+
+    pub unsafe fn with_root<T: ?Sized>(value: Value, _root: &T) -> Variants {
+        Variants(value, PhantomData)
     }
 
     /// Returns an instance of `ValueRef` which allows users to safely retrieve the interals of a
     /// value
     pub fn as_ref(&self) -> ValueRef {
-        ValueRef::new(self.0)
+        ValueRef::new(&self.0)
     }
 }
 
