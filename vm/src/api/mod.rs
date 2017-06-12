@@ -25,7 +25,7 @@ pub use value::Userdata;
 #[macro_use]
 pub mod mac;
 #[cfg(feature = "serde")]
-pub mod serde;
+pub mod ser;
 #[cfg(feature = "serde")]
 pub mod de;
 
