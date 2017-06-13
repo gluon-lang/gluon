@@ -5,11 +5,11 @@ use base::types::{ArcType, BuiltinType, Type, TypeEnv};
 use base::symbol::Symbol;
 
 use {Error as VmError, Result, Variants};
-use api::{Getable, ValueRef};
-use thread::Thread;
+use api::{Getable, ValueRef, VmType};
+use thread::{Thread, ThreadInternal};
 
-use serde::de::{self, DeserializeSeed, Visitor, SeqAccess, MapAccess, EnumAccess, VariantAccess,
-                IntoDeserializer, Error};
+use serde::de::{self, DeserializeSeed, DeserializeOwned, Visitor, SeqAccess, MapAccess,
+                EnumAccess, VariantAccess, IntoDeserializer, Error};
 
 impl de::Error for VmError {
     fn custom<T>(msg: T) -> Self
@@ -19,6 +19,40 @@ impl de::Error for VmError {
         VmError::Message(format!("{}", msg))
     }
 }
+
+pub struct De<T>(pub T);
+
+impl<T> VmType for De<T>
+where
+    T: VmType,
+{
+    type Type = T::Type;
+
+    fn make_type(thread: &Thread) -> ArcType {
+        T::make_type(thread)
+    }
+}
+
+impl<'vm, T> Getable<'vm> for De<T>
+where
+    T: VmType,
+    T: DeserializeOwned,
+{
+    fn from_value(thread: &'vm Thread, value: Variants) -> Option<Self> {
+        let env = thread.global_env().get_env();
+        let typ = T::make_type(thread);
+        let mut deserializer = Deserializer {
+            state: State {
+                thread: thread,
+                env: &*env,
+            },
+            input: value,
+            typ: &typ,
+        };
+        T::deserialize(&mut deserializer).map(De).ok()
+    }
+}
+
 
 #[derive(Clone)]
 struct State<'de> {
@@ -112,10 +146,8 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     where
         V: Visitor<'de>,
     {
-        match (self.input.as_ref(), &**self.typ) {
-            (ValueRef::Tag(t), &Type::Alias(ref alias)) if alias.name.as_ref() == "Bool" => {
-                visitor.visit_bool(t != 0)
-            }
+        match self.input.as_ref() {
+            ValueRef::Tag(t) => visitor.visit_bool(t != 0),
             _ => Err(Self::Error::custom("Cant deserialize type")),
         }
     }
@@ -280,10 +312,13 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     where
         V: Visitor<'de>,
     {
-        let typ = match **resolve::remove_aliases_cow(self.state.env, self.typ) {
+        let typ = resolve::canonical_alias(self.state.env, self.typ, |alias| {
+            alias.name.declared_name() == "std.types.Option"
+        });
+        let typ = match **typ {
             Type::App(ref func, ref args) if args.len() == 1 => {
                 match **func {
-                    Type::Alias(ref alias) if alias.name.declared_name() == "Option" => {
+                    Type::Alias(ref alias) if alias.name.declared_name() == "std.types.Option" => {
                         args[0].clone()
                     }
                     _ => return Err(Self::Error::custom("Expected `Option` type")),

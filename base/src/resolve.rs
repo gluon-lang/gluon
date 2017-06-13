@@ -29,9 +29,34 @@ pub fn remove_aliases_cow<'t>(env: &TypeEnv, typ: &'t ArcType) -> Cow<'t, ArcTyp
     }
 }
 
+pub fn canonical_alias<'t, F>(env: &TypeEnv, typ: &'t ArcType, canonical: F) -> Cow<'t, ArcType>
+where
+    F: Fn(&AliasData<Symbol, ArcType>) -> bool,
+{
+    match peek_alias(env, typ) {
+        Ok(Some(alias)) if canonical(alias) => {
+            type_of_alias(env, alias, typ.unapplied_args())
+                .map(|typ| {
+                    Cow::Owned(canonical_alias(env, &typ, canonical).into_owned())
+                })
+                .unwrap_or(Cow::Borrowed(typ))
+        }
+        _ => Cow::Borrowed(typ),
+    }
+}
+
 /// Expand `typ` if it is an alias that can be expanded and return the expanded type.
 /// Returns `None` if the type is not an alias or the alias could not be expanded.
 pub fn remove_alias(env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType>, Error> {
+    Ok(peek_alias(env, typ)?.and_then(|alias| {
+        type_of_alias(env, alias, typ.unapplied_args())
+    }))
+}
+
+pub fn peek_alias<'t>(
+    env: &'t TypeEnv,
+    typ: &'t ArcType,
+) -> Result<Option<&'t AliasData<Symbol, ArcType>>, Error> {
     let maybe_alias = match **typ {
         Type::Alias(ref alias) if alias.args.is_empty() => Some(alias),
         Type::App(ref alias, ref args) => {
@@ -53,8 +78,7 @@ pub fn remove_alias(env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType>, Err
                     })?
                 }
             };
-
-            Ok(type_of_alias(env, alias, typ.unapplied_args()))
+            Ok(Some(alias))
         }
         None => Ok(None),
     }

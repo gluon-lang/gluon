@@ -428,15 +428,15 @@ impl<'a, 'vm> ser::SerializeStructVariant for RecordSerializer<'a, 'vm> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use thread::{RootedThread, ThreadInternal};
+    use thread::{RootedThread, RootedValue, ThreadInternal};
 
-    fn make_value<'vm, T>(thread: &'vm Thread, value: T) -> Value
+    fn make_value<'vm, T>(thread: &'vm Thread, value: T) -> RootedValue<&'vm Thread>
     where
         T: Pushable<'vm>,
     {
         let mut context = thread.context();
         value.push(thread, &mut context).unwrap();
-        context.stack.pop()
+        thread.root_value(context.stack.pop())
     }
 
     #[test]
@@ -454,13 +454,13 @@ mod tests {
     #[test]
     fn record() {
         let thread = RootedThread::new();
-        let actual = to_value(
+        let actual = make_value(
             &thread,
-            &Record {
+            Ser(Record {
                 test: 123,
                 string: "abc".to_string(),
-            },
-        ).unwrap();
+            }),
+        );
         assert_eq!(
             actual,
             make_value(
@@ -483,26 +483,26 @@ mod tests {
     fn enum_() {
         let thread = RootedThread::new();
 
-        let actual = to_value(&thread, &Enum::A("abc".to_string())).unwrap();
+        let actual = make_value(&thread, Ser(Enum::A("abc".to_string())));
         let s = make_value(&thread, "abc");
         assert_eq!(
             actual,
-            Value::Data(
+            thread.root_value(Value::Data(
                 thread
                     .context()
                     .gc
                     .alloc(Def {
                         tag: 0,
-                        elems: &[s],
+                        elems: &[*s],
                     })
                     .unwrap(),
-            )
+            ))
         );
 
-        let actual = to_value(&thread, &Enum::B(1232)).unwrap();
+        let actual = make_value(&thread, Ser(Enum::B(1232)));
         assert_eq!(
             actual,
-            Value::Data(
+            thread.root_value(Value::Data(
                 thread
                     .context()
                     .gc
@@ -511,7 +511,7 @@ mod tests {
                         elems: &[Value::Int(1232)],
                     })
                     .unwrap(),
-            )
+            ))
         );
     }
 }
