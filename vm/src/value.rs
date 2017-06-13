@@ -175,11 +175,18 @@ mod gc_str {
     use super::ValueArray;
     use gc::{Gc, GcPtr, Generation, Traverseable};
 
+    use std::fmt;
     use std::str;
     use std::ops::Deref;
 
-    #[derive(Copy, Clone, Debug, PartialEq)]
+    #[derive(Copy, Clone, PartialEq)]
     pub struct GcStr(GcPtr<ValueArray>);
+
+    impl fmt::Debug for GcStr {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.debug_tuple("GcStr").field(&&**self).finish()
+        }
+    }
 
     impl Eq for GcStr {}
 
@@ -768,10 +775,18 @@ macro_rules! on_array {
 }
 
 
-#[derive(Debug)]
 pub struct ValueArray {
     repr: Repr,
     array: Array<()>,
+}
+
+impl fmt::Debug for ValueArray {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("ValueArray")
+            .field("repr", &self.repr)
+            .field("array", on_array!(self, |x| x as &fmt::Debug))
+            .finish()
+    }
 }
 
 impl PartialEq for ValueArray {
