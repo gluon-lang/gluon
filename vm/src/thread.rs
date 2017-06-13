@@ -30,8 +30,8 @@ use source_map::LocalIter;
 use stack::{Frame, Stack, StackFrame, State};
 use types::*;
 use vm::{GlobalVmState, VmEnv};
-use value::{Value, ClosureData, ClosureInitDef, ClosureDataDef, Def, ExternFunction, GcStr,
-            BytecodeFunction, Callable, PartialApplicationDataDef, Userdata};
+use value::{Value, ClosureData, ClosureInitDef, ClosureDataDef, DataStruct, Def, ExternFunction,
+            GcStr, BytecodeFunction, Callable, PartialApplicationDataDef, Userdata};
 
 use value::Value::{Int, Float, String, Data, Function, PartialApplication, Closure};
 
@@ -643,7 +643,7 @@ where
 
     fn can_share_values_with(&self, gc: &mut Gc, other: &Thread) -> bool;
 
-    fn lookup_field(&self, value: Value, field: &str) -> Result<Value>;
+    fn lookup_field(&self, data: &DataStruct, field: &str) -> Result<Value>;
 }
 
 impl ThreadInternal for Thread {
@@ -823,16 +823,13 @@ impl ThreadInternal for Thread {
         false
     }
 
-    fn lookup_field(&self, value: Value, field: &str) -> Result<Value> {
+    fn lookup_field(&self, data: &DataStruct, field: &str) -> Result<Value> {
         let context = self.context.lock().unwrap();
         let str_index = self.global_env().intern(field)?;
         context
             .record_map
-            .get_offset(0, str_index)
-            .and_then(|index| match value {
-                Data(data) => data.fields.get(index as usize).cloned(),
-                _ => None,
-            })
+            .get_offset(data.tag, str_index)
+            .and_then(|index| data.fields.get(index as usize).cloned())
             .ok_or_else(|| {
                 Error::Message(format!(
                     "Internal error: Undefined record field {}",

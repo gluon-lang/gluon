@@ -113,6 +113,15 @@ impl<'a> Data<'a> {
     pub fn get_variants(&self, index: usize) -> Option<Variants<'a>> {
         unsafe { self.0.fields.get(index).map(|v| Variants::new(v)) }
     }
+
+    // Retrieves the field `name` from this record
+    pub fn lookup_field(&self, thread: &Thread, name: &str) -> Option<Variants<'a>> {
+        unsafe {
+            thread.lookup_field(self.0, name).ok().map(|v| {
+                Variants::with_root(v, self.0)
+            })
+        }
+    }
 }
 
 /// Marker type representing a hole

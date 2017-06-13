@@ -630,6 +630,15 @@ where
             _ => None,
         }
     }
+
+    pub fn is_non_polymorphic_record(&self) -> bool {
+        match *self {
+            Type::Record(ref row) |
+            Type::ExtendRow { rest: ref row, .. } => row.is_non_polymorphic_record(),
+            Type::EmptyRow => true,
+            _ => false,
+        }
+    }
 }
 
 impl<T> Type<Symbol, T>

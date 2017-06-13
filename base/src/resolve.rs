@@ -34,7 +34,7 @@ where
     F: Fn(&AliasData<Symbol, ArcType>) -> bool,
 {
     match peek_alias(env, typ) {
-        Ok(Some(alias)) if canonical(alias) => {
+        Ok(Some(alias)) if !canonical(alias) => {
             type_of_alias(env, alias, typ.unapplied_args())
                 .map(|typ| {
                     Cow::Owned(canonical_alias(env, &typ, canonical).into_owned())

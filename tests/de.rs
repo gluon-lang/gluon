@@ -3,10 +3,9 @@ extern crate env_logger;
 extern crate serde_derive;
 
 extern crate gluon;
-#[macro_use]
-extern crate gluon_vm;
 
-use gluon::base::types::ArcType;
+use gluon::base::types::{ArcType, Field, Type};
+use gluon::base::symbol::Symbol;
 use gluon::vm::api::VmType;
 use gluon::vm::api::de::De;
 use gluon::vm::thread::Thread;
@@ -33,15 +32,19 @@ impl VmType for Record {
     type Type = Self;
 
     fn make_type(thread: &Thread) -> ArcType {
-        fn type_of<T: VmType>(thread: &Thread, _: T) -> ArcType {
-            T::make_type(thread)
-        }
-        type_of(
-            thread,
-            record!{
-            test => 0,
-            string => ""
-        },
+        Type::poly_record(
+            vec![],
+            vec![
+                Field {
+                    name: Symbol::from("test"),
+                    typ: i32::make_type(thread),
+                },
+                Field {
+                    name: Symbol::from("string"),
+                    typ: str::make_type(thread),
+                },
+            ],
+            Type::hole(),
         )
     }
 }
@@ -53,6 +56,38 @@ fn record() {
     let thread = new_vm();
     let (De(record), _) = Compiler::new()
         .run_expr::<De<Record>>(&thread, "test", r#" { test = 1, string = "test" } "#)
+        .unwrap_or_else(|err| panic!("{}", err));
+    assert_eq!(
+        record,
+        Record {
+            test: 1,
+            string: "test".to_string(),
+        }
+    );
+}
+
+#[test]
+fn option() {
+    let _ = env_logger::init();
+
+    let thread = new_vm();
+    let (De(opt), _) = Compiler::new()
+        .run_expr::<De<Option<f64>>>(&thread, "test", r#" Some 1.0 "#)
+        .unwrap_or_else(|err| panic!("{}", err));
+    assert_eq!(opt, Some(1.0));
+}
+
+#[test]
+fn partial_record() {
+    let _ = env_logger::init();
+
+    let thread = new_vm();
+    let (De(record), _) = Compiler::new()
+        .run_expr::<De<Record>>(
+            &thread,
+            "test",
+            r#" { test = 1, extra = 1.0, string = "test", } "#,
+        )
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(
         record,
