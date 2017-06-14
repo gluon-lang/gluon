@@ -20,6 +20,7 @@ impl de::Error for VmError {
     }
 }
 
+/// `Getable` wrapper which extracts `T` by deserializing it.
 pub struct De<T>(pub T);
 
 impl<T> VmType for De<T>
@@ -39,17 +40,8 @@ where
     T: DeserializeOwned,
 {
     fn from_value(thread: &'vm Thread, value: Variants) -> Option<Self> {
-        let env = thread.global_env().get_env();
         let typ = T::make_type(thread);
-        let mut deserializer = Deserializer {
-            state: State {
-                thread: thread,
-                env: &*env,
-            },
-            input: value,
-            typ: &typ,
-        };
-        T::deserialize(&mut deserializer)
+        from_value(thread, value, &typ)
             .map(De)
             .map_err(|err| {
                 debug!("{}", err);
@@ -59,12 +51,29 @@ where
     }
 }
 
+/// Deserializes `T` from a gluon value assuming that `value` is of type `typ`.
+pub fn from_value<T>(thread: &Thread, value: Variants, typ: &ArcType) -> Result<T>
+    where T: DeserializeOwned
+{
+    let env = thread.global_env().get_env();
+    let mut deserializer = Deserializer {
+        state: State {
+            thread: thread,
+            env: &*env,
+        },
+        input: value,
+        typ: typ,
+    };
+    T::deserialize(&mut deserializer)
+}
 
 #[derive(Clone)]
 struct State<'de> {
     thread: &'de Thread,
     env: &'de TypeEnv,
 }
+
+#[derive(Clone)]
 pub struct Deserializer<'de, 't> {
     state: State<'de>,
     input: Variants<'de>,
@@ -133,10 +142,15 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
             }
             ValueRef::Byte(_) => self.deserialize_u8(visitor),
             ValueRef::Data(_) => {
-                if let Type::Record(_) = **resolve::remove_aliases_cow(self.state.env, self.typ) {
-                    self.deserialize_enum("", &[], visitor)
+                let typ = resolve::remove_aliases_cow(self.state.env, self.typ);
+                let mut deserializer = Deserializer {
+                    typ: &typ,
+                    ..self.clone()
+                };
+                if let Type::Record(_) = **typ {
+                    deserializer.deserialize_enum("", &[], visitor)
                 } else {
-                    self.deserialize_map(visitor)
+                    deserializer.deserialize_map(visitor)
                 }
             }
             ValueRef::Float(_) => self.deserialize_f64(visitor),
@@ -320,27 +334,33 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
         let typ = resolve::canonical_alias(self.state.env, self.typ, |alias| {
             alias.name.declared_name() == "std.types.Option"
         });
-        let typ = match **typ {
+        let option_inner_typ = match **typ {
             Type::App(ref func, ref args) if args.len() == 1 => {
                 match **func {
                     Type::Alias(ref alias) if alias.name.declared_name() == "std.types.Option" => {
-                        args[0].clone()
+                        Some(&args[0])
                     }
-                    _ => return Err(Self::Error::custom("Expected `Option` type")),
+                    _ => None,
                 }
             }
-            _ => return Err(Self::Error::custom("Expected `Option` type")),
+            _ => None,
         };
-        match self.input.as_ref() {
-            ValueRef::Data(data) if data.tag() == 0 => visitor.visit_none(),
-            ValueRef::Data(data) if data.tag() == 1 => {
-                visitor.visit_some(&mut Deserializer {
-                    state: self.state.clone(),
-                    typ: &typ,
-                    input: data.get_variants(0).unwrap(),
-                })
+        // If the type is not `Option` we just visit the value itself
+        match option_inner_typ {
+            Some(typ) => {
+                match self.input.as_ref() {
+                    ValueRef::Data(data) if data.tag() == 0 => visitor.visit_none(),
+                    ValueRef::Data(data) if data.tag() == 1 => {
+                        visitor.visit_some(&mut Deserializer {
+                                                    state: self.state.clone(),
+                                                    typ: typ,
+                                                    input: data.get_variants(0).unwrap(),
+                                                })
+                    }
+                    _ => Err(Self::Error::custom("Cant deserialize type")),
+                }
             }
-            _ => Err(Self::Error::custom("Cant deserialize type")),
+            None => visitor.visit_some(self),
         }
     }
 

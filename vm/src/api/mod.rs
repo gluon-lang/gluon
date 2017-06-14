@@ -1012,6 +1012,10 @@ where
         *self.0
     }
 
+    pub fn get_variants(&self) -> Variants {
+        unsafe { Variants::new(&self.0) }
+    }
+
     pub fn get_ref(&self) -> ValueRef {
         ValueRef::new(&self.0)
     }

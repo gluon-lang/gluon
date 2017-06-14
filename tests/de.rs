@@ -6,8 +6,8 @@ extern crate gluon;
 
 use gluon::base::types::{ArcType, Field, Type};
 use gluon::base::symbol::Symbol;
-use gluon::vm::api::VmType;
-use gluon::vm::api::de::De;
+use gluon::vm::api::{Getable, Hole, OpaqueValue, VmType};
+use gluon::vm::api::de::{self, De};
 use gluon::vm::thread::Thread;
 use gluon::{Compiler, new_vm};
 
@@ -96,4 +96,70 @@ fn partial_record() {
             string: "test".to_string(),
         }
     );
+}
+
+
+#[derive(Debug, PartialEq, Deserialize)]
+struct OptionalFieldRecord {
+    test: Option<i32>,
+}
+
+impl VmType for OptionalFieldRecord {
+    type Type = Self;
+
+    fn make_type(thread: &Thread) -> ArcType {
+        Type::poly_record(
+            vec![],
+            vec![
+                Field {
+                    name: Symbol::from("test"),
+                    typ: Option::<i32>::make_type(thread),
+                },
+            ],
+            Type::hole(),
+        )
+    }
+}
+
+#[test]
+fn optional_field() {
+    let _ = env_logger::init();
+
+    let thread = new_vm();
+
+    let (value, _) = Compiler::new()
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "test", r#" { } "#)
+        .unwrap_or_else(|err| panic!("{}", err));
+    assert_eq!(
+        De::<OptionalFieldRecord>::from_value(&thread, value.get_variants()).map(|x| x.0),
+        Some(OptionalFieldRecord { test: None })
+    );
+
+    let (value, _) = Compiler::new()
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "test", r#" { test = Some 2 } "#)
+        .unwrap_or_else(|err| panic!("{}", err));
+    assert_eq!(
+        De::<OptionalFieldRecord>::from_value(&thread, value.get_variants()).map(|x| x.0),
+        Some(OptionalFieldRecord { test: Some(2) })
+    );
+
+    let (value, _) = Compiler::new()
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "test", r#" { test = 1 } "#)
+        .unwrap_or_else(|err| panic!("{}", err));
+
+    let typ = Type::poly_record(
+        vec![],
+        vec![
+            Field {
+                name: Symbol::from("test"),
+                typ: i32::make_type(&thread),
+            },
+        ],
+        Type::hole(),
+    );
+    assert_eq!(
+        de::from_value(&thread, value.get_variants(), &typ).ok(),
+        Some(OptionalFieldRecord { test: Some(1) })
+    );
+
 }
