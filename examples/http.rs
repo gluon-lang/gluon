@@ -113,8 +113,8 @@ impl<'vm> Getable<'vm> for Wrap<StatusCode> {
     fn from_value(_: &'vm Thread, value: Variants) -> Option<Self> {
         use hyper::StatusCode::*;
         match value.as_ref() {
-            ValueRef::Tag(tag) => {
-                Some(Wrap(match tag {
+            ValueRef::Data(data) => {
+                Some(Wrap(match data.tag() {
                     0 => Ok,
                     1 => NotFound,
                     2 => InternalServerError,

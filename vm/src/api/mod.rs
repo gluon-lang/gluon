@@ -43,7 +43,6 @@ pub enum ValueRef<'a> {
     String(&'a str),
     Data(Data<'a>),
     Array(ArrayRef<'a>),
-    Tag(VmTag),
     Userdata(&'a vm::Userdata),
     Internal,
 }
@@ -59,7 +58,6 @@ impl<'a, 'b> PartialEq<ValueRef<'b>> for ValueRef<'a> {
             (&Float(l), &Float(r)) => l == r,
             (&String(l), &String(r)) => l == r,
             (&Data(l), &Data(r)) => l == r,
-            (&Tag(l), &Tag(r)) => l == r,
             _ => false,
         }
     }
@@ -82,10 +80,10 @@ impl<'a> ValueRef<'a> {
             Value::Int(i) => ValueRef::Int(i),
             Value::Float(f) => ValueRef::Float(f),
             Value::String(s) => ValueRef::String(forget_lifetime(&*s)),
-            Value::Data(data) => ValueRef::Data(Data(forget_lifetime(&*data))),
+            Value::Data(data) => ValueRef::Data(Data(DataInner::Data(forget_lifetime(&*data)))),
+            Value::Tag(tag) => ValueRef::Data(Data(DataInner::Tag(tag))),
             Value::Array(array) => ValueRef::Array(ArrayRef(forget_lifetime(&*array))),
             Value::Userdata(data) => ValueRef::Userdata(forget_lifetime(&**data)),
-            Value::Tag(tag) => ValueRef::Tag(tag),
             Value::Thread(_) |
             Value::Function(_) |
             Value::Closure(_) |
@@ -95,31 +93,52 @@ impl<'a> ValueRef<'a> {
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
-pub struct Data<'a>(&'a DataStruct);
+enum DataInner<'a> {
+    Tag(VmTag),
+    Data(&'a DataStruct),
+}
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct Data<'a>(DataInner<'a>);
 
 impl<'a> Data<'a> {
     pub fn tag(&self) -> VmTag {
-        self.0.tag
+        match self.0 {
+            DataInner::Tag(tag) => tag,
+            DataInner::Data(data) => data.tag,
+        }
     }
 
     pub fn len(&self) -> usize {
-        self.0.fields.len()
+        match self.0 {
+            DataInner::Tag(_) => 0,
+            DataInner::Data(data) => data.fields.len(),
+        }
     }
 
     pub fn get(&self, index: usize) -> Option<ValueRef<'a>> {
-        self.0.fields.get(index).map(ValueRef::new)
+        match self.0 {
+            DataInner::Tag(_) => None,
+            DataInner::Data(data) => data.fields.get(index).map(ValueRef::new),
+        }
     }
 
     pub fn get_variants(&self, index: usize) -> Option<Variants<'a>> {
-        unsafe { self.0.fields.get(index).map(|v| Variants::new(v)) }
+        match self.0 {
+            DataInner::Tag(_) => None,
+            DataInner::Data(data) => unsafe { data.fields.get(index).map(|v| Variants::new(v)) },
+        }
     }
 
     // Retrieves the field `name` from this record
     pub fn lookup_field(&self, thread: &Thread, name: &str) -> Option<Variants<'a>> {
-        unsafe {
-            thread.lookup_field(self.0, name).ok().map(|v| {
-                Variants::with_root(v, self.0)
-            })
+        match self.0 {
+            DataInner::Tag(_) => None,
+            DataInner::Data(data) => unsafe {
+                thread.lookup_field(data, name).ok().map(|v| {
+                    Variants::with_root(v, data)
+                })
+            },
         }
     }
 }
@@ -557,8 +576,7 @@ impl<'vm> Pushable<'vm> for bool {
 impl<'vm> Getable<'vm> for bool {
     fn from_value(_: &'vm Thread, value: Variants) -> Option<bool> {
         match value.as_ref() {
-            ValueRef::Tag(1) => Some(true),
-            ValueRef::Tag(0) => Some(false),
+            ValueRef::Data(data) => Some(data.tag() == 1),
             _ => None,
         }
     }
@@ -588,7 +606,6 @@ impl<'vm> Getable<'vm> for Ordering {
     fn from_value(_: &'vm Thread, value: Variants) -> Option<Ordering> {
         let tag = match value.as_ref() {
             ValueRef::Data(data) => data.tag(),
-            ValueRef::Tag(tag) => tag,
             _ => return None,
         };
         match tag {
@@ -805,7 +822,6 @@ impl<'vm, T: Getable<'vm>> Getable<'vm> for Option<T> {
                     T::from_value(vm, data.get_variants(0).unwrap()).map(Some)
                 }
             }
-            ValueRef::Tag(0) => Some(None),
             _ => None,
         }
     }

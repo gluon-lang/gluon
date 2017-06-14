@@ -142,7 +142,6 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
             ValueRef::Float(_) => self.deserialize_f64(visitor),
             ValueRef::Int(_) => self.deserialize_i64(visitor),
             ValueRef::String(ref s) => visitor.visit_borrowed_str(s),
-            ValueRef::Tag(_) => self.deserialize_enum("", &[], visitor),
             ValueRef::Userdata(_) |
             ValueRef::Internal => Err(Self::Error::custom("Cant deserialize type")),
         }
@@ -153,7 +152,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
         V: Visitor<'de>,
     {
         match self.input.as_ref() {
-            ValueRef::Tag(t) => visitor.visit_bool(t != 0),
+            ValueRef::Data(data) => visitor.visit_bool(data.tag() != 0),
             _ => Err(Self::Error::custom("Cant deserialize type")),
         }
     }
@@ -333,7 +332,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
             _ => return Err(Self::Error::custom("Expected `Option` type")),
         };
         match self.input.as_ref() {
-            ValueRef::Tag(0) => visitor.visit_none(),
+            ValueRef::Data(data) if data.tag() == 0 => visitor.visit_none(),
             ValueRef::Data(data) if data.tag() == 1 => {
                 visitor.visit_some(&mut Deserializer {
                     state: self.state.clone(),
@@ -350,7 +349,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
         V: Visitor<'de>,
     {
         match self.input.as_ref() {
-            ValueRef::Tag(0) => visitor.visit_unit(),
+            ValueRef::Data(data) if data.tag() == 0 => visitor.visit_unit(),
             _ => Err(Self::Error::custom("Cant deserialize type")),
         }
     }
@@ -583,7 +582,6 @@ impl<'a, 'b, 'de, 't> de::Deserializer<'de> for &'b mut Enum<'a, 'de, 't> {
     {
         match self.de.input.as_ref() {
             ValueRef::Data(data) => visitor.visit_u32(data.tag()),
-            ValueRef::Tag(tag) => visitor.visit_u32(tag),
             _ => Err(Self::Error::custom("Cant deserialize tag")),
         }
     }
@@ -594,7 +592,6 @@ impl<'a, 'b, 'de, 't> de::Deserializer<'de> for &'b mut Enum<'a, 'de, 't> {
     {
         let tag = match self.de.input.as_ref() {
             ValueRef::Data(data) => data.tag(),
-            ValueRef::Tag(tag) => tag,
             _ => return Err(Self::Error::custom("Cant deserialize tag")),
         };
         let typ = resolve::remove_aliases_cow(self.de.state.env, self.de.typ);
