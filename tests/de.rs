@@ -163,3 +163,69 @@ fn optional_field() {
     );
 
 }
+
+#[derive(Debug, PartialEq, Deserialize)]
+enum Enum {
+    A(i32),
+    B { string: String, test: f64 },
+    C(i32, i32),
+}
+
+impl VmType for Enum {
+    type Type = Self;
+
+    fn make_type(thread: &Thread) -> ArcType {
+        thread.find_type_info("test.Enum").unwrap().into_type()
+    }
+}
+
+#[test]
+fn enum_() {
+    let _ = env_logger::init();
+
+    let thread = new_vm();
+    Compiler::new()
+        .implicit_prelude(false)
+        .load_script(
+            &thread,
+            "test",
+            r#" type Enum = | A Int | B String Float | C Int Int in { Enum } "#,
+        )
+        .unwrap_or_else(|err| panic!("{}", err));
+
+    let (De(enum_), _) = Compiler::new()
+        .implicit_prelude(false)
+        .run_expr::<De<Enum>>(
+            &thread,
+            "test",
+            r#" let { Enum } = import! "test" in A 123 "#,
+        )
+        .unwrap_or_else(|err| panic!("{}", err));
+    assert_eq!(enum_, Enum::A(123));
+
+    let (De(enum_), _) = Compiler::new()
+        .implicit_prelude(false)
+        .run_expr::<De<Enum>>(
+            &thread,
+            "test",
+            r#" let { Enum } = import! "test" in B "abc" 3.14 "#,
+        )
+        .unwrap_or_else(|err| panic!("{}", err));
+    assert_eq!(
+        enum_,
+        Enum::B {
+            string: "abc".to_string(),
+            test: 3.14,
+        }
+    );
+
+    let (De(enum_), _) = Compiler::new()
+        .implicit_prelude(false)
+        .run_expr::<De<Enum>>(
+            &thread,
+            "test",
+            r#" let { Enum } = import! "test" in C 0 1 "#,
+        )
+        .unwrap_or_else(|err| panic!("{}", err));
+    assert_eq!(enum_, Enum::C(0, 1));
+}

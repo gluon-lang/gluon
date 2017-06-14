@@ -1,7 +1,8 @@
 use std::fmt;
+use std::marker::PhantomData;
 
 use base::resolve;
-use base::types::{ArcType, BuiltinType, Type, TypeEnv};
+use base::types::{ArcType, arg_iter, BuiltinType, Type, TypeEnv};
 use base::symbol::Symbol;
 
 use {Error as VmError, Result, Variants};
@@ -117,10 +118,10 @@ impl<'de, 't> Deserializer<'de, 't> {
                 if expected(&typ) {
                     visit(c)
                 } else {
-                    Err(Error::custom("Cant deserialize type"))
+                    Err(VmError::Message(format!("Unable to deserialize `{}`", self.typ)))
                 }
             }
-            _ => Err(Error::custom("Cant deserialize type")),
+            _ => Err(VmError::Message(format!("Unable to deserialize `{}`", self.typ))),
         }
     }
 }
@@ -157,7 +158,9 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
             ValueRef::Int(_) => self.deserialize_i64(visitor),
             ValueRef::String(ref s) => visitor.visit_borrowed_str(s),
             ValueRef::Userdata(_) |
-            ValueRef::Internal => Err(Self::Error::custom("Cant deserialize type")),
+            ValueRef::Internal => {
+                Err(VmError::Message(format!("Unable to deserialize `{}`", self.typ)))
+            }
         }
     }
 
@@ -167,7 +170,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     {
         match self.input.as_ref() {
             ValueRef::Data(data) => visitor.visit_bool(data.tag() != 0),
-            _ => Err(Self::Error::custom("Cant deserialize type")),
+            _ => Err(VmError::Message(format!("Unable to deserialize bool"))),
         }
     }
 
@@ -179,7 +182,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     {
         match self.input.as_ref() {
             ValueRef::Byte(b) => visitor.visit_i8(b as i8),
-            _ => Err(Self::Error::custom("Cant deserialize type")),
+            _ => Err(Self::Error::custom("Unable to deserialize i8")),
         }
     }
 
@@ -189,7 +192,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     {
         match self.input.as_ref() {
             ValueRef::Byte(b) => visitor.visit_i16(b as i16),
-            _ => Err(Self::Error::custom("Cant deserialize type")),
+            _ => Err(Self::Error::custom("Unable to deserialize i16")),
         }
     }
 
@@ -199,7 +202,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     {
         match self.input.as_ref() {
             ValueRef::Int(b) => visitor.visit_i32(b as i32),
-            _ => Err(Self::Error::custom("Cant deserialize type")),
+            _ => Err(Self::Error::custom("Unable to deserialize i32")),
         }
     }
 
@@ -209,7 +212,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     {
         match self.input.as_ref() {
             ValueRef::Int(b) => visitor.visit_i64(b as i64),
-            _ => Err(Self::Error::custom("Cant deserialize type")),
+            _ => Err(Self::Error::custom("Unable to deserialize i64")),
         }
     }
 
@@ -219,7 +222,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     {
         match self.input.as_ref() {
             ValueRef::Byte(b) => visitor.visit_u8(b),
-            _ => Err(Self::Error::custom("Cant deserialize type")),
+            _ => Err(Self::Error::custom("Unable to deserialize u8")),
         }
     }
 
@@ -229,7 +232,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     {
         match self.input.as_ref() {
             ValueRef::Byte(b) => visitor.visit_u16(b as u16),
-            _ => Err(Self::Error::custom("Cant deserialize type")),
+            _ => Err(Self::Error::custom("Unable to deserialize u16")),
         }
     }
 
@@ -239,7 +242,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     {
         match self.input.as_ref() {
             ValueRef::Int(b) => visitor.visit_u32(b as u32),
-            _ => Err(Self::Error::custom("Cant deserialize type")),
+            _ => Err(Self::Error::custom("Unable to deserialize u32")),
         }
     }
 
@@ -249,7 +252,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     {
         match self.input.as_ref() {
             ValueRef::Int(b) => visitor.visit_u64(b as u64),
-            _ => Err(Self::Error::custom("Cant deserialize type")),
+            _ => Err(Self::Error::custom("Unable to deserialize u64")),
         }
     }
 
@@ -259,7 +262,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     {
         match self.input.as_ref() {
             ValueRef::Float(f) => visitor.visit_f32(f as f32),
-            _ => Err(Self::Error::custom("Cant deserialize type")),
+            _ => Err(Self::Error::custom("Unable to deserialize f32")),
         }
     }
 
@@ -269,7 +272,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     {
         match self.input.as_ref() {
             ValueRef::Float(f) => visitor.visit_f64(f),
-            _ => Err(Self::Error::custom("Cant deserialize type")),
+            _ => Err(Self::Error::custom("Unable to deserialize f64")),
         }
     }
 
@@ -283,10 +286,10 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
             (ValueRef::Int(c), &Type::Builtin(BuiltinType::Char)) => {
                 match from_u32(c as u32) {
                     Some(c) => visitor.visit_char(c),
-                    None => Err(Self::Error::custom("Cant deserialize type")),
+                    None => Err(Self::Error::custom("Unable to deserialize char")),
                 }
             }
-            _ => Err(Self::Error::custom("Cant deserialize type")),
+            _ => Err(Self::Error::custom("Unable to deserialize char")),
         }
     }
 
@@ -357,7 +360,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
                                                     input: data.get_variants(0).unwrap(),
                                                 })
                     }
-                    _ => Err(Self::Error::custom("Cant deserialize type")),
+                    _ => Err(Self::Error::custom("Unable to deserialize type")),
                 }
             }
             None => visitor.visit_some(self),
@@ -370,7 +373,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     {
         match self.input.as_ref() {
             ValueRef::Data(data) if data.tag() == 0 => visitor.visit_unit(),
-            _ => Err(Self::Error::custom("Cant deserialize type")),
+            _ => Err(Self::Error::custom("Unable to deserialize type")),
         }
     }
 
@@ -395,13 +398,23 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
         let typ = resolve::remove_aliases_cow(self.state.env, self.typ);
         match (self.input.as_ref(), &**typ) {
             (ValueRef::Array(values), &Type::App(_, ref args)) if args.len() == 1 => {
-                visitor.visit_seq(SeqDeserializer::new(
-                    self.state.clone(),
-                    &args[0],
-                    values.iter(),
-                ))
+                visitor.visit_seq(SeqDeserializer::new(self.state.clone(),
+                                                       values.iter().map(|variant| {
+                                                                             (variant, &args[0])
+                                                                         })))
             }
-            _ => Err(Self::Error::custom("Cant deserialize type")),
+            (ValueRef::Data(data), &Type::Variant(ref row)) => {
+                match row.row_iter().nth(data.tag() as usize) {
+                    Some(field) => {
+                        let iter = (0..data.len())
+                            .map(|i| data.get_variants(i).unwrap())
+                            .zip(arg_iter(&field.typ));
+                        visitor.visit_seq(SeqDeserializer::new(self.state.clone(), iter))
+                    }
+                    None => Err(Self::Error::custom("Unable to deserialize type")),
+                }
+            }
+            _ => Err(Self::Error::custom("Unable to deserialize type")),
         }
     }
 
@@ -437,9 +450,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
                 });
                 visitor.visit_map(MapDeserializer::new(self.state.clone(), iter))
             }
-            _ => Err(Self::Error::custom(
-                format!("Cant deserialize type {}", typ),
-            )),
+            _ => Err(Self::Error::custom(format!("Unable to deserialize type {}", typ))),
         }
     }
 
@@ -484,23 +495,22 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
 
 struct SeqDeserializer<'de, 't, I> {
     state: State<'de>,
-    typ: &'t ArcType,
     iter: I,
+    _marker: PhantomData<&'t ()>,
 }
 
 impl<'de, 't, I> SeqDeserializer<'de, 't, I> {
-    fn new(state: State<'de>, typ: &'t ArcType, iter: I) -> Self {
+    fn new(state: State<'de>, iter: I) -> Self {
         SeqDeserializer {
             state: state,
-            typ: typ,
             iter: iter,
+            _marker: PhantomData,
         }
     }
 }
 
 impl<'de, 't, I> SeqAccess<'de> for SeqDeserializer<'de, 't, I>
-where
-    I: Iterator<Item = Variants<'de>>,
+    where I: Iterator<Item = (Variants<'de>, &'t ArcType)>
 {
     type Error = VmError;
 
@@ -509,12 +519,13 @@ where
         T: DeserializeSeed<'de>,
     {
         match self.iter.next() {
-            Some(value) => {
+            Some((value, typ)) => {
                 seed.deserialize(&mut Deserializer {
-                    state: self.state.clone(),
-                    input: value,
-                    typ: self.typ,
-                }).map(Some)
+                                          state: self.state.clone(),
+                                          input: value,
+                                          typ: typ,
+                                      })
+                    .map(Some)
             }
             None => Ok(None),
         }
@@ -578,7 +589,7 @@ where
                     typ: typ,
                 })
             }
-            None => Err(Self::Error::custom("Cant deserialize type")),
+            None => Err(Self::Error::custom("Unable to deserialize value")),
         }
     }
 }
@@ -602,7 +613,7 @@ impl<'a, 'b, 'de, 't> de::Deserializer<'de> for &'b mut Enum<'a, 'de, 't> {
     {
         match self.de.input.as_ref() {
             ValueRef::Data(data) => visitor.visit_u32(data.tag()),
-            _ => Err(Self::Error::custom("Cant deserialize tag")),
+            _ => Err(Self::Error::custom("Unable to deserialize tag")),
         }
     }
 
@@ -612,17 +623,18 @@ impl<'a, 'b, 'de, 't> de::Deserializer<'de> for &'b mut Enum<'a, 'de, 't> {
     {
         let tag = match self.de.input.as_ref() {
             ValueRef::Data(data) => data.tag(),
-            _ => return Err(Self::Error::custom("Cant deserialize tag")),
+            _ => return Err(Self::Error::custom("Unable to deserialize tag")),
         };
         let typ = resolve::remove_aliases_cow(self.de.state.env, self.de.typ);
         match **typ {
             Type::Variant(ref variants) => {
-                let variant = variants.row_iter().nth(tag as usize).ok_or_else(|| {
-                    Self::Error::custom("Cant deserialize tag")
-                })?;
+                let variant = variants
+                    .row_iter()
+                    .nth(tag as usize)
+                    .ok_or_else(|| Self::Error::custom("Unable to deserialize tag"))?;
                 visitor.visit_str(variant.name.as_ref())
             }
-            _ => return Err(Self::Error::custom("Cant deserialize tag")),
+            _ => return Err(Self::Error::custom("Unable to deserialize tag")),
         }
     }
 
@@ -670,7 +682,15 @@ impl<'de, 'a, 't> VariantAccess<'de> for Enum<'a, 'de, 't> {
     where
         T: DeserializeSeed<'de>,
     {
-        seed.deserialize(self.de)
+        match self.de.input.as_ref() {
+            ValueRef::Data(data) if data.len() == 1 => {
+                seed.deserialize(&mut Deserializer {
+                                          input: data.get_variants(0).unwrap(),
+                                          ..self.de.clone()
+                                      })
+            }
+            _ => Err(VmError::Message(format!("Unable to deserialize bool"))),
+        }
     }
 
     fn tuple_variant<V>(self, _len: usize, visitor: V) -> Result<V::Value>
@@ -684,6 +704,6 @@ impl<'de, 'a, 't> VariantAccess<'de> for Enum<'a, 'de, 't> {
     where
         V: Visitor<'de>,
     {
-        de::Deserializer::deserialize_map(self.de, visitor)
+        de::Deserializer::deserialize_seq(self.de, visitor)
     }
 }
