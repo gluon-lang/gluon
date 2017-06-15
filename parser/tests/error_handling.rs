@@ -1,4 +1,6 @@
 extern crate env_logger;
+#[macro_use]
+extern crate pretty_assertions;
 
 extern crate gluon_base as base;
 extern crate gluon_parser as parser;
@@ -7,6 +9,7 @@ mod support;
 
 use base::ast::{TypedIdent, Pattern};
 use base::pos::{self, BytePos, Spanned};
+use base::types::Type;
 
 use parser::{Error, ParseErrors, TokenizeError};
 
@@ -172,4 +175,86 @@ fn missing_pattern() {
     let span = pos::span(BytePos::from(24), BytePos::from(26));
     assert_eq!(remove_expected(err),
                ParseErrors::from(vec![pos::spanned(span, error)]));
+}
+
+#[test]
+fn incomplete_alternative() {
+    let _ = ::env_logger::init();
+
+    let expr = r#"
+    match 1 with
+    | 
+    "#;
+    let result = parse(expr);
+    assert!(result.is_err());
+    let (expr, err) = result.unwrap_err();
+    assert_eq!(expr,
+               Some(case(int(1),
+                         vec![(Pattern::Error, error())])));
+
+    let error = Error::UnexpectedToken("CloseBlock".into(), vec![]);
+    let span = pos::span(BytePos::from(24), BytePos::from(26));
+    assert_eq!(remove_expected(err),
+               ParseErrors::from(vec![pos::spanned(span, error)]));
+}
+
+#[test]
+fn incomplete_alternative_before_complete_alternative() {
+    let _ = ::env_logger::init();
+
+    let expr = r#"
+    match 1 with
+    | 
+    | x -> x
+    "#;
+    let result = parse(expr);
+    assert!(result.is_err());
+    let (expr, err) = result.unwrap_err();
+    assert_eq!(expr,
+               Some(case(int(1),
+                         vec![(Pattern::Error, error()),
+                              (Pattern::Ident(TypedIdent::new(intern("x"))), id("x"))])));
+
+    let error = Error::UnexpectedToken("Pipe".into(), vec![]);
+    let span = pos::span(BytePos::from(24), BytePos::from(24));
+    assert_eq!(remove_expected(err),
+               ParseErrors::from(vec![pos::spanned(span, error)]));
+}
+
+#[test]
+fn incomplete_alternative_with_partial_pattern() {
+    let _ = ::env_logger::init();
+
+    let expr = r#"
+    match 1 with
+    | { x = }
+    "#;
+    let result = parse(expr);
+    assert!(result.is_err());
+    let (expr, err) = result.unwrap_err();
+    assert_eq!(
+        expr,
+        Some(case(
+            int(1),
+            vec![
+                (
+                    Pattern::Record {
+                        typ: Type::hole(),
+                        types: vec![],
+                        fields: vec![(intern("x"), Some(no_loc(Pattern::Error)))]
+                    },
+                    error()
+                ),
+            ],
+        ))
+    );
+
+    let errors = vec![
+        no_loc(Error::UnexpectedToken("RBrace".into(), vec![])),
+        no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![]))
+    ];
+    assert_eq!(
+        remove_expected(err),
+        ParseErrors::from(errors)
+    );
 }
