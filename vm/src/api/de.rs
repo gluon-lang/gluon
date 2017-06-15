@@ -126,7 +126,6 @@ impl<'de, 't> Deserializer<'de, 't> {
     }
 }
 
-
 impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     type Error = VmError;
 
@@ -182,7 +181,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     {
         match self.input.as_ref() {
             ValueRef::Byte(b) => visitor.visit_i8(b as i8),
-            _ => Err(Self::Error::custom("Unable to deserialize i8")),
+            _ => self.deserialize_any(visitor),
         }
     }
 
@@ -192,7 +191,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     {
         match self.input.as_ref() {
             ValueRef::Byte(b) => visitor.visit_i16(b as i16),
-            _ => Err(Self::Error::custom("Unable to deserialize i16")),
+            _ => self.deserialize_any(visitor),
         }
     }
 
@@ -202,7 +201,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     {
         match self.input.as_ref() {
             ValueRef::Int(b) => visitor.visit_i32(b as i32),
-            _ => Err(Self::Error::custom("Unable to deserialize i32")),
+            _ => self.deserialize_any(visitor),
         }
     }
 
@@ -212,7 +211,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     {
         match self.input.as_ref() {
             ValueRef::Int(b) => visitor.visit_i64(b as i64),
-            _ => Err(Self::Error::custom("Unable to deserialize i64")),
+            _ => self.deserialize_any(visitor),
         }
     }
 
@@ -222,7 +221,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     {
         match self.input.as_ref() {
             ValueRef::Byte(b) => visitor.visit_u8(b),
-            _ => Err(Self::Error::custom("Unable to deserialize u8")),
+            _ => self.deserialize_any(visitor),
         }
     }
 
@@ -232,7 +231,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     {
         match self.input.as_ref() {
             ValueRef::Byte(b) => visitor.visit_u16(b as u16),
-            _ => Err(Self::Error::custom("Unable to deserialize u16")),
+            _ => self.deserialize_any(visitor),
         }
     }
 
@@ -242,7 +241,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     {
         match self.input.as_ref() {
             ValueRef::Int(b) => visitor.visit_u32(b as u32),
-            _ => Err(Self::Error::custom("Unable to deserialize u32")),
+            _ => self.deserialize_any(visitor),
         }
     }
 
@@ -252,7 +251,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     {
         match self.input.as_ref() {
             ValueRef::Int(b) => visitor.visit_u64(b as u64),
-            _ => Err(Self::Error::custom("Unable to deserialize u64")),
+            _ => self.deserialize_any(visitor),
         }
     }
 
@@ -262,7 +261,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     {
         match self.input.as_ref() {
             ValueRef::Float(f) => visitor.visit_f32(f as f32),
-            _ => Err(Self::Error::custom("Unable to deserialize f32")),
+            _ => self.deserialize_any(visitor),
         }
     }
 
@@ -272,7 +271,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     {
         match self.input.as_ref() {
             ValueRef::Float(f) => visitor.visit_f64(f),
-            _ => Err(Self::Error::custom("Unable to deserialize f64")),
+            _ => self.deserialize_any(visitor),
         }
     }
 
@@ -286,10 +285,10 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
             (ValueRef::Int(c), &Type::Builtin(BuiltinType::Char)) => {
                 match from_u32(c as u32) {
                     Some(c) => visitor.visit_char(c),
-                    None => Err(Self::Error::custom("Unable to deserialize char")),
+                    None => self.deserialize_any(visitor),
                 }
             }
-            _ => Err(Self::Error::custom("Unable to deserialize char")),
+            _ => self.deserialize_any(visitor),
         }
     }
 
@@ -360,7 +359,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
                                                     input: data.get_variants(0).unwrap(),
                                                 })
                     }
-                    _ => Err(Self::Error::custom("Unable to deserialize type")),
+                    _ => self.deserialize_any(visitor),
                 }
             }
             None => visitor.visit_some(self),
@@ -373,7 +372,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     {
         match self.input.as_ref() {
             ValueRef::Data(data) if data.tag() == 0 => visitor.visit_unit(),
-            _ => Err(Self::Error::custom("Unable to deserialize type")),
+            _ => self.deserialize_any(visitor),
         }
     }
 
@@ -411,10 +410,10 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
                             .zip(arg_iter(&field.typ));
                         visitor.visit_seq(SeqDeserializer::new(self.state.clone(), iter))
                     }
-                    None => Err(Self::Error::custom("Unable to deserialize type")),
+                    None => self.deserialize_any(visitor),
                 }
             }
-            _ => Err(Self::Error::custom("Unable to deserialize type")),
+            _ => self.deserialize_any(visitor),
         }
     }
 
@@ -450,7 +449,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
                 });
                 visitor.visit_map(MapDeserializer::new(self.state.clone(), iter))
             }
-            _ => Err(Self::Error::custom(format!("Unable to deserialize type {}", typ))),
+            _ => self.deserialize_any(visitor),
         }
     }
 
@@ -548,8 +547,6 @@ impl<'de, 't, I> MapDeserializer<'de, 't, I> {
     }
 }
 
-// `MapAccess` is provided to the `Visitor` to give it the ability to iterate
-// through entries of the map.
 impl<'de, 'a, 't, I> MapAccess<'de> for MapDeserializer<'de, 't, I>
 where
     I: Iterator<
@@ -652,11 +649,6 @@ impl<'a, 'b, 'de, 't> de::Deserializer<'de> for &'b mut Enum<'a, 'de, 't> {
     }
 }
 
-// `EnumAccess` is provided to the `Visitor` to give it the ability to determine
-// which variant of the enum is supposed to be deserialized.
-//
-// Note that all enum deserialization methods in Serde refer exclusively to the
-// "externally tagged" enum representation.
 impl<'a, 'de, 't> EnumAccess<'de> for Enum<'a, 'de, 't> {
     type Error = VmError;
     type Variant = Self;
@@ -669,8 +661,6 @@ impl<'a, 'de, 't> EnumAccess<'de> for Enum<'a, 'de, 't> {
     }
 }
 
-// `VariantAccess` is provided to the `Visitor` to give it the ability to see
-// the content of the single variant that it decided to deserialize.
 impl<'de, 'a, 't> VariantAccess<'de> for Enum<'a, 'de, 't> {
     type Error = VmError;
 
