@@ -464,7 +464,9 @@ impl<'input> Iterator for Tokenizer<'input> {
                        }
 
                        ch if is_ident_start(ch) => Some(Ok(self.identifier(start))),
-                       ch if is_digit(ch) => Some(self.numeric_literal(start)), // TODO: negative numbers?
+                       ch if is_digit(ch) || (ch == '-' && self.test_lookahead(is_digit)) => {
+                           Some(self.numeric_literal(start))
+                       }
                        ch if is_operator_char(ch) => Some(Ok(self.operator(start))),
                        ch if ch.is_whitespace() => continue,
 
@@ -631,10 +633,11 @@ mod test {
 
     #[test]
     fn int_literals() {
-        test(r#"3 1036 45"#,
-             vec![(r#"~        "#, IntLiteral(3)),
-                  (r#"  ~~~~   "#, IntLiteral(1036)),
-                  (r#"       ~~"#, IntLiteral(45))]);
+        test(r#"3 1036 45 -123"#,
+             vec![(r#"~             "#, IntLiteral(3)),
+                  (r#"  ~~~~        "#, IntLiteral(1036)),
+                  (r#"       ~~     "#, IntLiteral(45)),
+                  (r#"          ~~~~"#, IntLiteral(-123))]);
     }
 
     #[test]
@@ -653,9 +656,10 @@ mod test {
 
     #[test]
     fn float_literals() {
-        test(r#"03.1415 1036.2"#,
-             vec![(r#"~~~~~~~       "#, FloatLiteral(3.1415)),
-                  (r#"        ~~~~~~"#, FloatLiteral(1036.2))]);
+        test(r#"03.1415 1036.2 -0.0"#,
+             vec![(r#"~~~~~~~            "#, FloatLiteral(3.1415)),
+                  (r#"        ~~~~~~     "#, FloatLiteral(1036.2)),
+                  (r#"               ~~~~"#, FloatLiteral(-0.0))]);
     }
 
     #[test]
