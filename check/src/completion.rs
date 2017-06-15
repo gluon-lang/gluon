@@ -135,6 +135,7 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
                     self.on_pattern(arg);
                 }
             }
+            Pattern::Error => ()
         }
     }
 

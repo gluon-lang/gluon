@@ -152,3 +152,24 @@ let x = 1
     );
     assert!(result.is_err());
 }
+
+#[test]
+fn missing_pattern() {
+    let _ = ::env_logger::init();
+
+    let expr = r#"
+    match 1 with
+    | -> x
+    "#;
+    let result = parse(expr);
+    assert!(result.is_err());
+    let (expr, err) = result.unwrap_err();
+    assert_eq!(expr,
+               Some(case(int(1),
+                         vec![(Pattern::Error, id("x"))])));
+
+    let error = Error::UnexpectedToken("RArrow".into(), vec![]);
+    let span = pos::span(BytePos::from(24), BytePos::from(26));
+    assert_eq!(remove_expected(err),
+               ParseErrors::from(vec![pos::spanned(span, error)]));
+}

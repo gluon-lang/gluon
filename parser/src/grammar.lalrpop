@@ -258,6 +258,11 @@ AtomicPattern: Pattern<Id> = {
             fields: values,
         }
     },
+
+    <!> => {
+        errors.push(<>.error);
+        Pattern::Error
+    },
 };
 
 Pattern = {

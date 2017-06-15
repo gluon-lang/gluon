@@ -407,6 +407,27 @@ test  test1
 }
 
 #[test]
+fn suggest_alternative() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Test = | A Int | B Int String
+match A 3 with
+| 
+"#;
+    let result = suggest(text, BytePos::from(30));
+    let expected = Ok(vec!["abb".into(), "abc".into()]);
+
+    assert_eq!(result, expected);
+
+    let result = suggest(text, BytePos::from(40));
+    let expected = Ok(vec!["abb".into(), "abc".into()]);
+
+    assert_eq!(result, expected);
+}
+
+
+#[test]
 fn metadata_at_variable() {
     let _ = env_logger::init();
 
