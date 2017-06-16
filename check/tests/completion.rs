@@ -415,16 +415,27 @@ type Test = | A Int | B Int String
 match A 3 with
 | 
 "#;
-    let result = suggest(text, BytePos::from(30));
-    let expected = Ok(vec!["abb".into(), "abc".into()]);
-
-    assert_eq!(result, expected);
-
-    let result = suggest(text, BytePos::from(40));
-    let expected = Ok(vec!["abb".into(), "abc".into()]);
+    let result = suggest(text, BytePos::from(53));
+    let expected = Ok(vec!["A".into(), "B".into()]);
 
     assert_eq!(result, expected);
 }
+
+#[test]
+fn suggest_incomplete_pattern_name() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Test = | A Int | BC Int String
+match A 3 with
+| B -> 3
+"#;
+    let result = suggest(text, BytePos::from(55));
+    let expected = Ok(vec!["BC".into()]);
+
+    assert_eq!(result, expected);
+}
+
 
 
 #[test]

@@ -1,5 +1,6 @@
 //! Primitive auto completion and type quering on ASTs
 
+use std::borrow::Borrow;
 use std::iter::once;
 use std::cmp::Ordering;
 
@@ -11,7 +12,7 @@ use base::resolve;
 use base::pos::{BytePos, Span, NO_EXPANSION};
 use base::scoped_map::ScopedMap;
 use base::symbol::Symbol;
-use base::types::{ArcType, Type, TypeEnv};
+use base::types::{AliasData, ArcType, Type, TypeEnv};
 
 trait OnFound {
     fn on_ident(&mut self, ident: &TypedIdent) {
@@ -22,12 +23,20 @@ trait OnFound {
         let _ = pattern;
     }
 
+    fn on_alias(&mut self, alias: &AliasData<Symbol, ArcType>) {
+        let _ = alias;
+    }
+
     fn expr(&mut self, expr: &SpannedExpr<Symbol>);
+
+    fn pattern(&mut self, pattern: &SpannedPattern<Symbol>);
 
     fn ident(&mut self, context: &SpannedExpr<Symbol>, ident: &Symbol, typ: &ArcType);
 
     /// Location points to whitespace
     fn nothing(&mut self);
+
+    fn nothing_pattern(&mut self) {}
 
     fn found(&self) -> bool;
 }
@@ -46,6 +55,10 @@ impl<E: TypeEnv> OnFound for GetType<E> {
         self.typ = Some(typ.clone());
     }
 
+    fn pattern(&mut self, pattern: &SpannedPattern<Symbol>) {
+        self.typ = Some(pattern.env_type_of(&self.env));
+    }
+
     fn nothing(&mut self) {}
 
     fn found(&self) -> bool {
@@ -62,6 +75,7 @@ pub struct Suggestion {
 struct Suggest<E> {
     env: E,
     stack: ScopedMap<Symbol, ArcType>,
+    patterns: ScopedMap<Symbol, ArcType>,
     result: Vec<Suggestion>,
 }
 
@@ -106,20 +120,29 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
             Pattern::Record {
                 ref typ,
                 fields: ref field_ids,
+                ref types,
                 ..
             } => {
                 let unaliased = resolve::remove_aliases(&self.env, typ.clone());
+                for &(ref alias_id, _) in types {
+                    if let Some(field) = unaliased.type_field_iter().find(|field| {
+                        field.name == *alias_id
+                    })
+                    {
+                        self.on_alias(&field.typ);
+                    }
+                }
                 for field in field_ids {
                     match field.1 {
-                        Some(ref pat) => self.on_pattern(pat),
+                        Some(_) => (),
                         None => {
 
                             let name = field.0.clone();
                             let typ = unaliased.row_iter()
                                 .find(|f| f.name.name_eq(&name))
                                 .map(|f| f.typ.clone())
-                                // If we did not find a matching field in the type, default to a type hole
-                                // so that the user at least gets completion on the name
+                                // If we did not find a matching field in the type, default to a
+                                // type hole so that the user at least gets completion on the name
                                 .unwrap_or_else(|| Type::hole());
                             self.stack.insert(name, typ);
                         }
@@ -135,7 +158,18 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
                     self.on_pattern(arg);
                 }
             }
-            Pattern::Error => ()
+            Pattern::Error => (),
+        }
+    }
+
+    fn on_alias(&mut self, alias: &AliasData<Symbol, ArcType>) {
+        // Insert variant constructors into the local scope
+        let aliased_type = alias.unresolved_type();
+        if let Type::Variant(ref row) = **aliased_type {
+            for field in row.row_iter().cloned() {
+                self.stack.insert(field.name.clone(), field.typ.clone());
+                self.patterns.insert(field.name, field.typ);
+            }
         }
     }
 
@@ -148,6 +182,25 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
                     typ: typ.clone(),
                 }
             }),
+        );
+    }
+
+    fn pattern(&mut self, pattern: &SpannedPattern<Symbol>) {
+        let prefix = match pattern.value {
+            Pattern::Constructor(ref id, _) |
+            Pattern::Ident(ref id) => id.as_ref(),
+            _ => "",
+        };
+        self.result.extend(
+            self.patterns
+                .iter()
+                .filter(|&(ref name, _)| name.declared_name().starts_with(prefix))
+                .map(|(name, typ)| {
+                    Suggestion {
+                        name: name.declared_name().into(),
+                        typ: typ.clone(),
+                    }
+                }),
         );
     }
 
@@ -168,6 +221,15 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
                 typ: typ.clone(),
             }
         }));
+    }
+
+    fn nothing_pattern(&mut self) {
+        self.result.extend(self.patterns.iter().map(|(name, typ)| {
+            Suggestion {
+                name: name.declared_name().into(),
+                typ: typ.clone(),
+            }
+        }))
     }
 
     fn found(&self) -> bool {
@@ -202,6 +264,9 @@ impl<'a> OnFound for GetMetadata<'a> {
             _ => (),
         }
     }
+
+    fn pattern(&mut self, pattern: &SpannedPattern<Symbol>) {}
+
 
     fn nothing(&mut self) {}
 
@@ -248,6 +313,8 @@ impl<'a, E: TypeEnv> OnFound for MetadataSuggest<'a, E> {
         }
     }
 
+    fn pattern(&mut self, pattern: &SpannedPattern<Symbol>) {}
+
     fn nothing(&mut self) {
         self.result = self.suggest
             .stack
@@ -267,9 +334,9 @@ struct FindVisitor<F> {
 }
 
 impl<F> FindVisitor<F> {
-    fn select_spanned<'e, I, S, T>(&self, iter: I, mut span: S) -> (bool, Option<&'e T>)
+    fn select_spanned<I, S, T>(&self, iter: I, mut span: S) -> (bool, Option<T>)
     where
-        I: IntoIterator<Item = &'e T>,
+        I: IntoIterator<Item = T>,
         S: FnMut(&T) -> Span<BytePos>,
     {
         let mut iter = iter.into_iter().peekable();
@@ -337,12 +404,49 @@ where
         self.visit_expr(expr.unwrap());
     }
 
-    fn visit_pattern(&mut self, pattern: &SpannedPattern<Symbol>) {
-        self.on_found.on_pattern(pattern);
+    fn visit_pattern(&mut self, current: &SpannedPattern<Symbol>) {
+        match current.value {
+            Pattern::Constructor(ref id, ref args) => {
+                let id_span = Span::new(
+                    current.span.start,
+                    current.span.start + BytePos::from(id.as_ref().len()),
+                );
+                if id_span.containment(&self.pos) == Ordering::Equal {
+                    self.on_found.pattern(current);
+                    return;
+                }
+                let (_, pattern) = self.select_spanned(args, |e| e.span);
+                match pattern {
+                    Some(pattern) => self.visit_pattern(pattern),
+                    None => self.on_found.nothing_pattern(),
+                }
+            }
+            Pattern::Record { ref fields, .. } => {
+                let (_, field) = self.select_spanned(fields, |field| {
+                    field.1.as_ref().map_or(current.span, |p| p.span)
+                });
+                if let Some(pattern) = field.and_then(|field| field.1.as_ref()) {
+                    self.visit_pattern(pattern);
+                }
+            }
+            Pattern::Tuple { ref elems, .. } => {
+                let (_, field) = self.select_spanned(elems, |elem| elem.span);
+                self.visit_pattern(field.unwrap());
+            }
+            Pattern::Ident(_) |
+            Pattern::Error => {
+                if current.span.containment(&self.pos) == Ordering::Equal {
+                    self.on_found.pattern(current)
+                } else {
+                    self.on_found.nothing_pattern()
+                }
+            }
+        }
     }
 
     fn visit_expr(&mut self, current: &SpannedExpr<Symbol>) {
-        // When inside a macro expanded expression we do a exhaustive search for an unexpanded expression
+        // When inside a macro expanded expression we do a exhaustive search for an unexpanded
+        // expression
         if current.span.expansion_id != NO_EXPANSION {
             VisitUnExpanded(self).visit_expr(current);
             return;
@@ -362,7 +466,26 @@ where
                 self.visit_one([pred, if_true, if_false].iter().map(|x| &***x))
             }
             Expr::Match(ref expr, ref alts) => {
-                self.visit_one(once(&**expr).chain(alts.iter().map(|alt| &alt.expr)))
+                let iter = once(Ok(&**expr)).chain(alts.iter().map(Err));
+                let (_, sel) = self.select_spanned(iter, |x| match *x {
+                    Ok(e) => e.span,
+                    Err(alt) => Span::new(alt.pattern.span.start, alt.expr.span.end),
+                });
+                match sel.unwrap() {
+                    Ok(expr) => self.visit_expr(expr),
+                    Err(alt) => {
+                        self.on_found.on_pattern(&alt.pattern);
+                        let iter = [Ok(&alt.pattern), Err(&alt.expr)];
+                        let (_, sel) = self.select_spanned(iter.iter().cloned(), |x| match *x {
+                            Ok(p) => p.span,
+                            Err(e) => e.span,
+                        });
+                        match sel.unwrap() {
+                            Ok(pattern) => self.visit_pattern(pattern),
+                            Err(expr) => self.visit_expr(expr),
+                        }
+                    }
+                }
             }
             Expr::Infix(ref l, ref op, ref r) => {
                 match (l.span.containment(&self.pos), r.span.containment(&self.pos)) {
@@ -376,7 +499,7 @@ where
             }
             Expr::LetBindings(ref bindings, ref expr) => {
                 for bind in bindings {
-                    self.visit_pattern(&bind.name);
+                    self.on_found.on_pattern(&bind.name);
                 }
                 match self.select_spanned(bindings, |b| b.expr.span) {
                     (false, Some(bind)) => {
@@ -388,7 +511,12 @@ where
                     _ => self.visit_expr(expr),
                 }
             }
-            Expr::TypeBindings(_, ref expr) => self.visit_expr(expr),
+            Expr::TypeBindings(ref type_bindings, ref expr) => {
+                for type_binding in type_bindings {
+                    self.on_found.on_alias(&type_binding.alias);
+                }
+                self.visit_expr(expr)
+            }
             Expr::Projection(ref expr, ref id, ref typ) => {
                 if expr.span.containment(&self.pos) <= Ordering::Equal {
                     self.visit_expr(expr);
@@ -440,6 +568,7 @@ where
         on_found: Suggest {
             env: env,
             stack: ScopedMap::new(),
+            patterns: ScopedMap::new(),
             result: Vec::new(),
         },
     };
@@ -480,6 +609,7 @@ where
             suggest: Suggest {
                 env: type_env,
                 stack: ScopedMap::new(),
+                patterns: ScopedMap::new(),
                 result: Vec::new(),
             },
             ident: name,

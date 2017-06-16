@@ -473,7 +473,8 @@ impl<'input> Iterator for Tokenizer<'input> {
                        ch => Some(self.error(start, UnexpectedChar(ch))),
                    };
         }
-        None
+        // Return EOF instead of None so that the layout algorithm receives the eof location
+        Some(Ok(pos::spanned2(self.eof_location, self.eof_location, Token::EOF)))
     }
 }
 

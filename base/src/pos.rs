@@ -94,7 +94,7 @@ impl fmt::Display for Line {
 }
 
 /// A location in a source file
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash, Ord, PartialOrd)]
+#[derive(Copy, Clone, Default, Eq, PartialEq, Debug, Hash, Ord, PartialOrd)]
 pub struct Location {
     pub line: Line,
     pub column: Column,
