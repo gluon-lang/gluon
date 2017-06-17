@@ -47,34 +47,38 @@ macro_rules! std_libs {
     }
 }
 // Include the standard library distribution in the binary
-static STD_LIBS: [(&'static str, &'static str); 7] = std_libs!("prelude",
-                                                               "types",
-                                                               "map",
-                                                               "string",
-                                                               "state",
-                                                               "test",
-                                                               "writer");
+static STD_LIBS: [(&'static str, &'static str); 7] = std_libs!(
+    "prelude",
+    "types",
+    "map",
+    "string",
+    "state",
+    "test",
+    "writer"
+);
 
 pub trait Importer: Any + Clone + Sync + Send {
-    fn import(&self,
-              compiler: &mut Compiler,
-              vm: &Thread,
-              modulename: &str,
-              input: &str,
-              expr: SpannedExpr<Symbol>)
-              -> Result<(), MacroError>;
+    fn import(
+        &self,
+        compiler: &mut Compiler,
+        vm: &Thread,
+        modulename: &str,
+        input: &str,
+        expr: SpannedExpr<Symbol>,
+    ) -> Result<(), MacroError>;
 }
 
 #[derive(Clone)]
 pub struct DefaultImporter;
 impl Importer for DefaultImporter {
-    fn import(&self,
-              compiler: &mut Compiler,
-              vm: &Thread,
-              modulename: &str,
-              input: &str,
-              expr: SpannedExpr<Symbol>)
-              -> Result<(), MacroError> {
+    fn import(
+        &self,
+        compiler: &mut Compiler,
+        vm: &Thread,
+        modulename: &str,
+        input: &str,
+        expr: SpannedExpr<Symbol>,
+    ) -> Result<(), MacroError> {
         use compiler_pipeline::*;
 
         MacroValue { expr: expr }
@@ -92,13 +96,14 @@ impl CheckImporter {
     }
 }
 impl Importer for CheckImporter {
-    fn import(&self,
-              compiler: &mut Compiler,
-              vm: &Thread,
-              module_name: &str,
-              input: &str,
-              expr: SpannedExpr<Symbol>)
-              -> Result<(), MacroError> {
+    fn import(
+        &self,
+        compiler: &mut Compiler,
+        vm: &Thread,
+        module_name: &str,
+        input: &str,
+        expr: SpannedExpr<Symbol>,
+    ) -> Result<(), MacroError> {
         use compiler_pipeline::*;
 
         let macro_value = MacroValue { expr: expr };
@@ -106,8 +111,12 @@ impl Importer for CheckImporter {
         self.0.lock().unwrap().insert(module_name.into(), expr);
         let metadata = Metadata::default();
         // Insert a global to ensure the globals type can be looked up
-        vm.global_env()
-            .set_global(Symbol::from(module_name), typ, metadata, Value::Int(0))?;
+        vm.global_env().set_global(
+            Symbol::from(module_name),
+            typ,
+            metadata,
+            Value::Int(0),
+        )?;
         Ok(())
     }
 }
@@ -134,7 +143,8 @@ impl<I> Import<I> {
     }
 
     pub fn read_file<P>(&self, filename: P) -> Result<Cow<'static, str>, MacroError>
-        where P: AsRef<Path>
+    where
+        P: AsRef<Path>,
     {
         self.read_file_(filename.as_ref())
     }
@@ -143,32 +153,31 @@ impl<I> Import<I> {
 
         // Retrieve the source, first looking in the standard library included in the
         // binary
-        let std_file = filename
-            .to_str()
-            .and_then(|filename| STD_LIBS.iter().find(|tup| tup.0 == filename));
+        let std_file = filename.to_str().and_then(|filename| {
+            STD_LIBS.iter().find(|tup| tup.0 == filename)
+        });
         Ok(match std_file {
-               Some(tup) => Cow::Borrowed(tup.1),
-               None => {
-            let file = self.paths
-                .read()
-                .unwrap()
-                .iter()
-                .filter_map(|p| {
-                                let base = p.join(filename);
-                                match File::open(&base) {
-                                    Ok(file) => Some(file),
-                                    Err(_) => None,
-                                }
-                            })
-                .next();
-            let mut file = file.ok_or_else(|| {
-                                               Error::String(format!("Could not find file '{}'",
-                                                                     filename.display()))
-                                           })?;
-            file.read_to_string(&mut buffer)?;
-            Cow::Owned(buffer)
-        }
-           })
+            Some(tup) => Cow::Borrowed(tup.1),
+            None => {
+                let file = self.paths
+                    .read()
+                    .unwrap()
+                    .iter()
+                    .filter_map(|p| {
+                        let base = p.join(filename);
+                        match File::open(&base) {
+                            Ok(file) => Some(file),
+                            Err(_) => None,
+                        }
+                    })
+                    .next();
+                let mut file = file.ok_or_else(|| {
+                    Error::String(format!("Could not find file '{}'", filename.display()))
+                })?;
+                file.read_to_string(&mut buffer)?;
+                Cow::Owned(buffer)
+            }
+        })
     }
 }
 
@@ -187,16 +196,20 @@ struct State {
 }
 
 impl<I> Macro for Import<I>
-    where I: Importer
+where
+    I: Importer,
 {
-    fn expand(&self,
-              macros: &mut MacroExpander,
-              args: &mut [SpannedExpr<Symbol>])
-              -> Result<SpannedExpr<Symbol>, MacroError> {
+    fn expand(
+        &self,
+        macros: &mut MacroExpander,
+        args: &mut [SpannedExpr<Symbol>],
+    ) -> Result<SpannedExpr<Symbol>, MacroError> {
         use compiler_pipeline::*;
 
         if args.len() != 1 {
-            return Err(Error::String("Expected import to get 1 argument".into()).into());
+            return Err(
+                Error::String("Expected import to get 1 argument".into()).into(),
+            );
         }
         match args[0].value {
             Expr::Literal(Literal::String(ref filename)) => {
@@ -221,8 +234,11 @@ impl<I> Macro for Import<I>
 
                     let mut compiler = Compiler::new().implicit_prelude(modulename != "std.types");
                     let errors = macros.errors.len();
-                    let macro_result = file_contents
-                        .expand_macro_with(&mut compiler, macros, &modulename)?;
+                    let macro_result = file_contents.expand_macro_with(
+                        &mut compiler,
+                        macros,
+                        &modulename,
+                    )?;
                     if errors != macros.errors.len() {
                         // If macro expansion of the imported module fails we need to stop
                         // compilation of that module. To return an error we return one of the
@@ -233,17 +249,23 @@ impl<I> Macro for Import<I>
                         }
                     }
                     get_state(macros).visited.pop();
-                    self.importer
-                        .import(&mut compiler,
-                                vm,
-                                &modulename,
-                                &file_contents,
-                                macro_result.expr)?;
+                    self.importer.import(
+                        &mut compiler,
+                        vm,
+                        &modulename,
+                        &file_contents,
+                        macro_result.expr,
+                    )?;
                 }
                 // FIXME Does not handle shadowing
-                Ok(pos::spanned(args[0].span, Expr::Ident(TypedIdent::new(name))))
+                Ok(pos::spanned(
+                    args[0].span,
+                    Expr::Ident(TypedIdent::new(name)),
+                ))
             }
-            _ => Err(Error::String("Expected a string literal to import".into()).into()),
+            _ => Err(
+                Error::String("Expected a string literal to import".into()).into(),
+            ),
         }
     }
 }

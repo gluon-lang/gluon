@@ -29,10 +29,11 @@ pub use value::Value; //FIXME Value should not be exposed
 pub use thread::{Thread, RootedThread, Status, Root, RootStr, RootedValue};
 
 
-fn new_bytecode(gc: &mut Gc,
-                vm: &GlobalVmState,
-                f: CompiledFunction)
-                -> Result<GcPtr<BytecodeFunction>> {
+fn new_bytecode(
+    gc: &mut Gc,
+    vm: &GlobalVmState,
+    f: CompiledFunction,
+) -> Result<GcPtr<BytecodeFunction>> {
     let CompiledFunction {
         id,
         args,
@@ -61,26 +62,23 @@ fn new_bytecode(gc: &mut Gc,
         .map(|vec| {
             vec.into_iter()
                 .map(|field| {
-                         Ok(vm.interner
-                                .write()
-                                .unwrap()
-                                .intern(gc, field.as_ref())?)
-                     })
+                    Ok(vm.interner.write().unwrap().intern(gc, field.as_ref())?)
+                })
                 .collect::<Result<_>>()
         })
         .collect();
 
     gc.alloc(Move(BytecodeFunction {
-                      name: id,
-                      args: args,
-                      max_stack_size: max_stack_size,
-                      instructions: instructions,
-                      inner_functions: fs?,
-                      strings: strings,
-                      globals: globals,
-                      records: records?,
-                      debug_info: debug_info,
-                  }))
+        name: id,
+        args: args,
+        max_stack_size: max_stack_size,
+        instructions: instructions,
+        inner_functions: fs?,
+        strings: strings,
+        globals: globals,
+        records: records?,
+        debug_info: debug_info,
+    }))
 }
 
 
@@ -155,13 +153,15 @@ impl TypeEnv for VmEnv {
                     .id_to_type
                     .values()
                     .filter_map(|alias| match **alias.unresolved_type() {
-                                    Type::Variant(ref row) => {
-                                        row.row_iter()
-                                            .find(|field| *field.name == *id)
-                                            .map(|field| &field.typ)
-                                    }
-                                    _ => None,
-                                })
+                        Type::Variant(ref row) => {
+                            row.row_iter().find(|field| *field.name == *id).map(
+                                |field| {
+                                    &field.typ
+                                },
+                            )
+                        }
+                        _ => None,
+                    })
                     .next()
                     .map(|ctor| ctor)
             })
@@ -171,10 +171,11 @@ impl TypeEnv for VmEnv {
         self.type_infos.find_type_info(id)
     }
 
-    fn find_record(&self,
-                   fields: &[Symbol],
-                   selector: RecordSelector)
-                   -> Option<(ArcType, ArcType)> {
+    fn find_record(
+        &self,
+        fields: &[Symbol],
+        selector: RecordSelector,
+    ) -> Option<(ArcType, ArcType)> {
         self.type_infos.find_record(fields, selector)
     }
 }
@@ -192,16 +193,17 @@ impl PrimitiveEnv for VmEnv {
 
 impl MetadataEnv for VmEnv {
     fn get_metadata(&self, id: &Symbol) -> Option<&Metadata> {
-        self.globals
-            .get(AsRef::<str>::as_ref(id))
-            .map(|g| &g.metadata)
+        self.globals.get(AsRef::<str>::as_ref(id)).map(
+            |g| &g.metadata,
+        )
     }
 }
 
 fn map_cow_option<T, U, F>(cow: Cow<T>, f: F) -> Option<Cow<U>>
-    where T: Clone,
-          U: Clone,
-          F: FnOnce(&T) -> Option<&U>
+where
+    T: Clone,
+    U: Clone,
+    F: FnOnce(&T) -> Option<&U>,
 {
     match cow {
         Cow::Borrowed(b) => f(b).map(Cow::Borrowed),
@@ -215,9 +217,9 @@ impl VmEnv {
         let module_str = name.module().as_str();
         if module_str == "" {
             return match self.type_infos.id_to_type.get(name.as_str()) {
-                       Some(alias) => Ok(Cow::Borrowed(alias)),
-                       None => Err(Error::UndefinedBinding(name.as_str().into())),
-                   };
+                Some(alias) => Ok(Cow::Borrowed(alias)),
+                None => Err(Error::UndefinedBinding(name.as_str().into())),
+            };
         }
         let (_, typ) = self.get_binding(name.module().as_str())?;
         let maybe_type_info = map_cow_option(typ.clone(), |typ| {
@@ -227,9 +229,8 @@ impl VmEnv {
                 .map(|field| &field.typ)
         });
         maybe_type_info.ok_or_else(move || {
-                                       Error::UndefinedField(typ.into_owned(),
-                                                             name.name().as_str().into())
-                                   })
+            Error::UndefinedField(typ.into_owned(), name.name().as_str().into())
+        })
     }
 
     pub fn get_binding(&self, name: &str) -> Result<(Value, Cow<ArcType>)> {
@@ -268,11 +269,13 @@ impl VmEnv {
             if field_name.starts_with('(') && field_name.ends_with(')') {
                 field_name = &field_name[1..field_name.len() - 1];
             } else if field_name.chars().any(ast::is_operator_char) {
-                return Err(Error::Message(format!("Operators cannot be used as fields \
+                return Err(Error::Message(format!(
+                    "Operators cannot be used as fields \
                                                    directly. To access an operator field, \
                                                    enclose the operator with parentheses \
                                                    before passing it in. (test.(+) instead of \
-                                                   test.+)")));
+                                                   test.+)"
+                )));
             }
             typ = match typ {
                 Cow::Borrowed(typ) => resolve::remove_aliases_cow(self, typ),
@@ -284,17 +287,16 @@ impl VmEnv {
                     .enumerate()
                     .find(|&(_, field)| field.name.as_ref() == field_name)
                     .map(|(index, field)| match value {
-                             Value::Data(data) => {
-                        value = data.fields[index];
-                        &field.typ
-                    }
-                             _ => panic!("Unexpected value {:?}", value),
-                         })
+                        Value::Data(data) => {
+                            value = data.fields[index];
+                            &field.typ
+                        }
+                        _ => panic!("Unexpected value {:?}", value),
+                    })
             });
-            typ =
-                next_type.ok_or_else(move || {
-                        Error::UndefinedField(typ.into_owned(), field_name.into())
-                    })?;
+            typ = next_type.ok_or_else(move || {
+                Error::UndefinedField(typ.into_owned(), field_name.into())
+            })?;
         }
         Ok((value, typ))
     }
@@ -308,9 +310,9 @@ impl VmEnv {
                 globals
                     .get(comp)
                     .or_else(|| {
-                                 components = name.name().components();
-                                 globals.get(name.module().as_str())
-                             })
+                        components = name.name().components();
+                        globals.get(name.module().as_str())
+                    })
                     .ok_or_else(|| Error::MetadataDoesNotExist(name_str.into()))?
             }
             None => return Err(Error::MetadataDoesNotExist(name_str.into())),
@@ -318,10 +320,9 @@ impl VmEnv {
 
         let mut metadata = &global.metadata;
         for field_name in components {
-            metadata = metadata
-                .module
-                .get(field_name)
-                .ok_or_else(|| Error::MetadataDoesNotExist(name_str.into()))?;
+            metadata = metadata.module.get(field_name).ok_or_else(|| {
+                Error::MetadataDoesNotExist(name_str.into())
+            })?;
         }
         Ok(metadata)
     }
@@ -332,9 +333,9 @@ impl GlobalVmState {
     pub fn new() -> GlobalVmState {
         let mut vm = GlobalVmState {
             env: RwLock::new(VmEnv {
-                                 globals: FnvMap::default(),
-                                 type_infos: TypeInfos::new(),
-                             }),
+                globals: FnvMap::default(),
+                type_infos: TypeInfos::new(),
+            }),
             generics: RwLock::new(FnvMap::default()),
             typeids: RwLock::new(FnvMap::default()),
             interner: RwLock::new(Interner::new()),
@@ -349,18 +350,22 @@ impl GlobalVmState {
     fn add_types(&mut self) -> StdResult<(), (TypeId, ArcType)> {
         use api::generic::A;
         use api::Generic;
-        fn add_type<T: Any>(ids: &mut FnvMap<TypeId, ArcType>,
-                            env: &mut VmEnv,
-                            name: &str,
-                            typ: ArcType) {
+        fn add_type<T: Any>(
+            ids: &mut FnvMap<TypeId, ArcType>,
+            env: &mut VmEnv,
+            name: &str,
+            typ: ArcType,
+        ) {
             ids.insert(TypeId::of::<T>(), typ);
             // Insert aliases so that `find_info` can retrieve information about the primitives
-            env.type_infos
-                .id_to_type
-                .insert(name.into(),
-                        Alias::from(AliasData::new(Symbol::from(name),
-                                                   Vec::new(),
-                                                   Type::opaque())));
+            env.type_infos.id_to_type.insert(
+                name.into(),
+                Alias::from(AliasData::new(
+                    Symbol::from(name),
+                    Vec::new(),
+                    Type::opaque(),
+                )),
+            );
         }
 
         {
@@ -373,8 +378,7 @@ impl GlobalVmState {
             add_type::<::std::string::String>(ids, env, "String", Type::string());
             add_type::<char>(ids, env, "Char", Type::char());
         }
-        self.register_type::<IO<Generic<A>>>("IO", &["a"])
-            .unwrap();
+        self.register_type::<IO<Generic<A>>>("IO", &["a"]).unwrap();
         self.register_type::<Lazy<Generic<A>>>("Lazy", &["a"])
             .unwrap();
         self.register_type::<Thread>("Thread", &[]).unwrap();
@@ -403,12 +407,13 @@ impl GlobalVmState {
     }
 
     /// TODO dont expose this directly
-    pub fn set_global(&self,
-                      id: Symbol,
-                      typ: ArcType,
-                      metadata: Metadata,
-                      value: Value)
-                      -> Result<()> {
+    pub fn set_global(
+        &self,
+        id: Symbol,
+        typ: ArcType,
+        metadata: Metadata,
+        value: Value,
+    ) -> Result<()> {
         let mut env = self.env.write().unwrap();
         let globals = &mut env.globals;
         let global = Global {
@@ -443,23 +448,18 @@ impl GlobalVmState {
             let args = arg_types
                 .iter()
                 .map(|g| match **g {
-                         Type::Generic(ref g) => g.clone(),
-                         _ => unreachable!(),
-                     })
+                    Type::Generic(ref g) => g.clone(),
+                    _ => unreachable!(),
+                })
                 .collect();
             let n = Symbol::from(name);
             let typ: ArcType = Type::app(Type::ident(n.clone()), arg_types);
             self.typeids.write().unwrap().insert(id, typ.clone());
-            let t = self.typeids
-                .read()
-                .unwrap()
-                .get(&id)
-                .unwrap()
-                .clone();
-            type_infos
-                .id_to_type
-                .insert(name.into(),
-                        Alias::from(AliasData::new(n, args, Type::opaque())));
+            let t = self.typeids.read().unwrap().get(&id).unwrap().clone();
+            type_infos.id_to_type.insert(
+                name.into(),
+                Alias::from(AliasData::new(n, args, Type::opaque())),
+            );
             Ok(t)
         }
     }
@@ -469,10 +469,10 @@ impl GlobalVmState {
     }
 
     pub fn intern(&self, s: &str) -> Result<InternedStr> {
-        self.interner
-            .write()
-            .unwrap()
-            .intern(&mut *self.gc.lock().unwrap(), s)
+        self.interner.write().unwrap().intern(
+            &mut *self.gc.lock().unwrap(),
+            s,
+        )
     }
 
     /// Returns a borrowed structure which implements `CompilerEnv`

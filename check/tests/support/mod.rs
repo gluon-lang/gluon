@@ -38,8 +38,9 @@ pub fn intern(s: &str) -> Symbol {
     }
 }
 
-pub fn parse_new(s: &str)
-                 -> Result<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, ParseErrors)> {
+pub fn parse_new(
+    s: &str,
+) -> Result<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, ParseErrors)> {
     let symbols = get_local_interner();
     let mut symbols = symbols.borrow_mut();
     let mut module = SymbolModule::new("test".into(), &mut symbols);
@@ -92,10 +93,11 @@ impl TypeEnv for MockEnv {
         }
     }
 
-    fn find_record(&self,
-                   _fields: &[Symbol],
-                   _selector: RecordSelector)
-                   -> Option<(ArcType, ArcType)> {
+    fn find_record(
+        &self,
+        _fields: &[Symbol],
+        _selector: RecordSelector,
+    ) -> Option<(ArcType, ArcType)> {
         None
     }
 }
@@ -132,17 +134,21 @@ impl<T: AsRef<str>> DisplayEnv for MockIdentEnv<T> {
 }
 
 impl<T> IdentEnv for MockIdentEnv<T>
-    where T: AsRef<str> + for<'a> From<&'a str>
+where
+    T: AsRef<str> + for<'a> From<&'a str>,
 {
     fn from_str(&mut self, s: &str) -> Self::Ident {
         T::from(s)
     }
 }
 
-pub fn typecheck_expr_expected
-    (text: &str,
-     expected: Option<&ArcType>)
-     -> (SpannedExpr<Symbol>, Result<ArcType, InFile<typecheck::TypeError<Symbol>>>) {
+pub fn typecheck_expr_expected(
+    text: &str,
+    expected: Option<&ArcType>,
+) -> (
+    SpannedExpr<Symbol>,
+    Result<ArcType, InFile<typecheck::TypeError<Symbol>>>,
+) {
     let mut expr = parse_new(text).unwrap_or_else(|(_, err)| panic!("{}", err));
 
     let env = MockEnv::new();
@@ -155,16 +161,22 @@ pub fn typecheck_expr_expected
     (expr, result.map_err(|err| InFile::new("test", text, err)))
 }
 
-pub fn typecheck_expr
-    (text: &str)
-     -> (SpannedExpr<Symbol>, Result<ArcType, InFile<typecheck::TypeError<Symbol>>>) {
+pub fn typecheck_expr(
+    text: &str,
+) -> (
+    SpannedExpr<Symbol>,
+    Result<ArcType, InFile<typecheck::TypeError<Symbol>>>,
+) {
     typecheck_expr_expected(text, None)
 }
 
 #[allow(dead_code)]
-pub fn typecheck_partial_expr
-    (text: &str)
-     -> (SpannedExpr<Symbol>, Result<ArcType, InFile<typecheck::TypeError<Symbol>>>) {
+pub fn typecheck_partial_expr(
+    text: &str,
+) -> (
+    SpannedExpr<Symbol>,
+    Result<ArcType, InFile<typecheck::TypeError<Symbol>>>,
+) {
     let mut expr = match parse_new(text) {
         Ok(e) => e,
         Err((Some(e), _)) => e,
@@ -188,7 +200,8 @@ pub fn typ(s: &str) -> ArcType {
 }
 
 pub fn typ_a<T>(s: &str, args: Vec<T>) -> T
-    where T: From<Type<Symbol, T>>
+where
+    T: From<Type<Symbol, T>>,
 {
     assert!(s.len() != 0);
 
@@ -210,33 +223,36 @@ pub fn typ_a<T>(s: &str, args: Vec<T>) -> T
 #[allow(dead_code)]
 pub fn alias(s: &str, args: &[&str], typ: ArcType) -> ArcType {
     assert!(s.len() != 0);
-    Type::alias(intern(s),
-                args.iter()
-                    .map(|id| Generic::new(intern(id), Kind::typ()))
-                    .collect(),
-                typ)
+    Type::alias(
+        intern(s),
+        args.iter()
+            .map(|id| Generic::new(intern(id), Kind::typ()))
+            .collect(),
+        typ,
+    )
 }
 
 
 /// Replace the variable at the `rest` part of a record for easier equality checks
 #[allow(dead_code)]
 pub fn close_record(typ: ArcType) -> ArcType {
-    types::walk_move_type(typ,
-                          &mut |typ| match *typ {
-                                   Type::ExtendRow {
-                                       ref types,
-                                       ref fields,
-                                       ref rest,
-                                   } => {
-                                       match **rest {
-                                           Type::ExtendRow { .. } => None,
-                                           _ => {
-                                               Some(Type::extend_row(types.clone(),
-                                                                     fields.clone(),
-                                                                     Type::empty_row()))
-                                           }
-                                       }
-                                   }
-                                   _ => None,
-                               })
+    types::walk_move_type(typ, &mut |typ| match *typ {
+        Type::ExtendRow {
+            ref types,
+            ref fields,
+            ref rest,
+        } => {
+            match **rest {
+                Type::ExtendRow { .. } => None,
+                _ => {
+                    Some(Type::extend_row(
+                        types.clone(),
+                        fields.clone(),
+                        Type::empty_row(),
+                    ))
+                }
+            }
+        }
+        _ => None,
+    })
 }

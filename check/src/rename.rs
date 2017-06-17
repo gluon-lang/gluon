@@ -30,10 +30,12 @@ impl fmt::Display for RenameError {
                 ref expected,
                 ref possible_types,
             } => {
-                writeln!(f,
-                         "Could not resolve a binding for `{}` with type `{}`",
-                         symbol,
-                         expected)?;
+                writeln!(
+                    f,
+                    "Could not resolve a binding for `{}` with type `{}`",
+                    symbol,
+                    expected
+                )?;
                 writeln!(f, "Possibilities:")?;
                 for &(ref span, ref typ) in possible_types {
                     match *span {
@@ -61,30 +63,31 @@ impl<'a> KindEnv for Environment<'a> {
 
 impl<'a> TypeEnv for Environment<'a> {
     fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
-        self.stack
-            .get(id)
-            .map(|t| &t.2)
-            .or_else(|| self.env.find_type(id))
+        self.stack.get(id).map(|t| &t.2).or_else(
+            || self.env.find_type(id),
+        )
     }
 
     fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
-        self.stack_types
-            .get(id)
-            .or_else(|| self.env.find_type_info(id))
+        self.stack_types.get(id).or_else(
+            || self.env.find_type_info(id),
+        )
     }
 
-    fn find_record(&self,
-                   _fields: &[Symbol],
-                   _selector: RecordSelector)
-                   -> Option<(ArcType, ArcType)> {
+    fn find_record(
+        &self,
+        _fields: &[Symbol],
+        _selector: RecordSelector,
+    ) -> Option<(ArcType, ArcType)> {
         None
     }
 }
 
-pub fn rename(symbols: &mut SymbolModule,
-              env: &TypeEnv,
-              expr: &mut SpannedExpr<Symbol>)
-              -> Result<(), Error> {
+pub fn rename(
+    symbols: &mut SymbolModule,
+    env: &TypeEnv,
+    expr: &mut SpannedExpr<Symbol>,
+) -> Result<(), Error> {
     use base::resolve;
 
     struct RenameVisitor<'a: 'b, 'b> {
@@ -109,23 +112,19 @@ pub fn rename(symbols: &mut SymbolModule,
                 } => {
                     let field_types = self.find_fields(typ);
                     for field in fields {
-                        let field_type =
-                            &field_types
-                                 .iter()
-                                 .find(|field_type| field_type.name.name_eq(&field.0))
-                                 .expect("ICE: Existing field")
-                                 .typ;
+                        let field_type = &field_types
+                            .iter()
+                            .find(|field_type| field_type.name.name_eq(&field.0))
+                            .expect("ICE: Existing field")
+                            .typ;
                         match field.1 {
                             Some(ref mut pat) => self.new_pattern(field_type, pat),
                             None => {
                                 let id = field.0.clone();
                                 let pat = Pattern::Ident(TypedIdent {
-                                                             name:
-                                                                 self.stack_var(id,
-                                                                                pattern.span,
-                                                                                field_type.clone()),
-                                                             typ: field_type.clone(),
-                                                         });
+                                    name: self.stack_var(id, pattern.span, field_type.clone()),
+                                    typ: field_type.clone(),
+                                });
                                 field.1 = Some(pos::spanned(pattern.span, pat));
                             }
                         }
@@ -168,13 +167,13 @@ pub fn rename(symbols: &mut SymbolModule,
             let old_id = id.clone();
             let name = self.symbols.string(&id).to_owned();
             let new_id = self.symbols.symbol(format!("{}:{}", name, span.start));
-            debug!("Rename binding `{}` = `{}` `{}`",
-                   self.symbols.string(&old_id),
-                   self.symbols.string(&new_id),
-                   types::display_type(&self.symbols, &typ));
-            self.env
-                .stack
-                .insert(old_id, (new_id.clone(), span, typ));
+            debug!(
+                "Rename binding `{}` = `{}` `{}`",
+                self.symbols.string(&old_id),
+                self.symbols.string(&new_id),
+                types::display_type(&self.symbols, &typ)
+            );
+            self.env.stack.insert(old_id, (new_id.clone(), span, typ));
             new_id
 
         }
@@ -184,17 +183,20 @@ pub fn rename(symbols: &mut SymbolModule,
             let aliased_type = alias.typ();
             if let Type::Variant(ref row) = **aliased_type {
                 for field in row.row_iter().cloned() {
-                    self.env
-                        .stack
-                        .insert(field.name.clone(), (field.name, span, field.typ));
+                    self.env.stack.insert(field.name.clone(), (
+                        field.name,
+                        span,
+                        field.typ,
+                    ));
                 }
             }
 
             // FIXME: Workaround so that both the types name in this module and its global
             // name are imported. Without this aliases may not be traversed properly
-            self.env
-                .stack_types
-                .insert(alias.name.clone(), alias.clone());
+            self.env.stack_types.insert(
+                alias.name.clone(),
+                alias.clone(),
+            );
             self.env.stack_types.insert(id, alias.clone());
         }
 
@@ -208,11 +210,10 @@ pub fn rename(symbols: &mut SymbolModule,
                 locals
                     .iter()
                     .flat_map(|bindings| {
-                                  bindings
-                                      .iter()
-                                      .rev()
-                                      .map(|bind| (&bind.0, Some(&bind.1), &bind.2))
-                              })
+                        bindings.iter().rev().map(|bind| {
+                            (&bind.0, Some(&bind.1), &bind.2)
+                        })
+                    })
                     .chain(global)
             };
             // If there is a single binding (or no binding in case of primitives such as #Int+)
@@ -255,12 +256,13 @@ pub fn rename(symbols: &mut SymbolModule,
                             None => {
                                 if let Some(new_id) = self.rename(&expr_field.name, &field.typ)? {
                                     debug!("Rename record field {} = {}", expr_field.name, new_id);
-                                    expr_field.value =
-                                        Some(pos::spanned(expr.span,
-                                                          Expr::Ident(TypedIdent {
-                                                                          name: new_id,
-                                                                          typ: field.typ.clone(),
-                                                                      })));
+                                    expr_field.value = Some(pos::spanned(
+                                        expr.span,
+                                        Expr::Ident(TypedIdent {
+                                            name: new_id,
+                                            typ: field.typ.clone(),
+                                        }),
+                                    ));
                                 }
                             }
                         }
@@ -268,9 +270,11 @@ pub fn rename(symbols: &mut SymbolModule,
                 }
                 Expr::Infix(ref mut lhs, ref mut op, ref mut rhs) => {
                     if let Some(new_id) = self.rename(&op.value.name, &op.value.typ)? {
-                        debug!("Rename {} = {}",
-                               self.symbols.string(&op.value.name),
-                               self.symbols.string(&new_id));
+                        debug!(
+                            "Rename {} = {}",
+                            self.symbols.string(&op.value.name),
+                            self.symbols.string(&new_id)
+                        );
                         op.value.name = new_id;
                     }
                     self.visit_expr(lhs);
@@ -323,12 +327,14 @@ pub fn rename(symbols: &mut SymbolModule,
                 Expr::TypeBindings(ref bindings, ref mut body) => {
                     self.env.stack_types.enter_scope();
                     for bind in bindings {
-                        self.stack_type(bind.name.clone(),
-                                        expr.span,
-                                        bind.finalized_alias
-                                            .as_ref()
-                                            .expect("ICE: Alias should have been finalized \
-                                                     before renaming"));
+                        self.stack_type(
+                            bind.name.clone(),
+                            expr.span,
+                            bind.finalized_alias.as_ref().expect(
+                                "ICE: Alias should have been finalized \
+                                                     before renaming",
+                            ),
+                        );
                     }
                     self.visit_expr(body);
                     self.env.stack_types.exit_scope();
@@ -344,11 +350,10 @@ pub fn rename(symbols: &mut SymbolModule,
 
         fn visit_expr(&mut self, expr: &mut SpannedExpr<Self::Ident>) {
             if let Err(err) = self.rename_expr(expr) {
-                self.errors
-                    .push(Spanned {
-                              span: expr.span,
-                              value: err,
-                          });
+                self.errors.push(Spanned {
+                    span: expr.span,
+                    value: err,
+                });
             }
         }
     }
@@ -391,14 +396,17 @@ struct Equivalent {
 }
 
 impl<'a> Unifier<State<'a>, ArcType> for Equivalent {
-    fn report_error(_unifier: &mut UnifierState<State<'a>, Self>,
-                    _error: UnifyError<ArcType, TypeError<Symbol>>) {
+    fn report_error(
+        _unifier: &mut UnifierState<State<'a>, Self>,
+        _error: UnifyError<ArcType, TypeError<Symbol>>,
+    ) {
     }
 
-    fn try_match(unifier: &mut UnifierState<State<'a>, Self>,
-                 l: &ArcType,
-                 r: &ArcType)
-                 -> Option<ArcType> {
+    fn try_match(
+        unifier: &mut UnifierState<State<'a>, Self>,
+        l: &ArcType,
+        r: &ArcType,
+    ) -> Option<ArcType> {
         debug!("{} ====> {}", l, r);
         match (&**l, &**r) {
             (&Type::Generic(ref gl), &Type::Generic(ref gr)) if gl == gr => None,

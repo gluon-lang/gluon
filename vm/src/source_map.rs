@@ -40,8 +40,9 @@ impl SourceMap {
             .position(|&(index, _)| index > instruction_index)
             .unwrap_or(self.map.len());
         if p == 0 ||
-           (p == self.map.len() &&
-            instruction_index >= self.map.last().expect("Empty source_map").0) {
+            (p == self.map.len() &&
+                 instruction_index >= self.map.last().expect("Empty source_map").0)
+        {
             // instruction_index is not valid in the function
             None
         } else {
@@ -73,14 +74,13 @@ impl LocalMap {
     /// Emits a local which is available starting from `instruction_index`. The end of each local's
     /// scope must be defined by calling `close`
     pub fn emit(&mut self, instruction_index: usize, index: VmIndex, name: Symbol, typ: ArcType) {
-        self.map
-            .push(Local {
-                      start: instruction_index,
-                      end: instruction_index,
-                      index: index,
-                      name: name,
-                      typ: typ,
-                  });
+        self.map.push(Local {
+            start: instruction_index,
+            end: instruction_index,
+            index: index,
+            name: name,
+            typ: typ,
+        });
     }
 
     /// `close` marks the end of a variables span and should be called for each variable inserted with

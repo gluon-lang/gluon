@@ -40,6 +40,8 @@ fn regex_error() {
         .run_expr_async::<String>(&thread, "<top>", text)
         .sync_or_error();
 
-    assert_eq!(result.unwrap().0,
-               "Error parsing regex near \')\' at character offset 0: Unopened parenthesis.");
+    assert_eq!(
+        result.unwrap().0,
+        "Error parsing regex near \')\' at character offset 0: Unopened parenthesis."
+    );
 }

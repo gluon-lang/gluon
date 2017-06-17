@@ -122,19 +122,16 @@ impl FunctionEnvs {
         FunctionEnvs { envs: vec![] }
     }
 
-    fn start_function(&mut self,
-                      compiler: &mut Compiler,
-                      args: VmIndex,
-                      id: Symbol,
-                      typ: ArcType) {
+    fn start_function(&mut self, compiler: &mut Compiler, args: VmIndex, id: Symbol, typ: ArcType) {
         compiler.stack_types.enter_scope();
         compiler.stack_constructors.enter_scope();
-        self.envs
-            .push(FunctionEnv::new(args,
-                                   id,
-                                   typ,
-                                   compiler.source_name.clone(),
-                                   compiler.emit_debug_info));
+        self.envs.push(FunctionEnv::new(
+            args,
+            id,
+            typ,
+            compiler.source_name.clone(),
+            compiler.emit_debug_info,
+        ));
     }
 
     fn end_function(&mut self, compiler: &mut Compiler, current_line: Line) -> FunctionEnv {
@@ -142,36 +139,35 @@ impl FunctionEnvs {
         compiler.stack_constructors.exit_scope();
         let instructions = self.function.instructions.len();
         if compiler.emit_debug_info {
-            self.function
-                .debug_info
-                .source_map
-                .close(instructions, current_line);
+            self.function.debug_info.source_map.close(
+                instructions,
+                current_line,
+            );
             let function = &mut **self;
-            function
-                .function
-                .debug_info
-                .upvars
-                .extend(function
-                            .free_vars
-                            .iter()
-                            .map(|&(ref name, ref typ)| {
-                                     UpvarInfo {
-                                         name: name.declared_name().to_string(),
-                                         typ: typ.clone(),
-                                     }
-                                 }));
+            function.function.debug_info.upvars.extend(
+                function
+                    .free_vars
+                    .iter()
+                    .map(|&(ref name, ref typ)| {
+                        UpvarInfo {
+                            name: name.declared_name().to_string(),
+                            typ: typ.clone(),
+                        }
+                    }),
+            );
         }
         self.envs.pop().expect("FunctionEnv in scope")
     }
 }
 
 impl FunctionEnv {
-    fn new(args: VmIndex,
-           id: Symbol,
-           typ: ArcType,
-           source_name: String,
-           emit_debug_info: bool)
-           -> FunctionEnv {
+    fn new(
+        args: VmIndex,
+        id: Symbol,
+        typ: ArcType,
+        source_name: String,
+        emit_debug_info: bool,
+    ) -> FunctionEnv {
         FunctionEnv {
             free_vars: Vec::new(),
             stack: ScopedMap::new(),
@@ -198,10 +194,11 @@ impl FunctionEnv {
         self.function.instructions.push(instruction);
 
         if self.emit_debug_info {
-            self.function
-                .debug_info
-                .source_map
-                .emit(self.function.instructions.len() - 1, self.current_line);
+            self.function.debug_info.source_map.emit(
+                self.function.instructions.len() -
+                    1,
+                self.current_line,
+            );
         }
     }
 
@@ -222,9 +219,9 @@ impl FunctionEnv {
     }
 
     fn emit_field(&mut self, compiler: &mut Compiler, typ: &ArcType, field: &Symbol) -> Result<()> {
-        let field_index = compiler
-            .find_field(typ, field)
-            .expect("ICE: Undefined field in field access");
+        let field_index = compiler.find_field(typ, field).expect(
+            "ICE: Undefined field in field access",
+        );
         match field_index {
             FieldAccess::Index(i) => self.emit(GetOffset(i)),
             FieldAccess::Name => {
@@ -285,13 +282,12 @@ impl FunctionEnv {
         debug!("Push var: {:?} at {}", s, self.stack_size - 1);
         let index = self.stack_size - 1;
         if self.emit_debug_info && compiler.empty_symbol != s {
-            self.function
-                .debug_info
-                .local_map
-                .emit(self.function.instructions.len(),
-                      index,
-                      s.clone(),
-                      typ.clone());
+            self.function.debug_info.local_map.emit(
+                self.function.instructions.len(),
+                index,
+                s.clone(),
+                typ.clone(),
+            );
         }
         self.stack.insert(s, (index, typ));
     }
@@ -302,10 +298,11 @@ impl FunctionEnv {
             count += 1;
             debug!("Pop var: {:?}", x);
             if self.emit_debug_info && compiler.empty_symbol != x.0 {
-                self.function
-                    .debug_info
-                    .local_map
-                    .close(self.function.instructions.len());
+                self.function.debug_info.local_map.close(
+                    self.function
+                        .instructions
+                        .len(),
+                );
             }
         }
         count
@@ -328,17 +325,17 @@ impl CompilerEnv for TypeInfos {
         self.id_to_type
             .iter()
             .filter_map(|(_, ref alias)| match **alias.unresolved_type() {
-                            Type::Variant(ref row) => {
-                                row.row_iter()
-                                    .enumerate()
-                                    .find(|&(_, field)| field.name == *id)
-                            }
-                            _ => None,
-                        })
+                Type::Variant(ref row) => {
+                    row.row_iter().enumerate().find(
+                        |&(_, field)| field.name == *id,
+                    )
+                }
+                _ => None,
+            })
             .next()
             .map(|(tag, field)| {
-                     Variable::Constructor(tag as VmTag, count_function_args(&field.typ))
-                 })
+                Variable::Constructor(tag as VmTag, count_function_args(&field.typ))
+            })
     }
 }
 
@@ -369,10 +366,11 @@ impl<'a> TypeEnv for Compiler<'a> {
         self.stack_types.get(id)
     }
 
-    fn find_record(&self,
-                   _fields: &[Symbol],
-                   _selector: RecordSelector)
-                   -> Option<(ArcType, ArcType)> {
+    fn find_record(
+        &self,
+        _fields: &[Symbol],
+        _selector: RecordSelector,
+    ) -> Option<(ArcType, ArcType)> {
         None
     }
 }
@@ -384,13 +382,14 @@ impl<'a, T: CompilerEnv> CompilerEnv for &'a T {
 }
 
 impl<'a> Compiler<'a> {
-    pub fn new(globals: &'a (CompilerEnv + 'a),
-               vm: &'a GlobalVmState,
-               mut symbols: SymbolModule<'a>,
-               source: &'a Source<'a>,
-               source_name: String,
-               emit_debug_info: bool)
-               -> Compiler<'a> {
+    pub fn new(
+        globals: &'a (CompilerEnv + 'a),
+        vm: &'a GlobalVmState,
+        mut symbols: SymbolModule<'a>,
+        source: &'a Source<'a>,
+        source_name: String,
+        emit_debug_info: bool,
+    ) -> Compiler<'a> {
         Compiler {
             globals: globals,
             vm: vm,
@@ -412,18 +411,20 @@ impl<'a> Compiler<'a> {
         let variable = self.stack_constructors
             .iter()
             .filter_map(|(_, typ)| match **typ {
-                            Type::Variant(ref row) => {
-                                row.row_iter()
-                                    .enumerate()
-                                    .find(|&(_, field)| field.name == *id)
-                            }
-                            _ => None,
-                        })
+                Type::Variant(ref row) => {
+                    row.row_iter().enumerate().find(
+                        |&(_, field)| field.name == *id,
+                    )
+                }
+                _ => None,
+            })
             .next()
             .map(|(tag, field)| {
-                     Constructor(tag as VmIndex,
-                                 types::arg_iter(&field.typ).count() as VmIndex)
-                 })
+                Constructor(
+                    tag as VmIndex,
+                    types::arg_iter(&field.typ).count() as VmIndex,
+                )
+            })
             .or_else(|| {
                 current
                     .stack
@@ -435,32 +436,30 @@ impl<'a> Compiler<'a> {
                         rest.iter()
                             .rev()
                             .filter_map(|env| {
-                                            env.stack
-                                                .get(id)
-                                                .map(|&(_, ref typ)| {
-                                                         UpVar(current[0].upvar(id, typ))
-                                                     })
-                                        })
+                                env.stack.get(id).map(|&(_, ref typ)| {
+                                    UpVar(current[0].upvar(id, typ))
+                                })
+                            })
                             .next()
                     })
             })
             .or_else(|| self.globals.find_var(&id));
         variable.map(|variable| match variable {
-                         Stack(i) => Stack(i),
-                         Global(s) => {
-            let existing = current
-                .function
-                .module_globals
-                .iter()
-                .position(|existing| existing == &s);
-            Global(existing.unwrap_or_else(|| {
-                                               current.function.module_globals.push(s);
-                                               current.function.module_globals.len() - 1
-                                           }) as VmIndex)
-        }
-                         Constructor(tag, args) => Constructor(tag, args),
-                         UpVar(i) => UpVar(i),
-                     })
+            Stack(i) => Stack(i),
+            Global(s) => {
+                let existing = current.function.module_globals.iter().position(
+                    |existing| {
+                        existing == &s
+                    },
+                );
+                Global(existing.unwrap_or_else(|| {
+                    current.function.module_globals.push(s);
+                    current.function.module_globals.len() - 1
+                }) as VmIndex)
+            }
+            Constructor(tag, args) => Constructor(tag, args),
+            UpVar(i) => UpVar(i),
+        })
     }
 
     fn find_field(&self, typ: &ArcType, field: &Symbol) -> Option<FieldAccess> {
@@ -471,11 +470,11 @@ impl<'a> Compiler<'a> {
             Some(index) => {
                 for _ in iter.by_ref() {}
                 Some(if **iter.current_type() == Type::EmptyRow {
-                         // Non-polymorphic record, access by index
-                         FieldAccess::Index(index as VmIndex)
-                     } else {
-                         FieldAccess::Name
-                     })
+                    // Non-polymorphic record, access by index
+                    FieldAccess::Index(index as VmIndex)
+                } else {
+                    FieldAccess::Name
+                })
             }
             None => None,
         }
@@ -499,16 +498,15 @@ impl<'a> Compiler<'a> {
         let env = self.vm.get_env();
         let translator = core::Translator::new(&*env);
         let expr = {
-            let expr = translator
-                .allocator
-                .arena
-                .alloc(translator.translate(expr));
+            let expr = translator.allocator.arena.alloc(translator.translate(expr));
             core::optimize::optimize(&translator.allocator, expr)
         };
         let mut env = FunctionEnvs::new();
         let id = self.empty_symbol.clone();
-        let typ = Type::function(vec![],
-                                 ArcType::from(expr.env_type_of(&self.globals).clone()));
+        let typ = Type::function(
+            vec![],
+            ArcType::from(expr.env_type_of(&self.globals).clone()),
+        );
 
         env.start_function(self, 0, id, typ);
         debug!("COMPILING: {}", expr);
@@ -519,27 +517,29 @@ impl<'a> Compiler<'a> {
     }
 
     fn load_identifier(&self, id: &Symbol, function: &mut FunctionEnvs) -> Result<()> {
-        match self.find(id, function)
-                  .unwrap_or_else(|| {
-                                      panic!("Undefined variable {}", self.symbols.string(&id))
-                                  }) {
+        match self.find(id, function).unwrap_or_else(|| {
+            panic!("Undefined variable {}", self.symbols.string(&id))
+        }) {
             Stack(index) => function.emit(Push(index)),
             UpVar(index) => function.emit(PushUpVar(index)),
             Global(index) => function.emit(PushGlobal(index)),
             // Zero argument constructors can be compiled as integers
             Constructor(tag, 0) => function.emit(Construct { tag: tag, args: 0 }),
             Constructor(..) => {
-                return Err(Error::Message(format!("Constructor `{}` is not fully applied", id)))
+                return Err(Error::Message(
+                    format!("Constructor `{}` is not fully applied", id),
+                ))
             }
         }
         Ok(())
     }
 
-    fn compile(&mut self,
-               mut expr: CExpr,
-               function: &mut FunctionEnvs,
-               tail_position: bool)
-               -> Result<()> {
+    fn compile(
+        &mut self,
+        mut expr: CExpr,
+        function: &mut FunctionEnvs,
+        tail_position: bool,
+    ) -> Result<()> {
         // Store a stack of expressions which need to be cleaned up after this "tailcall" loop is
         // done
         function.stack.enter_scope();
@@ -559,11 +559,12 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn compile_<'e>(&mut self,
-                    expr: CExpr<'e>,
-                    function: &mut FunctionEnvs,
-                    tail_position: bool)
-                    -> Result<Option<CExpr<'e>>> {
+    fn compile_<'e>(
+        &mut self,
+        expr: CExpr<'e>,
+        function: &mut FunctionEnvs,
+        tail_position: bool,
+    ) -> Result<Option<CExpr<'e>>> {
         match *expr {
             Expr::Const(ref lit, _) => {
                 match *lit {
@@ -583,31 +584,36 @@ impl<'a> Compiler<'a> {
                 match let_binding.expr {
                     core::Named::Expr(ref bind_expr) => {
                         self.compile(bind_expr, function, false)?;
-                        function.new_stack_var(self,
-                                               let_binding.name.name.clone(),
-                                               let_binding.name.typ.clone());
+                        function.new_stack_var(
+                            self,
+                            let_binding.name.name.clone(),
+                            let_binding.name.typ.clone(),
+                        );
                     }
                     core::Named::Recursive(ref closures) => {
                         for closure in closures.iter() {
                             // Add the NewClosure instruction before hand
                             // it will be fixed later
                             function.emit(NewClosure {
-                                              function_index: 0,
-                                              upvars: 0,
-                                          });
-                            function.new_stack_var(self,
-                                                   closure.name.name.clone(),
-                                                   closure.name.typ.clone());
+                                function_index: 0,
+                                upvars: 0,
+                            });
+                            function.new_stack_var(
+                                self,
+                                closure.name.name.clone(),
+                                closure.name.typ.clone(),
+                            );
                         }
                         for (i, closure) in closures.iter().enumerate() {
                             function.stack.enter_scope();
 
                             function.emit(Push(stack_start + i as VmIndex));
-                            let (function_index, vars, cf) =
-                                self.compile_lambda(&closure.name,
-                                                    &closure.args,
-                                                    &closure.expr,
-                                                    function)?;
+                            let (function_index, vars, cf) = self.compile_lambda(
+                                &closure.name,
+                                &closure.args,
+                                &closure.expr,
+                                function,
+                            )?;
                             let offset = first_index + i;
                             function.function.instructions[offset] = NewClosure {
                                 function_index: function_index,
@@ -626,8 +632,14 @@ impl<'a> Compiler<'a> {
             Expr::Call(func, args) => {
                 if let Expr::Ident(ref id, _) = *func {
                     if id.name.as_ref() == "&&" || id.name.as_ref() == "||" ||
-                       id.name.as_ref().starts_with('#') {
-                        self.compile_primitive(&id.name, args, function, tail_position)?;
+                        id.name.as_ref().starts_with('#')
+                    {
+                        self.compile_primitive(
+                            &id.name,
+                            args,
+                            function,
+                            tail_position,
+                        )?;
                         return Ok(None);
                     }
 
@@ -636,9 +648,9 @@ impl<'a> Compiler<'a> {
                             self.compile(arg, function, false)?;
                         }
                         function.emit(Construct {
-                                          tag: tag,
-                                          args: num_args,
-                                      });
+                            tag: tag,
+                            args: num_args,
+                        });
                         return Ok(None);
                     }
                 }
@@ -659,14 +671,15 @@ impl<'a> Compiler<'a> {
                 for alt in alts.iter() {
                     match alt.pattern {
                         Pattern::Constructor(ref id, _) => {
-                            let tag = self.find_tag(&typ, &id.name)
-                                .unwrap_or_else(|| {
-                                    panic!("ICE: Could not find tag for {}::{} when matching on \
+                            let tag = self.find_tag(&typ, &id.name).unwrap_or_else(|| {
+                                panic!(
+                                    "ICE: Could not find tag for {}::{} when matching on \
                                             expression `{}`",
-                                           types::display_type(&self.symbols, &typ),
-                                           self.symbols.string(&id.name),
-                                           expr)
-                                });
+                                    types::display_type(&self.symbols, &typ),
+                                    self.symbols.string(&id.name),
+                                    expr
+                                )
+                            });
                             function.emit(TestTag(tag));
                             start_jumps.push(function.function.instructions.len());
                             function.emit(CJump(0));
@@ -737,26 +750,25 @@ impl<'a> Compiler<'a> {
                 match **typ {
                     Type::Record(_) => {
                         let index =
-                            function.add_record_map(typ.row_iter()
-                                                        .map(|field| field.name.clone())
-                                                        .collect());
+                            function.add_record_map(
+                                typ.row_iter().map(|field| field.name.clone()).collect(),
+                            );
                         function.emit(ConstructRecord {
-                                          record: index,
-                                          args: exprs.len() as u32,
-                                      });
+                            record: index,
+                            args: exprs.len() as u32,
+                        });
                     }
                     Type::App(ref array, _) if **array == Type::Builtin(BuiltinType::Array) => {
                         function.emit(ConstructArray(exprs.len() as VmIndex));
                     }
                     Type::Variant(ref variants) => {
                         function.emit(Construct {
-                                          tag: variants
-                                              .row_iter()
-                                              .position(|field| field.name == id.name)
-                                              .unwrap() as
-                                               VmTag,
-                                          args: exprs.len() as u32,
-                                      });
+                            tag: variants
+                                .row_iter()
+                                .position(|field| field.name == id.name)
+                                .unwrap() as VmTag,
+                            args: exprs.len() as u32,
+                        });
                     }
                     _ => panic!("ICE: Unexpected data type: {}", typ),
                 }
@@ -765,12 +777,13 @@ impl<'a> Compiler<'a> {
         Ok(None)
     }
 
-    fn compile_primitive(&mut self,
-                         op: &Symbol,
-                         args: &[Expr],
-                         function: &mut FunctionEnvs,
-                         tail_position: bool)
-                         -> Result<()> {
+    fn compile_primitive(
+        &mut self,
+        op: &Symbol,
+        args: &[Expr],
+        function: &mut FunctionEnvs,
+        tail_position: bool,
+    ) -> Result<()> {
         assert!(args.len() == 2, "Invalid primitive application: {}", op);
         let lhs = &args[0];
         let rhs = &args[1];
@@ -793,8 +806,8 @@ impl<'a> Compiler<'a> {
             function.emit(CJump(0));
             self.compile(rhs, function, tail_position)?;
             function.emit(Jump(0));
-            function.function.instructions[lhs_end] = CJump(function.function.instructions.len() as
-                                                            VmIndex);
+            function.function.instructions[lhs_end] =
+                CJump(function.function.instructions.len() as VmIndex);
             function.emit(Construct { tag: 1, args: 0 });
             // Dont count the integer above
             function.stack_size -= 1;
@@ -832,11 +845,12 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn compile_let_pattern(&mut self,
-                           pattern: &Pattern,
-                           pattern_type: &ArcType,
-                           function: &mut FunctionEnvs)
-                           -> Result<()> {
+    fn compile_let_pattern(
+        &mut self,
+        pattern: &Pattern,
+        pattern_type: &ArcType,
+        function: &mut FunctionEnvs,
+    ) -> Result<()> {
         match *pattern {
             Pattern::Ident(ref name) => {
                 function.new_stack_var(self, name.name.clone(), pattern_type.clone());
@@ -849,8 +863,9 @@ impl<'a> Compiler<'a> {
                         let number_of_fields = field_iter.by_ref().count();
                         let is_polymorphic = **field_iter.current_type() != Type::EmptyRow;
                         if fields.len() == 0 ||
-                           (number_of_fields > 4 && number_of_fields / fields.len() >= 4) ||
-                           is_polymorphic {
+                            (number_of_fields > 4 && number_of_fields / fields.len() >= 4) ||
+                            is_polymorphic
+                        {
                             // For pattern matches on large records where only a few of the fields
                             // are used we instead emit a series of GetOffset instructions to avoid
                             // pushing a lot of unnecessary fields to the stack
@@ -879,24 +894,27 @@ impl<'a> Compiler<'a> {
                         } else {
                             function.emit(Split);
                             for field in typ.row_iter() {
-                                let (name, typ) =
-                                    match fields.iter().find(|tup| {
-                                                                 tup.0.name.name_eq(&field.name)
-                                                             }) {
-                                        Some(&(ref name, ref bind)) => {
-                                            (bind.as_ref().unwrap_or(&name.name).clone(),
-                                             field.typ.clone())
-                                        }
-                                        None => (self.empty_symbol.clone(), Type::hole()),
-                                    };
+                                let (name, typ) = match fields.iter().find(|tup| {
+                                    tup.0.name.name_eq(&field.name)
+                                }) {
+                                    Some(&(ref name, ref bind)) => {
+                                        (
+                                            bind.as_ref().unwrap_or(&name.name).clone(),
+                                            field.typ.clone(),
+                                        )
+                                    }
+                                    None => (self.empty_symbol.clone(), Type::hole()),
+                                };
                                 function.push_stack_var(self, name, typ);
                             }
                         }
                     }
                     _ => {
-                        panic!("Expected record, got {} at {:?}",
-                               types::display_type(&self.symbols, &typ),
-                               pattern)
+                        panic!(
+                            "Expected record, got {} at {:?}",
+                            types::display_type(&self.symbols, &typ),
+                            pattern
+                        )
                     }
                 }
             }
@@ -905,12 +923,13 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn compile_lambda(&mut self,
-                      id: &TypedIdent,
-                      args: &[TypedIdent],
-                      body: CExpr,
-                      function: &mut FunctionEnvs)
-                      -> Result<(VmIndex, VmIndex, CompiledFunction)> {
+    fn compile_lambda(
+        &mut self,
+        id: &TypedIdent,
+        args: &[TypedIdent],
+        body: CExpr,
+        function: &mut FunctionEnvs,
+    ) -> Result<(VmIndex, VmIndex, CompiledFunction)> {
         function.start_function(self, args.len() as VmIndex, id.name.clone(), id.typ.clone());
 
         function.stack.enter_scope();

@@ -56,9 +56,11 @@ fn error_to_string(err: &Error) -> &str {
 pub fn load(vm: &Thread) -> vm::Result<()> {
     vm.register_type::<Regex>("Regex", &[])?;
     vm.register_type::<Error>("Error", &[])?;
-    vm.define_global("regex",
-                     record!(new => primitive!(1 new),
+    vm.define_global(
+        "regex",
+        record!(new => primitive!(1 new),
                              is_match => primitive!(2 is_match),
                              error_to_string => primitive!(1 error_to_string)
-                            ))
+                            ),
+    )
 }

@@ -58,11 +58,11 @@ impl<T: VmType + 'static> VmType for Handler<T> {
     type Type = Self;
     fn make_type(vm: &Thread) -> ArcType {
         let typ = (*vm.global_env()
-                        .get_env()
-                        .find_type_info("examples.http_types.Handler")
-                        .unwrap())
-                .clone()
-                .into_type();
+                       .get_env()
+                       .find_type_info("examples.http_types.Handler")
+                       .unwrap())
+            .clone()
+            .into_type();
         Type::app(typ, collect![T::make_type(vm)])
     }
 }
@@ -92,18 +92,17 @@ define_vmtype! { Method }
 impl<'vm> Pushable<'vm> for Wrap<Method> {
     fn push(self, _: &'vm Thread, context: &mut Context) -> VmResult<()> {
         use hyper::Method::*;
-        context
-            .stack
-            .push(Value::Tag(match self.0 {
-                                 Get => 0,
-                                 Post => 1,
-                                 Delete => 2,
-                                 _ => {
-                return Err(VmError::Message(format!("Method `{:?}` does not exist in gluon",
-                                                    self.0))
-                    .into())
+        context.stack.push(Value::Tag(match self.0 {
+            Get => 0,
+            Post => 1,
+            Delete => 2,
+            _ => {
+                return Err(
+                    VmError::Message(format!("Method `{:?}` does not exist in gluon", self.0))
+                        .into(),
+                )
             }
-                             }));
+        }));
         Ok(())
     }
 }
@@ -116,11 +115,11 @@ impl<'vm> Getable<'vm> for Wrap<StatusCode> {
         match value.as_ref() {
             ValueRef::Tag(tag) => {
                 Some(Wrap(match tag {
-                              0 => Ok,
-                              1 => NotFound,
-                              2 => InternalServerError,
-                              _ => panic!("Unexpected tag"),
-                          }))
+                    0 => Ok,
+                    1 => NotFound,
+                    2 => InternalServerError,
+                    _ => panic!("Unexpected tag"),
+                }))
             }
             _ => panic!(),
         }
@@ -165,11 +164,12 @@ fn read_chunk(body: &Body) -> FutureResult<BoxFuture<IO<Option<PushAsRef<Chunk, 
     // `FutureResult` is a wrapper type around `Future` which when returned to the interpreter is
     // polled until completion. After `poll` returns `Ready` the value is then returned to the
     // gluon function which called `read_chunk`
-    FutureResult(poll_fn(move || {
-                             let mut stream = body.lock().unwrap();
-                             stream.poll().map(|async| async.map(IO::Value))
-                         })
-                         .boxed())
+    FutureResult(
+        poll_fn(move || {
+            let mut stream = body.lock().unwrap();
+            stream.poll().map(|async| async.map(IO::Value))
+        }).boxed(),
+    )
 }
 
 // A http body that is being written
@@ -191,43 +191,45 @@ impl VmType for ResponseBody {
     type Type = Self;
 }
 
-fn write_response(response: &ResponseBody,
-                  bytes: &[u8])
-                  -> FutureResult<BoxFuture<IO<()>, VmError>> {
+fn write_response(
+    response: &ResponseBody,
+    bytes: &[u8],
+) -> FutureResult<BoxFuture<IO<()>, VmError>> {
     use futures::future::poll_fn;
     use futures::AsyncSink;
 
     // Turn `bytes´ into a `Chunk` which can be sent to the http body
     let mut unsent_chunk = Some(Ok(bytes.to_owned().into()));
     let response = response.0.clone();
-    FutureResult(poll_fn(move || {
-        info!("Starting response send");
-        let mut sender = response.lock().unwrap();
-        let mut sender = sender
-            .as_mut()
-            .expect("Sender has been dropped while still in use");
-        if let Some(chunk) = unsent_chunk.take() {
-            match sender.start_send(chunk) {
-                Ok(AsyncSink::NotReady(chunk)) => {
-                    unsent_chunk = Some(chunk);
-                    return Ok(Async::NotReady);
+    FutureResult(
+        poll_fn(move || {
+            info!("Starting response send");
+            let mut sender = response.lock().unwrap();
+            let mut sender = sender.as_mut().expect(
+                "Sender has been dropped while still in use",
+            );
+            if let Some(chunk) = unsent_chunk.take() {
+                match sender.start_send(chunk) {
+                    Ok(AsyncSink::NotReady(chunk)) => {
+                        unsent_chunk = Some(chunk);
+                        return Ok(Async::NotReady);
+                    }
+                    Ok(AsyncSink::Ready) => (),
+                    Err(_) => {
+                        info!("Could not send http response");
+                        return Ok(Async::Ready(IO::Value(())));
+                    }
                 }
-                Ok(AsyncSink::Ready) => (),
+            }
+            match sender.poll_complete() {
+                Ok(async) => Ok(async.map(IO::Value)),
                 Err(_) => {
                     info!("Could not send http response");
-                    return Ok(Async::Ready(IO::Value(())));
+                    Ok(Async::Ready(IO::Value(())))
                 }
             }
-        }
-        match sender.poll_complete() {
-            Ok(async) => Ok(async.map(IO::Value)),
-            Err(_) => {
-                info!("Could not send http response");
-                Ok(Async::Ready(IO::Value(())))
-            }
-        }
-    })
-                         .boxed())
+        }).boxed(),
+    )
 }
 
 // Next we define some record types which are marshalled to and from gluon. These have equivalent
@@ -275,7 +277,8 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
         type Future = BoxFuture<HyperResponse, hyper::Error>;
 
         fn call(&self, request: HyperRequest) -> Self::Future {
-            let gluon_request = record_no_decl! {
+            let gluon_request =
+                record_no_decl! {
                 // Here we use to `Wrap` type to make `hyper::Request` into a type that can be
                 // pushed to gluon
                 method => Wrap(request.method().clone()),
@@ -290,7 +293,8 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
             };
             let (response_sender, response_body) = hyper::Body::pair();
             let response_sender = Arc::new(Mutex::new(Some(response_sender)));
-            let http_state = record_no_decl!{
+            let http_state =
+                record_no_decl!{
                 request => gluon_request,
                 response => ResponseBody(response_sender.clone())
             };
@@ -298,27 +302,31 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
                 .clone()
                 .call_async(self.handler.clone(), http_state)
                 .then(move |result| match result {
-                          Ok(value) => {
-                    match value {
-                        IO::Value(record_p!{ status }) => {
-                            // Drop the sender to so that it the receiver stops waiting for
-                            // more chunks
-                            *response_sender.lock().unwrap() = None;
-                            Ok(HyperResponse::new()
-                                   .with_status(status.0)
-                                   .with_body(response_body))
-                        }
-                        IO::Exception(err) => {
-                            let _ = stderr().write(err.as_bytes());
-                            Ok(HyperResponse::new().with_status(StatusCode::InternalServerError))
+                    Ok(value) => {
+                        match value {
+                            IO::Value(record_p!{ status }) => {
+                                // Drop the sender to so that it the receiver stops waiting for
+                                // more chunks
+                                *response_sender.lock().unwrap() = None;
+                                Ok(HyperResponse::new().with_status(status.0).with_body(
+                                    response_body,
+                                ))
+                            }
+                            IO::Exception(err) => {
+                                let _ = stderr().write(err.as_bytes());
+                                Ok(HyperResponse::new().with_status(
+                                    StatusCode::InternalServerError,
+                                ))
+                            }
                         }
                     }
-                }
-                          Err(err) => {
-                    let _ = stderr().write(format!("{}", err).as_bytes());
-                    Ok(HyperResponse::new().with_status(StatusCode::InternalServerError))
-                }
-                      })
+                    Err(err) => {
+                        let _ = stderr().write(format!("{}", err).as_bytes());
+                        Ok(HyperResponse::new().with_status(
+                            StatusCode::InternalServerError,
+                        ))
+                    }
+                })
                 .boxed()
         }
     }
@@ -327,9 +335,9 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
     let result = Http::new()
         .bind(&addr, move || {
             Ok(Listen {
-                   handle: handle.clone(),
-                   handler: handler.clone(),
-               })
+                handle: handle.clone(),
+                handler: handler.clone(),
+            })
         })
         .and_then(|server| server.run());
 
@@ -348,12 +356,14 @@ pub fn load_types(vm: &Thread) -> VmResult<()> {
 }
 
 pub fn load(vm: &Thread) -> VmResult<()> {
-    vm.define_global("http_prim",
-                       record! {
+    vm.define_global(
+        "http_prim",
+        record! {
         listen => primitive!(2 listen),
         read_chunk => primitive!(1 read_chunk),
         write_response => primitive!(2 write_response)
-    })?;
+    },
+    )?;
     Ok(())
 }
 
@@ -369,9 +379,11 @@ fn main() {
     // First load all the http types so we can refer to them from gluon
     load_types(&thread).unwrap();
     Compiler::new()
-        .run_expr::<()>(&thread,
-                        "",
-                        r#"let _ = import! "examples/http_types.glu" in () "#)
+        .run_expr::<()>(
+            &thread,
+            "",
+            r#"let _ = import! "examples/http_types.glu" in () "#,
+        )
         .unwrap_or_else(|err| panic!("{}", err));
 
     // Load the primitive functions we define in this module

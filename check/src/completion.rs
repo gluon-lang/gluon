@@ -65,22 +65,22 @@ struct Suggest<E> {
     result: Vec<Suggestion>,
 }
 
-fn expr_iter<'e>(stack: &'e ScopedMap<Symbol, ArcType>,
-                 expr: &'e SpannedExpr<Symbol>)
-                 -> Box<Iterator<Item = (&'e Symbol, &'e ArcType)> + 'e> {
+fn expr_iter<'e>(
+    stack: &'e ScopedMap<Symbol, ArcType>,
+    expr: &'e SpannedExpr<Symbol>,
+) -> Box<Iterator<Item = (&'e Symbol, &'e ArcType)> + 'e> {
     if let Expr::Ident(ref ident) = expr.value {
-        Box::new(stack
-                     .iter()
-                     .filter(move |&(k, _)| {
-                                 k.declared_name().starts_with(ident.name.declared_name())
-                             }))
+        Box::new(stack.iter().filter(move |&(k, _)| {
+            k.declared_name().starts_with(ident.name.declared_name())
+        }))
     } else {
         Box::new(None.into_iter())
     }
 }
 
 impl<E> Suggest<E>
-    where E: TypeEnv
+where
+    E: TypeEnv,
 {
     fn ident_iter(&self, context: &SpannedExpr<Symbol>, ident: &Symbol) -> Vec<(Symbol, ArcType)> {
         if let Expr::Projection(ref expr, _, _) = context.value {
@@ -139,38 +139,34 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
     }
 
     fn expr(&mut self, expr: &SpannedExpr<Symbol>) {
-        self.result
-            .extend(expr_iter(&self.stack, expr).map(|(k, typ)| {
+        self.result.extend(
+            expr_iter(&self.stack, expr).map(|(k, typ)| {
 
-                                                         Suggestion {
-                                                             name: k.declared_name().into(),
-                                                             typ: typ.clone(),
-                                                         }
-                                                     }));
+                Suggestion {
+                    name: k.declared_name().into(),
+                    typ: typ.clone(),
+                }
+            }),
+        );
     }
 
     fn ident(&mut self, context: &SpannedExpr<Symbol>, ident: &Symbol, _: &ArcType) {
         let iter = self.ident_iter(context, ident);
-        self.result
-            .extend(iter.into_iter()
-                        .map(|(name, typ)| {
-                                 Suggestion {
-                                     name: name.declared_name().into(),
-                                     typ: typ,
-                                 }
-                             }));
+        self.result.extend(iter.into_iter().map(|(name, typ)| {
+            Suggestion {
+                name: name.declared_name().into(),
+                typ: typ,
+            }
+        }));
     }
 
     fn nothing(&mut self) {
-        self.result
-            .extend(self.stack
-                        .iter()
-                        .map(|(name, typ)| {
-                                 Suggestion {
-                                     name: name.declared_name().into(),
-                                     typ: typ.clone(),
-                                 }
-                             }));
+        self.result.extend(self.stack.iter().map(|(name, typ)| {
+            Suggestion {
+                name: name.declared_name().into(),
+                typ: typ.clone(),
+            }
+        }));
     }
 
     fn found(&self) -> bool {
@@ -194,9 +190,9 @@ impl<'a> OnFound for GetMetadata<'a> {
         match context.value {
             Expr::Projection(ref expr, _, _) => {
                 if let Expr::Ident(ref expr_id) = expr.value {
-                    self.result = self.env
-                        .get(&expr_id.name)
-                        .and_then(|metadata| metadata.module.get(id.as_ref()));
+                    self.result = self.env.get(&expr_id.name).and_then(|metadata| {
+                        metadata.module.get(id.as_ref())
+                    });
                 }
             }
             Expr::Infix(..) => {
@@ -231,9 +227,8 @@ impl<'a, E: TypeEnv> OnFound for MetadataSuggest<'a, E> {
 
     fn expr(&mut self, expr: &SpannedExpr<Symbol>) {
         let suggestion = expr_iter(&self.suggest.stack, expr).find(|&(name, _)| {
-                                                                       name.declared_name() ==
-                                                                       self.ident
-                                                                   });
+            name.declared_name() == self.ident
+        });
         if let Some((name, _)) = suggestion {
             self.result = self.env.get(name);
         }
@@ -243,9 +238,9 @@ impl<'a, E: TypeEnv> OnFound for MetadataSuggest<'a, E> {
         match context.value {
             Expr::Projection(ref expr, _, _) => {
                 if let Expr::Ident(ref expr_ident) = expr.value {
-                    self.result = self.env
-                        .get(&expr_ident.name)
-                        .and_then(|metadata| metadata.module.get(self.ident));
+                    self.result = self.env.get(&expr_ident.name).and_then(|metadata| {
+                        metadata.module.get(self.ident)
+                    });
                 }
             }
             _ => (),
@@ -272,8 +267,9 @@ struct FindVisitor<F> {
 
 impl<F> FindVisitor<F> {
     fn select_spanned<'e, I, S, T>(&self, iter: I, mut span: S) -> (bool, Option<&'e T>)
-        where I: IntoIterator<Item = &'e T>,
-              S: FnMut(&T) -> Span<BytePos>
+    where
+        I: IntoIterator<Item = &'e T>,
+        S: FnMut(&T) -> Span<BytePos>,
     {
         let mut iter = iter.into_iter().peekable();
         let mut prev = None;
@@ -302,7 +298,8 @@ impl<F> FindVisitor<F> {
 struct VisitUnExpanded<'e, F: 'e>(&'e mut FindVisitor<F>);
 
 impl<'e, F> Visitor for VisitUnExpanded<'e, F>
-    where F: OnFound
+where
+    F: OnFound,
 {
     type Ident = Symbol;
 
@@ -328,10 +325,12 @@ impl<'e, F> Visitor for VisitUnExpanded<'e, F>
 }
 
 impl<F> FindVisitor<F>
-    where F: OnFound
+where
+    F: OnFound,
 {
     fn visit_one<'e, I>(&mut self, iter: I)
-        where I: IntoIterator<Item = &'e SpannedExpr<Symbol>>
+    where
+        I: IntoIterator<Item = &'e SpannedExpr<Symbol>>,
     {
         let (_, expr) = self.select_spanned(iter, |e| e.span);
         self.visit_expr(expr.unwrap());
@@ -367,8 +366,7 @@ impl<F> FindVisitor<F>
             Expr::Infix(ref l, ref op, ref r) => {
                 match (l.span.containment(&self.pos), r.span.containment(&self.pos)) {
                     (Ordering::Greater, Ordering::Less) => {
-                        self.on_found
-                            .ident(current, &op.value.name, &op.value.typ)
+                        self.on_found.ident(current, &op.value.name, &op.value.typ)
                     }
                     (_, Ordering::Greater) |
                     (_, Ordering::Equal) => self.visit_expr(r),
@@ -418,7 +416,8 @@ impl<F> FindVisitor<F>
 }
 
 pub fn find<T>(env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Result<ArcType, ()>
-    where T: TypeEnv
+where
+    T: TypeEnv,
 {
     let mut visitor = FindVisitor {
         pos: pos,
@@ -432,7 +431,8 @@ pub fn find<T>(env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Result<ArcT
 }
 
 pub fn suggest<T>(env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Vec<Suggestion>
-    where T: TypeEnv
+where
+    T: TypeEnv,
 {
     let mut visitor = FindVisitor {
         pos: pos,
@@ -446,10 +446,11 @@ pub fn suggest<T>(env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Vec<Sugg
     visitor.on_found.result
 }
 
-pub fn get_metadata<'a>(env: &'a FnvMap<Symbol, Metadata>,
-                        expr: &SpannedExpr<Symbol>,
-                        pos: BytePos)
-                        -> Option<&'a Metadata> {
+pub fn get_metadata<'a>(
+    env: &'a FnvMap<Symbol, Metadata>,
+    expr: &SpannedExpr<Symbol>,
+    pos: BytePos,
+) -> Option<&'a Metadata> {
     let mut visitor = FindVisitor {
         pos: pos,
         on_found: GetMetadata {
@@ -461,13 +462,15 @@ pub fn get_metadata<'a>(env: &'a FnvMap<Symbol, Metadata>,
     visitor.on_found.result
 }
 
-pub fn suggest_metadata<'a, T>(env: &'a FnvMap<Symbol, Metadata>,
-                               type_env: &T,
-                               expr: &SpannedExpr<Symbol>,
-                               pos: BytePos,
-                               name: &'a str)
-                               -> Option<&'a Metadata>
-    where T: TypeEnv
+pub fn suggest_metadata<'a, T>(
+    env: &'a FnvMap<Symbol, Metadata>,
+    type_env: &T,
+    expr: &SpannedExpr<Symbol>,
+    pos: BytePos,
+    name: &'a str,
+) -> Option<&'a Metadata>
+where
+    T: TypeEnv,
 {
     let mut visitor = FindVisitor {
         pos: pos,

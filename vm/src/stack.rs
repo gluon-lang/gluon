@@ -56,8 +56,10 @@ impl Stack {
 
     pub fn pop(&mut self) -> Value {
         if let Some(&frame) = self.frames.last() {
-            assert!(self.len() > frame.offset,
-                    "Attempted to pop value which did not belong to the current frame");
+            assert!(
+                self.len() > frame.offset,
+                "Attempted to pop value which did not belong to the current frame"
+            );
         }
         self.values.pop().expect("pop on empty stack")
     }
@@ -114,28 +116,27 @@ impl Stack {
         let frames = self.get_frames()[frame_level..]
             .iter()
             .filter_map(|frame| match frame.state {
-                            State::Closure(ref closure) => {
-                let line = closure
-                    .function
-                    .debug_info
-                    .source_map
-                    .line(frame.instruction_index);
-                Some(line.map(|line| {
-                                  StacktraceFrame {
-                                      name: closure.function.name.clone(),
-                                      line: line,
-                                  }
-                              }))
-            }
-                            State::Extern(ref ext) => {
-                                Some(Some(StacktraceFrame {
-                                              name: ext.id.clone(),
-                                              line: Line::from(0),
-                                          }))
-                            }
-                            State::Unknown => Some(None),
-                            State::Lock | State::Excess => None,
-                        })
+                State::Closure(ref closure) => {
+                    let line = closure.function.debug_info.source_map.line(
+                        frame
+                            .instruction_index,
+                    );
+                    Some(line.map(|line| {
+                        StacktraceFrame {
+                            name: closure.function.name.clone(),
+                            line: line,
+                        }
+                    }))
+                }
+                State::Extern(ref ext) => {
+                    Some(Some(StacktraceFrame {
+                        name: ext.id.clone(),
+                        line: Line::from(0),
+                    }))
+                }
+                State::Unknown => Some(None),
+                State::Lock | State::Excess => None,
+            })
             .collect();
         Stacktrace { frames: frames }
     }
@@ -235,8 +236,10 @@ impl<'a: 'b, 'b> StackFrame<'b> {
     }
 
     pub fn remove_range(&mut self, from: VmIndex, to: VmIndex) {
-        self.stack
-            .remove_range(self.frame.offset + from, self.frame.offset + to);
+        self.stack.remove_range(
+            self.frame.offset + from,
+            self.frame.offset + to,
+        );
     }
 
     pub fn get_rooted_value(&self, index: VmIndex) -> Value {
@@ -270,8 +273,10 @@ impl<'a: 'b, 'b> StackFrame<'b> {
         let current_frame = self.stack.frames.pop().expect("Expected frame");
         // The root frame should always exist
         debug_assert!(!self.stack.frames.is_empty(), "Poped the last frame");
-        assert!(current_frame.offset == self.frame.offset,
-                "Attempted to exit a scope other than the top-most scope");
+        assert!(
+            current_frame.offset == self.frame.offset,
+            "Attempted to exit a scope other than the top-most scope"
+        );
         let frame = self.stack.frames.last().cloned();
         match frame {
             Some(frame) => {
@@ -317,10 +322,12 @@ impl<'a: 'b, 'b> StackFrame<'b> {
             assert!(frame.offset <= offset);
         }
         stack.frames.push(frame);
-        debug!("----> Store {} {:?}\n||| {:?}",
-               stack.frames.len(),
-               frame,
-               prev);
+        debug!(
+            "----> Store {} {:?}\n||| {:?}",
+            stack.frames.len(),
+            frame,
+            prev
+        );
         frame
     }
 
@@ -417,11 +424,13 @@ impl fmt::Display for Stacktrace {
         for (i, frame) in self.frames.iter().enumerate() {
             match *frame {
                 Some(ref frame) => {
-                    writeln!(f,
-                             "{}: {}:Line {}",
-                             i,
-                             frame.name.declared_name(),
-                             frame.line)
+                    writeln!(
+                        f,
+                        "{}: {}:Line {}",
+                        i,
+                        frame.name.declared_name(),
+                        frame.line
+                    )
                 }
                 None => writeln!(f, "{}: <unknown>", i),
             }?

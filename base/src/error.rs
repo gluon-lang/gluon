@@ -162,13 +162,7 @@ impl<E: fmt::Display> InFile<E> {
     }
 
     pub fn errors(self) -> Errors<Spanned<E, Location>> {
-        Errors {
-            errors: self.error
-                .errors
-                .into_iter()
-                .map(|err| err.error)
-                .collect(),
-        }
+        Errors { errors: self.error.errors.into_iter().map(|err| err.error).collect() }
     }
 }
 

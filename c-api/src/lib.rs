@@ -33,12 +33,13 @@ pub unsafe extern "C" fn glu_free_vm(vm: &Thread) {
     RootedThread::from_raw(vm);
 }
 
-pub unsafe extern "C" fn glu_run_expr(vm: &Thread,
-                                      module: &u8,
-                                      module_len: usize,
-                                      expr: &u8,
-                                      expr_len: usize)
-                                      -> Error {
+pub unsafe extern "C" fn glu_run_expr(
+    vm: &Thread,
+    module: &u8,
+    module_len: usize,
+    expr: &u8,
+    expr_len: usize,
+) -> Error {
     let module = match str::from_utf8(slice::from_raw_parts(module, module_len)) {
         Ok(s) => s,
         Err(_) => return Error::Unknown,
@@ -54,12 +55,13 @@ pub unsafe extern "C" fn glu_run_expr(vm: &Thread,
     }
 }
 
-pub unsafe extern "C" fn glu_load_script(vm: &Thread,
-                                         module: &u8,
-                                         module_len: usize,
-                                         expr: &u8,
-                                         expr_len: usize)
-                                         -> Error {
+pub unsafe extern "C" fn glu_load_script(
+    vm: &Thread,
+    module: &u8,
+    module_len: usize,
+    expr: &u8,
+    expr_len: usize,
+) -> Error {
     let module = match str::from_utf8(slice::from_raw_parts(module, module_len)) {
         Ok(s) => s,
         Err(_) => return Error::Unknown,
@@ -112,12 +114,13 @@ pub extern "C" fn glu_push_bool(vm: &Thread, b: i8) {
     Thread::push(vm, b != 0).unwrap();
 }
 
-pub unsafe extern "C" fn glu_push_function(vm: &Thread,
-                                           name: &u8,
-                                           len: usize,
-                                           function: Function,
-                                           args: VmIndex)
-                                           -> Error {
+pub unsafe extern "C" fn glu_push_function(
+    vm: &Thread,
+    name: &u8,
+    len: usize,
+    function: Function,
+    args: VmIndex,
+) -> Error {
     let s = match str::from_utf8(slice::from_raw_parts(name, len)) {
         Ok(s) => s,
         Err(_) => return Error::Unknown,
@@ -177,16 +180,17 @@ pub extern "C" fn glu_get_bool(vm: &Thread, index: VmIndex, out: &mut i8) -> Err
 
 /// The returned string is garbage collected and may not be valid after the string is removed from
 /// its slot in the stack
-pub unsafe extern "C" fn glu_get_string(vm: &Thread,
-                                        index: VmIndex,
-                                        out: &mut *const u8,
-                                        out_len: &mut usize)
-                                        -> Error {
+pub unsafe extern "C" fn glu_get_string(
+    vm: &Thread,
+    index: VmIndex,
+    out: &mut *const u8,
+    out_len: &mut usize,
+) -> Error {
     let mut context = vm.context();
     let stack = context.stack.current_frame();
-    match stack
-              .get_variants(index)
-              .and_then(|value| <&str>::from_value(vm, value)) {
+    match stack.get_variants(index).and_then(|value| {
+        <&str>::from_value(vm, value)
+    }) {
         Some(value) => {
             *out = &*value.as_ptr();
             *out_len = value.len();
@@ -196,10 +200,11 @@ pub unsafe extern "C" fn glu_get_string(vm: &Thread,
     }
 }
 
-pub extern "C" fn glu_get_light_userdata(vm: &Thread,
-                                         index: VmIndex,
-                                         out: &mut *mut libc::c_void)
-                                         -> Error {
+pub extern "C" fn glu_get_light_userdata(
+    vm: &Thread,
+    index: VmIndex,
+    out: &mut *mut libc::c_void,
+) -> Error {
     let mut userdata = 0usize;
     let err = get_value(vm, index, &mut userdata);
     if err == Error::Ok {
@@ -209,13 +214,14 @@ pub extern "C" fn glu_get_light_userdata(vm: &Thread,
 }
 
 fn get_value<T>(vm: &Thread, index: VmIndex, out: &mut T) -> Error
-    where T: for<'vm> Getable<'vm>
+where
+    T: for<'vm> Getable<'vm>,
 {
     let mut context = vm.context();
     let stack = context.stack.current_frame();
-    match stack
-              .get_variants(index)
-              .and_then(|value| T::from_value(vm, value)) {
+    match stack.get_variants(index).and_then(
+        |value| T::from_value(vm, value),
+    ) {
         Some(value) => {
             *out = value;
             Error::Ok
@@ -256,10 +262,14 @@ mod tests {
 
             let mut string_ptr = ptr::null();
             let mut string_len = 0;
-            assert_eq!(glu_get_string(vm, 2, &mut string_ptr, &mut string_len),
-                       Error::Ok);
-            assert_eq!(str::from_utf8(slice::from_raw_parts(string_ptr, string_len)),
-                       Ok("test"));
+            assert_eq!(
+                glu_get_string(vm, 2, &mut string_ptr, &mut string_len),
+                Error::Ok
+            );
+            assert_eq!(
+                str::from_utf8(slice::from_raw_parts(string_ptr, string_len)),
+                Ok("test")
+            );
 
             let mut b = 0;
             assert_eq!(glu_get_bool(vm, 3, &mut b), Error::Ok);

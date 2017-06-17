@@ -42,7 +42,8 @@ pub struct Execute<T> {
 }
 
 impl<T> Execute<T>
-    where T: Deref<Target = Thread>
+where
+    T: Deref<Target = Thread>,
 {
     pub fn new(thread: T) -> Execute<T> {
         Execute { thread: Some(thread) }
@@ -50,7 +51,8 @@ impl<T> Execute<T>
 }
 
 impl<T> Future for Execute<T>
-    where T: Deref<Target = Thread>
+where
+    T: Deref<Target = Thread>,
 {
     type Item = (T, Value);
     type Error = Error;
@@ -58,10 +60,12 @@ impl<T> Future for Execute<T>
     // Returns `T` so that it can be reused by the caller
     fn poll(&mut self) -> Poll<(T, Value), Error> {
         let value = {
-            let mut context = try_ready!(self.thread
-                .as_ref()
-                .expect("cannot poll Execute future after it has succeded")
-                .resume());
+            let mut context = try_ready!(
+                self.thread
+                    .as_ref()
+                    .expect("cannot poll Execute future after it has succeded")
+                    .resume()
+            );
             context.stack.pop()
         };
         Ok(Async::Ready((self.thread.take().unwrap(), value)))
@@ -81,14 +85,16 @@ pub enum Status {
 /// A rooted value
 #[derive(Clone, PartialEq)]
 pub struct RootedValue<T>
-    where T: Deref<Target = Thread>
+where
+    T: Deref<Target = Thread>,
 {
     vm: T,
     value: Value,
 }
 
 impl<T> Drop for RootedValue<T>
-    where T: Deref<Target = Thread>
+where
+    T: Deref<Target = Thread>,
 {
     fn drop(&mut self) {
         // TODO not safe if the root changes order of being dropped with another root
@@ -97,7 +103,8 @@ impl<T> Drop for RootedValue<T>
 }
 
 impl<T> fmt::Debug for RootedValue<T>
-    where T: Deref<Target = Thread>
+where
+    T: Deref<Target = Thread>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self.value)
@@ -105,7 +112,8 @@ impl<T> fmt::Debug for RootedValue<T>
 }
 
 impl<T> Deref for RootedValue<T>
-    where T: Deref<Target = Thread>
+where
+    T: Deref<Target = Thread>,
 {
     type Target = Value;
     fn deref(&self) -> &Value {
@@ -114,27 +122,26 @@ impl<T> Deref for RootedValue<T>
 }
 
 impl<T> RootedValue<T>
-    where T: Deref<Target = Thread>
+where
+    T: Deref<Target = Thread>,
 {
     pub fn vm(&self) -> &Thread {
         &self.vm
     }
 
     pub fn clone_vm(&self) -> T
-        where T: Clone
+    where
+        T: Clone,
     {
         self.vm.clone()
     }
 
     pub fn get<'vm>(&'vm self, index: usize) -> Option<RootedValue<T>>
-        where T: VmRoot<'vm>
+    where
+        T: VmRoot<'vm>,
     {
         match self.value {
-            Value::Data(ref v) => {
-                v.fields
-                    .get(index)
-                    .map(|value| self.vm.root_value(*value))
-            }
+            Value::Data(ref v) => v.fields.get(index).map(|value| self.vm.root_value(*value)),
             _ => None,
         }
     }
@@ -227,12 +234,7 @@ impl VmType for Thread {
 impl Traverseable for Thread {
     fn traverse(&self, gc: &mut Gc) {
         self.traverse_fields_except_stack(gc);
-        self.context
-            .lock()
-            .unwrap()
-            .stack
-            .get_values()
-            .traverse(gc);
+        self.context.lock().unwrap().stack.get_values().traverse(gc);
         self.child_threads.read().unwrap().traverse(gc);
     }
 }
@@ -377,23 +379,27 @@ impl Thread {
     /// Creates a new global value at `name`.
     /// Fails if a global called `name` already exists.
     pub fn define_global<'vm, T>(&'vm self, name: &str, value: T) -> Result<()>
-        where T: Pushable<'vm> + VmType
+    where
+        T: Pushable<'vm> + VmType,
     {
         let value = {
             let mut context = self.context();
             value.push(self, &mut context)?;
             context.stack.pop()
         };
-        self.set_global(Symbol::from(name),
-                        T::make_type(self),
-                        Metadata::default(),
-                        value)
+        self.set_global(
+            Symbol::from(name),
+            T::make_type(self),
+            Metadata::default(),
+            value,
+        )
     }
 
     /// Retrieves the global called `name`.
     /// Fails if the global does not exist or it does not have the correct type.
     pub fn get_global<'vm, T>(&'vm self, name: &str) -> Result<T>
-        where T: Getable<'vm> + VmType
+    where
+        T: Getable<'vm> + VmType,
     {
         use check::check_signature;
         let env = self.get_env();
@@ -401,8 +407,9 @@ impl Thread {
         // Finally check that type of the returned value is correct
         let expected = T::make_type(self);
         if check_signature(&*env, &expected, &actual) {
-            T::from_value(self, Variants(&value))
-                .ok_or_else(|| Error::UndefinedBinding(name.into()))
+            T::from_value(self, Variants(&value)).ok_or_else(|| {
+                Error::UndefinedBinding(name.into())
+            })
         } else {
             Err(Error::WrongType(expected, actual.into_owned()))
         }
@@ -445,7 +452,8 @@ impl Thread {
 
     /// Pushes a value to the top of the stack
     pub fn push<'vm, T>(&'vm self, v: T) -> Result<()>
-        where T: Pushable<'vm>
+    where
+        T: Pushable<'vm>,
     {
         let mut context = self.current_context();
         v.push(self, &mut context)
@@ -481,14 +489,15 @@ impl Thread {
     }
 
     fn with_roots<F, R>(&self, context: &mut Context, f: F) -> R
-        where F: for<'b> FnOnce(&mut Gc, Roots<'b>) -> R
+    where
+        F: for<'b> FnOnce(&mut Gc, Roots<'b>) -> R,
     {
         // For this to be safe we require that the received stack is the same one that is in this
         // VM
         assert!(unsafe {
-                    context as *const _ as usize >= &self.context as *const _ as usize &&
-                    context as *const _ as usize <= (&self.context as *const _).offset(1) as usize
-                });
+            context as *const _ as usize >= &self.context as *const _ as usize &&
+                context as *const _ as usize <= (&self.context as *const _).offset(1) as usize
+        });
         let roots = Roots {
             vm: unsafe {
                 // Threads must only be on the garbage collectors heap which makes this safe
@@ -520,7 +529,8 @@ impl<'a> VmRoot<'a> for RootedThread {
 /// Internal functions for interacting with threads. These functions should be considered both
 /// unsafe and unstable.
 pub trait ThreadInternal
-    where for<'a> &'a Self: Deref<Target = Thread>
+where
+    for<'a> &'a Self: Deref<Target = Thread>,
 {
     /// Locks and retrives this threads stack
     fn context(&self) -> OwnedContext;
@@ -532,15 +542,18 @@ pub trait ThreadInternal
     fn root_string<'vm>(&'vm self, ptr: GcStr) -> RootStr<'vm>;
 
     /// Roots a value
-    fn root_value<'vm, T>(&'vm self, value: Value) -> RootedValue<T> where T: VmRoot<'vm>;
+    fn root_value<'vm, T>(&'vm self, value: Value) -> RootedValue<T>
+    where
+        T: VmRoot<'vm>;
 
 
-    fn add_bytecode(&self,
-                    name: &str,
-                    typ: ArcType,
-                    args: VmIndex,
-                    instructions: Vec<Instruction>)
-                    -> Result<()>;
+    fn add_bytecode(
+        &self,
+        name: &str,
+        typ: ArcType,
+        args: VmIndex,
+        instructions: Vec<Instruction>,
+    ) -> Result<()>;
 
     /// Evaluates a zero argument function (a thunk)
     fn call_thunk(&self, closure: GcPtr<ClosureData>) -> FutureValue<Execute<&Self>>;
@@ -551,21 +564,23 @@ pub trait ThreadInternal
     /// Calls a function on the stack.
     /// When this function is called it is expected that the function exists at
     /// `stack.len() - args - 1` and that the arguments are of the correct type
-    fn call_function<'b>(&'b self,
-                         stack: OwnedContext<'b>,
-                         args: VmIndex)
-                         -> Result<Async<Option<OwnedContext<'b>>>>;
+    fn call_function<'b>(
+        &'b self,
+        stack: OwnedContext<'b>,
+        args: VmIndex,
+    ) -> Result<Async<Option<OwnedContext<'b>>>>;
 
     fn resume(&self) -> Result<Async<OwnedContext>>;
 
     fn global_env(&self) -> &Arc<GlobalVmState>;
 
-    fn set_global(&self,
-                  name: Symbol,
-                  typ: ArcType,
-                  metadata: Metadata,
-                  value: Value)
-                  -> Result<()>;
+    fn set_global(
+        &self,
+        name: Symbol,
+        typ: ArcType,
+        metadata: Metadata,
+        value: Value,
+    ) -> Result<()>;
 
     /// `owner` is theread that owns `value` which is not necessarily the same as `self`
     fn deep_clone_value(&self, owner: &Thread, value: Value) -> Result<Value>;
@@ -584,31 +599,31 @@ impl ThreadInternal for Thread {
     }
     /// Roots a userdata
     fn root<'vm, T: Userdata>(&'vm self, v: GcPtr<Box<Userdata>>) -> Option<Root<'vm, T>> {
-        v.downcast_ref::<T>()
-            .map(|ptr| {
-                     self.roots.write().unwrap().push(v.as_traverseable());
-                     Root {
-                         roots: &self.roots,
-                         ptr: ptr,
-                     }
-                 })
+        v.downcast_ref::<T>().map(|ptr| {
+            self.roots.write().unwrap().push(v.as_traverseable());
+            Root {
+                roots: &self.roots,
+                ptr: ptr,
+            }
+        })
     }
 
     /// Roots a string
     fn root_string<'vm>(&'vm self, ptr: GcStr) -> RootStr<'vm> {
-        self.roots
-            .write()
-            .unwrap()
-            .push(ptr.into_inner().as_traverseable());
+        self.roots.write().unwrap().push(
+            ptr.into_inner()
+                .as_traverseable(),
+        );
         RootStr(Root {
-                    roots: &self.roots,
-                    ptr: &*ptr,
-                })
+            roots: &self.roots,
+            ptr: &*ptr,
+        })
     }
 
     /// Roots a value
     fn root_value<'vm, T>(&'vm self, value: Value) -> RootedValue<T>
-        where T: VmRoot<'vm>
+    where
+        T: VmRoot<'vm>,
     {
         self.rooted_values.write().unwrap().push(value);
         RootedValue {
@@ -617,12 +632,13 @@ impl ThreadInternal for Thread {
         }
     }
 
-    fn add_bytecode(&self,
-                    name: &str,
-                    typ: ArcType,
-                    args: VmIndex,
-                    instructions: Vec<Instruction>)
-                    -> Result<()> {
+    fn add_bytecode(
+        &self,
+        name: &str,
+        typ: ArcType,
+        args: VmIndex,
+        instructions: Vec<Instruction>,
+    ) -> Result<()> {
         let id = Symbol::from(name);
         let mut compiled_fn = CompiledFunction::new(args, id.clone(), typ.clone(), "".into());
         compiled_fn.instructions = instructions;
@@ -635,9 +651,7 @@ impl ThreadInternal for Thread {
     fn call_thunk(&self, closure: GcPtr<ClosureData>) -> FutureValue<Execute<&Thread>> {
         let mut context = self.current_context();
         context.stack.push(Closure(closure));
-        context
-            .borrow_mut()
-            .enter_scope(0, State::Closure(closure));
+        context.borrow_mut().enter_scope(0, State::Closure(closure));
         let async = try_future!(context.execute(false));
         match async {
             Async::Ready(context) => FutureValue::Value(Ok((self, context.unwrap().stack.pop()))),
@@ -677,10 +691,11 @@ impl ThreadInternal for Thread {
     /// Calls a function on the stack.
     /// When this function is called it is expected that the function exists at
     /// `stack.len() - args - 1` and that the arguments are of the correct type
-    fn call_function<'b>(&'b self,
-                         mut context: OwnedContext<'b>,
-                         args: VmIndex)
-                         -> Result<Async<Option<OwnedContext<'b>>>> {
+    fn call_function<'b>(
+        &'b self,
+        mut context: OwnedContext<'b>,
+        args: VmIndex,
+    ) -> Result<Async<Option<OwnedContext<'b>>>> {
         context.borrow_mut().do_call(args)?;
         context.execute(false)
     }
@@ -699,12 +714,13 @@ impl ThreadInternal for Thread {
         &self.global_state
     }
 
-    fn set_global(&self,
-                  name: Symbol,
-                  typ: ArcType,
-                  metadata: Metadata,
-                  value: Value)
-                  -> Result<()> {
+    fn set_global(
+        &self,
+        name: Symbol,
+        typ: ArcType,
+        metadata: Metadata,
+        value: Value,
+    ) -> Result<()> {
         let value = ::value::Cloner::new(self, &mut self.global_env().gc.lock().unwrap())
             .deep_clone(value)?;
         self.global_env().set_global(name, typ, metadata, value)
@@ -727,7 +743,8 @@ impl ThreadInternal for Thread {
         // If the threads do not share the same global state then they are disjoint and can't share
         // values
         if &*self.global_state as *const GlobalVmState !=
-           &*other.global_state as *const GlobalVmState {
+            &*other.global_state as *const GlobalVmState
+        {
             return false;
         }
         // Otherwise the threads might be able to share values but only if they are on the same
@@ -757,13 +774,15 @@ impl ThreadInternal for Thread {
             .record_map
             .get_offset(0, str_index)
             .and_then(|index| match value {
-                          Data(data) => data.fields.get(index as usize).cloned(),
-                          _ => None,
-                      })
+                Data(data) => data.fields.get(index as usize).cloned(),
+                _ => None,
+            })
             .ok_or_else(|| {
-                            Error::Message(format!("Internal error: Undefined record field {}",
-                                                   str_index))
-                        })
+                Error::Message(format!(
+                    "Internal error: Undefined record field {}",
+                    str_index
+                ))
+            })
     }
 }
 
@@ -791,9 +810,9 @@ impl<'a> DebugInfo<'a> {
         let frames = self.stack.get_frames();
         if level < frames.len() {
             Some(StackInfo {
-                     info: self,
-                     index: frames.len() - level - 1,
-                 })
+                info: self,
+                index: frames.len() - level - 1,
+            })
         } else {
             None
         }
@@ -823,11 +842,9 @@ impl<'a> StackInfo<'a> {
         let frame = self.frame();
         match frame.state {
             State::Closure(ref closure) => {
-                closure
-                    .function
-                    .debug_info
-                    .source_map
-                    .line(self.instruction_index())
+                closure.function.debug_info.source_map.line(
+                    self.instruction_index(),
+                )
             }
             _ => None,
         }
@@ -855,11 +872,9 @@ impl<'a> StackInfo<'a> {
         let frame = self.frame();
         match frame.state {
             State::Closure(ref closure) => {
-                closure
-                    .function
-                    .debug_info
-                    .local_map
-                    .locals(self.instruction_index())
+                closure.function.debug_info.local_map.locals(
+                    self.instruction_index(),
+                )
             }
             _ => LocalIter::empty(),
         }
@@ -918,24 +933,27 @@ impl Context {
     }
 
     pub fn new_data(&mut self, thread: &Thread, tag: VmTag, fields: &[Value]) -> Result<Value> {
-        self.alloc_with(thread,
-                        Def {
-                            tag: tag,
-                            elems: fields,
-                        })
-            .map(Value::Data)
+        self.alloc_with(
+            thread,
+            Def {
+                tag: tag,
+                elems: fields,
+            },
+        ).map(Value::Data)
     }
 
     pub fn alloc_with<D>(&mut self, thread: &Thread, data: D) -> Result<GcPtr<D::Value>>
-        where D: DataDef + Traverseable,
-              D::Value: Sized + Any
+    where
+        D: DataDef + Traverseable,
+        D::Value: Sized + Any,
     {
         alloc(&mut self.gc, thread, &self.stack, data)
     }
 
     pub fn alloc_ignore_limit<D>(&mut self, data: D) -> GcPtr<D::Value>
-        where D: DataDef + Traverseable,
-              D::Value: Sized + Any
+    where
+        D: DataDef + Traverseable,
+        D::Value: Sized + Any,
     {
         self.gc.alloc_ignore_limit(data)
     }
@@ -960,22 +978,24 @@ impl Context {
     /// This function is unsafe because the `vm` lifetime must not outlive the lifetime of the
     /// `Thread`
     pub unsafe fn return_future<'vm, F>(&mut self, mut future: F)
-        where F: Future<Error = Error> + Send + 'static,
-              F::Item: Pushable<'vm>
+    where
+        F: Future<Error = Error> + Send + 'static,
+        F::Item: Pushable<'vm>,
     {
         use std::mem::transmute;
         self.poll_fn = Some(Box::new(move |vm, context| {
-                                         let vm = transmute::<&Thread, &'vm Thread>(vm);
-                                         let value = try_ready!(future.poll());
-                                         value.push(vm, context).map(Async::Ready)
-                                     }));
+            let vm = transmute::<&Thread, &'vm Thread>(vm);
+            let value = try_ready!(future.poll());
+            value.push(vm, context).map(Async::Ready)
+        }));
     }
 }
 
 impl<'b> OwnedContext<'b> {
     pub fn alloc<D>(&mut self, data: D) -> Result<GcPtr<D::Value>>
-        where D: DataDef + Traverseable,
-              D::Value: Sized + Any
+    where
+        D: DataDef + Traverseable,
+        D::Value: Sized + Any,
     {
         let Context {
             ref mut gc,
@@ -994,8 +1014,9 @@ impl<'b> OwnedContext<'b> {
 }
 
 pub fn alloc<D>(gc: &mut Gc, thread: &Thread, stack: &Stack, def: D) -> Result<GcPtr<D::Value>>
-    where D: DataDef + Traverseable,
-          D::Value: Sized + Any
+where
+    D: DataDef + Traverseable,
+    D::Value: Sized + Any,
 {
     let roots = Roots {
         vm: unsafe {
@@ -1062,7 +1083,11 @@ impl<'b> OwnedContext<'b> {
                 State::Extern(ext) => {
                     let instruction_index = context.borrow_mut().stack.frame.instruction_index;
                     context.borrow_mut().stack.frame.instruction_index = 1;
-                    Some(try_ready!(context.execute_function(instruction_index == 0, &ext, polled)))
+                    Some(try_ready!(context.execute_function(
+                        instruction_index == 0,
+                        &ext,
+                        polled,
+                    )))
                 }
                 State::Closure(closure) => {
                     let max_stack_size = context.max_stack_size;
@@ -1081,21 +1106,26 @@ impl<'b> OwnedContext<'b> {
 
                         // Before entering a function check that the stack cannot exceed `max_stack_size`
                         if instruction_index == 0 &&
-                           context.stack.stack.len() + function_size > max_stack_size {
+                            context.stack.stack.len() + function_size > max_stack_size
+                        {
                             return Err(Error::StackOverflow(max_stack_size));
                         }
 
                         if context.stack.stack.get_frames().len() == 0 {
                             State::ReturnContext
                         } else {
-                            debug!("Continue with {}\nAt: {}/{}",
-                                   closure.function.name,
-                                   instruction_index,
-                                   closure.function.instructions.len());
+                            debug!(
+                                "Continue with {}\nAt: {}/{}",
+                                closure.function.name,
+                                instruction_index,
+                                closure.function.instructions.len()
+                            );
 
-                            let new_context = try_ready!(context.execute_(instruction_index,
-                                                            &closure.function.instructions,
-                                                            &closure.function));
+                            let new_context = try_ready!(context.execute_(
+                                instruction_index,
+                                &closure.function.instructions,
+                                &closure.function,
+                            ));
                             if new_context.is_some() {
                                 State::Exists
                             } else {
@@ -1114,14 +1144,17 @@ impl<'b> OwnedContext<'b> {
         Ok(Async::Ready(maybe_context))
     }
 
-    fn execute_function(mut self,
-                        initial_call: bool,
-                        function: &ExternFunction,
-                        polled: bool)
-                        -> Result<Async<OwnedContext<'b>>> {
-        info!("CALL EXTERN {} {:?}",
-              function.id,
-              &self.stack.current_frame()[..]);
+    fn execute_function(
+        mut self,
+        initial_call: bool,
+        function: &ExternFunction,
+        polled: bool,
+    ) -> Result<Async<OwnedContext<'b>>> {
+        info!(
+            "CALL EXTERN {} {:?}",
+            function.id,
+            &self.stack.current_frame()[..]
+        );
         let mut status = Status::Ok;
         if initial_call {
             // Make sure that the stack is not borrowed during the external function call
@@ -1159,19 +1192,19 @@ impl<'b> OwnedContext<'b> {
                 debug!("{} {:?}", stack.len(), &*stack);
                 stack.pop();
             }
-            debug_assert!(match stack.frame.state {
-                              State::Extern(ref e) => e.id == function.id,
-                              _ => false,
-                          },
-                          "Attempted to pop {:?} but {} was expected",
-                          stack.frame,
-                          function.id);
+            debug_assert!(
+                match stack.frame.state {
+                    State::Extern(ref e) => e.id == function.id,
+                    _ => false,
+                },
+                "Attempted to pop {:?} but {} was expected",
+                stack.frame,
+                function.id
+            );
         }
-        self =
-            self.exit_scope()
-                .map_err(|_| {
-                    Error::Message(StdString::from("Poped the last frame in execute_function"))
-                })?;
+        self = self.exit_scope().map_err(|_| {
+            Error::Message(StdString::from("Poped the last frame in execute_function"))
+        })?;
         self.stack.pop(); // Pop function
         self.stack.push(result);
 
@@ -1182,8 +1215,10 @@ impl<'b> OwnedContext<'b> {
                 match self.stack.pop() {
                     String(s) => Err(Error::Panic(s.to_string())),
                     _ => {
-                        Err(Error::Message(format!("Unexpected error calling function `{}`",
-                                                   function.id)))
+                        Err(Error::Message(format!(
+                            "Unexpected error calling function `{}`",
+                            function.id
+                        )))
                     }
                 }
             }
@@ -1212,13 +1247,13 @@ struct ExecuteContext<'b> {
 
 impl<'b> ExecuteContext<'b> {
     fn lookup_field(&self, tag: VmTag, index: InternedStr) -> Result<VmIndex> {
-        self.record_map
-            .get_offset(tag, index)
-            .ok_or_else(|| {
-                            Error::Message(format!("Internal error: Undefined record field {} {}",
-                                                   tag,
-                                                   index))
-                        })
+        self.record_map.get_offset(tag, index).ok_or_else(|| {
+            Error::Message(format!(
+                "Internal error: Undefined record field {} {}",
+                tag,
+                index
+            ))
+        })
     }
 
     fn enter_scope(&mut self, args: VmIndex, state: State) {
@@ -1258,11 +1293,12 @@ impl<'b> ExecuteContext<'b> {
         }
     }
 
-    fn call_function_with_upvars(&mut self,
-                                 args: VmIndex,
-                                 required_args: VmIndex,
-                                 callable: Callable)
-                                 -> Result<()> {
+    fn call_function_with_upvars(
+        &mut self,
+        args: VmIndex,
+        required_args: VmIndex,
+        callable: Callable,
+    ) -> Result<()> {
         debug!("cmp {} {} {:?} {:?}", args, required_args, callable, {
             let function_index = self.stack.len() - 1 - args;
             &(*self.stack)[(function_index + 1) as usize..]
@@ -1285,13 +1321,15 @@ impl<'b> ExecuteContext<'b> {
                 let excess_args = args - required_args;
                 let d = {
                     let fields = &self.stack[self.stack.len() - excess_args..];
-                    alloc(&mut self.gc,
-                          self.thread,
-                          &self.stack.stack,
-                          Def {
-                              tag: 0,
-                              elems: fields,
-                          })?
+                    alloc(
+                        &mut self.gc,
+                        self.thread,
+                        &self.stack.stack,
+                        Def {
+                            tag: 0,
+                            elems: fields,
+                        },
+                    )?
                 };
                 for _ in 0..excess_args {
                     self.stack.pop();
@@ -1300,9 +1338,11 @@ impl<'b> ExecuteContext<'b> {
                 // collected
                 let offset = self.stack.len() - required_args - 1;
                 self.stack.insert_slice(offset, &[Data(d)]);
-                debug!("xxxxxx {:?}\n{:?}",
-                       &(*self.stack)[..],
-                       self.stack.stack.get_frames());
+                debug!(
+                    "xxxxxx {:?}\n{:?}",
+                    &(*self.stack)[..],
+                    self.stack.stack.get_frames()
+                );
                 self.execute_callable(&callable, true)
             }
         }
@@ -1310,9 +1350,11 @@ impl<'b> ExecuteContext<'b> {
 
     fn do_call(&mut self, args: VmIndex) -> Result<()> {
         let function_index = self.stack.len() - 1 - args;
-        debug!("Do call {:?} {:?}",
-               self.stack[function_index],
-               &(*self.stack)[(function_index + 1) as usize..]);
+        debug!(
+            "Do call {:?} {:?}",
+            self.stack[function_index],
+            &(*self.stack)[(function_index + 1) as usize..]
+        );
         match self.stack[function_index].clone() {
             Function(ref f) => {
                 let callable = Callable::Extern(f.clone());
@@ -1332,16 +1374,19 @@ impl<'b> ExecuteContext<'b> {
         }
     }
 
-    fn execute_(&mut self,
-                mut index: usize,
-                instructions: &[Instruction],
-                function: &BytecodeFunction)
-                -> Result<Async<Option<()>>> {
+    fn execute_(
+        &mut self,
+        mut index: usize,
+        instructions: &[Instruction],
+        function: &BytecodeFunction,
+    ) -> Result<Async<Option<()>>> {
         {
-            debug!(">>>\nEnter frame {}: {:?}\n{:?}",
-                   function.name,
-                   &self.stack[..],
-                   self.stack.frame);
+            debug!(
+                ">>>\nEnter frame {}: {:?}\n{:?}",
+                function.name,
+                &self.stack[..],
+                self.stack.frame
+            );
         }
         while let Some(&instr) = instructions.get(index) {
             debug_instruction(&self.stack, index, instr, function);
@@ -1349,10 +1394,9 @@ impl<'b> ExecuteContext<'b> {
             if self.hook.flags.contains(LINE_FLAG) {
                 if let Some(ref mut hook) = self.hook.function {
                     let current_line = function.debug_info.source_map.line(index);
-                    let previous_line = function
-                        .debug_info
-                        .source_map
-                        .line(self.hook.previous_instruction_index);
+                    let previous_line = function.debug_info.source_map.line(
+                        self.hook.previous_instruction_index,
+                    );
                     self.hook.previous_instruction_index = index;
                     if current_line != previous_line {
                         self.stack.frame.instruction_index = index;
@@ -1378,8 +1422,9 @@ impl<'b> ExecuteContext<'b> {
                     self.stack.push(Value::Byte(b));
                 }
                 PushString(string_index) => {
-                    self.stack
-                        .push(String(function.strings[string_index as usize].inner()));
+                    self.stack.push(String(
+                        function.strings[string_index as usize].inner(),
+                    ));
                 }
                 PushGlobal(i) => {
                     let x = function.globals[i as usize];
@@ -1405,13 +1450,15 @@ impl<'b> ExecuteContext<'b> {
                             None => panic!("Expected excess args"),
                         }
                     }
-                    debug_assert!(match self.stack.frame.state {
-                                      State::Closure(ref c) => c.function.name == function.name,
-                                      _ => false,
-                                  },
-                                  "Attempted to pop {:?} but `{}` was expected",
-                                  self.stack.frame.state,
-                                  function.name);
+                    debug_assert!(
+                        match self.stack.frame.state {
+                            State::Closure(ref c) => c.function.name == function.name,
+                            _ => false,
+                        },
+                        "Attempted to pop {:?} but `{}` was expected",
+                        self.stack.frame.state,
+                        function.name
+                    );
                     match self.exit_scope() {
                         Ok(_) => (),
                         Err(_) => {
@@ -1430,13 +1477,15 @@ impl<'b> ExecuteContext<'b> {
                             Value::Tag(tag)
                         } else {
                             let fields = &self.stack[self.stack.len() - args..];
-                            Data(alloc(&mut self.gc,
-                                       self.thread,
-                                       &self.stack.stack,
-                                       Def {
-                                           tag: tag,
-                                           elems: fields,
-                                       })?)
+                            Data(alloc(
+                                &mut self.gc,
+                                self.thread,
+                                &self.stack.stack,
+                                Def {
+                                    tag: tag,
+                                    elems: fields,
+                                },
+                            )?)
                         }
                     };
                     for _ in 0..args {
@@ -1457,12 +1506,13 @@ impl<'b> ExecuteContext<'b> {
                                 };
                                 let field_names = &function.records[record as usize];
                                 let tag = self.record_map.get_map(&field_names);
-                                Data(self.gc
-                                         .alloc_and_collect(roots,
-                                                            Def {
-                                                                tag: tag,
-                                                                elems: fields,
-                                                            })?)
+                                Data(self.gc.alloc_and_collect(
+                                    roots,
+                                    Def {
+                                        tag: tag,
+                                        elems: fields,
+                                    },
+                                )?)
                             }
                         }
                     };
@@ -1474,10 +1524,12 @@ impl<'b> ExecuteContext<'b> {
                 ConstructArray(args) => {
                     let d = {
                         let fields = &self.stack[self.stack.len() - args..];
-                        alloc(&mut self.gc,
-                              self.thread,
-                              &self.stack.stack,
-                              ::value::ArrayDef(fields))?
+                        alloc(
+                            &mut self.gc,
+                            self.thread,
+                            &self.stack.stack,
+                            ::value::ArrayDef(fields),
+                        )?
                     };
                     for _ in 0..args {
                         self.stack.pop();
@@ -1509,12 +1561,14 @@ impl<'b> ExecuteContext<'b> {
                         Data(ref data) => data.tag,
                         Value::Tag(tag) => tag,
                         _ => {
-                            return Err(Error::Message("Op TestTag called on non data type"
-                                                          .to_string()))
+                            return Err(Error::Message(
+                                "Op TestTag called on non data type".to_string(),
+                            ))
                         }
                     };
-                    self.stack
-                        .push(Value::Tag(if data_tag == tag { 1 } else { 0 }));
+                    self.stack.push(
+                        Value::Tag(if data_tag == tag { 1 } else { 0 }),
+                    );
                 }
                 Split => {
                     match self.stack.pop() {
@@ -1526,8 +1580,9 @@ impl<'b> ExecuteContext<'b> {
                         // Zero argument variant
                         Value::Tag(_) => (),
                         _ => {
-                            return Err(Error::Message("Op Split called on non data type"
-                                                          .to_string()))
+                            return Err(Error::Message(
+                                "Op Split called on non data type".to_string(),
+                            ))
                         }
                     }
                 }
@@ -1564,10 +1619,12 @@ impl<'b> ExecuteContext<'b> {
                     let closure = {
                         let args = &self.stack[self.stack.len() - upvars..];
                         let func = function.inner_functions[function_index as usize];
-                        Closure(alloc(&mut self.gc,
-                                      self.thread,
-                                      &self.stack.stack,
-                                      ClosureDataDef(func, args))?)
+                        Closure(alloc(
+                            &mut self.gc,
+                            self.thread,
+                            &self.stack.stack,
+                            ClosureDataDef(func, args),
+                        )?)
                     };
                     for _ in 0..upvars {
                         self.stack.pop();
@@ -1581,10 +1638,12 @@ impl<'b> ExecuteContext<'b> {
                     let closure = {
                         // Use dummy variables until it is filled
                         let func = function.inner_functions[function_index as usize];
-                        Closure(alloc(&mut self.gc,
-                                      self.thread,
-                                      &self.stack.stack,
-                                      ClosureInitDef(func, upvars as usize))?)
+                        Closure(alloc(
+                            &mut self.gc,
+                            self.thread,
+                            &self.stack.stack,
+                            ClosureInitDef(func, upvars as usize),
+                        )?)
                     };
                     self.stack.push(closure);
                 }
@@ -1638,13 +1697,15 @@ impl<'b> ExecuteContext<'b> {
         let frame_has_excess = self.stack.frame.excess;
 
         // We might not get access to the frame above the current as it could be locked
-        debug_assert!(match self.stack.frame.state {
-                          State::Closure(ref c) => c.function.name == function.name,
-                          _ => false,
-                      },
-                      "Attempted to pop {:?} but `{}` was expected",
-                      self.stack.frame.state,
-                      function.name);
+        debug_assert!(
+            match self.stack.frame.state {
+                State::Closure(ref c) => c.function.name == function.name,
+                _ => false,
+            },
+            "Attempted to pop {:?} but `{}` was expected",
+            self.stack.frame.state,
+            function.name
+        );
         let stack_exists = self.exit_scope().is_ok();
 
         self.stack.pop();
@@ -1664,8 +1725,9 @@ impl<'b> ExecuteContext<'b> {
                     for value in &excess.fields {
                         self.stack.push(*value);
                     }
-                    self.do_call(excess.fields.len() as VmIndex)
-                        .map(|x| Async::Ready(Some(x)))
+                    self.do_call(excess.fields.len() as VmIndex).map(|x| {
+                        Async::Ready(Some(x))
+                    })
                 }
                 x => panic!("Expected excess arguments found {:?}", x),
             }
@@ -1677,32 +1739,36 @@ impl<'b> ExecuteContext<'b> {
 
 #[inline]
 fn binop_int<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
-    where F: FnOnce(T, T) -> VmInt,
-          T: Getable<'b> + fmt::Debug
+where
+    F: FnOnce(T, T) -> VmInt,
+    T: Getable<'b> + fmt::Debug,
 {
     binop(vm, stack, |l, r| Value::Int(f(l, r)))
 }
 
 #[inline]
 fn binop_f64<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
-    where F: FnOnce(T, T) -> f64,
-          T: Getable<'b> + fmt::Debug
+where
+    F: FnOnce(T, T) -> f64,
+    T: Getable<'b> + fmt::Debug,
 {
     binop(vm, stack, |l, r| Value::Float(f(l, r)))
 }
 
 #[inline]
 fn binop_byte<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
-    where F: FnOnce(T, T) -> u8,
-          T: Getable<'b> + fmt::Debug
+where
+    F: FnOnce(T, T) -> u8,
+    T: Getable<'b> + fmt::Debug,
 {
     binop(vm, stack, |l, r| Value::Byte(f(l, r)))
 }
 
 #[inline]
 fn binop_bool<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
-    where F: FnOnce(T, T) -> bool,
-          T: Getable<'b> + fmt::Debug
+where
+    F: FnOnce(T, T) -> bool,
+    T: Getable<'b> + fmt::Debug,
 {
     binop(vm, stack, |l, r| Value::Tag(if f(l, r) { 1 } else { 0 }))
 }
@@ -1710,12 +1776,16 @@ fn binop_bool<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
 
 #[inline]
 fn binop<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
-    where F: FnOnce(T, T) -> Value,
-          T: Getable<'b> + fmt::Debug
+where
+    F: FnOnce(T, T) -> Value,
+    T: Getable<'b> + fmt::Debug,
 {
     let r = stack.pop();
     let l = stack.pop();
-    match (T::from_value(vm, Variants(&l)), T::from_value(vm, Variants(&r))) {
+    match (
+        T::from_value(vm, Variants(&l)),
+        T::from_value(vm, Variants(&r)),
+    ) {
         (Some(l), Some(r)) => {
             let result = f(l, r);
             // pushing numbers should never return an error so unwrap
@@ -1725,27 +1795,31 @@ fn binop<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
     }
 }
 
-fn debug_instruction(stack: &StackFrame,
-                     index: usize,
-                     instr: Instruction,
-                     function: &BytecodeFunction) {
-    debug!("{:?}: {:?} -> {:?} {:?}",
-           index,
-           instr,
-           stack.len(),
-           match instr {
-               Push(i) => {
-        let x = stack.get(i as usize).cloned();
-        if x.is_none() {
-            debug!("{:?}", &stack[..])
+fn debug_instruction(
+    stack: &StackFrame,
+    index: usize,
+    instr: Instruction,
+    function: &BytecodeFunction,
+) {
+    debug!(
+        "{:?}: {:?} -> {:?} {:?}",
+        index,
+        instr,
+        stack.len(),
+        match instr {
+            Push(i) => {
+                let x = stack.get(i as usize).cloned();
+                if x.is_none() {
+                    debug!("{:?}", &stack[..])
+                }
+                x
+            }
+            PushGlobal(i) => function.globals.get(i as usize).cloned(),
+            NewClosure { .. } |
+            MakeClosure { .. } => Some(Int(stack.len() as isize)),
+            _ => None,
         }
-        x
-    }
-               PushGlobal(i) => function.globals.get(i as usize).cloned(),
-               NewClosure { .. } |
-               MakeClosure { .. } => Some(Int(stack.len() as isize)),
-               _ => None,
-           });
+    );
 }
 
 #[cfg(test)]

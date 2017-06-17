@@ -9,11 +9,12 @@ use std::time::Instant;
 use curl::easy::Easy;
 use curl::Error;
 
-fn test_server(easy: &mut Easy,
-               port: &str,
-               path: &str,
-               mut message: &'static [u8])
-               -> Result<String, Option<Error>> {
+fn test_server(
+    easy: &mut Easy,
+    port: &str,
+    path: &str,
+    mut message: &'static [u8],
+) -> Result<String, Option<Error>> {
     let http_path = "./target/debug/examples/http";
     let mut child = Command::new(http_path).arg(port).spawn().unwrap();
 
@@ -21,11 +22,11 @@ fn test_server(easy: &mut Easy,
     easy.url(&format!("localhost:{}{}", port, path)).unwrap();
     let out = Arc::new(Mutex::new(Vec::new()));
     easy.read_function(move |buffer| {
-                           let len = cmp::min(buffer.len(), message.len());
-                           buffer[..len].copy_from_slice(&message[..len]);
-                           message = &message[len..];
-                           Ok(len)
-                       })?;
+        let len = cmp::min(buffer.len(), message.len());
+        buffer[..len].copy_from_slice(&message[..len]);
+        message = &message[len..];
+        Ok(len)
+    })?;
     {
         let out = out.clone();
         easy.write_function(move |data| Ok(out.lock().unwrap().write(data).unwrap()))

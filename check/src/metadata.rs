@@ -12,9 +12,10 @@ struct Environment<'b> {
 }
 
 /// Queries `expr` for the metadata which it contains.
-pub fn metadata(env: &MetadataEnv,
-                expr: &SpannedExpr<Symbol>)
-                -> (Metadata, FnvMap<Symbol, Metadata>) {
+pub fn metadata(
+    env: &MetadataEnv,
+    expr: &SpannedExpr<Symbol>,
+) -> (Metadata, FnvMap<Symbol, Metadata>) {
     struct MetadataVisitor<'b> {
         env: Environment<'b>,
     }
@@ -23,14 +24,12 @@ pub fn metadata(env: &MetadataEnv,
         fn new_binding(&mut self, metadata: Metadata, bind: &ValueBinding<Symbol>) {
             match bind.name.value {
                 Pattern::Ident(ref id) => {
-                    let metadata = bind.comment
-                        .as_ref()
-                        .map_or(metadata, |comment| {
-                            Metadata {
-                                comment: Some(comment.clone()),
-                                module: BTreeMap::new(),
-                            }
-                        });
+                    let metadata = bind.comment.as_ref().map_or(metadata, |comment| {
+                        Metadata {
+                            comment: Some(comment.clone()),
+                            module: BTreeMap::new(),
+                        }
+                    });
                     self.stack_var(id.name.clone(), metadata);
                 }
                 _ => self.new_pattern(metadata, &bind.name),
@@ -82,18 +81,17 @@ pub fn metadata(env: &MetadataEnv,
 
         fn metadata(&self, id: &Symbol) -> Option<&Metadata> {
             debug!("Lookup {}", id);
-            self.env
-                .stack
-                .get(id)
-                .or_else(|| self.env.env.get_metadata(id))
+            self.env.stack.get(id).or_else(
+                || self.env.env.get_metadata(id),
+            )
         }
 
         fn metadata_expr(&mut self, expr: &SpannedExpr<Symbol>) -> Metadata {
             match expr.value {
                 Expr::Ident(ref id) => {
-                    self.metadata(&id.name)
-                        .cloned()
-                        .unwrap_or_else(Metadata::default)
+                    self.metadata(&id.name).cloned().unwrap_or_else(
+                        Metadata::default,
+                    )
                 }
                 Expr::Record {
                     ref exprs,
@@ -109,15 +107,12 @@ pub fn metadata(env: &MetadataEnv,
                             }
                             None => self.metadata(&field.name).cloned(),
                         };
-                        let field_metadata = field
-                            .comment
-                            .clone()
-                            .map(|comment| {
-                                     Metadata {
-                                         comment: Some(comment),
-                                         module: BTreeMap::new(),
-                                     }
-                                 });
+                        let field_metadata = field.comment.clone().map(|comment| {
+                            Metadata {
+                                comment: Some(comment),
+                                module: BTreeMap::new(),
+                            }
+                        });
                         let maybe_metadata = match (field_metadata, maybe_metadata) {
                             (Some(l), Some(r)) => Some(l.merge(r)),
                             (None, Some(x)) | (Some(x), None) => Some(x),
@@ -159,14 +154,12 @@ pub fn metadata(env: &MetadataEnv,
                 }
                 Expr::TypeBindings(ref bindings, ref expr) => {
                     for bind in bindings {
-                        let maybe_metadata = bind.comment
-                            .as_ref()
-                            .map(|comment| {
-                                     Metadata {
-                                         comment: Some(comment.clone()),
-                                         module: BTreeMap::new(),
-                                     }
-                                 });
+                        let maybe_metadata = bind.comment.as_ref().map(|comment| {
+                            Metadata {
+                                comment: Some(comment.clone()),
+                                module: BTreeMap::new(),
+                            }
+                        });
                         if let Some(metadata) = maybe_metadata {
                             self.stack_var(bind.name.clone(), metadata);
                         }

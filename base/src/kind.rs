@@ -132,7 +132,8 @@ impl fmt::Display for ArcKind {
 type_cache! { KindCache() { ArcKind, Kind } row hole typ }
 
 impl<F: ?Sized> Walker<ArcKind> for F
-    where F: FnMut(&ArcKind)
+where
+    F: FnMut(&ArcKind),
 {
     fn walk(&mut self, typ: &ArcKind) {
         self(typ);
@@ -141,7 +142,8 @@ impl<F: ?Sized> Walker<ArcKind> for F
 }
 
 pub fn walk_kind<F: ?Sized>(k: &ArcKind, f: &mut F)
-    where F: Walker<ArcKind>
+where
+    F: Walker<ArcKind>,
 {
     match **k {
         Kind::Function(ref a, ref r) => {

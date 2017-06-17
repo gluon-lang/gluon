@@ -68,10 +68,9 @@ impl<K: Eq + Hash, V> FixedMap<K, V> {
     }
 
     pub fn get(&self, k: &K) -> Option<&V> {
-        self.map
-            .borrow()
-            .get(k)
-            .map(|x| unsafe { forget_lifetime(&**x) })
+        self.map.borrow().get(k).map(
+            |x| unsafe { forget_lifetime(&**x) },
+        )
     }
 }
 
@@ -103,7 +102,8 @@ impl<T> FixedVec<T> {
     }
 
     pub fn find<F>(&self, mut test: F) -> Option<(usize, &T)>
-        where F: FnMut(&T) -> bool
+    where
+        F: FnMut(&T) -> bool,
     {
         self.vec
             .borrow()
