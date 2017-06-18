@@ -18,11 +18,16 @@ mod support;
 
 macro_rules! assert_err {
     ($e: expr, $($id: pat),+) => {{
+        #[allow(unused_imports)]
         use check::typecheck::TypeError::*;
         #[allow(unused_imports)]
-        use check::unify::Error::{TypeMismatch, Occurs, Other};
+        use check::unify::Error::{TypeMismatch, Substitution, Other};
+        #[allow(unused_imports)]
+        use check::substitution::Error::{Occurs, Constraint};
         #[allow(unused_imports)]
         use check::unify_type::TypeError::FieldMismatch;
+        #[allow(unused_imports)]
+        use check::rename::RenameError::*;
 
         match $e {
             Ok(x) => assert!(false, "Expected error, got {}", x),
@@ -46,7 +51,9 @@ macro_rules! assert_unify_err {
     ($e: expr, $($id: pat),+) => {{
         use check::typecheck::TypeError::*;
         #[allow(unused_imports)]
-        use check::unify::Error::{TypeMismatch, Occurs, Other};
+        use check::unify::Error::{TypeMismatch, Substitution, Other};
+        #[allow(unused_imports)]
+        use check::substitution::Error::{Occurs, Constraint};
         #[allow(unused_imports)]
         use check::unify_type::TypeError::{FieldMismatch, SelfRecursive, MissingFields};
 
@@ -189,7 +196,7 @@ in f ""
 "#;
     let result = support::typecheck(text);
 
-    assert_err!(result, Rename(..));
+    assert_unify_err!(result, Substitution(Constraint(..)));
 }
 
 #[test]
@@ -202,7 +209,7 @@ let (++) x y = x #Float+ y
 "#;
     let result = support::typecheck(text);
 
-    assert_err!(result, Rename(..));
+    assert_unify_err!(result, Substitution(Constraint(..)), Substitution(Constraint(..)));
 }
 
 #[test]
@@ -485,4 +492,19 @@ Found:
     -> looooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong
 0 errors were found during unification:
 "#);
+}
+
+#[test]
+fn undefined_field_after_overload() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let f =
+    \x g ->
+        let { x } = g x
+        x
+let r = f { x = 0 } (\r -> { x = r.x #Int+ 1 })
+r.y
+"#;
+    let result = support::typecheck(text);
+    assert_unify_err!(result, Substitution(Constraint(..)));
 }

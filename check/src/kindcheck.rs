@@ -209,7 +209,7 @@ impl<'a> KindCheck<'a> {
                 Ok((kind, Type::app(ctor, new_args)))
             }
             Type::Variant(ref row) => {
-                let row: StdResult<_, _> = row.row_iter()
+                let row: Result<_> = row.row_iter()
                     .map(|field| {
                         let (kind, typ) = self.kindcheck(&field.typ)?;
                         let type_kind = self.type_kind();
@@ -231,7 +231,7 @@ impl<'a> KindCheck<'a> {
                 ref fields,
                 ref rest,
             } => {
-                let fields: StdResult<_, _> = fields
+                let fields: Result<_> = fields
                     .iter()
                     .map(|field| {
                         let (kind, typ) = self.kindcheck(&field.typ)?;
@@ -255,7 +255,7 @@ impl<'a> KindCheck<'a> {
 
     fn unify(&mut self, expected: &ArcKind, mut actual: ArcKind) -> Result<ArcKind> {
         debug!("Unify {:?} <=> {:?}", expected, actual);
-        let result = unify::unify(&self.subs, &mut (), expected, &actual);
+        let result = unify::unify(&self.subs, (), expected, &actual);
         match result {
             Ok(k) => Ok(k),
             Err(_errors) => {
@@ -317,7 +317,7 @@ where
             expected,
             actual
         ),
-        Occurs(ref var, ref typ) => write!(f, "Variable `{}` occurs in `{}`.", var, typ),
+        Substitution(ref err) => write!(f, "{}", err),
         Other(KindError::UndefinedType(ref name)) => write!(f, "Type '{}' is not defined", name),
     }
 }

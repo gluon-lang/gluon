@@ -1,18 +1,21 @@
 use std::fmt;
 use std::mem;
+use std::rc::Rc;
 
 use base::error::Errors;
 use base::fnv::FnvMap;
 use base::merge;
 use base::kind::ArcKind;
-use base::types::{self, AppVec, ArcType, Field, Generic, Type, TypeVariable, TypeEnv};
+use base::types::{self, AppVec, ArcType, Field, Generic, Type, TypeEnv, TypeVariable};
 use base::symbol::{Symbol, SymbolRef};
 use base::resolve::{self, Error as ResolveError};
 use base::scoped_map::ScopedMap;
 
 use unify;
-use unify::{Error as UnifyError, GenericVariant, Unifier, Unifiable};
-use substitution::{Variable, Substitutable, Substitution, VariableFactory};
+use unify::{Error as UnifyError, GenericVariant, Unifiable, Unifier};
+use substitution::{Substitutable, Substitution, Variable, VariableFactory};
+
+pub type Constraint = Rc<Vec<ArcType>>;
 
 impl VariableFactory for ArcKind {
     type Variable = TypeVariable;
@@ -35,6 +38,7 @@ impl GenericVariant for ArcType {
 
 pub type Error<I> = UnifyError<ArcType<I>, TypeError<I>>;
 
+#[derive(Clone)]
 pub struct State<'a> {
     env: &'a (TypeEnv + 'a),
     /// A stack of which aliases are currently expanded. Used to determine when an alias is
@@ -669,6 +673,7 @@ where
 pub fn instantiate_generic_variables(
     named_variables: &mut FnvMap<Symbol, ArcType>,
     subs: &Substitution<ArcType>,
+    constraints: &FnvMap<Symbol, Constraint>,
     typ: &ArcType,
 ) -> ArcType {
     use std::collections::hash_map::Entry;
@@ -676,7 +681,14 @@ pub fn instantiate_generic_variables(
     types::walk_move_type(typ.clone(), &mut |typ| match **typ {
         Type::Generic(ref generic) => {
             let var = match named_variables.entry(generic.id.clone()) {
-                Entry::Vacant(entry) => entry.insert(subs.new_var()).clone(),
+                Entry::Vacant(entry) => {
+                    let constraint = constraints.get(&generic.id).cloned();
+                    entry
+                        .insert(subs.new_constrained_var(
+                            constraint.map(|constraint| (generic.id.clone(), constraint.clone())),
+                        ))
+                        .clone()
+                }
                 Entry::Occupied(entry) => entry.get().clone(),
             };
 
@@ -766,20 +778,18 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
                     }
                     None => l,
                 };
-                match subs.union(r_var, left) {
-                    Ok(()) => Ok(None),
-                    Err(()) => Err(UnifyError::Occurs(ArcType::from_variable(r_var.clone()), left.clone())),
-                }
+                subs.union(unifier.state.clone(), r_var, left)?;
+                Ok(None)
 
             }
-            (_, &Type::Variable(ref r)) => match subs.union(r, l) {
-                Ok(()) => Ok(None),
-                Err(()) => Err(UnifyError::Occurs(ArcType::from_variable(r.clone()), l.clone())),
-            },
-            (&Type::Variable(ref l), _) => match subs.union(l, r) {
-                Ok(()) => Ok(Some(r.clone())),
-                Err(()) => Err(UnifyError::Occurs(ArcType::from_variable(l.clone()), r.clone())),
-            },
+            (_, &Type::Variable(ref r)) => {
+                subs.union(unifier.state.clone(), r, l)?;
+                Ok(None)
+            }
+            (&Type::Variable(ref l), _) => {
+                subs.union(unifier.state.clone(), l, r)?;
+                Ok(Some(r.clone()))
+            }
             _ => {
                 // Both sides are concrete types, the only way they can be equal is if
                 // the matcher finds their top level to be equal (and their sub-terms

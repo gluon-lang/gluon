@@ -1,14 +1,45 @@
-use std::cell::RefCell;
+use std::cell::{RefCell, RefMut};
 use std::default::Default;
 use std::fmt;
+use std::rc::Rc;
 
 use union_find::{QuickFindUf, Union, UnionByRank, UnionFind, UnionResult};
 
-use base::fixed::{FixedMap, FixedVec};
 use base::fnv::FnvMap;
+use base::fixed::{FixedMap, FixedVec};
 use base::types;
 use base::types::{ArcType, Type, Walker};
 use base::symbol::Symbol;
+
+#[derive(Debug, PartialEq)]
+pub enum Error<T> {
+    Occurs(T, T),
+    Constraint(T, Rc<Vec<T>>),
+}
+
+impl<T> fmt::Display for Error<T>
+where
+    T: fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use self::Error::*;
+
+        match *self {
+            Occurs(ref var, ref typ) => write!(f, "Variable `{}` occurs in `{}`.", var, typ),
+            Constraint(ref typ, ref constraints) => {
+                writeln!(
+                    f,
+                    "Type `{}` could not fullfill a constraint.\nPossible resolves:",
+                    typ
+                )?;
+                for constraint in &constraints[..] {
+                    writeln!(f, "{}", constraint)?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
 
 use typecheck::unroll_typ;
 
@@ -18,7 +49,7 @@ where
 {
     /// Union-find data structure used to store the relationships of all variables in the
     /// substitution
-    union: RefCell<QuickFindUf<UnionByLevel>>,
+    union: RefCell<QuickFindUf<UnionByLevel<T>>>,
     /// Vector containing all created variables for this substitution. Needed for the `real` method
     /// which needs to always be able to return a `&T` reference
     variables: FixedVec<T>,
@@ -26,7 +57,6 @@ where
     /// stored here. As the type stored will never changed we use a `FixedMap` lets `real` return
     /// `&T` from this map safely.
     types: FixedMap<u32, T>,
-    constraints: FnvMap<u32, Vec<T>>,
     factory: T::Factory,
 }
 
@@ -124,29 +154,33 @@ where
 /// map.find(2) -> 1
 /// map.find(1) -> 1
 #[derive(Debug)]
-struct UnionByLevel {
+struct UnionByLevel<T> {
     rank: UnionByRank,
     level: u32,
+    constraints: FnvMap<Symbol, Rc<Vec<T>>>,
 }
 
-impl Default for UnionByLevel {
-    fn default() -> UnionByLevel {
+impl<T> Default for UnionByLevel<T> {
+    fn default() -> UnionByLevel<T> {
         UnionByLevel {
             rank: UnionByRank::default(),
             level: ::std::u32::MAX,
+            constraints: FnvMap::default(),
         }
     }
 }
 
-impl Union for UnionByLevel {
+impl<T> Union for UnionByLevel<T> {
     #[inline]
-    fn union(left: UnionByLevel, right: UnionByLevel) -> UnionResult<UnionByLevel> {
+    fn union(mut left: UnionByLevel<T>, right: UnionByLevel<T>) -> UnionResult<UnionByLevel<T>> {
         use std::cmp::Ordering;
+        left.constraints.extend(right.constraints);
         let (rank_result, rank) = match Union::union(left.rank, right.rank) {
             UnionResult::Left(l) => (
                 UnionResult::Left(UnionByLevel {
                     rank: l,
                     level: left.level,
+                    constraints: left.constraints,
                 }),
                 l,
             ),
@@ -154,6 +188,7 @@ impl Union for UnionByLevel {
                 UnionResult::Right(UnionByLevel {
                     rank: r,
                     level: left.level,
+                    constraints: left.constraints,
                 }),
                 r,
             ),
@@ -162,10 +197,16 @@ impl Union for UnionByLevel {
             Ordering::Less => UnionResult::Left(UnionByLevel {
                 rank: rank,
                 level: left.level,
+                constraints: match rank_result {
+                    UnionResult::Left(x) | UnionResult::Right(x) => x.constraints,
+                },
             }),
             Ordering::Greater => UnionResult::Right(UnionByLevel {
                 rank: rank,
                 level: right.level,
+                constraints: match rank_result {
+                    UnionResult::Left(x) | UnionResult::Right(x) => x.constraints,
+                },
             }),
             Ordering::Equal => rank_result,
         }
@@ -192,7 +233,6 @@ impl<T: Substitutable> Substitution<T> {
             union: RefCell::new(QuickFindUf::new(0)),
             variables: FixedVec::new(),
             types: FixedMap::new(),
-            constraints: FnvMap::default(),
             factory: factory,
         }
     }
@@ -224,8 +264,18 @@ impl<T: Substitutable> Substitution<T> {
     where
         T: Clone,
     {
+        self.new_constrained_var(None)
+    }
+
+    pub fn new_constrained_var(&self, constraint: Option<(Symbol, Rc<Vec<T>>)>) -> T
+    where
+        T: Clone,
+    {
         let var_id = self.variables.len() as u32;
-        let id = self.union.borrow_mut().insert(UnionByLevel::default());
+        let id = self.union.borrow_mut().insert(UnionByLevel {
+            constraints: constraint.into_iter().collect(),
+            ..UnionByLevel::default()
+        });
         assert!(id == self.variables.len());
 
         let var = T::from_variable(self.factory.new(var_id));
@@ -272,6 +322,16 @@ impl<T: Substitutable> Substitution<T> {
         *level
     }
 
+    pub fn get_constraints(&self, var: u32) -> Option<RefMut<FnvMap<Symbol, Rc<Vec<T>>>>> {
+        let union = self.union.borrow_mut();
+        let set = RefMut::map(union, |x| &mut x.get_mut(var as usize).constraints);
+        if set.is_empty() {
+            None
+        } else {
+            Some(set)
+        }
+    }
+
     pub fn replace_variable(&self, typ: &T) -> Option<T>
     where
         T: Clone,
@@ -312,9 +372,11 @@ impl<T: Substitutable + Clone> Substitution<T> {
 }
 impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
     /// Takes `id` and updates the substitution to say that it should have the same type as `typ`
-    pub fn union(&self, id: &T::Variable, typ: &T) -> Result<(), ()>
+    pub fn union<S>(&self, state: S, id: &T::Variable, typ: &T) -> Result<(), Error<T>>
     where
         T::Variable: Clone,
+        T: Unifiable<S> + fmt::Display,
+        S: Clone,
     {
         // Nothing needs to be done if both are the same variable already (also prevents the occurs
         // check from failing)
@@ -324,7 +386,7 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
             return Ok(());
         }
         if occurs(typ, self, id) {
-            return Err(());
+            return Err(Error::Occurs(T::from_variable(id.clone()), typ.clone()));
         }
         {
             let id_type = self.find_type_for_var(id.get_id());
@@ -344,9 +406,84 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
                 self.update_level(other_id.get_id(), id.get_id());
             }
             _ => {
+                {
+                    let constraints = self.union
+                        .borrow_mut()
+                        .get(id.get_id() as usize)
+                        .constraints
+                        .clone();
+                    for (_, constraint) in constraints {
+                        let resolved = constraint.iter().any(|constraint_type| {
+                            debug!(
+                                "Attempting to resolve constraint {} <> {}",
+                                constraint_type,
+                                typ
+                            );
+                            equivalent(state.clone(), self, constraint_type, typ)
+                        });
+                        if !resolved {
+                            return Err(Error::Constraint(typ.clone(), constraint.clone()));
+                        }
+                    }
+                }
                 self.insert(id.get_id(), typ.clone());
             }
         };
         Ok(())
+    }
+}
+
+use unify::{Error as UnifyError, Unifiable, Unifier, UnifierState};
+
+pub fn equivalent<S, T>(state: S, subs: &Substitution<T>, actual: &T, inferred: &T) -> bool
+where
+    T: Unifiable<S> + PartialEq + Clone,
+    T::Variable: Clone,
+{
+    let mut unifier = UnifierState {
+        state,
+        unifier: Equivalent { equiv: true, subs },
+    };
+    unifier.try_match(actual, inferred);
+    unifier.unifier.equiv
+}
+
+struct Equivalent<'e, T: Substitutable + 'e> {
+    equiv: bool,
+    subs: &'e Substitution<T>,
+}
+
+impl<'e, S, T> Unifier<S, T> for Equivalent<'e, T>
+where
+    T: Unifiable<S> + PartialEq + Clone + 'e,
+    T::Variable: Clone,
+{
+    fn report_error(unifier: &mut UnifierState<S, Self>, _error: UnifyError<T, T::Error>) {
+        unifier.unifier.equiv = false;
+    }
+
+    fn try_match_res(
+        unifier: &mut UnifierState<S, Self>,
+        l: &T,
+        r: &T,
+    ) -> Result<Option<T>, UnifyError<T, T::Error>> {
+        let subs = unifier.unifier.subs;
+        let l = subs.real(l);
+        let r = subs.real(r);
+        // `l` and `r` must have the same type, if one is a variable that variable is
+        // unified with whatever the other type is
+        match (l.get_var(), r.get_var()) {
+            (Some(l), Some(r)) if l.get_id() == r.get_id() => Ok(None),
+            (_, _) => {
+                // Both sides are concrete types, the only way they can be equal is if
+                // the matcher finds their top level to be equal (and their sub-terms
+                // unify)
+                l.zip_match(r, unifier)
+            }
+        }
+    }
+
+    fn error_type(_unifier: &mut UnifierState<S, Self>) -> Option<T> {
+        None
     }
 }

@@ -7,12 +7,12 @@ use base::fnv::FnvMap;
 use base::symbol::{Symbol, Symbols};
 use base::types::Type;
 
-use substitution::{Substitutable, Substitution, Variable};
+use substitution::{self, Substitutable, Substitution, Variable};
 
 #[derive(Debug, PartialEq)]
 pub enum Error<T, E> {
     TypeMismatch(T, T),
-    Occurs(T, T),
+    Substitution(::substitution::Error<T>),
     Other(E),
 }
 
@@ -43,12 +43,17 @@ where
                     .nest(4);
                 write!(f, "Types do not match:{}", doc.1.pretty(80))
             }
-            Occurs(ref var, ref typ) => write!(f, "Variable `{}` occurs in `{}`.", var, typ),
+            Substitution(ref err) => err.fmt(f),
             Other(ref err) => write!(f, "{}", err),
         }
     }
 }
 
+impl<T, E> From<substitution::Error<T>> for Error<T, E> {
+    fn from(err: substitution::Error<T>) -> Self {
+        Error::Substitution(err)
+    }
+}
 
 pub struct UnifierState<S, U> {
     pub state: S,
@@ -144,8 +149,9 @@ pub fn unify<S, T>(
     r: &T,
 ) -> Result<T, Errors<Error<T, T::Error>>>
 where
-    T: Unifiable<S> + PartialEq + Clone,
+    T: Unifiable<S> + PartialEq + fmt::Display + Clone,
     T::Variable: Clone,
+    S: Clone,
 {
     let mut state = UnifierState {
         state: state,
@@ -173,8 +179,9 @@ where
 
 impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
 where
-    T: Unifiable<S> + PartialEq + Clone + 'e,
+    T: Unifiable<S> + PartialEq + Clone + fmt::Display + 'e,
     T::Variable: Clone,
+    S: Clone,
 {
     fn report_error(unifier: &mut UnifierState<S, Self>, error: Error<T, T::Error>) {
         unifier.unifier.errors.push(error);
@@ -192,13 +199,13 @@ where
         // `l` and `r` must have the same type, if one is a variable that variable is
         // unified with whatever the other type is
         match (l.get_var(), r.get_var()) {
-            (_, Some(r)) => match subs.union(r, l) {
+            (_, Some(r)) => match subs.union(unifier.state.clone(), r, l) {
                 Ok(()) => Ok(None),
-                Err(()) => Err(Error::Occurs(T::from_variable(r.clone()), l.clone())),
+                Err(err) => Err(err.into()),
             },
-            (Some(l), _) => match subs.union(l, r) {
+            (Some(l), _) => match subs.union(unifier.state.clone(), l, r) {
                 Ok(()) => Ok(Some(r.clone())),
-                Err(()) => Err(Error::Occurs(T::from_variable(l.clone()), r.clone())),
+                Err(err) => Err(err.into()),
             },
             (None, None) => {
                 // Both sides are concrete types, the only way they can be equal is if
@@ -229,7 +236,7 @@ pub fn intersection<S, T>(
     state: S,
     l: &T,
     r: &T,
-) -> T
+) -> (FnvMap<(T, T), Symbol>, T)
 where
     T: GenericVariant + Unifiable<S> + Eq + Clone + Hash,
     T::Variable: Clone,
@@ -242,7 +249,8 @@ where
             subs: subs,
         },
     };
-    unifier.try_match(l, r).unwrap_or_else(|| l.clone())
+    let typ = unifier.try_match(l, r).unwrap_or_else(|| l.clone());
+    (unifier.unifier.constraints, typ)
 }
 
 struct Intersect<'m, T: 'm>
@@ -300,6 +308,8 @@ where
 
 #[cfg(test)]
 mod test {
+    use std::fmt;
+
     use base::error::Errors;
     use base::merge::merge;
     use base::symbol::{Symbol, Symbols};
@@ -316,6 +326,12 @@ mod test {
         Variable(u32),
         Ident(String),
         Arrow(T, T),
+    }
+
+    impl fmt::Display for TType {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "{:?}", self)
+        }
     }
 
     impl TType {
@@ -464,7 +480,9 @@ mod test {
         let result = unify(&subs, &fun, &var1);
         assert_eq!(
             result,
-            Err(Errors::from(vec![Error::Occurs(var1, fun.clone())]))
+            Err(Errors::from(vec![
+                Error::Substitution(::substitution::Error::Occurs(var1, fun.clone())),
+            ]))
         );
     }
 
@@ -472,7 +490,7 @@ mod test {
     fn intersection_test() {
         fn intersection(subs: &Substitution<TType>, l: &TType, r: &TType) -> TType {
             let mut symbols = Symbols::new();
-            super::intersection(subs, &mut symbols, (), l, r)
+            super::intersection(subs, &mut symbols, (), l, r).1
         }
 
         let subs = Substitution::<TType>::new(());
