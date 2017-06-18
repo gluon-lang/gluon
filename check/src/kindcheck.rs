@@ -269,7 +269,7 @@ impl<'a> KindCheck<'a> {
 
     pub fn finalize_type(&self, typ: ArcType) -> ArcType {
         let default = Some(&self.kind_cache.typ);
-        types::walk_move_type(typ, &mut |typ| match *typ {
+        types::walk_move_type(typ, &mut |typ| match **typ {
             Type::Variable(ref var) => {
                 let mut kind = var.kind.clone();
                 kind = update_kind(&self.subs, kind, default);

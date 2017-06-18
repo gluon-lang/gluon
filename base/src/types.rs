@@ -387,8 +387,8 @@ where
     Id: Clone + PartialEq,
 {
     pub fn typ(&self) -> Cow<T> {
-        let opt = walk_move_type_opt(&self.typ, &mut |typ: &Type<_, _>| {
-            match *typ {
+        let opt = walk_move_type_opt(&self.typ, &mut |typ: &T| {
+            match **typ {
                 Type::Ident(ref id) => {
                     // Replace `Ident` with the alias it resolves to so that a `TypeEnv` is not needed
                     // to resolve the type later on
@@ -804,6 +804,53 @@ where
             Type::Builtin(b) => Some(b.symbol()),
             _ => None,
         }
+    }
+
+    pub fn kind(&self) -> Cow<ArcKind> {
+        self.kind_(0)
+    }
+
+    fn kind_(&self, applied_args: usize) -> Cow<ArcKind> {
+        let mut immediate_kind = match *self {
+            Type::App(ref t, ref args) => t.kind_(args.len()),
+            Type::Hole | Type::Opaque | Type::Builtin(_) | Type::Record(_) | Type::Variant(_) => {
+                Cow::Owned(Kind::typ())
+            }
+            Type::EmptyRow |
+            Type::ExtendRow { .. } => Cow::Owned(Kind::row().into()),
+            Type::Variable(ref var) => Cow::Borrowed(&var.kind),
+            Type::Generic(ref gen) => Cow::Borrowed(&gen.kind),
+            // FIXME can be another kind
+            Type::Ident(_) => Cow::Owned(Kind::typ()),
+            Type::Alias(ref alias) => {
+                return if alias.args.len() < applied_args {
+                    alias.typ.kind_(applied_args - alias.args.len())
+                } else {
+                    let mut kind = alias.typ.kind_(0).into_owned();
+                    for arg in &alias.args[applied_args..] {
+                        kind = Kind::function(arg.kind.clone(), kind)
+                    }
+                    Cow::Owned(kind)
+                }
+            }
+        };
+        for _ in 0..applied_args {
+            immediate_kind = match immediate_kind {
+                Cow::Borrowed(k) => {
+                    match **k {
+                        Kind::Function(_, ref ret) => Cow::Borrowed(ret),
+                        _ => return Cow::Borrowed(k),
+                    }
+                }
+                Cow::Owned(k) => {
+                    match *k {
+                        Kind::Function(_, ref ret) => Cow::Owned(ret.clone()),
+                        _ => return Cow::Owned(k.clone()),
+                    }
+                }
+            };
+        }
+        immediate_kind
     }
 }
 
@@ -1440,7 +1487,7 @@ where
 }
 
 pub trait TypeVisitor<I, T> {
-    fn visit(&mut self, typ: &Type<I, T>) -> Option<T>
+    fn visit(&mut self, typ: &T) -> Option<T>
     where
         T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
         I: Clone,
@@ -1455,9 +1502,9 @@ pub trait Walker<T> {
 
 impl<I, T, F: ?Sized> TypeVisitor<I, T> for F
 where
-    F: FnMut(&Type<I, T>) -> Option<T>,
+    F: FnMut(&T) -> Option<T>,
 {
-    fn visit(&mut self, typ: &Type<I, T>) -> Option<T>
+    fn visit(&mut self, typ: &T) -> Option<T>
     where
         T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
         I: Clone,
@@ -1473,9 +1520,9 @@ pub struct ControlVisitation<F>(pub F);
 
 impl<F, I, T> TypeVisitor<I, T> for ControlVisitation<F>
 where
-    F: FnMut(&Type<I, T>) -> Option<T>,
+    F: FnMut(&T) -> Option<T>,
 {
-    fn visit(&mut self, typ: &Type<I, T>) -> Option<T>
+    fn visit(&mut self, typ: &T) -> Option<T>
     where
         T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
         I: Clone,
@@ -1498,7 +1545,7 @@ where
 /// Walks through a type calling `f` on each inner type. If `f` return `Some` the type is replaced.
 pub fn walk_move_type<F: ?Sized, I, T>(typ: T, f: &mut F) -> T
 where
-    F: FnMut(&Type<I, T>) -> Option<T>,
+    F: FnMut(&T) -> Option<T>,
     T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
     I: Clone,
 {

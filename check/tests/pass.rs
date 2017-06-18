@@ -29,7 +29,7 @@ macro_rules! assert_pass {
 /// types easier to write
 fn make_ident_type(typ: ArcType) -> ArcType {
     use base::types::walk_move_type;
-    walk_move_type(typ, &mut |typ| match *typ {
+    walk_move_type(typ, &mut |typ| match **typ {
         Type::Alias(ref alias) => Some(Type::ident(alias.name.clone())),
         _ => None,
     })

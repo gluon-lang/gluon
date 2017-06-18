@@ -5,14 +5,14 @@ use base::error::Errors;
 use base::fnv::FnvMap;
 use base::merge;
 use base::kind::ArcKind;
-use base::types::{self, AppVec, ArcType, Field, Type, TypeEnv, TypeVariable};
+use base::types::{self, AppVec, ArcType, Field, Generic, Type, TypeVariable, TypeEnv};
 use base::symbol::{Symbol, SymbolRef};
 use base::resolve::{self, Error as ResolveError};
 use base::scoped_map::ScopedMap;
 
 use unify;
-use unify::{Error as UnifyError, Unifiable, Unifier};
-use substitution::{Substitutable, Substitution, Variable, VariableFactory};
+use unify::{Error as UnifyError, GenericVariant, Unifier, Unifiable};
+use substitution::{Variable, Substitutable, Substitution, VariableFactory};
 
 impl VariableFactory for ArcKind {
     type Variable = TypeVariable;
@@ -21,6 +21,15 @@ impl VariableFactory for ArcKind {
             id: id,
             kind: self.clone(),
         }
+    }
+}
+
+impl GenericVariant for ArcType {
+    fn new_generic(symbol: Symbol, kind: &Self) -> Self {
+        Type::generic(Generic {
+            id: symbol,
+            kind: kind.kind().into_owned(),
+        })
     }
 }
 
@@ -664,7 +673,7 @@ pub fn instantiate_generic_variables(
 ) -> ArcType {
     use std::collections::hash_map::Entry;
 
-    types::walk_move_type(typ.clone(), &mut |typ| match *typ {
+    types::walk_move_type(typ.clone(), &mut |typ| match **typ {
         Type::Generic(ref generic) => {
             let var = match named_variables.entry(generic.id.clone()) {
                 Entry::Vacant(entry) => entry.insert(subs.new_var()).clone(),

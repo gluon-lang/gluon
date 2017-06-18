@@ -1278,15 +1278,14 @@ impl<'a> Typecheck<'a> {
                     self.subs.real(symbol_type)
                 );
                 let state = unify_type::State::new(&self.environment, &self.subs);
-                let result = unify::intersection(&self.subs, state, existing_type, symbol_type);
+                let result = unify::intersection(&self.subs, self.symbols.symbols(), state, existing_type, symbol_type);
                 debug!("Intersect result {}", result);
                 result
             } else {
                 symbol_type.clone()
             }
         };
-        *self.environment.stack.get_mut(symbol).unwrap() =
-            self.finish_type(level, &typ).unwrap_or(typ)
+        *self.environment.stack.get_mut(symbol).unwrap() = typ;
     }
 
     /// Generate a generic variable name which is not used in the current scope
@@ -1322,20 +1321,20 @@ impl<'a> Typecheck<'a> {
         level: u32,
         generic: &mut Option<String>,
         i: &mut i32,
-        typ: &Type<Symbol>,
+        typ: &ArcType,
     ) -> Option<ArcType> {
         use base::types::TypeVisitor;
 
-        let mut visitor = types::ControlVisitation(|typ: &Type<_, _>| {
+        let mut visitor = types::ControlVisitation(|typ: &ArcType| {
             let replacement = self.subs
                 .replace_variable(typ)
                 .map(|t| self.finish_type_(level, generic, i, &t).unwrap_or(t));
             let mut typ = typ;
             if let Some(ref t) = replacement {
                 debug!("{} ==> {}", typ, t);
-                typ = &**t;
+                typ = t;
             }
-            match *typ {
+            match **typ {
                 Type::Variable(ref var) if self.subs.get_level(var.id) >= level => {
                     // Create a prefix if none exists
                     if generic.is_none() {
@@ -1370,7 +1369,7 @@ impl<'a> Typecheck<'a> {
                     }).or_else(|| replacement.clone())
                 }
                 _ => {
-                    let new_type = types::walk_move_type_opt(typ, &mut |typ: &Type<Symbol>| {
+                    let new_type = types::walk_move_type_opt(typ, &mut |typ: &ArcType| {
                         self.finish_type_(level, generic, i, typ)
                     });
                     new_type
@@ -1399,8 +1398,8 @@ impl<'a> Typecheck<'a> {
     // Instantiates Type::Hole with a fresh type variable to ensure the hole only ever refers to a
     // single type variable
     fn create_unifiable_signature(&mut self, typ: ArcType) -> ArcType {
-        let mut f = |typ: &Type<Symbol, ArcType>| {
-            match *typ {
+        let mut f = |typ: &ArcType| {
+            match **typ {
                 Type::Ident(ref id) => {
                     // Substitute the Id by its alias if possible
                     let new_id = self.original_symbols.get(id).unwrap_or(id);
@@ -1675,18 +1674,18 @@ fn expr_check_span(e: &SpannedExpr<Symbol>) -> Span<BytePos> {
 /// # fn main() {
 /// let i: ArcType = Type::int();
 /// let s: ArcType = Type::string();
-/// assert_eq!(unroll_typ(&*Type::app(Type::app(i.clone(), collect![s.clone()]), collect![i.clone()])),
+/// assert_eq!(unroll_typ(&Type::app(Type::app(i.clone(), collect![s.clone()]), collect![i.clone()])),
 ///            Some(Type::app(i.clone(), collect![s.clone(), i.clone()])));
-/// assert_eq!(unroll_typ(&*Type::app(Type::app(i.clone(), collect![i.clone()]), collect![s.clone()])),
+/// assert_eq!(unroll_typ(&Type::app(Type::app(i.clone(), collect![i.clone()]), collect![s.clone()])),
 ///            Some(Type::app(i.clone(), collect![i.clone(), s.clone()])));
 /// let f: ArcType = Type::builtin(BuiltinType::Function);
-/// assert_eq!(unroll_typ(&*Type::app(Type::app(f.clone(), collect![i.clone()]), collect![s.clone()])),
+/// assert_eq!(unroll_typ(&Type::app(Type::app(f.clone(), collect![i.clone()]), collect![s.clone()])),
 ///            Some(Type::function(collect![i.clone()], s.clone())));
 /// # }
 /// ```
-pub fn unroll_typ(typ: &Type<Symbol>) -> Option<ArcType> {
+pub fn unroll_typ(typ: &ArcType) -> Option<ArcType> {
     let mut args = AppVec::new();
-    let mut current = match *typ {
+    let mut current = match **typ {
         Type::App(ref l, ref rest) => {
             // No need to unroll if `l` is not an application as that will just result in returning
             // an application that is identical to `typ`

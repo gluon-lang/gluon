@@ -5,6 +5,7 @@ use std::fmt;
 use union_find::{QuickFindUf, Union, UnionByRank, UnionFind, UnionResult};
 
 use base::fixed::{FixedMap, FixedVec};
+use base::fnv::FnvMap;
 use base::types;
 use base::types::{ArcType, Type, Walker};
 use base::symbol::Symbol;
@@ -25,6 +26,7 @@ where
     /// stored here. As the type stored will never changed we use a `FixedMap` lets `real` return
     /// `&T` from this map safely.
     types: FixedMap<u32, T>,
+    constraints: FnvMap<u32, Vec<T>>,
     factory: T::Factory,
 }
 
@@ -190,6 +192,7 @@ impl<T: Substitutable> Substitution<T> {
             union: RefCell::new(QuickFindUf::new(0)),
             variables: FixedVec::new(),
             types: FixedMap::new(),
+            constraints: FnvMap::default(),
             factory: factory,
         }
     }
@@ -268,23 +271,32 @@ impl<T: Substitutable> Substitution<T> {
         *level = ::std::cmp::min(*level, var);
         *level
     }
+
+    pub fn replace_variable(&self, typ: &T) -> Option<T>
+    where
+        T: Clone,
+    {
+        match typ.get_var() {
+            Some(id) => self.find_type_for_var(id.get_id()).cloned(),
+            None => None,
+        }
+    }
 }
 
 impl Substitution<ArcType> {
-    pub fn replace_variable(&self, typ: &Type<Symbol>) -> Option<ArcType> {
+    fn replace_variable_(&self, typ: &Type<Symbol>) -> Option<ArcType> {
         match *typ {
             Type::Variable(ref id) => self.find_type_for_var(id.id).cloned(),
             _ => None,
         }
     }
-
     pub fn set_type(&self, t: ArcType) -> ArcType {
         types::walk_move_type(t, &mut |typ| {
-            let replacement = self.replace_variable(typ);
+            let replacement = self.replace_variable_(typ);
             let result = {
                 let mut typ = typ;
                 if let Some(ref t) = replacement {
-                    typ = &**t;
+                    typ = t;
                 }
                 unroll_typ(typ)
             };

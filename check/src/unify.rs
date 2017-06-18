@@ -4,6 +4,7 @@ use std::hash::Hash;
 
 use base::error::Errors;
 use base::fnv::FnvMap;
+use base::symbol::{Symbol, Symbols};
 use base::types::Type;
 
 use substitution::{Substitutable, Substitution, Variable};
@@ -213,20 +214,31 @@ where
     }
 }
 
+pub trait GenericVariant {
+    fn new_generic(symbol: Symbol, kind: &Self) -> Self;
+}
+
 /// Calculates the intersection between two types. The intersection between two types is the most
 /// specialized type which both types can sucessfully unify to.
 ///
 /// # Example
 /// intersect (Int -> Int -> Bool) <=> (Float -> Float -> Bool) ==> (a -> a -> Bool)
-pub fn intersection<S, T>(subs: &Substitution<T>, state: S, l: &T, r: &T) -> T
+pub fn intersection<S, T>(
+    subs: &Substitution<T>,
+    symbols: &mut Symbols,
+    state: S,
+    l: &T,
+    r: &T,
+) -> T
 where
-    T: Unifiable<S> + Eq + Clone + Hash,
+    T: GenericVariant + Unifiable<S> + Eq + Clone + Hash,
     T::Variable: Clone,
 {
     let mut unifier = UnifierState {
         state: state,
         unifier: Intersect {
-            mismatch_map: FnvMap::default(),
+            constraints: FnvMap::default(),
+            symbols: symbols,
             subs: subs,
         },
     };
@@ -237,13 +249,14 @@ struct Intersect<'m, T: 'm>
 where
     T: Substitutable,
 {
-    mismatch_map: FnvMap<(T, T), T>,
+    constraints: FnvMap<(T, T), Symbol>,
+    symbols: &'m mut Symbols,
     subs: &'m Substitution<T>,
 }
 
 impl<'m, S, T> Unifier<S, T> for Intersect<'m, T>
 where
-    T: Unifiable<S> + Eq + Hash + Clone,
+    T: GenericVariant + Unifiable<S> + Eq + Clone + Hash,
     T::Variable: Clone,
 {
     fn report_error(_unifier: &mut UnifierState<S, Self>, _error: Error<T, T::Error>) {}
@@ -265,14 +278,16 @@ where
                         // If the immediate level of `l` and `r` does not match, record
                         // the mismatched types return a type variable in their place
                         // (Reusing a variable if the same mismatch was already seen)
-                        Ok(Some(
-                            unifier
-                                .unifier
-                                .mismatch_map
-                                .entry((l.clone(), r.clone()))
-                                .or_insert_with(|| subs.new_var())
-                                .clone(),
-                        ))
+                        let symbols = &mut unifier.unifier.symbols;
+                        let generic_symbol = unifier
+                            .unifier
+                            .constraints
+                            .entry((l.clone(), r.clone()))
+                            .or_insert_with(|| {
+                                let len = symbols.len();
+                                symbols.symbol(format!("abc{}", len))
+                            });
+                        Ok(Some(T::new_generic(generic_symbol.clone(), l)))
                     }
                 }
             }
@@ -287,9 +302,10 @@ where
 mod test {
     use base::error::Errors;
     use base::merge::merge;
+    use base::symbol::{Symbol, Symbols};
     use base::types::Walker;
 
-    use super::{Error, Unifiable, Unifier, UnifierState};
+    use super::{Error, GenericVariant, Unifiable, Unifier, UnifierState};
     use substitution::{Substitutable, Substitution};
 
     #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -300,6 +316,18 @@ mod test {
         Variable(u32),
         Ident(String),
         Arrow(T, T),
+    }
+
+    impl TType {
+        fn ident(s: &str) -> TType {
+            TType(Box::new(Type::Ident(s.into())))
+        }
+    }
+
+    impl GenericVariant for TType {
+        fn new_generic(symbol: Symbol, _: &TType) -> Self {
+            TType(Box::new(Type::Ident(symbol.to_string())))
+        }
     }
 
     impl Substitutable for TType {
@@ -443,7 +471,8 @@ mod test {
     #[test]
     fn intersection_test() {
         fn intersection(subs: &Substitution<TType>, l: &TType, r: &TType) -> TType {
-            super::intersection(subs, (), l, r)
+            let mut symbols = Symbols::new();
+            super::intersection(subs, &mut symbols, (), l, r)
         }
 
         let subs = Substitution::<TType>::new(());
@@ -454,16 +483,10 @@ mod test {
         let string_fun = mk_fn(&string, &string);
         let int_fun = mk_fn(&int, &int);
         let result = intersection(&subs, &int_fun, &string_fun);
-        assert_eq!(
-            result,
-            mk_fn(&TType::from_variable(1), &TType::from_variable(1))
-        );
+        assert_eq!(result, mk_fn(&TType::ident("abc0"), &TType::ident("abc0")));
 
         let var_fun = mk_fn(&var1, &var1);
         let result = intersection(&subs, &int_fun, &var_fun);
-        assert_eq!(
-            result,
-            mk_fn(&TType::from_variable(2), &TType::from_variable(2))
-        );
+        assert_eq!(result, mk_fn(&TType::ident("abc0"), &TType::ident("abc0")));
     }
 }

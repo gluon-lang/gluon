@@ -239,7 +239,7 @@ pub fn alias(s: &str, args: &[&str], typ: ArcType) -> ArcType {
 /// Replace the variable at the `rest` part of a record for easier equality checks
 #[allow(dead_code)]
 pub fn close_record(typ: ArcType) -> ArcType {
-    types::walk_move_type(typ, &mut |typ| match *typ {
+    types::walk_move_type(typ, &mut |typ| match **typ {
         Type::ExtendRow {
             ref types,
             ref fields,
