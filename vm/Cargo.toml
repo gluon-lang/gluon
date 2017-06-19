@@ -33,6 +33,8 @@ gluon_parser = { path = "../parser", version = "0.4.2", optional = true } # GLUO
 lalrpop = { version = "0.13.1", optional = true }
 
 [dev-dependencies]
+gluon = { path = "..", version = "0.4.2" } # GLUON
+
 lalrpop-util = "0.13.1"
 regex = "0.2.0"
 
