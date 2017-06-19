@@ -30,10 +30,11 @@ gluon_check = { path = "../check", version = "0.4.2" } # GLUON
 gluon_parser = { path = "../parser", version = "0.4.2", optional = true } # GLUON
 
 [build-dependencies]
-lalrpop = { version = "0.12.5", optional = true }
+lalrpop = { version = "0.13.1", optional = true }
 
 [dev-dependencies]
-lalrpop-util = "0.12.5"
+lalrpop-util = "0.13.1"
+regex = "0.2.0"
 
 [features]
 test = ["env_logger", "lalrpop", "gluon_parser"]
