@@ -1023,6 +1023,10 @@ impl Context {
         self.max_stack_size = limit;
     }
 
+    pub fn get_map(&mut self, fields: &[InternedStr]) -> VmTag {
+        self.record_map.get_map(fields)
+    }
+
     /// "Returns a future", letting the virtual machine know that `future` must be resolved to
     /// produce the actual value.
     ///

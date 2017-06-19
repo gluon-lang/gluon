@@ -1,24 +1,140 @@
+//! Rust -> Gluon value conversion via the `serde::Serialize` trait
 
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 
+use base::types::ArcType;
 use {Error, Result};
-use api::Pushable;
+use api::{Pushable, VmType};
+use interner::InternedStr;
 use thread::{Context, Thread, ThreadInternal};
 use types::{VmTag, VmIndex};
 use value::{Def, Value};
 use serde::ser::{self, Serialize};
 
-pub fn to_value<T>(thread: &Thread, value: &T) -> Result<Value>
-where
-    T: ?Sized + Serialize,
-{
-    let mut context = thread.context();
-    Ser(value).push(thread, &mut context)?;
-    Ok(context.stack.pop())
+/*
+`Pushable` wrapper which pushes `T` by serializing it.
+
+## Struct
+
+```
+#[macro_use]
+extern crate serde_derive;
+
+extern crate gluon;
+#[macro_use]
+extern crate gluon_vm;
+
+use gluon::{Compiler, Thread, new_vm};
+use gluon::base::types::ArcType;
+use gluon::vm::api::{FunctionRef, VmType};
+use gluon::vm::api::ser::Ser;
+# fn main() {
+
+#[derive(Serialize)]
+struct Vec2 {
+    x: i32,
+    y: i32,
 }
 
+impl VmType for Vec2 {
+    type Type = Self;
+
+    fn make_type(thread: &Thread) -> ArcType {
+        field_decl!{ x, y }
+        type T = record_type! {
+            x => i32,
+            y => i32
+        };
+        T::make_type(thread)
+    }
+}
+
+let thread = new_vm();
+let (mut f, _): (FunctionRef<fn (Ser<Vec2>) -> i32>, _) = Compiler::new()
+    .run_expr(&thread, "", r#"let f v: _ -> Int = v.x + v.y in f"#)
+    .unwrap_or_else(|err| panic!("{}", err));
+let vec = Vec2 {
+    x: 3,
+    y: 10
+};
+let result = f.call(Ser(vec)).unwrap_or_else(|err| panic!("{}", err));
+assert_eq!(result, 13);
+# }
+```
+
+## Enum
+
+```
+#[macro_use]
+extern crate serde_derive;
+
+extern crate gluon;
+#[macro_use]
+extern crate gluon_vm;
+
+use gluon::{Compiler, Thread, new_vm};
+use gluon::base::types::ArcType;
+use gluon::vm::api::{FunctionRef, VmType};
+use gluon::vm::api::ser::Ser;
+# fn main() {
+
+
+#[derive(Serialize)]
+enum Enum {
+    A(i32),
+    B(String, i32),
+}
+
+impl VmType for Enum {
+    type Type = Self;
+
+    fn make_type(thread: &Thread) -> ArcType {
+        // Use the enum type declared in gluon
+        thread.find_type_info("test.Enum").unwrap().into_type()
+    }
+}
+
+let thread = new_vm();
+
+let expr = r#"
+type Enum = | A Int | B String Int
+
+let f e =
+    match e with
+    | A a -> a
+    | B b c -> c
+
+{ Enum, f }
+"#;
+Compiler::new()
+#   .implicit_prelude(false)
+    .load_script(&thread, "test", expr)
+    .unwrap_or_else(|err| panic!("{}", err));
+
+let mut f: FunctionRef<fn (Ser<Enum>) -> i32> = thread
+    .get_global("test.f")
+    .unwrap_or_else(|err| panic!("{}", err));
+
+let result = f.call(Ser(Enum::B("".to_string(), 4))).unwrap_or_else(|err| panic!("{}", err));
+assert_eq!(result, 4);
+
+# }
+```
+*/
 pub struct Ser<T>(pub T);
+
+impl<T> VmType for Ser<T>
+where
+    T: VmType,
+{
+    type Type = T::Type;
+
+    fn make_type(thread: &Thread) -> ArcType {
+        T::make_type(thread)
+    }
+}
+
 
 impl<'vm, T> Pushable<'vm> for Ser<T>
 where
@@ -72,6 +188,7 @@ struct RecordSerializer<'s, 'vm: 's> {
     serializer: &'s mut Serializer<'vm>,
     variant_index: VmTag,
     values: VmIndex,
+    fields: Vec<InternedStr>,
 }
 
 impl<'s, 'vm> Deref for RecordSerializer<'s, 'vm> {
@@ -93,6 +210,7 @@ impl<'s, 'vm> RecordSerializer<'s, 'vm> {
             serializer: serializer,
             variant_index: variant_index,
             values: 0,
+            fields: Vec::new(),
         }
     }
 }
@@ -390,17 +508,20 @@ impl<'a, 'vm> ser::SerializeStruct for RecordSerializer<'a, 'vm> {
     type Ok = ();
     type Error = Error;
 
-    fn serialize_field<T>(&mut self, _key: &'static str, value: &T) -> Result<()>
+    fn serialize_field<T>(&mut self, key: &'static str, value: &T) -> Result<()>
     where
         T: ?Sized + Serialize,
     {
+        let field = self.thread.global_env().intern(key)?;
+        self.fields.push(field);
         value.serialize(&mut **self)?;
         self.values += 1;
         Ok(())
     }
 
-    fn end(self) -> Result<Self::Ok> {
-        self.serializer.alloc(self.variant_index, self.values)
+    fn end(mut self) -> Result<Self::Ok> {
+        let tag = self.serializer.context.get_map(&self.fields);
+        self.serializer.alloc(tag, self.values)
     }
 }
 
@@ -430,6 +551,15 @@ mod tests {
     use super::*;
     use thread::{RootedThread, RootedValue, ThreadInternal};
 
+    fn to_value<T>(thread: &Thread, value: &T) -> Result<Value>
+    where
+        T: ?Sized + Serialize,
+    {
+        let mut context = thread.context();
+        Ser(value).push(thread, &mut context)?;
+        Ok(context.stack.pop())
+    }
+
     fn make_value<'vm, T>(thread: &'vm Thread, value: T) -> RootedValue<&'vm Thread>
     where
         T: Pushable<'vm>,
@@ -443,75 +573,5 @@ mod tests {
     fn bool() {
         let thread = RootedThread::new();
         assert_eq!(to_value(&thread, &true).unwrap(), Value::Tag(1));
-    }
-
-    #[derive(Serialize)]
-    struct Record {
-        test: i32,
-        string: String,
-    }
-
-    #[test]
-    fn record() {
-        let thread = RootedThread::new();
-        let actual = make_value(
-            &thread,
-            Ser(Record {
-                test: 123,
-                string: "abc".to_string(),
-            }),
-        );
-        assert_eq!(
-            actual,
-            make_value(
-                &thread,
-                record! {
-                       test => 123,
-                       string => "abc"
-                   },
-            )
-        );
-    }
-
-    #[derive(Serialize)]
-    enum Enum {
-        A(String),
-        B(i32),
-    }
-
-    #[test]
-    fn enum_() {
-        let thread = RootedThread::new();
-
-        let actual = make_value(&thread, Ser(Enum::A("abc".to_string())));
-        let s = make_value(&thread, "abc");
-        assert_eq!(
-            actual,
-            thread.root_value(Value::Data(
-                thread
-                    .context()
-                    .gc
-                    .alloc(Def {
-                        tag: 0,
-                        elems: &[*s],
-                    })
-                    .unwrap(),
-            ))
-        );
-
-        let actual = make_value(&thread, Ser(Enum::B(1232)));
-        assert_eq!(
-            actual,
-            thread.root_value(Value::Data(
-                thread
-                    .context()
-                    .gc
-                    .alloc(Def {
-                        tag: 1,
-                        elems: &[Value::Int(1232)],
-                    })
-                    .unwrap(),
-            ))
-        );
     }
 }

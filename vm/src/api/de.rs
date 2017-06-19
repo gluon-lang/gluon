@@ -1,3 +1,5 @@
+//! Gluon -> Rust value conversion via the `serde::Deserialize` trait
+
 use std::fmt;
 use std::marker::PhantomData;
 
@@ -21,7 +23,129 @@ impl de::Error for VmError {
     }
 }
 
-/// `Getable` wrapper which extracts `T` by deserializing it.
+/**
+`Getable` wrapper which extracts `T` by deserializing it into a rust value.
+
+## Struct
+
+```
+#[macro_use]
+extern crate serde_derive;
+
+extern crate gluon;
+#[macro_use]
+extern crate gluon_vm;
+
+use gluon::{Compiler, Thread, new_vm};
+use gluon::base::types::ArcType;
+use gluon::vm::api::VmType;
+use gluon::vm::api::de::De;
+# fn main() {
+
+#[derive(Debug, PartialEq, Deserialize)]
+struct Vec2 {
+    x: f64,
+    y: f64
+}
+
+impl VmType for Vec2 {
+    type Type = Self;
+
+    fn make_type(thread: &Thread) -> ArcType {
+        field_decl!{ x, y }
+        type T = record_type! {
+            x => f64,
+            y => f64
+        };
+        T::make_type(thread)
+    }
+}
+
+let thread = new_vm();
+let (De(vec), _) = Compiler::new()
+#   .implicit_prelude(false)
+    .run_expr::<De<Vec2>>(&thread, "test", "{ x = 1.0, y = 2.0 }")
+    .unwrap_or_else(|err| panic!("{}", err));
+assert_eq!(vec, Vec2 {
+        x: 1.0,
+        y: 2.0
+    });
+
+# }
+```
+
+## Enum
+
+```
+#[macro_use]
+extern crate serde_derive;
+
+extern crate gluon;
+#[macro_use]
+extern crate gluon_vm;
+
+use gluon::{Compiler, Thread, new_vm};
+use gluon::base::types::ArcType;
+use gluon::vm::api::VmType;
+use gluon::vm::api::de::De;
+# fn main() {
+
+#[derive(Debug, PartialEq, Deserialize)]
+enum Enum {
+    A(i32),
+    B { string: String, test: f64 },
+}
+
+impl VmType for Enum {
+    type Type = Self;
+
+    fn make_type(thread: &Thread) -> ArcType {
+        // Use the enum type declared in gluon
+        thread.find_type_info("test.Enum").unwrap().into_type()
+    }
+}
+
+let thread = new_vm();
+Compiler::new()
+#   .implicit_prelude(false)
+    .load_script(
+        &thread,
+        "test",
+        r#" type Enum = | A Int | B String Float in { Enum } "#,
+    )
+    .unwrap_or_else(|err| panic!("{}", err));
+
+let (De(enum_), _) = Compiler::new()
+#   .implicit_prelude(false)
+    .run_expr::<De<Enum>>(
+        &thread,
+        "test",
+        r#" let { Enum } = import! "test" in A 123 "#,
+    )
+    .unwrap_or_else(|err| panic!("{}", err));
+assert_eq!(enum_, Enum::A(123));
+
+// The field names of record variants are ignored so make sure the fields are declared correctly
+let (De(enum_), _) = Compiler::new()
+#   .implicit_prelude(false)
+    .run_expr::<De<Enum>>(
+        &thread,
+        "test",
+        r#" let { Enum } = import! "test" in B "abc" 3.14 "#,
+    )
+    .unwrap_or_else(|err| panic!("{}", err));
+assert_eq!(
+    enum_,
+    Enum::B {
+        string: "abc".to_string(),
+        test: 3.14,
+    }
+);
+
+# }
+```
+*/
+
 pub struct De<T>(pub T);
 
 impl<T> VmType for De<T>
@@ -54,7 +178,8 @@ where
 
 /// Deserializes `T` from a gluon value assuming that `value` is of type `typ`.
 pub fn from_value<T>(thread: &Thread, value: Variants, typ: &ArcType) -> Result<T>
-    where T: DeserializeOwned
+where
+    T: DeserializeOwned,
 {
     let env = thread.global_env().get_env();
     let mut deserializer = Deserializer {
@@ -118,10 +243,14 @@ impl<'de, 't> Deserializer<'de, 't> {
                 if expected(&typ) {
                     visit(c)
                 } else {
-                    Err(VmError::Message(format!("Unable to deserialize `{}`", self.typ)))
+                    Err(VmError::Message(
+                        format!("Unable to deserialize `{}`", self.typ),
+                    ))
                 }
             }
-            _ => Err(VmError::Message(format!("Unable to deserialize `{}`", self.typ))),
+            _ => Err(VmError::Message(
+                format!("Unable to deserialize `{}`", self.typ),
+            )),
         }
     }
 }
@@ -158,7 +287,9 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
             ValueRef::String(ref s) => visitor.visit_borrowed_str(s),
             ValueRef::Userdata(_) |
             ValueRef::Internal => {
-                Err(VmError::Message(format!("Unable to deserialize `{}`", self.typ)))
+                Err(VmError::Message(
+                    format!("Unable to deserialize `{}`", self.typ),
+                ))
             }
         }
     }
@@ -354,10 +485,10 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
                     ValueRef::Data(data) if data.tag() == 0 => visitor.visit_none(),
                     ValueRef::Data(data) if data.tag() == 1 => {
                         visitor.visit_some(&mut Deserializer {
-                                                    state: self.state.clone(),
-                                                    typ: typ,
-                                                    input: data.get_variants(0).unwrap(),
-                                                })
+                            state: self.state.clone(),
+                            typ: typ,
+                            input: data.get_variants(0).unwrap(),
+                        })
                     }
                     _ => self.deserialize_any(visitor),
                 }
@@ -397,17 +528,17 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
         let typ = resolve::remove_aliases_cow(self.state.env, self.typ);
         match (self.input.as_ref(), &**typ) {
             (ValueRef::Array(values), &Type::App(_, ref args)) if args.len() == 1 => {
-                visitor.visit_seq(SeqDeserializer::new(self.state.clone(),
-                                                       values.iter().map(|variant| {
-                                                                             (variant, &args[0])
-                                                                         })))
+                visitor.visit_seq(SeqDeserializer::new(
+                    self.state.clone(),
+                    values.iter().map(|variant| (variant, &args[0])),
+                ))
             }
             (ValueRef::Data(data), &Type::Variant(ref row)) => {
                 match row.row_iter().nth(data.tag() as usize) {
                     Some(field) => {
-                        let iter = (0..data.len())
-                            .map(|i| data.get_variants(i).unwrap())
-                            .zip(arg_iter(&field.typ));
+                        let iter = (0..data.len()).map(|i| data.get_variants(i).unwrap()).zip(
+                            arg_iter(&field.typ),
+                        );
                         visitor.visit_seq(SeqDeserializer::new(self.state.clone(), iter))
                     }
                     None => self.deserialize_any(visitor),
@@ -509,7 +640,13 @@ impl<'de, 't, I> SeqDeserializer<'de, 't, I> {
 }
 
 impl<'de, 't, I> SeqAccess<'de> for SeqDeserializer<'de, 't, I>
-    where I: Iterator<Item = (Variants<'de>, &'t ArcType)>
+where
+    I: Iterator<
+        Item = (
+            Variants<'de>,
+            &'t ArcType,
+        ),
+    >,
 {
     type Error = VmError;
 
@@ -520,11 +657,10 @@ impl<'de, 't, I> SeqAccess<'de> for SeqDeserializer<'de, 't, I>
         match self.iter.next() {
             Some((value, typ)) => {
                 seed.deserialize(&mut Deserializer {
-                                          state: self.state.clone(),
-                                          input: value,
-                                          typ: typ,
-                                      })
-                    .map(Some)
+                    state: self.state.clone(),
+                    input: value,
+                    typ: typ,
+                }).map(Some)
             }
             None => Ok(None),
         }
@@ -625,10 +761,9 @@ impl<'a, 'b, 'de, 't> de::Deserializer<'de> for &'b mut Enum<'a, 'de, 't> {
         let typ = resolve::remove_aliases_cow(self.de.state.env, self.de.typ);
         match **typ {
             Type::Variant(ref variants) => {
-                let variant = variants
-                    .row_iter()
-                    .nth(tag as usize)
-                    .ok_or_else(|| Self::Error::custom("Unable to deserialize tag"))?;
+                let variant = variants.row_iter().nth(tag as usize).ok_or_else(|| {
+                    Self::Error::custom("Unable to deserialize tag")
+                })?;
                 visitor.visit_str(variant.name.as_ref())
             }
             _ => return Err(Self::Error::custom("Unable to deserialize tag")),
@@ -675,9 +810,9 @@ impl<'de, 'a, 't> VariantAccess<'de> for Enum<'a, 'de, 't> {
         match self.de.input.as_ref() {
             ValueRef::Data(data) if data.len() == 1 => {
                 seed.deserialize(&mut Deserializer {
-                                          input: data.get_variants(0).unwrap(),
-                                          ..self.de.clone()
-                                      })
+                    input: data.get_variants(0).unwrap(),
+                    ..self.de.clone()
+                })
             }
             _ => Err(VmError::Message(format!("Unable to deserialize bool"))),
         }

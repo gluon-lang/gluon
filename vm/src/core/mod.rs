@@ -1038,7 +1038,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 ast::Pattern::Record { .. } |
                 ast::Pattern::Tuple { .. } => CType::Record,
                 ast::Pattern::Constructor(_, _) => CType::Constructor,
-                ast::Pattern::Error => panic!("ICE: Error pattern survived typechecking")
+                ast::Pattern::Error => panic!("ICE: Error pattern survived typechecking"),
             }
         }
 
@@ -1145,7 +1145,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                         }
                     }
                 }
-                ast::Pattern::Error => ()
+                ast::Pattern::Error => (),
             }
         }
         if record_fields.is_empty() {

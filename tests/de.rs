@@ -50,23 +50,6 @@ impl VmType for Record {
 }
 
 #[test]
-fn record() {
-    let _ = env_logger::init();
-
-    let thread = new_vm();
-    let (De(record), _) = Compiler::new()
-        .run_expr::<De<Record>>(&thread, "test", r#" { test = 1, string = "test" } "#)
-        .unwrap_or_else(|err| panic!("{}", err));
-    assert_eq!(
-        record,
-        Record {
-            test: 1,
-            string: "test".to_string(),
-        }
-    );
-}
-
-#[test]
 fn option() {
     let _ = env_logger::init();
 
@@ -192,32 +175,6 @@ fn enum_() {
             r#" type Enum = | A Int | B String Float | C Int Int in { Enum } "#,
         )
         .unwrap_or_else(|err| panic!("{}", err));
-
-    let (De(enum_), _) = Compiler::new()
-        .implicit_prelude(false)
-        .run_expr::<De<Enum>>(
-            &thread,
-            "test",
-            r#" let { Enum } = import! "test" in A 123 "#,
-        )
-        .unwrap_or_else(|err| panic!("{}", err));
-    assert_eq!(enum_, Enum::A(123));
-
-    let (De(enum_), _) = Compiler::new()
-        .implicit_prelude(false)
-        .run_expr::<De<Enum>>(
-            &thread,
-            "test",
-            r#" let { Enum } = import! "test" in B "abc" 3.14 "#,
-        )
-        .unwrap_or_else(|err| panic!("{}", err));
-    assert_eq!(
-        enum_,
-        Enum::B {
-            string: "abc".to_string(),
-            test: 3.14,
-        }
-    );
 
     let (De(enum_), _) = Compiler::new()
         .implicit_prelude(false)
