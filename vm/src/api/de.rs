@@ -200,14 +200,14 @@ struct State<'de> {
 }
 
 #[derive(Clone)]
-pub struct Deserializer<'de, 't> {
+struct Deserializer<'de, 't> {
     state: State<'de>,
     input: Variants<'de>,
     typ: &'t ArcType,
 }
 
 impl<'de, 't> Deserializer<'de, 't> {
-    pub fn from_value(
+    fn from_value(
         thread: &'de Thread,
         env: &'de TypeEnv,
         input: Variants<'de>,
@@ -223,7 +223,7 @@ impl<'de, 't> Deserializer<'de, 't> {
         }
     }
 
-    pub fn deserialize_builtin<T, F, R>(&self, expected: BuiltinType, visit: F) -> Result<R>
+    fn deserialize_builtin<T, F, R>(&self, expected: BuiltinType, visit: F) -> Result<R>
     where
         F: FnOnce(T) -> Result<R>,
         T: Getable<'de>,
@@ -231,7 +231,7 @@ impl<'de, 't> Deserializer<'de, 't> {
         self.deserialize_leaf(|t| *t == Type::Builtin(expected), visit)
     }
 
-    pub fn deserialize_leaf<T, E, F, R>(&self, expected: E, visit: F) -> Result<R>
+    fn deserialize_leaf<T, E, F, R>(&self, expected: E, visit: F) -> Result<R>
     where
         E: FnOnce(&Type<Symbol, ArcType>) -> bool,
         F: FnOnce(T) -> Result<R>,

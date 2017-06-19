@@ -12,7 +12,7 @@ use types::{VmTag, VmIndex};
 use value::{Def, Value};
 use serde::ser::{self, Serialize};
 
-/*
+/**
 `Pushable` wrapper which pushes `T` by serializing it.
 
 ## Struct
