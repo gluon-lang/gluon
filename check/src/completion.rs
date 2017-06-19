@@ -1,6 +1,5 @@
 //! Primitive auto completion and type quering on ASTs
 
-use std::borrow::Borrow;
 use std::iter::once;
 use std::cmp::Ordering;
 
@@ -265,7 +264,7 @@ impl<'a> OnFound for GetMetadata<'a> {
         }
     }
 
-    fn pattern(&mut self, pattern: &SpannedPattern<Symbol>) {}
+    fn pattern(&mut self, _pattern: &SpannedPattern<Symbol>) {}
 
 
     fn nothing(&mut self) {}
@@ -313,7 +312,7 @@ impl<'a, E: TypeEnv> OnFound for MetadataSuggest<'a, E> {
         }
     }
 
-    fn pattern(&mut self, pattern: &SpannedPattern<Symbol>) {}
+    fn pattern(&mut self, _pattern: &SpannedPattern<Symbol>) {}
 
     fn nothing(&mut self) {
         self.result = self.suggest
