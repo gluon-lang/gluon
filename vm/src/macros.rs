@@ -17,21 +17,26 @@ pub type Error = Box<StdError + Send + Sync>;
 ///
 /// A macro is similiar to a function call but is run at compile time instead of at runtime.
 pub trait Macro: ::mopa::Any + Send + Sync {
-    fn expand(&self,
-              env: &mut MacroExpander,
-              args: &mut [SpannedExpr<Symbol>])
-              -> Result<SpannedExpr<Symbol>, Error>;
+    fn expand(
+        &self,
+        env: &mut MacroExpander,
+        args: &mut [SpannedExpr<Symbol>],
+    ) -> Result<SpannedExpr<Symbol>, Error>;
 }
 
 mopafy!(Macro);
 
 impl<F: ::mopa::Any + Clone + Send + Sync> Macro for F
-    where F: Fn(&mut MacroExpander, &mut [SpannedExpr<Symbol>]) -> Result<SpannedExpr<Symbol>, Error>,
+where
+    F: Fn(&mut MacroExpander,
+       &mut [SpannedExpr<Symbol>])
+       -> Result<SpannedExpr<Symbol>, Error>,
 {
-    fn expand(&self,
-              env: &mut MacroExpander,
-              args: &mut [SpannedExpr<Symbol>])
-              -> Result<SpannedExpr<Symbol>, Error> {
+    fn expand(
+        &self,
+        env: &mut MacroExpander,
+        args: &mut [SpannedExpr<Symbol>],
+    ) -> Result<SpannedExpr<Symbol>, Error> {
         self(env, args)
     }
 }
@@ -50,12 +55,10 @@ impl MacroEnv {
 
     /// Inserts a `Macro` which acts on any occurance of `symbol` when applied to an expression.
     pub fn insert<M>(&self, name: String, mac: M)
-        where M: Macro + 'static
+    where
+        M: Macro + 'static,
     {
-        self.macros
-            .write()
-            .unwrap()
-            .insert(name, Arc::new(mac));
+        self.macros.write().unwrap().insert(name, Arc::new(mac));
     }
 
     /// Retrieves the macro bound to `symbol`
@@ -114,12 +117,12 @@ impl<'a> MutVisitor for MacroExpander<'a> {
                         match self.macros.get(&name[..name.len() - 1]) {
                             Some(m) => {
                                 Some(match m.expand(self, args) {
-                                         Ok(e) => e,
-                                         Err(err) => {
-                                    self.errors.push(err);
-                                    pos::spanned(expr.span, Expr::Error)
-                                }
-                                     })
+                                    Ok(e) => e,
+                                    Err(err) => {
+                                        self.errors.push(err);
+                                        pos::spanned(expr.span, Expr::Error)
+                                    }
+                                })
                             }
                             None => None,
                         }

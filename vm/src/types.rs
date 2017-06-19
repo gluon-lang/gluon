@@ -156,16 +156,12 @@ pub struct TypeInfos {
 impl KindEnv for TypeInfos {
     fn find_kind(&self, type_name: &SymbolRef) -> Option<ArcKind> {
         let type_name = AsRef::<str>::as_ref(type_name);
-        self.id_to_type
-            .get(type_name)
-            .map(|alias| {
-                     alias
-                         .args
-                         .iter()
-                         .rev()
-                         .fold(Kind::typ(),
-                               |acc, arg| Kind::function(arg.kind.clone(), acc))
-                 })
+        self.id_to_type.get(type_name).map(|alias| {
+            alias.args.iter().rev().fold(
+                Kind::typ(),
+                |acc, arg| Kind::function(arg.kind.clone(), acc),
+            )
+        })
     }
 }
 
@@ -175,11 +171,9 @@ impl TypeEnv for TypeInfos {
         self.id_to_type
             .iter()
             .filter_map(|(_, ref alias)| match **alias.unresolved_type() {
-                            Type::Variant(ref row) => {
-                                row.row_iter().find(|field| field.name.as_ref() == id)
-                            }
-                            _ => None,
-                        })
+                Type::Variant(ref row) => row.row_iter().find(|field| field.name.as_ref() == id),
+                _ => None,
+            })
             .next()
             .map(|field| &field.typ)
     }
@@ -189,10 +183,11 @@ impl TypeEnv for TypeInfos {
         self.id_to_type.get(id)
     }
 
-    fn find_record(&self,
-                   _fields: &[Symbol],
-                   _selector: RecordSelector)
-                   -> Option<(ArcType, ArcType)> {
+    fn find_record(
+        &self,
+        _fields: &[Symbol],
+        _selector: RecordSelector,
+    ) -> Option<(ArcType, ArcType)> {
         None
     }
 }

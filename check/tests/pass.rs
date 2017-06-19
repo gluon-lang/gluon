@@ -29,11 +29,10 @@ macro_rules! assert_pass {
 /// types easier to write
 fn make_ident_type(typ: ArcType) -> ArcType {
     use base::types::walk_move_type;
-    walk_move_type(typ,
-                   &mut |typ| match *typ {
-                            Type::Alias(ref alias) => Some(Type::ident(alias.name.clone())),
-                            _ => None,
-                        })
+    walk_move_type(typ, &mut |typ| match *typ {
+        Type::Alias(ref alias) => Some(Type::ident(alias.name.clone())),
+        _ => None,
+    })
 }
 
 
@@ -95,9 +94,14 @@ fn type_decl() {
 type Test = { x: Int } in { x = 0 }
 ";
     let result = support::typecheck(text);
-    let expected = Ok(alias("Test",
-                            &[],
-                            Type::record(vec![], vec![Field::new(intern("x"), typ("Int"))])));
+    let expected = Ok(alias(
+        "Test",
+        &[],
+        Type::record(
+            vec![],
+            vec![Field::new(intern("x"), typ("Int"))],
+        ),
+    ));
 
     assert_eq!(result, expected);
 }
@@ -112,16 +116,21 @@ and Test2 = | Test2 Test
 in Test2 (\x -> x #Int+ 2)
 ";
     let result = support::typecheck(text);
-    let test = AliasData::new(intern("Test"),
-                              vec![],
-                              Type::function(vec![typ("Int")], typ("Int")));
-    let test2 = AliasData::new(intern("Test2"),
-                               vec![],
-                               Type::variant(vec![Field {
-                                                      name: intern("Test2"),
-                                                      typ: Type::function(vec![typ("Test")],
-                                                                          typ("Test2")),
-                                                  }]));
+    let test = AliasData::new(
+        intern("Test"),
+        vec![],
+        Type::function(vec![typ("Int")], typ("Int")),
+    );
+    let test2 = AliasData::new(
+        intern("Test2"),
+        vec![],
+        Type::variant(vec![
+            Field {
+                name: intern("Test2"),
+                typ: Type::function(vec![typ("Test")], typ("Test2")),
+            },
+        ]),
+    );
     let expected = Ok(Alias::group(vec![test, test2])[1].as_type().clone());
 
     assert_eq!(result, expected);
@@ -136,9 +145,14 @@ type T = { y: Int } in
 let f: T -> Int = \x -> x.y in { y = f { y = 123 } }
 ";
     let result = support::typecheck(text);
-    let expected = Ok(alias("T",
-                            &[],
-                            Type::record(vec![], vec![Field::new(intern("y"), typ("Int"))])));
+    let expected = Ok(alias(
+        "T",
+        &[],
+        Type::record(
+            vec![],
+            vec![Field::new(intern("y"), typ("Int"))],
+        ),
+    ));
 
     assert_eq!(result, expected);
 }
@@ -295,13 +309,19 @@ let eq_Int: Eq Int = {
 in eq_Int
 ";
     let result = support::typecheck(text);
-    let bool = Type::alias(support::intern_unscoped("Bool"),
-                           vec![],
-                           Type::ident(support::intern_unscoped("Bool")));
-    let eq = alias("Eq",
-                   &["a"],
-                   Type::record(vec![],
-                                vec![Field::new(support::intern_unscoped("=="), Type::function(vec![typ("a"), typ("a")], bool))]));
+    let bool = Type::alias(
+        support::intern_unscoped("Bool"),
+        vec![],
+        Type::ident(support::intern_unscoped("Bool")),
+    );
+    let eq = alias(
+        "Eq",
+        &["a"],
+        Type::record(
+            vec![],
+            vec![Field::new(support::intern_unscoped("=="), Type::function(vec![typ("a"), typ("a")], bool))],
+        ),
+    );
     let expected = Ok(Type::app(eq, collect![typ("Int")]));
 
     assert_eq!(result, expected);
@@ -324,10 +344,12 @@ let option_Functor: Functor Option = {
 in option_Functor.map (\x -> x #Int- 1) (Some 2)
 ";
     let result = support::typecheck(text);
-    let variants = Type::variant(vec![Field::new(support::intern_unscoped("None"), support::typ_a("Option", vec![typ("a")])),
+    let variants = Type::variant(
+        vec![Field::new(support::intern_unscoped("None"), support::typ_a("Option", vec![typ("a")])),
                                       Field::new(support::intern_unscoped("Some"), Type::function(vec![typ("a")],
                                                                    support::typ_a("Option",
-                                                                                  vec![typ("a")])))]);
+                                                                                  vec![typ("a")])))],
+    );
     let option = alias("Option", &["a"], variants);
 
     let expected = Ok(Type::app(option, collect![typ("Int")]));
@@ -367,7 +389,10 @@ test
                                                  Type::function(vec![typ("a")],
                                                                      support::typ_a("Test",
                                                                                     vec![typ("a")])))]);
-    let expected = Ok(Type::app(alias("Test", &["a"], variants), collect![Type::unit()]));
+    let expected = Ok(Type::app(
+        alias("Test", &["a"], variants),
+        collect![Type::unit()],
+    ));
 
     assert_eq!(result, expected);
 }
@@ -504,9 +529,11 @@ type Test = | Test String Int in { Test, x = 1 }
     let result = support::typecheck(text);
     let variant = Type::function(vec![typ("String"), typ("Int")], typ("Test"));
     let test = Type::variant(vec![Field::new(intern("Test"), variant)]);
-    let expected = Ok(Type::record(vec![Field::new(support::intern_unscoped("Test"),
+    let expected = Ok(Type::record(
+        vec![Field::new(support::intern_unscoped("Test"),
                                                    Alias::new(intern("Test"), vec![], test))],
-                                   vec![Field::new(intern("x"), typ("Int"))]));
+        vec![Field::new(intern("x"), typ("Int"))],
+    ));
 
     assert_eq!(result.map(support::close_record), expected);
 }
@@ -546,11 +573,15 @@ return 1
     let m = Generic::new(intern("m"), Kind::function(Kind::typ(), Kind::typ()));
 
     let id = alias("Id", &["a"], variant("Id"));
-    let id_t = Type::alias(intern("IdT"),
-                           vec![m.clone(),
+    let id_t = Type::alias(
+        intern("IdT"),
+        vec![m.clone(),
                                 Generic::new(intern("a"), Kind::typ())],
-                           Type::app(Type::generic(m),
-                                     collect![Type::app(id, collect![typ("a")])]));
+        Type::app(
+            Type::generic(m),
+            collect![Type::app(id, collect![typ("a")])],
+        ),
+    );
     let expected = Ok(Type::app(id_t, collect![test, typ("Int")]));
 
     assert_eq!(result, expected);
@@ -795,9 +826,14 @@ let r2: Type2 = r1
 let r3: Type3 = r2
 in r1"#;
     let result = support::typecheck(text);
-    let expected = Ok(alias("Type1",
-                            &[],
-                            Type::record(vec![], vec![Field::new(intern("x"), typ("Int"))])));
+    let expected = Ok(alias(
+        "Type1",
+        &[],
+        Type::record(
+            vec![],
+            vec![Field::new(intern("x"), typ("Int"))],
+        ),
+    ));
 
     assert_eq!(result, expected);
 }

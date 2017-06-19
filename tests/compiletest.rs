@@ -15,10 +15,11 @@ fn lib_dir(out_dir: &Path, lib_name: &str) -> PathBuf {
         .unwrap()
         .filter_map(|entry| {
             let entry = entry.expect("dir entry");
-            if entry
-                   .path()
-                   .to_str()
-                   .map_or(false, |name| name.contains(lib_name)) {
+            if entry.path().to_str().map_or(
+                false,
+                |name| name.contains(lib_name),
+            )
+            {
                 Some(entry)
             } else {
                 None
@@ -26,12 +27,11 @@ fn lib_dir(out_dir: &Path, lib_name: &str) -> PathBuf {
         })
         .collect();
     gluon_rlibs.sort_by(|l, r| {
-                            l.metadata()
-                                .unwrap()
-                                .modified()
-                                .unwrap()
-                                .cmp(&r.metadata().unwrap().modified().unwrap())
-                        });
+        l.metadata().unwrap().modified().unwrap().cmp(&r.metadata()
+            .unwrap()
+            .modified()
+            .unwrap())
+    });
     gluon_rlibs.last().expect("libgluon not found").path()
 }
 
@@ -59,10 +59,12 @@ fn run_mode(mode: &'static str) {
     config.verbose = true;
     config.mode = cfg_mode;
     config.src_base = PathBuf::from(format!("tests/{}", mode));
-    config.target_rustcflags = Some(format!("-L {}/deps --extern gluon={} --extern gluon_vm={}",
-                                            out_dir.display(),
-                                            gluon_rlib.display(),
-                                            gluon_vm_rlib.display()));
+    config.target_rustcflags = Some(format!(
+        "-L {}/deps --extern gluon={} --extern gluon_vm={}",
+        out_dir.display(),
+        gluon_rlib.display(),
+        gluon_vm_rlib.display()
+    ));
     println!("{}", config.target_rustcflags.as_ref().unwrap());
     compiletest::run_tests(&config);
 }

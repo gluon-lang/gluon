@@ -34,10 +34,8 @@ fn suggest_types(s: &str, pos: BytePos) -> Result<Vec<Suggestion>, ()> {
 
 fn suggest(s: &str, pos: BytePos) -> Result<Vec<String>, ()> {
     suggest_types(s, pos).map(|vec| {
-                                  vec.into_iter()
-                                      .map(|suggestion| suggestion.name)
-                                      .collect()
-                              })
+        vec.into_iter().map(|suggestion| suggestion.name).collect()
+    })
 }
 
 fn get_metadata(s: &str, pos: BytePos) -> Option<Metadata> {
@@ -94,12 +92,14 @@ fn literal_string() {
 
 #[test]
 fn in_let() {
-    let result = find_type(r#"
+    let result = find_type(
+        r#"
 let f x = 1
 and g x = "asd"
 1
 "#,
-                           BytePos::from(25));
+        BytePos::from(25),
+    );
     let expected = Ok(typ("String"));
 
     assert_eq!(result, expected);
@@ -107,14 +107,16 @@ and g x = "asd"
 
 #[test]
 fn let_in_let() {
-    let result = find_type(r#"
+    let result = find_type(
+        r#"
 let f =
     let g y =
         123
     g
 f
 "#,
-                           BytePos::from(33));
+        BytePos::from(33),
+    );
     let expected = Ok(typ("Int"));
 
     assert_eq!(result, expected);
@@ -124,11 +126,13 @@ f
 fn function_app() {
     let _ = env_logger::init();
 
-    let result = find_type(r#"
+    let result = find_type(
+        r#"
 let f x = f x
 1
 "#,
-                           BytePos::from(11));
+        BytePos::from(11),
+    );
     let expected = Ok(Type::function(vec![typ("a0")], typ("a1")));
 
     assert_eq!(result, expected);
@@ -140,13 +144,15 @@ fn binop() {
 
     let env = MockEnv::new();
 
-    let (mut expr, result) = support::typecheck_expr(r#"
+    let (mut expr, result) = support::typecheck_expr(
+        r#"
 let (++) l r =
     l #Int+ 1
     r #Float+ 1.0
     l
 1 ++ 2.0
-"#);
+"#,
+    );
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     let result = completion::find(&env, &mut expr, BytePos::from(57));
@@ -168,14 +174,19 @@ fn field_access() {
 
     let typ_env = MockEnv::new();
 
-    let (mut expr, result) = support::typecheck_expr(r#"
+    let (mut expr, result) = support::typecheck_expr(
+        r#"
 let r = { x = 1 }
 r.x
-"#);
+"#,
+    );
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     let result = completion::find(&typ_env, &mut expr, BytePos::from(19));
-    let expected = Ok(Type::record(vec![], vec![Field::new(intern("x"), typ("Int"))]));
+    let expected = Ok(Type::record(
+        vec![],
+        vec![Field::new(intern("x"), typ("Int"))],
+    ));
     assert_eq!(result.map(support::close_record), expected);
 
     let result = completion::find(&typ_env, &mut expr, BytePos::from(22));
@@ -187,13 +198,15 @@ r.x
 fn in_record() {
     let _ = env_logger::init();
 
-    let result = find_type(r#"
+    let result = find_type(
+        r#"
 {
     test = 123,
     s = "asd"
 }
 "#,
-                           BytePos::from(15));
+        BytePos::from(15),
+    );
     let expected = Ok(typ("Int"));
 
     assert_eq!(result, expected);
@@ -203,13 +216,15 @@ fn in_record() {
 fn suggest_identifier_when_prefix() {
     let _ = env_logger::init();
 
-    let result = suggest(r#"
+    let result = suggest(
+        r#"
 let test = 1
 let tes = ""
 let aaa = test
 te
 "#,
-                         BytePos::from(43));
+        BytePos::from(43),
+    );
     let expected = Ok(vec!["tes".into(), "test".into()]);
 
     assert_eq!(result, expected);
@@ -219,12 +234,14 @@ te
 fn suggest_arguments() {
     let _ = env_logger::init();
 
-    let result = suggest(r#"
+    let result = suggest(
+        r#"
 let f test =
     \test2 -> tes
 123
 "#,
-                         BytePos::from(31));
+        BytePos::from(31),
+    );
     let expected = Ok(vec!["test".into(), "test2".into()]);
 
     assert_eq!(result, expected);
@@ -234,12 +251,14 @@ let f test =
 fn suggest_after_unrelated_type_error() {
     let _ = env_logger::init();
 
-    let result = suggest(r#"
+    let result = suggest(
+        r#"
 let record = { aa = 1, ab = 2, c = "" }
 1.0 #Int+ 2
 record.a
 "#,
-                         BytePos::from(104));
+        BytePos::from(104),
+    );
     let expected = Ok(vec!["aa".into(), "ab".into()]);
 
     assert_eq!(result, expected);
@@ -249,13 +268,15 @@ record.a
 fn suggest_through_aliases() {
     let _ = env_logger::init();
 
-    let result = suggest(r#"
+    let result = suggest(
+        r#"
 type Test a = { abc: a -> Int }
 type Test2 = Test String
 let record: Test2 = { abc = \x -> 0 }
 record.ab
 "#,
-                         BytePos::from(108));
+        BytePos::from(108),
+    );
     let expected = Ok(vec!["abc".into()]);
 
     assert_eq!(result, expected);
@@ -265,11 +286,13 @@ record.ab
 fn suggest_after_dot() {
     let _ = env_logger::init();
 
-    let result = suggest(r#"
+    let result = suggest(
+        r#"
 let record = { aa = 1, ab = 2, c = "" }
 record.
 "#,
-                         BytePos::from(48));
+        BytePos::from(48),
+    );
     let expected = Ok(vec!["aa".into(), "ab".into(), "c".into()]);
 
     assert_eq!(result, expected);
@@ -279,11 +302,13 @@ record.
 fn suggest_from_record_unpack() {
     let _ = env_logger::init();
 
-    let result = suggest(r#"
+    let result = suggest(
+        r#"
 let { aa, c } = { aa = 1, ab = 2, c = "" }
 a
 "#,
-                         BytePos::from(45));
+        BytePos::from(45),
+    );
     let expected = Ok(vec!["aa".into()]);
 
     assert_eq!(result, expected);
@@ -293,15 +318,19 @@ a
 fn suggest_from_record_unpack_unordered() {
     let _ = env_logger::init();
 
-    let result = suggest_types(r#"
+    let result = suggest_types(
+        r#"
 let { c, aa } = { aa = 1, ab = 2.0, c = "" }
 a
 "#,
-                               BytePos::from(47));
-    let expected = Ok(vec![Suggestion {
-                               name: "aa".into(),
-                               typ: Type::int(),
-                           }]);
+        BytePos::from(47),
+    );
+    let expected = Ok(vec![
+        Suggestion {
+            name: "aa".into(),
+            typ: Type::int(),
+        },
+    ]);
 
     assert_eq!(result, expected);
 }
@@ -310,11 +339,13 @@ a
 fn suggest_on_record_in_field_access() {
     let _ = env_logger::init();
 
-    let result = suggest(r#"
+    let result = suggest(
+        r#"
 let record = { aa = 1, ab = 2, c = "" }
 record.aa
 "#,
-                         BytePos::from(45));
+        BytePos::from(45),
+    );
     let expected = Ok(vec!["record".into()]);
 
     assert_eq!(result, expected);
@@ -324,12 +355,14 @@ record.aa
 fn suggest_end_of_identifier() {
     let _ = env_logger::init();
 
-    let result = suggest(r#"
+    let result = suggest(
+        r#"
 let abc = 1
 let abb = 2
 abc
 "#,
-                         BytePos::from(28));
+        BytePos::from(28),
+    );
     let expected = Ok(vec!["abc".into()]);
 
     assert_eq!(result, expected);
@@ -339,12 +372,14 @@ abc
 fn suggest_after_identifier() {
     let _ = env_logger::init();
 
-    let result = suggest(r#"
+    let result = suggest(
+        r#"
 let abc = 1
 let abb = 2
 abc
 "#,
-                         BytePos::from(32));
+        BytePos::from(32),
+    );
     let expected = Ok(vec!["abb".into(), "abc".into()]);
 
     assert_eq!(result, expected);
@@ -390,9 +425,9 @@ abc
     let result = get_metadata(text, BytePos::from(41));
 
     let expected = Some(Metadata {
-                            comment: Some("test".to_string()),
-                            ..Metadata::default()
-                        });
+        comment: Some("test".to_string()),
+        ..Metadata::default()
+    });
     assert_eq!(result, expected);
 }
 
@@ -408,9 +443,9 @@ let (+++) x y = 1
     let result = get_metadata(text, BytePos::from(32));
 
     let expected = Some(Metadata {
-                            comment: Some("test".to_string()),
-                            ..Metadata::default()
-                        });
+        comment: Some("test".to_string()),
+        ..Metadata::default()
+    });
     assert_eq!(result, expected);
 }
 
@@ -430,9 +465,9 @@ module.abc
     let result = get_metadata(text, BytePos::from(81));
 
     let expected = Some(Metadata {
-                            comment: Some("test".to_string()),
-                            ..Metadata::default()
-                        });
+        comment: Some("test".to_string()),
+        ..Metadata::default()
+    });
     assert_eq!(result, expected);
 }
 
@@ -449,9 +484,9 @@ ab
     let result = suggest_metadata(text, BytePos::from(36), "abc");
 
     let expected = Some(Metadata {
-                            comment: Some("test".to_string()),
-                            ..Metadata::default()
-                        });
+        comment: Some("test".to_string()),
+        ..Metadata::default()
+    });
     assert_eq!(result, expected);
 }
 
@@ -470,8 +505,8 @@ module.ab
     let result = suggest_metadata(text, BytePos::from(81), "abc");
 
     let expected = Some(Metadata {
-                            comment: Some("test".to_string()),
-                            ..Metadata::default()
-                        });
+        comment: Some("test".to_string()),
+        ..Metadata::default()
+    });
     assert_eq!(result, expected);
 }

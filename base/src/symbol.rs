@@ -192,16 +192,18 @@ impl Name {
     }
 
     pub fn name(&self) -> &Name {
-        self.0
-            .rfind('.')
-            .map_or(self, |i| Name::new(&self.0[i + 1..]))
+        self.0.rfind('.').map_or(
+            self,
+            |i| Name::new(&self.0[i + 1..]),
+        )
     }
 }
 
 impl NameBuf {
     #[inline]
     pub fn new<T>(name: T) -> NameBuf
-        where T: Into<String>
+    where
+        T: Into<String>,
     {
         NameBuf(name.into())
     }
@@ -303,7 +305,8 @@ impl Symbols {
 
     /// Looks up the symbol for `name` or creates a new symbol if it does not exist
     pub fn symbol<N>(&mut self, name: N) -> Symbol
-        where N: Into<NameBuf> + AsRef<Name>
+    where
+        N: Into<NameBuf> + AsRef<Name>,
     {
         if let Some(symbol) = self.indexes.get(name.as_ref()) {
             return symbol.clone();
@@ -331,7 +334,8 @@ impl<'a> SymbolModule<'a> {
 
     /// Creates an unprefixed symbol, same as `Symbols::symbol`
     pub fn symbol<N>(&mut self, name: N) -> Symbol
-        where N: Into<NameBuf> + AsRef<Name>
+    where
+        N: Into<NameBuf> + AsRef<Name>,
     {
         self.symbols.symbol(name)
     }
@@ -359,9 +363,10 @@ impl DisplayEnv for Symbols {
     type Ident = Symbol;
 
     fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str {
-        self.strings
-            .get(ident)
-            .map_or(ident.as_ref(), |name| &*name.0)
+        self.strings.get(ident).map_or(
+            ident.as_ref(),
+            |name| &*name.0,
+        )
     }
 }
 

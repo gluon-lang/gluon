@@ -13,8 +13,9 @@ pub enum Error<T, E> {
 }
 
 impl<T, E> fmt::Display for Error<T, E>
-    where T: fmt::Display,
-          E: fmt::Display
+where
+    T: fmt::Display,
+    E: fmt::Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use unify::Error::*;
@@ -36,15 +37,17 @@ pub struct UnifierState<S, U> {
 
 impl<S, U> UnifierState<S, U> {
     pub fn report_error<Type>(&mut self, error: Error<Type, Type::Error>)
-        where U: Unifier<S, Type>,
-              Type: Unifiable<S>
+    where
+        U: Unifier<S, Type>,
+        Type: Unifiable<S>,
     {
         Unifier::report_error(self, error)
     }
 
     pub fn try_match<Type>(&mut self, l: &Type, r: &Type) -> Option<Type>
-        where U: Unifier<S, Type>,
-              Type: Unifiable<S>
+    where
+        U: Unifier<S, Type>,
+        Type: Unifiable<S>,
     {
         Unifier::try_match(self, l, r)
     }
@@ -52,7 +55,8 @@ impl<S, U> UnifierState<S, U> {
 
 /// A `Unifier` is a type which implements a unifying strategy between two values.
 pub trait Unifier<S, Type>: Sized
-    where Type: Unifiable<S>
+where
+    Type: Unifiable<S>,
 {
     /// Reports an error to the `unifier` for cases when returning the error is not possible.
     fn report_error(unifier: &mut UnifierState<S, Self>, error: Error<Type, Type::Error>);
@@ -72,11 +76,13 @@ pub trait Unifiable<S>: Substitutable + Sized {
     /// returns a more specific type (if None is returned `self` should be chosen as the type if
     /// that becomes necessary).
     /// Returns `Err` if the immediate level were not equal.
-    fn zip_match<U>(&self,
-                    other: &Self,
-                    unifier: &mut UnifierState<S, U>)
-                    -> Result<Option<Self>, Error<Self, Self::Error>>
-        where U: Unifier<S, Self>;
+    fn zip_match<U>(
+        &self,
+        other: &Self,
+        unifier: &mut UnifierState<S, U>,
+    ) -> Result<Option<Self>, Error<Self, Self::Error>>
+    where
+        U: Unifier<S, Self>;
 }
 
 /// Unify `l` and `r` taking into account and updating the substitution `subs` using the
@@ -84,13 +90,15 @@ pub trait Unifiable<S>: Substitutable + Sized {
 /// resolve which types must be equal.
 /// If the unification is successful the returned type is the unified type with as much sharing as
 /// possible which lets further computions be more efficient.
-pub fn unify<S, T>(subs: &Substitution<T>,
-                   state: S,
-                   l: &T,
-                   r: &T)
-                   -> Result<T, Errors<Error<T, T::Error>>>
-    where T: Unifiable<S> + PartialEq + Clone,
-          T::Variable: Clone
+pub fn unify<S, T>(
+    subs: &Substitution<T>,
+    state: S,
+    l: &T,
+    r: &T,
+) -> Result<T, Errors<Error<T, T::Error>>>
+where
+    T: Unifiable<S> + PartialEq + Clone,
+    T::Variable: Clone,
 {
     let mut state = UnifierState {
         state: state,
@@ -109,15 +117,17 @@ pub fn unify<S, T>(subs: &Substitution<T>,
 }
 
 struct Unify<'e, T, E>
-    where T: Substitutable + 'e
+where
+    T: Substitutable + 'e,
 {
     errors: Errors<Error<T, E>>,
     subs: &'e Substitution<T>,
 }
 
 impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
-    where T: Unifiable<S> + PartialEq + Clone + 'e,
-          T::Variable: Clone
+where
+    T: Unifiable<S> + PartialEq + Clone + 'e,
+    T::Variable: Clone,
 {
     fn report_error(unifier: &mut UnifierState<S, Self>, error: Error<T, T::Error>) {
         unifier.unifier.errors.push(error);
@@ -166,8 +176,9 @@ impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
 /// # Example
 /// intersect (Int -> Int -> Bool) <=> (Float -> Float -> Bool) ==> (a -> a -> Bool)
 pub fn intersection<S, T>(subs: &Substitution<T>, state: S, l: &T, r: &T) -> T
-    where T: Unifiable<S> + Eq + Clone + Hash,
-          T::Variable: Clone
+where
+    T: Unifiable<S> + Eq + Clone + Hash,
+    T::Variable: Clone,
 {
     let mut unifier = UnifierState {
         state: state,
@@ -180,15 +191,17 @@ pub fn intersection<S, T>(subs: &Substitution<T>, state: S, l: &T, r: &T) -> T
 }
 
 struct Intersect<'m, T: 'm>
-    where T: Substitutable
+where
+    T: Substitutable,
 {
     mismatch_map: FnvMap<(T, T), T>,
     subs: &'m Substitution<T>,
 }
 
 impl<'m, S, T> Unifier<S, T> for Intersect<'m, T>
-    where T: Unifiable<S> + Eq + Hash + Clone,
-          T::Variable: Clone
+where
+    T: Unifiable<S> + Eq + Hash + Clone,
+    T::Variable: Clone,
 {
     fn report_error(_unifier: &mut UnifierState<S, Self>, _error: Error<T, T::Error>) {}
 
@@ -205,12 +218,14 @@ impl<'m, S, T> Unifier<S, T> for Intersect<'m, T>
                         // If the immediate level of `l` and `r` does not match, record
                         // the mismatched types return a type variable in their place
                         // (Reusing a variable if the same mismatch was already seen)
-                        Some(unifier
-                                 .unifier
-                                 .mismatch_map
-                                 .entry((l.clone(), r.clone()))
-                                 .or_insert_with(|| subs.new_var())
-                                 .clone())
+                        Some(
+                            unifier
+                                .unifier
+                                .mismatch_map
+                                .entry((l.clone(), r.clone()))
+                                .or_insert_with(|| subs.new_var())
+                                .clone(),
+                        )
                     }
                 }
             }
@@ -251,7 +266,8 @@ mod test {
             }
         }
         fn traverse<F>(&self, f: &mut F)
-            where F: Walker<Self>
+        where
+            F: Walker<Self>,
         {
             fn traverse_(typ: &TType, f: &mut Walker<TType>) {
                 match *typ.0 {
@@ -269,18 +285,26 @@ mod test {
 
     impl Unifiable<()> for TType {
         type Error = ();
-        fn zip_match<F>(&self,
-                        other: &Self,
-                        f: &mut UnifierState<(), F>)
-                        -> Result<Option<Self>, Error<Self, Self::Error>>
-            where F: Unifier<(), Self>
+        fn zip_match<F>(
+            &self,
+            other: &Self,
+            f: &mut UnifierState<(), F>,
+        ) -> Result<Option<Self>, Error<Self, Self::Error>>
+        where
+            F: Unifier<(), Self>,
         {
             match (&*self.0, &*other.0) {
                 (&Type::Ident(ref l), &Type::Ident(ref r)) if l == r => Ok(None),
                 (&Type::Arrow(ref l1, ref l2), &Type::Arrow(ref r1, ref r2)) => {
                     let arg = f.try_match(l1, r1);
                     let ret = f.try_match(l2, r2);
-                    Ok(merge(l1, arg, l2, ret, |a, r| TType(Box::new(Type::Arrow(a, r)))))
+                    Ok(merge(
+                        l1,
+                        arg,
+                        l2,
+                        ret,
+                        |a, r| TType(Box::new(Type::Arrow(a, r))),
+                    ))
                 }
                 _ => Err(Error::TypeMismatch(self.clone(), other.clone())),
             }
@@ -291,10 +315,11 @@ mod test {
         TType(Box::new(Type::Arrow(a.clone(), r.clone())))
     }
 
-    fn unify(subs: &Substitution<TType>,
-             l: &TType,
-             r: &TType)
-             -> Result<TType, Errors<Error<TType, ()>>> {
+    fn unify(
+        subs: &Substitution<TType>,
+        l: &TType,
+        r: &TType,
+    ) -> Result<TType, Errors<Error<TType, ()>>> {
         super::unify(subs, (), l, r)
     }
 
@@ -344,8 +369,12 @@ mod test {
         let int = TType(Box::new(Type::Ident("Int".into())));
         // Check that var1 does not unify with int as it should already be a string
         let result = unify(&subs, &var1, &int);
-        assert_eq!(result,
-                   Err(Errors::from(vec![Error::TypeMismatch(string.clone(), int.clone())])));
+        assert_eq!(
+            result,
+            Err(Errors::from(
+                vec![Error::TypeMismatch(string.clone(), int.clone())],
+            ))
+        );
     }
 
     #[test]
@@ -356,8 +385,10 @@ mod test {
         let string = TType(Box::new(Type::Ident("String".into())));
         let fun = TType(Box::new(Type::Arrow(string.clone(), var1.clone())));
         let result = unify(&subs, &fun, &var1);
-        assert_eq!(result,
-                   Err(Errors::from(vec![Error::Occurs(var1, fun.clone())])));
+        assert_eq!(
+            result,
+            Err(Errors::from(vec![Error::Occurs(var1, fun.clone())]))
+        );
     }
 
     #[test]
@@ -374,12 +405,16 @@ mod test {
         let string_fun = mk_fn(&string, &string);
         let int_fun = mk_fn(&int, &int);
         let result = intersection(&subs, &int_fun, &string_fun);
-        assert_eq!(result,
-                   mk_fn(&TType::from_variable(1), &TType::from_variable(1)));
+        assert_eq!(
+            result,
+            mk_fn(&TType::from_variable(1), &TType::from_variable(1))
+        );
 
         let var_fun = mk_fn(&var1, &var1);
         let result = intersection(&subs, &int_fun, &var_fun);
-        assert_eq!(result,
-                   mk_fn(&TType::from_variable(2), &TType::from_variable(2)));
+        assert_eq!(
+            result,
+            mk_fn(&TType::from_variable(2), &TType::from_variable(2))
+        );
     }
 }

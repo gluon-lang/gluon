@@ -96,10 +96,7 @@ impl<'a> fmt::Display for Expr<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let arena = pretty::Arena::new();
         let mut s = Vec::new();
-        self.pretty(&arena)
-            .1
-            .render(80, &mut s)
-            .unwrap();
+        self.pretty(&arena).1.render(80, &mut s).unwrap();
         write!(f, "{}", ::std::str::from_utf8(&s).expect("utf-8"))
     }
 }
@@ -107,9 +104,10 @@ impl<'a> fmt::Display for Expr<'a> {
 const INDENT: usize = 4;
 
 impl<'a> Expr<'a> {
-    pub fn pretty(&'a self,
-                  arena: &'a pretty::Arena<'a>)
-                  -> pretty::DocBuilder<'a, pretty::Arena<'a>> {
+    pub fn pretty(
+        &'a self,
+        arena: &'a pretty::Arena<'a>,
+    ) -> pretty::DocBuilder<'a, pretty::Arena<'a>> {
         match *self {
             Expr::Call(f, args) => {
                 chain![arena;
@@ -117,8 +115,7 @@ impl<'a> Expr<'a> {
                     arena.concat(args.iter().map(|arg| {
                         arena.space().append(arg.pretty(arena))
                     }))
-                ]
-                    .group()
+                ].group()
             }
             Expr::Const(ref literal, _) => {
                 match *literal {
@@ -135,8 +132,7 @@ impl<'a> Expr<'a> {
                     arena.concat(args.iter().map(|arg| {
                         arena.space().append(arg.pretty(arena))
                     }))
-                ]
-                    .group()
+                ].group()
             }
             Expr::Ident(ref id, _) => arena.text(id.as_ref()),
             Expr::Let(ref bind, ref expr) => {
@@ -190,8 +186,7 @@ impl<'a> Expr<'a> {
                             alt.expr.pretty(arena).nest(INDENT).group()
                         ].nest(INDENT)
                     }).intersperse(arena.newline()))
-                ]
-                    .group()
+                ].group()
             }
         }
     }
@@ -200,12 +195,11 @@ impl<'a> Expr<'a> {
         match *self {
             Expr::Call(expr, args) => {
                 let span = expr.span();
-                Span::with_id(span.start,
-                              args.last()
-                                  .unwrap()
-                                  .span()
-                                  .end,
-                              span.expansion_id)
+                Span::with_id(
+                    span.start,
+                    args.last().unwrap().span().end,
+                    span.expansion_id,
+                )
             }
             Expr::Const(_, span) => span,
             Expr::Data(_, args, span_start, expansion_id) => {
@@ -219,22 +213,21 @@ impl<'a> Expr<'a> {
             }
             Expr::Match(expr, alts) => {
                 let span_start = expr.span();
-                Span::with_id(span_start.start,
-                              alts.last()
-                                  .unwrap()
-                                  .expr
-                                  .span()
-                                  .end,
-                              span_start.expansion_id)
+                Span::with_id(
+                    span_start.start,
+                    alts.last().unwrap().expr.span().end,
+                    span_start.expansion_id,
+                )
             }
         }
     }
 }
 
 impl Pattern {
-    pub fn pretty<'a>(&'a self,
-                      arena: &'a pretty::Arena<'a>)
-                      -> pretty::DocBuilder<'a, pretty::Arena<'a>> {
+    pub fn pretty<'a>(
+        &'a self,
+        arena: &'a pretty::Arena<'a>,
+    ) -> pretty::DocBuilder<'a, pretty::Arena<'a>> {
         match *self {
             Pattern::Constructor(ref ctor, ref args) => {
                 chain![arena;
@@ -273,11 +266,9 @@ impl Pattern {
 }
 
 fn is_constructor(s: &Symbol) -> bool {
-    s.as_ref()
-        .rsplit('.')
-        .next()
-        .unwrap()
-        .starts_with(char::is_uppercase)
+    s.as_ref().rsplit('.').next().unwrap().starts_with(
+        char::is_uppercase,
+    )
 }
 
 pub struct Allocator<'a> {
@@ -321,9 +312,12 @@ impl<'a, 'e> Translator<'a, 'e> {
             current = tail;
         }
         let tail = self.translate_(current);
-        lets.iter().rev().fold(tail, |result, &(span_start, ref binds)| {
-            self.translate_let(binds, result, span_start)
-        })
+        lets.iter().rev().fold(
+            tail,
+            |result, &(span_start, ref binds)| {
+                self.translate_let(binds, result, span_start)
+            },
+        )
     }
 
     fn translate_(&'a self, expr: &SpannedExpr<Symbol>) -> Expr<'a> {
@@ -338,34 +332,41 @@ impl<'a, 'e> Translator<'a, 'e> {
                         self.new_data_constructor(typ, id, new_args, expr.span)
                     }
                     _ => {
-                        Expr::Call(self.translate_alloc(function),
-                                   arena.alloc_extend(new_args.into_iter()))
+                        Expr::Call(
+                            self.translate_alloc(function),
+                            arena.alloc_extend(new_args.into_iter()),
+                        )
                     }
                 }
             }
             ast::Expr::Array(ref array) => {
-                let exprs: SmallVec<[_; 16]> = array.exprs
+                let exprs: SmallVec<[_; 16]> = array
+                    .exprs
                     .iter()
                     .map(|expr| self.translate(expr))
                     .collect();
-                Expr::Data(TypedIdent {
-                               name: self.dummy_symbol.name.clone(),
-                               typ: array.typ.clone(),
-                           },
-                           arena.alloc_extend(exprs.into_iter()),
-                           expr.span.start,
-                           expr.span.expansion_id)
+                Expr::Data(
+                    TypedIdent {
+                        name: self.dummy_symbol.name.clone(),
+                        typ: array.typ.clone(),
+                    },
+                    arena.alloc_extend(exprs.into_iter()),
+                    expr.span.start,
+                    expr.span.expansion_id,
+                )
             }
             ast::Expr::Block(ref exprs) => {
                 let (last, prefix) = exprs.split_last().unwrap();
                 let result = self.translate(last);
                 prefix.iter().rev().fold(result, |result, expr| {
-                    Expr::Let(LetBinding {
-                                  name: self.dummy_symbol.clone(),
-                                  expr: Named::Expr(self.translate_alloc(expr)),
-                                  span_start: expr.span.start,
-                              },
-                              arena.alloc(result))
+                    Expr::Let(
+                        LetBinding {
+                            name: self.dummy_symbol.clone(),
+                            expr: Named::Expr(self.translate_alloc(expr)),
+                            span_start: expr.span.start,
+                        },
+                        arena.alloc(result),
+                    )
                 })
             }
             ast::Expr::Ident(ref id) => {
@@ -376,29 +377,37 @@ impl<'a, 'e> Translator<'a, 'e> {
                 }
             }
             ast::Expr::IfElse(ref pred, ref if_true, ref if_false) => {
-                let alts: SmallVec<[_; 2]> = collect![Alternative {
-                                 pattern: Pattern::Constructor(self.bool_constructor(true),
-                                                               vec![]),
-                                 expr: self.translate_alloc(if_true),
-                             },
-                             Alternative {
-                                 pattern: Pattern::Constructor(self.bool_constructor(false),
-                                                               vec![]),
-                                 expr: self.translate_alloc(if_false),
-                             }];
-                Expr::Match(self.translate_alloc(pred),
-                            self.allocator.alternative_arena.alloc_extend(alts.into_iter()))
+                let alts: SmallVec<[_; 2]> = collect![
+                    Alternative {
+                        pattern: Pattern::Constructor(self.bool_constructor(true), vec![]),
+                        expr: self.translate_alloc(if_true),
+                    },
+                    Alternative {
+                        pattern: Pattern::Constructor(self.bool_constructor(false), vec![]),
+                        expr: self.translate_alloc(if_false),
+                    },
+                ];
+                Expr::Match(
+                    self.translate_alloc(pred),
+                    self.allocator.alternative_arena.alloc_extend(
+                        alts.into_iter(),
+                    ),
+                )
             }
             ast::Expr::Infix(ref l, ref op, ref r) => {
                 let args: SmallVec<[_; 2]> = collect![self.translate(l), self.translate(r)];
-                Expr::Call(arena.alloc(Expr::Ident(op.value.clone(), op.span)),
-                           arena.alloc_extend(args.into_iter()))
+                Expr::Call(
+                    arena.alloc(Expr::Ident(op.value.clone(), op.span)),
+                    arena.alloc_extend(args.into_iter()),
+                )
             }
             ast::Expr::Lambda(ref lambda) => {
-                self.new_lambda(lambda.id.clone(),
-                                lambda.args.clone(),
-                                self.translate_alloc(&lambda.body),
-                                expr.span)
+                self.new_lambda(
+                    lambda.id.clone(),
+                    lambda.args.clone(),
+                    self.translate_alloc(&lambda.body),
+                    expr.span,
+                )
             }
             ast::Expr::LetBindings(ref binds, ref tail) => {
                 self.translate_let(binds, self.translate(tail), expr.span.start)
@@ -422,23 +431,32 @@ impl<'a, 'e> Translator<'a, 'e> {
             // | { projection } -> projection
             ast::Expr::Projection(ref projected_expr, ref projection, ref projected_type) => {
                 let alt = Alternative {
-                    pattern: Pattern::Record(vec![(TypedIdent {
-                                                       name: projection.clone(),
-                                                       typ: projected_type.clone(),
-                                                   },
-                                                   None)]),
-                    expr: arena.alloc(Expr::Ident(TypedIdent {
-                                                      name: projection.clone(),
-                                                      typ: projected_type.clone(),
-                                                  },
-                                                  expr.span)),
+                    pattern: Pattern::Record(vec![
+                        (
+                            TypedIdent {
+                                name: projection.clone(),
+                                typ: projected_type.clone(),
+                            },
+                            None
+                        ),
+                    ]),
+                    expr: arena.alloc(Expr::Ident(
+                        TypedIdent {
+                            name: projection.clone(),
+                            typ: projected_type.clone(),
+                        },
+                        expr.span,
+                    )),
                 };
-                Expr::Match(self.translate_alloc(projected_expr),
-                            self.allocator.alternative_arena.alloc_extend(once(alt)))
+                Expr::Match(
+                    self.translate_alloc(projected_expr),
+                    self.allocator.alternative_arena.alloc_extend(once(alt)),
+                )
             }
             ast::Expr::Record { ref typ, ref exprs, .. } => {
                 let mut last_span = expr.span;
-                let args: SmallVec<[_; 16]> = exprs.iter()
+                let args: SmallVec<[_; 16]> = exprs
+                    .iter()
                     .map(|field| match field.value {
                         Some(ref expr) => {
                             last_span = expr.span;
@@ -447,39 +465,45 @@ impl<'a, 'e> Translator<'a, 'e> {
                         None => Expr::Ident(TypedIdent::new(field.name.clone()), last_span),
                     })
                     .collect();
-                Expr::Data(TypedIdent {
-                               name: self.dummy_symbol.name.clone(),
-                               typ: typ.clone(),
-                           },
-                           arena.alloc_extend(args.into_iter()),
-                           expr.span.start,
-                           expr.span.expansion_id)
+                Expr::Data(
+                    TypedIdent {
+                        name: self.dummy_symbol.name.clone(),
+                        typ: typ.clone(),
+                    },
+                    arena.alloc_extend(args.into_iter()),
+                    expr.span.start,
+                    expr.span.expansion_id,
+                )
             }
             ast::Expr::Tuple { ref elems, .. } => {
                 let args: SmallVec<[_; 16]> =
                     elems.iter().map(|expr| self.translate(expr)).collect();
-                Expr::Data(TypedIdent {
-                               name: self.dummy_symbol.name.clone(),
-                               typ: expr.env_type_of(&self.env),
-                           },
-                           arena.alloc_extend(args.into_iter()),
-                           expr.span.start,
-                           expr.span.expansion_id)
+                Expr::Data(
+                    TypedIdent {
+                        name: self.dummy_symbol.name.clone(),
+                        typ: expr.env_type_of(&self.env),
+                    },
+                    arena.alloc_extend(args.into_iter()),
+                    expr.span.start,
+                    expr.span.expansion_id,
+                )
             }
             ast::Expr::TypeBindings(_, ref expr) => self.translate(expr),
             ast::Expr::Error => panic!("ICE: Error expression found in the compiler"),
         }
     }
 
-    fn translate_let(&'a self,
-                     binds: &[ast::ValueBinding<Symbol>],
-                     tail: Expr<'a>,
-                     span_start: BytePos)
-                     -> Expr<'a> {
+    fn translate_let(
+        &'a self,
+        binds: &[ast::ValueBinding<Symbol>],
+        tail: Expr<'a>,
+        span_start: BytePos,
+    ) -> Expr<'a> {
         let arena = &self.allocator.arena;
         let is_recursive = binds.iter().all(|bind| bind.args.len() > 0);
         if is_recursive {
-            let closures = binds.iter()
+            let closures = binds
+                .iter()
                 .map(|bind| {
                     Closure {
                         name: match bind.name.value {
@@ -491,13 +515,15 @@ impl<'a, 'e> Translator<'a, 'e> {
                     }
                 })
                 .collect();
-            Expr::Let(LetBinding {
-                          // TODO
-                          name: self.dummy_symbol.clone(),
-                          expr: Named::Recursive(closures),
-                          span_start: span_start,
-                      },
-                      arena.alloc(tail))
+            Expr::Let(
+                LetBinding {
+                    // TODO
+                    name: self.dummy_symbol.clone(),
+                    expr: Named::Recursive(closures),
+                    span_start: span_start,
+                },
+                arena.alloc(tail),
+            )
         } else {
             binds.iter().rev().fold(tail, |tail, bind| {
                 let name = match bind.name.value {
@@ -505,29 +531,36 @@ impl<'a, 'e> Translator<'a, 'e> {
                     _ => {
                         let bind_expr = self.translate_alloc(&bind.expr);
                         let tail = &*arena.alloc(tail);
-                        return PatternTranslator(self).translate_top(bind_expr,
-                                                                     &[Equation {
-                                                                           patterns:
-                                                                               vec![&bind.name],
-                                                                           result: tail,
-                                                                       }]);
+                        return PatternTranslator(self).translate_top(
+                            bind_expr,
+                            &[
+                                Equation {
+                                    patterns: vec![&bind.name],
+                                    result: tail,
+                                },
+                            ],
+                        );
                     }
                 };
                 let named = if bind.args.is_empty() {
                     Named::Expr(self.translate_alloc(&bind.expr))
                 } else {
-                    Named::Recursive(vec![Closure {
-                                              name: name.clone(),
-                                              args: bind.args.clone(),
-                                              expr: self.translate_alloc(&bind.expr),
-                                          }])
+                    Named::Recursive(vec![
+                        Closure {
+                            name: name.clone(),
+                            args: bind.args.clone(),
+                            expr: self.translate_alloc(&bind.expr),
+                        },
+                    ])
                 };
-                Expr::Let(LetBinding {
-                              name: name,
-                              expr: named,
-                              span_start: bind.expr.span.start,
-                          },
-                          arena.alloc(tail))
+                Expr::Let(
+                    LetBinding {
+                        name: name,
+                        expr: named,
+                        span_start: bind.expr.span.start,
+                    },
+                    arena.alloc(tail),
+                )
             })
         }
     }
@@ -539,7 +572,8 @@ impl<'a, 'e> Translator<'a, 'e> {
                 match **alias.typ() {
                     Type::Variant(ref variants) => {
                         TypedIdent {
-                            name: variants.row_iter()
+                            name: variants
+                                .row_iter()
                                 .nth(variant as usize)
                                 .unwrap()
                                 .name
@@ -554,12 +588,13 @@ impl<'a, 'e> Translator<'a, 'e> {
         }
     }
 
-    fn new_data_constructor(&'a self,
-                            expr_type: ArcType,
-                            id: &TypedIdent<Symbol>,
-                            mut new_args: SmallVec<[Expr<'a>; 16]>,
-                            span: Span<BytePos>)
-                            -> Expr<'a> {
+    fn new_data_constructor(
+        &'a self,
+        expr_type: ArcType,
+        id: &TypedIdent<Symbol>,
+        mut new_args: SmallVec<[Expr<'a>; 16]>,
+        span: Span<BytePos>,
+    ) -> Expr<'a> {
         let arena = &self.allocator.arena;
         let typ = expr_type;
         let unapplied_args: Vec<_>;
@@ -580,44 +615,55 @@ impl<'a, 'e> Translator<'a, 'e> {
                 .collect();
             data_type = args.typ.clone();
         }
-        new_args.extend(unapplied_args.iter().map(|arg| Expr::Ident(arg.clone(), span)));
-        let data = Expr::Data(TypedIdent {
-                                  name: id.name.clone(),
-                                  typ: data_type,
-                              },
-                              arena.alloc_extend(new_args.into_iter()),
-                              span.start,
-                              span.expansion_id);
+        new_args.extend(unapplied_args.iter().map(
+            |arg| Expr::Ident(arg.clone(), span),
+        ));
+        let data = Expr::Data(
+            TypedIdent {
+                name: id.name.clone(),
+                typ: data_type,
+            },
+            arena.alloc_extend(new_args.into_iter()),
+            span.start,
+            span.expansion_id,
+        );
         if unapplied_args.is_empty() {
             data
         } else {
-            self.new_lambda(TypedIdent {
-                                name: Symbol::from(format!("${}", id.name)),
-                                typ: typ,
-                            },
-                            unapplied_args,
-                            arena.alloc(data),
-                            span)
+            self.new_lambda(
+                TypedIdent {
+                    name: Symbol::from(format!("${}", id.name)),
+                    typ: typ,
+                },
+                unapplied_args,
+                arena.alloc(data),
+                span,
+            )
         }
     }
 
-    fn new_lambda(&'a self,
-                  name: TypedIdent<Symbol>,
-                  args: Vec<TypedIdent<Symbol>>,
-                  body: &'a Expr<'a>,
-                  span: Span<BytePos>)
-                  -> Expr<'a> {
+    fn new_lambda(
+        &'a self,
+        name: TypedIdent<Symbol>,
+        args: Vec<TypedIdent<Symbol>>,
+        body: &'a Expr<'a>,
+        span: Span<BytePos>,
+    ) -> Expr<'a> {
         let arena = &self.allocator.arena;
-        Expr::Let(LetBinding {
-                      name: name.clone(),
-                      expr: Named::Recursive(vec![Closure {
-                                                      name: name.clone(),
-                                                      args: args,
-                                                      expr: body,
-                                                  }]),
-                      span_start: span.start,
-                  },
-                  arena.alloc(Expr::Ident(name, span)))
+        Expr::Let(
+            LetBinding {
+                name: name.clone(),
+                expr: Named::Recursive(vec![
+                    Closure {
+                        name: name.clone(),
+                        args: args,
+                        expr: body,
+                    },
+                ]),
+                span_start: span.start,
+            },
+            arena.alloc(Expr::Ident(name, span)),
+        )
     }
 }
 
@@ -644,8 +690,10 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
     let function_type = remove_aliases_cow(env, alias_type);
 
     let (_, ret) = function_type.as_function().unwrap_or_else(|| {
-        panic!("Call expression with a non function type `{}`",
-               function_type)
+        panic!(
+            "Call expression with a non function type `{}`",
+            function_type
+        )
     });
     get_return_type(env, ret, arg_count - 1)
 }
@@ -660,10 +708,12 @@ struct Equation<'a, 'p> {
 
 impl<'a, 'p> fmt::Display for Equation<'a, 'p> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f,
-               "[({:?},{})]",
-               self.patterns.iter().format(", "),
-               self.result)
+        write!(
+            f,
+            "[({:?},{})]",
+            self.patterns.iter().format(", "),
+            self.result
+        )
     }
 }
 
@@ -685,11 +735,13 @@ impl<'a> Visitor<'a> for ReplaceVariables<'a> {
         match *expr {
             Expr::Ident(ref id, span) => {
                 self.replacements.get(&id.name).map(|new_name| {
-                    &*self.allocator.arena.alloc(Expr::Ident(TypedIdent {
-                                                                 name: new_name.clone(),
-                                                                 typ: id.typ.clone(),
-                                                             },
-                                                             span))
+                    &*self.allocator.arena.alloc(Expr::Ident(
+                        TypedIdent {
+                            name: new_name.clone(),
+                            typ: id.typ.clone(),
+                        },
+                        span,
+                    ))
                 })
             }
             _ => walk_expr_alloc(self, expr),
@@ -702,53 +754,63 @@ impl<'a> Visitor<'a> for ReplaceVariables<'a> {
 
 
 impl<'a, 'e> PatternTranslator<'a, 'e> {
-    fn varcons_compile<'p>(&mut self,
-                           default: &'a Expr<'a>,
-                           variables: &[&'a Expr<'a>],
-                           varcon: CType,
-                           equations: &[Equation<'a, 'p>])
-                           -> &'a Expr<'a> {
+    fn varcons_compile<'p>(
+        &mut self,
+        default: &'a Expr<'a>,
+        variables: &[&'a Expr<'a>],
+        varcon: CType,
+        equations: &[Equation<'a, 'p>],
+    ) -> &'a Expr<'a> {
         use std::borrow::Cow;
 
         match varcon {
             CType::Record => {
 
                 let new_alt = {
-                    let pattern = self.pattern_identifiers(equations.iter()
-                        .map(|equation| *equation.patterns.first().unwrap()));
-                    let temp = equations.iter()
-                        .map(|equation| {
-                            match equation.patterns.first().unwrap().value {
-                                ast::Pattern::Record { ref typ, ref fields, .. } => {
-                                    fields.iter()
-                                        .map(|field| {
-                                            field.1
-                                                .as_ref()
-                                                .map(Cow::Borrowed)
-                                                .unwrap_or_else(|| {
-                                                    let field_type = remove_aliases_cow(&self.0.env, typ)
-                                                        .row_iter()
-                                                        .find(|f| f.name.name_eq(&field.0))
-                                                        .map(|f| f.typ.clone())
-                                                        .unwrap_or_else(|| Type::hole());
-                                                    Cow::Owned(spanned(Span::default(), ast::Pattern::Ident(TypedIdent {name: field.0.clone(), typ: field_type })))
-                                                })
+                    let pattern = self.pattern_identifiers(equations.iter().map(|equation| {
+                        *equation.patterns.first().unwrap()
+                    }));
+                    let temp = equations
+                        .iter()
+                        .map(|equation| match equation.patterns.first().unwrap().value {
+                            ast::Pattern::Record {
+                                ref typ,
+                                ref fields,
+                                ..
+                            } => {
+                                fields
+                                    .iter()
+                                    .map(|field| {
+                                        field.1.as_ref().map(Cow::Borrowed).unwrap_or_else(|| {
+                                            let field_type = remove_aliases_cow(&self.0.env, typ)
+                                                .row_iter()
+                                                .find(|f| f.name.name_eq(&field.0))
+                                                .map(|f| f.typ.clone())
+                                                .unwrap_or_else(|| Type::hole());
+                                            Cow::Owned(spanned(
+                                                Span::default(),
+                                                ast::Pattern::Ident(TypedIdent {
+                                                    name: field.0.clone(),
+                                                    typ: field_type,
+                                                }),
+                                            ))
                                         })
-                                        .collect::<Vec<_>>()
-                                }
-                                ast::Pattern::Tuple { ref elems, .. } => {
-                                    elems.iter()
-                                        .map(Cow::Borrowed)
-                                        .collect::<Vec<_>>()
-                                }
-                                _ => unreachable!(),
-                            } })
-                            .collect::<Vec<_>>();
-                    let new_equations = equations.iter()
+                                    })
+                                    .collect::<Vec<_>>()
+                            }
+                            ast::Pattern::Tuple { ref elems, .. } => {
+                                elems.iter().map(Cow::Borrowed).collect::<Vec<_>>()
+                            }
+                            _ => unreachable!(),
+                        })
+                        .collect::<Vec<_>>();
+                    let new_equations = equations
+                        .iter()
                         .zip(&temp)
                         .map(|(equation, first)| {
                             Equation {
-                                patterns: first.iter()
+                                patterns: first
+                                    .iter()
                                     .map(|pattern| &**pattern)
                                     .chain(equation.patterns.iter().cloned().skip(1))
                                     .collect(),
@@ -757,7 +819,11 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                         })
                         .collect::<Vec<_>>();
                     let new_variables = PatternIdentifiers::new(&pattern)
-                        .map(|id| &*self.0.allocator.arena.alloc(Expr::Ident(id, Span::default())))
+                        .map(|id| {
+                            &*self.0.allocator.arena.alloc(
+                                Expr::Ident(id, Span::default()),
+                            )
+                        })
                         .chain(variables[1..].iter().cloned())
                         .collect::<Vec<_>>();
                     let expr = self.translate(default, &new_variables, &new_equations);
@@ -766,11 +832,12 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                         expr: expr,
                     }
                 };
-                let expr = Expr::Match(variables[0],
-                                       self.0
-                                           .allocator
-                                           .alternative_arena
-                                           .alloc_extend(Some(new_alt).into_iter()));
+                let expr = Expr::Match(
+                    variables[0],
+                    self.0.allocator.alternative_arena.alloc_extend(
+                        Some(new_alt).into_iter(),
+                    ),
+                );
                 self.0.allocator.arena.alloc(expr)
             }
             CType::Constructor => {
@@ -780,7 +847,8 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 for equation in equations {
                     match equation.patterns.first().unwrap().value {
                         ast::Pattern::Constructor(ref id, _) => {
-                            groups.entry(&id.name)
+                            groups
+                                .entry(&id.name)
                                 .or_insert_with(|| {
                                     group_order.push(&id.name);
                                     Vec::new()
@@ -793,24 +861,27 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     }
                 }
                 let complete = groups.len() ==
-                               remove_aliases_cow(&self.0.env,
-                                                  &variables[0].env_type_of(&self.0.env))
-                    .row_iter()
-                    .count();
+                    remove_aliases_cow(&self.0.env, &variables[0].env_type_of(&self.0.env))
+                        .row_iter()
+                        .count();
 
-                let new_alts = group_order.into_iter()
+                let new_alts = group_order
+                    .into_iter()
                     .map(|key| {
                         let equations = &groups[key];
-                        let pattern = self.pattern_identifiers(equations.iter()
-                            .map(|equation| *equation.patterns.first().unwrap()));
-                        let new_equations = equations.iter()
+                        let pattern = self.pattern_identifiers(equations.iter().map(|equation| {
+                            *equation.patterns.first().unwrap()
+                        }));
+                        let new_equations = equations
+                            .iter()
                             .map(|equation| {
                                 let first = match equation.patterns.first().unwrap().value {
                                     ast::Pattern::Constructor(_, ref patterns) => patterns,
                                     _ => unreachable!(),
                                 };
                                 Equation {
-                                    patterns: first.iter()
+                                    patterns: first
+                                        .iter()
                                         .chain(equation.patterns.iter().cloned().skip(1))
                                         .collect(),
                                     result: equation.result,
@@ -819,7 +890,9 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                             .collect::<Vec<_>>();
                         let new_variables = PatternIdentifiers::new(&pattern)
                             .map(|id| {
-                                &*self.0.allocator.arena.alloc(Expr::Ident(id, Span::default()))
+                                &*self.0.allocator.arena.alloc(
+                                    Expr::Ident(id, Span::default()),
+                                )
                             })
                             .chain(variables[1..].iter().cloned())
                             .collect::<Vec<_>>();
@@ -859,27 +932,32 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                         })
                     })
                     .collect::<Vec<_>>();
-                let expr = Expr::Match(variables[0],
-                                       self.0
-                                           .allocator
-                                           .alternative_arena
-                                           .alloc_extend(new_alts.into_iter()));
+                let expr = Expr::Match(
+                    variables[0],
+                    self.0.allocator.alternative_arena.alloc_extend(
+                        new_alts.into_iter(),
+                    ),
+                );
                 self.0.allocator.arena.alloc(expr)
 
             }
             CType::Variable => {
-                let expr = self.translate(default,
-                                          &variables[1..],
-                                          &equations.iter()
-                                              .map(|equation| {
-                                                  Equation {
-                                                      patterns: equation.patterns[1..].to_owned(),
-                                                      result: equation.result,
-                                                  }
-                                              })
-                                              .collect::<Vec<_>>());
-                let pattern = self.pattern_identifiers(equations.iter()
-                    .map(|equation| *equation.patterns.first().unwrap()));
+                let expr = self.translate(
+                    default,
+                    &variables[1..],
+                    &equations
+                        .iter()
+                        .map(|equation| {
+                            Equation {
+                                patterns: equation.patterns[1..].to_owned(),
+                                result: equation.result,
+                            }
+                        })
+                        .collect::<Vec<_>>(),
+                );
+                let pattern = self.pattern_identifiers(equations.iter().map(|equation| {
+                    *equation.patterns.first().unwrap()
+                }));
                 let alt = Alternative {
                     pattern: pattern,
                     expr: expr,
@@ -887,37 +965,42 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 match (&alt.pattern, variables[0]) {
                     (&Pattern::Ident(ref id), &Expr::Ident(ref expr_id, _)) => {
                         return ReplaceVariables {
-                                replacements: collect![(id.name.clone(), expr_id.name.clone())],
-                                allocator: &self.0.allocator,
-                            }
-                            .visit_expr(expr)
+                            replacements: collect![(id.name.clone(), expr_id.name.clone())],
+                            allocator: &self.0.allocator,
+                        }.visit_expr(expr)
                             .unwrap_or(expr);
                     }
                     _ => (),
                 }
 
-                let expr = Expr::Match(variables[0],
-                                       self.0
-                                           .allocator
-                                           .alternative_arena
-                                           .alloc_extend(Some(alt).into_iter()));
+                let expr = Expr::Match(
+                    variables[0],
+                    self.0.allocator.alternative_arena.alloc_extend(
+                        Some(alt).into_iter(),
+                    ),
+                );
                 self.0.allocator.arena.alloc(expr)
             }
         }
     }
 
-    fn translate_top<'p>(&mut self,
-                         expr: &'a Expr<'a>,
-                         equations: &[Equation<'a, 'p>])
-                         -> Expr<'a> {
+    fn translate_top<'p>(
+        &mut self,
+        expr: &'a Expr<'a>,
+        equations: &[Equation<'a, 'p>],
+    ) -> Expr<'a> {
         let arena = &self.0.allocator.arena;
         // FIXME Symbol::from
-        let error =
-            arena.alloc(Expr::Ident(TypedIdent::new(Symbol::from("error")), Span::default()));
-        let args = arena.alloc_extend(Some(Expr::Const(Literal::String("Unmatched pattern"
-                                                           .into()),
-                                                       Span::default()))
-            .into_iter());
+        let error = arena.alloc(Expr::Ident(
+            TypedIdent::new(Symbol::from("error")),
+            Span::default(),
+        ));
+        let args = arena.alloc_extend(
+            Some(Expr::Const(
+                Literal::String("Unmatched pattern".into()),
+                Span::default(),
+            )).into_iter(),
+        );
         let default = arena.alloc(Expr::Call(error, args));
         match *expr {
             Expr::Ident(..) => self.translate(default, &[expr], equations).clone(),
@@ -926,25 +1009,27 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     name: Symbol::from("match_pattern"),
                     typ: expr.env_type_of(&self.0.env),
                 };
-                let id_expr = self.0
-                    .allocator
-                    .arena
-                    .alloc(Expr::Ident(name.clone(), expr.span()));
-                Expr::Let(LetBinding {
-                              name: name,
-                              expr: Named::Expr(expr),
-                              span_start: expr.span().start,
-                          },
-                          self.translate(default, &[id_expr], equations))
+                let id_expr = self.0.allocator.arena.alloc(
+                    Expr::Ident(name.clone(), expr.span()),
+                );
+                Expr::Let(
+                    LetBinding {
+                        name: name,
+                        expr: Named::Expr(expr),
+                        span_start: expr.span().start,
+                    },
+                    self.translate(default, &[id_expr], equations),
+                )
             }
         }
     }
 
-    fn translate<'p>(&mut self,
-                     default: &'a Expr<'a>,
-                     variables: &[&'a Expr<'a>],
-                     equations: &[Equation<'a, 'p>])
-                     -> &'a Expr<'a> {
+    fn translate<'p>(
+        &mut self,
+        default: &'a Expr<'a>,
+        variables: &[&'a Expr<'a>],
+        equations: &[Equation<'a, 'p>],
+    ) -> &'a Expr<'a> {
         fn varcon(equation: &Equation) -> CType {
             match equation.patterns.first().expect("Pattern").value {
                 ast::Pattern::Ident(_) => CType::Variable,
@@ -954,24 +1039,31 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             }
         }
 
-        let groups = equations.iter()
-            .group_by(|equation| varcon(&equation));
+        let groups = equations.iter().group_by(|equation| varcon(&equation));
         let expr = match variables.first() {
-            None => equations.first().map(|equation| equation.result).unwrap_or(default),
+            None => {
+                equations
+                    .first()
+                    .map(|equation| equation.result)
+                    .unwrap_or(default)
+            }
             Some(_) => {
                 let groups = (&groups).into_iter().collect::<Vec<_>>();
-                groups.into_iter()
-                    .rev()
-                    .fold(default, |expr, (key, group)| {
+                groups.into_iter().rev().fold(
+                    default,
+                    |expr, (key, group)| {
                         let equation_group = group.cloned().collect::<Vec<_>>();
                         self.varcons_compile(expr, variables, key, &equation_group)
-                    })
+                    },
+                )
             }
         };
-        debug!("Translated: [{}]\n[{}]\nInto: {}",
-               variables.iter().format(",\n"),
-               equations.iter().format(",\n"),
-               expr);
+        debug!(
+            "Translated: [{}]\n[{}]\nInto: {}",
+            variables.iter().format(",\n"),
+            equations.iter().format(",\n"),
+            expr
+        );
         expr
     }
 
@@ -988,7 +1080,8 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
     }
 
     fn pattern_identifiers<'b, 'p: 'b, I>(&self, patterns: I) -> Pattern
-        where I: IntoIterator<Item = &'b SpannedPattern<Symbol>>,
+    where
+        I: IntoIterator<Item = &'b SpannedPattern<Symbol>>,
     {
 
         let mut identifiers = Vec::new();
@@ -998,9 +1091,9 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         for pattern in patterns {
             match pattern.value {
                 ast::Pattern::Constructor(ref id, ref patterns) => {
-                    identifiers.extend(patterns.iter()
-                        .enumerate()
-                        .map(|(i, pattern)| self.extract_ident(i, &pattern.value)));
+                    identifiers.extend(patterns.iter().enumerate().map(|(i, pattern)| {
+                        self.extract_ident(i, &pattern.value)
+                    }));
                     // Just extract the patterns of the first constructor found
                     return Pattern::Constructor(id.clone(), identifiers);
                 }
@@ -1010,35 +1103,42 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     }
                 }
                 ast::Pattern::Tuple { ref typ, ref elems } => {
-                    record_fields.extend(elems.iter()
-                        .zip(typ.row_iter())
-                        .enumerate()
-                        .map(|(i, (elem, field_type))| {
-                            (TypedIdent {
-                                 name: field_type.name.clone(),
-                                 typ: field_type.typ.clone(),
-                             },
-                             Some(self.extract_ident(i, &elem.value).name))
-                        }));
+                    record_fields.extend(elems.iter().zip(typ.row_iter()).enumerate().map(
+                        |(i, (elem, field_type))| {
+                            (
+                                TypedIdent {
+                                    name: field_type.name.clone(),
+                                    typ: field_type.typ.clone(),
+                                },
+                                Some(self.extract_ident(i, &elem.value).name),
+                            )
+                        },
+                    ));
                     break;
                 }
-                ast::Pattern::Record { ref typ, ref fields, .. } => {
+                ast::Pattern::Record {
+                    ref typ,
+                    ref fields,
+                    ..
+                } => {
                     for (i, field) in fields.iter().enumerate() {
                         // Don't add one field twice
                         if record_fields.iter().all(|id| id.0.name != field.0) {
-                            let x = field.1
-                                .as_ref()
-                                .map(|pattern| self.extract_ident(i, &pattern.value).name);
+                            let x = field.1.as_ref().map(|pattern| {
+                                self.extract_ident(i, &pattern.value).name
+                            });
                             let field_type = remove_aliases_cow(&self.0.env, typ)
                                 .row_iter()
                                 .find(|f| f.name.name_eq(&field.0))
                                 .map(|f| f.typ.clone())
                                 .unwrap_or_else(|| Type::hole());
-                            record_fields.push((TypedIdent {
-                                                    name: field.0.clone(),
-                                                    typ: field_type,
-                                                },
-                                                x));
+                            record_fields.push((
+                                TypedIdent {
+                                    name: field.0.clone(),
+                                    typ: field_type,
+                                },
+                                x,
+                            ));
                         }
                     }
                 }
@@ -1093,15 +1193,18 @@ impl<'a> Iterator for PatternIdentifiers<'a> {
                 if self.start < fields.len() {
                     let field = &fields[self.start];
                     self.start += 1;
-                    Some(field.1
-                        .as_ref()
-                        .map(|name| {
-                            TypedIdent {
-                                name: name.clone(),
-                                typ: field.0.typ.clone(),
-                            }
-                        })
-                        .unwrap_or_else(|| field.0.clone()))
+                    Some(
+                        field
+                            .1
+                            .as_ref()
+                            .map(|name| {
+                                TypedIdent {
+                                    name: name.clone(),
+                                    typ: field.0.typ.clone(),
+                                }
+                            })
+                            .unwrap_or_else(|| field.0.clone()),
+                    )
                 } else {
                     None
                 }
@@ -1126,15 +1229,18 @@ impl<'a> DoubleEndedIterator for PatternIdentifiers<'a> {
                 if self.start != self.end {
                     self.end -= 1;
                     let field = &fields[self.end];
-                    Some(field.1
-                        .as_ref()
-                        .map(|name| {
-                            TypedIdent {
-                                name: name.clone(),
-                                typ: field.0.typ.clone(),
-                            }
-                        })
-                        .unwrap_or_else(|| field.0.clone()))
+                    Some(
+                        field
+                            .1
+                            .as_ref()
+                            .map(|name| {
+                                TypedIdent {
+                                    name: name.clone(),
+                                    typ: field.0.typ.clone(),
+                                }
+                            })
+                            .unwrap_or_else(|| field.0.clone()),
+                    )
                 } else {
                     None
                 }
@@ -1193,7 +1299,9 @@ mod tests {
                         (&Pattern::Constructor(ref l, ref l_ids),
                          &Pattern::Constructor(ref r, ref r_ids)) => {
                             check(map, &l.name, &r.name) &&
-                            l_ids.iter().zip(r_ids).all(|(l, r)| check(map, &l.name, &r.name))
+                                l_ids.iter().zip(r_ids).all(
+                                    |(l, r)| check(map, &l.name, &r.name),
+                                )
                         }
                         (&Pattern::Ident(ref l), &Pattern::Ident(ref r)) => {
                             check(map, &l.name, &r.name)
@@ -1201,11 +1309,11 @@ mod tests {
                         (&Pattern::Record(ref l), &Pattern::Record(ref r)) => {
                             l.iter().zip(r).all(|(l, r)| {
                                 check(map, &l.0.name, &r.0.name) &&
-                                match (&l.1, &r.1) {
-                                    (&Some(ref l), &Some(ref r)) => check(map, l, r),
-                                    (&None, &None) => true,
-                                    _ => false,
-                                }
+                                    match (&l.1, &r.1) {
+                                        (&Some(ref l), &Some(ref r)) => check(map, l, r),
+                                        (&None, &None) => true,
+                                        _ => false,
+                                    }
                             })
                         }
                         _ => false,
@@ -1227,11 +1335,11 @@ mod tests {
             }
             (&Expr::Call(lf, l_args), &Expr::Call(rf, r_args)) => {
                 expr_eq(map, lf, rf) && l_args.len() == r_args.len() &&
-                l_args.iter().zip(r_args).all(|(l, r)| expr_eq(map, l, r))
+                    l_args.iter().zip(r_args).all(|(l, r)| expr_eq(map, l, r))
             }
             (&Expr::Data(ref l, l_args, ..), &Expr::Data(ref r, r_args, ..)) => {
                 check(map, &l.name, &r.name) && l_args.len() == r_args.len() &&
-                l_args.iter().zip(r_args).all(|(l, r)| expr_eq(map, l, r))
+                    l_args.iter().zip(r_args).all(|(l, r)| expr_eq(map, l, r))
             }
             _ => false,
         }

@@ -28,29 +28,26 @@ fn type_of_expr(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     let WithVM { vm, value: args } = args;
     let mut compiler = Compiler::new();
     IO::Value(match compiler.typecheck_str(vm, "<repl>", &args, None) {
-                  Ok((expr, _)) => {
-        let env = vm.get_env();
-        Ok(format!("{}", expr.env_type_of(&*env)))
-    }
-                  Err(msg) => Err(format!("{}", msg)),
-              })
+        Ok((expr, _)) => {
+            let env = vm.get_env();
+            Ok(format!("{}", expr.env_type_of(&*env)))
+        }
+        Err(msg) => Err(format!("{}", msg)),
+    })
 }
 
 fn find_kind(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     let vm = args.vm;
     let args = args.value.trim();
     IO::Value(match vm.find_type_info(args) {
-                  Ok(ref alias) => {
-        let kind = alias
-            .args
-            .iter()
-            .rev()
-            .fold(Kind::typ(),
-                  |acc, arg| Kind::function(arg.kind.clone(), acc));
-        Ok(format!("{}", kind))
-    }
-                  Err(err) => Err(format!("{}", err)),
-              })
+        Ok(ref alias) => {
+            let kind = alias.args.iter().rev().fold(Kind::typ(), |acc, arg| {
+                Kind::function(arg.kind.clone(), acc)
+            });
+            Ok(format!("{}", kind))
+        }
+        Err(err) => Err(format!("{}", err)),
+    })
 }
 
 fn find_info(args: WithVM<RootStr>) -> IO<Result<String, String>> {
@@ -81,9 +78,9 @@ fn find_info(args: WithVM<RootStr>) -> IO<Result<String, String>> {
             }
         }
     }
-    let maybe_comment = env.get_metadata(args)
-        .ok()
-        .and_then(|metadata| metadata.comment.as_ref());
+    let maybe_comment = env.get_metadata(args).ok().and_then(|metadata| {
+        metadata.comment.as_ref()
+    });
     if let Some(comment) = maybe_comment {
         for line in comment.lines() {
             write!(&mut buffer, "\n/// {}", line).unwrap();
@@ -113,13 +110,15 @@ fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonRe
     // Only need the typechecker to fill infer the types as best it can regardless of errors
     let _ = compiler.typecheck_expr(thread, &name, fileinput, &mut expr);
     let suggestions = completion::suggest(&*thread.get_env(), &expr, BytePos::from(pos));
-    Ok(suggestions
-           .into_iter()
-           .map(|ident| {
-                    let s: &str = ident.name.as_ref();
-                    s.to_string()
-                })
-           .collect())
+    Ok(
+        suggestions
+            .into_iter()
+            .map(|ident| {
+                let s: &str = ident.name.as_ref();
+                s.to_string()
+            })
+            .collect(),
+    )
 }
 
 struct Completer(RootedThread);
@@ -177,9 +176,9 @@ fn readline(editor: &Editor, prompt: &str) -> IO<Option<String>> {
 
 fn eval_line(WithVM { vm, value: line }: WithVM<&str>) -> IO<String> {
     IO::Value(match eval_line_(vm, line) {
-                  Ok(x) => x,
-                  Err(x) => x.to_string(),
-              })
+        Ok(x) => x,
+        Err(x) => x.to_string(),
+    })
 }
 
 fn eval_line_(vm: &Thread, line: &str) -> GluonResult<String> {
@@ -220,52 +219,62 @@ fn eval_line_(vm: &Thread, line: &str) -> GluonResult<String> {
     };
 
     let env = vm.global_env().get_env();
-    Ok(ValuePrinter::new(&*env, &value.typ, *value.value)
-           .width(80)
-           .to_string())
+    Ok(
+        ValuePrinter::new(&*env, &value.typ, *value.value)
+            .width(80)
+            .to_string(),
+    )
 }
 
-fn set_globals(vm: &Thread,
-               pattern: &SpannedPattern<Symbol>,
-               typ: &ArcType,
-               value: &RootedValue<&Thread>)
-               -> GluonResult<()> {
+fn set_globals(
+    vm: &Thread,
+    pattern: &SpannedPattern<Symbol>,
+    typ: &ArcType,
+    value: &RootedValue<&Thread>,
+) -> GluonResult<()> {
 
     match pattern.value {
         Pattern::Ident(ref id) => {
-            vm.set_global(id.name.clone(), typ.clone(), Default::default(), **value)?;
+            vm.set_global(
+                id.name.clone(),
+                typ.clone(),
+                Default::default(),
+                **value,
+            )?;
             Ok(())
         }
         Pattern::Tuple { ref elems, .. } => {
-            let iter = elems
-                .iter()
-                .zip(::vm::dynamic::field_iter(&value, typ, vm));
+            let iter = elems.iter().zip(::vm::dynamic::field_iter(&value, typ, vm));
             for (elem_pattern, (elem_value, elem_type)) in iter {
                 set_globals(vm, elem_pattern, &elem_type, &elem_value)?;
             }
             Ok(())
         }
         Pattern::Record { ref fields, .. } => {
-            let iter = fields
-                .iter()
-                .zip(::vm::dynamic::field_iter(&value, typ, vm));
+            let iter = fields.iter().zip(
+                ::vm::dynamic::field_iter(&value, typ, vm),
+            );
             for (field, (field_value, field_type)) in iter {
                 match field.1 {
                     Some(ref field_pattern) => {
                         set_globals(vm, field_pattern, &field_type, &field_value)?
                     }
                     None => {
-                        vm.set_global(field.0.clone(),
-                                        field_type,
-                                        Default::default(),
-                                        *field_value)?
+                        vm.set_global(
+                            field.0.clone(),
+                            field_type,
+                            Default::default(),
+                            *field_value,
+                        )?
                     }
                 }
             }
             Ok(())
         }
         _ => {
-            Err(VMError::Message("The repl cannot bind variables from this pattern".into()).into())
+            Err(
+                VMError::Message("The repl cannot bind variables from this pattern".into()).into(),
+            )
         }
     }
 }
@@ -274,21 +283,25 @@ fn compile_repl(vm: &Thread) -> Result<(), Box<StdError + Send + Sync>> {
 
     vm.register_type::<Editor>("Editor", &[])?;
 
-    vm.define_global("rustyline",
-                       record!(
+    vm.define_global(
+        "rustyline",
+        record!(
         new_editor => primitive!(1 new_editor),
         readline => primitive!(2 readline)
-    ))?;
-    vm.define_global("repl_prim",
-                       record!(
+    ),
+    )?;
+    vm.define_global(
+        "repl_prim",
+        record!(
         type_of_expr => primitive!(1 type_of_expr),
         find_info => primitive!(1 find_info),
         find_kind => primitive!(1 find_kind),
         eval_line => primitive!(1 eval_line)
-    ))?;
+    ),
+    )?;
 
-    const REPL_SOURCE: &'static str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"),
-                                                           "/src/repl.glu"));
+    const REPL_SOURCE: &'static str =
+        include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/repl.glu"));
 
     let mut compiler = Compiler::new();
     compiler
@@ -351,8 +364,10 @@ mod tests {
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
         let mut find_kind: FunctionRef<QueryFn> = vm.get_global("repl_prim.find_kind").unwrap();
-        assert_eq!(find_kind.call("std.prelude.Option"),
-                   Ok(IO::Value(Ok("Type -> Type".into()))));
+        assert_eq!(
+            find_kind.call("std.prelude.Option"),
+            Ok(IO::Value(Ok("Type -> Type".into())))
+        );
     }
 
     #[test]

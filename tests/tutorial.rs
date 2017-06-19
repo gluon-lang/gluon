@@ -25,9 +25,11 @@ fn access_field_through_alias() {
     let _ = ::env_logger::init();
     let vm = new_vm();
     Compiler::new()
-        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm,
-                                                      "example",
-                                                      r#" import! "std/prelude.glu" "#)
+        .run_expr_async::<OpaqueValue<&Thread, Hole>>(
+            &vm,
+            "example",
+            r#" import! "std/prelude.glu" "#,
+        )
         .sync_or_error()
         .unwrap();
     let mut add: FunctionRef<fn(i32, i32) -> i32> = vm.get_global("std.prelude.num_Int.(+)")
@@ -62,10 +64,12 @@ fn use_string_module() {
 
     let vm = new_vm();
     let result = Compiler::new()
-        .run_expr_async::<String>(&vm,
-                                  "example",
-                                  " let string  = import! \"std/string.glu\" in string.trim \"  \
-                                   Hello world  \t\" ")
+        .run_expr_async::<String>(
+            &vm,
+            "example",
+            " let string  = import! \"std/string.glu\" in string.trim \"  \
+                                   Hello world  \t\" ",
+        )
         .sync_or_error()
         .unwrap();
     let expected = ("Hello world".to_string(), Type::string());

@@ -21,7 +21,8 @@ pub struct Lazy<T> {
 }
 
 impl<T> Userdata for Lazy<T>
-    where T: Any + Send + Sync
+where
+    T: Any + Send + Sync,
 {
     fn deep_clone(&self, deep_cloner: &mut Cloner) -> Result<GcPtr<Box<Userdata>>> {
         let value = self.value.lock().unwrap();
@@ -31,9 +32,9 @@ impl<T> Userdata for Lazy<T>
             Lazy_::Value(value) => Lazy_::Value(deep_cloner.deep_clone(value)?),
         };
         let data: Box<Userdata> = Box::new(Lazy {
-                                               value: Mutex::new(cloned_value),
-                                               _marker: PhantomData::<A>,
-                                           });
+            value: Mutex::new(cloned_value),
+            _marker: PhantomData::<A>,
+        });
         deep_cloner.gc().alloc(Move(data))
     }
 }
@@ -62,8 +63,9 @@ impl<T> Traverseable for Lazy<T> {
 }
 
 impl<T> VmType for Lazy<T>
-    where T: VmType,
-          T::Type: Sized
+where
+    T: VmType,
+    T::Type: Sized,
 {
     type Type = Lazy<T::Type>;
 
@@ -75,18 +77,17 @@ impl<T> VmType for Lazy<T>
     }
 }
 
-fn force(WithVM { vm, value: lazy }: WithVM<&Lazy<A>>)
-         -> RuntimeResult<Generic<A>, Cow<'static, str>> {
+fn force(
+    WithVM { vm, value: lazy }: WithVM<&Lazy<A>>,
+) -> RuntimeResult<Generic<A>, Cow<'static, str>> {
     let mut lazy_lock = lazy.value.lock().unwrap();
     match *lazy_lock {
         Lazy_::Blackhole => RuntimeResult::Panic("<<loop>>".into()),
         Lazy_::Thunk(value) => {
             *lazy_lock = Lazy_::Blackhole;
-            let mut function =
-                unsafe {
-                    FunctionRef::<fn(()) -> Generic<A>>::from_value(vm, Variants::new(&value))
-                        .unwrap()
-                };
+            let mut function = unsafe {
+                FunctionRef::<fn(()) -> Generic<A>>::from_value(vm, Variants::new(&value)).unwrap()
+            };
             drop(lazy_lock);
             match function.call(()) {
                 Ok(value) => {

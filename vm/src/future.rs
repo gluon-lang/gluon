@@ -7,7 +7,8 @@ use Error;
 /// that value. This makes it possible to avoid creating an event loop for computions which run
 /// synchronously.
 pub enum FutureValue<F>
-    where F: Future
+where
+    F: Future,
 {
     Value(Result<F::Item, F::Error>),
     Future(F),
@@ -17,17 +18,22 @@ pub enum FutureValue<F>
 pub type BoxFutureValue<'a, T, E> = FutureValue<Box<Future<Item = T, Error = E> + Send + 'a>>;
 
 impl<F> FutureValue<F>
-    where F: Future,
-          F::Error: From<Error>
+where
+    F: Future,
+    F::Error: From<Error>,
 {
     /// Returns the resolved `value` if it was synchronously computed or an error otherwise
     pub fn sync_or_error(self) -> Result<F::Item, F::Error> {
         match self {
             FutureValue::Value(v) => v,
             FutureValue::Future(_) => {
-                Err(Error::Message("Future needs to be resolved asynchronously".into()).into())
+                Err(
+                    Error::Message("Future needs to be resolved asynchronously".into()).into(),
+                )
             }
-            FutureValue::Polled => panic!("`FutureValue` may not be polled again if it contained a value"),
+            FutureValue::Polled => {
+                panic!("`FutureValue` may not be polled again if it contained a value")
+            }
         }
     }
 }
@@ -39,10 +45,12 @@ impl<T, E> FutureValue<FutureResult<T, E>> {
 }
 
 impl<'f, F> FutureValue<F>
-    where F: Future + 'f
+where
+    F: Future + 'f,
 {
     pub fn boxed(self) -> FutureValue<Box<Future<Item = F::Item, Error = F::Error> + Send + 'f>>
-        where F: Send
+    where
+        F: Send,
     {
         match self {
             FutureValue::Value(v) => FutureValue::Value(v),
@@ -52,7 +60,8 @@ impl<'f, F> FutureValue<F>
     }
 
     pub fn map<G, U>(self, g: G) -> FutureValue<Map<F, G>>
-        where G: FnOnce(F::Item) -> U
+    where
+        G: FnOnce(F::Item) -> U,
     {
         match self {
             FutureValue::Value(v) => FutureValue::Value(v.map(g)),
@@ -62,7 +71,8 @@ impl<'f, F> FutureValue<F>
     }
 
     pub fn map_err<G, U>(self, g: G) -> FutureValue<MapErr<F, G>>
-        where G: FnOnce(F::Error) -> U
+    where
+        G: FnOnce(F::Error) -> U,
     {
         match self {
             FutureValue::Value(v) => FutureValue::Value(v.map_err(g)),
@@ -72,8 +82,9 @@ impl<'f, F> FutureValue<F>
     }
 
     pub fn and_then<G, B>(self, g: G) -> FutureValue<Either<B, AndThen<F, FutureValue<B>, G>>>
-        where G: FnOnce(F::Item) -> FutureValue<B>,
-              B: Future<Error = F::Error>
+    where
+        G: FnOnce(F::Item) -> FutureValue<B>,
+        B: Future<Error = F::Error>,
     {
         match self {
             FutureValue::Value(v) => {
@@ -94,8 +105,9 @@ impl<'f, F> FutureValue<F>
     }
 
     pub fn then<G, B>(self, g: G) -> FutureValue<Either<B, Then<F, FutureValue<B>, G>>>
-        where G: FnOnce(Result<F::Item, F::Error>) -> FutureValue<B>,
-              B: Future<Error = F::Error>
+    where
+        G: FnOnce(Result<F::Item, F::Error>) -> FutureValue<B>,
+        B: Future<Error = F::Error>,
     {
         match self {
             FutureValue::Value(v) => {
@@ -111,8 +123,9 @@ impl<'f, F> FutureValue<F>
     }
 
     pub fn or_else<G, B>(self, g: G) -> FutureValue<Either<B, OrElse<F, FutureValue<B>, G>>>
-        where G: FnOnce(F::Error) -> FutureValue<B>,
-              B: Future<Item = F::Item>
+    where
+        G: FnOnce(F::Error) -> FutureValue<B>,
+        B: Future<Item = F::Item>,
     {
         match self {
             FutureValue::Value(v) => {
@@ -134,7 +147,8 @@ impl<'f, F> FutureValue<F>
 }
 
 impl<F> Future for FutureValue<F>
-    where F: Future
+where
+    F: Future,
 {
     type Item = F::Item;
     type Error = F::Error;
@@ -148,7 +162,9 @@ impl<F> Future for FutureValue<F>
                 }
             }
             FutureValue::Future(ref mut f) => f.poll(),
-            FutureValue::Polled => panic!("`FutureValue` may not be polled again if it contained a value"),
+            FutureValue::Polled => {
+                panic!("`FutureValue` may not be polled again if it contained a value")
+            }
         }
     }
 
@@ -156,7 +172,9 @@ impl<F> Future for FutureValue<F>
         match self {
             FutureValue::Value(v) => v,
             FutureValue::Future(f) => f.wait(),
-            FutureValue::Polled => panic!("`FutureValue` may not be polled again if it contained a value"),
+            FutureValue::Polled => {
+                panic!("`FutureValue` may not be polled again if it contained a value")
+            }
         }
     }
 }

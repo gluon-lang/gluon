@@ -21,8 +21,10 @@ fn parallel_() -> Result<(), Error> {
     let (value, _) = compiler
         .run_expr_async(&vm, "<top>", " channel 0 ")
         .sync_or_error()?;
-    let value: ChannelRecord<OpaqueValue<RootedThread, Sender<i32>>,
-                             OpaqueValue<RootedThread, Receiver<i32>>> = value;
+    let value: ChannelRecord<
+        OpaqueValue<RootedThread, Sender<i32>>,
+        OpaqueValue<RootedThread, Receiver<i32>>,
+    > = value;
     let (sender, receiver) = value.split();
 
     let child = vm.new_thread()?;

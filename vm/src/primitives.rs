@@ -18,18 +18,20 @@ fn array_length(array: Array<generic::A>) -> VmInt {
     array.len() as VmInt
 }
 
-fn array_index<'vm>(array: Array<'vm, Generic<generic::A>>,
-                    index: VmInt)
-                    -> RuntimeResult<Generic<generic::A>, String> {
+fn array_index<'vm>(
+    array: Array<'vm, Generic<generic::A>>,
+    index: VmInt,
+) -> RuntimeResult<Generic<generic::A>, String> {
     match array.get(index) {
         Some(value) => RuntimeResult::Return(value),
         None => RuntimeResult::Panic(format!("Index {} is out of range", index)),
     }
 }
 
-fn array_append<'vm>(lhs: Array<'vm, Generic<generic::A>>,
-                     rhs: Array<'vm, Generic<generic::A>>)
-                     -> RuntimeResult<Array<'vm, Generic<generic::A>>, Error> {
+fn array_append<'vm>(
+    lhs: Array<'vm, Generic<generic::A>>,
+    rhs: Array<'vm, Generic<generic::A>>,
+) -> RuntimeResult<Array<'vm, Generic<generic::A>>, Error> {
     struct Append<'b> {
         lhs: &'b ValueArray,
         rhs: &'b ValueArray,
@@ -69,16 +71,17 @@ fn array_append<'vm>(lhs: Array<'vm, Generic<generic::A>>,
     let value = {
         let mut context = vm.context();
         let result = context.alloc(Append {
-                                       lhs: &lhs,
-                                       rhs: &rhs,
-                                   });
+            lhs: &lhs,
+            rhs: &rhs,
+        });
         match result {
             Ok(x) => x,
             Err(err) => return RuntimeResult::Panic(err),
         }
     };
-    RuntimeResult::Return(Getable::from_value(lhs.vm(), Variants(&Value::Array(value)))
-        .expect("Array"))
+    RuntimeResult::Return(
+        Getable::from_value(lhs.vm(), Variants(&Value::Array(value))).expect("Array"),
+    )
 }
 
 fn string_append(lhs: WithVM<&str>, rhs: &str) -> RuntimeResult<String, Error> {
@@ -100,13 +103,13 @@ fn string_append(lhs: WithVM<&str>, rhs: &str) -> RuntimeResult<String, Error> {
             unsafe {
                 let result = &mut *result.as_mut_ptr();
                 result.set_repr(Repr::Byte);
-                result
-                    .unsafe_array_mut::<u8>()
-                    .initialize(self.lhs
-                                    .as_bytes()
-                                    .iter()
-                                    .chain(self.rhs.as_bytes())
-                                    .cloned());
+                result.unsafe_array_mut::<u8>().initialize(
+                    self.lhs
+                        .as_bytes()
+                        .iter()
+                        .chain(self.rhs.as_bytes())
+                        .cloned(),
+                );
                 result
             }
         }
@@ -122,7 +125,9 @@ fn string_append(lhs: WithVM<&str>, rhs: &str) -> RuntimeResult<String, Error> {
             Err(err) => return RuntimeResult::Panic(err),
         }
     };
-    RuntimeResult::Return(Getable::from_value(vm, Variants(&Value::String(value))).expect("Array"))
+    RuntimeResult::Return(
+        Getable::from_value(vm, Variants(&Value::String(value))).expect("Array"),
+    )
 }
 
 fn string_slice(s: &str, start: usize, end: usize) -> RuntimeResult<&str, String> {
@@ -132,11 +137,13 @@ fn string_slice(s: &str, start: usize, end: usize) -> RuntimeResult<&str, String
         // Limit the amount of characters to print in the error message
         let mut iter = s.chars();
         for _ in iter.by_ref().take(256) {}
-        RuntimeResult::Panic(format!("index {} and/or {} in `{}` does not lie on a character \
+        RuntimeResult::Panic(format!(
+            "index {} and/or {} in `{}` does not lie on a character \
                                       boundary",
-                                     start,
-                                     end,
-                                     &s[..(s.len() - iter.as_str().len())]))
+            start,
+            end,
+            &s[..(s.len() - iter.as_str().len())]
+        ))
     }
 }
 
@@ -148,11 +155,13 @@ extern "C" fn from_utf8(thread: &Thread) -> Status {
             match GcStr::from_utf8(array) {
                 Ok(string) => {
                     let value = Value::String(string);
-                    let result = context.alloc_with(thread,
-                                                    Def {
-                                                        tag: 1,
-                                                        elems: &[value],
-                                                    });
+                    let result = context.alloc_with(
+                        thread,
+                        Def {
+                            tag: 1,
+                            elems: &[value],
+                        },
+                    );
                     match result {
                         Ok(data) => {
                             context.stack.push(Value::Data(data));
@@ -182,9 +191,11 @@ fn char_at(s: &str, index: usize) -> RuntimeResult<char, String> {
     }
     let mut iter = s.chars();
     for _ in iter.by_ref().take(256) {}
-    RuntimeResult::Panic(format!("index {} in `{}` does not lie on a character boundary",
-                                 index,
-                                 &s[..(s.len() - iter.as_str().len())]))
+    RuntimeResult::Panic(format!(
+        "index {} in `{}` does not lie on a character boundary",
+        index,
+        &s[..(s.len() - iter.as_str().len())]
+    ))
 }
 
 fn show_int(i: VmInt) -> String {
@@ -208,8 +219,9 @@ extern "C" fn error(_: &Thread) -> Status {
 pub fn load(vm: &Thread) -> Result<()> {
     use std::f64;
     use std::char;
-    vm.define_global("float",
-                       record!(
+    vm.define_global(
+        "float",
+        record!(
         digits => f64::DIGITS,
         epsilon => f64::EPSILON,
         infinity => f64::INFINITY,
@@ -269,9 +281,11 @@ pub fn load(vm: &Thread) -> Result<()> {
         tanh => primitive!(1 f64::tanh),
         acosh => primitive!(1 f64::acosh),
         atanh => primitive!(1 f64::atanh)
-    ))?;
-    vm.define_global("int",
-                       record!(
+    ),
+    )?;
+    vm.define_global(
+        "int",
+        record!(
         min_value => VmInt::min_value(),
         max_value => VmInt::max_value(),
         count_ones => primitive!(1 VmInt::count_ones),
@@ -287,13 +301,16 @@ pub fn load(vm: &Thread) -> Result<()> {
         signum => primitive!(1 VmInt::signum),
         is_positive => primitive!(1 VmInt::is_positive),
         is_negative => primitive!(1 VmInt::is_negative)
-    ))?;
-    vm.define_global("array",
-                       record!(
+    ),
+    )?;
+    vm.define_global(
+        "array",
+        record!(
         length => primitive!(1 prim::array_length),
         index => primitive!(2 prim::array_index),
         append => primitive!(2 prim::array_append)
-    ))?;
+    ),
+    )?;
 
     vm.define_global("string_prim",
                        record!(
@@ -315,8 +332,9 @@ pub fn load(vm: &Thread) -> Result<()> {
         char_at => primitive!(2 prim::char_at),
         as_bytes => primitive!(1 str::as_bytes)
     ))?;
-    vm.define_global("char",
-                       record!(
+    vm.define_global(
+        "char",
+        record!(
         is_digit => primitive!(2 char::is_digit),
         to_digit => primitive!(2 char::to_digit),
         len_utf8 => primitive!(1 char::len_utf8),
@@ -328,18 +346,31 @@ pub fn load(vm: &Thread) -> Result<()> {
         is_alphanumeric => primitive!(1 char::is_alphanumeric),
         is_control => primitive!(1 char::is_control),
         is_numeric => primitive!(1 char::is_numeric)
-    ))?;
-    vm.define_global("prim",
-                       record!(
+    ),
+    )?;
+    vm.define_global(
+        "prim",
+        record!(
         show_Int => primitive!(1 prim::show_int),
         show_Float => primitive!(1 prim::show_float),
         show_Char => primitive!(1 prim::show_char)
-    ))?;
+    ),
+    )?;
 
-    vm.define_global("#error",
-                       primitive::<fn(StdString) -> Generic<A>>("#error", prim::error))?;
-    vm.define_global("error",
-                       primitive::<fn(StdString) -> Generic<A>>("error", prim::error))?;
+    vm.define_global(
+        "#error",
+        primitive::<fn(StdString) -> Generic<A>>(
+            "#error",
+            prim::error,
+        ),
+    )?;
+    vm.define_global(
+        "error",
+        primitive::<fn(StdString) -> Generic<A>>(
+            "error",
+            prim::error,
+        ),
+    )?;
 
     ::lazy::load(vm)?;
     ::reference::load(vm)?;

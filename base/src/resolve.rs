@@ -48,9 +48,9 @@ pub fn remove_alias(env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType>, Err
             let alias = match maybe_alias {
                 Some(alias) => alias,
                 None => {
-                    env.find_type_info(id)
-                        .map(|a| &**a)
-                        .ok_or_else(|| Error::UndefinedType(id.clone()))?
+                    env.find_type_info(id).map(|a| &**a).ok_or_else(|| {
+                        Error::UndefinedType(id.clone())
+                    })?
                 }
             };
 
@@ -67,10 +67,11 @@ pub fn remove_alias(env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType>, Err
 ///     alias = Result e t (| Err e | Ok t)
 ///     args = [Error, Option a]
 ///     result = | Err Error | Ok (Option a)
-pub fn type_of_alias(env: &TypeEnv,
-                     alias: &AliasData<Symbol, ArcType>,
-                     args: &[ArcType])
-                     -> Option<ArcType> {
+pub fn type_of_alias(
+    env: &TypeEnv,
+    alias: &AliasData<Symbol, ArcType>,
+    args: &[ArcType],
+) -> Option<ArcType> {
     let alias_args = &alias.args;
     let mut typ = alias.unresolved_type().clone();
 
@@ -89,9 +90,9 @@ pub fn type_of_alias(env: &TypeEnv,
                 .rev()
                 .zip(alias_args.iter().rev())
                 .take_while(|&(l, r)| match **l {
-                                Type::Generic(ref g) => g == r,
-                                _ => false,
-                            })
+                    Type::Generic(ref g) => g == r,
+                    _ => false,
+                })
                 .count();
             if alias_args.len() - args.len() <= allowed_missing_args {
                 // Remove the args at the end of the aliased type
@@ -112,8 +113,7 @@ pub fn type_of_alias(env: &TypeEnv,
         }
     }
 
-    Some(types::walk_move_type(typ,
-                               &mut |typ| {
+    Some(types::walk_move_type(typ, &mut |typ| {
         match *typ {
             Type::Generic(ref generic) => {
                 // Replace the generic variable with the type from the list

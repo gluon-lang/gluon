@@ -38,7 +38,8 @@ impl Ord for InternedStr {
 
 impl Hash for InternedStr {
     fn hash<H>(&self, hasher: &mut H)
-        where H: Hasher
+    where
+        H: Hasher,
     {
         self.as_ptr().hash(hasher)
     }

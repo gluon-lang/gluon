@@ -22,9 +22,7 @@ impl Lines {
             .filter(|&(_, &b)| b == b'\n')
             .map(|(i, _)| BytePos::from(i + 1)); // index of first char in the line
 
-        let starting_bytes = iter::once(BytePos::from(0))
-            .chain(input_indices)
-            .collect();
+        let starting_bytes = iter::once(BytePos::from(0)).chain(input_indices).collect();
         Lines {
             starting_bytes: starting_bytes,
             end: src.len(),
@@ -42,14 +40,13 @@ impl Lines {
         if byte.to_usize() <= self.end {
             let line_index = self.line_number_at_byte(byte);
 
-            self.line(line_index)
-                .map(|line_byte| {
-                         Location {
-                             line: line_index,
-                             column: Column::from((byte - line_byte).to_usize()),
-                             absolute: byte,
-                         }
-                     })
+            self.line(line_index).map(|line_byte| {
+                Location {
+                    line: line_index,
+                    column: Column::from((byte - line_byte).to_usize()),
+                    absolute: byte,
+                }
+            })
         } else {
             None
         }
@@ -59,11 +56,13 @@ impl Lines {
     pub fn line_number_at_byte(&self, byte: BytePos) -> Line {
         let num_lines = self.starting_bytes.len();
 
-        Line::from((0..num_lines)
-                       .filter(|&i| self.starting_bytes[i] > byte)
-                       .map(|i| i - 1)
-                       .next()
-                       .unwrap_or(num_lines - 1))
+        Line::from(
+            (0..num_lines)
+                .filter(|&i| self.starting_bytes[i] > byte)
+                .map(|i| i - 1)
+                .next()
+                .unwrap_or(num_lines - 1),
+        )
     }
 }
 
@@ -90,18 +89,14 @@ impl<'a> Source<'a> {
 
     /// Returns the byte offset and source of `line_number`
     pub fn line(&self, line_number: Line) -> Option<(BytePos, &str)> {
-        self.lines
-            .line(line_number)
-            .map(|start| {
-                let line = match self.lines
-                          .starting_bytes
-                          .get(line_number.to_usize() + 1) {
-                    Some(end) => &self.src[start.to_usize()..end.to_usize() - 1], // Skip '\n'
-                    None => &self.src[start.to_usize()..],
-                };
+        self.lines.line(line_number).map(|start| {
+            let line = match self.lines.starting_bytes.get(line_number.to_usize() + 1) {
+                Some(end) => &self.src[start.to_usize()..end.to_usize() - 1], // Skip '\n'
+                None => &self.src[start.to_usize()..],
+            };
 
-                (start, line)
-            })
+            (start, line)
+        })
     }
 
     /// Returns the line number and the source at `byte`
@@ -135,15 +130,23 @@ mod tests {
     fn source_line() {
         let source = test_source();
 
-        assert_eq!(source.line(Line::from(0)),
-                   Some((BytePos::from(0), "hello!")));
-        assert_eq!(source.line(Line::from(1)),
-                   Some((BytePos::from(7), "howdy")));
+        assert_eq!(
+            source.line(Line::from(0)),
+            Some((BytePos::from(0), "hello!"))
+        );
+        assert_eq!(
+            source.line(Line::from(1)),
+            Some((BytePos::from(7), "howdy"))
+        );
         assert_eq!(source.line(Line::from(2)), Some((BytePos::from(13), "")));
-        assert_eq!(source.line(Line::from(3)),
-                   Some((BytePos::from(14), "hi萤")));
-        assert_eq!(source.line(Line::from(4)),
-                   Some((BytePos::from(20), "bloop")));
+        assert_eq!(
+            source.line(Line::from(3)),
+            Some((BytePos::from(14), "hi萤"))
+        );
+        assert_eq!(
+            source.line(Line::from(4)),
+            Some((BytePos::from(20), "bloop"))
+        );
         assert_eq!(source.line(Line::from(5)), Some((BytePos::from(26), "")));
         assert_eq!(source.line(Line::from(6)), None);
     }
@@ -166,34 +169,42 @@ mod tests {
         assert_eq!(source.line_number_at_byte(BytePos::from(19)), Line::from(3));
         assert_eq!(source.line_number_at_byte(BytePos::from(20)), Line::from(4));
 
-        assert_eq!(source.line_number_at_byte(BytePos::from(400)),
-                   Line::from(5));
+        assert_eq!(
+            source.line_number_at_byte(BytePos::from(400)),
+            Line::from(5)
+        );
     }
 
     #[test]
     fn source_location() {
         let source = test_source();
 
-        assert_eq!(source.location(BytePos::from(0)),
-                   Some(Location {
-                            line: Line::from(0),
-                            column: Column::from(0),
-                            absolute: BytePos::from(0),
-                        }));
+        assert_eq!(
+            source.location(BytePos::from(0)),
+            Some(Location {
+                line: Line::from(0),
+                column: Column::from(0),
+                absolute: BytePos::from(0),
+            })
+        );
 
-        assert_eq!(source.location(BytePos::from(3)),
-                   Some(Location {
-                            line: Line::from(0),
-                            column: Column::from(3),
-                            absolute: BytePos::from(3),
-                        }));
+        assert_eq!(
+            source.location(BytePos::from(3)),
+            Some(Location {
+                line: Line::from(0),
+                column: Column::from(3),
+                absolute: BytePos::from(3),
+            })
+        );
 
-        assert_eq!(source.location(BytePos::from(16)),
-                   Some(Location {
-                            line: Line::from(3),
-                            column: Column::from(2),
-                            absolute: BytePos::from(16),
-                        }));
+        assert_eq!(
+            source.location(BytePos::from(16)),
+            Some(Location {
+                line: Line::from(3),
+                column: Column::from(2),
+                absolute: BytePos::from(16),
+            })
+        );
 
         assert_eq!(source.location(BytePos::from(400)), None);
     }
@@ -201,11 +212,13 @@ mod tests {
     #[test]
     fn source_location_end_of_source() {
         let source = test_source();
-        assert_eq!(source.location(BytePos::from(source.src.len())),
-                   Some(Location {
-                            line: Line::from(5),
-                            column: Column::from(0),
-                            absolute: BytePos::from(source.src.len()),
-                        }));
+        assert_eq!(
+            source.location(BytePos::from(source.src.len())),
+            Some(Location {
+                line: Line::from(5),
+                column: Column::from(0),
+                absolute: BytePos::from(source.src.len()),
+            })
+        );
     }
 }

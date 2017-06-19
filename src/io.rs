@@ -68,8 +68,9 @@ fn read_file<'vm>(file: WithVM<'vm, &GluonFile>, count: usize) -> IO<Array<'vm, 
                         Err(err) => return IO::Exception(format!("{}", err)),
                     }
                 };
-                IO::Value(Getable::from_value(vm, Variants::new(&Value::Array(value)))
-                    .expect("Array"))
+                IO::Value(
+                    Getable::from_value(vm, Variants::new(&Value::Array(value))).expect("Array"),
+                )
             }
             Err(err) => IO::Exception(format!("{}", err)),
         }
@@ -119,9 +120,10 @@ fn read_line() -> IO<String> {
 }
 
 /// IO a -> (String -> IO a) -> IO a
-fn catch<'vm>(action: OpaqueValue<&'vm Thread, IO<A>>,
-              mut catch: FunctionRef<fn(String) -> IO<Generic<A>>>)
-              -> IO<Generic<A>> {
+fn catch<'vm>(
+    action: OpaqueValue<&'vm Thread, IO<A>>,
+    mut catch: FunctionRef<fn(String) -> IO<Generic<A>>>,
+) -> IO<Generic<A>> {
     let vm = action.vm();
     let frame_level = vm.context().stack.get_frames().len();
     let mut action: FunctionRef<fn(()) -> Generic<A>> =
@@ -172,9 +174,11 @@ fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> IO<String> {
         Ok((value, typ)) => {
             let env = vm.global_env().get_env();
             unsafe {
-                IO::Value(format!("{} : {}",
-                                  ValuePrinter::new(&*env, &typ, value.get_value()).width(80),
-                                  typ))
+                IO::Value(format!(
+                    "{} : {}",
+                    ValuePrinter::new(&*env, &typ, value.get_value()).width(80),
+                    typ
+                ))
             }
         }
         Err(err) => clear_frames(err, frame_level, stack),
@@ -200,22 +204,32 @@ pub fn load(vm: &Thread) -> Result<()> {
 
     // io_flat_map f m : (a -> IO b) -> IO a -> IO b
     //     = f (m ())
-    let io_flat_map = vec![// [f, m, ()]       Initial stack
-                           Call(1), // [f, m_ret]       Call m ()
-                           PushInt(0), // [f, m_ret, ()]   Add a dummy argument ()
-                           TailCall(2) /* [f_ret]          Call f m_ret () */];
+    let io_flat_map = vec![
+        // [f, m, ()]       Initial stack
+        Call(1), // [f, m_ret]       Call m ()
+        PushInt(0), // [f, m_ret, ()]   Add a dummy argument ()
+        TailCall(2) /* [f_ret]          Call f m_ret () */,
+    ];
     let io_flat_map_type =
         <fn(fn(A) -> IO<B>, IO<A>) -> IO<B> as VmType>::make_type(vm);
-    vm.add_bytecode("io_flat_map", io_flat_map_type, 3, io_flat_map)?;
+    vm.add_bytecode(
+        "io_flat_map",
+        io_flat_map_type,
+        3,
+        io_flat_map,
+    )?;
 
 
-    vm.add_bytecode("io_pure",
-                      <fn(A) -> IO<A> as VmType>::make_type(vm),
-                      2,
-                      vec![Pop(1)])?;
+    vm.add_bytecode(
+        "io_pure",
+        <fn(A) -> IO<A> as VmType>::make_type(vm),
+        2,
+        vec![Pop(1)],
+    )?;
     // IO functions
-    vm.define_global("io",
-                       record!(
+    vm.define_global(
+        "io",
+        record!(
         open_file => primitive!(1 open_file),
         read_file => primitive!(2 read_file),
         read_file_to_string => primitive!(1 read_file_to_string),
@@ -227,6 +241,7 @@ pub fn load(vm: &Thread) -> Result<()> {
             primitive!(2 catch),
         run_expr => primitive!(1 run_expr),
         load_script => primitive!(2 load_script)
-    ))?;
+    ),
+    )?;
     Ok(())
 }

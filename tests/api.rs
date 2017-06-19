@@ -74,8 +74,9 @@ fn root_data() {
     fn test(r: Root<Test>, i: VmInt) -> VmInt {
         r.0 + i
     }
-    vm.register_type::<Test>("Test", &[])
-        .unwrap_or_else(|_| panic!("Could not add type"));
+    vm.register_type::<Test>("Test", &[]).unwrap_or_else(|_| {
+        panic!("Could not add type")
+    });
     vm.define_global("test", primitive!(2 test)).unwrap();
     load_script(&vm, "script_fn", expr).unwrap_or_else(|err| panic!("{}", err));
     let mut script_fn: FunctionRef<fn(Test) -> VmInt> = vm.get_global("script_fn").unwrap();
@@ -164,17 +165,16 @@ fn return_delayed_future() {
         let (ping_c, ping_p) = channel();
         let (pong_c, pong_p) = channel();
         spawn(move || {
-                  ping_p.wait().expect("wait");
-                  pong_c.send(i).expect("send");
-              });
-        FutureResult(lazy(move || {
-                              ping_c.send(()).unwrap();
-                              Ok(())
-                          })
-                             .and_then(|_| {
-                                           pong_p.map_err(|err| Error::Message(format!("{}", err)))
-                                       })
-                             .boxed())
+            ping_p.wait().expect("wait");
+            pong_c.send(i).expect("send");
+        });
+        FutureResult(
+            lazy(move || {
+                ping_c.send(()).unwrap();
+                Ok(())
+            }).and_then(|_| pong_p.map_err(|err| Error::Message(format!("{}", err))))
+                .boxed(),
+        )
     }
 
     let expr = r#"

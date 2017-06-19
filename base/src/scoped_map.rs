@@ -49,9 +49,7 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
             Some(..) => {
                 let mut i = self.scopes.len() as isize - 1;
                 while i >= 0 {
-                    if self.scopes[i as usize]
-                           .as_ref()
-                           .map_or(false, |x| x == k) {
+                    if self.scopes[i as usize].as_ref().map_or(false, |x| x == k) {
                         self.scopes.remove(i as usize);
                     }
                     i -= 1;
@@ -81,16 +79,18 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
 
     /// Returns a reference to the last inserted value corresponding to the key
     pub fn get<'a, Q: ?Sized>(&'a self, k: &Q) -> Option<&'a V>
-        where K: Borrow<Q>,
-              Q: Eq + Hash
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash,
     {
         self.map.get(k).and_then(|x| x.last())
     }
 
     /// Returns a reference to the all inserted value corresponding to the key
     pub fn get_all<'a, Q: ?Sized>(&'a self, k: &Q) -> Option<&'a [V]>
-        where K: Borrow<Q>,
-              Q: Eq + Hash
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash,
     {
         self.map.get(k).map(|x| &x[..])
     }
@@ -134,9 +134,7 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
             Some(v) => {
                 let mut i = self.scopes.len() as isize - 1;
                 while i >= 0 {
-                    if self.scopes[i as usize]
-                           .as_ref()
-                           .map_or(false, |x| x == k) {
+                    if self.scopes[i as usize].as_ref().map_or(false, |x| x == k) {
                         self.scopes.remove(i as usize);
                     }
                     i -= 1;
@@ -148,12 +146,10 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
     }
 
     pub fn get_mut<'a>(&'a mut self, key: &K) -> Option<&'a mut V> {
-        self.map
-            .get_mut(key)
-            .and_then(|x| {
-                          let last = x.len() - 1;
-                          x.get_mut(last)
-                      })
+        self.map.get_mut(key).and_then(|x| {
+            let last = x.len() - 1;
+            x.get_mut(last)
+        })
     }
 
     pub fn insert(&mut self, k: K, v: V) -> bool {
@@ -172,15 +168,17 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
 }
 
 pub struct Iter<'a, K, V>
-    where K: 'a,
-          V: 'a
+where
+    K: 'a,
+    V: 'a,
 {
     iter: hash_map::Iter<'a, K, Vec<V>>,
 }
 
 impl<'a, K, V> Iterator for Iter<'a, K, V>
-    where K: 'a,
-          V: 'a
+where
+    K: 'a,
+    V: 'a,
 {
     type Item = (&'a K, &'a V);
 
@@ -199,15 +197,17 @@ impl<'a, K, V> Iterator for Iter<'a, K, V>
 }
 
 pub struct ExitScopeIter<'a, K, V>
-    where K: 'a + Eq + Hash + Clone,
-          V: 'a
+where
+    K: 'a + Eq + Hash + Clone,
+    V: 'a,
 {
     map: &'a mut ScopedMap<K, V>,
     done: bool,
 }
 
 impl<'a, K, V> Drop for ExitScopeIter<'a, K, V>
-    where K: Eq + Hash + Clone
+where
+    K: Eq + Hash + Clone,
 {
     fn drop(&mut self) {
         for _ in self {}
@@ -215,7 +215,8 @@ impl<'a, K, V> Drop for ExitScopeIter<'a, K, V>
 }
 
 impl<'a, K, V> Iterator for ExitScopeIter<'a, K, V>
-    where K: Eq + Hash + Clone
+where
+    K: Eq + Hash + Clone,
 {
     type Item = (K, V);
 

@@ -98,13 +98,15 @@ impl From<Errors<macros::Error>> for Error {
                 Err(err) => Error::Macro(err),
             }
         } else {
-            Error::Multiple(errors
-                                .into_iter()
-                                .map(|err| match err.downcast::<Error>() {
-                                         Ok(err) => *err,
-                                         Err(err) => Error::Macro(err),
-                                     })
-                                .collect())
+            Error::Multiple(
+                errors
+                    .into_iter()
+                    .map(|err| match err.downcast::<Error>() {
+                        Ok(err) => *err,
+                        Err(err) => Error::Macro(err),
+                    })
+                    .collect(),
+            )
         }
     }
 }
@@ -165,71 +167,83 @@ impl Compiler {
     }
 
     /// Parse `expr_str`, returning an expression if successful
-    pub fn parse_expr(&mut self,
-                      file: &str,
-                      expr_str: &str)
-                      -> StdResult<SpannedExpr<Symbol>, InFile<parser::Error>> {
-        self.parse_partial_expr(file, expr_str)
-            .map_err(|(_, err)| err)
+    pub fn parse_expr(
+        &mut self,
+        file: &str,
+        expr_str: &str,
+    ) -> StdResult<SpannedExpr<Symbol>, InFile<parser::Error>> {
+        self.parse_partial_expr(file, expr_str).map_err(
+            |(_, err)| err,
+        )
     }
 
     /// Parse `input`, returning an expression if successful
-    pub fn parse_partial_expr
-        (&mut self,
-         file: &str,
-         expr_str: &str)
-         -> StdResult<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, InFile<parser::Error>)> {
-        Ok(parser::parse_partial_expr(&mut SymbolModule::new(file.into(), &mut self.symbols),
-                                      expr_str)
-                   .map_err(|(expr, err)| (expr, InFile::new(file, expr_str, err)))?)
+    pub fn parse_partial_expr(
+        &mut self,
+        file: &str,
+        expr_str: &str,
+    ) -> StdResult<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, InFile<parser::Error>)> {
+        Ok(parser::parse_partial_expr(
+            &mut SymbolModule::new(file.into(), &mut self.symbols),
+            expr_str,
+        ).map_err(
+            |(expr, err)| (expr, InFile::new(file, expr_str, err)),
+        )?)
     }
 
     /// Parse and typecheck `expr_str` returning the typechecked expression and type of the
     /// expression
-    pub fn typecheck_expr(&mut self,
-                          vm: &Thread,
-                          file: &str,
-                          expr_str: &str,
-                          expr: &mut SpannedExpr<Symbol>)
-                          -> Result<ArcType> {
+    pub fn typecheck_expr(
+        &mut self,
+        vm: &Thread,
+        file: &str,
+        expr_str: &str,
+        expr: &mut SpannedExpr<Symbol>,
+    ) -> Result<ArcType> {
         expr.typecheck_expected(self, vm, file, expr_str, None)
             .map(|result| result.typ)
     }
 
-    pub fn typecheck_str(&mut self,
-                         vm: &Thread,
-                         file: &str,
-                         expr_str: &str,
-                         expected_type: Option<&ArcType>)
-                         -> Result<(SpannedExpr<Symbol>, ArcType)> {
-        let TypecheckValue { expr, typ } =
-            expr_str
-                .typecheck_expected(self, vm, file, expr_str, expected_type)?;
+    pub fn typecheck_str(
+        &mut self,
+        vm: &Thread,
+        file: &str,
+        expr_str: &str,
+        expected_type: Option<&ArcType>,
+    ) -> Result<(SpannedExpr<Symbol>, ArcType)> {
+        let TypecheckValue { expr, typ } = expr_str.typecheck_expected(
+            self,
+            vm,
+            file,
+            expr_str,
+            expected_type,
+        )?;
         Ok((expr, typ))
     }
 
     /// Compiles `expr` into a function which can be added and run by the `vm`
-    pub fn compile_script(&mut self,
-                          vm: &Thread,
-                          filename: &str,
-                          expr_str: &str,
-                          expr: &SpannedExpr<Symbol>)
-                          -> Result<CompiledFunction> {
+    pub fn compile_script(
+        &mut self,
+        vm: &Thread,
+        filename: &str,
+        expr_str: &str,
+        expr: &SpannedExpr<Symbol>,
+    ) -> Result<CompiledFunction> {
         TypecheckValue {
-                expr: expr,
-                typ: Type::hole(),
-            }
-            .compile(self, vm, filename, expr_str, ())
+            expr: expr,
+            typ: Type::hole(),
+        }.compile(self, vm, filename, expr_str, ())
             .map(|result| result.function)
     }
 
     /// Parses and typechecks `expr_str` followed by extracting metadata from the created
     /// expression
-    pub fn extract_metadata(&mut self,
-                            vm: &Thread,
-                            file: &str,
-                            expr_str: &str)
-                            -> Result<(SpannedExpr<Symbol>, ArcType, Metadata)> {
+    pub fn extract_metadata(
+        &mut self,
+        vm: &Thread,
+        file: &str,
+        expr_str: &str,
+    ) -> Result<(SpannedExpr<Symbol>, ArcType, Metadata)> {
         use check::metadata;
         let (mut expr, typ) = self.typecheck_str(vm, file, expr_str, None)?;
 
@@ -246,11 +260,12 @@ impl Compiler {
         self.load_script_async(vm, filename, input).wait()
     }
 
-    pub fn load_script_async<'vm>(&mut self,
-                                  vm: &'vm Thread,
-                                  filename: &str,
-                                  input: &str)
-                                  -> BoxFutureValue<'vm, (), Error> {
+    pub fn load_script_async<'vm>(
+        &mut self,
+        vm: &'vm Thread,
+        filename: &str,
+        input: &str,
+    ) -> BoxFutureValue<'vm, (), Error> {
         input.load_script(self, vm, filename, input, None)
     }
 
@@ -259,10 +274,11 @@ impl Compiler {
         self.load_file_async(vm, filename).wait()
     }
 
-    pub fn load_file_async<'vm>(&mut self,
-                                vm: &'vm Thread,
-                                filename: &str)
-                                -> BoxFutureValue<'vm, (), Error> {
+    pub fn load_file_async<'vm>(
+        &mut self,
+        vm: &'vm Thread,
+        filename: &str,
+    ) -> BoxFutureValue<'vm, (), Error> {
         use std::borrow::Cow;
         use std::fs::File;
         use std::io::Read;
@@ -271,9 +287,9 @@ impl Compiler {
             // Use the import macro's path resolution if it exists so that we mimick the import
             // macro as close as possible
             let opt_macro = vm.get_macros().get("import");
-            match opt_macro
-                      .as_ref()
-                      .and_then(|mac| mac.downcast_ref::<Import>()) {
+            match opt_macro.as_ref().and_then(
+                |mac| mac.downcast_ref::<Import>(),
+            ) {
                 Some(import) => Ok(import.read_file(filename)?),
                 None => {
 
@@ -295,22 +311,26 @@ impl Compiler {
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
     /// expression is returned
-    pub fn run_expr<'vm, T>(&mut self,
-                            vm: &'vm Thread,
-                            name: &str,
-                            expr_str: &str)
-                            -> Result<(T, ArcType)>
-        where T: Getable<'vm> + VmType + Send + 'vm
+    pub fn run_expr<'vm, T>(
+        &mut self,
+        vm: &'vm Thread,
+        name: &str,
+        expr_str: &str,
+    ) -> Result<(T, ArcType)>
+    where
+        T: Getable<'vm> + VmType + Send + 'vm,
     {
         self.run_expr_async(vm, name, expr_str).wait()
     }
 
-    pub fn run_expr_async<'vm, T>(&mut self,
-                                  vm: &'vm Thread,
-                                  name: &str,
-                                  expr_str: &str)
-                                  -> BoxFutureValue<'vm, (T, ArcType), Error>
-        where T: Getable<'vm> + VmType + Send + 'vm
+    pub fn run_expr_async<'vm, T>(
+        &mut self,
+        vm: &'vm Thread,
+        name: &str,
+        expr_str: &str,
+    ) -> BoxFutureValue<'vm, (T, ArcType), Error>
+    where
+        T: Getable<'vm> + VmType + Send + 'vm,
     {
         let expected = T::make_type(vm);
         expr_str
@@ -319,11 +339,9 @@ impl Compiler {
                 let ExecuteValue { typ: actual, value, .. } = v;
                 unsafe {
                     FutureValue::sync(match T::from_value(vm, Variants::new(&value)) {
-                                          Some(value) => Ok((value, actual)),
-                                          None => {
-                                              Err(Error::from(VmError::WrongType(expected, actual)))
-                                          }
-                                      })
+                        Some(value) => Ok((value, actual)),
+                        None => Err(Error::from(VmError::WrongType(expected, actual))),
+                    })
                 }
             })
             .boxed()
@@ -331,31 +349,36 @@ impl Compiler {
 
     /// Compiles and runs `expr_str`. If the expression is of type `IO a` the action is evaluated
     /// and a value of type `a` is returned
-    pub fn run_io_expr<'vm, T>(&mut self,
-                               vm: &'vm Thread,
-                               name: &str,
-                               expr_str: &str)
-                               -> Result<(T, ArcType)>
-        where T: Getable<'vm> + VmType + Send + 'vm,
-              T::Type: Sized
+    pub fn run_io_expr<'vm, T>(
+        &mut self,
+        vm: &'vm Thread,
+        name: &str,
+        expr_str: &str,
+    ) -> Result<(T, ArcType)>
+    where
+        T: Getable<'vm> + VmType + Send + 'vm,
+        T::Type: Sized,
     {
         self.run_io_expr_async(vm, name, expr_str).wait()
     }
 
-    pub fn run_io_expr_async<'vm, T>(&mut self,
-                                     vm: &'vm Thread,
-                                     name: &str,
-                                     expr_str: &str)
-                                     -> BoxFutureValue<'vm, (T, ArcType), Error>
-        where T: Getable<'vm> + VmType + Send + 'vm,
-              T::Type: Sized
+    pub fn run_io_expr_async<'vm, T>(
+        &mut self,
+        vm: &'vm Thread,
+        name: &str,
+        expr_str: &str,
+    ) -> BoxFutureValue<'vm, (T, ArcType), Error>
+    where
+        T: Getable<'vm> + VmType + Send + 'vm,
+        T::Type: Sized,
     {
         use check::check_signature;
         use vm::api::IO;
         use vm::api::generic::A;
 
         let expected = T::make_type(vm);
-        expr_str.run_expr(self, vm, name, expr_str, Some(&expected))
+        expr_str
+            .run_expr(self, vm, name, expr_str, Some(&expected))
             .and_then(move |v| {
                 let ExecuteValue { typ: actual, value, .. } = v;
                 if check_signature(&*vm.get_env(), &actual, &IO::<A>::make_type(vm)) {
@@ -439,12 +462,11 @@ in 0
 pub fn filename_to_module(filename: &str) -> StdString {
     use std::path::Path;
     let path = Path::new(filename);
-    let name = path.extension()
-        .map_or(filename, |ext| {
-            ext.to_str()
-                .map(|ext| &filename[..filename.len() - ext.len() - 1])
-                .unwrap_or(filename)
-        });
+    let name = path.extension().map_or(filename, |ext| {
+        ext.to_str()
+            .map(|ext| &filename[..filename.len() - ext.len() - 1])
+            .unwrap_or(filename)
+    });
 
     name.replace(|c: char| c == '/' || c == '\\', ".")
 }

@@ -30,28 +30,34 @@ impl<'a> Visitor<'a> for RecognizeUnnecessaryAllocation<'a> {
                     Pattern::Record(ref fields) => {
                         debug_assert!(id.typ.row_iter().len() >= fields.len());
                         let next_expr = alts[0].expr;
-                        Some(id.typ
-                            .row_iter()
-                            .zip(exprs)
-                            .collect::<Vec<_>>()
-                            .into_iter()
-                            .rev()
-                            .fold(next_expr, |next_expr, (field, expr)| {
-                                let pattern_field =
-                                    fields.iter().find(|f| f.0.name.name_eq(&field.name)).unwrap();
-                                let pattern_field =
-                                    pattern_field.1.as_ref().unwrap_or(&pattern_field.0.name);
-                                let new_expr = Expr::Let(LetBinding {
-                                                             name: TypedIdent {
-                                                                 name: pattern_field.clone(),
-                                                                 typ: field.typ.clone(),
-                                                             },
-                                                             expr: Named::Expr(expr),
-                                                             span_start: pos::BytePos::default(),
-                                                         },
-                                                         next_expr);
-                                &*self.allocator().arena.alloc(new_expr)
-                            }))
+                        Some(
+                            id.typ
+                                .row_iter()
+                                .zip(exprs)
+                                .collect::<Vec<_>>()
+                                .into_iter()
+                                .rev()
+                                .fold(next_expr, |next_expr, (field, expr)| {
+                                    let pattern_field = fields
+                                        .iter()
+                                        .find(|f| f.0.name.name_eq(&field.name))
+                                        .unwrap();
+                                    let pattern_field =
+                                        pattern_field.1.as_ref().unwrap_or(&pattern_field.0.name);
+                                    let new_expr = Expr::Let(
+                                        LetBinding {
+                                            name: TypedIdent {
+                                                name: pattern_field.clone(),
+                                                typ: field.typ.clone(),
+                                            },
+                                            expr: Named::Expr(expr),
+                                            span_start: pos::BytePos::default(),
+                                        },
+                                        next_expr,
+                                    );
+                                    &*self.allocator().arena.alloc(new_expr)
+                                }),
+                        )
                     }
                     _ => walk_expr_alloc(self, expr),
                 }
@@ -71,54 +77,54 @@ pub fn optimize<'a>(allocator: &'a Allocator<'a>, expr: &'a Expr<'a>) -> &'a Exp
 }
 
 pub fn walk_expr_alloc<'a, V>(visitor: &mut V, expr: &'a Expr<'a>) -> Option<&'a Expr<'a>>
-    where V: ?Sized + Visitor<'a>,
+where
+    V: ?Sized + Visitor<'a>,
 {
     walk_expr(visitor, expr).map(|expr| &*visitor.allocator().arena.alloc(expr))
 }
 
 pub fn walk_expr<'a, V>(visitor: &mut V, expr: &'a Expr<'a>) -> Option<Expr<'a>>
-    where V: ?Sized + Visitor<'a>,
+where
+    V: ?Sized + Visitor<'a>,
 {
     match *expr {
         Expr::Call(f, args) => {
             let new_f = walk_expr_alloc(visitor, f);
             let new_args = merge_iter(args, |expr| walk_expr(visitor, expr), Expr::clone)
                 .map(|exprs: Vec<_>| {
-                    &*visitor.allocator()
-                        .arena
-                        .alloc_extend(exprs.into_iter())
+                    &*visitor.allocator().arena.alloc_extend(exprs.into_iter())
                 });
 
             merge(&f, new_f, &args, new_args, Expr::Call)
         }
         Expr::Const(_, _) => None,
         Expr::Data(ref id, exprs, pos, expansion) => {
-            merge_iter(exprs, |expr| walk_expr(visitor, expr), Expr::clone)
-                .map(|exprs: Vec<_>| {
-                    Expr::Data(id.clone(),
-                               visitor.allocator()
-                                   .arena
-                                   .alloc_extend(exprs.into_iter()),
-                               pos,
-                               expansion)
-                })
+            merge_iter(exprs, |expr| walk_expr(visitor, expr), Expr::clone).map(|exprs: Vec<_>| {
+                Expr::Data(
+                    id.clone(),
+                    visitor.allocator().arena.alloc_extend(exprs.into_iter()),
+                    pos,
+                    expansion,
+                )
+            })
         }
         Expr::Ident(_, _) => None,
         Expr::Let(ref bind, expr) => {
             let new_named = match bind.expr {
                 Named::Recursive(ref closures) => {
-                    merge_iter(closures,
-                               |closure| {
-                        walk_expr_alloc(visitor, closure.expr).map(|new_expr| {
-                            Closure {
-                                name: closure.name.clone(),
-                                args: closure.args.clone(),
-                                expr: new_expr,
-                            }
-                        })
-                    },
-                               Closure::clone)
-                        .map(Named::Recursive)
+                    merge_iter(
+                        closures,
+                        |closure| {
+                            walk_expr_alloc(visitor, closure.expr).map(|new_expr| {
+                                Closure {
+                                    name: closure.name.clone(),
+                                    args: closure.args.clone(),
+                                    expr: new_expr,
+                                }
+                            })
+                        },
+                        Closure::clone,
+                    ).map(Named::Recursive)
                 }
                 Named::Expr(bind_expr) => walk_expr_alloc(visitor, bind_expr).map(Named::Expr),
             };
@@ -136,9 +142,9 @@ pub fn walk_expr<'a, V>(visitor: &mut V, expr: &'a Expr<'a>) -> Option<Expr<'a>>
             let new_expr = walk_expr_alloc(visitor, expr);
             let new_alts = merge_iter(alts, |expr| walk_alt(visitor, expr), Alternative::clone)
                 .map(|alts: Vec<_>| {
-                    &*visitor.allocator()
-                        .alternative_arena
-                        .alloc_extend(alts.into_iter())
+                    &*visitor.allocator().alternative_arena.alloc_extend(
+                        alts.into_iter(),
+                    )
                 });
             merge(&expr, new_expr, &alts, new_alts, Expr::Match)
         }
@@ -146,7 +152,8 @@ pub fn walk_expr<'a, V>(visitor: &mut V, expr: &'a Expr<'a>) -> Option<Expr<'a>>
 }
 
 fn walk_alt<'a, V>(visitor: &mut V, alt: &'a Alternative<'a>) -> Option<Alternative<'a>>
-    where V: ?Sized + Visitor<'a>,
+where
+    V: ?Sized + Visitor<'a>,
 {
     let new_expr = walk_expr_alloc(visitor, alt.expr);
     new_expr.map(|expr| {
@@ -177,8 +184,10 @@ mod tests {
             | { l, r } -> l
             end
             "#;
-        let initial_expr = allocator.arena
-            .alloc(parse_core_expr(&mut symbols, &allocator, initial_str).unwrap());
+        let initial_expr = allocator.arena.alloc(
+            parse_core_expr(&mut symbols, &allocator, initial_str)
+                .unwrap(),
+        );
 
         let optimized_expr = optimize(&allocator, initial_expr);
 

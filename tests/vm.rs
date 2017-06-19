@@ -62,10 +62,12 @@ fn record() {
 ";
     let vm = make_vm();
     let value = run_expr::<OpaqueValue<&Thread, Hole>>(&vm, text);
-    assert_eq!(value.get_ref(),
-               vm.context()
-                   .new_data(&vm, 0, &mut [Int(0), Float(1.0), Value::Tag(0)])
-                   .unwrap());
+    assert_eq!(
+        value.get_ref(),
+        vm.context()
+            .new_data(&vm, 0, &mut [Int(0), Float(1.0), Value::Tag(0)])
+            .unwrap()
+    );
 }
 
 #[test]
@@ -78,10 +80,12 @@ add { x = 0, y = 1 } { x = 1, y = 1 }
 ";
     let vm = make_vm();
     let value = run_expr::<OpaqueValue<&Thread, Hole>>(&vm, text);
-    assert_eq!(value.get_ref(),
-               vm.context()
-                   .new_data(&vm, 0, &mut [Int(1), Int(2)])
-                   .unwrap());
+    assert_eq!(
+        value.get_ref(),
+        vm.context()
+            .new_data(&vm, 0, &mut [Int(1), Int(2)])
+            .unwrap()
+    );
 }
 #[test]
 fn script() {
@@ -118,8 +122,10 @@ in Some 1
 ";
     let vm = make_vm();
     let value = run_expr::<OpaqueValue<&Thread, Hole>>(&vm, text);
-    assert_eq!(value.get_ref(),
-               vm.context().new_data(&vm, 1, &mut [Int(1)]).unwrap());
+    assert_eq!(
+        value.get_ref(),
+        vm.context().new_data(&vm, 1, &mut [Int(1)]).unwrap()
+    );
 }
 
 
@@ -168,8 +174,10 @@ fn insert_stack_slice() {
     stack.insert_slice(1, &[]);
     assert_eq!(&stack[..], [Int(1), Int(10), Int(0)]);
     stack.insert_slice(2, &[Int(4), Int(5), Int(6)]);
-    assert_eq!(&stack[..],
-               [Int(1), Int(10), Int(4), Int(5), Int(6), Int(0)]);
+    assert_eq!(
+        &stack[..],
+        [Int(1), Int(10), Int(4), Int(5), Int(6), Int(0)]
+    );
 }
 
 
@@ -608,10 +616,12 @@ in
 "#;
     let vm = make_vm();
     let result = run_expr::<OpaqueValue<&Thread, Hole>>(&vm, text);
-    assert_eq!(result.get_ref(),
-               vm.context()
-                   .new_data(&vm, 0, &mut [Int(3), Float(3.0)])
-                   .unwrap());
+    assert_eq!(
+        result.get_ref(),
+        vm.context()
+            .new_data(&vm, 0, &mut [Int(3), Float(3.0)])
+            .unwrap()
+    );
 }
 
 test_expr!{ through_overloaded_alias,
@@ -703,9 +713,11 @@ fn access_operator_without_parentheses() {
     let _ = ::env_logger::init();
     let vm = make_vm();
     Compiler::new()
-        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm,
-                                                      "example",
-                                                      r#" import! "std/prelude.glu" "#)
+        .run_expr_async::<OpaqueValue<&Thread, Hole>>(
+            &vm,
+            "example",
+            r#" import! "std/prelude.glu" "#,
+        )
         .sync_or_error()
         .unwrap();
     let result: Result<FunctionRef<fn(i32, i32) -> i32>, _> =
@@ -813,9 +825,11 @@ pure 123
         .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr)
         .sync_or_error()
         .unwrap_or_else(|err| panic!("{}", err));
-    assert!(value.0.get_ref() != Value::Int(123),
-            "Unexpected {:?}",
-            value.0);
+    assert!(
+        value.0.get_ref() != Value::Int(123),
+        "Unexpected {:?}",
+        value.0
+    );
 }
 
 #[test]
@@ -823,8 +837,8 @@ fn partially_applied_constructor_is_lambda() {
     let _ = ::env_logger::init();
     let vm = make_vm();
 
-    let result =
-        Compiler::new().run_expr::<FunctionRef<fn(i32) -> Option<i32>>>(&vm, "test", "Some");
+    let result = Compiler::new()
+        .run_expr::<FunctionRef<fn(i32) -> Option<i32>>>(&vm, "test", "Some");
     assert!(result.is_ok(), "{}", result.err().unwrap());
     assert_eq!(result.unwrap().0.call(123), Ok(Some(123)));
 }
@@ -853,37 +867,41 @@ g 10
             let g = stacktrace.frames[0].as_ref().unwrap().name.clone();
             let f = stacktrace.frames[1].as_ref().unwrap().name.clone();
             let end = stacktrace.frames[6].as_ref().unwrap().name.clone();
-            assert_eq!(stacktrace.frames,
-                       vec![// Removed due to being a tail call
-                            // Some(StacktraceFrame { name: f.clone(), line: 9 }),
-                            Some(StacktraceFrame {
-                                     name: g.clone(),
-                                     line: 7.into(),
-                                 }),
-                            Some(StacktraceFrame {
-                                     name: f.clone(),
-                                     line: 6.into(),
-                                 }),
-                            Some(StacktraceFrame {
-                                     name: g.clone(),
-                                     line: 7.into(),
-                                 }),
-                            Some(StacktraceFrame {
-                                     name: f.clone(),
-                                     line: 6.into(),
-                                 }),
-                            Some(StacktraceFrame {
-                                     name: g.clone(),
-                                     line: 7.into(),
-                                 }),
-                            Some(StacktraceFrame {
-                                     name: f.clone(),
-                                     line: 4.into(),
-                                 }),
-                            Some(StacktraceFrame {
-                                     name: end.clone(),
-                                     line: 1.into(),
-                                 })]);
+            assert_eq!(
+                stacktrace.frames,
+                vec![
+                    // Removed due to being a tail call
+                    // Some(StacktraceFrame { name: f.clone(), line: 9 }),
+                    Some(StacktraceFrame {
+                        name: g.clone(),
+                        line: 7.into(),
+                    }),
+                    Some(StacktraceFrame {
+                        name: f.clone(),
+                        line: 6.into(),
+                    }),
+                    Some(StacktraceFrame {
+                        name: g.clone(),
+                        line: 7.into(),
+                    }),
+                    Some(StacktraceFrame {
+                        name: f.clone(),
+                        line: 6.into(),
+                    }),
+                    Some(StacktraceFrame {
+                        name: g.clone(),
+                        line: 7.into(),
+                    }),
+                    Some(StacktraceFrame {
+                        name: f.clone(),
+                        line: 4.into(),
+                    }),
+                    Some(StacktraceFrame {
+                        name: end.clone(),
+                        line: 1.into(),
+                    }),
+                ]
+            );
         }
         Err(err) => panic!("Unexpected error `{}`", err),
         Ok(_) => panic!("Expected an error"),
