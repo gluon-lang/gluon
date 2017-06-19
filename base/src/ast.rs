@@ -77,6 +77,7 @@ pub enum Pattern<Id> {
         elems: Vec<SpannedPattern<Id>>,
     },
     Ident(TypedIdent<Id>),
+    Error,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -294,6 +295,7 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::Id
             }
         }
         Pattern::Ident(ref mut id) => v.visit_typ(&mut id.typ),
+        Pattern::Error => (),
     }
 }
 
@@ -407,6 +409,7 @@ pub fn walk_pattern<V: ?Sized + Visitor>(v: &mut V, p: &Pattern<V::Ident>) {
             }
         }
         Pattern::Ident(ref id) => v.visit_typ(&id.typ),
+        Pattern::Error => (),
     }
 }
 
@@ -491,6 +494,7 @@ impl Typed for Pattern<Symbol> {
             Pattern::Record { ref typ, .. } => typ.clone(),
             Pattern::Tuple { ref typ, .. } => typ.clone(),
             Pattern::Constructor(ref id, ref args) => get_return_type(env, &id.typ, args.len()),
+            Pattern::Error => Type::hole(),
         }
     }
 }

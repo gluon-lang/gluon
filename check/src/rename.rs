@@ -160,6 +160,7 @@ pub fn rename(
                         self.new_pattern(arg_type, arg);
                     }
                 }
+                ast::Pattern::Error => ()
             }
         }
 

@@ -473,17 +473,18 @@ impl<'input> Iterator for Tokenizer<'input> {
                        ch => Some(self.error(start, UnexpectedChar(ch))),
                    };
         }
-        None
+        // Return EOF instead of None so that the layout algorithm receives the eof location
+        Some(Ok(pos::spanned2(self.eof_location, self.eof_location, Token::EOF)))
     }
 }
 
 
 #[cfg(test)]
 mod test {
-    use base::pos::{self, BytePos, Column, Line, Location};
+    use base::pos::{self, BytePos, Column, Line, Location, Spanned};
 
+    use super::*;
     use super::{Tokenizer, error};
-    use super::Error::*;
     use token::Token;
     use token::Token::*;
 
@@ -495,11 +496,21 @@ mod test {
         }
     }
 
-    fn test(input: &str, expected: Vec<(&str, Token)>) {
-        let tokenizer = Tokenizer::new(input);
-        let len = expected.len();
+    fn tokenizer<'input>(input: &'input str) -> Box<Iterator<Item = Result<SpannedToken<'input>, SpError>> + 'input>
+    where
+    {
+        Box::new(Tokenizer::new(input).take_while(|token| {
+            match *token {
+                Ok(Spanned { value: Token::EOF, .. }) => false,
+                _ => true
+            }
+        }))
+    }
 
-        for (token, (expected_span, expected_tok)) in tokenizer.zip(expected.into_iter()) {
+    fn test(input: &str, expected: Vec<(&str, Token)>) {
+        let mut tokenizer = tokenizer(input);
+
+        for (token, (expected_span, expected_tok)) in tokenizer.by_ref().zip(expected.into_iter()) {
             println!("{:?}", token);
             let start = loc(expected_span.find("~").unwrap());
             let end = loc(expected_span.rfind("~").unwrap() + 1);
@@ -507,8 +518,10 @@ mod test {
         }
 
         // Make sure that there is nothing else to consume
-        let tokenizer = Tokenizer::new(input);
-        assert_eq!(None, tokenizer.skip(len).next());
+        assert_eq!(
+            None,
+            tokenizer.next()
+        );
     }
 
     #[test]
@@ -580,13 +593,13 @@ mod test {
 
     #[test]
     fn string_literal_unexpected_escape_code() {
-        assert_eq!(Tokenizer::new(r#""\X""#).last(),
+        assert_eq!(tokenizer(r#""\X""#).last(),
                    Some(error(loc(2), UnexpectedEscapeCode('X'))));
     }
 
     #[test]
     fn string_literal_unterminated() {
-        assert_eq!(Tokenizer::new(r#"foo "bar\"\n baz"#).last(),
+        assert_eq!(tokenizer(r#"foo "bar\"\n baz"#).last(),
                    Some(error(loc(4), UnterminatedStringLiteral)));
     }
 
@@ -601,33 +614,33 @@ mod test {
 
     #[test]
     fn char_literal_empty() {
-        assert_eq!(Tokenizer::new(r#"foo ''"#).last(),
+        assert_eq!(tokenizer(r#"foo ''"#).last(),
                    Some(error(loc(4), EmptyCharLiteral)));
     }
 
     #[test]
     fn char_literal_unexpected_escape_code() {
-        assert_eq!(Tokenizer::new(r#"'\X'"#).last(),
+        assert_eq!(tokenizer(r#"'\X'"#).last(),
                    Some(error(loc(2), UnexpectedEscapeCode('X'))));
     }
 
     #[test]
     fn char_literal_unexpected_eof() {
-        assert_eq!(Tokenizer::new(r#"'"#).last(),
+        assert_eq!(tokenizer(r#"'"#).last(),
                    Some(error(loc(1), UnexpectedEof)));
-        assert_eq!(Tokenizer::new(r#"  '"#).last(),
+        assert_eq!(tokenizer(r#"  '"#).last(),
                    Some(error(loc(3), UnexpectedEof)));
-        assert_eq!(Tokenizer::new(r#"'b"#).last(),
+        assert_eq!(tokenizer(r#"'b"#).last(),
                    Some(error(loc(2), UnexpectedEof)));
-        assert_eq!(Tokenizer::new(r#"'\\"#).last(),
+        assert_eq!(tokenizer(r#"'\\"#).last(),
                    Some(error(loc(3), UnexpectedEof)));
-        assert_eq!(Tokenizer::new(r#"'\'"#).last(),
+        assert_eq!(tokenizer(r#"'\'"#).last(),
                    Some(error(loc(3), UnexpectedEof)));
     }
 
     #[test]
     fn char_literal_unterminated() {
-        assert_eq!(Tokenizer::new(r#"'frooble'"#).last(),
+        assert_eq!(tokenizer(r#"'frooble'"#).last(),
                    Some(error(loc(0), UnterminatedCharLiteral)));
     }
 
@@ -642,7 +655,7 @@ mod test {
 
     #[test]
     fn int_literal_overflow() {
-        assert_eq!(Tokenizer::new(r#"12345678901234567890"#).last(),
+        assert_eq!(tokenizer(r#"12345678901234567890"#).last(),
                    Some(error(loc(0), NonParseableInt)));
     }
 

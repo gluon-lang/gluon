@@ -68,7 +68,7 @@ pub fn metadata(
                     self.stack_var(id.name.clone(), metadata);
                 }
                 Pattern::Tuple { .. } |
-                Pattern::Constructor(..) => (),
+                Pattern::Constructor(..) | Pattern::Error => (),
             }
         }
 

@@ -260,13 +260,21 @@ AtomicPattern: Pattern<Id> = {
     },
 };
 
-Pattern = {
+NoErrorPattern = {
     AtomicPattern,
 
     <id: Ident> <args: Sp<AtomicPattern>+> => {
         let id = new_ident(type_cache, id);
 
         Pattern::Constructor(id, args)
+    },
+};
+
+Pattern = {
+    NoErrorPattern,
+    <!> => {
+        errors.push(<>.error);
+        Pattern::Error
     },
 };
 
@@ -280,13 +288,30 @@ Literal: Literal = {
     "float literal" => Literal::Float(<>),
 };
 
-Alternative: Alternative<Id> =
+Alternative: Alternative<Id> = {
     "|" <pat: Sp<Pattern>> "->" <expr: Sp<BlockExpr>> => {
         Alternative {
             pattern: pat,
             expr: super::shrink_hidden_spans(expr),
         }
-    };
+    },
+    "|" <pat: Sp<NoErrorPattern>> <end: @L> <err: !> => {
+        errors.push(err.error);
+        let span = pos::Span::new(pat.span.end, end);
+        Alternative {
+            pattern: pat,
+            expr: pos::spanned(span, Expr::Error),
+        }
+    },
+    "|" <start: @R> <end: @L> <err: !> => {
+        errors.push(err.error);
+        let span = pos::Span::new(start, end);
+        Alternative {
+            pattern: pos::spanned(span, Pattern::Error),
+            expr: pos::spanned(span, Expr::Error),
+        }
+    },
+};
 
 FieldExpr: FieldExpr<Id> = {
     <comment: DocComment?> <id: Ident> "=" <body: SpExpr> => {
