@@ -1279,6 +1279,8 @@ define_tuples! { _0 _1 _2 _3 _4 _5 _6 }
 pub use self::record::Record;
 
 pub mod record {
+    use std::any::Any;
+
     use base::types;
     use base::types::{Type, ArcType};
     use base::symbol::Symbol;
@@ -1301,8 +1303,6 @@ pub mod record {
         }
     }
 
-    pub struct HList<H, T>(pub H, pub T);
-
     pub trait Field: Default {
         fn name() -> &'static str;
     }
@@ -1312,7 +1312,29 @@ pub mod record {
     }
 
     pub trait FieldTypes: FieldList {
+        type Type: Any;
         fn field_types(vm: &Thread, fields: &mut Vec<types::Field<Symbol, ArcType>>);
+    }
+
+    pub trait PushableFieldList<'vm>: FieldList {
+        fn push(self, vm: &'vm Thread, fields: &mut Context) -> Result<()>;
+    }
+
+    pub trait GetableFieldList<'vm>: FieldList + Sized {
+        fn from_value(vm: &'vm Thread, values: &[Value]) -> Option<Self>;
+    }
+
+    impl<'vm> PushableFieldList<'vm> for () {
+        fn push(self, _: &'vm Thread, _: &mut Context) -> Result<()> {
+            Ok(())
+        }
+    }
+    
+    impl<'vm> GetableFieldList<'vm> for () {
+        fn from_value(_vm: &'vm Thread, values: &[Value]) -> Option<Self> {
+            debug_assert!(values.is_empty(), "{:?}", values);
+            Some(())
+        }
     }
 
     impl FieldList for () {
@@ -1322,8 +1344,11 @@ pub mod record {
     }
 
     impl FieldTypes for () {
+        type Type = ();
         fn field_types(_: &Thread, _: &mut Vec<types::Field<Symbol, ArcType>>) {}
     }
+
+    pub struct HList<H, T>(pub H, pub T);
 
     impl<F, H, T> FieldList for HList<(F, H), T>
     where
@@ -1337,20 +1362,12 @@ pub mod record {
     impl<F: Field, H: VmType, T> FieldTypes for HList<(F, H), T>
     where
         T: FieldTypes,
+        H::Type: Sized
     {
+        type Type = HList<(&'static str, H::Type), T::Type>;
         fn field_types(vm: &Thread, fields: &mut Vec<types::Field<Symbol, ArcType>>) {
             fields.push(types::Field::new(Symbol::from(F::name()), H::make_type(vm)));
             T::field_types(vm, fields);
-        }
-    }
-
-    pub trait PushableFieldList<'vm>: FieldList {
-        fn push(self, vm: &'vm Thread, fields: &mut Context) -> Result<()>;
-    }
-
-    impl<'vm> PushableFieldList<'vm> for () {
-        fn push(self, _: &'vm Thread, _: &mut Context) -> Result<()> {
-            Ok(())
         }
     }
 
@@ -1365,16 +1382,6 @@ pub mod record {
         }
     }
 
-    pub trait GetableFieldList<'vm>: FieldList + Sized {
-        fn from_value(vm: &'vm Thread, values: &[Value]) -> Option<Self>;
-    }
-
-    impl<'vm> GetableFieldList<'vm> for () {
-        fn from_value(_vm: &'vm Thread, values: &[Value]) -> Option<Self> {
-            debug_assert!(values.is_empty(), "{:?}", values);
-            Some(())
-        }
-    }
     impl<'vm, F, H, T> GetableFieldList<'vm> for HList<(F, H), T>
     where
         F: Field,
@@ -1389,27 +1396,23 @@ pub mod record {
         }
     }
 
-    impl<A: VmType, F: Field, T: FieldTypes> VmType for Record<HList<(F, A), T>>
-    where
-        A::Type: Sized,
+    impl<T: FieldTypes> VmType for Record<T>
     {
-        type Type = Record<((&'static str, A::Type),)>;
+        type Type = Record<T::Type>;
         fn make_type(vm: &Thread) -> ArcType {
-            let len = HList::<(F, A), T>::len() as usize;
+            let len = T::len() as usize;
             let mut fields = Vec::with_capacity(len);
-            HList::<(F, A), T>::field_types(vm, &mut fields);
+            T::field_types(vm, &mut fields);
             Type::record(Vec::new(), fields)
         }
     }
-    impl<'vm, A, F, T> Pushable<'vm> for Record<HList<(F, A), T>>
+    impl<'vm, T> Pushable<'vm> for Record<T>
     where
-        A: Pushable<'vm>,
-        F: Field,
         T: PushableFieldList<'vm>,
     {
         fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
             self.fields.push(thread, context)?;
-            let len = HList::<(F, A), T>::len();
+            let len = T::len();
             let offset = context.stack.len() - len;
             let value = thread::alloc(
                 &mut context.gc,
@@ -1427,17 +1430,18 @@ pub mod record {
             Ok(())
         }
     }
-    impl<'vm, A, F, T> Getable<'vm> for Record<HList<(F, A), T>>
+    impl<'vm, T> Getable<'vm> for Record<T>
     where
-        A: Getable<'vm> + VmType,
-        F: Field,
         T: GetableFieldList<'vm>,
     {
         fn from_value(vm: &'vm Thread, value: Variants) -> Option<Self> {
             match value.0 {
                 Value::Data(ref data) => {
-                    HList::<(F, A), T>::from_value(vm, &data.fields)
-                        .map(|fields| Record { fields: fields })
+                    T::from_value(vm, &data.fields).map(
+                        |fields| {
+                            Record { fields: fields }
+                        },
+                    )
                 }
                 _ => None,
             }
