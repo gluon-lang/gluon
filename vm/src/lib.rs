@@ -2,6 +2,8 @@
 #![doc(html_root_url="https://docs.rs/gluon_vm/0.4.2")] // # GLUON
 #![recursion_limit = "1024"]
 
+#[doc(hidden)]
+pub extern crate frunk_core;
 #[macro_use]
 extern crate log;
 #[cfg(test)]

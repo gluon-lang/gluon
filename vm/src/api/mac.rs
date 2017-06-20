@@ -97,12 +97,12 @@ macro_rules! field_decl {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! record_no_decl_inner {
-    () => { () };
+    () => { $crate::frunk_core::hlist::HNil };
     ($field: ident => $value: expr) => {
-        $crate::api::record::HList((_field::$field, $value), ())
+        $crate::frunk_core::hlist::h_cons((_field::$field, $value), record_no_decl_inner!())
     };
     ($field: ident => $value: expr, $($field_tail: ident => $value_tail: expr),*) => {
-        $crate::api::record::HList((_field::$field, $value),
+        $crate::frunk_core::hlist::h_cons((_field::$field, $value),
                                    record_no_decl_inner!($($field_tail => $value_tail),*))
     };
 }
@@ -153,12 +153,12 @@ macro_rules! record {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! record_type_inner {
-    () => { () };
+    () => { $crate::frunk_core::hlist::HNil };
     ($field: ident => $value: ty) => {
-        $crate::api::record::HList<(_field::$field, $value), ()>
+        $crate::frunk_core::hlist::HCons<(_field::$field, $value), record_type_inner!()>
     };
     ($field: ident => $value: ty, $($field_tail: ident => $value_tail: ty),*) => {
-        $crate::api::record::HList<(_field::$field, $value),
+        $crate::frunk_core::hlist::HCons<(_field::$field, $value),
                                 record_type_inner!( $($field_tail => $value_tail),*)>
     }
 }
@@ -187,13 +187,13 @@ macro_rules! record_type {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! record_p_impl {
-    () => { () };
+    () => { $crate::frunk_core::hlist::HNil };
     ($field: pat) => {
-        $crate::api::record::HList((_, $field), ())
+        $crate::frunk_core::hlist::HCons { head: (_, $field), tail: record_p_impl!() }
     };
     ($field: pat, $($field_tail: pat),*) => {
-        $crate::api::record::HList((_, $field),
-                                record_p_impl!($($field_tail),*))
+        $crate::frunk_core::hlist::HCons { head: (_, $field),
+                                           tail: record_p_impl!($($field_tail),*) }
     }
 }
 

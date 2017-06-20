@@ -14,6 +14,7 @@ build = "build.rs"
 
 [dependencies]
 env_logger = { version = "0.3.4", optional = true }
+frunk_core = "0.0.17"
 log = "0.3.6"
 quick-error = "1.1.0"
 mopa = "0.2.2"
