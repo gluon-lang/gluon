@@ -75,8 +75,8 @@ fn array_append<'vm>(
     let value = {
         let mut context = vm.context();
         let result = context.alloc(Append {
-            lhs: &lhs,
-            rhs: &rhs,
+            lhs: lhs.get_value_array(),
+            rhs: rhs.get_value_array(),
         });
         match result {
             Ok(x) => x,
