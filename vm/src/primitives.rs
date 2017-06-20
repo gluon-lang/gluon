@@ -9,7 +9,7 @@ use api::generic::A;
 use gc::{Gc, Traverseable, DataDef, WriteOnly};
 use Result;
 use vm::{Thread, Status};
-use value::{Def, GcStr, Value, ValueArray};
+use value::{Def, GcStr, Repr, Value, ValueArray};
 use stack::StackFrame;
 use thread::ThreadInternal;
 use types::VmInt;
@@ -37,6 +37,18 @@ fn array_append<'vm>(
         rhs: &'b ValueArray,
     }
 
+    impl<'b> Append<'b> {
+        fn repr(&self) -> Repr {
+            // Empty arrays don't have the correct representation set so choose the representation
+            // of `rhs` if it is empty. (And if both are empty the representation does not matter).
+            if self.lhs.len() == 0 {
+                self.rhs.repr()
+            } else {
+                self.lhs.repr()
+            }
+        }
+    }
+
     impl<'b> Traverseable for Append<'b> {
         fn traverse(&self, gc: &mut Gc) {
             self.lhs.traverse(gc);
@@ -47,21 +59,13 @@ fn array_append<'vm>(
     unsafe impl<'b> DataDef for Append<'b> {
         type Value = ValueArray;
         fn size(&self) -> usize {
-            use std::mem::size_of;
             let len = self.lhs.len() + self.rhs.len();
-            size_of::<usize>() + ::array::Array::<Value>::size_of(len)
+            ValueArray::size_of(self.repr(), len)
         }
         fn initialize<'w>(self, mut result: WriteOnly<'w, ValueArray>) -> &'w mut ValueArray {
-            // Empty arrays don't have the correct representation set so choose the representation
-            // of `rhs` if it is empty. (And if both are empty the representation does not matter).
-            let repr = if self.lhs.len() == 0 {
-                self.rhs.repr()
-            } else {
-                self.lhs.repr()
-            };
             unsafe {
                 let result = &mut *result.as_mut_ptr();
-                result.set_repr(repr);
+                result.set_repr(self.repr());
                 result.initialize(self.lhs.iter().chain(self.rhs.iter()));
                 result
             }
