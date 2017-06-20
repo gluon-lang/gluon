@@ -18,6 +18,13 @@ extern crate pretty;
 #[macro_use]
 extern crate futures;
 
+#[cfg(feature = "serde")]
+#[macro_use]
+extern crate serde;
+#[cfg(all(feature = "serde", test))]
+#[macro_use]
+extern crate serde_derive;
+
 #[macro_use]
 extern crate gluon_base as base;
 extern crate gluon_check as check;
@@ -47,26 +54,36 @@ mod source_map;
 mod value;
 mod vm;
 
+use std::marker::PhantomData;
+
 use api::ValueRef;
 use value::Value;
 use types::VmIndex;
 use base::types::ArcType;
 use base::symbol::Symbol;
 
-#[derive(Debug)]
-pub struct Variants<'a>(&'a Value);
+unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
+    ::std::mem::transmute(x)
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct Variants<'a>(Value, PhantomData<&'a Value>);
 
 impl<'a> Variants<'a> {
-    /// Creates a new `Variants` value which assumes that `value` is alive for the lifetime of the
+    /// Creates a new `Variants` value which assumes that `value` is rooted for the lifetime of the
     /// value
     pub unsafe fn new(value: &Value) -> Variants {
-        Variants(value)
+        Variants::with_root(*value, value)
+    }
+
+    pub unsafe fn with_root<T: ?Sized>(value: Value, _root: &T) -> Variants {
+        Variants(value, PhantomData)
     }
 
     /// Returns an instance of `ValueRef` which allows users to safely retrieve the interals of a
     /// value
-    pub fn as_ref(&self) -> ValueRef {
-        ValueRef::new(self.0)
+    pub fn as_ref(&self) -> ValueRef<'a> {
+        unsafe { ValueRef::rooted_new(self.0) }
     }
 }
 

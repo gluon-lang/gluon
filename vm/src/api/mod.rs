@@ -1,5 +1,5 @@
 //! The marshalling api
-use {Variants, Error, Result};
+use {Variants, Error, Result, forget_lifetime};
 use gc::{DataDef, Gc, Traverseable, Move};
 use base::symbol::Symbol;
 use stack::StackFrame;
@@ -22,6 +22,13 @@ use futures::{Async, BoxFuture, Future};
 
 pub use value::Userdata;
 
+#[macro_use]
+pub mod mac;
+#[cfg(feature = "serde")]
+pub mod ser;
+#[cfg(feature = "serde")]
+pub mod de;
+
 macro_rules! count {
     () => { 0 };
     ($_e: ident) => { 1 };
@@ -35,7 +42,7 @@ pub enum ValueRef<'a> {
     Float(f64),
     String(&'a str),
     Data(Data<'a>),
-    Tag(VmTag),
+    Array(ArrayRef<'a>),
     Userdata(&'a vm::Userdata),
     Internal,
 }
@@ -51,7 +58,6 @@ impl<'a, 'b> PartialEq<ValueRef<'b>> for ValueRef<'a> {
             (&Float(l), &Float(r)) => l == r,
             (&String(l), &String(r)) => l == r,
             (&Data(l), &Data(r)) => l == r,
-            (&Tag(l), &Tag(r)) => l == r,
             _ => false,
         }
     }
@@ -65,37 +71,75 @@ impl<'a> PartialEq<Value> for ValueRef<'a> {
 
 impl<'a> ValueRef<'a> {
     pub fn new(value: &'a Value) -> ValueRef<'a> {
-        match *value {
+        unsafe { ValueRef::rooted_new(*value) }
+    }
+
+    pub unsafe fn rooted_new(value: Value) -> ValueRef<'a> {
+        match value {
             Value::Byte(i) => ValueRef::Byte(i),
             Value::Int(i) => ValueRef::Int(i),
             Value::Float(f) => ValueRef::Float(f),
-            Value::String(ref s) => ValueRef::String(s),
-            Value::Data(ref data) => ValueRef::Data(Data(data)),
-            Value::Userdata(ref data) => ValueRef::Userdata(&***data),
-            Value::Tag(tag) => ValueRef::Tag(tag),
+            Value::String(s) => ValueRef::String(forget_lifetime(&*s)),
+            Value::Data(data) => ValueRef::Data(Data(DataInner::Data(forget_lifetime(&*data)))),
+            Value::Tag(tag) => ValueRef::Data(Data(DataInner::Tag(tag))),
+            Value::Array(array) => ValueRef::Array(ArrayRef(forget_lifetime(&*array))),
+            Value::Userdata(data) => ValueRef::Userdata(forget_lifetime(&**data)),
             Value::Thread(_) |
             Value::Function(_) |
             Value::Closure(_) |
-            Value::Array(_) | // FIXME Expose arrays safely
             Value::PartialApplication(_) => ValueRef::Internal,
         }
     }
 }
 
 #[derive(Copy, Clone, PartialEq, Debug)]
-pub struct Data<'a>(&'a DataStruct);
+enum DataInner<'a> {
+    Tag(VmTag),
+    Data(&'a DataStruct),
+}
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct Data<'a>(DataInner<'a>);
 
 impl<'a> Data<'a> {
     pub fn tag(&self) -> VmTag {
-        self.0.tag
+        match self.0 {
+            DataInner::Tag(tag) => tag,
+            DataInner::Data(data) => data.tag,
+        }
     }
 
     pub fn len(&self) -> usize {
-        self.0.fields.len()
+        match self.0 {
+            DataInner::Tag(_) => 0,
+            DataInner::Data(data) => data.fields.len(),
+        }
     }
 
     pub fn get(&self, index: usize) -> Option<ValueRef<'a>> {
-        self.0.fields.get(index).map(ValueRef::new)
+        match self.0 {
+            DataInner::Tag(_) => None,
+            DataInner::Data(data) => data.fields.get(index).map(ValueRef::new),
+        }
+    }
+
+    pub fn get_variants(&self, index: usize) -> Option<Variants<'a>> {
+        match self.0 {
+            DataInner::Tag(_) => None,
+            DataInner::Data(data) => unsafe { data.fields.get(index).map(|v| Variants::new(v)) },
+        }
+    }
+
+    // Retrieves the field `name` from this record
+    pub fn lookup_field(&self, thread: &Thread, name: &str) -> Option<Variants<'a>> {
+        match self.0 {
+            DataInner::Tag(_) => None,
+            DataInner::Data(data) => unsafe {
+                thread.lookup_field(data, name).ok().map(|v| {
+                    Variants::with_root(v, data)
+                })
+            },
+        }
     }
 }
 
@@ -159,68 +203,6 @@ where
     }
 }
 
-/// Creates a `GluonFunction` from a function implementing `VMFunction`
-///
-/// ```rust
-/// #[macro_use]
-/// extern crate gluon_vm;
-/// fn test(_x: i32, _y: String) -> f64 {
-///     panic!()
-/// }
-///
-/// fn main() {
-///     primitive!(2 test);
-/// }
-/// ```
-#[macro_export]
-macro_rules! primitive {
-    (0 $name: expr) => {
-        unsafe {
-            extern "C" fn wrapper(thread: &$crate::thread::Thread) -> $crate::thread::Status {
-                 $crate::api::VmFunction::unpack_and_call(
-                     &($name as fn () -> _), thread)
-            }
-            $crate::api::primitive_f(stringify!($name), wrapper, $name as fn () -> _)
-        }
-    };
-    (1 $name: expr) => {
-        unsafe {
-            extern "C" fn wrapper(thread: &$crate::thread::Thread) -> $crate::thread::Status {
-                 $crate::api::VmFunction::unpack_and_call(
-                     &($name as fn (_) -> _), thread)
-            }
-            $crate::api::primitive_f(stringify!($name), wrapper, $name as fn (_) -> _)
-        }
-    };
-    (2 $name: expr) => {
-        unsafe {
-            extern "C" fn wrapper(thread: &$crate::thread::Thread) -> $crate::thread::Status {
-                 $crate::api::VmFunction::unpack_and_call(
-                     &($name as fn (_, _) -> _), thread)
-            }
-            $crate::api::primitive_f(stringify!($name), wrapper, $name as fn (_, _) -> _)
-        }
-    };
-    (3 $name: expr) => {
-        unsafe {
-            extern "C" fn wrapper(thread: &$crate::thread::Thread) -> $crate::thread::Status {
-                 $crate::api::VmFunction::unpack_and_call(
-                     &($name as fn (_, _, _) -> _), thread)
-            }
-            $crate::api::primitive_f(stringify!($name), wrapper, $name as fn (_, _, _) -> _)
-        }
-    };
-    (4 $name: expr) => {
-        unsafe {
-            extern "C" fn wrapper(thread: &$crate::thread::Thread) -> $crate::thread::Status {
-                 $crate::api::VmFunction::unpack_and_call(
-                     &($name as fn (_, _, _, _) -> _), thread)
-            }
-            $crate::api::primitive_f(stringify!($name), wrapper, $name as fn (_, _, _, _) -> _)
-        }
-    };
-}
-
 #[derive(PartialEq)]
 pub struct Generic<T>(pub Value, PhantomData<T>);
 
@@ -255,7 +237,7 @@ impl<'vm, T: VmType> Pushable<'vm> for Generic<T> {
 }
 impl<'vm, T> Getable<'vm> for Generic<T> {
     fn from_value(_: &'vm Thread, value: Variants) -> Option<Generic<T>> {
-        Some(Generic::from(*value.0))
+        Some(Generic::from(value.0))
     }
 }
 
@@ -378,7 +360,7 @@ impl<'vm, T: vm::Userdata> Pushable<'vm> for T {
 
 impl<'vm> Getable<'vm> for Value {
     fn from_value(_vm: &'vm Thread, value: Variants) -> Option<Self> {
-        Some(*value.0)
+        Some(value.0)
     }
 }
 
@@ -400,10 +382,6 @@ where
     fn from_value(_vm: &'vm Thread, _value: Variants) -> Option<Self> {
         None
     }
-}
-
-unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
-    ::std::mem::transmute(x)
 }
 
 impl<'vm> Getable<'vm> for &'vm str {
@@ -598,8 +576,7 @@ impl<'vm> Pushable<'vm> for bool {
 impl<'vm> Getable<'vm> for bool {
     fn from_value(_: &'vm Thread, value: Variants) -> Option<bool> {
         match value.as_ref() {
-            ValueRef::Tag(1) => Some(true),
-            ValueRef::Tag(0) => Some(false),
+            ValueRef::Data(data) => Some(data.tag() == 1),
             _ => None,
         }
     }
@@ -629,7 +606,6 @@ impl<'vm> Getable<'vm> for Ordering {
     fn from_value(_: &'vm Thread, value: Variants) -> Option<Ordering> {
         let tag = match value.as_ref() {
             ValueRef::Data(data) => data.tag(),
-            ValueRef::Tag(tag) => tag,
             _ => return None,
         };
         match tag {
@@ -732,8 +708,8 @@ where
 }
 impl<'s, 'vm, T: Copy + ArrayRepr> Getable<'vm> for &'s [T] {
     unsafe fn from_value_unsafe(_: &'vm Thread, value: Variants) -> Option<Self> {
-        match *value.0 {
-            Value::Array(ptr) => ptr.as_slice().map(|s| &*(s as *const _)),
+        match value.as_ref() {
+            ValueRef::Array(ptr) => ptr.0.as_slice().map(|s| &*(s as *const _)),
             _ => None,
         }
     }
@@ -838,15 +814,14 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T> {
 }
 impl<'vm, T: Getable<'vm>> Getable<'vm> for Option<T> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<Option<T>> {
-        match *value.0 {
-            Value::Data(data) => {
-                if data.tag == 0 {
+        match value.as_ref() {
+            ValueRef::Data(data) => {
+                if data.tag() == 0 {
                     Some(None)
                 } else {
-                    T::from_value(vm, Variants(&data.fields[0])).map(Some)
+                    T::from_value(vm, data.get_variants(0).unwrap()).map(Some)
                 }
             }
-            Value::Tag(0) => Some(None),
             _ => None,
         }
     }
@@ -894,11 +869,11 @@ impl<'vm, T: Pushable<'vm>, E: Pushable<'vm>> Pushable<'vm> for StdResult<T, E> 
 
 impl<'vm, T: Getable<'vm>, E: Getable<'vm>> Getable<'vm> for StdResult<T, E> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<StdResult<T, E>> {
-        match *value.0 {
-            Value::Data(data) => {
-                match data.tag {
-                    0 => E::from_value(vm, Variants(&data.fields[0])).map(Err),
-                    1 => T::from_value(vm, Variants(&data.fields[0])).map(Ok),
+        match value.as_ref() {
+            ValueRef::Data(data) => {
+                match data.tag() {
+                    0 => E::from_value(vm, data.get_variants(0).unwrap()).map(Err),
+                    1 => T::from_value(vm, data.get_variants(0).unwrap()).map(Ok),
                     _ => None,
                 }
             }
@@ -1037,6 +1012,10 @@ where
         *self.0
     }
 
+    pub fn get_variants(&self) -> Variants {
+        unsafe { Variants::new(&self.0) }
+    }
+
     pub fn get_ref(&self) -> ValueRef {
         ValueRef::new(&self.0)
     }
@@ -1073,13 +1052,37 @@ where
 
 impl<'vm, V> Getable<'vm> for OpaqueValue<&'vm Thread, V> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<OpaqueValue<&'vm Thread, V>> {
-        Some(OpaqueValue(vm.root_value(*value.0), PhantomData))
+        Some(OpaqueValue(vm.root_value(value.0), PhantomData))
     }
 }
 
 impl<'vm, V> Getable<'vm> for OpaqueValue<RootedThread, V> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<OpaqueValue<RootedThread, V>> {
-        Some(OpaqueValue(vm.root_value(*value.0), PhantomData))
+        Some(OpaqueValue(vm.root_value(value.0), PhantomData))
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+pub struct ArrayRef<'vm>(&'vm ValueArray);
+
+impl<'vm> ArrayRef<'vm> {
+    pub fn get(&self, index: usize) -> Option<Variants> {
+        if index < self.0.len() {
+            unsafe { Some(Variants::with_root(self.0.get(index), self)) }
+        } else {
+            None
+        }
+    }
+
+    pub fn as_slice<T>(&self) -> Option<&[T]>
+    where
+        T: ArrayRepr + Copy,
+    {
+        self.0.as_slice()
+    }
+
+    pub fn iter(&self) -> ::value::VariantIter<'vm> {
+        self.0.variant_iter()
     }
 }
 
@@ -1104,12 +1107,14 @@ impl<'vm, T> Array<'vm, T> {
 
 impl<'vm, T: for<'vm2> Getable<'vm2>> Array<'vm, T> {
     pub fn get(&self, index: VmInt) -> Option<T> {
-        match *self.0 {
-            Value::Array(data) => {
-                let v = data.get(index as usize);
-                T::from_value(self.0.vm(), Variants(&v))
+        unsafe {
+            match Variants::new(&self.0).as_ref() {
+                ValueRef::Array(data) => {
+                    let v = data.get(index as usize).unwrap();
+                    T::from_value(self.0.vm(), v)
+                }
+                _ => None,
             }
-            _ => None,
         }
     }
 }
@@ -1137,7 +1142,7 @@ where
 
 impl<'vm, T> Getable<'vm> for Array<'vm, T> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<Array<'vm, T>> {
-        Some(Array(vm.root_value(*value.0), PhantomData))
+        Some(Array(vm.root_value(value.0), PhantomData))
     }
 }
 
@@ -1146,7 +1151,7 @@ impl<'vm, T: Any> VmType for Root<'vm, T> {
 }
 impl<'vm, T: vm::Userdata> Getable<'vm> for Root<'vm, T> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<Root<'vm, T>> {
-        match *value.0 {
+        match value.0 {
             Value::Userdata(data) => vm.root::<T>(data).map(From::from),
             _ => None,
         }
@@ -1158,7 +1163,7 @@ impl<'vm> VmType for RootStr<'vm> {
 }
 impl<'vm> Getable<'vm> for RootStr<'vm> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<RootStr<'vm>> {
-        match *value.0 {
+        match value.0 {
             Value::String(v) => Some(vm.root_string(v)),
             _ => None,
         }
@@ -1217,9 +1222,10 @@ macro_rules! define_tuple {
             fn from_value(vm: &'vm Thread, value: Variants) -> Option<($($id),+)> {
                 match value.as_ref() {
                     ValueRef::Data(v) => {
+                        assert!(v.len() == count!($($id),+));
                         let mut i = 0;
                         let x = ( $(
-                            { let a = $id::from_value(vm, Variants(&v.0.fields[i])); i += 1; a }
+                            { let a = $id::from_value(vm, v.get_variants(i).unwrap()); i += 1; a }
                         ),+ );
                         match x {
                             ($(Some($id)),+) => Some(( $($id),+ )),
@@ -1424,7 +1430,7 @@ pub mod record {
         T: GetableFieldList<'vm>,
     {
         fn from_value(vm: &'vm Thread, value: Variants) -> Option<Self> {
-            match *value.0 {
+            match value.0 {
                 Value::Data(ref data) => {
                     HList::<(F, A), T>::from_value(vm, &data.fields).map(
                         |fields| {
@@ -1434,163 +1440,6 @@ pub mod record {
                 }
                 _ => None,
             }
-        }
-    }
-}
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! field_decl_inner {
-    ($($field: ident),*) => {
-        $(
-        #[allow(non_camel_case_types)]
-        #[derive(Default)]
-        pub struct $field;
-        impl $crate::api::record::Field for $field {
-            fn name() -> &'static str {
-                stringify!($field)
-            }
-        }
-        )*
-    }
-}
-
-/// Declares fields useable by the record macros
-///
-/// ```rust
-/// #[macro_use]
-/// extern crate gluon_vm;
-/// # fn main() { }
-///
-/// field_decl! {x, y}
-/// ```
-#[macro_export]
-macro_rules! field_decl {
-    ($($field: ident),*) => {
-        mod _field { field_decl_inner!($($field),*); }
-    }
-}
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! record_no_decl_inner {
-    () => { () };
-    ($field: ident => $value: expr) => {
-        $crate::api::record::HList((_field::$field, $value), ())
-    };
-    ($field: ident => $value: expr, $($field_tail: ident => $value_tail: expr),*) => {
-        $crate::api::record::HList((_field::$field, $value),
-                                   record_no_decl_inner!($($field_tail => $value_tail),*))
-    };
-}
-
-/// Macro that creates a record that can be passed to gluon. Reuses already declared fields
-/// instead of generating unique ones.
-///
-/// ```rust
-/// #[macro_use]
-/// extern crate gluon_vm;
-///
-/// field_decl! {x, y, name}
-///
-/// fn main() {
-///     record_no_decl!(x => 1, y => 2, name => "Gluon");
-/// }
-/// ```
-#[macro_export]
-macro_rules! record_no_decl {
-    ($($field: ident => $value: expr),*) => {
-        {
-            $crate::api::Record {
-                fields: record_no_decl_inner!($($field => $value),*)
-            }
-        }
-    }
-}
-
-/// Macro that creates a record that can be passed to gluon
-///
-/// ```rust
-/// #[macro_use]
-/// extern crate gluon_vm;
-/// fn main() {
-///     record!(x => 1, y => 2, name => "Gluon");
-/// }
-/// ```
-#[macro_export]
-macro_rules! record {
-    ($($field: ident => $value: expr),*) => {
-        {
-            field_decl!($($field),*);
-            record_no_decl!($($field => $value),*)
-        }
-    }
-}
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! record_type_inner {
-    () => { () };
-    ($field: ident => $value: ty) => {
-        $crate::api::record::HList<(_field::$field, $value), ()>
-    };
-    ($field: ident => $value: ty, $($field_tail: ident => $value_tail: ty),*) => {
-        $crate::api::record::HList<(_field::$field, $value),
-                                record_type_inner!( $($field_tail => $value_tail),*)>
-    }
-}
-
-/// Creates a Rust type compatible with the type of `record_no_decl!`
-///
-/// ```rust
-/// #[macro_use]
-/// extern crate gluon_vm;
-/// # fn main() { }
-/// // Fields used in `record_type!` needs to be forward declared
-/// field_decl! {x, y}
-/// fn new_vec(x: f64, y: f64) -> record_type!(x => f64, y => f64) {
-///     record_no_decl!(x => y, y => y)
-/// }
-/// ```
-#[macro_export]
-macro_rules! record_type {
-    ($($field: ident => $value: ty),*) => {
-        $crate::api::Record<
-            record_type_inner!($($field => $value),*)
-            >
-    }
-}
-
-#[doc(hidden)]
-#[macro_export]
-macro_rules! record_p_impl {
-    () => { () };
-    ($field: pat) => {
-        $crate::api::record::HList((_, $field), ())
-    };
-    ($field: pat, $($field_tail: pat),*) => {
-        $crate::api::record::HList((_, $field),
-                                record_p_impl!($($field_tail),*))
-    }
-}
-
-/// Creates a pattern which matches on marshalled gluon records
-///
-/// ```rust
-/// #[macro_use]
-/// extern crate gluon_vm;
-/// fn main() {
-///     match record!(x => 1, y => "y") {
-///         record_p!(a, "y") => assert_eq!(a, 1),
-///         _ => assert!(false),
-///     }
-/// }
-/// ```
-#[macro_export]
-macro_rules! record_p {
-    ($($field: pat),*) => {
-        $crate::api::Record {
-            fields: record_p_impl!($($field),*)
         }
     }
 }
@@ -1753,7 +1602,7 @@ where
 impl<'vm, F> Getable<'vm> for Function<&'vm Thread, F> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<Function<&'vm Thread, F>> {
         Some(Function {
-            value: vm.root_value(*value.0),
+            value: vm.root_value(value.0),
             _marker: PhantomData,
         }) //TODO not type safe
     }
@@ -1762,7 +1611,7 @@ impl<'vm, F> Getable<'vm> for Function<&'vm Thread, F> {
 impl<'vm, F> Getable<'vm> for Function<RootedThread, F> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<Self> {
         Some(Function {
-            value: vm.root_value(*value.0),
+            value: vm.root_value(value.0),
             _marker: PhantomData,
         }) //TODO not type safe
     }
@@ -1844,7 +1693,7 @@ where $($args: Getable<'vm> + 'vm,)*
             let (lock, ($($args,)*)) = {
                 let stack = StackFrame::current(&mut context.stack);
                 $(let $args = {
-                    let x = $args::from_value_unsafe(vm, Variants(&stack[i]))
+                    let x = $args::from_value_unsafe(vm, Variants::new(&stack[i]))
                         .expect(stringify!(Argument $args));
                     i += 1;
                     x
@@ -1892,7 +1741,7 @@ where $($args: Getable<'vm> + 'vm,)*
             let (lock, ($($args,)*)) = {
                 let stack = StackFrame::current(&mut context.stack);
                 $(let $args = {
-                    let x = $args::from_value_unsafe(vm, Variants(&stack[i]))
+                    let x = $args::from_value_unsafe(vm, Variants::new(&stack[i]))
                         .expect(stringify!(Argument $args));
                     i += 1;
                     x
@@ -1946,13 +1795,15 @@ impl<'vm, T, $($args,)* R> Function<T, fn($($args),*) -> R>
             }
         })
     }
-
+    
     fn return_value(vm: &Thread, value: Value) -> Result<R> {
-        R::from_value(vm, Variants(&value))
-            .ok_or_else(|| {
-                error!("Wrong type {:?}", value);
-                Error::Message("Wrong type".to_string())
-            })
+        unsafe {
+            R::from_value(vm, Variants::new(&value))
+                .ok_or_else(|| {
+                    error!("Wrong type {:?}", value);
+                    Error::Message("Wrong type".to_string())
+                })
+        }
     }
 }
 

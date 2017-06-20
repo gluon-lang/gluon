@@ -30,8 +30,8 @@ use source_map::LocalIter;
 use stack::{Frame, Stack, StackFrame, State};
 use types::*;
 use vm::{GlobalVmState, VmEnv};
-use value::{Value, ClosureData, ClosureInitDef, ClosureDataDef, Def, ExternFunction, GcStr,
-            BytecodeFunction, Callable, PartialApplicationDataDef, Userdata};
+use value::{Value, ClosureData, ClosureInitDef, ClosureDataDef, DataStruct, Def, ExternFunction,
+            GcStr, BytecodeFunction, Callable, PartialApplicationDataDef, Userdata};
 
 use value::Value::{Int, Float, String, Data, Function, PartialApplication, Closure};
 
@@ -461,9 +461,11 @@ impl Thread {
         // Finally check that type of the returned value is correct
         let expected = T::make_type(self);
         if check_signature(&*env, &expected, &actual) {
-            T::from_value(self, Variants(&value)).ok_or_else(|| {
-                Error::UndefinedBinding(name.into())
-            })
+            unsafe {
+                T::from_value(self, Variants::new(&value)).ok_or_else(|| {
+                    Error::UndefinedBinding(name.into())
+                })
+            }
         } else {
             Err(Error::WrongType(expected, actual.into_owned()))
         }
@@ -641,7 +643,7 @@ where
 
     fn can_share_values_with(&self, gc: &mut Gc, other: &Thread) -> bool;
 
-    fn lookup_field(&self, value: Value, field: &str) -> Result<Value>;
+    fn lookup_field(&self, data: &DataStruct, field: &str) -> Result<Value>;
 }
 
 impl ThreadInternal for Thread {
@@ -821,16 +823,13 @@ impl ThreadInternal for Thread {
         false
     }
 
-    fn lookup_field(&self, value: Value, field: &str) -> Result<Value> {
+    fn lookup_field(&self, data: &DataStruct, field: &str) -> Result<Value> {
         let context = self.context.lock().unwrap();
         let str_index = self.global_env().intern(field)?;
         context
             .record_map
-            .get_offset(0, str_index)
-            .and_then(|index| match value {
-                Data(data) => data.fields.get(index as usize).cloned(),
-                _ => None,
-            })
+            .get_offset(data.tag, str_index)
+            .and_then(|index| data.fields.get(index as usize).cloned())
             .ok_or_else(|| {
                 Error::Message(format!(
                     "Internal error: Undefined record field {}",
@@ -1022,6 +1021,10 @@ impl Context {
 
     pub fn set_max_stack_size(&mut self, limit: VmIndex) {
         self.max_stack_size = limit;
+    }
+
+    pub fn get_map(&mut self, fields: &[InternedStr]) -> VmTag {
+        self.record_map.get_map(fields)
     }
 
     /// "Returns a future", letting the virtual machine know that `future` must be resolved to
@@ -1834,19 +1837,18 @@ where
     F: FnOnce(T, T) -> Value,
     T: Getable<'b> + fmt::Debug,
 {
-    let r = stack.pop();
-    let l = stack.pop();
-    match (
-        T::from_value(vm, Variants(&l)),
-        T::from_value(vm, Variants(&r)),
-    ) {
-        (Some(l), Some(r)) => {
-            let result = f(l, r);
-            // pushing numbers should never return an error so unwrap
-            stack.stack.push(result);
+    let (l, r) = {
+        let r = stack.get_variants(stack.len() - 1).unwrap();
+        let l = stack.get_variants(stack.len() - 2).unwrap();
+        match (T::from_value(vm, l), T::from_value(vm, r)) {
+            (Some(l), Some(r)) => (l, r),
+            _ => panic!("{:?} `op` {:?}", l, r),
         }
-        _ => panic!("{:?} `op` {:?}", l, r),
-    }
+    };
+    let result = f(l, r);
+    stack.pop();
+    stack.pop();
+    stack.stack.push(result);
 }
 
 fn debug_instruction(

@@ -3,6 +3,7 @@ use base::fnv::FnvMap;
 use interner::InternedStr;
 use types::{VmTag, VmIndex};
 
+#[derive(Debug)]
 pub struct FieldMap {
     /// Maps fields into a tag
     tags: FnvMap<Vec<InternedStr>, VmTag>,

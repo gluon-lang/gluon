@@ -377,7 +377,8 @@ impl<'a, 'e> Translator<'a, 'e> {
                 }
             }
             ast::Expr::IfElse(ref pred, ref if_true, ref if_false) => {
-                let alts: SmallVec<[_; 2]> = collect![
+                let alts: SmallVec<[_; 2]> =
+                    collect![
                     Alternative {
                         pattern: Pattern::Constructor(self.bool_constructor(true), vec![]),
                         expr: self.translate_alloc(if_true),
@@ -1037,7 +1038,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 ast::Pattern::Record { .. } |
                 ast::Pattern::Tuple { .. } => CType::Record,
                 ast::Pattern::Constructor(_, _) => CType::Constructor,
-                ast::Pattern::Error => panic!("ICE: Error pattern survived typechecking")
+                ast::Pattern::Error => panic!("ICE: Error pattern survived typechecking"),
             }
         }
 
@@ -1144,7 +1145,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                         }
                     }
                 }
-                ast::Pattern::Error => ()
+                ast::Pattern::Error => (),
             }
         }
         if record_fields.is_empty() {

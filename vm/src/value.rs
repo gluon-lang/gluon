@@ -16,7 +16,7 @@ use compiler::DebugInfo;
 use gc::{Gc, GcPtr, Generation, Traverseable, DataDef, Move, WriteOnly};
 use array::Array;
 use thread::{Thread, Status};
-use {Error, Result};
+use {Error, Result, Variants};
 
 use self::Value::{Int, Float, String, Function, PartialApplication, Closure};
 
@@ -175,11 +175,18 @@ mod gc_str {
     use super::ValueArray;
     use gc::{Gc, GcPtr, Generation, Traverseable};
 
+    use std::fmt;
     use std::str;
     use std::ops::Deref;
 
-    #[derive(Copy, Clone, Debug, PartialEq)]
+    #[derive(Copy, Clone, PartialEq)]
     pub struct GcStr(GcPtr<ValueArray>);
+
+    impl fmt::Debug for GcStr {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.debug_tuple("GcStr").field(&&**self).finish()
+        }
+    }
 
     impl Eq for GcStr {}
 
@@ -768,10 +775,18 @@ macro_rules! on_array {
 }
 
 
-#[derive(Debug)]
 pub struct ValueArray {
     repr: Repr,
     array: Array<()>,
+}
+
+impl fmt::Debug for ValueArray {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("ValueArray")
+            .field("repr", &self.repr)
+            .field("array", on_array!(self, |x| x as &fmt::Debug))
+            .finish()
+    }
 }
 
 impl PartialEq for ValueArray {
@@ -791,6 +806,29 @@ impl<'a> Iterator for Iter<'a> {
             let value = self.array.get(self.index);
             self.index += 1;
             Some(value)
+        } else {
+            None
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let i = self.array.len() - self.index;
+        (i, Some(i))
+    }
+}
+
+pub struct VariantIter<'a> {
+    array: &'a ValueArray,
+    index: usize,
+}
+
+impl<'a> Iterator for VariantIter<'a> {
+    type Item = Variants<'a>;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.array.len() {
+            let value = self.array.get(self.index);
+            self.index += 1;
+            Some(unsafe { Variants::with_root(value, self.array) })
         } else {
             None
         }
@@ -834,6 +872,13 @@ impl ValueArray {
 
     pub fn iter(&self) -> Iter {
         Iter {
+            array: self,
+            index: 0,
+        }
+    }
+
+    pub fn variant_iter(&self) -> VariantIter {
+        VariantIter {
             array: self,
             index: 0,
         }
