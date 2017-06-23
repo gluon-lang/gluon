@@ -2,6 +2,7 @@ use std::fmt;
 use std::ops::Deref;
 use std::sync::Arc;
 
+use serde::de::DeserializeSeedEx;
 use serde::ser::{SerializeSeed, Serializer};
 
 use serialization::SeSeed;
@@ -20,22 +21,13 @@ impl<'a, T: ?Sized + KindEnv> KindEnv for &'a T {
     }
 }
 
-#[derive(Clone)]
-pub struct KindSeed(pub ::serialization::NodeMap);
-
-impl AsMut<::serialization::NodeMap> for KindSeed {
-    fn as_mut(&mut self) -> &mut ::serialization::NodeMap {
-        &mut self.0
-    }
-}
-
-impl KindSeed {
-    fn deserialize<'de, D>(seed: &mut KindSeed, deserializer: D) -> Result<ArcKind, D::Error>
+impl<'de, S> DeserializeSeedEx<'de, S> for ArcKind where S: AsMut<::serialization::NodeMap> {
+    fn deserialize_seed<D>(seed: &mut S, deserializer: D) -> Result<ArcKind, D::Error>
     where
         D: ::serde::Deserializer<'de>,
     {
         let seed = ::serialization::SharedSeed(::serialization::MapSeed::<_, fn(_) -> _>::new(
-            seed.clone(),
+            ::serde::de::Seed::new(seed.as_mut()),
             ArcKind::new,
         ));
         ::serde::de::DeserializeSeed::deserialize(seed, deserializer)
@@ -51,7 +43,7 @@ impl KindSeed {
 /// as well as `Functor` which has the kind `Type -> Type -> Type`.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, DeserializeSeed, SerializeSeed)]
 #[serde(serialize_seed = "SeSeed")]
-#[serde(deserialize_seed = "KindSeed")]
+#[serde(deserialize_seed = "::serialization::NodeMap")]
 pub enum Kind {
     Hole,
     /// Representation for a kind which is yet to be inferred.
@@ -62,11 +54,9 @@ pub enum Kind {
     Row,
     /// Constructor which takes two kinds, taking the first as argument and returning the second.
     Function(
-        #[serde(deserialize_seed_with = "KindSeed::deserialize")]
-        #[serde(serialize_seed)]
+        #[serde(seed)]
         ArcKind,
-        #[serde(deserialize_seed_with = "KindSeed::deserialize")]
-        #[serde(serialize_seed)]
+        #[serde(seed)]
         ArcKind
     ),
 }

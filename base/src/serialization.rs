@@ -176,8 +176,13 @@ impl NodeMap {
     }
 }
 
-#[derive(Clone)]
-pub struct SharedSeed<T>(pub T);
+pub struct SharedSeed<'seed, T: 'seed>(pub &'seed mut T);
+
+impl<'seed, T> AsMut<T> for SharedSeed<'seed, T> {
+    fn as_mut(&mut self) -> &mut T {
+        self.0
+    }
+}
 
 pub struct VariantSeed<T>(pub T);
 
@@ -213,9 +218,9 @@ pub enum Variant<T> {
     Reference(Id),
 }
 
-impl<'de, T> DeserializeSeed<'de> for SharedSeed<T>
+impl<'de, 'seed, T> DeserializeSeed<'de> for SharedSeed<'seed, T>
 where
-    T: DeserializeSeed<'de> + Clone,
+    T: DeserializeSeed<'de>,
     T: AsMut<NodeMap>,
     T::Value: Any + Clone,
 {
@@ -225,7 +230,7 @@ where
     where
         D: Deserializer<'de>,
     {
-        match VariantSeed(self.0.clone()).deserialize(deserializer)? {
+        match VariantSeed(self.0).deserialize(deserializer)? {
             Variant::Marked(id, node) => {
                 self.0.as_mut().insert(id, node.clone());
                 Ok(node)
