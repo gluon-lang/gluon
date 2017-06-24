@@ -149,7 +149,7 @@ fn optional_field() {
 
 #[derive(Debug, PartialEq, Deserialize)]
 enum Enum {
-    A(i32),
+    A(String),
     B { string: String, test: f64 },
     C(i32, i32),
 }
@@ -172,9 +172,19 @@ fn enum_() {
         .load_script(
             &thread,
             "test",
-            r#" type Enum = | A Int | B String Float | C Int Int in { Enum } "#,
+            r#" type Enum = | A String | B String Float | C Int Int in { Enum } "#,
         )
         .unwrap_or_else(|err| panic!("{}", err));
+
+    let (De(enum_), _) = Compiler::new()
+        .implicit_prelude(false)
+        .run_expr::<De<Enum>>(
+            &thread,
+            "test",
+            r#" let { Enum } = import! "test" in A "abc" "#,
+        )
+        .unwrap_or_else(|err| panic!("{}", err));
+    assert_eq!(enum_, Enum::A("abc".to_string()));
 
     let (De(enum_), _) = Compiler::new()
         .implicit_prelude(false)

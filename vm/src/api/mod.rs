@@ -135,9 +135,10 @@ impl<'a> Data<'a> {
         match self.0 {
             DataInner::Tag(_) => None,
             DataInner::Data(data) => unsafe {
-                thread.lookup_field(data, name).ok().map(|v| {
-                    Variants::with_root(v, data)
-                })
+                thread
+                    .lookup_field(data, name)
+                    .ok()
+                    .map(|v| Variants::with_root(v, data))
             },
         }
     }
@@ -1089,19 +1090,21 @@ impl<'vm> ArrayRef<'vm> {
 /// Type which represents an array
 pub struct Array<'vm, T>(RootedValue<&'vm Thread>, PhantomData<T>);
 
-impl<'vm, T> Deref for Array<'vm, T> {
-    type Target = ValueArray;
-    fn deref(&self) -> &ValueArray {
-        match *self.0 {
-            Value::Array(ref data) => data,
-            _ => panic!("Expected an array found {:?}", self.0),
-        }
-    }
-}
-
 impl<'vm, T> Array<'vm, T> {
     pub fn vm(&self) -> &'vm Thread {
         self.0.vm_()
+    }
+
+    pub fn len(&self) -> usize {
+        self.get_value_array().len()
+    }
+
+    #[doc(hidden)]
+    pub fn get_value_array(&self) -> &ValueArray {
+        match *self.0 {
+            Value::Array(ref array) => array,
+            _ => panic!("Expected an array found {:?}", self.0),
+        }
     }
 }
 
@@ -1352,7 +1355,8 @@ pub mod record {
     }
 
     impl<'vm, F: Field, H: Pushable<'vm>, T> PushableFieldList<'vm> for HList<(F, H), T>
-        where T: PushableFieldList<'vm>
+    where
+        T: PushableFieldList<'vm>,
     {
         fn push(self, vm: &'vm Thread, fields: &mut Context) -> Result<()> {
             let HList((_, head), tail) = self;
@@ -1432,11 +1436,8 @@ pub mod record {
         fn from_value(vm: &'vm Thread, value: Variants) -> Option<Self> {
             match value.0 {
                 Value::Data(ref data) => {
-                    HList::<(F, A), T>::from_value(vm, &data.fields).map(
-                        |fields| {
-                            Record { fields: fields }
-                        },
-                    )
+                    HList::<(F, A), T>::from_value(vm, &data.fields)
+                        .map(|fields| Record { fields: fields })
                 }
                 _ => None,
             }
