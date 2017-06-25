@@ -279,7 +279,7 @@ macro_rules! layout {
                                 err.span.end.absolute,
                                 err.value.into())
                 })?;
-            let token = token.map_err(|err| pos::spanned2(0.into(), 0.into(), err.into()))?;
+            let token = token.map_err(|err| pos::spanned(err.span, err.value.into()))?;
             debug!("Lex {:?}", token.value);
             let Span { start, end, .. } = token.span;
             Ok((start.absolute, token.value, end.absolute))

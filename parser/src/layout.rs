@@ -71,13 +71,13 @@ impl Contexts {
         self.stack.pop()
     }
 
-    fn push(&mut self, offside: Offside) -> Result<(), Error> {
+    fn push(&mut self, offside: Offside) -> Result<(), Spanned<Error, BytePos>> {
         self.check_unindentation_limit(offside)?;
         self.stack.push(offside);
         Ok(())
     }
 
-    fn check_unindentation_limit(&mut self, offside: Offside) -> Result<(), Error> {
+    fn check_unindentation_limit(&mut self, offside: Offside) -> Result<(), Spanned<Error, BytePos>> {
         let mut skip_block = false;
         for other_offside in self.stack.iter().rev() {
             match other_offside.context {
@@ -96,7 +96,7 @@ impl Contexts {
                 _ => continue,
             }
             debug!("Unindentation error: {:?} < {:?}", offside, other_offside);
-            return Err(Error::UnindentedTooFar);
+            return Err(pos::spanned2(offside.location.absolute, offside.location.absolute, Error::UnindentedTooFar));
         }
         Ok(())
     }
@@ -146,7 +146,7 @@ impl<'input, Tokens> Layout<'input, Tokens>
         pos::spanned(span, layout_token)
     }
 
-    fn scan_for_next_block(&mut self, context: Context) -> Result<(), Error> {
+    fn scan_for_next_block(&mut self, context: Context) -> Result<(), Spanned<Error, BytePos>> {
         let next = self.next_token();
         let span = next.span;
         self.unprocessed_tokens.push(next);
@@ -158,7 +158,7 @@ impl<'input, Tokens> Layout<'input, Tokens>
             .push(Offside::new(span.start, context))
     }
 
-    fn layout_next_token(&mut self) -> Result<SpannedToken<'input>, Error> {
+    fn layout_next_token(&mut self) -> Result<SpannedToken<'input>, Spanned<Error, BytePos>> {
         use std::cmp::Ordering;
 
         let mut token = self.next_token();
@@ -436,9 +436,9 @@ fn token_closes_context(token: &Token, context: Context) -> bool {
 impl<'input, Tokens> Iterator for Layout<'input, Tokens>
     where Tokens: Iterator<Item = SpannedToken<'input>>
 {
-    type Item = Result<SpannedToken<'input>, Error>;
+    type Item = Result<SpannedToken<'input>, Spanned<Error, BytePos>>;
 
-    fn next(&mut self) -> Option<Result<SpannedToken<'input>, Error>> {
+    fn next(&mut self) -> Option<Self::Item> {
         match self.layout_next_token() {
             Ok(Spanned { value: Token::EOF, .. }) => None,
             token => Some(token),
