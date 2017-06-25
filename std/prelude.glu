@@ -382,8 +382,13 @@ let make_Monad m =
         match xs with
         | Cons y ys -> f x y >>= (\a -> foldM f a ys)
         | Nil -> pure x
+    
+    let mapM f xs =
+        match xs with
+        | Cons y ys -> f y >>= (\a -> mapM f ys >>= \rest -> pure (Cons a rest))
+        | Nil -> pure Nil
 
-    { applicative, flat_map, (=<<), (>>=), join, forM_, foldM }
+    { applicative, flat_map, (=<<), (>>=), join, forM_, foldM, mapM }
 
 /// `Show a` represents a conversion function from `a` to a readable string.
 type Show a = { show : a -> String }
@@ -506,6 +511,8 @@ let foldr f x xs =
     | Cons y ys -> f y (foldr f x ys)
     | Nil -> x
 
+let len = foldl (\x _ -> num_Int.(+) x 1) 0
+
 {
     Bool,
     Ordering,
@@ -521,6 +528,7 @@ let foldr f x xs =
     list,
     foldl,
     foldr,
+    len,
 
     Monoid,
     make_Monoid,

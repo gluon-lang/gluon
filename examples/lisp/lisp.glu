@@ -1,5 +1,5 @@
 let prelude = import! "std/prelude.glu"
-let { List, Functor, Applicative, Monad, id } = prelude
+let { List, Functor, Applicative, Monad, id, list, len = list_len } = prelude
 let { (==) } = prelude.eq_Int
 let { (==) } = prelude.eq_Float
 let {
@@ -26,11 +26,25 @@ let string = import! "std/string.glu"
 let { (==) } = string.eq
 let { (<>) } = prelude.make_Monoid string.monoid
 
+let map = import! "std/map.glu"
+let { Map } = map
+let prim_map = map.make string.ord
+
 type Expr =
     | Atom String
     | Int Int
     | Float Float
     | List (List Expr)
+    | Function Function
+    | Primitive (List Expr -> Lisp Expr)
+and Function = {
+    params : Array String,
+    vararg : Option String,
+    body : Expr,
+    closure : Map String Expr
+}
+and LispState = Map String Expr
+and Lisp a = LispState -> Result String { value : a, state : LispState }
 
 let eq : Eq Expr =
     let eq_expr l r : Expr -> Expr -> Bool =
@@ -56,20 +70,27 @@ let eq : Eq Expr =
     { (==) = eq_expr }
 
 let show : Show Expr =
-    let spaced xs =
+    let spaced show_ xs =
         match xs with
-        | Cons y ys -> show y <> spaced1 ys
+        | Cons y ys -> show_ y <> spaced1 show_ ys
         | Nil -> ""
-    and spaced1 xs =
+    and spaced1 show_ xs =
         match xs with
-        | Cons y ys -> " " <> show y <> spaced1 ys
+        | Cons y ys -> " " <> show_ y <> spaced1 show_ ys
         | Nil -> ""
-    and show expr =
+    let show expr =
         match expr with
         | Atom s -> s
         | Int i -> prelude.show_Int.show i
         | Float f -> prelude.show_Float.show f
-        | List ls -> "(" <> spaced ls <> ")"
+        | List ls -> "(" <> spaced show ls <> ")"
+        | Function f ->
+            let vararg =
+                match f.vararg with
+                | Some arg -> " . " <> arg
+                | None -> ""
+            "(lambda (" <> spaced id (list f.params) <> ")" <> vararg <> ") ...)"
+        | Primitive _ -> "<primitive>"
     { show }
 
 let { (<*), (*>), map2, pure } = prelude.make_Applicative applicative
@@ -104,14 +125,6 @@ let list _ : () -> Parser Expr =
     between (token '(') (token ')') (spaces *> functor.map (\x -> List x) (many e))
 and expr _ : () -> Parser Expr = (atom <|> float <|> int <|> lazy_parser list) <* spaces
 
-
-let map = import! "std/map.glu"
-let { Map } = map
-let prim_map = map.make string.ord
-
-type LispState = Map String Expr
-type Lisp a = LispState -> Result String { value : a, state : LispState }
-
 let lisp : Lisp a -> Lisp a = id
 
 let functor_Lisp : Functor Lisp = {
@@ -143,37 +156,58 @@ let monad_Lisp : Monad Lisp = {
         | Err err -> Err err)
 }
 
-let { (>>=), foldM } = prelude.make_Monad monad_Lisp
+let { (>>=), foldM, mapM } = prelude.make_Monad monad_Lisp
+let { map = map_lisp } = functor_Lisp
 
 let fail msg : String -> Lisp a = lisp (\_ -> Err msg)
 
-let primitive name int_op float_op
-    : _ -> _ -> _ -> Map String (Expr -> Expr -> Lisp Expr) =
-    prim_map.singleton name (\l r ->
-        match l with
-        | Int li ->
-            match r with
-            | Int ri -> pure (Int (int_op li ri))
-            | _ -> fail ("Cant add " <> show.show r)
-        | Float lf ->
-            match r with
-            | Float rf -> pure (Float (float_op lf rf))
-            | _ -> fail ("Cant add " <> show.show r)
-        | _ -> fail ("Cant add " <> show.show l)
-        )
+let primitive name f : String -> _ -> Map String Expr =
+    prim_map.singleton name (Primitive f)
+
+type Binop a = a -> a -> a
+
+let primitive_binop name int_op float_op : _ -> Binop Int -> Binop Float -> Map String Expr =
+    let unpack x : Expr -> Lisp Int =
+        match x with
+        | Int i -> pure i
+        | _ -> fail "Expected integer"
+    let unpack x : Expr -> Lisp Float =
+        match x with
+        | Float f -> pure f
+        | _ -> fail "Expected float"
+    
+    let fold unpack op = foldM (\acc x -> map_lisp (\y -> op acc y) (unpack x))
+
+    let f xs : List Expr -> Lisp Expr =
+        match xs with
+        | Cons l ys ->
+            match l with
+            | Int li ->
+                map_lisp Int (fold unpack int_op li ys)
+            | Float lf ->
+                map_lisp Float (fold unpack float_op lf ys)
+            | _ -> fail ("Cant add " <> show.show l)
+        | _ -> fail ("Expected two arguments to binop, got " <> show.show (List xs))
+    primitive name f
 
 let primitives =
     let { (<>) = (++) } = prelude.make_Monoid prim_map.monoid
-    primitive "+" (+) (+) ++
-        primitive "-" (-) (-) ++
-        primitive "*" (*) (*) ++
-        primitive "/" (/) (/)
+    primitive_binop "+" (+) (+) ++
+        primitive_binop "-" (-) (-) ++
+        primitive_binop "*" (*) (*) ++
+        primitive_binop "/" (/) (/)
+
+let apply f xs =
+    match f with
+    | Primitive primitive -> primitive xs
+    | _ -> fail "Can't call value"
 
 let eval_lisp expr : Expr -> Lisp Expr =
     match expr with
     | Atom _ -> fail "unimplemented"
     | Int _ -> pure expr
     | Float _ -> pure expr
+    | Function _ -> pure expr
     | List list ->
         match list with
         | Cons x xs ->
@@ -181,11 +215,8 @@ let eval_lisp expr : Expr -> Lisp Expr =
             | Atom name ->
                 match prim_map.find name primitives with
                 | Some prim ->
-                    match xs with
-                    | Cons y ys ->
-                        let arg_eval l r = eval_lisp r >>= (\a -> prim l a)
-                        eval_lisp y >>= (\y -> foldM arg_eval y ys)
-                    | Nil -> fail "Expected arguments to primitive"
+                    mapM eval_lisp xs >>= \evaluated_args ->
+                        apply prim evaluated_args
                 | None -> fail ("Primitive `" <> name <> "` does not exist")
             | _ -> fail ("Cant apply" <> show.show x)
         | Nil -> pure expr
