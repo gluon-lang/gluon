@@ -438,3 +438,29 @@ Types do not match:
 "#
     );
 }
+
+#[test]
+fn alias_mismatch() {
+    let _ = ::env_logger::init();
+    let text = r#"
+type A = | A Int
+type B = | B Float
+let eq x _ : a -> a -> a = x
+eq (A 0) (B 0.0)
+"#;
+    let result = support::typecheck(text);
+
+    assert_eq!(
+        &*format!("{}", result.unwrap_err()).replace("\t", "        "),
+        r#"test:Line: 5, Column: 10: Expected the following types to be equal
+Expected: test.A
+Found: test.B
+1 errors were found during unification:
+Types do not match:
+        Expected: test.A
+        Found: test.B
+eq (A 0) (B 0.0)
+         ^~~~~~~
+"#
+    );
+}

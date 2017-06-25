@@ -404,37 +404,36 @@ struct Equivalent {
 
 impl<'a> Unifier<State<'a>, ArcType> for Equivalent {
     fn report_error(
-        _unifier: &mut UnifierState<State<'a>, Self>,
+        unifier: &mut UnifierState<State<'a>, Self>,
         _error: UnifyError<ArcType, TypeError<Symbol>>,
     ) {
+        unifier.unifier.equiv = false;
     }
 
-    fn try_match(
+    fn try_match_res(
         unifier: &mut UnifierState<State<'a>, Self>,
         l: &ArcType,
         r: &ArcType,
-    ) -> Option<ArcType> {
+    ) -> Result<Option<ArcType>, UnifyError<ArcType, TypeError<Symbol>>> {
         debug!("{} ====> {}", l, r);
         match (&**l, &**r) {
-            (&Type::Generic(ref gl), &Type::Generic(ref gr)) if gl == gr => None,
+            (&Type::Generic(ref gl), &Type::Generic(ref gr)) if gl == gr => Ok(None),
             (&Type::Generic(ref gl), _) => {
                 match unifier.unifier.map.get(&gl.id).cloned() {
-                    Some(ref typ) => unifier.try_match(typ, r),
+                    Some(ref typ) => unifier.try_match_res(typ, r),
                     None => {
                         unifier.unifier.map.insert(gl.id.clone(), r.clone());
-                        None
+                        Ok(None)
                     }
                 }
             }
-            _ => {
-                match l.zip_match(r, unifier) {
-                    Ok(typ) => typ,
-                    Err(_) => {
-                        unifier.unifier.equiv = false;
-                        None
-                    }
-                }
-            }
+            _ => l.zip_match(r, unifier),
         }
+    }
+
+    fn error_type(
+        _unifier: &mut UnifierState<State<'a>, Self>
+        ) -> Option<ArcType> {
+        None
     }
 }
