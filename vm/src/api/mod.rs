@@ -1310,7 +1310,7 @@ pub mod record {
         }
     }
 
-    impl<'vm, F: Field, H: Pushable<'vm>, T> PushableFieldList<'vm> for HList<(F, H), T>
+    impl<'vm, F: Field, H: Pushable<'vm>, T> PushableFieldList<'vm> for HCons<(F, H), T>
     where
         T: PushableFieldList<'vm>,
     {

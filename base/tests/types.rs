@@ -152,12 +152,12 @@ fn show_record_multi_line() {
     let expected = r#"{
     Test a = a -> String,
     x : Int,
-    test : Test Int (a -> String) ->
-        Float ->
-        (a -> String) ->
-        (a -> String) ->
-        a ->
-        String,
+    test : Test Int (a -> String)
+        -> Float
+        -> (a -> String)
+        -> (a -> String)
+        -> a
+        -> String,
     record_looooooooooooooooooooooooooooooooooong : {
         Test a = a -> String,
         x : Int,
