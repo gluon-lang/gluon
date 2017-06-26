@@ -104,8 +104,14 @@ impl<'a, T> IntoIterator for &'a mut Errors<T> {
 
 impl<T: fmt::Display> fmt::Display for Errors<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for error in &self.errors {
-            write!(f, "{}\n", error)?;
+        for (i, error) in self.errors.iter().enumerate() {
+            write!(f, "{}", error)?;
+            // Errors are assumed to not have a newline at the end so we add one to keep errors on
+            // separate lines and one to space them out
+            if i + 1 != self.errors.len() {
+                writeln!(f)?;
+                writeln!(f)?;
+            }
         }
         Ok(())
     }
