@@ -79,6 +79,7 @@ impl<I> From<RenameError> for TypeError<I> {
 impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::TypeError::*;
+        use pretty::{DocAllocator, Arena};
         match *self {
             UndefinedVariable(ref name) => write!(f, "Undefined variable `{}`", name),
             NotAFunction(ref typ) => write!(f, "`{}` is not a function", typ),
@@ -87,12 +88,24 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
                 write!(f, "Type `{}` does not have the field `{}`", typ, field)
             }
             Unification(ref expected, ref actual, ref errors) => {
+                let arena = Arena::new();
+                let doc = chain![&arena;
+                    "Expected:",
+                    chain![&arena;
+                        arena.space(),
+                        expected.pretty(&arena)
+                    ].nest(4).group(),
+                    arena.newline(),
+                    "Found:",
+                    chain![&arena;
+                        arena.space(),
+                        actual.pretty(&arena)
+                    ].nest(4).group()
+                ].group();
                 writeln!(
                     f,
-                    "Expected the following types to be equal\nExpected: {}\nFound: {}\n{} \
-                     errors were found during unification:",
-                    expected,
-                    actual,
+                    "Expected the following types to be equal\n{}\n{} errors were found during unification:",
+                    doc.1.pretty(80),
                     errors.len()
                 )?;
                 if errors.is_empty() {
@@ -785,7 +798,10 @@ impl<'a> Typecheck<'a> {
                         *typ = self.create_unifiable_signature(typ.clone());
                     }
                     let alias = self.find_type_info(&field.name.value)?.clone();
-                    if self.error_on_duplicated_field(&mut duplicated_fields, field.name.clone()) {
+                    if self.error_on_duplicated_field(
+                        &mut duplicated_fields,
+                        field.name.clone(),
+                    ) {
                         new_types.push(Field::new(field.name.value.clone(), alias));
                     }
                 }
@@ -796,7 +812,10 @@ impl<'a> Typecheck<'a> {
                         Some(ref mut expr) => self.typecheck(expr),
                         None => self.find(&field.name.value)?,
                     };
-                    if self.error_on_duplicated_field(&mut duplicated_fields, field.name.clone()) {
+                    if self.error_on_duplicated_field(
+                        &mut duplicated_fields,
+                        field.name.clone(),
+                    ) {
                         new_fields.push(Field::new(field.name.value.clone(), typ));
                     }
                 }

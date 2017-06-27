@@ -638,6 +638,13 @@ where
             _ => false,
         }
     }
+
+    pub fn pretty<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>>
+    where
+        Id: AsRef<str>,
+    {
+        top(self).pretty(arena)
+    }
 }
 
 impl<T> Type<Symbol, T>
@@ -953,10 +960,6 @@ fn top<'a, I, T>(typ: &'a Type<I, T>) -> DisplayType<'a, I, T> {
     dt(Prec::Top, typ)
 }
 
-pub fn display_type<'a, E, I, T>(_: &E, typ: &'a Type<I, T>) -> DisplayType<'a, I, T> {
-    top(typ)
-}
-
 pub struct DisplayType<'a, I: 'a, T: 'a> {
     prec: Prec,
     typ: &'a Type<I, T>,
@@ -997,7 +1000,7 @@ impl<'a, I, T> DisplayType<'a, I, T>
 where
     T: Deref<Target = Type<I, T>> + 'a,
 {
-    fn pretty(&self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>>
+    pub fn pretty(&self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>>
     where
         I: AsRef<str>,
     {
@@ -1014,24 +1017,21 @@ where
             Type::App(ref t, ref args) => {
                 match self.typ.as_function() {
                     Some((arg, ret)) => {
-                        let doc =
-                            chain![arena;
-                                dt(Prec::Function, arg).pretty(arena).group(),
-                                arena.space(),
-                                "-> ",
-                                top(ret).pretty(arena)];
+                        let doc = chain![arena;
+                            dt(Prec::Function, arg).pretty(arena).group(),
+                            arena.space(),
+                            "-> ",
+                            top(ret).pretty(arena)
+                        ].group();
 
                         p.enclose(Prec::Function, arena, doc)
                     }
                     None => {
                         let doc = dt(Prec::Top, t).pretty(arena);
                         let arg_doc = arena.concat(args.iter().map(|arg| {
-                            arena.space().append(
-                                dt(
-                                    Prec::Constructor,
-                                    arg,
-                                ).pretty(arena),
-                            )
+                            arena
+                                .space()
+                                .append(dt(Prec::Constructor, arg).pretty(arena))
                         }));
                         let doc = doc.append(arg_doc.nest(INDENT));
                         p.enclose(Prec::Constructor, arena, doc).group()

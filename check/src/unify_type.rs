@@ -729,7 +729,11 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
         unifier.unifier.errors.push(error);
     }
 
-    fn try_match_res(unifier: &mut UnifierState<Self>, l: &ArcType, r: &ArcType) -> Result<Option<ArcType>, UnifyError<ArcType, TypeError<Symbol>>> {
+    fn try_match_res(
+        unifier: &mut UnifierState<Self>,
+        l: &ArcType,
+        r: &ArcType,
+    ) -> Result<Option<ArcType>, UnifyError<ArcType, TypeError<Symbol>>> {
         let subs = unifier.unifier.subs;
         // Retrieve the 'real' types by resolving
         let l = subs.real(l);

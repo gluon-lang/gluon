@@ -431,9 +431,7 @@ impl<'a> Unifier<State<'a>, ArcType> for Equivalent {
         }
     }
 
-    fn error_type(
-        _unifier: &mut UnifierState<State<'a>, Self>
-        ) -> Option<ArcType> {
+    fn error_type(_unifier: &mut UnifierState<State<'a>, Self>) -> Option<ArcType> {
         None
     }
 }

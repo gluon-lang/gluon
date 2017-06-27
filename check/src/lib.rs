@@ -10,8 +10,10 @@ extern crate log;
 #[cfg(test)]
 extern crate env_logger;
 extern crate union_find;
+extern crate pretty;
 extern crate smallvec;
 
+#[macro_use]
 extern crate gluon_base as base;
 
 pub mod typecheck;

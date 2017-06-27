@@ -1,8 +1,11 @@
+use std::ops::Deref;
 use std::fmt;
 use std::hash::Hash;
 
 use base::error::Errors;
 use base::fnv::FnvMap;
+use base::types::Type;
+
 use substitution::{Substitution, Substitutable, Variable};
 
 #[derive(Debug, PartialEq)]
@@ -12,16 +15,32 @@ pub enum Error<T, E> {
     Other(E),
 }
 
-impl<T, E> fmt::Display for Error<T, E>
+impl<I, T, E> fmt::Display for Error<T, E>
 where
-    T: fmt::Display,
+    I: AsRef<str>,
+    T: fmt::Display + Deref<Target = Type<I, T>>,
     E: fmt::Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use unify::Error::*;
+
         match *self {
             TypeMismatch(ref l, ref r) => {
-                write!(f, "Types do not match:\n\tExpected: {}\n\tFound: {}", l, r)
+                use pretty::{DocAllocator, Arena};
+
+                let arena = Arena::new();
+                let doc = chain![&arena;
+                    arena.newline(),
+                    "Expected:",
+                    arena.space(),
+                    l.pretty(&arena).group(),
+                    arena.newline(),
+                    "Found:",
+                    arena.space(),
+                    r.pretty(&arena).group()
+                ].group()
+                    .nest(4);
+                write!(f, "Types do not match:{}", doc.1.pretty(80))
             }
             Occurs(ref var, ref typ) => write!(f, "Variable `{}` occurs in `{}`.", var, typ),
             Other(ref err) => write!(f, "{}", err),
@@ -44,7 +63,11 @@ impl<S, U> UnifierState<S, U> {
         Unifier::report_error(self, error)
     }
 
-    pub fn try_match_res<Type>(&mut self, l: &Type, r: &Type) -> Result<Option<Type>, Error<Type, Type::Error>>
+    pub fn try_match_res<Type>(
+        &mut self,
+        l: &Type,
+        r: &Type,
+    ) -> Result<Option<Type>, Error<Type, Type::Error>>
     where
         U: Unifier<S, Type>,
         Type: Unifiable<S>,
@@ -78,7 +101,11 @@ where
             }
         }
     }
-    fn try_match_res(unifier: &mut UnifierState<S, Self>, l: &Type, r: &Type) -> Result<Option<Type>, Error<Type, Type::Error>>;
+    fn try_match_res(
+        unifier: &mut UnifierState<S, Self>,
+        l: &Type,
+        r: &Type,
+    ) -> Result<Option<Type>, Error<Type, Type::Error>>;
 
     fn error_type(unifier: &mut UnifierState<S, Self>) -> Option<Type>;
 }
@@ -152,7 +179,11 @@ where
         unifier.unifier.errors.push(error);
     }
 
-    fn try_match_res(unifier: &mut UnifierState<S, Self>, l: &T, r: &T) -> Result<Option<T>, Error<T, T::Error>> {
+    fn try_match_res(
+        unifier: &mut UnifierState<S, Self>,
+        l: &T,
+        r: &T,
+    ) -> Result<Option<T>, Error<T, T::Error>> {
         let subs = unifier.unifier.subs;
         // Retrieve the 'real' types by resolving
         let l = subs.real(l);
@@ -221,7 +252,11 @@ where
 {
     fn report_error(_unifier: &mut UnifierState<S, Self>, _error: Error<T, T::Error>) {}
 
-    fn try_match_res(unifier: &mut UnifierState<S, Self>, l: &T, r: &T) -> Result<Option<T>, Error<T, T::Error>> {
+    fn try_match_res(
+        unifier: &mut UnifierState<S, Self>,
+        l: &T,
+        r: &T,
+    ) -> Result<Option<T>, Error<T, T::Error>> {
         let subs = unifier.unifier.subs;
         let l = subs.real(l);
         let r = subs.real(r);
