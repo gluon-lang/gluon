@@ -4,9 +4,10 @@ use itertools::Itertools;
 use pretty::{Arena, DocAllocator, DocBuilder};
 
 use ast::{Expr, Comment, CommentType, is_operator_char, Literal, Pattern, SpannedExpr, SpannedPattern, ValueBinding};
+use kind::Kind;
 use pos::{BytePos, Span};
 use source::Source;
-use types::{Type, pretty_print as pretty_type};
+use types::{Prec, Type, pretty_print as pretty_type};
 
 const INDENT: usize = 4;
 
@@ -72,6 +73,28 @@ fn doc_comment<'a>(arena: &'a Arena<'a>, text: &'a Option<Comment>) -> DocBuilde
     }
 }
 
+pub fn pretty_kind<'a>(
+    arena: &'a Arena<'a>,
+    prec: Prec,
+    kind: &'a Kind,
+) -> DocBuilder<'a, Arena<'a>>
+{
+    match *kind {
+        Kind::Type => arena.text("Type"),
+        Kind::Row => arena.text("Row"),
+        Kind::Hole => arena.text("_"),
+        Kind::Variable(ref id) => arena.text(id.to_string()),
+        Kind::Function(ref a, ref r) => {
+            let doc = chain![arena;
+                pretty_kind(arena, Prec::Function, a),
+                arena.space(),
+                "-> ",
+                pretty_kind(arena, Prec::Top, r)
+            ];
+            prec.enclose(Prec::Function, arena, doc)
+        }
+    }
+}
 pub fn pretty_pattern<'a, Id>(
     arena: &'a Arena<'a>,
     pattern: &'a SpannedPattern<Id>,
@@ -224,14 +247,15 @@ impl<'a> ExprPrinter<'a> {
             }
             Expr::Ident(ref id) => ident(arena, id.name.as_ref()),
             Expr::IfElse(ref body, ref if_true, ref if_false) => {
+                let space = newline(arena, expr);
                 chain![arena;
                     arena.text("if ").append(pretty(body)).group(),
                     arena.space(),
                     "then",
-                    arena.space().append(pretty(if_true)).nest(INDENT).group(),
-                    arena.space(),
+                    space.clone().append(pretty(if_true)).nest(INDENT).group(),
+                    space.clone(),
                     "else",
-                    arena.space().append(pretty(if_false)).nest(INDENT).group()
+                    space.append(pretty(if_false)).nest(INDENT).group()
                 ]
             }
             Expr::Infix(ref l, ref op, ref r) => {
@@ -339,7 +363,21 @@ impl<'a> ExprPrinter<'a> {
                             bind.name.value.as_ref(),
                             " ",
                             arena.concat(bind.alias.value.args.iter().map(|arg| {
-                                arena.text(arg.id.as_ref()).append(" ")
+                                if *arg.kind != Kind::Type && *arg.kind != Kind::Hole {
+                                    chain![arena;
+                                        chain![arena;
+                                            "(",
+                                            arg.id.as_ref(),
+                                            " :",
+                                            arena.space(),
+                                            pretty_kind(arena, Prec::Top, &arg.kind).group(),
+                                            ")"
+                                        ].group(),
+                                        " "
+                                    ]
+                                } else {
+                                    chain![arena; arg.id.as_ref(), " "]
+                                }
                             })),
                             "=",
                             arena.space()

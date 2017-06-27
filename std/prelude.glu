@@ -30,7 +30,7 @@ This means the following laws must hold:
 */
 type Monoid m = { append : m -> m -> m, empty : m }
 
-let monoid_Function m : Monoid b -> (Monoid (a -> b)) = {
+let monoid_Function m : Monoid b -> Monoid (a -> b) = {
     append = \f g -> \x -> m.append (f x) (g x),
     empty = \_ -> m.empty
 }
@@ -257,9 +257,7 @@ let (>>) : (a -> b) -> (b -> c) -> a -> c = (make_Category category_Function).(>
 A `Functor` represents an action on a parameterized type which does not change the structure with
 the mapped type.
 */
-type Functor (f : Type -> Type) = {
-    map : (a -> b) -> f a -> f b
-}
+type Functor f = { map : (a -> b) -> f a -> f b }
 
 let functor_Function : Functor ((->) a) = { map = category_Function.compose }
 

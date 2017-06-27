@@ -914,7 +914,7 @@ impl fmt::Display for BuiltinType {
 }
 
 #[derive(PartialEq, Copy, Clone, PartialOrd)]
-enum Prec {
+pub enum Prec {
     /// The type exists in the top context, no parentheses needed.
     Top,
     /// The type exists in a function argument `Type -> a`, parentheses are
@@ -925,6 +925,22 @@ enum Prec {
     /// `Option (Result a b)`.
     Constructor,
 }
+
+impl Prec {
+    pub fn enclose<'a>(
+        &self,
+        limit: Prec,
+        arena: &'a Arena<'a>,
+        doc: DocBuilder<'a, Arena<'a>>,
+    ) -> DocBuilder<'a, Arena<'a>> {
+        if *self >= limit {
+            chain![arena; "(", doc, ")"]
+        } else {
+            doc
+        }
+    }
+}
+
 
 fn dt<'a, I, T>(prec: Prec, typ: &'a Type<I, T>) -> DisplayType<'a, I, T> {
     DisplayType {
@@ -987,19 +1003,6 @@ where
     {
         use pretty_print::ident;
 
-        fn enclose<'a>(
-            p: Prec,
-            limit: Prec,
-            arena: &'a Arena<'a>,
-            doc: DocBuilder<'a, Arena<'a>>,
-        ) -> DocBuilder<'a, Arena<'a>> {
-            if p >= limit {
-                chain![arena; "(", doc, ")"]
-            } else {
-                doc
-            }
-        }
-
         let p = self.prec;
         match *self.typ {
             Type::Hole => arena.text("_"),
@@ -1015,7 +1018,7 @@ where
                                          arena.space(),
                                          top(ret).pretty(arena)];
 
-                        enclose(p, Prec::Function, arena, doc)
+                        p.enclose(Prec::Function, arena, doc)
                     }
                     None => {
                         let mut doc = dt(Prec::Top, t).pretty(arena);
@@ -1023,7 +1026,7 @@ where
                             doc = doc.append(arena.space())
                                 .append(dt(Prec::Constructor, arg).pretty(arena));
                         }
-                        enclose(p, Prec::Constructor, arena, doc).group()
+                        p.enclose(Prec::Constructor, arena, doc).group()
                     }
                 }
             }
@@ -1051,7 +1054,7 @@ where
                     ref typ => panic!("Unexpected type `{}` in variant", typ),
                 };
 
-                enclose(p, Prec::Constructor, arena, doc).group()
+                p.enclose(Prec::Constructor, arena, doc).group()
             }
             Type::Builtin(ref t) => {
                 match *t {
