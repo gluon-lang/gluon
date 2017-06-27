@@ -282,7 +282,7 @@ impl<'a> ExprPrinter<'a> {
                 match *literal {
                     Literal::Byte(b) => arena.text(format!("b{}", b)),
                     Literal::Char(c) => arena.text(format!("{:?}", c)),
-                    Literal::Float(f) => arena.text(format!("{}", f)),
+                    Literal::Float(f) => arena.text(format!("{:.1}", f)),
                     Literal::Int(i) => arena.text(format!("{}", i)),
                     Literal::String(ref s) => arena.text(format!("{:?}", s)),
                 }
