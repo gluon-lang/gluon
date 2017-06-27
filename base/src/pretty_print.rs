@@ -379,15 +379,16 @@ impl<'a> ExprPrinter<'a> {
                 ref exprs,
                 ..
             } => {
+                let newline = if forced_new_line(&expr.value) {
+                    arena.newline()
+                } else {
+                    arena.space()
+                };
                 let record = chain![arena;
                     if types.is_empty() && exprs.is_empty() {
                         arena.nil()
                     } else {
-                        if forced_new_line(&expr.value) {
-                            arena.newline()
-                        } else {
-                            arena.space()
-                        }
+                        newline.clone()
                     },
                     arena.concat(types.iter().map(|field| {
                         ident(arena, field.name.as_ref())
@@ -397,9 +398,9 @@ impl<'a> ExprPrinter<'a> {
                             Some(ref expr) => self.hang(id.append(" ="), expr),
                             None => id,
                         }
-                    })).intersperse(arena.text(",").append(arena.space())))
+                    })).intersperse(arena.text(",").append(newline.clone())))
                 ].nest(INDENT)
-                    .append(arena.space())
+                    .append(newline)
                     .group()
                     .append("}");
                 (arena.text("{"), record)

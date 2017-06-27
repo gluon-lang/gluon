@@ -6,9 +6,7 @@ type Stream_ a = | Value a (Stream a) | Empty
 and Stream a = Lazy (Stream_ a)
 
 let from f : (Int -> Option a) -> Stream a =
-    let from_ i =
-        lazy
-            (\_ ->
+    let from_ i = lazy (\_ ->
             match f i with
             | Some x -> Value x (from_ (i + 1))
             | None -> Empty)
