@@ -1055,6 +1055,10 @@ where
             }
             Type::Builtin(ref t) => arena.text(t.to_str()),
             Type::Record(ref row) => {
+                // Empty records are always formatted as unit (`()`)
+                if let Type::EmptyRow = **row {
+                    return arena.text("()");
+                }
                 let mut doc = arena.text("{");
                 let empty_fields = match **row {
                     Type::ExtendRow { .. } => false,

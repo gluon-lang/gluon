@@ -76,7 +76,7 @@ fn some_record() -> ArcType<&'static str> {
 fn show_record() {
     assert_eq_display!(
         format!("{}", Type::<&str, ArcType<&str>>::record(vec![], vec![])),
-        "{}"
+        "()"
     );
     let typ = Type::record(
         vec![],
