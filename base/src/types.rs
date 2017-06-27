@@ -1053,7 +1053,14 @@ where
 
                 enclose(p, Prec::Constructor, arena, doc).group()
             }
-            Type::Builtin(ref t) => arena.text(t.to_str()),
+            Type::Builtin(ref t) => {
+                match *t {
+                    BuiltinType::Function => {
+                        chain![arena; "(", t.to_str(), ")"]
+                    }
+                    _ => arena.text(t.to_str())
+                }
+            }
             Type::Record(ref row) => {
                 // Empty records are always formatted as unit (`()`)
                 if let Type::EmptyRow = **row {

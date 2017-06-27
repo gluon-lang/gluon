@@ -286,7 +286,7 @@ impl<'input, Tokens> Layout<'input, Tokens>
                 }
                 (Context::Block { emit_semi: false }, Ordering::Equal) => {
                     match token.value {
-                        Token::DocComment(_) |
+                        Token::DocComment { .. } |
                         Token::OpenBlock => (),
                         _ => {
                             // If it is the first token in a sequence we dont want to emit a

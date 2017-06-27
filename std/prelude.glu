@@ -18,7 +18,6 @@ let unwrap_err res : Result e a -> e =
     | Err x -> x
 
 /**
-
 `Monoid m` represents an associative operation on `m` an which has an identity.
 This means the following laws must hold:
 
@@ -29,10 +28,7 @@ This means the following laws must hold:
 * x <> (y <> z) = (x <> y) <> z
 
 */
-type Monoid m = {
-    append : m -> m -> m,
-    empty : m
-}
+type Monoid m = { append : m -> m -> m, empty : m }
 
 let monoid_Function m : Monoid b -> (Monoid (a -> b)) = {
     append = \f g -> \x -> m.append (f x) (g x),
@@ -49,25 +45,13 @@ let monoid_Option m : Monoid a -> Monoid (Option a) = {
     empty = None
 }
 
-let monoid_Int_Add = {
-    append = \x y -> x #Int+ y,
-    empty = 0
-}
+let monoid_Int_Add = { append = \x y -> x #Int+ y, empty = 0 }
 
-let monoid_Int_Mul = {
-    append = \x y -> x #Int* y,
-    empty = 1
-}
+let monoid_Int_Mul = { append = \x y -> x #Int* y, empty = 1 }
 
-let monoid_Float_Add = {
-    append = \x y -> x #Float+ y,
-    empty = 0.0
-}
+let monoid_Float_Add = { append = \x y -> x #Float+ y, empty = 0 }
 
-let monoid_Float_Mul = {
-    append = \x y -> x #Float* y,
-    empty = 1.0
-}
+let monoid_Float_Mul = { append = \x y -> x #Float* y, empty = 1 }
 
 let make_Monoid m =
     let { append, empty } = m
@@ -79,29 +63,17 @@ let make_Monoid m =
 let not x = if x then False else True
 
 /// `Eq a` defines equality (==) on `a`
-type Eq a = {
-    (==) : a -> a -> Bool
-}
+type Eq a = { (==) : a -> a -> Bool }
 
-let eq_Unit : Eq () = {
-    (==) = \l r -> True
-}
+let eq_Unit : Eq () = { (==) = \l r -> True }
 
-let eq_Bool : Eq Bool = {
-    (==) = \l r -> if l then r else not r
-}
+let eq_Bool : Eq Bool = { (==) = \l r -> if l then r else not r }
 
-let eq_Int = {
-    (==) = \l r -> l #Int== r
-}
+let eq_Int = { (==) = \l r -> l #Int== r }
 
-let eq_Float = {
-    (==) = \l r -> l #Float== r
-}
+let eq_Float = { (==) = \l r -> l #Float== r }
 
-let eq_Char = {
-    (==) = \l r -> l #Char== r
-}
+let eq_Char = { (==) = \l r -> l #Char== r }
 
 let eq_Option a : Eq a -> Eq (Option a) = {
     (==) = \l r ->
@@ -128,27 +100,11 @@ let monoid_Ordering = {
 }
 
 /// `Ord a` defines an ordering on `a`
-type Ord a = {
-    eq : Eq a,
-    compare : a -> a -> Ordering
-}
+type Ord a = { eq : Eq a, compare : a -> a -> Ordering }
 
-let ord_Unit = {
-    eq = eq_Unit,
-    compare = \l r -> EQ
-}
+let ord_Unit = { eq = eq_Unit, compare = \l r -> EQ }
 
-let ord_Bool = {
-    eq = eq_Bool,
-    compare = \l r ->
-        if l then
-            if r then
-                EQ
-            else
-                GT
-        else
-            LT
-}
+let ord_Bool = { eq = eq_Bool, compare = \l r -> if l then if r then EQ else GT else LT }
 
 let ord_Int = {
     eq = eq_Int,
@@ -280,12 +236,10 @@ let make_Category cat =
     { id, compose, (<<), (>>) }
 
 /// The identity function, where `id x == x`
-let id : a -> a =
-    category_Function.id
+let id : a -> a = category_Function.id
 
 /// flip `f` takes creates a new function which takes its two arguments in reverse order
-let flip f : (a -> b -> c) -> b -> a -> c =
-    \x y -> f y x
+let flip f : (a -> b -> c) -> b -> a -> c = \x y -> f y x
 
 /// Backward function application, where `f <| x == f x`
 let (<|) f x : (a -> b) -> a -> b = f x
@@ -294,12 +248,10 @@ let (<|) f x : (a -> b) -> a -> b = f x
 let (|>) x f : a -> (a -> b) -> b = f x
 
 /// Right-to-left function composition
-let (<<) : (b -> c) -> (a -> b) -> a -> c =
-    (make_Category category_Function).(<<)
+let (<<) : (b -> c) -> (a -> b) -> a -> c = (make_Category category_Function).(<<)
 
 /// Left-to-right function composition
-let (>>) : (a -> b) -> (b -> c) -> a -> c =
-    (make_Category category_Function).(>>)
+let (>>) : (a -> b) -> (b -> c) -> a -> c = (make_Category category_Function).(>>)
 
 /**
 A `Functor` represents an action on a parameterized type which does not change the structure with
@@ -309,9 +261,7 @@ type Functor (f : Type -> Type) = {
     map : (a -> b) -> f a -> f b
 }
 
-let functor_Function : Functor ((->) a) = {
-    map = category_Function.compose
-}
+let functor_Function : Functor ((->) a) = { map = category_Function.compose }
 
 let functor_Option : Functor Option = {
     map = \f x ->
@@ -327,9 +277,7 @@ let functor_Result : Functor (Result e) = {
         | Err _ -> x
 }
 
-let functor_IO : Functor IO = {
-    map = \f -> io_flat_map (\x -> io_pure (f x))
-}
+let functor_IO : Functor IO = { map = \f -> io_flat_map (\x -> io_pure (f x)) }
 
 type Applicative (f : Type -> Type) = {
     functor : Functor f,
@@ -344,8 +292,7 @@ let applicative_Function : Applicative ((->) a) = {
 }
 
 /// const `x` creates a function which always returns `x`
-let const : a -> b -> a =
-    applicative_Function.pure
+let const : a -> b -> a = applicative_Function.pure
 
 let applicative_Option : Applicative Option = {
     functor = functor_Option,
@@ -453,29 +400,17 @@ let make_Monad m =
     { applicative, flat_map, (=<<), (>>=), join, forM_ }
 
 /// `Show a` represents a conversion function from `a` to a readable string.
-type Show a = {
-    show : a -> String
-}
+type Show a = { show : a -> String }
 
-let show_Unit : Show () = {
-    show = const "()"
-}
+let show_Unit : Show () = { show = const "()" }
 
-let show_Bool : Show Bool = {
-    show = \x -> if x then "True" else "False"
-}
+let show_Bool : Show Bool = { show = \x -> if x then "True" else "False" }
 
-let show_Int : Show Int = {
-    show = prim.show_Int
-}
+let show_Int : Show Int = { show = prim.show_Int }
 
-let show_Float : Show Float = {
-    show = prim.show_Float
-}
+let show_Float : Show Float = { show = prim.show_Float }
 
-let show_Char : Show Char = {
-    show = prim.show_Char
-}
+let show_Char : Show Char = { show = prim.show_Char }
 
 let (++) = string_prim.append
 

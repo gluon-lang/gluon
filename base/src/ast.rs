@@ -28,6 +28,18 @@ impl<'a, T: ?Sized + IdentEnv> IdentEnv for &'a mut T {
     }
 }
 
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+pub enum CommentType {
+    Block,
+    Line,
+}
+
+#[derive(Clone, Eq, PartialEq, Debug)]
+pub struct Comment {
+    pub typ: CommentType,
+    pub content: String,
+}
+
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct TypedIdent<Id = Symbol> {
     pub typ: ArcType<Id>,
@@ -105,7 +117,7 @@ pub type SpannedIdent<Id> = Spanned<TypedIdent<Id>, BytePos>;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct ExprField<Id, E> {
-    pub comment: Option<String>,
+    pub comment: Option<Comment>,
     pub name: Id,
     pub value: Option<E>,
 }
@@ -154,7 +166,7 @@ pub enum Expr<Id> {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct TypeBinding<Id> {
-    pub comment: Option<String>,
+    pub comment: Option<Comment>,
     pub name: Spanned<Id, BytePos>,
     pub alias: Spanned<AliasData<Id, ArcType<Id>>, BytePos>,
     pub finalized_alias: Option<Alias<Id, ArcType<Id>>>,
@@ -169,7 +181,7 @@ impl<Id> TypeBinding<Id> {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct ValueBinding<Id> {
-    pub comment: Option<String>,
+    pub comment: Option<Comment>,
     pub name: SpannedPattern<Id>,
     pub typ: ArcType<Id>,
     pub args: Vec<TypedIdent<Id>>,

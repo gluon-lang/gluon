@@ -4,6 +4,8 @@ extern crate env_logger;
 extern crate log;
 #[macro_use]
 extern crate collect_mac;
+#[macro_use]
+extern crate pretty_assertions;
 
 #[macro_use]
 mod support;
@@ -434,7 +436,10 @@ id
         no_loc(Expr::LetBindings(
             vec![
                 ValueBinding {
-                    comment: Some("The identity function".into()),
+                    comment: Some(Comment {
+                        typ: CommentType::Line,
+                        content: "The identity function".into(),
+                    }),
                     name: no_loc(Pattern::Ident(TypedIdent::new(intern("id")))),
                     typ: Type::hole(),
                     args: vec![TypedIdent::new(intern("x"))],
@@ -460,7 +465,10 @@ id
         type_decls(
             vec![
                 TypeBinding {
-                    comment: Some("Test type ".into()),
+                    comment: Some(Comment {
+                        typ: CommentType::Block,
+                        content: "Test type ".into(),
+                    }),
                     name: no_loc(intern("Test")),
                     alias: alias(intern("Test"), Vec::new(), typ("Int")),
                     finalized_alias: None,
@@ -491,7 +499,10 @@ id
             type_decls(
                 vec![
                     TypeBinding {
-                        comment: Some("Test type ".into()),
+                        comment: Some(Comment {
+                            typ: CommentType::Block,
+                            content: "Test type ".into(),
+                        }),
                         name: no_loc(intern("Test")),
                         alias: alias(intern("Test"), Vec::new(), typ("Int")),
                         finalized_alias: None,
@@ -519,7 +530,10 @@ id
         type_decls(
             vec![
                 TypeBinding {
-                    comment: Some("Merge\nconsecutive\nline comments.".into()),
+                    comment: Some(Comment {
+                        typ: CommentType::Line,
+                        content: "Merge\nconsecutive\nline comments.".into(),
+                    }),
                     name: no_loc(intern("Test")),
                     alias: alias(intern("Test"), Vec::new(), typ("Int")),
                     finalized_alias: None,
@@ -674,14 +688,20 @@ fn doc_comment_on_record_field() {
             typ: Type::hole(),
             types: vec![
                 ExprField {
-                    comment: Some("test".into()),
+                    comment: Some(Comment {
+                        typ: CommentType::Block,
+                        content: "test".into()
+                    }),
                     name: "Test".into(),
                     value: None,
                 },
             ],
             exprs: vec![
                 ExprField {
-                    comment: Some("x binding".into()),
+                    comment: Some(Comment {
+                        typ: CommentType::Line,
+                        content: "x binding".into()
+                    }),
                     name: "x".into(),
                     value: Some(int(1)),
                 },

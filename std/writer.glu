@@ -12,17 +12,17 @@ let make w : Monoid w -> Impl w =
     let functor : Functor (Writer w) = { map = \f m -> { value = f m.value, writer = m.writer } }
 
     let applicative : Applicative (Writer w) = {
-            functor,
-            apply = \mf m -> { value = mf.value m.value, writer = mf.writer <> m.writer },
-            pure = \value -> { value, writer = empty }
-        }
+        functor,
+        apply = \mf m -> { value = mf.value m.value, writer = mf.writer <> m.writer },
+        pure = \value -> { value, writer = empty }
+    }
 
     let monad : Monad (Writer w) = {
-            applicative,
-            flat_map = \f m ->
-                let { value, writer } = f m.value
-                { value, writer = m.writer <> writer }
-        }
+        applicative,
+        flat_map = \f m ->
+            let { value, writer } = f m.value
+            { value, writer = m.writer <> writer }
+    }
 
     { functor, applicative, monad }
 

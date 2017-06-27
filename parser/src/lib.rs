@@ -5,6 +5,7 @@
 
 #[macro_use] 
 extern crate log;
+extern crate itertools;
 #[macro_use]
 extern crate quick_error;
 extern crate gluon_base as base;
@@ -13,7 +14,7 @@ extern crate lalrpop_util;
 use std::cell::RefCell;
 use std::fmt;
 
-use base::ast::{Expr, IdentEnv, ValueBinding, SpannedExpr, SpannedPattern, TypedIdent};
+use base::ast::{Comment, Expr, IdentEnv, ValueBinding, SpannedExpr, SpannedPattern, TypedIdent};
 use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::symbol::Symbol;
@@ -254,8 +255,8 @@ pub enum FieldPattern<Id> {
 }
 
 pub enum FieldExpr<Id> {
-    Type(Option<String>, Id, Option<ArcType<Id>>),
-    Value(Option<String>, Id, Option<SpannedExpr<Id>>),
+    Type(Option<Comment>, Id, Option<ArcType<Id>>),
+    Value(Option<Comment>, Id, Option<SpannedExpr<Id>>),
 }
 
 // Hack around LALRPOP's limited type syntax

@@ -3,7 +3,7 @@ use std::iter::{once, repeat};
 use itertools::Itertools;
 use pretty::{Arena, DocAllocator, DocBuilder};
 
-use ast::{Expr, is_operator_char, Literal, Pattern, SpannedExpr, SpannedPattern, ValueBinding};
+use ast::{Expr, Comment, CommentType, is_operator_char, Literal, Pattern, SpannedExpr, SpannedPattern, ValueBinding};
 use pos::{BytePos, Span};
 use source::Source;
 use types::{Type, pretty_print as pretty_type};
@@ -18,32 +18,55 @@ pub fn ident<'b>(arena: &'b Arena<'b>, name: &'b str) -> DocBuilder<'b, Arena<'b
     }
 }
 
-fn forced_new_line<Id>(expr: &Expr<Id>) -> bool {
-    match *expr {
+fn forced_new_line<Id>(expr: &SpannedExpr<Id>) -> bool {
+    match expr.value {
         // len() == 1 is parentheses currently
         Expr::Block(ref exprs) if exprs.len() > 1 => true,
         Expr::LetBindings(..) |
         Expr::Match(..) |
         Expr::TypeBindings(..) => true,
-        Expr::Lambda(ref lambda) => forced_new_line(&lambda.body.value),
+        Expr::Lambda(ref lambda) => forced_new_line(&lambda.body),
         Expr::Record { ref exprs, .. } => {
             exprs.iter().any(|field| {
                 field
                     .value
                     .as_ref()
-                    .map_or(false, |expr| forced_new_line(&expr.value))
+                    .map_or(false, |expr| forced_new_line(expr))
             })
         }
+        Expr::IfElse(_, ref t, ref f) => forced_new_line(t) || forced_new_line(f),
         _ => false,
     }
 }
+fn newline<'a, Id>(arena: &'a Arena<'a>, expr: &'a SpannedExpr<Id>) -> DocBuilder<'a, Arena<'a>> {
+    if forced_new_line(expr) {
+        arena.newline()
+    } else {
+        arena.space()
+    }
+}
 
-fn doc_comment<'a>(arena: &'a Arena<'a>, text: &'a Option<String>) -> DocBuilder<'a, Arena<'a>> {
+fn doc_comment<'a>(arena: &'a Arena<'a>, text: &'a Option<Comment>) -> DocBuilder<'a, Arena<'a>> {
     match *text {
-        Some(ref text) => {
-            arena.concat(text.lines().map(|line| {
-                arena.text("/// ").append(line).append(arena.newline())
-            }))
+        Some(ref comment) => {
+            match comment.typ {
+                CommentType::Line => {
+                    arena.concat(comment.content.lines().map(|line| {
+                        arena.text("/// ").append(line).append(arena.newline())
+                    }))
+                }
+                CommentType::Block => {
+                    chain![arena;
+                        "/**",
+                        arena.newline(),
+                        arena.concat(comment.content.lines().map(|line| {
+                            arena.text(line).append(arena.newline())
+                        })),
+                        "*/",
+                        arena.newline()
+                    ]
+                }
+            }
         }
         None => arena.nil(),
     }
@@ -110,7 +133,7 @@ where
                     .intersperse(arena.text(",").append(arena.space()))
                 ),
                 ")"
-            ]
+            ].group()
         }
         Pattern::Error => arena.text("<error>"),
     }
@@ -248,7 +271,6 @@ impl<'a> ExprPrinter<'a> {
                 };
                 let prefixes = once("let ").chain(repeat("and "));
                 chain![arena;
-                    doc_comment(arena, &binds.first().unwrap().comment),
                     arena.concat(prefixes.zip(binds).map(|(prefix, bind)| {
                         binding(prefix, bind)
                     }).interleave(newlines_iter!(binds.iter().map(|bind| bind.span())))),
@@ -292,7 +314,7 @@ impl<'a> ExprPrinter<'a> {
             }
             Expr::Record { .. } => {
                 let (x, y) = self.pretty_lambda(previous_end, expr);
-                x.append(y)
+                x.append(y).group()
             }
             Expr::Tuple { ref elems, .. } => {
                 arena
@@ -379,16 +401,12 @@ impl<'a> ExprPrinter<'a> {
                 ref exprs,
                 ..
             } => {
-                let newline = if forced_new_line(&expr.value) {
-                    arena.newline()
-                } else {
-                    arena.space()
-                };
+                let line = newline(arena, expr);
                 let record = chain![arena;
                     if types.is_empty() && exprs.is_empty() {
                         arena.nil()
                     } else {
-                        newline.clone()
+                        line.clone()
                     },
                     arena.concat(types.iter().map(|field| {
                         ident(arena, field.name.as_ref())
@@ -398,9 +416,9 @@ impl<'a> ExprPrinter<'a> {
                             Some(ref expr) => self.hang(id.append(" ="), expr),
                             None => id,
                         }
-                    })).intersperse(arena.text(",").append(newline.clone())))
-                ].nest(INDENT)
-                    .append(newline)
+                    })).intersperse(arena.text(",").append(line.clone())))
+                ].block(INDENT)
+                    .append(line)
                     .group()
                     .append("}");
                 (arena.text("{"), record)
@@ -417,16 +435,20 @@ impl<'a> ExprPrinter<'a> {
     where
         Id: AsRef<str>,
     {
-        let (arguments, body) = self.pretty_lambda(BytePos::from(0), expr);
+        let (arguments, mut body) = self.pretty_lambda(BytePos::from(0), expr);
         let first = if arguments.1 == self.arena.nil().1 {
             self.arena.nil()
         } else {
             self.arena.space()
         };
+        match expr.value {
+            Expr::Record { .. } => (),
+            _ => body = body.block(INDENT),
+        }
         from.append(first)
             .append(arguments)
             .group()
-            .append(body.block(INDENT))
+            .append(body)
             .group()
     }
 
@@ -438,11 +460,7 @@ impl<'a> ExprPrinter<'a> {
     where
         Id: AsRef<str>,
     {
-        let line = if forced_new_line(&expr.value) {
-            self.arena.newline()
-        } else {
-            self.arena.space()
-        };
+        let line = newline(&self.arena, expr);
         line.append(self.pretty_expr_(previous_end, expr))
     }
 }

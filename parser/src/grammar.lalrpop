@@ -1,7 +1,9 @@
 use std::iter::once;
 use std::str::FromStr;
 
-use base::ast::{Alternative, Array, Expr, ExprField, Lambda, Literal, Pattern, SpannedExpr, TypeBinding, TypedIdent, ValueBinding};
+use itertools::Itertools;
+
+use base::ast::{Alternative, Array, Comment, Expr, ExprField, Lambda, Literal, Pattern, SpannedExpr, TypeBinding, TypedIdent, ValueBinding};
 use base::kind::{ArcKind, Kind};
 use base::pos::{self, BytePos, Spanned};
 use base::types::{AliasData, ArcType, BuiltinType, Field, Generic, Type, TypeCache};
@@ -26,7 +28,7 @@ extern {
         "int literal" => Token::IntLiteral(<i64>),
         "byte literal" => Token::ByteLiteral(<u8>),
         "float literal" => Token::FloatLiteral(<f64>),
-        "documentation comment" => Token::DocComment(<String>),
+        "documentation comment" => Token::DocComment(<Comment>),
 
         "and" => Token::And,
         "else" => Token::Else,
@@ -89,8 +91,14 @@ Ident: Id =
 Operator: TypedIdent<Id> =
     "operator" => new_ident(type_cache, env.from_str(<>));
 
-DocComment: String =
-    "documentation comment"+ => <>.join("\n");
+DocComment: Comment =
+    "documentation comment"+ => {
+        let typ = <>.last().unwrap().typ;
+        Comment {
+            typ: typ,
+            content: <>.into_iter().map(|comment| comment.content).join("\n")
+        }
+    };
 
 // Kinds
 
