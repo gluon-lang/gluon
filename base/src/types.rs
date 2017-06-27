@@ -1022,7 +1022,7 @@ where
                             arena.space(),
                             "-> ",
                             top(ret).pretty(arena)
-                        ];
+                        ].group();
 
                         p.enclose(Prec::Function, arena, doc)
                     }
