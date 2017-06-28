@@ -1,9 +1,10 @@
 use std::iter::{once, repeat};
 
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 use pretty::{Arena, DocAllocator, DocBuilder};
 
-use ast::{Expr, Comment, CommentType, is_operator_char, Literal, Pattern, SpannedExpr, SpannedPattern, ValueBinding};
+use ast::{Expr, Comment, CommentType, is_operator_char, Literal, Pattern, SpannedExpr,
+          SpannedPattern, ValueBinding};
 use kind::Kind;
 use pos::{BytePos, Span};
 use source::Source;
@@ -77,8 +78,7 @@ pub fn pretty_kind<'a>(
     arena: &'a Arena<'a>,
     prec: Prec,
     kind: &'a Kind,
-) -> DocBuilder<'a, Arena<'a>>
-{
+) -> DocBuilder<'a, Arena<'a>> {
     match *kind {
         Kind::Type => arena.text("Type"),
         Kind::Row => arena.text("Row"),
@@ -440,21 +440,33 @@ impl<'a> ExprPrinter<'a> {
                 ..
             } => {
                 let line = newline(arena, expr);
+                let ordered_iter = types.iter().map(Either::Left).merge_by(
+                    exprs.iter().map(Either::Right),
+                    |x, y| {
+                        x.either(|l| l.name.span.start, |r| r.name.span.start) <
+                            y.either(|l| l.name.span.start, |r| r.name.span.start)
+                    },
+                );
                 let record = chain![arena;
                     if types.is_empty() && exprs.is_empty() {
                         arena.nil()
                     } else {
                         line.clone()
                     },
-                    arena.concat(types.iter().map(|field| {
-                        ident(arena, field.name.value.as_ref())
-                    }).chain(exprs.iter().map(|field| {
-                        let id = ident(arena, field.name.value.as_ref());
-                        match field.value {
-                            Some(ref expr) => self.hang(id.append(" ="), expr),
-                            None => id,
+                    arena.concat(ordered_iter.map(|either| {
+                        match either {
+                            Either::Left(l) => {
+                                ident(arena, l.name.value.as_ref())
+                            }
+                            Either::Right(r) => {
+                                let id = ident(arena, r.name.value.as_ref());
+                                match r.value {
+                                    Some(ref expr) => self.hang(id.append(" ="), expr),
+                                    None => id,
+                                }
+                            }
                         }
-                    })).intersperse(arena.text(",").append(line.clone())))
+                    }).intersperse(arena.text(",").append(line.clone())))
                 ].block(INDENT)
                     .append(line)
                     .group()
