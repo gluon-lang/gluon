@@ -122,13 +122,13 @@ where
                 arena.concat(types.iter().map(|field| {
                     chain![arena;
                         arena.space(),
-                        field.0.as_ref()
+                        field.name.value.as_ref()
                     ]
                 }).chain(fields.iter().map(|field| {
                     chain![arena;
                         arena.space(),
-                        ident(arena, field.0.as_ref()),
-                        match field.1 {
+                        ident(arena, field.name.value.as_ref()),
+                        match field.value {
                             Some(ref new_name) => {
                                 chain![arena;
                                     " = ",
@@ -447,9 +447,9 @@ impl<'a> ExprPrinter<'a> {
                         line.clone()
                     },
                     arena.concat(types.iter().map(|field| {
-                        ident(arena, field.name.as_ref())
+                        ident(arena, field.name.value.as_ref())
                     }).chain(exprs.iter().map(|field| {
-                        let id = ident(arena, field.name.as_ref());
+                        let id = ident(arena, field.name.value.as_ref());
                         match field.value {
                             Some(ref expr) => self.hang(id.append(" ="), expr),
                             None => id,

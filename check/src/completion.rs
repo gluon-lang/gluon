@@ -123,20 +123,20 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
                 ..
             } => {
                 let unaliased = resolve::remove_aliases(&self.env, typ.clone());
-                for &(ref alias_id, _) in types {
+                for ast_field in types {
                     if let Some(field) = unaliased
                         .type_field_iter()
-                        .find(|field| field.name == *alias_id)
+                        .find(|field| field.name == ast_field.name.value)
                     {
                         self.on_alias(&field.typ);
                     }
                 }
                 for field in field_ids {
-                    match field.1 {
+                    match field.value {
                         Some(_) => (),
                         None => {
 
-                            let name = field.0.clone();
+                            let name = field.name.value.clone();
                             let typ = unaliased.row_iter()
                                 .find(|f| f.name.name_eq(&name))
                                 .map(|f| f.typ.clone())
@@ -421,9 +421,9 @@ where
             }
             Pattern::Record { ref fields, .. } => {
                 let (_, field) = self.select_spanned(fields, |field| {
-                    field.1.as_ref().map_or(current.span, |p| p.span)
+                    field.value.as_ref().map_or(current.span, |p| p.span)
                 });
-                if let Some(pattern) = field.and_then(|field| field.1.as_ref()) {
+                if let Some(pattern) = field.and_then(|field| field.value.as_ref()) {
                     self.visit_pattern(pattern);
                 }
             }

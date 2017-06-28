@@ -6,7 +6,7 @@ use std::iter::once;
 use std::mem;
 
 use base::scoped_map::ScopedMap;
-use base::ast::{DisplayEnv, Expr, Literal, MutVisitor, Pattern, SpannedExpr};
+use base::ast::{DisplayEnv, Expr, Literal, MutVisitor, Pattern, PatternField, SpannedExpr};
 use base::ast::{SpannedPattern, TypeBinding, TypedIdent, ValueBinding};
 use base::error::Errors;
 use base::fnv::{FnvMap, FnvSet};
@@ -567,7 +567,6 @@ impl<'a> Typecheck<'a> {
         &mut self,
         expr: &mut SpannedExpr<Symbol>,
     ) -> Result<TailCall, TypeError<Symbol>> {
-        let expr_span = expr_check_span(expr);
         match expr.value {
             Expr::Ident(ref mut id) => {
                 if let Some(new) = self.original_symbols.get(&id.name) {
@@ -783,13 +782,12 @@ impl<'a> Typecheck<'a> {
                     if let Some(ref mut typ) = field.value {
                         *typ = self.create_unifiable_signature(typ.clone());
                     }
-                    let alias = self.find_type_info(&field.name)?.clone();
+                    let alias = self.find_type_info(&field.name.value)?.clone();
                     if self.error_on_duplicated_field(
                         &mut duplicated_fields,
-                        expr_span,
                         field.name.clone(),
                     ) {
-                        new_types.push(Field::new(field.name.clone(), alias));
+                        new_types.push(Field::new(field.name.value.clone(), alias));
                     }
                 }
 
@@ -797,14 +795,13 @@ impl<'a> Typecheck<'a> {
                 for field in fields {
                     let typ = match field.value {
                         Some(ref mut expr) => self.typecheck(expr),
-                        None => self.find(&field.name)?,
+                        None => self.find(&field.name.value)?,
                     };
                     if self.error_on_duplicated_field(
                         &mut duplicated_fields,
-                        expr_span,
                         field.name.clone(),
                     ) {
-                        new_fields.push(Field::new(field.name.clone(), typ));
+                        new_fields.push(Field::new(field.name.value.clone(), typ));
                     }
                 }
                 let record_fields = new_fields
@@ -897,15 +894,14 @@ impl<'a> Typecheck<'a> {
                 {
                     let all_fields = associated_types
                         .iter()
-                        .map(|field| &field.0)
-                        .chain(fields.iter().map(|field| &field.0));
+                        .map(|field| &field.name)
+                        .chain(fields.iter().map(|field| &field.name));
                     for field in all_fields {
                         if self.error_on_duplicated_field(
                             &mut duplicated_fields,
-                            span,
                             field.clone(),
                         ) {
-                            pattern_fields.push(field.clone());
+                            pattern_fields.push(field.value.clone());
                         }
                     }
                 }
@@ -933,14 +929,14 @@ impl<'a> Typecheck<'a> {
                             .filter(|field| {
                                 associated_types
                                     .iter()
-                                    .any(|other| other.0.name_eq(&field.name))
+                                    .any(|other| other.name.value.name_eq(&field.name))
                             })
                             .cloned()
                             .collect();
 
                         let fields = fields
                             .iter()
-                            .map(|&(ref id, _)| Field::new(id.clone(), self.subs.new_var()))
+                            .map(|field| Field::new(field.name.value.clone(), self.subs.new_var()))
                             .collect();
                         let t = Type::poly_record(types, fields, self.subs.new_var());
                         (t.clone(), t)
@@ -956,7 +952,7 @@ impl<'a> Typecheck<'a> {
                 let match_type = actual_type;
 
                 for field in fields {
-                    let name = &field.0;
+                    let name = &field.name.value;
                     // The field should always exist since the type was constructed from the pattern
                     let field_type = match_type
                         .row_iter()
@@ -964,7 +960,7 @@ impl<'a> Typecheck<'a> {
                         .expect("ICE: Expected field to exist in type")
                         .typ
                         .clone();
-                    match field.1 {
+                    match field.value {
                         Some(ref mut pattern) => {
                             self.typecheck_pattern(pattern, field_type);
                         }
@@ -976,7 +972,7 @@ impl<'a> Typecheck<'a> {
 
                 // Check that all types declared in the pattern exists
                 for field in associated_types.iter_mut() {
-                    let name = field.1.as_ref().unwrap_or(&field.0).clone();
+                    let name = field.value.as_ref().unwrap_or(&field.name.value).clone();
                     // The `types` in the record type should have a type matching the
                     // `name`
                     let field_type = match_type
@@ -1521,10 +1517,10 @@ impl<'a> Typecheck<'a> {
     fn error_on_duplicated_field(
         &mut self,
         duplicated_fields: &mut FnvSet<Symbol>,
-        span: Span<BytePos>,
-        name: Symbol,
+        new_name: Spanned<Symbol, BytePos>,
     ) -> bool {
-        duplicated_fields.replace(name).map_or(true, |name| {
+        let span = new_name.span;
+        duplicated_fields.replace(new_name.value).map_or(true, |name| {
             self.errors.push(Spanned {
                 span: span,
                 value: TypeError::DuplicateField(name),
@@ -1535,7 +1531,7 @@ impl<'a> Typecheck<'a> {
 }
 
 fn with_pattern_types<F>(
-    fields: &mut [(Symbol, Option<SpannedPattern<Symbol>>)],
+    fields: &mut [PatternField<Symbol, SpannedPattern<Symbol>>],
     typ: &ArcType,
     mut f: F,
 ) where
@@ -1545,9 +1541,9 @@ fn with_pattern_types<F>(
         // If the field in the pattern does not exist (undefined field error) then skip it as
         // the error itself will already have been reported
         let opt = typ.row_iter()
-            .find(|type_field| type_field.name.name_eq(&field.0));
+            .find(|type_field| type_field.name.name_eq(&field.name.value));
         if let Some(associated_type) = opt {
-            f(&field.0, &mut field.1, &associated_type.typ);
+            f(&field.name.value, &mut field.value, &associated_type.typ);
         }
     }
 }

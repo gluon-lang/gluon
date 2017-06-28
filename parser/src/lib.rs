@@ -250,13 +250,13 @@ impl<'a, I> Iterator for SharedIter<'a, I>
 }
 
 pub enum FieldPattern<Id> {
-    Type(Id, Option<Id>),
-    Value(Id, Option<SpannedPattern<Id>>),
+    Type(Spanned<Id, BytePos>, Option<Id>),
+    Value(Spanned<Id, BytePos>, Option<SpannedPattern<Id>>),
 }
 
 pub enum FieldExpr<Id> {
-    Type(Option<Comment>, Id, Option<ArcType<Id>>),
-    Value(Option<Comment>, Id, Option<SpannedExpr<Id>>),
+    Type(Option<Comment>, Spanned<Id, BytePos>, Option<ArcType<Id>>),
+    Value(Option<Comment>, Spanned<Id, BytePos>, Option<SpannedExpr<Id>>),
 }
 
 // Hack around LALRPOP's limited type syntax

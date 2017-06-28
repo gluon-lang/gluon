@@ -182,7 +182,7 @@ pub fn record_a(
             .map(|(name, value)| {
                 ExprField {
                     comment: None,
-                    name: name,
+                    name: no_loc(name),
                     value: value,
                 }
             })
@@ -192,7 +192,7 @@ pub fn record_a(
             .map(|(name, value)| {
                 ExprField {
                     comment: None,
-                    name: name,
+                    name: no_loc(name),
                     value: value,
                 }
             })

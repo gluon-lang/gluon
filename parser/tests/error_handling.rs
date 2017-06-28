@@ -7,7 +7,7 @@ extern crate gluon_parser as parser;
 
 mod support;
 
-use base::ast::{TypedIdent, Pattern};
+use base::ast::{TypedIdent, Pattern, PatternField};
 use base::pos::{self, BytePos, Spanned};
 use base::types::Type;
 
@@ -247,7 +247,10 @@ fn incomplete_alternative_with_partial_pattern() {
                     Pattern::Record {
                         typ: Type::hole(),
                         types: vec![],
-                        fields: vec![(intern("x"), Some(no_loc(Pattern::Error)))],
+                        fields: vec![PatternField {
+                            name: no_loc(intern("x")),
+                            value: Some(no_loc(Pattern::Error))
+                        }],
                     },
                     error()
                 ),

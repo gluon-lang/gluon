@@ -66,6 +66,11 @@ fn map() {
 }
 
 #[test]
+fn prelude() {
+    test_format("prelude.glu");
+}
+
+#[test]
 fn state() {
     test_format("state.glu");
 }

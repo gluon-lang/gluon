@@ -255,13 +255,13 @@ fn set_globals(
                 ::vm::dynamic::field_iter(&value, typ, vm),
             );
             for (field, (field_value, field_type)) in iter {
-                match field.1 {
+                match field.value {
                     Some(ref field_pattern) => {
                         set_globals(vm, field_pattern, &field_type, &field_value)?
                     }
                     None => {
                         vm.set_global(
-                            field.0.clone(),
+                            field.name.value.clone(),
                             field_type,
                             Default::default(),
                             *field_value,

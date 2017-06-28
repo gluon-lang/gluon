@@ -462,7 +462,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                             last_span = expr.span;
                             self.translate(expr)
                         }
-                        None => Expr::Ident(TypedIdent::new(field.name.clone()), last_span),
+                        None => Expr::Ident(TypedIdent::new(field.name.value.clone()), last_span),
                     })
                     .collect();
                 Expr::Data(
@@ -785,16 +785,16 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                                 fields
                                     .iter()
                                     .map(|field| {
-                                        field.1.as_ref().map(Cow::Borrowed).unwrap_or_else(|| {
+                                        field.value.as_ref().map(Cow::Borrowed).unwrap_or_else(|| {
                                             let field_type = remove_aliases_cow(&self.0.env, typ)
                                                 .row_iter()
-                                                .find(|f| f.name.name_eq(&field.0))
+                                                .find(|f| f.name.name_eq(&field.name.value))
                                                 .map(|f| f.typ.clone())
                                                 .unwrap_or_else(|| Type::hole());
                                             Cow::Owned(spanned(
                                                 Span::default(),
                                                 ast::Pattern::Ident(TypedIdent {
-                                                    name: field.0.clone(),
+                                                    name: field.name.value.clone(),
                                                     typ: field_type,
                                                 }),
                                             ))
@@ -1142,19 +1142,19 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 } => {
                     for (i, field) in fields.iter().enumerate() {
                         // Don't add one field twice
-                        if record_fields.iter().all(|id| id.0.name != field.0) {
+                        if record_fields.iter().all(|id| id.0.name != field.name.value) {
                             let x = field
-                                .1
+                                .value
                                 .as_ref()
                                 .map(|pattern| self.extract_ident(i, &pattern.value).name);
                             let field_type = remove_aliases_cow(&self.0.env, typ)
                                 .row_iter()
-                                .find(|f| f.name.name_eq(&field.0))
+                                .find(|f| f.name.name_eq(&field.name.value))
                                 .map(|f| f.typ.clone())
                                 .unwrap_or_else(|| Type::hole());
                             record_fields.push((
                                 TypedIdent {
-                                    name: field.0.clone(),
+                                    name: field.name.value.clone(),
                                     typ: field_type,
                                 },
                                 x,

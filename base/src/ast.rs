@@ -77,12 +77,18 @@ pub enum Literal {
 pub type SpannedPattern<Id> = Spanned<Pattern<Id>, BytePos>;
 
 #[derive(Clone, PartialEq, Debug)]
+pub struct PatternField<Id, P> {
+    pub name: Spanned<Id, BytePos>,
+    pub value: Option<P>,
+}
+
+#[derive(Clone, PartialEq, Debug)]
 pub enum Pattern<Id> {
     Constructor(TypedIdent<Id>, Vec<SpannedPattern<Id>>),
     Record {
         typ: ArcType<Id>,
-        types: Vec<(Id, Option<Id>)>,
-        fields: Vec<(Id, Option<SpannedPattern<Id>>)>,
+        types: Vec<PatternField<Id, Id>>,
+        fields: Vec<PatternField<Id, SpannedPattern<Id>>>,
     },
     Tuple {
         typ: ArcType<Id>,
@@ -118,7 +124,7 @@ pub type SpannedIdent<Id> = Spanned<TypedIdent<Id>, BytePos>;
 #[derive(Clone, PartialEq, Debug)]
 pub struct ExprField<Id, E> {
     pub comment: Option<Comment>,
-    pub name: Id,
+    pub name: Spanned<Id, BytePos>,
     pub value: Option<E>,
 }
 
@@ -305,7 +311,7 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::Id
         } => {
             v.visit_typ(typ);
             for field in fields {
-                if let Some(ref mut pattern) = field.1 {
+                if let Some(ref mut pattern) = field.value {
                     v.visit_pattern(pattern);
                 }
             }
@@ -422,7 +428,7 @@ pub fn walk_pattern<V: ?Sized + Visitor>(v: &mut V, p: &Pattern<V::Ident>) {
         } => {
             v.visit_typ(typ);
             for field in fields {
-                if let Some(ref pattern) = field.1 {
+                if let Some(ref pattern) = field.value {
                     v.visit_pattern(pattern);
                 }
             }

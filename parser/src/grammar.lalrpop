@@ -3,7 +3,7 @@ use std::str::FromStr;
 
 use itertools::Itertools;
 
-use base::ast::{Alternative, Array, Comment, Expr, ExprField, Lambda, Literal, Pattern, SpannedExpr, TypeBinding, TypedIdent, ValueBinding};
+use base::ast::{Alternative, Array, Comment, Expr, ExprField, Lambda, Literal, Pattern, PatternField, SpannedExpr, TypeBinding, TypedIdent, ValueBinding};
 use base::kind::{ArcKind, Kind};
 use base::pos::{self, BytePos, Spanned};
 use base::types::{AliasData, ArcType, BuiltinType, Field, Generic, Type, TypeCache};
@@ -222,12 +222,12 @@ Type = {
 // Patterns
 
 FieldPattern : FieldPattern<Id> = {
-    <id: Ident> "=" <body: Sp<Pattern>> =>
+    <id: Sp<Ident>> "=" <body: Sp<Pattern>> =>
         FieldPattern::Value(id, Some(body)),
 
-    <IdentStr> => {
-        let id = env.from_str(<>);
-        if <>.starts_with(char::is_uppercase) {
+    <Sp<IdentStr>> => {
+        let id = pos::spanned(<>.span, env.from_str(<>.value));
+        if <>.value.starts_with(char::is_uppercase) {
             FieldPattern::Type(id, None)
         } else {
             FieldPattern::Value(id, None)
@@ -256,8 +256,14 @@ AtomicPattern: Pattern<Id> = {
 
         for field in fields {
             match field {
-                FieldPattern::Type(id, typ) => types.push((id, typ)),
-                FieldPattern::Value(id, field) => values.push((id, field)),
+                FieldPattern::Type(id, typ) => types.push(PatternField {
+                    name: id,
+                    value: typ
+                }),
+                FieldPattern::Value(id, field) => values.push(PatternField {
+                    name: id,
+                    value: field
+                }),
             }
         }
 
@@ -323,13 +329,13 @@ Alternative: Alternative<Id> = {
 };
 
 FieldExpr: FieldExpr<Id> = {
-    <comment: DocComment?> <id: Ident> "=" <body: SpExpr> => {
+    <comment: DocComment?> <id: Sp<Ident>> "=" <body: SpExpr> => {
         FieldExpr::Value(comment, id, Some(body))
     },
 
-    <comment: DocComment?> <id_str: IdentStr> => {
-        let id = env.from_str(id_str);
-        if id_str.starts_with(char::is_uppercase) {
+    <comment: DocComment?> <id_str: Sp<IdentStr>> => {
+        let id = pos::spanned(id_str.span, env.from_str(id_str.value));
+        if id_str.value.starts_with(char::is_uppercase) {
             FieldExpr::Type(comment, id, None)
         } else {
             FieldExpr::Value(comment, id, None)
