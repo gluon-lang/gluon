@@ -49,9 +49,9 @@ let monoid_Int_Add = { append = \x y -> x #Int+ y, empty = 0 }
 
 let monoid_Int_Mul = { append = \x y -> x #Int* y, empty = 1 }
 
-let monoid_Float_Add = { append = \x y -> x #Float+ y, empty = 0 }
+let monoid_Float_Add = { append = \x y -> x #Float+ y, empty = 0.0 }
 
-let monoid_Float_Mul = { append = \x y -> x #Float* y, empty = 1 }
+let monoid_Float_Mul = { append = \x y -> x #Float* y, empty = 1.0 }
 
 let make_Monoid m =
     let { append, empty } = m
