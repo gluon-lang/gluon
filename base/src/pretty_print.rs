@@ -162,6 +162,12 @@ where
     }
 }
 
+macro_rules! newlines_iter {
+    ($self_: ident, $iterable: expr) => {
+        $iterable.into_iter().tuple_windows().map(|(prev, next)| $self_.newlines(prev.end, next.start))
+    }
+}
+
 pub struct ExprPrinter<'a> {
     arena: Arena<'a>,
     source: &'a Source<'a>,
@@ -173,6 +179,16 @@ impl<'a> ExprPrinter<'a> {
             arena: Arena::new(),
             source: source,
         }
+    }
+
+
+    fn newlines(&'a self, prev: BytePos, next: BytePos) -> DocBuilder<'a, Arena<'a>> {
+        let arena = &self.arena;
+        let prev_line = self.source.line_number_at_byte(prev);
+        let next_line = self.source.line_number_at_byte(next);
+        arena.concat(
+            repeat(arena.newline()).take((next_line - prev_line).to_usize()),
+        )
     }
 
     pub fn pretty_expr<Id>(&'a self, expr: &'a SpannedExpr<Id>) -> DocBuilder<'a, Arena<'a>>
@@ -192,20 +208,6 @@ impl<'a> ExprPrinter<'a> {
         let arena = &self.arena;
 
         let pretty = |next: &'a SpannedExpr<_>| self.pretty_expr_(next.span.start, next);
-
-        let newlines = |prev, next| {
-            let prev_line = self.source.line_number_at_byte(prev);
-            let next_line = self.source.line_number_at_byte(next);
-            arena.concat(
-                repeat(arena.newline()).take((next_line - prev_line).to_usize()),
-            )
-        };
-        macro_rules! newlines_iter {
-            ($iterable: expr) => {
-                $iterable.into_iter().tuple_windows().map(|(prev, next)| newlines(prev.end, next.start))
-            }
-        }
-
 
         let doc = match expr.value {
             Expr::App(ref func, ref args) => {
@@ -297,8 +299,8 @@ impl<'a> ExprPrinter<'a> {
                 chain![arena;
                     arena.concat(prefixes.zip(binds).map(|(prefix, bind)| {
                         binding(prefix, bind)
-                    }).interleave(newlines_iter!(binds.iter().map(|bind| bind.span())))),
-                    newlines(binds.last().unwrap().expr.span.end, body.span.start),
+                    }).interleave(newlines_iter!(self, binds.iter().map(|bind| bind.span())))),
+                    self.newlines(binds.last().unwrap().expr.span.end, body.span.start),
                     pretty(body).group()
                 ]
             }
@@ -385,9 +387,9 @@ impl<'a> ExprPrinter<'a> {
                                 .block(INDENT)
                                 .group()
                         ].group()
-                    }).interleave(newlines_iter!(binds.iter().map(|bind| bind.span()))
+                    }).interleave(newlines_iter!(self, binds.iter().map(|bind| bind.span()))
                         .map(|doc| doc.append("and ")))),
-                    newlines(binds.last().unwrap().alias.span.end, body.span.start),
+                    self.newlines(binds.last().unwrap().alias.span.end, body.span.start),
                     pretty(body).group()
                 ]
             }
@@ -439,21 +441,40 @@ impl<'a> ExprPrinter<'a> {
                 ref exprs,
                 ..
             } => {
-                let line = newline(arena, expr);
-                let ordered_iter = types.iter().map(Either::Left).merge_by(
-                    exprs.iter().map(Either::Right),
-                    |x, y| {
-                        x.either(|l| l.name.span.start, |r| r.name.span.start) <
-                            y.either(|l| l.name.span.start, |r| r.name.span.start)
-                    },
-                );
+                let ordered_iter = || {
+                    types.iter().map(Either::Left).merge_by(
+                        exprs.iter().map(Either::Right),
+                        |x, y| {
+                            x.either(|l| l.name.span.start, |r| r.name.span.start) <
+                                y.either(|l| l.name.span.start, |r| r.name.span.start)
+                        },
+                    )
+                };
+
+                let newlines = newlines_iter!(
+                    self,
+                    ordered_iter().map(|x| x.either(|l| l.name.span, |r| r.name.span))
+                ).collect::<Vec<_>>();
+
+                let mut line = newline(arena, expr);
+                // If there are any explicit line breaks then we need put each field on a separate line
+                if newlines.iter().any(|doc| doc.1 != arena.nil().1) {
+                    line = arena.newline();
+                }
+                let end_iter = newlines.into_iter().map(|mut doc| {
+                    if doc.1 == arena.nil().1 {
+                        doc = line.clone();
+                    }
+                    arena.text(",").append(doc)
+                });
+
                 let record = chain![arena;
                     if types.is_empty() && exprs.is_empty() {
                         arena.nil()
                     } else {
                         line.clone()
                     },
-                    arena.concat(ordered_iter.map(|either| {
+                    arena.concat(ordered_iter().map(|either| {
                         match either {
                             Either::Left(l) => {
                                 ident(arena, l.name.value.as_ref())
@@ -466,9 +487,9 @@ impl<'a> ExprPrinter<'a> {
                                 }
                             }
                         }
-                    }).intersperse(arena.text(",").append(line.clone())))
+                    }).interleave(end_iter))
                 ].block(INDENT)
-                    .append(line)
+                    .append(line.clone())
                     .group()
                     .append("}");
                 (arena.text("{"), record)
