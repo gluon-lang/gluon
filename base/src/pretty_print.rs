@@ -6,7 +6,7 @@ use pretty::{Arena, DocAllocator, DocBuilder};
 use ast::{Expr, Comment, CommentType, is_operator_char, Literal, Pattern, SpannedExpr,
           SpannedPattern, ValueBinding};
 use kind::Kind;
-use pos::{BytePos, Span};
+use pos::{BytePos, Line, Span};
 use source::Source;
 use types::{Prec, Type, pretty_print as pretty_type};
 
@@ -186,9 +186,13 @@ impl<'a> ExprPrinter<'a> {
         let arena = &self.arena;
         let prev_line = self.source.line_number_at_byte(prev);
         let next_line = self.source.line_number_at_byte(next);
-        arena.concat(
-            repeat(arena.newline()).take((next_line - prev_line).to_usize()),
-        )
+        // Record expressions
+        let empty_lines = (prev_line.to_usize()..next_line.to_usize())
+            .map(|l| {
+                self.source.line(Line::from(l)).unwrap().1.trim().is_empty()
+            })
+            .count();
+        arena.concat(repeat(arena.newline()).take(empty_lines))
     }
 
     pub fn pretty_expr<Id>(&'a self, expr: &'a SpannedExpr<Id>) -> DocBuilder<'a, Arena<'a>>
@@ -453,7 +457,16 @@ impl<'a> ExprPrinter<'a> {
 
                 let newlines = newlines_iter!(
                     self,
-                    ordered_iter().map(|x| x.either(|l| l.name.span, |r| r.name.span))
+                    ordered_iter().map(|x| {
+                        x.either(|l| l.name.span, |r| {
+                            Span::new(
+                                r.name.span.start,
+                                r.value
+                                    .as_ref()
+                                    .map_or(r.name.span.start, |expr| expr.span.end),
+                            )
+                        })
+                    })
                 ).collect::<Vec<_>>();
 
                 let mut line = newline(arena, expr);
