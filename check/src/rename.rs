@@ -137,7 +137,11 @@ pub fn rename(
                             .type_field_iter()
                             .find(|field| field.name.name_eq(&ast_field.name.value))
                             .expect("field_type");
-                        self.stack_type(ast_field.name.value.clone(), pattern.span, &field_type.typ);
+                        self.stack_type(
+                            ast_field.name.value.clone(),
+                            pattern.span,
+                            &field_type.typ,
+                        );
                     }
                 }
                 ast::Pattern::Ident(ref mut id) => {
@@ -254,7 +258,10 @@ pub fn rename(
                         match expr_field.value {
                             Some(ref mut expr) => self.visit_expr(expr),
                             None => {
-                                if let Some(new_id) = self.rename(&expr_field.name.value, &field.typ)? {
+                                if let Some(new_id) = self.rename(
+                                    &expr_field.name.value,
+                                    &field.typ,
+                                )? {
                                     debug!("Rename record field {} = {}", expr_field.name, new_id);
                                     expr_field.value = Some(pos::spanned(
                                         expr.span,

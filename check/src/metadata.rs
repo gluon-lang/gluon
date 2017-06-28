@@ -59,7 +59,11 @@ pub fn metadata(
                     }
                     for field in types {
                         if let Some(m) = metadata.module.remove(field.name.value.as_ref()) {
-                            let id = field.value.as_ref().unwrap_or_else(|| &field.name.value).clone();
+                            let id = field
+                                .value
+                                .as_ref()
+                                .unwrap_or_else(|| &field.name.value)
+                                .clone();
                             self.stack_var(id, m);
                         }
                     }

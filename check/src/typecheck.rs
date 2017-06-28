@@ -783,10 +783,7 @@ impl<'a> Typecheck<'a> {
                         *typ = self.create_unifiable_signature(typ.clone());
                     }
                     let alias = self.find_type_info(&field.name.value)?.clone();
-                    if self.error_on_duplicated_field(
-                        &mut duplicated_fields,
-                        field.name.clone(),
-                    ) {
+                    if self.error_on_duplicated_field(&mut duplicated_fields, field.name.clone()) {
                         new_types.push(Field::new(field.name.value.clone(), alias));
                     }
                 }
@@ -797,10 +794,7 @@ impl<'a> Typecheck<'a> {
                         Some(ref mut expr) => self.typecheck(expr),
                         None => self.find(&field.name.value)?,
                     };
-                    if self.error_on_duplicated_field(
-                        &mut duplicated_fields,
-                        field.name.clone(),
-                    ) {
+                    if self.error_on_duplicated_field(&mut duplicated_fields, field.name.clone()) {
                         new_fields.push(Field::new(field.name.value.clone(), typ));
                     }
                 }
@@ -897,10 +891,7 @@ impl<'a> Typecheck<'a> {
                         .map(|field| &field.name)
                         .chain(fields.iter().map(|field| &field.name));
                     for field in all_fields {
-                        if self.error_on_duplicated_field(
-                            &mut duplicated_fields,
-                            field.clone(),
-                        ) {
+                        if self.error_on_duplicated_field(&mut duplicated_fields, field.clone()) {
                             pattern_fields.push(field.value.clone());
                         }
                     }
@@ -936,7 +927,9 @@ impl<'a> Typecheck<'a> {
 
                         let fields = fields
                             .iter()
-                            .map(|field| Field::new(field.name.value.clone(), self.subs.new_var()))
+                            .map(|field| {
+                                Field::new(field.name.value.clone(), self.subs.new_var())
+                            })
                             .collect();
                         let t = Type::poly_record(types, fields, self.subs.new_var());
                         (t.clone(), t)
@@ -1243,9 +1236,13 @@ impl<'a> Typecheck<'a> {
             }
             Pattern::Constructor(ref id, ref mut args) => {
                 debug!("{}: {}", self.symbols.string(&id.name), typ);
-                for (arg, arg_type) in args.iter_mut()
-                    .zip(function_arg_iter(self, typ.clone()).collect::<Vec<_>>())
-                {
+                let len = args.len();
+                let iter = args.iter_mut().zip(
+                    function_arg_iter(self, typ.clone())
+                        .take(len)
+                        .collect::<Vec<_>>(),
+                );
+                for (arg, arg_type) in iter {
                     self.finish_pattern(level, arg, &arg_type);
                 }
             }
@@ -1520,13 +1517,16 @@ impl<'a> Typecheck<'a> {
         new_name: Spanned<Symbol, BytePos>,
     ) -> bool {
         let span = new_name.span;
-        duplicated_fields.replace(new_name.value).map_or(true, |name| {
-            self.errors.push(Spanned {
-                span: span,
-                value: TypeError::DuplicateField(name),
-            });
-            false
-        })
+        duplicated_fields.replace(new_name.value).map_or(
+            true,
+            |name| {
+                self.errors.push(Spanned {
+                    span: span,
+                    value: TypeError::DuplicateField(name),
+                });
+                false
+            },
+        )
     }
 }
 
