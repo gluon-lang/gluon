@@ -56,7 +56,7 @@ let monoid_Float_Mul = { append = \x y -> x #Float* y, empty = 1.0 }
 let make_Monoid m =
     let { append, empty } = m
 
-    let (<>) /* : m -> m -> m */ = append
+    let (<>) = append
 
     { append, empty, (<>) }
 
@@ -108,32 +108,17 @@ let ord_Bool = { eq = eq_Bool, compare = \l r -> if l then if r then EQ else GT 
 
 let ord_Int = {
     eq = eq_Int,
-    compare = \l r ->
-        if l #Int< r
-        then LT
-        else if l #Int== r
-        then EQ
-        else GT
+    compare = \l r -> if l #Int< r then LT else if l #Int== r then EQ else GT
 }
 
 let ord_Float = {
     eq = eq_Float,
-    compare = \l r ->
-        if l #Float< r
-        then LT
-        else if l #Float== r
-        then EQ
-        else GT
+    compare = \l r -> if l #Float< r then LT else if l #Float== r then EQ else GT
 }
 
 let ord_Char = {
     eq = eq_Char,
-    compare = \l r ->
-        if l #Char< r
-        then LT
-        else if l #Char== r
-        then EQ
-        else GT
+    compare = \l r -> if l #Char< r then LT else if l #Char== r then EQ else GT
 }
 
 let ord_Option a : Ord a -> Ord (Option a) = {
@@ -215,10 +200,7 @@ let num_Float : Num Float = {
     negate = \x -> 0.0 #Float- x
 }
 
-type Category (cat : Type -> Type -> Type) = {
-    id : cat a a,
-    compose : cat b c -> cat a b -> cat a c
-}
+type Category (cat : Type -> Type -> Type) = { id : cat a a, compose : cat b c -> cat a b -> cat a c }
 
 let category_Function : Category (->) = {
     id = \x -> x,
@@ -229,9 +211,9 @@ let make_Category cat =
     let { id, compose } = cat
 
     /// Right-to-left composition. Alias for `compose`.
-    let (<<) /* : cat b c -> cat a b -> cat a c */ = compose
+    let (<<) = compose
     /// Left-to-right composition. Alias for `compose`, but with the arguments flipped.
-    let (>>) f g /* : cat a b -> cat b c -> cat a c */ = compose g f
+    let (>>) f g = compose g f
 
     { id, compose, (<<), (>>) }
 
@@ -320,19 +302,15 @@ let applicative_IO : Applicative IO =
 let make_Applicative app =
     let { functor, apply, pure } = app
 
-    let (<*>) /* : app (a -> b) -> app a -> app b */ = apply
-    let (<*) l r /* : app a -> app b -> app a */ = functor.map const l <*> r
-    let (*>) l r /* : app a -> app b -> app b */ = functor.map (const id) l <*> r
-    let map2 f a b /* : (a -> b -> c) -> app a -> app b -> app c */ = (functor.map f a) <*> b
-    let map3 f a b c /* : (a -> b -> c -> d) -> app a -> app b -> app c -> app d */ = (functor.map f a) <*> b <*> c
+    let (<*>) = apply
+    let (<*) l r = functor.map const l <*> r
+    let (*>) l r = functor.map (const id) l <*> r
+    let map2 f a b = (functor.map f a) <*> b
+    let map3 f a b c = (functor.map f a) <*> b <*> c
 
     { functor, apply, pure, (<*>), (<*), (*>), map2, map3 }
 
-type Alternative f = {
-    applicative : Applicative f,
-    or : f a -> f a -> f a,
-    empty : f a
-}
+type Alternative f = { applicative : Applicative f, or : f a -> f a -> f a, empty : f a }
 
 let alternative_Option : Alternative Option = {
     applicative = applicative_Option,
@@ -347,22 +325,19 @@ let make_Alternative f =
     let { applicative, or, empty } = f
     let { functor, (<*>), pure } = make_Applicative applicative
 
-    let (<|>) /* : f a -> f a -> f a */ = or
-    let many x /* : f a -> f (List a) */ =
+    let (<|>) = or
+    let many x =
         let many_v _ = some_v () <|> pure Nil
         and some_v _ = functor.map (\h l -> Cons h l) x <*> many_v ()
         many_v ()
-    let some x  /* : f a -> f (List a) */ =
+    let some x =
         let many_v _ = some_v () <|> pure Nil
         and some_v _ = functor.map (\h l -> Cons h l) x <*> many_v ()
         some_v ()
 
     { applicative, or, empty, (<|>), many, some }
 
-type Monad (m : Type -> Type) = {
-    applicative : Applicative m,
-    flat_map : (a -> m b) -> m a -> m b
-}
+type Monad (m : Type -> Type) = { applicative : Applicative m, flat_map : (a -> m b) -> m a -> m b }
 
 let monad_Function : Monad ((->) a) = {
     applicative = applicative_Function,
@@ -387,10 +362,10 @@ let make_Monad m =
     let { (*>), pure } = make_Applicative applicative
     let { id } = category_Function
 
-    let (=<<) /* : (a -> m b) -> m a -> m b */ = flat_map
-    let (>>=) /* : m a -> (a -> m b) -> m b */ = flip flat_map
-    let join mm /* : m (m a) -> m a */ = mm >>= id
-    let forM_ xs f /* : List a -> (a -> m b) -> m () */ =
+    let (=<<) = flat_map
+    let (>>=) = flip flat_map
+    let join mm = mm >>= id
+    let forM_ xs f =
         match xs with
         | Cons y ys -> f y *> forM_ ys f
         | Nil -> pure ()
@@ -614,4 +589,3 @@ let foldr f x xs =
     show_Option,
     show_Result
 }
-

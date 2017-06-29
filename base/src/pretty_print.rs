@@ -365,12 +365,17 @@ impl<'a> ExprPrinter<'a> {
                     doc_comment(arena, &binds.first().unwrap().comment),
                     "type ",
                     arena.concat(binds.iter().map(|bind| {
+                        let mut type_doc = pretty_type(arena, &bind.alias.value.unresolved_type());
+                        match **bind.alias.value.unresolved_type() {
+                            Type::Record(_) => (),
+                            _ => type_doc = type_doc.block(INDENT),
+                        }
                         chain![arena;
                             bind.name.value.as_ref(),
                             " ",
                             arena.concat(bind.alias.value.args.iter().map(|arg| {
-                                if *arg.kind != Kind::Type && *arg.kind != Kind::Hole {
-                                    chain![arena;
+                                chain![arena;
+                                    if *arg.kind != Kind::Type && *arg.kind != Kind::Hole {
                                         chain![arena;
                                             "(",
                                             arg.id.as_ref(),
@@ -378,24 +383,22 @@ impl<'a> ExprPrinter<'a> {
                                             arena.space(),
                                             pretty_kind(arena, Prec::Top, &arg.kind).group(),
                                             ")"
-                                        ].group(),
-                                        " "
-                                    ]
-                                } else {
-                                    chain![arena; arg.id.as_ref(), " "]
-                                }
-                            })),
-                            "=",
-                            arena.space()
-                                .append(pretty_type(arena, &bind.alias.value.unresolved_type()))
-                                .block(INDENT)
+                                        ].group()
+                                    } else {
+                                        arena.text(arg.id.as_ref())
+                                    },
+                                    arena.space()
+                                ]
+                            })).group(),
+                            arena.text("= ")
+                                .append(type_doc)
                                 .group()
                         ].group()
                     }).interleave(newlines_iter!(self, binds.iter().map(|bind| bind.span()))
                         .map(|doc| doc.append("and ")))),
                     self.newlines(binds.last().unwrap().alias.span.end, body.span.start),
-                    pretty(body).group()
-                ]
+                    pretty(body)
+                ].group()
             }
             Expr::Error => arena.text("<error>"),
         };
