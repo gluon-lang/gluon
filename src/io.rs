@@ -212,12 +212,7 @@ pub fn load(vm: &Thread) -> Result<()> {
     ];
     let io_flat_map_type =
         <fn(fn(A) -> IO<B>, IO<A>) -> IO<B> as VmType>::make_type(vm);
-    vm.add_bytecode(
-        "io_flat_map",
-        io_flat_map_type,
-        3,
-        io_flat_map,
-    )?;
+    vm.add_bytecode("io_flat_map", io_flat_map_type, 3, io_flat_map)?;
 
 
     vm.add_bytecode(

@@ -205,9 +205,9 @@ fn write_response(
         poll_fn(move || {
             info!("Starting response send");
             let mut sender = response.lock().unwrap();
-            let mut sender = sender.as_mut().expect(
-                "Sender has been dropped while still in use",
-            );
+            let mut sender = sender
+                .as_mut()
+                .expect("Sender has been dropped while still in use");
             if let Some(chunk) = unsent_chunk.take() {
                 match sender.start_send(chunk) {
                     Ok(AsyncSink::NotReady(chunk)) => {
@@ -260,7 +260,8 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
     use hyper::server::{Http, Request as HyperRequest, Response as HyperResponse};
 
     // Retrieve the `handle` function from the http module which we use to evaluate values of type // `Handler Response`
-    type ListenFn = fn(OpaqueValue<RootedThread, Handler<Response>>, HttpState) -> IO<Response>;
+    type ListenFn = fn(OpaqueValue<RootedThread, Handler<Response>>, HttpState)
+        -> IO<Response>;
     let handle: Function<RootedThread, ListenFn> = thread
         .get_global("examples.http.handle")
         .unwrap_or_else(|err| panic!("{}", err));
@@ -277,8 +278,7 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
         type Future = BoxFuture<HyperResponse, hyper::Error>;
 
         fn call(&self, request: HyperRequest) -> Self::Future {
-            let gluon_request =
-                record_no_decl! {
+            let gluon_request = record_no_decl! {
                 // Here we use to `Wrap` type to make `hyper::Request` into a type that can be
                 // pushed to gluon
                 method => Wrap(request.method().clone()),
@@ -293,8 +293,7 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
             };
             let (response_sender, response_body) = hyper::Body::pair();
             let response_sender = Arc::new(Mutex::new(Some(response_sender)));
-            let http_state =
-                record_no_decl!{
+            let http_state = record_no_decl!{
                 request => gluon_request,
                 response => ResponseBody(response_sender.clone())
             };
@@ -308,23 +307,26 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
                                 // Drop the sender to so that it the receiver stops waiting for
                                 // more chunks
                                 *response_sender.lock().unwrap() = None;
-                                Ok(HyperResponse::new().with_status(status.0).with_body(
-                                    response_body,
-                                ))
+                                Ok(
+                                    HyperResponse::new()
+                                        .with_status(status.0)
+                                        .with_body(response_body),
+                                )
                             }
                             IO::Exception(err) => {
                                 let _ = stderr().write(err.as_bytes());
-                                Ok(HyperResponse::new().with_status(
-                                    StatusCode::InternalServerError,
-                                ))
+                                Ok(
+                                    HyperResponse::new()
+                                        .with_status(StatusCode::InternalServerError),
+                                )
                             }
                         }
                     }
                     Err(err) => {
                         let _ = stderr().write(format!("{}", err).as_bytes());
-                        Ok(HyperResponse::new().with_status(
-                            StatusCode::InternalServerError,
-                        ))
+                        Ok(
+                            HyperResponse::new().with_status(StatusCode::InternalServerError),
+                        )
                     }
                 })
                 .boxed()
