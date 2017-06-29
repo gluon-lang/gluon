@@ -13,14 +13,14 @@ let { (<>), empty } = prelude.make_Monoid monoid
 let load_file filename : String -> IO String =
     let last_slash =
         match string.rfind filename "/" with
-            | None -> 0
-            | Some i -> i + 1
+        | None -> 0
+        | Some i -> i + 1
     let modulename = string.slice filename last_slash (string.length filename - 3)
     let read_result = io.catch (io.read_file_to_string filename >>= \x -> pure (Ok x)) (\err -> pure (Err err))
     read_result >>= \result ->
         match result with
-            | Ok expr -> io.load_script modulename expr
-            | Err msg -> pure msg
+        | Ok expr -> io.load_script modulename expr
+        | Err msg -> pure msg
 
 type Cmd = {
     info : String,
@@ -30,8 +30,8 @@ type Cmd = {
 let commands : Map String Cmd =
     let print_result result =
         match result with
-            | Ok x -> io.println x
-            | Err x -> io.println x
+        | Ok x -> io.println x
+        | Err x -> io.println x
 
     let commands = ref empty
     let cmds =
@@ -71,19 +71,19 @@ let do_command line : String -> IO Bool =
         let cmd = string.slice line 1 2
         let arg = if string.length line >= 3 then string.trim (string.slice line 3 (string.length line)) else ""
         match find cmd commands with
-            | Some command -> command.action arg
-            | None -> io.println ("Unknown command '"  ++ cmd ++ "'") *> pure True
+        | Some command -> command.action arg
+        | None -> io.println ("Unknown command '"  ++ cmd ++ "'") *> pure True
     else
         io.println "Expected a command such as `:h`" *> pure True
 
 let store line : String -> IO Bool =
     let line = string.trim line
     match string.find line " " with
-        | Some bind_end ->
-            let binding = string.slice line 0 bind_end
-            let expr = string.slice line bind_end (string.length line)
-            io.load_script binding expr *> pure True
-        | None -> io.println "Expected binding in definition" *> pure True
+    | Some bind_end ->
+        let binding = string.slice line 0 bind_end
+        let expr = string.slice line bind_end (string.length line)
+        io.load_script binding expr *> pure True
+    | None -> io.println "Expected binding in definition" *> pure True
 
 let loop editor : Editor -> IO () =
     let run_line line =
@@ -98,9 +98,9 @@ let loop editor : Editor -> IO () =
 
     rustyline.readline editor "> " >>= \line_opt ->
         match line_opt with
-            | None -> pure ()
-            | Some line -> run_line line >>= \continue ->
-                if continue then loop editor else pure ()
+        | None -> pure ()
+        | Some line -> run_line line >>= \continue ->
+            if continue then loop editor else pure ()
 
 let run x : () -> IO () =
     io.println "gluon (:h for help, :q to quit)"
