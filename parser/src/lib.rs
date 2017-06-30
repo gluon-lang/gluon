@@ -47,6 +47,7 @@ type LalrpopError<'input> = lalrpop_util::ParseError<BytePos,
 /// Shrink hidden spans to fit the visible expressions and flatten singleton blocks.
 fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
     match expr.value {
+        Expr::Infix(_, _, ref last) |
         Expr::IfElse(_, _, ref last) |
         Expr::LetBindings(_, ref last) |
         Expr::TypeBindings(_, ref last) => expr.span.end = last.span.end,
@@ -68,7 +69,6 @@ fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
         Expr::Ident(_) |
         Expr::Literal(_) |
         Expr::Projection(_, _, _) |
-        Expr::Infix(_, _, _) |
         Expr::Array(_) |
         Expr::Record { .. } |
         Expr::Tuple { .. } |

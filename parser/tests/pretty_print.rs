@@ -27,8 +27,9 @@ mod support;
 fn test_format(name: &str) {
     let _ = env_logger::init();
 
+    let name = Path::new(name);
     let mut contents = String::new();
-    File::open(Path::new("../std").join(name))
+    File::open(Path::new("../").join(name))
         .unwrap()
         .read_to_string(&mut contents)
         .unwrap();
@@ -51,7 +52,7 @@ fn test_format(name: &str) {
         .interleave_shortest(repeat("\n"))
         .collect::<String>();
     if contents != out_str {
-        let out_path = Path::new(env!("OUT_DIR")).join(name);
+        let out_path = Path::new(env!("OUT_DIR")).join(name.file_name().unwrap());
         File::create(out_path)
             .unwrap()
             .write_all(out_str.as_bytes())
@@ -62,40 +63,45 @@ fn test_format(name: &str) {
 
 #[test]
 fn map() {
-    test_format("map.glu");
+    test_format("std/map.glu");
 }
 
 #[test]
 fn prelude() {
-    test_format("prelude.glu");
+    test_format("std/prelude.glu");
 }
 
 #[test]
 fn state() {
-    test_format("state.glu");
+    test_format("std/state.glu");
 }
 
 #[test]
 fn stream() {
-    test_format("stream.glu");
+    test_format("std/stream.glu");
 }
 
 #[test]
 fn string() {
-    test_format("string.glu");
+    test_format("std/string.glu");
 }
 
 #[test]
 fn test() {
-    test_format("test.glu");
+    test_format("std/test.glu");
 }
 
 #[test]
 fn types() {
-    test_format("types.glu");
+    test_format("std/types.glu");
 }
 
 #[test]
 fn writer() {
-    test_format("writer.glu");
+    test_format("std/writer.glu");
+}
+
+#[test]
+fn repl() {
+    test_format("repl/src/repl.glu");
 }

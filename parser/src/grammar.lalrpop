@@ -374,10 +374,10 @@ AtomicExpr: Expr<Id> = {
     // "(" "." <id: Ident> ")" =>
     //     Expr::Getter(id),
 
-    <expr: Sp<AtomicExpr>> "." <id: Ident> =>
+    <expr: SpAtomicExpr> "." <id: Ident> =>
         Expr::Projection(Box::new(expr), id, type_cache.hole()),
 
-    <expr: Sp<AtomicExpr>> "." <err: !> => {
+    <expr: SpAtomicExpr> "." <err: !> => {
         errors.push(err.error);
         Expr::Projection(Box::new(expr), env.from_str(""), type_cache.hole())
     },
@@ -422,10 +422,14 @@ AtomicExpr: Expr<Id> = {
     },
 };
 
+SpAtomicExpr: SpannedExpr<Id> = {
+    <Sp<AtomicExpr>> => super::shrink_hidden_spans(<>)
+};
+
 AppExpr = {
     AtomicExpr,
 
-    <expr: Sp<AtomicExpr>> <args: Sp<AtomicExpr>+> =>
+    <expr: SpAtomicExpr> <args: SpAtomicExpr+> =>
         Expr::App(Box::new(expr), args),
 };
 
@@ -440,7 +444,7 @@ InfixExpr = {
         }),
 
     <lhs: Sp<AppExpr>> <op: Sp<Operator>> <rhs: Sp<InfixExpr>> =>
-        Expr::Infix(Box::new(lhs), op, Box::new(rhs)),
+        Expr::Infix(Box::new(lhs), op, Box::new(super::shrink_hidden_spans(rhs))),
 };
 
 AndValueBinding: ValueBinding<Id> =

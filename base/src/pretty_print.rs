@@ -37,6 +37,7 @@ fn forced_new_line<Id>(expr: &SpannedExpr<Id>) -> bool {
             })
         }
         Expr::IfElse(_, ref t, ref f) => forced_new_line(t) || forced_new_line(f),
+        Expr::Infix(ref l, _, ref r) => forced_new_line(l) || forced_new_line(r),
         _ => false,
     }
 }
@@ -192,6 +193,7 @@ impl<'a> ExprPrinter<'a> {
                 self.source.line(Line::from(l)).unwrap().1.trim().is_empty()
             })
             .count();
+        println!("{} {} {}", prev, next, empty_lines);
         arena.concat(repeat(arena.newline()).take(empty_lines))
     }
 
@@ -219,7 +221,7 @@ impl<'a> ExprPrinter<'a> {
                     arena
                         .concat(args.iter().map(|arg| arena.space().append(pretty(arg))))
                         .nest(INDENT),
-                )
+                ).group()
             }
             Expr::Array(ref array) => {
                 arena
@@ -247,7 +249,8 @@ impl<'a> ExprPrinter<'a> {
                     arena.concat(
                         elems
                             .iter()
-                            .map(|elem| pretty(elem).group().append(arena.newline())),
+                            .map(|elem| pretty(elem).group())
+                            .intersperse(arena.newline()),
                     )
                 }
             }
@@ -266,11 +269,13 @@ impl<'a> ExprPrinter<'a> {
             }
             Expr::Infix(ref l, ref op, ref r) => {
                 chain![arena;
-                    pretty(l),
-                    " ",
-                    op.value.name.as_ref(),
-                    " ",
-                    pretty(r)
+                    pretty(l).group(),
+                    chain![arena;
+                        newline(arena, r),
+                        op.value.name.as_ref(),
+                        " ",
+                        pretty(r).group()
+                    ].nest(INDENT)
                 ]
             }
             Expr::Lambda(_) => {
@@ -361,16 +366,18 @@ impl<'a> ExprPrinter<'a> {
                     .group()
             }
             Expr::TypeBindings(ref binds, ref body) => {
+                let prefixes = once("type").chain(repeat("and"));
                 chain![arena;
                     doc_comment(arena, &binds.first().unwrap().comment),
-                    "type ",
-                    arena.concat(binds.iter().map(|bind| {
+                    arena.concat(binds.iter().zip(prefixes).map(|(bind, prefix)| {
                         let mut type_doc = pretty_type(arena, &bind.alias.value.unresolved_type());
                         match **bind.alias.value.unresolved_type() {
                             Type::Record(_) => (),
-                            _ => type_doc = type_doc.block(INDENT),
+                            _ => type_doc = type_doc.nest(INDENT),
                         }
                         chain![arena;
+                            prefix,
+                            " ",
                             bind.name.value.as_ref(),
                             " ",
                             arena.concat(bind.alias.value.args.iter().map(|arg| {
@@ -394,8 +401,7 @@ impl<'a> ExprPrinter<'a> {
                                 .append(type_doc)
                                 .group()
                         ].group()
-                    }).interleave(newlines_iter!(self, binds.iter().map(|bind| bind.span()))
-                        .map(|doc| doc.append("and ")))),
+                    }).interleave(newlines_iter!(self, binds.iter().map(|bind| bind.span())))),
                     self.newlines(binds.last().unwrap().alias.span.end, body.span.start),
                     pretty(body)
                 ].group()
@@ -438,7 +444,7 @@ impl<'a> ExprPrinter<'a> {
                 ];
                 let (next_lambda, body) = self.pretty_lambda(previous_end, &lambda.body);
                 if next_lambda.1 == arena.nil().1 {
-                    (decl.append(next_lambda), body)
+                    (decl, body)
                 } else {
                     (decl.append(arena.space()).append(next_lambda), body)
                 }
@@ -504,7 +510,7 @@ impl<'a> ExprPrinter<'a> {
                             }
                         }
                     }).interleave(end_iter))
-                ].block(INDENT)
+                ].nest(INDENT)
                     .append(line.clone())
                     .group()
                     .append("}");
@@ -530,7 +536,7 @@ impl<'a> ExprPrinter<'a> {
         };
         match expr.value {
             Expr::Record { .. } => (),
-            _ => body = body.block(INDENT),
+            _ => body = body.nest(INDENT),
         }
         from.append(first)
             .append(arguments)

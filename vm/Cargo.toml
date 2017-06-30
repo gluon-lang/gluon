@@ -18,7 +18,7 @@ log = "0.3.6"
 quick-error = "1.1.0"
 mopa = "0.2.2"
 collect-mac = "0.1.0"
-pretty = { version = "0.3.0", git = "https://github.com/Marwes/pretty.rs", branch = "indent_fix" }
+pretty = { version = "0.3.1", git = "https://github.com/Marwes/pretty.rs", branch = "indent_fix" }
 bitflags = "0.7.0"
 itertools = "0.6.0"
 futures = "0.1.0"
