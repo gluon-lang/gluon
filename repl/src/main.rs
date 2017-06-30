@@ -13,7 +13,7 @@ extern crate futures;
 extern crate gluon_vm;
 extern crate gluon;
 
-use std::io;
+use std::io::{self, Write};
 
 use gluon::base;
 use gluon::parser;
@@ -45,7 +45,7 @@ fn init_env_logger() {
 #[cfg(not(feature = "env_logger"))]
 fn init_env_logger() {}
 
-fn format(writer: &mut io::Write, buffer: &str) -> Result<usize> {
+fn format(writer: &mut Write, buffer: &str) -> Result<usize> {
     use gluon::base::pretty_print::ExprPrinter;
     use gluon::base::source::Source;
 
@@ -60,14 +60,11 @@ fn format(writer: &mut io::Write, buffer: &str) -> Result<usize> {
 }
 
 fn fmt_file(name: &str) -> Result<()> {
-    use std::io::{Read, Seek, SeekFrom, Write};
+    use std::io::{Read, Seek, SeekFrom};
     use std::fs::{File, OpenOptions};
 
-    let mut input_file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(name)?;
-    
+    let mut input_file = OpenOptions::new().read(true).write(true).open(name)?;
+
     let mut buffer = String::new();
     input_file.read_to_string(&mut buffer)?;
 
@@ -93,55 +90,57 @@ fn fmt_stdio() -> Result<()> {
     Ok(())
 }
 
-fn main() {
+fn run() -> std::result::Result<(), Box<std::error::Error + Send + Sync>> {
     const GLUON_VERSION: &'static str = env!("CARGO_PKG_VERSION");
+
+    let matches = clap_app!(gluon =>
+        (version: GLUON_VERSION)
+        (about: "executes gluon programs")
+        (@arg REPL: -i --interactive "Starts the repl")
+        (@subcommand fmt =>
+            (about: "Formats gluon source code")
+            (@arg INPUT: ... "Formats each file")
+        )
+        (@arg INPUT: ... "Executes each file as a gluon program")
+    ).get_matches();
+    if let Some(fmt_matches) = matches.subcommand_matches("fmt") {
+        if let Some(args) = fmt_matches.values_of("INPUT") {
+            for arg in args {
+                fmt_file(arg)?;
+            }
+        } else {
+            fmt_stdio()?;
+        }
+    } else if matches.is_present("REPL") {
+        repl::run()?;
+    } else if let Some(args) = matches.values_of("INPUT") {
+        let vm = new_vm();
+        match run_files(&vm, args) {
+            Ok(()) => (),
+            Err(err @ Error::VM(VMError::Message(_))) => {
+                return Err(format!("{}\n{}", err, vm.context().stack.stacktrace(0)).into())
+            }
+            Err(err) => return Err(err.into()),
+        }
+    } else {
+        write!(io::stderr(), "{}", matches.usage()).expect("Error writing help to stderr");
+    }
+    Ok(())
+}
+
+fn main() {
+    init_env_logger();
 
     // Need the extra stack size when compiling the program using the msvc compiler
     ::std::thread::Builder::new()
         .stack_size(2 * 1024 * 1024)
-        .spawn(|| {
-            init_env_logger();
+        .spawn(|| if let Err(err) = run() {
+            let stderr = &mut io::stderr();
+            let errmsg = "Error writing to stderr";
 
-            let matches = clap_app!(gluon =>
-                (version: GLUON_VERSION)
-                (about: "executes gluon programs")
-                (@arg REPL: -i --interactive "Starts the repl")
-                (@subcommand fmt => 
-                    (about: "Formats gluon source code")
-                    (@arg INPUT: ... "Formats each file")
-                )
-                (@arg INPUT: ... "Executes each file as a gluon program")
-            ).get_matches();
-            if let Some(fmt_matches) = matches.subcommand_matches("fmt") {
-                if let Some(args) = fmt_matches.values_of("INPUT") {
-                    for arg in args {
-                        if let Err(err) = fmt_file(arg) {
-                            println!("{}", err);
-                            std::process::exit(1);
-                        }
-                    }
-                } else {
-                    if let Err(err) = fmt_stdio() {
-                        println!("{}", err);
-                        std::process::exit(1);
-                    }
-                }
-            } else if matches.is_present("REPL") {
-                if let Err(err) = repl::run() {
-                    println!("{}", err);
-                }
-            } else if let Some(args) = matches.values_of("INPUT") {
-                let vm = new_vm();
-                match run_files(&vm, args) {
-                    Ok(()) => (),
-                    Err(err @ Error::VM(VMError::Message(_))) => {
-                        println!("{}\n{}", err, vm.context().stack.stacktrace(0));
-                    }
-                    Err(msg) => println!("{}", msg),
-                }
-            } else {
-                println!("{}", matches.usage());
-            }
+            write!(stderr, "error: {}", err).expect(errmsg);
+
+            ::std::process::exit(1);
         })
         .unwrap()
         .join()

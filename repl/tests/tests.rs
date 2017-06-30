@@ -10,7 +10,10 @@ fn fmt_repl() {
     let source = "src/repl.glu";
 
     let mut before = String::new();
-    File::open(source).unwrap().read_to_string(&mut before).unwrap();
+    File::open(source)
+        .unwrap()
+        .read_to_string(&mut before)
+        .unwrap();
 
     let status = Command::new("gluon")
         .args(&["fmt", source])
@@ -21,7 +24,10 @@ fn fmt_repl() {
     assert!(status.success());
 
     let mut after = String::new();
-    File::open(source).unwrap().read_to_string(&mut after).unwrap();
+    File::open(source)
+        .unwrap()
+        .read_to_string(&mut after)
+        .unwrap();
 
     assert_eq!(before, after);
 }
