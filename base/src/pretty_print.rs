@@ -181,7 +181,7 @@ impl<'a> ExprPrinter<'a> {
         }
     }
 
-    pub fn format<Id>(&'a self, width: usize, expr: &'a SpannedExpr<Id>) -> String
+    pub fn format<Id>(&'a self, width: usize, newline: &'a str, expr: &'a SpannedExpr<Id>) -> String
     where
         Id: AsRef<str>,
     {
@@ -190,7 +190,7 @@ impl<'a> ExprPrinter<'a> {
             .pretty(width)
             .to_string()
             .lines()
-            .map(|s| format!("{}\n", s.trim_right()))
+            .map(|s| format!("{}{}", s.trim_right(), newline))
             .collect()
     }
 

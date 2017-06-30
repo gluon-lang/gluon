@@ -403,3 +403,28 @@ pub fn parse_string<'env, 'input>
      -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, ParseErrors)> {
     parse_partial_expr(symbols, input)
 }
+
+pub fn format_expr(input: &str) -> Result<String, ParseErrors> {
+    use base::pretty_print::ExprPrinter;
+    use base::source::Source;
+    use base::symbol::Symbols;
+
+    let newline = match input.find(|c: char| c == '\n' || c == '\r') {
+        Some(i) => {
+            if input[i..].starts_with("\r\n") {
+                "\r\n"
+            } else if input[i..].starts_with("\r") {
+                "\r"
+            } else {
+                "\n"
+            }
+        }
+        None => "\n"
+    };
+
+    let expr = parse_expr(&mut Symbols::new(), input)?;
+
+    let source = Source::new(input);
+    let printer = ExprPrinter::new(&source);
+    Ok(printer.format(100, newline, &expr))
+}

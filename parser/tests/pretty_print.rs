@@ -14,7 +14,7 @@ use difference::assert_diff;
 use base::source::Source;
 use base::pretty_print::ExprPrinter;
 
-use parser::parse_string;
+use parser::format_expr;
 
 use support::MockEnv;
 
@@ -29,14 +29,9 @@ fn test_format(name: &str) {
         .unwrap()
         .read_to_string(&mut contents)
         .unwrap();
-    // The output uses \n line endings
-    contents = contents.replace("\r\n", "\n");
 
-    let expr = parse_string(&mut MockEnv::new(), &contents).unwrap();
+    let out_str = format_expr(&contents).unwrap();
 
-    let source = Source::new(&contents);
-    let printer = ExprPrinter::new(&source);
-    let out_str = printer.format(100, &expr);
     if contents != out_str {
         let out_path = Path::new(env!("OUT_DIR")).join(name.file_name().unwrap());
         File::create(out_path)

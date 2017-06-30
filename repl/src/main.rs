@@ -20,6 +20,8 @@ use gluon::parser;
 use gluon::check;
 use gluon::vm;
 
+use base::error::InFile;
+
 use gluon::{new_vm, Compiler, Thread, Error, Result};
 use gluon::vm::thread::ThreadInternal;
 use gluon::vm::Error as VMError;
@@ -46,15 +48,10 @@ fn init_env_logger() {
 fn init_env_logger() {}
 
 fn format(writer: &mut Write, buffer: &str) -> Result<usize> {
-    use gluon::base::pretty_print::ExprPrinter;
-    use gluon::base::source::Source;
+    use gluon::parser::format_expr;
 
-    let expr = Compiler::new().parse_expr("", buffer)?;
-
-    let source = Source::new(buffer);
-    let printer = ExprPrinter::new(&source);
-
-    let output = printer.format(100, &expr);
+    let output = format_expr(buffer)
+        .map_err(|err| InFile::new("", buffer, err))?;
     writer.write_all(output.as_bytes())?;
     Ok(output.len())
 }
