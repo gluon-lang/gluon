@@ -13,6 +13,8 @@ extern crate futures;
 extern crate gluon_vm;
 extern crate gluon;
 
+use std::io;
+
 use gluon::base;
 use gluon::parser;
 use gluon::check;
@@ -43,12 +45,23 @@ fn init_env_logger() {
 #[cfg(not(feature = "env_logger"))]
 fn init_env_logger() {}
 
+fn format(writer: &mut io::Write, buffer: &str) -> Result<usize> {
+    use gluon::base::pretty_print::ExprPrinter;
+    use gluon::base::source::Source;
+
+    let expr = Compiler::new().parse_expr("", buffer)?;
+
+    let source = Source::new(buffer);
+    let printer = ExprPrinter::new(&source);
+
+    let output = printer.format(100, &expr);
+    writer.write_all(output.as_bytes())?;
+    Ok(output.len())
+}
+
 fn fmt_file(name: &str) -> Result<()> {
     use std::io::{Read, Seek, SeekFrom, Write};
     use std::fs::{File, OpenOptions};
-
-    use gluon::base::pretty_print::ExprPrinter;
-    use gluon::base::source::Source;
 
     let mut input_file = OpenOptions::new()
         .read(true)
@@ -58,17 +71,25 @@ fn fmt_file(name: &str) -> Result<()> {
     let mut buffer = String::new();
     input_file.read_to_string(&mut buffer)?;
 
-    let mut backup = File::create(&format!("{}.bk", name))?;
-    backup.write_all(buffer.as_bytes())?;
+    {
+        let mut backup = File::create(&format!("{}.bk", name))?;
+        backup.write_all(buffer.as_bytes())?;
+    }
 
-    let expr = Compiler::new().parse_expr("", &buffer)?;
-
-    let source = Source::new(&buffer);
-    let printer = ExprPrinter::new(&source);
-
-    let output = printer.format(100, &expr);
     input_file.seek(SeekFrom::Start(0))?;
-    input_file.write_all(output.as_bytes())?;
+    let written = format(&mut input_file, &buffer)?;
+    // Truncate the file to remove any data that were there before
+    input_file.set_len(written as u64)?;
+    Ok(())
+}
+
+fn fmt_stdio() -> Result<()> {
+    use std::io::{Read, stdin, stdout};
+
+    let mut buffer = String::new();
+    stdin().read_to_string(&mut buffer)?;
+
+    format(&mut stdout(), &buffer)?;
     Ok(())
 }
 
@@ -100,8 +121,10 @@ fn main() {
                         }
                     }
                 } else {
-                    println!("Expected input arguments to `fmt`");
-                    std::process::exit(1);
+                    if let Err(err) = fmt_stdio() {
+                        println!("{}", err);
+                        std::process::exit(1);
+                    }
                 }
             } else if matches.is_present("REPL") {
                 if let Err(err) = repl::run() {
