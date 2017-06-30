@@ -43,6 +43,35 @@ fn init_env_logger() {
 #[cfg(not(feature = "env_logger"))]
 fn init_env_logger() {}
 
+fn fmt_file(name: &str) -> Result<()> {
+    use std::io::{Read, Seek, SeekFrom, Write};
+    use std::fs::{File, OpenOptions};
+
+    use gluon::base::pretty_print::ExprPrinter;
+    use gluon::base::source::Source;
+
+    let mut input_file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(name)?;
+    
+    let mut buffer = String::new();
+    input_file.read_to_string(&mut buffer)?;
+
+    let mut backup = File::create(&format!("{}.bk", name))?;
+    backup.write_all(buffer.as_bytes())?;
+
+    let expr = Compiler::new().parse_expr("", &buffer)?;
+
+    let source = Source::new(&buffer);
+    let printer = ExprPrinter::new(&source);
+
+    let output = printer.format(100, &expr);
+    input_file.seek(SeekFrom::Start(0))?;
+    input_file.write_all(output.as_bytes())?;
+    Ok(())
+}
+
 fn main() {
     const GLUON_VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
@@ -56,9 +85,25 @@ fn main() {
                 (version: GLUON_VERSION)
                 (about: "executes gluon programs")
                 (@arg REPL: -i --interactive "Starts the repl")
+                (@subcommand fmt => 
+                    (about: "Formats gluon source code")
+                    (@arg INPUT: ... "Formats each file")
+                )
                 (@arg INPUT: ... "Executes each file as a gluon program")
             ).get_matches();
-            if matches.is_present("REPL") {
+            if let Some(fmt_matches) = matches.subcommand_matches("fmt") {
+                if let Some(args) = fmt_matches.values_of("INPUT") {
+                    for arg in args {
+                        if let Err(err) = fmt_file(arg) {
+                            println!("{}", err);
+                            std::process::exit(1);
+                        }
+                    }
+                } else {
+                    println!("Expected input arguments to `fmt`");
+                    std::process::exit(1);
+                }
+            } else if matches.is_present("REPL") {
                 if let Err(err) = repl::run() {
                     println!("{}", err);
                 }

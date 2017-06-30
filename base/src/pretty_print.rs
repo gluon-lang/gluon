@@ -22,12 +22,11 @@ pub fn ident<'b>(arena: &'b Arena<'b>, name: &'b str) -> DocBuilder<'b, Arena<'b
 
 fn forced_new_line<Id>(expr: &SpannedExpr<Id>) -> bool {
     match expr.value {
-        // len() == 1 is parentheses currently
-        Expr::Block(ref exprs) if exprs.len() > 1 => true,
         Expr::LetBindings(..) |
         Expr::Match(..) |
         Expr::TypeBindings(..) => true,
         Expr::Lambda(ref lambda) => forced_new_line(&lambda.body),
+        Expr::Tuple { ref elems, .. } => elems.iter().any(forced_new_line),
         Expr::Record { ref exprs, .. } => {
             exprs.iter().any(|field| {
                 field
@@ -182,6 +181,19 @@ impl<'a> ExprPrinter<'a> {
         }
     }
 
+    pub fn format<Id>(&'a self, width: usize, expr: &'a SpannedExpr<Id>) -> String
+    where
+        Id: AsRef<str>,
+    {
+        self.pretty_expr(expr)
+            .1
+            .pretty(width)
+            .to_string()
+            .lines()
+            .map(|s| format!("{}\n", s.trim_right()))
+            .collect()
+    }
+
 
     fn newlines(&'a self, prev: BytePos, next: BytePos) -> DocBuilder<'a, Arena<'a>> {
         let arena = &self.arena;
@@ -193,7 +205,6 @@ impl<'a> ExprPrinter<'a> {
                 self.source.line(Line::from(l)).unwrap().1.trim().is_empty()
             })
             .count();
-        println!("{} {} {}", prev, next, empty_lines);
         arena.concat(repeat(arena.newline()).take(empty_lines))
     }
 
@@ -217,11 +228,13 @@ impl<'a> ExprPrinter<'a> {
 
         let doc = match expr.value {
             Expr::App(ref func, ref args) => {
-                pretty(func).append(
-                    arena
-                        .concat(args.iter().map(|arg| arena.space().append(pretty(arg))))
-                        .nest(INDENT),
-                ).group()
+                pretty(func)
+                    .append(
+                        arena
+                            .concat(args.iter().map(|arg| arena.space().append(pretty(arg))))
+                            .nest(INDENT),
+                    )
+                    .group()
             }
             Expr::Array(ref array) => {
                 arena

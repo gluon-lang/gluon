@@ -383,12 +383,7 @@ AtomicExpr: Expr<Id> = {
     },
 
     "(" <elems: Comma<SpExpr>> ")" =>
-        match elems.len() {
-            // Parenthesized expression - wrap in a block to ensure
-            // that it survives operator reparsing
-            1 => Expr::Block(elems),
-            _ => Expr::Tuple { typ: type_cache.hole(), elems: elems },
-        },
+        Expr::Tuple { typ: type_cache.hole(), elems: elems },
 
     "[" <elems: Comma<SpExpr>> "]" => Expr::Array(Array {
             typ: type_cache.hole(),

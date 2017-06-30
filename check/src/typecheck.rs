@@ -659,21 +659,23 @@ impl<'a> Typecheck<'a> {
                 ref mut typ,
                 elems: ref mut exprs,
             } => {
-                *typ = if exprs.is_empty() {
-                    Type::unit()
-                } else {
-                    let fields = exprs
-                        .iter_mut()
-                        .enumerate()
-                        .map(|(i, expr)| {
-                            let typ = self.typecheck(expr);
-                            Field {
-                                name: self.symbols.symbol(format!("_{}", i)),
-                                typ: typ,
-                            }
-                        })
-                        .collect();
-                    Type::record(vec![], fields)
+                *typ = match exprs.len() {
+                    0 => Type::unit(),
+                    1 => self.typecheck(&mut exprs[0]),
+                    _ => {
+                        let fields = exprs
+                            .iter_mut()
+                            .enumerate()
+                            .map(|(i, expr)| {
+                                let typ = self.typecheck(expr);
+                                Field {
+                                    name: self.symbols.symbol(format!("_{}", i)),
+                                    typ: typ,
+                                }
+                            })
+                            .collect();
+                        Type::record(vec![], fields)
+                    }
                 };
                 Ok(TailCall::Type(typ.clone()))
             }

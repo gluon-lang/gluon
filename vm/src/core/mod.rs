@@ -476,17 +476,21 @@ impl<'a, 'e> Translator<'a, 'e> {
                 )
             }
             ast::Expr::Tuple { ref elems, .. } => {
-                let args: SmallVec<[_; 16]> =
-                    elems.iter().map(|expr| self.translate(expr)).collect();
-                Expr::Data(
-                    TypedIdent {
-                        name: self.dummy_symbol.name.clone(),
-                        typ: expr.env_type_of(&self.env),
-                    },
-                    arena.alloc_extend(args.into_iter()),
-                    expr.span.start,
-                    expr.span.expansion_id,
-                )
+                if elems.len() == 1 {
+                    self.translate(&elems[0])
+                } else {
+                    let args: SmallVec<[_; 16]> =
+                        elems.iter().map(|expr| self.translate(expr)).collect();
+                    Expr::Data(
+                        TypedIdent {
+                            name: self.dummy_symbol.name.clone(),
+                            typ: expr.env_type_of(&self.env),
+                        },
+                        arena.alloc_extend(args.into_iter()),
+                        expr.span.start,
+                        expr.span.expansion_id,
+                    )
+                }
             }
             ast::Expr::TypeBindings(_, ref expr) => self.translate(expr),
             ast::Expr::Error => panic!("ICE: Error expression found in the compiler"),

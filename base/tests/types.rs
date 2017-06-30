@@ -218,11 +218,8 @@ fn break_record() {
     let data = |s, a| ArcType::from(type_con(s, a));
 
     let test = data("Test", vec![data("a", vec![])]);
-    let typ: ArcType<&str> = 
-    
-    Type::record(
-        vec![
-        ],
+    let typ: ArcType<&str> = Type::record(
+        vec![],
         vec![
             Field::new("x", Type::int()),
             Field::new("test", test.clone()),
@@ -233,7 +230,8 @@ fn break_record() {
         ],
     );
     let arena = Arena::new();
-    let typ = arena.text("aaaaaaaaabbbbbbbbbbcccccccccc ")
+    let typ = arena
+        .text("aaaaaaaaabbbbbbbbbbcccccccccc ")
         .append(pretty_print(&arena, &typ))
         .append(arena.newline());
     assert_eq_display!(
@@ -243,5 +241,6 @@ fn break_record() {
     test : Test a,
     (+) : Int -> Int -> Int
 }
-"#);
+"#
+    );
 }
