@@ -14,6 +14,7 @@ build = "build.rs"
 
 [dependencies]
 env_logger = { version = "0.3.4", optional = true }
+itertools = "0.5.6"
 quick-error = "1.0.0"
 lalrpop-util = "0.13.1"
 log = "0.3.6"
@@ -21,6 +22,8 @@ gluon_base = { path = "../base", version = "0.4.2" } # GLUON
 
 [dev-dependencies]
 collect-mac = "0.1.0"
+difference = "0.4.0"
+pretty = { version = "0.3.1", git = "https://github.com/Marwes/pretty.rs", branch = "newline" }
 pretty_assertions = "0.2.0"
 
 [build-dependencies]

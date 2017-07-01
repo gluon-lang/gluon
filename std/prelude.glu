@@ -18,7 +18,6 @@ let unwrap_err res : Result e a -> e =
     | Err x -> x
 
 /**
-
 `Monoid m` represents an associative operation on `m` an which has an identity.
 This means the following laws must hold:
 
@@ -29,12 +28,9 @@ This means the following laws must hold:
 * x <> (y <> z) = (x <> y) <> z
 
 */
-type Monoid m = {
-    append : m -> m -> m,
-    empty : m
-}
+type Monoid m = { append : m -> m -> m, empty : m }
 
-let monoid_Function m : Monoid b -> (Monoid (a -> b)) = {
+let monoid_Function m : Monoid b -> Monoid (a -> b) = {
     append = \f g -> \x -> m.append (f x) (g x),
     empty = \_ -> m.empty
 }
@@ -49,59 +45,35 @@ let monoid_Option m : Monoid a -> Monoid (Option a) = {
     empty = None
 }
 
-let monoid_Int_Add = {
-    append = \x y -> x #Int+ y,
-    empty = 0
-}
+let monoid_Int_Add = { append = \x y -> x #Int+ y, empty = 0 }
 
-let monoid_Int_Mul = {
-    append = \x y -> x #Int* y,
-    empty = 1
-}
+let monoid_Int_Mul = { append = \x y -> x #Int* y, empty = 1 }
 
-let monoid_Float_Add = {
-    append = \x y -> x #Float+ y,
-    empty = 0.0
-}
+let monoid_Float_Add = { append = \x y -> x #Float+ y, empty = 0.0 }
 
-let monoid_Float_Mul = {
-    append = \x y -> x #Float* y,
-    empty = 1.0
-}
+let monoid_Float_Mul = { append = \x y -> x #Float* y, empty = 1.0 }
 
 let make_Monoid m =
     let { append, empty } = m
 
-    let (<>) /* : m -> m -> m */ = append
+    let (<>) = append
 
     { append, empty, (<>) }
 
 let not x = if x then False else True
 
 /// `Eq a` defines equality (==) on `a`
-type Eq a = {
-    (==) : a -> a -> Bool
-}
+type Eq a = { (==) : a -> a -> Bool }
 
-let eq_Unit : Eq () = {
-    (==) = \l r -> True
-}
+let eq_Unit : Eq () = { (==) = \l r -> True }
 
-let eq_Bool : Eq Bool = {
-    (==) = \l r -> if l then r else not r
-}
+let eq_Bool : Eq Bool = { (==) = \l r -> if l then r else not r }
 
-let eq_Int = {
-    (==) = \l r -> l #Int== r
-}
+let eq_Int = { (==) = \l r -> l #Int== r }
 
-let eq_Float = {
-    (==) = \l r -> l #Float== r
-}
+let eq_Float = { (==) = \l r -> l #Float== r }
 
-let eq_Char = {
-    (==) = \l r -> l #Char== r
-}
+let eq_Char = { (==) = \l r -> l #Char== r }
 
 let eq_Option a : Eq a -> Eq (Option a) = {
     (==) = \l r ->
@@ -128,56 +100,25 @@ let monoid_Ordering = {
 }
 
 /// `Ord a` defines an ordering on `a`
-type Ord a = {
-    eq : Eq a,
-    compare : a -> a -> Ordering
-}
+type Ord a = { eq : Eq a, compare : a -> a -> Ordering }
 
-let ord_Unit = {
-    eq = eq_Unit,
-    compare = \l r -> EQ
-}
+let ord_Unit = { eq = eq_Unit, compare = \l r -> EQ }
 
-let ord_Bool = {
-    eq = eq_Bool,
-    compare = \l r ->
-        if l then
-            if r then
-                EQ
-            else
-                GT
-        else
-            LT
-}
+let ord_Bool = { eq = eq_Bool, compare = \l r -> if l then if r then EQ else GT else LT }
 
 let ord_Int = {
     eq = eq_Int,
-    compare = \l r ->
-        if l #Int< r
-        then LT
-        else if l #Int== r
-        then EQ
-        else GT
+    compare = \l r -> if l #Int< r then LT else if l #Int== r then EQ else GT
 }
 
 let ord_Float = {
     eq = eq_Float,
-    compare = \l r ->
-        if l #Float< r
-        then LT
-        else if l #Float== r
-        then EQ
-        else GT
+    compare = \l r -> if l #Float< r then LT else if l #Float== r then EQ else GT
 }
 
 let ord_Char = {
     eq = eq_Char,
-    compare = \l r ->
-        if l #Char< r
-        then LT
-        else if l #Char== r
-        then EQ
-        else GT
+    compare = \l r -> if l #Char< r then LT else if l #Char== r then EQ else GT
 }
 
 let ord_Option a : Ord a -> Ord (Option a) = {
@@ -259,10 +200,7 @@ let num_Float : Num Float = {
     negate = \x -> 0.0 #Float- x
 }
 
-type Category (cat : Type -> Type -> Type) = {
-    id : cat a a,
-    compose : cat b c -> cat a b -> cat a c
-}
+type Category (cat : Type -> Type -> Type) = { id : cat a a, compose : cat b c -> cat a b -> cat a c }
 
 let category_Function : Category (->) = {
     id = \x -> x,
@@ -273,19 +211,17 @@ let make_Category cat =
     let { id, compose } = cat
 
     /// Right-to-left composition. Alias for `compose`.
-    let (<<) /* : cat b c -> cat a b -> cat a c */ = compose
+    let (<<) = compose
     /// Left-to-right composition. Alias for `compose`, but with the arguments flipped.
-    let (>>) f g /* : cat a b -> cat b c -> cat a c */ = compose g f
+    let (>>) f g = compose g f
 
     { id, compose, (<<), (>>) }
 
 /// The identity function, where `id x == x`
-let id : a -> a =
-    category_Function.id
+let id : a -> a = category_Function.id
 
 /// flip `f` takes creates a new function which takes its two arguments in reverse order
-let flip f : (a -> b -> c) -> b -> a -> c =
-    \x y -> f y x
+let flip f : (a -> b -> c) -> b -> a -> c = \x y -> f y x
 
 /// Backward function application, where `f <| x == f x`
 let (<|) f x : (a -> b) -> a -> b = f x
@@ -294,24 +230,18 @@ let (<|) f x : (a -> b) -> a -> b = f x
 let (|>) x f : a -> (a -> b) -> b = f x
 
 /// Right-to-left function composition
-let (<<) : (b -> c) -> (a -> b) -> a -> c =
-    (make_Category category_Function).(<<)
+let (<<) : (b -> c) -> (a -> b) -> a -> c = (make_Category category_Function).(<<)
 
 /// Left-to-right function composition
-let (>>) : (a -> b) -> (b -> c) -> a -> c =
-    (make_Category category_Function).(>>)
+let (>>) : (a -> b) -> (b -> c) -> a -> c = (make_Category category_Function).(>>)
 
 /**
 A `Functor` represents an action on a parameterized type which does not change the structure with
 the mapped type.
 */
-type Functor (f : Type -> Type) = {
-    map : (a -> b) -> f a -> f b
-}
+type Functor f = { map : (a -> b) -> f a -> f b }
 
-let functor_Function : Functor ((->) a) = {
-    map = category_Function.compose
-}
+let functor_Function : Functor ((->) a) = { map = category_Function.compose }
 
 let functor_Option : Functor Option = {
     map = \f x ->
@@ -327,9 +257,7 @@ let functor_Result : Functor (Result e) = {
         | Err _ -> x
 }
 
-let functor_IO : Functor IO = {
-    map = \f -> io_flat_map (\x -> io_pure (f x))
-}
+let functor_IO : Functor IO = { map = \f -> io_flat_map (\x -> io_pure (f x)) }
 
 type Applicative (f : Type -> Type) = {
     functor : Functor f,
@@ -344,8 +272,7 @@ let applicative_Function : Applicative ((->) a) = {
 }
 
 /// const `x` creates a function which always returns `x`
-let const : a -> b -> a =
-    applicative_Function.pure
+let const : a -> b -> a = applicative_Function.pure
 
 let applicative_Option : Applicative Option = {
     functor = functor_Option,
@@ -375,19 +302,15 @@ let applicative_IO : Applicative IO =
 let make_Applicative app =
     let { functor, apply, pure } = app
 
-    let (<*>) /* : app (a -> b) -> app a -> app b */ = apply
-    let (<*) l r /* : app a -> app b -> app a */ = functor.map const l <*> r
-    let (*>) l r /* : app a -> app b -> app b */ = functor.map (const id) l <*> r
-    let map2 f a b /* : (a -> b -> c) -> app a -> app b -> app c */ = (functor.map f a) <*> b
-    let map3 f a b c /* : (a -> b -> c -> d) -> app a -> app b -> app c -> app d */ = (functor.map f a) <*> b <*> c
+    let (<*>) = apply
+    let (<*) l r = functor.map const l <*> r
+    let (*>) l r = functor.map (const id) l <*> r
+    let map2 f a b = (functor.map f a) <*> b
+    let map3 f a b c = (functor.map f a) <*> b <*> c
 
     { functor, apply, pure, (<*>), (<*), (*>), map2, map3 }
 
-type Alternative f = {
-    applicative : Applicative f,
-    or : f a -> f a -> f a,
-    empty : f a
-}
+type Alternative f = { applicative : Applicative f, or : f a -> f a -> f a, empty : f a }
 
 let alternative_Option : Alternative Option = {
     applicative = applicative_Option,
@@ -402,22 +325,19 @@ let make_Alternative f =
     let { applicative, or, empty } = f
     let { functor, (<*>), pure } = make_Applicative applicative
 
-    let (<|>) /* : f a -> f a -> f a */ = or
-    let many x /* : f a -> f (List a) */ =
+    let (<|>) = or
+    let many x =
         let many_v _ = some_v () <|> pure Nil
         and some_v _ = functor.map (\h l -> Cons h l) x <*> many_v ()
         many_v ()
-    let some x  /* : f a -> f (List a) */ =
+    let some x =
         let many_v _ = some_v () <|> pure Nil
         and some_v _ = functor.map (\h l -> Cons h l) x <*> many_v ()
         some_v ()
 
     { applicative, or, empty, (<|>), many, some }
 
-type Monad (m : Type -> Type) = {
-    applicative : Applicative m,
-    flat_map : (a -> m b) -> m a -> m b
-}
+type Monad (m : Type -> Type) = { applicative : Applicative m, flat_map : (a -> m b) -> m a -> m b }
 
 let monad_Function : Monad ((->) a) = {
     applicative = applicative_Function,
@@ -442,10 +362,10 @@ let make_Monad m =
     let { (*>), pure } = make_Applicative applicative
     let { id } = category_Function
 
-    let (=<<) /* : (a -> m b) -> m a -> m b */ = flat_map
-    let (>>=) /* : m a -> (a -> m b) -> m b */ = flip flat_map
-    let join mm /* : m (m a) -> m a */ = mm >>= id
-    let forM_ xs f /* : List a -> (a -> m b) -> m () */ =
+    let (=<<) = flat_map
+    let (>>=) = flip flat_map
+    let join mm = mm >>= id
+    let forM_ xs f =
         match xs with
         | Cons y ys -> f y *> forM_ ys f
         | Nil -> pure ()
@@ -453,29 +373,17 @@ let make_Monad m =
     { applicative, flat_map, (=<<), (>>=), join, forM_ }
 
 /// `Show a` represents a conversion function from `a` to a readable string.
-type Show a = {
-    show : a -> String
-}
+type Show a = { show : a -> String }
 
-let show_Unit : Show () = {
-    show = const "()"
-}
+let show_Unit : Show () = { show = const "()" }
 
-let show_Bool : Show Bool = {
-    show = \x -> if x then "True" else "False"
-}
+let show_Bool : Show Bool = { show = \x -> if x then "True" else "False" }
 
-let show_Int : Show Int = {
-    show = prim.show_Int
-}
+let show_Int : Show Int = { show = prim.show_Int }
 
-let show_Float : Show Float = {
-    show = prim.show_Float
-}
+let show_Float : Show Float = { show = prim.show_Float }
 
-let show_Char : Show Char = {
-    show = prim.show_Char
-}
+let show_Char : Show Char = { show = prim.show_Char }
 
 let (++) = string_prim.append
 
@@ -592,42 +500,92 @@ let foldr f x xs =
     Result,
     List,
 
-    unwrap, unwrap_ok, unwrap_err,
+    unwrap,
+    unwrap_ok,
+    unwrap_err,
 
     not,
-    list, foldl, foldr,
+    list,
+    foldl,
+    foldr,
 
-    Monoid, make_Monoid,
-    monoid_Function, monoid_List, monoid_Option,
-    monoid_Int_Add, monoid_Int_Mul, monoid_Float_Add, monoid_Float_Mul,
+    Monoid,
+    make_Monoid,
+    monoid_Function,
+    monoid_List,
+    monoid_Option,
+    monoid_Int_Add,
+    monoid_Int_Mul,
+    monoid_Float_Add,
+    monoid_Float_Mul,
 
     Eq,
-    eq_Unit, eq_Bool, eq_List, eq_Option, eq_Result, eq_Float, eq_Int, eq_Char,
+    eq_Unit,
+    eq_Bool,
+    eq_List,
+    eq_Option,
+    eq_Result,
+    eq_Float,
+    eq_Int,
+    eq_Char,
 
-    Ord, make_Ord,
-    ord_Unit, ord_Bool, ord_Option, ord_Result, ord_Float, ord_Int, ord_Char,
+    Ord,
+    make_Ord,
+    ord_Unit,
+    ord_Bool,
+    ord_Option,
+    ord_Result,
+    ord_Float,
+    ord_Int,
+    ord_Char,
 
-    Category, make_Category,
+    Category,
+    make_Category,
     category_Function,
 
     Functor,
-    functor_Option, functor_Result, functor_List, functor_IO,
+    functor_Option,
+    functor_Result,
+    functor_List,
+    functor_IO,
 
-    Applicative, make_Applicative,
-    applicative_Option, applicative_Result, applicative_List, applicative_IO,
+    Applicative,
+    make_Applicative,
+    applicative_Option,
+    applicative_Result,
+    applicative_List,
+    applicative_IO,
 
-    Alternative, make_Alternative,
-    alternative_Option, alternative_List,
+    Alternative,
+    make_Alternative,
+    alternative_Option,
+    alternative_List,
 
-    Monad, make_Monad,
-    monad_Option, monad_List, monad_IO,
+    Monad,
+    make_Monad,
+    monad_Option,
+    monad_List,
+    monad_IO,
 
     Num,
-    num_Int, num_Float,
+    num_Int,
+    num_Float,
 
-    id, const, flip, (<|), (|>), (<<), (>>),
+    id,
+    const,
+    flip,
+    (<|),
+    (|>),
+    (<<),
+    (>>),
 
     Show,
-    show_Unit, show_Bool, show_Int, show_Float, show_Char, show_List, show_Option, show_Result
+    show_Unit,
+    show_Bool,
+    show_Int,
+    show_Float,
+    show_Char,
+    show_List,
+    show_Option,
+    show_Result
 }
-

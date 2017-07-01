@@ -9,7 +9,7 @@ extern crate gluon_parser as parser;
 extern crate gluon_check as check;
 
 use base::pos::Spanned;
-use base::types::{self, Type};
+use base::types::Type;
 
 mod support;
 
@@ -21,10 +21,8 @@ macro_rules! assert_err {
         #[allow(unused_imports)]
         use check::unify_type::TypeError::FieldMismatch;
 
-        let symbols = support::get_local_interner();
         match $e {
-            Ok(x) => assert!(false, "Expected error, got {}",
-                             types::display_type(&*symbols.borrow(), &x)),
+            Ok(x) => assert!(false, "Expected error, got {}", x),
             Err(err) => {
                 let errors = err.errors();
                 let mut iter = (&errors).into_iter();
@@ -49,11 +47,8 @@ macro_rules! assert_unify_err {
         #[allow(unused_imports)]
         use check::unify_type::TypeError::{FieldMismatch, SelfRecursive, MissingFields};
 
-        let symbols = support::get_local_interner();
-
         match $e {
-            Ok(x) => assert!(false, "Expected error, got {}",
-                             types::display_type(&*symbols.borrow(), &x)),
+            Ok(x) => assert!(false, "Expected error, got {}", x),
             Err(err) => {
                 for error in err.errors() {
                     match error {
@@ -433,11 +428,11 @@ fn no_inference_variable_in_error() {
         &*format!("{}", result.unwrap_err()).replace("\t", "        "),
         r#"test:Line: 2, Column: 1: Expected the following types to be equal
 Expected: b0 -> b1
-Found: {}
+Found: ()
 1 errors were found during unification:
 Types do not match:
         Expected: b0 -> b1
-        Found: {}
+        Found: ()
 () 1
 ^~~~
 "#

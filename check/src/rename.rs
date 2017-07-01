@@ -63,15 +63,16 @@ impl<'a> KindEnv for Environment<'a> {
 
 impl<'a> TypeEnv for Environment<'a> {
     fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
-        self.stack.get(id).map(|t| &t.2).or_else(
-            || self.env.find_type(id),
-        )
+        self.stack
+            .get(id)
+            .map(|t| &t.2)
+            .or_else(|| self.env.find_type(id))
     }
 
     fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
-        self.stack_types.get(id).or_else(
-            || self.env.find_type_info(id),
-        )
+        self.stack_types
+            .get(id)
+            .or_else(|| self.env.find_type_info(id))
     }
 
     fn find_record(
@@ -114,29 +115,33 @@ pub fn rename(
                     for field in fields {
                         let field_type = &field_types
                             .iter()
-                            .find(|field_type| field_type.name.name_eq(&field.0))
+                            .find(|field_type| field_type.name.name_eq(&field.name.value))
                             .expect("ICE: Existing field")
                             .typ;
-                        match field.1 {
+                        match field.value {
                             Some(ref mut pat) => self.new_pattern(field_type, pat),
                             None => {
-                                let id = field.0.clone();
+                                let id = field.name.value.clone();
                                 let pat = Pattern::Ident(TypedIdent {
                                     name: self.stack_var(id, pattern.span, field_type.clone()),
                                     typ: field_type.clone(),
                                 });
-                                field.1 = Some(pos::spanned(pattern.span, pat));
+                                field.value = Some(pos::spanned(pattern.span, pat));
                             }
                         }
                     }
 
                     let record_type = resolve::remove_aliases(&self.env, typ.clone()).clone();
-                    for &(ref name, _) in types {
+                    for ast_field in types {
                         let field_type = record_type
                             .type_field_iter()
-                            .find(|field| field.name.name_eq(name))
+                            .find(|field| field.name.name_eq(&ast_field.name.value))
                             .expect("field_type");
-                        self.stack_type(name.clone(), pattern.span, &field_type.typ);
+                        self.stack_type(
+                            ast_field.name.value.clone(),
+                            pattern.span,
+                            &field_type.typ,
+                        );
                     }
                 }
                 ast::Pattern::Ident(ref mut id) => {
@@ -160,7 +165,7 @@ pub fn rename(
                         self.new_pattern(arg_type, arg);
                     }
                 }
-                ast::Pattern::Error => ()
+                ast::Pattern::Error => (),
             }
         }
 
@@ -172,7 +177,7 @@ pub fn rename(
                 "Rename binding `{}` = `{}` `{}`",
                 self.symbols.string(&old_id),
                 self.symbols.string(&new_id),
-                types::display_type(&self.symbols, &typ)
+                typ
             );
             self.env.stack.insert(old_id, (new_id.clone(), span, typ));
             new_id
@@ -184,20 +189,17 @@ pub fn rename(
             let aliased_type = alias.typ();
             if let Type::Variant(ref row) = **aliased_type {
                 for field in row.row_iter().cloned() {
-                    self.env.stack.insert(field.name.clone(), (
-                        field.name,
-                        span,
-                        field.typ,
-                    ));
+                    self.env
+                        .stack
+                        .insert(field.name.clone(), (field.name, span, field.typ));
                 }
             }
 
             // FIXME: Workaround so that both the types name in this module and its global
             // name are imported. Without this aliases may not be traversed properly
-            self.env.stack_types.insert(
-                alias.name.clone(),
-                alias.clone(),
-            );
+            self.env
+                .stack_types
+                .insert(alias.name.clone(), alias.clone());
             self.env.stack_types.insert(id, alias.clone());
         }
 
@@ -211,9 +213,10 @@ pub fn rename(
                 locals
                     .iter()
                     .flat_map(|bindings| {
-                        bindings.iter().rev().map(|bind| {
-                            (&bind.0, Some(&bind.1), &bind.2)
-                        })
+                        bindings
+                            .iter()
+                            .rev()
+                            .map(|bind| (&bind.0, Some(&bind.1), &bind.2))
                     })
                     .chain(global)
             };
@@ -255,7 +258,10 @@ pub fn rename(
                         match expr_field.value {
                             Some(ref mut expr) => self.visit_expr(expr),
                             None => {
-                                if let Some(new_id) = self.rename(&expr_field.name, &field.typ)? {
+                                if let Some(new_id) = self.rename(
+                                    &expr_field.name.value,
+                                    &field.typ,
+                                )? {
                                     debug!("Rename record field {} = {}", expr_field.name, new_id);
                                     expr_field.value = Some(pos::spanned(
                                         expr.span,
@@ -329,11 +335,11 @@ pub fn rename(
                     self.env.stack_types.enter_scope();
                     for bind in bindings {
                         self.stack_type(
-                            bind.name.clone(),
+                            bind.name.value.clone(),
                             expr.span,
                             bind.finalized_alias.as_ref().expect(
                                 "ICE: Alias should have been finalized \
-                                                     before renaming",
+                                 before renaming",
                             ),
                         );
                     }

@@ -664,7 +664,7 @@ impl<'a> Compiler<'a> {
                                 panic!(
                                     "ICE: Could not find tag for {}::{} when matching on \
                                      expression `{}`",
-                                    types::display_type(&self.symbols, &typ),
+                                    typ,
                                     self.symbols.string(&id.name),
                                     expr
                                 )
@@ -897,13 +897,7 @@ impl<'a> Compiler<'a> {
                             }
                         }
                     }
-                    _ => {
-                        panic!(
-                            "Expected record, got {} at {:?}",
-                            types::display_type(&self.symbols, &typ),
-                            pattern
-                        )
-                    }
+                    _ => panic!("Expected record, got {} at {:?}", typ, pattern),
                 }
             }
             Pattern::Constructor(..) => panic!("constructor pattern in let"),

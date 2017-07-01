@@ -294,9 +294,9 @@ impl<'a> KindCheck<'a> {
 fn update_kind(subs: &Substitution<ArcKind>, kind: ArcKind, default: Option<&ArcKind>) -> ArcKind {
     walk_move_kind(kind, &mut |kind| match *kind {
         Kind::Variable(id) => {
-            subs.find_type_for_var(id).cloned().or_else(
-                || default.cloned(),
-            )
+            subs.find_type_for_var(id)
+                .cloned()
+                .or_else(|| default.cloned())
         }
         _ => None,
     })

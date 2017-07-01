@@ -68,7 +68,7 @@ fn use_string_module() {
             &vm,
             "example",
             " let string  = import! \"std/string.glu\" in string.trim \"  \
-                                   Hello world  \t\" ",
+             Hello world  \t\" ",
         )
         .sync_or_error()
         .unwrap();

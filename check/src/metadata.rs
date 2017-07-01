@@ -26,7 +26,7 @@ pub fn metadata(
                 Pattern::Ident(ref id) => {
                     let metadata = bind.comment.as_ref().map_or(metadata, |comment| {
                         Metadata {
-                            comment: Some(comment.clone()),
+                            comment: Some(comment.content.clone()),
                             module: BTreeMap::new(),
                         }
                     });
@@ -44,22 +44,26 @@ pub fn metadata(
                     ..
                 } => {
                     for field in fields {
-                        if let Some(m) = metadata.module.remove(field.0.as_ref()) {
-                            let id = match field.1 {
+                        if let Some(m) = metadata.module.remove(field.name.value.as_ref()) {
+                            let id = match field.value {
                                 Some(ref pat) => {
                                     match pat.value {
                                         Pattern::Ident(ref id) => &id.name,
                                         _ => return self.new_pattern(m, pat),
                                     }
                                 }
-                                None => &field.0,
+                                None => &field.name.value,
                             };
                             self.stack_var(id.clone(), m);
                         }
                     }
                     for field in types {
-                        if let Some(m) = metadata.module.remove(field.0.as_ref()) {
-                            let id = field.1.as_ref().unwrap_or_else(|| &field.0).clone();
+                        if let Some(m) = metadata.module.remove(field.name.value.as_ref()) {
+                            let id = field
+                                .value
+                                .as_ref()
+                                .unwrap_or_else(|| &field.name.value)
+                                .clone();
                             self.stack_var(id, m);
                         }
                     }
@@ -68,7 +72,8 @@ pub fn metadata(
                     self.stack_var(id.name.clone(), metadata);
                 }
                 Pattern::Tuple { .. } |
-                Pattern::Constructor(..) | Pattern::Error => (),
+                Pattern::Constructor(..) |
+                Pattern::Error => (),
             }
         }
 
@@ -81,17 +86,18 @@ pub fn metadata(
 
         fn metadata(&self, id: &Symbol) -> Option<&Metadata> {
             debug!("Lookup {}", id);
-            self.env.stack.get(id).or_else(
-                || self.env.env.get_metadata(id),
-            )
+            self.env
+                .stack
+                .get(id)
+                .or_else(|| self.env.env.get_metadata(id))
         }
 
         fn metadata_expr(&mut self, expr: &SpannedExpr<Symbol>) -> Metadata {
             match expr.value {
                 Expr::Ident(ref id) => {
-                    self.metadata(&id.name).cloned().unwrap_or_else(
-                        Metadata::default,
-                    )
+                    self.metadata(&id.name)
+                        .cloned()
+                        .unwrap_or_else(Metadata::default)
                 }
                 Expr::Record {
                     ref exprs,
@@ -105,11 +111,11 @@ pub fn metadata(
                                 let m = self.metadata_expr(expr);
                                 if m.has_data() { Some(m) } else { None }
                             }
-                            None => self.metadata(&field.name).cloned(),
+                            None => self.metadata(&field.name.value).cloned(),
                         };
                         let field_metadata = field.comment.clone().map(|comment| {
                             Metadata {
-                                comment: Some(comment),
+                                comment: Some(comment.content),
                                 module: BTreeMap::new(),
                             }
                         });
@@ -119,13 +125,13 @@ pub fn metadata(
                             (None, None) => None,
                         };
                         if let Some(metadata) = maybe_metadata {
-                            module.insert(String::from(field.name.as_ref()), metadata);
+                            module.insert(String::from(field.name.value.as_ref()), metadata);
                         }
                     }
                     for field in types {
-                        let maybe_metadata = self.metadata(&field.name).cloned();
+                        let maybe_metadata = self.metadata(&field.name.value).cloned();
                         if let Some(metadata) = maybe_metadata {
-                            let name = Name::new(field.name.as_ref()).name().as_str();
+                            let name = Name::new(field.name.value.as_ref()).name().as_str();
                             module.insert(String::from(name), metadata);
                         }
                     }
@@ -156,12 +162,12 @@ pub fn metadata(
                     for bind in bindings {
                         let maybe_metadata = bind.comment.as_ref().map(|comment| {
                             Metadata {
-                                comment: Some(comment.clone()),
+                                comment: Some(comment.content.clone()),
                                 module: BTreeMap::new(),
                             }
                         });
                         if let Some(metadata) = maybe_metadata {
-                            self.stack_var(bind.name.clone(), metadata);
+                            self.stack_var(bind.name.value.clone(), metadata);
                         }
                     }
                     let result = self.metadata_expr(expr);

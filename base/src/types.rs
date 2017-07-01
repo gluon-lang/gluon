@@ -8,7 +8,7 @@ use pretty::{DocAllocator, Arena, DocBuilder};
 
 use smallvec::{SmallVec, VecLike};
 
-use ast::{self, IdentEnv, DisplayEnv};
+use ast::IdentEnv;
 use kind::{ArcKind, Kind, KindEnv};
 use merge::merge;
 use symbol::{Symbol, SymbolRef};
@@ -49,9 +49,9 @@ impl RecordSelector {
         match *self {
             RecordSelector::Exact => record().into_iter().eq(needle),
             RecordSelector::Subset => {
-                needle.into_iter().all(|name| {
-                    record().into_iter().any(|other| other == name)
-                })
+                needle
+                    .into_iter()
+                    .all(|name| record().into_iter().any(|other| other == name))
             }
         }
     }
@@ -321,11 +321,10 @@ where
                 Type::Ident(ref id) => {
                     // Replace `Ident` with the alias it resolves to so that a `TypeEnv` is not needed
                     // to resolve the type later on
-                    let index =
-                        self.group
-                            .iter()
-                            .position(|alias| alias.name == *id)
-                            .expect("ICE: Alias group were not able to resolve an identifier");
+                    let index = self.group
+                        .iter()
+                        .position(|alias| alias.name == *id)
+                        .expect("ICE: Alias group were not able to resolve an identifier");
                     Some(T::from(Type::Alias(AliasRef {
                         index: index,
                         group: self.group.clone(),
@@ -915,7 +914,7 @@ impl fmt::Display for BuiltinType {
 }
 
 #[derive(PartialEq, Copy, Clone, PartialOrd)]
-enum Prec {
+pub enum Prec {
     /// The type exists in the top context, no parentheses needed.
     Top,
     /// The type exists in a function argument `Type -> a`, parentheses are
@@ -927,31 +926,44 @@ enum Prec {
     Constructor,
 }
 
-fn dt<'a, I, T, E>(env: &'a E, prec: Prec, typ: &'a Type<I, T>) -> DisplayType<'a, I, T, E> {
+impl Prec {
+    pub fn enclose<'a>(
+        &self,
+        limit: Prec,
+        arena: &'a Arena<'a>,
+        doc: DocBuilder<'a, Arena<'a>>,
+    ) -> DocBuilder<'a, Arena<'a>> {
+        if *self >= limit {
+            chain![arena; "(", doc, ")"]
+        } else {
+            doc
+        }
+    }
+}
+
+
+fn dt<'a, I, T>(prec: Prec, typ: &'a Type<I, T>) -> DisplayType<'a, I, T> {
     DisplayType {
-        env: env,
         prec: prec,
         typ: typ,
     }
 }
 
-fn top<'a, I, T, E>(env: &'a E, typ: &'a Type<I, T>) -> DisplayType<'a, I, T, E> {
-    dt(env, Prec::Top, typ)
+fn top<'a, I, T>(typ: &'a Type<I, T>) -> DisplayType<'a, I, T> {
+    dt(Prec::Top, typ)
 }
 
-pub fn display_type<'a, I, T, E>(env: &'a E, typ: &'a Type<I, T>) -> DisplayType<'a, I, T, E> {
-    top(env, typ)
+pub fn display_type<'a, E, I, T>(_: &E, typ: &'a Type<I, T>) -> DisplayType<'a, I, T> {
+    top(typ)
 }
 
-pub struct DisplayType<'a, I: 'a, T: 'a, E: 'a> {
+pub struct DisplayType<'a, I: 'a, T: 'a> {
     prec: Prec,
     typ: &'a Type<I, T>,
-    env: &'a E,
 }
 
-impl<'a, I, T, E> fmt::Display for DisplayType<'a, I, T, E>
+impl<'a, I, T> fmt::Display for DisplayType<'a, I, T>
 where
-    E: DisplayEnv<Ident = I> + 'a,
     T: Deref<Target = Type<I, T>> + 'a,
     I: AsRef<str>,
 {
@@ -981,35 +993,15 @@ macro_rules! chain {
     }}
 }
 
-impl<'a, I, T, E> DisplayType<'a, I, T, E>
+impl<'a, I, T> DisplayType<'a, I, T>
 where
-    E: DisplayEnv<Ident = I> + 'a,
     T: Deref<Target = Type<I, T>> + 'a,
 {
     fn pretty(&self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>>
     where
         I: AsRef<str>,
     {
-        fn ident<'b>(arena: &'b Arena<'b>, name: &'b str) -> DocBuilder<'b, Arena<'b>> {
-            if name.starts_with(ast::is_operator_char) {
-                chain![arena; "(", name, ")"]
-            } else {
-                arena.text(name)
-            }
-        }
-
-        fn enclose<'a>(
-            p: Prec,
-            limit: Prec,
-            arena: &'a Arena<'a>,
-            doc: DocBuilder<'a, Arena<'a>>,
-        ) -> DocBuilder<'a, Arena<'a>> {
-            if p >= limit {
-                chain![arena; "(", doc, ")"]
-            } else {
-                doc
-            }
-        }
+        use pretty_print::ident;
 
         let p = self.prec;
         match *self.typ {
@@ -1020,27 +1012,21 @@ where
             Type::App(ref t, ref args) => {
                 match self.typ.as_function() {
                     Some((arg, ret)) => {
-                        let doc =
-                            chain![arena;
-                                         dt(self.env, Prec::Function, arg).pretty(arena).group(),
+                        let doc = chain![arena;
+                                         dt(Prec::Function, arg).pretty(arena).group(),
                                          " ->",
                                          arena.space(),
-                                         top(self.env, ret).pretty(arena)];
+                                         top(ret).pretty(arena)];
 
-                        enclose(p, Prec::Function, arena, doc)
+                        p.enclose(Prec::Function, arena, doc)
                     }
                     None => {
-                        let mut doc = dt(self.env, Prec::Top, t).pretty(arena);
+                        let mut doc = dt(Prec::Top, t).pretty(arena);
                         for arg in args {
-                            doc = doc.append(arena.space()).append(
-                                dt(
-                                    self.env,
-                                    Prec::Constructor,
-                                    arg,
-                                ).pretty(arena),
-                            );
+                            doc = doc.append(arena.space())
+                                .append(dt(Prec::Constructor, arg).pretty(arena));
                         }
-                        enclose(p, Prec::Constructor, arena, doc).group()
+                        p.enclose(Prec::Constructor, arena, doc).group()
                     }
                 }
             }
@@ -1058,21 +1044,29 @@ where
                             first = false;
                             doc = doc.append("| ").append(field.name.as_ref());
                             for arg in arg_iter(&field.typ) {
-                                doc =
-                                    chain![arena;
+                                doc = chain![arena;
                                             doc,
                                             " ",
-                                            dt(self.env, Prec::Constructor, &arg).pretty(arena)];
+                                            dt(Prec::Constructor, &arg).pretty(arena)];
                             }
                         }
                     }
                     ref typ => panic!("Unexpected type `{}` in variant", typ),
                 };
 
-                enclose(p, Prec::Constructor, arena, doc).group()
+                p.enclose(Prec::Constructor, arena, doc).group()
             }
-            Type::Builtin(ref t) => arena.text(t.to_str()),
+            Type::Builtin(ref t) => {
+                match *t {
+                    BuiltinType::Function => chain![arena; "(", t.to_str(), ")"],
+                    _ => arena.text(t.to_str()),
+                }
+            }
             Type::Record(ref row) => {
+                // Empty records are always formatted as unit (`()`)
+                if let Type::EmptyRow = **row {
+                    return arena.text("()");
+                }
                 let mut doc = arena.text("{");
                 let empty_fields = match **row {
                     Type::ExtendRow { .. } => false,
@@ -1081,11 +1075,11 @@ where
 
                 doc = match **row {
                     Type::EmptyRow => doc,
-                    Type::ExtendRow { .. } => doc.append(top(self.env, row).pretty(arena)).nest(4),
+                    Type::ExtendRow { .. } => doc.append(top(row).pretty(arena)).nest(4),
                     _ => {
                         doc.append(arena.space())
                             .append("| ")
-                            .append(top(self.env, row).pretty(arena))
+                            .append(top(row).pretty(arena))
                             .nest(4)
                     }
                 };
@@ -1107,13 +1101,13 @@ where
                 {
                     for (i, field) in types.iter().enumerate() {
                         let f = chain![arena;
-                            self.env.string(&field.name),
+                            field.name.as_ref(),
                             arena.space(),
                             arena.concat(field.typ.args.iter().map(|arg| {
-                                arena.text(self.env.string(&arg.id)).append(" ")
+                                arena.text(arg.id.as_ref()).append(" ")
                             })),
                             arena.text("= ")
-                                 .append(top(self.env, &field.typ.typ).pretty(arena)),
+                                 .append(top(&field.typ.typ).pretty(arena)),
                             if i + 1 != types.len() || !fields.is_empty() {
                                 arena.text(",")
                             } else {
@@ -1135,14 +1129,14 @@ where
                 } = *typ
                 {
                     for (i, field) in fields.iter().enumerate() {
-                        let mut rhs = top(self.env, &*field.typ).pretty(arena);
+                        let mut rhs = top(&*field.typ).pretty(arena);
                         match *field.typ {
                             // Records handle nesting on their own
                             Type::Record(_) => (),
                             _ => rhs = rhs.nest(4),
                         }
                         let f = chain![arena;
-                            ident(arena, self.env.string(&field.name)),
+                            ident(arena, field.name.as_ref()),
                             " : ",
                             rhs.group(),
                             if i + 1 != fields.len() {
@@ -1157,18 +1151,17 @@ where
                 match *typ {
                     Type::EmptyRow => doc,
                     _ => {
-                        doc.append(arena.space()).append("| ").append(
-                            top(self.env, typ)
-                                .pretty(arena),
-                        )
+                        doc.append(arena.space())
+                            .append("| ")
+                            .append(top(typ).pretty(arena))
                     }
                 }
             }
             // This should not be displayed normally as it should only exist in `ExtendRow`
             // which handles `EmptyRow` explicitly
             Type::EmptyRow => arena.text("EmptyRow"),
-            Type::Ident(ref id) => arena.text(self.env.string(id)),
-            Type::Alias(ref alias) => arena.text(self.env.string(&alias.name)),
+            Type::Ident(ref id) => arena.text(id.as_ref()),
+            Type::Alias(ref alias) => arena.text(alias.name.as_ref()),
         }
     }
 }
@@ -1179,20 +1172,19 @@ where
     T: Deref<Target = Type<I, T>>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use std::marker::PhantomData;
-
-        pub struct EmptyEnv<T>(PhantomData<T>);
-
-        impl<T: AsRef<str>> DisplayEnv for EmptyEnv<T> {
-            type Ident = T;
-
-            fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str {
-                ident.as_ref()
-            }
-        }
-
-        write!(f, "{}", dt(&EmptyEnv(PhantomData), Prec::Top, self))
+        top(self).fmt(f)
     }
+}
+
+pub fn pretty_print<'a, I, T>(
+    arena: &'a Arena<'a>,
+    typ: &'a Type<I, T>,
+) -> DocBuilder<'a, Arena<'a>>
+where
+    I: AsRef<str>,
+    T: Deref<Target = Type<I, T>>,
+{
+    dt(Prec::Top, typ).pretty(arena)
 }
 
 pub fn walk_type<I, T, F>(typ: &T, mut f: F)
@@ -1338,9 +1330,8 @@ where
             ref rest,
         } => {
             let new_fields = walk_move_types(fields, |field| {
-                f.visit(&field.typ).map(
-                    |typ| Field::new(field.name.clone(), typ),
-                )
+                f.visit(&field.typ)
+                    .map(|typ| Field::new(field.name.clone(), typ))
             });
             let new_rest = f.visit(rest);
             merge(fields, new_fields, rest, new_rest, |fields, rest| {

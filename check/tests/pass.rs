@@ -97,10 +97,7 @@ type Test = { x: Int } in { x = 0 }
     let expected = Ok(alias(
         "Test",
         &[],
-        Type::record(
-            vec![],
-            vec![Field::new(intern("x"), typ("Int"))],
-        ),
+        Type::record(vec![], vec![Field::new(intern("x"), typ("Int"))]),
     ));
 
     assert_eq!(result, expected);
@@ -148,10 +145,7 @@ let f: T -> Int = \x -> x.y in { y = f { y = 123 } }
     let expected = Ok(alias(
         "T",
         &[],
-        Type::record(
-            vec![],
-            vec![Field::new(intern("y"), typ("Int"))],
-        ),
+        Type::record(vec![], vec![Field::new(intern("y"), typ("Int"))]),
     ));
 
     assert_eq!(result, expected);
@@ -829,10 +823,7 @@ in r1"#;
     let expected = Ok(alias(
         "Type1",
         &[],
-        Type::record(
-            vec![],
-            vec![Field::new(intern("x"), typ("Int"))],
-        ),
+        Type::record(vec![], vec![Field::new(intern("x"), typ("Int"))]),
     ));
 
     assert_eq!(result, expected);

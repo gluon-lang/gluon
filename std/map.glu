@@ -1,14 +1,11 @@
 let prelude = import! "std/prelude.glu"
 and { Ordering, Ord, Option, List, Monoid } = prelude
 
-type Map k a =
-    | Bin k a (Map k a) (Map k a)
-    | Tip
+type Map k a = | Bin k a (Map k a) (Map k a) | Tip
 
 let empty = Tip
 
-let singleton k v =
-    Bin k v empty empty
+let singleton k v = Bin k v empty empty
 
 and make ord =
     let find k m =
@@ -30,10 +27,9 @@ and make ord =
     and to_list m =
         let (++) = prelude.monoid_List.append
         match m with
-        | Bin key value l r ->
-            to_list l ++ Cons { key, value } (to_list r)
+        | Bin key value l r -> to_list l ++ Cons { key, value } (to_list r)
         | Tip -> Nil
-    
+
     let fold f x m =
         match m with
         | Bin k v l r ->
@@ -41,8 +37,7 @@ and make ord =
             fold f (fold f y l) r
         | Tip -> x
 
-    let append l r =
-        fold insert l r
+    let append l r = fold insert l r
 
     let monoid = { append, empty }
 

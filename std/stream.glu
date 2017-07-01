@@ -2,33 +2,29 @@ let prelude = import! "std/prelude.glu"
 and { Option, Num } = prelude
 and { (+) } = prelude.num_Int
 
-type Stream_ a =
-    | Value a (Stream a)
-    | Empty
+type Stream_ a = | Value a (Stream a) | Empty
 and Stream a = Lazy (Stream_ a)
 
 let from f : (Int -> Option a) -> Stream a =
-        let from_ i =
-                lazy (\_ ->
-                    match f i with
-                        | Some x -> Value x (from_ (i + 1))
-                        | None -> Empty
-                )
-        in from_ 0
+    let from_ i = lazy (\_ ->
+            match f i with
+            | Some x -> Value x (from_ (i + 1))
+            | None -> Empty)
+    from_ 0
 
 let next stream : Stream a -> Option a =
     match force stream with
-        | Value x _ -> Some x
-        | Empty -> None
+    | Value x _ -> Some x
+    | Empty -> None
 
 let is_empty stream : Stream a -> Bool =
     match force stream with
-        | Value _ _ -> False
-        | Empty -> True
+    | Value _ _ -> False
+    | Empty -> True
 
 let fold f b stream : (a -> b -> b) -> b -> Stream a -> b =
     match force stream with
-        | Value x xs -> fold f (f x b) xs
-        | Empty -> b
+    | Value x xs -> fold f (f x b) xs
+    | Empty -> b
 
 { from, next, is_empty, fold }

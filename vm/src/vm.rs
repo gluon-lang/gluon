@@ -154,11 +154,9 @@ impl TypeEnv for VmEnv {
                     .values()
                     .filter_map(|alias| match **alias.unresolved_type() {
                         Type::Variant(ref row) => {
-                            row.row_iter().find(|field| *field.name == *id).map(
-                                |field| {
-                                    &field.typ
-                                },
-                            )
+                            row.row_iter()
+                                .find(|field| *field.name == *id)
+                                .map(|field| &field.typ)
                         }
                         _ => None,
                     })
@@ -193,9 +191,9 @@ impl PrimitiveEnv for VmEnv {
 
 impl MetadataEnv for VmEnv {
     fn get_metadata(&self, id: &Symbol) -> Option<&Metadata> {
-        self.globals.get(AsRef::<str>::as_ref(id)).map(
-            |g| &g.metadata,
-        )
+        self.globals
+            .get(AsRef::<str>::as_ref(id))
+            .map(|g| &g.metadata)
     }
 }
 
@@ -271,10 +269,10 @@ impl VmEnv {
             } else if field_name.chars().any(ast::is_operator_char) {
                 return Err(Error::Message(format!(
                     "Operators cannot be used as fields \
-                                                   directly. To access an operator field, \
-                                                   enclose the operator with parentheses \
-                                                   before passing it in. (test.(+) instead of \
-                                                   test.+)"
+                     directly. To access an operator field, \
+                     enclose the operator with parentheses \
+                     before passing it in. (test.(+) instead of \
+                     test.+)"
                 )));
             }
             typ = match typ {
@@ -294,9 +292,10 @@ impl VmEnv {
                         _ => panic!("Unexpected value {:?}", value),
                     })
             });
-            typ = next_type.ok_or_else(move || {
-                Error::UndefinedField(typ.into_owned(), field_name.into())
-            })?;
+            typ = next_type
+                .ok_or_else(move || {
+                    Error::UndefinedField(typ.into_owned(), field_name.into())
+                })?;
         }
         Ok((value, typ))
     }
@@ -320,9 +319,10 @@ impl VmEnv {
 
         let mut metadata = &global.metadata;
         for field_name in components {
-            metadata = metadata.module.get(field_name).ok_or_else(|| {
-                Error::MetadataDoesNotExist(name_str.into())
-            })?;
+            metadata = metadata
+                .module
+                .get(field_name)
+                .ok_or_else(|| Error::MetadataDoesNotExist(name_str.into()))?;
         }
         Ok(metadata)
     }
@@ -469,10 +469,10 @@ impl GlobalVmState {
     }
 
     pub fn intern(&self, s: &str) -> Result<InternedStr> {
-        self.interner.write().unwrap().intern(
-            &mut *self.gc.lock().unwrap(),
-            s,
-        )
+        self.interner
+            .write()
+            .unwrap()
+            .intern(&mut *self.gc.lock().unwrap(), s)
     }
 
     /// Returns a borrowed structure which implements `CompilerEnv`

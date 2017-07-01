@@ -4,13 +4,15 @@ extern crate env_logger;
 extern crate log;
 #[macro_use]
 extern crate collect_mac;
+#[macro_use]
+extern crate pretty_assertions;
 
 #[macro_use]
 mod support;
 
 use base::ast::*;
 use base::pos::{BytePos, Span, Spanned};
-use base::types::{AliasData, Field, Type};
+use base::types::{Field, Type};
 use support::*;
 
 #[test]
@@ -123,14 +125,14 @@ fn type_mutually_recursive() {
     let binds = vec![
         TypeBinding {
             comment: None,
-            name: intern("Test"),
-            alias: AliasData::new(intern("Test"), Vec::new(), test),
+            name: no_loc(intern("Test")),
+            alias: alias(intern("Test"), Vec::new(), test),
             finalized_alias: None,
         },
         TypeBinding {
             comment: None,
-            name: intern("Test2"),
-            alias: AliasData::new(intern("Test2"), Vec::new(), test2),
+            name: no_loc(intern("Test2")),
+            alias: alias(intern("Test2"), Vec::new(), test2),
             finalized_alias: None,
         },
     ];
@@ -217,17 +219,12 @@ match None with
                 (
                     Pattern::Constructor(
                         TypedIdent::new(intern("Some")),
-                        vec![
-                            no_loc(Pattern::Ident(TypedIdent::new(intern("x")))),
-                        ],
+                        vec![no_loc(Pattern::Ident(TypedIdent::new(intern("x"))))],
                     ),
                     id("x")
                 ),
                 (
-                    Pattern::Constructor(
-                        TypedIdent::new(intern("None")),
-                        vec![],
-                    ),
+                    Pattern::Constructor(TypedIdent::new(intern("None")), vec![]),
                     int(0)
                 ),
             ],
@@ -279,11 +276,14 @@ fn record_pattern() {
         typ: Type::hole(),
         types: Vec::new(),
         fields: vec![
-            (intern("y"), None),
-            (
-                intern("x"),
-                Some(no_loc(Pattern::Ident(TypedIdent::new(intern("z")))))
-            ),
+            PatternField {
+                name: no_loc(intern("y")),
+                value: None,
+            },
+            PatternField {
+                name: no_loc(intern("x")),
+                value: Some(no_loc(Pattern::Ident(TypedIdent::new(intern("z"))))),
+            },
         ],
     };
     assert_eq!(e, case(id("x"), vec![(pattern, id("z"))]));
@@ -301,7 +301,16 @@ fn let_pattern() {
                     name: no_loc(Pattern::Record {
                         typ: Type::hole(),
                         types: Vec::new(),
-                        fields: vec![(intern("x"), None), (intern("y"), None)],
+                        fields: vec![
+                            PatternField {
+                                name: no_loc(intern("x")),
+                                value: None,
+                            },
+                            PatternField {
+                                name: no_loc(intern("y")),
+                                value: None,
+                            },
+                        ],
                     }),
                     typ: Type::hole(),
                     args: vec![],
@@ -324,7 +333,12 @@ fn nested_pattern() {
     let pattern = Pattern::Record {
         typ: Type::hole(),
         types: Vec::new(),
-        fields: vec![(intern("y"), Some(nested))],
+        fields: vec![
+            PatternField {
+                name: no_loc(intern("y")),
+                value: Some(nested),
+            },
+        ],
     };
     assert_eq!(e, case(id("x"), vec![(pattern, id("z"))]));
 }
@@ -439,7 +453,10 @@ id
         no_loc(Expr::LetBindings(
             vec![
                 ValueBinding {
-                    comment: Some("The identity function".into()),
+                    comment: Some(Comment {
+                        typ: CommentType::Line,
+                        content: "The identity function".into(),
+                    }),
                     name: no_loc(Pattern::Ident(TypedIdent::new(intern("id")))),
                     typ: Type::hole(),
                     args: vec![TypedIdent::new(intern("x"))],
@@ -465,9 +482,12 @@ id
         type_decls(
             vec![
                 TypeBinding {
-                    comment: Some("Test type ".into()),
-                    name: intern("Test"),
-                    alias: AliasData::new(intern("Test"), Vec::new(), typ("Int")),
+                    comment: Some(Comment {
+                        typ: CommentType::Block,
+                        content: "Test type ".into(),
+                    }),
+                    name: no_loc(intern("Test")),
+                    alias: alias(intern("Test"), Vec::new(), typ("Int")),
                     finalized_alias: None,
                 },
             ],
@@ -496,9 +516,12 @@ id
             type_decls(
                 vec![
                     TypeBinding {
-                        comment: Some("Test type ".into()),
-                        name: intern("Test"),
-                        alias: AliasData::new(intern("Test"), Vec::new(), typ("Int")),
+                        comment: Some(Comment {
+                            typ: CommentType::Block,
+                            content: "Test type ".into(),
+                        }),
+                        name: no_loc(intern("Test")),
+                        alias: alias(intern("Test"), Vec::new(), typ("Int")),
                         finalized_alias: None,
                     },
                 ],
@@ -524,9 +547,12 @@ id
         type_decls(
             vec![
                 TypeBinding {
-                    comment: Some("Merge\nconsecutive\nline comments.".into()),
-                    name: intern("Test"),
-                    alias: AliasData::new(intern("Test"), Vec::new(), typ("Int")),
+                    comment: Some(Comment {
+                        typ: CommentType::Line,
+                        content: "Merge\nconsecutive\nline comments.".into(),
+                    }),
+                    name: no_loc(intern("Test")),
+                    alias: alias(intern("Test"), Vec::new(), typ("Int")),
                     finalized_alias: None,
                 },
             ],
@@ -679,15 +705,21 @@ fn doc_comment_on_record_field() {
             typ: Type::hole(),
             types: vec![
                 ExprField {
-                    comment: Some("test".into()),
-                    name: "Test".into(),
+                    comment: Some(Comment {
+                        typ: CommentType::Block,
+                        content: "test".into(),
+                    }),
+                    name: no_loc("Test".into()),
                     value: None,
                 },
             ],
             exprs: vec![
                 ExprField {
-                    comment: Some("x binding".into()),
-                    name: "x".into(),
+                    comment: Some(Comment {
+                        typ: CommentType::Line,
+                        content: "x binding".into(),
+                    }),
+                    name: no_loc("x".into()),
                     value: Some(int(1)),
                 },
             ],

@@ -147,15 +147,13 @@ fn implicit_prelude_lines_not_counted() {
     let thread = new_vm();
     {
         let mut context = thread.context();
-        context.set_hook(Some(Box::new(
-            move |_, debug_info| if debug_info.stack_info(0).unwrap().source_name() ==
-                "test"
-            {
+        context.set_hook(Some(Box::new(move |_, debug_info| {
+            if debug_info.stack_info(0).unwrap().source_name() == "test" {
                 Ok(Async::NotReady)
             } else {
                 Ok(Async::Ready(()))
-            },
-        )));
+            }
+        })));
         context.set_hook_mask(LINE_FLAG);
     }
     let mut execute = Compiler::new()
@@ -445,12 +443,14 @@ fn implicit_prelude_variable_names() {
     let f = functions.lock().unwrap();
     match *f[0] {
         Type::Record(ref row) => {
-            assert!(row.row_iter().any(
-                |field| field.name.declared_name() == "id",
-            ));
-            assert!(row.row_iter().any(
-                |field| field.name.declared_name() == "not",
-            ));
+            assert!(
+                row.row_iter()
+                    .any(|field| field.name.declared_name() == "id")
+            );
+            assert!(
+                row.row_iter()
+                    .any(|field| field.name.declared_name() == "not")
+            );
         }
         _ => panic!(),
     }

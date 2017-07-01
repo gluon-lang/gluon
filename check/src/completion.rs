@@ -123,20 +123,20 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
                 ..
             } => {
                 let unaliased = resolve::remove_aliases(&self.env, typ.clone());
-                for &(ref alias_id, _) in types {
-                    if let Some(field) = unaliased.type_field_iter().find(|field| {
-                        field.name == *alias_id
-                    })
+                for ast_field in types {
+                    if let Some(field) = unaliased
+                        .type_field_iter()
+                        .find(|field| field.name == ast_field.name.value)
                     {
                         self.on_alias(&field.typ);
                     }
                 }
                 for field in field_ids {
-                    match field.1 {
+                    match field.value {
                         Some(_) => (),
                         None => {
 
-                            let name = field.0.clone();
+                            let name = field.name.value.clone();
                             let typ = unaliased.row_iter()
                                 .find(|f| f.name.name_eq(&name))
                                 .map(|f| f.typ.clone())
@@ -252,9 +252,9 @@ impl<'a> OnFound for GetMetadata<'a> {
         match context.value {
             Expr::Projection(ref expr, _, _) => {
                 if let Expr::Ident(ref expr_id) = expr.value {
-                    self.result = self.env.get(&expr_id.name).and_then(|metadata| {
-                        metadata.module.get(id.as_ref())
-                    });
+                    self.result = self.env
+                        .get(&expr_id.name)
+                        .and_then(|metadata| metadata.module.get(id.as_ref()));
                 }
             }
             Expr::Infix(..) => {
@@ -291,9 +291,8 @@ impl<'a, E: TypeEnv> OnFound for MetadataSuggest<'a, E> {
     }
 
     fn expr(&mut self, expr: &SpannedExpr<Symbol>) {
-        let suggestion = expr_iter(&self.suggest.stack, expr).find(|&(name, _)| {
-            name.declared_name() == self.ident
-        });
+        let suggestion = expr_iter(&self.suggest.stack, expr)
+            .find(|&(name, _)| name.declared_name() == self.ident);
         if let Some((name, _)) = suggestion {
             self.result = self.env.get(name);
         }
@@ -303,9 +302,9 @@ impl<'a, E: TypeEnv> OnFound for MetadataSuggest<'a, E> {
         match context.value {
             Expr::Projection(ref expr, _, _) => {
                 if let Expr::Ident(ref expr_ident) = expr.value {
-                    self.result = self.env.get(&expr_ident.name).and_then(|metadata| {
-                        metadata.module.get(self.ident)
-                    });
+                    self.result = self.env
+                        .get(&expr_ident.name)
+                        .and_then(|metadata| metadata.module.get(self.ident));
                 }
             }
             _ => (),
@@ -422,9 +421,9 @@ where
             }
             Pattern::Record { ref fields, .. } => {
                 let (_, field) = self.select_spanned(fields, |field| {
-                    field.1.as_ref().map_or(current.span, |p| p.span)
+                    field.value.as_ref().map_or(current.span, |p| p.span)
                 });
-                if let Some(pattern) = field.and_then(|field| field.1.as_ref()) {
+                if let Some(pattern) = field.and_then(|field| field.value.as_ref()) {
                     self.visit_pattern(pattern);
                 }
             }
@@ -512,7 +511,7 @@ where
             }
             Expr::TypeBindings(ref type_bindings, ref expr) => {
                 for type_binding in type_bindings {
-                    self.on_found.on_alias(&type_binding.alias);
+                    self.on_found.on_alias(&type_binding.alias.value);
                 }
                 self.visit_expr(expr)
             }

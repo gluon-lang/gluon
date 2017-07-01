@@ -9,6 +9,7 @@ extern crate pretty;
 extern crate smallvec;
 #[macro_use]
 extern crate collect_mac;
+extern crate itertools;
 
 macro_rules! type_cache {
     ($name: ident ($($args: ident),*) { $typ: ty, $inner_type: ident } $( $id: ident )+) => {
@@ -42,6 +43,15 @@ macro_rules! type_cache {
     }
 }
 
+macro_rules! chain {
+    ($alloc: expr; $first: expr, $($rest: expr),+) => {{
+        let mut doc = ::pretty::DocBuilder($alloc, $first.into());
+        $(
+            doc = doc.append($rest);
+        )*
+        doc
+    }}
+}
 
 pub mod ast;
 pub mod error;
@@ -50,6 +60,7 @@ pub mod fnv;
 pub mod kind;
 pub mod merge;
 pub mod metadata;
+pub mod pretty_print;
 pub mod pos;
 pub mod resolve;
 pub mod scoped_map;

@@ -5,6 +5,7 @@
 
 #[macro_use] 
 extern crate log;
+extern crate itertools;
 #[macro_use]
 extern crate quick_error;
 extern crate gluon_base as base;
@@ -13,7 +14,7 @@ extern crate lalrpop_util;
 use std::cell::RefCell;
 use std::fmt;
 
-use base::ast::{Expr, IdentEnv, ValueBinding, SpannedExpr, SpannedPattern, TypedIdent};
+use base::ast::{Comment, Expr, IdentEnv, ValueBinding, SpannedExpr, SpannedPattern, TypedIdent};
 use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::symbol::Symbol;
@@ -46,6 +47,7 @@ type LalrpopError<'input> = lalrpop_util::ParseError<BytePos,
 /// Shrink hidden spans to fit the visible expressions and flatten singleton blocks.
 fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
     match expr.value {
+        Expr::Infix(_, _, ref last) |
         Expr::IfElse(_, _, ref last) |
         Expr::LetBindings(_, ref last) |
         Expr::TypeBindings(_, ref last) => expr.span.end = last.span.end,
@@ -67,7 +69,6 @@ fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
         Expr::Ident(_) |
         Expr::Literal(_) |
         Expr::Projection(_, _, _) |
-        Expr::Infix(_, _, _) |
         Expr::Array(_) |
         Expr::Record { .. } |
         Expr::Tuple { .. } |
@@ -249,13 +250,13 @@ impl<'a, I> Iterator for SharedIter<'a, I>
 }
 
 pub enum FieldPattern<Id> {
-    Type(Id, Option<Id>),
-    Value(Id, Option<SpannedPattern<Id>>),
+    Type(Spanned<Id, BytePos>, Option<Id>),
+    Value(Spanned<Id, BytePos>, Option<SpannedPattern<Id>>),
 }
 
 pub enum FieldExpr<Id> {
-    Type(Option<String>, Id, Option<ArcType<Id>>),
-    Value(Option<String>, Id, Option<SpannedExpr<Id>>),
+    Type(Option<Comment>, Spanned<Id, BytePos>, Option<ArcType<Id>>),
+    Value(Option<Comment>, Spanned<Id, BytePos>, Option<SpannedExpr<Id>>),
 }
 
 // Hack around LALRPOP's limited type syntax
@@ -401,4 +402,29 @@ pub fn parse_string<'env, 'input>
      input: &'input str)
      -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, ParseErrors)> {
     parse_partial_expr(symbols, input)
+}
+
+pub fn format_expr(input: &str) -> Result<String, ParseErrors> {
+    use base::pretty_print::ExprPrinter;
+    use base::source::Source;
+    use base::symbol::Symbols;
+
+    let newline = match input.find(|c: char| c == '\n' || c == '\r') {
+        Some(i) => {
+            if input[i..].starts_with("\r\n") {
+                "\r\n"
+            } else if input[i..].starts_with("\r") {
+                "\r"
+            } else {
+                "\n"
+            }
+        }
+        None => "\n"
+    };
+
+    let expr = parse_expr(&mut Symbols::new(), input)?;
+
+    let source = Source::new(input);
+    let printer = ExprPrinter::new(&source);
+    Ok(printer.format(100, newline, &expr))
 }

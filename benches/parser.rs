@@ -19,8 +19,8 @@ fn prelude(b: &mut ::test::Bencher) {
     b.iter(|| {
         let mut symbols = Symbols::new();
         let mut symbols = SymbolModule::new("".into(), &mut symbols);
-        let expr =
-            parser::parse_expr(&mut symbols, &text).unwrap_or_else(|err| panic!("{:?}", err));
+        let expr = parser::parse_expr(&mut symbols, &text)
+            .unwrap_or_else(|err| panic!("{:?}", err));
         ::test::black_box(expr)
     })
 }

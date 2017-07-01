@@ -145,7 +145,7 @@ fn string_slice(s: &str, start: usize, end: usize) -> RuntimeResult<&str, String
         for _ in iter.by_ref().take(256) {}
         RuntimeResult::Panic(format!(
             "index {} and/or {} in `{}` does not lie on a character \
-                                      boundary",
+             boundary",
             start,
             end,
             &s[..(s.len() - iter.as_str().len())]
@@ -365,17 +365,11 @@ pub fn load(vm: &Thread) -> Result<()> {
 
     vm.define_global(
         "#error",
-        primitive::<fn(StdString) -> Generic<A>>(
-            "#error",
-            prim::error,
-        ),
+        primitive::<fn(StdString) -> Generic<A>>("#error", prim::error),
     )?;
     vm.define_global(
         "error",
-        primitive::<fn(StdString) -> Generic<A>>(
-            "error",
-            prim::error,
-        ),
+        primitive::<fn(StdString) -> Generic<A>>("error", prim::error),
     )?;
 
     ::lazy::load(vm)?;

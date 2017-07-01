@@ -1,6 +1,6 @@
 //! Module containing the types which make up `gluon`'s AST (Abstract Syntax Tree)
 
-use pos::{BytePos, Spanned};
+use pos::{BytePos, Span, Spanned};
 use symbol::Symbol;
 use types::{self, Alias, AliasData, ArcType, Type, TypeEnv};
 
@@ -26,6 +26,18 @@ impl<'a, T: ?Sized + IdentEnv> IdentEnv for &'a mut T {
     fn from_str(&mut self, s: &str) -> Self::Ident {
         (**self).from_str(s)
     }
+}
+
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+pub enum CommentType {
+    Block,
+    Line,
+}
+
+#[derive(Clone, Eq, PartialEq, Debug)]
+pub struct Comment {
+    pub typ: CommentType,
+    pub content: String,
 }
 
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -65,12 +77,18 @@ pub enum Literal {
 pub type SpannedPattern<Id> = Spanned<Pattern<Id>, BytePos>;
 
 #[derive(Clone, PartialEq, Debug)]
+pub struct PatternField<Id, P> {
+    pub name: Spanned<Id, BytePos>,
+    pub value: Option<P>,
+}
+
+#[derive(Clone, PartialEq, Debug)]
 pub enum Pattern<Id> {
     Constructor(TypedIdent<Id>, Vec<SpannedPattern<Id>>),
     Record {
         typ: ArcType<Id>,
-        types: Vec<(Id, Option<Id>)>,
-        fields: Vec<(Id, Option<SpannedPattern<Id>>)>,
+        types: Vec<PatternField<Id, Id>>,
+        fields: Vec<PatternField<Id, SpannedPattern<Id>>>,
     },
     Tuple {
         typ: ArcType<Id>,
@@ -105,8 +123,8 @@ pub type SpannedIdent<Id> = Spanned<TypedIdent<Id>, BytePos>;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct ExprField<Id, E> {
-    pub comment: Option<String>,
-    pub name: Id,
+    pub comment: Option<Comment>,
+    pub name: Spanned<Id, BytePos>,
     pub value: Option<E>,
 }
 
@@ -154,19 +172,32 @@ pub enum Expr<Id> {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct TypeBinding<Id> {
-    pub comment: Option<String>,
-    pub name: Id,
-    pub alias: AliasData<Id, ArcType<Id>>,
+    pub comment: Option<Comment>,
+    pub name: Spanned<Id, BytePos>,
+    pub alias: Spanned<AliasData<Id, ArcType<Id>>, BytePos>,
     pub finalized_alias: Option<Alias<Id, ArcType<Id>>>,
 }
 
+impl<Id> TypeBinding<Id> {
+    pub fn span(&self) -> Span<BytePos> {
+        Span::new(self.name.span.start, self.alias.span.end)
+    }
+}
+
+
 #[derive(Clone, PartialEq, Debug)]
 pub struct ValueBinding<Id> {
-    pub comment: Option<String>,
+    pub comment: Option<Comment>,
     pub name: SpannedPattern<Id>,
     pub typ: ArcType<Id>,
     pub args: Vec<TypedIdent<Id>>,
     pub expr: SpannedExpr<Id>,
+}
+
+impl<Id> ValueBinding<Id> {
+    pub fn span(&self) -> Span<BytePos> {
+        Span::new(self.name.span.start, self.expr.span.end)
+    }
 }
 
 /// Visitor trait which walks over expressions calling `visit_*` on all encountered elements. By
@@ -280,7 +311,7 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::Id
         } => {
             v.visit_typ(typ);
             for field in fields {
-                if let Some(ref mut pattern) = field.1 {
+                if let Some(ref mut pattern) = field.value {
                     v.visit_pattern(pattern);
                 }
             }
@@ -397,7 +428,7 @@ pub fn walk_pattern<V: ?Sized + Visitor>(v: &mut V, p: &Pattern<V::Ident>) {
         } => {
             v.visit_typ(typ);
             for field in fields {
-                if let Some(ref pattern) = field.1 {
+                if let Some(ref pattern) = field.value {
                     v.visit_pattern(pattern);
                 }
             }
@@ -548,7 +579,8 @@ pub fn is_operator_char(c: char) -> bool {
 }
 
 pub fn is_constructor(s: &str) -> bool {
-    s.rsplit('.').next().unwrap().starts_with(
-        char::is_uppercase,
-    )
+    s.rsplit('.')
+        .next()
+        .unwrap()
+        .starts_with(char::is_uppercase)
 }

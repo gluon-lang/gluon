@@ -41,9 +41,10 @@ fn find_kind(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     let args = args.value.trim();
     IO::Value(match vm.find_type_info(args) {
         Ok(ref alias) => {
-            let kind = alias.args.iter().rev().fold(Kind::typ(), |acc, arg| {
-                Kind::function(arg.kind.clone(), acc)
-            });
+            let kind = alias.args.iter().rev().fold(
+                Kind::typ(),
+                |acc, arg| Kind::function(arg.kind.clone(), acc),
+            );
             Ok(format!("{}", kind))
         }
         Err(err) => Err(format!("{}", err)),
@@ -78,9 +79,9 @@ fn find_info(args: WithVM<RootStr>) -> IO<Result<String, String>> {
             }
         }
     }
-    let maybe_comment = env.get_metadata(args).ok().and_then(|metadata| {
-        metadata.comment.as_ref()
-    });
+    let maybe_comment = env.get_metadata(args)
+        .ok()
+        .and_then(|metadata| metadata.comment.as_ref());
     if let Some(comment) = maybe_comment {
         for line in comment.lines() {
             write!(&mut buffer, "\n/// {}", line).unwrap();
@@ -98,12 +99,12 @@ fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonRe
 
     // The parser may find parse errors but still produce an expression
     // For that case still typecheck the expression but return the parse error afterwards
-    let (mut expr, _parse_result): (_, GluonResult<()>) =
-        match compiler.parse_partial_expr(&name, fileinput) {
-            Ok(expr) => (expr, Ok(())),
-            Err((None, err)) => return Err(err.into()),
-            Err((Some(expr), err)) => (expr, Err(err.into())),
-        };
+    let (mut expr, _parse_result): (_, GluonResult<()>) = match compiler
+        .parse_partial_expr(&name, fileinput) {
+        Ok(expr) => (expr, Ok(())),
+        Err((None, err)) => return Err(err.into()),
+        Err((Some(expr), err)) => (expr, Err(err.into())),
+    };
 
     expr.expand_macro(&mut compiler, thread, &name)?;
 
@@ -235,12 +236,7 @@ fn set_globals(
 
     match pattern.value {
         Pattern::Ident(ref id) => {
-            vm.set_global(
-                id.name.clone(),
-                typ.clone(),
-                Default::default(),
-                **value,
-            )?;
+            vm.set_global(id.name.clone(), typ.clone(), Default::default(), **value)?;
             Ok(())
         }
         Pattern::Tuple { ref elems, .. } => {
@@ -251,17 +247,17 @@ fn set_globals(
             Ok(())
         }
         Pattern::Record { ref fields, .. } => {
-            let iter = fields.iter().zip(
-                ::vm::dynamic::field_iter(&value, typ, vm),
-            );
+            let iter = fields
+                .iter()
+                .zip(::vm::dynamic::field_iter(&value, typ, vm));
             for (field, (field_value, field_type)) in iter {
-                match field.1 {
+                match field.value {
                     Some(ref field_pattern) => {
                         set_globals(vm, field_pattern, &field_type, &field_value)?
                     }
                     None => {
                         vm.set_global(
-                            field.0.clone(),
+                            field.name.value.clone(),
                             field_type,
                             Default::default(),
                             *field_value,

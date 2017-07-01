@@ -1,7 +1,9 @@
 use std::iter::once;
 use std::str::FromStr;
 
-use base::ast::{Alternative, Array, Expr, ExprField, Lambda, Literal, Pattern, SpannedExpr, TypeBinding, TypedIdent, ValueBinding};
+use itertools::Itertools;
+
+use base::ast::{Alternative, Array, Comment, Expr, ExprField, Lambda, Literal, Pattern, PatternField, SpannedExpr, TypeBinding, TypedIdent, ValueBinding};
 use base::kind::{ArcKind, Kind};
 use base::pos::{self, BytePos, Spanned};
 use base::types::{AliasData, ArcType, BuiltinType, Field, Generic, Type, TypeCache};
@@ -26,7 +28,7 @@ extern {
         "int literal" => Token::IntLiteral(<i64>),
         "byte literal" => Token::ByteLiteral(<u8>),
         "float literal" => Token::FloatLiteral(<f64>),
-        "documentation comment" => Token::DocComment(<String>),
+        "documentation comment" => Token::DocComment(<Comment>),
 
         "and" => Token::And,
         "else" => Token::Else,
@@ -89,8 +91,14 @@ Ident: Id =
 Operator: TypedIdent<Id> =
     "operator" => new_ident(type_cache, env.from_str(<>));
 
-DocComment: String =
-    "documentation comment"+ => <>.join("\n");
+DocComment: Comment =
+    "documentation comment"+ => {
+        let typ = <>.last().unwrap().typ;
+        Comment {
+            typ: typ,
+            content: <>.into_iter().map(|comment| comment.content).join("\n")
+        }
+    };
 
 // Kinds
 
@@ -140,27 +148,28 @@ VariantField: (Id, Vec<ArcType<Id>>) =
     "|" <Ident> <AtomicType*> => (<>);
 
 TypeBinding: TypeBinding<Id> = {
-    <id: Ident> <params: TypeParam*> "=" <row: VariantField+> => {
+    <id: Sp<Ident>> <params: TypeParam*> "=" <row: Sp<VariantField+>> => {
         let typ_args = params.iter().cloned().map(Type::generic).collect();
-        let typ: ArcType<Id> = Type::app(Type::ident(id.clone()), typ_args);
+        let typ: ArcType<Id> = Type::app(Type::ident(id.value.clone()), typ_args);
 
-        let row = row.into_iter()
+        let row_span = row.span;
+        let row = row.value.into_iter()
             .map(|(id, params)| Field::new(id, type_cache.function(params, typ.clone())))
             .collect();
-
+        
         TypeBinding {
             comment: None,
             name: id.clone(),
-            alias: AliasData::new(id, params, Type::variant(row)),
+            alias: pos::spanned(row_span, AliasData::new(id.value, params, Type::variant(row))),
             finalized_alias: None,
         }
     },
 
-    <id: Ident> <params: TypeParam*> "=" <body: Type> => {
+    <id: Sp<Ident>> <params: TypeParam*> "=" <body: Sp<Type>> => {
         TypeBinding {
             comment: None,
             name: id.clone(),
-            alias: AliasData::new(id, params, body),
+            alias: pos::spanned(body.span, AliasData::new(id.value, params, body.value)),
             finalized_alias: None,
         }
     },
@@ -213,12 +222,12 @@ Type = {
 // Patterns
 
 FieldPattern : FieldPattern<Id> = {
-    <id: Ident> "=" <body: Sp<Pattern>> =>
+    <id: Sp<Ident>> "=" <body: Sp<Pattern>> =>
         FieldPattern::Value(id, Some(body)),
 
-    <IdentStr> => {
-        let id = env.from_str(<>);
-        if <>.starts_with(char::is_uppercase) {
+    <Sp<IdentStr>> => {
+        let id = pos::spanned(<>.span, env.from_str(<>.value));
+        if <>.value.starts_with(char::is_uppercase) {
             FieldPattern::Type(id, None)
         } else {
             FieldPattern::Value(id, None)
@@ -247,8 +256,14 @@ AtomicPattern: Pattern<Id> = {
 
         for field in fields {
             match field {
-                FieldPattern::Type(id, typ) => types.push((id, typ)),
-                FieldPattern::Value(id, field) => values.push((id, field)),
+                FieldPattern::Type(id, typ) => types.push(PatternField {
+                    name: id,
+                    value: typ
+                }),
+                FieldPattern::Value(id, field) => values.push(PatternField {
+                    name: id,
+                    value: field
+                }),
             }
         }
 
@@ -314,13 +329,13 @@ Alternative: Alternative<Id> = {
 };
 
 FieldExpr: FieldExpr<Id> = {
-    <comment: DocComment?> <id: Ident> "=" <body: SpExpr> => {
+    <comment: DocComment?> <id: Sp<Ident>> "=" <body: SpExpr> => {
         FieldExpr::Value(comment, id, Some(body))
     },
 
-    <comment: DocComment?> <id_str: IdentStr> => {
-        let id = env.from_str(id_str);
-        if id_str.starts_with(char::is_uppercase) {
+    <comment: DocComment?> <id_str: Sp<IdentStr>> => {
+        let id = pos::spanned(id_str.span, env.from_str(id_str.value));
+        if id_str.value.starts_with(char::is_uppercase) {
             FieldExpr::Type(comment, id, None)
         } else {
             FieldExpr::Value(comment, id, None)
@@ -359,21 +374,16 @@ AtomicExpr: Expr<Id> = {
     // "(" "." <id: Ident> ")" =>
     //     Expr::Getter(id),
 
-    <expr: Sp<AtomicExpr>> "." <id: Ident> =>
+    <expr: SpAtomicExpr> "." <id: Ident> =>
         Expr::Projection(Box::new(expr), id, type_cache.hole()),
 
-    <expr: Sp<AtomicExpr>> "." <err: !> => {
+    <expr: SpAtomicExpr> "." <err: !> => {
         errors.push(err.error);
         Expr::Projection(Box::new(expr), env.from_str(""), type_cache.hole())
     },
 
     "(" <elems: Comma<SpExpr>> ")" =>
-        match elems.len() {
-            // Parenthesized expression - wrap in a block to ensure
-            // that it survives operator reparsing
-            1 => Expr::Block(elems),
-            _ => Expr::Tuple { typ: type_cache.hole(), elems: elems },
-        },
+        Expr::Tuple { typ: type_cache.hole(), elems: elems },
 
     "[" <elems: Comma<SpExpr>> "]" => Expr::Array(Array {
             typ: type_cache.hole(),
@@ -407,10 +417,14 @@ AtomicExpr: Expr<Id> = {
     },
 };
 
+SpAtomicExpr: SpannedExpr<Id> = {
+    <Sp<AtomicExpr>> => super::shrink_hidden_spans(<>)
+};
+
 AppExpr = {
     AtomicExpr,
 
-    <expr: Sp<AtomicExpr>> <args: Sp<AtomicExpr>+> =>
+    <expr: SpAtomicExpr> <args: SpAtomicExpr+> =>
         Expr::App(Box::new(expr), args),
 };
 
@@ -425,7 +439,7 @@ InfixExpr = {
         }),
 
     <lhs: Sp<AppExpr>> <op: Sp<Operator>> <rhs: Sp<InfixExpr>> =>
-        Expr::Infix(Box::new(lhs), op, Box::new(rhs)),
+        Expr::Infix(Box::new(lhs), op, Box::new(super::shrink_hidden_spans(rhs))),
 };
 
 AndValueBinding: ValueBinding<Id> =

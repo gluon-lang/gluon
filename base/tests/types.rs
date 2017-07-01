@@ -1,7 +1,10 @@
 extern crate gluon_base as base;
 extern crate collect_mac;
+extern crate pretty;
 
 use std::ops::Deref;
+
+use pretty::{Arena, DocAllocator};
 
 use base::kind::Kind;
 use base::types::*;
@@ -76,7 +79,7 @@ fn some_record() -> ArcType<&'static str> {
 fn show_record() {
     assert_eq_display!(
         format!("{}", Type::<&str, ArcType<&str>>::record(vec![], vec![])),
-        "{}"
+        "()"
     );
     let typ = Type::record(
         vec![],
@@ -208,4 +211,36 @@ fn show_polymorphic_record_associated_type() {
     ];
     let typ: ArcType<&str> = Type::poly_record(type_fields, vec![], Type::ident("r"));
     assert_eq_display!(format!("{}", typ), "{ Test a = a | r }");
+}
+
+#[test]
+fn break_record() {
+    let data = |s, a| ArcType::from(type_con(s, a));
+
+    let test = data("Test", vec![data("a", vec![])]);
+    let typ: ArcType<&str> = Type::record(
+        vec![],
+        vec![
+            Field::new("x", Type::int()),
+            Field::new("test", test.clone()),
+            Field::new(
+                "+",
+                Type::function(vec![Type::int(), Type::int()], Type::int())
+            ),
+        ],
+    );
+    let arena = Arena::new();
+    let typ = arena
+        .text("aaaaaaaaabbbbbbbbbbcccccccccc ")
+        .append(pretty_print(&arena, &typ))
+        .append(arena.newline());
+    assert_eq_display!(
+        format!("{}", typ.1.pretty(80)),
+        r#"aaaaaaaaabbbbbbbbbbcccccccccc {
+    x : Int,
+    test : Test a,
+    (+) : Int -> Int -> Int
+}
+"#
+    );
 }
