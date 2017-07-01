@@ -23,7 +23,7 @@ gluon_base = { path = "../base", version = "0.5.0" } # GLUON
 [dev-dependencies]
 collect-mac = "0.1.0"
 difference = "0.4.0"
-pretty = { version = "0.3.1", git = "https://github.com/Marwes/pretty.rs", branch = "newline" }
+pretty = "0.3.1"
 pretty_assertions = "0.2.0"
 
 [build-dependencies]
