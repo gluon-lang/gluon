@@ -1,6 +1,8 @@
 extern crate env_logger;
 extern crate pretty;
 extern crate difference;
+#[macro_use]
+extern crate pretty_assertions;
 
 extern crate gluon_parser as parser;
 extern crate gluon_base as base;
@@ -11,12 +13,7 @@ use std::path::Path;
 
 use difference::assert_diff;
 
-use base::source::Source;
-use base::pretty_print::ExprPrinter;
-
 use parser::format_expr;
-
-use support::MockEnv;
 
 mod support;
 
@@ -85,4 +82,19 @@ fn writer() {
 #[test]
 fn repl() {
     test_format("repl/src/repl.glu");
+}
+
+#[test]
+fn dont_add_newline_for_let_literal() {
+    let expr = r#"
+let x = 1
+x
+"#;
+    assert_eq!(
+        &format_expr(expr).unwrap(),
+        r#"
+let x = 1
+x
+"#
+    );
 }

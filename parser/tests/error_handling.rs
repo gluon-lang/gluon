@@ -247,10 +247,12 @@ fn incomplete_alternative_with_partial_pattern() {
                     Pattern::Record {
                         typ: Type::hole(),
                         types: vec![],
-                        fields: vec![PatternField {
-                            name: no_loc(intern("x")),
-                            value: Some(no_loc(Pattern::Error))
-                        }],
+                        fields: vec![
+                            PatternField {
+                                name: no_loc(intern("x")),
+                                value: Some(no_loc(Pattern::Error)),
+                            },
+                        ],
                     },
                     error()
                 ),

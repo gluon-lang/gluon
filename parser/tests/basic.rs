@@ -276,14 +276,14 @@ fn record_pattern() {
         typ: Type::hole(),
         types: Vec::new(),
         fields: vec![
-                            PatternField {
-                                name: no_loc(intern("y")),
-                                value: None
-                            },
-                            PatternField {
-                                name: no_loc(intern("x")),
-                value: Some(no_loc(Pattern::Ident(TypedIdent::new(intern("z")))))
-                            }
+            PatternField {
+                name: no_loc(intern("y")),
+                value: None,
+            },
+            PatternField {
+                name: no_loc(intern("x")),
+                value: Some(no_loc(Pattern::Ident(TypedIdent::new(intern("z"))))),
+            },
         ],
     };
     assert_eq!(e, case(id("x"), vec![(pattern, id("z"))]));
@@ -304,12 +304,13 @@ fn let_pattern() {
                         fields: vec![
                             PatternField {
                                 name: no_loc(intern("x")),
-                                value: None
+                                value: None,
                             },
                             PatternField {
                                 name: no_loc(intern("y")),
-                                value: None
-                            }],
+                                value: None,
+                            },
+                        ],
                     }),
                     typ: Type::hole(),
                     args: vec![],
@@ -332,10 +333,12 @@ fn nested_pattern() {
     let pattern = Pattern::Record {
         typ: Type::hole(),
         types: Vec::new(),
-        fields: vec![PatternField {
-            name: no_loc(intern("y")),
-            value: Some(nested)
-        }],
+        fields: vec![
+            PatternField {
+                name: no_loc(intern("y")),
+                value: Some(nested),
+            },
+        ],
     };
     assert_eq!(e, case(id("x"), vec![(pattern, id("z"))]));
 }
@@ -704,7 +707,7 @@ fn doc_comment_on_record_field() {
                 ExprField {
                     comment: Some(Comment {
                         typ: CommentType::Block,
-                        content: "test".into()
+                        content: "test".into(),
                     }),
                     name: no_loc("Test".into()),
                     value: None,
@@ -714,7 +717,7 @@ fn doc_comment_on_record_field() {
                 ExprField {
                     comment: Some(Comment {
                         typ: CommentType::Line,
-                        content: "x binding".into()
+                        content: "x binding".into(),
                     }),
                     name: no_loc("x".into()),
                     value: Some(int(1)),

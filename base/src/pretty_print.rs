@@ -296,9 +296,8 @@ impl<'a> ExprPrinter<'a> {
                 arguments.group().append(body)
             }
             Expr::LetBindings(ref binds, ref body) => {
-                let binding = |prefix, bind: &'a ValueBinding<Id>| {
+                let binding = |prefix: &'a str, bind: &'a ValueBinding<Id>| {
                     let decl = chain![arena;
-                        doc_comment(arena, &bind.comment),
                         prefix,
                         chain![arena;
                             pretty_pattern(arena, &bind.name),
@@ -315,7 +314,10 @@ impl<'a> ExprPrinter<'a> {
                         },
                         "="
                     ];
-                    self.hang(decl, &bind.expr)
+                    chain![arena;
+                        doc_comment(arena, &bind.comment),
+                        self.hang(decl, &bind.expr).group()
+                    ]
                 };
                 let prefixes = once("let ").chain(repeat("and "));
                 chain![arena;
@@ -541,7 +543,7 @@ impl<'a> ExprPrinter<'a> {
     where
         Id: AsRef<str>,
     {
-        let (arguments, mut body) = self.pretty_lambda(BytePos::from(0), expr);
+        let (arguments, mut body) = self.pretty_lambda(expr.span.start, expr);
         let first = if arguments.1 == self.arena.nil().1 {
             self.arena.nil()
         } else {
