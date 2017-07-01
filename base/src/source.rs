@@ -143,8 +143,13 @@ impl<'a> Iterator for CommentIter<'a> {
                 .trim_matches(|c: char| c.is_whitespace() && c != '\n');
             if self.src.starts_with("//") && !self.src.starts_with("///") {
                 let comment_line = self.src[2..].lines().next().unwrap();
-                // Add 1 to skip `\n' as well
-                self.src = &self.src[(2 + comment_line.len() + 1)..];
+                self.src = &self.src[(2 + comment_line.len())..];
+                self.src = if self.src.starts_with("\r\n") {
+                    &self.src[2..]
+                } else {
+                    /// \n
+                    &self.src[1..]
+                };
                 Some(comment_line.trim_left())
             } else if self.src.starts_with("\n") {
                 self.src = &self.src[1..];

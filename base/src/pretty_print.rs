@@ -429,13 +429,13 @@ impl<'a> ExprPrinter<'a> {
                     .comments_between(Span::new(previous_end, expr.span.start))
                     .map(|comment| {
                         chain![arena;
-                        if comment.is_empty() {
-                            arena.nil()
-                        } else {
-                            arena.text("// ").append(comment)
-                        },
-                        arena.newline()
-                    ]
+                            if comment.is_empty() {
+                                arena.nil()
+                            } else {
+                                arena.text("// ").append(comment)
+                            },
+                            arena.newline()
+                        ]
                     }),
             )
             .append(doc)
