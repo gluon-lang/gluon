@@ -9,7 +9,10 @@ extern crate gluon_parser as parser;
 extern crate gluon_check as check;
 
 use base::pos::Spanned;
-use base::types::Type;
+use base::symbol::Symbol;
+use base::types::{ArcType, Type};
+
+use check::typecheck::TypeError;
 
 mod support;
 
@@ -431,10 +434,55 @@ Expected: b0 -> b1
 Found: ()
 1 errors were found during unification:
 Types do not match:
-        Expected: b0 -> b1
-        Found: ()
+    Expected: b0 -> b1
+    Found: ()
 () 1
 ^~~~
 "#
     );
+}
+
+#[test]
+fn alias_mismatch() {
+    let _ = ::env_logger::init();
+    let text = r#"
+type A = | A Int
+type B = | B Float
+let eq x _ : a -> a -> a = x
+eq (A 0) (B 0.0)
+"#;
+    let result = support::typecheck(text);
+
+    assert_eq!(
+        &*format!("{}", result.unwrap_err()).replace("\t", "        "),
+        r#"test:Line: 5, Column: 10: Expected the following types to be equal
+Expected: test.A
+Found: test.B
+1 errors were found during unification:
+Types do not match:
+    Expected: test.A
+    Found: test.B
+eq (A 0) (B 0.0)
+         ^~~~~~~
+"#
+    );
+}
+
+
+#[test]
+fn long_type_error_format() {
+    let long_type: ArcType = Type::function(
+        vec![Type::int()],
+        Type::ident(Symbol::from(
+            "looooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong",
+        )),
+    );
+    let err = TypeError::Unification(Type::int(), long_type.clone(), vec![]);
+    assert_eq!(&*err.to_string(), r#"Expected the following types to be equal
+Expected: Int
+Found:
+    Int
+    -> looooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong
+0 errors were found during unification:
+"#);
 }

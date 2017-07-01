@@ -638,6 +638,13 @@ where
             _ => false,
         }
     }
+
+    pub fn pretty<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>>
+    where
+        Id: AsRef<str>,
+    {
+        top(self).pretty(arena)
+    }
 }
 
 impl<T> Type<Symbol, T>
@@ -953,10 +960,6 @@ fn top<'a, I, T>(typ: &'a Type<I, T>) -> DisplayType<'a, I, T> {
     dt(Prec::Top, typ)
 }
 
-pub fn display_type<'a, E, I, T>(_: &E, typ: &'a Type<I, T>) -> DisplayType<'a, I, T> {
-    top(typ)
-}
-
 pub struct DisplayType<'a, I: 'a, T: 'a> {
     prec: Prec,
     typ: &'a Type<I, T>,
@@ -997,11 +1000,13 @@ impl<'a, I, T> DisplayType<'a, I, T>
 where
     T: Deref<Target = Type<I, T>> + 'a,
 {
-    fn pretty(&self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>>
+    pub fn pretty(&self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>>
     where
         I: AsRef<str>,
     {
         use pretty_print::ident;
+
+        const INDENT: usize = 4;
 
         let p = self.prec;
         match *self.typ {
@@ -1013,19 +1018,22 @@ where
                 match self.typ.as_function() {
                     Some((arg, ret)) => {
                         let doc = chain![arena;
-                                         dt(Prec::Function, arg).pretty(arena).group(),
-                                         " ->",
-                                         arena.space(),
-                                         top(ret).pretty(arena)];
+                            dt(Prec::Function, arg).pretty(arena).group(),
+                            arena.space(),
+                            "-> ",
+                            top(ret).pretty(arena)
+                        ];
 
                         p.enclose(Prec::Function, arena, doc)
                     }
                     None => {
-                        let mut doc = dt(Prec::Top, t).pretty(arena);
-                        for arg in args {
-                            doc = doc.append(arena.space())
-                                .append(dt(Prec::Constructor, arg).pretty(arena));
-                        }
+                        let doc = dt(Prec::Top, t).pretty(arena);
+                        let arg_doc = arena.concat(args.iter().map(|arg| {
+                            arena
+                                .space()
+                                .append(dt(Prec::Constructor, arg).pretty(arena))
+                        }));
+                        let doc = doc.append(arg_doc.nest(INDENT));
                         p.enclose(Prec::Constructor, arena, doc).group()
                     }
                 }
@@ -1075,12 +1083,12 @@ where
 
                 doc = match **row {
                     Type::EmptyRow => doc,
-                    Type::ExtendRow { .. } => doc.append(top(row).pretty(arena)).nest(4),
+                    Type::ExtendRow { .. } => doc.append(top(row).pretty(arena)).nest(INDENT),
                     _ => {
                         doc.append(arena.space())
                             .append("| ")
                             .append(top(row).pretty(arena))
-                            .nest(4)
+                            .nest(INDENT)
                     }
                 };
                 if !empty_fields {
@@ -1133,7 +1141,7 @@ where
                         match *field.typ {
                             // Records handle nesting on their own
                             Type::Record(_) => (),
-                            _ => rhs = rhs.nest(4),
+                            _ => rhs = rhs.nest(INDENT),
                         }
                         let f = chain![arena;
                             ident(arena, field.name.as_ref()),

@@ -333,7 +333,16 @@ where
                     let rhs = rhs.as_ref().unwrap_or(actual);
                     // FIXME Maybe always return `None` here since the types before we removed the
                     // aliases are probably more specific.
-                    Ok(unifier.try_match(lhs, rhs))
+                    unifier.try_match_res(lhs, rhs).map_err(|_err| {
+                        // We failed to unify `lhs` and `rhs` at the spine. Replace that error with
+                        // a mismatch between the aliases instead as that should be less verbose
+                        // Example
+                        // type A = | A Int
+                        // type B = | B Float
+                        // A <=> B
+                        // Gives `A` != `B` instead of `| A Int` != `| B Float`
+                        UnifyError::TypeMismatch(expected.clone(), actual.clone())
+                    })
                 }
             }
         }
@@ -720,14 +729,18 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
         unifier.unifier.errors.push(error);
     }
 
-    fn try_match(unifier: &mut UnifierState<Self>, l: &ArcType, r: &ArcType) -> Option<ArcType> {
+    fn try_match_res(
+        unifier: &mut UnifierState<Self>,
+        l: &ArcType,
+        r: &ArcType,
+    ) -> Result<Option<ArcType>, UnifyError<ArcType, TypeError<Symbol>>> {
         let subs = unifier.unifier.subs;
         // Retrieve the 'real' types by resolving
         let l = subs.real(l);
         let r = subs.real(r);
         // `l` and `r` must have the same type, if one is a variable that variable is
         // unified with whatever the other type is
-        let result = match (&**l, &**r) {
+        match (&**l, &**r) {
             (&Type::Hole, _) => Ok(None),
             (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => Ok(None),
             (&Type::Generic(ref l_gen), &Type::Variable(ref r_var)) => {
@@ -741,11 +754,9 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
                             }
                             // `r_var` is outside the scope of the generic variable.
                             Type::Variable(ref var) if var.id > r_var.id => {
-                                let error = UnifyError::Other(
+                                return Err(UnifyError::Other(
                                     TypeError::UnableToGeneralize(l_gen.id.clone()),
-                                );
-                                unifier.unifier.errors.push(error);
-                                return None;
+                                ));
                             }
                             _ => l,
                         }
@@ -776,14 +787,11 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
                 // unify)
                 l.zip_match(r, unifier)
             }
-        };
-        match result {
-            Ok(typ) => typ,
-            Err(error) => {
-                unifier.unifier.errors.push(error);
-                Some(subs.new_var())
-            }
         }
+    }
+
+    fn error_type(unifier: &mut UnifierState<Self>) -> Option<ArcType> {
+        Some(unifier.unifier.subs.new_var())
     }
 }
 

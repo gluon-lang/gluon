@@ -1,6 +1,6 @@
 [package]
 name = "gluon_vm"
-version = "0.4.2" # GLUON
+version = "0.5.0" # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 
 license = "MIT"
@@ -14,11 +14,12 @@ build = "build.rs"
 
 [dependencies]
 env_logger = { version = "0.3.4", optional = true }
+frunk_core = "0.0.17"
 log = "0.3.6"
 quick-error = "1.1.0"
 mopa = "0.2.2"
 collect-mac = "0.1.0"
-pretty = { version = "0.3.1", git = "https://github.com/Marwes/pretty.rs", branch = "newline" }
+pretty = "0.3.1"
 bitflags = "0.7.0"
 itertools = "0.6.0"
 futures = "0.1.0"
@@ -26,15 +27,15 @@ typed-arena = "1.2.0"
 serde = { version = "1.0.0", optional = true }
 smallvec = "0.2.1"
 
-gluon_base = { path = "../base", version = "0.4.2" } # GLUON
-gluon_check = { path = "../check", version = "0.4.2" } # GLUON
-gluon_parser = { path = "../parser", version = "0.4.2", optional = true } # GLUON
+gluon_base = { path = "../base", version = "0.5.0" } # GLUON
+gluon_check = { path = "../check", version = "0.5.0" } # GLUON
+gluon_parser = { path = "../parser", version = "0.5.0", optional = true } # GLUON
 
 [build-dependencies]
 lalrpop = { version = "0.13.1", optional = true }
 
 [dev-dependencies]
-gluon = { path = "..", version = "0.4.2" } # GLUON
+gluon = { path = "..", version = "0.5.0" } # GLUON
 
 lalrpop-util = "0.13.1"
 regex = "0.2.0"

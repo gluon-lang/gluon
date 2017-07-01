@@ -1,4 +1,5 @@
 //! Module containing the types which make up `gluon`'s AST (Abstract Syntax Tree)
+use std::marker::PhantomData;
 
 use pos::{BytePos, Span, Spanned};
 use symbol::Symbol;
@@ -12,6 +13,21 @@ pub trait DisplayEnv {
 
 pub trait IdentEnv: DisplayEnv {
     fn from_str(&mut self, s: &str) -> Self::Ident;
+}
+
+pub struct EmptyEnv<T>(PhantomData<T>);
+impl<T> Default for EmptyEnv<T> {
+    fn default() -> Self {
+        EmptyEnv(PhantomData)
+    }
+}
+
+impl<T: AsRef<str>> DisplayEnv for EmptyEnv<T> {
+    type Ident = T;
+
+    fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str {
+        ident.as_ref()
+    }
 }
 
 impl<'t, T: ?Sized + DisplayEnv> DisplayEnv for &'t mut T {

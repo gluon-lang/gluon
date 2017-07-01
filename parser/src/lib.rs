@@ -1,7 +1,7 @@
 //! The parser is a bit more complex than it needs to be as it needs to be fully specialized to
 //! avoid a recompilation every time a later part of the compiler is changed. Due to this the
 //! string interner and therefore also garbage collector needs to compiled before the parser.
-#![doc(html_root_url="https://docs.rs/gluon_parser/0.4.2")] // # GLUON
+#![doc(html_root_url="https://docs.rs/gluon_parser/0.5.0")] // # GLUON
 
 #[macro_use] 
 extern crate log;
@@ -279,7 +279,7 @@ macro_rules! layout {
                                 err.span.end.absolute,
                                 err.value.into())
                 })?;
-            let token = token.map_err(|err| pos::spanned2(0.into(), 0.into(), err.into()))?;
+            let token = token.map_err(|err| pos::spanned(err.span, err.value.into()))?;
             debug!("Lex {:?}", token.value);
             let Span { start, end, .. } = token.span;
             Ok((start.absolute, token.value, end.absolute))
