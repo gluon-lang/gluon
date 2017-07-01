@@ -1,3 +1,47 @@
+<a name="v.0.5.0"></a>
+## v0.5.0 (2017-07-01)
+
+Highlights for 0.5 include code formatting of gluon code and automatic marshalling between Rust
+and Gluon through [serde][]. Formatting can be done either via the `gluon fmt` sub-command or with
+directly in Visual Studio Code with the [language-server plugin][].
+
+Type errors should now be formatted much better and have more precise types.
+
+[serde]:https://serde.rs
+[language-server plugin]:https://github.com/gluon-lang/gluon_language-server
+
+#### Bug Fixes
+
+*   Separate all errors with a newline ([86f159fd](https://github.com/gluon-lang/gluon/commit/86f159fd7099c04d74103b8561d6d0662029e81c))
+* **check:**
+  *  Indent types in error messages correctly ([13a7f52c](https://github.com/gluon-lang/gluon/commit/13a7f52c7a987febd64eab705f5ef6827bc855ac))
+  *  Report clearer errors when aliases do not match ([2ea68654](https://github.com/gluon-lang/gluon/commit/2ea686547abcf64bc7553e85c7db0aba98d7fb7a))
+  *  Don't leak inference variables out to type errors ([ef1d584b](https://github.com/gluon-lang/gluon/commit/ef1d584b478f93999e5fefd835fb8218701247b0), closes [#292](https://github.com/gluon-lang/gluon/issues/292))
+* **parser:**  Give correct location information for unindentation errors ([30541c1e](https://github.com/gluon-lang/gluon/commit/30541c1eeb82b97823067c592e1fa7e0052146cc))
+* **pretty:**  Always format empty records as unit types ([03f07f16](https://github.com/gluon-lang/gluon/commit/03f07f16453818cd3250b3bf1f2a5fa660117e4c))
+* **vm:**
+  *  Only allocate enough memory for a ValueArray when appending arrays ([abe7a4b2](https://github.com/gluon-lang/gluon/commit/abe7a4b2ac30d2bbcecf29762d500bf403731956))
+  *  Fix the debug printing of GcStr and ValueArray ([5566b518](https://github.com/gluon-lang/gluon/commit/5566b5183e137cde97b4122f707dc049491ea40d))
+
+#### Features
+
+*   Add a fmt sub-command to the gluon executable ([b9c6ea6c](https://github.com/gluon-lang/gluon/commit/b9c6ea6c3cc0d532811f565d7ae509abf7a6eeb9))
+*   Bump version of pretty ([29808fce](https://github.com/gluon-lang/gluon/commit/29808fce01d7e2e3a1fbc03aad18db8047280302))
+* **base:**
+  *  Display applied and function types better during multi line splits ([3fff91eb](https://github.com/gluon-lang/gluon/commit/3fff91eb14a7f113d36eab3908d66bd2c85eb86a))
+  *  Add basic pretty printing of expressions ([68b3bb97](https://github.com/gluon-lang/gluon/commit/68b3bb975f24a7a5b480321ea60f087aa6803459))
+* **check:**  Auto complete pattern matches ([712dc412](https://github.com/gluon-lang/gluon/commit/712dc4125ec1824d96d1c5e741a863c34bb766d7))
+* **parser:**
+  *  Allow partial parsing of alternatives when only the `|` exists ([cbe698f7](https://github.com/gluon-lang/gluon/commit/cbe698f768c1c4348ef5101855f805d015dea304))
+  *  Allow partial parsing when patterns are missing ([e3285428](https://github.com/gluon-lang/gluon/commit/e32854284367531417466fab8e899ccf70d82af9))
+  *  (Re-)add negative numbers to the language ([65dfc1ac](https://github.com/gluon-lang/gluon/commit/65dfc1ac8454750a13ce33f98e4adf177b68aca5))
+* **vm:**
+  *  Merge the Tag and Data variants of ValueRef ([ed7330d1](https://github.com/gluon-lang/gluon/commit/ed7330d1b318a406ade8993d526464d8e94c99e0))
+  *  Add deserialization from gluon values ([6b98e29c](https://github.com/gluon-lang/gluon/commit/6b98e29c76abe30d2c9117de0475eed6d6a4dfe7))
+  *  Allow automatic marshalling from Rust to gluon objects via serde ([8318e341](https://github.com/gluon-lang/gluon/commit/8318e34168848a31511b8c0ffce8a7f5c1009ee8))
+
+
+
 <a name="v0.4.1"></a>
 ##  v0.4.1 (2017-05-23)
 
