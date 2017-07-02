@@ -3,7 +3,7 @@ use std::iter::{once, repeat};
 use itertools::{Either, Itertools};
 use pretty::{Arena, DocAllocator, DocBuilder};
 
-use ast::{Expr, Comment, CommentType, is_operator_char, Literal, Pattern, SpannedExpr,
+use ast::{Expr, Comment, CommentType, is_operator_char, Pattern, SpannedExpr,
           SpannedPattern, ValueBinding};
 use kind::Kind;
 use pos::{BytePos, Line, Span};
@@ -328,14 +328,10 @@ impl<'a> ExprPrinter<'a> {
                     pretty(body).group()
                 ]
             }
-            Expr::Literal(ref literal) => {
-                match *literal {
-                    Literal::Byte(b) => arena.text(format!("b{}", b)),
-                    Literal::Char(c) => arena.text(format!("{:?}", c)),
-                    Literal::Float(f) => arena.text(format!("{:.1}", f)),
-                    Literal::Int(i) => arena.text(format!("{}", i)),
-                    Literal::String(ref s) => arena.text(format!("{:?}", s)),
-                }
+            Expr::Literal(_) => {
+                arena.text(
+                    &self.source.src()[expr.span.start.to_usize()..expr.span.end.to_usize()],
+                )
             }
             Expr::Match(ref expr, ref alts) => {
                 chain![arena;

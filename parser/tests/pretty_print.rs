@@ -98,3 +98,11 @@ x
 "#
     );
 }
+
+#[test]
+fn dont_lose_information_in_literals() {
+    let expr = r#"
+3.14 "\t\n\r\""
+"#;
+    assert_eq!(&format_expr(expr).unwrap(), expr);
+}
