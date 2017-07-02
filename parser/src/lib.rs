@@ -3,7 +3,7 @@
 //! string interner and therefore also garbage collector needs to compiled before the parser.
 #![doc(html_root_url="https://docs.rs/gluon_parser/0.5.0")] // # GLUON
 
-#[macro_use] 
+#[macro_use]
 extern crate log;
 extern crate itertools;
 #[macro_use]
@@ -28,6 +28,7 @@ pub use infix::Error as InfixError;
 pub use layout::Error as LayoutError;
 pub use token::Error as TokenizeError;
 
+#[cfg_attr(rustfmt, rustfmt_skip)]
 mod grammar;
 mod infix;
 mod layout;
@@ -40,9 +41,11 @@ fn new_ident<Id>(type_cache: &TypeCache<Id>, name: Id) -> TypedIdent<Id> {
     }
 }
 
-type LalrpopError<'input> = lalrpop_util::ParseError<BytePos,
-                                                     Token<'input>,
-                                                     Spanned<Error, BytePos>>;
+type LalrpopError<'input> = lalrpop_util::ParseError<
+    BytePos,
+    Token<'input>,
+    Spanned<Error, BytePos>,
+>;
 
 /// Shrink hidden spans to fit the visible expressions and flatten singleton blocks.
 fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
@@ -78,7 +81,8 @@ fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
 }
 
 fn transform_errors<'a, Iter>(errors: Iter) -> Errors<Spanned<Error, BytePos>>
-    where Iter: IntoIterator<Item = LalrpopError<'a>>
+where
+    Iter: IntoIterator<Item = LalrpopError<'a>>,
 {
     errors.into_iter().map(Error::from_lalrpop).collect()
 }
@@ -162,9 +166,11 @@ impl Error {
                 mut expected,
             } => {
                 remove_extra_quotes(&mut expected);
-                pos::spanned2(lpos,
-                              rpos,
-                              Error::UnexpectedToken(token.to_string(), expected))
+                pos::spanned2(
+                    lpos,
+                    rpos,
+                    Error::UnexpectedToken(token.to_string(), expected),
+                )
             }
             UnrecognizedToken {
                 token: None,
@@ -205,8 +211,9 @@ impl<I, E> ResultOkIter<I, E> {
 }
 
 impl<I, T, E> Iterator for ResultOkIter<I, E>
-    where I: Iterator<Item = Result<T, E>>,
-          E: ::std::fmt::Debug
+where
+    I: Iterator<Item = Result<T, E>>,
+    E: ::std::fmt::Debug,
 {
     type Item = T;
 
@@ -240,7 +247,8 @@ impl<'a, I> SharedIter<'a, I> {
 }
 
 impl<'a, I> Iterator for SharedIter<'a, I>
-    where I: Iterator
+where
+    I: Iterator,
 {
     type Item = I::Item;
 
@@ -287,10 +295,12 @@ macro_rules! layout {
     } }
 }
 
-pub fn parse_partial_expr<Id>(symbols: &mut IdentEnv<Ident = Id>,
-                              input: &str)
-                              -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, ParseErrors)>
-    where Id: Clone
+pub fn parse_partial_expr<Id>(
+    symbols: &mut IdentEnv<Ident = Id>,
+    input: &str,
+) -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, ParseErrors)>
+where
+    Id: Clone,
 {
     let result_ok_iter;
     let layout = layout!(result_ok_iter, input);
@@ -307,10 +317,12 @@ pub fn parse_partial_expr<Id>(symbols: &mut IdentEnv<Ident = Id>,
     if let Err(err) = result_ok_iter.borrow_mut().result(()) {
         parse_errors.pop(); // Remove the EOF error
         parse_errors.push(lalrpop_util::ParseError::User {
-                              error: pos::spanned2(err.span.start.absolute,
-                                                   err.span.end.absolute,
-                                                   err.value.into()),
-                          });
+            error: pos::spanned2(
+                err.span.start.absolute,
+                err.span.end.absolute,
+                err.value.into(),
+            ),
+        });
     }
 
     match result {
@@ -318,9 +330,7 @@ pub fn parse_partial_expr<Id>(symbols: &mut IdentEnv<Ident = Id>,
             let mut errors = transform_errors(parse_errors);
             let mut reparser = Reparser::new(OpTable::default(), symbols);
             if let Err(reparse_errors) = reparser.reparse(&mut expr) {
-                errors.extend(reparse_errors
-                                  .into_iter()
-                                  .map(|err| err.map(Error::Infix)));
+                errors.extend(reparse_errors.into_iter().map(|err| err.map(Error::Infix)));
             }
 
             if errors.has_errors() {
@@ -336,19 +346,21 @@ pub fn parse_partial_expr<Id>(symbols: &mut IdentEnv<Ident = Id>,
     }
 }
 
-pub fn parse_expr(symbols: &mut IdentEnv<Ident = Symbol>,
-                  input: &str)
-                  -> Result<SpannedExpr<Symbol>, ParseErrors> {
+pub fn parse_expr(
+    symbols: &mut IdentEnv<Ident = Symbol>,
+    input: &str,
+) -> Result<SpannedExpr<Symbol>, ParseErrors> {
     parse_partial_expr(symbols, input).map_err(|t| t.1)
 }
 
 pub type LetOrExpr<Id> = Result<SpannedExpr<Id>, ValueBinding<Id>>;
 
-pub fn parse_partial_let_or_expr<Id>
-    (symbols: &mut IdentEnv<Ident = Id>,
-     input: &str)
-     -> Result<LetOrExpr<Id>, (Option<LetOrExpr<Id>>, ParseErrors)>
-    where Id: Clone,
+pub fn parse_partial_let_or_expr<Id>(
+    symbols: &mut IdentEnv<Ident = Id>,
+    input: &str,
+) -> Result<LetOrExpr<Id>, (Option<LetOrExpr<Id>>, ParseErrors)>
+where
+    Id: Clone,
 {
     let result_ok_iter;
     let layout = layout!(result_ok_iter, input);
@@ -365,9 +377,11 @@ pub fn parse_partial_let_or_expr<Id>
     if let Err(err) = result_ok_iter.borrow_mut().result(()) {
         parse_errors.pop(); // Remove the EOF error
         parse_errors.push(lalrpop_util::ParseError::User {
-            error: pos::spanned2(err.span.start.absolute,
-                                 err.span.end.absolute,
-                                 err.value.into()),
+            error: pos::spanned2(
+                err.span.start.absolute,
+                err.span.end.absolute,
+                err.value.into(),
+            ),
         });
     }
 
@@ -397,10 +411,10 @@ pub fn parse_partial_let_or_expr<Id>
 }
 
 #[cfg(feature = "test")]
-pub fn parse_string<'env, 'input>
-    (symbols: &'env mut IdentEnv<Ident = String>,
-     input: &'input str)
-     -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, ParseErrors)> {
+pub fn parse_string<'env, 'input>(
+    symbols: &'env mut IdentEnv<Ident = String>,
+    input: &'input str,
+) -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, ParseErrors)> {
     parse_partial_expr(symbols, input)
 }
 
@@ -419,7 +433,7 @@ pub fn format_expr(input: &str) -> Result<String, ParseErrors> {
                 "\n"
             }
         }
-        None => "\n"
+        None => "\n",
     };
 
     let expr = parse_expr(&mut Symbols::new(), input)?;
