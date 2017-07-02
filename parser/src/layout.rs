@@ -77,7 +77,10 @@ impl Contexts {
         Ok(())
     }
 
-    fn check_unindentation_limit(&mut self, offside: Offside) -> Result<(), Spanned<Error, BytePos>> {
+    fn check_unindentation_limit(
+        &mut self,
+        offside: Offside,
+    ) -> Result<(), Spanned<Error, BytePos>> {
         let mut skip_block = false;
         for other_offside in self.stack.iter().rev() {
             match other_offside.context {
@@ -91,12 +94,16 @@ impl Contexts {
                 Context::MatchClause |
                 Context::Type |
                 Context::Let |
-                Context::Block { .. } if offside.location.column <
-                                         other_offside.location.column => (),
+                Context::Block { .. }
+                    if offside.location.column < other_offside.location.column => (),
                 _ => continue,
             }
             debug!("Unindentation error: {:?} < {:?}", offside, other_offside);
-            return Err(pos::spanned2(offside.location.absolute, offside.location.absolute, Error::UnindentedTooFar));
+            return Err(pos::spanned2(
+                offside.location.absolute,
+                offside.location.absolute,
+                Error::UnindentedTooFar,
+            ));
         }
         Ok(())
     }
@@ -109,7 +116,8 @@ pub struct Layout<'input, Tokens> {
 }
 
 impl<'input, Tokens> Layout<'input, Tokens>
-    where Tokens: Iterator<Item = SpannedToken<'input>>
+where
+    Tokens: Iterator<Item = SpannedToken<'input>>,
 {
     pub fn new(tokens: Tokens) -> Layout<'input, Tokens> {
         Layout {
@@ -120,27 +128,24 @@ impl<'input, Tokens> Layout<'input, Tokens>
     }
 
     fn next_token(&mut self) -> SpannedToken<'input> {
-        self.unprocessed_tokens
-            .pop()
-            .unwrap_or_else(|| {
-                self.tokens
-                    .next()
-                    .unwrap_or_else(|| {
-                        // Blegh
-                        let location = Location {
-                            line: Line::from(0),
-                            column: Column::from(1),
-                            absolute: BytePos::from(0),
-                        };
-                        pos::spanned2(location, location, Token::EOF)
-                    })
+        self.unprocessed_tokens.pop().unwrap_or_else(|| {
+            self.tokens.next().unwrap_or_else(|| {
+                // Blegh
+                let location = Location {
+                    line: Line::from(0),
+                    column: Column::from(1),
+                    absolute: BytePos::from(0),
+                };
+                pos::spanned2(location, location, Token::EOF)
             })
+        })
     }
 
-    fn layout_token(&mut self,
-                    token: SpannedToken<'input>,
-                    layout_token: Token<'input>)
-                    -> SpannedToken<'input> {
+    fn layout_token(
+        &mut self,
+        token: SpannedToken<'input>,
+        layout_token: Token<'input>,
+    ) -> SpannedToken<'input> {
         let span = token.span;
         self.unprocessed_tokens.push(token);
         pos::spanned(span, layout_token)
@@ -154,8 +159,7 @@ impl<'input, Tokens> Layout<'input, Tokens>
             self.unprocessed_tokens
                 .push(pos::spanned(span, Token::OpenBlock));
         }
-        self.indent_levels
-            .push(Offside::new(span.start, context))
+        self.indent_levels.push(Offside::new(span.start, context))
     }
 
     fn layout_next_token(&mut self) -> Result<SpannedToken<'input>, Spanned<Error, BytePos>> {
@@ -172,8 +176,8 @@ impl<'input, Tokens> Layout<'input, Tokens>
                 (_, Some(offside)) => offside,
                 (&Token::EOF, None) => return Ok(token),
                 (_, None) => {
-                    let offside = Offside::new(token.span.start,
-                                               Context::Block { emit_semi: false });
+                    let offside =
+                        Offside::new(token.span.start, Context::Block { emit_semi: false });
                     self.indent_levels.push(offside)?;
                     debug!("Default block {:?}", token);
                     return Ok(self.layout_token(token, Token::OpenBlock));
@@ -201,12 +205,9 @@ impl<'input, Tokens> Layout<'input, Tokens>
                     // syntax error. Just return the token directly in that case to avoid an
                     // infinite loop caused by repeatedly inserting a default block and removing
                     // it.
-                    if self.indent_levels
-                           .stack
-                           .iter()
-                           .all(|offside| {
-                                    !token_closes_context(&token.value, offside.context)
-                                }) {
+                    if self.indent_levels.stack.iter().all(|offside| {
+                        !token_closes_context(&token.value, offside.context)
+                    }) {
                         return Ok(token);
                     }
 
@@ -219,7 +220,8 @@ impl<'input, Tokens> Layout<'input, Tokens>
                                     // The enclosing block should not emit a block separator for the next
                                     // expression
                                     if let Context::Block { ref mut emit_semi, .. } =
-                                        offside.context {
+                                        offside.context
+                                    {
                                         *emit_semi = false;
                                     }
                                 }
@@ -233,7 +235,8 @@ impl<'input, Tokens> Layout<'input, Tokens>
                                     // The enclosing block should not emit a block separator for the next
                                     // expression
                                     if let Context::Block { ref mut emit_semi, .. } =
-                                        offside.context {
+                                        offside.context
+                                    {
                                         *emit_semi = false;
                                     }
                                     offside.location
@@ -246,8 +249,8 @@ impl<'input, Tokens> Layout<'input, Tokens>
                                 // b
                                 // ```
                                 // `let x = 1 in {{ a; b }}` and not `{{ (let x = 1 in a) ; b }}`
-                                let offside = Offside::new(location,
-                                                           Context::Block { emit_semi: false });
+                                let offside =
+                                    Offside::new(location, Context::Block { emit_semi: false });
                                 self.indent_levels.push(offside)?;
                                 self.unprocessed_tokens
                                     .push(pos::spanned(token.span, Token::OpenBlock));
@@ -309,15 +312,16 @@ impl<'input, Tokens> Layout<'input, Tokens>
                 (Context::MatchClause, _) => {
                     // Must allow `|` to be on the same line
                     if ordering == Ordering::Less ||
-                       (ordering == Ordering::Equal && token.value != Token::Pipe) {
+                        (ordering == Ordering::Equal && token.value != Token::Pipe)
+                    {
                         self.indent_levels.pop();
                         continue;
                     }
                 }
                 // `and` and `}` are allowed to be on the same line as the `let` or `type`
                 (Context::Let, Ordering::Equal) |
-                (Context::Type, Ordering::Equal) if token.value != Token::And &&
-                                                    token.value != Token::RBrace => {
+                (Context::Type, Ordering::Equal)
+                    if token.value != Token::And && token.value != Token::RBrace => {
                     // Insert an `in` token
                     self.indent_levels.pop();
                     let location = {
@@ -395,7 +399,7 @@ impl<'input, Tokens> Layout<'input, Tokens>
                     // else
                     //     3
                     let add_block = next.value != Token::If ||
-                                    next.span.start.line != token.span.start.line;
+                        next.span.start.line != token.span.start.line;
                     self.unprocessed_tokens.push(next);
                     if add_block {
                         self.scan_for_next_block(Context::Block { emit_semi: false })?;
@@ -434,7 +438,8 @@ fn token_closes_context(token: &Token, context: Context) -> bool {
 }
 
 impl<'input, Tokens> Iterator for Layout<'input, Tokens>
-    where Tokens: Iterator<Item = SpannedToken<'input>>
+where
+    Tokens: Iterator<Item = SpannedToken<'input>>,
 {
     type Item = Result<SpannedToken<'input>, Spanned<Error, BytePos>>;
 
