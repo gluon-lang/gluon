@@ -208,12 +208,33 @@ impl<'a> ExprPrinter<'a> {
         arena.concat(repeat(arena.newline()).take(empty_lines))
     }
 
+    fn comments(&'a self, span: Span<BytePos>) -> DocBuilder<'a, Arena<'a>> {
+        let arena = &self.arena;
+        arena
+            .concat(
+                self.source
+                    .comments_between(span)
+                    .map(|comment| {
+                        chain![arena;
+                            if comment.is_empty() {
+                                arena.nil()
+                            } else {
+                                arena.text("// ").append(comment)
+                            },
+                            arena.newline()
+                        ]
+                    }),
+            )
+    }
+
     pub fn pretty_expr<Id>(&'a self, expr: &'a SpannedExpr<Id>) -> DocBuilder<'a, Arena<'a>>
     where
         Id: AsRef<str>,
     {
         self.pretty_expr_(BytePos::from(0), expr)
+            .append(self.comments(Span::new(expr.span.end, BytePos::from(self.source.src().len()))))
     }
+
     pub fn pretty_expr_<Id>(
         &'a self,
         previous_end: BytePos,
@@ -324,8 +345,7 @@ impl<'a> ExprPrinter<'a> {
                     arena.concat(prefixes.zip(binds).map(|(prefix, bind)| {
                         binding(prefix, bind)
                     }).interleave(newlines_iter!(self, binds.iter().map(|bind| bind.span())))),
-                    self.newlines(binds.last().unwrap().expr.span.end, body.span.start),
-                    pretty(body).group()
+                    self.pretty_expr_(binds.last().unwrap().span().end, body).group()
                 ]
             }
             Expr::Literal(_) => {
@@ -413,27 +433,12 @@ impl<'a> ExprPrinter<'a> {
                                 .group()
                         ].group()
                     }).interleave(newlines_iter!(self, binds.iter().map(|bind| bind.span())))),
-                    self.newlines(binds.last().unwrap().alias.span.end, body.span.start),
-                    pretty(body)
+                    self.pretty_expr_(binds.last().unwrap().alias.span.end, body)
                 ].group()
             }
             Expr::Error => arena.text("<error>"),
         };
-        arena
-            .concat(
-                self.source
-                    .comments_between(Span::new(previous_end, expr.span.start))
-                    .map(|comment| {
-                        chain![arena;
-                            if comment.is_empty() {
-                                arena.nil()
-                            } else {
-                                arena.text("// ").append(comment)
-                            },
-                            arena.newline()
-                        ]
-                    }),
-            )
+        self.comments(Span::new(previous_end, expr.span.start))
             .append(doc)
     }
 

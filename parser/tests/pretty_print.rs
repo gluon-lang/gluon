@@ -106,3 +106,18 @@ fn dont_lose_information_in_literals() {
 "#;
     assert_eq!(&format_expr(expr).unwrap(), expr);
 }
+
+
+#[test]
+fn preserve_comment_between_let_in() {
+    let expr = r#"
+// test
+let x = 1
+// test
+type Test = Int
+// test
+1
+// test2
+"#;
+    assert_eq!(&format_expr(expr).unwrap(), expr);
+}
