@@ -168,13 +168,19 @@ impl<'a> DoubleEndedIterator for CommentIter<'a> {
         } else {
             self.src = self.src
                 .trim_right_matches(|c: char| c.is_whitespace() && c != '\n');
-            if self.src.starts_with("\n") {
+            if self.src.ends_with("\n") {
                 let comment_line = self.src[..self.src.len() - 1].lines().next_back().unwrap();
-                // Add 1 to skip `\n' as well
-                self.src = &self.src[..(self.src.len() - 2 - comment_line.len() - 1)];
-
                 let trimmed = comment_line.trim_left();
+
+                let newline_len = if self.src.ends_with("\r\n") {
+                    2
+                } else {
+                    1
+                };
+                self.src = &self.src[..(self.src.len() - newline_len)];
+
                 if trimmed.starts_with("//") && !trimmed.starts_with("///") {
+                    self.src = &self.src[..(self.src.len() - 2 - comment_line.len() - 1)];
                     Some(trimmed)
                 } else {
                     Some("")

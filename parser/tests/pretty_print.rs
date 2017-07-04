@@ -121,3 +121,16 @@ type Test = Int
 "#;
     assert_eq!(&format_expr(expr).unwrap(), expr);
 }
+
+#[test]
+fn preserve_whitespace_in_record() {
+    let expr = r#"
+{
+    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax = 1,
+
+
+    bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbby = 2
+}
+"#;
+    assert_eq!(&format_expr(expr).unwrap(), expr);
+}
