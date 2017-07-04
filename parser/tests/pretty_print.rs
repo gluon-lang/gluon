@@ -134,3 +134,15 @@ fn preserve_whitespace_in_record() {
 "#;
     assert_eq!(&format_expr(expr).unwrap(), expr);
 }
+
+
+#[test]
+fn preserve_block_comments() {
+    let expr = r#"
+/* test */
+let x = { field = f /* test */ 123 /* doc */ }
+/* test */
+x
+"#;
+    assert_eq!(&format_expr(expr).unwrap(), expr);
+}

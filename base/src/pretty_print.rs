@@ -200,18 +200,46 @@ impl<'a> ExprPrinter<'a> {
             .collect()
     }
 
-    fn comments(&'a self, span: Span<BytePos>) -> DocBuilder<'a, Arena<'a>> {
+    fn space(&'a self, span: Span<BytePos>) -> DocBuilder<'a, Arena<'a>> {
+        self.whitespace(span, self.arena.space())
+    }
+
+    fn whitespace(
+        &'a self,
+        span: Span<BytePos>,
+        default: DocBuilder<'a, Arena<'a>>,
+    ) -> DocBuilder<'a, Arena<'a>> {
         let arena = &self.arena;
-        arena.concat(self.source.comments_between(span).map(|comment| {
-            chain![arena;
-                            if comment.is_empty() {
-                                arena.nil()
-                            } else {
-                                arena.text("// ").append(comment)
-                            },
-                            arena.newline()
-                        ]
-        }))
+        let (doc, count) = self.comments_count(span);
+        if doc.1 == arena.nil().1 {
+            default
+        } else if count == 0 {
+            // No comments, only newlines from the iterator
+            doc
+        } else {
+            arena.space().append(doc).append(arena.space())
+        }
+    }
+
+    fn comments(&'a self, span: Span<BytePos>) -> DocBuilder<'a, Arena<'a>> {
+        self.comments_count(span).0
+    }
+    fn comments_count(&'a self, span: Span<BytePos>) -> (DocBuilder<'a, Arena<'a>>, usize) {
+        let arena = &self.arena;
+        let mut comments = 0;
+        let doc = arena.concat(self.source.comments_between(span).map(
+            |comment| if comment.is_empty() {
+                arena.newline()
+            } else {
+                comments += 1;
+                if comment.starts_with("//") {
+                    arena.text(comment).append(arena.newline())
+                } else {
+                    arena.text(comment)
+                }
+            },
+        ));
+        (doc, comments)
     }
 
     fn rev_comments(&'a self, span: Span<BytePos>) -> DocBuilder<'a, Arena<'a>> {
@@ -256,14 +284,17 @@ impl<'a> ExprPrinter<'a> {
 
         let pretty = |next: &'a SpannedExpr<_>| self.pretty_expr_(next.span.start, next);
 
+        let comments = self.comments(Span::new(previous_end, expr.span.start));
         let doc = match expr.value {
             Expr::App(ref func, ref args) => {
+                let arg_iter = once(&**func).chain(args).tuple_windows().map(
+                    |(prev, arg)| {
+                        self.space(Span::new(prev.span.end, arg.span.start))
+                            .append(pretty(arg))
+                    },
+                );
                 pretty(func)
-                    .append(
-                        arena
-                            .concat(args.iter().map(|arg| arena.space().append(pretty(arg))))
-                            .nest(INDENT),
-                    )
+                    .append(arena.concat(arg_iter).nest(INDENT))
                     .group()
             }
             Expr::Array(ref array) => {
@@ -447,8 +478,7 @@ impl<'a> ExprPrinter<'a> {
             }
             Expr::Error => arena.text("<error>"),
         };
-        self.comments(Span::new(previous_end, expr.span.start))
-            .append(doc)
+        comments.append(doc)
     }
 
     fn pretty_lambda<Id>(
@@ -508,7 +538,9 @@ impl<'a> ExprPrinter<'a> {
 
                 let mut line = newline(arena, expr);
                 // If there are any explicit line breaks then we need put each field on a separate line
-                if newlines.iter().any(|&(ref l, ref r)| l.1 != arena.nil().1 || r.1 != arena.nil().1) {
+                if newlines.iter().any(|&(ref l, ref r)| {
+                    l.1 != arena.nil().1 || r.1 != arena.nil().1
+                }) {
                     line = arena.newline();
                 }
                 let end_iter = newlines.into_iter().map(|(l_doc, mut r_doc)| {
@@ -521,6 +553,8 @@ impl<'a> ExprPrinter<'a> {
                         r_doc
                     ]
                 });
+
+                let last_field_end = spans().last().map_or(expr.span.start, |s| s.end);
 
                 let record = chain![arena;
                     if types.is_empty() && exprs.is_empty() {
@@ -543,7 +577,10 @@ impl<'a> ExprPrinter<'a> {
                         }
                     }).interleave(end_iter))
                 ].nest(INDENT)
-                    .append(line.clone())
+                    .append(self.whitespace(
+                        Span::new(last_field_end, expr.span.end),
+                        line.clone(),
+                    ))
                     .group()
                     .append("}");
                 (arena.text("{"), record)
