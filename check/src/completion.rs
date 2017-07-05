@@ -374,6 +374,14 @@ where
             if e.span.expansion_id == NO_EXPANSION {
                 self.0.visit_expr(e);
             } else {
+                match e.value {
+                    Expr::TypeBindings(ref type_bindings, _) => {
+                        for type_binding in type_bindings {
+                            self.0.on_found.on_alias(&type_binding.alias.value);
+                        }
+                    }
+                    _ => ()
+                }
                 walk_expr(self, e);
             }
         }

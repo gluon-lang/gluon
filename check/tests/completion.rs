@@ -7,7 +7,7 @@ extern crate gluon_parser as parser;
 extern crate gluon_check as check;
 
 use base::metadata::Metadata;
-use base::pos::BytePos;
+use base::pos::{self, BytePos};
 use base::types::{Field, Type, ArcType};
 use check::completion::{self, Suggestion};
 
@@ -436,7 +436,27 @@ match A 3 with
     assert_eq!(result, expected);
 }
 
+#[test]
+fn suggest_implicit_import() {
+    let _ = env_logger::init();
 
+    let text = r#"
+type Test = | Abc Int
+match Abc 1 with
+| 
+"#;
+    let env = MockEnv::new();
+
+    let (mut expr, _result) = support::typecheck_partial_expr(text);
+    expr.span.expansion_id = pos::UNKNOWN_EXPANSION;
+    let result: Vec<_> = completion::suggest(&env, &mut expr, 42.into())
+        .into_iter()
+        .map(|s| s.name)
+        .collect();
+
+    let expected = ["Abc".to_string()];
+    assert_eq!(result, expected);
+}
 
 #[test]
 fn metadata_at_variable() {
