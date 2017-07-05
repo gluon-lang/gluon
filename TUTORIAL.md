@@ -333,7 +333,7 @@ let module =
     let id x = x
     in
     type MyInt = Int
-    in { id, pi = 3.14 }
+    in { MyInt, id, pi = 3.14 }
 in
 module.id module.pi
 ```

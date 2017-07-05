@@ -28,6 +28,7 @@ macro_rules! assert_deq {
 }
 
 #[cfg(test)]
+#[cfg_attr(rustfmt, rustfmt_skip)]
 mod grammar;
 pub mod optimize;
 

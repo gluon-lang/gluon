@@ -75,7 +75,8 @@ pub struct OpTable {
 
 impl OpTable {
     fn new<I>(ops: I) -> OpTable
-        where I: IntoIterator<Item = (&'static str, OpMeta)>
+    where
+        I: IntoIterator<Item = (&'static str, OpMeta)>,
     {
         OpTable {
             operators: ops.into_iter()
@@ -88,27 +89,29 @@ impl OpTable {
 
 impl Default for OpTable {
     fn default() -> OpTable {
-        OpTable::new(vec![("*", OpMeta::new(7, Fixity::Left)),
-                          ("/", OpMeta::new(7, Fixity::Left)),
-                          ("%", OpMeta::new(7, Fixity::Left)),
-                          ("+", OpMeta::new(6, Fixity::Left)),
-                          ("-", OpMeta::new(6, Fixity::Left)),
-                          (":", OpMeta::new(5, Fixity::Right)),
-                          ("++", OpMeta::new(5, Fixity::Right)),
-                          ("&&", OpMeta::new(3, Fixity::Right)),
-                          ("||", OpMeta::new(2, Fixity::Right)),
-                          ("$", OpMeta::new(0, Fixity::Right)),
-                          ("==", OpMeta::new(4, Fixity::Left)),
-                          ("/=", OpMeta::new(4, Fixity::Left)),
-                          ("<", OpMeta::new(4, Fixity::Left)),
-                          (">", OpMeta::new(4, Fixity::Left)),
-                          ("<=", OpMeta::new(4, Fixity::Left)),
-                          (">=", OpMeta::new(4, Fixity::Left)),
-                          // Hack for some library operators
-                          ("<<", OpMeta::new(9, Fixity::Right)),
-                          (">>", OpMeta::new(9, Fixity::Left)),
-                          ("<|", OpMeta::new(0, Fixity::Right)),
-                          ("|>", OpMeta::new(0, Fixity::Left))])
+        OpTable::new(vec![
+            ("*", OpMeta::new(7, Fixity::Left)),
+            ("/", OpMeta::new(7, Fixity::Left)),
+            ("%", OpMeta::new(7, Fixity::Left)),
+            ("+", OpMeta::new(6, Fixity::Left)),
+            ("-", OpMeta::new(6, Fixity::Left)),
+            (":", OpMeta::new(5, Fixity::Right)),
+            ("++", OpMeta::new(5, Fixity::Right)),
+            ("&&", OpMeta::new(3, Fixity::Right)),
+            ("||", OpMeta::new(2, Fixity::Right)),
+            ("$", OpMeta::new(0, Fixity::Right)),
+            ("==", OpMeta::new(4, Fixity::Left)),
+            ("/=", OpMeta::new(4, Fixity::Left)),
+            ("<", OpMeta::new(4, Fixity::Left)),
+            (">", OpMeta::new(4, Fixity::Left)),
+            ("<=", OpMeta::new(4, Fixity::Left)),
+            (">=", OpMeta::new(4, Fixity::Left)),
+            // Hack for some library operators
+            ("<<", OpMeta::new(9, Fixity::Right)),
+            (">>", OpMeta::new(9, Fixity::Left)),
+            ("<|", OpMeta::new(0, Fixity::Right)),
+            ("|>", OpMeta::new(0, Fixity::Left)),
+        ])
     }
 }
 
@@ -116,13 +119,13 @@ impl<'a> Index<&'a str> for OpTable {
     type Output = OpMeta;
 
     fn index(&self, name: &'a str) -> &OpMeta {
-        self.operators
-            .get(name)
-            .unwrap_or_else(|| if name.starts_with('#') {
-                                &self[name[1..].trim_left_matches(char::is_alphanumeric)]
-                            } else {
-                                &self.default_meta
-                            })
+        self.operators.get(name).unwrap_or_else(
+            || if name.starts_with('#') {
+                &self[name[1..].trim_left_matches(char::is_alphanumeric)]
+            } else {
+                &self.default_meta
+            },
+        )
     }
 }
 
@@ -143,9 +146,10 @@ impl<'s, Id> Reparser<'s, Id> {
         }
     }
 
-    pub fn reparse(&mut self,
-                   expr: &mut SpannedExpr<Id>)
-                   -> Result<(), Errors<Spanned<Error, BytePos>>> {
+    pub fn reparse(
+        &mut self,
+        expr: &mut SpannedExpr<Id>,
+    ) -> Result<(), Errors<Spanned<Error, BytePos>>> {
         self.visit_expr(expr);
         if self.errors.has_errors() {
             Err(mem::replace(&mut self.errors, Errors::new()))
@@ -160,9 +164,11 @@ impl<'s, Id> MutVisitor for Reparser<'s, Id> {
 
     fn visit_expr(&mut self, e: &mut SpannedExpr<Self::Ident>) {
         if let Expr::Infix(..) = e.value {
-            let dummy = pos::spanned2(BytePos::from(0),
-                                      BytePos::from(0),
-                                      Expr::Literal(Literal::Int(0)));
+            let dummy = pos::spanned2(
+                BytePos::from(0),
+                BytePos::from(0),
+                Expr::Literal(Literal::Int(0)),
+            );
             let expr = mem::replace(e, dummy);
             match reparse(expr, self.symbols, &self.operators) {
                 Ok(expr) => {
@@ -187,12 +193,14 @@ impl fmt::Display for Error {
         match *self {
             ConflictingFixities((ref lhs_name, lhs_meta), (ref rhs_name, rhs_meta)) => {
                 write!(f, "Conflicting fixities at the same precedence level. ")?;
-                write!(f,
-                       "left: `{} {}`, right: `{} {}`",
-                       lhs_meta,
-                       lhs_name,
-                       rhs_meta,
-                       rhs_name)
+                write!(
+                    f,
+                    "left: `{} {}`, right: `{} {}`",
+                    lhs_meta,
+                    lhs_name,
+                    rhs_meta,
+                    rhs_name
+                )
             }
         }
     }
@@ -210,10 +218,11 @@ impl StdError for Error {
 /// Inspired by [`Language.Haskell.Infix`].
 ///
 /// [`Language.Haskell.Infix`]: https://hackage.haskell.org/package/infix-0.1.1/docs/src/Language-Haskell-Infix.html
-pub fn reparse<Id>(expr: SpannedExpr<Id>,
-                   symbols: &IdentEnv<Ident = Id>,
-                   operators: &OpTable)
-                   -> Result<SpannedExpr<Id>, Spanned<Error, BytePos>> {
+pub fn reparse<Id>(
+    expr: SpannedExpr<Id>,
+    symbols: &IdentEnv<Ident = Id>,
+    operators: &OpTable,
+) -> Result<SpannedExpr<Id>, Spanned<Error, BytePos>> {
     use base::pos;
     use self::Error::*;
 
@@ -277,8 +286,10 @@ pub fn reparse<Id>(expr: SpannedExpr<Id>,
                                 let stack_op_name =
                                     symbols.string(&stack_op.value.name).to_string();
                                 let span = pos::span(stack_op.span.start, next_op.span.end);
-                                let error = ConflictingFixities((stack_op_name, stack_op_meta),
-                                                                (next_op_name, next_op_meta));
+                                let error = ConflictingFixities(
+                                    (stack_op_name, stack_op_meta),
+                                    (next_op_name, next_op_meta),
+                                );
 
                                 return Err(pos::spanned(span, error));
                             }
@@ -355,19 +366,17 @@ impl<Id> Iterator for Infixes<Id> {
             return Some(InfixToken::Op(op));
         }
 
-        self.remaining_expr
-            .take()
-            .map(|expr| {
-                let expr = *expr; // Workaround for http://stackoverflow.com/questions/28466809/
-                match expr.value {
-                    Expr::Infix(lhs, op, rhs) => {
-                        self.remaining_expr = Some(rhs);
-                        self.next_op = Some(op);
-                        InfixToken::Arg(lhs)
-                    }
-                    _ => InfixToken::Arg(Box::new(expr)), // FIXME: remove reallocation?
+        self.remaining_expr.take().map(|expr| {
+            let expr = *expr; // Workaround for http://stackoverflow.com/questions/28466809/
+            match expr.value {
+                Expr::Infix(lhs, op, rhs) => {
+                    self.remaining_expr = Some(rhs);
+                    self.next_op = Some(op);
+                    InfixToken::Arg(lhs)
                 }
-            })
+                _ => InfixToken::Arg(Box::new(expr)), // FIXME: remove reallocation?
+            }
+        })
     }
 }
 
@@ -397,7 +406,8 @@ mod tests {
     }
 
     impl<T> IdentEnv for MockEnv<T>
-        where T: AsRef<str> + for<'a> From<&'a str>
+    where
+        T: AsRef<str> + for<'a> From<&'a str>,
     {
         fn from_str(&mut self, s: &str) -> Self::Ident {
             T::from(s)
@@ -413,10 +423,11 @@ mod tests {
         TypedIdent::new(name.to_string())
     }
 
-    fn op(lhs: Box<SpannedExpr<String>>,
-          op_str: &str,
-          rhs: Box<SpannedExpr<String>>)
-          -> Box<SpannedExpr<String>> {
+    fn op(
+        lhs: Box<SpannedExpr<String>>,
+        op_str: &str,
+        rhs: Box<SpannedExpr<String>>,
+    ) -> Box<SpannedExpr<String>> {
         Box::new(no_loc(Expr::Infix(lhs, no_loc(ident(op_str)), rhs)))
     }
 
@@ -426,20 +437,24 @@ mod tests {
 
     #[test]
     fn infixes() {
-        let expr = op(int(1),
-                      "+",
-                      op(int(2), "^", op(int(4), "*", op(int(6), "-", int(8)))));
+        let expr = op(
+            int(1),
+            "+",
+            op(int(2), "^", op(int(4), "*", op(int(6), "-", int(8)))),
+        );
 
         let result: Vec<_> = Infixes::new(*expr).collect();
-        let expected = vec![InfixToken::Arg(int(1)),
-                            InfixToken::Op(no_loc(ident("+"))),
-                            InfixToken::Arg(int(2)),
-                            InfixToken::Op(no_loc(ident("^"))),
-                            InfixToken::Arg(int(4)),
-                            InfixToken::Op(no_loc(ident("*"))),
-                            InfixToken::Arg(int(6)),
-                            InfixToken::Op(no_loc(ident("-"))),
-                            InfixToken::Arg(int(8))];
+        let expected = vec![
+            InfixToken::Arg(int(1)),
+            InfixToken::Op(no_loc(ident("+"))),
+            InfixToken::Arg(int(2)),
+            InfixToken::Op(no_loc(ident("^"))),
+            InfixToken::Arg(int(4)),
+            InfixToken::Op(no_loc(ident("*"))),
+            InfixToken::Arg(int(6)),
+            InfixToken::Op(no_loc(ident("-"))),
+            InfixToken::Arg(int(8)),
+        ];
 
         assert_eq!(result, expected);
     }
@@ -458,8 +473,10 @@ mod tests {
     #[test]
     fn reparse_less_precedence() {
         let env = MockEnv::new();
-        let ops = OpTable::new(vec![("*", OpMeta::new(7, Fixity::Left)),
-                                    ("+", OpMeta::new(6, Fixity::Left))]);
+        let ops = OpTable::new(vec![
+            ("*", OpMeta::new(7, Fixity::Left)),
+            ("+", OpMeta::new(6, Fixity::Left)),
+        ]);
 
         // 1 + (2 * 8)
         let expr = *op(int(1), "+", op(int(2), "*", int(8)));
@@ -471,8 +488,10 @@ mod tests {
     #[test]
     fn reparse_greater_precedence() {
         let env = MockEnv::new();
-        let ops = OpTable::new(vec![("*", OpMeta::new(7, Fixity::Left)),
-                                    ("+", OpMeta::new(6, Fixity::Left))]);
+        let ops = OpTable::new(vec![
+            ("*", OpMeta::new(7, Fixity::Left)),
+            ("+", OpMeta::new(6, Fixity::Left)),
+        ]);
 
         // 1 * (2 + 8)
         let expr = *op(int(1), "*", op(int(2), "+", int(8)));
@@ -485,8 +504,10 @@ mod tests {
     #[test]
     fn reparse_equal_precedence_left_fixity() {
         let env = MockEnv::new();
-        let ops = OpTable::new(vec![("-", OpMeta::new(6, Fixity::Left)),
-                                    ("+", OpMeta::new(6, Fixity::Left))]);
+        let ops = OpTable::new(vec![
+            ("-", OpMeta::new(6, Fixity::Left)),
+            ("+", OpMeta::new(6, Fixity::Left)),
+        ]);
 
         // 1 + (2 - 8)
         let expr = *op(int(1), "+", op(int(2), "-", int(8)));
@@ -499,8 +520,10 @@ mod tests {
     #[test]
     fn reparse_equal_precedence_right_fixity() {
         let env = MockEnv::new();
-        let ops = OpTable::new(vec![("-", OpMeta::new(6, Fixity::Right)),
-                                    ("+", OpMeta::new(6, Fixity::Right))]);
+        let ops = OpTable::new(vec![
+            ("-", OpMeta::new(6, Fixity::Right)),
+            ("+", OpMeta::new(6, Fixity::Right)),
+        ]);
 
         // 1 + (2 - 8)
         let expr = *op(int(1), "+", op(int(2), "-", int(8)));
@@ -512,9 +535,11 @@ mod tests {
     #[test]
     fn reparse_mixed_precedences_mixed_fixities() {
         let env = MockEnv::new();
-        let ops = OpTable::new(vec![("*", OpMeta::new(7, Fixity::Left)),
-                                    ("-", OpMeta::new(6, Fixity::Left)),
-                                    ("+", OpMeta::new(6, Fixity::Left))]);
+        let ops = OpTable::new(vec![
+            ("*", OpMeta::new(7, Fixity::Left)),
+            ("-", OpMeta::new(6, Fixity::Left)),
+            ("+", OpMeta::new(6, Fixity::Left)),
+        ]);
 
         //  1  + (2  * (6   -  8))
         let expr = *op(int(1), "+", op(int(2), "*", op(int(6), "-", int(8))));
@@ -527,13 +552,17 @@ mod tests {
     #[test]
     fn reparse_equal_precedence_conflicting_fixities() {
         let env = MockEnv::new();
-        let ops = OpTable::new(vec![("|>", OpMeta::new(5, Fixity::Left)),
-                                    ("<|", OpMeta::new(5, Fixity::Right))]);
+        let ops = OpTable::new(vec![
+            ("|>", OpMeta::new(5, Fixity::Left)),
+            ("<|", OpMeta::new(5, Fixity::Right)),
+        ]);
 
         // 1 |> (2 <| 8)
         let expr = *op(int(1), "|>", op(int(2), "<|", int(8)));
-        let error = ConflictingFixities(("|>".to_string(), OpMeta::new(5, Fixity::Left)),
-                                        ("<|".to_string(), OpMeta::new(5, Fixity::Right)));
+        let error = ConflictingFixities(("|>".to_string(), OpMeta::new(5, Fixity::Left)), (
+            "<|".to_string(),
+            OpMeta::new(5, Fixity::Right),
+        ));
         let expected = Err(no_loc(error));
 
         assert_eq!(reparse(expr, &env, &ops), expected);
@@ -542,13 +571,17 @@ mod tests {
     #[test]
     fn reparse_equal_precedence_conflicting_fixities_nested() {
         let env = MockEnv::new();
-        let ops = OpTable::new(vec![("|>", OpMeta::new(5, Fixity::Left)),
-                                    ("<|", OpMeta::new(5, Fixity::Right))]);
+        let ops = OpTable::new(vec![
+            ("|>", OpMeta::new(5, Fixity::Left)),
+            ("<|", OpMeta::new(5, Fixity::Right)),
+        ]);
 
         // 1 + (1 |> (2 <| 8))
         let expr = *op(int(1), "+", op(int(1), "|>", op(int(2), "<|", int(8))));
-        let error = ConflictingFixities(("|>".to_string(), OpMeta::new(5, Fixity::Left)),
-                                        ("<|".to_string(), OpMeta::new(5, Fixity::Right)));
+        let error = ConflictingFixities(("|>".to_string(), OpMeta::new(5, Fixity::Left)), (
+            "<|".to_string(),
+            OpMeta::new(5, Fixity::Right),
+        ));
         let expected = Err(no_loc(error));
 
         assert_eq!(reparse(expr, &env, &ops), expected);

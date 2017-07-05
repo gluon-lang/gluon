@@ -3,10 +3,10 @@ use std::iter::{once, repeat};
 use itertools::{Either, Itertools};
 use pretty::{Arena, DocAllocator, DocBuilder};
 
-use ast::{Expr, Comment, CommentType, is_operator_char, Literal, Pattern, SpannedExpr,
-          SpannedPattern, ValueBinding};
+use ast::{Expr, Comment, CommentType, is_operator_char, Pattern, SpannedExpr, SpannedPattern,
+          ValueBinding};
 use kind::Kind;
-use pos::{BytePos, Line, Span};
+use pos::{BytePos, Span};
 use source::Source;
 use types::{Prec, Type, pretty_print as pretty_type};
 
@@ -164,7 +164,13 @@ where
 
 macro_rules! newlines_iter {
     ($self_: ident, $iterable: expr) => {
-        $iterable.into_iter().tuple_windows().map(|(prev, next)| $self_.newlines(prev.end, next.start))
+        $iterable.into_iter().tuple_windows().map(|(prev, next)| $self_.comments(Span::new(prev.end, next.start)))
+    }
+}
+
+macro_rules! rev_newlines_iter {
+    ($self_: ident, $iterable: expr) => {
+        $iterable.into_iter().tuple_windows().map(|(prev, next)| $self_.rev_comments(Span::new(prev.end, next.start)))
     }
 }
 
@@ -194,26 +200,78 @@ impl<'a> ExprPrinter<'a> {
             .collect()
     }
 
+    fn space(&'a self, span: Span<BytePos>) -> DocBuilder<'a, Arena<'a>> {
+        self.whitespace(span, self.arena.space())
+    }
 
-    fn newlines(&'a self, prev: BytePos, next: BytePos) -> DocBuilder<'a, Arena<'a>> {
+    fn whitespace(
+        &'a self,
+        span: Span<BytePos>,
+        default: DocBuilder<'a, Arena<'a>>,
+    ) -> DocBuilder<'a, Arena<'a>> {
         let arena = &self.arena;
-        let prev_line = self.source.line_number_at_byte(prev);
-        let next_line = self.source.line_number_at_byte(next);
-        // Record expressions
-        let empty_lines = (prev_line.to_usize()..next_line.to_usize())
-            .map(|l| {
-                self.source.line(Line::from(l)).unwrap().1.trim().is_empty()
+        let (doc, count) = self.comments_count(span);
+        if doc.1 == arena.nil().1 {
+            default
+        } else if count == 0 {
+            // No comments, only newlines from the iterator
+            doc
+        } else {
+            arena.space().append(doc).append(arena.space())
+        }
+    }
+
+    fn comments(&'a self, span: Span<BytePos>) -> DocBuilder<'a, Arena<'a>> {
+        self.comments_count(span).0
+    }
+    fn comments_count(&'a self, span: Span<BytePos>) -> (DocBuilder<'a, Arena<'a>>, usize) {
+        let arena = &self.arena;
+        let mut comments = 0;
+        let doc = arena.concat(self.source.comments_between(span).map(
+            |comment| if comment.is_empty() {
+                arena.newline()
+            } else {
+                comments += 1;
+                if comment.starts_with("//") {
+                    arena.text(comment).append(arena.newline())
+                } else {
+                    arena.text(comment)
+                }
+            },
+        ));
+        (doc, comments)
+    }
+
+    fn rev_comments(&'a self, span: Span<BytePos>) -> DocBuilder<'a, Arena<'a>> {
+        let arena = &self.arena;
+        self.source
+            .comments_between(span)
+            .rev()
+            .map(|comment| {
+                chain![arena;
+                            if comment.is_empty() {
+                                arena.nil()
+                            } else {
+                                arena.text("// ").append(comment)
+                            },
+                            arena.newline()
+                        ]
             })
-            .count();
-        arena.concat(repeat(arena.newline()).take(empty_lines))
+            .fold(arena.nil(), |acc, doc| doc.append(acc))
     }
 
     pub fn pretty_expr<Id>(&'a self, expr: &'a SpannedExpr<Id>) -> DocBuilder<'a, Arena<'a>>
     where
         Id: AsRef<str>,
     {
-        self.pretty_expr_(BytePos::from(0), expr)
+        self.pretty_expr_(BytePos::from(0), expr).append(
+            self.comments(Span::new(
+                expr.span.end,
+                BytePos::from(self.source.src().len()),
+            )),
+        )
     }
+
     pub fn pretty_expr_<Id>(
         &'a self,
         previous_end: BytePos,
@@ -226,14 +284,17 @@ impl<'a> ExprPrinter<'a> {
 
         let pretty = |next: &'a SpannedExpr<_>| self.pretty_expr_(next.span.start, next);
 
+        let comments = self.comments(Span::new(previous_end, expr.span.start));
         let doc = match expr.value {
             Expr::App(ref func, ref args) => {
+                let arg_iter = once(&**func).chain(args).tuple_windows().map(
+                    |(prev, arg)| {
+                        self.space(Span::new(prev.span.end, arg.span.start))
+                            .append(pretty(arg))
+                    },
+                );
                 pretty(func)
-                    .append(
-                        arena
-                            .concat(args.iter().map(|arg| arena.space().append(pretty(arg))))
-                            .nest(INDENT),
-                    )
+                    .append(arena.concat(arg_iter).nest(INDENT))
                     .group()
             }
             Expr::Array(ref array) => {
@@ -324,18 +385,13 @@ impl<'a> ExprPrinter<'a> {
                     arena.concat(prefixes.zip(binds).map(|(prefix, bind)| {
                         binding(prefix, bind)
                     }).interleave(newlines_iter!(self, binds.iter().map(|bind| bind.span())))),
-                    self.newlines(binds.last().unwrap().expr.span.end, body.span.start),
-                    pretty(body).group()
+                    self.pretty_expr_(binds.last().unwrap().span().end, body).group()
                 ]
             }
-            Expr::Literal(ref literal) => {
-                match *literal {
-                    Literal::Byte(b) => arena.text(format!("b{}", b)),
-                    Literal::Char(c) => arena.text(format!("{:?}", c)),
-                    Literal::Float(f) => arena.text(format!("{:.1}", f)),
-                    Literal::Int(i) => arena.text(format!("{}", i)),
-                    Literal::String(ref s) => arena.text(format!("{:?}", s)),
-                }
+            Expr::Literal(_) => {
+                arena.text(
+                    &self.source.src()[expr.span.start.to_usize()..expr.span.end.to_usize()],
+                )
             }
             Expr::Match(ref expr, ref alts) => {
                 chain![arena;
@@ -417,28 +473,12 @@ impl<'a> ExprPrinter<'a> {
                                 .group()
                         ].group()
                     }).interleave(newlines_iter!(self, binds.iter().map(|bind| bind.span())))),
-                    self.newlines(binds.last().unwrap().alias.span.end, body.span.start),
-                    pretty(body)
+                    self.pretty_expr_(binds.last().unwrap().alias.span.end, body)
                 ].group()
             }
             Expr::Error => arena.text("<error>"),
         };
-        arena
-            .concat(
-                self.source
-                    .comments_between(Span::new(previous_end, expr.span.start))
-                    .map(|comment| {
-                        chain![arena;
-                            if comment.is_empty() {
-                                arena.nil()
-                            } else {
-                                arena.text("// ").append(comment)
-                            },
-                            arena.newline()
-                        ]
-                    }),
-            )
-            .append(doc)
+        comments.append(doc)
     }
 
     fn pretty_lambda<Id>(
@@ -478,9 +518,7 @@ impl<'a> ExprPrinter<'a> {
                         },
                     )
                 };
-
-                let newlines = newlines_iter!(
-                    self,
+                let spans = || {
                     ordered_iter().map(|x| {
                         x.either(|l| l.name.span, |r| {
                             Span::new(
@@ -491,19 +529,32 @@ impl<'a> ExprPrinter<'a> {
                             )
                         })
                     })
-                ).collect::<Vec<_>>();
+                };
+
+                // Preserve comments before and after the comma
+                let newlines = newlines_iter!(self, spans())
+                    .zip(rev_newlines_iter!(self, spans()))
+                    .collect::<Vec<_>>();
 
                 let mut line = newline(arena, expr);
                 // If there are any explicit line breaks then we need put each field on a separate line
-                if newlines.iter().any(|doc| doc.1 != arena.nil().1) {
+                if newlines.iter().any(|&(ref l, ref r)| {
+                    l.1 != arena.nil().1 || r.1 != arena.nil().1
+                }) {
                     line = arena.newline();
                 }
-                let end_iter = newlines.into_iter().map(|mut doc| {
-                    if doc.1 == arena.nil().1 {
-                        doc = line.clone();
+                let end_iter = newlines.into_iter().map(|(l_doc, mut r_doc)| {
+                    if r_doc.1 == arena.nil().1 {
+                        r_doc = line.clone();
                     }
-                    arena.text(",").append(doc)
+                    chain![arena;
+                        l_doc,
+                        ",",
+                        r_doc
+                    ]
                 });
+
+                let last_field_end = spans().last().map_or(expr.span.start, |s| s.end);
 
                 let record = chain![arena;
                     if types.is_empty() && exprs.is_empty() {
@@ -526,7 +577,10 @@ impl<'a> ExprPrinter<'a> {
                         }
                     }).interleave(end_iter))
                 ].nest(INDENT)
-                    .append(line.clone())
+                    .append(self.whitespace(
+                        Span::new(last_field_end, expr.span.end),
+                        line.clone(),
+                    ))
                     .group()
                     .append("}");
                 (arena.text("{"), record)

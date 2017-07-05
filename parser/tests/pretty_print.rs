@@ -98,3 +98,51 @@ x
 "#
     );
 }
+
+#[test]
+fn dont_lose_information_in_literals() {
+    let expr = r#"
+3.14 "\t\n\r\""
+"#;
+    assert_eq!(&format_expr(expr).unwrap(), expr);
+}
+
+
+#[test]
+fn preserve_comment_between_let_in() {
+    let expr = r#"
+// test
+let x = 1
+// test
+type Test = Int
+// test
+1
+// test2
+"#;
+    assert_eq!(&format_expr(expr).unwrap(), expr);
+}
+
+#[test]
+fn preserve_whitespace_in_record() {
+    let expr = r#"
+{
+    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax = 1,
+
+
+    bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbby = 2
+}
+"#;
+    assert_eq!(&format_expr(expr).unwrap(), expr);
+}
+
+
+#[test]
+fn preserve_block_comments() {
+    let expr = r#"
+/* test */
+let x = { field = f /* test */ 123 /* doc */ }
+/* test */
+x
+"#;
+    assert_eq!(&format_expr(expr).unwrap(), expr);
+}
