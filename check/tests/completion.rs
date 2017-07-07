@@ -459,6 +459,30 @@ match Abc 1 with
 }
 
 #[test]
+fn suggest_implicit_import_from_pattern() {
+    let _ = env_logger::init();
+
+    let text = r#"
+let { Test } =
+    type Test = | Abc Int
+    { Test }
+match Abc 1 with
+| 
+"#;
+    let env = MockEnv::new();
+
+    let (mut expr, _result) = support::typecheck_partial_expr(text);
+    expr.span.expansion_id = pos::UNKNOWN_EXPANSION;
+    let result: Vec<_> = completion::suggest(&env, &mut expr, 74.into())
+        .into_iter()
+        .map(|s| s.name)
+        .collect();
+
+    let expected = ["Abc".to_string()];
+    assert_eq!(result, expected);
+}
+
+#[test]
 fn metadata_at_variable() {
     let _ = env_logger::init();
 
