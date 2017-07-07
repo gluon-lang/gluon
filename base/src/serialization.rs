@@ -8,7 +8,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use serde::de::{Deserialize, DeserializeSeed, Deserializer, Error};
+use serde::de::{Deserialize, DeserializeSeed, DeserializeSeedEx, Deserializer, Error};
 use serde::ser::{SerializeSeed, Serializer};
 
 use symbol::Symbol;
@@ -192,15 +192,15 @@ fn deserialize_t<'de, D, T>(
 ) -> Result<T::Value, D::Error>
 where
     D: Deserializer<'de>,
-    T: DeserializeSeed<'de> + Clone,
+    T: DeserializeSeed<'de>,
 {
-    seed.0.clone().deserialize(deserializer)
+    seed.0.deserialize(deserializer)
 }
 
 #[derive(DeserializeSeed, SerializeSeed)]
 #[serde(deserialize_seed = "VariantSeed<S>")]
 #[serde(de_parameters = "S")]
-#[serde(bound(deserialize = "S: DeserializeSeed<'de, Value = T> + Clone"))]
+#[serde(bound(deserialize = "S: DeserializeSeed<'de, Value = T>"))]
 #[serde(bound(serialize = "T: SerializeSeed"))]
 #[serde(serialize_seed = "T::Seed")]
 pub enum Variant<T> {
@@ -230,7 +230,7 @@ where
     where
         D: Deserializer<'de>,
     {
-        match VariantSeed(self.0).deserialize(deserializer)? {
+        match Variant::deserialize_seed(&mut VariantSeed(&mut self), deserializer)? {
             Variant::Marked(id, node) => {
                 self.0.as_mut().insert(id, node.clone());
                 Ok(node)
