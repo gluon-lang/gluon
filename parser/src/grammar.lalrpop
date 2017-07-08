@@ -21,6 +21,7 @@ extern {
     type Error = Spanned<Error, BytePos>;
 
     enum Token<'input> {
+        "shebang line" => Token::ShebangLine(<String>),
         "identifier" => Token::Identifier(<&'input str>),
         "operator" => Token::Operator(<&'input str>),
         "string literal" => Token::StringLiteral(<String>),
@@ -504,7 +505,7 @@ SpExpr: SpannedExpr<Id> = {
 };
 
 pub TopExpr: SpannedExpr<Id> = {
-    <expr: SpExpr> => expr,
+    "shebang line"? <expr: SpExpr> => expr,
 };
 
 pub LetOrExpr: Result<SpannedExpr<Id>, ValueBinding<Id>> = {

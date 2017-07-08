@@ -726,3 +726,15 @@ fn doc_comment_on_record_field() {
         })
     )
 }
+
+#[test]
+fn shebang_at_top_is_ignored() {
+    let _ = ::env_logger::init();
+    let text = r"#!/bin/gluon
+{ Test, x }";
+    let e = parse_new!(text);
+    assert_eq!(
+        e,
+        record_a(vec![("Test".into(), None)], vec![("x".into(), None)])
+    )
+}
