@@ -17,7 +17,7 @@ pub enum Token<'input> {
     ByteLiteral(u8),
     FloatLiteral(f64),
     DocComment(Comment),
-    
+
     And,
     Else,
     If,
@@ -64,7 +64,7 @@ impl<'input> fmt::Display for Token<'input> {
             ByteLiteral(_) => "ByteLiteral",
             FloatLiteral(_) => "FloatLiteral",
             DocComment { .. } => "DocComment",
-            
+
             And => "And",
             Else => "Else",
             If => "If",
