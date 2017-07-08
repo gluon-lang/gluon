@@ -21,7 +21,7 @@ extern {
     type Error = Spanned<Error, BytePos>;
 
     enum Token<'input> {
-        "shebang line" => Token::ShebangLine(<String>),
+        "shebang line" => Token::ShebangLine(<&'input str>),
         "identifier" => Token::Identifier(<&'input str>),
         "operator" => Token::Operator(<&'input str>),
         "string literal" => Token::StringLiteral(<String>),

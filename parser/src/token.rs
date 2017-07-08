@@ -7,7 +7,7 @@ use self::Error::*;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Token<'input> {
-    ShebangLine(String),
+    ShebangLine(&'input str),
     Identifier(&'input str),
     Operator(&'input str),
 
@@ -372,7 +372,7 @@ impl<'input> Tokenizer<'input> {
         
         if line.starts_with("#!") {
             let skip = 2;
-            let result = line[skip..].trim_right().to_string();
+            let result = line[skip..].trim_right();
             let tok = Token::ShebangLine(result);
             Some(pos::spanned2(start, end, tok))
         } else {
@@ -828,7 +828,7 @@ mod test {
         test(
             "#!/bin/gluon\nhi /// hellooo/// hi",
             vec![
-                (r#"~~~~~~~~~~~~                   "#, ShebangLine("/bin/gluon".to_string())),
+                (r#"~~~~~~~~~~~~                   "#, ShebangLine("/bin/gluon")),
                 (r#"            ~~                 "#, Identifier("hi")),
                 (r#"              ~~~~~~~~~~~~~~~~~"#,
                     DocComment(Comment {
