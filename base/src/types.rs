@@ -6,7 +6,7 @@ use std::marker::PhantomData;
 
 use pretty::{DocAllocator, Arena, DocBuilder};
 
-use serde::de::{Deserialize, Deserializer, DeserializeSeed, DeserializeSeedEx};
+use serde::de::{Deserializer, DeserializeSeed, DeserializeSeedEx};
 use serde::ser::{Serializer, SerializeSeed};
 
 use smallvec::{SmallVec, VecLike};
@@ -14,7 +14,7 @@ use smallvec::{SmallVec, VecLike};
 use ast::IdentEnv;
 use kind::{ArcKind, Kind, KindEnv};
 use merge::merge;
-use serialization::{IdSeed, SeSeed};
+use serialization::SeSeed;
 use symbol::{Symbol, SymbolRef};
 
 /// Trait for values which contains typed values which can be refered by name
@@ -251,9 +251,8 @@ where
     where
         D: Deserializer<'de>,
     {
-        use serialization::{MapSeed, SharedSeed};
-            let mut seed = ::serde::de::Seed::new(seed);
-        let seed = SharedSeed(&mut seed,
+        use serialization::{SharedSeed};
+        let seed = SharedSeed::new(seed,
         );
         DeserializeSeed::deserialize(
             seed,
@@ -534,13 +533,8 @@ impl<Id, T> Clone for Seed<Id, T> {
         T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>,
         Id: DeserializeSeedEx<'de, Seed<Id, T>> + Clone + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>,
     {
-        use serialization::{MapSeed, SharedSeed};
-        let mut seed = 
-            ::serde::de::Seed::new(seed)
-        ;
-        let mut seed = SharedSeed(&mut seed);
         DeserializeSeed::deserialize(
-            ::serde::de::SeqSeedEx::new(&mut seed, |_| AppVec::default()),
+            ::serde::de::SeqSeedEx::new(seed, |_| AppVec::default()),
             deserializer,
         )
     }
@@ -553,10 +547,7 @@ impl<Id, T> Clone for Seed<Id, T> {
         T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>,
         Id: DeserializeSeedEx<'de, Seed<Id, T>> + Clone + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>
     {
-        use serialization::{MapSeed, SharedSeed};
-        let seed = 
-            ::serde::de::SharedSeed::new(seed);
-        let mut seed = MapSeed::<_, fn(_) -> _>::new(&seed, Arc::new);
+        use serialization::{SharedSeed};
         let seed = SharedSeed::new(seed);
         DeserializeSeed::deserialize(seed, deserializer)
     }

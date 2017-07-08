@@ -140,7 +140,6 @@ where
     }
 }
 
-
 pub type Id = u32;
 type IdToShared<T> = HashMap<Id, T>;
 
@@ -182,16 +181,17 @@ impl NodeMap {
     }
 }
 
-pub struct SharedSeed<'seed, T: 'seed, U>(pub &'seed mut T, PhantomData<U>);
+pub struct SharedSeed<'seed, T, S: 'seed>(pub &'seed mut S, PhantomData<T>);
 
-impl<'seed, T, U> SharedSeed<'seed, T, U> {
-    pub fn new(t: &'seed mut T) -> Self {
-        SharedSeed(t, PhantomData)
+impl<'seed, T, S> SharedSeed<'seed, T, S> {
+    pub fn new(s: &'seed mut S) -> Self {
+        SharedSeed(s, PhantomData)
     }
 }
 
-impl<'seed, T, U> AsMut<T> for SharedSeed<'seed, T, U> {
-    fn as_mut(&mut self) -> &mut T {
+
+impl<'seed, T, S> AsMut<S> for SharedSeed<'seed, T, S> {
+    fn as_mut(&mut self) -> &mut S {
         self.0
     }
 }
@@ -205,31 +205,29 @@ impl<'seed, T, U> AsMut<T> for SharedSeed<'seed, T, U> {
 pub enum Variant<T> {
     Marked(
         Id,
-        #[serde(deserialize_seed)]
-        #[serde(serialize_seed)]
+        #[serde(seed)]
         T
     ),
     Plain(
-        #[serde(deserialize_seed)]
-        #[serde(serialize_seed)]
+        #[serde(seed)]
         T
     ),
     Reference(Id),
 }
 
-impl<'de, 'seed, T, U> DeserializeSeed<'de> for SharedSeed<'seed, T, U>
+impl<'de, 'seed, T, S> DeserializeSeed<'de> for SharedSeed<'seed, T, S>
 where
-    U: DeserializeSeedEx<'de, T>,
-    T: AsMut<NodeMap>,
-    U: Any + Clone,
+    T: DeserializeSeedEx<'de, S>,
+    S: AsMut<NodeMap>,
+    T: Any + Clone,
 {
-    type Value = U;
+    type Value = T;
 
     fn deserialize<D>(mut self, deserializer: D) -> Result<Self::Value, D::Error>
     where
         D: Deserializer<'de>,
     {
-        match Variant::<U>::deserialize_seed(self.0, deserializer)? {
+        match Variant::<T>::deserialize_seed(self.0, deserializer)? {
             Variant::Marked(id, node) => {
                 self.0.as_mut().insert(id, node.clone());
                 Ok(node)

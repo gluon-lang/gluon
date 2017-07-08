@@ -26,13 +26,8 @@ impl<'de, S> DeserializeSeedEx<'de, S> for ArcKind where S: AsMut<::serializatio
     where
         D: ::serde::Deserializer<'de>,
     {
-        let seed = 
-            ::serde::de::SharedSeed::new(seed);
-        let seed = ::serialization::SharedSeed::new(::serialization::MapSeed::<_, fn(_) -> _>::new(
-            &seed,
-            ArcKind::new,
-        ));
-        ::serde::de::DeserializeSeed::deserialize(seed, deserializer)
+        use serde::de::DeserializeSeed;
+        ::serialization::SharedSeed::new(seed).deserialize(deserializer).map(ArcKind)
     }
 }
 
@@ -45,7 +40,9 @@ impl<'de, S> DeserializeSeedEx<'de, S> for ArcKind where S: AsMut<::serializatio
 /// as well as `Functor` which has the kind `Type -> Type -> Type`.
 #[derive(Clone, Debug, Eq, PartialEq, Hash, DeserializeSeed, SerializeSeed)]
 #[serde(serialize_seed = "SeSeed")]
-#[serde(deserialize_seed = "::serialization::NodeMap")]
+#[serde(de_parameters = "S")]
+#[serde(deserialize_seed = "S")]
+#[serde(bound(deserialize = "S: AsMut<::serialization::NodeMap>"))]
 pub enum Kind {
     Hole,
     /// Representation for a kind which is yet to be inferred.
