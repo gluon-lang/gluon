@@ -26,8 +26,10 @@ impl<'de, S> DeserializeSeedEx<'de, S> for ArcKind where S: AsMut<::serializatio
     where
         D: ::serde::Deserializer<'de>,
     {
-        let seed = ::serialization::SharedSeed(::serialization::MapSeed::<_, fn(_) -> _>::new(
-            ::serde::de::Seed::new(seed.as_mut()),
+        let seed = 
+            ::serde::de::SharedSeed::new(seed);
+        let seed = ::serialization::SharedSeed::new(::serialization::MapSeed::<_, fn(_) -> _>::new(
+            &seed,
             ArcKind::new,
         ));
         ::serde::de::DeserializeSeed::deserialize(seed, deserializer)

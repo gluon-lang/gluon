@@ -534,41 +534,15 @@ impl<Id, T> Clone for Seed<Id, T> {
         T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>,
         Id: DeserializeSeedEx<'de, Seed<Id, T>> + Clone + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>,
     {
-        use serde::de::{Visitor, SeqAccess};
-
-        struct SeqVisitor<Id, T>(PhantomData<(Id, T)>);
-        impl<'de, Id, T> Visitor<'de> for SeqVisitor<Id, T>
-        where
-            T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>,
-            Id: DeserializeSeedEx<'de, Seed<Id, T>> + Clone + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>,
-        {
-            type Value = AppVec<T>;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a sequence")
-            }
-
-            #[inline]
-            fn visit_seq<A>(self, mut access: A) -> Result<Self::Value, A::Error>
-            where
-                A: SeqAccess<'de>,
-            {
-                use serialization::{MapSeed, SharedSeed};
-                let mut seed = 
-                    ::serde::de::Seed::new(seed)
-                ;
-
-                let mut values = AppVec::new();
-
-                while let Some(value) = try!(access.next_element_seed(SharedSeed(&mut seed))) {
-                    values.extend(Some(value));
-                }
-
-                Ok(values)
-            }
-        }
-
-        deserializer.deserialize_seq(SeqVisitor(PhantomData))
+        use serialization::{MapSeed, SharedSeed};
+        let mut seed = 
+            ::serde::de::Seed::new(seed)
+        ;
+        let mut seed = SharedSeed(&mut seed);
+        DeserializeSeed::deserialize(
+            ::serde::de::SeqSeedEx::new(&mut seed, |_| AppVec::default()),
+            deserializer,
+        )
     }
     fn deserialize_group<'de, Id, T, D>(
         seed: &mut Seed<Id, T>,
@@ -581,9 +555,9 @@ impl<Id, T> Clone for Seed<Id, T> {
     {
         use serialization::{MapSeed, SharedSeed};
         let seed = 
-            ::serde::de::Seed::new(seed);
-        let mut seed = MapSeed::<_, fn(_) -> _>::new(seed, Arc::new);
-        let seed = SharedSeed(&mut seed);
+            ::serde::de::SharedSeed::new(seed);
+        let mut seed = MapSeed::<_, fn(_) -> _>::new(&seed, Arc::new);
+        let seed = SharedSeed::new(seed);
         DeserializeSeed::deserialize(seed, deserializer)
     }
 /// The representation of gluon's types.

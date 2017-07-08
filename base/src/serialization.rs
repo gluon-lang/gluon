@@ -153,6 +153,12 @@ impl Default for NodeMap {
     }
 }
 
+impl AsMut<NodeMap> for NodeMap {
+    fn as_mut(&mut self) -> &mut NodeMap {
+        self
+    }
+}
+
 impl NodeMap {
     pub fn insert<T>(&self, id: Id, value: T)
     where
@@ -176,61 +182,54 @@ impl NodeMap {
     }
 }
 
-pub struct SharedSeed<'seed, T: 'seed>(pub &'seed mut T);
+pub struct SharedSeed<'seed, T: 'seed, U>(pub &'seed mut T, PhantomData<U>);
 
-impl<'seed, T> AsMut<T> for SharedSeed<'seed, T> {
+impl<'seed, T, U> SharedSeed<'seed, T, U> {
+    pub fn new(t: &'seed mut T) -> Self {
+        SharedSeed(t, PhantomData)
+    }
+}
+
+impl<'seed, T, U> AsMut<T> for SharedSeed<'seed, T, U> {
     fn as_mut(&mut self) -> &mut T {
         self.0
     }
 }
 
-pub struct VariantSeed<T>(pub T);
-
-fn deserialize_t<'de, D, T>(
-    seed: &mut VariantSeed<T>,
-    deserializer: D,
-) -> Result<T::Value, D::Error>
-where
-    D: Deserializer<'de>,
-    T: DeserializeSeed<'de>,
-{
-    seed.0.deserialize(deserializer)
-}
-
 #[derive(DeserializeSeed, SerializeSeed)]
-#[serde(deserialize_seed = "VariantSeed<S>")]
+#[serde(deserialize_seed = "S")]
 #[serde(de_parameters = "S")]
-#[serde(bound(deserialize = "S: DeserializeSeed<'de, Value = T>"))]
+#[serde(bound(deserialize = "T: DeserializeSeedEx<'de, S>"))]
 #[serde(bound(serialize = "T: SerializeSeed"))]
 #[serde(serialize_seed = "T::Seed")]
 pub enum Variant<T> {
     Marked(
         Id,
-        #[serde(deserialize_seed_with = "deserialize_t")]
+        #[serde(deserialize_seed)]
         #[serde(serialize_seed)]
         T
     ),
     Plain(
-        #[serde(deserialize_seed_with = "deserialize_t")]
+        #[serde(deserialize_seed)]
         #[serde(serialize_seed)]
         T
     ),
     Reference(Id),
 }
 
-impl<'de, 'seed, T> DeserializeSeed<'de> for SharedSeed<'seed, T>
+impl<'de, 'seed, T, U> DeserializeSeed<'de> for SharedSeed<'seed, T, U>
 where
-    T: DeserializeSeed<'de>,
+    U: DeserializeSeedEx<'de, T>,
     T: AsMut<NodeMap>,
-    T::Value: Any + Clone,
+    U: Any + Clone,
 {
-    type Value = T::Value;
+    type Value = U;
 
     fn deserialize<D>(mut self, deserializer: D) -> Result<Self::Value, D::Error>
     where
         D: Deserializer<'de>,
     {
-        match Variant::deserialize_seed(&mut VariantSeed(&mut self), deserializer)? {
+        match Variant::<U>::deserialize_seed(self.0, deserializer)? {
             Variant::Marked(id, node) => {
                 self.0.as_mut().insert(id, node.clone());
                 Ok(node)
