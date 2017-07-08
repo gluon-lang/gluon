@@ -548,7 +548,7 @@ mod test {
         let mut count = 0;
         let length = expected.len();
         for (token, (expected_span, expected_tok)) in tokenizer.by_ref().zip(expected.into_iter()) {
-            count = count + 1;
+            count += 1;
             println!("{:?}", token);
             let start = loc(expected_span.find("~").unwrap());
             let end = loc(expected_span.rfind("~").unwrap() + 1);
