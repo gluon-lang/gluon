@@ -167,7 +167,6 @@ impl Compiler {
     }
 
     /// Parse `expr_str`, returning an expression if successful
-=======
     pub fn parse_expr(&mut self,
                       type_cache: &TypeCache<Symbol>,
                       file: &str,
