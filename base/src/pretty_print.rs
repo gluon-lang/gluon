@@ -264,12 +264,50 @@ impl<'a> ExprPrinter<'a> {
     where
         Id: AsRef<str>,
     {
-        self.pretty_expr_(BytePos::from(0), expr).append(
+        self.pretty_expr_with_shebang_line(BytePos::from(0), expr).append(
             self.comments(Span::new(
                 expr.span.end,
                 BytePos::from(self.source.src().len()),
             )),
         )
+    }
+
+    fn find_shebang_line(&'a self) -> Option<&str> {
+        let src = self.source.src();
+        let len = src.len();
+        if len > 1 && &src[0..2] == "#!" {
+            let newline_index = src.find('\n');
+            match newline_index {
+                Some(i) => {
+                    Some(&src[0..i])
+                },
+                _ => Some(src),
+            }
+        }
+        else {
+            None
+        }
+    }
+
+    pub fn pretty_expr_with_shebang_line<Id>(
+        &'a self,
+        previous_end: BytePos,
+        expr: &'a SpannedExpr<Id>,
+    ) -> DocBuilder<'a, Arena<'a>>
+    where
+        Id: AsRef<str>,
+    {
+        let arena = &self.arena;
+        match self.find_shebang_line() {
+            Some(shebang_line) => { 
+                arena
+                    .text(shebang_line)
+                    .append(
+                        self.pretty_expr_(BytePos::from(shebang_line.len()), expr)
+                    )
+            },
+            None => self.pretty_expr_(previous_end, expr)
+        }
     }
 
     pub fn pretty_expr_<Id>(
