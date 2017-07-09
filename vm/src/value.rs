@@ -107,32 +107,25 @@ unsafe impl DataDef for ClosureInitDef {
     }
 }
 
-gc_serialize!{ BytecodeFunction }
-
 #[derive(Debug, DeserializeSeed, SerializeSeed)]
-#[serde(deserialize_seed = "::serialization::Seed<BytecodeFunction>")]
+#[serde(deserialize_seed = "::serialization::DeSeed")]
 #[serde(serialize_seed = "::serialization::SeSeed")]
 pub struct BytecodeFunction {
-    #[serde(deserialize_seed_with = "::serialization::deserialize")]
+    #[serde(deserialize_seed_with = "::serialization::symbol::deserialize")]
     #[serde(serialize_seed_with = "::serialization::symbol::serialize")]
     pub name: Symbol,
     pub args: VmIndex,
     pub max_stack_size: VmIndex,
     pub instructions: Vec<Instruction>,
-    #[serde(deserialize_seed_with = "::serialization::deserialize")]
-    #[serde(serialize_seed)]
+    #[serde(seed)]
     pub inner_functions: Vec<GcPtr<BytecodeFunction>>,
-    #[serde(deserialize_seed_with = "::serialization::deserialize")]
-    #[serde(serialize_seed)]
+    #[serde(seed)]
     pub strings: Vec<InternedStr>,
-    #[serde(deserialize_seed_with = "::serialization::deserialize")]
-    #[serde(serialize_seed)]
+    #[serde(seed)]
     pub globals: Vec<Value>,
-    #[serde(deserialize_seed_with = "::serialization::deserialize")]
-    #[serde(serialize_seed)]
+    #[serde(seed)]
     pub records: Vec<Vec<InternedStr>>,
-    #[serde(deserialize_seed_with = "::serialization::deserialize")]
-    #[serde(serialize_seed)]
+    #[serde(seed)]
     pub debug_info: DebugInfo,
 }
 
@@ -263,17 +256,15 @@ mod gc_str {
 }
 pub use self::gc_str::GcStr;
 
-gc_serialize!{ Value }
-
 #[derive(Copy, Clone, PartialEq, DeserializeSeed, SerializeSeed)]
-#[serde(deserialize_seed = "::serialization::Seed<Value>")]
+#[serde(deserialize_seed = "::serialization::DeSeed")]
 #[serde(serialize_seed = "::serialization::SeSeed")]
 pub enum Value {
     Byte(u8),
     Int(VmInt),
     Float(f64),
     String(
-        #[serde(deserialize_seed_with = "::serialization::deserialize")]
+        #[serde(deserialize_seed)]
         GcStr
     ),
     Tag(VmTag),
@@ -288,8 +279,7 @@ pub enum Value {
         GcPtr<ValueArray>
     ),
     Function(
-        #[serde(deserialize_seed_with = "::serialization::deserialize")]
-        #[serde(serialize_seed)]
+        #[serde(seed)]
         GcPtr<ExternFunction>
     ),
     Closure(
@@ -528,10 +518,8 @@ impl<'a, 't> InternalPrinter<'a, 't> {
     }
 }
 
-gc_serialize!{ Callable }
-
 #[derive(Copy, Clone, Debug, DeserializeSeed, SerializeSeed)]
-#[serde(deserialize_seed = "::serialization::Seed<Callable>")]
+#[serde(deserialize_seed = "::serialization::DeSeed")]
 #[serde(serialize_seed = "::serialization::SeSeed")]
 pub enum Callable {
     Closure(
@@ -540,8 +528,7 @@ pub enum Callable {
         GcPtr<ClosureData>
     ),
     Extern(
-        #[serde(deserialize_seed_with = "::serialization::deserialize")]
-        #[serde(serialize_seed)]
+        #[serde(seed)]
         GcPtr<ExternFunction>
     ),
 }

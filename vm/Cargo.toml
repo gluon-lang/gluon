@@ -27,7 +27,7 @@ typed-arena = "1.2.0"
 smallvec = "0.2.1"
 
 serde = { git = "https://github.com/Marwes/serde", path = "serde", branch = "seeded_serialization", optional = true }
-serde_derive = { git = "https://github.com/Marwes/serde", path = "serde_derive", branch = "seeded_serialization" }
+serde_derive = { git = "https://github.com/Marwes/serde", path = "serde_derive", branch = "seeded_serialization", optional = true }
 
 gluon_base = { path = "../base", version = "0.5.0" } # GLUON
 gluon_check = { path = "../check", version = "0.5.0" } # GLUON
@@ -47,4 +47,5 @@ serde_json = { git = "https://github.com/Marwes/json" }
 gluon_parser = { path = "../parser", version = "0.5.0" } # GLUON
 
 [features]
-test = ["env_logger", "lalrpop"]
+serialization = ["serde", "serde_derive"]
+test = ["env_logger", "lalrpop", "serialization"]

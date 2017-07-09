@@ -33,10 +33,8 @@ enum FieldAccess {
     Index(VmIndex),
 }
 
-gc_serialize! { UpvarInfo }
-
 #[derive(Clone, Debug, PartialEq, DeserializeSeed, SerializeSeed)]
-#[serde(deserialize_seed = "::serialization::Seed<UpvarInfo>")]
+#[serde(deserialize_seed = "::serialization::DeSeed")]
 #[serde(serialize_seed = "::serialization::SeSeed")]
 pub struct UpvarInfo {
     pub name: String,
@@ -44,19 +42,15 @@ pub struct UpvarInfo {
     pub typ: ArcType,
 }
 
-gc_serialize! { DebugInfo }
-
 #[derive(Debug, Default, DeserializeSeed, SerializeSeed)]
-#[serde(deserialize_seed = "::serialization::Seed<DebugInfo>")]
+#[serde(deserialize_seed = "::serialization::DeSeed")]
 #[serde(serialize_seed = "::serialization::SeSeed")]
 pub struct DebugInfo {
     /// Maps instruction indexes to the line that spawned them
     pub source_map: SourceMap,
-    #[serde(deserialize_seed_with = "::serialization::deserialize")]
-    #[serde(serialize_seed)]
+    #[serde(seed)]
     pub local_map: LocalMap,
-    #[serde(deserialize_seed_with = "::serialization::deserialize")]
-    #[serde(serialize_seed)]
+    #[serde(seed)]
     pub upvars: Vec<UpvarInfo>,
     pub source_name: String,
 }

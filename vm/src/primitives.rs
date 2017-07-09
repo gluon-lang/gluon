@@ -139,9 +139,11 @@ mod string {
                 Err(err) => return RuntimeResult::Panic(err),
             }
         };
-        RuntimeResult::Return(
-            Getable::from_value(vm, Variants(&Value::String(value))).expect("Array"),
-        )
+        unsafe {
+            RuntimeResult::Return(
+                Getable::from_value(vm, Variants::new(&Value::String(value))).expect("Array"),
+            )
+        }
     }
 
     pub fn slice(s: &str, start: usize, end: usize) -> RuntimeResult<&str, String> {

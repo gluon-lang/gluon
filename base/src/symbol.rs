@@ -7,6 +7,7 @@ use std::borrow::Borrow;
 use std::ops::Deref;
 
 use serde::{Serialize, Serializer, Deserialize, Deserializer};
+use serde::de::DeserializeSeedEx;
 use serde::ser::SerializeSeed;
 use serialization::SeSeed;
 
@@ -25,6 +26,24 @@ impl<'de> Deserialize<'de> for Symbol {
     {
         use std::borrow::Cow;
         Cow::<str>::deserialize(deserializer).map(Symbol::from)
+    }
+}
+
+impl<'de, Id, T> DeserializeSeedEx<'de, ::types::Seed<Id, T>> for Symbol
+{
+    fn deserialize_seed<D>(seed: &mut ::types::Seed<Id, T>, deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        use serde::de::DeserializeSeed;
+        use serialization::{SharedSeed};
+
+        let seed = SharedSeed::new(seed,
+        );
+        DeserializeSeed::deserialize(
+            seed,
+            deserializer,
+        ).map(Symbol)
     }
 }
 
@@ -190,7 +209,9 @@ impl SymbolRef {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, DeserializeSeed)]
+#[serde(deserialize_seed = "S")]
+#[serde(de_parameters = "S")]
 pub struct NameBuf(String);
 
 #[derive(Debug, Eq, Hash)]

@@ -51,31 +51,26 @@ impl SourceMap {
     }
 }
 
-gc_serialize!{ Local }
-
 #[derive(Debug, DeserializeSeed, SerializeSeed)]
-#[serde(deserialize_seed = "::serialization::Seed<Local>")]
+#[serde(deserialize_seed = "::serialization::DeSeed")]
 #[serde(serialize_seed = "::serialization::SeSeed")]
 pub struct Local {
     start: usize,
     end: usize,
     pub index: VmIndex,
-    #[serde(deserialize_seed_with = "::serialization::deserialize")]
+    #[serde(deserialize_seed_with = "::serialization::symbol::deserialize")]
     #[serde(serialize_seed_with = "::serialization::symbol::serialize")]
     pub name: Symbol,
     #[serde(seed_with = "::serialization::typ")]
     pub typ: ArcType,
 }
 
-gc_serialize!{ LocalMap }
-
 #[derive(Debug, Default, DeserializeSeed, SerializeSeed)]
-#[serde(deserialize_seed = "::serialization::Seed<LocalMap>")]
+#[serde(deserialize_seed = "::serialization::DeSeed")]
 #[serde(serialize_seed = "::serialization::SeSeed")]
 pub struct LocalMap {
     // Instruction indexes marking [start, end) where the local variable `Symbol` exists
-    #[serde(deserialize_seed_with = "::serialization::deserialize")]
-    #[serde(serialize_seed)]
+    #[serde(seed)]
     map: Vec<Local>,
 }
 
