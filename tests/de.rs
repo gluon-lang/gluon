@@ -1,3 +1,4 @@
+#![cfg(feature = "serialization")]
 extern crate env_logger;
 #[macro_use]
 extern crate serde_derive;

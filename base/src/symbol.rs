@@ -6,11 +6,6 @@ use std::sync::Arc;
 use std::borrow::Borrow;
 use std::ops::Deref;
 
-use serde::{Serialize, Serializer, Deserialize, Deserializer};
-use serde::de::DeserializeSeedEx;
-use serde::ser::SerializeSeed;
-use serialization::SeSeed;
-
 use ast::{DisplayEnv, IdentEnv};
 use fnv::FnvMap;
 
@@ -18,6 +13,15 @@ use fnv::FnvMap;
 /// A symbol uniquely identifies something regardless of its name and which module it originated from
 #[derive(Clone, Eq)]
 pub struct Symbol(Arc<NameBuf>);
+
+#[cfg(feature = "serde")]
+mod serialization {
+    use super::*;
+
+use serde::{Serialize, Serializer, Deserialize, Deserializer};
+use serde::de::DeserializeSeedEx;
+use serde::ser::SerializeSeed;
+use serialization::SeSeed;
 
 impl<'de> Deserialize<'de> for Symbol {
     fn deserialize<D>(deserializer: D) -> Result<Symbol, D::Error>
@@ -65,7 +69,7 @@ impl SerializeSeed for Symbol {
         ::serialization::serialize_shared(self, serializer, seed)
     }
 }
-
+}
 
 impl Deref for Symbol {
     type Target = SymbolRef;
@@ -134,8 +138,9 @@ where
 }
 
 
-#[derive(Eq, SerializeSeed)]
-#[serde(serialize_seed = "SeSeed")]
+#[derive(Eq)]
+#[cfg_attr(feature = "serde_derive", derive(SerializeSeed))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "SeSeed"))]
 pub struct SymbolRef(str);
 
 impl fmt::Debug for SymbolRef {
@@ -207,9 +212,10 @@ impl SymbolRef {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, DeserializeSeed)]
-#[serde(deserialize_seed = "S")]
-#[serde(de_parameters = "S")]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeSeed))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "S"))]
+#[cfg_attr(feature = "serde_derive", serde(de_parameters = "S"))]
 pub struct NameBuf(String);
 
 #[derive(Debug, Eq, Hash)]

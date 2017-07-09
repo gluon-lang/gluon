@@ -33,6 +33,7 @@ extern crate gluon_base as base;
 extern crate gluon_check as check;
 
 #[macro_use]
+#[cfg(feature = "serde")]
 pub mod serialization;
 
 #[macro_use]

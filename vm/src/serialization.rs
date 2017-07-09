@@ -104,6 +104,15 @@ pub mod gc {
     use thread::ThreadInternal;
     use types::VmTag;
 
+    impl Serialize for GcStr {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            (**self).serialize(serializer)
+        }
+    }
+
     impl<'de, T> DeserializeSeedEx<'de, DeSeed> for ::gc::Move<T>
     where
         T: ::gc::Traverseable,
@@ -161,10 +170,10 @@ pub mod gc {
     }
 
     #[derive(DeserializeSeed)]
-    #[serde(deserialize_seed = "::serialization::DeSeed")]
+    #[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "::serialization::DeSeed"))]
     pub struct Data {
         tag: VmTag,
-        #[serde(deserialize_seed)]
+        #[cfg_attr(feature = "serde_derive", serde(deserialize_seed))]
         fields: Vec<Value>,
     }
 
@@ -458,11 +467,11 @@ where
 }
 
 #[derive(DeserializeSeed)]
-#[serde(deserialize_seed = "DeSeed")]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "DeSeed"))]
 struct PartialApplicationModel {
-    #[serde(deserialize_seed)]
+    #[cfg_attr(feature = "serde_derive", serde(deserialize_seed))]
     function: Callable,
-    #[serde(deserialize_seed)]
+    #[cfg_attr(feature = "serde_derive", serde(deserialize_seed))]
     upvars: Vec<Value>,
 }
 
@@ -602,6 +611,20 @@ impl<'de> DeserializeSeedEx<'de, DeSeed> for ExternFunction {
                 _ => Err(D::Error::custom("Invalid type for extern function")),
             }
         }
+    }
+}
+
+impl<T> SerializeSeed for Array<T>
+where
+    T: Copy + SerializeSeed,
+{
+    type Seed = T::Seed;
+
+    fn serialize_seed<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        (**self).serialize_seed(serializer, seed)
     }
 }
 

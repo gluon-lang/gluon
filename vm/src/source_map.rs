@@ -6,7 +6,8 @@ use base::types::ArcType;
 
 use types::VmIndex;
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Default)]
+#[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub struct SourceMap {
     /// The index of the first instruction for each line
     map: Vec<(usize, Line)>,
@@ -51,26 +52,28 @@ impl SourceMap {
     }
 }
 
-#[derive(Debug, DeserializeSeed, SerializeSeed)]
-#[serde(deserialize_seed = "::serialization::DeSeed")]
-#[serde(serialize_seed = "::serialization::SeSeed")]
+#[derive(Debug)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeSeed, SerializeSeed))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "::serialization::SeSeed"))]
 pub struct Local {
     start: usize,
     end: usize,
     pub index: VmIndex,
-    #[serde(deserialize_seed_with = "::serialization::symbol::deserialize")]
-    #[serde(serialize_seed_with = "::serialization::symbol::serialize")]
+    #[cfg_attr(feature = "serde_derive", serde(deserialize_seed_with = "::serialization::symbol::deserialize"))]
+    #[cfg_attr(feature = "serde_derive", serde(serialize_seed_with = "::serialization::symbol::serialize"))]
     pub name: Symbol,
-    #[serde(seed_with = "::serialization::typ")]
+    #[cfg_attr(feature = "serde_derive", serde(seed_with = "::serialization::typ"))]
     pub typ: ArcType,
 }
 
-#[derive(Debug, Default, DeserializeSeed, SerializeSeed)]
-#[serde(deserialize_seed = "::serialization::DeSeed")]
-#[serde(serialize_seed = "::serialization::SeSeed")]
+#[derive(Debug, Default)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeSeed, SerializeSeed))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "::serialization::SeSeed"))]
 pub struct LocalMap {
     // Instruction indexes marking [start, end) where the local variable `Symbol` exists
-    #[serde(seed)]
+    #[cfg_attr(feature = "serde_derive", serde(seed))]
     map: Vec<Local>,
 }
 

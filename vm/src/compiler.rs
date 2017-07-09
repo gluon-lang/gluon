@@ -33,24 +33,26 @@ enum FieldAccess {
     Index(VmIndex),
 }
 
-#[derive(Clone, Debug, PartialEq, DeserializeSeed, SerializeSeed)]
-#[serde(deserialize_seed = "::serialization::DeSeed")]
-#[serde(serialize_seed = "::serialization::SeSeed")]
+#[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeSeed, SerializeSeed))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "::serialization::SeSeed"))]
 pub struct UpvarInfo {
     pub name: String,
-    #[serde(seed_with = "::serialization::typ")]
+    #[cfg_attr(feature = "serde_derive", serde(seed_with = "::serialization::typ"))]
     pub typ: ArcType,
 }
 
-#[derive(Debug, Default, DeserializeSeed, SerializeSeed)]
-#[serde(deserialize_seed = "::serialization::DeSeed")]
-#[serde(serialize_seed = "::serialization::SeSeed")]
+#[derive(Debug, Default)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeSeed, SerializeSeed))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "::serialization::SeSeed"))]
 pub struct DebugInfo {
     /// Maps instruction indexes to the line that spawned them
     pub source_map: SourceMap,
-    #[serde(seed)]
+    #[cfg_attr(feature = "serde_derive", serde(seed))]
     pub local_map: LocalMap,
-    #[serde(seed)]
+    #[cfg_attr(feature = "serde_derive", serde(seed))]
     pub upvars: Vec<UpvarInfo>,
     pub source_name: String,
 }

@@ -6,8 +6,6 @@ use itertools::Itertools;
 
 use pretty::{Arena, DocAllocator, DocBuilder};
 
-use serde::ser::SerializeSeed;
-
 use base::symbol::Symbol;
 use base::types::{ArcType, Type, TypeEnv};
 use types::*;
@@ -107,25 +105,26 @@ unsafe impl DataDef for ClosureInitDef {
     }
 }
 
-#[derive(Debug, DeserializeSeed, SerializeSeed)]
-#[serde(deserialize_seed = "::serialization::DeSeed")]
-#[serde(serialize_seed = "::serialization::SeSeed")]
+#[derive(Debug)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeSeed, SerializeSeed))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "::serialization::SeSeed"))]
 pub struct BytecodeFunction {
-    #[serde(deserialize_seed_with = "::serialization::symbol::deserialize")]
-    #[serde(serialize_seed_with = "::serialization::symbol::serialize")]
+    #[cfg_attr(feature = "serde_derive", serde(deserialize_seed_with = "::serialization::symbol::deserialize"))]
+    #[cfg_attr(feature = "serde_derive", serde(serialize_seed_with = "::serialization::symbol::serialize"))]
     pub name: Symbol,
     pub args: VmIndex,
     pub max_stack_size: VmIndex,
     pub instructions: Vec<Instruction>,
-    #[serde(seed)]
+    #[cfg_attr(feature = "serde_derive", serde(seed))]
     pub inner_functions: Vec<GcPtr<BytecodeFunction>>,
-    #[serde(seed)]
+    #[cfg_attr(feature = "serde_derive", serde(seed))]
     pub strings: Vec<InternedStr>,
-    #[serde(seed)]
+    #[cfg_attr(feature = "serde_derive", serde(seed))]
     pub globals: Vec<Value>,
-    #[serde(seed)]
+    #[cfg_attr(feature = "serde_derive", serde(seed))]
     pub records: Vec<Vec<InternedStr>>,
-    #[serde(seed)]
+    #[cfg_attr(feature = "serde_derive", serde(seed))]
     pub debug_info: DebugInfo,
 }
 
@@ -136,11 +135,12 @@ impl Traverseable for BytecodeFunction {
     }
 }
 
-#[derive(Debug, SerializeSeed)]
-#[serde(serialize_seed = "::serialization::SeSeed")]
+#[derive(Debug)]
+#[cfg_attr(feature = "serde_derive", derive(SerializeSeed))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "::serialization::SeSeed"))]
 pub struct DataStruct {
     pub tag: VmTag,
-    #[serde(serialize_seed)]
+    #[cfg_attr(feature = "serde_derive", serde(serialize_seed))]
     pub fields: Array<Value>,
 }
 
@@ -191,8 +191,6 @@ mod gc_str {
     use std::str;
     use std::ops::Deref;
 
-    use serde::ser::{Serialize, Serializer};
-
     #[derive(Copy, Clone, PartialEq)]
     pub struct GcStr(GcPtr<ValueArray>);
 
@@ -203,15 +201,6 @@ mod gc_str {
     }
 
     impl Eq for GcStr {}
-
-    impl Serialize for GcStr {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        {
-            (**self).serialize(serializer)
-        }
-    }
 
     impl GcStr {
         pub fn from_utf8(array: GcPtr<ValueArray>) -> Result<GcStr, ()> {
@@ -256,47 +245,48 @@ mod gc_str {
 }
 pub use self::gc_str::GcStr;
 
-#[derive(Copy, Clone, PartialEq, DeserializeSeed, SerializeSeed)]
-#[serde(deserialize_seed = "::serialization::DeSeed")]
-#[serde(serialize_seed = "::serialization::SeSeed")]
+#[derive(Copy, Clone, PartialEq)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeSeed, SerializeSeed))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "::serialization::SeSeed"))]
 pub enum Value {
     Byte(u8),
     Int(VmInt),
     Float(f64),
     String(
-        #[serde(deserialize_seed)]
+        #[cfg_attr(feature = "serde_derive", serde(deserialize_seed))]
         GcStr
     ),
     Tag(VmTag),
     Data(
-        #[serde(deserialize_seed_with = "::serialization::gc::deserialize_data")]
-        #[serde(serialize_seed)]
+        #[cfg_attr(feature = "serde_derive", serde(deserialize_seed_with = "::serialization::gc::deserialize_data"))]
+        #[cfg_attr(feature = "serde_derive", serde(serialize_seed))]
         GcPtr<DataStruct>
     ),
     Array(
-        #[serde(deserialize_seed_with = "::serialization::gc::deserialize_array")]
-        #[serde(serialize_seed)]
+        #[cfg_attr(feature = "serde_derive", serde(deserialize_seed_with = "::serialization::gc::deserialize_array"))]
+        #[cfg_attr(feature = "serde_derive", serde(serialize_seed))]
         GcPtr<ValueArray>
     ),
     Function(
-        #[serde(seed)]
+        #[cfg_attr(feature = "serde_derive", serde(seed))]
         GcPtr<ExternFunction>
     ),
     Closure(
-        #[serde(deserialize_seed_with = "::serialization::deserialize_closure")]
-        #[serde(serialize_seed_with = "ClosureData::serialize_seed")]
+        #[cfg_attr(feature = "serde_derive", serde(deserialize_seed_with = "::serialization::deserialize_closure"))]
+        #[cfg_attr(feature = "serde_derive", serde(serialize_seed_with = "ClosureData::serialize_seed"))]
         GcPtr<ClosureData>
     ),
     PartialApplication(
-        #[serde(deserialize_seed_with = "::serialization::deserialize_application")]
-        #[serde(serialize_seed)]
+        #[cfg_attr(feature = "serde_derive", serde(deserialize_seed_with = "::serialization::deserialize_application"))]
+        #[cfg_attr(feature = "serde_derive", serde(serialize_seed))]
         GcPtr<PartialApplicationData>
     ),
-    #[serde(skip_deserializing)]
-    #[serde(skip_serializing)]
+    #[cfg_attr(feature = "serde_derive", serde(skip_deserializing))]
+    #[cfg_attr(feature = "serde_derive", serde(skip_serializing))]
     Userdata(GcPtr<Box<Userdata>>),
-    #[serde(skip_deserializing)]
-    #[serde(skip_serializing)]
+    #[cfg_attr(feature = "serde_derive", serde(skip_deserializing))]
+    #[cfg_attr(feature = "serde_derive", serde(skip_serializing))]
     Thread(GcPtr<Thread>),
 }
 
@@ -518,17 +508,18 @@ impl<'a, 't> InternalPrinter<'a, 't> {
     }
 }
 
-#[derive(Copy, Clone, Debug, DeserializeSeed, SerializeSeed)]
-#[serde(deserialize_seed = "::serialization::DeSeed")]
-#[serde(serialize_seed = "::serialization::SeSeed")]
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeSeed, SerializeSeed))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "::serialization::SeSeed"))]
 pub enum Callable {
     Closure(
-        #[serde(deserialize_seed_with = "::serialization::deserialize_closure")]
-        #[serde(serialize_seed_with = "ClosureData::serialize_seed")]
+        #[cfg_attr(feature = "serde_derive", serde(deserialize_seed_with = "::serialization::deserialize_closure"))]
+        #[cfg_attr(feature = "serde_derive", serde(serialize_seed_with = "ClosureData::serialize_seed"))]
         GcPtr<ClosureData>
     ),
     Extern(
-        #[serde(seed)]
+        #[cfg_attr(feature = "serde_derive", serde(seed))]
         GcPtr<ExternFunction>
     ),
 }
@@ -564,12 +555,13 @@ impl Traverseable for Callable {
     }
 }
 
-#[derive(Debug, SerializeSeed)]
-#[serde(serialize_seed = "::serialization::SeSeed")]
+#[derive(Debug)]
+#[cfg_attr(feature = "serde_derive", derive(SerializeSeed))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "::serialization::SeSeed"))]
 pub struct PartialApplicationData {
-    #[serde(serialize_seed)]
+    #[cfg_attr(feature = "serde_derive", serde(serialize_seed))]
     pub function: Callable,
-    #[serde(serialize_seed)]
+    #[cfg_attr(feature = "serde_derive", serde(serialize_seed))]
     pub args: Array<Value>,
 }
 
@@ -698,13 +690,13 @@ impl fmt::Debug for Value {
     }
 }
 
-#[derive(SerializeSeed)]
-#[serde(serialize_seed = "::serialization::SeSeed")]
+#[cfg_attr(feature = "serde_derive", derive(SerializeSeed))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "::serialization::SeSeed"))]
 pub struct ExternFunction {
-    #[serde(serialize_seed_with = "::serialization::symbol::serialize")]
+    #[cfg_attr(feature = "serde_derive", serde(serialize_seed_with = "::serialization::symbol::serialize"))]
     pub id: Symbol,
     pub args: VmIndex,
-    #[serde(skip_serializing)]
+    #[cfg_attr(feature = "serde_derive", serde(skip_serializing))]
     pub function: extern "C" fn(&Thread) -> Status,
 }
 

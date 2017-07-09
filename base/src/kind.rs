@@ -2,10 +2,6 @@ use std::fmt;
 use std::ops::Deref;
 use std::sync::Arc;
 
-use serde::de::DeserializeSeedEx;
-use serde::ser::{SerializeSeed, Serializer};
-
-use serialization::SeSeed;
 use symbol::SymbolRef;
 use types::Walker;
 
@@ -21,21 +17,6 @@ impl<'a, T: ?Sized + KindEnv> KindEnv for &'a T {
     }
 }
 
-impl<'de, S> DeserializeSeedEx<'de, S> for ArcKind
-where
-    S: AsMut<::serialization::NodeMap>,
-{
-    fn deserialize_seed<D>(seed: &mut S, deserializer: D) -> Result<ArcKind, D::Error>
-    where
-        D: ::serde::Deserializer<'de>,
-    {
-        use serde::de::DeserializeSeed;
-        ::serialization::SharedSeed::new(seed)
-            .deserialize(deserializer)
-            .map(ArcKind)
-    }
-}
-
 /// Kind representation
 ///
 /// All types in gluon has a kind. Most types encountered are of the `Type` kind which
@@ -43,11 +24,12 @@ where
 /// which are said to be "higher kinded" and these use the `Function` (a -> b) variant.
 /// These types include `Option` and `(->)` which both have the kind `Type -> Type -> Type`
 /// as well as `Functor` which has the kind `Type -> Type -> Type`.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, DeserializeSeed, SerializeSeed)]
-#[serde(serialize_seed = "SeSeed")]
-#[serde(de_parameters = "S")]
-#[serde(deserialize_seed = "S")]
-#[serde(bound(deserialize = "S: AsMut<::serialization::NodeMap>"))]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeSeed, SerializeSeed))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "::serialization::SeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(de_parameters = "S"))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "S"))]
+#[cfg_attr(feature = "serde_derive", serde(bound(deserialize = "S: AsMut<::serialization::NodeMap>")))]
 pub enum Kind {
     Hole,
     /// Representation for a kind which is yet to be inferred.
@@ -58,9 +40,9 @@ pub enum Kind {
     Row,
     /// Constructor which takes two kinds, taking the first as argument and returning the second.
     Function(
-        #[serde(seed)]
+        #[cfg_attr(feature = "serde_derive", serde(seed))]
         ArcKind,
-        #[serde(seed)]
+        #[cfg_attr(feature = "serde_derive", serde(seed))]
         ArcKind
     ),
 }
@@ -126,17 +108,6 @@ impl<'a> fmt::Display for DisplayKind<'a> {
 /// Reference counted kind type.
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct ArcKind(Arc<Kind>);
-
-impl SerializeSeed for ArcKind {
-    type Seed = SeSeed;
-
-    fn serialize_seed<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        ::serialization::serialize_shared(self, serializer, seed)
-    }
-}
 
 impl ArcKind {
     pub fn new(kind: Kind) -> ArcKind {

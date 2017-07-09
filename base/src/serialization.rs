@@ -9,10 +9,11 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use serde::de::{Deserialize, DeserializeSeed, DeserializeSeedEx, Deserializer, Error};
-use serde::ser::{SerializeSeed, Serializer};
+use serde::ser::{Serialize, SerializeSeed, Serializer};
 
+use kind::ArcKind;
 use symbol::Symbol;
-use types::{ArcType, Type};
+use types::{AliasData, ArcType, Type};
 
 pub struct SeSeed {
     node_to_id: NodeToId,
@@ -24,10 +25,80 @@ impl SeSeed {
     }
 }
 
-impl AsRef<NodeToId> for SeSeed {
+    impl AsRef<NodeToId> for SeSeed {
     fn as_ref(&self) -> &NodeToId {
         &self.node_to_id
     }
+}
+
+pub struct Seed<Id, T> {
+    nodes: ::serialization::NodeMap,
+    _marker: PhantomData<(Id, T)>,
+}
+
+impl<Id, T> AsMut<Seed<Id, T>> for Seed<Id, T> {
+    fn as_mut(&mut self) -> &mut Self {
+        self
+    }
+}
+
+impl<Id, T> AsMut<::serialization::NodeMap> for Seed<Id, T> {
+    fn as_mut(&mut self) -> &mut ::serialization::NodeMap {
+        &mut self.nodes
+    }
+}
+
+impl<Id, T> Seed<Id, T> {
+    pub fn new(nodes: ::serialization::NodeMap) -> Self {
+        Seed {
+            nodes: nodes,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<Id, T> Clone for Seed<Id, T> {
+    fn clone(&self) -> Self {
+        Seed {
+            nodes: self.nodes.clone(),
+            _marker: PhantomData,
+        }
+    }
+}
+
+
+fn deserialize_type_vec<'de, Id, T, D>(
+    seed: &mut Seed<Id, T>,
+    deserializer: D,
+) -> Result<AppVec<T>, D::Error>
+where
+    D: ::serde::Deserializer<'de>,
+    T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>,
+    Id: DeserializeSeedEx<'de, Seed<Id, T>>
+        + Clone
+        + ::std::any::Any
+        + DeserializeSeedEx<'de, Seed<Id, T>>,
+{
+    DeserializeSeed::deserialize(
+        ::serde::de::SeqSeedEx::new(seed, |_| AppVec::default()),
+        deserializer,
+    )
+}
+fn deserialize_group<'de, Id, T, D>(
+    seed: &mut Seed<Id, T>,
+    deserializer: D,
+) -> Result<Arc<Vec<AliasData<Id, T>>>, D::Error>
+where
+    D: ::serde::Deserializer<'de>,
+    T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>,
+    Id: DeserializeSeedEx<'de, Seed<Id, T>>
+        + Clone
+        + ::std::any::Any
+        + DeserializeSeedEx<'de, Seed<Id, T>>,
+{
+    use serialization::SharedSeed;
+    let seed = SharedSeed::new(seed);
+    DeserializeSeed::deserialize(seed, deserializer)
 }
 
 impl Shared for ::kind::ArcKind {
@@ -197,19 +268,19 @@ impl<'seed, T, S> AsMut<S> for SharedSeed<'seed, T, S> {
 }
 
 #[derive(DeserializeSeed, SerializeSeed)]
-#[serde(deserialize_seed = "S")]
-#[serde(de_parameters = "S")]
-#[serde(bound(deserialize = "T: DeserializeSeedEx<'de, S>"))]
-#[serde(bound(serialize = "T: SerializeSeed"))]
-#[serde(serialize_seed = "T::Seed")]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "S"))]
+#[cfg_attr(feature = "serde_derive", serde(de_parameters = "S"))]
+#[cfg_attr(feature = "serde_derive", serde(bound(deserialize = "T: DeserializeSeedEx<'de, S>")))]
+#[cfg_attr(feature = "serde_derive", serde(bound(serialize = "T: SerializeSeed")))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "T::Seed"))]
 pub enum Variant<T> {
     Marked(
         Id,
-        #[serde(seed)]
+        #[cfg_attr(feature = "serde_derive", serde(seed))]
         T
     ),
     Plain(
-        #[serde(seed)]
+        #[cfg_attr(feature = "serde_derive", serde(seed))]
         T
     ),
     Reference(Id),
@@ -303,4 +374,61 @@ where
     V: SerializeSeed,
 {
     (**self_).serialize_seed(serializer, seed)
+}
+
+impl<'de, Id> DeserializeSeedEx<'de, Seed<Id, ArcType<Id>>> for ArcType<Id>
+where
+    Id: DeserializeSeedEx<'de, Seed<Id, ArcType<Id>>> + Clone + ::std::any::Any,
+{
+    fn deserialize_seed<D>(
+        seed: &mut Seed<Id, ArcType<Id>>,
+        deserializer: D,
+    ) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        use serialization::SharedSeed;
+        let seed = SharedSeed::new(seed);
+        DeserializeSeed::deserialize(seed, deserializer).map(|typ| ArcType { typ: typ })
+    }
+}
+
+impl<Id> SerializeSeed for ArcType<Id>
+where
+    Id: SerializeSeed<Seed = SeSeed>,
+{
+    type Seed = SeSeed;
+
+    fn serialize_seed<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        ::serialization::serialize_shared(self, serializer, seed)
+    }
+}
+
+impl<'de, S> DeserializeSeedEx<'de, S> for ArcKind
+where
+    S: AsMut<::serialization::NodeMap>,
+{
+    fn deserialize_seed<D>(seed: &mut S, deserializer: D) -> Result<ArcKind, D::Error>
+    where
+        D: ::serde::Deserializer<'de>,
+    {
+        use serde::de::DeserializeSeed;
+        ::serialization::SharedSeed::new(seed)
+            .deserialize(deserializer)
+            .map(ArcKind)
+    }
+}
+
+impl SerializeSeed for ArcKind {
+    type Seed = SeSeed;
+
+    fn serialize_seed<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        ::serialization::serialize_shared(self, serializer, seed)
+    }
 }

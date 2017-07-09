@@ -10,7 +10,10 @@ extern crate smallvec;
 #[macro_use]
 extern crate collect_mac;
 extern crate itertools;
+
+#[cfg(feature = "serde")]
 extern crate serde;
+#[cfg(feature = "serde_derive")]
 #[macro_use]
 extern crate serde_derive;
 
@@ -67,6 +70,7 @@ pub mod pretty_print;
 pub mod pos;
 pub mod resolve;
 pub mod scoped_map;
+#[cfg(feature = "serde")]
 pub mod serialization;
 pub mod source;
 pub mod symbol;

@@ -47,5 +47,5 @@ serde_json = { git = "https://github.com/Marwes/json" }
 gluon_parser = { path = "../parser", version = "0.5.0" } # GLUON
 
 [features]
-serialization = ["serde", "serde_derive"]
+serialization = ["serde", "serde_derive", "gluon_base/serialization"]
 test = ["env_logger", "lalrpop", "serialization"]

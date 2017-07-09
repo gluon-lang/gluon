@@ -12,7 +12,8 @@ pub type VmInt = isize;
 /// Enum which represent the instructions executed by the virtual machine.
 ///
 /// The binary arithmetic instructions pop two values of the stack and then push the result.
-#[derive(Copy, Clone, Debug, Deserialize, Serialize)]
+#[derive(Copy, Clone, Debug)]
+#[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub enum Instruction {
     /// Push an integer to the stack
     PushInt(isize),
