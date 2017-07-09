@@ -182,14 +182,7 @@ where
     T: DeserializeOwned,
 {
     let env = thread.global_env().get_env();
-    let mut deserializer = Deserializer {
-        state: State {
-            thread: thread,
-            env: &*env,
-        },
-        input: value,
-        typ: typ,
-    };
+    let mut deserializer = Deserializer::from_value(thread, &*env, value, typ);
     T::deserialize(&mut deserializer)
 }
 

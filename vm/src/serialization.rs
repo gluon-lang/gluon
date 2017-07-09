@@ -242,17 +242,6 @@ pub mod symbol {
     use serde::{Deserialize, Deserializer};
     use serde::ser::{Serialize, Serializer};
 
-    impl<'de> DeserializeSeed<'de> for Seed<Symbol> {
-        type Value = Symbol;
-
-        fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            String::deserialize(deserializer).map(|s| self.state.symbols.borrow_mut().symbol(s))
-        }
-    }
-
     pub fn deserialize<'de, D>(seed: &mut DeSeed, deserializer: D) -> Result<Symbol, D::Error>
     where
         D: Deserializer<'de>,
