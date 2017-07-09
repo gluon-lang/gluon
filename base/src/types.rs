@@ -49,9 +49,9 @@ impl RecordSelector {
         match *self {
             RecordSelector::Exact => record().into_iter().eq(needle),
             RecordSelector::Subset => {
-                needle
-                    .into_iter()
-                    .all(|name| record().into_iter().any(|other| other == name))
+                needle.into_iter().all(|name| {
+                    record().into_iter().any(|other| other == name)
+                })
             }
         }
     }
@@ -321,10 +321,11 @@ where
                 Type::Ident(ref id) => {
                     // Replace `Ident` with the alias it resolves to so that a `TypeEnv` is not needed
                     // to resolve the type later on
-                    let index = self.group
-                        .iter()
-                        .position(|alias| alias.name == *id)
-                        .expect("ICE: Alias group were not able to resolve an identifier");
+                    let index =
+                        self.group
+                            .iter()
+                            .position(|alias| alias.name == *id)
+                            .expect("ICE: Alias group were not able to resolve an identifier");
                     Some(T::from(Type::Alias(AliasRef {
                         index: index,
                         group: self.group.clone(),
@@ -1017,7 +1018,8 @@ where
             Type::App(ref t, ref args) => {
                 match self.typ.as_function() {
                     Some((arg, ret)) => {
-                        let doc = chain![arena;
+                        let doc =
+                            chain![arena;
                             dt(Prec::Function, arg).pretty(arena).group(),
                             arena.space(),
                             "-> ",
@@ -1029,9 +1031,9 @@ where
                     None => {
                         let doc = dt(Prec::Top, t).pretty(arena);
                         let arg_doc = arena.concat(args.iter().map(|arg| {
-                            arena
-                                .space()
-                                .append(dt(Prec::Constructor, arg).pretty(arena))
+                            arena.space().append(
+                                dt(Prec::Constructor, arg).pretty(arena),
+                            )
                         }));
                         let doc = doc.append(arg_doc.nest(INDENT));
                         p.enclose(Prec::Constructor, arena, doc).group()
@@ -1052,7 +1054,8 @@ where
                             first = false;
                             doc = doc.append("| ").append(field.name.as_ref());
                             for arg in arg_iter(&field.typ) {
-                                doc = chain![arena;
+                                doc =
+                                    chain![arena;
                                             doc,
                                             " ",
                                             dt(Prec::Constructor, &arg).pretty(arena)];
@@ -1159,9 +1162,9 @@ where
                 match *typ {
                     Type::EmptyRow => doc,
                     _ => {
-                        doc.append(arena.space())
-                            .append("| ")
-                            .append(top(typ).pretty(arena))
+                        doc.append(arena.space()).append("| ").append(
+                            top(typ).pretty(arena),
+                        )
                     }
                 }
             }
@@ -1338,8 +1341,9 @@ where
             ref rest,
         } => {
             let new_fields = walk_move_types(fields, |field| {
-                f.visit(&field.typ)
-                    .map(|typ| Field::new(field.name.clone(), typ))
+                f.visit(&field.typ).map(
+                    |typ| Field::new(field.name.clone(), typ),
+                )
             });
             let new_rest = f.visit(rest);
             merge(fields, new_fields, rest, new_rest, |fields, rest| {

@@ -14,10 +14,13 @@ rust:
 os:
 - linux
 before_script:
+- export PATH="$PATH:$HOME/.cargo/bin"
+- which rustfmt || cargo install rustfmt
 - |
   pip install 'travis-cargo<0.2' --user &&
   export PATH=$HOME/Library/Python/2.7/bin:$HOME/.local/bin:$PATH
 script:
+- sh ./rust-format-diff.sh
 - |
   sh ./test-no-skeptic.sh &&
   travis-cargo --only nightly test -- --features "test nightly" -p gluon compile_test &&

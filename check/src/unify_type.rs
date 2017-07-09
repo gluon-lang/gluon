@@ -228,36 +228,33 @@ where
                 &mut unifier.state.record_context,
                 Some((expected.clone(), actual.clone())),
             );
-            let result = unifier
-                .try_match(l_row, r_row)
-                .map(|row| ArcType::from(Type::Record(row)));
+            let result = unifier.try_match(l_row, r_row).map(|row| {
+                ArcType::from(Type::Record(row))
+            });
             unifier.state.record_context = previous;
             Ok(result)
         }
-        (
-            &Type::ExtendRow {
-                types: ref l_types,
-                fields: ref l_args,
-                rest: ref l_rest,
-            },
-            &Type::ExtendRow {
-                types: ref r_types,
-                fields: ref r_args,
-                rest: ref r_rest,
-            },
-        ) => {
+        (&Type::ExtendRow {
+             types: ref l_types,
+             fields: ref l_args,
+             rest: ref l_rest,
+         },
+         &Type::ExtendRow {
+             types: ref r_types,
+             fields: ref r_args,
+             rest: ref r_rest,
+         }) => {
             // When the field names of both rows match exactly we special case
             // unification to maximize sharing through `merge` and `walk_move_type`
             if l_args.len() == r_args.len() &&
-                l_args
-                    .iter()
-                    .zip(r_args)
-                    .all(|(l, r)| l.name.name_eq(&r.name)) && l_types == r_types
+                l_args.iter().zip(r_args).all(
+                    |(l, r)| l.name.name_eq(&r.name),
+                ) && l_types == r_types
             {
                 let new_args = merge::merge_tuple_iter(l_args.iter().zip(r_args), |l, r| {
-                    unifier
-                        .try_match(&l.typ, &r.typ)
-                        .map(|typ| Field::new(l.name.clone(), typ))
+                    unifier.try_match(&l.typ, &r.typ).map(|typ| {
+                        Field::new(l.name.clone(), typ)
+                    })
                 });
                 let new_rest = unifier.try_match(l_rest, r_rest);
                 Ok(merge::merge(
@@ -265,7 +262,9 @@ where
                     new_args,
                     l_rest,
                     new_rest,
-                    |fields, rest| Type::extend_row(l_types.clone(), fields, rest),
+                    |fields, rest| {
+                        Type::extend_row(l_types.clone(), fields, rest)
+                    },
                 ))
             } else if **l_rest == Type::EmptyRow && **r_rest == Type::EmptyRow {
                 for l_typ in expected.type_field_iter() {
@@ -297,7 +296,9 @@ where
                     new_args,
                     l_rest,
                     new_rest,
-                    |fields, rest| Type::extend_row(l_types.clone(), fields, rest),
+                    |fields, rest| {
+                        Type::extend_row(l_types.clone(), fields, rest)
+                    },
                 ))
             } else {
                 unify_rows(unifier, expected, actual)
@@ -314,14 +315,12 @@ where
         // Last ditch attempt to unify the types expanding the aliases
         // (if the types are alias types).
         (_, _) => {
-            let lhs = unifier
-                .state
-                .remove_aliases(expected)
-                .map_err(UnifyError::Other)?;
-            let rhs = unifier
-                .state
-                .remove_aliases(actual)
-                .map_err(UnifyError::Other)?;
+            let lhs = unifier.state.remove_aliases(expected).map_err(
+                UnifyError::Other,
+            )?;
+            let rhs = unifier.state.remove_aliases(actual).map_err(
+                UnifyError::Other,
+            )?;
 
             match (&lhs, &rhs) {
                 (&None, &None) => {
@@ -403,11 +402,7 @@ where
 fn gather_fields<'a, I, J, T>(
     l: I,
     r: J,
-) -> (
-    Vec<Field<Symbol, T>>,
-    Vec<(&'a Field<Symbol, T>, &'a Field<Symbol, T>)>,
-    Vec<Field<Symbol, T>>,
-)
+) -> (Vec<Field<Symbol, T>>, Vec<(&'a Field<Symbol, T>, &'a Field<Symbol, T>)>, Vec<Field<Symbol, T>>)
 where
     I: Clone + IntoIterator<Item = &'a Field<Symbol, T>>,
     J: Clone + IntoIterator<Item = &'a Field<Symbol, T>>,
@@ -459,9 +454,9 @@ where
 
     // Unify the fields that exists in both records
     let new_both = merge::merge_tuple_iter(both.iter().cloned(), |l, r| {
-        unifier
-            .try_match(&l.typ, &r.typ)
-            .map(|typ| Field::new(l.name.clone(), typ))
+        unifier.try_match(&l.typ, &r.typ).map(|typ| {
+            Field::new(l.name.clone(), typ)
+        })
     });
 
     // Pack all fields from both records into a single `Type::ExtendRow` value
@@ -599,10 +594,11 @@ where
                 did_alias = true;
                 match resolve::remove_alias(unifier.state.env, &l) {
                     Ok(Some(typ)) => {
-                        unifier
-                            .state
-                            .reduced_aliases
-                            .push(l.alias_ident().expect("Alias").clone());
+                        unifier.state.reduced_aliases.push(
+                            l.alias_ident()
+                                .expect("Alias")
+                                .clone(),
+                        );
                         typ
                     }
                     Ok(None) => break,

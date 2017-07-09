@@ -12,7 +12,7 @@ use types::{VmTag, VmIndex};
 use value::{Def, Value};
 use serde::ser::{self, Serialize};
 
-/**
+#[doc = /**
 `Pushable` wrapper which pushes `T` by serializing it.
 
 ## Struct
@@ -121,7 +121,7 @@ assert_eq!(result, 4);
 
 # }
 ```
-*/
+*/]
 pub struct Ser<T>(pub T);
 
 impl<T> VmType for Ser<T>

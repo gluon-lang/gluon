@@ -156,8 +156,9 @@ where
         let span = next.span;
         self.unprocessed_tokens.push(next);
         if let Context::Block { .. } = context {
-            self.unprocessed_tokens
-                .push(pos::spanned(span, Token::OpenBlock));
+            self.unprocessed_tokens.push(
+                pos::spanned(span, Token::OpenBlock),
+            );
         }
         self.indent_levels.push(Offside::new(span.start, context))
     }
@@ -207,7 +208,8 @@ where
                     // it.
                     if self.indent_levels.stack.iter().all(|offside| {
                         !token_closes_context(&token.value, offside.context)
-                    }) {
+                    })
+                    {
                         return Ok(token);
                     }
 
@@ -229,9 +231,9 @@ where
                             }
                             Context::Let | Context::Type => {
                                 let location = {
-                                    let offside = self.indent_levels
-                                        .last_mut()
-                                        .expect("No top level block found");
+                                    let offside = self.indent_levels.last_mut().expect(
+                                        "No top level block found",
+                                    );
                                     // The enclosing block should not emit a block separator for the next
                                     // expression
                                     if let Context::Block { ref mut emit_semi, .. } =
@@ -252,8 +254,10 @@ where
                                 let offside =
                                     Offside::new(location, Context::Block { emit_semi: false });
                                 self.indent_levels.push(offside)?;
-                                self.unprocessed_tokens
-                                    .push(pos::spanned(token.span, Token::OpenBlock));
+                                self.unprocessed_tokens.push(pos::spanned(
+                                    token.span,
+                                    Token::OpenBlock,
+                                ));
 
                                 return Ok(token);
                             }
@@ -325,9 +329,9 @@ where
                     // Insert an `in` token
                     self.indent_levels.pop();
                     let location = {
-                        let offside = self.indent_levels
-                            .last_mut()
-                            .expect("No top level block found");
+                        let offside = self.indent_levels.last_mut().expect(
+                            "No top level block found",
+                        );
                         // The enclosing block should not emit a block separator for the next
                         // expression
                         if let Context::Block { ref mut emit_semi, .. } = offside.context {
@@ -347,8 +351,9 @@ where
                     // `let x = 1 in {{ a; b }}` and not `{{ (let x = 1 in a) ; b }}`
                     let offside = Offside::new(location, Context::Block { emit_semi: false });
                     self.indent_levels.push(offside)?;
-                    self.unprocessed_tokens
-                        .push(pos::spanned(span, Token::OpenBlock));
+                    self.unprocessed_tokens.push(
+                        pos::spanned(span, Token::OpenBlock),
+                    );
 
                     return result;
                 }
@@ -384,7 +389,11 @@ where
                 (&Token::Equals, Context::Let) |
                 (&Token::RArrow, Context::Lambda) |
                 (&Token::RArrow, Context::MatchClause) |
-                (&Token::Then, _) => self.scan_for_next_block(Context::Block { emit_semi: false })?,
+                (&Token::Then, _) => {
+                    self.scan_for_next_block(
+                        Context::Block { emit_semi: false },
+                    )?
+                }
                 (&Token::With, _) => self.scan_for_next_block(Context::MatchClause)?,
 
                 (&Token::Else, _) => {
@@ -402,7 +411,9 @@ where
                         next.span.start.line != token.span.start.line;
                     self.unprocessed_tokens.push(next);
                     if add_block {
-                        self.scan_for_next_block(Context::Block { emit_semi: false })?;
+                        self.scan_for_next_block(
+                            Context::Block { emit_semi: false },
+                        )?;
                     }
                 }
                 (&Token::Comma, _) => {

@@ -74,8 +74,9 @@ fn root_data() {
     fn test(r: Root<Test>, i: VmInt) -> VmInt {
         r.0 + i
     }
-    vm.register_type::<Test>("Test", &[])
-        .unwrap_or_else(|_| panic!("Could not add type"));
+    vm.register_type::<Test>("Test", &[]).unwrap_or_else(|_| {
+        panic!("Could not add type")
+    });
     vm.define_global("test", primitive!(2 test)).unwrap();
     load_script(&vm, "script_fn", expr).unwrap_or_else(|err| panic!("{}", err));
     let mut script_fn: FunctionRef<fn(Test) -> VmInt> = vm.get_global("script_fn").unwrap();

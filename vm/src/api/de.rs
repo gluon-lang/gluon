@@ -23,7 +23,7 @@ impl de::Error for VmError {
     }
 }
 
-/**
+#[doc = /**
 `Getable` wrapper which extracts `T` by deserializing it into a rust value.
 
 ## Struct
@@ -144,7 +144,7 @@ assert_eq!(
 
 # }
 ```
-*/
+*/]
 
 pub struct De<T>(pub T);
 
@@ -521,9 +521,9 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
             (ValueRef::Data(data), &Type::Variant(ref row)) => {
                 match row.row_iter().nth(data.tag() as usize) {
                     Some(field) => {
-                        let iter = (0..data.len())
-                            .map(|i| data.get_variants(i).unwrap())
-                            .zip(arg_iter(&field.typ));
+                        let iter = (0..data.len()).map(|i| data.get_variants(i).unwrap()).zip(
+                            arg_iter(&field.typ),
+                        );
                         visitor.visit_seq(SeqDeserializer::new(self.state.clone(), iter))
                     }
                     None => self.deserialize_any(visitor),
@@ -626,7 +626,10 @@ impl<'de, 't, I> SeqDeserializer<'de, 't, I> {
 
 impl<'de, 't, I> SeqAccess<'de> for SeqDeserializer<'de, 't, I>
 where
-    I: Iterator<Item = (Variants<'de>, &'t ArcType)>,
+    I: Iterator<
+        Item = (Variants<'de>,
+                &'t ArcType),
+    >,
 {
     type Error = VmError;
 
@@ -665,7 +668,11 @@ impl<'de, 't, I> MapDeserializer<'de, 't, I> {
 
 impl<'de, 'a, 't, I> MapAccess<'de> for MapDeserializer<'de, 't, I>
 where
-    I: Iterator<Item = (Variants<'de>, &'t Symbol, &'t ArcType)>,
+    I: Iterator<
+        Item = (Variants<'de>,
+                &'t Symbol,
+                &'t ArcType),
+    >,
 {
     type Error = VmError;
 
@@ -676,8 +683,9 @@ where
         match self.iter.next() {
             Some((value, field, typ)) => {
                 self.value = Some((value, typ));
-                seed.deserialize(field.as_ref().into_deserializer())
-                    .map(Some)
+                seed.deserialize(field.as_ref().into_deserializer()).map(
+                    Some,
+                )
             }
             None => Ok(None),
         }
@@ -734,10 +742,9 @@ impl<'a, 'b, 'de, 't> de::Deserializer<'de> for &'b mut Enum<'a, 'de, 't> {
         let typ = resolve::remove_aliases_cow(self.de.state.env, self.de.typ);
         match **typ {
             Type::Variant(ref variants) => {
-                let variant = variants
-                    .row_iter()
-                    .nth(tag as usize)
-                    .ok_or_else(|| Self::Error::custom("Unable to deserialize tag"))?;
+                let variant = variants.row_iter().nth(tag as usize).ok_or_else(|| {
+                    Self::Error::custom("Unable to deserialize tag")
+                })?;
                 visitor.visit_str(variant.name.as_ref())
             }
             _ => return Err(Self::Error::custom("Unable to deserialize tag")),
@@ -787,19 +794,12 @@ impl<'de, 'a, 't> VariantAccess<'de> for Enum<'a, 'de, 't> {
                 match row.row_iter().nth(data.tag() as usize) {
                     Some(field) => {
                         seed.deserialize(&mut Deserializer {
-                            input: data.get_variants(0)
-                                .ok_or_else(|| {
-                                    VmError::Message(
-                                        "Expected variant to have a value argument".into(),
-                                    )
-                                })?,
-                            typ: arg_iter(&field.typ)
-                                .next()
-                                .ok_or_else(|| {
-                                    VmError::Message(
-                                        "Expected variant to have a type argument".into(),
-                                    )
-                                })?,
+                            input: data.get_variants(0).ok_or_else(|| {
+                                VmError::Message("Expected variant to have a value argument".into())
+                            })?,
+                            typ: arg_iter(&field.typ).next().ok_or_else(|| {
+                                VmError::Message("Expected variant to have a type argument".into())
+                            })?,
                             ..self.de.clone()
                         })
                     }

@@ -425,11 +425,12 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                         ]
             }
             Type::Variant(ref row) => {
-                let type_field = row.row_iter()
-                    .nth(tag as usize)
-                    .expect("Variant tag is out of bounds");
+                let type_field = row.row_iter().nth(tag as usize).expect(
+                    "Variant tag is out of bounds",
+                );
                 let mut empty = true;
-                let doc = chain![arena;
+                let doc =
+                    chain![arena;
                             type_field.name.declared_name().to_string(),
                             arena.concat(fields.into_iter().zip(arg_iter(&type_field.typ))
                                 .map(|(field, typ)| {
@@ -1034,8 +1035,9 @@ impl<'t> Cloner<'t> {
     pub fn deep_clone(&mut self, value: Value) -> Result<Value> {
         // Only need to clone values which belong to a younger generation than the gc that the new
         // value will live in
-        if self.receiver_generation
-            .can_contain_values_from(value.generation())
+        if self.receiver_generation.can_contain_values_from(
+            value.generation(),
+        )
         {
             return Ok(value);
         }
@@ -1046,9 +1048,9 @@ impl<'t> Cloner<'t> {
             Closure(data) => self.deep_clone_closure(data).map(Value::Closure),
             PartialApplication(data) => self.deep_clone_app(data).map(Value::PartialApplication),
             Function(f) => {
-                self.gc
-                    .alloc(Move(ExternFunction::clone(&f)))
-                    .map(Value::Function)
+                self.gc.alloc(Move(ExternFunction::clone(&f))).map(
+                    Value::Function,
+                )
             }
             Value::Tag(i) => Ok(Value::Tag(i)),
             Value::Byte(i) => Ok(Value::Byte(i)),
@@ -1180,7 +1182,9 @@ impl<'t> Cloner<'t> {
         data: GcPtr<PartialApplicationData>,
     ) -> Result<GcPtr<PartialApplicationData>> {
         let result = self.deep_clone_ptr(data, |gc, data| {
-            let ptr = gc.alloc(PartialApplicationDataDef(data.function, &data.args))?;
+            let ptr = gc.alloc(
+                PartialApplicationDataDef(data.function, &data.args),
+            )?;
             Ok((PartialApplication(ptr), ptr))
         })?;
         match result {

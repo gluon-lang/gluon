@@ -286,10 +286,10 @@ pub fn reparse<Id>(
                                 let stack_op_name =
                                     symbols.string(&stack_op.value.name).to_string();
                                 let span = pos::span(stack_op.span.start, next_op.span.end);
-                                let error = ConflictingFixities(
-                                    (stack_op_name, stack_op_meta),
-                                    (next_op_name, next_op_meta),
-                                );
+                                let error = ConflictingFixities((stack_op_name, stack_op_meta), (
+                                    next_op_name,
+                                    next_op_meta,
+                                ));
 
                                 return Err(pos::spanned(span, error));
                             }

@@ -219,12 +219,17 @@ match None with
                 (
                     Pattern::Constructor(
                         TypedIdent::new(intern("Some")),
-                        vec![no_loc(Pattern::Ident(TypedIdent::new(intern("x"))))],
+                        vec![
+                            no_loc(Pattern::Ident(TypedIdent::new(intern("x")))),
+                        ],
                     ),
                     id("x")
                 ),
                 (
-                    Pattern::Constructor(TypedIdent::new(intern("None")), vec![]),
+                    Pattern::Constructor(
+                        TypedIdent::new(intern("None")),
+                        vec![],
+                    ),
                     int(0)
                 ),
             ],

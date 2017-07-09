@@ -192,9 +192,10 @@ impl Name {
     }
 
     pub fn name(&self) -> &Name {
-        self.0
-            .rfind('.')
-            .map_or(self, |i| Name::new(&self.0[i + 1..]))
+        self.0.rfind('.').map_or(
+            self,
+            |i| Name::new(&self.0[i + 1..]),
+        )
     }
 }
 
@@ -362,9 +363,10 @@ impl DisplayEnv for Symbols {
     type Ident = Symbol;
 
     fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str {
-        self.strings
-            .get(ident)
-            .map_or(ident.as_ref(), |name| &*name.0)
+        self.strings.get(ident).map_or(
+            ident.as_ref(),
+            |name| &*name.0,
+        )
     }
 }
 

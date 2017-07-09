@@ -50,8 +50,9 @@ fn init_env_logger() {}
 fn format(writer: &mut Write, buffer: &str) -> Result<usize> {
     use gluon::parser::format_expr;
 
-    let output = format_expr(buffer)
-        .map_err(|err| InFile::new("", buffer, err))?;
+    let output = format_expr(buffer).map_err(
+        |err| InFile::new("", buffer, err),
+    )?;
     writer.write_all(output.as_bytes())?;
     Ok(output.len())
 }
@@ -115,7 +116,9 @@ fn run() -> std::result::Result<(), Box<std::error::Error + Send + Sync>> {
         match run_files(&vm, args) {
             Ok(()) => (),
             Err(err @ Error::VM(VMError::Message(_))) => {
-                return Err(format!("{}\n{}", err, vm.context().stack.stacktrace(0)).into())
+                return Err(
+                    format!("{}\n{}", err, vm.context().stack.stacktrace(0)).into(),
+                )
             }
             Err(err) => return Err(err.into()),
         }

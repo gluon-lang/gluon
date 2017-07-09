@@ -172,8 +172,9 @@ impl Compiler {
         file: &str,
         expr_str: &str,
     ) -> StdResult<SpannedExpr<Symbol>, InFile<parser::Error>> {
-        self.parse_partial_expr(file, expr_str)
-            .map_err(|(_, err)| err)
+        self.parse_partial_expr(file, expr_str).map_err(
+            |(_, err)| err,
+        )
     }
 
     /// Parse `input`, returning an expression if successful
@@ -210,8 +211,13 @@ impl Compiler {
         expr_str: &str,
         expected_type: Option<&ArcType>,
     ) -> Result<(SpannedExpr<Symbol>, ArcType)> {
-        let TypecheckValue { expr, typ } = expr_str
-            .typecheck_expected(self, vm, file, expr_str, expected_type)?;
+        let TypecheckValue { expr, typ } = expr_str.typecheck_expected(
+            self,
+            vm,
+            file,
+            expr_str,
+            expected_type,
+        )?;
         Ok((expr, typ))
     }
 
@@ -281,9 +287,9 @@ impl Compiler {
             // Use the import macro's path resolution if it exists so that we mimick the import
             // macro as close as possible
             let opt_macro = vm.get_macros().get("import");
-            match opt_macro
-                .as_ref()
-                .and_then(|mac| mac.downcast_ref::<Import>()) {
+            match opt_macro.as_ref().and_then(
+                |mac| mac.downcast_ref::<Import>(),
+            ) {
                 Some(import) => Ok(import.read_file(filename)?),
                 None => {
 

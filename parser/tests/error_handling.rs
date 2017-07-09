@@ -60,7 +60,9 @@ fn missing_match_expr() {
         expr,
         Some(case(
             error(),
-            vec![(Pattern::Ident(TypedIdent::new(intern("x"))), id("x"))],
+            vec![
+                (Pattern::Ident(TypedIdent::new(intern("x"))), id("x")),
+            ],
         ))
     );
 
@@ -181,7 +183,7 @@ fn incomplete_alternative() {
 
     let expr = r#"
     match 1 with
-    | 
+    |
     "#;
     let result = parse(expr);
     assert!(result.is_err());
@@ -202,7 +204,7 @@ fn incomplete_alternative_before_complete_alternative() {
 
     let expr = r#"
     match 1 with
-    | 
+    |
     | x -> x
     "#;
     let result = parse(expr);

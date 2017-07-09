@@ -145,10 +145,7 @@ where
 pub fn typecheck_expr_expected(
     text: &str,
     expected: Option<&ArcType>,
-) -> (
-    SpannedExpr<Symbol>,
-    Result<ArcType, InFile<typecheck::TypeError<Symbol>>>,
-) {
+) -> (SpannedExpr<Symbol>, Result<ArcType, InFile<typecheck::TypeError<Symbol>>>) {
     let mut expr = parse_new(text).unwrap_or_else(|(_, err)| panic!("{}", err));
 
     let env = MockEnv::new();
@@ -163,20 +160,14 @@ pub fn typecheck_expr_expected(
 
 pub fn typecheck_expr(
     text: &str,
-) -> (
-    SpannedExpr<Symbol>,
-    Result<ArcType, InFile<typecheck::TypeError<Symbol>>>,
-) {
+) -> (SpannedExpr<Symbol>, Result<ArcType, InFile<typecheck::TypeError<Symbol>>>) {
     typecheck_expr_expected(text, None)
 }
 
 #[allow(dead_code)]
 pub fn typecheck_partial_expr(
     text: &str,
-) -> (
-    SpannedExpr<Symbol>,
-    Result<ArcType, InFile<typecheck::TypeError<Symbol>>>,
-) {
+) -> (SpannedExpr<Symbol>, Result<ArcType, InFile<typecheck::TypeError<Symbol>>>) {
     let mut expr = match parse_new(text) {
         Ok(e) => e,
         Err((Some(e), _)) => e,

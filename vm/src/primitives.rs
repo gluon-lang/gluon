@@ -365,11 +365,17 @@ pub fn load(vm: &Thread) -> Result<()> {
 
     vm.define_global(
         "#error",
-        primitive::<fn(StdString) -> Generic<A>>("#error", prim::error),
+        primitive::<fn(StdString) -> Generic<A>>(
+            "#error",
+            prim::error,
+        ),
     )?;
     vm.define_global(
         "error",
-        primitive::<fn(StdString) -> Generic<A>>("error", prim::error),
+        primitive::<fn(StdString) -> Generic<A>>(
+            "error",
+            prim::error,
+        ),
     )?;
 
     ::lazy::load(vm)?;

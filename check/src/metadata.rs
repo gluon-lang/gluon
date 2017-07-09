@@ -86,18 +86,17 @@ pub fn metadata(
 
         fn metadata(&self, id: &Symbol) -> Option<&Metadata> {
             debug!("Lookup {}", id);
-            self.env
-                .stack
-                .get(id)
-                .or_else(|| self.env.env.get_metadata(id))
+            self.env.stack.get(id).or_else(
+                || self.env.env.get_metadata(id),
+            )
         }
 
         fn metadata_expr(&mut self, expr: &SpannedExpr<Symbol>) -> Metadata {
             match expr.value {
                 Expr::Ident(ref id) => {
-                    self.metadata(&id.name)
-                        .cloned()
-                        .unwrap_or_else(Metadata::default)
+                    self.metadata(&id.name).cloned().unwrap_or_else(
+                        Metadata::default,
+                    )
                 }
                 Expr::Record {
                     ref exprs,

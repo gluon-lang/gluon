@@ -413,7 +413,7 @@ fn suggest_alternative() {
     let text = r#"
 type Test = | A Int | B Int String
 match A 3 with
-| 
+|
 "#;
     let result = suggest(text, BytePos::from(53));
     let expected = Ok(vec!["A".into(), "B".into()]);
@@ -443,7 +443,7 @@ fn suggest_implicit_import() {
     let text = r#"
 type Test = | Abc Int
 match Abc 1 with
-| 
+|
 "#;
     let env = MockEnv::new();
 

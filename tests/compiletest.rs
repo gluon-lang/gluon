@@ -15,10 +15,10 @@ fn lib_dir(out_dir: &Path, lib_name: &str) -> PathBuf {
         .unwrap()
         .filter_map(|entry| {
             let entry = entry.expect("dir entry");
-            if entry
-                .path()
-                .to_str()
-                .map_or(false, |name| name.contains(lib_name))
+            if entry.path().to_str().map_or(
+                false,
+                |name| name.contains(lib_name),
+            )
             {
                 Some(entry)
             } else {
@@ -27,11 +27,10 @@ fn lib_dir(out_dir: &Path, lib_name: &str) -> PathBuf {
         })
         .collect();
     gluon_rlibs.sort_by(|l, r| {
-        l.metadata()
+        l.metadata().unwrap().modified().unwrap().cmp(&r.metadata()
             .unwrap()
             .modified()
-            .unwrap()
-            .cmp(&r.metadata().unwrap().modified().unwrap())
+            .unwrap())
     });
     gluon_rlibs.last().expect("libgluon not found").path()
 }
