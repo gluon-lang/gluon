@@ -247,17 +247,16 @@ impl<'de, Id> DeserializeSeedEx<'de, Seed<Id, ArcType<Id>>> for ArcType<Id>
 where
     Id: DeserializeSeedEx<'de, Seed<Id, ArcType<Id>>> + Clone + ::std::any::Any,
 {
-    fn deserialize_seed<D>(seed: &mut Seed<Id, ArcType<Id>>, deserializer: D) -> Result<Self, D::Error>
+    fn deserialize_seed<D>(
+        seed: &mut Seed<Id, ArcType<Id>>,
+        deserializer: D,
+    ) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        use serialization::{SharedSeed};
-        let seed = SharedSeed::new(seed,
-        );
-        DeserializeSeed::deserialize(
-            seed,
-            deserializer,
-        )
+        use serialization::SharedSeed;
+        let seed = SharedSeed::new(seed);
+        DeserializeSeed::deserialize(seed, deserializer).map(|typ| ArcType { typ: typ })
     }
 }
 
@@ -527,30 +526,39 @@ impl<Id, T> Clone for Seed<Id, T> {
 }
 
 
-    fn deserialize_type_vec<'de, Id, T, D>(seed: &mut Seed<Id, T>, deserializer: D) -> Result<AppVec<T>, D::Error>
-    where
-        D: ::serde::Deserializer<'de>,
-        T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>,
-        Id: DeserializeSeedEx<'de, Seed<Id, T>> + Clone + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>,
-    {
-        DeserializeSeed::deserialize(
-            ::serde::de::SeqSeedEx::new(seed, |_| AppVec::default()),
-            deserializer,
-        )
-    }
-    fn deserialize_group<'de, Id, T, D>(
-        seed: &mut Seed<Id, T>,
-        deserializer: D,
-    ) -> Result<Arc<Vec<AliasData<Id, T>>>, D::Error>
-    where
-        D: ::serde::Deserializer<'de>,
-        T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>,
-        Id: DeserializeSeedEx<'de, Seed<Id, T>> + Clone + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>
-    {
-        use serialization::{SharedSeed};
-        let seed = SharedSeed::new(seed);
-        DeserializeSeed::deserialize(seed, deserializer)
-    }
+fn deserialize_type_vec<'de, Id, T, D>(
+    seed: &mut Seed<Id, T>,
+    deserializer: D,
+) -> Result<AppVec<T>, D::Error>
+where
+    D: ::serde::Deserializer<'de>,
+    T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>,
+    Id: DeserializeSeedEx<'de, Seed<Id, T>>
+        + Clone
+        + ::std::any::Any
+        + DeserializeSeedEx<'de, Seed<Id, T>>,
+{
+    DeserializeSeed::deserialize(
+        ::serde::de::SeqSeedEx::new(seed, |_| AppVec::default()),
+        deserializer,
+    )
+}
+fn deserialize_group<'de, Id, T, D>(
+    seed: &mut Seed<Id, T>,
+    deserializer: D,
+) -> Result<Arc<Vec<AliasData<Id, T>>>, D::Error>
+where
+    D: ::serde::Deserializer<'de>,
+    T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>,
+    Id: DeserializeSeedEx<'de, Seed<Id, T>>
+        + Clone
+        + ::std::any::Any
+        + DeserializeSeedEx<'de, Seed<Id, T>>,
+{
+    use serialization::SharedSeed;
+    let seed = SharedSeed::new(seed);
+    DeserializeSeed::deserialize(seed, deserializer)
+}
 /// The representation of gluon's types.
 ///
 /// For efficency this enum is not stored directly but instead a pointer wrapper which derefs to

@@ -29,21 +29,19 @@ impl<'de> Deserialize<'de> for Symbol {
     }
 }
 
-impl<'de, Id, T> DeserializeSeedEx<'de, ::types::Seed<Id, T>> for Symbol
-{
-    fn deserialize_seed<D>(seed: &mut ::types::Seed<Id, T>, deserializer: D) -> Result<Self, D::Error>
+impl<'de, Id, T> DeserializeSeedEx<'de, ::types::Seed<Id, T>> for Symbol {
+    fn deserialize_seed<D>(
+        seed: &mut ::types::Seed<Id, T>,
+        deserializer: D,
+    ) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         use serde::de::DeserializeSeed;
-        use serialization::{SharedSeed};
+        use serialization::SharedSeed;
 
-        let seed = SharedSeed::new(seed,
-        );
-        DeserializeSeed::deserialize(
-            seed,
-            deserializer,
-        ).map(Symbol)
+        let seed = SharedSeed::new(seed);
+        DeserializeSeed::deserialize(seed, deserializer).map(Symbol)
     }
 }
 

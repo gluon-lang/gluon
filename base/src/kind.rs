@@ -21,13 +21,18 @@ impl<'a, T: ?Sized + KindEnv> KindEnv for &'a T {
     }
 }
 
-impl<'de, S> DeserializeSeedEx<'de, S> for ArcKind where S: AsMut<::serialization::NodeMap> {
+impl<'de, S> DeserializeSeedEx<'de, S> for ArcKind
+where
+    S: AsMut<::serialization::NodeMap>,
+{
     fn deserialize_seed<D>(seed: &mut S, deserializer: D) -> Result<ArcKind, D::Error>
     where
         D: ::serde::Deserializer<'de>,
     {
         use serde::de::DeserializeSeed;
-        ::serialization::SharedSeed::new(seed).deserialize(deserializer).map(ArcKind)
+        ::serialization::SharedSeed::new(seed)
+            .deserialize(deserializer)
+            .map(ArcKind)
     }
 }
 
