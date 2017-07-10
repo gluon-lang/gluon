@@ -19,9 +19,6 @@ before_script:
   export PATH=$HOME/Library/Python/2.7/bin:$HOME/.local/bin:$PATH
 script:
 - ./scripts/travis.sh
-env:
-  global:
-  - TRAVIS_CARGO_NIGHTLY_FEATURE="nightly"
 notifications:
   webhooks:
     urls:
