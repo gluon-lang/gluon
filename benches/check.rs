@@ -1,6 +1,6 @@
-#![feature(test)]
+#[macro_use]
+extern crate bencher;
 
-extern crate test;
 
 extern crate gluon_base as base;
 extern crate gluon_parser as parser;
@@ -10,11 +10,12 @@ extern crate gluon;
 use std::fs::File;
 use std::io::Read;
 
+use bencher::{Bencher, black_box};
+
 use gluon::{Compiler, new_vm};
 use gluon::compiler_pipeline::*;
 
-#[bench]
-fn typecheck_prelude(b: &mut ::test::Bencher) {
+fn typecheck_prelude(b: &mut Bencher) {
     let vm = new_vm();
     let mut compiler = Compiler::new();
     let MacroValue { expr } = {
@@ -32,12 +33,11 @@ fn typecheck_prelude(b: &mut ::test::Bencher) {
             println!("{}", err);
             assert!(false);
         }
-        ::test::black_box(result)
+        black_box(result)
     })
 }
 
-#[bench]
-fn clone_prelude(b: &mut ::test::Bencher) {
+fn clone_prelude(b: &mut Bencher) {
     let vm = new_vm();
     let mut compiler = Compiler::new();
     let TypecheckValue { expr, .. } = {
@@ -49,5 +49,8 @@ fn clone_prelude(b: &mut ::test::Bencher) {
         text.typecheck(&mut compiler, &vm, "std.prelude", &text)
             .unwrap_or_else(|err| panic!("{}", err))
     };
-    b.iter(|| ::test::black_box(expr.clone()))
+    b.iter(|| black_box(expr.clone()))
 }
+
+benchmark_group!(check, typecheck_prelude, clone_prelude);
+benchmark_main!(check);
