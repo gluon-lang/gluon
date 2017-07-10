@@ -467,7 +467,7 @@ let { Test } =
     type Test = | Abc Int
     { Test }
 match Abc 1 with
-| 
+|
 "#;
     let env = MockEnv::new();
 
