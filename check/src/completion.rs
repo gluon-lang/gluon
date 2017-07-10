@@ -124,9 +124,9 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
             } => {
                 let unaliased = resolve::remove_aliases(&self.env, typ.clone());
                 for ast_field in types {
-                    if let Some(field) = unaliased.type_field_iter().find(|field| {
-                        field.name == ast_field.name.value
-                    })
+                    if let Some(field) = unaliased
+                        .type_field_iter()
+                        .find(|field| field.name == ast_field.name.value)
                     {
                         self.on_alias(&field.typ);
                     }
@@ -252,9 +252,9 @@ impl<'a> OnFound for GetMetadata<'a> {
         match context.value {
             Expr::Projection(ref expr, _, _) => {
                 if let Expr::Ident(ref expr_id) = expr.value {
-                    self.result = self.env.get(&expr_id.name).and_then(|metadata| {
-                        metadata.module.get(id.as_ref())
-                    });
+                    self.result = self.env
+                        .get(&expr_id.name)
+                        .and_then(|metadata| metadata.module.get(id.as_ref()));
                 }
             }
             Expr::Infix(..) => {
@@ -291,9 +291,8 @@ impl<'a, E: TypeEnv> OnFound for MetadataSuggest<'a, E> {
     }
 
     fn expr(&mut self, expr: &SpannedExpr<Symbol>) {
-        let suggestion = expr_iter(&self.suggest.stack, expr).find(|&(name, _)| {
-            name.declared_name() == self.ident
-        });
+        let suggestion = expr_iter(&self.suggest.stack, expr)
+            .find(|&(name, _)| name.declared_name() == self.ident);
         if let Some((name, _)) = suggestion {
             self.result = self.env.get(name);
         }
@@ -303,9 +302,9 @@ impl<'a, E: TypeEnv> OnFound for MetadataSuggest<'a, E> {
         match context.value {
             Expr::Projection(ref expr, _, _) => {
                 if let Expr::Ident(ref expr_ident) = expr.value {
-                    self.result = self.env.get(&expr_ident.name).and_then(|metadata| {
-                        metadata.module.get(self.ident)
-                    });
+                    self.result = self.env
+                        .get(&expr_ident.name)
+                        .and_then(|metadata| metadata.module.get(self.ident));
                 }
             }
             _ => (),
@@ -376,14 +375,20 @@ where
                 self.0.visit_expr(e);
             } else {
                 match e.value {
-                    Expr::TypeBindings(ref type_bindings, _) => {
+                    Expr::TypeBindings(ref type_bindings, ref e) => {
                         for type_binding in type_bindings {
                             self.0.on_found.on_alias(&type_binding.alias.value);
                         }
+                        self.0.visit_expr(e);
                     }
-                    _ => (),
+                    Expr::LetBindings(ref bindings, ref e) => {
+                        for binding in bindings {
+                            self.0.on_found.on_pattern(&binding.name);
+                        }
+                        self.0.visit_expr(e);
+                    }
+                    _ => walk_expr(self, e),
                 }
-                walk_expr(self, e);
             }
         }
     }
