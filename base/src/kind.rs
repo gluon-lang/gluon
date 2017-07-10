@@ -29,7 +29,8 @@ impl<'a, T: ?Sized + KindEnv> KindEnv for &'a T {
 #[cfg_attr(feature = "serde_derive", serde(serialize_seed = "::serialization::SeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "S"))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "S"))]
-#[cfg_attr(feature = "serde_derive", serde(bound(deserialize = "S: AsMut<::serialization::NodeMap>")))]
+#[cfg_attr(feature = "serde_derive",
+           serde(bound(deserialize = "S: AsMut<::serialization::NodeMap>")))]
 pub enum Kind {
     Hole,
     /// Representation for a kind which is yet to be inferred.
@@ -108,6 +109,22 @@ impl<'a> fmt::Display for DisplayKind<'a> {
 /// Reference counted kind type.
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct ArcKind(Arc<Kind>);
+
+#[cfg(feature = "serde")]
+impl<'de, S> ::serde::de::DeserializeSeedEx<'de, S> for ArcKind
+where
+    S: AsMut<::serialization::NodeMap>,
+{
+    fn deserialize_seed<D>(seed: &mut S, deserializer: D) -> Result<ArcKind, D::Error>
+    where
+        D: ::serde::Deserializer<'de>,
+    {
+        use serde::de::DeserializeSeed;
+        ::serialization::SharedSeed::new(seed)
+            .deserialize(deserializer)
+            .map(ArcKind)
+    }
+}
 
 impl ArcKind {
     pub fn new(kind: Kind) -> ArcKind {

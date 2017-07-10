@@ -15,6 +15,10 @@ use symbol::{Symbol, SymbolRef};
 
 #[cfg(feature = "serde")]
 use serialization::{SeSeed, Seed};
+#[cfg(feature = "serde")]
+use serde::de::DeserializeSeedEx;
+#[cfg(feature = "serde")]
+use serde::ser::SerializeSeed;
 
 /// Trait for values which contains typed values which can be refered by name
 pub trait TypeEnv: KindEnv {
@@ -52,9 +56,9 @@ impl RecordSelector {
         match *self {
             RecordSelector::Exact => record().into_iter().eq(needle),
             RecordSelector::Subset => {
-                needle
-                    .into_iter()
-                    .all(|name| record().into_iter().any(|other| other == name))
+                needle.into_iter().all(|name| {
+                    record().into_iter().any(|other| other == name)
+                })
             }
         }
     }
@@ -228,7 +232,8 @@ pub struct TypeVariable {
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeSeed, SerializeSeed))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "Seed<Id, T>"))]
-#[cfg_attr(feature = "serde_derive", serde(bound(deserialize = "Id: DeserializeSeedEx<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
+#[cfg_attr(feature = "serde_derive",
+           serde(bound(deserialize = "Id: DeserializeSeedEx<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "T"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_seed = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(bound(serialize = "Id: SerializeSeed<Seed = SeSeed>")))]
@@ -251,7 +256,7 @@ impl<Id> Generic<Id> {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeSeed, SerializeSeed))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "Seed<Id, T>"))]
 #[cfg_attr(feature = "serde_derive",
-    serde(bound(deserialize = "T: DeserializeSeedEx<'de, Seed<Id, T>> + Clone + From<Type<Id, T>> + ::std::any::Any,
+           serde(bound(deserialize = "T: DeserializeSeedEx<'de, Seed<Id, T>> + Clone + From<Type<Id, T>> + ::std::any::Any,
                              Id: DeserializeSeedEx<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_seed = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(bound(serialize = "T: SerializeSeed<Seed = SeSeed>")))]
@@ -360,15 +365,18 @@ where
 #[cfg_attr(feature = "serde_derive", derive(DeserializeSeed, SerializeSeed))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "Seed<Id, T>"))]
 #[cfg_attr(feature = "serde_derive",
-    serde(bound(deserialize = "T: DeserializeSeedEx<'de, Seed<Id, T>> + Clone + From<Type<Id, T>> + ::std::any::Any,
+           serde(bound(deserialize = "T: DeserializeSeedEx<'de, Seed<Id, T>> + Clone + From<Type<Id, T>> + ::std::any::Any,
                  Id: DeserializeSeedEx<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_seed = "SeSeed"))]
-#[cfg_attr(feature = "serde_derive", serde(bound(serialize = "T: SerializeSeed<Seed = SeSeed>, Id: SerializeSeed<Seed = SeSeed>")))]
+#[cfg_attr(feature = "serde_derive",
+           serde(bound(serialize = "T: SerializeSeed<Seed = SeSeed>, Id: SerializeSeed<Seed = SeSeed>")))]
 pub struct AliasRef<Id, T> {
     /// Name of the Alias
     index: usize,
-    #[cfg_attr(feature = "serde_derive", serde(deserialize_seed_with = "deserialize_group"))]
-    #[cfg_attr(feature = "serde_derive", serde(serialize_seed_with = "::serialization::serialize_shared"))]
+    #[cfg_attr(feature = "serde_derive",
+               serde(deserialize_seed_with = "::serialization::deserialize_group"))]
+    #[cfg_attr(feature = "serde_derive",
+               serde(serialize_seed_with = "::serialization::serialize_shared"))]
     /// The other aliases defined in this group
     pub group: Arc<Vec<AliasData<Id, T>>>,
 }
@@ -384,10 +392,11 @@ where
                 Type::Ident(ref id) => {
                     // Replace `Ident` with the alias it resolves to so that a `TypeEnv` is not needed
                     // to resolve the type later on
-                    let index = self.group
-                        .iter()
-                        .position(|alias| alias.name == *id)
-                        .expect("ICE: Alias group were not able to resolve an identifier");
+                    let index =
+                        self.group
+                            .iter()
+                            .position(|alias| alias.name == *id)
+                            .expect("ICE: Alias group were not able to resolve an identifier");
                     Some(T::from(Type::Alias(AliasRef {
                         index: index,
                         group: self.group.clone(),
@@ -407,10 +416,11 @@ where
 #[cfg_attr(feature = "serde_derive", derive(DeserializeSeed, SerializeSeed))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "Seed<Id, T>"))]
 #[cfg_attr(feature = "serde_derive",
-    serde(bound(deserialize = "T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>,
+           serde(bound(deserialize = "T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>,
                              Id: DeserializeSeedEx<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_seed = "SeSeed"))]
-#[cfg_attr(feature = "serde_derive", serde(bound(serialize = "T: SerializeSeed<Seed = SeSeed>, Id: SerializeSeed<Seed = SeSeed>")))]
+#[cfg_attr(feature = "serde_derive",
+           serde(bound(serialize = "T: SerializeSeed<Seed = SeSeed>, Id: SerializeSeed<Seed = SeSeed>")))]
 pub struct AliasData<Id, T> {
     #[cfg_attr(feature = "serde_derive", serde(seed))]
     pub name: Id,
@@ -454,11 +464,13 @@ impl<Id, T> Deref for AliasRef<Id, T> {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeSeed, SerializeSeed))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "Seed<Id, U>"))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "U"))]
-#[cfg_attr(feature = "serde_derive", serde(bound(deserialize = "Id: DeserializeSeedEx<'de, Seed<Id, U>> + Clone + ::std::any::Any,
+#[cfg_attr(feature = "serde_derive",
+           serde(bound(deserialize = "Id: DeserializeSeedEx<'de, Seed<Id, U>> + Clone + ::std::any::Any,
                              T: DeserializeSeedEx<'de, Seed<Id, U>>
                              ")))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_seed = "SeSeed"))]
-#[cfg_attr(feature = "serde_derive", serde(bound(serialize = "T: SerializeSeed<Seed = SeSeed>, Id: SerializeSeed<Seed = SeSeed>")))]
+#[cfg_attr(feature = "serde_derive",
+           serde(bound(serialize = "T: SerializeSeed<Seed = SeSeed>, Id: SerializeSeed<Seed = SeSeed>")))]
 pub struct Field<Id, T = ArcType<Id>> {
     #[cfg_attr(feature = "serde_derive", serde(seed))]
     pub name: Id,
@@ -491,7 +503,7 @@ impl<Id, T> Field<Id, T> {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeSeed, SerializeSeed))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "Seed<Id, T>"))]
 #[cfg_attr(feature = "serde_derive",
-    serde(bound(deserialize = "T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>,
+           serde(bound(deserialize = "T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>,
                              Id: DeserializeSeedEx<'de, Seed<Id, T>> + Clone + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>")))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_seed = "SeSeed"))]
 pub enum Type<Id, T = ArcType<Id>> {
@@ -507,8 +519,10 @@ pub enum Type<Id, T = ArcType<Id>> {
         #[cfg_attr(feature = "serde_derive", serde(deserialize_seed))]
         #[cfg_attr(feature = "serde_derive", serde(serialize_seed))]
         T,
-        #[cfg_attr(feature = "serde_derive", serde(deserialize_seed_with = "deserialize_type_vec"))]
-        #[cfg_attr(feature = "serde_derive", serde(serialize_seed_with = "::serialization::serialize_seq"))]
+        #[cfg_attr(feature = "serde_derive",
+                   serde(deserialize_seed_with = "::serialization::deserialize_type_vec"))]
+        #[cfg_attr(feature = "serde_derive",
+                   serde(serialize_seed_with = "::serialization::serialize_seq"))]
         AppVec<T>
     ),
     /// Record constructor, of kind `Row -> Type`
@@ -797,6 +811,24 @@ where
 #[derive(Eq, PartialEq, Hash)]
 pub struct ArcType<Id = Symbol> {
     typ: Arc<Type<Id, ArcType<Id>>>,
+}
+
+#[cfg(feature = "serde")]
+impl<'de, Id> DeserializeSeedEx<'de, Seed<Id, ArcType<Id>>> for ArcType<Id>
+where
+    Id: DeserializeSeedEx<'de, Seed<Id, ArcType<Id>>> + Clone + ::std::any::Any,
+{
+    fn deserialize_seed<D>(
+        seed: &mut Seed<Id, ArcType<Id>>,
+        deserializer: D,
+    ) -> Result<Self, D::Error>
+    where
+        D: ::serde::de::Deserializer<'de>,
+    {
+        use serialization::SharedSeed;
+        let seed = SharedSeed::new(seed);
+        ::serde::de::DeserializeSeed::deserialize(seed, deserializer).map(|typ| ArcType { typ: typ })
+    }
 }
 
 impl<Id> Clone for ArcType<Id> {
@@ -1122,8 +1154,9 @@ impl<'a, I, T> TypeFormatter<'a, I, T> {
 }
 
 impl<'a, I, T> fmt::Display for TypeFormatter<'a, I, T>
-    where T: Deref<Target = Type<I, T>> + 'a,
-          I: AsRef<str>,
+where
+    T: Deref<Target = Type<I, T>> + 'a,
+    I: AsRef<str>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let arena = Arena::new();
@@ -1170,7 +1203,8 @@ where
             Type::App(ref t, ref args) => {
                 match self.typ.as_function() {
                     Some((arg, ret)) => {
-                        let doc = chain![arena;
+                        let doc =
+                            chain![arena;
                             dt(Prec::Function, arg).pretty(arena).group(),
                             arena.space(),
                             "-> ",
@@ -1182,9 +1216,9 @@ where
                     None => {
                         let doc = dt(Prec::Top, t).pretty(arena);
                         let arg_doc = arena.concat(args.iter().map(|arg| {
-                            arena
-                                .space()
-                                .append(dt(Prec::Constructor, arg).pretty(arena))
+                            arena.space().append(
+                                dt(Prec::Constructor, arg).pretty(arena),
+                            )
                         }));
                         let doc = doc.append(arg_doc.nest(INDENT));
                         p.enclose(Prec::Constructor, arena, doc).group()
@@ -1205,7 +1239,8 @@ where
                             first = false;
                             doc = doc.append("| ").append(field.name.as_ref());
                             for arg in arg_iter(&field.typ) {
-                                doc = chain![arena;
+                                doc =
+                                    chain![arena;
                                             doc,
                                             " ",
                                             dt(Prec::Constructor, &arg).pretty(arena)];
@@ -1312,9 +1347,9 @@ where
                 match *typ {
                     Type::EmptyRow => doc,
                     _ => {
-                        doc.append(arena.space())
-                            .append("| ")
-                            .append(top(typ).pretty(arena))
+                        doc.append(arena.space()).append("| ").append(
+                            top(typ).pretty(arena),
+                        )
                     }
                 }
             }
@@ -1491,8 +1526,9 @@ where
             ref rest,
         } => {
             let new_fields = walk_move_types(fields, |field| {
-                f.visit(&field.typ)
-                    .map(|typ| Field::new(field.name.clone(), typ))
+                f.visit(&field.typ).map(
+                    |typ| Field::new(field.name.clone(), typ),
+                )
             });
             let new_rest = f.visit(rest);
             merge(fields, new_fields, rest, new_rest, |fields, rest| {

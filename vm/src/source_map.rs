@@ -60,8 +60,10 @@ pub struct Local {
     start: usize,
     end: usize,
     pub index: VmIndex,
-    #[cfg_attr(feature = "serde_derive", serde(deserialize_seed_with = "::serialization::symbol::deserialize"))]
-    #[cfg_attr(feature = "serde_derive", serde(serialize_seed_with = "::serialization::symbol::serialize"))]
+    #[cfg_attr(feature = "serde_derive",
+               serde(deserialize_seed_with = "::serialization::symbol::deserialize"))]
+    #[cfg_attr(feature = "serde_derive",
+               serde(serialize_seed_with = "::serialization::symbol::serialize"))]
     pub name: Symbol,
     #[cfg_attr(feature = "serde_derive", serde(seed_with = "::serialization::typ"))]
     pub typ: ArcType,

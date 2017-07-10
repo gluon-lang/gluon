@@ -9,11 +9,11 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use serde::de::{Deserialize, DeserializeSeed, DeserializeSeedEx, Deserializer, Error};
-use serde::ser::{Serialize, SerializeSeed, Serializer};
+use serde::ser::{SerializeSeed, Serializer};
 
 use kind::ArcKind;
 use symbol::Symbol;
-use types::{AliasData, ArcType, Type};
+use types::{AliasData, AppVec, ArcType, Type};
 
 pub struct SeSeed {
     node_to_id: NodeToId,
@@ -25,7 +25,7 @@ impl SeSeed {
     }
 }
 
-    impl AsRef<NodeToId> for SeSeed {
+impl AsRef<NodeToId> for SeSeed {
     fn as_ref(&self) -> &NodeToId {
         &self.node_to_id
     }
@@ -67,7 +67,7 @@ impl<Id, T> Clone for Seed<Id, T> {
 }
 
 
-fn deserialize_type_vec<'de, Id, T, D>(
+pub fn deserialize_type_vec<'de, Id, T, D>(
     seed: &mut Seed<Id, T>,
     deserializer: D,
 ) -> Result<AppVec<T>, D::Error>
@@ -84,7 +84,7 @@ where
         deserializer,
     )
 }
-fn deserialize_group<'de, Id, T, D>(
+pub fn deserialize_group<'de, Id, T, D>(
     seed: &mut Seed<Id, T>,
     deserializer: D,
 ) -> Result<Arc<Vec<AliasData<Id, T>>>, D::Error>
@@ -245,10 +245,9 @@ impl NodeMap {
     where
         T: Any + Clone,
     {
-        self.0
-            .borrow()
-            .get::<IdToShared<T>>()
-            .and_then(|map| map.get(id).cloned())
+        self.0.borrow().get::<IdToShared<T>>().and_then(|map| {
+            map.get(id).cloned()
+        })
     }
 }
 
@@ -376,23 +375,6 @@ where
     (**self_).serialize_seed(serializer, seed)
 }
 
-impl<'de, Id> DeserializeSeedEx<'de, Seed<Id, ArcType<Id>>> for ArcType<Id>
-where
-    Id: DeserializeSeedEx<'de, Seed<Id, ArcType<Id>>> + Clone + ::std::any::Any,
-{
-    fn deserialize_seed<D>(
-        seed: &mut Seed<Id, ArcType<Id>>,
-        deserializer: D,
-    ) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        use serialization::SharedSeed;
-        let seed = SharedSeed::new(seed);
-        DeserializeSeed::deserialize(seed, deserializer).map(|typ| ArcType { typ: typ })
-    }
-}
-
 impl<Id> SerializeSeed for ArcType<Id>
 where
     Id: SerializeSeed<Seed = SeSeed>,
@@ -404,21 +386,6 @@ where
         S: Serializer,
     {
         ::serialization::serialize_shared(self, serializer, seed)
-    }
-}
-
-impl<'de, S> DeserializeSeedEx<'de, S> for ArcKind
-where
-    S: AsMut<::serialization::NodeMap>,
-{
-    fn deserialize_seed<D>(seed: &mut S, deserializer: D) -> Result<ArcKind, D::Error>
-    where
-        D: ::serde::Deserializer<'de>,
-    {
-        use serde::de::DeserializeSeed;
-        ::serialization::SharedSeed::new(seed)
-            .deserialize(deserializer)
-            .map(ArcKind)
     }
 }
 

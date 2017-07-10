@@ -10,7 +10,9 @@ use serde::de::{Deserialize, DeserializeSeed, DeserializeSeedEx, Error};
 use serde::ser::{Serializer, SerializeSeed, SerializeSeq, Seeded};
 
 use base::serialization::{NodeMap, NodeToId};
-use base::symbol::{Symbols};
+use base::symbol::Symbols;
+
+use array::Array;
 use gc::{DataDef, GcPtr, WriteOnly};
 use thread::{RootedThread, Thread, ThreadInternal};
 use types::VmIndex;
@@ -97,9 +99,8 @@ impl<T> From<DeSeed> for Seed<T> {
 
 pub mod gc {
     use super::*;
-    use serde::{Deserialize, Deserializer};
-    use serde::de::DeserializeSeed;
-    use serde::ser::{SerializeSeed, Serializer};
+    use serde::de::{Deserialize, DeserializeSeed, Deserializer};
+    use serde::ser::{Serialize, SerializeSeed, Serializer};
     use value::{DataStruct, GcStr, Value, ValueArray};
     use thread::ThreadInternal;
     use types::VmTag;
@@ -308,8 +309,8 @@ pub mod typ {
     pub fn deserialize<'de, D>(seed: &mut DeSeed, deserializer: D) -> Result<ArcType, D::Error>
     where
         D: Deserializer<'de>,
-    {
-        use base::types::Seed;
+    { 
+        use base::serialization::Seed;
         ArcType::deserialize_seed(&mut Seed::new(seed.gc_map.clone()), deserializer)
     }
 
@@ -342,9 +343,11 @@ unsafe impl DataDef for ClosureDataModel {
         unsafe {
             let result = &mut *result.as_mut_ptr();
             result.function = self.function;
-            result
-                .upvars
-                .initialize(::std::iter::repeat(Value::Int(0)).take(self.upvars));
+            result.upvars.initialize(
+                ::std::iter::repeat(Value::Int(0)).take(
+                    self.upvars,
+                ),
+            );
             result
         }
     }
@@ -376,8 +379,9 @@ impl SerializeSeed for ClosureData {
             serializer.serialize_element(&GraphVariant::Marked(len))?;
             node_to_id.insert(self_id, len);
         }
-        serializer
-            .serialize_element(&Seeded::new(seed, self.function))?;
+        serializer.serialize_element(
+            &Seeded::new(seed, self.function),
+        )?;
         serializer.serialize_element(&self.upvars.len())?;
         for item in self.upvars.iter() {
             serializer.serialize_element(&Seeded::new(seed, item))?;
@@ -415,33 +419,37 @@ where
                 where
                     V: SeqAccess<'de>,
                 {
-                    let variant = seq.next_element()?
-                        .ok_or_else(|| V::Error::invalid_length(0, &self))?;
+                    let variant = seq.next_element()?.ok_or_else(
+                        || V::Error::invalid_length(0, &self),
+                    )?;
                     unsafe {
                         match variant {
                             GraphVariant::Marked(id) => {
                                 let function =
                                     seq.next_element_seed(::serde::de::Seed::new(&mut self.state))?
                                         .ok_or_else(|| V::Error::invalid_length(1, &self))?;
-                                let upvars = seq.next_element()?
-                                    .ok_or_else(|| V::Error::invalid_length(2, &self))?;
+                                let upvars = seq.next_element()?.ok_or_else(|| {
+                                    V::Error::invalid_length(2, &self)
+                                })?;
 
-                                let mut closure: GcPtr<ClosureData> = self.state
-                                    .thread
-                                    .context()
-                                    .gc
-                                    .alloc(ClosureDataModel {
-                                        function: function,
-                                        upvars: upvars,
-                                    })
-                                    .map_err(V::Error::custom)?;
+                                let mut closure: GcPtr<ClosureData> =
+                                    self.state
+                                        .thread
+                                        .context()
+                                        .gc
+                                        .alloc(ClosureDataModel {
+                                            function: function,
+                                            upvars: upvars,
+                                        })
+                                        .map_err(V::Error::custom)?;
                                 self.state.gc_map.insert(id, closure);
 
                                 for i in 0..upvars {
-                                    let value = seq.next_element_seed(
-                                        ::serde::de::Seed::new(&mut self.state),
-                                    )?
-                                        .ok_or_else(|| V::Error::invalid_length(i + 2, &self))?;
+                                    let value =
+                                        seq.next_element_seed(
+                                            ::serde::de::Seed::new(&mut self.state),
+                                        )?
+                                            .ok_or_else(|| V::Error::invalid_length(i + 2, &self))?;
                                     closure.as_mut().upvars[i] = value;
                                 }
                                 Ok(closure)
@@ -582,15 +590,14 @@ impl<'de> DeserializeSeedEx<'de, DeSeed> for ExternFunction {
         let iter = partial
             .id
             .split(|c: char| c == '.')
-            .map(|s| {
-                if s.chars()
-                    .next()
-                    .map_or(false, ::base::ast::is_operator_char)
-                {
-                    Cow::Owned(format!("({})", s))
-                } else {
-                    Cow::Borrowed(s)
-                }
+            .map(|s| if s.chars().next().map_or(
+                false,
+                ::base::ast::is_operator_char,
+            )
+            {
+                Cow::Owned(format!("({})", s))
+            } else {
+                Cow::Borrowed(s)
             })
             .intersperse(Cow::Borrowed("."));
         for s in iter {

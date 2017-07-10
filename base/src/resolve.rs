@@ -48,10 +48,9 @@ where
 /// Expand `typ` if it is an alias that can be expanded and return the expanded type.
 /// Returns `None` if the type is not an alias or the alias could not be expanded.
 pub fn remove_alias(env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType>, Error> {
-    Ok(
-        peek_alias(env, typ)?
-            .and_then(|alias| type_of_alias(env, alias, typ.unapplied_args())),
-    )
+    Ok(peek_alias(env, typ)?.and_then(|alias| {
+        type_of_alias(env, alias, typ.unapplied_args())
+    }))
 }
 
 pub fn peek_alias<'t>(
@@ -74,9 +73,9 @@ pub fn peek_alias<'t>(
             let alias = match maybe_alias {
                 Some(alias) => alias,
                 None => {
-                    env.find_type_info(id)
-                        .map(|a| &**a)
-                        .ok_or_else(|| Error::UndefinedType(id.clone()))?
+                    env.find_type_info(id).map(|a| &**a).ok_or_else(|| {
+                        Error::UndefinedType(id.clone())
+                    })?
                 }
             };
             Ok(Some(alias))

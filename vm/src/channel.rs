@@ -213,9 +213,15 @@ pub fn load<'vm>(vm: &'vm Thread) -> VmResult<()> {
     vm.define_global("send", primitive!(2 send))?;
     vm.define_global(
         "resume",
-        primitive::<fn(&'vm Thread) -> Result<(), String>>("resume", resume),
+        primitive::<fn(&'vm Thread) -> Result<(), String>>(
+            "resume",
+            resume,
+        ),
     )?;
-    vm.define_global("yield", primitive::<fn(())>("yield", yield_))?;
+    vm.define_global(
+        "yield",
+        primitive::<fn(())>("yield", yield_),
+    )?;
     vm.define_global("spawn", primitive!(1 spawn))?;
     Ok(())
 }

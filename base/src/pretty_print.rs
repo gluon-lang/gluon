@@ -29,10 +29,10 @@ fn forced_new_line<Id>(expr: &SpannedExpr<Id>) -> bool {
         Expr::Tuple { ref elems, .. } => elems.iter().any(forced_new_line),
         Expr::Record { ref exprs, .. } => {
             exprs.iter().any(|field| {
-                field
-                    .value
-                    .as_ref()
-                    .map_or(false, |expr| forced_new_line(expr))
+                field.value.as_ref().map_or(
+                    false,
+                    |expr| forced_new_line(expr),
+                )
             })
         }
         Expr::IfElse(_, ref t, ref f) => forced_new_line(t) || forced_new_line(f),
@@ -85,7 +85,8 @@ pub fn pretty_kind<'a>(
         Kind::Hole => arena.text("_"),
         Kind::Variable(ref id) => arena.text(id.to_string()),
         Kind::Function(ref a, ref r) => {
-            let doc = chain![arena;
+            let doc =
+                chain![arena;
                 pretty_kind(arena, Prec::Function, a),
                 arena.space(),
                 "-> ",
@@ -227,8 +228,8 @@ impl<'a> ExprPrinter<'a> {
     fn comments_count(&'a self, span: Span<BytePos>) -> (DocBuilder<'a, Arena<'a>>, usize) {
         let arena = &self.arena;
         let mut comments = 0;
-        let doc = arena.concat(self.source.comments_between(span).map(
-            |comment| if comment.is_empty() {
+        let doc = arena.concat(self.source.comments_between(span).map(|comment| {
+            if comment.is_empty() {
                 arena.newline()
             } else {
                 comments += 1;
@@ -237,8 +238,8 @@ impl<'a> ExprPrinter<'a> {
                 } else {
                     arena.text(comment)
                 }
-            },
-        ));
+            }
+        }));
         (doc, comments)
     }
 
@@ -265,10 +266,16 @@ impl<'a> ExprPrinter<'a> {
         Id: AsRef<str>,
     {
         self.pretty_expr_with_shebang_line(expr).append(
-            self.comments(Span::new(
-                expr.span.end,
-                BytePos::from(self.source.src().len()),
-            )),
+            self.comments(
+                Span::new(
+                    expr.span.end,
+                    BytePos::from(
+                        self.source
+                            .src()
+                            .len(),
+                    ),
+                ),
+            ),
         )
     }
 
@@ -330,15 +337,11 @@ impl<'a> ExprPrinter<'a> {
             Expr::Array(ref array) => {
                 arena
                     .text("[")
-                    .append(
-                        arena.concat(
-                            array
-                                .exprs
-                                .iter()
-                                .map(|elem| pretty(elem))
-                                .intersperse(arena.text(",").append(arena.space())),
+                    .append(arena.concat(
+                        array.exprs.iter().map(|elem| pretty(elem)).intersperse(
+                            arena.text(",").append(arena.space()),
                         ),
-                    )
+                    ))
                     .append("]")
                     .group()
             }
@@ -350,12 +353,9 @@ impl<'a> ExprPrinter<'a> {
                         ")"
                     ]
                 } else {
-                    arena.concat(
-                        elems
-                            .iter()
-                            .map(|elem| pretty(elem).group())
-                            .intersperse(arena.newline()),
-                    )
+                    arena.concat(elems.iter().map(|elem| pretty(elem).group()).intersperse(
+                        arena.newline(),
+                    ))
                 }
             }
             Expr::Ident(ref id) => ident(arena, id.name.as_ref()),
@@ -388,7 +388,8 @@ impl<'a> ExprPrinter<'a> {
             }
             Expr::LetBindings(ref binds, ref body) => {
                 let binding = |prefix: &'a str, bind: &'a ValueBinding<Id>| {
-                    let decl = chain![arena;
+                    let decl =
+                        chain![arena;
                         prefix,
                         chain![arena;
                             pretty_pattern(arena, &bind.name),
@@ -455,14 +456,11 @@ impl<'a> ExprPrinter<'a> {
             Expr::Tuple { ref elems, .. } => {
                 arena
                     .text("(")
-                    .append(
-                        arena.concat(
-                            elems
-                                .iter()
-                                .map(|elem| pretty(elem))
-                                .intersperse(arena.text(",").append(arena.space())),
+                    .append(arena.concat(
+                        elems.iter().map(|elem| pretty(elem)).intersperse(
+                            arena.text(",").append(arena.space()),
                         ),
-                    )
+                    ))
                     .append(")")
                     .group()
             }
@@ -541,7 +539,9 @@ impl<'a> ExprPrinter<'a> {
             } => {
                 let ordered_iter = || {
                     types.iter().map(Either::Left).merge_by(
-                        exprs.iter().map(Either::Right),
+                        exprs.iter().map(
+                            Either::Right,
+                        ),
                         |x, y| {
                             x.either(|l| l.name.span.start, |r| r.name.span.start) <
                                 y.either(|l| l.name.span.start, |r| r.name.span.start)
@@ -553,9 +553,10 @@ impl<'a> ExprPrinter<'a> {
                         x.either(|l| l.name.span, |r| {
                             Span::new(
                                 r.name.span.start,
-                                r.value
-                                    .as_ref()
-                                    .map_or(r.name.span.start, |expr| expr.span.end),
+                                r.value.as_ref().map_or(
+                                    r.name.span.start,
+                                    |expr| expr.span.end,
+                                ),
                             )
                         })
                     })
@@ -570,7 +571,8 @@ impl<'a> ExprPrinter<'a> {
                 // If there are any explicit line breaks then we need put each field on a separate line
                 if newlines.iter().any(|&(ref l, ref r)| {
                     l.1 != arena.nil().1 || r.1 != arena.nil().1
-                }) {
+                })
+                {
                     line = arena.newline();
                 }
                 let end_iter = newlines.into_iter().map(|(l_doc, mut r_doc)| {

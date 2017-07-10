@@ -18,57 +18,59 @@ pub struct Symbol(Arc<NameBuf>);
 mod serialization {
     use super::*;
 
-use serde::{Serialize, Serializer, Deserialize, Deserializer};
-use serde::de::DeserializeSeedEx;
-use serde::ser::SerializeSeed;
-use serialization::SeSeed;
+    use serde::{Serialize, Serializer, Deserialize, Deserializer};
+    use serde::de::DeserializeSeedEx;
+    use serde::ser::SerializeSeed;
+    use serialization::SeSeed;
 
-impl<'de> Deserialize<'de> for Symbol {
-    fn deserialize<D>(deserializer: D) -> Result<Symbol, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        use std::borrow::Cow;
-        Cow::<str>::deserialize(deserializer).map(Symbol::from)
+    impl<'de> Deserialize<'de> for Symbol {
+        fn deserialize<D>(deserializer: D) -> Result<Symbol, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            use std::borrow::Cow;
+            Cow::<str>::deserialize(deserializer).map(Symbol::from)
+        }
     }
-}
 
-impl<'de, Id, T> DeserializeSeedEx<'de, ::types::Seed<Id, T>> for Symbol {
-    fn deserialize_seed<D>(
-        seed: &mut ::types::Seed<Id, T>,
-        deserializer: D,
-    ) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        use serde::de::DeserializeSeed;
-        use serialization::SharedSeed;
+    impl<'de, Id, T> DeserializeSeedEx<'de, ::serialization::Seed<Id, T>> for Symbol {
+        fn deserialize_seed<D>(
+            seed: &mut ::serialization::Seed<Id, T>,
+            deserializer: D,
+        ) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            use serde::de::DeserializeSeed;
+            use serialization::SharedSeed;
 
-        let seed = SharedSeed::new(seed);
-        DeserializeSeed::deserialize(seed, deserializer).map(Symbol)
+            let seed = SharedSeed::new(seed);
+            DeserializeSeed::deserialize(seed, deserializer).map(Symbol)
+        }
     }
-}
 
-impl Serialize for Symbol {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let s: &str = self.as_ref();
-        s.serialize(serializer)
+    impl Serialize for Symbol {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            let s: &str = self.as_ref();
+            s.serialize(serializer)
+        }
     }
-}
 
-impl SerializeSeed for Symbol {
-    type Seed = SeSeed;
+    impl SerializeSeed for Symbol {
+        type Seed = SeSeed;
 
-    fn serialize_seed<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        ::serialization::serialize_shared(self, serializer, seed)
+        fn serialize_seed<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            {
+                ::serialization::serialize_shared(self, serializer, seed)
+            }
+        }
     }
-}
 }
 
 impl Deref for Symbol {
@@ -140,7 +142,7 @@ where
 
 #[derive(Eq)]
 #[cfg_attr(feature = "serde_derive", derive(SerializeSeed))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "SeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "::serialization::SeSeed"))]
 pub struct SymbolRef(str);
 
 impl fmt::Debug for SymbolRef {
@@ -257,9 +259,10 @@ impl Name {
     }
 
     pub fn name(&self) -> &Name {
-        self.0
-            .rfind('.')
-            .map_or(self, |i| Name::new(&self.0[i + 1..]))
+        self.0.rfind('.').map_or(
+            self,
+            |i| Name::new(&self.0[i + 1..]),
+        )
     }
 }
 
@@ -427,9 +430,10 @@ impl DisplayEnv for Symbols {
     type Ident = Symbol;
 
     fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str {
-        self.strings
-            .get(ident)
-            .map_or(ident.as_ref(), |name| &*name.0)
+        self.strings.get(ident).map_or(
+            ident.as_ref(),
+            |name| &*name.0,
+        )
     }
 }
 

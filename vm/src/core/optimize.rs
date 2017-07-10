@@ -142,10 +142,9 @@ where
             let new_expr = walk_expr_alloc(visitor, expr);
             let new_alts = merge_iter(alts, |expr| walk_alt(visitor, expr), Alternative::clone)
                 .map(|alts: Vec<_>| {
-                    &*visitor
-                        .allocator()
-                        .alternative_arena
-                        .alloc_extend(alts.into_iter())
+                    &*visitor.allocator().alternative_arena.alloc_extend(
+                        alts.into_iter(),
+                    )
                 });
             merge(&expr, new_expr, &alts, new_alts, Expr::Match)
         }
@@ -186,7 +185,8 @@ mod tests {
             end
             "#;
         let initial_expr = allocator.arena.alloc(
-            parse_core_expr(&mut symbols, &allocator, initial_str).unwrap(),
+            parse_core_expr(&mut symbols, &allocator, initial_str)
+                .unwrap(),
         );
 
         let optimized_expr = optimize(&allocator, initial_expr);
