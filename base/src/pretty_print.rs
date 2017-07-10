@@ -264,7 +264,7 @@ impl<'a> ExprPrinter<'a> {
     where
         Id: AsRef<str>,
     {
-        self.pretty_expr_with_shebang_line(BytePos::from(0), expr).append(
+        self.pretty_expr_with_shebang_line(expr).append(
             self.comments(Span::new(
                 expr.span.end,
                 BytePos::from(self.source.src().len()),
@@ -284,7 +284,6 @@ impl<'a> ExprPrinter<'a> {
 
     pub fn pretty_expr_with_shebang_line<Id>(
         &'a self,
-        previous_end: BytePos,
         expr: &'a SpannedExpr<Id>,
     ) -> DocBuilder<'a, Arena<'a>>
     where
@@ -299,7 +298,7 @@ impl<'a> ExprPrinter<'a> {
                         self.pretty_expr_(BytePos::from(shebang_line.len()), expr)
                     )
             },
-            None => self.pretty_expr_(previous_end, expr)
+            None => self.pretty_expr_(BytePos::from(0), expr)
         }
     }
 
