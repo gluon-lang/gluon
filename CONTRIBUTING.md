@@ -32,3 +32,22 @@ You may see that some of the [commits][] follow the [commit message convention o
 
 [commits]:https://github.com/gluon-lang/gluon/commit/9b36d699c63e482969239ed9f84779f7cd1ad2f3
 [commit message convention of Angular]:https://github.com/angular/angular.js/blob/master/CONTRIBUTING.md#commit-message-format
+
+## Rust format
+
+The continous integration process checks to make sure all code has had cargo fmt run against it.  If the script
+
+    ./rust-format-diff.sh
+
+finds any formatting errors it will block the build.
+
+To automatically format all of the code you can run:
+
+    ./rust-format.sh
+
+To automate this process locally you can setup a git pre-commit hook using the below:
+
+    cat << EOF > .git/hooks/pre-commit
+    #!/bin/sh
+    ./rust-format-diff.sh
+    EOF
