@@ -173,6 +173,7 @@ where
         loop {
             // Retrieve the current indentation level if one exists
             let offside = match (&token.value, self.indent_levels.last().cloned()) {
+                (&Token::ShebangLine(_), _) => return Ok(token),
                 (_, Some(offside)) => offside,
                 (&Token::EOF, None) => return Ok(token),
                 (_, None) => {

@@ -146,3 +146,14 @@ x
 "#;
     assert_eq!(&format_expr(expr).unwrap(), expr);
 }
+
+#[test]
+fn preserve_shebang_line() {
+    let expr = r#"#!/bin/gluon
+/* test */
+let x = { field = f /* test */ 123 /* doc */ }
+/* test */
+x
+"#;
+    assert_eq!(&format_expr(expr).unwrap(), expr);
+}

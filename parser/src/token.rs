@@ -7,6 +7,7 @@ use self::Error::*;
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Token<'input> {
+    ShebangLine(&'input str),
     Identifier(&'input str),
     Operator(&'input str),
 
@@ -54,6 +55,7 @@ impl<'input> fmt::Display for Token<'input> {
         use self::Token::*;
 
         let s = match *self {
+            ShebangLine(_) => "ShebangLine",
             Identifier(_) => "Identifier",
             Operator(_) => "Operator",
             StringLiteral(_) => "StringLiteral",
@@ -364,6 +366,20 @@ impl<'input> Tokenizer<'input> {
         self.error(start, UnterminatedStringLiteral)
     }
 
+    fn shebang_line(&mut self, start: Location) -> Option<SpannedToken<'input>> {
+
+        let (end, line) = self.take_until(start, |ch| ch == '\n');
+        
+        if line.starts_with("#!") {
+            let skip = 2;
+            let result = line[skip..].trim_right();
+            let tok = Token::ShebangLine(result);
+            Some(pos::spanned2(start, end, tok))
+        } else {
+            None
+        }
+    }
+
     fn char_literal(&mut self, start: Location) -> Result<SpannedToken<'input>, SpError> {
         let ch = match self.bump() {
             Some((_, '\\')) => self.escape_code()?,
@@ -473,6 +489,12 @@ impl<'input> Iterator for Tokenizer<'input> {
                         Err(err) => Some(Err(err)),
                     }
                 }
+                '#' if start.absolute == BytePos::from(0) && self.test_lookahead(|ch| ch == '!') => {
+                    match self.shebang_line(start) {
+                        Some(token) => Some(Ok(token)),
+                        None => continue,
+                    }
+                }
 
                 ch if is_ident_start(ch) => Some(Ok(self.identifier(start))),
                 ch if is_digit(ch) || (ch == '-' && self.test_lookahead(is_digit)) => {
@@ -523,13 +545,18 @@ mod test {
 
     fn test(input: &str, expected: Vec<(&str, Token)>) {
         let mut tokenizer = tokenizer(input);
-
+        let mut count = 0;
+        let length = expected.len();
         for (token, (expected_span, expected_tok)) in tokenizer.by_ref().zip(expected.into_iter()) {
+            count += 1;
             println!("{:?}", token);
             let start = loc(expected_span.find("~").unwrap());
             let end = loc(expected_span.rfind("~").unwrap() + 1);
             assert_eq!(Ok(pos::spanned2(start, end, expected_tok)), token);
         }
+
+        assert_eq!(count, length);
+        assert_eq!(true, count > 0);
 
         // Make sure that there is nothing else to consume
         assert_eq!(None, tokenizer.next());
@@ -787,6 +814,23 @@ mod test {
                 (r#"~~                  "#, Identifier("hi")),
                 (
                     r#"   ~~~~~~~~~~~~~~~~~"#,
+                    DocComment(Comment {
+                        typ: CommentType::Line,
+                        content: "hellooo/// hi".to_string(),
+                    })
+                ),
+            ],
+        );
+    }
+
+    #[test]
+    fn shebang_line_token_test() {
+        test(
+            "#!/bin/gluon\nhi /// hellooo/// hi",
+            vec![
+                (r#"~~~~~~~~~~~~                   "#, ShebangLine("/bin/gluon")),
+                (r#"            ~~                 "#, Identifier("hi")),
+                (r#"              ~~~~~~~~~~~~~~~~~"#,
                     DocComment(Comment {
                         typ: CommentType::Line,
                         content: "hellooo/// hi".to_string(),
