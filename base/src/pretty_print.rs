@@ -274,15 +274,8 @@ impl<'a> ExprPrinter<'a> {
 
     fn find_shebang_line(&'a self) -> Option<&str> {
         let src = self.source.src();
-        let len = src.len();
-        if len > 1 && &src[0..2] == "#!" {
-            let newline_index = src.find('\n');
-            match newline_index {
-                Some(i) => {
-                    Some(&src[0..i])
-                },
-                _ => Some(src),
-            }
+        if src.starts_with("#!") {
+            src.lines().next()
         }
         else {
             None
