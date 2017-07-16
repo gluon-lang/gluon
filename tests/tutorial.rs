@@ -32,8 +32,8 @@ fn access_field_through_alias() {
         )
         .sync_or_error()
         .unwrap();
-    let mut add: FunctionRef<fn(i32, i32) -> i32> = vm.get_global("std.prelude.num_Int.(+)")
-        .unwrap();
+    let mut add: FunctionRef<fn(i32, i32) -> i32> =
+        vm.get_global("std.prelude.num_Int.(+)").unwrap();
     let result = add.call(1, 2);
     assert_eq!(result, Ok(3));
 }
@@ -43,7 +43,11 @@ fn call_rust_from_gluon() {
     let _ = ::env_logger::init();
 
     fn factorial(x: i32) -> i32 {
-        if x <= 1 { 1 } else { x * factorial(x - 1) }
+        if x <= 1 {
+            1
+        } else {
+            x * factorial(x - 1)
+        }
     }
     let vm = new_vm();
     vm.define_global("factorial", primitive!(1 factorial))

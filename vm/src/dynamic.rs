@@ -29,9 +29,9 @@ where
                     Type::ExtendRow { ref fields, .. } => {
                         let index = self.index;
                         self.index += 1;
-                        self.value.get(index).map(|value| {
-                            (value, fields[index].typ.clone())
-                        })
+                        self.value
+                            .get(index)
+                            .map(|value| (value, fields[index].typ.clone()))
                     }
                     _ => None,
                 }

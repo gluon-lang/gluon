@@ -167,11 +167,12 @@ impl Compiler {
     }
 
     /// Parse `expr_str`, returning an expression if successful
-    pub fn parse_expr(&mut self,
-                      type_cache: &TypeCache<Symbol>,
-                      file: &str,
-                      expr_str: &str)
-                      -> StdResult<SpannedExpr<Symbol>, InFile<parser::Error>> {
+    pub fn parse_expr(
+        &mut self,
+        type_cache: &TypeCache<Symbol>,
+        file: &str,
+        expr_str: &str,
+    ) -> StdResult<SpannedExpr<Symbol>, InFile<parser::Error>> {
         self.parse_partial_expr(type_cache, file, expr_str)
             .map_err(|(_, err)| err)
     }
@@ -373,7 +374,9 @@ impl Compiler {
         expr_str
             .run_expr(self, vm, name, expr_str, Some(&expected))
             .and_then(move |v| {
-                let ExecuteValue { typ: actual, value, .. } = v;
+                let ExecuteValue {
+                    typ: actual, value, ..
+                } = v;
                 unsafe {
                     FutureValue::sync(match T::from_value(vm, Variants::new(&value)) {
                         Some(value) => Ok((value, actual)),
@@ -417,7 +420,9 @@ impl Compiler {
         expr_str
             .run_expr(self, vm, name, expr_str, Some(&expected))
             .and_then(move |v| {
-                let ExecuteValue { typ: actual, value, .. } = v;
+                let ExecuteValue {
+                    typ: actual, value, ..
+                } = v;
                 if check_signature(&*vm.get_env(), &actual, &IO::<A>::make_type(vm)) {
                     vm.execute_io(*value)
                         .map(move |(_, value)| (value, expected, actual))

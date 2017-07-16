@@ -28,9 +28,8 @@ mopafy!(Macro);
 
 impl<F: ::mopa::Any + Clone + Send + Sync> Macro for F
 where
-    F: Fn(&mut MacroExpander,
-       &mut [SpannedExpr<Symbol>])
-       -> Result<SpannedExpr<Symbol>, Error>,
+    F: Fn(&mut MacroExpander, &mut [SpannedExpr<Symbol>])
+        -> Result<SpannedExpr<Symbol>, Error>,
 {
     fn expand(
         &self,
@@ -50,7 +49,9 @@ pub struct MacroEnv {
 impl MacroEnv {
     /// Creates a new `MacroEnv`
     pub fn new() -> MacroEnv {
-        MacroEnv { macros: RwLock::new(FnvMap::default()) }
+        MacroEnv {
+            macros: RwLock::new(FnvMap::default()),
+        }
     }
 
     /// Inserts a `Macro` which acts on any occurance of `symbol` when applied to an expression.

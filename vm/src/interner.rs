@@ -84,7 +84,9 @@ impl Traverseable for Interner {
 
 impl Interner {
     pub fn new() -> Interner {
-        Interner { indexes: FnvMap::default() }
+        Interner {
+            indexes: FnvMap::default(),
+        }
     }
 
     pub fn intern(&mut self, gc: &mut Gc, s: &str) -> Result<InternedStr> {

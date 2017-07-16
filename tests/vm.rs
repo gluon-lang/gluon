@@ -837,8 +837,8 @@ fn partially_applied_constructor_is_lambda() {
     let _ = ::env_logger::init();
     let vm = make_vm();
 
-    let result = Compiler::new()
-        .run_expr::<FunctionRef<fn(i32) -> Option<i32>>>(&vm, "test", "Some");
+    let result =
+        Compiler::new().run_expr::<FunctionRef<fn(i32) -> Option<i32>>>(&vm, "test", "Some");
     assert!(result.is_ok(), "{}", result.err().unwrap());
     assert_eq!(result.unwrap().0.call(123), Ok(Some(123)));
 }

@@ -135,9 +135,10 @@ impl<'a> Data<'a> {
         match self.0 {
             DataInner::Tag(_) => None,
             DataInner::Data(data) => unsafe {
-                thread.lookup_field(data, name).ok().map(|v| {
-                    Variants::with_root(v, data)
-                })
+                thread
+                    .lookup_field(data, name)
+                    .ok()
+                    .map(|v| Variants::with_root(v, data))
             },
         }
     }

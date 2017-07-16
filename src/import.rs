@@ -181,7 +181,11 @@ fn get_state<'m>(macros: &'m mut MacroExpander) -> &'m mut State {
     macros
         .state
         .entry(String::from("import"))
-        .or_insert_with(|| Box::new(State { visited: Vec::new() }))
+        .or_insert_with(|| {
+            Box::new(State {
+                visited: Vec::new(),
+            })
+        })
         .downcast_mut::<State>()
         .unwrap()
 }

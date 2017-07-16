@@ -126,7 +126,9 @@ fn channel(
         thread: unsafe { GcPtr::from_raw(vm) },
         queue: Arc::new(Mutex::new(VecDeque::new())),
     };
-    let receiver = Receiver { queue: sender.queue.clone() };
+    let receiver = Receiver {
+        queue: sender.queue.clone(),
+    };
     record_no_decl!(sender => sender, receiver => receiver)
 }
 
@@ -213,15 +215,9 @@ pub fn load<'vm>(vm: &'vm Thread) -> VmResult<()> {
     vm.define_global("send", primitive!(2 send))?;
     vm.define_global(
         "resume",
-        primitive::<fn(&'vm Thread) -> Result<(), String>>(
-            "resume",
-            resume,
-        ),
+        primitive::<fn(&'vm Thread) -> Result<(), String>>("resume", resume),
     )?;
-    vm.define_global(
-        "yield",
-        primitive::<fn(())>("yield", yield_),
-    )?;
+    vm.define_global("yield", primitive::<fn(())>("yield", yield_))?;
     vm.define_global("spawn", primitive!(1 spawn))?;
     Ok(())
 }

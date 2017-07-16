@@ -46,7 +46,9 @@ where
     T: Deref<Target = Thread>,
 {
     pub fn new(thread: T) -> Execute<T> {
-        Execute { thread: Some(thread) }
+        Execute {
+            thread: Some(thread),
+        }
     }
 }
 
@@ -472,9 +474,8 @@ impl Thread {
         let expected = T::make_type(self);
         if check_signature(&*env, &expected, &actual) {
             unsafe {
-                T::from_value(self, Variants::new(&value)).ok_or_else(|| {
-                    Error::UndefinedBinding(name.into())
-                })
+                T::from_value(self, Variants::new(&value))
+                    .ok_or_else(|| Error::UndefinedBinding(name.into()))
             }
         } else {
             Err(Error::WrongType(expected, actual.into_owned()))
@@ -676,10 +677,10 @@ impl ThreadInternal for Thread {
 
     /// Roots a string
     fn root_string<'vm>(&'vm self, ptr: GcStr) -> RootStr<'vm> {
-        self.roots.write().unwrap().push(
-            ptr.into_inner()
-                .as_traverseable(),
-        );
+        self.roots
+            .write()
+            .unwrap()
+            .push(ptr.into_inner().as_traverseable());
         RootStr(Root {
             roots: &self.roots,
             ptr: &*ptr,
@@ -905,9 +906,11 @@ impl<'a> StackInfo<'a> {
         let frame = self.frame();
         match frame.state {
             State::Closure(ref closure) => {
-                closure.function.debug_info.source_map.line(
-                    self.instruction_index(),
-                )
+                closure
+                    .function
+                    .debug_info
+                    .source_map
+                    .line(self.instruction_index())
             }
             _ => None,
         }
@@ -935,9 +938,11 @@ impl<'a> StackInfo<'a> {
         let frame = self.frame();
         match frame.state {
             State::Closure(ref closure) => {
-                closure.function.debug_info.local_map.locals(
-                    self.instruction_index(),
-                )
+                closure
+                    .function
+                    .debug_info
+                    .local_map
+                    .locals(self.instruction_index())
             }
             _ => LocalIter::empty(),
         }
@@ -1116,7 +1121,11 @@ impl<'b> DerefMut for OwnedContext<'b> {
 impl<'b> OwnedContext<'b> {
     fn exit_scope(mut self) -> StdResult<OwnedContext<'b>, ()> {
         let exists = StackFrame::current(&mut self.stack).exit_scope().is_ok();
-        if exists { Ok(self) } else { Err(()) }
+        if exists {
+            Ok(self)
+        } else {
+            Err(())
+        }
     }
 
     fn execute(self, polled: bool) -> Result<Async<Option<OwnedContext<'b>>>> {
@@ -1128,8 +1137,7 @@ impl<'b> OwnedContext<'b> {
             let instruction_index = context.borrow_mut().stack.frame.instruction_index;
             if instruction_index == 0 && context.hook.flags.contains(CALL_FLAG) {
                 match state {
-                    State::Extern(_) |
-                    State::Closure(_) => {
+                    State::Extern(_) | State::Closure(_) => {
                         let thread = context.thread;
                         let context = &mut *context;
                         if let Some(ref mut hook) = context.hook.function {
@@ -1150,11 +1158,9 @@ impl<'b> OwnedContext<'b> {
                 State::Extern(ext) => {
                     let instruction_index = context.borrow_mut().stack.frame.instruction_index;
                     context.borrow_mut().stack.frame.instruction_index = 1;
-                    Some(try_ready!(context.execute_function(
-                        instruction_index == 0,
-                        &ext,
-                        polled,
-                    )))
+                    Some(try_ready!(
+                        context.execute_function(instruction_index == 0, &ext, polled,)
+                    ))
                 }
                 State::Closure(closure) => {
                     let max_stack_size = context.max_stack_size;
@@ -1269,9 +1275,10 @@ impl<'b> OwnedContext<'b> {
                 function.id
             );
         }
-        self = self.exit_scope().map_err(|_| {
-            Error::Message(StdString::from("Poped the last frame in execute_function"))
-        })?;
+        self = self.exit_scope()
+            .map_err(|_| {
+                Error::Message(StdString::from("Poped the last frame in execute_function"))
+            })?;
         self.stack.pop(); // Pop function
         self.stack.push(result);
 
@@ -1461,9 +1468,10 @@ impl<'b> ExecuteContext<'b> {
             if self.hook.flags.contains(LINE_FLAG) {
                 if let Some(ref mut hook) = self.hook.function {
                     let current_line = function.debug_info.source_map.line(index);
-                    let previous_line = function.debug_info.source_map.line(
-                        self.hook.previous_instruction_index,
-                    );
+                    let previous_line = function
+                        .debug_info
+                        .source_map
+                        .line(self.hook.previous_instruction_index);
                     self.hook.previous_instruction_index = index;
                     if current_line != previous_line {
                         self.stack.frame.instruction_index = index;
@@ -1489,9 +1497,8 @@ impl<'b> ExecuteContext<'b> {
                     self.stack.push(Value::Byte(b));
                 }
                 PushString(string_index) => {
-                    self.stack.push(String(
-                        function.strings[string_index as usize].inner(),
-                    ));
+                    self.stack
+                        .push(String(function.strings[string_index as usize].inner()));
                 }
                 PushGlobal(i) => {
                     let x = function.globals[i as usize];
@@ -1633,9 +1640,8 @@ impl<'b> ExecuteContext<'b> {
                             ))
                         }
                     };
-                    self.stack.push(
-                        Value::Tag(if data_tag == tag { 1 } else { 0 }),
-                    );
+                    self.stack
+                        .push(Value::Tag(if data_tag == tag { 1 } else { 0 }));
                 }
                 Split => {
                     match self.stack.pop() {
@@ -1792,9 +1798,8 @@ impl<'b> ExecuteContext<'b> {
                     for value in &excess.fields {
                         self.stack.push(*value);
                     }
-                    self.do_call(excess.fields.len() as VmIndex).map(|x| {
-                        Async::Ready(Some(x))
-                    })
+                    self.do_call(excess.fields.len() as VmIndex)
+                        .map(|x| Async::Ready(Some(x)))
                 }
                 x => panic!("Expected excess arguments found {:?}", x),
             }
@@ -1881,8 +1886,7 @@ fn debug_instruction(
                 x
             }
             PushGlobal(i) => function.globals.get(i as usize).cloned(),
-            NewClosure { .. } |
-            MakeClosure { .. } => Some(Int(stack.len() as isize)),
+            NewClosure { .. } | MakeClosure { .. } => Some(Int(stack.len() as isize)),
             _ => None,
         }
     );

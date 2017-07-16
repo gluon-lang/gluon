@@ -206,9 +206,9 @@ pub fn load(vm: &Thread) -> Result<()> {
     //     = f (m ())
     let io_flat_map = vec![
         // [f, m, ()]       Initial stack
-        Call(1), // [f, m_ret]       Call m ()
-        PushInt(0), // [f, m_ret, ()]   Add a dummy argument ()
-        TailCall(2) /* [f_ret]          Call f m_ret () */,
+        Call(1),     // [f, m_ret]       Call m ()
+        PushInt(0),  // [f, m_ret, ()]   Add a dummy argument ()
+        TailCall(2), /* [f_ret]          Call f m_ret () */
     ];
     let io_flat_map_type =
         <fn(fn(A) -> IO<B>, IO<A>) -> IO<B> as VmType>::make_type(vm);

@@ -305,7 +305,7 @@ fn argument_types() {
                 vec![
                     ("int_function".to_string(), int_function.clone()),
                     ("g".to_string(), int_function.clone()),
-                ]
+                ],
             ),
             (
                 4,
@@ -313,7 +313,7 @@ fn argument_types() {
                     ("int_function".to_string(), int_function.clone()),
                     ("g".to_string(), int_function.clone()),
                     ("f".to_string(), int_function.clone()),
-                ]
+                ],
             ),
             (3, vec![("z".to_string(), Type::int())]),
             (2, vec![("y".to_string(), Type::int())]),

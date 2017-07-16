@@ -405,7 +405,9 @@ impl<T: ?Sized> GcPtr<T> {
 impl<'a, T: Traverseable + Send + Sync + 'a> GcPtr<T> {
     /// Coerces `self` to a `Traverseable` trait object
     pub fn as_traverseable(self) -> GcPtr<Traverseable + Send + Sync + 'a> {
-        GcPtr { ptr: self.ptr as *const (Traverseable + Send + Sync) }
+        GcPtr {
+            ptr: self.ptr as *const (Traverseable + Send + Sync),
+        }
     }
 }
 impl GcPtr<str> {
@@ -413,7 +415,9 @@ impl GcPtr<str> {
     pub fn as_traverseable_string(self) -> GcPtr<Traverseable + Send + Sync> {
         // As there is nothing to traverse in a str we can safely cast it to *const u8 and use
         // u8's Traverseable impl
-        GcPtr { ptr: self.as_ptr() as *const (Traverseable + Send + Sync) }
+        GcPtr {
+            ptr: self.as_ptr() as *const (Traverseable + Send + Sync),
+        }
     }
 }
 
@@ -873,8 +877,9 @@ mod tests {
         let dropped = Rc::new(Cell::new(false));
         let mut gc = Gc::new(Generation::default(), usize::MAX);
         {
-            let ptr = gc.alloc(Move(Dropable { dropped: dropped.clone() }))
-                .unwrap();
+            let ptr = gc.alloc(Move(Dropable {
+                dropped: dropped.clone(),
+            })).unwrap();
             assert_eq!(false, ptr.dropped.get());
         }
         assert_eq!(false, dropped.get());

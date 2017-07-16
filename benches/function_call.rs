@@ -81,6 +81,10 @@ fn gluon_rust_boundary_overhead(b: &mut Bencher) {
     })
 }
 
-benchmark_group!(function_call,
-    factorial, factorial_tail_call, gluon_rust_boundary_overhead);
+benchmark_group!(
+    function_call,
+    factorial,
+    factorial_tail_call,
+    gluon_rust_boundary_overhead
+);
 benchmark_main!(function_call);
