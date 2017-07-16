@@ -13,6 +13,7 @@ impl<'a, T: ?Sized + MetadataEnv> MetadataEnv for &'a T {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub struct Metadata {
     pub comment: Option<String>,
     pub module: BTreeMap<String, Metadata>,

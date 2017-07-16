@@ -8,5 +8,6 @@
   cargo check --bench check --features test &&
   cargo check --bench function_call --features test &&
   cargo check --bench parser --features test &&
+  cargo check --bench precompiled --features test &&
   travis-cargo --only stable build -- --all --no-default-features
 )

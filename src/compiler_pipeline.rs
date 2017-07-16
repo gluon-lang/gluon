@@ -387,3 +387,66 @@ where
             .boxed()
     }
 }
+
+#[cfg(feature = "serde")]
+pub struct Precompiled<D>(pub D);
+
+#[cfg(feature = "serde")]
+impl<'vm, 'de, D> Executable<'vm, ()> for Precompiled<D>
+where
+    D: ::serde::Deserializer<'de>,
+{
+    type Expr = ();
+
+    fn run_expr(
+        self,
+        _compiler: &mut Compiler,
+        vm: &'vm Thread,
+        _name: &str,
+        _expr_str: &str,
+        _: (),
+    ) -> BoxFutureValue<'vm, ExecuteValue<'vm, Self::Expr>, Error> {
+        use vm::serialization::DeSeed;
+        use vm::internal::Global;
+
+        let Global { typ, value, .. } = try_future!(
+            DeSeed::new(vm)
+                .deserialize(self.0)
+                .map_err(|err| Error::VM(err.to_string().into()))
+        );
+        FutureValue::sync(Ok(
+            (ExecuteValue {
+                 expr: (),
+                 typ: typ,
+                 value: vm.root_value(value),
+             }),
+        )).boxed()
+    }
+    fn load_script(
+        self,
+        compiler: &mut Compiler,
+        vm: &'vm Thread,
+        name: &str,
+        _expr_str: &str,
+        _: (),
+    ) -> BoxFutureValue<'vm, (), Error> {
+        use vm::serialization::DeSeed;
+        use vm::internal::Global;
+
+        let Global {
+            metadata,
+            typ,
+            value,
+            id: _,
+        } = try_future!(
+            DeSeed::new(vm)
+                .deserialize(self.0)
+                .map_err(|err| Error::VM(err.to_string().into()))
+        );
+        let id = compiler.symbols.symbol(name);
+        // FIXME
+        try_future!(vm.set_global(id, typ, metadata, value,));
+        info!("Loaded module `{}`", name);
+        FutureValue::sync(Ok(())).boxed()
+    }
+}

@@ -133,6 +133,7 @@ quick_error! {
         }
         Message(err: String) {
             display("{}", err)
+            from()
         }
         Panic(err: String) {
             display("{}", err)
@@ -143,4 +144,5 @@ quick_error! {
 /// Internal types and functions exposed to the main `gluon` crate
 pub mod internal {
     pub use value::{Value, ClosureDataDef, ValuePrinter};
+    pub use vm::Global;
 }

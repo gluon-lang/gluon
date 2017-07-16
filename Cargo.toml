@@ -32,6 +32,10 @@ quick-error = "1.0.0"
 collect-mac = "0.1.0"
 futures = "0.1.11"
 
+serde = { version = "1.0.0", optional = true }
+serde_state = { version = "0.1.0", optional = true }
+serde_derive_state = { version = "0.1.0", optional = true }
+
 # Binding crates
 regex = { version = "0.2.1", optional = true }
 
@@ -54,12 +58,13 @@ serde = "1.0.0"
 serde_derive = "1.0.0"
 serde_derive_state = "0.1.0"
 serde_json = "1.0.0"
+bincode = "0.8.0"
 
 [features]
 default = ["regex"]
-serialization = ["gluon_vm/serialization"]
+serialization = ["serde", "serde_state", "serde_derive_state", "gluon_vm/serialization"]
 
-test = ["gluon_vm/test", "gluon_check/test", "gluon_parser/test"]
+test = ["serialization", "gluon_vm/test", "gluon_check/test", "gluon_parser/test"]
 nightly = ["compiletest_rs"]
 
 
@@ -73,4 +78,8 @@ harness = false
 
 [[bench]]
 name = "parser"
+harness = false
+
+[[bench]]
+name = "precompiled"
 harness = false

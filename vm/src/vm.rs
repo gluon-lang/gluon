@@ -81,14 +81,20 @@ fn new_bytecode(
     }))
 }
 
-
 #[derive(Debug)]
+#[cfg_attr(feature = "serde_derive_state", derive(SerializeState, DeserializeState))]
+#[cfg_attr(feature = "serde_derive_state", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive_state", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct Global {
+    #[cfg_attr(feature = "serde_derive", serde(seed_with = "::serialization::symbol"))]
     pub id: Symbol,
+    #[cfg_attr(feature = "serde_derive_state", serde(seed_with = "::serialization::typ"))]
     pub typ: ArcType,
     pub metadata: Metadata,
+    #[cfg_attr(feature = "serde_derive_state", serde(seed))]
     pub value: Value,
 }
+
 
 impl Traverseable for Global {
     fn traverse(&self, gc: &mut Gc) {

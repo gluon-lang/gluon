@@ -11,6 +11,9 @@ extern crate log;
 extern crate quick_error;
 extern crate futures;
 
+#[cfg(feature = "serde")]
+extern crate serde;
+
 #[macro_use]
 pub extern crate gluon_vm as vm;
 pub extern crate gluon_base as base;
