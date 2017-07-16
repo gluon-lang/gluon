@@ -15,10 +15,10 @@ fn fmt_repl() {
         .read_to_string(&mut before)
         .unwrap();
 
-    let status = Command::new("gluon")
+    let status = Command::new("target/debug/gluon")
         .args(&["fmt", source])
         .spawn()
-        .unwrap()
+        .expect("Could not find gluon executable")
         .wait()
         .unwrap();
     assert!(status.success());
