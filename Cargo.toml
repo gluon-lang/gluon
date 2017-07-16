@@ -52,7 +52,7 @@ curl = "0.4.1"
 
 serde = "1.0.0"
 serde_derive = "1.0.0"
-serde_derive_state = { git = "https://github.com/Marwes/serde", path = "serde_derive_state", branch = "master" }
+serde_derive_state = "0.1.0"
 serde_json = "1.0.0"
 
 [features]
