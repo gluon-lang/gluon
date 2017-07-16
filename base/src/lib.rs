@@ -12,10 +12,13 @@ extern crate collect_mac;
 extern crate itertools;
 
 #[cfg(feature = "serde")]
-extern crate serde;
+extern crate serde_seed as serde;
 #[cfg(feature = "serde_derive")]
 #[macro_use]
 extern crate serde_derive;
+#[cfg(feature = "serde_derive_seed")]
+#[macro_use]
+extern crate serde_derive_seed;
 
 macro_rules! type_cache {
     ($name: ident ($($args: ident),*) { $typ: ty, $inner_type: ident } $( $id: ident )+) => {

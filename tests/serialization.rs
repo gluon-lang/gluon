@@ -1,6 +1,6 @@
 #![cfg(feature = "serialization")]
 extern crate serde_json;
-extern crate serde;
+extern crate serde_seed as serde;
 
 extern crate gluon;
 
