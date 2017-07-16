@@ -1,14 +1,14 @@
-#![feature(test)]
-
-extern crate test;
+#[macro_use]
+extern crate bencher;
 
 extern crate gluon_base as base;
 extern crate gluon_parser as parser;
 
+use bencher::{Bencher, black_box};
+
 use base::symbol::{Symbols, SymbolModule};
 
-#[bench]
-fn prelude(b: &mut ::test::Bencher) {
+fn prelude(b: &mut Bencher) {
     use std::fs::File;
     use std::io::Read;
     let mut text = String::new();
@@ -21,6 +21,9 @@ fn prelude(b: &mut ::test::Bencher) {
         let mut symbols = SymbolModule::new("".into(), &mut symbols);
         let expr = parser::parse_expr(&mut symbols, &text)
             .unwrap_or_else(|err| panic!("{:?}", err));
-        ::test::black_box(expr)
+        black_box(expr)
     })
 }
+
+benchmark_group!(parser, prelude);
+benchmark_main!(parser);

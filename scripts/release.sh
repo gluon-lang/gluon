@@ -1,3 +1,5 @@
+#!/bin/sh
+
 (cd base && cargo publish $@) &&
     (cd parser && cargo publish $@) &&
     (cd check && cargo publish $@) &&

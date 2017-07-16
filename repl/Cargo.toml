@@ -11,6 +11,7 @@ documentation = "https://docs.rs/gluon_repl"
 
 [[bin]]
 name = "gluon"
+path = "src/main.rs"
 doc = false
 
 [dependencies]

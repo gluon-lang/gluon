@@ -48,6 +48,7 @@ pub fn make_vm() -> RootedThread {
     vm
 }
 
+#[allow(unused_macros)]
 macro_rules! test_expr {
     (prelude $name: ident, $expr: expr, $value: expr) => {
         #[test]

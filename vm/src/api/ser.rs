@@ -549,7 +549,7 @@ impl<'a, 'vm> ser::SerializeStructVariant for RecordSerializer<'a, 'vm> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use thread::{RootedThread, RootedValue, ThreadInternal};
+    use thread::{RootedThread, ThreadInternal};
 
     fn to_value<T>(thread: &Thread, value: &T) -> Result<Value>
     where
@@ -558,15 +558,6 @@ mod tests {
         let mut context = thread.context();
         Ser(value).push(thread, &mut context)?;
         Ok(context.stack.pop())
-    }
-
-    fn make_value<'vm, T>(thread: &'vm Thread, value: T) -> RootedValue<&'vm Thread>
-    where
-        T: Pushable<'vm>,
-    {
-        let mut context = thread.context();
-        value.push(thread, &mut context).unwrap();
-        thread.root_value(context.stack.pop())
     }
 
     #[test]

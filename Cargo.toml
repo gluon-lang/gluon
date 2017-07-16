@@ -43,6 +43,7 @@ skeptic = { version = "0.6", optional = true }
 skeptic = { version = "0.6", optional = true }
 
 [dev-dependencies]
+bencher = "0.1.2"
 collect-mac = "0.1.0"
 env_logger = "0.3.4"
 
@@ -57,3 +58,16 @@ default = ["regex"]
 
 test = ["gluon_vm/test", "gluon_check/test", "gluon_parser/test"]
 nightly = ["compiletest_rs"]
+
+
+[[bench]]
+name = "check"
+harness = false
+
+[[bench]]
+name = "function_call"
+harness = false
+
+[[bench]]
+name = "parser"
+harness = false

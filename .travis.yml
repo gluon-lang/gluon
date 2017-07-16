@@ -18,14 +18,7 @@ before_script:
   pip install 'travis-cargo<0.2' --user &&
   export PATH=$HOME/Library/Python/2.7/bin:$HOME/.local/bin:$PATH
 script:
-- |
-  sh ./test-no-skeptic.sh &&
-  travis-cargo --only nightly test -- --features "test nightly" -p gluon compile_test &&
-  travis-cargo --only nightly bench &&
-  travis-cargo --only stable build -- --all --no-default-features
-env:
-  global:
-  - TRAVIS_CARGO_NIGHTLY_FEATURE="nightly"
+- ./scripts/travis.sh
 notifications:
   webhooks:
     urls:

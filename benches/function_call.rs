@@ -1,16 +1,16 @@
-#![feature(test)]
-
-extern crate test;
+#[macro_use]
+extern crate bencher;
 
 extern crate gluon;
+
+use bencher::{Bencher, black_box};
 
 use gluon::{Compiler, new_vm};
 use gluon::vm::thread::{Status, Thread};
 use gluon::vm::api::{FunctionRef, primitive};
 
 // Benchmarks function calls
-#[bench]
-fn factorial(b: &mut ::test::Bencher) {
+fn factorial(b: &mut Bencher) {
     let vm = new_vm();
     let text = r#"
     let factorial n =
@@ -23,12 +23,11 @@ fn factorial(b: &mut ::test::Bencher) {
     let mut factorial: FunctionRef<fn(i32) -> i32> = vm.get_global("factorial").unwrap();
     b.iter(|| {
         let result = factorial.call(100).unwrap();
-        ::test::black_box(result)
+        black_box(result)
     })
 }
 
-#[bench]
-fn factorial_tail_call(b: &mut ::test::Bencher) {
+fn factorial_tail_call(b: &mut Bencher) {
     let vm = new_vm();
     let text = r#"
     let factorial a n =
@@ -41,12 +40,11 @@ fn factorial_tail_call(b: &mut ::test::Bencher) {
     let mut factorial: FunctionRef<fn(i32) -> i32> = vm.get_global("factorial").unwrap();
     b.iter(|| {
         let result = factorial.call(100).unwrap();
-        ::test::black_box(result)
+        black_box(result)
     })
 }
 
-#[bench]
-fn gluon_rust_boundary_overhead(b: &mut ::test::Bencher) {
+fn gluon_rust_boundary_overhead(b: &mut Bencher) {
     let vm = new_vm();
 
     extern "C" fn test_fn(_: &Thread) -> Status {
@@ -79,6 +77,10 @@ fn gluon_rust_boundary_overhead(b: &mut ::test::Bencher) {
     let mut test: FunctionRef<fn(i32) -> ()> = vm.get_global("test").unwrap();
     b.iter(|| {
         let result = test.call(1000).unwrap();
-        ::test::black_box(result)
+        black_box(result)
     })
 }
+
+benchmark_group!(function_call,
+    factorial, factorial_tail_call, gluon_rust_boundary_overhead);
+benchmark_main!(function_call);
