@@ -15,7 +15,7 @@ fn fmt_repl() {
         .read_to_string(&mut before)
         .unwrap();
 
-    let status = Command::new("target/debug/gluon")
+    let status = Command::new("../target/debug/gluon")
         .args(&["fmt", source])
         .spawn()
         .expect("Could not find gluon executable")

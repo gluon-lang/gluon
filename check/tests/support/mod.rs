@@ -1,5 +1,3 @@
-#![allow(unused_macros)]
-
 use base::ast::{DisplayEnv, IdentEnv, SpannedExpr};
 use base::error::InFile;
 use base::kind::{ArcKind, Kind, KindEnv};

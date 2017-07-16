@@ -1,5 +1,3 @@
-#![allow(unused_macros)]
-
 extern crate env_logger;
 extern crate gluon;
 pub extern crate futures;
@@ -50,6 +48,7 @@ pub fn make_vm() -> RootedThread {
     vm
 }
 
+#[allow(unused_macros)]
 macro_rules! test_expr {
     (prelude $name: ident, $expr: expr, $value: expr) => {
         #[test]
