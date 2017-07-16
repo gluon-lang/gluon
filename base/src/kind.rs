@@ -25,10 +25,10 @@ impl<'a, T: ?Sized + KindEnv> KindEnv for &'a T {
 /// These types include `Option` and `(->)` which both have the kind `Type -> Type -> Type`
 /// as well as `Functor` which has the kind `Type -> Type -> Type`.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde_derive", derive(DeserializeSeed, SerializeSeed))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "::serialization::SeSeed"))]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "S"))]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "S"))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "S"))]
 #[cfg_attr(feature = "serde_derive",
            serde(bound(deserialize = "S: AsMut<::serialization::NodeMap>")))]
 pub enum Kind {
@@ -111,11 +111,11 @@ impl<'a> fmt::Display for DisplayKind<'a> {
 pub struct ArcKind(Arc<Kind>);
 
 #[cfg(feature = "serde")]
-impl<'de, S> ::serde::de::DeserializeSeedEx<'de, S> for ArcKind
+impl<'de, S> ::serde::de::DeserializeState<'de, S> for ArcKind
 where
     S: AsMut<::serialization::NodeMap>,
 {
-    fn deserialize_seed<D>(seed: &mut S, deserializer: D) -> Result<ArcKind, D::Error>
+    fn deserialize_state<D>(seed: &mut S, deserializer: D) -> Result<ArcKind, D::Error>
     where
         D: ::serde::Deserializer<'de>,
     {

@@ -1,6 +1,6 @@
 #![cfg(feature = "serialization")]
 extern crate serde_json;
-extern crate serde_seed as serde;
+extern crate serde_state as serde;
 
 extern crate gluon;
 
@@ -15,14 +15,14 @@ fn roundtrip<'t>(
 ) -> RootedValue<&'t Thread> {
     use std::str::from_utf8;
 
-    use serde::ser::SerializeSeed;
+    use serde::ser::SerializeState;
     let value = unsafe { value.get_value() };
 
     let mut buffer = Vec::new();
     {
         let mut ser = serde_json::Serializer::pretty(&mut buffer);
-        let ser_seed = SeSeed::new();
-        value.serialize_seed(&mut ser, &ser_seed).unwrap();
+        let ser_state = SeSeed::new();
+        value.serialize_state(&mut ser, &ser_state).unwrap();
     }
     let buffer = from_utf8(&buffer).unwrap();
 
@@ -38,8 +38,8 @@ fn roundtrip<'t>(
     let mut buffer2 = Vec::new();
     {
         let mut ser = serde_json::Serializer::pretty(&mut buffer2);
-        let ser_seed = SeSeed::new();
-        value.serialize_seed(&mut ser, &ser_seed).unwrap();
+        let ser_state = SeSeed::new();
+        value.serialize_state(&mut ser, &ser_state).unwrap();
     }
     assert_eq!(buffer, from_utf8(&buffer2).unwrap());
 

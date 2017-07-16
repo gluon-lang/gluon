@@ -21,15 +21,15 @@ extern crate pretty;
 #[macro_use]
 extern crate futures;
 
-#[cfg(feature = "serde_seed")]
+#[cfg(feature = "serde_state")]
 #[macro_use]
-extern crate serde_seed as serde;
+extern crate serde_state as serde;
 #[cfg(feature = "serde_derive")]
 #[macro_use]
 extern crate serde_derive;
 #[cfg(feature = "serde_derive")]
 #[macro_use]
-extern crate serde_derive_seed;
+extern crate serde_derive_state;
 
 #[macro_use]
 extern crate gluon_base as base;

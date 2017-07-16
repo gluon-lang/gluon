@@ -53,26 +53,26 @@ impl SourceMap {
 }
 
 #[derive(Debug)]
-#[cfg_attr(feature = "serde_derive", derive(DeserializeSeed, SerializeSeed))]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "::serialization::DeSeed"))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "::serialization::SeSeed"))]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct Local {
     start: usize,
     end: usize,
     pub index: VmIndex,
     #[cfg_attr(feature = "serde_derive",
-               serde(deserialize_seed_with = "::serialization::symbol::deserialize"))]
+               serde(deserialize_state_with = "::serialization::symbol::deserialize"))]
     #[cfg_attr(feature = "serde_derive",
-               serde(serialize_seed_with = "::serialization::symbol::serialize"))]
+               serde(serialize_state_with = "::serialization::symbol::serialize"))]
     pub name: Symbol,
     #[cfg_attr(feature = "serde_derive", serde(seed_with = "::serialization::typ"))]
     pub typ: ArcType,
 }
 
 #[derive(Debug, Default)]
-#[cfg_attr(feature = "serde_derive", derive(DeserializeSeed, SerializeSeed))]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "::serialization::DeSeed"))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "::serialization::SeSeed"))]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct LocalMap {
     // Instruction indexes marking [start, end) where the local variable `Symbol` exists
     #[cfg_attr(feature = "serde_derive", serde(seed))]

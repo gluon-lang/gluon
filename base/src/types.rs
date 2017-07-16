@@ -16,9 +16,9 @@ use symbol::{Symbol, SymbolRef};
 #[cfg(feature = "serde")]
 use serialization::{SeSeed, Seed};
 #[cfg(feature = "serde")]
-use serde::de::DeserializeSeedEx;
+use serde::de::DeserializeState;
 #[cfg(feature = "serde")]
-use serde::ser::SerializeSeed;
+use serde::ser::SerializeState;
 
 /// Trait for values which contains typed values which can be refered by name
 pub trait TypeEnv: KindEnv {
@@ -219,9 +219,9 @@ impl BuiltinType {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde_derive", derive(DeserializeSeed, SerializeSeed))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "SeSeed"))]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "Seed<Id, T>"))]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "Id, T"))]
 pub struct TypeVariable {
     #[cfg_attr(feature = "serde_derive", serde(seed))]
@@ -230,13 +230,13 @@ pub struct TypeVariable {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde_derive", derive(DeserializeSeed, SerializeSeed))]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "Seed<Id, T>"))]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(feature = "serde_derive",
-           serde(bound(deserialize = "Id: DeserializeSeedEx<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
+           serde(bound(deserialize = "Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "T"))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "SeSeed"))]
-#[cfg_attr(feature = "serde_derive", serde(bound(serialize = "Id: SerializeSeed<Seed = SeSeed>")))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(bound(serialize = "Id: SerializeState<Seed = SeSeed>")))]
 pub struct Generic<Id> {
     #[cfg_attr(feature = "serde_derive", serde(seed))]
     pub id: Id,
@@ -253,13 +253,13 @@ impl<Id> Generic<Id> {
 /// An alias is wrapper around `Type::Alias`, allowing it to be cheaply converted to a type and dereferenced
 /// to `AliasRef`
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde_derive", derive(DeserializeSeed, SerializeSeed))]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "Seed<Id, T>"))]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(feature = "serde_derive",
-           serde(bound(deserialize = "T: DeserializeSeedEx<'de, Seed<Id, T>> + Clone + From<Type<Id, T>> + ::std::any::Any,
-                             Id: DeserializeSeedEx<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "SeSeed"))]
-#[cfg_attr(feature = "serde_derive", serde(bound(serialize = "T: SerializeSeed<Seed = SeSeed>")))]
+           serde(bound(deserialize = "T: DeserializeState<'de, Seed<Id, T>> + Clone + From<Type<Id, T>> + ::std::any::Any,
+                             Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(bound(serialize = "T: SerializeState<Seed = SeSeed>")))]
 pub struct Alias<Id, T> {
     #[cfg_attr(feature = "serde_derive", serde(seed))]
     _typ: T,
@@ -362,21 +362,21 @@ where
 /// Data for a type alias. Probably you want to use `Alias` instead of this directly as Alias allows for
 /// cheap conversion back into a type as well.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde_derive", derive(DeserializeSeed, SerializeSeed))]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "Seed<Id, T>"))]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(feature = "serde_derive",
-           serde(bound(deserialize = "T: DeserializeSeedEx<'de, Seed<Id, T>> + Clone + From<Type<Id, T>> + ::std::any::Any,
-                 Id: DeserializeSeedEx<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "SeSeed"))]
+           serde(bound(deserialize = "T: DeserializeState<'de, Seed<Id, T>> + Clone + From<Type<Id, T>> + ::std::any::Any,
+                 Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive",
-           serde(bound(serialize = "T: SerializeSeed<Seed = SeSeed>, Id: SerializeSeed<Seed = SeSeed>")))]
+           serde(bound(serialize = "T: SerializeState<Seed = SeSeed>, Id: SerializeState<Seed = SeSeed>")))]
 pub struct AliasRef<Id, T> {
     /// Name of the Alias
     index: usize,
     #[cfg_attr(feature = "serde_derive",
-               serde(deserialize_seed_with = "::serialization::deserialize_group"))]
+               serde(deserialize_state_with = "::serialization::deserialize_group"))]
     #[cfg_attr(feature = "serde_derive",
-               serde(serialize_seed_with = "::serialization::serialize_shared"))]
+               serde(serialize_state_with = "::serialization::serialize_shared"))]
     /// The other aliases defined in this group
     pub group: Arc<Vec<AliasData<Id, T>>>,
 }
@@ -413,14 +413,14 @@ where
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde_derive", derive(DeserializeSeed, SerializeSeed))]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "Seed<Id, T>"))]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(feature = "serde_derive",
-           serde(bound(deserialize = "T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>,
-                             Id: DeserializeSeedEx<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "SeSeed"))]
+           serde(bound(deserialize = "T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeState<'de, Seed<Id, T>>,
+                             Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive",
-           serde(bound(serialize = "T: SerializeSeed<Seed = SeSeed>, Id: SerializeSeed<Seed = SeSeed>")))]
+           serde(bound(serialize = "T: SerializeState<Seed = SeSeed>, Id: SerializeState<Seed = SeSeed>")))]
 pub struct AliasData<Id, T> {
     #[cfg_attr(feature = "serde_derive", serde(seed))]
     pub name: Id,
@@ -461,16 +461,16 @@ impl<Id, T> Deref for AliasRef<Id, T> {
 }
 
 #[derive(Clone, Hash, Eq, PartialEq, Debug)]
-#[cfg_attr(feature = "serde_derive", derive(DeserializeSeed, SerializeSeed))]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "Seed<Id, U>"))]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, U>"))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "U"))]
 #[cfg_attr(feature = "serde_derive",
-           serde(bound(deserialize = "Id: DeserializeSeedEx<'de, Seed<Id, U>> + Clone + ::std::any::Any,
-                             T: DeserializeSeedEx<'de, Seed<Id, U>>
+           serde(bound(deserialize = "Id: DeserializeState<'de, Seed<Id, U>> + Clone + ::std::any::Any,
+                             T: DeserializeState<'de, Seed<Id, U>>
                              ")))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "SeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive",
-           serde(bound(serialize = "T: SerializeSeed<Seed = SeSeed>, Id: SerializeSeed<Seed = SeSeed>")))]
+           serde(bound(serialize = "T: SerializeState<Seed = SeSeed>, Id: SerializeState<Seed = SeSeed>")))]
 pub struct Field<Id, T = ArcType<Id>> {
     #[cfg_attr(feature = "serde_derive", serde(seed))]
     pub name: Id,
@@ -500,12 +500,12 @@ impl<Id, T> Field<Id, T> {
 /// `Type` such as `Type::app` and `Type::record` when constructing types as those will construct
 /// the pointer wrapper directly.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde_derive", derive(DeserializeSeed, SerializeSeed))]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "Seed<Id, T>"))]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(feature = "serde_derive",
-           serde(bound(deserialize = "T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>,
-                             Id: DeserializeSeedEx<'de, Seed<Id, T>> + Clone + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>")))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "SeSeed"))]
+           serde(bound(deserialize = "T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeState<'de, Seed<Id, T>>,
+                             Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any + DeserializeState<'de, Seed<Id, T>>")))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 pub enum Type<Id, T = ArcType<Id>> {
     /// An unbound type `_`, awaiting ascription.
     Hole,
@@ -516,13 +516,13 @@ pub enum Type<Id, T = ArcType<Id>> {
     /// A type application with multiple arguments. For example,
     /// `Map String Int` would be represented as `App(Map, [String, Int])`.
     App(
-        #[cfg_attr(feature = "serde_derive", serde(deserialize_seed))]
-        #[cfg_attr(feature = "serde_derive", serde(serialize_seed))]
+        #[cfg_attr(feature = "serde_derive", serde(deserialize_state))]
+        #[cfg_attr(feature = "serde_derive", serde(serialize_state))]
         T,
         #[cfg_attr(feature = "serde_derive",
-                   serde(deserialize_seed_with = "::serialization::deserialize_type_vec"))]
+                   serde(deserialize_state_with = "::serialization::deserialize_type_vec"))]
         #[cfg_attr(feature = "serde_derive",
-                   serde(serialize_seed_with = "::serialization::serialize_seq"))]
+                   serde(serialize_state_with = "::serialization::serialize_seq"))]
         AppVec<T>
     ),
     /// Record constructor, of kind `Row -> Type`
@@ -814,11 +814,11 @@ pub struct ArcType<Id = Symbol> {
 }
 
 #[cfg(feature = "serde")]
-impl<'de, Id> DeserializeSeedEx<'de, Seed<Id, ArcType<Id>>> for ArcType<Id>
+impl<'de, Id> DeserializeState<'de, Seed<Id, ArcType<Id>>> for ArcType<Id>
 where
-    Id: DeserializeSeedEx<'de, Seed<Id, ArcType<Id>>> + Clone + ::std::any::Any,
+    Id: DeserializeState<'de, Seed<Id, ArcType<Id>>> + Clone + ::std::any::Any,
 {
-    fn deserialize_seed<D>(
+    fn deserialize_state<D>(
         seed: &mut Seed<Id, ArcType<Id>>,
         deserializer: D,
     ) -> Result<Self, D::Error>

@@ -8,8 +8,8 @@ use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use serde::de::{Deserialize, DeserializeSeed, DeserializeSeedEx, Deserializer, Error};
-use serde::ser::{SerializeSeed, Serializer};
+use serde::de::{Deserialize, DeserializeSeed, DeserializeState, Deserializer, Error};
+use serde::ser::{SerializeState, Serializer};
 
 use kind::ArcKind;
 use symbol::Symbol;
@@ -73,11 +73,11 @@ pub fn deserialize_type_vec<'de, Id, T, D>(
 ) -> Result<AppVec<T>, D::Error>
 where
     D: ::serde::Deserializer<'de>,
-    T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>,
-    Id: DeserializeSeedEx<'de, Seed<Id, T>>
+    T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeState<'de, Seed<Id, T>>,
+    Id: DeserializeState<'de, Seed<Id, T>>
         + Clone
         + ::std::any::Any
-        + DeserializeSeedEx<'de, Seed<Id, T>>,
+        + DeserializeState<'de, Seed<Id, T>>,
 {
     DeserializeSeed::deserialize(
         ::serde::de::SeqSeedEx::new(seed, |_| AppVec::default()),
@@ -90,11 +90,11 @@ pub fn deserialize_group<'de, Id, T, D>(
 ) -> Result<Arc<Vec<AliasData<Id, T>>>, D::Error>
 where
     D: ::serde::Deserializer<'de>,
-    T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeSeedEx<'de, Seed<Id, T>>,
-    Id: DeserializeSeedEx<'de, Seed<Id, T>>
+    T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeState<'de, Seed<Id, T>>,
+    Id: DeserializeState<'de, Seed<Id, T>>
         + Clone
         + ::std::any::Any
-        + DeserializeSeedEx<'de, Seed<Id, T>>,
+        + DeserializeState<'de, Seed<Id, T>>,
 {
     use serialization::SharedSeed;
     let seed = SharedSeed::new(seed);
@@ -266,12 +266,12 @@ impl<'seed, T, S> AsMut<S> for SharedSeed<'seed, T, S> {
     }
 }
 
-#[derive(DeserializeSeed, SerializeSeed)]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "S"))]
+#[derive(DeserializeState, SerializeState)]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "S"))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "S"))]
-#[cfg_attr(feature = "serde_derive", serde(bound(deserialize = "T: DeserializeSeedEx<'de, S>")))]
-#[cfg_attr(feature = "serde_derive", serde(bound(serialize = "T: SerializeSeed")))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "T::Seed"))]
+#[cfg_attr(feature = "serde_derive", serde(bound(deserialize = "T: DeserializeState<'de, S>")))]
+#[cfg_attr(feature = "serde_derive", serde(bound(serialize = "T: SerializeState")))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "T::Seed"))]
 pub enum Variant<T> {
     Marked(
         Id,
@@ -287,7 +287,7 @@ pub enum Variant<T> {
 
 impl<'de, 'seed, T, S> DeserializeSeed<'de> for SharedSeed<'seed, T, S>
 where
-    T: DeserializeSeedEx<'de, S>,
+    T: DeserializeState<'de, S>,
     S: AsMut<NodeMap>,
     T: Any + Clone,
 {
@@ -297,7 +297,7 @@ where
     where
         D: Deserializer<'de>,
     {
-        match Variant::<T>::deserialize_seed(self.0, deserializer)? {
+        match Variant::<T>::deserialize_state(self.0, deserializer)? {
             Variant::Marked(id, node) => {
                 self.0.as_mut().insert(id, node.clone());
                 Ok(node)
@@ -346,20 +346,20 @@ where
 pub fn serialize_shared<S, T>(
     self_: &T,
     serializer: S,
-    seed: &<T::Target as SerializeSeed>::Seed,
+    seed: &<T::Target as SerializeState>::Seed,
 ) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
     T: Shared + Deref,
-    T::Target: SerializeSeed,
-    <T::Target as SerializeSeed>::Seed: AsRef<NodeToId>,
+    T::Target: SerializeState,
+    <T::Target as SerializeState>::Seed: AsRef<NodeToId>,
 {
     let node = match node_to_id(seed.as_ref(), self_) {
         Lookup::Unique => Variant::Plain(&**self_),
         Lookup::Found(id) => Variant::Reference(id),
         Lookup::Inserted(id) => Variant::Marked(id, &**self_),
     };
-    node.serialize_seed(serializer, seed)
+    node.serialize_state(serializer, seed)
 }
 
 pub fn serialize_seq<'a, S, T, V>(
@@ -370,18 +370,18 @@ pub fn serialize_seq<'a, S, T, V>(
 where
     S: Serializer,
     T: Deref<Target = [V]>,
-    V: SerializeSeed,
+    V: SerializeState,
 {
-    (**self_).serialize_seed(serializer, seed)
+    (**self_).serialize_state(serializer, seed)
 }
 
-impl<Id> SerializeSeed for ArcType<Id>
+impl<Id> SerializeState for ArcType<Id>
 where
-    Id: SerializeSeed<Seed = SeSeed>,
+    Id: SerializeState<Seed = SeSeed>,
 {
     type Seed = SeSeed;
 
-    fn serialize_seed<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+    fn serialize_state<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -389,10 +389,10 @@ where
     }
 }
 
-impl SerializeSeed for ArcKind {
+impl SerializeState for ArcKind {
     type Seed = SeSeed;
 
-    fn serialize_seed<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+    fn serialize_state<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {

@@ -19,8 +19,8 @@ mod serialization {
     use super::*;
 
     use serde::{Serialize, Serializer, Deserialize, Deserializer};
-    use serde::de::DeserializeSeedEx;
-    use serde::ser::SerializeSeed;
+    use serde::de::DeserializeState;
+    use serde::ser::SerializeState;
     use serialization::SeSeed;
 
     impl<'de> Deserialize<'de> for Symbol {
@@ -33,8 +33,8 @@ mod serialization {
         }
     }
 
-    impl<'de, Id, T> DeserializeSeedEx<'de, ::serialization::Seed<Id, T>> for Symbol {
-        fn deserialize_seed<D>(
+    impl<'de, Id, T> DeserializeState<'de, ::serialization::Seed<Id, T>> for Symbol {
+        fn deserialize_state<D>(
             seed: &mut ::serialization::Seed<Id, T>,
             deserializer: D,
         ) -> Result<Self, D::Error>
@@ -45,7 +45,7 @@ mod serialization {
             use serialization::SharedSeed;
 
             let seed = SharedSeed::new(seed);
-            DeserializeSeed::deserialize(seed, deserializer).map(Symbol)
+            seed.deserialize(deserializer).map(Symbol)
         }
     }
 
@@ -59,10 +59,10 @@ mod serialization {
         }
     }
 
-    impl SerializeSeed for Symbol {
+    impl SerializeState for Symbol {
         type Seed = SeSeed;
 
-        fn serialize_seed<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+        fn serialize_state<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
         {
@@ -141,8 +141,8 @@ where
 
 
 #[derive(Eq)]
-#[cfg_attr(feature = "serde_derive", derive(SerializeSeed))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_seed = "::serialization::SeSeed"))]
+#[cfg_attr(feature = "serde_derive", derive(SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct SymbolRef(str);
 
 impl fmt::Debug for SymbolRef {
@@ -215,8 +215,8 @@ impl SymbolRef {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde_derive", derive(DeserializeSeed))]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "S"))]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "S"))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "S"))]
 pub struct NameBuf(String);
 

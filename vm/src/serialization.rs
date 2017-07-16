@@ -6,8 +6,8 @@ use std::rc::Rc;
 use itertools::Itertools;
 
 use serde::Deserializer;
-use serde::de::{Deserialize, DeserializeSeed, DeserializeSeedEx, Error};
-use serde::ser::{Serializer, SerializeSeed, SerializeSeq, Seeded};
+use serde::de::{Deserialize, DeserializeSeed, DeserializeState, Error};
+use serde::ser::{Serializer, SerializeState, SerializeSeq, Seeded};
 
 use base::serialization::{NodeMap, NodeToId};
 use base::symbol::Symbols;
@@ -38,9 +38,9 @@ impl DeSeed {
     pub fn deserialize<'de, D, T>(mut self, deserializer: D) -> Result<T, D::Error>
     where
         D: Deserializer<'de>,
-        T: DeserializeSeedEx<'de, Self>,
+        T: DeserializeState<'de, Self>,
     {
-        T::deserialize_seed(&mut self, deserializer)
+        T::deserialize_state(&mut self, deserializer)
     }
 }
 
@@ -99,8 +99,8 @@ impl<T> From<DeSeed> for Seed<T> {
 
 pub mod gc {
     use super::*;
-    use serde::de::{Deserialize, DeserializeSeed, Deserializer};
-    use serde::ser::{Serialize, SerializeSeed, Serializer};
+    use serde::de::{Deserialize, DeserializeState, Deserializer};
+    use serde::ser::{Serialize, SerializeState, Serializer};
     use value::{DataStruct, GcStr, Value, ValueArray};
     use thread::ThreadInternal;
     use types::VmTag;
@@ -114,25 +114,25 @@ pub mod gc {
         }
     }
 
-    impl<'de, T> DeserializeSeedEx<'de, DeSeed> for ::gc::Move<T>
+    impl<'de, T> DeserializeState<'de, DeSeed> for ::gc::Move<T>
     where
         T: ::gc::Traverseable,
-        T: DeserializeSeedEx<'de, DeSeed>,
+        T: DeserializeState<'de, DeSeed>,
     {
-        fn deserialize_seed<D>(seed: &mut DeSeed, deserializer: D) -> Result<Self, D::Error>
+        fn deserialize_state<D>(seed: &mut DeSeed, deserializer: D) -> Result<Self, D::Error>
         where
             D: Deserializer<'de>,
         {
-            T::deserialize_seed(seed, deserializer).map(::gc::Move)
+            T::deserialize_state(seed, deserializer).map(::gc::Move)
         }
     }
 
-    impl<'de, T> DeserializeSeedEx<'de, DeSeed> for GcPtr<T>
+    impl<'de, T> DeserializeState<'de, DeSeed> for GcPtr<T>
     where
         T: ::gc::Traverseable + 'static,
-        T: DeserializeSeedEx<'de, DeSeed>,
+        T: DeserializeState<'de, DeSeed>,
     {
-        fn deserialize_seed<D>(seed: &mut DeSeed, deserializer: D) -> Result<Self, D::Error>
+        fn deserialize_state<D>(seed: &mut DeSeed, deserializer: D) -> Result<Self, D::Error>
         where
             D: Deserializer<'de>,
         {
@@ -144,10 +144,10 @@ pub mod gc {
         }
     }
 
-    impl SerializeSeed for ValueArray {
+    impl SerializeState for ValueArray {
         type Seed = SeSeed;
 
-        fn serialize_seed<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+        fn serialize_state<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
         {
@@ -170,11 +170,11 @@ pub mod gc {
         )
     }
 
-    #[derive(DeserializeSeed)]
-    #[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "::serialization::DeSeed"))]
+    #[derive(DeserializeState)]
+    #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
     pub struct Data {
         tag: VmTag,
-        #[cfg_attr(feature = "serde_derive", serde(deserialize_seed))]
+        #[cfg_attr(feature = "serde_derive", serde(deserialize_state))]
         fields: Vec<Value>,
     }
 
@@ -208,8 +208,8 @@ pub mod gc {
         DeserializeSeed::deserialize(Seed::<DataDefSeed<Data>>::from(seed.clone()), deserializer)
     }
 
-    impl<'de> DeserializeSeedEx<'de, DeSeed> for GcStr {
-        fn deserialize_seed<D>(seed: &mut DeSeed, deserializer: D) -> Result<Self, D::Error>
+    impl<'de> DeserializeState<'de, DeSeed> for GcStr {
+        fn deserialize_state<D>(seed: &mut DeSeed, deserializer: D) -> Result<Self, D::Error>
         where
             D: Deserializer<'de>,
         {
@@ -229,15 +229,15 @@ pub mod gc {
         }
     }
 
-    impl<T> SerializeSeed for GcPtr<T>
+    impl<T> SerializeState for GcPtr<T>
     where
-        T: SerializeSeed,
+        T: SerializeState,
         T::Seed: AsRef<NodeToId>,
     {
         type Seed = T::Seed;
 
         #[inline]
-        fn serialize_seed<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+        fn serialize_state<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
         {
@@ -259,7 +259,7 @@ pub mod symbol {
         String::deserialize(deserializer).map(|s| seed.symbols.borrow_mut().symbol(s))
     }
 
-    pub fn serialize<S>(symbol: &Symbol, serializer: S, _seed: &SeSeed) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(symbol: &Symbol, serializer: S, _state: &SeSeed) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -274,10 +274,10 @@ pub mod intern {
     use thread::ThreadInternal;
 
     use serde::{Deserialize, Deserializer};
-    use serde::ser::{SerializeSeed, Serialize, Serializer};
+    use serde::ser::{SerializeState, Serialize, Serializer};
 
-    impl<'de> DeserializeSeedEx<'de, DeSeed> for InternedStr {
-        fn deserialize_seed<D>(seed: &mut DeSeed, deserializer: D) -> Result<Self, D::Error>
+    impl<'de> DeserializeState<'de, DeSeed> for InternedStr {
+        fn deserialize_state<D>(seed: &mut DeSeed, deserializer: D) -> Result<Self, D::Error>
         where
             D: Deserializer<'de>,
         {
@@ -285,11 +285,11 @@ pub mod intern {
         }
     }
 
-    impl SerializeSeed for InternedStr {
+    impl SerializeState for InternedStr {
         type Seed = SeSeed;
 
         #[inline]
-        fn serialize_seed<S>(&self, serializer: S, _seed: &Self::Seed) -> Result<S::Ok, S::Error>
+        fn serialize_state<S>(&self, serializer: S, _state: &Self::Seed) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
         {
@@ -301,7 +301,7 @@ pub mod intern {
 
 pub mod typ {
     use serde::de::Deserializer;
-    use serde::ser::{Serializer, SerializeSeed};
+    use serde::ser::{Serializer, SerializeState};
 
     use super::*;
     use base::types::ArcType;
@@ -311,14 +311,14 @@ pub mod typ {
         D: Deserializer<'de>,
     { 
         use base::serialization::Seed;
-        ArcType::deserialize_seed(&mut Seed::new(seed.gc_map.clone()), deserializer)
+        ArcType::deserialize_state(&mut Seed::new(seed.gc_map.clone()), deserializer)
     }
 
     pub fn serialize<S>(typ: &ArcType, serializer: S, seed: &SeSeed) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        typ.serialize_seed(
+        typ.serialize_state(
             serializer,
             &::base::serialization::SeSeed::new(seed.node_to_id.clone()),
         )
@@ -359,11 +359,11 @@ enum GraphVariant {
     Reference(::base::serialization::Id),
 }
 
-impl SerializeSeed for ClosureData {
+impl SerializeState for ClosureData {
     type Seed = SeSeed;
 
     #[inline]
-    fn serialize_seed<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+    fn serialize_state<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -474,12 +474,12 @@ where
     DeserializeSeed::deserialize(Seed::<ClosureData>::from(seed.clone()), deserializer)
 }
 
-#[derive(DeserializeSeed)]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_seed = "DeSeed"))]
+#[derive(DeserializeState)]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "DeSeed"))]
 struct PartialApplicationModel {
-    #[cfg_attr(feature = "serde_derive", serde(deserialize_seed))]
+    #[cfg_attr(feature = "serde_derive", serde(deserialize_state))]
     function: Callable,
-    #[cfg_attr(feature = "serde_derive", serde(deserialize_seed))]
+    #[cfg_attr(feature = "serde_derive", serde(deserialize_state))]
     upvars: Vec<Value>,
 }
 
@@ -515,7 +515,7 @@ impl<'de, T> DeserializeSeed<'de> for ::serialization::Seed<DataDefSeed<T>>
 where
     T: DataDef + 'static,
     <T as DataDef>::Value: Sized,
-    T: DeserializeSeedEx<'de, DeSeed>,
+    T: DeserializeState<'de, DeSeed>,
 {
     type Value = GcPtr<<T as DataDef>::Value>;
 
@@ -543,17 +543,17 @@ where
             }
         }
 
-        impl<'de, T> DeserializeSeedEx<'de, GcSeed<T>> for GcPtr<T::Value>
+        impl<'de, T> DeserializeState<'de, GcSeed<T>> for GcPtr<T::Value>
         where
             T: DataDef + 'static,
             <T as DataDef>::Value: Sized,
-            T: DeserializeSeedEx<'de, DeSeed>,
+            T: DeserializeState<'de, DeSeed>,
         {
-            fn deserialize_seed<D>(seed: &mut GcSeed<T>, deserializer: D) -> Result<Self, D::Error>
+            fn deserialize_state<D>(seed: &mut GcSeed<T>, deserializer: D) -> Result<Self, D::Error>
             where
                 D: Deserializer<'de>,
             {
-                let def = T::deserialize_seed(&mut seed.state, deserializer)?;
+                let def = T::deserialize_state(&mut seed.state, deserializer)?;
                 seed.state
                     .thread
                     .context()
@@ -572,8 +572,8 @@ where
     }
 }
 
-impl<'de> DeserializeSeedEx<'de, DeSeed> for ExternFunction {
-    fn deserialize_seed<D>(seed: &mut DeSeed, deserializer: D) -> Result<Self, D::Error>
+impl<'de> DeserializeState<'de, DeSeed> for ExternFunction {
+    fn deserialize_state<D>(seed: &mut DeSeed, deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -621,17 +621,17 @@ impl<'de> DeserializeSeedEx<'de, DeSeed> for ExternFunction {
     }
 }
 
-impl<T> SerializeSeed for Array<T>
+impl<T> SerializeState for Array<T>
 where
-    T: Copy + SerializeSeed,
+    T: Copy + SerializeState,
 {
     type Seed = T::Seed;
 
-    fn serialize_seed<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+    fn serialize_state<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        (**self).serialize_seed(serializer, seed)
+        (**self).serialize_state(serializer, seed)
     }
 }
 
