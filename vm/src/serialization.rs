@@ -27,9 +27,9 @@ pub struct DeSeed {
 }
 
 impl DeSeed {
-    pub fn new(thread: RootedThread) -> DeSeed {
+    pub fn new(thread: &Thread) -> DeSeed {
         DeSeed {
-            thread: thread,
+            thread: thread.root_thread(),
             symbols: Default::default(),
             gc_map: NodeMap::default(),
         }
@@ -387,84 +387,102 @@ impl SerializeState for ClosureData {
     }
 }
 
-pub fn deserialize_closure<'de, D>(
-    seed: &mut DeSeed,
-    deserializer: D,
-) -> Result<GcPtr<ClosureData>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    use std::fmt;
+pub mod closure {
+    use super::*;
 
-    use serde::de::{SeqAccess, Visitor};
+    pub fn deserialize<'de, D>(
+        seed: &mut DeSeed,
+        deserializer: D,
+    ) -> Result<GcPtr<ClosureData>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        use std::fmt;
 
-    impl<'de> DeserializeSeed<'de> for Seed<ClosureData> {
-        type Value = GcPtr<ClosureData>;
+        use serde::de::{SeqAccess, Visitor};
 
-        fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-        where
-            D: Deserializer<'de>,
-        {
-            impl<'de> Visitor<'de> for Seed<ClosureData> {
-                type Value = GcPtr<ClosureData>;
+        impl<'de> DeserializeSeed<'de> for Seed<ClosureData> {
+            type Value = GcPtr<ClosureData>;
 
-                fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                    formatter.write_str("struct ClosureData")
-                }
+            fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                impl<'de> Visitor<'de> for Seed<ClosureData> {
+                    type Value = GcPtr<ClosureData>;
 
-                fn visit_seq<V>(mut self, mut seq: V) -> Result<Self::Value, V::Error>
-                where
-                    V: SeqAccess<'de>,
-                {
-                    let variant = seq.next_element()?
-                        .ok_or_else(|| V::Error::invalid_length(0, &self))?;
-                    unsafe {
-                        match variant {
-                            GraphVariant::Marked(id) => {
-                                let function =
-                                    seq.next_element_seed(::serde::de::Seed::new(&mut self.state))?
-                                        .ok_or_else(|| V::Error::invalid_length(1, &self))?;
-                                let upvars = seq.next_element()?
-                                    .ok_or_else(|| V::Error::invalid_length(2, &self))?;
+                    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                        formatter.write_str("struct ClosureData")
+                    }
 
-                                let mut closure: GcPtr<ClosureData> = self.state
-                                    .thread
-                                    .context()
-                                    .gc
-                                    .alloc(ClosureDataModel {
-                                        function: function,
-                                        upvars: upvars,
-                                    })
-                                    .map_err(V::Error::custom)?;
-                                self.state.gc_map.insert(id, closure);
-
-                                for i in 0..upvars {
-                                    let value = seq.next_element_seed(
+                    fn visit_seq<V>(mut self, mut seq: V) -> Result<Self::Value, V::Error>
+                    where
+                        V: SeqAccess<'de>,
+                    {
+                        let variant = seq.next_element()?
+                            .ok_or_else(|| V::Error::invalid_length(0, &self))?;
+                        unsafe {
+                            match variant {
+                                GraphVariant::Marked(id) => {
+                                    let function = seq.next_element_seed(
                                         ::serde::de::Seed::new(&mut self.state),
                                     )?
-                                        .ok_or_else(|| V::Error::invalid_length(i + 2, &self))?;
-                                    closure.as_mut().upvars[i] = value;
+                                        .ok_or_else(|| V::Error::invalid_length(1, &self))?;
+                                    let upvars = seq.next_element()?
+                                        .ok_or_else(|| V::Error::invalid_length(2, &self))?;
+
+                                    let mut closure: GcPtr<
+                                        ClosureData,
+                                    > = self.state
+                                        .thread
+                                        .context()
+                                        .gc
+                                        .alloc(ClosureDataModel {
+                                            function: function,
+                                            upvars: upvars,
+                                        })
+                                        .map_err(V::Error::custom)?;
+                                    self.state.gc_map.insert(id, closure);
+
+                                    for i in 0..upvars {
+                                        let value = seq.next_element_seed(
+                                            ::serde::de::Seed::new(&mut self.state),
+                                        )?
+                                            .ok_or_else(|| V::Error::invalid_length(i + 2, &self))?;
+                                        closure.as_mut().upvars[i] = value;
+                                    }
+                                    Ok(closure)
                                 }
-                                Ok(closure)
-                            }
-                            GraphVariant::Reference(id) => {
-                                match self.state.gc_map.get::<GcPtr<ClosureData>>(&id) {
-                                    Some(rc) => Ok(rc),
-                                    None => {
-                                        Err(V::Error::custom(format_args!("missing id {}", id)))
+                                GraphVariant::Reference(id) => {
+                                    match self.state.gc_map.get::<GcPtr<ClosureData>>(&id) {
+                                        Some(rc) => Ok(rc),
+                                        None => {
+                                            Err(V::Error::custom(format_args!("missing id {}", id)))
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            deserializer.deserialize_seq(self)
+                deserializer.deserialize_seq(self)
+            }
         }
+
+        DeserializeSeed::deserialize(Seed::<ClosureData>::from(seed.clone()), deserializer)
     }
 
-    DeserializeSeed::deserialize(Seed::<ClosureData>::from(seed.clone()), deserializer)
+    pub fn serialize<S>(
+        self_: &ClosureData,
+        serializer: S,
+        seed: &SeSeed,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self_.serialize_state(serializer, seed)
+    }
 }
 
 #[derive(DeserializeState)]
@@ -641,7 +659,7 @@ mod tests {
     fn str_value() {
         let thread = RootedThread::new();
         let mut de = serde_json::Deserializer::from_str(r#" { "String": "test" } "#);
-        let value: Value = DeSeed::new(thread).deserialize(&mut de).unwrap();
+        let value: Value = DeSeed::new(&thread).deserialize(&mut de).unwrap();
         match value {
             Value::String(s) => assert_eq!(&*s, "test"),
             _ => panic!(),
@@ -665,7 +683,7 @@ mod tests {
             }
         } "#,
         );
-        let value: Value = DeSeed::new(thread).deserialize(&mut de).unwrap();
+        let value: Value = DeSeed::new(&thread).deserialize(&mut de).unwrap();
         match value {
             Value::Array(s) => {
                 assert_eq!(

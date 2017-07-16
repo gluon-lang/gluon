@@ -110,10 +110,7 @@ unsafe impl DataDef for ClosureInitDef {
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct BytecodeFunction {
-    #[cfg_attr(feature = "serde_derive",
-               serde(deserialize_state_with = "::serialization::symbol::deserialize"))]
-    #[cfg_attr(feature = "serde_derive",
-               serde(serialize_state_with = "::serialization::symbol::serialize"))]
+    #[cfg_attr(feature = "serde_derive", serde(seed_with = "::serialization::symbol"))]
     pub name: Symbol,
     pub args: VmIndex,
     pub max_stack_size: VmIndex,
@@ -278,8 +275,7 @@ pub enum Value {
     ),
     Closure(
         #[cfg_attr(feature = "serde_derive",
-                   serde(deserialize_state_with = "::serialization::deserialize_closure"))]
-        #[cfg_attr(feature = "serde_derive", serde(serialize_state))]
+                   serde(seed_with = "::serialization::closure"))]
         GcPtr<ClosureData>,
     ),
     PartialApplication(
@@ -521,8 +517,7 @@ impl<'a, 't> InternalPrinter<'a, 't> {
 pub enum Callable {
     Closure(
         #[cfg_attr(feature = "serde_derive",
-                   serde(deserialize_state_with = "::serialization::deserialize_closure"))]
-        #[cfg_attr(feature = "serde_derive", serde(serialize_state))]
+                   serde(seed_with = "::serialization::closure"))]
         GcPtr<ClosureData>,
     ),
     Extern(
