@@ -14,14 +14,6 @@ use support::{MockEnv, MockIdentEnv, intern, typ};
 
 mod support;
 
-macro_rules! assert_pass {
-    ($e: expr) => {{
-        if !$e.is_ok() {
-            panic!("assert_pass: {}", $e.unwrap_err());
-        }
-    }};
-}
-
 #[test]
 fn infer_fields() {
     let _ = env_logger::init();

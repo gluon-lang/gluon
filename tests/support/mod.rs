@@ -1,3 +1,5 @@
+#![allow(unused_macros)]
+
 extern crate env_logger;
 extern crate gluon;
 pub extern crate futures;
