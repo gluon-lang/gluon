@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 (
   export TRAVIS_CARGO_NIGHTLY_FEATURE="nightly";
