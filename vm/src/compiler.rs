@@ -39,7 +39,7 @@ enum FieldAccess {
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct UpvarInfo {
     pub name: String,
-    #[cfg_attr(feature = "serde_derive", serde(seed_with = "::serialization::typ"))]
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::typ"))]
     pub typ: ArcType,
 }
 

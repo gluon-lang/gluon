@@ -86,9 +86,9 @@ fn new_bytecode(
 #[cfg_attr(feature = "serde_derive_state", serde(deserialize_state = "::serialization::DeSeed"))]
 #[cfg_attr(feature = "serde_derive_state", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct Global {
-    #[cfg_attr(feature = "serde_derive", serde(seed_with = "::serialization::symbol"))]
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::symbol"))]
     pub id: Symbol,
-    #[cfg_attr(feature = "serde_derive_state", serde(seed_with = "::serialization::typ"))]
+    #[cfg_attr(feature = "serde_derive_state", serde(state_with = "::serialization::typ"))]
     pub typ: ArcType,
     pub metadata: Metadata,
     #[cfg_attr(feature = "serde_derive_state", serde(seed))]

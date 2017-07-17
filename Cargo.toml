@@ -33,8 +33,8 @@ collect-mac = "0.1.0"
 futures = "0.1.11"
 
 serde = { version = "1.0.0", optional = true }
-serde_state = { version = "0.1.0", optional = true }
-serde_derive_state = { version = "0.1.0", optional = true }
+serde_state = { version = "0.2.0", optional = true }
+serde_derive_state = { version = "0.2.0", optional = true }
 
 # Binding crates
 regex = { version = "0.2.1", optional = true }
@@ -56,7 +56,7 @@ curl = "0.4.1"
 
 serde = "1.0.0"
 serde_derive = "1.0.0"
-serde_derive_state = "0.1.0"
+serde_derive_state = "0.2.0"
 serde_json = "1.0.0"
 bincode = "0.8.0"
 

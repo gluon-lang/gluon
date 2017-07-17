@@ -65,7 +65,7 @@ pub struct Local {
     #[cfg_attr(feature = "serde_derive",
                serde(serialize_state_with = "::serialization::symbol::serialize"))]
     pub name: Symbol,
-    #[cfg_attr(feature = "serde_derive", serde(seed_with = "::serialization::typ"))]
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::typ"))]
     pub typ: ArcType,
 }
 
