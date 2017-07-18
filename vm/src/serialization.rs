@@ -647,6 +647,14 @@ where
     }
 }
 
+pub fn serialize_userdata<S, T>(_: &T, _: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    use serde::ser::Error;
+    Err(S::Error::custom("Userdata cannot be serialized"))
+}
+
 #[cfg(test)]
 mod tests {
     extern crate serde_json;

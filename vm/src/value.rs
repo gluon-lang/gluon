@@ -274,8 +274,7 @@ pub enum Value {
         GcPtr<ExternFunction>,
     ),
     Closure(
-        #[cfg_attr(feature = "serde_derive",
-                   serde(state_with = "::serialization::closure"))]
+        #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::closure"))]
         GcPtr<ClosureData>,
     ),
     PartialApplication(
@@ -284,9 +283,13 @@ pub enum Value {
         #[cfg_attr(feature = "serde_derive", serde(serialize_state))]
         GcPtr<PartialApplicationData>,
     ),
+    // TODO Implement serializing of userdata
     #[cfg_attr(feature = "serde_derive", serde(skip_deserializing))]
-    #[cfg_attr(feature = "serde_derive", serde(skip_serializing))]
-    Userdata(GcPtr<Box<Userdata>>),
+    Userdata(
+        #[cfg_attr(feature = "serde_derive",
+                   serde(serialize_with = "::serialization::serialize_userdata"))]
+        GcPtr<Box<Userdata>>,
+    ),
     #[cfg_attr(feature = "serde_derive", serde(skip_deserializing))]
     #[cfg_attr(feature = "serde_derive", serde(skip_serializing))]
     Thread(GcPtr<Thread>),
@@ -516,8 +519,7 @@ impl<'a, 't> InternalPrinter<'a, 't> {
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub enum Callable {
     Closure(
-        #[cfg_attr(feature = "serde_derive",
-                   serde(state_with = "::serialization::closure"))]
+        #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::closure"))]
         GcPtr<ClosureData>,
     ),
     Extern(
