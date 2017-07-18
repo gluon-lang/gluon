@@ -105,7 +105,7 @@ impl<'a> Data<'a> {
     pub fn tag(&self) -> VmTag {
         match self.0 {
             DataInner::Tag(tag) => tag,
-            DataInner::Data(data) => data.tag,
+            DataInner::Data(data) => data.tag(),
         }
     }
 

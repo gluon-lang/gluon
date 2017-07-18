@@ -1,5 +1,6 @@
-use std::fmt;
 use std::collections::hash_map::Entry;
+use std::fmt;
+use std::mem::size_of;
 use std::result::Result as StdResult;
 
 use itertools::Itertools;
@@ -64,7 +65,6 @@ impl<'b> Traverseable for ClosureDataDef<'b> {
 unsafe impl<'b> DataDef for ClosureDataDef<'b> {
     type Value = ClosureData;
     fn size(&self) -> usize {
-        use std::mem::size_of;
         size_of::<GcPtr<BytecodeFunction>>() + Array::<Value>::size_of(self.1.len())
     }
     fn initialize<'w>(self, mut result: WriteOnly<'w, ClosureData>) -> &'w mut ClosureData {
@@ -88,7 +88,6 @@ impl Traverseable for ClosureInitDef {
 unsafe impl DataDef for ClosureInitDef {
     type Value = ClosureData;
     fn size(&self) -> usize {
-        use std::mem::size_of;
         size_of::<GcPtr<BytecodeFunction>>() + Array::<Value>::size_of(self.1)
     }
     fn initialize<'w>(self, mut result: WriteOnly<'w, ClosureData>) -> &'w mut ClosureData {
@@ -138,7 +137,7 @@ impl Traverseable for BytecodeFunction {
 #[cfg_attr(feature = "serde_derive", derive(SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct DataStruct {
-    pub tag: VmTag,
+    tag: VmTag,
     #[cfg_attr(feature = "serde_derive", serde(serialize_state))]
     pub fields: Array<Value>,
 }
@@ -155,6 +154,16 @@ impl PartialEq for DataStruct {
     }
 }
 
+impl DataStruct {
+    pub fn tag(&self) -> VmTag {
+        self.tag & !(1 << ((size_of::<VmTag>() * 8) - 1))
+    }
+
+    pub fn is_record(&self) -> bool {
+        (self.tag & (1 << ((size_of::<VmTag>() * 8) - 1))) != 0
+    }
+}
+
 /// Definition for data values in the VM
 pub struct Def<'b> {
     pub tag: VmTag,
@@ -163,7 +172,6 @@ pub struct Def<'b> {
 unsafe impl<'b> DataDef for Def<'b> {
     type Value = DataStruct;
     fn size(&self) -> usize {
-        use std::mem::size_of;
         size_of::<usize>() + Array::<Value>::size_of(self.elems.len())
     }
     fn initialize<'w>(self, mut result: WriteOnly<'w, DataStruct>) -> &'w mut DataStruct {
@@ -177,6 +185,32 @@ unsafe impl<'b> DataDef for Def<'b> {
 }
 
 impl<'b> Traverseable for Def<'b> {
+    fn traverse(&self, gc: &mut Gc) {
+        self.elems.traverse(gc);
+    }
+}
+
+pub struct RecordDef<'b> {
+    pub tag: VmTag,
+    pub elems: &'b [Value],
+}
+
+unsafe impl<'b> DataDef for RecordDef<'b> {
+    type Value = DataStruct;
+    fn size(&self) -> usize {
+        size_of::<usize>() + Array::<Value>::size_of(self.elems.len())
+    }
+    fn initialize<'w>(self, mut result: WriteOnly<'w, DataStruct>) -> &'w mut DataStruct {
+        unsafe {
+            let result = &mut *result.as_mut_ptr();
+            result.tag = self.tag | (1 << ((size_of::<VmTag>() * 8) - 1));
+            result.fields.initialize(self.elems.iter().cloned());
+            result
+        }
+    }
+}
+
+impl<'b> Traverseable for RecordDef<'b> {
     fn traverse(&self, gc: &mut Gc) {
         self.elems.traverse(gc);
     }

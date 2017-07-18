@@ -65,7 +65,7 @@ fn record() {
     assert_eq!(
         value.get_ref(),
         vm.context()
-            .new_data(&vm, 0, &mut [Int(0), Float(1.0), Value::Tag(0)])
+            .new_record(&vm, 0, &mut [Int(0), Float(1.0), Value::Tag(0)])
             .unwrap()
     );
 }
@@ -83,7 +83,7 @@ add { x = 0, y = 1 } { x = 1, y = 1 }
     assert_eq!(
         value.get_ref(),
         vm.context()
-            .new_data(&vm, 0, &mut [Int(1), Int(2)])
+            .new_record(&vm, 0, &mut [Int(1), Int(2)])
             .unwrap()
     );
 }
@@ -619,7 +619,7 @@ in
     assert_eq!(
         result.get_ref(),
         vm.context()
-            .new_data(&vm, 0, &mut [Int(3), Float(3.0)])
+            .new_record(&vm, 0, &mut [Int(3), Float(3.0)])
             .unwrap()
     );
 }

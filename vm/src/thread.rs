@@ -31,7 +31,7 @@ use stack::{Frame, Stack, StackFrame, State};
 use types::*;
 use vm::{GlobalVmState, VmEnv};
 use value::{Value, ClosureData, ClosureInitDef, ClosureDataDef, DataStruct, Def, ExternFunction,
-            GcStr, BytecodeFunction, Callable, PartialApplicationDataDef, Userdata};
+            GcStr, BytecodeFunction, Callable, PartialApplicationDataDef, RecordDef, Userdata};
 
 use value::Value::{Int, Float, String, Data, Function, PartialApplication, Closure};
 
@@ -839,7 +839,7 @@ impl ThreadInternal for Thread {
         let str_index = self.global_env().intern(field)?;
         context
             .record_map
-            .get_offset(data.tag, str_index)
+            .get_offset(data.tag(), str_index)
             .and_then(|index| data.fields.get(index as usize).cloned())
             .ok_or_else(|| {
                 Error::Message(format!(
@@ -1004,6 +1004,16 @@ impl Context {
         self.alloc_with(
             thread,
             Def {
+                tag: tag,
+                elems: fields,
+            },
+        ).map(Value::Data)
+    }
+
+    pub fn new_record(&mut self, thread: &Thread, tag: VmTag, fields: &[Value]) -> Result<Value> {
+        self.alloc_with(
+            thread,
+            RecordDef {
                 tag: tag,
                 elems: fields,
             },
@@ -1582,7 +1592,7 @@ impl<'b> ExecuteContext<'b> {
                                 let tag = self.record_map.get_map(&field_names);
                                 Data(self.gc.alloc_and_collect(
                                     roots,
-                                    Def {
+                                    RecordDef {
                                         tag: tag,
                                         elems: fields,
                                     },
@@ -1623,7 +1633,7 @@ impl<'b> ExecuteContext<'b> {
                     let field = function.strings[i as usize];
                     match self.stack.pop() {
                         Data(data) => {
-                            let offset = self.lookup_field(data.tag, field)?;
+                            let offset = self.lookup_field(data.tag(), field)?;
                             let v = data.fields[offset as usize];
                             self.stack.push(v);
                         }
@@ -1632,7 +1642,7 @@ impl<'b> ExecuteContext<'b> {
                 }
                 TestTag(tag) => {
                     let data_tag = match self.stack.top() {
-                        Data(ref data) => data.tag,
+                        Data(ref data) => data.tag(),
                         Value::Tag(tag) => tag,
                         _ => {
                             return Err(Error::Message(
