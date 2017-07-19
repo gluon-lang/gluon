@@ -43,7 +43,9 @@ impl<K: Eq + Hash + fmt::Debug, V: fmt::Debug> fmt::Debug for FixedMap<K, V> {
 
 impl<K: Eq + Hash, V> FixedMap<K, V> {
     pub fn new() -> FixedMap<K, V> {
-        FixedMap { map: RefCell::new(FnvMap::default()) }
+        FixedMap {
+            map: RefCell::new(FnvMap::default()),
+        }
     }
 
     pub fn clear(&mut self) {
@@ -68,9 +70,10 @@ impl<K: Eq + Hash, V> FixedMap<K, V> {
     }
 
     pub fn get(&self, k: &K) -> Option<&V> {
-        self.map.borrow().get(k).map(
-            |x| unsafe { forget_lifetime(&**x) },
-        )
+        self.map
+            .borrow()
+            .get(k)
+            .map(|x| unsafe { forget_lifetime(&**x) })
     }
 }
 
@@ -81,7 +84,9 @@ pub struct FixedVec<T> {
 
 impl<T> FixedVec<T> {
     pub fn new() -> FixedVec<T> {
-        FixedVec { vec: RefCell::new(Vec::new()) }
+        FixedVec {
+            vec: RefCell::new(Vec::new()),
+        }
     }
 
     pub fn clear(&mut self) {
@@ -142,6 +147,8 @@ impl<T> IndexMut<usize> for FixedVec<T> {
 impl<A> FromIterator<A> for FixedVec<A> {
     fn from_iter<T: IntoIterator<Item = A>>(iterator: T) -> FixedVec<A> {
         let vec: Vec<_> = iterator.into_iter().map(Box::new).collect();
-        FixedVec { vec: RefCell::new(vec) }
+        FixedVec {
+            vec: RefCell::new(vec),
+        }
     }
 }

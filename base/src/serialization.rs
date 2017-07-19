@@ -21,7 +21,9 @@ pub struct SeSeed {
 
 impl SeSeed {
     pub fn new(node_to_id: NodeToId) -> Self {
-        SeSeed { node_to_id: node_to_id }
+        SeSeed {
+            node_to_id: node_to_id,
+        }
     }
 }
 
@@ -245,9 +247,10 @@ impl NodeMap {
     where
         T: Any + Clone,
     {
-        self.0.borrow().get::<IdToShared<T>>().and_then(|map| {
-            map.get(id).cloned()
-        })
+        self.0
+            .borrow()
+            .get::<IdToShared<T>>()
+            .and_then(|map| map.get(id).cloned())
     }
 }
 
@@ -276,11 +279,11 @@ pub enum Variant<T> {
     Marked(
         Id,
         #[cfg_attr(feature = "serde_derive", serde(seed))]
-        T
+        T,
     ),
     Plain(
         #[cfg_attr(feature = "serde_derive", serde(seed))]
-        T
+        T,
     ),
     Reference(Id),
 }

@@ -56,9 +56,9 @@ impl RecordSelector {
         match *self {
             RecordSelector::Exact => record().into_iter().eq(needle),
             RecordSelector::Subset => {
-                needle.into_iter().all(|name| {
-                    record().into_iter().any(|other| other == name)
-                })
+                needle
+                    .into_iter()
+                    .all(|name| record().into_iter().any(|other| other == name))
             }
         }
     }
@@ -392,11 +392,10 @@ where
                 Type::Ident(ref id) => {
                     // Replace `Ident` with the alias it resolves to so that a `TypeEnv` is not needed
                     // to resolve the type later on
-                    let index =
-                        self.group
-                            .iter()
-                            .position(|alias| alias.name == *id)
-                            .expect("ICE: Alias group were not able to resolve an identifier");
+                    let index = self.group
+                        .iter()
+                        .position(|alias| alias.name == *id)
+                        .expect("ICE: Alias group were not able to resolve an identifier");
                     Some(T::from(Type::Alias(AliasRef {
                         index: index,
                         group: self.group.clone(),
@@ -523,17 +522,17 @@ pub enum Type<Id, T = ArcType<Id>> {
                    serde(deserialize_state_with = "::serialization::deserialize_type_vec"))]
         #[cfg_attr(feature = "serde_derive",
                    serde(serialize_state_with = "::serialization::serialize_seq"))]
-        AppVec<T>
+        AppVec<T>,
     ),
     /// Record constructor, of kind `Row -> Type`
     Record(
         #[cfg_attr(feature = "serde_derive", serde(seed))]
-        T
+        T,
     ),
     /// Variant constructor, of kind `Row -> Type`
     Variant(
         #[cfg_attr(feature = "serde_derive", serde(seed))]
-        T
+        T,
     ),
     /// The empty row, of kind `Row`
     EmptyRow,
@@ -557,23 +556,23 @@ pub enum Type<Id, T = ArcType<Id>> {
     /// _may_ cause spurious unification failures.
     Ident(
         #[cfg_attr(feature = "serde_derive", serde(seed))]
-        Id
+        Id,
     ),
     /// An unbound type variable that may be unified with other types. These
     /// will eventually be converted into `Type::Generic`s during generalization.
     Variable(
         #[cfg_attr(feature = "serde_derive", serde(seed))]
-        TypeVariable
+        TypeVariable,
     ),
     /// A variable that needs to be instantiated with a fresh type variable
     /// when the binding is refered to.
     Generic(
         #[cfg_attr(feature = "serde_derive", serde(seed))]
-        Generic<Id>
+        Generic<Id>,
     ),
     Alias(
         #[cfg_attr(feature = "serde_derive", serde(seed))]
-        AliasRef<Id, T>
+        AliasRef<Id, T>,
     ),
 }
 
@@ -766,8 +765,9 @@ where
 
     pub fn is_non_polymorphic_record(&self) -> bool {
         match *self {
-            Type::Record(ref row) |
-            Type::ExtendRow { rest: ref row, .. } => row.is_non_polymorphic_record(),
+            Type::Record(ref row) | Type::ExtendRow { rest: ref row, .. } => {
+                row.is_non_polymorphic_record()
+            }
             Type::EmptyRow => true,
             _ => false,
         }
@@ -827,13 +827,16 @@ where
     {
         use serialization::SharedSeed;
         let seed = SharedSeed::new(seed);
-        ::serde::de::DeserializeSeed::deserialize(seed, deserializer).map(|typ| ArcType { typ: typ })
+        ::serde::de::DeserializeSeed::deserialize(seed, deserializer)
+            .map(|typ| ArcType { typ: typ })
     }
 }
 
 impl<Id> Clone for ArcType<Id> {
     fn clone(&self) -> ArcType<Id> {
-        ArcType { typ: self.typ.clone() }
+        ArcType {
+            typ: self.typ.clone(),
+        }
     }
 }
 
@@ -947,8 +950,7 @@ where
 
     fn next(&mut self) -> Option<&'a Field<Id, T>> {
         match **self.typ {
-            Type::Record(ref row) |
-            Type::Variant(ref row) => {
+            Type::Record(ref row) | Type::Variant(ref row) => {
                 self.typ = row;
                 self.next()
             }
@@ -984,8 +986,7 @@ where
         let mut size = 0;
         loop {
             typ = match **typ {
-                Type::Record(ref row) |
-                Type::Variant(ref row) => row,
+                Type::Record(ref row) | Type::Variant(ref row) => row,
                 Type::ExtendRow {
                     ref fields,
                     ref rest,
@@ -1203,8 +1204,7 @@ where
             Type::App(ref t, ref args) => {
                 match self.typ.as_function() {
                     Some((arg, ret)) => {
-                        let doc =
-                            chain![arena;
+                        let doc = chain![arena;
                             dt(Prec::Function, arg).pretty(arena).group(),
                             arena.space(),
                             "-> ",
@@ -1216,9 +1216,9 @@ where
                     None => {
                         let doc = dt(Prec::Top, t).pretty(arena);
                         let arg_doc = arena.concat(args.iter().map(|arg| {
-                            arena.space().append(
-                                dt(Prec::Constructor, arg).pretty(arena),
-                            )
+                            arena
+                                .space()
+                                .append(dt(Prec::Constructor, arg).pretty(arena))
                         }));
                         let doc = doc.append(arg_doc.nest(INDENT));
                         p.enclose(Prec::Constructor, arena, doc).group()
@@ -1239,8 +1239,7 @@ where
                             first = false;
                             doc = doc.append("| ").append(field.name.as_ref());
                             for arg in arg_iter(&field.typ) {
-                                doc =
-                                    chain![arena;
+                                doc = chain![arena;
                                             doc,
                                             " ",
                                             dt(Prec::Constructor, &arg).pretty(arena)];
@@ -1347,9 +1346,9 @@ where
                 match *typ {
                     Type::EmptyRow => doc,
                     _ => {
-                        doc.append(arena.space()).append("| ").append(
-                            top(typ).pretty(arena),
-                        )
+                        doc.append(arena.space())
+                            .append("| ")
+                            .append(top(typ).pretty(arena))
                     }
                 }
             }
@@ -1403,8 +1402,7 @@ where
                 f.walk(a);
             }
         }
-        Type::Record(ref row) |
-        Type::Variant(ref row) => f.walk(row),
+        Type::Record(ref row) | Type::Variant(ref row) => f.walk(row),
         Type::ExtendRow {
             ref types,
             ref fields,
@@ -1526,9 +1524,8 @@ where
             ref rest,
         } => {
             let new_fields = walk_move_types(fields, |field| {
-                f.visit(&field.typ).map(
-                    |typ| Field::new(field.name.clone(), typ),
-                )
+                f.visit(&field.typ)
+                    .map(|typ| Field::new(field.name.clone(), typ))
             });
             let new_rest = f.visit(rest);
             merge(fields, new_fields, rest, new_rest, |fields, rest| {

@@ -164,7 +164,11 @@ pub enum Expr<Id> {
     /// Lambda abstraction, eg. `\x y -> x * y`
     Lambda(Lambda<Id>),
     /// If-then-else conditional
-    IfElse(Box<SpannedExpr<Id>>, Box<SpannedExpr<Id>>, Box<SpannedExpr<Id>>),
+    IfElse(
+        Box<SpannedExpr<Id>>,
+        Box<SpannedExpr<Id>>,
+        Box<SpannedExpr<Id>>,
+    ),
     /// Pattern match expression
     Match(Box<SpannedExpr<Id>>, Vec<Alternative<Id>>),
     /// Infix operator expression eg. `f >> g`
@@ -299,7 +303,10 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
                 }
             }
         }
-        Expr::Tuple { elems: ref mut exprs, .. } |
+        Expr::Tuple {
+            elems: ref mut exprs,
+            ..
+        } |
         Expr::Block(ref mut exprs) => {
             for expr in exprs {
                 v.visit_expr(expr);
@@ -314,8 +321,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
         }
         Expr::TypeBindings(_, ref mut expr) => v.visit_expr(expr),
         Expr::Ident(ref mut id) => v.visit_typ(&mut id.typ),
-        Expr::Literal(..) |
-        Expr::Error => (),
+        Expr::Literal(..) | Expr::Error => (),
     }
 }
 
@@ -411,7 +417,9 @@ pub fn walk_expr<V: ?Sized + Visitor>(v: &mut V, e: &SpannedExpr<V::Ident>) {
                 v.visit_expr(expr);
             }
         }
-        Expr::Record { ref typ, ref exprs, .. } => {
+        Expr::Record {
+            ref typ, ref exprs, ..
+        } => {
             v.visit_typ(typ);
             for field in exprs {
                 if let Some(ref expr) = field.value {
@@ -419,7 +427,9 @@ pub fn walk_expr<V: ?Sized + Visitor>(v: &mut V, e: &SpannedExpr<V::Ident>) {
                 }
             }
         }
-        Expr::Tuple { elems: ref exprs, .. } |
+        Expr::Tuple {
+            elems: ref exprs, ..
+        } |
         Expr::Block(ref exprs) => {
             for expr in exprs {
                 v.visit_expr(expr);
@@ -431,8 +441,7 @@ pub fn walk_expr<V: ?Sized + Visitor>(v: &mut V, e: &SpannedExpr<V::Ident>) {
         }
         Expr::TypeBindings(_, ref expr) => v.visit_expr(expr),
         Expr::Ident(ref id) => v.visit_typ(&id.typ),
-        Expr::Literal(..) |
-        Expr::Error => (),
+        Expr::Literal(..) | Expr::Error => (),
     }
 }
 
@@ -517,8 +526,9 @@ impl Typed for Expr<Symbol> {
                 }
                 panic!("Expected function type in binop");
             }
-            Expr::LetBindings(_, ref expr) |
-            Expr::TypeBindings(_, ref expr) => expr.env_type_of(env),
+            Expr::LetBindings(_, ref expr) | Expr::TypeBindings(_, ref expr) => {
+                expr.env_type_of(env)
+            }
             Expr::App(ref func, ref args) => {
                 get_return_type(env, &func.env_type_of(env), args.len())
             }
@@ -603,7 +613,8 @@ pub fn is_operator_char(c: char) -> bool {
 }
 
 pub fn is_constructor(s: &str) -> bool {
-    s.rsplit('.').next().unwrap().starts_with(
-        char::is_uppercase,
-    )
+    s.rsplit('.')
+        .next()
+        .unwrap()
+        .starts_with(char::is_uppercase)
 }

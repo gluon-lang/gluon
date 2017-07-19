@@ -44,7 +44,7 @@ pub enum Kind {
         #[cfg_attr(feature = "serde_derive", serde(seed))]
         ArcKind,
         #[cfg_attr(feature = "serde_derive", serde(seed))]
-        ArcKind
+        ArcKind,
     ),
 }
 
@@ -181,9 +181,6 @@ where
             f.walk(a);
             f.walk(r);
         }
-        Kind::Hole |
-        Kind::Variable(_) |
-        Kind::Type |
-        Kind::Row => (),
+        Kind::Hole | Kind::Variable(_) | Kind::Type | Kind::Row => (),
     }
 }
