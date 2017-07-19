@@ -134,11 +134,8 @@ impl Traverseable for BytecodeFunction {
 }
 
 #[derive(Debug)]
-#[cfg_attr(feature = "serde_derive", derive(SerializeState))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct DataStruct {
     tag: VmTag,
-    #[cfg_attr(feature = "serde_derive", serde(serialize_state))]
     pub fields: Array<Value>,
 }
 
@@ -154,13 +151,18 @@ impl PartialEq for DataStruct {
     }
 }
 
+
 impl DataStruct {
+    pub fn record_bit() -> VmTag {
+        1 << ((size_of::<VmTag>() * 8) - 1)
+    }
+
     pub fn tag(&self) -> VmTag {
-        self.tag & !(1 << ((size_of::<VmTag>() * 8) - 1))
+        self.tag & !Self::record_bit()
     }
 
     pub fn is_record(&self) -> bool {
-        (self.tag & (1 << ((size_of::<VmTag>() * 8) - 1))) != 0
+        (self.tag & Self::record_bit()) != 0
     }
 }
 

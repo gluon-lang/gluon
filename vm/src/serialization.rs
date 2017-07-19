@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use itertools::Itertools;
 
@@ -51,9 +52,9 @@ impl AsMut<NodeMap> for DeSeed {
 }
 
 
-#[derive(Default)]
 pub struct SeSeed {
     node_to_id: NodeToId,
+    thread: RootedThread,
 }
 
 impl AsRef<NodeToId> for SeSeed {
@@ -63,8 +64,11 @@ impl AsRef<NodeToId> for SeSeed {
 }
 
 impl SeSeed {
-    pub fn new() -> SeSeed {
-        SeSeed::default()
+    pub fn new(thread: &Thread) -> SeSeed {
+        SeSeed {
+            node_to_id: NodeToId::default(),
+            thread: thread.root_thread(),
+        }
     }
 }
 
@@ -101,6 +105,8 @@ pub mod gc {
     use super::*;
     use serde::de::{Deserialize, DeserializeState, Deserializer};
     use serde::ser::{Serialize, SerializeState, Serializer};
+
+    use interner::InternedStr;
     use value::{DataStruct, GcStr, Value, ValueArray};
     use thread::ThreadInternal;
     use types::VmTag;
@@ -170,31 +176,66 @@ pub mod gc {
         )
     }
 
-    #[derive(DeserializeState)]
-    #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
-    pub struct Data {
-        tag: VmTag,
-        #[cfg_attr(feature = "serde_derive", serde(deserialize_state))]
-        fields: Vec<Value>,
+    #[derive(DeserializeState, SerializeState)]
+    #[serde(deserialize_state = "::serialization::DeSeed")]
+    #[serde(serialize_state = "::serialization::SeSeed")]
+    #[serde(bound(deserialize = "F: DeserializeState<'de, ::serialization::DeSeed>,
+                                 S: ::std::ops::Deref + ::std::any::Any + Clone
+                                    + ::base::serialization::Shared
+                                    + DeserializeState<'de, ::serialization::DeSeed>",
+                  serialize = "F: SerializeState<Seed = ::serialization::SeSeed>,
+                               S: ::std::ops::Deref + ::std::any::Any + Clone
+                                    + ::base::serialization::Shared,
+                               S::Target: SerializeState<Seed = ::serialization::SeSeed>"
+                  ))]
+    struct Data<F, S> {
+        #[serde(seed)]
+        tag: DataTag<S>,
+        #[serde(seed)]
+        fields: F,
     }
 
-    unsafe impl DataDef for Data {
-        type Value = DataStruct;
+    #[derive(DeserializeState, SerializeState)]
+    #[serde(deserialize_state = "::serialization::DeSeed")]
+    #[serde(serialize_state = "::serialization::SeSeed")]
+    #[serde(bound(deserialize = "S: ::std::ops::Deref + ::std::any::Any + Clone
+                                    + ::base::serialization::Shared
+                                    + DeserializeState<'de, ::serialization::DeSeed>",
+                  serialize = "S: ::std::ops::Deref + ::std::any::Any + Clone
+                                    + ::base::serialization::Shared,
+                               S::Target: SerializeState<Seed = ::serialization::SeSeed>"
+                  ))]
+    enum DataTag<S> {
+        Record(
+            #[serde(state_with = "::base::serialization::shared")]
+            S,
+        ),
+        Data(VmTag),
+    }
 
-        fn size(&self) -> usize {
-            use value::Def;
-            Def {
-                tag: self.tag,
-                elems: &self.fields,
-            }.size()
-        }
 
-        fn initialize<'w>(self, result: WriteOnly<'w, Self::Value>) -> &'w mut Self::Value {
-            use value::Def;
-            Def {
-                tag: self.tag,
-                elems: &self.fields,
-            }.initialize(result)
+    impl SerializeState for DataStruct {
+        type Seed = SeSeed;
+
+        fn serialize_state<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            use serde::ser::Error;
+            let tag = if self.is_record() {
+                let fields = seed.thread
+                        .context()
+                        .get_fields(self.tag())
+                        .ok_or_else(|| S::Error::custom("Undefined record"))?
+                        .clone();
+                DataTag::Record(fields)
+            } else {
+                DataTag::Data(self.tag())
+            };
+            Data {
+                tag: tag,
+                fields: &self.fields[..],
+            }.serialize_state(serializer, seed)
         }
     }
 
@@ -205,7 +246,46 @@ pub mod gc {
     where
         D: Deserializer<'de>,
     {
-        DeserializeSeed::deserialize(Seed::<DataDefSeed<Data>>::from(seed.clone()), deserializer)
+        use base::serialization::SharedSeed;
+
+        struct GcSeed<'a> {
+            state: &'a mut DeSeed,
+        }
+        impl<'a> AsMut<NodeMap> for GcSeed<'a> {
+            fn as_mut(&mut self) -> &mut NodeMap {
+                &mut self.state.gc_map
+            }
+        }
+
+        impl<'de, 'a> DeserializeState<'de, GcSeed<'a>> for GcPtr<DataStruct> {
+            fn deserialize_state<D>(
+                seed: &mut GcSeed<'a>,
+                deserializer: D,
+            ) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                let seed = &mut seed.state;
+                let def = Data::<Vec<Value>, Arc<Vec<InternedStr>>>::deserialize_state(seed, deserializer)?;
+                use value::Def;
+                let tag = match def.tag {
+                    DataTag::Record(fields) => seed.thread.context().get_map(&fields),
+                    DataTag::Data(tag) => tag,
+                };
+                seed.thread
+                    .context()
+                    .gc
+                    .alloc(Def {
+                        tag: tag,
+                        elems: &def.fields,
+                    })
+                    .map_err(D::Error::custom)
+            }
+        }
+
+        let mut seed = GcSeed { state: seed };
+
+        DeserializeSeed::deserialize(SharedSeed::new(&mut seed), deserializer)
     }
 
     impl<'de> DeserializeState<'de, DeSeed> for GcStr {
@@ -241,7 +321,7 @@ pub mod gc {
         where
             S: Serializer,
         {
-            ::base::serialization::serialize_shared(self, serializer, seed)
+            ::base::serialization::shared::serialize(self, serializer, seed)
         }
     }
 }
@@ -539,14 +619,6 @@ where
         struct GcSeed<T> {
             _marker: PhantomData<T>,
             state: DeSeed,
-        }
-        impl<T> Clone for GcSeed<T> {
-            fn clone(&self) -> Self {
-                GcSeed {
-                    _marker: PhantomData,
-                    state: self.state.clone(),
-                }
-            }
         }
         impl<T> AsMut<NodeMap> for GcSeed<T> {
             fn as_mut(&mut self) -> &mut NodeMap {

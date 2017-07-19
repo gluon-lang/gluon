@@ -376,7 +376,7 @@ pub struct AliasRef<Id, T> {
     #[cfg_attr(feature = "serde_derive",
                serde(deserialize_state_with = "::serialization::deserialize_group"))]
     #[cfg_attr(feature = "serde_derive",
-               serde(serialize_state_with = "::serialization::serialize_shared"))]
+               serde(serialize_state_with = "::serialization::shared::serialize"))]
     /// The other aliases defined in this group
     pub group: Arc<Vec<AliasData<Id, T>>>,
 }

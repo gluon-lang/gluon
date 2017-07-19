@@ -1048,6 +1048,10 @@ impl Context {
         self.max_stack_size = limit;
     }
 
+    pub fn get_fields(&mut self, tag: VmTag) -> Option<&Arc<Vec<InternedStr>>> {
+        self.record_map.get_fields(tag)
+    }
+
     pub fn get_map(&mut self, fields: &[InternedStr]) -> VmTag {
         self.record_map.get_map(fields)
     }

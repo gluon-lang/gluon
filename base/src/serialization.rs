@@ -103,6 +103,16 @@ where
     DeserializeSeed::deserialize(seed, deserializer)
 }
 
+impl<'a, T> Shared for &'a T {
+    fn unique(&self) -> bool {
+        false
+    }
+
+    fn as_ptr(&self) -> *const () {
+        &**self as *const _ as *const ()
+    }
+}
+
 impl Shared for ::kind::ArcKind {
     fn unique(&self) -> bool {
         ::kind::ArcKind::strong_count(self) == 1
@@ -346,25 +356,6 @@ where
 }
 
 
-pub fn serialize_shared<S, T>(
-    self_: &T,
-    serializer: S,
-    seed: &<T::Target as SerializeState>::Seed,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-    T: Shared + Deref,
-    T::Target: SerializeState,
-    <T::Target as SerializeState>::Seed: AsRef<NodeToId>,
-{
-    let node = match node_to_id(seed.as_ref(), self_) {
-        Lookup::Unique => Variant::Plain(&**self_),
-        Lookup::Found(id) => Variant::Reference(id),
-        Lookup::Inserted(id) => Variant::Marked(id, &**self_),
-    };
-    node.serialize_state(serializer, seed)
-}
-
 pub fn serialize_seq<'a, S, T, V>(
     self_: &'a T,
     serializer: S,
@@ -388,7 +379,7 @@ where
     where
         S: Serializer,
     {
-        ::serialization::serialize_shared(self, serializer, seed)
+        ::serialization::shared::serialize(self, serializer, seed)
     }
 }
 
@@ -399,6 +390,40 @@ impl SerializeState for ArcKind {
     where
         S: Serializer,
     {
-        ::serialization::serialize_shared(self, serializer, seed)
+        ::serialization::shared::serialize(self, serializer, seed)
+    }
+}
+
+pub mod shared {
+    use super::*;
+    use serde::de::DeserializeSeed;
+
+    pub fn serialize<S, T>(
+        self_: &T,
+        serializer: S,
+        seed: &<T::Target as SerializeState>::Seed,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        T: Shared + Deref,
+        T::Target: SerializeState,
+        <T::Target as SerializeState>::Seed: AsRef<NodeToId>,
+    {
+        let node = match node_to_id(seed.as_ref(), self_) {
+            Lookup::Unique => Variant::Plain(&**self_),
+            Lookup::Found(id) => Variant::Reference(id),
+            Lookup::Inserted(id) => Variant::Marked(id, &**self_),
+        };
+        node.serialize_state(serializer, seed)
+    }
+
+    pub fn deserialize<'de, D, S, T>(seed: &mut S, deserializer: D) -> Result<T, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: DeserializeState<'de, S>,
+        S: AsMut<NodeMap>,
+        T: Any + Clone,
+    {
+        SharedSeed::new(seed).deserialize(deserializer)
     }
 }

@@ -21,7 +21,7 @@ fn roundtrip<'t>(
     let mut buffer = Vec::new();
     {
         let mut ser = serde_json::Serializer::pretty(&mut buffer);
-        let ser_state = SeSeed::new();
+        let ser_state = SeSeed::new(thread);
         value.serialize_state(&mut ser, &ser_state).unwrap();
     }
     let buffer = from_utf8(&buffer).unwrap();
@@ -38,7 +38,7 @@ fn roundtrip<'t>(
     let mut buffer2 = Vec::new();
     {
         let mut ser = serde_json::Serializer::pretty(&mut buffer2);
-        let ser_state = SeSeed::new();
+        let ser_state = SeSeed::new(thread);
         value.serialize_state(&mut ser, &ser_state).unwrap();
     }
     assert_eq!(buffer, from_utf8(&buffer2).unwrap());

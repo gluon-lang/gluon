@@ -67,7 +67,7 @@ mod serialization {
             S: Serializer,
         {
             {
-                ::serialization::serialize_shared(self, serializer, seed)
+                ::serialization::shared::serialize(self, serializer, seed)
             }
         }
     }
