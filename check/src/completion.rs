@@ -40,6 +40,20 @@ impl OnFound for () {
 
 }
 
+impl<'a, T> OnFound for &'a mut T where T: OnFound + 'a {
+    fn on_ident(&mut self, ident: &TypedIdent) {
+        (**self).on_ident(ident)
+    }
+
+    fn on_pattern(&mut self, pattern: &SpannedPattern<Symbol>) {
+        (**self).on_pattern(pattern)
+    }
+
+    fn on_alias(&mut self, alias: &AliasData<Symbol, ArcType>) {
+        (**self).on_alias(alias)
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Suggestion {
     pub name: String,
@@ -378,17 +392,23 @@ where
     }
 }
 
+fn complete_at<F>(on_found: F, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Result<Found, ()>
+    where F: OnFound
+{
+    let mut visitor = FindVisitor {
+        pos: pos,
+        on_found: on_found,
+        found: None,
+    };
+    visitor.visit_expr(expr);
+    visitor.found.ok_or(())
+}
+
 pub fn find<T>(env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Result<ArcType, ()>
 where
     T: TypeEnv,
 {
-    let mut visitor = FindVisitor {
-        pos: pos,
-        on_found: (),
-        found: None,
-    };
-    visitor.visit_expr(expr);
-    Ok(match visitor.found.ok_or(())? {
+    Ok(match complete_at((), expr, pos)? {
         Found::Expr(expr) => {
             expr.env_type_of(env)
         }
@@ -403,23 +423,18 @@ pub fn suggest<T>(env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Vec<Sugg
 where
     T: TypeEnv,
 {
-    let mut visitor = FindVisitor {
-        pos: pos,
-        on_found: Suggest {
-            env: env,
-            stack: ScopedMap::new(),
-            patterns: ScopedMap::new(),
-        },
-        found: None,
+    let mut suggest = Suggest {
+        env: env,
+        stack: ScopedMap::new(),
+        patterns: ScopedMap::new(),
     };
-    visitor.visit_expr(expr);
 
-    if visitor.found.is_none() {
-        return vec![];
-    }
+    let found = match complete_at(&mut suggest, expr, pos) {
+        Ok(x) => x,
+        Err(()) => return vec![],
+    };
     let mut result = vec![];
-    let suggest = &visitor.on_found;
-    match visitor.found.unwrap() {
+    match found {
         Found::Expr(expr) => {
             result.extend(
                 expr_iter(&suggest.stack, expr).map(|(k, typ)| {
@@ -486,13 +501,7 @@ pub fn get_metadata<'a>(
     expr: &SpannedExpr<Symbol>,
     pos: BytePos,
 ) -> Option<&'a Metadata> {
-    let mut visitor = FindVisitor {
-        pos: pos,
-        on_found: (),
-        found: None,
-    };
-    visitor.visit_expr(expr);
-    visitor.found.and_then(|found| {
+    complete_at((), expr, pos).ok().and_then(|found| {
         match found {
             Found::Expr(expr) => {
                 if let Expr::Ident(ref id) = expr.value {
@@ -533,19 +542,12 @@ pub fn suggest_metadata<'a, T>(
 where
     T: TypeEnv,
 {
-    let mut visitor = FindVisitor {
-        pos: pos,
-        on_found: Suggest {
-            env: type_env,
-            stack: ScopedMap::new(),
-            patterns: ScopedMap::new(),
-        },
-        found: None,
+    let mut suggest = Suggest {
+        env: type_env,
+        stack: ScopedMap::new(),
+        patterns: ScopedMap::new(),
     };
-    visitor.visit_expr(expr);
-
-    let suggest = &visitor.on_found;
-    visitor.found.and_then(|found| {
+    complete_at(&mut suggest, expr, pos).ok().and_then(|found| {
         match found {
             Found::Expr( expr) => {
                 let suggestion = expr_iter(&suggest.stack, expr)
