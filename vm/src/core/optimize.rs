@@ -6,6 +6,9 @@ use core::{Allocator, Alternative, Closure, Expr, LetBinding, Named, Pattern};
 
 pub trait Visitor<'a> {
     fn visit_expr(&mut self, expr: &'a Expr<'a>) -> Option<&'a Expr<'a>>;
+    fn visit_expr_(&mut self, expr: &'a Expr<'a>) -> Option<Expr<'a>> {
+        self.visit_expr(expr).map(Clone::clone)
+    }
     fn allocator(&self) -> &'a Allocator<'a>;
 }
 
@@ -92,7 +95,7 @@ where
     match *expr {
         Expr::Call(f, args) => {
             let new_f = visitor.visit_expr(f);
-            let new_args = merge_iter(args, |expr| visitor.visit_expr(expr).cloned(), Expr::clone)
+            let new_args = merge_iter(args, |expr| visitor.visit_expr_(expr), Expr::clone)
                 .map(|exprs: Vec<_>| {
                     &*visitor.allocator().arena.alloc_extend(exprs.into_iter())
                 });
@@ -101,7 +104,7 @@ where
         }
         Expr::Const(_, _) => None,
         Expr::Data(ref id, exprs, pos, expansion) => {
-            merge_iter(exprs, |expr| visitor.visit_expr(expr).cloned(), Expr::clone).map(|exprs: Vec<_>| {
+            merge_iter(exprs, |expr| visitor.visit_expr_(expr), Expr::clone).map(|exprs: Vec<_>| {
                 Expr::Data(
                     id.clone(),
                     visitor.allocator().arena.alloc_extend(exprs.into_iter()),
@@ -128,6 +131,7 @@ where
                         Closure::clone,
                     ).map(Named::Recursive)
                 }
+                Named::Expr(bind_expr) => visitor.visit_expr(bind_expr).map(Named::Expr),
                 Named::Expr(bind_expr) => visitor.visit_expr(bind_expr).map(Named::Expr),
             };
             let new_bind = new_named.map(|named| {

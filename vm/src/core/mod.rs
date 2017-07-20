@@ -94,6 +94,15 @@ pub enum Expr<'a> {
     Match(&'a Expr<'a>, &'a [Alternative<'a>]),
 }
 
+impl fmt::Display for Pattern {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let arena = pretty::Arena::new();
+        let mut s = Vec::new();
+        self.pretty(&arena).1.render(80, &mut s).unwrap();
+        write!(f, "{}", ::std::str::from_utf8(&s).expect("utf-8"))
+    }
+}
+
 impl<'a> fmt::Display for Expr<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let arena = pretty::Arena::new();
@@ -767,7 +776,7 @@ struct ReplaceVariables<'a> {
     replacements: HashMap<Symbol, Symbol>,
     allocator: &'a Allocator<'a>,
 }
-
+    
 impl<'a> Visitor<'a> for ReplaceVariables<'a> {
     fn visit_expr(&mut self, expr: &'a Expr<'a>) -> Option<&'a Expr<'a>> {
         match *expr {
