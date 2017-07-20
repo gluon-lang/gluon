@@ -31,6 +31,7 @@ macro_rules! assert_deq {
 #[cfg_attr(rustfmt, rustfmt_skip)]
 mod grammar;
 pub mod optimize;
+pub mod interpreter;
 
 use std::collections::HashMap;
 use std::fmt;
