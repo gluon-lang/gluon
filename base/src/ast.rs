@@ -360,21 +360,21 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::Id
     }
 }
 
-pub trait Visitor {
-    type Ident;
+pub trait Visitor<'a> {
+    type Ident: 'a;
 
-    fn visit_expr(&mut self, e: &SpannedExpr<Self::Ident>) {
+    fn visit_expr(&mut self, e: &'a SpannedExpr<Self::Ident>) {
         walk_expr(self, e);
     }
 
-    fn visit_pattern(&mut self, e: &SpannedPattern<Self::Ident>) {
+    fn visit_pattern(&mut self, e: &'a SpannedPattern<Self::Ident>) {
         walk_pattern(self, &e.value);
     }
 
-    fn visit_typ(&mut self, _: &ArcType<Self::Ident>) {}
+    fn visit_typ(&mut self, _: &'a ArcType<Self::Ident>) {}
 }
 
-pub fn walk_expr<V: ?Sized + Visitor>(v: &mut V, e: &SpannedExpr<V::Ident>) {
+pub fn walk_expr<'a, V: ?Sized + Visitor<'a>>(v: &mut V, e: &'a SpannedExpr<V::Ident>) {
     match e.value {
         Expr::IfElse(ref pred, ref if_true, ref if_false) => {
             v.visit_expr(pred);
@@ -446,7 +446,7 @@ pub fn walk_expr<V: ?Sized + Visitor>(v: &mut V, e: &SpannedExpr<V::Ident>) {
 }
 
 /// Walks a pattern, calling `visit_*` on all relevant elements
-pub fn walk_pattern<V: ?Sized + Visitor>(v: &mut V, p: &Pattern<V::Ident>) {
+pub fn walk_pattern<'a, V: ?Sized + Visitor<'a>>(v: &mut V, p: &'a Pattern<V::Ident>) {
     match *p {
         Pattern::Constructor(ref id, ref args) => {
             v.visit_typ(&id.typ);

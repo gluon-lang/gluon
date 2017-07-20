@@ -363,7 +363,7 @@ impl<F> FindVisitor<F> {
 
 struct VisitUnExpanded<'e, F: 'e>(&'e mut FindVisitor<F>);
 
-impl<'e, F> Visitor for VisitUnExpanded<'e, F>
+impl<'a, 'e, F> Visitor<'a> for VisitUnExpanded<'e, F>
 where
     F: OnFound,
 {
