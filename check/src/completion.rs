@@ -13,6 +13,15 @@ use base::scoped_map::ScopedMap;
 use base::symbol::Symbol;
 use base::types::{AliasData, ArcType, Type, TypeEnv};
 
+enum Found<'a> {
+    Expr(&'a SpannedExpr<Symbol>),
+    Pattern(&'a SpannedPattern<Symbol>),
+    Ident(&'a SpannedExpr<Symbol>, &'a Symbol, &'a ArcType),
+    /// Location points to whitespace
+    Nothing,
+    NothingPattern,
+}
+
 trait OnFound {
     fn on_ident(&mut self, ident: &TypedIdent) {
         let _ = ident;
@@ -25,44 +34,10 @@ trait OnFound {
     fn on_alias(&mut self, alias: &AliasData<Symbol, ArcType>) {
         let _ = alias;
     }
-
-    fn expr(&mut self, expr: &SpannedExpr<Symbol>);
-
-    fn pattern(&mut self, pattern: &SpannedPattern<Symbol>);
-
-    fn ident(&mut self, context: &SpannedExpr<Symbol>, ident: &Symbol, typ: &ArcType);
-
-    /// Location points to whitespace
-    fn nothing(&mut self);
-
-    fn nothing_pattern(&mut self) {}
-
-    fn found(&self) -> bool;
 }
 
-struct GetType<E> {
-    env: E,
-    typ: Option<ArcType>,
-}
+impl OnFound for () {
 
-impl<E: TypeEnv> OnFound for GetType<E> {
-    fn expr(&mut self, expr: &SpannedExpr<Symbol>) {
-        self.typ = Some(expr.env_type_of(&self.env));
-    }
-
-    fn ident(&mut self, _context: &SpannedExpr<Symbol>, _: &Symbol, typ: &ArcType) {
-        self.typ = Some(typ.clone());
-    }
-
-    fn pattern(&mut self, pattern: &SpannedPattern<Symbol>) {
-        self.typ = Some(pattern.env_type_of(&self.env));
-    }
-
-    fn nothing(&mut self) {}
-
-    fn found(&self) -> bool {
-        self.typ.is_some()
-    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -75,7 +50,6 @@ struct Suggest<E> {
     env: E,
     stack: ScopedMap<Symbol, ArcType>,
     patterns: ScopedMap<Symbol, ArcType>,
-    result: Vec<Suggestion>,
 }
 
 fn expr_iter<'e>(
@@ -171,167 +145,15 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
             }
         }
     }
-
-    fn expr(&mut self, expr: &SpannedExpr<Symbol>) {
-        self.result.extend(
-            expr_iter(&self.stack, expr).map(|(k, typ)| {
-
-                Suggestion {
-                    name: k.declared_name().into(),
-                    typ: typ.clone(),
-                }
-            }),
-        );
-    }
-
-    fn pattern(&mut self, pattern: &SpannedPattern<Symbol>) {
-        let prefix = match pattern.value {
-            Pattern::Constructor(ref id, _) |
-            Pattern::Ident(ref id) => id.as_ref(),
-            _ => "",
-        };
-        self.result.extend(
-            self.patterns
-                .iter()
-                .filter(|&(ref name, _)| name.declared_name().starts_with(prefix))
-                .map(|(name, typ)| {
-                    Suggestion {
-                        name: name.declared_name().into(),
-                        typ: typ.clone(),
-                    }
-                }),
-        );
-    }
-
-    fn ident(&mut self, context: &SpannedExpr<Symbol>, ident: &Symbol, _: &ArcType) {
-        let iter = self.ident_iter(context, ident);
-        self.result.extend(iter.into_iter().map(|(name, typ)| {
-            Suggestion {
-                name: name.declared_name().into(),
-                typ: typ,
-            }
-        }));
-    }
-
-    fn nothing(&mut self) {
-        self.result.extend(self.stack.iter().map(|(name, typ)| {
-            Suggestion {
-                name: name.declared_name().into(),
-                typ: typ.clone(),
-            }
-        }));
-    }
-
-    fn nothing_pattern(&mut self) {
-        self.result.extend(self.patterns.iter().map(|(name, typ)| {
-            Suggestion {
-                name: name.declared_name().into(),
-                typ: typ.clone(),
-            }
-        }))
-    }
-
-    fn found(&self) -> bool {
-        !self.result.is_empty()
-    }
 }
 
-struct GetMetadata<'a> {
-    env: &'a FnvMap<Symbol, Metadata>,
-    result: Option<&'a Metadata>,
-}
-
-impl<'a> OnFound for GetMetadata<'a> {
-    fn expr(&mut self, expr: &SpannedExpr<Symbol>) {
-        if let Expr::Ident(ref id) = expr.value {
-            self.result = self.env.get(&id.name);
-        }
-    }
-
-    fn ident(&mut self, context: &SpannedExpr<Symbol>, id: &Symbol, _typ: &ArcType) {
-        match context.value {
-            Expr::Projection(ref expr, _, _) => {
-                if let Expr::Ident(ref expr_id) = expr.value {
-                    self.result = self.env
-                        .get(&expr_id.name)
-                        .and_then(|metadata| metadata.module.get(id.as_ref()));
-                }
-            }
-            Expr::Infix(..) => {
-                self.result = self.env.get(id);
-            }
-            _ => (),
-        }
-    }
-
-    fn pattern(&mut self, _pattern: &SpannedPattern<Symbol>) {}
-
-
-    fn nothing(&mut self) {}
-
-    fn found(&self) -> bool {
-        self.result.is_some()
-    }
-}
-
-struct MetadataSuggest<'a, E> {
-    env: &'a FnvMap<Symbol, Metadata>,
-    suggest: Suggest<E>,
-    ident: &'a str,
-    result: Option<&'a Metadata>,
-}
-
-impl<'a, E: TypeEnv> OnFound for MetadataSuggest<'a, E> {
-    fn on_ident(&mut self, ident: &TypedIdent) {
-        self.suggest.on_ident(ident)
-    }
-
-    fn on_pattern(&mut self, pattern: &SpannedPattern<Symbol>) {
-        self.suggest.on_pattern(pattern)
-    }
-
-    fn expr(&mut self, expr: &SpannedExpr<Symbol>) {
-        let suggestion = expr_iter(&self.suggest.stack, expr)
-            .find(|&(name, _)| name.declared_name() == self.ident);
-        if let Some((name, _)) = suggestion {
-            self.result = self.env.get(name);
-        }
-    }
-
-    fn ident(&mut self, context: &SpannedExpr<Symbol>, _: &Symbol, _typ: &ArcType) {
-        match context.value {
-            Expr::Projection(ref expr, _, _) => {
-                if let Expr::Ident(ref expr_ident) = expr.value {
-                    self.result = self.env
-                        .get(&expr_ident.name)
-                        .and_then(|metadata| metadata.module.get(self.ident));
-                }
-            }
-            _ => (),
-        }
-    }
-
-    fn pattern(&mut self, _pattern: &SpannedPattern<Symbol>) {}
-
-    fn nothing(&mut self) {
-        self.result = self.suggest
-            .stack
-            .iter()
-            .find(|&(ref name, _)| name.declared_name() == self.ident)
-            .and_then(|t| self.env.get(t.0));
-    }
-
-    fn found(&self) -> bool {
-        self.result.is_some()
-    }
-}
-
-struct FindVisitor<F> {
+struct FindVisitor<'a, F> {
     pos: BytePos,
     on_found: F,
+    found: Option<Found<'a>>
 }
 
-impl<F> FindVisitor<F> {
+impl<'a, F> FindVisitor<'a, F> {
     fn select_spanned<I, S, T>(&self, iter: I, mut span: S) -> (bool, Option<T>)
     where
         I: IntoIterator<Item = T>,
@@ -361,16 +183,16 @@ impl<F> FindVisitor<F> {
     }
 }
 
-struct VisitUnExpanded<'e, F: 'e>(&'e mut FindVisitor<F>);
+struct VisitUnExpanded<'a: 'e, 'e, F: 'e>(&'e mut FindVisitor<'a, F>);
 
-impl<'a, 'e, F> Visitor<'a> for VisitUnExpanded<'e, F>
+impl<'a, 'e, F> Visitor<'a> for VisitUnExpanded<'a, 'e, F>
 where
     F: OnFound,
 {
     type Ident = Symbol;
 
-    fn visit_expr(&mut self, e: &SpannedExpr<Self::Ident>) {
-        if !self.0.on_found.found() {
+    fn visit_expr(&mut self, e: &'a SpannedExpr<Self::Ident>) {
+        if self.0.found.is_none() {
             if e.span.expansion_id == NO_EXPANSION {
                 self.0.visit_expr(e);
             } else {
@@ -393,7 +215,7 @@ where
         }
     }
 
-    fn visit_pattern(&mut self, e: &SpannedPattern<Self::Ident>) {
+    fn visit_pattern(&mut self, e: &'a SpannedPattern<Self::Ident>) {
         if e.span.expansion_id == NO_EXPANSION {
             self.0.visit_pattern(e);
         } else {
@@ -404,19 +226,19 @@ where
     }
 }
 
-impl<F> FindVisitor<F>
+impl<'a, F> FindVisitor<'a, F>
 where
     F: OnFound,
 {
-    fn visit_one<'e, I>(&mut self, iter: I)
+    fn visit_one<I>(&mut self, iter: I)
     where
-        I: IntoIterator<Item = &'e SpannedExpr<Symbol>>,
+        I: IntoIterator<Item = &'a SpannedExpr<Symbol>>,
     {
         let (_, expr) = self.select_spanned(iter, |e| e.span);
         self.visit_expr(expr.unwrap());
     }
 
-    fn visit_pattern(&mut self, current: &SpannedPattern<Symbol>) {
+    fn visit_pattern(&mut self, current: &'a SpannedPattern<Symbol>) {
         match current.value {
             Pattern::Constructor(ref id, ref args) => {
                 let id_span = Span::new(
@@ -424,13 +246,13 @@ where
                     current.span.start + BytePos::from(id.as_ref().len()),
                 );
                 if id_span.containment(&self.pos) == Ordering::Equal {
-                    self.on_found.pattern(current);
+                    self.found = Some(Found::Pattern(current));
                     return;
                 }
                 let (_, pattern) = self.select_spanned(args, |e| e.span);
                 match pattern {
                     Some(pattern) => self.visit_pattern(pattern),
-                    None => self.on_found.nothing_pattern(),
+                    None => self.found = Some(Found::NothingPattern),
                 }
             }
             Pattern::Record { ref fields, .. } => {
@@ -447,16 +269,16 @@ where
             }
             Pattern::Ident(_) |
             Pattern::Error => {
-                if current.span.containment(&self.pos) == Ordering::Equal {
-                    self.on_found.pattern(current)
+                self.found = Some(if current.span.containment(&self.pos) == Ordering::Equal {
+                    Found::Pattern(current)
                 } else {
-                    self.on_found.nothing_pattern()
-                }
+                    Found::NothingPattern
+                });
             }
         }
     }
 
-    fn visit_expr(&mut self, current: &SpannedExpr<Symbol>) {
+    fn visit_expr(&mut self, current: &'a SpannedExpr<Symbol>) {
         // When inside a macro expanded expression we do a exhaustive search for an unexpanded
         // expression
         if current.span.expansion_id != NO_EXPANSION {
@@ -465,11 +287,11 @@ where
         }
         match current.value {
             Expr::Ident(_) | Expr::Literal(_) => {
-                if current.span.containment(&self.pos) == Ordering::Equal {
-                    self.on_found.expr(current)
+                self.found = Some(if current.span.containment(&self.pos) == Ordering::Equal {
+                    Found::Expr(current)
                 } else {
-                    self.on_found.nothing()
-                }
+                    Found::Nothing
+                });
             }
             Expr::App(ref func, ref args) => {
                 self.visit_one(once(&**func).chain(args));
@@ -502,7 +324,7 @@ where
             Expr::Infix(ref l, ref op, ref r) => {
                 match (l.span.containment(&self.pos), r.span.containment(&self.pos)) {
                     (Ordering::Greater, Ordering::Less) => {
-                        self.on_found.ident(current, &op.value.name, &op.value.typ)
+                        self.found = Some(Found::Ident(current, &op.value.name, &op.value.typ));
                     }
                     (_, Ordering::Greater) |
                     (_, Ordering::Equal) => self.visit_expr(r),
@@ -533,7 +355,7 @@ where
                 if expr.span.containment(&self.pos) <= Ordering::Equal {
                     self.visit_expr(expr);
                 } else {
-                    self.on_found.ident(current, id, typ);
+                    self.found = Some(Found::Ident(current, id, typ));
                 }
             }
             Expr::Array(ref array) => self.visit_one(&array.exprs),
@@ -562,13 +384,19 @@ where
 {
     let mut visitor = FindVisitor {
         pos: pos,
-        on_found: GetType {
-            env: env,
-            typ: None,
-        },
+        on_found: (),
+        found: None,
     };
     visitor.visit_expr(expr);
-    visitor.on_found.typ.ok_or(())
+    Ok(match visitor.found.ok_or(())? {
+        Found::Expr(expr) => {
+            expr.env_type_of(env)
+        }
+        Found::Ident(_, _, typ) => typ.clone(),
+        Found::Pattern(pattern) =>
+            pattern.env_type_of(env),
+        _ => return Err(())
+    })
 }
 
 pub fn suggest<T>(env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Vec<Suggestion>
@@ -581,11 +409,76 @@ where
             env: env,
             stack: ScopedMap::new(),
             patterns: ScopedMap::new(),
-            result: Vec::new(),
         },
+        found: None,
     };
     visitor.visit_expr(expr);
-    visitor.on_found.result
+
+    if visitor.found.is_none() {
+        return vec![];
+    }
+    let mut result = vec![];
+    let suggest = &visitor.on_found;
+    match visitor.found.unwrap() {
+        Found::Expr(expr) => {
+            result.extend(
+                expr_iter(&suggest.stack, expr).map(|(k, typ)| {
+                    Suggestion {
+                        name: k.declared_name().into(),
+                        typ: typ.clone(),
+                    }
+                }),
+            );
+        }
+
+        Found::Pattern(pattern) => { 
+            let prefix = match pattern.value {
+                Pattern::Constructor(ref id, _) |
+                Pattern::Ident(ref id) => id.as_ref(),
+                _ => "",
+            };
+            result.extend(
+                suggest.patterns
+                    .iter()
+                    .filter(|&(ref name, _)| name.declared_name().starts_with(prefix))
+                    .map(|(name, typ)| {
+                        Suggestion {
+                            name: name.declared_name().into(),
+                            typ: typ.clone(),
+                        }
+                    }),
+            );
+        }
+
+        Found::Ident(context, ident, _) => {
+            let iter = suggest.ident_iter(context, ident);
+            result.extend(iter.into_iter().map(|(name, typ)| {
+                Suggestion {
+                    name: name.declared_name().into(),
+                    typ: typ,
+                }
+            }));
+        }
+
+        Found::Nothing => {
+            result.extend(suggest.stack.iter().map(|(name, typ)| {
+                Suggestion {
+                    name: name.declared_name().into(),
+                    typ: typ.clone(),
+                }
+            }));
+        }
+
+        Found::NothingPattern => {
+            result.extend(suggest.patterns.iter().map(|(name, typ)| {
+                Suggestion {
+                    name: name.declared_name().into(),
+                    typ: typ.clone(),
+                }
+            }))
+        }
+    }
+    result
 }
 
 pub fn get_metadata<'a>(
@@ -595,13 +488,39 @@ pub fn get_metadata<'a>(
 ) -> Option<&'a Metadata> {
     let mut visitor = FindVisitor {
         pos: pos,
-        on_found: GetMetadata {
-            env: env,
-            result: None,
-        },
+        on_found: (),
+        found: None,
     };
     visitor.visit_expr(expr);
-    visitor.on_found.result
+    visitor.found.and_then(|found| {
+        match found {
+            Found::Expr(expr) => {
+                if let Expr::Ident(ref id) = expr.value {
+                    env.get(&id.name)
+                } else {
+                    None
+                }
+            }
+            Found::Ident(context, id, _typ) => {
+                match context.value {
+                    Expr::Projection(ref expr, _, _) => {
+                        if let Expr::Ident(ref expr_id) = expr.value {
+                            env
+                                .get(&expr_id.name)
+                                .and_then(|metadata| metadata.module.get(id.as_ref()))
+                        } else {
+                            None
+                        }
+                    }
+                    Expr::Infix(..) => {
+                        env.get(id)
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+    })
 }
 
 pub fn suggest_metadata<'a, T>(
@@ -616,18 +535,52 @@ where
 {
     let mut visitor = FindVisitor {
         pos: pos,
-        on_found: MetadataSuggest {
-            env: env,
-            suggest: Suggest {
-                env: type_env,
-                stack: ScopedMap::new(),
-                patterns: ScopedMap::new(),
-                result: Vec::new(),
-            },
-            ident: name,
-            result: None,
+        on_found: Suggest {
+            env: type_env,
+            stack: ScopedMap::new(),
+            patterns: ScopedMap::new(),
         },
+        found: None,
     };
     visitor.visit_expr(expr);
-    visitor.on_found.result
+
+    let suggest = &visitor.on_found;
+    visitor.found.and_then(|found| {
+        match found {
+            Found::Expr( expr) => {
+                let suggestion = expr_iter(&suggest.stack, expr)
+                    .find(|&(stack_name, _)| stack_name.declared_name() == name);
+                if let Some((name, _)) = suggestion {
+                    env.get(name)
+                } else {
+                    None
+                }
+            }
+
+            Found::Ident(context, _, _) => {
+                match context.value {
+                    Expr::Projection(ref expr, _, _) => {
+                        if let Expr::Ident(ref expr_ident) = expr.value {
+                            env
+                                .get(&expr_ident.name)
+                                .and_then(|metadata| metadata.module.get(name))
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                }
+            }
+
+            Found::Nothing => {
+                suggest
+                    .stack
+                    .iter()
+                    .find(|&(ref stack_name, _)| stack_name.declared_name() == name)
+                    .and_then(|t| env.get(t.0))
+            }
+
+            _ => None
+        }
+    })
 }
