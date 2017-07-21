@@ -324,6 +324,35 @@ fn is_constructor(s: &Symbol) -> bool {
         .starts_with(char::is_uppercase)
 }
 
+mod internal {
+    use super::{Allocator, Expr};
+
+    pub struct CoreExpr {
+        allocator: Allocator<'static>,
+        expr: Expr<'static>,
+    }
+
+    impl CoreExpr {
+        pub fn new(allocator: Allocator<'static>, expr: Expr<'static>) -> CoreExpr {
+            CoreExpr {
+                allocator,
+                expr,
+            }
+        }
+
+        // unsafe: The lifetimes of the returned `Expr` must be bound to `&self`
+        pub fn expr(&self) -> &Expr {
+            &self.expr
+        }
+
+        pub fn allocator(&self) -> &Allocator {
+            unsafe { ::std::mem::transmute(&self.allocator) }
+        }
+    }
+}
+
+pub use self::internal::CoreExpr;
+
 pub struct Allocator<'a> {
     pub arena: Arena<Expr<'a>>,
     pub alternative_arena: Arena<Alternative<'a>>,
@@ -335,6 +364,21 @@ impl<'a> Allocator<'a> {
             arena: Arena::new(),
             alternative_arena: Arena::new(),
         }
+    }
+}
+
+pub fn translate(env: &PrimitiveEnv, expr: &SpannedExpr<Symbol>) -> CoreExpr {
+    use std::mem::transmute;
+    // Here we temporarily forget the lifetime of `translator` so it can be moved into a
+    // `CoreExpr`. After we have it in `CoreExpr` the expression is then guaranteed to live as
+    // long as the `CoreExpr` making it safe again
+    unsafe {
+        let translator = Translator::new(env);
+        let core_expr = {
+            let core_expr = (*(&translator as *const Translator)).translate(expr);
+            transmute::<Expr, Expr<'static>>(core_expr)
+        };
+        CoreExpr::new(transmute::<Allocator, Allocator<'static>>(translator.allocator), core_expr)
     }
 }
 
