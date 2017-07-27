@@ -1,5 +1,5 @@
 use std::ops::{Deref, DerefMut};
-use base::ast::{TypedIdent, Typed};
+use base::ast::{Typed, TypedIdent};
 use base::fnv::FnvSet;
 use base::resolve;
 use base::kind::{ArcKind, KindEnv};
@@ -7,7 +7,7 @@ use base::types::{self, Alias, ArcType, RecordSelector, Type, TypeEnv};
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolRef};
 use core::{self, Allocator, CExpr, Expr, Pattern};
-use core::optimize::{ExprProducer, Visitor, DifferentLifetime, SameLifetime, walk_expr_alloc};
+use core::optimize::{walk_expr_alloc, DifferentLifetime, ExprProducer, SameLifetime, Visitor};
 use types::*;
 use self::Variable::*;
 
@@ -57,7 +57,7 @@ impl<'l, 'g> ReducedExpr<'l, 'g> {
     }
 }
 
-impl <'l, 'g> From<CExpr<'l>> for ReducedExpr<'l, 'g> {
+impl<'l, 'g> From<CExpr<'l>> for ReducedExpr<'l, 'g> {
     fn from(expr: CExpr<'l>) -> Self {
         ReducedExpr::Local(expr)
     }
@@ -225,7 +225,10 @@ impl<'a, 'e> TypeEnv for Compiler<'a, 'e> {
 }
 
 impl<'a, 'e> Compiler<'a, 'e> {
-    pub fn new(allocator: &'e Allocator<'e>, globals: &'a Fn(&Symbol) -> Option<CExpr<'a>>) -> Compiler<'a, 'e> {
+    pub fn new(
+        allocator: &'e Allocator<'e>,
+        globals: &'a Fn(&Symbol) -> Option<CExpr<'a>>,
+    ) -> Compiler<'a, 'e> {
         Compiler {
             allocator,
             globals,
@@ -234,15 +237,17 @@ impl<'a, 'e> Compiler<'a, 'e> {
         }
     }
 
-    fn find(&self, id: &Symbol, current: &mut FunctionEnvs<'e, 'a>) -> Option<Variable<'e, 'a, CExpr<'a>>> {
+    fn find(
+        &self,
+        id: &Symbol,
+        current: &mut FunctionEnvs<'e, 'a>,
+    ) -> Option<Variable<'e, 'a, CExpr<'a>>> {
         let variable = self.stack_constructors
             .iter()
             .filter_map(|(_, typ)| match **typ {
-                Type::Variant(ref row) => {
-                    row.row_iter()
-                        .enumerate()
-                        .find(|&(_, field)| field.name == *id)
-                }
+                Type::Variant(ref row) => row.row_iter()
+                    .enumerate()
+                    .find(|&(_, field)| field.name == *id),
                 _ => None,
             })
             .next()
@@ -279,8 +284,11 @@ impl<'a, 'e> Compiler<'a, 'e> {
         debug!("Interpreting: {}", expr);
         let new_expr = self.compile(expr, &mut env)?;
         env.end_function(self);
-        Ok(new_expr.map(|expr| expr.into_local(self.allocator))
-            .unwrap_or(expr))
+        Ok(
+            new_expr
+                .map(|expr| expr.into_local(self.allocator))
+                .unwrap_or(expr),
+        )
     }
 
     fn load_identifier(
@@ -289,22 +297,20 @@ impl<'a, 'e> Compiler<'a, 'e> {
         function: &mut FunctionEnvs<'e, 'a>,
     ) -> Result<Option<ReducedExpr<'e, 'a>>> {
         match self.find(id, function) {
-            Some(variable) => {
-                match variable {
-                    Stack(expr) => {
-                        if let Some(e) = expr {
-                            debug!("Loading `{}` as `{}`", id, e.as_ref());
-                        } else {
-                            debug!("Unable to fold `{}`", id);
-                        }
-                        Ok(expr)
+            Some(variable) => match variable {
+                Stack(expr) => {
+                    if let Some(e) = expr {
+                        debug!("Loading `{}` as `{}`", id, e.as_ref());
+                    } else {
+                        debug!("Unable to fold `{}`", id);
                     }
-                    Global(expr) => Ok(Some(ReducedExpr::Global(expr))),
-                    Constructor(..) => Ok(None),
+                    Ok(expr)
                 }
-            }
+                Global(expr) => Ok(Some(ReducedExpr::Global(expr))),
+                Constructor(..) => Ok(None),
+            },
             // Can't inline what we can't resolve
-            None => Ok(None)
+            None => Ok(None),
         }
     }
 
@@ -401,20 +407,17 @@ impl<'a, 'e> Compiler<'a, 'e> {
                 }
                 return Ok(TailCall::Tail(body));
             }
-            Expr::Call(..) => {
-                self.walk_expr(expr, function)?
-            }
+            Expr::Call(..) => self.walk_expr(expr, function)?,
             Expr::Match(expr, alts) => {
-                let expr = self.compile(expr, function)?.unwrap_or(ReducedExpr::Local(expr));
+                let expr = self.compile(expr, function)?
+                    .unwrap_or(ReducedExpr::Local(expr));
                 for alt in alts {
                     self.stack_constructors.enter_scope();
                     function.stack.enter_scope();
                     match alt.pattern {
-                        Pattern::Constructor(_, ref args) => {
-                            for arg in args.iter() {
-                                function.push_unknown_stack_var(arg.name.clone());
-                            }
-                        }
+                        Pattern::Constructor(_, ref args) => for arg in args.iter() {
+                            function.push_unknown_stack_var(arg.name.clone());
+                        },
                         Pattern::Record { .. } => {
                             let typ = &expr.as_ref().env_type_of(self);
                             self.compile_let_pattern(&alt.pattern, expr, typ, function)?;
@@ -423,7 +426,8 @@ impl<'a, 'e> Compiler<'a, 'e> {
                             function.push_stack_var(id.name.clone(), expr);
                         }
                     }
-                    let new_expr = self.compile(&alt.expr, function)?.unwrap_or(ReducedExpr::Local(&alt.expr));
+                    let new_expr = self.compile(&alt.expr, function)?
+                        .unwrap_or(ReducedExpr::Local(&alt.expr));
                     function.exit_scope();
                     self.stack_constructors.exit_scope();
                     match alt.pattern {
@@ -581,7 +585,9 @@ mod tests {
         let _ = ::env_logger::init();
 
         let global_alloc = Allocator::new();
-        let global: CExpr = global_alloc.arena.alloc(Expr::Const(Literal::Int(1), Span::default()));
+        let global: CExpr = global_alloc
+            .arena
+            .alloc(Expr::Const(Literal::Int(1), Span::default()));
 
         let expr = r#"
         x"#;

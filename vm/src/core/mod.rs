@@ -336,10 +336,7 @@ mod internal {
 
     impl CoreExpr {
         pub fn new(allocator: Allocator<'static>, expr: Expr<'static>) -> CoreExpr {
-            CoreExpr {
-                allocator,
-                expr,
-            }
+            CoreExpr { allocator, expr }
         }
 
         // unsafe: The lifetimes of the returned `Expr` must be bound to `&self`
@@ -380,7 +377,10 @@ pub fn translate(env: &PrimitiveEnv, expr: &SpannedExpr<Symbol>) -> CoreExpr {
             let core_expr = (*(&translator as *const Translator)).translate(expr);
             transmute::<Expr, Expr<'static>>(core_expr)
         };
-        CoreExpr::new(transmute::<Allocator, Allocator<'static>>(translator.allocator), core_expr)
+        CoreExpr::new(
+            transmute::<Allocator, Allocator<'static>>(translator.allocator),
+            core_expr,
+        )
     }
 }
 
@@ -822,7 +822,7 @@ struct ReplaceVariables<'a> {
     replacements: HashMap<Symbol, Symbol>,
     allocator: &'a Allocator<'a>,
 }
-    
+
 impl<'a> Visitor<'a, 'a> for ReplaceVariables<'a> {
     type Producer = SameLifetime<'a>;
 

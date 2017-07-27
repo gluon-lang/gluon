@@ -40,7 +40,7 @@ lalrpop = { version = "0.13.1", optional = true }
 [dev-dependencies]
 # HACK Trick crates.io into letting letting this be published with a dependency on gluon
 # (which requires gluon_vm to be published)
-# gluon = { path = "..", version = "<0.6.0, >=0.4.2" } # GLUON
+gluon = { path = "..", version = "<0.6.0, >=0.4.2" } # GLUON
 
 lalrpop-util = "0.13.1"
 regex = "0.2.0"
