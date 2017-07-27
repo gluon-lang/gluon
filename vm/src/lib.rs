@@ -43,6 +43,7 @@ pub mod serialization;
 #[macro_use]
 pub mod api;
 pub mod channel;
+pub mod core;
 pub mod compiler;
 pub mod debug;
 pub mod dynamic;
@@ -57,7 +58,6 @@ pub mod stack;
 pub mod types;
 
 mod array;
-mod core;
 mod field_map;
 mod interner;
 mod lazy;

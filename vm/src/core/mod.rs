@@ -84,6 +84,8 @@ pub struct Alternative<'a> {
     pub expr: &'a Expr<'a>,
 }
 
+pub type CExpr<'a> = &'a Expr<'a>;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expr<'a> {
     Const(Literal, Span<BytePos>),
@@ -821,7 +823,9 @@ struct ReplaceVariables<'a> {
     allocator: &'a Allocator<'a>,
 }
     
-impl<'a> Visitor<'a> for ReplaceVariables<'a> {
+impl<'a> Visitor<'a, 'a> for ReplaceVariables<'a> {
+    type Producer = SameLifetime<'a>;
+
     fn visit_expr(&mut self, expr: &'a Expr<'a>) -> Option<&'a Expr<'a>> {
         match *expr {
             Expr::Ident(ref id, span) => self.replacements.get(&id.name).map(|new_name| {
@@ -836,8 +840,8 @@ impl<'a> Visitor<'a> for ReplaceVariables<'a> {
             _ => walk_expr_alloc(self, expr),
         }
     }
-    fn allocator(&self) -> &'a Allocator<'a> {
-        self.allocator
+    fn detach_allocator(&self) -> Option<&'a Allocator<'a>> {
+        Some(self.allocator)
     }
 }
 

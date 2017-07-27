@@ -1,22 +1,87 @@
+use std::marker::PhantomData;
+
 use base::ast::TypedIdent;
-use base::merge::{merge, merge_iter};
+use base::merge::{merge_fn, merge_iter};
 use base::pos;
 
-use core::{Allocator, Alternative, Closure, Expr, LetBinding, Named, Pattern};
+use core::{Allocator, Alternative, Closure, CExpr, Expr, Named, LetBinding, Pattern};
 
-pub trait Visitor<'a> {
-    fn visit_expr(&mut self, expr: &'a Expr<'a>) -> Option<&'a Expr<'a>>;
-    fn visit_expr_(&mut self, expr: &'a Expr<'a>) -> Option<Expr<'a>> {
+pub trait ExprProducer<'a, 'b>: Visitor<'a, 'b> {
+    fn new(allocator: &'a Allocator<'a>) -> Self;
+    fn produce(&mut self, expr: CExpr<'b>) -> CExpr<'a>;
+}
+
+pub struct SameLifetime<'a>(&'a Allocator<'a>);
+impl<'a> ExprProducer<'a, 'a> for SameLifetime<'a> {
+    fn new(allocator: &'a Allocator<'a>) -> Self {
+        SameLifetime(allocator)
+    }
+    fn produce(&mut self, expr: CExpr<'a>) -> CExpr<'a> {
+        expr
+    }
+}
+
+impl<'a> Visitor<'a, 'a> for SameLifetime<'a> {
+    type Producer = SameLifetime<'a>;
+
+    fn visit_expr(&mut self, expr: &'a Expr<'a>) -> Option<&'a Expr<'a>> {
+        Some(self.produce(expr))
+    }
+    fn detach_allocator(&self) -> Option<&'a Allocator<'a>> {
+        Some(self.0)
+    }
+}
+
+pub struct DifferentLifetime<'a, 'b>(&'a Allocator<'a>, PhantomData<&'b ()>);
+
+impl<'a, 'b> ExprProducer<'a, 'b> for DifferentLifetime<'a, 'b> {
+    fn new(allocator: &'a Allocator<'a>) -> Self {
+        DifferentLifetime(allocator, PhantomData)
+    }
+    fn produce(&mut self, expr: CExpr<'b>) -> CExpr<'a> {
+        match *expr {
+            Expr::Const(ref id, ref span) => self.0.arena.alloc(Expr::Const(id.clone(), span.clone())),
+            Expr::Ident(ref id, ref span) => self.0.arena.alloc(Expr::Ident(id.clone(), span.clone())),
+            Expr::Data(ref id, args, pos, expansion) if args.is_empty() =>
+                self.0.arena.alloc(Expr::Data(id.clone(), &[], pos.clone(), expansion.clone())),
+            _ => walk_expr_alloc(self, expr).unwrap(),
+        }
+    }
+}
+
+impl<'a, 'b> Visitor<'a, 'b> for DifferentLifetime<'a, 'b> {
+    type Producer = DifferentLifetime<'a, 'b>;
+
+    fn visit_expr(&mut self, expr: &'b Expr<'b>) -> Option<&'a Expr<'a>> {
+        Some(self.produce(expr))
+    }
+
+    fn detach_allocator(&self) -> Option<&'a Allocator<'a>> {
+        Some(self.0)
+    }
+}
+
+
+pub trait Visitor<'a, 'b> {
+    type Producer: ExprProducer<'a, 'b>;
+
+    fn visit_expr(&mut self, expr: CExpr<'b>) -> Option<&'a Expr<'a>>;
+    fn visit_expr_(&mut self, expr: CExpr<'b>) -> Option<Expr<'a>> {
         self.visit_expr(expr).map(Clone::clone)
     }
-    fn allocator(&self) -> &'a Allocator<'a>;
+    fn detach_allocator(&self) -> Option<&'a Allocator<'a>>;
+    fn allocator(&self) -> &'a Allocator<'a> {
+        self.detach_allocator().expect("Allocator")
+    }
 }
 
 struct RecognizeUnnecessaryAllocation<'a> {
     allocator: &'a Allocator<'a>,
 }
 
-impl<'a> Visitor<'a> for RecognizeUnnecessaryAllocation<'a> {
+impl<'a> Visitor<'a, 'a> for RecognizeUnnecessaryAllocation<'a> {
+    type Producer = SameLifetime<'a>;
+
     fn visit_expr(&mut self, expr: &'a Expr<'a>) -> Option<&'a Expr<'a>> {
         // Avoids boxing data which are destructured immediately after creation
         // match { l, r } with
@@ -69,8 +134,8 @@ impl<'a> Visitor<'a> for RecognizeUnnecessaryAllocation<'a> {
         }
     }
 
-    fn allocator(&self) -> &'a Allocator<'a> {
-        self.allocator
+    fn detach_allocator(&self) -> Option<&'a Allocator<'a>> {
+        Some(self.allocator)
     }
 }
 
@@ -81,30 +146,43 @@ pub fn optimize<'a>(allocator: &'a Allocator<'a>, expr: &'a Expr<'a>) -> &'a Exp
     optimizer.visit_expr(expr).unwrap_or(expr)
 }
 
-pub fn walk_expr_alloc<'a, V>(visitor: &mut V, expr: &'a Expr<'a>) -> Option<&'a Expr<'a>>
+pub fn walk_expr_alloc<'a, 'b, V>(visitor: &mut V, expr: CExpr<'b>) -> Option<CExpr<'a>>
 where
-    V: ?Sized + Visitor<'a>,
+    V: ?Sized + Visitor<'a, 'b>,
 {
     walk_expr(visitor, expr).map(|expr| &*visitor.allocator().arena.alloc(expr))
 }
 
-pub fn walk_expr<'a, V>(visitor: &mut V, expr: &'a Expr<'a>) -> Option<Expr<'a>>
+pub fn walk_expr<'a, 'b, V>(visitor: &mut V, expr: CExpr<'b>) -> Option<Expr<'a>>
 where
-    V: ?Sized + Visitor<'a>,
+    V: ?Sized + Visitor<'a, 'b>,
 {
+    let allocator = visitor.detach_allocator();
     match *expr {
         Expr::Call(f, args) => {
             let new_f = visitor.visit_expr(f);
-            let new_args = merge_iter(args, |expr| visitor.visit_expr_(expr), Expr::clone)
+            let new_args = merge_iter(args, |expr| visitor.visit_expr_(expr), |e| 
+               V::Producer::new(allocator.expect("Allocator"))
+            .produce(e).clone())
                 .map(|exprs: Vec<_>| {
                     &*visitor.allocator().arena.alloc_extend(exprs.into_iter())
                 });
 
-            merge(&f, new_f, &args, new_args, Expr::Call)
+            merge_fn(&f,
+                |e| V::Producer::new(visitor.allocator()).produce(e),
+                new_f,
+                &args,
+                |a| {
+                    let a = a.iter().map(|a| V::Producer::new(visitor.allocator()).produce(a).clone()).collect::<Vec<_>>();
+                    visitor.allocator().arena.alloc_extend(a)
+                },
+                new_args,
+                Expr::Call)
         }
         Expr::Const(_, _) => None,
+        Expr::Ident(_, _) => None,
         Expr::Data(ref id, exprs, pos, expansion) => {
-            merge_iter(exprs, |expr| visitor.visit_expr_(expr), Expr::clone).map(|exprs: Vec<_>| {
+            merge_iter(exprs, |expr| visitor.visit_expr_(expr), |e| V::Producer::new(allocator.expect("Allocator")).produce(e).clone()).map(|exprs: Vec<_>| {
                 Expr::Data(
                     id.clone(),
                     visitor.allocator().arena.alloc_extend(exprs.into_iter()),
@@ -113,54 +191,79 @@ where
                 )
             })
         }
-        Expr::Ident(_, _) => None,
         Expr::Let(ref bind, expr) => {
-            let new_named = match bind.expr {
-                Named::Recursive(ref closures) => {
-                    merge_iter(
-                        closures,
-                        |closure| {
-                            visitor.visit_expr(closure.expr).map(|new_expr| {
-                                Closure {
-                                    name: closure.name.clone(),
-                                    args: closure.args.clone(),
-                                    expr: new_expr,
-                                }
-                            })
-                        },
-                        Closure::clone,
-                    ).map(Named::Recursive)
-                }
-                Named::Expr(bind_expr) => visitor.visit_expr(bind_expr).map(Named::Expr),
-                Named::Expr(bind_expr) => visitor.visit_expr(bind_expr).map(Named::Expr),
-            };
-            let new_bind = new_named.map(|named| {
-                LetBinding {
-                    name: bind.name.clone(),
-                    expr: named,
-                    span_start: bind.span_start,
-                }
-            });
+            let new_bind = walk_bind(visitor, bind);
             let new_expr = visitor.visit_expr(expr);
-            merge(bind, new_bind, &expr, new_expr, Expr::Let)
+            merge_fn(bind,
+                |bind| walk_bind(&mut V::Producer::new(visitor.allocator()), bind).unwrap(),
+                new_bind, &expr,
+                |e| V::Producer::new(visitor.allocator()).produce(e),
+                new_expr, Expr::Let)
         }
         Expr::Match(expr, alts) => {
             let new_expr = visitor.visit_expr(expr);
-            let new_alts = merge_iter(alts, |expr| walk_alt(visitor, expr), Alternative::clone)
+            let new_alts = merge_iter(alts, |expr| walk_alt(visitor, expr), |alt| walk_alt(&mut V::Producer::new(allocator.expect("Allocator")), alt).expect("alt"))
                 .map(|alts: Vec<_>| {
                     &*visitor
                         .allocator()
                         .alternative_arena
                         .alloc_extend(alts.into_iter())
                 });
-            merge(&expr, new_expr, &alts, new_alts, Expr::Match)
+            merge_fn(&expr,
+                |e| V::Producer::new(visitor.allocator()).produce(e),
+                new_expr, &alts,
+                |a| {
+                    let a = a.iter().map(|a| Alternative {
+                        pattern: a.pattern.clone(),
+                        expr: V::Producer::new(visitor.allocator()).produce(a.expr),
+                    }).collect::<Vec<_>>();
+                    visitor.allocator().alternative_arena.alloc_extend(a)
+                },
+                new_alts, Expr::Match)
         }
     }
 }
 
-fn walk_alt<'a, V>(visitor: &mut V, alt: &'a Alternative<'a>) -> Option<Alternative<'a>>
+
+fn walk_bind<'a, 'b, V>(visitor: &mut V, bind: &'b LetBinding<'b>) -> Option<LetBinding<'a>>
 where
-    V: ?Sized + Visitor<'a>,
+    V: ?Sized + Visitor<'a, 'b>,
+{
+    let allocator = visitor.detach_allocator();
+    let new_named = match bind.expr {
+        Named::Recursive(ref closures) => {
+            merge_iter(
+                closures,
+                |closure| {
+                    visitor.visit_expr(closure.expr).map(|new_expr| {
+                        Closure {
+                            name: closure.name.clone(),
+                            args: closure.args.clone(),
+                            expr: new_expr,
+                        }
+                    })
+                },
+                |closure| Closure {
+                    name: closure.name.clone(),
+                    args: closure.args.clone(),
+                    expr: V::Producer::new(allocator.expect("Allocator")).produce(closure.expr),
+                },
+            ).map(Named::Recursive)
+        }
+        Named::Expr(bind_expr) => visitor.visit_expr(bind_expr).map(Named::Expr),
+    };
+    new_named.map(|named| {
+        LetBinding {
+            name: bind.name.clone(),
+            expr: named,
+            span_start: bind.span_start,
+        }
+    })
+}
+
+fn walk_alt<'a, 'b, V>(visitor: &mut V, alt: &'b Alternative<'b>) -> Option<Alternative<'a>>
+where
+    V: ?Sized + Visitor<'a, 'b>,
 {
     let new_expr = visitor.visit_expr(alt.expr);
     new_expr.map(|expr| {

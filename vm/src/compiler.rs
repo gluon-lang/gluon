@@ -8,15 +8,13 @@ use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolModule, SymbolRef};
 use base::pos::{Line, NO_EXPANSION};
 use base::source::Source;
-use core::{self, Expr, Pattern};
+use core::{self, CExpr, Expr, Pattern};
 use types::*;
 use vm::GlobalVmState;
 use source_map::{LocalMap, SourceMap};
 use self::Variable::*;
 
 use {Error, Result};
-
-pub type CExpr<'a> = &'a core::Expr<'a>;
 
 #[derive(Clone, Debug)]
 pub enum Variable<G> {
