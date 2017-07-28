@@ -33,6 +33,7 @@ mod grammar;
 pub mod optimize;
 pub mod interpreter;
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
 use std::iter::once;
@@ -782,13 +783,17 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
     }
     let function_type = remove_aliases_cow(env, alias_type);
 
-    let (_, ret) = function_type.as_function().unwrap_or_else(|| {
-        panic!(
-            "Call expression with a non function type `{}`",
-            function_type
-        )
-    });
-    get_return_type(env, ret, arg_count - 1)
+    let ret = function_type
+        .as_function()
+        .map(|t| Cow::Borrowed(t.1))
+        .unwrap_or_else(|| {
+            debug!(
+                "Call expression with a non function type `{}`",
+                function_type
+            );
+            Cow::Owned(Type::hole())
+        });
+    get_return_type(env, &ret, arg_count - 1)
 }
 
 pub struct PatternTranslator<'a, 'e: 'a>(&'a Translator<'a, 'e>);

@@ -16,7 +16,8 @@ Comma<Rule>: Vec<Rule> =
 
 
 Identifier: Symbol = {
-    <r"[A-Za-z_][A-Za-z0-9_]*"> => symbols.symbol(<>)
+    <r"[A-Za-z_][A-Za-z0-9_]*"> => symbols.symbol(<>),
+    <r"\(#?[A-Za-z_]*[+\-*/]\)"> => symbols.symbol(&<>[1..<>.len() - 1])
 };
 
 Field: (Symbol, Option<Symbol>) = {
