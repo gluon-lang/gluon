@@ -3,13 +3,12 @@ use base::ast::{Literal, TypedIdent};
 use base::fnv::FnvSet;
 use base::merge::merge_iter;
 use base::kind::{ArcKind, KindEnv};
-use base::types::{self, Alias, ArcType, RecordSelector, Type, TypeEnv};
+use base::types::{Alias, ArcType, RecordSelector, TypeEnv};
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolRef};
 use core::{self, Allocator, CExpr, Closure, Expr, LetBinding, Named, Pattern};
 use core::optimize::{walk_expr_alloc, DifferentLifetime, ExprProducer, SameLifetime, Visitor};
 use types::*;
-use self::Variable::*;
 
 use {Error, Result};
 
@@ -101,20 +100,16 @@ impl<'a, 'l, 'g, 'expr> Visitor<'l, 'expr> for Pure<'a, 'l, 'g> {
                     Expr::Ident(ref id, ..) => {
                         match self.1.find(&id.name, self.2) {
                             Some(variable) => match variable {
-                                Variable::Stack(Binding::Expr(expr)) => {
+                                Binding::Expr(expr) => {
                                     self.visit_expr(expr.as_ref());
                                 }
-                                Variable::Stack(Binding::Closure(closure)) => {
+                                Binding::Closure(closure) => {
                                     self.visit_expr(closure.as_ref().1.as_ref());
                                 }
-                                Variable::Stack(Binding::None) => self.0 = false,
-                                Variable::Global(expr) => {
-                                    self.visit_expr(expr);
-                                }
-                                Variable::Constructor(..) => (),
+                                Binding::None => self.0 = false,
                             },
-                            // If we can't resolve the identifier to an expression it is a primitive function
-                            // which can be impure
+                            // If we can't resolve the identifier to an expression it is a
+                            // primitive function which can be impure
                             // FIXME Let primitive functions mark themselves as pure somehow
                             None => if !id.name.as_ref().starts_with("#") {
                                 self.0 = false;
@@ -122,6 +117,16 @@ impl<'a, 'l, 'g, 'expr> Visitor<'l, 'expr> for Pure<'a, 'l, 'g> {
                         }
                     }
                     _ => (),
+                }
+                walk_expr_alloc(self, expr)
+            }
+            Expr::Let(ref bind, expr) => {
+                match bind.expr {
+                    // Creating a group of closures is always pure (though calling them may not be)
+                    Named::Recursive(_) => (),
+                    Named::Expr(expr) => {
+                        walk_expr_alloc(self, expr);
+                    }
                 }
                 walk_expr_alloc(self, expr)
             }
@@ -133,22 +138,14 @@ impl<'a, 'l, 'g, 'expr> Visitor<'l, 'expr> for Pure<'a, 'l, 'g> {
     }
 }
 
-#[derive(Clone, Debug)]
-enum Variable<'l, 'g, G> {
-    Stack(Binding<'l, 'g>),
-    Global(G),
-    Constructor(VmTag, VmIndex),
-}
-
 enum TailCall<'a, T> {
     Tail(CExpr<'a>),
     Value(T),
 }
 
-type ReducedClosure<'l, 'g> = Reduced<
-    (&'l [TypedIdent<Symbol>], CExpr<'l>),
-    (&'g [TypedIdent<Symbol>], CExpr<'g>),
->;
+pub type ClosureRef<'a> = (&'a [TypedIdent<Symbol>], CExpr<'a>);
+
+type ReducedClosure<'l, 'g> = Reduced<ClosureRef<'l>, ClosureRef<'g>>;
 
 impl<'l, 'g> ReducedClosure<'l, 'g> {
     fn as_ref(&self) -> (&[TypedIdent<Symbol>], ReducedExpr<'l, 'g>) {
@@ -160,28 +157,29 @@ impl<'l, 'g> ReducedClosure<'l, 'g> {
 }
 
 #[derive(Clone, Copy, Debug)]
-enum Binding<'l, 'g> {
-    Expr(ReducedExpr<'l, 'g>),
-    Closure(ReducedClosure<'l, 'g>),
+pub enum Binding<E, C> {
+    Expr(E),
+    Closure(C),
     None,
 }
 
-impl<'l, 'g> From<ReducedExpr<'l, 'g>> for Binding<'l, 'g> {
+impl<'l, 'g, C> From<ReducedExpr<'l, 'g>> for Binding<ReducedExpr<'l, 'g>, C> {
     fn from(expr: ReducedExpr<'l, 'g>) -> Self {
         Binding::Expr(expr)
     }
 }
 
-impl<'l, 'g> From<ReducedClosure<'l, 'g>> for Binding<'l, 'g> {
+impl<'l, 'g, E> From<ReducedClosure<'l, 'g>> for Binding<E, ReducedClosure<'l, 'g>> {
     fn from(expr: ReducedClosure<'l, 'g>) -> Self {
         Binding::Closure(expr)
     }
 }
 
+type StackBinding<'l, 'g> = Binding<ReducedExpr<'l, 'g>, ReducedClosure<'l, 'g>>;
 
 struct FunctionEnv<'l, 'g> {
     /// The variables currently in scope in the this function.
-    stack: ScopedMap<Symbol, Binding<'l, 'g>>,
+    stack: ScopedMap<Symbol, StackBinding<'l, 'g>>,
 }
 
 struct FunctionEnvs<'l, 'g> {
@@ -220,7 +218,7 @@ impl<'l, 'g> FunctionEnvs<'l, 'g> {
 
     fn push_stack_var<T>(&mut self, compiler: &Compiler<'g, 'l>, s: Symbol, expr: T)
     where
-        T: Into<Binding<'l, 'g>>,
+        T: Into<StackBinding<'l, 'g>>,
     {
         let expr = expr.into();
         let expr = {
@@ -253,7 +251,7 @@ impl<'l, 'g> FunctionEnv<'l, 'g> {
         self.new_stack_var(s, Binding::None)
     }
 
-    fn new_stack_var(&mut self, s: Symbol, expr: Binding<'l, 'g>) {
+    fn new_stack_var(&mut self, s: Symbol, expr: StackBinding<'l, 'g>) {
         self.stack.insert(s, expr);
     }
 
@@ -266,9 +264,11 @@ impl<'l, 'g> FunctionEnv<'l, 'g> {
     }
 }
 
+pub type GlobalBinding<'a> = Binding<CExpr<'a>, ClosureRef<'a>>;
+
 pub struct Compiler<'a, 'e> {
     allocator: &'e Allocator<'e>,
-    globals: &'a Fn(&Symbol) -> Option<CExpr<'a>>,
+    globals: &'a Fn(&Symbol) -> Option<GlobalBinding<'a>>,
     stack_constructors: ScopedMap<Symbol, ArcType>,
     stack_types: ScopedMap<Symbol, Alias<Symbol, ArcType>>,
     bindings: Vec<LetBinding<'e>>,
@@ -301,7 +301,7 @@ impl<'a, 'e> TypeEnv for Compiler<'a, 'e> {
 impl<'a, 'e> Compiler<'a, 'e> {
     pub fn new(
         allocator: &'e Allocator<'e>,
-        globals: &'a Fn(&Symbol) -> Option<CExpr<'a>>,
+        globals: &'a Fn(&Symbol) -> Option<GlobalBinding<'a>>,
     ) -> Compiler<'a, 'e> {
         Compiler {
             allocator,
@@ -316,38 +316,26 @@ impl<'a, 'e> Compiler<'a, 'e> {
         &self,
         id: &Symbol,
         current: &mut FunctionEnvs<'e, 'a>,
-    ) -> Option<Variable<'e, 'a, CExpr<'a>>> {
-        let variable = self.stack_constructors
-            .iter()
-            .filter_map(|(_, typ)| match **typ {
-                Type::Variant(ref row) => row.row_iter()
-                    .enumerate()
-                    .find(|&(_, field)| field.name == *id),
-                _ => None,
-            })
-            .next()
-            .map(|(tag, field)| {
-                Constructor(
-                    tag as VmIndex,
-                    types::arg_iter(&field.typ).count() as VmIndex,
-                )
+    ) -> Option<StackBinding<'e, 'a>> {
+        current
+            .stack
+            .get(id)
+            .cloned()
+            .or_else(|| {
+                let i = current.envs.len() - 1;
+                let (rest, _current) = current.envs.split_at_mut(i);
+                rest.iter()
+                    .rev()
+                    .filter_map(|env| env.stack.get(id).cloned())
+                    .next()
             })
             .or_else(|| {
-                current.stack.get(id).map(|&expr| Stack(expr)).or_else(|| {
-                    let i = current.envs.len() - 1;
-                    let (rest, _current) = current.envs.split_at_mut(i);
-                    rest.iter()
-                        .rev()
-                        .filter_map(|env| env.stack.get(id).map(|&expr| Stack(expr)))
-                        .next()
+                (self.globals)(id).map(|global| match global {
+                    Binding::Expr(expr) => Binding::Expr(Reduced::Global(expr)),
+                    Binding::Closure(c) => Binding::Closure(Reduced::Global(c)),
+                    Binding::None => Binding::None,
                 })
             })
-            .or_else(|| (self.globals)(id).map(Variable::Global));
-        variable.and_then(|variable| match variable {
-            Stack(i) => Some(Stack(i)),
-            Global(s) => Some(Global(s)),
-            Constructor(tag, args) => Some(Constructor(tag, args)),
-        })
     }
 
     /// Compiles an expression to a zero argument function which can be directly fed to the
@@ -370,20 +358,16 @@ impl<'a, 'e> Compiler<'a, 'e> {
         &self,
         id: &Symbol,
         function: &mut FunctionEnvs<'e, 'a>,
-    ) -> Result<Binding<'e, 'a>> {
+    ) -> Result<StackBinding<'e, 'a>> {
         match self.find(id, function) {
-            Some(variable) => match variable {
-                Stack(expr) => {
-                    if let Binding::Expr(e) = expr {
-                        debug!("Loading `{}` as `{}`", id, e.as_ref());
-                    } else {
-                        debug!("Unable to fold `{}`", id);
-                    }
-                    Ok(expr)
+            Some(expr) => {
+                if let Binding::Expr(e) = expr {
+                    debug!("Loading `{}` as `{}`", id, e.as_ref());
+                } else {
+                    debug!("Unable to fold `{}`", id);
                 }
-                Global(expr) => Ok(Binding::Expr(Reduced::Global(expr))),
-                Constructor(..) => Ok(Binding::None),
-            },
+                Ok(expr)
+            }
             // Can't inline what we can't resolve
             None => Ok(Binding::None),
         }
@@ -544,7 +528,9 @@ impl<'a, 'e> Compiler<'a, 'e> {
                 return Ok(TailCall::Tail(body));
             }
             Expr::Call(f, args) => {
+                println!("{}", expr);
                 let f = self.compile(f, function)?.unwrap_or(Reduced::Local(f));
+                println!("xx {}", f.as_ref());
                 match *f.as_ref() {
                     Expr::Ident(ref id, ..) => {
                         if id.name.as_ref().starts_with("#") && args.len() == 2 {
@@ -577,6 +563,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
             Expr::Match(expr, alts) => {
                 let expr = self.compile(expr, function)?
                     .unwrap_or(Reduced::Local(expr));
+                println!("aaa {}\n", expr.as_ref());
                 for alt in alts {
                     self.stack_constructors.enter_scope();
                     function.stack.enter_scope();
@@ -621,6 +608,27 @@ impl<'a, 'e> Compiler<'a, 'e> {
         pattern_expr: ReducedExpr<'e, 'a>,
         function: &mut FunctionEnvs<'e, 'a>,
     ) -> Result<()> {
+        fn peek_through_lets<'l, 'g, 'e>(compiler: &mut Compiler<'g, 'l>, function: &mut FunctionEnvs<'l, 'g>, expr: CExpr<'e>) -> Option<CExpr<'e>> {
+            fn peek_through_lets_(expr: CExpr) -> CExpr {
+                match *expr {
+                    Expr::Let(_, body) => {
+                        peek_through_lets_(body)
+                    }
+                    _ => expr,
+                }
+            }
+            let mut p = Pure(true, compiler, function);
+            p.visit_expr(expr);
+            if p.0 {
+                Some(peek_through_lets_(expr))
+            } else {
+                None
+            }
+        }
+        let pattern_expr = match pattern_expr {
+            Reduced::Local(expr) => Reduced::Local(peek_through_lets(self, function, expr).unwrap_or(expr)),
+            Reduced::Global(expr) => Reduced::Global(peek_through_lets(self, function, expr).unwrap_or(expr)),
+        };
         match *pattern {
             Pattern::Ident(ref name) => {
                 function.push_stack_var(self, name.name.clone(), pattern_expr);
@@ -641,7 +649,12 @@ impl<'a, 'e> Compiler<'a, 'e> {
                                 .as_ref()
                                 .unwrap_or(&pattern_field.0.name)
                                 .clone();
-                            function.push_stack_var(self, field_name, wrap(&exprs[field]));
+                            let expr = match exprs[field] {
+                                Expr::Ident(ref id, _) => self.load_identifier(&id.name, function)?,
+                                ref expr => wrap(expr).into(),
+                            };
+                            println!("bind {} {:?}", field_name, expr);
+                            function.push_stack_var(self, field_name, expr);
                         }
                     },
                     _ => panic!("Expected record, got `{}` at {:?}", pattern_expr.as_ref(), pattern)
@@ -754,7 +767,7 @@ mod tests {
             let globals = $globals;
 
             let allocator = Allocator::new();
-    
+
             let actual_expr = parse_core_expr(&mut symbols, &allocator, $actual)
                 .unwrap();
 
@@ -766,7 +779,7 @@ mod tests {
 
             let expected_expr = parse_core_expr(&mut symbols, &allocator, $expected)
                 .unwrap();
-            
+
             assert_deq!(*actual_expr, expected_expr);
         } }
     }
@@ -813,7 +826,7 @@ mod tests {
 
         let expr = r#"
         x"#;
-        assert_eq_expr!(expr, "1", move |_: &_| -> Option<CExpr> { Some(global) });
+        assert_eq_expr!(expr, "1", move |_: &_| Some(Binding::Expr(global)));
     }
 
     #[test]
@@ -852,6 +865,51 @@ mod tests {
             let g y = (#Int+) 2 y in
             g
         "#
+        );
+    }
+
+    // TODO
+    #[test]
+    #[ignore]
+    fn fold_global_function_call_with_unknown_parameters() {
+        let _ = ::env_logger::init();
+        let mut symbols = Symbols::new();
+        let global_allocator = Allocator::new();
+        let global = parse_core_expr(
+            &mut symbols,
+            &global_allocator,
+            "let f x y = (#Int+) x y in { f }",
+        ).unwrap();
+        let global: CExpr = global_allocator.arena.alloc(global);
+
+
+        let expr = r#"
+            let g y = (match global with | { f } -> f end) 2 y in
+            g
+        "#;
+        assert_eq_expr!(
+            expr,
+            r#"
+            let g y = (#Int+) 2 y in
+            g
+        "#,
+            move |s: &Symbol| {
+                if s.as_ref() == "f" {
+                    match *global {
+                        Expr::Let(ref bind, _) => {
+                            match bind.expr {
+                                Named::Recursive(ref closures) => {
+                                    Some(Binding::Closure((&closures[0].args[..], closures[0].expr)))
+                                }
+                                _ => unreachable!()
+                            }
+                        }
+                        _ => unreachable!()
+                    }
+                } else {
+                    Some(Binding::Expr(global))
+                }
+            }
         );
     }
 }
