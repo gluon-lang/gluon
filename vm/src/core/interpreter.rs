@@ -1,31 +1,62 @@
 use std::ops::{Deref, DerefMut};
-use base::ast::{Literal, Typed, TypedIdent};
+use base::ast::{Literal, TypedIdent};
 use base::fnv::FnvSet;
-use base::resolve;
+use base::merge::merge_iter;
 use base::kind::{ArcKind, KindEnv};
 use base::types::{self, Alias, ArcType, RecordSelector, Type, TypeEnv};
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolRef};
-use core::{self, Allocator, CExpr, Expr, Pattern};
+use core::{self, Allocator, CExpr, Closure, Expr, LetBinding, Named, Pattern};
 use core::optimize::{walk_expr_alloc, DifferentLifetime, ExprProducer, SameLifetime, Visitor};
 use types::*;
 use self::Variable::*;
 
 use {Error, Result};
 
-pub struct FreeVars(FnvSet<Symbol>);
+fn is_variable_in_expression<'a, I>(iter: I, expr: CExpr) -> bool
+where
+    I: IntoIterator<Item = &'a Symbol>,
+{
+    struct FreeVars(FnvSet<Symbol>);
+    impl<'e> Visitor<'e, 'e> for FreeVars {
+        type Producer = SameLifetime<'e>;
+
+        fn visit_expr(&mut self, expr: CExpr<'e>) -> Option<CExpr<'e>> {
+            match *expr {
+                Expr::Ident(ref id, ..) => {
+                    self.0.insert(id.name.clone());
+                    None
+                }
+                _ => walk_expr_alloc(self, expr),
+            }
+        }
+        fn detach_allocator(&self) -> Option<&'e Allocator<'e>> {
+            None
+        }
+    }
+    let mut free_vars = FreeVars(FnvSet::default());
+    free_vars.visit_expr(expr);
+    iter.into_iter().any(|field| free_vars.0.contains(field))
+}
 
 #[derive(Copy, Clone, Debug)]
-enum ReducedExpr<'l, 'g> {
-    Local(CExpr<'l>),
-    Global(CExpr<'g>),
+enum Reduced<L, G> {
+    Local(L),
+    Global(G),
 }
+
+type ReducedExpr<'l, 'g> = Reduced<CExpr<'l>, CExpr<'g>>;
 
 impl<'l, 'g> ReducedExpr<'l, 'g> {
     fn into_local(self, allocator: &'l Allocator<'l>) -> CExpr<'l> {
         match self {
-            ReducedExpr::Local(e) => e,
-            ReducedExpr::Global(e) => DifferentLifetime::new(allocator).produce(e),
+            Reduced::Local(e) => e,
+            Reduced::Global(e) => DifferentLifetime::new(allocator).produce(e),
+        }
+    }
+    fn as_ref(&self) -> &Expr {
+        match *self {
+            Reduced::Local(e) | Reduced::Global(e) => e,
         }
     }
 }
@@ -33,50 +64,25 @@ impl<'l, 'g> ReducedExpr<'l, 'g> {
 macro_rules! match_reduce {
     ($expr: expr, $wrapper: ident; $($pat: pat => $alt: expr),*) => {
         match $expr {
-            ReducedExpr::Local(e) => {
-                let $wrapper = ReducedExpr::Local;
+            Reduced::Local(e) => {
+                let $wrapper = Reduced::Local;
                 match *e {
                     $($pat => $alt),*
                 }
             }
-            ReducedExpr::Global(e) => {
-                let $wrapper = ReducedExpr::Global;
+            Reduced::Global(e) => {
+                let $wrapper = Reduced::Global;
                 match *e {
                     $($pat => $alt),*
                 }
             }
-        }
-    }
-}
-
-impl<'l, 'g> ReducedExpr<'l, 'g> {
-    fn as_ref(&self) -> &Expr {
-        match *self {
-            ReducedExpr::Local(e) | ReducedExpr::Global(e) => e,
         }
     }
 }
 
 impl<'l, 'g> From<CExpr<'l>> for ReducedExpr<'l, 'g> {
     fn from(expr: CExpr<'l>) -> Self {
-        ReducedExpr::Local(expr)
-    }
-}
-
-impl<'e> Visitor<'e, 'e> for FreeVars {
-    type Producer = SameLifetime<'e>;
-
-    fn visit_expr(&mut self, expr: CExpr<'e>) -> Option<CExpr<'e>> {
-        match *expr {
-            Expr::Ident(ref id, ..) => {
-                self.0.insert(id.name.clone());
-                None
-            }
-            _ => walk_expr_alloc(self, expr),
-        }
-    }
-    fn detach_allocator(&self) -> Option<&'e Allocator<'e>> {
-        None
+        Reduced::Local(expr)
     }
 }
 
@@ -90,24 +96,34 @@ impl<'a, 'l, 'g, 'expr> Visitor<'l, 'expr> for Pure<'a, 'l, 'g> {
             return None;
         }
         match *expr {
-            Expr::Ident(ref id, ..) => {
-                match self.1.find(&id.name, self.2) {
-                    Some(variable) => match variable {
-                        Variable::Stack(Some(expr)) => {
-                            self.visit_expr(expr.as_ref());
+            Expr::Call(f, _) => {
+                match *f {
+                    Expr::Ident(ref id, ..) => {
+                        match self.1.find(&id.name, self.2) {
+                            Some(variable) => match variable {
+                                Variable::Stack(Binding::Expr(expr)) => {
+                                    self.visit_expr(expr.as_ref());
+                                }
+                                Variable::Stack(Binding::Closure(closure)) => {
+                                    self.visit_expr(closure.as_ref().1.as_ref());
+                                }
+                                Variable::Stack(Binding::None) => self.0 = false,
+                                Variable::Global(expr) => {
+                                    self.visit_expr(expr);
+                                }
+                                Variable::Constructor(..) => (),
+                            },
+                            // If we can't resolve the identifier to an expression it is a primitive function
+                            // which can be impure
+                            // FIXME Let primitive functions mark themselves as pure somehow
+                            None => if !id.name.as_ref().starts_with("#") {
+                                self.0 = false;
+                            },
                         }
-                        Variable::Stack(None) => self.0 = false,
-                        Variable::Global(expr) => {
-                            self.visit_expr(expr);
-                        }
-                        Variable::Constructor(..) => (),
-                    },
-                    // If we can't resolve the identifier to an expression it is a primitive function
-                    // which can be impure
-                    // FIXME Let primitive functions mark themselves as pure somehow
-                    None => self.0 = false,
+                    }
+                    _ => (),
                 }
-                None
+                walk_expr_alloc(self, expr)
             }
             _ => walk_expr_alloc(self, expr),
         }
@@ -119,7 +135,7 @@ impl<'a, 'l, 'g, 'expr> Visitor<'l, 'expr> for Pure<'a, 'l, 'g> {
 
 #[derive(Clone, Debug)]
 enum Variable<'l, 'g, G> {
-    Stack(Option<ReducedExpr<'l, 'g>>),
+    Stack(Binding<'l, 'g>),
     Global(G),
     Constructor(VmTag, VmIndex),
 }
@@ -129,9 +145,43 @@ enum TailCall<'a, T> {
     Value(T),
 }
 
+type ReducedClosure<'l, 'g> = Reduced<
+    (&'l [TypedIdent<Symbol>], CExpr<'l>),
+    (&'g [TypedIdent<Symbol>], CExpr<'g>),
+>;
+
+impl<'l, 'g> ReducedClosure<'l, 'g> {
+    fn as_ref(&self) -> (&[TypedIdent<Symbol>], ReducedExpr<'l, 'g>) {
+        match *self {
+            Reduced::Local((a, e)) => (a, Reduced::Local(e)),
+            Reduced::Global((a, e)) => (a, Reduced::Global(e)),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Binding<'l, 'g> {
+    Expr(ReducedExpr<'l, 'g>),
+    Closure(ReducedClosure<'l, 'g>),
+    None,
+}
+
+impl<'l, 'g> From<ReducedExpr<'l, 'g>> for Binding<'l, 'g> {
+    fn from(expr: ReducedExpr<'l, 'g>) -> Self {
+        Binding::Expr(expr)
+    }
+}
+
+impl<'l, 'g> From<ReducedClosure<'l, 'g>> for Binding<'l, 'g> {
+    fn from(expr: ReducedClosure<'l, 'g>) -> Self {
+        Binding::Closure(expr)
+    }
+}
+
+
 struct FunctionEnv<'l, 'g> {
     /// The variables currently in scope in the this function.
-    stack: ScopedMap<Symbol, Option<ReducedExpr<'l, 'g>>>,
+    stack: ScopedMap<Symbol, Binding<'l, 'g>>,
 }
 
 struct FunctionEnvs<'l, 'g> {
@@ -168,20 +218,24 @@ impl<'l, 'g> FunctionEnvs<'l, 'g> {
         self.envs.pop().expect("FunctionEnv in scope")
     }
 
-    fn push_stack_var(
-        &mut self,
-        compiler: &Compiler<'g, 'l>,
-        s: Symbol,
-        expr: ReducedExpr<'l, 'g>,
-    ) {
+    fn push_stack_var<T>(&mut self, compiler: &Compiler<'g, 'l>, s: Symbol, expr: T)
+    where
+        T: Into<Binding<'l, 'g>>,
+    {
+        let expr = expr.into();
         let expr = {
             let mut p = Pure(true, compiler, self);
-            p.visit_expr(expr.as_ref());
+            match expr {
+                Binding::Expr(expr) => {
+                    p.visit_expr(expr.as_ref());
+                }
+                Binding::Closure(_) | Binding::None => (),
+            }
             // Only allow pure expression to be folded
             if p.0 {
-                Some(expr)
+                expr
             } else {
-                None
+                Binding::None
             }
         };
         self.new_stack_var(s, expr)
@@ -196,10 +250,10 @@ impl<'l, 'g> FunctionEnv<'l, 'g> {
     }
 
     fn push_unknown_stack_var(&mut self, s: Symbol) {
-        self.new_stack_var(s, None)
+        self.new_stack_var(s, Binding::None)
     }
 
-    fn new_stack_var(&mut self, s: Symbol, expr: Option<ReducedExpr<'l, 'g>>) {
+    fn new_stack_var(&mut self, s: Symbol, expr: Binding<'l, 'g>) {
         self.stack.insert(s, expr);
     }
 
@@ -217,6 +271,7 @@ pub struct Compiler<'a, 'e> {
     globals: &'a Fn(&Symbol) -> Option<CExpr<'a>>,
     stack_constructors: ScopedMap<Symbol, ArcType>,
     stack_types: ScopedMap<Symbol, Alias<Symbol, ArcType>>,
+    bindings: Vec<LetBinding<'e>>,
 }
 
 impl<'a, 'e> KindEnv for Compiler<'a, 'e> {
@@ -253,6 +308,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
             globals,
             stack_constructors: ScopedMap::new(),
             stack_types: ScopedMap::new(),
+            bindings: Vec::new(),
         }
     }
 
@@ -314,22 +370,22 @@ impl<'a, 'e> Compiler<'a, 'e> {
         &self,
         id: &Symbol,
         function: &mut FunctionEnvs<'e, 'a>,
-    ) -> Result<Option<ReducedExpr<'e, 'a>>> {
+    ) -> Result<Binding<'e, 'a>> {
         match self.find(id, function) {
             Some(variable) => match variable {
                 Stack(expr) => {
-                    if let Some(e) = expr {
+                    if let Binding::Expr(e) = expr {
                         debug!("Loading `{}` as `{}`", id, e.as_ref());
                     } else {
                         debug!("Unable to fold `{}`", id);
                     }
                     Ok(expr)
                 }
-                Global(expr) => Ok(Some(ReducedExpr::Global(expr))),
-                Constructor(..) => Ok(None),
+                Global(expr) => Ok(Binding::Expr(Reduced::Global(expr))),
+                Constructor(..) => Ok(Binding::None),
             },
             // Can't inline what we can't resolve
-            None => Ok(None),
+            None => Ok(Binding::None),
         }
     }
 
@@ -368,7 +424,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
         let new_expr = walk_expr_alloc(&mut visitor, expr);
         match visitor.error {
             Some(err) => Err(err),
-            None => Ok(new_expr.map(ReducedExpr::Local)),
+            None => Ok(new_expr.map(Reduced::Local)),
         }
     }
 
@@ -380,10 +436,34 @@ impl<'a, 'e> Compiler<'a, 'e> {
         // Store a stack of expressions which need to be cleaned up after this "tailcall" loop is
         // done
         function.stack.enter_scope();
+        let scope_start = self.bindings.len();
         loop {
             match self.compile_(expr, function)? {
                 TailCall::Tail(tail) => expr = tail,
-                TailCall::Value(value) => return Ok(value),
+                TailCall::Value(mut value) => {
+                    let allocator = self.allocator;
+                    for bind in self.bindings.drain(scope_start..).rev() {
+                        let variable_in_value = {
+                            let body = value.as_ref().map_or(expr, |v| v.as_ref());
+                            match bind.expr {
+                                Named::Recursive(ref closures) => is_variable_in_expression(
+                                    closures.iter().map(|closure| &closure.name.name),
+                                    body,
+                                ),
+                                Named::Expr(_) => {
+                                    is_variable_in_expression(Some(&bind.name.name), body)
+                                }
+                            }
+                        };
+                        if variable_in_value {
+                            value = Some(Reduced::Local(&*self.allocator.arena.alloc(Expr::Let(
+                                bind,
+                                value.map_or(expr, |value| value.into_local(allocator)),
+                            ))));
+                        }
+                    }
+                    return Ok(value);
+                }
             }
         }
     }
@@ -394,99 +474,109 @@ impl<'a, 'e> Compiler<'a, 'e> {
         function: &mut FunctionEnvs<'e, 'a>,
     ) -> Result<TailCall<'e, Option<ReducedExpr<'e, 'a>>>> {
         let reduced = match *expr {
-            Expr::Const(_, _) => Some(ReducedExpr::Local(expr)),
-            Expr::Ident(ref id, _) => self.load_identifier(&id.name, function)?,
+            Expr::Const(_, _) => Some(Reduced::Local(expr)),
+            Expr::Ident(ref id, _) => match self.load_identifier(&id.name, function)? {
+                Binding::Expr(expr) => Some(expr),
+                _ => None,
+            },
             Expr::Let(ref let_binding, ref body) => {
                 self.stack_constructors.enter_scope();
-                match let_binding.expr {
+                let new_named = match let_binding.expr {
                     core::Named::Expr(ref bind_expr) => {
                         let reduced = self.compile(bind_expr, function)?;
                         function.push_stack_var(
                             self,
                             let_binding.name.name.clone(),
-                            reduced.unwrap_or(ReducedExpr::Local(bind_expr)),
+                            Binding::Expr(reduced.unwrap_or(Reduced::Local(bind_expr))),
                         );
+                        reduced.map(|e| Named::Expr(e.into_local(self.allocator)))
                     }
                     core::Named::Recursive(ref closures) => {
                         for closure in closures.iter() {
-                            function.push_unknown_stack_var(closure.name.name.clone());
+                            function.push_stack_var(
+                                self,
+                                closure.name.name.clone(),
+                                Reduced::Local((&closure.args[..], closure.expr)),
+                            );
                         }
-                        for closure in closures {
-                            function.stack.enter_scope();
+                        let mut result = Ok(());
+                        let new_closures = merge_iter(
+                            closures,
+                            |closure| {
+                                function.stack.enter_scope();
 
-                            self.compile_lambda(
-                                &closure.name,
-                                &closure.args,
-                                &closure.expr,
-                                function,
-                            )?;
+                                let new_body = match self.compile_lambda(
+                                    &closure.name,
+                                    &closure.args,
+                                    &closure.expr,
+                                    function,
+                                ) {
+                                    Ok(b) => b,
+                                    Err(err) => {
+                                        result = Err(err);
+                                        return None;
+                                    }
+                                };
+                                let new_body = new_body.map(|expr| {
+                                    Closure {
+                                        name: closure.name.clone(),
+                                        args: closure.args.clone(),
+                                        expr: expr.into_local(self.allocator),
+                                    }
+                                });
 
-                            function.exit_scope();
-                        }
+                                function.exit_scope();
+
+                                new_body
+                            },
+                            Clone::clone,
+                        ).map(Named::Recursive);
+                        result?;
+                        new_closures
                     }
+                };
+                if let Some(expr) = new_named {
+                    self.bindings.push(LetBinding {
+                        expr,
+                        ..let_binding.clone()
+                    });
                 }
                 return Ok(TailCall::Tail(body));
             }
-            Expr::Call(f, args) if args.len() == 2 => {
-                let f = self.compile(f, function)?.unwrap_or(ReducedExpr::Local(f));
+            Expr::Call(f, args) => {
+                let f = self.compile(f, function)?.unwrap_or(Reduced::Local(f));
                 match *f.as_ref() {
-                    Expr::Ident(ref id, ..) if id.name.as_ref().starts_with("#") => {
-                        macro_rules! binop {
-                            ($id: expr) => { {
-                                let f: fn (_, _) -> _ = match $id.name.as_ref().chars().last().unwrap() {
-                                    '+' => |l, r| l + r,
-                                    '-' => |l, r| l - r,
-                                    '*' => |l, r| l * r,
-                                    '/' => |l, r| l / r,
-                                    _ => return Err(format!("Invalid binop `{}`", id.name).into()),
-                                };
-                                f
-                            } }
-                        }
-
-                        let l = self.compile(&args[0], function)?;
-                        let l = match l {
-                            Some(l) => l,
-                            None => return self.walk_expr(expr, function).map(TailCall::Value),
-                        };
-                        let r = self.compile(&args[1], function)?;
-                        let r = match r {
-                            Some(r) => r,
-                            None => return self.walk_expr(expr, function).map(TailCall::Value),
-                        };
-                        match (l.as_ref(), r.as_ref()) {
-                            (
-                                &Expr::Const(Literal::Int(l), ..),
-                                &Expr::Const(Literal::Int(r), ..),
-                            ) => {
-                                let f = binop!(id);
-                                Some(ReducedExpr::Local(
-                                    self.allocator
-                                        .arena
-                                        .alloc(Expr::Const(Literal::Int(f(l, r)), expr.span())),
-                                ))
+                    Expr::Ident(ref id, ..) => {
+                        if id.name.as_ref().starts_with("#") && args.len() == 2 {
+                            self.reduce_primitive_binop(function, expr, id, args)?
+                        } else {
+                            match self.load_identifier(&id.name, function)? {
+                                Binding::Closure(closure) => {
+                                    function.start_function(self);
+                                    let (closure_args, closure_body) = closure.as_ref();
+                                    // FIXME Avoid doing into_local here somehow
+                                    let closure_body = closure_body.into_local(self.allocator);
+                                    for (name, value) in closure_args.iter().zip(args) {
+                                        function.push_stack_var(
+                                            self,
+                                            name.name.clone(),
+                                            Reduced::Local(value),
+                                        );
+                                    }
+                                    let expr = self.compile(closure_body, function)?;
+                                    function.end_function(self);
+                                    expr
+                                }
+                                _ => self.walk_expr(expr, function)?,
                             }
-                            (
-                                &Expr::Const(Literal::Float(l), ..),
-                                &Expr::Const(Literal::Float(r), ..),
-                            ) => {
-                                let f = binop!(id);
-                                Some(ReducedExpr::Local(
-                                    self.allocator
-                                        .arena
-                                        .alloc(Expr::Const(Literal::Float(f(l, r)), expr.span())),
-                                ))
-                            }
-                            _ => None,
                         }
                     }
                     _ => self.walk_expr(expr, function)?,
                 }
             }
-            Expr::Call(..) => self.walk_expr(expr, function)?,
             Expr::Match(expr, alts) => {
                 let expr = self.compile(expr, function)?
-                    .unwrap_or(ReducedExpr::Local(expr));
+                    .unwrap_or(Reduced::Local(expr));
                 for alt in alts {
                     self.stack_constructors.enter_scope();
                     function.stack.enter_scope();
@@ -495,26 +585,22 @@ impl<'a, 'e> Compiler<'a, 'e> {
                             function.push_unknown_stack_var(arg.name.clone());
                         },
                         Pattern::Record { .. } => {
-                            let typ = &expr.as_ref().env_type_of(self);
-                            self.compile_let_pattern(&alt.pattern, expr, typ, function)?;
+                            self.compile_let_pattern(&alt.pattern, expr, function)?;
                         }
                         Pattern::Ident(ref id) => {
                             function.push_stack_var(self, id.name.clone(), expr);
                         }
                     }
                     let new_expr = self.compile(&alt.expr, function)?
-                        .unwrap_or(ReducedExpr::Local(&alt.expr));
+                        .unwrap_or(Reduced::Local(&alt.expr));
                     function.exit_scope();
                     self.stack_constructors.exit_scope();
                     match alt.pattern {
                         Pattern::Record(ref fields) if alts.len() == 1 => {
-                            let mut free_vars = FreeVars(FnvSet::default());
-                            free_vars.visit_expr(new_expr.as_ref());
-                            let free_vars_in_expr = fields.iter().any(|field| {
-                                let field_name = field.1.as_ref().unwrap_or(&field.0.name);
-                                free_vars.0.contains(field_name)
-                            });
-                            if !free_vars_in_expr {
+                            let fields = fields
+                                .iter()
+                                .map(|field| field.1.as_ref().unwrap_or(&field.0.name));
+                            if !is_variable_in_expression(fields, new_expr.as_ref()) {
                                 debug!("Removing redundant match `{}`", alt.pattern);
                                 return Ok(TailCall::Value(Some(new_expr)));
                             }
@@ -533,7 +619,6 @@ impl<'a, 'e> Compiler<'a, 'e> {
         &mut self,
         pattern: &Pattern,
         pattern_expr: ReducedExpr<'e, 'a>,
-        pattern_type: &ArcType,
         function: &mut FunctionEnvs<'e, 'a>,
     ) -> Result<()> {
         match *pattern {
@@ -573,19 +658,79 @@ impl<'a, 'e> Compiler<'a, 'e> {
         args: &[TypedIdent],
         body: CExpr<'e>,
         function: &mut FunctionEnvs<'e, 'a>,
-    ) -> Result<()> {
+    ) -> Result<Option<ReducedExpr<'e, 'a>>> {
         function.start_function(self);
 
         function.stack.enter_scope();
         for arg in args {
             function.push_unknown_stack_var(arg.name.clone());
         }
-        self.compile(body, function)?;
+        let body = self.compile(body, function)?;
 
         function.exit_scope();
 
         function.end_function(self);
-        Ok(())
+        Ok(body)
+    }
+
+    fn reduce_primitive_binop(
+        &mut self,
+        function: &mut FunctionEnvs<'e, 'a>,
+        expr: CExpr<'e>,
+        id: &TypedIdent<Symbol>,
+        args: &'e [Expr<'e>],
+    ) -> Result<Option<ReducedExpr<'e, 'a>>> {
+        macro_rules! binop {
+            () => { {
+                let f: fn (_, _) -> _ = match id.name.as_ref().chars().last().unwrap() {
+                    '+' => |l, r| l + r,
+                    '-' => |l, r| l - r,
+                    '*' => |l, r| l * r,
+                    '/' => |l, r| l / r,
+                    _ => return Err(format!("Invalid binop `{}`", id.name).into()),
+                };
+                f
+            } }
+        }
+
+        let l = self.compile(&args[0], function)?;
+        let r = self.compile(&args[1], function)?;
+        Ok(match (
+            l.as_ref().map(|l| l.as_ref()),
+            r.as_ref().map(|r| r.as_ref()),
+        ) {
+            (Some(&Expr::Const(Literal::Int(l), ..)), Some(&Expr::Const(Literal::Int(r), ..))) => {
+                let f = binop!();
+                Some(Reduced::Local(
+                    self.allocator
+                        .arena
+                        .alloc(Expr::Const(Literal::Int(f(l, r)), expr.span())),
+                ))
+            }
+            (
+                Some(&Expr::Const(Literal::Float(l), ..)),
+                Some(&Expr::Const(Literal::Float(r), ..)),
+            ) => {
+                let f = binop!();
+                Some(Reduced::Local(
+                    self.allocator
+                        .arena
+                        .alloc(Expr::Const(Literal::Float(f(l, r)), expr.span())),
+                ))
+            }
+            _ => match *expr {
+                Expr::Call(f, args) => {
+                    let new_args = self.allocator.arena.alloc_extend(vec![
+                        l.map_or(args[0].clone(), |l| l.into_local(self.allocator).clone()),
+                        r.map_or(args[1].clone(), |r| r.into_local(self.allocator).clone()),
+                    ]);
+                    Some(Reduced::Local(
+                        &*self.allocator.arena.alloc(Expr::Call(f, new_args)),
+                    ))
+                }
+                _ => unreachable!(),
+            },
+        })
     }
 }
 
@@ -595,11 +740,8 @@ mod tests {
 
     use super::*;
 
-    use base::symbol::{SymbolModule, Symbols};
+    use base::symbol::Symbols;
 
-    use self::parser::parse_expr;
-
-    use thread::RootedThread;
     use core::*;
     use core::grammar::parse_Expr as parse_core_expr;
 
@@ -682,5 +824,34 @@ mod tests {
             (#Int+) 1 2
         "#;
         assert_eq_expr!(expr, "3");
+    }
+
+    #[test]
+    fn fold_function_call() {
+        let _ = ::env_logger::init();
+
+        let expr = r#"
+            let f x y = (#Int+) x y
+            in f 1 2
+        "#;
+        assert_eq_expr!(expr, "3");
+    }
+
+    #[test]
+    fn fold_function_call_with_unknown_parameters() {
+        let _ = ::env_logger::init();
+
+        let expr = r#"
+            let f x y = (#Int+) x y in
+            let g y = f 2 y in
+            g
+        "#;
+        assert_eq_expr!(
+            expr,
+            r#"
+            let g y = (#Int+) 2 y in
+            g
+        "#
+        );
     }
 }

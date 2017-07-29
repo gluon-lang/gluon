@@ -263,7 +263,7 @@ where
 }
 
 
-fn walk_bind<'a, 'b, V>(visitor: &mut V, bind: &'b LetBinding<'b>) -> Option<LetBinding<'a>>
+fn walk_bind<'a, 'b, V>(visitor: &mut V, bind: &LetBinding<'b>) -> Option<LetBinding<'a>>
 where
     V: ?Sized + Visitor<'a, 'b>,
 {
