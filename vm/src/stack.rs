@@ -1,12 +1,12 @@
 use std::fmt;
-use std::ops::{Deref, DerefMut, Index, IndexMut, Range, RangeTo, RangeFrom, RangeFull};
+use std::ops::{Deref, DerefMut, Index, IndexMut, Range, RangeFrom, RangeFull, RangeTo};
 
 use base::symbol::Symbol;
 use base::pos::Line;
 
 use Variants;
 use gc::GcPtr;
-use value::{ClosureData, Value, DataStruct, ExternFunction};
+use value::{ClosureData, DataStruct, ExternFunction, Value};
 use types::VmIndex;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -129,12 +129,10 @@ impl Stack {
                         }
                     }))
                 }
-                State::Extern(ref ext) => {
-                    Some(Some(StacktraceFrame {
-                        name: ext.id.clone(),
-                        line: Line::from(0),
-                    }))
-                }
+                State::Extern(ref ext) => Some(Some(StacktraceFrame {
+                    name: ext.id.clone(),
+                    line: Line::from(0),
+                })),
                 State::Unknown => Some(None),
                 State::Lock | State::Excess => None,
             })
@@ -424,15 +422,13 @@ impl fmt::Display for Stacktrace {
         writeln!(f, "Stacktrace:\n")?;
         for (i, frame) in self.frames.iter().enumerate() {
             match *frame {
-                Some(ref frame) => {
-                    writeln!(
-                        f,
-                        "{}: {}:Line {}",
-                        i,
-                        frame.name.declared_name(),
-                        frame.line
-                    )
-                }
+                Some(ref frame) => writeln!(
+                    f,
+                    "{}: {}:Line {}",
+                    i,
+                    frame.name.declared_name(),
+                    frame.line
+                ),
                 None => writeln!(f, "{}: <unknown>", i),
             }?
         }

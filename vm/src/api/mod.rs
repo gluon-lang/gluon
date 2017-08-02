@@ -1,14 +1,14 @@
 //! The marshalling api
-use {Variants, Error, Result, forget_lifetime};
-use gc::{DataDef, Gc, Traverseable, Move};
+use {forget_lifetime, Error, Result, Variants};
+use gc::{DataDef, Gc, Move, Traverseable};
 use base::symbol::Symbol;
 use stack::StackFrame;
-use vm::{self, Thread, Status, RootStr, RootedValue, Root};
-use value::{ArrayRepr, Cloner, DataStruct, ExternFunction, GcStr, Value, ValueArray, Def};
+use vm::{self, Root, RootStr, RootedValue, Status, Thread};
+use value::{ArrayRepr, Cloner, DataStruct, Def, ExternFunction, GcStr, Value, ValueArray};
 use thread::{self, Context, RootedThread};
 use thread::ThreadInternal;
 use base::types::{self, ArcType, Type};
-use types::{VmIndex, VmTag, VmInt};
+use types::{VmIndex, VmInt, VmTag};
 
 use std::any::Any;
 use std::cell::Ref;
@@ -561,9 +561,9 @@ impl VmType for bool {
     type Type = Self;
     fn make_type(vm: &Thread) -> ArcType {
         (*vm.global_env()
-             .get_env()
-             .find_type_info("std.types.Bool")
-             .unwrap())
+            .get_env()
+            .find_type_info("std.types.Bool")
+            .unwrap())
             .clone()
             .into_type()
     }
@@ -816,13 +816,11 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T> {
 impl<'vm, T: Getable<'vm>> Getable<'vm> for Option<T> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<Option<T>> {
         match value.as_ref() {
-            ValueRef::Data(data) => {
-                if data.tag() == 0 {
-                    Some(None)
-                } else {
-                    T::from_value(vm, data.get_variants(0).unwrap()).map(Some)
-                }
-            }
+            ValueRef::Data(data) => if data.tag() == 0 {
+                Some(None)
+            } else {
+                T::from_value(vm, data.get_variants(0).unwrap()).map(Some)
+            },
             _ => None,
         }
     }
@@ -871,13 +869,11 @@ impl<'vm, T: Pushable<'vm>, E: Pushable<'vm>> Pushable<'vm> for StdResult<T, E> 
 impl<'vm, T: Getable<'vm>, E: Getable<'vm>> Getable<'vm> for StdResult<T, E> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<StdResult<T, E>> {
         match value.as_ref() {
-            ValueRef::Data(data) => {
-                match data.tag() {
-                    0 => E::from_value(vm, data.get_variants(0).unwrap()).map(Err),
-                    1 => T::from_value(vm, data.get_variants(0).unwrap()).map(Ok),
-                    _ => None,
-                }
-            }
+            ValueRef::Data(data) => match data.tag() {
+                0 => E::from_value(vm, data.get_variants(0).unwrap()).map(Err),
+                1 => T::from_value(vm, data.get_variants(0).unwrap()).map(Ok),
+                _ => None,
+            },
             _ => None,
         }
     }
@@ -1286,18 +1282,18 @@ pub use self::record::Record;
 pub mod record {
     use std::any::Any;
 
-    use frunk_core::hlist::{h_cons, HCons, HNil, HList, Plucker};
+    use frunk_core::hlist::{h_cons, HCons, HList, HNil, Plucker};
 
     use base::types;
     use base::types::ArcType;
     use base::symbol::Symbol;
 
-    use {Variants, Result};
+    use {Result, Variants};
     use thread::{self, Context, ThreadInternal};
     use types::VmIndex;
     use vm::Thread;
     use value::{Def, Value};
-    use super::{VmType, Getable, Pushable};
+    use super::{Getable, Pushable, VmType};
 
     pub struct Record<T> {
         pub fields: T,

@@ -1,11 +1,11 @@
 use std::ops::{Deref, DerefMut};
 use interner::InternedStr;
-use base::ast::{Literal, TypedIdent, Typed, DisplayEnv, SpannedExpr};
+use base::ast::{DisplayEnv, Literal, SpannedExpr, Typed, TypedIdent};
 use base::resolve;
 use base::kind::{ArcKind, KindEnv};
 use base::types::{self, Alias, ArcType, BuiltinType, RecordSelector, Type, TypeEnv};
 use base::scoped_map::ScopedMap;
-use base::symbol::{Symbol, SymbolRef, SymbolModule};
+use base::symbol::{Symbol, SymbolModule, SymbolRef};
 use base::pos::{Line, NO_EXPANSION};
 use base::source::Source;
 use core::{self, Expr, Pattern};
@@ -329,11 +329,9 @@ impl CompilerEnv for TypeInfos {
         self.id_to_type
             .iter()
             .filter_map(|(_, ref alias)| match **alias.unresolved_type() {
-                Type::Variant(ref row) => {
-                    row.row_iter()
-                        .enumerate()
-                        .find(|&(_, field)| field.name == *id)
-                }
+                Type::Variant(ref row) => row.row_iter()
+                    .enumerate()
+                    .find(|&(_, field)| field.name == *id),
                 _ => None,
             })
             .next()
@@ -415,11 +413,9 @@ impl<'a> Compiler<'a> {
         let variable = self.stack_constructors
             .iter()
             .filter_map(|(_, typ)| match **typ {
-                Type::Variant(ref row) => {
-                    row.row_iter()
-                        .enumerate()
-                        .find(|&(_, field)| field.name == *id)
-                }
+                Type::Variant(ref row) => row.row_iter()
+                    .enumerate()
+                    .find(|&(_, field)| field.name == *id),
                 _ => None,
             })
             .next()
@@ -486,12 +482,10 @@ impl<'a> Compiler<'a> {
 
     fn find_tag(&self, typ: &ArcType, constructor: &Symbol) -> Option<VmTag> {
         match **resolve::remove_aliases_cow(self, typ) {
-            Type::Variant(ref row) => {
-                row.row_iter()
-                    .enumerate()
-                    .find(|&(_, field)| field.name == *constructor)
-                    .map(|(tag, _)| tag as VmTag)
-            }
+            Type::Variant(ref row) => row.row_iter()
+                .enumerate()
+                .find(|&(_, field)| field.name == *constructor)
+                .map(|(tag, _)| tag as VmTag),
             _ => None,
         }
     }
@@ -519,7 +513,8 @@ impl<'a> Compiler<'a> {
 
     fn load_identifier(&self, id: &Symbol, function: &mut FunctionEnvs) -> Result<()> {
         match self.find(id, function)
-            .unwrap_or_else(|| panic!("Undefined variable {}", self.symbols.string(&id))) {
+            .unwrap_or_else(|| panic!("Undefined variable {}", self.symbols.string(&id)))
+        {
             Stack(index) => function.emit(Push(index)),
             UpVar(index) => function.emit(PushUpVar(index)),
             Global(index) => function.emit(PushGlobal(index)),
@@ -566,15 +561,13 @@ impl<'a> Compiler<'a> {
         tail_position: bool,
     ) -> Result<Option<CExpr<'e>>> {
         match *expr {
-            Expr::Const(ref lit, _) => {
-                match *lit {
-                    Literal::Int(i) => function.emit(PushInt(i as isize)),
-                    Literal::Byte(b) => function.emit(PushByte(b)),
-                    Literal::Float(f) => function.emit(PushFloat(f)),
-                    Literal::String(ref s) => function.emit_string(self.intern(&s)?),
-                    Literal::Char(c) => function.emit(PushInt(c as isize)),
-                }
-            }
+            Expr::Const(ref lit, _) => match *lit {
+                Literal::Int(i) => function.emit(PushInt(i as isize)),
+                Literal::Byte(b) => function.emit(PushByte(b)),
+                Literal::Float(f) => function.emit(PushFloat(f)),
+                Literal::String(ref s) => function.emit_string(self.intern(&s)?),
+                Literal::Char(c) => function.emit(PushInt(c as isize)),
+            },
             Expr::Ident(ref id, _) => self.load_identifier(&id.name, function)?,
             Expr::Let(ref let_binding, ref body) => {
                 self.stack_constructors.enter_scope();
@@ -894,13 +887,12 @@ impl<'a> Compiler<'a> {
                             for field in typ.row_iter() {
                                 let (name, typ) = match fields
                                     .iter()
-                                    .find(|tup| tup.0.name.name_eq(&field.name)) {
-                                    Some(&(ref name, ref bind)) => {
-                                        (
-                                            bind.as_ref().unwrap_or(&name.name).clone(),
-                                            field.typ.clone(),
-                                        )
-                                    }
+                                    .find(|tup| tup.0.name.name_eq(&field.name))
+                                {
+                                    Some(&(ref name, ref bind)) => (
+                                        bind.as_ref().unwrap_or(&name.name).clone(),
+                                        field.typ.clone(),
+                                    ),
                                     None => (self.empty_symbol.clone(), Type::hole()),
                                 };
                                 function.push_stack_var(self, name, typ);

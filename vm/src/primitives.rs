@@ -2,13 +2,13 @@
 use std::string::String as StdString;
 use std::result::Result as StdResult;
 
-use {Variants, Error};
+use {Error, Variants};
 use primitives as prim;
-use api::{generic, Generic, Getable, Array, RuntimeResult, primitive, WithVM};
+use api::{generic, primitive, Array, Generic, Getable, RuntimeResult, WithVM};
 use api::generic::A;
-use gc::{Gc, Traverseable, DataDef, WriteOnly};
+use gc::{DataDef, Gc, Traverseable, WriteOnly};
 use Result;
-use vm::{Thread, Status};
+use vm::{Status, Thread};
 use value::{Def, GcStr, Repr, Value, ValueArray};
 use stack::StackFrame;
 use types::VmInt;
@@ -167,34 +167,32 @@ mod string {
         let mut context = thread.context();
         let value = StackFrame::current(&mut context.stack)[0];
         match value {
-            Value::Array(array) => {
-                match GcStr::from_utf8(array) {
-                    Ok(string) => {
-                        let value = Value::String(string);
-                        let result = context.alloc_with(
-                            thread,
-                            Def {
-                                tag: 1,
-                                elems: &[value],
-                            },
-                        );
-                        match result {
-                            Ok(data) => {
-                                context.stack.push(Value::Data(data));
-                                Status::Ok
-                            }
-                            Err(err) => {
-                                let result: RuntimeResult<(), _> = RuntimeResult::Panic(err);
-                                result.status_push(thread, &mut context)
-                            }
+            Value::Array(array) => match GcStr::from_utf8(array) {
+                Ok(string) => {
+                    let value = Value::String(string);
+                    let result = context.alloc_with(
+                        thread,
+                        Def {
+                            tag: 1,
+                            elems: &[value],
+                        },
+                    );
+                    match result {
+                        Ok(data) => {
+                            context.stack.push(Value::Data(data));
+                            Status::Ok
+                        }
+                        Err(err) => {
+                            let result: RuntimeResult<(), _> = RuntimeResult::Panic(err);
+                            result.status_push(thread, &mut context)
                         }
                     }
-                    Err(()) =>{
+                }
+                Err(()) =>{
                     let err: StdResult<&str, ()> = Err(());
                     err.status_push(thread, &mut context)
                 }
-                }
-            }
+            },
             _ => unreachable!(),
         }
     }

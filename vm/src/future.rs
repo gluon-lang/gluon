@@ -26,11 +26,9 @@ where
     pub fn sync_or_error(self) -> Result<F::Item, F::Error> {
         match self {
             FutureValue::Value(v) => v,
-            FutureValue::Future(_) => {
-                Err(
-                    Error::Message("Future needs to be resolved asynchronously".into()).into(),
-                )
-            }
+            FutureValue::Future(_) => Err(
+                Error::Message("Future needs to be resolved asynchronously".into()).into(),
+            ),
             FutureValue::Polled => {
                 panic!("`FutureValue` may not be polled again if it contained a value")
             }
@@ -87,18 +85,14 @@ where
         B: Future<Error = F::Error>,
     {
         match self {
-            FutureValue::Value(v) => {
-                match v {
-                    Ok(v) => {
-                        match g(v) {
-                            FutureValue::Value(v) => FutureValue::Value(v),
-                            FutureValue::Future(f) => FutureValue::Future(Either::A(f)),
-                            FutureValue::Polled => FutureValue::Polled,
-                        }
-                    }
-                    Err(err) => FutureValue::Value(Err(err)),
-                }
-            }
+            FutureValue::Value(v) => match v {
+                Ok(v) => match g(v) {
+                    FutureValue::Value(v) => FutureValue::Value(v),
+                    FutureValue::Future(f) => FutureValue::Future(Either::A(f)),
+                    FutureValue::Polled => FutureValue::Polled,
+                },
+                Err(err) => FutureValue::Value(Err(err)),
+            },
             FutureValue::Future(f) => FutureValue::Future(Either::B(f.and_then(g))),
             FutureValue::Polled => FutureValue::Polled,
         }
@@ -110,13 +104,11 @@ where
         B: Future<Error = F::Error>,
     {
         match self {
-            FutureValue::Value(v) => {
-                match g(v) {
-                    FutureValue::Value(v) => FutureValue::Value(v),
-                    FutureValue::Future(f) => FutureValue::Future(Either::A(f)),
-                    FutureValue::Polled => FutureValue::Polled,
-                }
-            }
+            FutureValue::Value(v) => match g(v) {
+                FutureValue::Value(v) => FutureValue::Value(v),
+                FutureValue::Future(f) => FutureValue::Future(Either::A(f)),
+                FutureValue::Polled => FutureValue::Polled,
+            },
             FutureValue::Future(f) => FutureValue::Future(Either::B(f.then(g))),
             FutureValue::Polled => FutureValue::Polled,
         }
@@ -128,18 +120,14 @@ where
         B: Future<Item = F::Item>,
     {
         match self {
-            FutureValue::Value(v) => {
-                match v {
-                    Ok(v) => FutureValue::Value(Ok(v)),
-                    Err(err) => {
-                        match g(err) {
-                            FutureValue::Value(v) => FutureValue::Value(v),
-                            FutureValue::Future(f) => FutureValue::Future(Either::A(f)),
-                            FutureValue::Polled => FutureValue::Polled,
-                        }
-                    }
-                }
-            }
+            FutureValue::Value(v) => match v {
+                Ok(v) => FutureValue::Value(Ok(v)),
+                Err(err) => match g(err) {
+                    FutureValue::Value(v) => FutureValue::Value(v),
+                    FutureValue::Future(f) => FutureValue::Future(Either::A(f)),
+                    FutureValue::Polled => FutureValue::Polled,
+                },
+            },
             FutureValue::Future(f) => FutureValue::Future(Either::B(f.or_else(g))),
             FutureValue::Polled => FutureValue::Polled,
         }
@@ -155,12 +143,10 @@ where
 
     fn poll(&mut self) -> Poll<F::Item, F::Error> {
         match *self {
-            FutureValue::Value(_) => {
-                match ::std::mem::replace(self, FutureValue::Polled) {
-                    FutureValue::Value(v) => return v.map(Async::Ready),
-                    _ => unreachable!(),
-                }
-            }
+            FutureValue::Value(_) => match ::std::mem::replace(self, FutureValue::Polled) {
+                FutureValue::Value(v) => return v.map(Async::Ready),
+                _ => unreachable!(),
+            },
             FutureValue::Future(ref mut f) => f.poll(),
             FutureValue::Polled => {
                 panic!("`FutureValue` may not be polled again if it contained a value")

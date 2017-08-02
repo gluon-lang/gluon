@@ -4,7 +4,7 @@
 //! behaviour. For information about how to use this library the best resource currently is the
 //! [tutorial](https://github.com/gluon-lang/gluon/blob/master/TUTORIAL.md) which contains examples on
 //! how to write gluon programs as well as how to run them using this library.
-#![doc(html_root_url="https://docs.rs/gluon/0.5.0")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon/0.5.0")] // # GLUON
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -37,11 +37,11 @@ use std::env;
 use base::ast::{self, SpannedExpr};
 use base::error::{Errors, InFile};
 use base::metadata::Metadata;
-use base::symbol::{Symbol, Symbols, SymbolModule};
+use base::symbol::{Symbol, SymbolModule, Symbols};
 use base::types::{ArcType, TypeCache};
 use check::typecheck::TypeError;
 use vm::Variants;
-use vm::api::{Getable, Hole, VmType, OpaqueValue};
+use vm::api::{Getable, Hole, OpaqueValue, VmType};
 use vm::Error as VmError;
 use vm::future::{BoxFutureValue, FutureValue};
 use vm::compiler::CompiledFunction;
@@ -289,7 +289,8 @@ impl Compiler {
             let opt_macro = vm.get_macros().get("import");
             match opt_macro
                 .as_ref()
-                .and_then(|mac| mac.downcast_ref::<Import>()) {
+                .and_then(|mac| mac.downcast_ref::<Import>())
+            {
                 Some(import) => Ok(import.read_file(filename)?),
                 None => {
 
@@ -459,7 +460,7 @@ impl Compiler {
 
         // Set all spans in the prelude expression to -1 so that completion requests always
         // skips searching the implicit prelude
-        use base::ast::{MutVisitor, SpannedPattern, walk_mut_expr, walk_mut_pattern};
+        use base::ast::{walk_mut_expr, walk_mut_pattern, MutVisitor, SpannedPattern};
         use base::pos::UNKNOWN_EXPANSION;
         struct ExpandedSpans;
 

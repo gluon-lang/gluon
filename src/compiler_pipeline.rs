@@ -416,10 +416,10 @@ where
         );
         FutureValue::sync(Ok(
             (ExecuteValue {
-                 expr: (),
-                 typ: typ,
-                 value: vm.root_value(value),
-             }),
+                expr: (),
+                typ: typ,
+                value: vm.root_value(value),
+            }),
         )).boxed()
     }
     fn load_script(

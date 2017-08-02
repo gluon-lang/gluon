@@ -1,4 +1,4 @@
-use std::io::{Read, stdin};
+use std::io::{stdin, Read};
 use std::fmt;
 use std::fs::File;
 use std::sync::Mutex;
@@ -8,8 +8,8 @@ use vm::gc::{Gc, Traverseable};
 use vm::types::*;
 use vm::thread::ThreadInternal;
 use vm::thread::Thread;
-use vm::api::{Array, FunctionRef, Generic, Hole, VmType, Getable, OpaqueValue, IO, WithVM,
-              Userdata};
+use vm::api::{Array, FunctionRef, Generic, Getable, Hole, OpaqueValue, Userdata, VmType, WithVM,
+              IO};
 use vm::api::generic::{A, B};
 use vm::stack::StackFrame;
 use vm::internal::ValuePrinter;
@@ -92,16 +92,12 @@ fn read_file_to_string(s: &str) -> IO<String> {
 
 fn read_char() -> IO<char> {
     match stdin().bytes().next() {
-        Some(result) => {
-            match result {
-                Ok(b) => {
-                    ::std::char::from_u32(b as u32)
-                        .map(IO::Value)
-                        .unwrap_or_else(|| IO::Exception("Not a valid char".into()))
-                }
-                Err(err) => IO::Exception(format!("{}", err)),
-            }
-        }
+        Some(result) => match result {
+            Ok(b) => ::std::char::from_u32(b as u32)
+                .map(IO::Value)
+                .unwrap_or_else(|| IO::Exception("Not a valid char".into())),
+            Err(err) => IO::Exception(format!("{}", err)),
+        },
         None => IO::Exception("No read".into()),
     }
 }

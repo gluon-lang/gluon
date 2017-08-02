@@ -2,7 +2,7 @@ use base::ast::TypedIdent;
 use base::merge::{merge, merge_iter};
 use base::pos;
 
-use core::{Allocator, Alternative, Closure, Expr, Named, LetBinding, Pattern};
+use core::{Allocator, Alternative, Closure, Expr, LetBinding, Named, Pattern};
 
 pub trait Visitor<'a> {
     fn visit_expr(&mut self, expr: &'a Expr<'a>) -> Option<&'a Expr<'a>>;
@@ -113,21 +113,19 @@ where
         Expr::Ident(_, _) => None,
         Expr::Let(ref bind, expr) => {
             let new_named = match bind.expr {
-                Named::Recursive(ref closures) => {
-                    merge_iter(
-                        closures,
-                        |closure| {
-                            walk_expr_alloc(visitor, closure.expr).map(|new_expr| {
-                                Closure {
-                                    name: closure.name.clone(),
-                                    args: closure.args.clone(),
-                                    expr: new_expr,
-                                }
-                            })
-                        },
-                        Closure::clone,
-                    ).map(Named::Recursive)
-                }
+                Named::Recursive(ref closures) => merge_iter(
+                    closures,
+                    |closure| {
+                        walk_expr_alloc(visitor, closure.expr).map(|new_expr| {
+                            Closure {
+                                name: closure.name.clone(),
+                                args: closure.args.clone(),
+                                expr: new_expr,
+                            }
+                        })
+                    },
+                    Closure::clone,
+                ).map(Named::Recursive),
                 Named::Expr(bind_expr) => walk_expr_alloc(visitor, bind_expr).map(Named::Expr),
             };
             let new_bind = new_named.map(|named| {

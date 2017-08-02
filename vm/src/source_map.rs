@@ -42,7 +42,7 @@ impl SourceMap {
             .unwrap_or(self.map.len());
         if p == 0 ||
             (p == self.map.len() &&
-                 instruction_index >= self.map.last().expect("Empty source_map").0)
+                instruction_index >= self.map.last().expect("Empty source_map").0)
         {
             // instruction_index is not valid in the function
             None

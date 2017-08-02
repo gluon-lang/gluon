@@ -2,7 +2,7 @@
 
 use std::any::Any;
 use std::borrow::Cow;
-use std::sync::{Arc, RwLock, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::fs::File;
 use std::io;
 use std::io::Read;
@@ -12,7 +12,7 @@ use base::ast::{Expr, Literal, SpannedExpr, TypedIdent};
 use base::metadata::Metadata;
 use base::pos;
 use base::symbol::Symbol;
-use vm::macros::{Macro, MacroExpander, Error as MacroError};
+use vm::macros::{Error as MacroError, Macro, MacroExpander};
 use vm::thread::{Thread, ThreadInternal};
 use vm::internal::Value;
 use super::{filename_to_module, Compiler};

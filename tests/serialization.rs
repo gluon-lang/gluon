@@ -4,7 +4,7 @@ extern crate serde_state as serde;
 
 extern crate gluon;
 
-use gluon::{Compiler, new_vm};
+use gluon::{new_vm, Compiler};
 use gluon::vm::api::{Hole, OpaqueValue};
 use gluon::vm::thread::{RootedThread, RootedValue, Thread, ThreadInternal};
 use gluon::vm::serialization::{DeSeed, SeSeed};

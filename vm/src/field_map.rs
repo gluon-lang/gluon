@@ -4,7 +4,7 @@ use std::sync::Arc;
 use base::fnv::FnvMap;
 
 use interner::InternedStr;
-use types::{VmTag, VmIndex};
+use types::{VmIndex, VmTag};
 
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
 struct Fields(Arc<Vec<InternedStr>>);

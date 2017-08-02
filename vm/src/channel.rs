@@ -6,13 +6,13 @@ use std::collections::VecDeque;
 use base::types::{ArcType, Type};
 
 use {Error, Result as VmResult};
-use api::{Generic, VmType, primitive, WithVM, Function, AsyncPushable, Pushable, RuntimeResult};
+use api::{primitive, AsyncPushable, Function, Generic, Pushable, RuntimeResult, VmType, WithVM};
 use api::generic::A;
-use gc::{Traverseable, Gc, GcPtr};
-use vm::{Thread, RootedThread, Status};
+use gc::{Gc, GcPtr, Traverseable};
+use vm::{RootedThread, Status, Thread};
 use thread::ThreadInternal;
 use value::{GcStr, Userdata, Value};
-use stack::{State, StackFrame};
+use stack::{StackFrame, State};
 
 pub struct Sender<T> {
     // No need to traverse this thread reference as any thread having a reference to this `Sender`

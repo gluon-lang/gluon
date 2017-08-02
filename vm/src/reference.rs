@@ -3,13 +3,13 @@ use std::fmt;
 use std::sync::Mutex;
 use std::marker::PhantomData;
 
-use base::types::{Type, ArcType};
+use base::types::{ArcType, Type};
 use Result;
 use gc::{Gc, GcPtr, Move, Traverseable};
 use vm::Thread;
 use thread::ThreadInternal;
-use value::{Value, Cloner};
-use api::{RuntimeResult, Generic, Userdata, VmType, WithVM};
+use value::{Cloner, Value};
+use api::{Generic, RuntimeResult, Userdata, VmType, WithVM};
 use api::generic::A;
 
 pub struct Reference<T> {

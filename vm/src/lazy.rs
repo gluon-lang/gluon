@@ -5,9 +5,9 @@ use std::marker::PhantomData;
 use std::sync::Mutex;
 
 use base::types;
-use base::types::{Type, ArcType};
+use base::types::{ArcType, Type};
 use gc::{Gc, GcPtr, Move, Traverseable};
-use api::{FunctionRef, Getable, OpaqueValue, Userdata, VmType, WithVM, RuntimeResult};
+use api::{FunctionRef, Getable, OpaqueValue, RuntimeResult, Userdata, VmType, WithVM};
 use api::Generic;
 use api::generic::A;
 use vm::Thread;

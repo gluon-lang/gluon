@@ -11,7 +11,7 @@ use futures::{Async, Future};
 
 use gluon::base::pos::Line;
 use gluon::base::types::{ArcType, Type};
-use gluon::{Compiler, new_vm};
+use gluon::{new_vm, Compiler};
 use gluon::vm::compiler::UpvarInfo;
 use gluon::vm::thread::{ThreadInternal, CALL_FLAG, LINE_FLAG};
 

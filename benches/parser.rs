@@ -4,9 +4,9 @@ extern crate bencher;
 extern crate gluon_base as base;
 extern crate gluon_parser as parser;
 
-use bencher::{Bencher, black_box};
+use bencher::{black_box, Bencher};
 
-use base::symbol::{Symbols, SymbolModule};
+use base::symbol::{SymbolModule, Symbols};
 use base::types::TypeCache;
 
 fn prelude(b: &mut Bencher) {

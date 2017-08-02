@@ -3,11 +3,11 @@ extern crate bencher;
 
 extern crate gluon;
 
-use bencher::{Bencher, black_box};
+use bencher::{black_box, Bencher};
 
-use gluon::{Compiler, new_vm};
+use gluon::{new_vm, Compiler};
 use gluon::vm::thread::{Status, Thread};
-use gluon::vm::api::{FunctionRef, primitive};
+use gluon::vm::api::{primitive, FunctionRef};
 
 // Benchmarks function calls
 fn factorial(b: &mut Bencher) {

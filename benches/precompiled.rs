@@ -9,11 +9,11 @@ extern crate bincode;
 use std::fs::File;
 use std::io::Read;
 
-use bencher::{Bencher, black_box};
+use bencher::{black_box, Bencher};
 
 use serde_state::ser::SerializeState;
 
-use gluon::{Compiler, Future, new_vm};
+use gluon::{new_vm, Compiler, Future};
 use gluon::vm::thread::ThreadInternal;
 use gluon::vm::serialization::SeSeed;
 

@@ -111,26 +111,22 @@ impl<'a> MutVisitor for MacroExpander<'a> {
 
     fn visit_expr(&mut self, expr: &mut SpannedExpr<Symbol>) {
         let replacement = match expr.value {
-            Expr::App(ref mut id, ref mut args) => {
-                match id.value {
-                    Expr::Ident(ref id) if id.name.as_ref().ends_with('!') => {
-                        let name = id.name.as_ref();
-                        match self.macros.get(&name[..name.len() - 1]) {
-                            Some(m) => {
-                                Some(match m.expand(self, args) {
-                                    Ok(e) => e,
-                                    Err(err) => {
-                                        self.errors.push(err);
-                                        pos::spanned(expr.span, Expr::Error)
-                                    }
-                                })
+            Expr::App(ref mut id, ref mut args) => match id.value {
+                Expr::Ident(ref id) if id.name.as_ref().ends_with('!') => {
+                    let name = id.name.as_ref();
+                    match self.macros.get(&name[..name.len() - 1]) {
+                        Some(m) => Some(match m.expand(self, args) {
+                            Ok(e) => e,
+                            Err(err) => {
+                                self.errors.push(err);
+                                pos::spanned(expr.span, Expr::Error)
                             }
-                            None => None,
-                        }
+                        }),
+                        None => None,
                     }
-                    _ => None,
                 }
-            }
+                _ => None,
+            },
             _ => None,
         };
         if let Some(mut e) = replacement {

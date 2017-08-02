@@ -16,12 +16,11 @@ use {Error, Result};
 #[inline]
 unsafe fn allocate(size: usize) -> *mut u8 {
     // Allocate an extra element if it does not fit exactly
-    let cap = size / mem::size_of::<f64>() +
-        (if size % mem::size_of::<f64>() != 0 {
-             1
-         } else {
-             0
-         });
+    let cap = size / mem::size_of::<f64>() + (if size % mem::size_of::<f64>() != 0 {
+        1
+    } else {
+        0
+    });
     ptr_from_vec(Vec::<f64>::with_capacity(cap))
 }
 
@@ -35,12 +34,11 @@ fn ptr_from_vec(mut buf: Vec<f64>) -> *mut u8 {
 
 #[inline]
 unsafe fn deallocate(ptr: *mut u8, old_size: usize) {
-    let cap = old_size / mem::size_of::<f64>() +
-        (if old_size % mem::size_of::<f64>() != 0 {
-             1
-         } else {
-             0
-         });
+    let cap = old_size / mem::size_of::<f64>() + (if old_size % mem::size_of::<f64>() != 0 {
+        1
+    } else {
+        0
+    });
     Vec::<f64>::from_raw_parts(ptr as *mut f64, 0, cap);
 }
 
@@ -630,12 +628,10 @@ impl Gc {
         }
         let type_info: *const TypeInfo = match self.type_infos.entry(TypeId::of::<D::Value>()) {
             Entry::Occupied(entry) => &**entry.get(),
-            Entry::Vacant(entry) => {
-                &**entry.insert(Box::new(TypeInfo {
-                    drop: drop::<D::Value>,
-                    generation: self.generation,
-                }))
-            }
+            Entry::Vacant(entry) => &**entry.insert(Box::new(TypeInfo {
+                drop: drop::<D::Value>,
+                generation: self.generation,
+            })),
         };
         let mut ptr = AllocPtr::new::<D::Value>(type_info, size);
         ptr.next = self.values.take();
@@ -748,7 +744,7 @@ impl Gc {
 
 #[cfg(test)]
 mod tests {
-    use super::{Gc, GcPtr, GcHeader, Generation, Traverseable, DataDef, WriteOnly, Move};
+    use super::{DataDef, Gc, GcHeader, GcPtr, Generation, Move, Traverseable, WriteOnly};
     use std::fmt;
     use std::mem;
     use std::rc::Rc;

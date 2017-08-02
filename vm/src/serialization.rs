@@ -8,7 +8,7 @@ use itertools::Itertools;
 
 use serde::Deserializer;
 use serde::de::{Deserialize, DeserializeSeed, DeserializeState, Error};
-use serde::ser::{Serializer, SerializeState, SerializeSeq, Seeded};
+use serde::ser::{Seeded, SerializeSeq, SerializeState, Serializer};
 
 use base::serialization::{NodeMap, NodeToId};
 use base::symbol::Symbols;
@@ -183,11 +183,10 @@ pub mod gc {
                                  S: ::std::ops::Deref + ::std::any::Any + Clone
                                     + ::base::serialization::Shared
                                     + DeserializeState<'de, ::serialization::DeSeed>",
-                  serialize = "F: SerializeState<Seed = ::serialization::SeSeed>,
+                    serialize = "F: SerializeState<Seed = ::serialization::SeSeed>,
                                S: ::std::ops::Deref + ::std::any::Any + Clone
                                     + ::base::serialization::Shared,
-                               S::Target: SerializeState<Seed = ::serialization::SeSeed>"
-                  ))]
+                               S::Target: SerializeState<Seed = ::serialization::SeSeed>"))]
     struct Data<F, S> {
         #[serde(seed)]
         tag: DataTag<S>,
@@ -201,10 +200,9 @@ pub mod gc {
     #[serde(bound(deserialize = "S: ::std::ops::Deref + ::std::any::Any + Clone
                                     + ::base::serialization::Shared
                                     + DeserializeState<'de, ::serialization::DeSeed>",
-                  serialize = "S: ::std::ops::Deref + ::std::any::Any + Clone
+                    serialize = "S: ::std::ops::Deref + ::std::any::Any + Clone
                                     + ::base::serialization::Shared,
-                               S::Target: SerializeState<Seed = ::serialization::SeSeed>"
-                  ))]
+                               S::Target: SerializeState<Seed = ::serialization::SeSeed>"))]
     enum DataTag<S> {
         Record(
             #[serde(state_with = "::base::serialization::shared")]
@@ -224,10 +222,10 @@ pub mod gc {
             use serde::ser::Error;
             let tag = if self.is_record() {
                 let fields = seed.thread
-                        .context()
-                        .get_fields(self.tag())
-                        .ok_or_else(|| S::Error::custom("Undefined record"))?
-                        .clone();
+                    .context()
+                    .get_fields(self.tag())
+                    .ok_or_else(|| S::Error::custom("Undefined record"))?
+                    .clone();
                 DataTag::Record(fields)
             } else {
                 DataTag::Data(self.tag())
@@ -266,7 +264,10 @@ pub mod gc {
                 D: Deserializer<'de>,
             {
                 let seed = &mut seed.state;
-                let def = Data::<Vec<Value>, Arc<Vec<InternedStr>>>::deserialize_state(seed, deserializer)?;
+                let def = Data::<Vec<Value>, Arc<Vec<InternedStr>>>::deserialize_state(
+                    seed,
+                    deserializer,
+                )?;
                 use value::Def;
                 let tag = match def.tag {
                     DataTag::Record(fields) => seed.thread.context().get_map(&fields),
@@ -354,7 +355,7 @@ pub mod intern {
     use thread::ThreadInternal;
 
     use serde::{Deserialize, Deserializer};
-    use serde::ser::{SerializeState, Serialize, Serializer};
+    use serde::ser::{Serialize, SerializeState, Serializer};
 
     impl<'de> DeserializeState<'de, DeSeed> for InternedStr {
         fn deserialize_state<D>(seed: &mut DeSeed, deserializer: D) -> Result<Self, D::Error>
@@ -381,7 +382,7 @@ pub mod intern {
 
 pub mod typ {
     use serde::de::Deserializer;
-    use serde::ser::{Serializer, SerializeState};
+    use serde::ser::{SerializeState, Serializer};
 
     use super::*;
     use base::types::ArcType;
@@ -692,13 +693,11 @@ impl<'de> DeserializeState<'de, DeSeed> for ExternFunction {
             .map_err(|err| D::Error::custom(err))?;
         unsafe {
             match function.get_value() {
-                Value::Function(function) if partial.args == function.args => {
-                    Ok(ExternFunction {
-                        id: function.id.clone(),
-                        args: function.args,
-                        function: function.function,
-                    })
-                }
+                Value::Function(function) if partial.args == function.args => Ok(ExternFunction {
+                    id: function.id.clone(),
+                    args: function.args,
+                    function: function.function,
+                }),
                 _ => Err(D::Error::custom("Invalid type for extern function")),
             }
         }
@@ -765,12 +764,10 @@ mod tests {
         );
         let value: Value = DeSeed::new(&thread).deserialize(&mut de).unwrap();
         match value {
-            Value::Array(s) => {
-                assert_eq!(
-                    s.iter().collect::<Vec<_>>(),
-                    [Value::Int(1), Value::Int(2), Value::Int(3)]
-                )
-            }
+            Value::Array(s) => assert_eq!(
+                s.iter().collect::<Vec<_>>(),
+                [Value::Int(1), Value::Int(2), Value::Int(3)]
+            ),
             _ => panic!(),
         }
     }

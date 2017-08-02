@@ -9,11 +9,11 @@ use support::*;
 use gluon::base::pos::BytePos;
 use gluon::base::types::Type;
 use gluon::check::completion;
-use gluon::vm::api::{FunctionRef, Hole, IO, OpaqueValue, ValueRef};
+use gluon::vm::api::{FunctionRef, Hole, OpaqueValue, ValueRef, IO};
 use gluon::vm::thread::{Thread, ThreadInternal};
 use gluon::vm::internal::Value;
 use gluon::vm::internal::Value::{Float, Int};
-use gluon::vm::stack::{State, StackFrame};
+use gluon::vm::stack::{StackFrame, State};
 use gluon::vm::channel::Sender;
 use gluon::{Compiler, Error};
 
