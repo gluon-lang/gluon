@@ -15,8 +15,9 @@ use kind::ArcKind;
 use symbol::Symbol;
 use types::{AliasData, AppVec, ArcType, Type};
 
+#[derive(Default)]
 pub struct SeSeed {
-    node_to_id: NodeToId,
+    pub node_to_id: NodeToId,
 }
 
 impl SeSeed {
@@ -36,6 +37,12 @@ impl AsRef<NodeToId> for SeSeed {
 pub struct Seed<Id, T> {
     nodes: ::serialization::NodeMap,
     _marker: PhantomData<(Id, T)>,
+}
+
+impl<Id, T> Default for Seed<Id, T> {
+    fn default() -> Self {
+        Seed::new(::serialization::NodeMap::default())
+    }
 }
 
 impl<Id, T> AsMut<Seed<Id, T>> for Seed<Id, T> {
@@ -283,16 +290,17 @@ impl<'seed, T, S> AsMut<S> for SharedSeed<'seed, T, S> {
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "S"))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "S"))]
 #[cfg_attr(feature = "serde_derive", serde(bound(deserialize = "T: DeserializeState<'de, S>")))]
-#[cfg_attr(feature = "serde_derive", serde(bound(serialize = "T: SerializeState")))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_state = "T::Seed"))]
+#[cfg_attr(feature = "serde_derive", serde(bound(serialize = "T: SerializeState<S>")))]
+#[cfg_attr(feature = "serde_derive", serde(ser_parameters = "S"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "S"))]
 pub enum Variant<T> {
     Marked(
         Id,
-        #[cfg_attr(feature = "serde_derive", serde(seed))]
+        #[cfg_attr(feature = "serde_derive", serde(state))]
         T,
     ),
     Plain(
-        #[cfg_attr(feature = "serde_derive", serde(seed))]
+        #[cfg_attr(feature = "serde_derive", serde(state))]
         T,
     ),
     Reference(Id),
@@ -356,26 +364,24 @@ where
 }
 
 
-pub fn serialize_seq<'a, S, T, V>(
+pub fn serialize_seq<'a, S, T, V, Seed>(
     self_: &'a T,
     serializer: S,
-    seed: &V::Seed,
+    seed: &Seed,
 ) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
     T: Deref<Target = [V]>,
-    V: SerializeState,
+    V: SerializeState<Seed>,
 {
     (**self_).serialize_state(serializer, seed)
 }
 
-impl<Id> SerializeState for ArcType<Id>
+impl<Id> SerializeState<SeSeed> for ArcType<Id>
 where
-    Id: SerializeState<Seed = SeSeed>,
+    Id: SerializeState<SeSeed>,
 {
-    type Seed = SeSeed;
-
-    fn serialize_state<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+    fn serialize_state<S>(&self, serializer: S, seed: &SeSeed) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -383,10 +389,8 @@ where
     }
 }
 
-impl SerializeState for ArcKind {
-    type Seed = SeSeed;
-
-    fn serialize_state<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+impl SerializeState<SeSeed> for ArcKind {
+    fn serialize_state<S>(&self, serializer: S, seed: &SeSeed) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -398,16 +402,16 @@ pub mod shared {
     use super::*;
     use serde::de::DeserializeSeed;
 
-    pub fn serialize<S, T>(
+    pub fn serialize<S, T, Seed>(
         self_: &T,
         serializer: S,
-        seed: &<T::Target as SerializeState>::Seed,
+        seed: &Seed,
     ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
         T: Shared + Deref,
-        T::Target: SerializeState,
-        <T::Target as SerializeState>::Seed: AsRef<NodeToId>,
+        T::Target: SerializeState<Seed>,
+        Seed: AsRef<NodeToId>,
     {
         let node = match node_to_id(seed.as_ref(), self_) {
             Lookup::Unique => Variant::Plain(&**self_),

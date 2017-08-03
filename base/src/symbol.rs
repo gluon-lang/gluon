@@ -59,10 +59,8 @@ mod serialization {
         }
     }
 
-    impl SerializeState for Symbol {
-        type Seed = SeSeed;
-
-        fn serialize_state<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+    impl SerializeState<SeSeed> for Symbol {
+        fn serialize_state<S>(&self, serializer: S, seed: &SeSeed) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
         {

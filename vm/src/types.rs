@@ -165,7 +165,11 @@ impl Instruction {
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct TypeInfos {
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
     pub id_to_type: FnvMap<String, Alias<Symbol, ArcType>>,
 }
 

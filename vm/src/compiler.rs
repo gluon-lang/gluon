@@ -39,7 +39,7 @@ enum FieldAccess {
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct UpvarInfo {
     pub name: String,
-    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::typ"))]
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
     pub typ: ArcType,
 }
 
@@ -50,9 +50,9 @@ pub struct UpvarInfo {
 pub struct DebugInfo {
     /// Maps instruction indexes to the line that spawned them
     pub source_map: SourceMap,
-    #[cfg_attr(feature = "serde_derive", serde(seed))]
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub local_map: LocalMap,
-    #[cfg_attr(feature = "serde_derive", serde(seed))]
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub upvars: Vec<UpvarInfo>,
     pub source_name: String,
 }

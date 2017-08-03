@@ -11,7 +11,8 @@ use serde::de::{Deserialize, DeserializeSeed, DeserializeState, Error};
 use serde::ser::{Seeded, SerializeSeq, SerializeState, Serializer};
 
 use base::serialization::{NodeMap, NodeToId};
-use base::symbol::Symbols;
+use base::symbol::{Symbol, Symbols};
+use base::types::ArcType;
 
 use array::Array;
 use gc::{DataDef, GcPtr, WriteOnly};
@@ -25,6 +26,7 @@ pub struct DeSeed {
     thread: RootedThread,
     symbols: Rc<RefCell<Symbols>>,
     gc_map: NodeMap,
+    base_seed: ::base::serialization::Seed<Symbol, ArcType<Symbol>>,
 }
 
 impl DeSeed {
@@ -33,6 +35,7 @@ impl DeSeed {
             thread: thread.root_thread(),
             symbols: Default::default(),
             gc_map: NodeMap::default(),
+            base_seed: Default::default(),
         }
     }
 
@@ -53,20 +56,20 @@ impl AsMut<NodeMap> for DeSeed {
 
 
 pub struct SeSeed {
-    node_to_id: NodeToId,
+    node_to_id: ::base::serialization::SeSeed,
     thread: RootedThread,
 }
 
 impl AsRef<NodeToId> for SeSeed {
     fn as_ref(&self) -> &NodeToId {
-        &self.node_to_id
+        &self.node_to_id.node_to_id
     }
 }
 
 impl SeSeed {
     pub fn new(thread: &Thread) -> SeSeed {
         SeSeed {
-            node_to_id: NodeToId::default(),
+            node_to_id: Default::default(),
             thread: thread.root_thread(),
         }
     }
@@ -150,10 +153,8 @@ pub mod gc {
         }
     }
 
-    impl SerializeState for ValueArray {
-        type Seed = SeSeed;
-
-        fn serialize_state<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+    impl SerializeState<SeSeed> for ValueArray {
+        fn serialize_state<S>(&self, serializer: S, seed: &SeSeed) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
         {
@@ -183,14 +184,14 @@ pub mod gc {
                                  S: ::std::ops::Deref + ::std::any::Any + Clone
                                     + ::base::serialization::Shared
                                     + DeserializeState<'de, ::serialization::DeSeed>",
-                    serialize = "F: SerializeState<Seed = ::serialization::SeSeed>,
+                    serialize = "F: SerializeState<::serialization::SeSeed>,
                                S: ::std::ops::Deref + ::std::any::Any + Clone
                                     + ::base::serialization::Shared,
-                               S::Target: SerializeState<Seed = ::serialization::SeSeed>"))]
+                               S::Target: SerializeState<::serialization::SeSeed>"))]
     struct Data<F, S> {
-        #[serde(seed)]
+        #[serde(state)]
         tag: DataTag<S>,
-        #[serde(seed)]
+        #[serde(state)]
         fields: F,
     }
 
@@ -202,7 +203,7 @@ pub mod gc {
                                     + DeserializeState<'de, ::serialization::DeSeed>",
                     serialize = "S: ::std::ops::Deref + ::std::any::Any + Clone
                                     + ::base::serialization::Shared,
-                               S::Target: SerializeState<Seed = ::serialization::SeSeed>"))]
+                               S::Target: SerializeState<::serialization::SeSeed>"))]
     enum DataTag<S> {
         Record(
             #[serde(state_with = "::base::serialization::shared")]
@@ -212,10 +213,8 @@ pub mod gc {
     }
 
 
-    impl SerializeState for DataStruct {
-        type Seed = SeSeed;
-
-        fn serialize_state<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+    impl SerializeState<SeSeed> for DataStruct {
+        fn serialize_state<S>(&self, serializer: S, seed: &SeSeed) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
         {
@@ -310,15 +309,13 @@ pub mod gc {
         }
     }
 
-    impl<T> SerializeState for GcPtr<T>
+    impl<T, Seed> SerializeState<Seed> for GcPtr<T>
     where
-        T: SerializeState,
-        T::Seed: AsRef<NodeToId>,
+        T: SerializeState<Seed>,
+        Seed: AsRef<NodeToId>,
     {
-        type Seed = T::Seed;
-
         #[inline]
-        fn serialize_state<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+        fn serialize_state<S>(&self, serializer: S, seed: &Seed) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
         {
@@ -366,11 +363,9 @@ pub mod intern {
         }
     }
 
-    impl SerializeState for InternedStr {
-        type Seed = SeSeed;
-
+    impl SerializeState<SeSeed> for InternedStr {
         #[inline]
-        fn serialize_state<S>(&self, serializer: S, _state: &Self::Seed) -> Result<S::Ok, S::Error>
+        fn serialize_state<S>(&self, serializer: S, _state: &SeSeed) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
         {
@@ -380,29 +375,52 @@ pub mod intern {
     }
 }
 
+pub mod borrow {
+    use super::*;
+    use std::borrow::{Borrow, BorrowMut};
+
+    pub fn deserialize<'de, D, T, Seed, Seed2>(seed: &mut Seed, deserializer: D) -> Result<T, D::Error>
+    where
+        D: Deserializer<'de>,
+        T: DeserializeState<'de, Seed2>,
+        Seed: BorrowMut<Seed2>,
+    {
+        T::deserialize_state(seed.borrow_mut(), deserializer)
+    }
+
+    pub fn serialize<S, T, Seed, Seed2>(symbol: &T, serializer: S, seed: &Seed) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        T: SerializeState<Seed2>,
+        Seed: Borrow<Seed2>,
+    {
+        symbol.serialize_state(serializer, seed.borrow())
+    }
+}
+
 pub mod typ {
     use serde::de::Deserializer;
     use serde::ser::{SerializeState, Serializer};
 
     use super::*;
     use base::types::ArcType;
+    use base::symbol::Symbol;
 
-    pub fn deserialize<'de, D>(seed: &mut DeSeed, deserializer: D) -> Result<ArcType, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        use base::serialization::Seed;
-        ArcType::deserialize_state(&mut Seed::new(seed.gc_map.clone()), deserializer)
+    impl ::std::borrow::Borrow<::base::serialization::Seed<Symbol, ArcType<Symbol>>> for DeSeed {
+        fn borrow(&self) -> &::base::serialization::Seed<Symbol, ArcType<Symbol>> {
+            &self.base_seed
+        }
+    }
+    impl ::std::borrow::BorrowMut<::base::serialization::Seed<Symbol, ArcType<Symbol>>> for DeSeed {
+        fn borrow_mut(&mut self) -> &mut ::base::serialization::Seed<Symbol, ArcType<Symbol>> {
+            &mut self.base_seed
+        }
     }
 
-    pub fn serialize<S>(typ: &ArcType, serializer: S, seed: &SeSeed) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        typ.serialize_state(
-            serializer,
-            &::base::serialization::SeSeed::new(seed.node_to_id.clone()),
-        )
+    impl ::std::borrow::Borrow<::base::serialization::SeSeed> for SeSeed {
+        fn borrow(&self) -> &::base::serialization::SeSeed {
+            &self.node_to_id
+        }
     }
 }
 
@@ -438,22 +456,20 @@ enum GraphVariant {
     Reference(::base::serialization::Id),
 }
 
-impl SerializeState for ClosureData {
-    type Seed = SeSeed;
-
+impl SerializeState<SeSeed> for ClosureData {
     #[inline]
-    fn serialize_state<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+    fn serialize_state<S>(&self, serializer: S, seed: &SeSeed) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         let mut serializer = serializer.serialize_seq(Some(3 + self.upvars.len()))?;
         let self_id = self as *const _ as *const ();
-        if let Some(&id) = seed.node_to_id.borrow().get(&self_id) {
+        if let Some(&id) = seed.node_to_id.node_to_id.borrow().get(&self_id) {
             serializer.serialize_element(&GraphVariant::Reference(id))?;
             return serializer.end();
         }
         {
-            let mut node_to_id = seed.node_to_id.borrow_mut();
+            let mut node_to_id = seed.node_to_id.node_to_id.borrow_mut();
             let len = node_to_id.len() as ::base::serialization::Id;
             serializer.serialize_element(&GraphVariant::Marked(len))?;
             node_to_id.insert(self_id, len);
@@ -704,13 +720,11 @@ impl<'de> DeserializeState<'de, DeSeed> for ExternFunction {
     }
 }
 
-impl<T> SerializeState for Array<T>
+impl<T> SerializeState<SeSeed> for Array<T>
 where
-    T: Copy + SerializeState,
+    T: Copy + SerializeState<SeSeed>,
 {
-    type Seed = T::Seed;
-
-    fn serialize_state<S>(&self, serializer: S, seed: &Self::Seed) -> Result<S::Ok, S::Error>
+    fn serialize_state<S>(&self, serializer: S, seed: &SeSeed) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {

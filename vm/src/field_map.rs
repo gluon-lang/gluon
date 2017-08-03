@@ -7,7 +7,12 @@ use interner::InternedStr;
 use types::{VmIndex, VmTag};
 
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
-struct Fields(Arc<Vec<InternedStr>>);
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
+struct Fields(
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::base::serialization::shared"))]
+    Arc<Vec<InternedStr>>);
 
 impl Borrow<[InternedStr]> for Fields {
     fn borrow(&self) -> &[InternedStr] {
@@ -16,11 +21,17 @@ impl Borrow<[InternedStr]> for Fields {
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct FieldMap {
     /// Maps fields into a tag
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     tags: FnvMap<Fields, VmTag>,
     /// Maps the tag the record has and the field name onto the offset in the data
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     fields: FnvMap<(VmTag, InternedStr), VmIndex>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     field_list: FnvMap<VmTag, Fields>,
 }
 

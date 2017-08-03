@@ -114,15 +114,15 @@ pub struct BytecodeFunction {
     pub args: VmIndex,
     pub max_stack_size: VmIndex,
     pub instructions: Vec<Instruction>,
-    #[cfg_attr(feature = "serde_derive", serde(seed))]
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub inner_functions: Vec<GcPtr<BytecodeFunction>>,
-    #[cfg_attr(feature = "serde_derive", serde(seed))]
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub strings: Vec<InternedStr>,
-    #[cfg_attr(feature = "serde_derive", serde(seed))]
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub globals: Vec<Value>,
-    #[cfg_attr(feature = "serde_derive", serde(seed))]
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub records: Vec<Vec<InternedStr>>,
-    #[cfg_attr(feature = "serde_derive", serde(seed))]
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub debug_info: DebugInfo,
 }
 
@@ -306,7 +306,7 @@ pub enum Value {
         GcPtr<ValueArray>,
     ),
     Function(
-        #[cfg_attr(feature = "serde_derive", serde(seed))]
+        #[cfg_attr(feature = "serde_derive", serde(state))]
         GcPtr<ExternFunction>,
     ),
     Closure(
@@ -328,7 +328,10 @@ pub enum Value {
     ),
     #[cfg_attr(feature = "serde_derive", serde(skip_deserializing))]
     #[cfg_attr(feature = "serde_derive", serde(skip_serializing))]
-    Thread(GcPtr<Thread>),
+    Thread(
+        #[cfg_attr(feature = "serde_derive", serde(deserialize_state))]
+        GcPtr<Thread>
+    ),
 }
 
 impl Value {
@@ -559,7 +562,7 @@ pub enum Callable {
         GcPtr<ClosureData>,
     ),
     Extern(
-        #[cfg_attr(feature = "serde_derive", serde(seed))]
+        #[cfg_attr(feature = "serde_derive", serde(state))]
         GcPtr<ExternFunction>,
     ),
 }

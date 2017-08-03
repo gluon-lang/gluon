@@ -217,17 +217,27 @@ impl<'b> Traverseable for Roots<'b> {
 // knowing wheter it is or not. So the only way of allowing it to mark itself is to disallow it to
 // be allocated anywhere else.
 /// Representation of the virtual machine
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct Thread {
+    #[cfg_attr(feature = "serde_derive",
+               serde(state_with = "::base::serialization::shared"))]
     global_state: Arc<GlobalVmState>,
     // The parent of this thread, if it exists must live at least as long as this thread as this
     // thread can refer to any value in the parent thread
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     parent: Option<RootedThread>,
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
     roots: RwLock<Vec<GcPtr<Traverseable + Send + Sync>>>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     rooted_values: RwLock<Vec<Value>>,
     /// All threads which this thread have spawned in turn. Necessary as this thread needs to scan
     /// the roots of all its children as well since those may contain references to this threads
     /// garbage collected values
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     child_threads: RwLock<Vec<GcPtr<Thread>>>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     context: Mutex<Context>,
 }
 
@@ -271,7 +281,12 @@ impl<'vm> Pushable<'vm> for RootedThread {
 /// An instance of `Thread` which is rooted. See the `Thread` type for documentation on interacting
 /// with the type.
 #[derive(Debug)]
-pub struct RootedThread(GcPtr<Thread>);
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
+pub struct RootedThread(
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+        GcPtr<Thread>);
 
 impl Drop for RootedThread {
     fn drop(&mut self) {
@@ -958,6 +973,7 @@ impl<'a> StackInfo<'a> {
 }
 
 bitflags! {
+    #[derive(Default)]
     pub flags HookFlags: u8 {
         /// Call the hook when execution moves to a new line
         const LINE_FLAG = 0b01,
@@ -966,6 +982,7 @@ bitflags! {
     }
 }
 
+#[derive(Default)]
 struct Hook {
     function: Option<HookFn>,
     flags: HookFlags,
@@ -973,14 +990,22 @@ struct Hook {
     previous_instruction_index: usize,
 }
 
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct Context {
     // FIXME It is dangerous to write to gc and stack
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub stack: Stack,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub gc: Gc,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     record_map: FieldMap,
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
     hook: Hook,
     max_stack_size: VmIndex,
 
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
     poll_fn: Option<Box<FnMut(&Thread, &mut Context) -> Result<Async<()>> + Send>>,
 }
 

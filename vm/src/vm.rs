@@ -88,10 +88,10 @@ fn new_bytecode(
 pub struct Global {
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::symbol"))]
     pub id: Symbol,
-    #[cfg_attr(feature = "serde_derive_state", serde(state_with = "::serialization::typ"))]
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
     pub typ: ArcType,
     pub metadata: Metadata,
-    #[cfg_attr(feature = "serde_derive_state", serde(seed))]
+    #[cfg_attr(feature = "serde_derive_state", serde(state))]
     pub value: Value,
 }
 
@@ -102,18 +102,36 @@ impl Traverseable for Global {
     }
 }
 
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct GlobalVmState {
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     env: RwLock<VmEnv>,
+
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
     generics: RwLock<FnvMap<StdString, ArcType>>,
+
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
     typeids: RwLock<FnvMap<TypeId, ArcType>>,
+
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     interner: RwLock<Interner>,
+
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
     macros: MacroEnv,
+
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
     type_cache: TypeCache<Symbol>,
+
     // FIXME These fields should not be public
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub gc: Mutex<Gc>,
+
     // List of all generation 0 threads (ie, threads allocated by the global gc). when doing a
     // generation 0 sweep these threads are scanned as generation 0 values may be refered to by any
     // thread
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub generation_0_threads: RwLock<Vec<GcPtr<Thread>>>,
 }
 
@@ -131,8 +149,13 @@ impl Traverseable for GlobalVmState {
 /// A borrowed structure which implements `CompilerEnv`, `TypeEnv` and `KindEnv` allowing the
 /// typechecker and compiler to lookup things in the virtual machine.
 #[derive(Debug)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct VmEnv {
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub type_infos: TypeInfos,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub globals: FnvMap<StdString, Global>,
 }
 

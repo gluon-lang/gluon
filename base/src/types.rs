@@ -224,7 +224,7 @@ impl BuiltinType {
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "Id, T"))]
 pub struct TypeVariable {
-    #[cfg_attr(feature = "serde_derive", serde(seed))]
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub kind: ArcKind,
     pub id: u32,
 }
@@ -236,11 +236,11 @@ pub struct TypeVariable {
            serde(bound(deserialize = "Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "T"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
-#[cfg_attr(feature = "serde_derive", serde(bound(serialize = "Id: SerializeState<Seed = SeSeed>")))]
+#[cfg_attr(feature = "serde_derive", serde(bound(serialize = "Id: SerializeState<SeSeed>")))]
 pub struct Generic<Id> {
-    #[cfg_attr(feature = "serde_derive", serde(seed))]
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub id: Id,
-    #[cfg_attr(feature = "serde_derive", serde(seed))]
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub kind: ArcKind,
 }
 
@@ -259,9 +259,9 @@ impl<Id> Generic<Id> {
            serde(bound(deserialize = "T: DeserializeState<'de, Seed<Id, T>> + Clone + From<Type<Id, T>> + ::std::any::Any,
                              Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
-#[cfg_attr(feature = "serde_derive", serde(bound(serialize = "T: SerializeState<Seed = SeSeed>")))]
+#[cfg_attr(feature = "serde_derive", serde(bound(serialize = "T: SerializeState<SeSeed>")))]
 pub struct Alias<Id, T> {
-    #[cfg_attr(feature = "serde_derive", serde(seed))]
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     _typ: T,
     _marker: PhantomData<Id>,
 }
@@ -369,7 +369,7 @@ where
                  Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive",
-           serde(bound(serialize = "T: SerializeState<Seed = SeSeed>, Id: SerializeState<Seed = SeSeed>")))]
+           serde(bound(serialize = "T: SerializeState<SeSeed>, Id: SerializeState<SeSeed>")))]
 pub struct AliasRef<Id, T> {
     /// Name of the Alias
     index: usize,
@@ -419,15 +419,15 @@ where
                              Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive",
-           serde(bound(serialize = "T: SerializeState<Seed = SeSeed>, Id: SerializeState<Seed = SeSeed>")))]
+           serde(bound(serialize = "T: SerializeState<SeSeed>, Id: SerializeState<SeSeed>")))]
 pub struct AliasData<Id, T> {
-    #[cfg_attr(feature = "serde_derive", serde(seed))]
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub name: Id,
     /// Arguments to the alias
-    #[cfg_attr(feature = "serde_derive", serde(seed))]
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub args: Vec<Generic<Id>>,
     /// The type that is being aliased
-    #[cfg_attr(feature = "serde_derive", serde(seed))]
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     typ: T,
 }
 
@@ -469,11 +469,11 @@ impl<Id, T> Deref for AliasRef<Id, T> {
                              ")))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive",
-           serde(bound(serialize = "T: SerializeState<Seed = SeSeed>, Id: SerializeState<Seed = SeSeed>")))]
+           serde(bound(serialize = "T: SerializeState<SeSeed>, Id: SerializeState<SeSeed>")))]
 pub struct Field<Id, T = ArcType<Id>> {
-    #[cfg_attr(feature = "serde_derive", serde(seed))]
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub name: Id,
-    #[cfg_attr(feature = "serde_derive", serde(seed))]
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub typ: T,
 }
 
@@ -526,12 +526,12 @@ pub enum Type<Id, T = ArcType<Id>> {
     ),
     /// Record constructor, of kind `Row -> Type`
     Record(
-        #[cfg_attr(feature = "serde_derive", serde(seed))]
+        #[cfg_attr(feature = "serde_derive", serde(state))]
         T,
     ),
     /// Variant constructor, of kind `Row -> Type`
     Variant(
-        #[cfg_attr(feature = "serde_derive", serde(seed))]
+        #[cfg_attr(feature = "serde_derive", serde(state))]
         T,
     ),
     /// The empty row, of kind `Row`
@@ -539,13 +539,13 @@ pub enum Type<Id, T = ArcType<Id>> {
     /// Row extension, of kind `... -> Row -> Row`
     ExtendRow {
         /// The associated types of this record type
-        #[cfg_attr(feature = "serde_derive", serde(seed))]
+        #[cfg_attr(feature = "serde_derive", serde(state))]
         types: Vec<Field<Id, Alias<Id, T>>>,
         /// The fields of this record type
-        #[cfg_attr(feature = "serde_derive", serde(seed))]
+        #[cfg_attr(feature = "serde_derive", serde(state))]
         fields: Vec<Field<Id, T>>,
         /// The rest of the row
-        #[cfg_attr(feature = "serde_derive", serde(seed))]
+        #[cfg_attr(feature = "serde_derive", serde(state))]
         rest: T,
     },
     /// An identifier type. These are created during parsing, but should all be
@@ -555,23 +555,23 @@ pub enum Type<Id, T = ArcType<Id>> {
     /// in reference counted pointers. This is a bit of a wart at the moment and
     /// _may_ cause spurious unification failures.
     Ident(
-        #[cfg_attr(feature = "serde_derive", serde(seed))]
+        #[cfg_attr(feature = "serde_derive", serde(state))]
         Id,
     ),
     /// An unbound type variable that may be unified with other types. These
     /// will eventually be converted into `Type::Generic`s during generalization.
     Variable(
-        #[cfg_attr(feature = "serde_derive", serde(seed))]
+        #[cfg_attr(feature = "serde_derive", serde(state))]
         TypeVariable,
     ),
     /// A variable that needs to be instantiated with a fresh type variable
     /// when the binding is refered to.
     Generic(
-        #[cfg_attr(feature = "serde_derive", serde(seed))]
+        #[cfg_attr(feature = "serde_derive", serde(state))]
         Generic<Id>,
     ),
     Alias(
-        #[cfg_attr(feature = "serde_derive", serde(seed))]
+        #[cfg_attr(feature = "serde_derive", serde(state))]
         AliasRef<Id, T>,
     ),
 }

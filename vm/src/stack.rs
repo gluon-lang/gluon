@@ -10,20 +10,31 @@ use value::{ClosureData, DataStruct, ExternFunction, Value};
 use types::VmIndex;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub enum State {
     Unknown,
     /// Locked frame which can only be unlocked by the caller which introduced the lock
     Lock,
     /// Extra frame introduced to store a call with excess arguments
     Excess,
-    Closure(GcPtr<ClosureData>),
-    Extern(GcPtr<ExternFunction>),
+    Closure(
+        #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::closure"))]
+        GcPtr<ClosureData>),
+    Extern(
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+        GcPtr<ExternFunction>),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct Frame {
     pub offset: VmIndex,
     pub instruction_index: usize,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub state: State,
     pub excess: bool,
 }
@@ -41,8 +52,13 @@ impl Frame {
 pub struct Lock(VmIndex);
 
 #[derive(Debug)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct Stack {
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     values: Vec<Value>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     frames: Vec<Frame>,
 }
 
