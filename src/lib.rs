@@ -9,10 +9,14 @@
 extern crate log;
 #[macro_use]
 extern crate quick_error;
+pub extern crate either;
 extern crate futures;
 
 #[cfg(feature = "serde")]
-extern crate serde;
+extern crate serde_state as serde;
+#[cfg(feature = "serde_derive_state")]
+#[macro_use]
+extern crate serde_derive_state;
 
 #[macro_use]
 pub extern crate gluon_vm as vm;
@@ -29,6 +33,8 @@ pub mod regex_bind;
 pub use vm::thread::{RootedThread, Thread};
 
 pub use futures::Future;
+
+use either::Either;
 
 use std::result::Result as StdResult;
 use std::string::String as StdString;
@@ -89,6 +95,12 @@ quick_error! {
             description(err.description())
             display("{}", err)
         }
+    }
+}
+
+impl From<String> for Error {
+    fn from(s: String) -> Self {
+        Error::VM(s.into())
     }
 }
 
@@ -234,6 +246,44 @@ impl Compiler {
             typ: vm.global_env().type_cache().hole(),
         }.compile(self, vm, filename, expr_str, ())
             .map(|result| result.function)
+    }
+
+    /// Compiles the source code `expr_str` into bytecode serialized using `serializer`
+    #[cfg(feature = "serialization")]
+    pub fn compile_to_bytecode<S>(
+        &mut self,
+        thread: &Thread,
+        name: &str,
+        expr_str: &str,
+        serializer: S,
+    ) -> StdResult<S::Ok, Either<Error, S::Error>> where S: serde::Serializer, S::Error: 'static {
+        compile_to(
+            expr_str,
+            self,
+            &thread,
+            name,
+            expr_str,
+            None,
+            serializer
+        )
+    }
+
+    /// Loads bytecode from a `Deserializer` and stores it into the module `name`.
+    ///
+    /// `load_script` is equivalent to `compile_to_bytecode` followed by `load_bytecode`
+    #[cfg(feature = "serialization")]
+    pub fn load_bytecode<'vm, D>(
+        &mut self,
+        thread: &'vm Thread,
+        name: &str,
+        deserializer: D,
+    ) -> BoxFutureValue<'vm, (), Error>
+    where
+        D: serde::Deserializer<'vm> + 'vm,
+        D::Error: Send + Sync,
+    {
+        Precompiled(deserializer)
+            .load_script(self, thread, name, "", ())
     }
 
     /// Parses and typechecks `expr_str` followed by extracting metadata from the created

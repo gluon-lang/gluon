@@ -8,9 +8,13 @@
 //! difficult to forget a stage.
 
 use std::borrow::{Borrow, BorrowMut};
+use std::result::Result as StdResult;
+
+use either::Either;
 
 use base::ast::SpannedExpr;
 use base::error::InFile;
+use base::metadata::Metadata;
 use base::types::ArcType;
 use base::source::Source;
 use base::symbol::{Name, NameBuf, Symbol, SymbolModule};
@@ -259,6 +263,7 @@ where
 
 /// Result of successful execution
 pub struct ExecuteValue<'vm, E> {
+    pub id: Symbol,
     pub expr: E,
     pub typ: ArcType,
     pub value: RootedValue<&'vm Thread>,
@@ -341,11 +346,13 @@ where
             typ,
             mut function,
         } = self;
-        function.id = Symbol::from(name);
+        let module_id = Symbol::from(name);
+        function.id = module_id.clone();
         let closure = try_future!(vm.global_env().new_global_thunk(function));
         vm.call_thunk(closure)
             .map(|(vm, value)| {
                 ExecuteValue {
+                    id: module_id,
                     expr: expr,
                     typ: typ,
                     value: vm.root_value(value),
@@ -391,6 +398,18 @@ where
 #[cfg(feature = "serde")]
 pub struct Precompiled<D>(pub D);
 
+#[cfg_attr(feature = "serde_derive_state", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive_state",
+           serde(deserialize_state = "::vm::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive_state", serde(serialize_state = "::vm::serialization::SeSeed"))]
+pub struct Module {
+    #[cfg_attr(feature = "serde_derive_state", serde(state_with = "::vm::serialization::borrow"))]
+    pub typ: ArcType,
+    pub metadata: Metadata,
+    #[cfg_attr(feature = "serde_derive_state", serde(state))]
+    pub function: CompiledFunction,
+}
+
 #[cfg(feature = "serde")]
 impl<'vm, 'de, D> Executable<'vm, ()> for Precompiled<D>
 where
@@ -402,25 +421,39 @@ where
         self,
         _compiler: &mut Compiler,
         vm: &'vm Thread,
-        _name: &str,
+        filename: &str,
         _expr_str: &str,
         _: (),
     ) -> BoxFutureValue<'vm, ExecuteValue<'vm, Self::Expr>, Error> {
         use vm::serialization::DeSeed;
-        use vm::internal::Global;
 
-        let Global { typ, value, .. } = try_future!(
+        let module: Module = try_future!(
             DeSeed::new(vm)
                 .deserialize(self.0)
-                .map_err(|err| Error::VM(err.to_string().into()))
+                .map_err(|err| err.to_string())
         );
-        FutureValue::sync(Ok(
-            (ExecuteValue {
-                expr: (),
-                typ: typ,
-                value: vm.root_value(value),
-            }),
-        )).boxed()
+        let module_id = module.function.id.clone();
+        if filename != module_id.as_ref() {
+            return FutureValue::sync(Err(format!(
+                "filenames do not match `{}` != `{}`",
+                filename,
+                module_id
+            ).into()))
+                .boxed();
+        }
+        let typ = module.typ;
+        let closure = try_future!(vm.global_env().new_global_thunk(module.function));
+        vm.call_thunk(closure)
+            .map(|(vm, value)| {
+                ExecuteValue {
+                    id: module_id,
+                    expr: (),
+                    typ: typ,
+                    value: vm.root_value(value),
+                }
+            })
+            .map_err(Error::from)
+            .boxed()
     }
     fn load_script(
         self,
@@ -441,12 +474,41 @@ where
         } = try_future!(
             DeSeed::new(vm)
                 .deserialize(self.0)
-                .map_err(|err| Error::VM(err.to_string().into()))
+                .map_err(|err| err.to_string())
         );
         let id = compiler.symbols.symbol(name);
-        // FIXME
         try_future!(vm.set_global(id, typ, metadata, value,));
         info!("Loaded module `{}`", name);
         FutureValue::sync(Ok(())).boxed()
     }
+}
+
+#[cfg(feature = "serde")]
+pub fn compile_to<S, T, E>(
+    self_: T,
+    compiler: &mut Compiler,
+    thread: &Thread,
+    file: &str,
+    expr_str: &str,
+    arg: E,
+    serializer: S,
+) -> StdResult<S::Ok, Either<Error, S::Error>>
+where
+    S: ::serde::Serializer,
+    S::Error: 'static,
+    T: Compileable<E>,
+{
+    use serde::ser::SerializeState;
+    use vm::serialization::SeSeed;
+    let CompileValue {
+        expr: _,
+        typ,
+        function,
+    } = self_.compile(compiler, thread, file, expr_str, arg).map_err(Error::from).map_err(Either::Left)?;
+    let module = Module {
+        typ,
+        metadata: Metadata::default(),
+        function,
+    };
+    module.serialize_state(serializer, &SeSeed::new(thread)).map_err(Either::Right)
 }

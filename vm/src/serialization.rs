@@ -399,9 +399,6 @@ pub mod borrow {
 }
 
 pub mod typ {
-    use serde::de::Deserializer;
-    use serde::ser::{SerializeState, Serializer};
-
     use super::*;
     use base::types::ArcType;
     use base::symbol::Symbol;

@@ -35,16 +35,10 @@ impl PartialEq for Userdata {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ClosureData {
     pub function: GcPtr<BytecodeFunction>,
     pub upvars: Array<Value>,
-}
-
-impl PartialEq for ClosureData {
-    fn eq(&self, _: &ClosureData) -> bool {
-        false
-    }
 }
 
 impl Traverseable for ClosureData {
@@ -104,7 +98,7 @@ unsafe impl DataDef for ClosureInitDef {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
@@ -755,8 +749,8 @@ impl Clone for ExternFunction {
 }
 
 impl PartialEq for ExternFunction {
-    fn eq(&self, _: &ExternFunction) -> bool {
-        false
+    fn eq(&self, other: &ExternFunction) -> bool {
+        self.id == other.id && self.args == other.args && self.function as usize == other.function as usize
     }
 }
 

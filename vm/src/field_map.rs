@@ -20,7 +20,7 @@ impl Borrow<[InternedStr]> for Fields {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]

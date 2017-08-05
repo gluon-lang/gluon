@@ -6,7 +6,7 @@ use base::types::ArcType;
 
 use types::VmIndex;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub struct SourceMap {
     /// The index of the first instruction for each line
@@ -52,7 +52,7 @@ impl SourceMap {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
@@ -67,7 +67,7 @@ pub struct Local {
     pub typ: ArcType,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]

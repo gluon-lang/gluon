@@ -1,13 +1,34 @@
 #![cfg(feature = "serialization")]
+extern crate futures;
+
 extern crate serde_json;
 extern crate serde_state as serde;
 
 extern crate gluon;
 
+use std::fs::File;
+use std::io::Read;
+
+use futures::Future;
+
+use serde::ser::SerializeState;
+
 use gluon::{new_vm, Compiler};
 use gluon::vm::api::{Hole, OpaqueValue};
 use gluon::vm::thread::{RootedThread, RootedValue, Thread, ThreadInternal};
 use gluon::vm::serialization::{DeSeed, SeSeed};
+use gluon::vm::internal::Value;
+
+fn serialize_value(thread: &Thread, value: &Value) {
+
+    let mut buffer = Vec::new();
+    {
+        let mut ser = serde_json::Serializer::pretty(&mut buffer);
+        let ser_state = SeSeed::new(thread);
+        value.serialize_state(&mut ser, &ser_state).unwrap();
+    }
+    String::from_utf8(buffer).unwrap();
+}
 
 fn roundtrip<'t>(
     thread: &'t RootedThread,
@@ -15,7 +36,6 @@ fn roundtrip<'t>(
 ) -> RootedValue<&'t Thread> {
     use std::str::from_utf8;
 
-    use serde::ser::SerializeState;
     let value = unsafe { value.get_value() };
 
     let mut buffer = Vec::new();
@@ -61,7 +81,7 @@ fn roundtrip_recursive_closure() {
     let thread = new_vm();
     let expr = r#"
         let f x = g x
-        and g x = f x 
+        and g x = f x
         { f, g }
         "#;
     let (value, _) = Compiler::new()
@@ -103,4 +123,42 @@ fn roundtrip_std_libs() {
         .run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "test", &expr)
         .unwrap_or_else(|err| panic!("{}", err));
     roundtrip(&thread, &value);
+}
+
+#[test]
+fn precompile() {
+    use gluon::compiler_pipeline::*;
+
+    let thread = new_vm();
+    let mut text = String::new();
+    File::open("std/map.glu")
+        .expect("Unable to open map.glu")
+        .read_to_string(&mut text)
+        .unwrap();
+
+    let mut buffer = Vec::new();
+    {
+        let mut serializer = serde_json::Serializer::new(&mut buffer);
+        Compiler::new()
+            .compile_to_bytecode(&thread, "test", &text, &mut serializer)
+            .unwrap()
+    }
+    let precompiled_result = {
+        let mut deserializer = serde_json::Deserializer::from_slice(&buffer);
+        Precompiled(&mut deserializer)
+            .run_expr(&mut Compiler::new(), &thread, "test", "", ())
+            .wait()
+            .unwrap()
+    };
+    let thread2 = new_vm();
+    assert_eq!(
+        serialize_value(
+            &thread2,
+            &text.run_expr(&mut Compiler::new(), &thread2, "test", &text, None)
+                .wait()
+                .unwrap()
+                .value
+        ),
+        serialize_value(&thread, &precompiled_result.value)
+    );
 }

@@ -43,7 +43,7 @@ pub struct UpvarInfo {
     pub typ: ArcType,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
@@ -58,18 +58,28 @@ pub struct DebugInfo {
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "serde_derive_state", derive(SerializeState, DeserializeState))]
+#[cfg_attr(feature = "serde_derive_state", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive_state", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct CompiledFunction {
     pub args: VmIndex,
     /// The maximum possible number of stack slots needed for this function
     pub max_stack_size: VmIndex,
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
     pub id: Symbol,
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
     pub typ: ArcType,
     pub instructions: Vec<Instruction>,
+    #[cfg_attr(feature = "serde_derive_state", serde(state))]
     pub inner_functions: Vec<CompiledFunction>,
+    #[cfg_attr(feature = "serde_derive_state", serde(state))]
     pub strings: Vec<InternedStr>,
     /// Storage for globals which are needed by the module which is currently being compiled
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
     pub module_globals: Vec<Symbol>,
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
     pub records: Vec<Vec<Symbol>>,
+    #[cfg_attr(feature = "serde_derive_state", serde(state))]
     pub debug_info: DebugInfo,
 }
 
