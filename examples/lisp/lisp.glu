@@ -38,7 +38,7 @@ type Expr =
     | Function Function
     | Primitive (List Expr -> Lisp Expr)
 and Function = {
-    params : Array String,
+    params : List String,
     vararg : Option String,
     body : List Expr,
     closure : Map String Expr
@@ -89,7 +89,7 @@ let show : Show Expr =
                 match f.vararg with
                 | Some arg -> " . " <> arg
                 | None -> ""
-            "(lambda (" <> spaced id (list f.params) <> ")" <> vararg <> ") ...)"
+            "(lambda (" <> spaced id f.params <> ")" <> vararg <> ") ...)"
         | Primitive _ -> "<primitive>"
     { show }
 
@@ -159,7 +159,7 @@ let monad_Lisp : Monad Lisp = {
 let { (>>=), foldM, mapM } = prelude.make_Monad monad_Lisp
 let { map = map_lisp } = functor_Lisp
 
-let get_state : Lisp LispState = lisp (\state -> Ok { value = state.state, state = state.state })
+let get_state : Lisp LispState = lisp (\state -> Ok { value = state, state = state })
 
 let fail msg : String -> Lisp a = lisp (\_ -> Err msg)
 
@@ -195,7 +195,7 @@ let primitive_binop name int_op float_op : _ -> Binop Int -> Binop Float -> Map 
 let define =
     let f xs =
         match xs with
-        | Cons (Cons (Atom name) params) body ->
+        | Cons (List (Cons (Atom name) params)) body ->
             get_state >>= (\closure ->
                 pure (Function {
                     params = prelude.functor_List.map show.show params,
