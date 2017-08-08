@@ -41,12 +41,10 @@ fn run_mode(mode: &'static str) {
     let mut out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     loop {
         match out_dir.file_name() {
-            Some(name) => {
-                match name.to_str() {
-                    Some(name) if name == "debug" => break,
-                    _ => (),
-                }
-            }
+            Some(name) => match name.to_str() {
+                Some(name) if name == "debug" => break,
+                _ => (),
+            },
             None => break,
         }
         out_dir.pop();

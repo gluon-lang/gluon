@@ -1,7 +1,7 @@
 extern crate gluon;
 extern crate env_logger;
 
-use gluon::{Compiler, new_vm};
+use gluon::{new_vm, Compiler};
 use gluon::vm::api::IO;
 
 #[test]
@@ -17,7 +17,7 @@ fn read_file() {
 
         io.open_file "Cargo.toml" >>= \file ->
             io.read_file file 9 >>= \bytes ->
-            assert (array.length bytes == 9)
+            assert (array.len bytes == 9)
             assert (array.index bytes 0 #Byte== 91b) // [
             assert (array.index bytes 1 #Byte== 112b) // p
             pure (array.index bytes 8)

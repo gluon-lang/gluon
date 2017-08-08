@@ -9,11 +9,11 @@ use support::*;
 use gluon::base::pos::BytePos;
 use gluon::base::types::Type;
 use gluon::check::completion;
-use gluon::vm::api::{FunctionRef, Hole, IO, OpaqueValue, ValueRef};
+use gluon::vm::api::{FunctionRef, Hole, OpaqueValue, ValueRef, IO};
 use gluon::vm::thread::{Thread, ThreadInternal};
 use gluon::vm::internal::Value;
 use gluon::vm::internal::Value::{Float, Int};
-use gluon::vm::stack::{State, StackFrame};
+use gluon::vm::stack::{StackFrame, State};
 use gluon::vm::channel::Sender;
 use gluon::{Compiler, Error};
 
@@ -65,7 +65,7 @@ fn record() {
     assert_eq!(
         value.get_ref(),
         vm.context()
-            .new_data(&vm, 0, &mut [Int(0), Float(1.0), Value::Tag(0)])
+            .new_record(&vm, 0, &mut [Int(0), Float(1.0), Value::Tag(0)])
             .unwrap()
     );
 }
@@ -83,7 +83,7 @@ add { x = 0, y = 1 } { x = 1, y = 1 }
     assert_eq!(
         value.get_ref(),
         vm.context()
-            .new_data(&vm, 0, &mut [Int(1), Int(2)])
+            .new_record(&vm, 0, &mut [Int(1), Int(2)])
             .unwrap()
     );
 }
@@ -335,7 +335,7 @@ match A with
 test_expr!{ match_record_pattern,
 r#"
 match { x = 1, y = "abc" } with
-| { x, y = z } -> x #Int+ string_prim.length z
+| { x, y = z } -> x #Int+ string_prim.len z
 "#,
 4i32
 }
@@ -343,7 +343,7 @@ match { x = 1, y = "abc" } with
 test_expr!{ match_stack,
 r#"
 1 #Int+ (match string_prim with
-         | { length } -> length "abc")
+         | { len } -> len "abc")
 "#,
 4i32
 }
@@ -355,7 +355,7 @@ in
 let a = { x = 10, y = "abc" }
 in
 let {x, y = z} = a
-in x + string_prim.length z
+in x + string_prim.len z
 "#,
 13i32
 }
@@ -409,7 +409,7 @@ in (id { x = 1 }).x
 }
 
 test_expr!{ module_function,
-r#"let x = string_prim.length "test" in x"#,
+r#"let x = string_prim.len "test" in x"#,
 4i32
 }
 
@@ -422,8 +422,8 @@ r#"
 let arr = [1,2,3]
 
 array.index arr 0 #Int== 1
-    && array.length arr #Int== 3
-    && array.length (array.append arr arr) #Int== array.length arr #Int* 2"#,
+    && array.len arr #Int== 3
+    && array.len (array.append arr arr) #Int== array.len arr #Int* 2"#,
 true
 }
 
@@ -431,9 +431,9 @@ test_expr!{ array_byte,
 r#"
 let arr = [1b,2b,3b]
 
-let b = array.index arr 2 #Byte== 3b && array.length arr #Int== 3
+let b = array.index arr 2 #Byte== 3b && array.len arr #Int== 3
 let arr2 = array.append arr arr
-b && array.length arr2 #Int== array.length arr #Int* 2
+b && array.len arr2 #Int== array.len arr #Int* 2
   && array.index arr2 1 #Byte== array.index arr2 4
 "#,
 true
@@ -443,9 +443,9 @@ test_expr!{ array_float,
 r#"
 let arr = [1.0,2.0,3.0]
 
-let b = array.index arr 2 #Float== 3.0 && array.length arr #Int== 3
+let b = array.index arr 2 #Float== 3.0 && array.len arr #Int== 3
 let arr2 = array.append arr arr
-b && array.length arr2 #Int== array.length arr #Int* 2
+b && array.len arr2 #Int== array.len arr #Int* 2
   && array.index arr2 1 #Float== array.index arr2 4
 "#,
 true
@@ -455,9 +455,9 @@ test_expr!{ array_data,
 r#"
 let arr = [{x = 1, y = "a" }, { x = 2, y = "b" }]
 
-let b = (array.index arr 1).x #Int== 2 && array.length arr #Int== 2
+let b = (array.index arr 1).x #Int== 2 && array.len arr #Int== 2
 let arr2 = array.append arr arr
-b && array.length arr2 #Int== array.length arr #Int* 2
+b && array.len arr2 #Int== array.len arr #Int* 2
 "#,
 true
 }
@@ -466,9 +466,9 @@ test_expr!{ array_array,
 r#"
 let arr = [[], [1], [2, 3]]
 
-let b = array.length (array.index arr 1) #Int== 1 && array.length arr #Int== 3
+let b = array.len (array.index arr 1) #Int== 1 && array.len arr #Int== 3
 let arr2 = array.append arr arr
-b && array.length arr2 #Int== array.length arr #Int* 2
+b && array.len arr2 #Int== array.len arr #Int* 2
 "#,
 true
 }
@@ -619,7 +619,7 @@ in
     assert_eq!(
         result.get_ref(),
         vm.context()
-            .new_data(&vm, 0, &mut [Int(3), Float(3.0)])
+            .new_record(&vm, 0, &mut [Int(3), Float(3.0)])
             .unwrap()
     );
 }
@@ -799,7 +799,7 @@ fn invalid_string_slice_dont_panic() {
     let text = r#"
 let string = import! "std/string.glu"
 let s = "åäö"
-string.slice s 1 (string.length s)
+string.slice s 1 (string.len s)
 "#;
     let mut vm = make_vm();
     let result = Compiler::new()
@@ -837,8 +837,8 @@ fn partially_applied_constructor_is_lambda() {
     let _ = ::env_logger::init();
     let vm = make_vm();
 
-    let result = Compiler::new()
-        .run_expr::<FunctionRef<fn(i32) -> Option<i32>>>(&vm, "test", "Some");
+    let result =
+        Compiler::new().run_expr::<FunctionRef<fn(i32) -> Option<i32>>>(&vm, "test", "Some");
     assert!(result.is_ok(), "{}", result.err().unwrap());
     assert_eq!(result.unwrap().0.call(123), Ok(Some(123)));
 }

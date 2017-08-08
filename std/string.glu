@@ -11,7 +11,7 @@ let ord : Ord String = { eq, compare = string_prim.compare }
 let show : Show String = { show = prelude.id }
 
 {
-    length = string_prim.length,
+    len = string_prim.len,
     is_empty = string_prim.is_empty,
     split_at = string_prim.split_at,
     find = string_prim.find,

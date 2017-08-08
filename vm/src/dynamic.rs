@@ -24,18 +24,16 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         match **self.resolved_type {
-            Type::Record(ref row) => {
-                match **row {
-                    Type::ExtendRow { ref fields, .. } => {
-                        let index = self.index;
-                        self.index += 1;
-                        self.value
-                            .get(index)
-                            .map(|value| (value, fields[index].typ.clone()))
-                    }
-                    _ => None,
+            Type::Record(ref row) => match **row {
+                Type::ExtendRow { ref fields, .. } => {
+                    let index = self.index;
+                    self.index += 1;
+                    self.value
+                        .get(index)
+                        .map(|value| (value, fields[index].typ.clone()))
                 }
-            }
+                _ => None,
+            },
             _ => None,
         }
     }

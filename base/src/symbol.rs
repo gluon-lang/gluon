@@ -14,6 +14,63 @@ use fnv::FnvMap;
 #[derive(Clone, Eq)]
 pub struct Symbol(Arc<NameBuf>);
 
+#[cfg(feature = "serde")]
+mod serialization {
+    use super::*;
+
+    use serde::{Serialize, Serializer, Deserialize, Deserializer};
+    use serde::de::DeserializeState;
+    use serde::ser::SerializeState;
+    use serialization::SeSeed;
+
+    impl<'de> Deserialize<'de> for Symbol {
+        fn deserialize<D>(deserializer: D) -> Result<Symbol, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            use std::borrow::Cow;
+            Cow::<str>::deserialize(deserializer).map(Symbol::from)
+        }
+    }
+
+    impl<'de, Id, T> DeserializeState<'de, ::serialization::Seed<Id, T>> for Symbol {
+        fn deserialize_state<D>(
+            seed: &mut ::serialization::Seed<Id, T>,
+            deserializer: D,
+        ) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            use serde::de::DeserializeSeed;
+            use serialization::SharedSeed;
+
+            let seed = SharedSeed::new(seed);
+            seed.deserialize(deserializer).map(Symbol)
+        }
+    }
+
+    impl Serialize for Symbol {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            let s: &str = self.as_ref();
+            s.serialize(serializer)
+        }
+    }
+
+    impl SerializeState<SeSeed> for Symbol {
+        fn serialize_state<S>(&self, serializer: S, seed: &SeSeed) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            {
+                ::serialization::shared::serialize(self, serializer, seed)
+            }
+        }
+    }
+}
+
 impl Deref for Symbol {
     type Target = SymbolRef;
     fn deref(&self) -> &SymbolRef {
@@ -71,20 +128,19 @@ impl Hash for Symbol {
     }
 }
 
-impl<'a> From<&'a str> for Symbol {
-    fn from(name: &'a str) -> Symbol {
-        Symbol::from(String::from(name))
-    }
-}
-
-impl From<String> for Symbol {
-    fn from(name: String) -> Symbol {
-        Symbol(Arc::new(NameBuf(name)))
+impl<S> From<S> for Symbol
+where
+    S: Into<String>,
+{
+    fn from(name: S) -> Symbol {
+        Symbol(Arc::new(NameBuf(name.into())))
     }
 }
 
 
 #[derive(Eq)]
+#[cfg_attr(feature = "serde_derive", derive(SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct SymbolRef(str);
 
 impl fmt::Debug for SymbolRef {
@@ -129,6 +185,12 @@ impl AsRef<str> for SymbolRef {
     }
 }
 
+impl Symbol {
+    pub fn strong_count(sym: &Symbol) -> usize {
+        Arc::strong_count(&sym.0)
+    }
+}
+
 impl SymbolRef {
     /// Checks whether the names of two symbols are equal
     pub fn name_eq(&self, other: &SymbolRef) -> bool {
@@ -151,6 +213,9 @@ impl SymbolRef {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "S"))]
+#[cfg_attr(feature = "serde_derive", serde(de_parameters = "S"))]
 pub struct NameBuf(String);
 
 #[derive(Debug, Eq, Hash)]

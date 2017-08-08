@@ -22,9 +22,7 @@ pub fn ident<'b>(arena: &'b Arena<'b>, name: &'b str) -> DocBuilder<'b, Arena<'b
 
 fn forced_new_line<Id>(expr: &SpannedExpr<Id>) -> bool {
     match expr.value {
-        Expr::LetBindings(..) |
-        Expr::Match(..) |
-        Expr::TypeBindings(..) => true,
+        Expr::LetBindings(..) | Expr::Match(..) | Expr::TypeBindings(..) => true,
         Expr::Lambda(ref lambda) => forced_new_line(&lambda.body),
         Expr::Tuple { ref elems, .. } => elems.iter().any(forced_new_line),
         Expr::Record { ref exprs, .. } => {
@@ -276,8 +274,7 @@ impl<'a> ExprPrinter<'a> {
         let src = self.source.src();
         if src.starts_with("#!") {
             src.lines().next()
-        }
-        else {
+        } else {
             None
         }
     }
@@ -291,14 +288,12 @@ impl<'a> ExprPrinter<'a> {
     {
         let arena = &self.arena;
         match self.find_shebang_line() {
-            Some(shebang_line) => { 
+            Some(shebang_line) => {
                 arena
                     .text(shebang_line)
-                    .append(
-                        self.pretty_expr_(BytePos::from(shebang_line.len()), expr)
-                    )
-            },
-            None => self.pretty_expr_(BytePos::from(0), expr)
+                    .append(self.pretty_expr_(BytePos::from(shebang_line.len()), expr))
+            }
+            None => self.pretty_expr_(BytePos::from(0), expr),
         }
     }
 
@@ -550,14 +545,17 @@ impl<'a> ExprPrinter<'a> {
                 };
                 let spans = || {
                     ordered_iter().map(|x| {
-                        x.either(|l| l.name.span, |r| {
-                            Span::new(
-                                r.name.span.start,
-                                r.value
-                                    .as_ref()
-                                    .map_or(r.name.span.start, |expr| expr.span.end),
-                            )
-                        })
+                        x.either(
+                            |l| l.name.span,
+                            |r| {
+                                Span::new(
+                                    r.name.span.start,
+                                    r.value
+                                        .as_ref()
+                                        .map_or(r.name.span.start, |expr| expr.span.end),
+                                )
+                            },
+                        )
                     })
                 };
 

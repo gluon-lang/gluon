@@ -1,11 +1,11 @@
 use std::ops::{Deref, DerefMut};
 use interner::InternedStr;
-use base::ast::{Literal, TypedIdent, Typed, DisplayEnv, SpannedExpr};
+use base::ast::{DisplayEnv, Literal, SpannedExpr, Typed, TypedIdent};
 use base::resolve;
 use base::kind::{ArcKind, KindEnv};
 use base::types::{self, Alias, ArcType, BuiltinType, RecordSelector, Type, TypeEnv};
 use base::scoped_map::ScopedMap;
-use base::symbol::{Symbol, SymbolRef, SymbolModule};
+use base::symbol::{Symbol, SymbolModule, SymbolRef};
 use base::pos::{Line, NO_EXPANSION};
 use base::source::Source;
 use core::{self, Expr, Pattern};
@@ -34,33 +34,52 @@ enum FieldAccess {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct UpvarInfo {
     pub name: String,
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
     pub typ: ArcType,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default, PartialEq)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct DebugInfo {
     /// Maps instruction indexes to the line that spawned them
     pub source_map: SourceMap,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub local_map: LocalMap,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub upvars: Vec<UpvarInfo>,
     pub source_name: String,
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "serde_derive_state", derive(SerializeState, DeserializeState))]
+#[cfg_attr(feature = "serde_derive_state", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive_state", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct CompiledFunction {
     pub args: VmIndex,
     /// The maximum possible number of stack slots needed for this function
     pub max_stack_size: VmIndex,
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
     pub id: Symbol,
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
     pub typ: ArcType,
     pub instructions: Vec<Instruction>,
+    #[cfg_attr(feature = "serde_derive_state", serde(state))]
     pub inner_functions: Vec<CompiledFunction>,
+    #[cfg_attr(feature = "serde_derive_state", serde(state))]
     pub strings: Vec<InternedStr>,
     /// Storage for globals which are needed by the module which is currently being compiled
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
     pub module_globals: Vec<Symbol>,
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
     pub records: Vec<Vec<Symbol>>,
+    #[cfg_attr(feature = "serde_derive_state", serde(state))]
     pub debug_info: DebugInfo,
 }
 
@@ -320,11 +339,9 @@ impl CompilerEnv for TypeInfos {
         self.id_to_type
             .iter()
             .filter_map(|(_, ref alias)| match **alias.unresolved_type() {
-                Type::Variant(ref row) => {
-                    row.row_iter()
-                        .enumerate()
-                        .find(|&(_, field)| field.name == *id)
-                }
+                Type::Variant(ref row) => row.row_iter()
+                    .enumerate()
+                    .find(|&(_, field)| field.name == *id),
                 _ => None,
             })
             .next()
@@ -406,11 +423,9 @@ impl<'a> Compiler<'a> {
         let variable = self.stack_constructors
             .iter()
             .filter_map(|(_, typ)| match **typ {
-                Type::Variant(ref row) => {
-                    row.row_iter()
-                        .enumerate()
-                        .find(|&(_, field)| field.name == *id)
-                }
+                Type::Variant(ref row) => row.row_iter()
+                    .enumerate()
+                    .find(|&(_, field)| field.name == *id),
                 _ => None,
             })
             .next()
@@ -477,12 +492,10 @@ impl<'a> Compiler<'a> {
 
     fn find_tag(&self, typ: &ArcType, constructor: &Symbol) -> Option<VmTag> {
         match **resolve::remove_aliases_cow(self, typ) {
-            Type::Variant(ref row) => {
-                row.row_iter()
-                    .enumerate()
-                    .find(|&(_, field)| field.name == *constructor)
-                    .map(|(tag, _)| tag as VmTag)
-            }
+            Type::Variant(ref row) => row.row_iter()
+                .enumerate()
+                .find(|&(_, field)| field.name == *constructor)
+                .map(|(tag, _)| tag as VmTag),
             _ => None,
         }
     }
@@ -498,10 +511,7 @@ impl<'a> Compiler<'a> {
         };
         let mut env = FunctionEnvs::new();
         let id = self.empty_symbol.clone();
-        let typ = Type::function(
-            vec![],
-            ArcType::from(expr.env_type_of(&self.globals).clone()),
-        );
+        let typ = expr.env_type_of(&self.globals);
 
         env.start_function(self, 0, id, typ);
         debug!("COMPILING: {}", expr);
@@ -513,7 +523,8 @@ impl<'a> Compiler<'a> {
 
     fn load_identifier(&self, id: &Symbol, function: &mut FunctionEnvs) -> Result<()> {
         match self.find(id, function)
-            .unwrap_or_else(|| panic!("Undefined variable {}", self.symbols.string(&id))) {
+            .unwrap_or_else(|| panic!("Undefined variable {}", self.symbols.string(&id)))
+        {
             Stack(index) => function.emit(Push(index)),
             UpVar(index) => function.emit(PushUpVar(index)),
             Global(index) => function.emit(PushGlobal(index)),
@@ -560,15 +571,13 @@ impl<'a> Compiler<'a> {
         tail_position: bool,
     ) -> Result<Option<CExpr<'e>>> {
         match *expr {
-            Expr::Const(ref lit, _) => {
-                match *lit {
-                    Literal::Int(i) => function.emit(PushInt(i as isize)),
-                    Literal::Byte(b) => function.emit(PushByte(b)),
-                    Literal::Float(f) => function.emit(PushFloat(f)),
-                    Literal::String(ref s) => function.emit_string(self.intern(&s)?),
-                    Literal::Char(c) => function.emit(PushInt(c as isize)),
-                }
-            }
+            Expr::Const(ref lit, _) => match *lit {
+                Literal::Int(i) => function.emit(PushInt(i as isize)),
+                Literal::Byte(b) => function.emit(PushByte(b)),
+                Literal::Float(f) => function.emit(PushFloat(f)),
+                Literal::String(ref s) => function.emit_string(self.intern(&s)?),
+                Literal::Char(c) => function.emit(PushInt(c as isize)),
+            },
             Expr::Ident(ref id, _) => self.load_identifier(&id.name, function)?,
             Expr::Let(ref let_binding, ref body) => {
                 self.stack_constructors.enter_scope();
@@ -684,8 +693,12 @@ impl<'a> Compiler<'a> {
                         }
                     }
                 }
+                let constructors_in_type =
+                    resolve::remove_aliases_cow(self, &typ).row_iter().count();
                 // Create a catch all to prevent us from running into undefined behaviour
-                if !catch_all {
+                // If a catch all already exists or all constructors have been matched then we can
+                // skip it
+                if !catch_all && alts.len() != constructors_in_type {
                     let error_fn = self.symbols.symbol("#error");
                     self.load_identifier(&error_fn, function)?;
                     function.emit_string(self.intern("Non-exhaustive pattern")?);
@@ -884,13 +897,12 @@ impl<'a> Compiler<'a> {
                             for field in typ.row_iter() {
                                 let (name, typ) = match fields
                                     .iter()
-                                    .find(|tup| tup.0.name.name_eq(&field.name)) {
-                                    Some(&(ref name, ref bind)) => {
-                                        (
-                                            bind.as_ref().unwrap_or(&name.name).clone(),
-                                            field.typ.clone(),
-                                        )
-                                    }
+                                    .find(|tup| tup.0.name.name_eq(&field.name))
+                                {
+                                    Some(&(ref name, ref bind)) => (
+                                        bind.as_ref().unwrap_or(&name.name).clone(),
+                                        field.typ.clone(),
+                                    ),
                                     None => (self.empty_symbol.clone(), Type::hole()),
                                 };
                                 function.push_stack_var(self, name, typ);

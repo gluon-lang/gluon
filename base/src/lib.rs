@@ -11,6 +11,15 @@ extern crate smallvec;
 extern crate collect_mac;
 extern crate itertools;
 
+#[cfg(feature = "serde")]
+extern crate serde_state as serde;
+#[cfg(feature = "serde_derive")]
+#[macro_use]
+extern crate serde_derive;
+#[cfg(feature = "serde_derive_state")]
+#[macro_use]
+extern crate serde_derive_state;
+
 macro_rules! type_cache {
     ($name: ident ($($args: ident),*) { $typ: ty, $inner_type: ident } $( $id: ident )+) => {
 
@@ -64,6 +73,8 @@ pub mod pretty_print;
 pub mod pos;
 pub mod resolve;
 pub mod scoped_map;
+#[cfg(feature = "serde")]
+pub mod serialization;
 pub mod source;
 pub mod symbol;
 pub mod types;

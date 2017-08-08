@@ -1,3 +1,4 @@
+#![cfg(feature = "serialization")]
 extern crate env_logger;
 #[macro_use]
 extern crate serde_derive;
@@ -9,7 +10,7 @@ use gluon::base::symbol::Symbol;
 use gluon::vm::api::{Getable, Hole, OpaqueValue, VmType};
 use gluon::vm::api::de::{self, De};
 use gluon::vm::thread::Thread;
-use gluon::{Compiler, new_vm};
+use gluon::{new_vm, Compiler};
 
 #[test]
 fn bool() {

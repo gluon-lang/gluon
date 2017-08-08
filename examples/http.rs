@@ -35,20 +35,20 @@ use futures::sink::Sink;
 use futures::stream::{BoxStream, Stream};
 use futures::sync::mpsc::Sender;
 
-use base::types::{Type, ArcType};
+use base::types::{ArcType, Type};
 
-use vm::{Result as VmResult, Error as VmError};
+use vm::{Error as VmError, Result as VmResult};
 
 use vm::thread::ThreadInternal;
 use vm::thread::{Context, RootedThread, Thread};
 use vm::Variants;
-use vm::api::{VmType, Function, FunctionRef, FutureResult, Getable, OpaqueValue, Pushable,
-              PushAsRef, IO, Userdata, ValueRef, WithVM};
+use vm::api::{Function, FunctionRef, FutureResult, Getable, OpaqueValue, PushAsRef, Pushable,
+              Userdata, ValueRef, VmType, WithVM, IO};
 use vm::gc::{Gc, Traverseable};
 
 use vm::internal::Value;
 
-use gluon::{Compiler, new_vm};
+use gluon::{new_vm, Compiler};
 
 // `Handler` is a type defined in http.glu but since we need to refer to it in the signature of
 // listen we define a phantom type which we can use with `OpaqueValue` to store a `Handler` in Rust
@@ -58,9 +58,9 @@ impl<T: VmType + 'static> VmType for Handler<T> {
     type Type = Self;
     fn make_type(vm: &Thread) -> ArcType {
         let typ = (*vm.global_env()
-                       .get_env()
-                       .find_type_info("examples.http_types.Handler")
-                       .unwrap())
+            .get_env()
+            .find_type_info("examples.http_types.Handler")
+            .unwrap())
             .clone()
             .into_type();
         Type::app(typ, collect![T::make_type(vm)])
@@ -113,14 +113,12 @@ impl<'vm> Getable<'vm> for Wrap<StatusCode> {
     fn from_value(_: &'vm Thread, value: Variants) -> Option<Self> {
         use hyper::StatusCode::*;
         match value.as_ref() {
-            ValueRef::Data(data) => {
-                Some(Wrap(match data.tag() {
-                    0 => Ok,
-                    1 => NotFound,
-                    2 => InternalServerError,
-                    _ => panic!("Unexpected tag"),
-                }))
-            }
+            ValueRef::Data(data) => Some(Wrap(match data.tag() {
+                0 => Ok,
+                1 => NotFound,
+                2 => InternalServerError,
+                _ => panic!("Unexpected tag"),
+            })),
             _ => panic!(),
         }
     }

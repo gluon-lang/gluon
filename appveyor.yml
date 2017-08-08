@@ -2,6 +2,10 @@ environment:
   global:
     # This will be used as part of the zipfile name
     PROJECT_NAME: gluon
+    # By default schannel checks revocation of certificates unlike some other SSL
+    # backends, but we've historically had problems on CI where a revocation
+    # server goes down presumably. See rust-lang/#43333 for more info
+    CARGO_HTTP_CHECK_REVOKE: false
   matrix:
     - TARGET: x86_64-pc-windows-msvc
       CHANNEL: stable

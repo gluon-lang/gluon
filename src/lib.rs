@@ -4,12 +4,19 @@
 //! behaviour. For information about how to use this library the best resource currently is the
 //! [tutorial](https://github.com/gluon-lang/gluon/blob/master/TUTORIAL.md) which contains examples on
 //! how to write gluon programs as well as how to run them using this library.
-#![doc(html_root_url="https://docs.rs/gluon/0.5.0")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon/0.5.0")] // # GLUON
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate quick_error;
+pub extern crate either;
 extern crate futures;
+
+#[cfg(feature = "serde")]
+extern crate serde_state as serde;
+#[cfg(feature = "serde_derive_state")]
+#[macro_use]
+extern crate serde_derive_state;
 
 #[macro_use]
 pub extern crate gluon_vm as vm;
@@ -27,6 +34,8 @@ pub use vm::thread::{RootedThread, Thread};
 
 pub use futures::Future;
 
+use either::Either;
+
 use std::result::Result as StdResult;
 use std::string::String as StdString;
 use std::env;
@@ -34,11 +43,11 @@ use std::env;
 use base::ast::{self, SpannedExpr};
 use base::error::{Errors, InFile};
 use base::metadata::Metadata;
-use base::symbol::{Symbol, Symbols, SymbolModule};
-use base::types::{ArcType, Type};
+use base::symbol::{Symbol, SymbolModule, Symbols};
+use base::types::{ArcType, TypeCache};
 use check::typecheck::TypeError;
 use vm::Variants;
-use vm::api::{Getable, Hole, VmType, OpaqueValue};
+use vm::api::{Getable, Hole, OpaqueValue, VmType};
 use vm::Error as VmError;
 use vm::future::{BoxFutureValue, FutureValue};
 use vm::compiler::CompiledFunction;
@@ -86,6 +95,12 @@ quick_error! {
             description(err.description())
             display("{}", err)
         }
+    }
+}
+
+impl From<String> for Error {
+    fn from(s: String) -> Self {
+        Error::VM(s.into())
     }
 }
 
@@ -169,21 +184,24 @@ impl Compiler {
     /// Parse `expr_str`, returning an expression if successful
     pub fn parse_expr(
         &mut self,
+        type_cache: &TypeCache<Symbol>,
         file: &str,
         expr_str: &str,
     ) -> StdResult<SpannedExpr<Symbol>, InFile<parser::Error>> {
-        self.parse_partial_expr(file, expr_str)
+        self.parse_partial_expr(type_cache, file, expr_str)
             .map_err(|(_, err)| err)
     }
 
     /// Parse `input`, returning an expression if successful
     pub fn parse_partial_expr(
         &mut self,
+        type_cache: &TypeCache<Symbol>,
         file: &str,
         expr_str: &str,
     ) -> StdResult<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, InFile<parser::Error>)> {
         Ok(parser::parse_partial_expr(
             &mut SymbolModule::new(file.into(), &mut self.symbols),
+            type_cache,
             expr_str,
         ).map_err(
             |(expr, err)| (expr, InFile::new(file, expr_str, err)),
@@ -225,9 +243,47 @@ impl Compiler {
     ) -> Result<CompiledFunction> {
         TypecheckValue {
             expr: expr,
-            typ: Type::hole(),
+            typ: vm.global_env().type_cache().hole(),
         }.compile(self, vm, filename, expr_str, ())
             .map(|result| result.function)
+    }
+
+    /// Compiles the source code `expr_str` into bytecode serialized using `serializer`
+    #[cfg(feature = "serialization")]
+    pub fn compile_to_bytecode<S>(
+        &mut self,
+        thread: &Thread,
+        name: &str,
+        expr_str: &str,
+        serializer: S,
+    ) -> StdResult<S::Ok, Either<Error, S::Error>> where S: serde::Serializer, S::Error: 'static {
+        compile_to(
+            expr_str,
+            self,
+            &thread,
+            name,
+            expr_str,
+            None,
+            serializer
+        )
+    }
+
+    /// Loads bytecode from a `Deserializer` and stores it into the module `name`.
+    ///
+    /// `load_script` is equivalent to `compile_to_bytecode` followed by `load_bytecode`
+    #[cfg(feature = "serialization")]
+    pub fn load_bytecode<'vm, D>(
+        &mut self,
+        thread: &'vm Thread,
+        name: &str,
+        deserializer: D,
+    ) -> BoxFutureValue<'vm, (), Error>
+    where
+        D: serde::Deserializer<'vm> + 'vm,
+        D::Error: Send + Sync,
+    {
+        Precompiled(deserializer)
+            .load_script(self, thread, name, "", ())
     }
 
     /// Parses and typechecks `expr_str` followed by extracting metadata from the created
@@ -283,7 +339,8 @@ impl Compiler {
             let opt_macro = vm.get_macros().get("import");
             match opt_macro
                 .as_ref()
-                .and_then(|mac| mac.downcast_ref::<Import>()) {
+                .and_then(|mac| mac.downcast_ref::<Import>())
+            {
                 Some(import) => Ok(import.read_file(filename)?),
                 None => {
 
@@ -371,7 +428,9 @@ impl Compiler {
         expr_str
             .run_expr(self, vm, name, expr_str, Some(&expected))
             .and_then(move |v| {
-                let ExecuteValue { typ: actual, value, .. } = v;
+                let ExecuteValue {
+                    typ: actual, value, ..
+                } = v;
                 unsafe {
                     FutureValue::sync(match T::from_value(vm, Variants::new(&value)) {
                         Some(value) => Ok((value, actual)),
@@ -415,7 +474,9 @@ impl Compiler {
         expr_str
             .run_expr(self, vm, name, expr_str, Some(&expected))
             .and_then(move |v| {
-                let ExecuteValue { typ: actual, value, .. } = v;
+                let ExecuteValue {
+                    typ: actual, value, ..
+                } = v;
                 if check_signature(&*vm.get_env(), &actual, &IO::<A>::make_type(vm)) {
                     vm.execute_io(*value)
                         .map(move |(_, value)| (value, expected, actual))
@@ -433,18 +494,23 @@ impl Compiler {
             .boxed()
     }
 
-    fn include_implicit_prelude(&mut self, name: &str, expr: &mut SpannedExpr<Symbol>) {
+    fn include_implicit_prelude(
+        &mut self,
+        type_cache: &TypeCache<Symbol>,
+        name: &str,
+        expr: &mut SpannedExpr<Symbol>,
+    ) {
         use std::mem;
         if name == "std.prelude" {
             return;
         }
 
-        let prelude_expr = self.parse_expr("", PRELUDE).unwrap();
+        let prelude_expr = self.parse_expr(type_cache, "", PRELUDE).unwrap();
         let original_expr = mem::replace(expr, prelude_expr);
 
         // Set all spans in the prelude expression to -1 so that completion requests always
         // skips searching the implicit prelude
-        use base::ast::{MutVisitor, SpannedPattern, walk_mut_expr, walk_mut_pattern};
+        use base::ast::{walk_mut_expr, walk_mut_pattern, MutVisitor, SpannedPattern};
         use base::pos::UNKNOWN_EXPANSION;
         struct ExpandedSpans;
 

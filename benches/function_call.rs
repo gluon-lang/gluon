@@ -3,11 +3,11 @@ extern crate bencher;
 
 extern crate gluon;
 
-use bencher::{Bencher, black_box};
+use bencher::{black_box, Bencher};
 
-use gluon::{Compiler, new_vm};
+use gluon::{new_vm, Compiler};
 use gluon::vm::thread::{Status, Thread};
-use gluon::vm::api::{FunctionRef, primitive};
+use gluon::vm::api::{primitive, FunctionRef};
 
 // Benchmarks function calls
 fn factorial(b: &mut Bencher) {
@@ -81,6 +81,10 @@ fn gluon_rust_boundary_overhead(b: &mut Bencher) {
     })
 }
 
-benchmark_group!(function_call,
-    factorial, factorial_tail_call, gluon_rust_boundary_overhead);
+benchmark_group!(
+    function_call,
+    factorial,
+    factorial_tail_call,
+    gluon_rust_boundary_overhead
+);
 benchmark_main!(function_call);

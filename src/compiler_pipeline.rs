@@ -8,9 +8,13 @@
 //! difficult to forget a stage.
 
 use std::borrow::{Borrow, BorrowMut};
+use std::result::Result as StdResult;
+
+use either::Either;
 
 use base::ast::SpannedExpr;
 use base::error::InFile;
+use base::metadata::Metadata;
 use base::types::ArcType;
 use base::source::Source;
 use base::symbol::{Name, NameBuf, Symbol, SymbolModule};
@@ -64,7 +68,7 @@ impl<'s> MacroExpandable for &'s str {
     ) -> Result<MacroValue<Self::Expr>> {
 
         compiler
-            .parse_expr(file, self)
+            .parse_expr(macros.vm.global_env().type_cache(), file, self)
             .map_err(From::from)
             .and_then(|mut expr| {
                 expr.expand_macro_with(compiler, macros, file)?;
@@ -83,7 +87,7 @@ impl<'s> MacroExpandable for &'s mut SpannedExpr<Symbol> {
         file: &str,
     ) -> Result<MacroValue<Self::Expr>> {
         if compiler.implicit_prelude {
-            compiler.include_implicit_prelude(file, self);
+            compiler.include_implicit_prelude(macros.vm.global_env().type_cache(), file, self);
         }
         macros.run(self);
         Ok(MacroValue { expr: self })
@@ -156,7 +160,12 @@ where
         use check::typecheck::Typecheck;
 
         let env = thread.get_env();
-        let mut tc = Typecheck::new(file.into(), &mut compiler.symbols, &*env);
+        let mut tc = Typecheck::new(
+            file.into(),
+            &mut compiler.symbols,
+            &*env,
+            thread.global_env().type_cache().clone(),
+        );
 
         let typ = tc.typecheck_expr_expected(self.expr.borrow_mut(), expected_type)
             .map_err(|err| InFile::new(file, expr_str, err))?;
@@ -254,6 +263,7 @@ where
 
 /// Result of successful execution
 pub struct ExecuteValue<'vm, E> {
+    pub id: Symbol,
     pub expr: E,
     pub typ: ArcType,
     pub value: RootedValue<&'vm Thread>,
@@ -336,11 +346,13 @@ where
             typ,
             mut function,
         } = self;
-        function.id = Symbol::from(name);
+        let module_id = Symbol::from(name);
+        function.id = module_id.clone();
         let closure = try_future!(vm.global_env().new_global_thunk(function));
         vm.call_thunk(closure)
             .map(|(vm, value)| {
                 ExecuteValue {
+                    id: module_id,
                     expr: expr,
                     typ: typ,
                     value: vm.root_value(value),
@@ -381,4 +393,122 @@ where
             })
             .boxed()
     }
+}
+
+#[cfg(feature = "serde")]
+pub struct Precompiled<D>(pub D);
+
+#[cfg_attr(feature = "serde_derive_state", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive_state",
+           serde(deserialize_state = "::vm::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive_state", serde(serialize_state = "::vm::serialization::SeSeed"))]
+pub struct Module {
+    #[cfg_attr(feature = "serde_derive_state", serde(state_with = "::vm::serialization::borrow"))]
+    pub typ: ArcType,
+    pub metadata: Metadata,
+    #[cfg_attr(feature = "serde_derive_state", serde(state))]
+    pub function: CompiledFunction,
+}
+
+#[cfg(feature = "serde")]
+impl<'vm, 'de, D> Executable<'vm, ()> for Precompiled<D>
+where
+    D: ::serde::Deserializer<'de>,
+{
+    type Expr = ();
+
+    fn run_expr(
+        self,
+        _compiler: &mut Compiler,
+        vm: &'vm Thread,
+        filename: &str,
+        _expr_str: &str,
+        _: (),
+    ) -> BoxFutureValue<'vm, ExecuteValue<'vm, Self::Expr>, Error> {
+        use vm::serialization::DeSeed;
+
+        let module: Module = try_future!(
+            DeSeed::new(vm)
+                .deserialize(self.0)
+                .map_err(|err| err.to_string())
+        );
+        let module_id = module.function.id.clone();
+        if filename != module_id.as_ref() {
+            return FutureValue::sync(Err(format!(
+                "filenames do not match `{}` != `{}`",
+                filename,
+                module_id
+            ).into()))
+                .boxed();
+        }
+        let typ = module.typ;
+        let closure = try_future!(vm.global_env().new_global_thunk(module.function));
+        vm.call_thunk(closure)
+            .map(|(vm, value)| {
+                ExecuteValue {
+                    id: module_id,
+                    expr: (),
+                    typ: typ,
+                    value: vm.root_value(value),
+                }
+            })
+            .map_err(Error::from)
+            .boxed()
+    }
+    fn load_script(
+        self,
+        compiler: &mut Compiler,
+        vm: &'vm Thread,
+        name: &str,
+        _expr_str: &str,
+        _: (),
+    ) -> BoxFutureValue<'vm, (), Error> {
+        use vm::serialization::DeSeed;
+        use vm::internal::Global;
+
+        let Global {
+            metadata,
+            typ,
+            value,
+            id: _,
+        } = try_future!(
+            DeSeed::new(vm)
+                .deserialize(self.0)
+                .map_err(|err| err.to_string())
+        );
+        let id = compiler.symbols.symbol(name);
+        try_future!(vm.set_global(id, typ, metadata, value,));
+        info!("Loaded module `{}`", name);
+        FutureValue::sync(Ok(())).boxed()
+    }
+}
+
+#[cfg(feature = "serde")]
+pub fn compile_to<S, T, E>(
+    self_: T,
+    compiler: &mut Compiler,
+    thread: &Thread,
+    file: &str,
+    expr_str: &str,
+    arg: E,
+    serializer: S,
+) -> StdResult<S::Ok, Either<Error, S::Error>>
+where
+    S: ::serde::Serializer,
+    S::Error: 'static,
+    T: Compileable<E>,
+{
+    use serde::ser::SerializeState;
+    use vm::serialization::SeSeed;
+    let CompileValue {
+        expr: _,
+        typ,
+        function,
+    } = self_.compile(compiler, thread, file, expr_str, arg).map_err(Error::from).map_err(Either::Left)?;
+    let module = Module {
+        typ,
+        metadata: Metadata::default(),
+        function,
+    };
+    module.serialize_state(serializer, &SeSeed::new(thread)).map_err(Either::Right)
 }

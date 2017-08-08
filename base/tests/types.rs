@@ -61,7 +61,7 @@ fn some_record() -> ArcType<&'static str> {
         vec![
             Field::new(
                 "Test",
-                Alias::new("Test", vec![Generic::new("a", Kind::typ())], f.clone())
+                Alias::new("Test", vec![Generic::new("a", Kind::typ())], f.clone()),
             ),
         ],
         vec![
@@ -69,7 +69,7 @@ fn some_record() -> ArcType<&'static str> {
             Field::new("test", test.clone()),
             Field::new(
                 "+",
-                Type::function(vec![Type::int(), Type::int()], Type::int())
+                Type::function(vec![Type::int(), Type::int()], Type::int()),
             ),
         ],
     )
@@ -93,7 +93,7 @@ fn show_record() {
         vec![
             Field::new(
                 "Test",
-                Alias::new("Test", vec![Generic::new("a", Kind::typ())], f.clone())
+                Alias::new("Test", vec![Generic::new("a", Kind::typ())], f.clone()),
             ),
         ],
         vec![Field::new("x", Type::int())],
@@ -107,7 +107,7 @@ fn show_record() {
         vec![
             Field::new(
                 "Test",
-                Alias::new("Test", vec![Generic::new("a", Kind::typ())], f.clone())
+                Alias::new("Test", vec![Generic::new("a", Kind::typ())], f.clone()),
             ),
         ],
         vec![],
@@ -125,7 +125,7 @@ fn show_record_multi_line() {
         vec![
             Field::new(
                 "Test",
-                Alias::new("Test", vec![Generic::new("a", Kind::typ())], f.clone())
+                Alias::new("Test", vec![Generic::new("a", Kind::typ())], f.clone()),
             ),
         ],
         vec![
@@ -140,11 +140,11 @@ fn show_record_multi_line() {
                         f.clone(),
                     ],
                     f.clone(),
-                )
+                ),
             ),
             Field::new(
                 "record_looooooooooooooooooooooooooooooooooong",
-                some_record()
+                some_record(),
             ),
             Field::new("looooooooooooooooooooooooooooooooooong_field", test.clone()),
         ],
@@ -173,10 +173,7 @@ fn show_record_multi_line() {
 #[test]
 fn show_variant() {
     let typ: ArcType<&str> = Type::variant(vec![
-        Field::new(
-            "A",
-            Type::function(vec![Type::int()], Type::ident("A"))
-        ),
+        Field::new("A", Type::function(vec![Type::int()], Type::ident("A"))),
         Field::new("B", Type::ident("A")),
     ]);
     assert_eq_display!(format!("{}", typ), "| A Int | B");
@@ -206,7 +203,7 @@ fn show_polymorphic_record_associated_type() {
                 "Test",
                 vec![Generic::new("a", Kind::typ())],
                 Type::ident("a"),
-            )
+            ),
         ),
     ];
     let typ: ArcType<&str> = Type::poly_record(type_fields, vec![], Type::ident("r"));
@@ -225,7 +222,7 @@ fn break_record() {
             Field::new("test", test.clone()),
             Field::new(
                 "+",
-                Type::function(vec![Type::int(), Type::int()], Type::int())
+                Type::function(vec![Type::int(), Type::int()], Type::int()),
             ),
         ],
     );

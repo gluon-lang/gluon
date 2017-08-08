@@ -5,7 +5,7 @@ extern crate regex;
 use std::error::Error as StdError;
 
 use vm;
-use vm::api::{VmType, Userdata};
+use vm::api::{Userdata, VmType};
 use vm::gc::{Gc, Traverseable};
 use vm::thread::Thread;
 
