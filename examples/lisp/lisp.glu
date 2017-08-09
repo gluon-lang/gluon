@@ -160,6 +160,7 @@ let { (>>=), foldM, mapM } = prelude.make_Monad monad_Lisp
 let { map = map_lisp } = functor_Lisp
 
 let get_state : Lisp LispState = lisp (\state -> Ok { value = state, state = state })
+let set_state state : LispState -> Lisp () = lisp (\_ -> Ok { value = (), state })
 
 let fail msg : String -> Lisp a = lisp (\_ -> Err msg)
 
@@ -195,6 +196,10 @@ let primitive_binop name int_op float_op : _ -> Binop Int -> Binop Float -> Map 
 let define =
     let f xs =
         match xs with
+        | Cons (Atom name) (Cons value Nil) ->
+            get_state >>= \state ->
+                let new_state = prim_map.insert name value state
+                set_state new_state >>= \_ -> pure value
         | Cons (List (Cons (Atom name) params)) body ->
             get_state >>= (\closure ->
                 pure (Function {
@@ -217,11 +222,15 @@ let primitives =
 let apply f xs =
     match f with
     | Primitive primitive -> primitive xs
-    | _ -> fail "Can't call value"
+    | _ -> fail ("Can't call value: " <> show.show f)
 
 let eval_lisp expr : Expr -> Lisp Expr =
     match expr with
-    | Atom _ -> fail "unimplemented"
+    | Atom name ->
+        get_state >>= \state ->
+            match prim_map.find name state with
+            | Some value -> pure value
+            | None -> fail ("Binding `" <> name <> "` is not defined")
     | Int _ -> pure expr
     | Float _ -> pure expr
     | Function _ -> pure expr
@@ -230,11 +239,12 @@ let eval_lisp expr : Expr -> Lisp Expr =
         | Cons x xs ->
             match x with
             | Atom name ->
-                match prim_map.find name primitives with
-                | Some prim ->
-                    mapM eval_lisp xs >>= \evaluated_args ->
-                        apply prim evaluated_args
-                | None -> fail ("Primitive `" <> name <> "` does not exist")
+                get_state >>= \state ->
+                    match prim_map.find name state with
+                    | Some prim ->
+                        mapM eval_lisp xs >>= \evaluated_args ->
+                            apply prim evaluated_args
+                    | None -> fail ("Primitive `" <> name <> "` does not exist")
             | _ -> fail ("Cant apply" <> show.show x)
         | Nil -> pure expr
 
@@ -242,7 +252,7 @@ let run_lisp expr env : Lisp a -> Map String Expr -> Result String a =
     prelude.functor_Result.map (\r -> r.value) (lisp expr env)
 
 let eval expr : Expr -> Result String Expr =
-    run_lisp (eval_lisp expr) prim_map.monoid.empty
+    run_lisp (eval_lisp expr) primitives
 
 {
     Expr,
