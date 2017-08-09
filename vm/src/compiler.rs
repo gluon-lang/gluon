@@ -504,7 +504,7 @@ impl<'a> Compiler<'a> {
         );
 
         env.start_function(self, 0, id, typ);
-        debug!("COMPILING: {}", expr);
+        info!("COMPILING: {}", expr);
         self.compile(&expr, &mut env, true)?;
         let current_line = self.source.line_number_at_byte(expr.span().end);
         let FunctionEnv { function, .. } = env.end_function(self, current_line);
