@@ -134,35 +134,38 @@ where
             ref types,
             ..
         } => {
+            let doc = arena.concat(types.iter().map(|field| {
+                chain![arena;
+                    arena.space(),
+                    field.name.value.as_ref()
+                ]
+            }).chain(fields.iter().map(|field| {
+                chain![arena;
+                    arena.space(),
+                    ident(arena, field.name.value.as_ref()),
+                    match field.value {
+                        Some(ref new_name) => {
+                            chain![arena;
+                                " = ",
+                                pretty_pattern(arena, new_name)
+                            ]
+                        }
+                        None => arena.nil(),
+                    }
+                ]
+            }))
+                .intersperse(arena.text(",")))
+                .nest(INDENT);
             chain![arena;
                 "{",
-                arena.concat(types.iter().map(|field| {
-                    chain![arena;
-                        arena.space(),
-                        field.name.value.as_ref()
-                    ]
-                }).chain(fields.iter().map(|field| {
-                    chain![arena;
-                        arena.space(),
-                        ident(arena, field.name.value.as_ref()),
-                        match field.value {
-                            Some(ref new_name) => {
-                                chain![arena;
-                                    " = ",
-                                    pretty_pattern(arena, new_name)
-                                ]
-                            }
-                            None => arena.nil(),
-                        }
-                    ]
-                })).intersperse(arena.text(","))),
+                doc,
                 if types.is_empty() && fields.is_empty() {
                     arena.nil()
                 } else {
                     arena.space()
                 },
                 "}"
-            ]
+            ].group()
         }
         Pattern::Tuple { ref elems, .. } => {
             chain![arena;

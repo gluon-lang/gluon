@@ -167,3 +167,17 @@ match None with
 "#;
     assert_eq!(&format_expr(expr).unwrap(), expr);
 }
+
+#[test]
+fn long_pattern_match() {
+    let expr = r#"
+let {
+    CCCCCCCCCCCCCC,
+    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,
+    bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+} =
+    test
+123
+"#;
+    assert_eq!(&format_expr(expr).unwrap(), expr);
+}
