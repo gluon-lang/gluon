@@ -13,7 +13,7 @@ use base::scoped_map::ScopedMap;
 use base::symbol::Symbol;
 use base::types::{AliasData, ArcType, Type, TypeEnv};
 
-enum Found<'a> {
+pub enum Found<'a> {
     Expr(&'a SpannedExpr<Symbol>),
     Pattern(&'a SpannedPattern<Symbol>),
     Ident(&'a SpannedExpr<Symbol>, &'a Symbol, &'a ArcType),
@@ -404,19 +404,81 @@ fn complete_at<F>(on_found: F, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Resu
     visitor.found.ok_or(())
 }
 
+pub trait Extract {
+    type Output;
+    fn extract(self, found: &Found) -> Result<Self::Output, ()>;
+}
+
+pub struct TypeAt<'a> {
+    pub env: &'a TypeEnv,
+}
+impl<'a> Extract for TypeAt<'a> {
+    type Output = ArcType;
+    fn extract(self, found: &Found) -> Result<Self::Output, ()> {
+
+        Ok(match *found {
+            Found::Expr(expr) => {
+                expr.env_type_of(self.env)
+            }
+            Found::Ident(_, _, typ) => typ.clone(),
+            Found::Pattern(pattern) =>
+                pattern.env_type_of(self.env),
+            _ => return Err(())
+        })
+    }
+}
+
+pub struct SpanAt;
+impl Extract for SpanAt {
+    type Output = Span<BytePos>;
+    fn extract(self, found: &Found) -> Result<Self::Output, ()> {
+        Ok(match *found {
+            Found::Expr(expr) | Found::Ident(expr, _, _) => expr.span,
+            Found::Pattern(pattern) =>
+                pattern.span,
+            _ => return Err(())
+        })
+    }
+}
+
+macro_rules! tuple_extract {
+    ($first: ident) => {
+    };
+    ($first: ident $($id: ident)+) => {
+        tuple_extract_!{$first $($id)+}
+        tuple_extract!{$($id)+}
+    };
+}
+
+macro_rules! tuple_extract_ {
+    ($($id: ident)*) => {
+        impl<$($id : Extract),*> Extract for ( $($id),* ) {
+            type Output = ( $($id::Output),* );
+            #[allow(non_snake_case)]
+            fn extract(self, found: &Found) -> Result<Self::Output, ()> {
+                let ( $($id),* ) = self;
+                Ok(( $( $id.extract(found)? ),* ))
+            }
+        }
+    };
+}
+
+tuple_extract!{A B C D E F G H}
+
+pub fn completion<T>(extract: T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Result<T::Output, ()>
+where
+    T: Extract,
+{
+    let found = complete_at((), expr, pos)?;
+    extract.extract(&found)
+}
+
 pub fn find<T>(env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Result<ArcType, ()>
 where
     T: TypeEnv,
 {
-    Ok(match complete_at((), expr, pos)? {
-        Found::Expr(expr) => {
-            expr.env_type_of(env)
-        }
-        Found::Ident(_, _, typ) => typ.clone(),
-        Found::Pattern(pattern) =>
-            pattern.env_type_of(env),
-        _ => return Err(())
-    })
+    let extract = TypeAt { env };
+    completion(extract, expr, pos)
 }
 
 pub fn suggest<T>(env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Vec<Suggestion>
