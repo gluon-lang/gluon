@@ -157,3 +157,13 @@ x
 "#;
     assert_eq!(&format_expr(expr).unwrap(), expr);
 }
+
+#[test]
+fn nested_constructor_pattern() {
+    let expr = r#"
+match None with
+| Some (Some x) -> x
+| _ -> 123
+"#;
+    assert_eq!(&format_expr(expr).unwrap(), expr);
+}

@@ -95,6 +95,7 @@ pub fn pretty_kind<'a>(
         }
     }
 }
+
 pub fn pretty_pattern<'a, Id>(
     arena: &'a Arena<'a>,
     pattern: &'a SpannedPattern<Id>,
@@ -102,14 +103,30 @@ pub fn pretty_pattern<'a, Id>(
 where
     Id: AsRef<str>,
 {
+    pretty_pattern_(arena, pattern, Prec::Top)
+}
+
+fn pretty_pattern_<'a, Id>(
+    arena: &'a Arena<'a>,
+    pattern: &'a SpannedPattern<Id>,
+    prec: Prec,
+) -> DocBuilder<'a, Arena<'a>>
+where
+    Id: AsRef<str>,
+{
     match pattern.value {
         Pattern::Constructor(ref ctor, ref args) => {
-            chain![arena;
+            let doc = chain![arena;
                 ctor.as_ref(),
                 arena.concat(args.iter().map(|arg| {
-                    arena.text(" ").append(pretty_pattern(arena, arg))
+                    arena.text(" ").append(pretty_pattern_(arena, arg, Prec::Constructor))
                 }))
-            ]
+            ];
+            if args.is_empty() {
+                doc
+            } else {
+                prec.enclose(Prec::Constructor, arena, doc)
+            }
         }
         Pattern::Ident(ref id) => ident(arena, id.as_ref()),
         Pattern::Record {
