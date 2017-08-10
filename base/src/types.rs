@@ -13,6 +13,13 @@ use kind::{ArcKind, Kind, KindEnv};
 use merge::merge;
 use symbol::{Symbol, SymbolRef};
 
+#[cfg(feature = "serde")]
+use serialization::{SeSeed, Seed};
+#[cfg(feature = "serde")]
+use serde::de::DeserializeState;
+#[cfg(feature = "serde")]
+use serde::ser::SerializeState;
+
 /// Trait for values which contains typed values which can be refered by name
 pub trait TypeEnv: KindEnv {
     /// Returns the type of the value bound at `id`
@@ -88,7 +95,8 @@ impl<'a, T: ?Sized + PrimitiveEnv> PrimitiveEnv for &'a T {
 }
 
 type_cache! { TypeCache(Id) { ArcType<Id>, Type }
-    hole int byte float string char function_builtin unit
+    hole opaque int byte float string char
+    function_builtin array_builtin unit empty_row
 }
 
 impl<Id> TypeCache<Id> {
@@ -120,13 +128,42 @@ impl<Id> TypeCache<Id> {
         if fields.is_empty() {
             self.unit.clone()
         } else {
-            Type::record(vec![], fields)
+            self.record(vec![], fields)
         }
+    }
+
+    pub fn variant(&self, fields: Vec<Field<Id, ArcType<Id>>>) -> ArcType<Id> {
+        Type::poly_variant(fields, self.empty_row())
+    }
+
+    pub fn record(
+        &self,
+        types: Vec<Field<Id, Alias<Id, ArcType<Id>>>>,
+        fields: Vec<Field<Id, ArcType<Id>>>,
+    ) -> ArcType<Id> {
+        Type::poly_record(types, fields, self.empty_row())
+    }
+
+    pub fn builtin_type(&self, typ: BuiltinType) -> ArcType<Id> {
+        match typ {
+            BuiltinType::String => self.string(),
+            BuiltinType::Byte => self.byte(),
+            BuiltinType::Char => self.char(),
+            BuiltinType::Int => self.int(),
+            BuiltinType::Float => self.float(),
+            BuiltinType::Array => self.array_builtin(),
+            BuiltinType::Function => self.function_builtin(),
+        }
+    }
+
+    pub fn array(&self, typ: ArcType<Id>) -> ArcType<Id> {
+        Type::app(self.array_builtin(), collect![typ])
     }
 }
 
 /// All the builtin types of gluon
 #[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
+#[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub enum BuiltinType {
     /// Unicode string
     String,
@@ -182,14 +219,28 @@ impl BuiltinType {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
+#[cfg_attr(feature = "serde_derive", serde(de_parameters = "Id, T"))]
 pub struct TypeVariable {
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub kind: ArcKind,
     pub id: u32,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
+#[cfg_attr(feature = "serde_derive",
+           serde(bound(deserialize = "Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
+#[cfg_attr(feature = "serde_derive", serde(de_parameters = "T"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(bound(serialize = "Id: SerializeState<SeSeed>")))]
 pub struct Generic<Id> {
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub id: Id,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub kind: ArcKind,
 }
 
@@ -202,7 +253,15 @@ impl<Id> Generic<Id> {
 /// An alias is wrapper around `Type::Alias`, allowing it to be cheaply converted to a type and dereferenced
 /// to `AliasRef`
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
+#[cfg_attr(feature = "serde_derive",
+           serde(bound(deserialize = "T: DeserializeState<'de, Seed<Id, T>> + Clone + From<Type<Id, T>> + ::std::any::Any,
+                             Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(bound(serialize = "T: SerializeState<SeSeed>")))]
 pub struct Alias<Id, T> {
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     _typ: T,
     _marker: PhantomData<Id>,
 }
@@ -303,9 +362,21 @@ where
 /// Data for a type alias. Probably you want to use `Alias` instead of this directly as Alias allows for
 /// cheap conversion back into a type as well.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
+#[cfg_attr(feature = "serde_derive",
+           serde(bound(deserialize = "T: DeserializeState<'de, Seed<Id, T>> + Clone + From<Type<Id, T>> + ::std::any::Any,
+                 Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
+#[cfg_attr(feature = "serde_derive",
+           serde(bound(serialize = "T: SerializeState<SeSeed>, Id: SerializeState<SeSeed>")))]
 pub struct AliasRef<Id, T> {
     /// Name of the Alias
     index: usize,
+    #[cfg_attr(feature = "serde_derive",
+               serde(deserialize_state_with = "::serialization::deserialize_group"))]
+    #[cfg_attr(feature = "serde_derive",
+               serde(serialize_state_with = "::serialization::shared::serialize"))]
     /// The other aliases defined in this group
     pub group: Arc<Vec<AliasData<Id, T>>>,
 }
@@ -341,11 +412,22 @@ where
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
+#[cfg_attr(feature = "serde_derive",
+           serde(bound(deserialize = "T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeState<'de, Seed<Id, T>>,
+                             Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
+#[cfg_attr(feature = "serde_derive",
+           serde(bound(serialize = "T: SerializeState<SeSeed>, Id: SerializeState<SeSeed>")))]
 pub struct AliasData<Id, T> {
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub name: Id,
     /// Arguments to the alias
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub args: Vec<Generic<Id>>,
     /// The type that is being aliased
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     typ: T,
 }
 
@@ -377,10 +459,21 @@ impl<Id, T> Deref for AliasRef<Id, T> {
     }
 }
 
-
 #[derive(Clone, Hash, Eq, PartialEq, Debug)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, U>"))]
+#[cfg_attr(feature = "serde_derive", serde(de_parameters = "U"))]
+#[cfg_attr(feature = "serde_derive",
+           serde(bound(deserialize = "Id: DeserializeState<'de, Seed<Id, U>> + Clone + ::std::any::Any,
+                             T: DeserializeState<'de, Seed<Id, U>>
+                             ")))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
+#[cfg_attr(feature = "serde_derive",
+           serde(bound(serialize = "T: SerializeState<SeSeed>, Id: SerializeState<SeSeed>")))]
 pub struct Field<Id, T = ArcType<Id>> {
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub name: Id,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub typ: T,
 }
 
@@ -406,6 +499,12 @@ impl<Id, T> Field<Id, T> {
 /// `Type` such as `Type::app` and `Type::record` when constructing types as those will construct
 /// the pointer wrapper directly.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
+#[cfg_attr(feature = "serde_derive",
+           serde(bound(deserialize = "T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeState<'de, Seed<Id, T>>,
+                             Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any + DeserializeState<'de, Seed<Id, T>>")))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 pub enum Type<Id, T = ArcType<Id>> {
     /// An unbound type `_`, awaiting ascription.
     Hole,
@@ -415,20 +514,38 @@ pub enum Type<Id, T = ArcType<Id>> {
     Builtin(BuiltinType),
     /// A type application with multiple arguments. For example,
     /// `Map String Int` would be represented as `App(Map, [String, Int])`.
-    App(T, AppVec<T>),
+    App(
+        #[cfg_attr(feature = "serde_derive", serde(deserialize_state))]
+        #[cfg_attr(feature = "serde_derive", serde(serialize_state))]
+        T,
+        #[cfg_attr(feature = "serde_derive",
+                   serde(deserialize_state_with = "::serialization::deserialize_type_vec"))]
+        #[cfg_attr(feature = "serde_derive",
+                   serde(serialize_state_with = "::serialization::serialize_seq"))]
+        AppVec<T>,
+    ),
     /// Record constructor, of kind `Row -> Type`
-    Record(T),
+    Record(
+        #[cfg_attr(feature = "serde_derive", serde(state))]
+        T,
+    ),
     /// Variant constructor, of kind `Row -> Type`
-    Variant(T),
+    Variant(
+        #[cfg_attr(feature = "serde_derive", serde(state))]
+        T,
+    ),
     /// The empty row, of kind `Row`
     EmptyRow,
     /// Row extension, of kind `... -> Row -> Row`
     ExtendRow {
         /// The associated types of this record type
+        #[cfg_attr(feature = "serde_derive", serde(state))]
         types: Vec<Field<Id, Alias<Id, T>>>,
         /// The fields of this record type
+        #[cfg_attr(feature = "serde_derive", serde(state))]
         fields: Vec<Field<Id, T>>,
         /// The rest of the row
+        #[cfg_attr(feature = "serde_derive", serde(state))]
         rest: T,
     },
     /// An identifier type. These are created during parsing, but should all be
@@ -437,14 +554,26 @@ pub enum Type<Id, T = ArcType<Id>> {
     /// Identifiers are also sometimes used inside aliased types to avoid cycles
     /// in reference counted pointers. This is a bit of a wart at the moment and
     /// _may_ cause spurious unification failures.
-    Ident(Id),
+    Ident(
+        #[cfg_attr(feature = "serde_derive", serde(state))]
+        Id,
+    ),
     /// An unbound type variable that may be unified with other types. These
     /// will eventually be converted into `Type::Generic`s during generalization.
-    Variable(TypeVariable),
+    Variable(
+        #[cfg_attr(feature = "serde_derive", serde(state))]
+        TypeVariable,
+    ),
     /// A variable that needs to be instantiated with a fresh type variable
     /// when the binding is refered to.
-    Generic(Generic<Id>),
-    Alias(AliasRef<Id, T>),
+    Generic(
+        #[cfg_attr(feature = "serde_derive", serde(state))]
+        Generic<Id>,
+    ),
+    Alias(
+        #[cfg_attr(feature = "serde_derive", serde(state))]
+        AliasRef<Id, T>,
+    ),
 }
 
 impl<Id, T> Type<Id, T>
@@ -460,7 +589,11 @@ where
     }
 
     pub fn array(typ: T) -> T {
-        Type::app(Type::builtin(BuiltinType::Array), collect![typ])
+        Type::app(Type::array_builtin(), collect![typ])
+    }
+
+    pub fn array_builtin() -> T {
+        Type::builtin(BuiltinType::Array)
     }
 
     pub fn app(id: T, args: AppVec<T>) -> T {
@@ -632,8 +765,9 @@ where
 
     pub fn is_non_polymorphic_record(&self) -> bool {
         match *self {
-            Type::Record(ref row) |
-            Type::ExtendRow { rest: ref row, .. } => row.is_non_polymorphic_record(),
+            Type::Record(ref row) | Type::ExtendRow { rest: ref row, .. } => {
+                row.is_non_polymorphic_record()
+            }
             Type::EmptyRow => true,
             _ => false,
         }
@@ -679,9 +813,30 @@ pub struct ArcType<Id = Symbol> {
     typ: Arc<Type<Id, ArcType<Id>>>,
 }
 
+#[cfg(feature = "serde")]
+impl<'de, Id> DeserializeState<'de, Seed<Id, ArcType<Id>>> for ArcType<Id>
+where
+    Id: DeserializeState<'de, Seed<Id, ArcType<Id>>> + Clone + ::std::any::Any,
+{
+    fn deserialize_state<D>(
+        seed: &mut Seed<Id, ArcType<Id>>,
+        deserializer: D,
+    ) -> Result<Self, D::Error>
+    where
+        D: ::serde::de::Deserializer<'de>,
+    {
+        use serialization::SharedSeed;
+        let seed = SharedSeed::new(seed);
+        ::serde::de::DeserializeSeed::deserialize(seed, deserializer)
+            .map(|typ| ArcType { typ: typ })
+    }
+}
+
 impl<Id> Clone for ArcType<Id> {
     fn clone(&self) -> ArcType<Id> {
-        ArcType { typ: self.typ.clone() }
+        ArcType {
+            typ: self.typ.clone(),
+        }
     }
 }
 
@@ -726,6 +881,10 @@ impl<Id> ArcType<Id> {
             typ: self,
             current: 0,
         }
+    }
+
+    pub fn strong_count(typ: &ArcType<Id>) -> usize {
+        Arc::strong_count(&typ.typ)
     }
 }
 
@@ -791,8 +950,7 @@ where
 
     fn next(&mut self) -> Option<&'a Field<Id, T>> {
         match **self.typ {
-            Type::Record(ref row) |
-            Type::Variant(ref row) => {
+            Type::Record(ref row) | Type::Variant(ref row) => {
                 self.typ = row;
                 self.next()
             }
@@ -828,8 +986,7 @@ where
         let mut size = 0;
         loop {
             typ = match **typ {
-                Type::Record(ref row) |
-                Type::Variant(ref row) => row,
+                Type::Record(ref row) | Type::Variant(ref row) => row,
                 Type::ExtendRow {
                     ref fields,
                     ref rest,
@@ -960,26 +1117,56 @@ fn top<'a, I, T>(typ: &'a Type<I, T>) -> DisplayType<'a, I, T> {
     dt(Prec::Top, typ)
 }
 
+pub fn display_type<'a, I, T>(typ: &'a Type<I, T>) -> TypeFormatter<'a, I, T> {
+    TypeFormatter {
+        width: 80,
+        typ: typ,
+    }
+}
+
 pub struct DisplayType<'a, I: 'a, T: 'a> {
     prec: Prec,
     typ: &'a Type<I, T>,
 }
 
-impl<'a, I, T> fmt::Display for DisplayType<'a, I, T>
+pub struct TypeFormatter<'a, I, T>
+where
+    I: 'a,
+    T: 'a,
+{
+    width: usize,
+    typ: &'a Type<I, T>,
+}
+
+impl<'a, I, T> TypeFormatter<'a, I, T> {
+    pub fn new(typ: &'a Type<I, T>) -> Self {
+        TypeFormatter {
+            width: 80,
+            typ: typ,
+        }
+    }
+}
+
+impl<'a, I, T> TypeFormatter<'a, I, T> {
+    pub fn width(mut self, width: usize) -> Self {
+        self.width = width;
+        self
+    }
+}
+
+impl<'a, I, T> fmt::Display for TypeFormatter<'a, I, T>
 where
     T: Deref<Target = Type<I, T>> + 'a,
     I: AsRef<str>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        // Standard width for terminals are 80 characters
-        const WIDTH: usize = 80;
-
         let arena = Arena::new();
         let mut s = Vec::new();
-        self.pretty(&arena)
+        dt(Prec::Top, self.typ)
+            .pretty(&arena)
             .group()
             .1
-            .render(WIDTH, &mut s)
+            .render(self.width, &mut s)
             .map_err(|_| fmt::Error)?;
         write!(f, "{}", ::std::str::from_utf8(&s).expect("utf-8"))
     }
@@ -1180,7 +1367,7 @@ where
     T: Deref<Target = Type<I, T>>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        top(self).fmt(f)
+        write!(f, "{}", TypeFormatter::new(self))
     }
 }
 
@@ -1215,8 +1402,7 @@ where
                 f.walk(a);
             }
         }
-        Type::Record(ref row) |
-        Type::Variant(ref row) => f.walk(row),
+        Type::Record(ref row) | Type::Variant(ref row) => f.walk(row),
         Type::ExtendRow {
             ref types,
             ref fields,

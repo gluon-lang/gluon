@@ -100,7 +100,7 @@ fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonRe
     // The parser may find parse errors but still produce an expression
     // For that case still typecheck the expression but return the parse error afterwards
     let (mut expr, _parse_result): (_, GluonResult<()>) = match compiler
-        .parse_partial_expr(&name, fileinput) {
+        .parse_partial_expr(thread.global_env().type_cache(), &name, fileinput) {
         Ok(expr) => (expr, Ok(())),
         Err((None, err)) => return Err(err.into()),
         Err((Some(expr), err)) => (expr, Err(err.into())),

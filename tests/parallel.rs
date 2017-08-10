@@ -4,7 +4,7 @@ extern crate gluon;
 
 use std::thread::spawn;
 
-use gluon::vm::channel::{ChannelRecord, Sender, Receiver};
+use gluon::vm::channel::{ChannelRecord, Receiver, Sender};
 use gluon::vm::api::OpaqueValue;
 use gluon::vm::api::FunctionRef;
 use gluon::RootedThread;

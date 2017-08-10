@@ -10,8 +10,8 @@ use futures::future::lazy;
 
 use gluon::base::types::Type;
 use gluon::vm::Error;
-use gluon::vm::api::{FutureResult, VmType, FunctionRef, Userdata};
-use gluon::vm::thread::{RootedThread, Thread, Traverseable, Root, RootStr};
+use gluon::vm::api::{FunctionRef, FutureResult, Userdata, VmType};
+use gluon::vm::thread::{Root, RootStr, RootedThread, Thread, Traverseable};
 use gluon::vm::types::VmInt;
 use gluon::Compiler;
 use gluon::import::Import;

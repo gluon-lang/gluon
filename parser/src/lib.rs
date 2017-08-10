@@ -297,6 +297,7 @@ macro_rules! layout {
 
 pub fn parse_partial_expr<Id>(
     symbols: &mut IdentEnv<Ident = Id>,
+    type_cache: &TypeCache<Id>,
     input: &str,
 ) -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, ParseErrors)>
 where
@@ -307,9 +308,7 @@ where
 
     let mut parse_errors = Errors::new();
 
-    let type_cache = TypeCache::new();
-
-    let result = grammar::parse_TopExpr(input, &type_cache, symbols, &mut parse_errors, layout);
+    let result = grammar::parse_TopExpr(input, type_cache, symbols, &mut parse_errors, layout);
 
     // If there is a tokenizer error it may still exist in the result iterator wrapper.
     // If that is the case we return that error instead of the unexpected EOF error that lalrpop
@@ -348,9 +347,10 @@ where
 
 pub fn parse_expr(
     symbols: &mut IdentEnv<Ident = Symbol>,
+    type_cache: &TypeCache<Symbol>,
     input: &str,
 ) -> Result<SpannedExpr<Symbol>, ParseErrors> {
-    parse_partial_expr(symbols, input).map_err(|t| t.1)
+    parse_partial_expr(symbols, type_cache, input).map_err(|t| t.1)
 }
 
 pub type LetOrExpr<Id> = Result<SpannedExpr<Id>, ValueBinding<Id>>;
@@ -415,7 +415,7 @@ pub fn parse_string<'env, 'input>(
     symbols: &'env mut IdentEnv<Ident = String>,
     input: &'input str,
 ) -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, ParseErrors)> {
-    parse_partial_expr(symbols, input)
+    parse_partial_expr(symbols, &TypeCache::new(), input)
 }
 
 pub fn format_expr(input: &str) -> Result<String, ParseErrors> {
@@ -436,7 +436,8 @@ pub fn format_expr(input: &str) -> Result<String, ParseErrors> {
         None => "\n",
     };
 
-    let expr = parse_expr(&mut Symbols::new(), input)?;
+    let type_cache = TypeCache::new();
+    let expr = parse_expr(&mut Symbols::new(), &type_cache, input)?;
 
     let source = Source::new(input);
     let printer = ExprPrinter::new(&source);

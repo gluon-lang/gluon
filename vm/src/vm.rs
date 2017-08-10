@@ -11,7 +11,7 @@ use base::kind::{ArcKind, Kind, KindEnv};
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Name, Symbol, SymbolRef};
 use base::types::{Alias, AliasData, AppVec, ArcType, Generic, PrimitiveEnv, RecordSelector, Type,
-                  TypeEnv};
+                  TypeCache, TypeEnv};
 
 use macros::MacroEnv;
 use {Error, Result};
@@ -81,14 +81,20 @@ fn new_bytecode(
     }))
 }
 
-
 #[derive(Debug)]
+#[cfg_attr(feature = "serde_derive_state", derive(SerializeState, DeserializeState))]
+#[cfg_attr(feature = "serde_derive_state", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive_state", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct Global {
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::symbol"))]
     pub id: Symbol,
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
     pub typ: ArcType,
     pub metadata: Metadata,
+    #[cfg_attr(feature = "serde_derive_state", serde(state))]
     pub value: Value,
 }
+
 
 impl Traverseable for Global {
     fn traverse(&self, gc: &mut Gc) {
@@ -96,17 +102,36 @@ impl Traverseable for Global {
     }
 }
 
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct GlobalVmState {
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     env: RwLock<VmEnv>,
+
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
     generics: RwLock<FnvMap<StdString, ArcType>>,
+
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
     typeids: RwLock<FnvMap<TypeId, ArcType>>,
+
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     interner: RwLock<Interner>,
+
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
     macros: MacroEnv,
+
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
+    type_cache: TypeCache<Symbol>,
+
     // FIXME These fields should not be public
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub gc: Mutex<Gc>,
+
     // List of all generation 0 threads (ie, threads allocated by the global gc). when doing a
     // generation 0 sweep these threads are scanned as generation 0 values may be refered to by any
     // thread
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub generation_0_threads: RwLock<Vec<GcPtr<Thread>>>,
 }
 
@@ -124,8 +149,13 @@ impl Traverseable for GlobalVmState {
 /// A borrowed structure which implements `CompilerEnv`, `TypeEnv` and `KindEnv` allowing the
 /// typechecker and compiler to lookup things in the virtual machine.
 #[derive(Debug)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct VmEnv {
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub type_infos: TypeInfos,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub globals: FnvMap<StdString, Global>,
 }
 
@@ -341,6 +371,7 @@ impl GlobalVmState {
             interner: RwLock::new(Interner::new()),
             gc: Mutex::new(Gc::new(Generation::default(), usize::MAX)),
             macros: MacroEnv::new(),
+            type_cache: TypeCache::new(),
             generation_0_threads: RwLock::new(Vec::new()),
         };
         vm.add_types().unwrap();
@@ -348,14 +379,16 @@ impl GlobalVmState {
     }
 
     fn add_types(&mut self) -> StdResult<(), (TypeId, ArcType)> {
+        use base::types::BuiltinType;
         use api::generic::A;
         use api::Generic;
-        fn add_type<T: Any>(
-            ids: &mut FnvMap<TypeId, ArcType>,
-            env: &mut VmEnv,
-            name: &str,
-            typ: ArcType,
-        ) {
+        fn add_builtin_type<T: Any>(self_: &mut GlobalVmState, b: BuiltinType) {
+            let typ = self_.type_cache.builtin_type(b);
+            add_type::<T>(self_, b.to_str(), typ)
+        }
+        fn add_type<T: Any>(self_: &mut GlobalVmState, name: &str, typ: ArcType) {
+            let ids = self_.typeids.get_mut().unwrap();
+            let env = self_.env.get_mut().unwrap();
             ids.insert(TypeId::of::<T>(), typ);
             // Insert aliases so that `find_info` can retrieve information about the primitives
             env.type_infos.id_to_type.insert(
@@ -363,26 +396,29 @@ impl GlobalVmState {
                 Alias::from(AliasData::new(
                     Symbol::from(name),
                     Vec::new(),
-                    Type::opaque(),
+                    self_.type_cache.opaque(),
                 )),
             );
         }
 
         {
-            let ids = self.typeids.get_mut().unwrap();
-            let env = self.env.get_mut().unwrap();
-            add_type::<()>(ids, env, "()", Type::unit());
-            add_type::<VmInt>(ids, env, "Int", Type::int());
-            add_type::<u8>(ids, env, "Byte", Type::byte());
-            add_type::<f64>(ids, env, "Float", Type::float());
-            add_type::<::std::string::String>(ids, env, "String", Type::string());
-            add_type::<char>(ids, env, "Char", Type::char());
+            let unit = self.type_cache.unit();
+            add_type::<()>(self, "()", unit);
+            add_builtin_type::<VmInt>(self, BuiltinType::Int);
+            add_builtin_type::<u8>(self, BuiltinType::Byte);
+            add_builtin_type::<f64>(self, BuiltinType::Float);
+            add_builtin_type::<::std::string::String>(self, BuiltinType::String);
+            add_builtin_type::<char>(self, BuiltinType::Char)
         }
         self.register_type::<IO<Generic<A>>>("IO", &["a"]).unwrap();
         self.register_type::<Lazy<Generic<A>>>("Lazy", &["a"])
             .unwrap();
         self.register_type::<Thread>("Thread", &[]).unwrap();
         Ok(())
+    }
+
+    pub fn type_cache(&self) -> &TypeCache<Symbol> {
+        &self.type_cache
     }
 
     pub fn new_global_thunk(&self, f: CompiledFunction) -> Result<GcPtr<ClosureData>> {
@@ -458,7 +494,7 @@ impl GlobalVmState {
             let t = self.typeids.read().unwrap().get(&id).unwrap().clone();
             type_infos.id_to_type.insert(
                 name.into(),
-                Alias::from(AliasData::new(n, args, Type::opaque())),
+                Alias::from(AliasData::new(n, args, self.type_cache.opaque())),
             );
             Ok(t)
         }

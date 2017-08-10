@@ -3,6 +3,7 @@
 *.swo
 # rustfmt backup files
 *.bk
+*.rs.fmt
 
 *.bak
 

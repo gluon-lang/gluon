@@ -161,7 +161,7 @@ TypeBinding: TypeBinding<Id> = {
         TypeBinding {
             comment: None,
             name: id.clone(),
-            alias: pos::spanned(row_span, AliasData::new(id.value, params, Type::variant(row))),
+            alias: pos::spanned(row_span, AliasData::new(id.value, params, type_cache.variant(row))),
             finalized_alias: None,
         }
     },
@@ -180,20 +180,31 @@ AtomicType: ArcType<Id> = {
     "(" "->" ")" =>
         type_cache.function_builtin(),
 
-    IdentStr =>
-        if <> == "_" {
-            type_cache.hole()
-        } else {
-            match BuiltinType::from_str(<>) {
-                Ok(ty) => Type::builtin(ty),
-                Err(_) if (<>).starts_with(char::is_uppercase) => {
-                    Type::ident(env.from_str(<>))
-                }
-                Err(_) => {
-                    Type::generic(Generic::new(env.from_str(<>), Kind::hole()))
+    <ids: (<IdentStr> ".")*> <last: IdentStr> => {
+        if ids.is_empty() {
+            if last == "_" {
+                type_cache.hole()
+            } else {
+                match BuiltinType::from_str(last) {
+                    Ok(ty) => type_cache.builtin_type(ty),
+                    Err(_) if last.starts_with(char::is_uppercase) => {
+                        Type::ident(env.from_str(last))
+                    }
+                    Err(_) => {
+                        Type::generic(Generic::new(env.from_str(last), Kind::hole()))
+                    }
                 }
             }
-        },
+        } else {
+            let project_id: String = ids
+                .iter()
+                .cloned()
+                .chain(Some(last))
+                .intersperse(".")
+                .collect();
+            Type::ident(env.from_str(&project_id))
+        }
+    },
 
     "(" <elems: Comma<Type>> ")" =>
         match elems.len() {
@@ -203,7 +214,7 @@ AtomicType: ArcType<Id> = {
         },
 
     "{" <row: Comma<RecordField>> "}" =>
-        Type::record(vec![], row),
+        type_cache.record(vec![], row),
 };
 
 AppType = {

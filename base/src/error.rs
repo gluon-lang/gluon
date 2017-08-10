@@ -62,7 +62,9 @@ impl<T> From<Vec<T>> for Errors<T> {
 
 impl<T> FromIterator<T> for Errors<T> {
     fn from_iter<Iter: IntoIterator<Item = T>>(iter: Iter) -> Errors<T> {
-        Errors { errors: iter.into_iter().collect() }
+        Errors {
+            errors: iter.into_iter().collect(),
+        }
     }
 }
 
@@ -168,7 +170,9 @@ impl<E: fmt::Display> InFile<E> {
     }
 
     pub fn errors(self) -> Errors<Spanned<E, Location>> {
-        Errors { errors: self.error.errors.into_iter().map(|err| err.error).collect() }
+        Errors {
+            errors: self.error.errors.into_iter().map(|err| err.error).collect(),
+        }
     }
 }
 

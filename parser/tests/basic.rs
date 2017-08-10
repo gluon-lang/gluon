@@ -140,6 +140,14 @@ fn type_mutually_recursive() {
 }
 
 #[test]
+fn type_decl_projection() {
+    let _ = ::env_logger::init();
+    let e = parse_new!("type Test = x.y.Z in 1");
+    let record = Type::ident(intern("x.y.Z"));
+    assert_eq!(e, type_decl(intern("Test"), vec![], record, int(1)));
+}
+
+#[test]
 fn tuple_type() {
     let _ = ::env_logger::init();
 

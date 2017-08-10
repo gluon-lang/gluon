@@ -31,7 +31,7 @@ use stack::{Frame, Stack, StackFrame, State};
 use types::*;
 use vm::{GlobalVmState, VmEnv};
 use value::{Value, ClosureData, ClosureInitDef, ClosureDataDef, DataStruct, Def, ExternFunction,
-            GcStr, BytecodeFunction, Callable, PartialApplicationDataDef, Userdata};
+            GcStr, BytecodeFunction, Callable, PartialApplicationDataDef, RecordDef, Userdata};
 
 use value::Value::{Int, Float, String, Data, Function, PartialApplication, Closure};
 
@@ -46,7 +46,9 @@ where
     T: Deref<Target = Thread>,
 {
     pub fn new(thread: T) -> Execute<T> {
-        Execute { thread: Some(thread) }
+        Execute {
+            thread: Some(thread),
+        }
     }
 }
 
@@ -83,13 +85,23 @@ pub enum Status {
 }
 
 /// A rooted value
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub struct RootedValue<T>
 where
     T: Deref<Target = Thread>,
 {
     vm: T,
     value: Value,
+}
+
+impl<T, U> PartialEq<RootedValue<U>> for RootedValue<T>
+where
+    T: Deref<Target = Thread>,
+    U: Deref<Target = Thread>,
+{
+    fn eq(&self, other: &RootedValue<U>) -> bool {
+        self.value == other.value
+    }
 }
 
 impl<T> Drop for RootedValue<T>
@@ -205,17 +217,27 @@ impl<'b> Traverseable for Roots<'b> {
 // knowing wheter it is or not. So the only way of allowing it to mark itself is to disallow it to
 // be allocated anywhere else.
 /// Representation of the virtual machine
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct Thread {
+    #[cfg_attr(feature = "serde_derive",
+               serde(state_with = "::base::serialization::shared"))]
     global_state: Arc<GlobalVmState>,
     // The parent of this thread, if it exists must live at least as long as this thread as this
     // thread can refer to any value in the parent thread
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     parent: Option<RootedThread>,
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
     roots: RwLock<Vec<GcPtr<Traverseable + Send + Sync>>>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     rooted_values: RwLock<Vec<Value>>,
     /// All threads which this thread have spawned in turn. Necessary as this thread needs to scan
     /// the roots of all its children as well since those may contain references to this threads
     /// garbage collected values
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     child_threads: RwLock<Vec<GcPtr<Thread>>>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     context: Mutex<Context>,
 }
 
@@ -259,7 +281,12 @@ impl<'vm> Pushable<'vm> for RootedThread {
 /// An instance of `Thread` which is rooted. See the `Thread` type for documentation on interacting
 /// with the type.
 #[derive(Debug)]
-pub struct RootedThread(GcPtr<Thread>);
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
+pub struct RootedThread(
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+        GcPtr<Thread>);
 
 impl Drop for RootedThread {
     fn drop(&mut self) {
@@ -827,7 +854,7 @@ impl ThreadInternal for Thread {
         let str_index = self.global_env().intern(field)?;
         context
             .record_map
-            .get_offset(data.tag, str_index)
+            .get_offset(data.tag(), str_index)
             .and_then(|index| data.fields.get(index as usize).cloned())
             .ok_or_else(|| {
                 Error::Message(format!(
@@ -946,6 +973,7 @@ impl<'a> StackInfo<'a> {
 }
 
 bitflags! {
+    #[derive(Default)]
     pub flags HookFlags: u8 {
         /// Call the hook when execution moves to a new line
         const LINE_FLAG = 0b01,
@@ -954,6 +982,7 @@ bitflags! {
     }
 }
 
+#[derive(Default)]
 struct Hook {
     function: Option<HookFn>,
     flags: HookFlags,
@@ -961,14 +990,22 @@ struct Hook {
     previous_instruction_index: usize,
 }
 
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct Context {
     // FIXME It is dangerous to write to gc and stack
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub stack: Stack,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     pub gc: Gc,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
     record_map: FieldMap,
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
     hook: Hook,
     max_stack_size: VmIndex,
 
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
     poll_fn: Option<Box<FnMut(&Thread, &mut Context) -> Result<Async<()>> + Send>>,
 }
 
@@ -992,6 +1029,16 @@ impl Context {
         self.alloc_with(
             thread,
             Def {
+                tag: tag,
+                elems: fields,
+            },
+        ).map(Value::Data)
+    }
+
+    pub fn new_record(&mut self, thread: &Thread, tag: VmTag, fields: &[Value]) -> Result<Value> {
+        self.alloc_with(
+            thread,
+            RecordDef {
                 tag: tag,
                 elems: fields,
             },
@@ -1024,6 +1071,10 @@ impl Context {
 
     pub fn set_max_stack_size(&mut self, limit: VmIndex) {
         self.max_stack_size = limit;
+    }
+
+    pub fn get_fields(&mut self, tag: VmTag) -> Option<&Arc<Vec<InternedStr>>> {
+        self.record_map.get_fields(tag)
     }
 
     pub fn get_map(&mut self, fields: &[InternedStr]) -> VmTag {
@@ -1109,7 +1160,11 @@ impl<'b> DerefMut for OwnedContext<'b> {
 impl<'b> OwnedContext<'b> {
     fn exit_scope(mut self) -> StdResult<OwnedContext<'b>, ()> {
         let exists = StackFrame::current(&mut self.stack).exit_scope().is_ok();
-        if exists { Ok(self) } else { Err(()) }
+        if exists {
+            Ok(self)
+        } else {
+            Err(())
+        }
     }
 
     fn execute(self, polled: bool) -> Result<Async<Option<OwnedContext<'b>>>> {
@@ -1121,8 +1176,7 @@ impl<'b> OwnedContext<'b> {
             let instruction_index = context.borrow_mut().stack.frame.instruction_index;
             if instruction_index == 0 && context.hook.flags.contains(CALL_FLAG) {
                 match state {
-                    State::Extern(_) |
-                    State::Closure(_) => {
+                    State::Extern(_) | State::Closure(_) => {
                         let thread = context.thread;
                         let context = &mut *context;
                         if let Some(ref mut hook) = context.hook.function {
@@ -1144,7 +1198,7 @@ impl<'b> OwnedContext<'b> {
                     let instruction_index = context.borrow_mut().stack.frame.instruction_index;
                     context.borrow_mut().stack.frame.instruction_index = 1;
                     Some(try_ready!(
-                        context.execute_function(instruction_index == 0, &ext, polled)
+                        context.execute_function(instruction_index == 0, &ext, polled,)
                     ))
                 }
                 State::Closure(closure) => {
@@ -1567,7 +1621,7 @@ impl<'b> ExecuteContext<'b> {
                                 let tag = self.record_map.get_map(&field_names);
                                 Data(self.gc.alloc_and_collect(
                                     roots,
-                                    Def {
+                                    RecordDef {
                                         tag: tag,
                                         elems: fields,
                                     },
@@ -1608,7 +1662,7 @@ impl<'b> ExecuteContext<'b> {
                     let field = function.strings[i as usize];
                     match self.stack.pop() {
                         Data(data) => {
-                            let offset = self.lookup_field(data.tag, field)?;
+                            let offset = self.lookup_field(data.tag(), field)?;
                             let v = data.fields[offset as usize];
                             self.stack.push(v);
                         }
@@ -1617,7 +1671,7 @@ impl<'b> ExecuteContext<'b> {
                 }
                 TestTag(tag) => {
                     let data_tag = match self.stack.top() {
-                        Data(ref data) => data.tag,
+                        Data(ref data) => data.tag(),
                         Value::Tag(tag) => tag,
                         _ => {
                             return Err(Error::Message(
@@ -1871,8 +1925,7 @@ fn debug_instruction(
                 x
             }
             PushGlobal(i) => function.globals.get(i as usize).cloned(),
-            NewClosure { .. } |
-            MakeClosure { .. } => Some(Int(stack.len() as isize)),
+            NewClosure { .. } | MakeClosure { .. } => Some(Int(stack.len() as isize)),
             _ => None,
         }
     );

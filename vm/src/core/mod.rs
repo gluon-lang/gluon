@@ -44,11 +44,11 @@ use self::smallvec::SmallVec;
 
 use pretty::{self, DocAllocator};
 
-use base::ast::{self, Literal, SpannedExpr, SpannedPattern, TypedIdent, Typed};
-use base::pos::{BytePos, ExpansionId, Span, spanned};
+use base::ast::{self, Literal, SpannedExpr, SpannedPattern, Typed, TypedIdent};
+use base::pos::{spanned, BytePos, ExpansionId, Span};
 use base::resolve::remove_aliases_cow;
 use base::symbol::Symbol;
-use base::types::{ArcType, Type, TypeEnv, PrimitiveEnv, arg_iter};
+use base::types::{arg_iter, ArcType, PrimitiveEnv, Type, TypeEnv};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Closure<'a> {
@@ -110,8 +110,7 @@ impl<'a> Expr<'a> {
         arena: &'a pretty::Arena<'a>,
     ) -> pretty::DocBuilder<'a, pretty::Arena<'a>> {
         match *self {
-            Expr::Call(f, args) => {
-                chain![arena;
+            Expr::Call(f, args) => chain![arena;
                     f.pretty(arena),
                     arena.concat(args.iter().map(|arg| {
                         arena.space().append(arg.pretty(arena))
@@ -157,8 +156,7 @@ impl<'a> Expr<'a> {
                 }
             }
             Expr::Ident(ref id, _) => arena.text(id.as_ref()),
-            Expr::Let(ref bind, ref expr) => {
-                chain![arena;
+            Expr::Let(ref bind, ref expr) => chain![arena;
                     "let ",
                     match bind.expr {
                         Named::Expr(ref expr) => {
@@ -270,8 +268,7 @@ impl Pattern {
         arena: &'a pretty::Arena<'a>,
     ) -> pretty::DocBuilder<'a, pretty::Arena<'a>> {
         match *self {
-            Pattern::Constructor(ref ctor, ref args) => {
-                chain![arena;
+            Pattern::Constructor(ref ctor, ref args) => chain![arena;
                     ctor.as_ref(),
                     arena.concat(args.iter().map(|arg| {
                         arena.space().append(arg.as_ref())
@@ -279,8 +276,7 @@ impl Pattern {
                 ].group()
             }
             Pattern::Ident(ref id) => arena.text(id.as_ref()),
-            Pattern::Record(ref fields) => {
-                chain![arena;
+            Pattern::Record(ref fields) => chain![arena;
                     "{",
                     arena.concat(fields.iter().map(|&(ref field, ref value)| {
                         chain![arena;
@@ -372,12 +368,10 @@ impl<'a, 'e> Translator<'a, 'e> {
                         let typ = expr.env_type_of(&self.env);
                         self.new_data_constructor(typ, id, new_args, expr.span)
                     }
-                    _ => {
-                        Expr::Call(
-                            self.translate_alloc(function),
-                            arena.alloc_extend(new_args.into_iter()),
-                        )
-                    }
+                    _ => Expr::Call(
+                        self.translate_alloc(function),
+                        arena.alloc_extend(new_args.into_iter()),
+                    ),
                 }
             }
             ast::Expr::Array(ref array) => {
@@ -410,13 +404,11 @@ impl<'a, 'e> Translator<'a, 'e> {
                     )
                 })
             }
-            ast::Expr::Ident(ref id) => {
-                if is_constructor(&id.name) {
-                    self.new_data_constructor(id.typ.clone(), id, SmallVec::new(), expr.span)
-                } else {
-                    Expr::Ident(id.clone(), expr.span)
-                }
-            }
+            ast::Expr::Ident(ref id) => if is_constructor(&id.name) {
+                self.new_data_constructor(id.typ.clone(), id, SmallVec::new(), expr.span)
+            } else {
+                Expr::Ident(id.clone(), expr.span)
+            },
             ast::Expr::IfElse(ref pred, ref if_true, ref if_false) => {
                 let alts: SmallVec<[_; 2]> = collect![
                     Alternative {
@@ -442,14 +434,12 @@ impl<'a, 'e> Translator<'a, 'e> {
                     arena.alloc_extend(args.into_iter()),
                 )
             }
-            ast::Expr::Lambda(ref lambda) => {
-                self.new_lambda(
-                    lambda.id.clone(),
-                    lambda.args.clone(),
-                    self.translate_alloc(&lambda.body),
-                    expr.span,
-                )
-            }
+            ast::Expr::Lambda(ref lambda) => self.new_lambda(
+                lambda.id.clone(),
+                lambda.args.clone(),
+                self.translate_alloc(&lambda.body),
+                expr.span,
+            ),
             ast::Expr::LetBindings(ref binds, ref tail) => {
                 self.translate_let(binds, self.translate(tail), expr.span.start)
             }
@@ -478,7 +468,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                                 name: projection.clone(),
                                 typ: projected_type.clone(),
                             },
-                            None
+                            None,
                         ),
                     ]),
                     expr: arena.alloc(Expr::Ident(
@@ -494,7 +484,9 @@ impl<'a, 'e> Translator<'a, 'e> {
                     self.allocator.alternative_arena.alloc_extend(once(alt)),
                 )
             }
-            ast::Expr::Record { ref typ, ref exprs, .. } => {
+            ast::Expr::Record {
+                ref typ, ref exprs, ..
+            } => {
                 let mut last_span = expr.span;
                 let args: SmallVec<[_; 16]> = exprs
                     .iter()
@@ -516,23 +508,21 @@ impl<'a, 'e> Translator<'a, 'e> {
                     expr.span.expansion_id,
                 )
             }
-            ast::Expr::Tuple { ref elems, .. } => {
-                if elems.len() == 1 {
-                    self.translate(&elems[0])
-                } else {
-                    let args: SmallVec<[_; 16]> =
-                        elems.iter().map(|expr| self.translate(expr)).collect();
-                    Expr::Data(
-                        TypedIdent {
-                            name: self.dummy_symbol.name.clone(),
-                            typ: expr.env_type_of(&self.env),
-                        },
-                        arena.alloc_extend(args.into_iter()),
-                        expr.span.start,
-                        expr.span.expansion_id,
-                    )
-                }
-            }
+            ast::Expr::Tuple { ref elems, .. } => if elems.len() == 1 {
+                self.translate(&elems[0])
+            } else {
+                let args: SmallVec<[_; 16]> =
+                    elems.iter().map(|expr| self.translate(expr)).collect();
+                Expr::Data(
+                    TypedIdent {
+                        name: self.dummy_symbol.name.clone(),
+                        typ: expr.env_type_of(&self.env),
+                    },
+                    arena.alloc_extend(args.into_iter()),
+                    expr.span.start,
+                    expr.span.expansion_id,
+                )
+            },
             ast::Expr::TypeBindings(_, ref expr) => self.translate(expr),
             ast::Expr::Error => panic!("ICE: Error expression found in the compiler"),
         }
@@ -613,22 +603,18 @@ impl<'a, 'e> Translator<'a, 'e> {
     fn bool_constructor(&self, variant: bool) -> TypedIdent<Symbol> {
         let b = self.env.get_bool();
         match **b {
-            Type::Alias(ref alias) => {
-                match **alias.typ() {
-                    Type::Variant(ref variants) => {
-                        TypedIdent {
-                            name: variants
-                                .row_iter()
-                                .nth(variant as usize)
-                                .unwrap()
-                                .name
-                                .clone(),
-                            typ: b.clone(),
-                        }
-                    }
-                    _ => panic!(),
-                }
-            }
+            Type::Alias(ref alias) => match **alias.typ() {
+                Type::Variant(ref variants) => TypedIdent {
+                    name: variants
+                        .row_iter()
+                        .nth(variant as usize)
+                        .unwrap()
+                        .name
+                        .clone(),
+                    typ: b.clone(),
+                },
+                _ => panic!(),
+            },
             _ => panic!(),
         }
     }
@@ -780,17 +766,15 @@ struct ReplaceVariables<'a> {
 impl<'a> Visitor<'a> for ReplaceVariables<'a> {
     fn visit_expr(&mut self, expr: &'a Expr<'a>) -> Option<&'a Expr<'a>> {
         match *expr {
-            Expr::Ident(ref id, span) => {
-                self.replacements.get(&id.name).map(|new_name| {
-                    &*self.allocator.arena.alloc(Expr::Ident(
-                        TypedIdent {
-                            name: new_name.clone(),
-                            typ: id.typ.clone(),
-                        },
-                        span,
-                    ))
-                })
-            }
+            Expr::Ident(ref id, span) => self.replacements.get(&id.name).map(|new_name| {
+                &*self.allocator.arena.alloc(Expr::Ident(
+                    TypedIdent {
+                        name: new_name.clone(),
+                        typ: id.typ.clone(),
+                    },
+                    span,
+                ))
+            }),
             _ => walk_expr_alloc(self, expr),
         }
     }
@@ -826,27 +810,25 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                                 ref typ,
                                 ref fields,
                                 ..
-                            } => {
-                                fields
-                                    .iter()
-                                    .map(|field| {
-                                        field.value.as_ref().map(Cow::Borrowed).unwrap_or_else(|| {
-                                            let field_type = remove_aliases_cow(&self.0.env, typ)
-                                                .row_iter()
-                                                .find(|f| f.name.name_eq(&field.name.value))
-                                                .map(|f| f.typ.clone())
-                                                .unwrap_or_else(|| Type::hole());
-                                            Cow::Owned(spanned(
-                                                Span::default(),
-                                                ast::Pattern::Ident(TypedIdent {
-                                                    name: field.name.value.clone(),
-                                                    typ: field_type,
-                                                }),
-                                            ))
-                                        })
+                            } => fields
+                                .iter()
+                                .map(|field| {
+                                    field.value.as_ref().map(Cow::Borrowed).unwrap_or_else(|| {
+                                        let field_type = remove_aliases_cow(&self.0.env, typ)
+                                            .row_iter()
+                                            .find(|f| f.name.name_eq(&field.name.value))
+                                            .map(|f| f.typ.clone())
+                                            .unwrap_or_else(|| Type::hole());
+                                        Cow::Owned(spanned(
+                                            Span::default(),
+                                            ast::Pattern::Ident(TypedIdent {
+                                                name: field.name.value.clone(),
+                                                typ: field_type,
+                                            }),
+                                        ))
                                     })
-                                    .collect::<Vec<_>>()
-                            }
+                                })
+                                .collect::<Vec<_>>(),
                             ast::Pattern::Tuple { ref elems, .. } => {
                                 elems.iter().map(Cow::Borrowed).collect::<Vec<_>>()
                             }
@@ -978,12 +960,10 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                             Expr::Match(e, alts) if e == variables[0] && alts.len() == 1 => {
                                 alts[0].clone()
                             }
-                            _ => {
-                                Alternative {
-                                    pattern: Pattern::Ident(TypedIdent::new(Symbol::from("_"))),
-                                    expr: default,
-                                }
-                            }
+                            _ => Alternative {
+                                pattern: Pattern::Ident(TypedIdent::new(Symbol::from("_"))),
+                                expr: default,
+                            },
                         })
                     })
                     .collect::<Vec<_>>();
@@ -1093,8 +1073,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         fn varcon(equation: &Equation) -> CType {
             match equation.patterns.first().expect("Pattern").value {
                 ast::Pattern::Ident(_) => CType::Variable,
-                ast::Pattern::Record { .. } |
-                ast::Pattern::Tuple { .. } => CType::Record,
+                ast::Pattern::Record { .. } | ast::Pattern::Tuple { .. } => CType::Record,
                 ast::Pattern::Constructor(_, _) => CType::Constructor,
                 ast::Pattern::Error => panic!("ICE: Error pattern survived typechecking"),
             }
@@ -1102,12 +1081,10 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
 
         let groups = equations.iter().group_by(|equation| varcon(&equation));
         let expr = match variables.first() {
-            None => {
-                equations
-                    .first()
-                    .map(|equation| equation.result)
-                    .unwrap_or(default)
-            }
+            None => equations
+                .first()
+                .map(|equation| equation.result)
+                .unwrap_or(default),
             Some(_) => {
                 let groups = (&groups).into_iter().collect::<Vec<_>>();
                 groups.into_iter().rev().fold(
@@ -1131,12 +1108,10 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
     fn extract_ident(&self, index: usize, pattern: &ast::Pattern<Symbol>) -> TypedIdent<Symbol> {
         match *pattern {
             ast::Pattern::Ident(ref id) => id.clone(),
-            _ => {
-                TypedIdent {
-                    name: Symbol::from(format!("pattern_{}", index)),
-                    typ: pattern.env_type_of(&self.0.env),
-                }
-            }
+            _ => TypedIdent {
+                name: Symbol::from(format!("pattern_{}", index)),
+                typ: pattern.env_type_of(&self.0.env),
+            },
         }
     }
 
@@ -1161,11 +1136,9 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     // Just extract the patterns of the first constructor found
                     return Pattern::Constructor(id.clone(), identifiers);
                 }
-                ast::Pattern::Ident(ref id) => {
-                    if ident.is_none() {
-                        ident = Some(id.clone())
-                    }
-                }
+                ast::Pattern::Ident(ref id) => if ident.is_none() {
+                    ident = Some(id.clone())
+                },
                 ast::Pattern::Tuple { ref typ, ref elems } => {
                     record_fields.extend(elems.iter().zip(typ.row_iter()).enumerate().map(
                         |(i, (elem, field_type))| {
@@ -1246,35 +1219,31 @@ impl<'a> Iterator for PatternIdentifiers<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         match *self.pattern {
-            Pattern::Constructor(_, ref patterns) => {
-                if self.start < self.end {
-                    let i = self.start;
-                    self.start += 1;
-                    Some(patterns[i].clone())
-                } else {
-                    None
-                }
-            }
-            Pattern::Record(ref fields) => {
-                if self.start < fields.len() {
-                    let field = &fields[self.start];
-                    self.start += 1;
-                    Some(
-                        field
-                            .1
-                            .as_ref()
-                            .map(|name| {
-                                TypedIdent {
-                                    name: name.clone(),
-                                    typ: field.0.typ.clone(),
-                                }
-                            })
-                            .unwrap_or_else(|| field.0.clone()),
-                    )
-                } else {
-                    None
-                }
-            }
+            Pattern::Constructor(_, ref patterns) => if self.start < self.end {
+                let i = self.start;
+                self.start += 1;
+                Some(patterns[i].clone())
+            } else {
+                None
+            },
+            Pattern::Record(ref fields) => if self.start < fields.len() {
+                let field = &fields[self.start];
+                self.start += 1;
+                Some(
+                    field
+                        .1
+                        .as_ref()
+                        .map(|name| {
+                            TypedIdent {
+                                name: name.clone(),
+                                typ: field.0.typ.clone(),
+                            }
+                        })
+                        .unwrap_or_else(|| field.0.clone()),
+                )
+            } else {
+                None
+            },
             Pattern::Ident(_) => None,
         }
     }
@@ -1283,34 +1252,30 @@ impl<'a> Iterator for PatternIdentifiers<'a> {
 impl<'a> DoubleEndedIterator for PatternIdentifiers<'a> {
     fn next_back(&mut self) -> Option<Self::Item> {
         match *self.pattern {
-            Pattern::Constructor(_, ref patterns) => {
-                if self.start != self.end {
-                    self.end -= 1;
-                    Some(patterns[self.end].clone())
-                } else {
-                    None
-                }
-            }
-            Pattern::Record(ref fields) => {
-                if self.start != self.end {
-                    self.end -= 1;
-                    let field = &fields[self.end];
-                    Some(
-                        field
-                            .1
-                            .as_ref()
-                            .map(|name| {
-                                TypedIdent {
-                                    name: name.clone(),
-                                    typ: field.0.typ.clone(),
-                                }
-                            })
-                            .unwrap_or_else(|| field.0.clone()),
-                    )
-                } else {
-                    None
-                }
-            }
+            Pattern::Constructor(_, ref patterns) => if self.start != self.end {
+                self.end -= 1;
+                Some(patterns[self.end].clone())
+            } else {
+                None
+            },
+            Pattern::Record(ref fields) => if self.start != self.end {
+                self.end -= 1;
+                let field = &fields[self.end];
+                Some(
+                    field
+                        .1
+                        .as_ref()
+                        .map(|name| {
+                            TypedIdent {
+                                name: name.clone(),
+                                typ: field.0.typ.clone(),
+                            }
+                        })
+                        .unwrap_or_else(|| field.0.clone()),
+                )
+            } else {
+                None
+            },
             Pattern::Ident(_) => None,
         }
     }
@@ -1330,12 +1295,21 @@ mod tests {
 
     use std::collections::HashMap;
 
-    use base::symbol::{SymbolModule, Symbols};
+    use base::ast;
+    use base::symbol::{Symbol, SymbolModule, Symbols};
+    use base::types::TypeCache;
 
-    use self::parser::parse_expr;
     use core::grammar::parse_Expr as parse_core_expr;
 
     use vm::RootedThread;
+
+    fn parse_expr(symbols: &mut Symbols, expr_str: &str) -> ast::SpannedExpr<Symbol> {
+        self::parser::parse_expr(
+            &mut SymbolModule::new("".into(), symbols),
+            &TypeCache::new(),
+            expr_str,
+        ).unwrap()
+    }
 
     #[derive(Debug)]
     struct PatternEq<'a>(&'a Expr<'a>);
@@ -1377,12 +1351,11 @@ mod tests {
                         }
                         (&Pattern::Record(ref l), &Pattern::Record(ref r)) => {
                             l.iter().zip(r).all(|(l, r)| {
-                                check(map, &l.0.name, &r.0.name) &&
-                                    match (&l.1, &r.1) {
-                                        (&Some(ref l), &Some(ref r)) => check(map, l, r),
-                                        (&None, &None) => true,
-                                        _ => false,
-                                    }
+                                check(map, &l.0.name, &r.0.name) && match (&l.1, &r.1) {
+                                    (&Some(ref l), &Some(ref r)) => check(map, l, r),
+                                    (&None, &None) => true,
+                                    _ => false,
+                                }
                             })
                         }
                         _ => false,
@@ -1430,12 +1403,12 @@ mod tests {
             match test with
             | x -> x
         "#;
-        let expr = parse_expr(&mut SymbolModule::new("".into(), &mut symbols), expr_str).unwrap();
+        let expr = parse_expr(&mut symbols, expr_str);
         let core_expr = translator.translate(&expr);
 
         let expected_str = " let y = 1 in y ";
-        let expected_expr = parse_core_expr(&mut symbols, &translator.allocator, expected_str)
-            .unwrap();
+        let expected_expr =
+            parse_core_expr(&mut symbols, &translator.allocator, expected_str).unwrap();
         assert_deq!(PatternEq(&core_expr), expected_expr);
     }
 
@@ -1453,7 +1426,7 @@ mod tests {
             match test with
             | Ctor (Ctor x) -> x
         "#;
-        let expr = parse_expr(&mut SymbolModule::new("".into(), &mut symbols), expr_str).unwrap();
+        let expr = parse_expr(&mut symbols, expr_str);
         let core_expr = translator.translate(&expr);
 
         let expected_str = r#"
@@ -1464,8 +1437,8 @@ mod tests {
                 end
             end
             "#;
-        let expected_expr = parse_core_expr(&mut symbols, &translator.allocator, expected_str)
-            .unwrap();
+        let expected_expr =
+            parse_core_expr(&mut symbols, &translator.allocator, expected_str).unwrap();
         assert_deq!(PatternEq(&core_expr), expected_expr);
     }
 
@@ -1485,7 +1458,7 @@ mod tests {
             | Ctor y -> 2
             | z -> 3
         "#;
-        let expr = parse_expr(&mut SymbolModule::new("".into(), &mut symbols), expr_str).unwrap();
+        let expr = parse_expr(&mut symbols, expr_str);
         let core_expr = translator.translate(&expr);
 
         let expected_str = r#"
@@ -1498,8 +1471,8 @@ mod tests {
             | z -> 3
             end
             "#;
-        let expected_expr = parse_core_expr(&mut symbols, &translator.allocator, expected_str)
-            .unwrap();
+        let expected_expr =
+            parse_core_expr(&mut symbols, &translator.allocator, expected_str).unwrap();
 
         assert_deq!(PatternEq(&core_expr), expected_expr);
     }
@@ -1520,7 +1493,7 @@ mod tests {
             | { l = None, r = None } -> True
             | _ -> False
         "#;
-        let expr = parse_expr(&mut SymbolModule::new("".into(), &mut symbols), expr_str).unwrap();
+        let expr = parse_expr(&mut symbols, expr_str);
         let core_expr = translator.translate(&expr);
 
         let expected_str = r#"
@@ -1541,8 +1514,8 @@ mod tests {
                 end
             end
             "#;
-        let expected_expr = parse_core_expr(&mut symbols, &translator.allocator, expected_str)
-            .unwrap();
+        let expected_expr =
+            parse_core_expr(&mut symbols, &translator.allocator, expected_str).unwrap();
 
         assert_deq!(PatternEq(&core_expr), expected_expr);
     }

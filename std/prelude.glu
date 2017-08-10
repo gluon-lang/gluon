@@ -397,11 +397,11 @@ let show_Unit : Show () = { show = const "()" }
 
 let show_Bool : Show Bool = { show = \x -> if x then "True" else "False" }
 
-let show_Int : Show Int = { show = prim.show_Int }
+let show_Int : Show Int = { show = prim.show_int }
 
-let show_Float : Show Float = { show = prim.show_Float }
+let show_Float : Show Float = { show = prim.show_float }
 
-let show_Char : Show Char = { show = prim.show_Char }
+let show_Char : Show Char = { show = prim.show_char }
 
 let (++) = string_prim.append
 
@@ -490,7 +490,7 @@ let (-) = num_Int.(-)
 /// list [1, 2, 3]
 /// ```
 let list xs : Array a -> List a =
-    let len = array.length xs
+    let len = array.len xs
     let list_ i ys =
         if i == 0 then
             ys

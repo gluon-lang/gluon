@@ -16,7 +16,8 @@ os:
 before_script:
 - |
   pip install 'travis-cargo<0.2' --user &&
-  export PATH=$HOME/Library/Python/2.7/bin:$HOME/.local/bin:$PATH
+  export PATH=$HOME/Library/Python/2.7/bin:$HOME/.local/bin:$PATH &&
+  export RUST_BACKTRACE=1
 script:
 - ./scripts/travis.sh
 notifications:

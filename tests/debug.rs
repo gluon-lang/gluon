@@ -11,7 +11,7 @@ use futures::{Async, Future};
 
 use gluon::base::pos::Line;
 use gluon::base::types::{ArcType, Type};
-use gluon::{Compiler, new_vm};
+use gluon::{new_vm, Compiler};
 use gluon::vm::compiler::UpvarInfo;
 use gluon::vm::thread::{ThreadInternal, CALL_FLAG, LINE_FLAG};
 
@@ -305,7 +305,7 @@ fn argument_types() {
                 vec![
                     ("int_function".to_string(), int_function.clone()),
                     ("g".to_string(), int_function.clone()),
-                ]
+                ],
             ),
             (
                 4,
@@ -313,7 +313,7 @@ fn argument_types() {
                     ("int_function".to_string(), int_function.clone()),
                     ("g".to_string(), int_function.clone()),
                     ("f".to_string(), int_function.clone()),
-                ]
+                ],
             ),
             (3, vec![("z".to_string(), Type::int())]),
             (2, vec![("y".to_string(), Type::int())]),

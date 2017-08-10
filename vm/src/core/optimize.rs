@@ -2,7 +2,7 @@ use base::ast::TypedIdent;
 use base::merge::{merge, merge_iter};
 use base::pos;
 
-use core::{Allocator, Alternative, Closure, Expr, Named, LetBinding, Pattern};
+use core::{Allocator, Alternative, Closure, Expr, LetBinding, Named, Pattern};
 
 pub trait Visitor<'a> {
     fn visit_expr(&mut self, expr: &'a Expr<'a>) -> Option<&'a Expr<'a>>;
@@ -72,7 +72,9 @@ impl<'a> Visitor<'a> for RecognizeUnnecessaryAllocation<'a> {
 }
 
 pub fn optimize<'a>(allocator: &'a Allocator<'a>, expr: &'a Expr<'a>) -> &'a Expr<'a> {
-    let mut optimizer = RecognizeUnnecessaryAllocation { allocator: allocator };
+    let mut optimizer = RecognizeUnnecessaryAllocation {
+        allocator: allocator,
+    };
     optimizer.visit_expr(expr).unwrap_or(expr)
 }
 

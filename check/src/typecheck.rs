@@ -56,6 +56,7 @@ pub enum TypeError<I> {
     EmptyCase,
     /// An `Error` ast node was found indicating an invalid parse
     ErrorAst(&'static str),
+    Message(&'static str),
 }
 
 impl<I> From<KindCheckError<I>> for TypeError<I>
@@ -148,6 +149,7 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
             }
             EmptyCase => write!(f, "`case` expression with no alternatives"),
             ErrorAst(typ) => write!(f, "`Error` {} found during typechecking", typ),
+            Message(msg) => write!(f, "{}", msg),
         }
     }
 }
@@ -257,6 +259,7 @@ impl<'a> Typecheck<'a> {
         module: String,
         symbols: &'a mut Symbols,
         environment: &'a (PrimitiveEnv + 'a),
+        type_cache: TypeCache<Symbol>,
     ) -> Typecheck<'a> {
         let symbols = SymbolModule::new(module, symbols);
         let kind_cache = KindCache::new();
@@ -272,7 +275,7 @@ impl<'a> Typecheck<'a> {
             named_variables: FnvMap::default(),
             errors: Errors::new(),
             type_variables: ScopedMap::new(),
-            type_cache: TypeCache::new(),
+            type_cache: type_cache,
             kind_cache: kind_cache,
         }
     }
@@ -437,7 +440,8 @@ impl<'a> Typecheck<'a> {
                 EmptyCase |
                 ErrorAst(_) |
                 Rename(_) |
-                KindError(_) => (),
+                KindError(_) |
+                Message(_) => (),
                 NotAFunction(ref mut typ) |
                 UndefinedField(ref mut typ, _) |
                 PatternError(ref mut typ, _) |
@@ -590,11 +594,11 @@ impl<'a> Typecheck<'a> {
             }
             Expr::Literal(ref lit) => {
                 Ok(TailCall::Type(match *lit {
-                    Literal::Int(_) => Type::int(),
-                    Literal::Byte(_) => Type::byte(),
-                    Literal::Float(_) => Type::float(),
-                    Literal::String(_) => Type::string(),
-                    Literal::Char(_) => Type::char(),
+                    Literal::Int(_) => self.type_cache.int(),
+                    Literal::Byte(_) => self.type_cache.byte(),
+                    Literal::Float(_) => self.type_cache.float(),
+                    Literal::String(_) => self.type_cache.string(),
+                    Literal::Char(_) => self.type_cache.char(),
                 }))
             }
             Expr::App(ref mut func, ref mut args) => {
@@ -632,7 +636,10 @@ impl<'a> Typecheck<'a> {
                     // Handle primitives
                     let arg_type = self.unify(&lhs_type, rhs_type)?;
                     let op_type = op_name.trim_matches(|c: char| !c.is_alphabetic());
-                    let prim_type = primitive_type(op_type);
+                    let builtin_type = op_type
+                        .parse()
+                        .map_err(|_| TypeError::Message("Invalid builtin type for operator"))?;
+                    let prim_type = self.type_cache.builtin_type(builtin_type);
                     let typ = self.unify(&prim_type, arg_type)?;
                     let return_type = match &op_name[1 + op_type.len()..] {
                         "+" | "-" | "*" | "/" => typ,
@@ -770,7 +777,7 @@ impl<'a> Typecheck<'a> {
                     let typ = self.typecheck(expr);
                     expected_type = self.unify_span(expr.span, &expected_type, typ);
                 }
-                array.typ = Type::array(expected_type);
+                array.typ = self.type_cache.array(expected_type);
                 Ok(TailCall::Type(array.typ.clone()))
             }
             Expr::Lambda(ref mut lambda) => {
@@ -829,7 +836,7 @@ impl<'a> Typecheck<'a> {
                 let (id_type, record_type) = match result {
                     Ok(x) => x,
                     Err(_) => {
-                        *typ = Type::record(new_types, new_fields);
+                        *typ = self.type_cache.record(new_types, new_fields);
                         return Ok(TailCall::Type(typ.clone()));
                     }
                 };
@@ -839,7 +846,7 @@ impl<'a> Typecheck<'a> {
                     &self.subs,
                     &record_type,
                 );
-                self.unify(&Type::record(new_types, new_fields), record_type)?;
+                self.unify(&self.type_cache.record(new_types, new_fields), record_type)?;
                 *typ = id_type.clone();
                 Ok(TailCall::Type(id_type.clone()))
             }
@@ -1307,7 +1314,7 @@ impl<'a> Typecheck<'a> {
                     symbol,
                     Type::variable(TypeVariable {
                         id: level,
-                        kind: Kind::typ(),
+                        kind: self.kind_cache.typ(),
                     }),
                 );
                 return;
@@ -1429,15 +1436,17 @@ impl<'a> Typecheck<'a> {
                     if iter().any(|opt| opt.is_some()) {
                         // If any of the variants requires a symbol replacement
                         // we create a new type
-                        Some(Type::variant(
-                            iter()
-                                .zip(row.row_iter())
-                                .map(|(new, old)| match new {
-                                    Some(new) => Field::new(new.clone(), old.typ.clone()),
-                                    None => old.clone(),
-                                })
-                                .collect(),
-                        ))
+                        Some(
+                            self.type_cache.variant(
+                                iter()
+                                    .zip(row.row_iter())
+                                    .map(|(new, old)| match new {
+                                        Some(new) => Field::new(new.clone(), old.typ.clone()),
+                                        None => old.clone(),
+                                    })
+                                    .collect(),
+                            ),
+                        )
                     } else {
                         None
                     }
@@ -1649,16 +1658,6 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
 
 fn function_arg_iter<'a, 'b>(tc: &'a mut Typecheck<'b>, typ: ArcType) -> FunctionArgIter<'a, 'b> {
     FunctionArgIter { tc: tc, typ: typ }
-}
-
-fn primitive_type(op_type: &str) -> ArcType {
-    match op_type {
-        "Int" => Type::int(),
-        "Float" => Type::float(),
-        "Char" => Type::char(),
-        "Byte" => Type::byte(),
-        _ => panic!("ICE: Unknown primitive type"),
-    }
 }
 
 /// Returns a span of the innermost expression of a group of nested `let` and `type` bindings.

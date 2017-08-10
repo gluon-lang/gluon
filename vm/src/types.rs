@@ -12,7 +12,8 @@ pub type VmInt = isize;
 /// Enum which represent the instructions executed by the virtual machine.
 ///
 /// The binary arithmetic instructions pop two values of the stack and then push the result.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub enum Instruction {
     /// Push an integer to the stack
     PushInt(isize),
@@ -125,9 +126,9 @@ impl Instruction {
             PushInt(_) | PushByte(_) | PushFloat(_) | PushString(_) | Push(_) | PushGlobal(_) => 1,
             Call(n) => -(n as i32),
             TailCall(n) => -(n as i32),
-            Construct { args, .. } |
-            ConstructRecord { args, .. } |
-            ConstructArray(args) => 1 - args as i32,
+            Construct { args, .. } | ConstructRecord { args, .. } | ConstructArray(args) => {
+                1 - args as i32
+            }
             GetField(_) | GetOffset(_) => 0,
             // The number of added stack slots are handled separately as the type is needed to
             // calculate the number of slots needed
@@ -141,15 +142,34 @@ impl Instruction {
             NewClosure { .. } => 1,
             CloseClosure(_) => -1,
             PushUpVar(_) => 1,
-            AddInt | SubtractInt | MultiplyInt | DivideInt | IntLT | IntEQ | AddFloat |
-            AddByte | SubtractByte | MultiplyByte | DivideByte | ByteLT | ByteEQ |
-            SubtractFloat | MultiplyFloat | DivideFloat | FloatLT | FloatEQ => -1,
+            AddInt |
+            SubtractInt |
+            MultiplyInt |
+            DivideInt |
+            IntLT |
+            IntEQ |
+            AddFloat |
+            AddByte |
+            SubtractByte |
+            MultiplyByte |
+            DivideByte |
+            ByteLT |
+            ByteEQ |
+            SubtractFloat |
+            MultiplyFloat |
+            DivideFloat |
+            FloatLT |
+            FloatEQ => -1,
         }
     }
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct TypeInfos {
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
     pub id_to_type: FnvMap<String, Alias<Symbol, ArcType>>,
 }
 
@@ -194,7 +214,9 @@ impl TypeEnv for TypeInfos {
 
 impl TypeInfos {
     pub fn new() -> TypeInfos {
-        TypeInfos { id_to_type: FnvMap::default() }
+        TypeInfos {
+            id_to_type: FnvMap::default(),
+        }
     }
 
     pub fn extend(&mut self, other: TypeInfos) {
