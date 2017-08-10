@@ -20,7 +20,8 @@ let {
     take1,
     skip_many,
     skip_many1
-    } = import! "std/parser.glu"
+} =
+    import! "std/parser.glu"
 
 let string = import! "std/string.glu"
 let { (==) } = string.eq
@@ -48,25 +49,14 @@ and Lisp a = LispState -> Result String { value : a, state : LispState }
 
 let eq : Eq Expr =
     let eq_expr l r : Expr -> Expr -> Bool =
-        match l with
-        | Atom ls ->
-            match r with
-            | Atom rs -> ls == rs
-            | _ -> False
-        | Int ls ->
-            match r with
-            | Int rs -> ls == rs
-            | _ -> False
-        | Float ls ->
-            match r with
-            | Float rs -> ls == rs
-            | _ -> False
-        | List ls ->
-            match r with
-            | List rs ->
-                let list_eq: Eq (List Expr) = prelude.eq_List { (==) = eq_expr }
-                list_eq.(==) ls rs
-            | _ -> False
+        match (l, r) with
+        | (Atom ls, Atom rs) -> ls == rs
+        | (Int ls, Int rs) -> ls == rs
+        | (Float ls, Float rs) -> ls == rs
+        | (List ls, List rs) ->
+            let list_eq : Eq (List Expr) = prelude.eq_List { (==) = eq_expr }
+            list_eq.(==) ls rs
+        | _ -> False
     { (==) = eq_expr }
 
 let show : Show Expr =
@@ -105,20 +95,21 @@ let atom : Parser Expr =
         (\x -> Atom x)
         (take_string ((alpha <|> symbol) *> skip_many (alpha_num <|> symbol)))
 
-let parse_parser p f msg: Parser a -> (String -> Result () b) -> String -> Parser b =
-    take_string p >>= (\s ->
+let parse_parser p f msg : Parser a -> (String -> Result () b) -> String -> Parser b =
+    take_string p
+        >>= (\s ->
         match f s with
         | Ok i -> pure i
         | Err _ -> fail ("Expected " <> msg))
 
 let int : Parser Expr =
-    functor.map (\i -> Int i) (parse_parser (skip_many1 (satisfy char.is_numeric)) int.parse "integer")
+    functor.map
+        (\i -> Int i)
+        (parse_parser (skip_many1 (satisfy char.is_numeric)) int.parse "integer")
 
 let float : Parser Expr =
     let number = skip_many1 (satisfy char.is_numeric)
-    functor.map
-        (\f -> Float f)
-        (parse_parser (number *> token '.' *> number) float.parse "float")
+    functor.map (\f -> Float f) (parse_parser (number *> token '.' *> number) float.parse "float")
 
 let list _ : () -> Parser Expr =
     let e = expr ()
@@ -127,22 +118,20 @@ and expr _ : () -> Parser Expr = (atom <|> float <|> int <|> lazy_parser list) <
 
 let lisp : Lisp a -> Lisp a = id
 
-let functor_Lisp : Functor Lisp = {
-    map = \f m -> lisp (\state ->
-        match lisp m state with
-        | Ok r -> Ok { value = f r.value, state = r.state }
-        | Err err -> Err err)
-}
+let functor_Lisp : Functor Lisp = { map = \f m -> lisp (\state ->
+            match lisp m state with
+            | Ok r -> Ok { value = f r.value, state = r.state }
+            | Err err -> Err err) }
 
 let applicative_Lisp : Applicative Lisp = {
     functor = functor_Lisp,
     apply = \f m -> lisp (\state ->
-        match lisp f state with
-        | Ok g ->
-            match lisp m g.state with
-            | Ok r -> Ok { value = g.value r.value, state = r.state }
-            | Err err -> Err err
-        | Err err -> Err err),
+            match lisp f state with
+            | Ok g ->
+                match lisp m g.state with
+                | Ok r -> Ok { value = g.value r.value, state = r.state }
+                | Err err -> Err err
+            | Err err -> Err err),
     pure = \value -> lisp (\state -> Ok { value, state })
 }
 
@@ -151,9 +140,9 @@ let { pure } = applicative_Lisp
 let monad_Lisp : Monad Lisp = {
     applicative = applicative_Lisp,
     flat_map = \f m -> lisp (\state ->
-        match lisp m state with
-        | Ok r -> lisp (f r.value) r.state
-        | Err err -> Err err)
+            match lisp m state with
+            | Ok r -> lisp (f r.value) r.state
+            | Err err -> Err err)
 }
 
 let { (>>=), foldM, mapM } = prelude.make_Monad monad_Lisp
@@ -161,11 +150,14 @@ let { map = map_lisp } = functor_Lisp
 
 let get_state : Lisp LispState = lisp (\state -> Ok { value = state, state = state })
 let set_state state : LispState -> Lisp () = lisp (\_ -> Ok { value = (), state })
+let modify_state f : (LispState -> LispState) -> Lisp () =
+    get_state >>= \state -> set_state (f state)
+let scope_state run : Lisp a -> Lisp a =
+    get_state >>= \original -> run >>= \x -> set_state original >>= \_ -> pure x
 
 let fail msg : String -> Lisp a = lisp (\_ -> Err msg)
 
-let primitive name f : String -> _ -> Map String Expr =
-    prim_map.singleton name (Primitive f)
+let primitive name f : String -> _ -> Map String Expr = prim_map.singleton name (Primitive f)
 
 type Binop a = a -> a -> a
 
@@ -178,56 +170,68 @@ let primitive_binop name int_op float_op : _ -> Binop Int -> Binop Float -> Map 
         match x with
         | Float f -> pure f
         | _ -> fail "Expected float"
-    
+
     let fold unpack op = foldM (\acc x -> map_lisp (\y -> op acc y) (unpack x))
 
     let f xs : List Expr -> Lisp Expr =
         match xs with
         | Cons l ys ->
             match l with
-            | Int li ->
-                map_lisp Int (fold unpack int_op li ys)
-            | Float lf ->
-                map_lisp Float (fold unpack float_op lf ys)
+            | Int li -> map_lisp Int (fold unpack int_op li ys)
+            | Float lf -> map_lisp Float (fold unpack float_op lf ys)
             | _ -> fail ("Cant add " <> show.show l)
         | _ -> fail ("Expected two arguments to binop, got " <> show.show (List xs))
     primitive name f
 
-let define =
-    let f xs =
-        match xs with
-        | Cons (Atom name) (Cons value Nil) ->
-            get_state >>= \state ->
-                let new_state = prim_map.insert name value state
-                set_state new_state >>= \_ -> pure value
-        | Cons (List (Cons (Atom name) params)) body ->
-            get_state >>= (\closure ->
-                pure (Function {
+let define xs =
+    match xs with
+    | Cons (Atom name) (Cons value Nil) ->
+        get_state
+            >>= \state ->
+            let new_state = prim_map.insert name value state
+            set_state new_state >>= \_ -> pure value
+    | Cons (List (Cons (Atom name) params)) body ->
+        get_state
+            >>= \closure ->
+                let function = Function {
                     params = prelude.functor_List.map show.show params,
                     vararg = None,
                     body,
                     closure
-                })
-            )
-        | _ -> fail "Unexpected parameters to define `define`"
-    primitive "define" f
+                }
+                let new_state = prim_map.insert name function closure
+                set_state new_state
+                    >>= \_ -> pure function
+    | _ -> fail "Unexpected parameters to define `define`"
 
 let primitives =
     let { (<>) = (++) } = prelude.make_Monoid prim_map.monoid
-    primitive_binop "+" (+) (+) ++
-        primitive_binop "-" (-) (-) ++
-        primitive_binop "*" (*) (*) ++
-        primitive_binop "/" (/) (/)
+    primitive_binop "+" (+) (+)
+        ++ primitive_binop "-" (-) (-)
+        ++ primitive_binop "*" (*) (*)
+        ++ primitive_binop "/" (/) (/)
+        ++ primitive "define" define
 
-let apply f xs =
+let apply f xs : Expr -> List Expr -> Lisp Expr =
+    let add_args names values =
+        match (names, values) with
+        | (Cons name names, Cons value values) ->
+            modify_state (\state -> prim_map.insert name value state)
+                >>= \_ -> add_args names values
+        | (Nil, _) -> pure ()
+        | _ -> fail "Not enough arguments to function"
+
     match f with
     | Primitive primitive -> primitive xs
-    | _ -> fail ("Can't call value: " <> show.show f)
+    | Function function ->
+        scope_state (add_args function.params xs >>= \_ -> eval_exprs function.body)
+    | _ -> fail ("Can\'t call value: " <> show.show f)
 
-let eval_lisp expr : Expr -> Lisp Expr =
+and eval_lisp expr : Expr -> Lisp Expr =
     match expr with
     | Atom name ->
-        get_state >>= \state ->
+        get_state
+            >>= \state ->
             match prim_map.find name state with
             | Some value -> pure value
             | None -> fail ("Binding `" <> name <> "` is not defined")
@@ -239,24 +243,35 @@ let eval_lisp expr : Expr -> Lisp Expr =
         | Cons x xs ->
             match x with
             | Atom name ->
-                get_state >>= \state ->
-                    match prim_map.find name state with
-                    | Some prim ->
-                        mapM eval_lisp xs >>= \evaluated_args ->
-                            apply prim evaluated_args
-                    | None -> fail ("Primitive `" <> name <> "` does not exist")
+                get_state
+                    >>= \state ->
+                    if name == "define" then
+                        define xs
+                    else
+                        match prim_map.find name state with
+                        | Some prim ->
+                            mapM eval_lisp xs
+                                >>= \evaluated_args -> apply prim evaluated_args
+                        | None -> fail ("Variable `" <> name <> "` does not exist")
             | _ -> fail ("Cant apply" <> show.show x)
         | Nil -> pure expr
+
+and eval_exprs exprs = foldM (\_result expr -> eval_lisp expr) (List Nil) exprs
 
 let run_lisp expr env : Lisp a -> Map String Expr -> Result String a =
     prelude.functor_Result.map (\r -> r.value) (lisp expr env)
 
-let eval expr : Expr -> Result String Expr =
-    run_lisp (eval_lisp expr) primitives
+let eval expr : Expr -> Result String Expr = run_lisp (eval_lisp expr) primitives
+let eval_seq exprs =
+    match exprs with
+    | Cons _ _ -> run_lisp (eval_exprs exprs) primitives
+    | Nil -> error "Expected at least one lisp expression"
 
 {
     Expr,
-    eq, show,
+    eq,
+    show,
     expr = spaces *> lazy_parser expr,
-    eval
+    eval,
+    eval_seq
 }

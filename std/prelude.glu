@@ -382,7 +382,7 @@ let make_Monad m =
         match xs with
         | Cons y ys -> f x y >>= (\a -> foldM f a ys)
         | Nil -> pure x
-    
+
     let mapM f xs =
         match xs with
         | Cons y ys -> f y >>= (\a -> mapM f ys >>= \rest -> pure (Cons a rest))
