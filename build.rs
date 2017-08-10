@@ -65,7 +65,7 @@ mod gen_skeptic {
     pub fn generate() {
         // If we dont run skeptic we do not need to rebuild anything unless the script itself is
         // changed
-        println!("rerun-if-changed=build.rs");
+        println!("cargo:rerun-if-changed=build.rs");
     }
 }
 
