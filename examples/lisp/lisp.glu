@@ -1,27 +1,5 @@
 let prelude = import! "std/prelude.glu"
-let { List, Functor, Applicative, Monad, id, list, len = list_len } = prelude
-let { (==) } = prelude.eq_Int
-let { (==) } = prelude.eq_Float
-let {
-    Parser,
-    functor,
-    alternative,
-    applicative,
-    monad,
-    fail,
-    between,
-    lazy_parser,
-    many,
-    one_of,
-    satisfy,
-    spaces,
-    token,
-    take_string,
-    take1,
-    skip_many,
-    skip_many1
-} =
-    import! "std/parser.glu"
+let { List, Functor, Applicative, Monad, id, list, len = list_len, eq_Int = { (==) }, eq_Float = { (==) } } = prelude
 
 let string = import! "std/string.glu"
 let { (==) } = string.eq
@@ -31,21 +9,8 @@ let map = import! "std/map.glu"
 let { Map } = map
 let prim_map = map.make string.ord
 
-type Expr =
-    | Atom String
-    | Int Int
-    | Float Float
-    | List (List Expr)
-    | Function Function
-    | Primitive (List Expr -> Lisp Expr)
-and Function = {
-    params : List String,
-    vararg : Option String,
-    body : List Expr,
-    closure : Map String Expr
-}
-and LispState = Map String Expr
-and Lisp a = LispState -> Result String { value : a, state : LispState }
+let { Expr, Function, Lisp, LispState } = import! "examples/lisp/types.glu"
+let parser = import! "examples/lisp/parser.glu"
 
 let eq : Eq Expr =
     let eq_expr l r : Expr -> Expr -> Bool =
@@ -82,39 +47,6 @@ let show : Show Expr =
             "(lambda (" <> spaced id f.params <> ")" <> vararg <> ") ...)"
         | Primitive _ -> "<primitive>"
     { show }
-
-let { (<*), (*>), map2, pure } = prelude.make_Applicative applicative
-let { (<|>) } = prelude.make_Alternative alternative
-let { (>>=) } = prelude.make_Monad monad
-
-let atom : Parser Expr =
-    let symbol = one_of "!#$%&|*+-/:<=>?@^_~"
-    let alpha = satisfy char.is_alphabetic
-    let alpha_num = satisfy char.is_alphanumeric
-    functor.map
-        (\x -> Atom x)
-        (take_string ((alpha <|> symbol) *> skip_many (alpha_num <|> symbol)))
-
-let parse_parser p f msg : Parser a -> (String -> Result () b) -> String -> Parser b =
-    take_string p
-        >>= (\s ->
-        match f s with
-        | Ok i -> pure i
-        | Err _ -> fail ("Expected " <> msg))
-
-let int : Parser Expr =
-    functor.map
-        (\i -> Int i)
-        (parse_parser (skip_many1 (satisfy char.is_numeric)) int.parse "integer")
-
-let float : Parser Expr =
-    let number = skip_many1 (satisfy char.is_numeric)
-    functor.map (\f -> Float f) (parse_parser (number *> token '.' *> number) float.parse "float")
-
-let list _ : () -> Parser Expr =
-    let e = expr ()
-    between (token '(') (token ')') (spaces *> functor.map (\x -> List x) (many e))
-and expr _ : () -> Parser Expr = (atom <|> float <|> int <|> lazy_parser list) <* spaces
 
 let lisp : Lisp a -> Lisp a = id
 
@@ -271,7 +203,7 @@ let eval_seq exprs =
     Expr,
     eq,
     show,
-    expr = spaces *> lazy_parser expr,
+    expr = parser.expr,
     eval,
     eval_seq
 }

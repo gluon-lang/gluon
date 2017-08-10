@@ -1,0 +1,64 @@
+let prelude = import! "std/prelude.glu"
+let { List } = prelude
+let { Expr } = import! "examples/lisp/types.glu"
+let string = import! "std/string.glu"
+
+let {
+    Parser,
+    functor,
+    alternative,
+    applicative,
+    monad,
+    fail,
+    between,
+    lazy_parser,
+    many,
+    one_of,
+    satisfy,
+    spaces,
+    token,
+    take_string,
+    take1,
+    skip_many,
+    skip_many1
+} =
+    import! "std/parser.glu"
+
+let { (<>) } = prelude.make_Monoid string.monoid
+
+let { (<*), (*>), map2, pure } = prelude.make_Applicative applicative
+let { (<|>) } = prelude.make_Alternative alternative
+let { (>>=) } = prelude.make_Monad monad
+
+let atom : Parser Expr =
+    let symbol = one_of "!#$%&|*+-/:<=>?@^_~"
+    let alpha = satisfy char.is_alphabetic
+    let alpha_num = satisfy char.is_alphanumeric
+    functor.map
+        (\x -> Atom x)
+        (take_string ((alpha <|> symbol) *> skip_many (alpha_num <|> symbol)))
+
+let parse_parser p f msg : Parser a -> (String -> Result () b) -> String -> Parser b =
+    take_string p
+        >>= (\s ->
+        match f s with
+        | Ok i -> pure i
+        | Err _ -> fail ("Expected " <> msg))
+
+let int : Parser Expr =
+    functor.map
+        (\i -> Int i)
+        (parse_parser (skip_many1 (satisfy char.is_numeric)) int.parse "integer")
+
+let float : Parser Expr =
+    let number = skip_many1 (satisfy char.is_numeric)
+    functor.map (\f -> Float f) (parse_parser (number *> token '.' *> number) float.parse "float")
+
+let list _ : () -> Parser Expr =
+    let e = expr ()
+    between (token '(') (token ')') (spaces *> functor.map (\x -> List x) (many e))
+and expr _ : () -> Parser Expr = (atom <|> float <|> int <|> lazy_parser list) <* spaces
+
+{
+    expr = spaces *> lazy_parser expr,
+}
