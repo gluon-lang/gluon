@@ -585,18 +585,18 @@ struct PartialApplicationModel {
     #[cfg_attr(feature = "serde_derive", serde(deserialize_state))]
     function: Callable,
     #[cfg_attr(feature = "serde_derive", serde(deserialize_state))]
-    upvars: Vec<Value>,
+    args: Vec<Value>,
 }
 
 unsafe impl DataDef for PartialApplicationModel {
     type Value = PartialApplicationData;
 
     fn size(&self) -> usize {
-        PartialApplicationDataDef(self.function, &self.upvars).size()
+        PartialApplicationDataDef(self.function, &self.args).size()
     }
 
     fn initialize<'w>(self, result: WriteOnly<'w, Self::Value>) -> &'w mut Self::Value {
-        PartialApplicationDataDef(self.function, &self.upvars).initialize(result)
+        PartialApplicationDataDef(self.function, &self.args).initialize(result)
     }
 }
 
