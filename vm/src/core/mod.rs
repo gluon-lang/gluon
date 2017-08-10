@@ -110,7 +110,8 @@ impl<'a> Expr<'a> {
         arena: &'a pretty::Arena<'a>,
     ) -> pretty::DocBuilder<'a, pretty::Arena<'a>> {
         match *self {
-            Expr::Call(f, args) => chain![arena;
+            Expr::Call(f, args) => {
+                chain![arena;
                     f.pretty(arena),
                     arena.concat(args.iter().map(|arg| {
                         arena.space().append(arg.pretty(arena))
@@ -156,7 +157,8 @@ impl<'a> Expr<'a> {
                 }
             }
             Expr::Ident(ref id, _) => arena.text(id.as_ref()),
-            Expr::Let(ref bind, ref expr) => chain![arena;
+            Expr::Let(ref bind, ref expr) => {
+                chain![arena;
                     "let ",
                     match bind.expr {
                         Named::Expr(ref expr) => {
@@ -268,7 +270,8 @@ impl Pattern {
         arena: &'a pretty::Arena<'a>,
     ) -> pretty::DocBuilder<'a, pretty::Arena<'a>> {
         match *self {
-            Pattern::Constructor(ref ctor, ref args) => chain![arena;
+            Pattern::Constructor(ref ctor, ref args) => {
+                chain![arena;
                     ctor.as_ref(),
                     arena.concat(args.iter().map(|arg| {
                         arena.space().append(arg.as_ref())
@@ -276,7 +279,8 @@ impl Pattern {
                 ].group()
             }
             Pattern::Ident(ref id) => arena.text(id.as_ref()),
-            Pattern::Record(ref fields) => chain![arena;
+            Pattern::Record(ref fields) => {
+                chain![arena;
                     "{",
                     arena.concat(fields.iter().map(|&(ref field, ref value)| {
                         chain![arena;

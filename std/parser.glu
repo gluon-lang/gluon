@@ -158,7 +158,7 @@ and skip_many1 p : Parser a -> Parser () =
 
 let one_of s : String -> Parser Char =
     satisfy (\first ->
-        let len = string.length s
+        let len = string.len s
         let one_of_ i =
             if i == len then
                 False
@@ -171,7 +171,7 @@ let one_of s : String -> Parser Char =
         one_of_ 0) <|> fail ("Expected one of `" <> s <> "`")
 
 let parse p input: Parser a -> String -> Result String a =
-    match p { start = 0, end = string.length input, buffer = input } with
+    match p { start = 0, end = string.len input, buffer = input } with
     | Ok ok -> Ok ok.value
     | Err err -> Err err
     
