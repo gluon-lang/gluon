@@ -88,10 +88,15 @@ fn fmt_stdio() -> Result<()> {
 }
 
 fn run() -> std::result::Result<(), Box<std::error::Error + Send + Sync>> {
-    const GLUON_VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
     let matches = clap_app!(gluon =>
-        (version: GLUON_VERSION)
+        (version: crate_version!())
+        (long_version:
+            concat!(
+                crate_version!(), "\n",
+                "commit: ", env!("GIT_HASH")
+            )
+        )
         (about: "executes gluon programs")
         (@arg REPL: -i --interactive "Starts the repl")
         (@subcommand fmt =>

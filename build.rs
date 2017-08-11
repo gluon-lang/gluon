@@ -62,7 +62,11 @@ fn main() {{
 
 #[cfg(not(feature = "skeptic"))]
 mod gen_skeptic {
-    pub fn generate() {}
+    pub fn generate() {
+        // If we dont run skeptic we do not need to rebuild anything unless the script itself is
+        // changed
+        println!("cargo:rerun-if-changed=build.rs");
+    }
 }
 
 fn main() {

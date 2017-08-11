@@ -1,0 +1,20 @@
+let { List } = import! "std/prelude.glu"
+let { Map } = import! "std/map.glu"
+
+type Expr =
+    | Atom String
+    | Int Int
+    | Float Float
+    | List (List Expr)
+    | Function Function
+    | Primitive (List Expr -> Lisp Expr)
+and Function = {
+    params : List String,
+    vararg : Option String,
+    body : List Expr,
+    closure : Map String Expr
+}
+and LispState = Map String Expr
+and Lisp a = LispState -> Result String { value : a, state : LispState }
+
+{ Expr, Function, LispState, Lisp }

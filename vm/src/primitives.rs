@@ -1,6 +1,7 @@
 //! Module containing functions for interacting with gluon's primitive types.
-use std::string::String as StdString;
 use std::result::Result as StdResult;
+use std::string::String as StdString;
+use std::str::FromStr;
 
 use {Error, Variants};
 use primitives as prim;
@@ -213,6 +214,12 @@ mod string {
     }
 }
 
+fn parse<T>(s: &str) -> StdResult<T, ()>
+    where T: FromStr,
+{
+    s.parse().map_err(|_| ())
+}
+
 fn show_int(i: VmInt) -> String {
     format!("{}", i)
 }
@@ -297,7 +304,8 @@ pub fn load(vm: &Thread) -> Result<()> {
         cosh => primitive!(1 float::cosh),
         tanh => primitive!(1 float::tanh),
         acosh => primitive!(1 float::acosh),
-        atanh => primitive!(1 float::atanh)
+        atanh => primitive!(1 float::atanh),
+        parse => named_primitive!(1, "float.parse", parse::<f64>)
     ),
     )?;
 
@@ -319,7 +327,8 @@ pub fn load(vm: &Thread) -> Result<()> {
         abs => primitive!(1 int::abs),
         signum => primitive!(1 int::signum),
         is_positive => primitive!(1 int::is_positive),
-        is_negative => primitive!(1 int::is_negative)
+        is_negative => primitive!(1 int::is_negative),
+        parse => named_primitive!(1, "int.parse", parse::<VmInt>)
     ),
     )?;
 

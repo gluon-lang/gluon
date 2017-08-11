@@ -91,8 +91,8 @@ where
 {
     match *expr {
         Expr::Call(f, args) => {
-            let new_f = walk_expr_alloc(visitor, f);
-            let new_args = merge_iter(args, |expr| walk_expr(visitor, expr), Expr::clone)
+            let new_f = visitor.visit_expr(f);
+            let new_args = merge_iter(args, |expr| visitor.visit_expr(expr).cloned(), Expr::clone)
                 .map(|exprs: Vec<_>| {
                     &*visitor.allocator().arena.alloc_extend(exprs.into_iter())
                 });
@@ -101,7 +101,7 @@ where
         }
         Expr::Const(_, _) => None,
         Expr::Data(ref id, exprs, pos, expansion) => {
-            merge_iter(exprs, |expr| walk_expr(visitor, expr), Expr::clone).map(|exprs: Vec<_>| {
+            merge_iter(exprs, |expr| visitor.visit_expr(expr).cloned(), Expr::clone).map(|exprs: Vec<_>| {
                 Expr::Data(
                     id.clone(),
                     visitor.allocator().arena.alloc_extend(exprs.into_iter()),
@@ -113,20 +113,22 @@ where
         Expr::Ident(_, _) => None,
         Expr::Let(ref bind, expr) => {
             let new_named = match bind.expr {
-                Named::Recursive(ref closures) => merge_iter(
-                    closures,
-                    |closure| {
-                        walk_expr_alloc(visitor, closure.expr).map(|new_expr| {
-                            Closure {
-                                name: closure.name.clone(),
-                                args: closure.args.clone(),
-                                expr: new_expr,
-                            }
-                        })
-                    },
-                    Closure::clone,
-                ).map(Named::Recursive),
-                Named::Expr(bind_expr) => walk_expr_alloc(visitor, bind_expr).map(Named::Expr),
+                Named::Recursive(ref closures) => {
+                    merge_iter(
+                        closures,
+                        |closure| {
+                            visitor.visit_expr(closure.expr).map(|new_expr| {
+                                Closure {
+                                    name: closure.name.clone(),
+                                    args: closure.args.clone(),
+                                    expr: new_expr,
+                                }
+                            })
+                        },
+                        Closure::clone,
+                    ).map(Named::Recursive)
+                }
+                Named::Expr(bind_expr) => visitor.visit_expr(bind_expr).map(Named::Expr),
             };
             let new_bind = new_named.map(|named| {
                 LetBinding {
@@ -135,11 +137,11 @@ where
                     span_start: bind.span_start,
                 }
             });
-            let new_expr = walk_expr_alloc(visitor, expr);
+            let new_expr = visitor.visit_expr(expr);
             merge(bind, new_bind, &expr, new_expr, Expr::Let)
         }
         Expr::Match(expr, alts) => {
-            let new_expr = walk_expr_alloc(visitor, expr);
+            let new_expr = visitor.visit_expr(expr);
             let new_alts = merge_iter(alts, |expr| walk_alt(visitor, expr), Alternative::clone)
                 .map(|alts: Vec<_>| {
                     &*visitor
@@ -156,7 +158,7 @@ fn walk_alt<'a, V>(visitor: &mut V, alt: &'a Alternative<'a>) -> Option<Alternat
 where
     V: ?Sized + Visitor<'a>,
 {
-    let new_expr = walk_expr_alloc(visitor, alt.expr);
+    let new_expr = visitor.visit_expr(alt.expr);
     new_expr.map(|expr| {
         Alternative {
             pattern: alt.pattern.clone(),

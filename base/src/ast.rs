@@ -585,7 +585,7 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
         });
 
         env.find_type_info(alias_ident).unwrap_or_else(|| {
-            panic!("Unexpected type {:?} is not a function", alias_type)
+            panic!("Unexpected type {} is not a function", alias_type)
         })
     };
 

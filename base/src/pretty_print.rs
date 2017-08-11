@@ -93,6 +93,7 @@ pub fn pretty_kind<'a>(
         }
     }
 }
+
 pub fn pretty_pattern<'a, Id>(
     arena: &'a Arena<'a>,
     pattern: &'a SpannedPattern<Id>,
@@ -100,14 +101,30 @@ pub fn pretty_pattern<'a, Id>(
 where
     Id: AsRef<str>,
 {
+    pretty_pattern_(arena, pattern, Prec::Top)
+}
+
+fn pretty_pattern_<'a, Id>(
+    arena: &'a Arena<'a>,
+    pattern: &'a SpannedPattern<Id>,
+    prec: Prec,
+) -> DocBuilder<'a, Arena<'a>>
+where
+    Id: AsRef<str>,
+{
     match pattern.value {
         Pattern::Constructor(ref ctor, ref args) => {
-            chain![arena;
+            let doc = chain![arena;
                 ctor.as_ref(),
                 arena.concat(args.iter().map(|arg| {
-                    arena.text(" ").append(pretty_pattern(arena, arg))
+                    arena.text(" ").append(pretty_pattern_(arena, arg, Prec::Constructor))
                 }))
-            ]
+            ];
+            if args.is_empty() {
+                doc
+            } else {
+                prec.enclose(Prec::Constructor, arena, doc)
+            }
         }
         Pattern::Ident(ref id) => ident(arena, id.as_ref()),
         Pattern::Record {
@@ -115,35 +132,38 @@ where
             ref types,
             ..
         } => {
+            let doc = arena.concat(types.iter().map(|field| {
+                chain![arena;
+                    arena.space(),
+                    field.name.value.as_ref()
+                ]
+            }).chain(fields.iter().map(|field| {
+                chain![arena;
+                    arena.space(),
+                    ident(arena, field.name.value.as_ref()),
+                    match field.value {
+                        Some(ref new_name) => {
+                            chain![arena;
+                                " = ",
+                                pretty_pattern(arena, new_name)
+                            ]
+                        }
+                        None => arena.nil(),
+                    }
+                ]
+            }))
+                .intersperse(arena.text(",")))
+                .nest(INDENT);
             chain![arena;
                 "{",
-                arena.concat(types.iter().map(|field| {
-                    chain![arena;
-                        arena.space(),
-                        field.name.value.as_ref()
-                    ]
-                }).chain(fields.iter().map(|field| {
-                    chain![arena;
-                        arena.space(),
-                        ident(arena, field.name.value.as_ref()),
-                        match field.value {
-                            Some(ref new_name) => {
-                                chain![arena;
-                                    " = ",
-                                    pretty_pattern(arena, new_name)
-                                ]
-                            }
-                            None => arena.nil(),
-                        }
-                    ]
-                })).intersperse(arena.text(","))),
+                doc,
                 if types.is_empty() && fields.is_empty() {
                     arena.nil()
                 } else {
                     arena.space()
                 },
                 "}"
-            ]
+            ].group()
         }
         Pattern::Tuple { ref elems, .. } => {
             chain![arena;
