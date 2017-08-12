@@ -148,6 +148,14 @@ x
 }
 
 #[test]
+fn preserve_more_block_comments() {
+    let expr = r#"
+{ /* abc */ field /* abc */ = /* test */ 123 }
+"#;
+    assert_eq!(&format_expr(expr).unwrap(), expr);
+}
+
+#[test]
 fn preserve_shebang_line() {
     let expr = r#"#!/bin/gluon
 /* test */

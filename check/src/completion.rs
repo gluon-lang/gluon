@@ -13,13 +13,16 @@ use base::scoped_map::ScopedMap;
 use base::symbol::Symbol;
 use base::types::{AliasData, ArcType, Type, TypeEnv};
 
-pub enum Found<'a> {
+pub struct Found<'a> {
+    pub match_: Option<Match<'a>>,
+    pub enclosing_match: Option<Match<'a>>,
+}
+
+#[derive(Copy, Clone)]
+pub enum Match<'a> {
     Expr(&'a SpannedExpr<Symbol>),
     Pattern(&'a SpannedPattern<Symbol>),
     Ident(&'a SpannedExpr<Symbol>, &'a Symbol, &'a ArcType),
-    /// Location points to whitespace
-    Nothing,
-    NothingPattern,
 }
 
 trait OnFound {
@@ -164,7 +167,8 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
 struct FindVisitor<'a, F> {
     pos: BytePos,
     on_found: F,
-    found: Option<Found<'a>>
+    found: Option<Option<Match<'a>>>,
+    enclosing_match: Match<'a>,
 }
 
 impl<'a, F> FindVisitor<'a, F> {
@@ -253,6 +257,9 @@ where
     }
 
     fn visit_pattern(&mut self, current: &'a SpannedPattern<Symbol>) {
+        if current.span.containment(&self.pos) == Ordering::Equal {
+            self.enclosing_match = Match::Pattern(current);
+        }
         match current.value {
             Pattern::Constructor(ref id, ref args) => {
                 let id_span = Span::new(
@@ -260,13 +267,13 @@ where
                     current.span.start + BytePos::from(id.as_ref().len()),
                 );
                 if id_span.containment(&self.pos) == Ordering::Equal {
-                    self.found = Some(Found::Pattern(current));
+                    self.found = Some(Some(Match::Pattern(current)));
                     return;
                 }
                 let (_, pattern) = self.select_spanned(args, |e| e.span);
                 match pattern {
                     Some(pattern) => self.visit_pattern(pattern),
-                    None => self.found = Some(Found::NothingPattern),
+                    None => self.found = Some(None),
                 }
             }
             Pattern::Record { ref fields, .. } => {
@@ -284,9 +291,9 @@ where
             Pattern::Ident(_) |
             Pattern::Error => {
                 self.found = Some(if current.span.containment(&self.pos) == Ordering::Equal {
-                    Found::Pattern(current)
+                    Some(Match::Pattern(current))
                 } else {
-                    Found::NothingPattern
+                    None
                 });
             }
         }
@@ -299,12 +306,15 @@ where
             VisitUnExpanded(self).visit_expr(current);
             return;
         }
+        if current.span.containment(&self.pos) == Ordering::Equal {
+            self.enclosing_match = Match::Expr(current);
+        }
         match current.value {
             Expr::Ident(_) | Expr::Literal(_) => {
                 self.found = Some(if current.span.containment(&self.pos) == Ordering::Equal {
-                    Found::Expr(current)
+                    Some(Match::Expr(current))
                 } else {
-                    Found::Nothing
+                    None
                 });
             }
             Expr::App(ref func, ref args) => {
@@ -320,7 +330,10 @@ where
                     Err(alt) => Span::new(alt.pattern.span.start, alt.expr.span.end),
                 });
                 match sel.unwrap() {
-                    Ok(expr) => self.visit_expr(expr),
+                    Ok(expr) => {
+                        self.enclosing_match = Match::Expr(expr);
+                        self.visit_expr(expr)
+                    }
                     Err(alt) => {
                         self.on_found.on_pattern(&alt.pattern);
                         let iter = [Ok(&alt.pattern), Err(&alt.expr)];
@@ -338,7 +351,7 @@ where
             Expr::Infix(ref l, ref op, ref r) => {
                 match (l.span.containment(&self.pos), r.span.containment(&self.pos)) {
                     (Ordering::Greater, Ordering::Less) => {
-                        self.found = Some(Found::Ident(current, &op.value.name, &op.value.typ));
+                        self.found = Some(Some(Match::Ident(current, &op.value.name, &op.value.typ)));
                     }
                     (_, Ordering::Greater) |
                     (_, Ordering::Equal) => self.visit_expr(r),
@@ -369,7 +382,7 @@ where
                 if expr.span.containment(&self.pos) <= Ordering::Equal {
                     self.visit_expr(expr);
                 } else {
-                    self.found = Some(Found::Ident(current, id, typ));
+                    self.found = Some(Some(Match::Ident(current, id, typ)));
                 }
             }
             Expr::Array(ref array) => self.visit_one(&array.exprs),
@@ -388,7 +401,7 @@ where
             Expr::Tuple { elems: ref exprs, .. } |
             Expr::Block(ref exprs) => self.visit_one(exprs),
             Expr::Error => (),
-        };
+        }
     }
 }
 
@@ -399,44 +412,66 @@ fn complete_at<F>(on_found: F, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Resu
         pos: pos,
         on_found: on_found,
         found: None,
+        enclosing_match: Match::Expr(expr),
     };
     visitor.visit_expr(expr);
-    visitor.found.ok_or(())
+    visitor.found.map(|match_| {
+        Found {
+            match_,
+            enclosing_match: Some(visitor.enclosing_match),
+        }
+    }).ok_or(())
 }
 
-pub trait Extract {
+pub trait Extract: Sized {
     type Output;
     fn extract(self, found: &Found) -> Result<Self::Output, ()>;
+    fn match_extract(self, match_: &Match) -> Result<Self::Output, ()>;
 }
 
+#[derive(Clone, Copy)]
 pub struct TypeAt<'a> {
     pub env: &'a TypeEnv,
 }
 impl<'a> Extract for TypeAt<'a> {
     type Output = ArcType;
     fn extract(self, found: &Found) -> Result<Self::Output, ()> {
+        match (&found.match_, &found.enclosing_match) {
+            (&Some(ref match_), _) | (_, &Some(ref match_)) =>
+                self.match_extract(match_),
+            _ => Err(())
+        }
+    }
 
+    fn match_extract(self, found: &Match) -> Result<Self::Output, ()> {
         Ok(match *found {
-            Found::Expr(expr) => {
+            Match::Expr(expr) => {
                 expr.env_type_of(self.env)
             }
-            Found::Ident(_, _, typ) => typ.clone(),
-            Found::Pattern(pattern) =>
+            Match::Ident(_, _, typ) => typ.clone(),
+            Match::Pattern(pattern) =>
                 pattern.env_type_of(self.env),
-            _ => return Err(())
         })
     }
 }
 
+#[derive(Copy, Clone)]
 pub struct SpanAt;
 impl Extract for SpanAt {
     type Output = Span<BytePos>;
     fn extract(self, found: &Found) -> Result<Self::Output, ()> {
+        match (&found.match_, &found.enclosing_match) {
+            (&Some(ref match_), _) | (_, &Some(ref match_)) =>
+                self.match_extract(match_),
+            _ => Err(())
+        }
+    }
+
+    fn match_extract(self, found: &Match) -> Result<Self::Output, ()> {
         Ok(match *found {
-            Found::Expr(expr) | Found::Ident(expr, _, _) => expr.span,
-            Found::Pattern(pattern) =>
+            Match::Expr(expr) | Match::Ident(expr, _, _) => expr.span,
+            Match::Pattern(pattern) =>
                 pattern.span,
-            _ => return Err(())
         })
     }
 }
@@ -452,12 +487,16 @@ macro_rules! tuple_extract {
 
 macro_rules! tuple_extract_ {
     ($($id: ident)*) => {
+        #[allow(non_snake_case)]
         impl<$($id : Extract),*> Extract for ( $($id),* ) {
             type Output = ( $($id::Output),* );
-            #[allow(non_snake_case)]
             fn extract(self, found: &Found) -> Result<Self::Output, ()> {
                 let ( $($id),* ) = self;
                 Ok(( $( $id.extract(found)? ),* ))
+            }
+            fn match_extract(self, found: &Match) -> Result<Self::Output, ()> {
+                let ( $($id),* ) = self;
+                Ok(( $( $id.match_extract(found)? ),* ))
             }
         }
     };
@@ -496,63 +535,71 @@ where
         Err(()) => return vec![],
     };
     let mut result = vec![];
-    match found {
-        Found::Expr(expr) => {
-            result.extend(
-                expr_iter(&suggest.stack, expr).map(|(k, typ)| {
-                    Suggestion {
-                        name: k.declared_name().into(),
-                        typ: typ.clone(),
-                    }
-                }),
-            );
+    match found.match_ {
+        Some(match_) => {
+            match match_ {
+                Match::Expr(expr) => {
+                    result.extend(
+                        expr_iter(&suggest.stack, expr).map(|(k, typ)| {
+                            Suggestion {
+                                name: k.declared_name().into(),
+                                typ: typ.clone(),
+                            }
+                        }),
+                    );
+                }
+
+                Match::Pattern(pattern) => { 
+                    let prefix = match pattern.value {
+                        Pattern::Constructor(ref id, _) |
+                        Pattern::Ident(ref id) => id.as_ref(),
+                        _ => "",
+                    };
+                    result.extend(
+                        suggest.patterns
+                            .iter()
+                            .filter(|&(ref name, _)| name.declared_name().starts_with(prefix))
+                            .map(|(name, typ)| {
+                                Suggestion {
+                                    name: name.declared_name().into(),
+                                    typ: typ.clone(),
+                                }
+                            }),
+                    );
+                }
+                Match::Ident(context, ident, _) => {
+                    let iter = suggest.ident_iter(context, ident);
+                    result.extend(iter.into_iter().map(|(name, typ)| {
+                        Suggestion {
+                            name: name.declared_name().into(),
+                            typ: typ,
+                        }
+                    }));
+                }
+            }
         }
 
-        Found::Pattern(pattern) => { 
-            let prefix = match pattern.value {
-                Pattern::Constructor(ref id, _) |
-                Pattern::Ident(ref id) => id.as_ref(),
-                _ => "",
-            };
-            result.extend(
-                suggest.patterns
-                    .iter()
-                    .filter(|&(ref name, _)| name.declared_name().starts_with(prefix))
-                    .map(|(name, typ)| {
+        None => {
+            match found.enclosing_match {
+                Some(Match::Expr(..)) | Some(Match::Ident(..)) => {
+                    result.extend(suggest.stack.iter().map(|(name, typ)| {
                         Suggestion {
                             name: name.declared_name().into(),
                             typ: typ.clone(),
                         }
-                    }),
-            );
-        }
-
-        Found::Ident(context, ident, _) => {
-            let iter = suggest.ident_iter(context, ident);
-            result.extend(iter.into_iter().map(|(name, typ)| {
-                Suggestion {
-                    name: name.declared_name().into(),
-                    typ: typ,
+                    }));
                 }
-            }));
-        }
 
-        Found::Nothing => {
-            result.extend(suggest.stack.iter().map(|(name, typ)| {
-                Suggestion {
-                    name: name.declared_name().into(),
-                    typ: typ.clone(),
+                Some(Match::Pattern(..)) => {
+                    result.extend(suggest.patterns.iter().map(|(name, typ)| {
+                        Suggestion {
+                            name: name.declared_name().into(),
+                            typ: typ.clone(),
+                        }
+                    }))
                 }
-            }));
-        }
-
-        Found::NothingPattern => {
-            result.extend(suggest.patterns.iter().map(|(name, typ)| {
-                Suggestion {
-                    name: name.declared_name().into(),
-                    typ: typ.clone(),
-                }
-            }))
+                None => ()
+            }
         }
     }
     result
@@ -563,16 +610,16 @@ pub fn get_metadata<'a>(
     expr: &SpannedExpr<Symbol>,
     pos: BytePos,
 ) -> Option<&'a Metadata> {
-    complete_at((), expr, pos).ok().and_then(|found| {
-        match found {
-            Found::Expr(expr) => {
+    complete_at((), expr, pos).ok().and_then(|found| found.match_).and_then(|match_| {
+        match match_ {
+            Match::Expr(expr) => {
                 if let Expr::Ident(ref id) = expr.value {
                     env.get(&id.name)
                 } else {
                     None
                 }
             }
-            Found::Ident(context, id, _typ) => {
+            Match::Ident(context, id, _typ) => {
                 match context.value {
                     Expr::Projection(ref expr, _, _) => {
                         if let Expr::Ident(ref expr_id) = expr.value {
@@ -610,41 +657,50 @@ where
         patterns: ScopedMap::new(),
     };
     complete_at(&mut suggest, expr, pos).ok().and_then(|found| {
-        match found {
-            Found::Expr( expr) => {
-                let suggestion = expr_iter(&suggest.stack, expr)
-                    .find(|&(stack_name, _)| stack_name.declared_name() == name);
-                if let Some((name, _)) = suggestion {
-                    env.get(name)
-                } else {
-                    None
-                }
-            }
-
-            Found::Ident(context, _, _) => {
-                match context.value {
-                    Expr::Projection(ref expr, _, _) => {
-                        if let Expr::Ident(ref expr_ident) = expr.value {
-                            env
-                                .get(&expr_ident.name)
-                                .and_then(|metadata| metadata.module.get(name))
+        match found.match_ {
+            Some(match_) => {
+                match match_ {
+                    Match::Expr(expr) => {
+                        let suggestion = expr_iter(&suggest.stack, expr)
+                            .find(|&(stack_name, _)| stack_name.declared_name() == name);
+                        if let Some((name, _)) = suggestion {
+                            env.get(name)
                         } else {
                             None
                         }
                     }
-                    _ => None,
+
+                    Match::Ident(context, _, _) => {
+                        match context.value {
+                            Expr::Projection(ref expr, _, _) => {
+                                if let Expr::Ident(ref expr_ident) = expr.value {
+                                    env
+                                        .get(&expr_ident.name)
+                                        .and_then(|metadata| metadata.module.get(name))
+                                } else {
+                                    None
+                                }
+                            }
+                            _ => None,
+                        }
+                    }
+                    _ => None
                 }
             }
 
-            Found::Nothing => {
-                suggest
-                    .stack
-                    .iter()
-                    .find(|&(ref stack_name, _)| stack_name.declared_name() == name)
-                    .and_then(|t| env.get(t.0))
-            }
+            None => {
+                match found.enclosing_match {
+                    Some(Match::Expr(..)) | Some(Match::Ident(..)) => {
+                        suggest
+                            .stack
+                            .iter()
+                            .find(|&(ref stack_name, _)| stack_name.declared_name() == name)
+                            .and_then(|t| env.get(t.0))
+                    }
 
-            _ => None
+                    _ => None
+                }
+            }
         }
     })
 }

@@ -7,20 +7,26 @@ extern crate gluon_parser as parser;
 extern crate gluon_check as check;
 
 use base::metadata::Metadata;
-use base::pos::{self, BytePos};
+use base::pos::{self, BytePos, Span};
+use base::symbol::Symbol;
 use base::types::{Field, Type, ArcType};
 use check::completion::{self, Suggestion};
 
 mod support;
 use support::{MockEnv, intern, typ};
 
-fn find_type(s: &str, pos: BytePos) -> Result<ArcType, ()> {
+fn find_span_type(s: &str, pos: BytePos) -> Result<(Span<BytePos>, ArcType), ()> {
     let env = MockEnv::new();
 
     let (mut expr, result) = support::typecheck_expr(s);
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    completion::find(&env, &mut expr, pos)
+    let extract = (completion::SpanAt, completion::TypeAt { env: &env, });
+    completion::completion(extract, &mut expr, pos)
+}
+
+fn find_type(s: &str, pos: BytePos) -> Result<ArcType, ()> {
+    find_span_type(s, pos).map(|t| t.1)
 }
 
 fn suggest_types(s: &str, pos: BytePos) -> Result<Vec<Suggestion>, ()> {
@@ -191,6 +197,52 @@ r.x
 
     let result = completion::find(&typ_env, &mut expr, BytePos::from(22));
     let expected = Ok(typ("Int"));
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn parens() {
+    let _ = env_logger::init();
+
+    let text = r#"
+let id x = x
+(id 1)
+"#;
+    let (mut expr, result) = support::typecheck_expr(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+
+    let env = MockEnv::new();
+    let extract = (completion::SpanAt, completion::TypeAt { env: &env, });
+
+    let result = completion::completion(extract, &mut expr, BytePos::from(14));
+    let expected = Ok((Span::new(14.into(), 20.into()), Type::int()));
+    assert_eq!(result, expected);
+
+    let result = completion::completion(extract, &mut expr, BytePos::from(15));
+    let expected = Ok((Span::new(15.into(), 17.into()), Type::function(vec![Type::int()], Type::int())));
+    assert_eq!(result, expected);
+}
+
+#[ignore]
+#[test]
+fn parens_pattern() {
+    let _ = env_logger::init();
+
+    let text = r#"
+let { x } = { x = 1 }
+x
+"#;
+    let (mut expr, result) = support::typecheck_expr(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+
+    let env = MockEnv::new();
+    let extract = (completion::SpanAt, completion::TypeAt { env: &env, });
+
+    let result = completion::completion(extract, &mut expr, BytePos::from(6));
+    let expected = Ok((Span::new(6.into(), 10.into()), Type::record(vec![], vec![Field {
+        name: Symbol::from("x"),
+        typ: Type::int(),
+    }])));
     assert_eq!(result, expected);
 }
 
