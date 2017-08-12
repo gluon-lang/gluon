@@ -279,7 +279,7 @@ macro_rules! layout {
         $result_ok_iter = RefCell::new(ResultOkIter::new(tokenizer));
 
         Layout::new(SharedIter::new(&$result_ok_iter)).map(|token| {
-            /// Return the tokenizer error if one exists
+            // Return the tokenizer error if one exists
             $result_ok_iter.borrow_mut()
                 .result(())
                 .map_err(|err| {
