@@ -203,7 +203,7 @@ fn write_response(
         poll_fn(move || {
             info!("Starting response send");
             let mut sender = response.lock().unwrap();
-            let mut sender = sender
+            let sender = sender
                 .as_mut()
                 .expect("Sender has been dropped while still in use");
             if let Some(chunk) = unsent_chunk.take() {

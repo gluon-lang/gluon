@@ -206,7 +206,7 @@ impl<'b> fmt::Debug for StackFrame<'b> {
 }
 
 impl<'a: 'b, 'b> StackFrame<'b> {
-    pub fn take_stack(mut self) -> &'b mut Stack {
+    pub fn take_stack(self) -> &'b mut Stack {
         *self.stack.frames.last_mut().unwrap() = self.frame;
         self.stack
     }
