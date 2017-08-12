@@ -7,7 +7,7 @@ use std::mem;
 
 use base::scoped_map::ScopedMap;
 use base::ast::{DisplayEnv, Expr, Literal, MutVisitor, Pattern, PatternField, SpannedExpr};
-use base::ast::{SpannedPattern, TypeBinding, TypedIdent, ValueBinding};
+use base::ast::{SpannedPattern, SpannedIdent, TypeBinding, ValueBinding};
 use base::error::Errors;
 use base::fnv::{FnvMap, FnvSet};
 use base::resolve;
@@ -391,7 +391,7 @@ impl<'a> Typecheck<'a> {
     fn generalize_variables(
         &mut self,
         level: u32,
-        args: &mut [TypedIdent<Symbol>],
+        args: &mut [SpannedIdent<Symbol>],
         expr: &mut SpannedExpr<Symbol>,
     ) {
         self.type_variables.enter_scope();
@@ -418,7 +418,7 @@ impl<'a> Typecheck<'a> {
             };
             visitor.visit_expr(expr);
             for arg in args {
-                visitor.visit_typ(&mut arg.typ)
+                visitor.visit_typ(&mut arg.value.typ)
             }
         }
 
@@ -853,7 +853,7 @@ impl<'a> Typecheck<'a> {
     fn typecheck_lambda(
         &mut self,
         function_type: ArcType,
-        args: &mut [TypedIdent],
+        args: &mut [SpannedIdent<Symbol>],
         body: &mut SpannedExpr<Symbol>,
     ) -> ArcType {
         self.enter_scope();
@@ -862,6 +862,8 @@ impl<'a> Typecheck<'a> {
             let mut iter1 = function_arg_iter(self, function_type);
             let mut iter2 = args.iter_mut();
             while let (Some(arg_type), Some(arg)) = (iter1.next(), iter2.next()) {
+                let arg = &mut arg.value;
+
                 arg.typ = arg_type;
                 arg_types.push(arg.typ.clone());
                 iter1.tc.stack_var(arg.name.clone(), arg.typ.clone());

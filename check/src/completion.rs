@@ -378,7 +378,7 @@ where
                 ) {
                     (false, Some(bind)) => {
                         for arg in &bind.args {
-                            self.on_found.on_ident(arg);
+                            self.on_found.on_ident(&arg.value);
                         }
                         let iter = [Ok(&bind.name), Err(&bind.expr)];
                         let (_, sel) = self.select_spanned(iter.iter().cloned(), |x| match *x {
@@ -415,7 +415,7 @@ where
             }
             Expr::Lambda(ref lambda) => {
                 for arg in &lambda.args {
-                    self.on_found.on_ident(arg);
+                    self.on_found.on_ident(&arg.value);
                 }
                 self.visit_expr(&lambda.body)
             }

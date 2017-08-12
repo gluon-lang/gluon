@@ -137,7 +137,7 @@ pub struct Array<Id> {
 #[derive(Clone, PartialEq, Debug)]
 pub struct Lambda<Id> {
     pub id: TypedIdent<Id>,
-    pub args: Vec<TypedIdent<Id>>,
+    pub args: Vec<SpannedIdent<Id>>,
     pub body: Box<SpannedExpr<Id>>,
 }
 
@@ -218,7 +218,7 @@ pub struct ValueBinding<Id> {
     pub comment: Option<Comment>,
     pub name: SpannedPattern<Id>,
     pub typ: ArcType<Id>,
-    pub args: Vec<TypedIdent<Id>>,
+    pub args: Vec<SpannedIdent<Id>>,
     pub expr: SpannedExpr<Id>,
 }
 
@@ -261,7 +261,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
             for bind in bindings {
                 v.visit_pattern(&mut bind.name);
                 for arg in &mut bind.args {
-                    v.visit_typ(&mut arg.typ);
+                    v.visit_typ(&mut arg.value.typ);
                 }
                 v.visit_expr(&mut bind.expr);
                 v.visit_typ(&mut bind.typ);
@@ -312,15 +312,13 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
                 v.visit_expr(expr);
             }
         }
-        Expr::Block(ref mut exprs) => {
-            for expr in exprs {
-                v.visit_expr(expr);
-            }
-        }
+        Expr::Block(ref mut exprs) => for expr in exprs {
+            v.visit_expr(expr);
+        },
         Expr::Lambda(ref mut lambda) => {
             v.visit_typ(&mut lambda.id.typ);
             for arg in &mut lambda.args {
-                v.visit_typ(&mut arg.typ);
+                v.visit_typ(&mut arg.value.typ);
             }
             v.visit_expr(&mut lambda.body);
         }
@@ -435,11 +433,9 @@ pub fn walk_expr<'a, V: ?Sized + Visitor<'a>>(v: &mut V, e: &'a SpannedExpr<V::I
         Expr::Tuple {
             elems: ref exprs, ..
         } |
-        Expr::Block(ref exprs) => {
-            for expr in exprs {
-                v.visit_expr(expr);
-            }
-        }
+        Expr::Block(ref exprs) => for expr in exprs {
+            v.visit_expr(expr);
+        },
         Expr::Lambda(ref lambda) => {
             v.visit_typ(&lambda.id.typ);
             v.visit_expr(&lambda.body);

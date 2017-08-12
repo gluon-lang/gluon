@@ -497,7 +497,7 @@ impl<'a, 'e> Translator<'a, 'e> {
             }
             ast::Expr::Lambda(ref lambda) => self.new_lambda(
                 lambda.id.clone(),
-                lambda.args.clone(),
+                lambda.args.iter().map(|arg| arg.value.clone()).collect(),
                 self.translate_alloc(&lambda.body),
                 expr.span,
             ),
@@ -606,7 +606,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                             ast::Pattern::Ident(ref id) => id.clone(),
                             _ => unreachable!(),
                         },
-                        args: bind.args.clone(),
+                        args: bind.args.iter().map(|arg| arg.value.clone()).collect(),
                         expr: self.translate_alloc(&bind.expr),
                     }
                 })
@@ -644,7 +644,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                     Named::Recursive(vec![
                         Closure {
                             name: name.clone(),
-                            args: bind.args.clone(),
+                            args: bind.args.iter().map(|arg| arg.value.clone()).collect(),
                             expr: self.translate_alloc(&bind.expr),
                         },
                     ])

@@ -467,7 +467,7 @@ id
                     }),
                     name: no_loc(Pattern::Ident(TypedIdent::new(intern("id")))),
                     typ: Type::hole(),
-                    args: vec![TypedIdent::new(intern("x"))],
+                    args: vec![no_loc(TypedIdent::new(intern("x")))],
                     expr: id("x"),
                 },
             ],
