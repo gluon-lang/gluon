@@ -304,9 +304,14 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
             }
         }
         Expr::Tuple {
-            elems: ref mut exprs,
-            ..
-        } |
+            ref mut typ,
+            ref mut elems,
+        } => {
+            v.visit_typ(typ);
+            for expr in elems {
+                v.visit_expr(expr);
+            }
+        }
         Expr::Block(ref mut exprs) => {
             for expr in exprs {
                 v.visit_expr(expr);
