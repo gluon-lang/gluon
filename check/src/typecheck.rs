@@ -11,19 +11,19 @@ use base::ast::{SpannedPattern, TypeBinding, TypedIdent, ValueBinding};
 use base::error::Errors;
 use base::fnv::{FnvMap, FnvSet};
 use base::resolve;
-use base::kind::{Kind, KindEnv, ArcKind, KindCache};
+use base::kind::{ArcKind, Kind, KindCache, KindEnv};
 use base::merge;
 use base::pos::{BytePos, Span, Spanned};
-use base::symbol::{Symbol, SymbolRef, SymbolModule, Symbols};
+use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
 use base::types::{self, Alias, AliasData, AppVec, ArcType, Field, Generic};
-use base::types::{PrimitiveEnv, RecordSelector, Type, TypeEnv, TypeVariable, TypeCache};
+use base::types::{PrimitiveEnv, RecordSelector, Type, TypeCache, TypeEnv, TypeVariable};
 
 use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
 use substitution::Substitution;
 use rename::RenameError;
 use unify::Error as UnifyError;
 use unify;
-use unify_type::{self, Error as UnifyTypeError, instantiate_generic_variables};
+use unify_type::{self, instantiate_generic_variables, Error as UnifyTypeError};
 
 /// Type representing a single error when checking a type
 #[derive(Debug, PartialEq)]
@@ -80,7 +80,7 @@ impl<I> From<RenameError> for TypeError<I> {
 impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::TypeError::*;
-        use pretty::{DocAllocator, Arena};
+        use pretty::{Arena, DocAllocator};
         match *self {
             UndefinedVariable(ref name) => write!(f, "Undefined variable `{}`", name),
             NotAFunction(ref typ) => write!(f, "`{}` is not a function", typ),
@@ -122,23 +122,19 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
             }
             KindError(ref err) => kindcheck::fmt_kind_error(err, f),
             Rename(ref err) => write!(f, "{}", err),
-            DuplicateTypeDefinition(ref id) => {
-                write!(
-                    f,
-                    "Type '{}' has been already been defined in this module",
-                    id
-                )
-            }
+            DuplicateTypeDefinition(ref id) => write!(
+                f,
+                "Type '{}' has been already been defined in this module",
+                id
+            ),
             DuplicateField(ref id) => {
                 write!(f, "The record has more than one field named '{}'", id)
             }
-            InvalidProjection(ref typ) => {
-                write!(
-                    f,
-                    "Type '{}' is not a type which allows field accesses",
-                    typ
-                )
-            }
+            InvalidProjection(ref typ) => write!(
+                f,
+                "Type '{}' is not a type which allows field accesses",
+                typ
+            ),
             UndefinedRecord { ref fields } => {
                 write!(f, "No type found with the following fields: ")?;
                 write!(f, "{}", fields[0])?;
@@ -320,11 +316,15 @@ impl<'a> Typecheck<'a> {
         // returns the wrong record as the record we expect can still contain type fields.
         // Just return an error so that inference continues without any guessed record type.
         if fields.is_empty() {
-            Err(TypeError::UndefinedRecord { fields: fields.to_owned() })
+            Err(TypeError::UndefinedRecord {
+                fields: fields.to_owned(),
+            })
         } else {
-            self.environment
-                .find_record(fields, selector)
-                .ok_or(TypeError::UndefinedRecord { fields: fields.to_owned() })
+            self.environment.find_record(fields, selector).ok_or(
+                TypeError::UndefinedRecord {
+                    fields: fields.to_owned(),
+                },
+            )
         }
     }
 
@@ -494,8 +494,7 @@ impl<'a> Typecheck<'a> {
     ) -> Result<ArcType, Error> {
         fn tail_expr(e: &mut SpannedExpr<Symbol>) -> &mut SpannedExpr<Symbol> {
             match e.value {
-                Expr::LetBindings(_, ref mut b) |
-                Expr::TypeBindings(_, ref mut b) => tail_expr(b),
+                Expr::LetBindings(_, ref mut b) | Expr::TypeBindings(_, ref mut b) => tail_expr(b),
                 _ => e,
             }
         }
@@ -592,15 +591,13 @@ impl<'a> Typecheck<'a> {
                 id.typ = self.find(&id.name)?;
                 Ok(TailCall::Type(id.typ.clone()))
             }
-            Expr::Literal(ref lit) => {
-                Ok(TailCall::Type(match *lit {
-                    Literal::Int(_) => self.type_cache.int(),
-                    Literal::Byte(_) => self.type_cache.byte(),
-                    Literal::Float(_) => self.type_cache.float(),
-                    Literal::String(_) => self.type_cache.string(),
-                    Literal::Char(_) => self.type_cache.char(),
-                }))
-            }
+            Expr::Literal(ref lit) => Ok(TailCall::Type(match *lit {
+                Literal::Int(_) => self.type_cache.int(),
+                Literal::Byte(_) => self.type_cache.byte(),
+                Literal::Float(_) => self.type_cache.float(),
+                Literal::String(_) => self.type_cache.string(),
+                Literal::Char(_) => self.type_cache.char(),
+            })),
             Expr::App(ref mut func, ref mut args) => {
                 let mut func_type = self.typecheck(&mut **func);
                 for arg in args.iter_mut() {
@@ -734,10 +731,9 @@ impl<'a> Typecheck<'a> {
                     // Eagerly attempt to find a record with `field_access` since infering to just
                     // a polymorphic record may cause some code to fail to infer such as
                     // the test `row_polymorphism::late_merge_with_signature`
-                    if let Ok(record_type) = self.find_record(
-                        &[field_id.clone()],
-                        RecordSelector::Subset,
-                    ).map(|t| t.0.clone())
+                    if let Ok(record_type) =
+                        self.find_record(&[field_id.clone()], RecordSelector::Subset)
+                            .map(|t| t.0.clone())
                     {
                         let record_type = self.instantiate(&record_type);
                         expr_typ = self.unify(&record_type, expr_typ)?;
@@ -745,8 +741,7 @@ impl<'a> Typecheck<'a> {
                 }
                 let record = self.remove_aliases(expr_typ.clone());
                 match *record {
-                    Type::Variable(_) |
-                    Type::Record(_) => {
+                    Type::Variable(_) | Type::Record(_) => {
                         let field_type = record
                             .row_iter()
                             .find(|field| field.name.name_eq(field_id))
@@ -805,10 +800,7 @@ impl<'a> Typecheck<'a> {
                         *typ = self.create_unifiable_signature(typ.clone());
                     }
                     let alias = self.find_type_info(&field.name.value)?.clone();
-                    if self.error_on_duplicated_field(
-                        &mut duplicated_fields,
-                        field.name.clone(),
-                    ) {
+                    if self.error_on_duplicated_field(&mut duplicated_fields, field.name.clone()) {
                         new_types.push(Field::new(field.name.value.clone(), alias));
                     }
                 }
@@ -819,10 +811,7 @@ impl<'a> Typecheck<'a> {
                         Some(ref mut expr) => self.typecheck(expr),
                         None => self.find(&field.name.value)?,
                     };
-                    if self.error_on_duplicated_field(
-                        &mut duplicated_fields,
-                        field.name.clone(),
-                    ) {
+                    if self.error_on_duplicated_field(&mut duplicated_fields, field.name.clone()) {
                         new_fields.push(Field::new(field.name.value.clone(), typ));
                     }
                 }
@@ -930,11 +919,9 @@ impl<'a> Typecheck<'a> {
                     // If the type we are matching on already an alias we don't guess as it is
                     // possible that we guess the wrong type (and we already have an alias anyway)
                     Type::Alias(_) => None,
-                    _ => {
-                        self.find_record(&pattern_fields, RecordSelector::Subset)
-                            .map(|t| (t.0.clone(), t.1.clone()))
-                            .ok()
-                    }
+                    _ => self.find_record(&pattern_fields, RecordSelector::Subset)
+                        .map(|t| (t.0.clone(), t.1.clone()))
+                        .ok(),
                 };
                 let (mut typ, mut actual_type) = match record_guess {
                     Some(typ) => typ,
@@ -1046,15 +1033,13 @@ impl<'a> Typecheck<'a> {
     ) -> TcResult<ArcType> {
         let len = args.len();
         match args.split_first_mut() {
-            Some((head, tail)) => {
-                match typ.as_function() {
-                    Some((arg, ret)) => {
-                        self.typecheck_pattern(head, arg.clone());
-                        self.typecheck_pattern_rec(tail, ret.clone())
-                    }
-                    None => Err(TypeError::PatternError(typ.clone(), len)),
+            Some((head, tail)) => match typ.as_function() {
+                Some((arg, ret)) => {
+                    self.typecheck_pattern(head, arg.clone());
+                    self.typecheck_pattern_rec(tail, ret.clone())
                 }
-            }
+                None => Err(TypeError::PatternError(typ.clone(), len)),
+            },
             None => Ok(typ),
         }
     }
@@ -1257,11 +1242,9 @@ impl<'a> Typecheck<'a> {
             Pattern::Tuple {
                 ref typ,
                 ref mut elems,
-            } => {
-                for (elem, field) in elems.iter_mut().zip(typ.row_iter()) {
-                    self.finish_pattern(level, elem, &field.typ);
-                }
-            }
+            } => for (elem, field) in elems.iter_mut().zip(typ.row_iter()) {
+                self.finish_pattern(level, elem, &field.typ);
+            },
             Pattern::Constructor(ref id, ref mut args) => {
                 debug!("{}: {}", self.symbols.string(&id.name), typ);
                 let len = args.len();
@@ -1300,8 +1283,8 @@ impl<'a> Typecheck<'a> {
                 symbol_type.clone()
             }
         };
-        *self.environment.stack.get_mut(symbol).unwrap() = self.finish_type(level, &typ)
-            .unwrap_or(typ)
+        *self.environment.stack.get_mut(symbol).unwrap() =
+            self.finish_type(level, &typ).unwrap_or(typ)
     }
 
     /// Generate a generic variable name which is not used in the current scope
@@ -1610,18 +1593,14 @@ fn get_alias_app<'a>(
 ) -> Option<(&'a AliasData<Symbol, ArcType>, &'a [ArcType])> {
     match **typ {
         Type::Alias(ref alias) => Some((alias, &[][..])),
-        Type::App(ref alias, ref args) => {
-            match **alias {
-                Type::Alias(ref alias) => Some((alias, args)),
-                _ => None,
-            }
-        }
-        _ => {
-            typ.alias_ident().and_then(|id| {
-                env.find_type_info(id)
-                    .map(|alias| (&**alias, typ.unapplied_args()))
-            })
-        }
+        Type::App(ref alias, ref args) => match **alias {
+            Type::Alias(ref alias) => Some((alias, args)),
+            _ => None,
+        },
+        _ => typ.alias_ident().and_then(|id| {
+            env.find_type_info(id)
+                .map(|alias| (&**alias, typ.unapplied_args()))
+        }),
     }
 }
 
@@ -1636,17 +1615,15 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
         loop {
             let (arg, new) = match self.typ.as_function() {
                 Some((arg, ret)) => (Some(arg.clone()), ret.clone()),
-                None => {
-                    match get_alias_app(&self.tc.environment, &self.typ) {
-                        Some((alias, args)) => {
-                            match resolve::type_of_alias(&self.tc.environment, alias, args) {
-                                Some(typ) => (None, typ.clone()),
-                                None => return None,
-                            }
+                None => match get_alias_app(&self.tc.environment, &self.typ) {
+                    Some((alias, args)) => {
+                        match resolve::type_of_alias(&self.tc.environment, alias, args) {
+                            Some(typ) => (None, typ.clone()),
+                            None => return None,
                         }
-                        None => return Some(self.tc.subs.new_var()),
                     }
-                }
+                    None => return Some(self.tc.subs.new_var()),
+                },
             };
             self.typ = new;
             if let Some(arg) = arg {
@@ -1674,8 +1651,7 @@ fn function_arg_iter<'a, 'b>(tc: &'a mut Typecheck<'b>, typ: ArcType) -> Functio
 /// ```
 fn expr_check_span(e: &SpannedExpr<Symbol>) -> Span<BytePos> {
     match e.value {
-        Expr::LetBindings(_, ref b) |
-        Expr::TypeBindings(_, ref b) => expr_check_span(b),
+        Expr::LetBindings(_, ref b) | Expr::TypeBindings(_, ref b) => expr_check_span(b),
         _ => e.span,
     }
 }
@@ -1741,16 +1717,14 @@ fn unroll_record(typ: &Type<Symbol>) -> Option<ArcType> {
             ref types,
             ref fields,
             ref rest,
-        } => {
-            match **rest {
-                Type::ExtendRow { .. } => {
-                    new_types.extend_from_slice(types);
-                    new_fields.extend_from_slice(fields);
-                    rest
-                }
-                _ => return None,
+        } => match **rest {
+            Type::ExtendRow { .. } => {
+                new_types.extend_from_slice(types);
+                new_fields.extend_from_slice(fields);
+                rest
             }
-        }
+            _ => return None,
+        },
         _ => return None,
     };
     while let Type::ExtendRow {

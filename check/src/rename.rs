@@ -1,15 +1,15 @@
 use std::fmt;
 
-use base::ast::{self, DisplayEnv, Expr, Pattern, SpannedExpr, MutVisitor, Typed, TypedIdent};
+use base::ast::{self, DisplayEnv, Expr, MutVisitor, Pattern, SpannedExpr, Typed, TypedIdent};
 use base::error::Errors;
 use base::fnv::FnvMap;
 use base::kind::{ArcKind, Kind, KindEnv};
 use base::pos::{self, BytePos, Span, Spanned};
 use base::scoped_map::ScopedMap;
-use base::symbol::{Symbol, SymbolRef, SymbolModule};
+use base::symbol::{Symbol, SymbolModule, SymbolRef};
 use base::types::{self, Alias, ArcType, RecordSelector, Type, TypeEnv};
-use unify_type::{TypeError, State};
-use unify::{Error as UnifyError, Unifier, Unifiable, UnifierState};
+use unify_type::{State, TypeError};
+use unify::{Error as UnifyError, Unifiable, Unifier, UnifierState};
 
 pub type Error = Errors<Spanned<RenameError, BytePos>>;
 
@@ -151,11 +151,9 @@ pub fn rename(
                 ast::Pattern::Tuple {
                     ref typ,
                     ref mut elems,
-                } => {
-                    for (field, elem) in typ.row_iter().zip(elems) {
-                        self.new_pattern(&field.typ, elem);
-                    }
-                }
+                } => for (field, elem) in typ.row_iter().zip(elems) {
+                    self.new_pattern(&field.typ, elem);
+                },
                 ast::Pattern::Constructor(ref mut id, ref mut args) => {
                     let typ = self.env
                         .find_type(&id.name)
@@ -242,12 +240,10 @@ pub fn rename(
 
         fn rename_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> Result<(), RenameError> {
             match expr.value {
-                Expr::Ident(ref mut id) => {
-                    if let Some(new_id) = self.rename(&id.name, &id.typ)? {
-                        debug!("Rename identifier {} = {}", id.name, new_id);
-                        id.name = new_id;
-                    }
-                }
+                Expr::Ident(ref mut id) => if let Some(new_id) = self.rename(&id.name, &id.typ)? {
+                    debug!("Rename identifier {} = {}", id.name, new_id);
+                    id.name = new_id;
+                },
                 Expr::Record {
                     ref mut typ,
                     ref mut exprs,
@@ -257,21 +253,18 @@ pub fn rename(
                     for (field, expr_field) in field_types.iter().zip(exprs) {
                         match expr_field.value {
                             Some(ref mut expr) => self.visit_expr(expr),
-                            None => {
-                                if let Some(new_id) = self.rename(
-                                    &expr_field.name.value,
-                                    &field.typ,
-                                )? {
-                                    debug!("Rename record field {} = {}", expr_field.name, new_id);
-                                    expr_field.value = Some(pos::spanned(
-                                        expr.span,
-                                        Expr::Ident(TypedIdent {
-                                            name: new_id,
-                                            typ: field.typ.clone(),
-                                        }),
-                                    ));
-                                }
-                            }
+                            None => if let Some(new_id) =
+                                self.rename(&expr_field.name.value, &field.typ)?
+                            {
+                                debug!("Rename record field {} = {}", expr_field.name, new_id);
+                                expr_field.value = Some(pos::spanned(
+                                    expr.span,
+                                    Expr::Ident(TypedIdent {
+                                        name: new_id,
+                                        typ: field.typ.clone(),
+                                    }),
+                                ));
+                            },
                         }
                     }
                 }
@@ -418,15 +411,13 @@ impl<'a> Unifier<State<'a>, ArcType> for Equivalent {
         debug!("{} ====> {}", l, r);
         match (&**l, &**r) {
             (&Type::Generic(ref gl), &Type::Generic(ref gr)) if gl == gr => Ok(None),
-            (&Type::Generic(ref gl), _) => {
-                match unifier.unifier.map.get(&gl.id).cloned() {
-                    Some(ref typ) => unifier.try_match_res(typ, r),
-                    None => {
-                        unifier.unifier.map.insert(gl.id.clone(), r.clone());
-                        Ok(None)
-                    }
+            (&Type::Generic(ref gl), _) => match unifier.unifier.map.get(&gl.id).cloned() {
+                Some(ref typ) => unifier.try_match_res(typ, r),
+                None => {
+                    unifier.unifier.map.insert(gl.id.clone(), r.clone());
+                    Ok(None)
                 }
-            }
+            },
             _ => l.zip_match(r, unifier),
         }
     }

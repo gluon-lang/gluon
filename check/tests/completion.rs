@@ -9,11 +9,11 @@ extern crate gluon_check as check;
 use base::metadata::Metadata;
 use base::pos::{self, BytePos, Span};
 use base::symbol::Symbol;
-use base::types::{Field, Type, ArcType};
+use base::types::{ArcType, Field, Type};
 use check::completion::{self, Suggestion};
 
 mod support;
-use support::{MockEnv, intern, typ};
+use support::{intern, typ, MockEnv};
 
 fn find_span_type(s: &str, pos: BytePos) -> Result<(Span<BytePos>, ArcType), ()> {
     let env = MockEnv::new();
@@ -21,7 +21,7 @@ fn find_span_type(s: &str, pos: BytePos) -> Result<(Span<BytePos>, ArcType), ()>
     let (mut expr, result) = support::typecheck_expr(s);
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    let extract = (completion::SpanAt, completion::TypeAt { env: &env, });
+    let extract = (completion::SpanAt, completion::TypeAt { env: &env });
     completion::completion(extract, &mut expr, pos)
 }
 
@@ -212,14 +212,17 @@ let id x = x
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     let env = MockEnv::new();
-    let extract = (completion::SpanAt, completion::TypeAt { env: &env, });
+    let extract = (completion::SpanAt, completion::TypeAt { env: &env });
 
     let result = completion::completion(extract, &mut expr, BytePos::from(14));
     let expected = Ok((Span::new(14.into(), 20.into()), Type::int()));
     assert_eq!(result, expected);
 
     let result = completion::completion(extract, &mut expr, BytePos::from(15));
-    let expected = Ok((Span::new(15.into(), 17.into()), Type::function(vec![Type::int()], Type::int())));
+    let expected = Ok((
+        Span::new(15.into(), 17.into()),
+        Type::function(vec![Type::int()], Type::int()),
+    ));
     assert_eq!(result, expected);
 }
 
@@ -236,13 +239,21 @@ x
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     let env = MockEnv::new();
-    let extract = (completion::SpanAt, completion::TypeAt { env: &env, });
+    let extract = (completion::SpanAt, completion::TypeAt { env: &env });
 
     let result = completion::completion(extract, &mut expr, BytePos::from(6));
-    let expected = Ok((Span::new(6.into(), 10.into()), Type::record(vec![], vec![Field {
-        name: Symbol::from("x"),
-        typ: Type::int(),
-    }])));
+    let expected = Ok((
+        Span::new(6.into(), 10.into()),
+        Type::record(
+            vec![],
+            vec![
+                Field {
+                    name: Symbol::from("x"),
+                    typ: Type::int(),
+                },
+            ],
+        ),
+    ));
     assert_eq!(result, expected);
 }
 

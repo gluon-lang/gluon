@@ -13,7 +13,7 @@ use base::kind::Kind;
 use base::pos::{BytePos, Span};
 use base::types::{Alias, AliasData, ArcType, Field, Generic, Type};
 
-use support::{MockEnv, alias, intern, typ};
+use support::{alias, intern, typ, MockEnv};
 
 mod support;
 
@@ -755,26 +755,20 @@ test 1
 
     assert!(result.is_ok());
     let (bind, call) = match expr.value {
-        Expr::TypeBindings(_, ref body) => {
-            match body.value {
-                Expr::LetBindings(_, ref body) => {
-                    match body.value {
-                        Expr::LetBindings(ref binds, ref body) => (&binds[0], body),
-                        _ => panic!(),
-                    }
-                }
+        Expr::TypeBindings(_, ref body) => match body.value {
+            Expr::LetBindings(_, ref body) => match body.value {
+                Expr::LetBindings(ref binds, ref body) => (&binds[0], body),
                 _ => panic!(),
-            }
-        }
+            },
+            _ => panic!(),
+        },
         _ => panic!(),
     };
     let call_id = match call.value {
-        Expr::App(ref f, _) => {
-            match f.value {
-                Expr::Ident(ref id) => id,
-                _ => panic!(),
-            }
-        }
+        Expr::App(ref f, _) => match f.value {
+            Expr::Ident(ref id) => id,
+            _ => panic!(),
+        },
         _ => panic!(),
     };
     let test_id = match bind.name.value {
@@ -794,12 +788,10 @@ a.id
 "#;
     let (expr, _result) = support::typecheck_expr(text);
     let t = match expr.value {
-        Expr::LetBindings(_, ref body) => {
-            match body.value {
-                Expr::Projection(_, _, ref typ) => typ,
-                _ => panic!(),
-            }
-        }
+        Expr::LetBindings(_, ref body) => match body.value {
+            Expr::Projection(_, _, ref typ) => typ,
+            _ => panic!(),
+        },
         _ => panic!(),
     };
     let expected = Type::function(vec![typ("a0")], typ("a0"));

@@ -2,7 +2,7 @@ use base::ast::{DisplayEnv, IdentEnv, SpannedExpr};
 use base::error::InFile;
 use base::kind::{ArcKind, Kind, KindEnv};
 use base::metadata::{Metadata, MetadataEnv};
-use base::symbol::{Symbols, SymbolModule, Symbol, SymbolRef};
+use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
 use base::types::{self, Alias, ArcType, Generic, PrimitiveEnv, RecordSelector, Type, TypeCache,
                   TypeEnv};
 use check::typecheck::{self, Typecheck};
@@ -66,7 +66,9 @@ impl MockEnv {
         let bool_sym = interner.symbol("Bool");
         let bool_ty = Type::app(Type::ident(bool_sym.clone()), collect![]);
 
-        MockEnv { bool: Alias::new(bool_sym, vec![], bool_ty) }
+        MockEnv {
+            bool: Alias::new(bool_sym, vec![], bool_ty),
+        }
     }
 }
 
@@ -242,18 +244,14 @@ pub fn close_record(typ: ArcType) -> ArcType {
             ref types,
             ref fields,
             ref rest,
-        } => {
-            match **rest {
-                Type::ExtendRow { .. } => None,
-                _ => {
-                    Some(Type::extend_row(
-                        types.clone(),
-                        fields.clone(),
-                        Type::empty_row(),
-                    ))
-                }
-            }
-        }
+        } => match **rest {
+            Type::ExtendRow { .. } => None,
+            _ => Some(Type::extend_row(
+                types.clone(),
+                fields.clone(),
+                Type::empty_row(),
+            )),
+        },
         _ => None,
     })
 }

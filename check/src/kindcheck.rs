@@ -2,12 +2,12 @@ use std::fmt;
 use std::result::Result as StdResult;
 
 use base::ast;
-use base::kind::{self, ArcKind, Kind, KindEnv, KindCache};
+use base::kind::{self, ArcKind, Kind, KindCache, KindEnv};
 use base::merge;
 use base::symbol::Symbol;
 use base::types::{self, AppVec, ArcType, BuiltinType, Field, Generic, Type, Walker};
 
-use substitution::{Substitution, Substitutable};
+use substitution::{Substitutable, Substitution};
 use unify::{self, Error as UnifyError, Unifiable, Unifier, UnifierState};
 
 pub type Error<I> = UnifyError<ArcKind, KindError<I>>;
@@ -52,10 +52,7 @@ where
                 let ret_new = walk_move_kind2(ret, f);
                 merge::merge(arg, arg_new, ret, ret_new, Kind::function)
             }
-            Kind::Hole |
-            Kind::Type |
-            Kind::Variable(_) |
-            Kind::Row => None,
+            Kind::Hole | Kind::Type | Kind::Variable(_) | Kind::Row => None,
         }
     };
     new2.or(new)
@@ -169,7 +166,10 @@ impl<'a> KindCheck<'a> {
 
     fn builtin_kind(&self, typ: BuiltinType) -> ArcKind {
         match typ {
-            BuiltinType::String | BuiltinType::Byte | BuiltinType::Char | BuiltinType::Int |
+            BuiltinType::String |
+            BuiltinType::Byte |
+            BuiltinType::Char |
+            BuiltinType::Int |
             BuiltinType::Float => self.type_kind(),
             BuiltinType::Array => self.function1_kind(),
             BuiltinType::Function => self.function2_kind(),
@@ -178,9 +178,7 @@ impl<'a> KindCheck<'a> {
 
     fn kindcheck(&mut self, typ: &ArcType) -> Result<(ArcKind, ArcType)> {
         match **typ {
-            Type::Hole |
-            Type::Opaque |
-            Type::Variable(_) => Ok((self.subs.new_var(), typ.clone())),
+            Type::Hole | Type::Opaque | Type::Variable(_) => Ok((self.subs.new_var(), typ.clone())),
             Type::Generic(ref gen) => {
                 let mut gen = gen.clone();
                 gen.kind = self.find(&gen.id)?;
@@ -293,11 +291,9 @@ impl<'a> KindCheck<'a> {
 
 fn update_kind(subs: &Substitution<ArcKind>, kind: ArcKind, default: Option<&ArcKind>) -> ArcKind {
     walk_move_kind(kind, &mut |kind| match *kind {
-        Kind::Variable(id) => {
-            subs.find_type_for_var(id)
-                .cloned()
-                .or_else(|| default.cloned())
-        }
+        Kind::Variable(id) => subs.find_type_for_var(id)
+            .cloned()
+            .or_else(|| default.cloned()),
         _ => None,
     })
 }
@@ -315,14 +311,12 @@ where
 {
     use unify::Error::*;
     match *error {
-        TypeMismatch(ref expected, ref actual) => {
-            write!(
-                f,
-                "Kind mismatch\nExpected: {}\nFound: {}",
-                expected,
-                actual
-            )
-        }
+        TypeMismatch(ref expected, ref actual) => write!(
+            f,
+            "Kind mismatch\nExpected: {}\nFound: {}",
+            expected,
+            actual
+        ),
         Occurs(ref var, ref typ) => write!(f, "Variable `{}` occurs in `{}`.", var, typ),
         Other(KindError::UndefinedType(ref name)) => write!(f, "Type '{}' is not defined", name),
     }
@@ -368,13 +362,11 @@ impl<S> Unifiable<S> for ArcKind {
                 let r = unifier.try_match(l2, r2);
                 Ok(merge::merge(l1, a, l2, r, Kind::function))
             }
-            (l, r) => {
-                if l == r {
-                    Ok(None)
-                } else {
-                    Err(UnifyError::TypeMismatch(self.clone(), other.clone()))
-                }
-            }
+            (l, r) => if l == r {
+                Ok(None)
+            } else {
+                Err(UnifyError::TypeMismatch(self.clone(), other.clone()))
+            },
         }
     }
 }

@@ -46,12 +46,10 @@ pub fn metadata(
                     for field in fields {
                         if let Some(m) = metadata.module.remove(field.name.value.as_ref()) {
                             let id = match field.value {
-                                Some(ref pat) => {
-                                    match pat.value {
-                                        Pattern::Ident(ref id) => &id.name,
-                                        _ => return self.new_pattern(m, pat),
-                                    }
-                                }
+                                Some(ref pat) => match pat.value {
+                                    Pattern::Ident(ref id) => &id.name,
+                                    _ => return self.new_pattern(m, pat),
+                                },
                                 None => &field.name.value,
                             };
                             self.stack_var(id.clone(), m);
@@ -71,9 +69,7 @@ pub fn metadata(
                 Pattern::Ident(ref id) => {
                     self.stack_var(id.name.clone(), metadata);
                 }
-                Pattern::Tuple { .. } |
-                Pattern::Constructor(..) |
-                Pattern::Error => (),
+                Pattern::Tuple { .. } | Pattern::Constructor(..) | Pattern::Error => (),
             }
         }
 
@@ -94,11 +90,9 @@ pub fn metadata(
 
         fn metadata_expr(&mut self, expr: &SpannedExpr<Symbol>) -> Metadata {
             match expr.value {
-                Expr::Ident(ref id) => {
-                    self.metadata(&id.name)
-                        .cloned()
-                        .unwrap_or_else(Metadata::default)
-                }
+                Expr::Ident(ref id) => self.metadata(&id.name)
+                    .cloned()
+                    .unwrap_or_else(Metadata::default),
                 Expr::Record {
                     ref exprs,
                     ref types,
@@ -109,7 +103,11 @@ pub fn metadata(
                         let maybe_metadata = match field.value {
                             Some(ref expr) => {
                                 let m = self.metadata_expr(expr);
-                                if m.has_data() { Some(m) } else { None }
+                                if m.has_data() {
+                                    Some(m)
+                                } else {
+                                    None
+                                }
                             }
                             None => self.metadata(&field.name.value).cloned(),
                         };
