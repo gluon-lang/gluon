@@ -8,7 +8,6 @@ extern crate gluon_check as check;
 
 use base::metadata::Metadata;
 use base::pos::{self, BytePos, Span};
-use base::symbol::Symbol;
 use base::types::{ArcType, Field, Type};
 use check::completion::{self, Suggestion};
 
@@ -226,7 +225,6 @@ let id x = x
     assert_eq!(result, expected);
 }
 
-#[ignore]
 #[test]
 fn parens_pattern() {
     let _ = env_logger::init();
@@ -241,14 +239,14 @@ x
     let env = MockEnv::new();
     let extract = (completion::SpanAt, completion::TypeAt { env: &env });
 
-    let result = completion::completion(extract, &mut expr, BytePos::from(6));
+    let result = completion::completion(extract, &mut expr, BytePos::from(5));
     let expected = Ok((
-        Span::new(6.into(), 10.into()),
+        Span::new(5.into(), 10.into()),
         Type::record(
             vec![],
             vec![
                 Field {
-                    name: Symbol::from("x"),
+                    name: intern("x"),
                     typ: Type::int(),
                 },
             ],

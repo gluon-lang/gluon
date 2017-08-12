@@ -279,10 +279,20 @@ where
             }
             Pattern::Record { ref fields, .. } => {
                 let (_, field) = self.select_spanned(fields, |field| {
-                    field.value.as_ref().map_or(current.span, |p| p.span)
+                    Span::new(
+                        field.name.span.start,
+                        field
+                            .value
+                            .as_ref()
+                            .map_or(field.name.span.end, |p| p.span.end),
+                    )
                 });
-                if let Some(pattern) = field.and_then(|field| field.value.as_ref()) {
-                    self.visit_pattern(pattern);
+                if let Some(field) = field {
+                    if field.name.span.containment(&self.pos) != Ordering::Greater {
+                        self.found = Some(None);
+                    } else if let Some(ref pattern) = field.value {
+                        self.visit_pattern(pattern)
+                    }
                 }
             }
             Pattern::Tuple { ref elems, .. } => {
@@ -362,12 +372,23 @@ where
                 for bind in bindings {
                     self.on_found.on_pattern(&bind.name);
                 }
-                match self.select_spanned(bindings, |b| b.expr.span) {
+                match self.select_spanned(
+                    bindings,
+                    |b| Span::new(b.name.span.start, b.expr.span.end),
+                ) {
                     (false, Some(bind)) => {
                         for arg in &bind.args {
                             self.on_found.on_ident(arg);
                         }
-                        self.visit_expr(&bind.expr)
+                        let iter = [Ok(&bind.name), Err(&bind.expr)];
+                        let (_, sel) = self.select_spanned(iter.iter().cloned(), |x| match *x {
+                            Ok(p) => p.span,
+                            Err(e) => e.span,
+                        });
+                        match sel.unwrap() {
+                            Ok(pattern) => self.visit_pattern(pattern),
+                            Err(expr) => self.visit_expr(expr),
+                        }
                     }
                     _ => self.visit_expr(expr),
                 }
