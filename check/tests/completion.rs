@@ -305,6 +305,18 @@ let f : Int -> String -> String = \x y -> y
     assert_eq!(result, expected);
 }
 
+#[test]
+fn unit() {
+    let _ = env_logger::init();
+
+    let result = find_type(
+        "()",
+        BytePos::from(1),
+    );
+    let expected = Ok(Type::unit());
+
+    assert_eq!(result, expected);
+}
 
 #[test]
 fn suggest_identifier_when_prefix() {

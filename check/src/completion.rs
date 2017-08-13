@@ -446,7 +446,13 @@ where
             Expr::Tuple {
                 elems: ref exprs, ..
             } |
-            Expr::Block(ref exprs) => self.visit_one(exprs),
+            Expr::Block(ref exprs) => {
+                if exprs.is_empty() {
+                    self.found = Some(Some(Match::Expr(current)));
+                } else {
+                    self.visit_one(exprs)
+                }
+            }
             Expr::Error => (),
         }
     }
