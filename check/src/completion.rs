@@ -3,8 +3,8 @@
 use std::iter::once;
 use std::cmp::Ordering;
 
-use base::ast::{walk_expr, walk_pattern, Expr, Pattern, SpannedExpr, SpannedPattern, Typed,
-                TypedIdent, Visitor};
+use base::ast::{walk_expr, walk_pattern, Expr, Pattern, SpannedExpr, SpannedIdent, SpannedPattern,
+                Typed, TypedIdent, Visitor};
 use base::fnv::FnvMap;
 use base::metadata::Metadata;
 use base::resolve;
@@ -380,14 +380,29 @@ where
                         for arg in &bind.args {
                             self.on_found.on_ident(&arg.value);
                         }
-                        let iter = [Ok(&bind.name), Err(&bind.expr)];
-                        let (_, sel) = self.select_spanned(iter.iter().cloned(), |x| match *x {
-                            Ok(p) => p.span,
-                            Err(e) => e.span,
+
+                        enum Variant<'a> {
+                            Pattern(&'a SpannedPattern<Symbol>),
+                            Ident(&'a SpannedIdent<Symbol>),
+                            Expr(&'a SpannedExpr<Symbol>),
+                        }
+                        let iter = once(Variant::Pattern(&bind.name))
+                            .chain(bind.args.iter().map(Variant::Ident))
+                            .chain(once(Variant::Expr(&bind.expr)));
+                        let (_, sel) = self.select_spanned(iter, |x| match *x {
+                            Variant::Pattern(p) => p.span,
+                            Variant::Ident(e) => e.span,
+                            Variant::Expr(e) => e.span,
                         });
+
                         match sel.unwrap() {
-                            Ok(pattern) => self.visit_pattern(pattern),
-                            Err(expr) => self.visit_expr(expr),
+                            Variant::Pattern(pattern) => self.visit_pattern(pattern),
+                            Variant::Ident(ident) => {
+                                self.found = Some(Some(
+                                    Match::Ident(current, &ident.value.name, &ident.value.typ),
+                                ));
+                            }
+                            Variant::Expr(expr) => self.visit_expr(expr),
                         }
                     }
                     _ => self.visit_expr(expr),
@@ -417,7 +432,15 @@ where
                 for arg in &lambda.args {
                     self.on_found.on_ident(&arg.value);
                 }
-                self.visit_expr(&lambda.body)
+
+                let selection = self.select_spanned(&lambda.args, |arg| arg.span);
+                match selection {
+                    (false, Some(arg)) => {
+                        self.found =
+                            Some(Some(Match::Ident(current, &arg.value.name, &arg.value.typ)));
+                    }
+                    _ => self.visit_expr(&lambda.body),
+                }
             }
             Expr::Tuple {
                 elems: ref exprs, ..

@@ -274,6 +274,39 @@ fn in_record() {
 }
 
 #[test]
+fn function_arg() {
+    let _ = env_logger::init();
+
+    let result = find_type(
+        r#"
+let f x = x #Int+ 1
+""
+"#,
+        BytePos::from(7),
+    );
+    let expected = Ok(Type::int());
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn lambda_arg() {
+    let _ = env_logger::init();
+
+    let result = find_type(
+        r#"
+let f : Int -> String -> String = \x y -> y
+1.0
+"#,
+        BytePos::from(38),
+    );
+    let expected = Ok(Type::string());
+
+    assert_eq!(result, expected);
+}
+
+
+#[test]
 fn suggest_identifier_when_prefix() {
     let _ = env_logger::init();
 
