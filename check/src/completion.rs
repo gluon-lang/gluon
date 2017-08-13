@@ -8,21 +8,21 @@ use base::ast::{walk_expr, walk_pattern, Expr, Pattern, SpannedExpr, SpannedIden
 use base::fnv::FnvMap;
 use base::metadata::Metadata;
 use base::resolve;
-use base::pos::{BytePos, Span, NO_EXPANSION};
+use base::pos::{BytePos, Span, Spanned, NO_EXPANSION};
 use base::scoped_map::ScopedMap;
 use base::symbol::Symbol;
 use base::types::{AliasData, ArcType, Type, TypeEnv};
 
 pub struct Found<'a> {
     pub match_: Option<Match<'a>>,
-    pub enclosing_match: Option<Match<'a>>,
+    pub enclosing_match: Match<'a>,
 }
 
 #[derive(Copy, Clone)]
 pub enum Match<'a> {
     Expr(&'a SpannedExpr<Symbol>),
     Pattern(&'a SpannedPattern<Symbol>),
-    Ident(&'a SpannedExpr<Symbol>, &'a Symbol, &'a ArcType),
+    Ident(Span<BytePos>, &'a Symbol, &'a ArcType),
 }
 
 trait OnFound {
@@ -362,7 +362,7 @@ where
                 match (l.span.containment(&self.pos), r.span.containment(&self.pos)) {
                     (Ordering::Greater, Ordering::Less) => {
                         self.found =
-                            Some(Some(Match::Ident(current, &op.value.name, &op.value.typ)));
+                            Some(Some(Match::Ident(op.span, &op.value.name, &op.value.typ)));
                     }
                     (_, Ordering::Greater) | (_, Ordering::Equal) => self.visit_expr(r),
                     _ => self.visit_expr(l),
@@ -399,7 +399,7 @@ where
                             Variant::Pattern(pattern) => self.visit_pattern(pattern),
                             Variant::Ident(ident) => {
                                 self.found = Some(Some(
-                                    Match::Ident(current, &ident.value.name, &ident.value.typ),
+                                    Match::Ident(ident.span, &ident.value.name, &ident.value.typ),
                                 ));
                             }
                             Variant::Expr(expr) => self.visit_expr(expr),
@@ -418,7 +418,8 @@ where
                 if expr.span.containment(&self.pos) <= Ordering::Equal {
                     self.visit_expr(expr);
                 } else {
-                    self.found = Some(Some(Match::Ident(current, id, typ)));
+                    self.enclosing_match = Match::Expr(current);
+                    self.found = Some(Some(Match::Ident(current.span, id, typ)));
                 }
             }
             Expr::Array(ref array) => self.visit_one(&array.exprs),
@@ -437,7 +438,7 @@ where
                 match selection {
                     (false, Some(arg)) => {
                         self.found =
-                            Some(Some(Match::Ident(current, &arg.value.name, &arg.value.typ)));
+                            Some(Some(Match::Ident(arg.span, &arg.value.name, &arg.value.typ)));
                     }
                     _ => self.visit_expr(&lambda.body),
                 }
@@ -467,7 +468,7 @@ where
         .map(|match_| {
             Found {
                 match_,
-                enclosing_match: Some(visitor.enclosing_match),
+                enclosing_match: visitor.enclosing_match,
             }
         })
         .ok_or(())
@@ -486,9 +487,9 @@ pub struct TypeAt<'a> {
 impl<'a> Extract for TypeAt<'a> {
     type Output = ArcType;
     fn extract(self, found: &Found) -> Result<Self::Output, ()> {
-        match (&found.match_, &found.enclosing_match) {
-            (&Some(ref match_), _) | (_, &Some(ref match_)) => self.match_extract(match_),
-            _ => Err(()),
+        match found.match_ {
+            Some(ref match_) => self.match_extract(match_),
+            None => self.match_extract(&found.enclosing_match),
         }
     }
 
@@ -506,15 +507,16 @@ pub struct SpanAt;
 impl Extract for SpanAt {
     type Output = Span<BytePos>;
     fn extract(self, found: &Found) -> Result<Self::Output, ()> {
-        match (&found.match_, &found.enclosing_match) {
-            (&Some(ref match_), _) | (_, &Some(ref match_)) => self.match_extract(match_),
-            _ => Err(()),
+        match found.match_ {
+            Some(ref match_) => self.match_extract(match_),
+            None => self.match_extract(&found.enclosing_match),
         }
     }
 
     fn match_extract(self, found: &Match) -> Result<Self::Output, ()> {
         Ok(match *found {
-            Match::Expr(expr) | Match::Ident(expr, _, _) => expr.span,
+            Match::Expr(expr) => expr.span,
+            Match::Ident(span, _, _) => span,
             Match::Pattern(pattern) => pattern.span,
         })
     }
@@ -608,19 +610,21 @@ where
                         }),
                 );
             }
-            Match::Ident(context, ident, _) => {
-                let iter = suggest.ident_iter(context, ident);
-                result.extend(iter.into_iter().map(|(name, typ)| {
-                    Suggestion {
-                        name: name.declared_name().into(),
-                        typ: typ,
-                    }
-                }));
+            Match::Ident(_, ident, _) => {
+                if let Match::Expr(context) = found.enclosing_match {
+                    let iter = suggest.ident_iter(context, ident);
+                    result.extend(iter.into_iter().map(|(name, typ)| {
+                        Suggestion {
+                            name: name.declared_name().into(),
+                            typ: typ,
+                        }
+                    }));
+                }
             }
         },
 
         None => match found.enclosing_match {
-            Some(Match::Expr(..)) | Some(Match::Ident(..)) => {
+            Match::Expr(..) | Match::Ident(..) => {
                 result.extend(suggest.stack.iter().map(|(name, typ)| {
                     Suggestion {
                         name: name.declared_name().into(),
@@ -629,13 +633,12 @@ where
                 }));
             }
 
-            Some(Match::Pattern(..)) => result.extend(suggest.patterns.iter().map(|(name, typ)| {
+            Match::Pattern(..) => result.extend(suggest.patterns.iter().map(|(name, typ)| {
                 Suggestion {
                     name: name.declared_name().into(),
                     typ: typ.clone(),
                 }
             })),
-            None => (),
         },
     }
     result
@@ -648,22 +651,24 @@ pub fn get_metadata<'a>(
 ) -> Option<&'a Metadata> {
     complete_at((), expr, pos)
         .ok()
-        .and_then(|found| found.match_)
-        .and_then(|match_| match match_ {
+        .and_then(|found| found.match_.map(|m|(m, found.enclosing_match)))
+        .and_then(|(match_, enclosing_match)| match match_ {
             Match::Expr(expr) => if let Expr::Ident(ref id) = expr.value {
                 env.get(&id.name)
             } else {
                 None
             },
-            Match::Ident(context, id, _typ) => match context.value {
-                Expr::Projection(ref expr, _, _) => if let Expr::Ident(ref expr_id) = expr.value {
-                    env.get(&expr_id.name)
-                        .and_then(|metadata| metadata.module.get(id.as_ref()))
-                } else {
-                    None
-                },
-                Expr::Infix(..) => env.get(id),
-                _ => None,
+            Match::Ident(_, id, _typ) => {
+                match enclosing_match {
+                    Match::Expr(&Spanned { value: Expr::Projection(ref expr, _, _), .. }) => if let Expr::Ident(ref expr_id) = expr.value {
+                        env.get(&expr_id.name)
+                            .and_then(|metadata| metadata.module.get(id.as_ref()))
+                    } else {
+                        None
+                    },
+                    Match::Expr(&Spanned { value: Expr::Infix(..), .. }) => env.get(id),
+                    _ => None,
+                }
             },
             _ => None,
         })
@@ -697,8 +702,8 @@ where
                     }
                 }
 
-                Match::Ident(context, _, _) => match context.value {
-                    Expr::Projection(ref expr, _, _) => {
+                Match::Ident(_, _, _) => match found.enclosing_match {
+                    Match::Expr(&Spanned { value: Expr::Projection(ref expr, _, _), .. }) => {
                         if let Expr::Ident(ref expr_ident) = expr.value {
                             env.get(&expr_ident.name)
                                 .and_then(|metadata| metadata.module.get(name))
@@ -712,7 +717,7 @@ where
             },
 
             None => match found.enclosing_match {
-                Some(Match::Expr(..)) | Some(Match::Ident(..)) => suggest
+                Match::Expr(..) | Match::Ident(..) => suggest
                     .stack
                     .iter()
                     .find(|&(ref stack_name, _)| stack_name.declared_name() == name)
