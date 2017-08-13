@@ -147,6 +147,8 @@ x
     assert_eq!(&format_expr(expr).unwrap(), expr);
 }
 
+// TODO
+#[ignore]
 #[test]
 fn preserve_more_block_comments() {
     let expr = r#"
