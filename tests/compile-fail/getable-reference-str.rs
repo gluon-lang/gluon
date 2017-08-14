@@ -1,9 +1,8 @@
-#[macro_use]
 extern crate gluon_vm;
 extern crate gluon;
 use gluon::new_vm;
 use gluon::vm::thread::{Thread, Status};
-use gluon::vm::api::{primitive_f, Pushable};
+use gluon::vm::api::primitive_f;
 
 extern "C" fn dummy(_: &Thread) -> Status {
     unimplemented!()

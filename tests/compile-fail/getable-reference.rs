@@ -1,10 +1,9 @@
-#[macro_use]
 extern crate gluon_vm;
 extern crate gluon;
 use gluon::new_vm;
 use gluon::vm::thread::{Thread, Status};
 use gluon::vm::gc::{Gc, Traverseable};
-use gluon::vm::api::{Pushable, VmType, Userdata, primitive_f};
+use gluon::vm::api::{VmType, Userdata, primitive_f};
 
 #[derive(Debug)]
 struct Test;
