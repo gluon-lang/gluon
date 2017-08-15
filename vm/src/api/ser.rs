@@ -519,7 +519,7 @@ impl<'a, 'vm> ser::SerializeStruct for RecordSerializer<'a, 'vm> {
         Ok(())
     }
 
-    fn end(mut self) -> Result<Self::Ok> {
+    fn end(self) -> Result<Self::Ok> {
         let tag = self.serializer.context.get_map(&self.fields);
         self.serializer.alloc(tag, self.values)
     }

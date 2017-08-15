@@ -149,7 +149,7 @@ impl<'a> Iterator for CommentIter<'a> {
                 self.src = if self.src.starts_with("\r\n") {
                     &self.src[2..]
                 } else {
-                    /// \n
+                    // \n
                     &self.src[1..]
                 };
                 Some(comment_line)

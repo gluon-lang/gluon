@@ -3,7 +3,8 @@ use std::str::FromStr;
 
 use itertools::Itertools;
 
-use base::ast::{Alternative, Array, Comment, Expr, ExprField, Lambda, Literal, Pattern, PatternField, SpannedExpr, TypeBinding, TypedIdent, ValueBinding};
+use base::ast::{Alternative, Array, Comment, Expr, ExprField, Lambda, Literal, Pattern,
+    PatternField, SpannedExpr, SpannedIdent, TypeBinding, TypedIdent, ValueBinding};
 use base::kind::{ArcKind, Kind};
 use base::pos::{self, BytePos, Spanned};
 use base::types::{AliasData, ArcType, BuiltinType, Field, Generic, Type, TypeCache};
@@ -88,6 +89,9 @@ SkipExtraTokens: () = {
 
 Ident: Id =
     IdentStr => env.from_str(<>);
+
+SpannedIdent: SpannedIdent<Id> =
+    Sp<Ident> => pos::spanned(<>.span, new_ident(type_cache, <>.value));
 
 Operator: TypedIdent<Id> =
     "operator" => new_ident(type_cache, env.from_str(<>));
@@ -365,12 +369,12 @@ ValueBinding: ValueBinding<Id> = {
             expr: body,
         },
 
-    <comment: DocComment?> <name: Sp<Ident>> <args: Ident+> <typ: (":" <Type>)?> "=" <body: SpExpr> =>
+    <comment: DocComment?> <name: Sp<Ident>> <args: SpannedIdent+> <typ: (":" <Type>)?> "=" <body: SpExpr> =>
         ValueBinding {
-            comment: comment,
+            comment,
             name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
             typ: typ.unwrap_or_else(|| type_cache.hole()),
-            args: args.into_iter().map(|name| new_ident(type_cache, name)).collect(),
+            args,
             expr: body,
         },
 };
@@ -443,10 +447,10 @@ AppExpr = {
 InfixExpr = {
     AppExpr,
 
-    "\\" <args: Ident+> "->" <body: SpExpr> =>
+    "\\" <args: SpannedIdent+> "->" <body: SpExpr> =>
         Expr::Lambda(Lambda {
             id: new_ident(type_cache, env.from_str("")),
-            args: args.into_iter().map(|name| new_ident(type_cache, name)).collect(),
+            args,
             body: Box::new(body),
         }),
 

@@ -3,7 +3,7 @@ use base::pos::{BytePos, ExpansionId, Span};
 use base::symbol::{Symbol, Symbols};
 use base::types::{Field, Type};
 
-use core::{Allocator, Alternative, Expr, LetBinding, Named, Pattern};
+use core::{Allocator, Alternative, Closure, Expr, LetBinding, Named, Pattern};
 
 grammar<'env, 'a>(symbols: &'env mut Symbols, allocator: &'a Allocator<'a>);
 
@@ -16,7 +16,8 @@ Comma<Rule>: Vec<Rule> =
 
 
 Identifier: Symbol = {
-    <r"[A-Za-z_][A-Za-z0-9_]*"> => symbols.symbol(<>)
+    <r"[A-Za-z_][A-Za-z0-9_]*"> => symbols.symbol(<>),
+    <r"\(#?[A-Za-z_]*[+\-*/]\)"> => symbols.symbol(&<>[1..<>.len() - 1])
 };
 
 Field: (Symbol, Option<Symbol>) = {
@@ -77,6 +78,15 @@ LetBinding: LetBinding<'a> = {
     <name: Identifier> "=" <expr: AllocExpr> => LetBinding {
         name: TypedIdent::new(name),
         expr: Named::Expr(expr),
+        span_start: BytePos::default(),
+    },
+    <name: Identifier> <args: Identifier+> "=" <expr: AllocExpr> => LetBinding {
+        name: TypedIdent::new(name.clone()),
+        expr: Named::Recursive(vec![Closure {
+            name: TypedIdent::new(name),
+            args: args.into_iter().map(TypedIdent::new).collect(),
+            expr,
+        }]),
         span_start: BytePos::default(),
     }
 };

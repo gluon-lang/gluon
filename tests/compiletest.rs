@@ -52,7 +52,7 @@ fn run_mode(mode: &'static str) {
     let gluon_rlib = lib_dir(&out_dir, "libgluon-");
     let gluon_vm_rlib = lib_dir(&out_dir, "libgluon_vm-");
 
-    let mut config = compiletest::default_config();
+    let mut config = compiletest::Config::default();
     let cfg_mode = mode.parse().ok().expect("Invalid mode");
 
     config.verbose = true;

@@ -141,38 +141,30 @@ impl Union for UnionByLevel {
     fn union(left: UnionByLevel, right: UnionByLevel) -> UnionResult<UnionByLevel> {
         use std::cmp::Ordering;
         let (rank_result, rank) = match Union::union(left.rank, right.rank) {
-            UnionResult::Left(l) => {
-                (
-                    UnionResult::Left(UnionByLevel {
-                        rank: l,
-                        level: left.level,
-                    }),
-                    l,
-                )
-            }
-            UnionResult::Right(r) => {
-                (
-                    UnionResult::Right(UnionByLevel {
-                        rank: r,
-                        level: left.level,
-                    }),
-                    r,
-                )
-            }
+            UnionResult::Left(l) => (
+                UnionResult::Left(UnionByLevel {
+                    rank: l,
+                    level: left.level,
+                }),
+                l,
+            ),
+            UnionResult::Right(r) => (
+                UnionResult::Right(UnionByLevel {
+                    rank: r,
+                    level: left.level,
+                }),
+                r,
+            ),
         };
         match left.level.cmp(&right.level) {
-            Ordering::Less => {
-                UnionResult::Left(UnionByLevel {
-                    rank: rank,
-                    level: left.level,
-                })
-            }
-            Ordering::Greater => {
-                UnionResult::Right(UnionByLevel {
-                    rank: rank,
-                    level: right.level,
-                })
-            }
+            Ordering::Less => UnionResult::Left(UnionByLevel {
+                rank: rank,
+                level: left.level,
+            }),
+            Ordering::Greater => UnionResult::Right(UnionByLevel {
+                rank: rank,
+                level: right.level,
+            }),
             Ordering::Equal => rank_result,
         }
     }
@@ -213,18 +205,14 @@ impl<T: Substitutable> Substitution<T> {
 
     pub fn insert(&self, var: u32, t: T) {
         match t.get_var() {
-            Some(_) => {
-                panic!(
-                    "Tried to insert variable which is not allowed as that would cause memory \
-                     unsafety"
-                )
-            }
-            None => {
-                match self.types.try_insert(var, t) {
-                    Ok(()) => (),
-                    Err(_) => panic!("Expected variable to not have a type associated with it"),
-                }
-            }
+            Some(_) => panic!(
+                "Tried to insert variable which is not allowed as that would cause memory \
+                 unsafety"
+            ),
+            None => match self.types.try_insert(var, t) {
+                Ok(()) => (),
+                Err(_) => panic!("Expected variable to not have a type associated with it"),
+            },
         }
     }
 
@@ -247,12 +235,10 @@ impl<T: Substitutable> Substitution<T> {
     /// to have `real` called on them.
     pub fn real<'r>(&'r self, typ: &'r T) -> &'r T {
         match typ.get_var() {
-            Some(var) => {
-                match self.find_type_for_var(var.get_id()) {
-                    Some(t) => t,
-                    None => typ,
-                }
-            }
+            Some(var) => match self.find_type_for_var(var.get_id()) {
+                Some(t) => t,
+                None => typ,
+            },
             _ => typ,
         }
     }

@@ -409,7 +409,7 @@ impl<'a> ExprPrinter<'a> {
                             pretty_pattern(arena, &bind.name),
                             " ",
                             arena.concat(bind.args.iter().map(|arg| {
-                                arena.text(arg.name.as_ref()).append(" ")
+                                arena.text(arg.value.name.as_ref()).append(" ")
                             }))
                         ].group(),
                         match *bind.typ {
@@ -539,7 +539,9 @@ impl<'a> ExprPrinter<'a> {
             Expr::Lambda(ref lambda) => {
                 let decl = chain![arena;
                     "\\",
-                    arena.concat(lambda.args.iter().map(|arg| arena.text(arg.name.as_ref()).append(" "))),
+                    arena.concat(lambda.args.iter().map(|arg| {
+                        arena.text(arg.value.name.as_ref()).append(" ")
+                    })),
                     "->"
                 ];
                 let (next_lambda, body) = self.pretty_lambda(previous_end, &lambda.body);

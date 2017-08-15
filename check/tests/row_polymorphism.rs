@@ -10,7 +10,7 @@ use base::kind::{Kind, KindCache};
 use base::types::{Field, Type};
 use check::kindcheck::KindCheck;
 
-use support::{MockEnv, MockIdentEnv, intern, typ};
+use support::{intern, typ, MockEnv, MockIdentEnv};
 
 mod support;
 

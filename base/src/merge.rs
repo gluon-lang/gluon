@@ -14,13 +14,31 @@ where
     B: ToOwned,
     F: FnOnce(A::Owned, B::Owned) -> R,
 {
+    merge_fn(a_original, A::to_owned, a, b_original, B::to_owned, b, f)
+}
+
+pub fn merge_fn<'a, 'b, F, G, H, A: ?Sized, B: ?Sized, A1, B1, R>(
+    a_original: &'a A,
+    g: G,
+    a: Option<A1>,
+    b_original: &'b B,
+    h: H,
+    b: Option<B1>,
+    f: F,
+) -> Option<R>
+where
+    F: FnOnce(A1, B1) -> R,
+    G: FnOnce(&'a A) -> A1,
+    H: FnOnce(&'b B) -> B1,
+{
     match (a, b) {
         (Some(a), Some(b)) => Some(f(a, b)),
-        (Some(a), None) => Some(f(a, b_original.to_owned())),
-        (None, Some(b)) => Some(f(a_original.to_owned(), b)),
+        (Some(a), None) => Some(f(a, h(b_original))),
+        (None, Some(b)) => Some(f(g(a_original), b)),
         (None, None) => None,
     }
 }
+
 
 pub fn merge_tuple_iter<'a, I, F, T, R>(types: I, mut f: F) -> Option<R>
 where

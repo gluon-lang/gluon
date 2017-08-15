@@ -6,7 +6,7 @@ use base::error::Errors;
 use base::fnv::FnvMap;
 use base::types::Type;
 
-use substitution::{Substitution, Substitutable, Variable};
+use substitution::{Substitutable, Substitution, Variable};
 
 #[derive(Debug, PartialEq)]
 pub enum Error<T, E> {
@@ -26,7 +26,7 @@ where
 
         match *self {
             TypeMismatch(ref l, ref r) => {
-                use pretty::{DocAllocator, Arena};
+                use pretty::{Arena, DocAllocator};
 
                 let arena = Arena::new();
                 let doc = chain![&arena;
@@ -191,18 +191,14 @@ where
         // `l` and `r` must have the same type, if one is a variable that variable is
         // unified with whatever the other type is
         match (l.get_var(), r.get_var()) {
-            (_, Some(r)) => {
-                match subs.union(r, l) {
-                    Ok(()) => Ok(None),
-                    Err(()) => Err(Error::Occurs(T::from_variable(r.clone()), l.clone())),
-                }
-            }
-            (Some(l), _) => {
-                match subs.union(l, r) {
-                    Ok(()) => Ok(Some(r.clone())),
-                    Err(()) => Err(Error::Occurs(T::from_variable(l.clone()), r.clone())),
-                }
-            }
+            (_, Some(r)) => match subs.union(r, l) {
+                Ok(()) => Ok(None),
+                Err(()) => Err(Error::Occurs(T::from_variable(r.clone()), l.clone())),
+            },
+            (Some(l), _) => match subs.union(l, r) {
+                Ok(()) => Ok(Some(r.clone())),
+                Err(()) => Err(Error::Occurs(T::from_variable(l.clone()), r.clone())),
+            },
             (None, None) => {
                 // Both sides are concrete types, the only way they can be equal is if
                 // the matcher finds their top level to be equal (and their sub-terms
@@ -293,8 +289,8 @@ mod test {
     use base::merge::merge;
     use base::types::Walker;
 
-    use super::{Error, Unifier, Unifiable, UnifierState};
-    use substitution::{Substitution, Substitutable};
+    use super::{Error, Unifiable, Unifier, UnifierState};
+    use substitution::{Substitutable, Substitution};
 
     #[derive(Debug, Clone, Eq, PartialEq, Hash)]
     pub struct TType(Box<Type<TType>>);
@@ -329,8 +325,7 @@ mod test {
                         f.walk(a);
                         f.walk(r);
                     }
-                    Type::Variable(_) |
-                    Type::Ident(_) => (),
+                    Type::Variable(_) | Type::Ident(_) => (),
                 }
             }
             traverse_(self, f)
@@ -427,7 +422,7 @@ mod test {
             result,
             Err(Errors::from(
                 vec![Error::TypeMismatch(string.clone(), int.clone())],
-            ))
+            ),)
         );
     }
 

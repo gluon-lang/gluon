@@ -189,7 +189,7 @@ mod string {
                         }
                     }
                 }
-                Err(()) =>{
+                Err(()) => {
                     let err: StdResult<&str, ()> = Err(());
                     err.status_push(thread, &mut context)
                 }

@@ -5,14 +5,14 @@ use base::error::Errors;
 use base::fnv::FnvMap;
 use base::merge;
 use base::kind::ArcKind;
-use base::types::{self, AppVec, ArcType, Field, Type, TypeVariable, TypeEnv};
+use base::types::{self, AppVec, ArcType, Field, Type, TypeEnv, TypeVariable};
 use base::symbol::{Symbol, SymbolRef};
 use base::resolve::{self, Error as ResolveError};
 use base::scoped_map::ScopedMap;
 
 use unify;
-use unify::{Error as UnifyError, Unifier, Unifiable};
-use substitution::{Variable, Substitutable, Substitution, VariableFactory};
+use unify::{Error as UnifyError, Unifiable, Unifier};
+use substitution::{Substitutable, Substitution, Variable, VariableFactory};
 
 impl VariableFactory for ArcKind {
     type Variable = TypeVariable;
@@ -98,30 +98,24 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
-            TypeError::FieldMismatch(ref l, ref r) => {
-                write!(
-                    f,
-                    "Field names in record do not match.\n\tExpected: {}\n\tFound: {}",
-                    l,
-                    r
-                )
-            }
+            TypeError::FieldMismatch(ref l, ref r) => write!(
+                f,
+                "Field names in record do not match.\n\tExpected: {}\n\tFound: {}",
+                l,
+                r
+            ),
             TypeError::UndefinedType(ref id) => write!(f, "Type `{}` does not exist.", id),
-            TypeError::SelfRecursive(ref id) => {
-                write!(
-                    f,
-                    "The use of self recursion in type `{}` could not be unified.",
-                    id
-                )
-            }
-            TypeError::UnableToGeneralize(ref id) => {
-                write!(
-                    f,
-                    "Could not generalize the variable bound to `{}` as the variable was used \
-                     outside its scope",
-                    id
-                )
-            }
+            TypeError::SelfRecursive(ref id) => write!(
+                f,
+                "The use of self recursion in type `{}` could not be unified.",
+                id
+            ),
+            TypeError::UnableToGeneralize(ref id) => write!(
+                f,
+                "Could not generalize the variable bound to `{}` as the variable was used \
+                 outside its scope",
+                id
+            ),
             TypeError::MissingFields(ref typ, ref fields) => {
                 write!(f, "The type `{}` lacks the following fields: ", typ)?;
                 for (i, field) in fields.iter().enumerate() {
@@ -769,18 +763,14 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
                 }
 
             }
-            (_, &Type::Variable(ref r)) => {
-                match subs.union(r, l) {
-                    Ok(()) => Ok(None),
-                    Err(()) => Err(UnifyError::Occurs(ArcType::from_variable(r.clone()), l.clone())),
-                }
-            }
-            (&Type::Variable(ref l), _) => {
-                match subs.union(l, r) {
-                    Ok(()) => Ok(Some(r.clone())),
-                    Err(()) => Err(UnifyError::Occurs(ArcType::from_variable(l.clone()), r.clone())),
-                }
-            }
+            (_, &Type::Variable(ref r)) => match subs.union(r, l) {
+                Ok(()) => Ok(None),
+                Err(()) => Err(UnifyError::Occurs(ArcType::from_variable(r.clone()), l.clone())),
+            },
+            (&Type::Variable(ref l), _) => match subs.union(l, r) {
+                Ok(()) => Ok(Some(r.clone())),
+                Err(()) => Err(UnifyError::Occurs(ArcType::from_variable(l.clone()), r.clone())),
+            },
             _ => {
                 // Both sides are concrete types, the only way they can be equal is if
                 // the matcher finds their top level to be equal (and their sub-terms

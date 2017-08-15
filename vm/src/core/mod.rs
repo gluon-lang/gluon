@@ -31,7 +31,9 @@ macro_rules! assert_deq {
 #[cfg_attr(rustfmt, rustfmt_skip)]
 mod grammar;
 pub mod optimize;
+pub mod interpreter;
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
 use std::iter::once;
@@ -83,6 +85,8 @@ pub struct Alternative<'a> {
     pub expr: &'a Expr<'a>,
 }
 
+pub type CExpr<'a> = &'a Expr<'a>;
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expr<'a> {
     Const(Literal, Span<BytePos>),
@@ -91,6 +95,15 @@ pub enum Expr<'a> {
     Data(TypedIdent<Symbol>, &'a [Expr<'a>], BytePos, ExpansionId),
     Let(LetBinding<'a>, &'a Expr<'a>),
     Match(&'a Expr<'a>, &'a [Alternative<'a>]),
+}
+
+impl fmt::Display for Pattern {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let arena = pretty::Arena::new();
+        let mut s = Vec::new();
+        self.pretty(&arena).1.render(80, &mut s).unwrap();
+        write!(f, "{}", ::std::str::from_utf8(&s).expect("utf-8"))
+    }
 }
 
 impl<'a> fmt::Display for Expr<'a> {
@@ -314,6 +327,32 @@ fn is_constructor(s: &Symbol) -> bool {
         .starts_with(char::is_uppercase)
 }
 
+mod internal {
+    use super::{Allocator, Expr};
+
+    pub struct CoreExpr {
+        allocator: Allocator<'static>,
+        expr: Expr<'static>,
+    }
+
+    impl CoreExpr {
+        pub fn new(allocator: Allocator<'static>, expr: Expr<'static>) -> CoreExpr {
+            CoreExpr { allocator, expr }
+        }
+
+        // unsafe: The lifetimes of the returned `Expr` must be bound to `&self`
+        pub fn expr(&self) -> &Expr {
+            &self.expr
+        }
+
+        pub fn allocator(&self) -> &Allocator {
+            unsafe { ::std::mem::transmute(&self.allocator) }
+        }
+    }
+}
+
+pub use self::internal::CoreExpr;
+
 pub struct Allocator<'a> {
     pub arena: Arena<Expr<'a>>,
     pub alternative_arena: Arena<Alternative<'a>>,
@@ -325,6 +364,24 @@ impl<'a> Allocator<'a> {
             arena: Arena::new(),
             alternative_arena: Arena::new(),
         }
+    }
+}
+
+pub fn translate(env: &PrimitiveEnv, expr: &SpannedExpr<Symbol>) -> CoreExpr {
+    use std::mem::transmute;
+    // Here we temporarily forget the lifetime of `translator` so it can be moved into a
+    // `CoreExpr`. After we have it in `CoreExpr` the expression is then guaranteed to live as
+    // long as the `CoreExpr` making it safe again
+    unsafe {
+        let translator = Translator::new(env);
+        let core_expr = {
+            let core_expr = (*(&translator as *const Translator)).translate(expr);
+            transmute::<Expr, Expr<'static>>(core_expr)
+        };
+        CoreExpr::new(
+            transmute::<Allocator, Allocator<'static>>(translator.allocator),
+            core_expr,
+        )
     }
 }
 
@@ -440,7 +497,7 @@ impl<'a, 'e> Translator<'a, 'e> {
             }
             ast::Expr::Lambda(ref lambda) => self.new_lambda(
                 lambda.id.clone(),
-                lambda.args.clone(),
+                lambda.args.iter().map(|arg| arg.value.clone()).collect(),
                 self.translate_alloc(&lambda.body),
                 expr.span,
             ),
@@ -549,7 +606,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                             ast::Pattern::Ident(ref id) => id.clone(),
                             _ => unreachable!(),
                         },
-                        args: bind.args.clone(),
+                        args: bind.args.iter().map(|arg| arg.value.clone()).collect(),
                         expr: self.translate_alloc(&bind.expr),
                     }
                 })
@@ -587,7 +644,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                     Named::Recursive(vec![
                         Closure {
                             name: name.clone(),
-                            args: bind.args.clone(),
+                            args: bind.args.iter().map(|arg| arg.value.clone()).collect(),
                             expr: self.translate_alloc(&bind.expr),
                         },
                     ])
@@ -726,13 +783,17 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
     }
     let function_type = remove_aliases_cow(env, alias_type);
 
-    let (_, ret) = function_type.as_function().unwrap_or_else(|| {
-        panic!(
-            "Call expression with a non function type `{}`",
-            function_type
-        )
-    });
-    get_return_type(env, ret, arg_count - 1)
+    let ret = function_type
+        .as_function()
+        .map(|t| Cow::Borrowed(t.1))
+        .unwrap_or_else(|| {
+            debug!(
+                "Call expression with a non function type `{}`",
+                function_type
+            );
+            Cow::Owned(Type::hole())
+        });
+    get_return_type(env, &ret, arg_count - 1)
 }
 
 pub struct PatternTranslator<'a, 'e: 'a>(&'a Translator<'a, 'e>);
@@ -767,7 +828,9 @@ struct ReplaceVariables<'a> {
     allocator: &'a Allocator<'a>,
 }
 
-impl<'a> Visitor<'a> for ReplaceVariables<'a> {
+impl<'a> Visitor<'a, 'a> for ReplaceVariables<'a> {
+    type Producer = SameLifetime<'a>;
+
     fn visit_expr(&mut self, expr: &'a Expr<'a>) -> Option<&'a Expr<'a>> {
         match *expr {
             Expr::Ident(ref id, span) => self.replacements.get(&id.name).map(|new_name| {
@@ -782,8 +845,8 @@ impl<'a> Visitor<'a> for ReplaceVariables<'a> {
             _ => walk_expr_alloc(self, expr),
         }
     }
-    fn allocator(&self) -> &'a Allocator<'a> {
-        self.allocator
+    fn detach_allocator(&self) -> Option<&'a Allocator<'a>> {
+        Some(self.allocator)
     }
 }
 

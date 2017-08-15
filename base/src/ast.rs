@@ -137,7 +137,7 @@ pub struct Array<Id> {
 #[derive(Clone, PartialEq, Debug)]
 pub struct Lambda<Id> {
     pub id: TypedIdent<Id>,
-    pub args: Vec<TypedIdent<Id>>,
+    pub args: Vec<SpannedIdent<Id>>,
     pub body: Box<SpannedExpr<Id>>,
 }
 
@@ -218,7 +218,7 @@ pub struct ValueBinding<Id> {
     pub comment: Option<Comment>,
     pub name: SpannedPattern<Id>,
     pub typ: ArcType<Id>,
-    pub args: Vec<TypedIdent<Id>>,
+    pub args: Vec<SpannedIdent<Id>>,
     pub expr: SpannedExpr<Id>,
 }
 
@@ -261,7 +261,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
             for bind in bindings {
                 v.visit_pattern(&mut bind.name);
                 for arg in &mut bind.args {
-                    v.visit_typ(&mut arg.typ);
+                    v.visit_typ(&mut arg.value.typ);
                 }
                 v.visit_expr(&mut bind.expr);
                 v.visit_typ(&mut bind.typ);
@@ -304,18 +304,21 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
             }
         }
         Expr::Tuple {
-            elems: ref mut exprs,
-            ..
-        } |
-        Expr::Block(ref mut exprs) => {
-            for expr in exprs {
+            ref mut typ,
+            ref mut elems,
+        } => {
+            v.visit_typ(typ);
+            for expr in elems {
                 v.visit_expr(expr);
             }
         }
+        Expr::Block(ref mut exprs) => for expr in exprs {
+            v.visit_expr(expr);
+        },
         Expr::Lambda(ref mut lambda) => {
             v.visit_typ(&mut lambda.id.typ);
             for arg in &mut lambda.args {
-                v.visit_typ(&mut arg.typ);
+                v.visit_typ(&mut arg.value.typ);
             }
             v.visit_expr(&mut lambda.body);
         }
@@ -360,21 +363,21 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::Id
     }
 }
 
-pub trait Visitor {
-    type Ident;
+pub trait Visitor<'a> {
+    type Ident: 'a;
 
-    fn visit_expr(&mut self, e: &SpannedExpr<Self::Ident>) {
+    fn visit_expr(&mut self, e: &'a SpannedExpr<Self::Ident>) {
         walk_expr(self, e);
     }
 
-    fn visit_pattern(&mut self, e: &SpannedPattern<Self::Ident>) {
+    fn visit_pattern(&mut self, e: &'a SpannedPattern<Self::Ident>) {
         walk_pattern(self, &e.value);
     }
 
-    fn visit_typ(&mut self, _: &ArcType<Self::Ident>) {}
+    fn visit_typ(&mut self, _: &'a ArcType<Self::Ident>) {}
 }
 
-pub fn walk_expr<V: ?Sized + Visitor>(v: &mut V, e: &SpannedExpr<V::Ident>) {
+pub fn walk_expr<'a, V: ?Sized + Visitor<'a>>(v: &mut V, e: &'a SpannedExpr<V::Ident>) {
     match e.value {
         Expr::IfElse(ref pred, ref if_true, ref if_false) => {
             v.visit_expr(pred);
@@ -430,11 +433,9 @@ pub fn walk_expr<V: ?Sized + Visitor>(v: &mut V, e: &SpannedExpr<V::Ident>) {
         Expr::Tuple {
             elems: ref exprs, ..
         } |
-        Expr::Block(ref exprs) => {
-            for expr in exprs {
-                v.visit_expr(expr);
-            }
-        }
+        Expr::Block(ref exprs) => for expr in exprs {
+            v.visit_expr(expr);
+        },
         Expr::Lambda(ref lambda) => {
             v.visit_typ(&lambda.id.typ);
             v.visit_expr(&lambda.body);
@@ -446,7 +447,7 @@ pub fn walk_expr<V: ?Sized + Visitor>(v: &mut V, e: &SpannedExpr<V::Ident>) {
 }
 
 /// Walks a pattern, calling `visit_*` on all relevant elements
-pub fn walk_pattern<V: ?Sized + Visitor>(v: &mut V, p: &Pattern<V::Ident>) {
+pub fn walk_pattern<'a, V: ?Sized + Visitor<'a>>(v: &mut V, p: &'a Pattern<V::Ident>) {
     match *p {
         Pattern::Constructor(ref id, ref args) => {
             v.visit_typ(&id.typ);
