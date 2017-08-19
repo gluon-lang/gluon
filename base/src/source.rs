@@ -189,6 +189,12 @@ impl<'a> DoubleEndedIterator for CommentIter<'a> {
                 } else {
                     Some("")
                 }
+            } else if self.src.ends_with("*/") {
+                self.src.rfind("/*").map(|i| {
+                    let (rest, comment) = self.src.split_at(i);
+                    self.src = rest;
+                    comment
+                })
             } else {
                 None
             }
