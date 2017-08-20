@@ -1,6 +1,5 @@
 use std::fmt;
 use std::mem;
-use std::rc::Rc;
 
 use base::error::Errors;
 use base::fnv::FnvMap;
@@ -12,10 +11,8 @@ use base::resolve::{self, Error as ResolveError};
 use base::scoped_map::ScopedMap;
 
 use unify;
-use unify::{Error as UnifyError, GenericVariant, Unifiable, Unifier};
-use substitution::{Substitutable, Substitution, Variable, VariableFactory};
-
-pub type Constraint = Rc<Vec<ArcType>>;
+use unify::{Error as UnifyError, Fresh, GenericVariant, Unifiable, Unifier};
+use substitution::{Constraints, Substitutable, Substitution, Variable, VariableFactory};
 
 impl VariableFactory for ArcKind {
     type Variable = TypeVariable;
@@ -46,6 +43,12 @@ pub struct State<'a> {
     reduced_aliases: Vec<Symbol>,
     subs: &'a Substitution<ArcType>,
     record_context: Option<(ArcType, ArcType)>,
+}
+
+impl<'a> Fresh for State<'a> {
+    fn fresh(&self) -> Self {
+        State::new(self.env, self.subs)
+    }
 }
 
 impl<'a> State<'a> {
@@ -154,11 +157,11 @@ impl Variable for TypeVariable {
     }
 }
 
-impl<I> Substitutable for ArcType<I> {
+impl Substitutable for ArcType<Symbol> {
     type Variable = TypeVariable;
     type Factory = ArcKind;
 
-    fn from_variable(var: TypeVariable) -> ArcType<I> {
+    fn from_variable(var: TypeVariable) -> Self {
         Type::variable(var)
     }
 
@@ -171,9 +174,18 @@ impl<I> Substitutable for ArcType<I> {
 
     fn traverse<F>(&self, f: &mut F)
     where
-        F: types::Walker<ArcType<I>>,
+        F: types::Walker<Self>,
     {
         types::walk_type_(self, f)
+    }
+
+    fn instantiate(
+        &self,
+        subs: &Substitution<Self>,
+        constraints: &FnvMap<Symbol, Constraints<Self>>,
+    ) -> Self {
+        let mut named_variables = FnvMap::default();
+        instantiate_generic_variables(&mut named_variables, subs, constraints, self)
     }
 }
 
@@ -189,7 +201,7 @@ impl<'a> Unifiable<State<'a>> for ArcType {
         U: Unifier<State<'a>, Self>,
     {
         let reduced_aliases = unifier.state.reduced_aliases.len();
-        debug!("{:?} <=> {:?}", self, other);
+        debug!("{} <=> {}", self, other);
         let (l_temp, r_temp);
         let (mut l, mut r) = (self, other);
         let mut through_alias = false;
@@ -224,11 +236,44 @@ fn do_zip_match<'a, U>(
 where
     U: Unifier<State<'a>, ArcType>,
 {
-    debug!("Unifying:\n{:?} <=> {:?}", expected, actual);
+    debug!("Unifying:\n{} <=> {}", expected, actual);
     match (&**expected, &**actual) {
         (&Type::App(ref l, ref l_args), &Type::App(ref r, ref r_args)) => {
             Ok(unify_app(unifier, l, l_args, r, r_args))
         }
+        (&Type::Variant(ref l_row), &Type::Variant(ref r_row)) => match (&**l_row, &**r_row) {
+            (
+                &Type::ExtendRow {
+                    fields: ref l_row,
+                    rest: ref l_rest,
+                    ..
+                },
+                &Type::ExtendRow {
+                    fields: ref r_row,
+                    rest: ref r_rest,
+                    ..
+                },
+            ) => if l_row.len() == r_row.len() &&
+                l_row
+                    .iter()
+                    .zip(r_row)
+                    .all(|(l, r)| l.name.name_eq(&r.name)) &&
+                l_rest == r_rest
+            {
+                let iter = l_row.iter().zip(r_row);
+                let new_fields = merge::merge_tuple_iter(iter, |l, r| {
+                    unifier
+                        .try_match(&l.typ, &r.typ)
+                        .map(|typ| Field::new(l.name.clone(), typ))
+                });
+                Ok(
+                    new_fields.map(|fields| Type::poly_variant(fields, l_rest.clone())),
+                )
+            } else {
+                Err(UnifyError::TypeMismatch(expected.clone(), actual.clone()))
+            },
+            _ => Err(UnifyError::TypeMismatch(expected.clone(), actual.clone())),
+        },
         (&Type::Record(ref l_row), &Type::Record(ref r_row)) => {
             // Store the current records so that they can be used when displaying field errors
             let previous = mem::replace(
@@ -673,7 +718,7 @@ where
 pub fn instantiate_generic_variables(
     named_variables: &mut FnvMap<Symbol, ArcType>,
     subs: &Substitution<ArcType>,
-    constraints: &FnvMap<Symbol, Constraint>,
+    constraints: &FnvMap<Symbol, Constraints<ArcType>>,
     typ: &ArcType,
 ) -> ArcType {
     use std::collections::hash_map::Entry;
@@ -778,16 +823,16 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
                     }
                     None => l,
                 };
-                subs.union(unifier.state.clone(), r_var, left)?;
+                subs.union(|| unifier.state.fresh(), r_var, left)?;
                 Ok(None)
 
             }
             (_, &Type::Variable(ref r)) => {
-                subs.union(unifier.state.clone(), r, l)?;
+                subs.union(|| unifier.state.fresh(), r, l)?;
                 Ok(None)
             }
             (&Type::Variable(ref l), _) => {
-                subs.union(unifier.state.clone(), l, r)?;
+                subs.union(|| unifier.state.fresh(), l, r)?;
                 Ok(Some(r.clone()))
             }
             _ => {

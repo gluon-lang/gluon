@@ -1219,6 +1219,18 @@ where
     }
 }
 
+pub trait ToDoc<'a, A> {
+    fn to_doc(&'a self, allocator: &'a A) -> DocBuilder<'a, A>
+    where
+        A: DocAllocator<'a>;
+}
+
+impl<'a, I> ToDoc<'a, Arena<'a>> for ArcType<I> where I: AsRef<str> {
+    fn to_doc(&'a self, allocator: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
+        dt(Prec::Top, self).pretty(allocator)
+    }
+}
+
 #[macro_export]
 macro_rules! chain {
     ($alloc: expr; $first: expr, $($rest: expr),+) => {{

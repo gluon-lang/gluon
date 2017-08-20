@@ -1,25 +1,25 @@
-use std::ops::Deref;
 use std::fmt;
 use std::hash::Hash;
+
+use pretty::{Arena, DocAllocator};
 
 use base::error::Errors;
 use base::fnv::FnvMap;
 use base::symbol::{Symbol, Symbols};
-use base::types::Type;
+use base::types::ToDoc;
 
 use substitution::{self, Substitutable, Substitution, Variable};
 
 #[derive(Debug, PartialEq)]
 pub enum Error<T, E> {
     TypeMismatch(T, T),
-    Substitution(::substitution::Error<T>),
+    Substitution(::substitution::Error<T, E>),
     Other(E),
 }
 
-impl<I, T, E> fmt::Display for Error<T, E>
+impl<T, E> fmt::Display for Error<T, E>
 where
-    I: AsRef<str>,
-    T: fmt::Display + Deref<Target = Type<I, T>>,
+    T: fmt::Display + for<'a> ToDoc<'a, Arena<'a>>,
     E: fmt::Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -27,18 +27,17 @@ where
 
         match *self {
             TypeMismatch(ref l, ref r) => {
-                use pretty::{Arena, DocAllocator};
 
                 let arena = Arena::new();
                 let doc = chain![&arena;
                     arena.newline(),
                     "Expected:",
                     arena.space(),
-                    l.pretty(&arena).group(),
+                    l.to_doc(&arena).group(),
                     arena.newline(),
                     "Found:",
                     arena.space(),
-                    r.pretty(&arena).group()
+                    r.to_doc(&arena).group()
                 ].group()
                     .nest(4);
                 write!(f, "Types do not match:{}", doc.1.pretty(80))
@@ -49,8 +48,8 @@ where
     }
 }
 
-impl<T, E> From<substitution::Error<T>> for Error<T, E> {
-    fn from(err: substitution::Error<T>) -> Self {
+impl<T, E> From<substitution::Error<T, E>> for Error<T, E> {
+    fn from(err: substitution::Error<T, E>) -> Self {
         Error::Substitution(err)
     }
 }
@@ -137,6 +136,16 @@ pub trait Unifiable<S>: Substitutable + Sized {
         U: Unifier<S, Self>;
 }
 
+pub trait Fresh {
+    fn fresh(&self) -> Self;
+}
+
+impl Fresh for () {
+    fn fresh(&self) -> Self {
+        *self
+    }
+}
+
 /// Unify `l` and `r` taking into account and updating the substitution `subs` using the
 /// [Union-Find](https://en.wikipedia.org/wiki/Disjoint-set_data_structure) algorithm to
 /// resolve which types must be equal.
@@ -149,9 +158,10 @@ pub fn unify<S, T>(
     r: &T,
 ) -> Result<T, Errors<Error<T, T::Error>>>
 where
-    T: Unifiable<S> + PartialEq + fmt::Display + Clone,
+    T: Unifiable<S> + PartialEq + fmt::Display + fmt::Debug + Clone,
     T::Variable: Clone,
-    S: Clone,
+    T::Factory: Clone,
+    S: Fresh,
 {
     let mut state = UnifierState {
         state: state,
@@ -181,7 +191,8 @@ impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
 where
     T: Unifiable<S> + PartialEq + Clone + fmt::Display + 'e,
     T::Variable: Clone,
-    S: Clone,
+    T::Factory: Clone,
+    S: Fresh,
 {
     fn report_error(unifier: &mut UnifierState<S, Self>, error: Error<T, T::Error>) {
         unifier.unifier.errors.push(error);
@@ -189,24 +200,41 @@ where
 
     fn try_match_res(
         unifier: &mut UnifierState<S, Self>,
-        l: &T,
-        r: &T,
+        l_orig: &T,
+        r_orig: &T,
     ) -> Result<Option<T>, Error<T, T::Error>> {
         let subs = unifier.unifier.subs;
         // Retrieve the 'real' types by resolving
-        let l = subs.real(l);
-        let r = subs.real(r);
+        let l = subs.real(l_orig);
+        let r = subs.real(r_orig);
+        fn test() {
+            debug!("");
+        }
+        if l as *const _ != l_orig as *const _ {
+            if l_orig.get_var().map_or(0, |x| x.get_id()) == 1949 {
+                test();
+            }
+            debug!("Real l: {} => {}", l_orig, l);
+        }
+        if r as *const _ != r_orig as *const _ {
+            if r_orig.get_var().map_or(0, |x| x.get_id()) == 1949 {
+                test();
+            }
+            debug!("Real r: {} => {}", r_orig, r);
+        }
         // `l` and `r` must have the same type, if one is a variable that variable is
         // unified with whatever the other type is
         match (l.get_var(), r.get_var()) {
-            (_, Some(r)) => match subs.union(unifier.state.clone(), r, l) {
-                Ok(()) => Ok(None),
-                Err(err) => Err(err.into()),
-            },
-            (Some(l), _) => match subs.union(unifier.state.clone(), l, r) {
-                Ok(()) => Ok(Some(r.clone())),
-                Err(err) => Err(err.into()),
-            },
+            (_, Some(r_var)) => {
+                let replacement = subs.union(|| unifier.state.fresh(), r_var, l)?;
+                debug!("Union {} <> {}", l, replacement.as_ref().unwrap_or(r));
+                Ok(replacement)
+            }
+            (Some(l_var), _) => {
+                let replacement = subs.union(|| unifier.state.fresh(), l_var, r)?;
+                debug!("Union {} <> {}", replacement.as_ref().unwrap_or(l), r);
+                Ok(replacement.or_else(|| Some(r.clone())))
+            }
             (None, None) => {
                 // Both sides are concrete types, the only way they can be equal is if
                 // the matcher finds their top level to be equal (and their sub-terms
@@ -308,6 +336,8 @@ where
 
 #[cfg(test)]
 mod test {
+    use super::*;
+
     use std::fmt;
 
     use base::error::Errors;
@@ -315,8 +345,7 @@ mod test {
     use base::symbol::{Symbol, Symbols};
     use base::types::Walker;
 
-    use super::{Error, GenericVariant, Unifiable, Unifier, UnifierState};
-    use substitution::{Substitutable, Substitution};
+    use substitution::{Constraints, Substitutable, Substitution};
 
     #[derive(Debug, Clone, Eq, PartialEq, Hash)]
     pub struct TType(Box<Type<TType>>);
@@ -373,6 +402,14 @@ mod test {
                 }
             }
             traverse_(self, f)
+        }
+
+        fn instantiate(
+            &self,
+            _subs: &Substitution<Self>,
+            _constraints: &FnvMap<Symbol, Constraints<Self>>,
+        ) -> Self {
+            self.clone()
         }
     }
 

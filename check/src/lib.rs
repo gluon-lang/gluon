@@ -5,6 +5,7 @@
 //! internal compiler error.
 #![doc(html_root_url = "https://docs.rs/gluon_check/0.5.0")] // # GLUON
 
+extern crate itertools;
 #[macro_use]
 extern crate log;
 #[cfg(test)]

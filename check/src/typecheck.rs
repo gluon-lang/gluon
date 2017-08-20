@@ -5,11 +5,13 @@ use std::borrow::Cow;
 use std::fmt;
 use std::iter::once;
 use std::mem;
-use std::rc::Rc;
+use std::sync::Arc;
+
+use itertools::Itertools;
 
 use base::scoped_map::ScopedMap;
 use base::ast::{DisplayEnv, Expr, Literal, MutVisitor, Pattern, PatternField, SpannedExpr};
-use base::ast::{SpannedPattern, SpannedIdent, TypeBinding, ValueBinding};
+use base::ast::{SpannedIdent, SpannedPattern, TypeBinding, ValueBinding};
 use base::error::Errors;
 use base::fnv::{FnvMap, FnvSet};
 use base::resolve;
@@ -21,10 +23,10 @@ use base::types::{self, Alias, AliasData, AppVec, ArcType, Field, Generic};
 use base::types::{PrimitiveEnv, RecordSelector, Type, TypeCache, TypeEnv, TypeVariable};
 
 use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
-use substitution::{self, Substitution};
+use substitution::{self, Constraints, Substitution};
 use rename::RenameError;
 use unify::{self, Error as UnifyError};
-use unify_type::{self, Constraint, instantiate_generic_variables, Error as UnifyTypeError};
+use unify_type::{self, instantiate_generic_variables, Error as UnifyTypeError};
 
 /// Type representing a single error when checking a type
 #[derive(Debug, PartialEq)]
@@ -156,7 +158,7 @@ pub type SpannedTypeError<Id> = Spanned<TypeError<Id>, BytePos>;
 type TcResult<T> = Result<T, TypeError<Symbol>>;
 
 struct StackBinding {
-    constraints: FnvMap<Symbol, Constraint>,
+    constraints: FnvMap<Symbol, Constraints<ArcType>>,
     typ: ArcType,
 }
 
@@ -483,19 +485,21 @@ impl<'a> Typecheck<'a> {
                                 self.generalize_type(0, l);
                                 self.generalize_type(0, r);
                             }
-                            unify::Error::Substitution(ref mut err) => {
-                                match *err {
-                                    substitution::Error::Occurs(_, ref mut typ) => {
+                            unify::Error::Substitution(ref mut err) => match *err {
+                                substitution::Error::Occurs(_, ref mut typ) => {
+                                    self.generalize_type(0, typ);
+                                }
+                                substitution::Error::Constraint(
+                                    ref mut var,
+                                    ref mut constraints,
+                                    ref mut todo
+                                ) => {
+                                    for typ in Arc::make_mut(constraints) {
                                         self.generalize_type(0, typ);
                                     }
-                                    substitution::Error::Constraint(ref mut var, ref mut constraints) => {
-                                        for typ in Rc::make_mut(constraints) {
-                                            self.generalize_type(0, typ);
-                                        }
-                                        self.generalize_type(0, var);
-                                    }
+                                    self.generalize_type(0, var);
                                 }
-                            }
+                            },
                             unify::Error::Other(ref mut err) => {
                                 if let unify_type::TypeError::MissingFields(ref mut typ, _) = *err {
                                     self.generalize_type(0, typ);
@@ -1309,11 +1313,11 @@ impl<'a> Typecheck<'a> {
                 .get_all(symbol)
                 .expect("Symbol is not in scope");
             if existing_types.len() >= 2 {
-                let existing_type = &existing_types[existing_types.len() - 2].typ;
+                let existing_binding = &existing_types[existing_types.len() - 2];
                 debug!(
                     "Intersect `{}`\n{} ∩ {}",
                     symbol,
-                    self.subs.real(existing_type),
+                    self.subs.real(&existing_binding.typ),
                     self.subs.real(symbol_type)
                 );
                 let state = unify_type::State::new(&self.environment, &self.subs);
@@ -1321,14 +1325,42 @@ impl<'a> Typecheck<'a> {
                     &self.subs,
                     self.symbols.symbols(),
                     state,
-                    existing_type,
+                    &existing_binding.typ,
                     symbol_type,
                 );
                 constraints = intersection_constraints
                     .into_iter()
-                    .map(|((l, r), name)| (name, Rc::new(vec![l, r])))
+                    .map(|((l, r), name)| {
+                        let constraints = match *l {
+                            Type::Generic(ref gen) => existing_binding.constraints.get(&gen.id),
+                            _ => None,
+                        };
+                        (
+                            name,
+                            Arc::new(
+                                constraints
+                                    .iter()
+                                    .flat_map(|x| x.iter())
+                                    .cloned()
+                                    .chain(Some(r))
+                                    .chain(if constraints.is_none() {
+                                        Some(l)
+                                    } else {
+                                        None
+                                    })
+                                    .collect::<Vec<_>>(),
+                            ),
+                        )
+                    })
                     .collect();
-                debug!("Intersect result {}", result);
+                debug!(
+                    "Intersect result {}\n\t{}",
+                    result,
+                    constraints
+                        .iter()
+                        .map(|t| format!("{}:{}", t.0, t.1.iter().format("\n\t\t")))
+                        .format("\n")
+                );
                 typ = result
             } else {
                 typ = symbol_type.clone()
@@ -1387,23 +1419,41 @@ impl<'a> Typecheck<'a> {
                 typ = t;
             }
             match **typ {
-                Type::Variable(ref var)
-                    if self.subs.get_level(var.id) >= level &&
-                           self.subs.get_constraints(var.id).is_none() => {
-                    // Create a prefix if none exists
-                    if generic.is_none() {
-                        let mut g = String::new();
-                        self.next_variable(level, &mut g);
-                        *generic = Some(g);
-                    }
-                    let generic = generic.as_ref().unwrap();
+                Type::Variable(ref var) if self.subs.get_level(var.id) >= level => {
+                    if self.subs.get_constraints(var.id).is_some() {
+                        let resolved_result = {
+                            let state = unify_type::State::new(&self.environment, &self.subs);
+                            self.subs.resolve_constraints(|| state.clone(), var, typ)
+                        };
+                        let resolved_type = match resolved_result {
+                            Ok(x) => x.unwrap_or_else(|| typ.clone()),
+                            Err(err) => self.error(
+                                Span::new(0.into(), 0.into()),
+                                TypeError::Unification(
+                                    typ.clone(),
+                                    typ.clone(),
+                                    vec![unify::Error::Substitution(err)],
+                                ),
+                            ),
+                        };
+                        Some(resolved_type)
+                    } else {
+                        // Create a prefix if none exists
+                        if generic.is_none() {
+                            let mut g = String::new();
+                            self.next_variable(level, &mut g);
+                            *generic = Some(g);
+                        }
+                        let generic = generic.as_ref().unwrap();
 
-                    let generic = format!("{}{}", generic, i);
-                    *i += 1;
-                    let id = self.symbols.symbol(generic);
-                    let gen: ArcType = Type::generic(Generic::new(id.clone(), var.kind.clone()));
-                    self.subs.insert(var.id, gen.clone());
-                    Some(gen)
+                        let generic = format!("{}{}", generic, i);
+                        *i += 1;
+                        let id = self.symbols.symbol(generic);
+                        let gen: ArcType =
+                            Type::generic(Generic::new(id.clone(), var.kind.clone()));
+                        self.subs.insert(var.id, gen.clone());
+                        Some(gen)
+                    }
                 }
                 Type::ExtendRow {
                     ref types,
@@ -1580,7 +1630,7 @@ impl<'a> Typecheck<'a> {
 
     fn instantiate_constrained(
         &mut self,
-        constraints: &FnvMap<Symbol, Constraint>,
+        constraints: &FnvMap<Symbol, Constraints<ArcType>>,
         typ: &ArcType,
     ) -> ArcType {
         self.named_variables.clear();
@@ -1635,17 +1685,17 @@ fn apply_subs(
             TypeMismatch(expected, actual) => {
                 TypeMismatch(subs.set_type(expected), subs.set_type(actual))
             }
-            Substitution(err) => {
-                Substitution(match err {
-                    substitution::Error::Occurs(var, typ) => substitution::Error::Occurs(var, subs.set_type(typ)),
-                    substitution::Error::Constraint(typ, mut constraints) => {
-                        for typ in Rc::make_mut(&mut constraints) {
-                            *typ = subs.set_type(typ.clone());
-                        }
-                        substitution::Error::Constraint(subs.set_type(typ), constraints)
-                    },
-                })
-            }
+            Substitution(err) => Substitution(match err {
+                substitution::Error::Occurs(var, typ) => {
+                    substitution::Error::Occurs(var, subs.set_type(typ))
+                }
+                substitution::Error::Constraint(typ, mut constraints, errors) => {
+                    for typ in Arc::make_mut(&mut constraints) {
+                        *typ = subs.set_type(typ.clone());
+                    }
+                    substitution::Error::Constraint(subs.set_type(typ), constraints, errors)
+                }
+            }),
             Other(err) => Other(err),
         })
         .collect()

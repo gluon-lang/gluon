@@ -324,12 +324,10 @@ where
                 Ok(node)
             }
             Variant::Plain(value) => Ok(value),
-            Variant::Reference(id) => {
-                match self.0.as_mut().get(&id) {
-                    Some(rc) => Ok(rc),
-                    None => Err(D::Error::custom(format_args!("missing id {}", id))),
-                }
-            }
+            Variant::Reference(id) => match self.0.as_mut().get(&id) {
+                Some(rc) => Ok(rc),
+                None => Err(D::Error::custom(format_args!("missing id {}", id))),
+            },
         }
     }
 }
@@ -402,11 +400,7 @@ pub mod shared {
     use super::*;
     use serde::de::DeserializeSeed;
 
-    pub fn serialize<S, T, Seed>(
-        self_: &T,
-        serializer: S,
-        seed: &Seed,
-    ) -> Result<S::Ok, S::Error>
+    pub fn serialize<S, T, Seed>(self_: &T, serializer: S, seed: &Seed) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
         T: Shared + Deref,

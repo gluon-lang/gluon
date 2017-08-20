@@ -2,12 +2,13 @@ use std::fmt;
 use std::result::Result as StdResult;
 
 use base::ast;
+use base::fnv::FnvMap;
 use base::kind::{self, ArcKind, Kind, KindCache, KindEnv};
 use base::merge;
 use base::symbol::Symbol;
 use base::types::{self, AppVec, ArcType, BuiltinType, Field, Generic, Type, Walker};
 
-use substitution::{Substitutable, Substitution};
+use substitution::{Constraints, Substitutable, Substitution};
 use unify::{self, Error as UnifyError, Unifiable, Unifier, UnifierState};
 
 pub type Error<I> = UnifyError<ArcKind, KindError<I>>;
@@ -305,6 +306,17 @@ pub enum KindError<I> {
     UndefinedType(I),
 }
 
+impl<I> fmt::Display for KindError<I>
+where
+    I: fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            KindError::UndefinedType(ref name) => write!(f, "Type '{}' is not defined", name),
+        }
+    }
+}
+
 pub fn fmt_kind_error<I>(error: &Error<I>, f: &mut fmt::Formatter) -> fmt::Result
 where
     I: fmt::Display,
@@ -318,7 +330,7 @@ where
             actual
         ),
         Substitution(ref err) => write!(f, "{}", err),
-        Other(KindError::UndefinedType(ref name)) => write!(f, "Type '{}' is not defined", name),
+        Other(ref err) => write!(f, "{}", err),
     }
 }
 
@@ -342,6 +354,13 @@ impl Substitutable for ArcKind {
         F: Walker<ArcKind>,
     {
         kind::walk_kind(self, f);
+    }
+    fn instantiate(
+        &self,
+        _subs: &Substitution<Self>,
+        _constraints: &FnvMap<Symbol, Constraints<Self>>,
+    ) -> Self {
+        self.clone()
     }
 }
 

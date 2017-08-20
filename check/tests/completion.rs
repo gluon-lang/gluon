@@ -309,10 +309,7 @@ let f : Int -> String -> String = \x y -> y
 fn unit() {
     let _ = env_logger::init();
 
-    let result = find_type(
-        "()",
-        BytePos::from(1),
-    );
+    let result = find_type("()", BytePos::from(1));
     let expected = Ok(Type::unit());
 
     assert_eq!(result, expected);

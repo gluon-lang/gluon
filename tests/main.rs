@@ -51,6 +51,13 @@ fn test_files(path: &str) -> Result<Vec<PathBuf>, Box<Error>> {
 }
 
 fn main_() -> Result<(), Box<Error>> {
+    let args: Vec<_> = ::std::env::args().collect();
+    let filter = if args.len() > 1 && args.last().unwrap() != "main" {
+        args.last()
+    } else {
+        None
+    };
+
     let vm = new_vm();
     let mut compiler = Compiler::new();
     compiler
@@ -58,7 +65,11 @@ fn main_() -> Result<(), Box<Error>> {
         .sync_or_error()?;
     let mut text = String::new();
     let _ = ::env_logger::init();
-    for filename in test_files("tests/pass")? {
+
+    let iter = test_files("tests/pass")?.into_iter().filter(|filename| {
+        filter.map_or(true, |filter| filename.to_string_lossy().contains(filter))
+    });
+    for filename in iter {
         let mut file = File::open(&filename)?;
         text.clear();
         file.read_to_string(&mut text)?;
@@ -68,7 +79,11 @@ fn main_() -> Result<(), Box<Error>> {
             .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, name, &text)
             .sync_or_error()?;
     }
-    for filename in test_files("tests/fail")? {
+
+    let iter = test_files("tests/fail")?.into_iter().filter(|filename| {
+        filter.map_or(true, |filter| filename.to_string_lossy().contains(filter))
+    });
+    for filename in iter {
         let mut file = File::open(&filename)?;
         text.clear();
         file.read_to_string(&mut text)?;

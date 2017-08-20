@@ -26,8 +26,6 @@ macro_rules! assert_err {
         use check::substitution::Error::{Occurs, Constraint};
         #[allow(unused_imports)]
         use check::unify_type::TypeError::FieldMismatch;
-        #[allow(unused_imports)]
-        use check::rename::RenameError::*;
 
         match $e {
             Ok(x) => assert!(false, "Expected error, got {}", x),
@@ -48,7 +46,12 @@ macro_rules! assert_err {
 }
 
 macro_rules! assert_unify_err {
-    ($e: expr, $($id: pat),+) => {{
+    ($e: expr, $($id: pat),+) => {
+        assert_multi_unify_err!($e, [$($id),+])
+    }
+}
+macro_rules! assert_multi_unify_err {
+    ($e: expr, $( [ $( $id: pat ),+ ] ),+) => {{
         use check::typecheck::TypeError::*;
         #[allow(unused_imports)]
         use check::unify::Error::{TypeMismatch, Substitution, Other};
@@ -60,32 +63,53 @@ macro_rules! assert_unify_err {
         match $e {
             Ok(x) => assert!(false, "Expected error, got {}", x),
             Err(err) => {
-                for error in err.errors() {
-                    match error {
-                        Spanned { value: Unification(_, _, ref errors), .. } => {
-                            let mut iter = errors.iter();
-                            $(
-                            match iter.next() {
-                                Some(&$id) => (),
-                                Some(error2) => {
-                                    assert!(false, "Found errors:\n{}\nExpected:\n{}\nFound\n:{:?}",
-                                            error, stringify!($id), error2);
+                let errors = err.errors();
+                let mut errors_iter = (&errors).into_iter().enumerate();
+                $(
+                match errors_iter.next() {
+                    Some((i, error)) => {
+                        match *error {
+                            Spanned { value: Unification(_, _, ref errors), .. } => {
+                                let mut iter = errors.iter();
+                                $(
+                                match iter.next() {
+                                    Some(&$id) => (),
+                                    Some(error2) => {
+                                        assert!(false,
+                                            "Found errors at {}:\n{}\nExpected:\n{}\nFound\n:{:?}",
+                                            i,
+                                            error,
+                                            stringify!($id),
+                                            error2
+                                        );
+                                    }
+                                    None => {
+                                        assert!(false,
+                                            "Found less errors than expected at {}.\nErrors:\n{}\nbut expected {}",
+                                            i,
+                                            error,
+                                            stringify!($id)
+                                        );
+                                    }
                                 }
-                                None => {
-                                    assert!(false, "Found errors:\n{}\nbut expected {}",
-                                            error, stringify!($id));
-                                }
+                                )+
+                                assert!(iter.count() == 0,
+                                        "Found more errors than expected at {}\n{}",
+                                        i,
+                                        error);
                             }
-                            )+
-                            assert!(iter.count() == 0,
-                                    "Found more errors than expected\n{}",
-                                    error);
+                            _ => assert!(false,
+                                        "Found errors at {}:\n{}\nbut expected an unification error",
+                                        i,
+                                        error)
                         }
-                        _ => assert!(false,
-                                     "Found errors:\n{}\nbut expected an unification error",
-                                     error)
                     }
+                    None => ()
                 }
+                )+
+                assert!(errors_iter.count() == 0,
+                        "Found more unification errors than expected\n{}",
+                        errors);
             }
         }
     }}
@@ -190,9 +214,9 @@ fn no_matching_overloaded_binding() {
     let _ = env_logger::init();
     let text = r#"
 let f x = x #Int+ 1
-in
 let f x = x #Float+ 1.0
-in f ""
+let f x : () -> () = ()
+f ""
 "#;
     let result = support::typecheck(text);
 
@@ -209,9 +233,15 @@ let (++) x y = x #Float+ y
 "#;
     let result = support::typecheck(text);
 
-    assert_unify_err!(result, Substitution(Constraint(..)), Substitution(Constraint(..)));
+    assert_multi_unify_err!(
+        result,
+        [Substitution(Constraint(..)), Substitution(Constraint(..))],
+        [Substitution(Constraint(..))]
+    );
 }
 
+// TODO Determine what the correct semantics is for this case
+#[ignore]
 #[test]
 fn not_enough_information_to_decide_overload() {
     let _ = env_logger::init();
@@ -222,7 +252,7 @@ let f x = x #Float+ 1.0
 "#;
     let result = support::typecheck(text);
 
-    assert_err!(result, Rename(..));
+    assert_unify_err!(result, Substitution(Constraint(..)));
 }
 
 #[test]
@@ -506,5 +536,5 @@ let r = f { x = 0 } (\r -> { x = r.x #Int+ 1 })
 r.y
 "#;
     let result = support::typecheck(text);
-    assert_unify_err!(result, Substitution(Constraint(..)));
+    assert_err!(result, InvalidProjection(..));
 }

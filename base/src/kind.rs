@@ -2,8 +2,10 @@ use std::fmt;
 use std::ops::Deref;
 use std::sync::Arc;
 
+use pretty::{Doc, DocAllocator, DocBuilder};
+
 use symbol::SymbolRef;
-use types::Walker;
+use types::{ToDoc, Walker};
 
 /// Trait for values which contains kinded values which can be refered by name
 pub trait KindEnv {
@@ -87,6 +89,16 @@ impl fmt::Display for Kind {
     }
 }
 
+impl<'a, A> ToDoc<'a, A> for ArcKind {
+    fn to_doc(&'a self, allocator: &'a A) -> DocBuilder<'a, A>
+    where
+        A: DocAllocator<'a>,
+    {
+        DocBuilder(allocator, Doc::text(self.to_string()))
+    }
+}
+
+
 impl<'a> fmt::Display for DisplayKind<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self.1 {
@@ -94,14 +106,10 @@ impl<'a> fmt::Display for DisplayKind<'a> {
             Kind::Variable(i) => i.fmt(f),
             Kind::Type => "Type".fmt(f),
             Kind::Row => "Row".fmt(f),
-            Kind::Function(ref arg, ref ret) => {
-                match self.0 {
-                    Prec::Function => {
-                        write!(f, "({} -> {})", DisplayKind(Prec::Function, arg), ret)
-                    }
-                    Prec::Top => write!(f, "{} -> {}", DisplayKind(Prec::Function, arg), ret),
-                }
-            }
+            Kind::Function(ref arg, ref ret) => match self.0 {
+                Prec::Function => write!(f, "({} -> {})", DisplayKind(Prec::Function, arg), ret),
+                Prec::Top => write!(f, "{} -> {}", DisplayKind(Prec::Function, arg), ret),
+            },
         }
     }
 }
