@@ -398,9 +398,11 @@ where
                         match sel.unwrap() {
                             Variant::Pattern(pattern) => self.visit_pattern(pattern),
                             Variant::Ident(ident) => {
-                                self.found = Some(Some(
-                                    Match::Ident(ident.span, &ident.value.name, &ident.value.typ),
-                                ));
+                                self.found = Some(Some(Match::Ident(
+                                    ident.span,
+                                    &ident.value.name,
+                                    &ident.value.typ,
+                                )));
                             }
                             Variant::Expr(expr) => self.visit_expr(expr),
                         }
@@ -437,8 +439,9 @@ where
                 let selection = self.select_spanned(&lambda.args, |arg| arg.span);
                 match selection {
                     (false, Some(arg)) => {
-                        self.found =
-                            Some(Some(Match::Ident(arg.span, &arg.value.name, &arg.value.typ)));
+                        self.found = Some(Some(
+                            Match::Ident(arg.span, &arg.value.name, &arg.value.typ),
+                        ));
                     }
                     _ => self.visit_expr(&lambda.body),
                 }
@@ -446,13 +449,11 @@ where
             Expr::Tuple {
                 elems: ref exprs, ..
             } |
-            Expr::Block(ref exprs) => {
-                if exprs.is_empty() {
-                    self.found = Some(Some(Match::Expr(current)));
-                } else {
-                    self.visit_one(exprs)
-                }
-            }
+            Expr::Block(ref exprs) => if exprs.is_empty() {
+                self.found = Some(Some(Match::Expr(current)));
+            } else {
+                self.visit_one(exprs)
+            },
             Expr::Error => (),
         }
     }
@@ -616,17 +617,15 @@ where
                         }),
                 );
             }
-            Match::Ident(_, ident, _) => {
-                if let Match::Expr(context) = found.enclosing_match {
-                    let iter = suggest.ident_iter(context, ident);
-                    result.extend(iter.into_iter().map(|(name, typ)| {
-                        Suggestion {
-                            name: name.declared_name().into(),
-                            typ: typ,
-                        }
-                    }));
-                }
-            }
+            Match::Ident(_, ident, _) => if let Match::Expr(context) = found.enclosing_match {
+                let iter = suggest.ident_iter(context, ident);
+                result.extend(iter.into_iter().map(|(name, typ)| {
+                    Suggestion {
+                        name: name.declared_name().into(),
+                        typ: typ,
+                    }
+                }));
+            },
         },
 
         None => match found.enclosing_match {
@@ -657,24 +656,28 @@ pub fn get_metadata<'a>(
 ) -> Option<&'a Metadata> {
     complete_at((), expr, pos)
         .ok()
-        .and_then(|found| found.match_.map(|m|(m, found.enclosing_match)))
+        .and_then(|found| found.match_.map(|m| (m, found.enclosing_match)))
         .and_then(|(match_, enclosing_match)| match match_ {
             Match::Expr(expr) => if let Expr::Ident(ref id) = expr.value {
                 env.get(&id.name)
             } else {
                 None
             },
-            Match::Ident(_, id, _typ) => {
-                match enclosing_match {
-                    Match::Expr(&Spanned { value: Expr::Projection(ref expr, _, _), .. }) => if let Expr::Ident(ref expr_id) = expr.value {
-                        env.get(&expr_id.name)
-                            .and_then(|metadata| metadata.module.get(id.as_ref()))
-                    } else {
-                        None
-                    },
-                    Match::Expr(&Spanned { value: Expr::Infix(..), .. }) => env.get(id),
-                    _ => None,
-                }
+            Match::Ident(_, id, _typ) => match enclosing_match {
+                Match::Expr(&Spanned {
+                    value: Expr::Projection(ref expr, _, _),
+                    ..
+                }) => if let Expr::Ident(ref expr_id) = expr.value {
+                    env.get(&expr_id.name)
+                        .and_then(|metadata| metadata.module.get(id.as_ref()))
+                } else {
+                    None
+                },
+                Match::Expr(&Spanned {
+                    value: Expr::Infix(..),
+                    ..
+                }) => env.get(id),
+                _ => None,
             },
             _ => None,
         })
@@ -709,14 +712,15 @@ where
                 }
 
                 Match::Ident(_, _, _) => match found.enclosing_match {
-                    Match::Expr(&Spanned { value: Expr::Projection(ref expr, _, _), .. }) => {
-                        if let Expr::Ident(ref expr_ident) = expr.value {
-                            env.get(&expr_ident.name)
-                                .and_then(|metadata| metadata.module.get(name))
-                        } else {
-                            None
-                        }
-                    }
+                    Match::Expr(&Spanned {
+                        value: Expr::Projection(ref expr, _, _),
+                        ..
+                    }) => if let Expr::Ident(ref expr_ident) = expr.value {
+                        env.get(&expr_ident.name)
+                            .and_then(|metadata| metadata.module.get(name))
+                    } else {
+                        None
+                    },
                     _ => None,
                 },
                 _ => None,

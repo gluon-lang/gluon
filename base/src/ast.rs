@@ -591,7 +591,7 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
     };
 
     let typ = types::walk_move_type(alias.typ().into_owned(), &mut |typ| {
-        match *typ {
+        match **typ {
             Type::Generic(ref generic) => {
                 // Replace the generic variable with the type from the list
                 // or if it is not found the make a fresh variable

@@ -2,12 +2,13 @@ use std::fmt;
 use std::result::Result as StdResult;
 
 use base::ast;
+use base::fnv::FnvMap;
 use base::kind::{self, ArcKind, Kind, KindCache, KindEnv};
 use base::merge;
 use base::symbol::Symbol;
 use base::types::{self, AppVec, ArcType, BuiltinType, Field, Generic, Type, Walker};
 
-use substitution::{Substitutable, Substitution};
+use substitution::{Constraints, Substitutable, Substitution};
 use unify::{self, Error as UnifyError, Unifiable, Unifier, UnifierState};
 
 pub type Error<I> = UnifyError<ArcKind, KindError<I>>;
@@ -209,7 +210,7 @@ impl<'a> KindCheck<'a> {
                 Ok((kind, Type::app(ctor, new_args)))
             }
             Type::Variant(ref row) => {
-                let row: StdResult<_, _> = row.row_iter()
+                let row: Result<_> = row.row_iter()
                     .map(|field| {
                         let (kind, typ) = self.kindcheck(&field.typ)?;
                         let type_kind = self.type_kind();
@@ -231,7 +232,7 @@ impl<'a> KindCheck<'a> {
                 ref fields,
                 ref rest,
             } => {
-                let fields: StdResult<_, _> = fields
+                let fields: Result<_> = fields
                     .iter()
                     .map(|field| {
                         let (kind, typ) = self.kindcheck(&field.typ)?;
@@ -255,7 +256,7 @@ impl<'a> KindCheck<'a> {
 
     fn unify(&mut self, expected: &ArcKind, mut actual: ArcKind) -> Result<ArcKind> {
         debug!("Unify {:?} <=> {:?}", expected, actual);
-        let result = unify::unify(&self.subs, &mut (), expected, &actual);
+        let result = unify::unify(&self.subs, (), expected, &actual);
         match result {
             Ok(k) => Ok(k),
             Err(_errors) => {
@@ -269,7 +270,7 @@ impl<'a> KindCheck<'a> {
 
     pub fn finalize_type(&self, typ: ArcType) -> ArcType {
         let default = Some(&self.kind_cache.typ);
-        types::walk_move_type(typ, &mut |typ| match *typ {
+        types::walk_move_type(typ, &mut |typ| match **typ {
             Type::Variable(ref var) => {
                 let mut kind = var.kind.clone();
                 kind = update_kind(&self.subs, kind, default);
@@ -305,6 +306,17 @@ pub enum KindError<I> {
     UndefinedType(I),
 }
 
+impl<I> fmt::Display for KindError<I>
+where
+    I: fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            KindError::UndefinedType(ref name) => write!(f, "Type '{}' is not defined", name),
+        }
+    }
+}
+
 pub fn fmt_kind_error<I>(error: &Error<I>, f: &mut fmt::Formatter) -> fmt::Result
 where
     I: fmt::Display,
@@ -317,8 +329,8 @@ where
             expected,
             actual
         ),
-        Occurs(ref var, ref typ) => write!(f, "Variable `{}` occurs in `{}`.", var, typ),
-        Other(KindError::UndefinedType(ref name)) => write!(f, "Type '{}' is not defined", name),
+        Substitution(ref err) => write!(f, "{}", err),
+        Other(ref err) => write!(f, "{}", err),
     }
 }
 
@@ -342,6 +354,13 @@ impl Substitutable for ArcKind {
         F: Walker<ArcKind>,
     {
         kind::walk_kind(self, f);
+    }
+    fn instantiate(
+        &self,
+        _subs: &Substitution<Self>,
+        _constraints: &FnvMap<Symbol, Constraints<Self>>,
+    ) -> Self {
+        self.clone()
     }
 }
 

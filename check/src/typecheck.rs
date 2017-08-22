@@ -1,13 +1,17 @@
 //! The main typechecking interface which is responsible for typechecking expressions, patterns,
 //! etc. Only checks which need to be aware of expressions are handled here the actual unifying and
 //! checking of types are done in the `unify_type` and `kindcheck` modules.
+use std::borrow::Cow;
 use std::fmt;
 use std::iter::once;
 use std::mem;
+use std::sync::Arc;
+
+use itertools::Itertools;
 
 use base::scoped_map::ScopedMap;
 use base::ast::{DisplayEnv, Expr, Literal, MutVisitor, Pattern, PatternField, SpannedExpr};
-use base::ast::{SpannedPattern, SpannedIdent, TypeBinding, ValueBinding};
+use base::ast::{SpannedIdent, SpannedPattern, TypeBinding, ValueBinding};
 use base::error::Errors;
 use base::fnv::{FnvMap, FnvSet};
 use base::resolve;
@@ -19,10 +23,9 @@ use base::types::{self, Alias, AliasData, AppVec, ArcType, Field, Generic};
 use base::types::{PrimitiveEnv, RecordSelector, Type, TypeCache, TypeEnv, TypeVariable};
 
 use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
-use substitution::Substitution;
+use substitution::{self, Constraints, Substitution};
 use rename::RenameError;
-use unify::Error as UnifyError;
-use unify;
+use unify::{self, Error as UnifyError};
 use unify_type::{self, instantiate_generic_variables, Error as UnifyTypeError};
 
 /// Type representing a single error when checking a type
@@ -154,11 +157,16 @@ pub type SpannedTypeError<Id> = Spanned<TypeError<Id>, BytePos>;
 
 type TcResult<T> = Result<T, TypeError<Symbol>>;
 
+struct StackBinding {
+    constraints: FnvMap<Symbol, Constraints<ArcType>>,
+    typ: ArcType,
+}
+
 struct Environment<'a> {
     /// The global environment which the typechecker extracts types from
     environment: &'a (PrimitiveEnv + 'a),
     /// Stack allocated variables
-    stack: ScopedMap<Symbol, ArcType>,
+    stack: ScopedMap<Symbol, StackBinding>,
     /// Types which exist in some scope (`type Test = ... in ...`)
     stack_types: ScopedMap<Symbol, (ArcType, Alias<Symbol, ArcType>)>,
 }
@@ -182,6 +190,7 @@ impl<'a> TypeEnv for Environment<'a> {
     fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
         self.stack
             .get(id)
+            .map(|bind| &bind.typ)
             .or_else(|| self.environment.find_type(id))
     }
 
@@ -298,8 +307,21 @@ impl<'a> Typecheck<'a> {
     fn find(&mut self, id: &Symbol) -> TcResult<ArcType> {
         match self.environment.find_type(id).map(ArcType::clone) {
             Some(typ) => {
+                let constraints = self.environment
+                    .stack
+                    .get(id)
+                    .map(|bind| Cow::Borrowed(&bind.constraints))
+                    .unwrap_or_else(|| Cow::Owned(FnvMap::default()));
                 let typ = self.subs.set_type(typ);
-                let typ = self.instantiate(&typ);
+
+                self.named_variables.clear();
+                let typ = instantiate_generic_variables(
+                    &mut self.named_variables,
+                    &self.subs,
+                    &constraints,
+                    &typ,
+                );
+
                 debug!("Find {} : {}", self.symbols.string(id), typ);
                 Ok(typ)
             }
@@ -335,7 +357,13 @@ impl<'a> Typecheck<'a> {
     }
 
     fn stack_var(&mut self, id: Symbol, typ: ArcType) {
-        self.environment.stack.insert(id, typ);
+        self.environment.stack.insert(
+            id,
+            StackBinding {
+                constraints: FnvMap::default(),
+                typ: typ,
+            },
+        );
     }
 
     fn stack_type(&mut self, id: Symbol, alias: &Alias<Symbol, ArcType>) {
@@ -457,10 +485,21 @@ impl<'a> Typecheck<'a> {
                                 self.generalize_type(0, l);
                                 self.generalize_type(0, r);
                             }
-                            unify::Error::Occurs(ref mut var, ref mut typ) => {
-                                self.generalize_type(0, var);
-                                self.generalize_type(0, typ);
-                            }
+                            unify::Error::Substitution(ref mut err) => match *err {
+                                substitution::Error::Occurs(_, ref mut typ) => {
+                                    self.generalize_type(0, typ);
+                                }
+                                substitution::Error::Constraint(
+                                    ref mut var,
+                                    ref mut constraints,
+                                    ref mut todo
+                                ) => {
+                                    for typ in Arc::make_mut(constraints) {
+                                        self.generalize_type(0, typ);
+                                    }
+                                    self.generalize_type(0, var);
+                                }
+                            },
                             unify::Error::Other(ref mut err) => {
                                 if let unify_type::TypeError::MissingFields(ref mut typ, _) = *err {
                                     self.generalize_type(0, typ);
@@ -833,6 +872,7 @@ impl<'a> Typecheck<'a> {
                 let record_type = instantiate_generic_variables(
                     &mut self.named_variables,
                     &self.subs,
+                    &FnvMap::default(),
                     &record_type,
                 );
                 self.unify(&self.type_cache.record(new_types, new_fields), record_type)?;
@@ -956,6 +996,7 @@ impl<'a> Typecheck<'a> {
                 actual_type = instantiate_generic_variables(
                     &mut self.named_variables,
                     &self.subs,
+                    &FnvMap::default(),
                     &actual_type,
                 );
                 self.unify_span(span, &match_type, typ);
@@ -1264,29 +1305,71 @@ impl<'a> Typecheck<'a> {
     }
 
     fn intersect_type(&mut self, level: u32, symbol: &Symbol, symbol_type: &ArcType) {
-        let typ = {
+        let typ;
+        let mut constraints = FnvMap::default();
+        {
             let existing_types = self.environment
                 .stack
                 .get_all(symbol)
                 .expect("Symbol is not in scope");
             if existing_types.len() >= 2 {
-                let existing_type = &existing_types[existing_types.len() - 2];
+                let existing_binding = &existing_types[existing_types.len() - 2];
                 debug!(
                     "Intersect `{}`\n{} ∩ {}",
                     symbol,
-                    self.subs.real(existing_type),
+                    self.subs.real(&existing_binding.typ),
                     self.subs.real(symbol_type)
                 );
                 let state = unify_type::State::new(&self.environment, &self.subs);
-                let result = unify::intersection(&self.subs, state, existing_type, symbol_type);
-                debug!("Intersect result {}", result);
-                result
+                let (intersection_constraints, result) = unify::intersection(
+                    &self.subs,
+                    self.symbols.symbols(),
+                    state,
+                    &existing_binding.typ,
+                    symbol_type,
+                );
+                constraints = intersection_constraints
+                    .into_iter()
+                    .map(|((l, r), name)| {
+                        let constraints = match *l {
+                            Type::Generic(ref gen) => existing_binding.constraints.get(&gen.id),
+                            _ => None,
+                        };
+                        (
+                            name,
+                            Arc::new(
+                                constraints
+                                    .iter()
+                                    .flat_map(|x| x.iter())
+                                    .cloned()
+                                    .chain(Some(r))
+                                    .chain(if constraints.is_none() {
+                                        Some(l)
+                                    } else {
+                                        None
+                                    })
+                                    .collect::<Vec<_>>(),
+                            ),
+                        )
+                    })
+                    .collect();
+                debug!(
+                    "Intersect result {}\n\t{}",
+                    result,
+                    constraints
+                        .iter()
+                        .map(|t| format!("{}:{}", t.0, t.1.iter().format("\n\t\t")))
+                        .format("\n")
+                );
+                typ = result
             } else {
-                symbol_type.clone()
+                typ = symbol_type.clone()
             }
-        };
-        *self.environment.stack.get_mut(symbol).unwrap() =
-            self.finish_type(level, &typ).unwrap_or(typ)
+        }
+        let typ = self.finish_type(level, &typ).unwrap_or(typ);
+        let bind = self.environment.stack.get_mut(symbol).unwrap();
+        bind.constraints = constraints;
+        bind.typ = typ;
     }
 
     /// Generate a generic variable name which is not used in the current scope
@@ -1322,35 +1405,55 @@ impl<'a> Typecheck<'a> {
         level: u32,
         generic: &mut Option<String>,
         i: &mut i32,
-        typ: &Type<Symbol>,
+        typ: &ArcType,
     ) -> Option<ArcType> {
         use base::types::TypeVisitor;
 
-        let mut visitor = types::ControlVisitation(|typ: &Type<_, _>| {
+        let mut visitor = types::ControlVisitation(|typ: &ArcType| {
             let replacement = self.subs
                 .replace_variable(typ)
                 .map(|t| self.finish_type_(level, generic, i, &t).unwrap_or(t));
             let mut typ = typ;
             if let Some(ref t) = replacement {
                 debug!("{} ==> {}", typ, t);
-                typ = &**t;
+                typ = t;
             }
-            match *typ {
+            match **typ {
                 Type::Variable(ref var) if self.subs.get_level(var.id) >= level => {
-                    // Create a prefix if none exists
-                    if generic.is_none() {
-                        let mut g = String::new();
-                        self.next_variable(level, &mut g);
-                        *generic = Some(g);
-                    }
-                    let generic = generic.as_ref().unwrap();
+                    if self.subs.get_constraints(var.id).is_some() {
+                        let resolved_result = {
+                            let state = unify_type::State::new(&self.environment, &self.subs);
+                            self.subs.resolve_constraints(|| state.clone(), var, typ)
+                        };
+                        let resolved_type = match resolved_result {
+                            Ok(x) => x.unwrap_or_else(|| typ.clone()),
+                            Err(err) => self.error(
+                                Span::new(0.into(), 0.into()),
+                                TypeError::Unification(
+                                    typ.clone(),
+                                    typ.clone(),
+                                    vec![unify::Error::Substitution(err)],
+                                ),
+                            ),
+                        };
+                        Some(resolved_type)
+                    } else {
+                        // Create a prefix if none exists
+                        if generic.is_none() {
+                            let mut g = String::new();
+                            self.next_variable(level, &mut g);
+                            *generic = Some(g);
+                        }
+                        let generic = generic.as_ref().unwrap();
 
-                    let generic = format!("{}{}", generic, i);
-                    *i += 1;
-                    let id = self.symbols.symbol(generic);
-                    let gen: ArcType = Type::generic(Generic::new(id.clone(), var.kind.clone()));
-                    self.subs.insert(var.id, gen.clone());
-                    Some(gen)
+                        let generic = format!("{}{}", generic, i);
+                        *i += 1;
+                        let id = self.symbols.symbol(generic);
+                        let gen: ArcType =
+                            Type::generic(Generic::new(id.clone(), var.kind.clone()));
+                        self.subs.insert(var.id, gen.clone());
+                        Some(gen)
+                    }
                 }
                 Type::ExtendRow {
                     ref types,
@@ -1370,7 +1473,7 @@ impl<'a> Typecheck<'a> {
                     }).or_else(|| replacement.clone())
                 }
                 _ => {
-                    let new_type = types::walk_move_type_opt(typ, &mut |typ: &Type<Symbol>| {
+                    let new_type = types::walk_move_type_opt(typ, &mut |typ: &ArcType| {
                         self.finish_type_(level, generic, i, typ)
                     });
                     new_type
@@ -1399,8 +1502,8 @@ impl<'a> Typecheck<'a> {
     // Instantiates Type::Hole with a fresh type variable to ensure the hole only ever refers to a
     // single type variable
     fn create_unifiable_signature(&mut self, typ: ArcType) -> ArcType {
-        let mut f = |typ: &Type<Symbol, ArcType>| {
-            match *typ {
+        let mut f = |typ: &ArcType| {
+            match **typ {
                 Type::Ident(ref id) => {
                     // Substitute the Id by its alias if possible
                     let new_id = self.original_symbols.get(id).unwrap_or(id);
@@ -1522,8 +1625,16 @@ impl<'a> Typecheck<'a> {
     }
 
     fn instantiate(&mut self, typ: &ArcType) -> ArcType {
+        self.instantiate_constrained(&FnvMap::default(), typ)
+    }
+
+    fn instantiate_constrained(
+        &mut self,
+        constraints: &FnvMap<Symbol, Constraints<ArcType>>,
+        typ: &ArcType,
+    ) -> ArcType {
         self.named_variables.clear();
-        instantiate_generic_variables(&mut self.named_variables, &self.subs, typ)
+        instantiate_generic_variables(&mut self.named_variables, &self.subs, constraints, typ)
     }
 
     fn error_on_duplicated_field(
@@ -1574,7 +1685,17 @@ fn apply_subs(
             TypeMismatch(expected, actual) => {
                 TypeMismatch(subs.set_type(expected), subs.set_type(actual))
             }
-            Occurs(var, typ) => Occurs(var, subs.set_type(typ)),
+            Substitution(err) => Substitution(match err {
+                substitution::Error::Occurs(var, typ) => {
+                    substitution::Error::Occurs(var, subs.set_type(typ))
+                }
+                substitution::Error::Constraint(typ, mut constraints, errors) => {
+                    for typ in Arc::make_mut(&mut constraints) {
+                        *typ = subs.set_type(typ.clone());
+                    }
+                    substitution::Error::Constraint(subs.set_type(typ), constraints, errors)
+                }
+            }),
             Other(err) => Other(err),
         })
         .collect()
@@ -1675,18 +1796,18 @@ fn expr_check_span(e: &SpannedExpr<Symbol>) -> Span<BytePos> {
 /// # fn main() {
 /// let i: ArcType = Type::int();
 /// let s: ArcType = Type::string();
-/// assert_eq!(unroll_typ(&*Type::app(Type::app(i.clone(), collect![s.clone()]), collect![i.clone()])),
+/// assert_eq!(unroll_typ(&Type::app(Type::app(i.clone(), collect![s.clone()]), collect![i.clone()])),
 ///            Some(Type::app(i.clone(), collect![s.clone(), i.clone()])));
-/// assert_eq!(unroll_typ(&*Type::app(Type::app(i.clone(), collect![i.clone()]), collect![s.clone()])),
+/// assert_eq!(unroll_typ(&Type::app(Type::app(i.clone(), collect![i.clone()]), collect![s.clone()])),
 ///            Some(Type::app(i.clone(), collect![i.clone(), s.clone()])));
 /// let f: ArcType = Type::builtin(BuiltinType::Function);
-/// assert_eq!(unroll_typ(&*Type::app(Type::app(f.clone(), collect![i.clone()]), collect![s.clone()])),
+/// assert_eq!(unroll_typ(&Type::app(Type::app(f.clone(), collect![i.clone()]), collect![s.clone()])),
 ///            Some(Type::function(collect![i.clone()], s.clone())));
 /// # }
 /// ```
-pub fn unroll_typ(typ: &Type<Symbol>) -> Option<ArcType> {
+pub fn unroll_typ(typ: &ArcType) -> Option<ArcType> {
     let mut args = AppVec::new();
-    let mut current = match *typ {
+    let mut current = match **typ {
         Type::App(ref l, ref rest) => {
             // No need to unroll if `l` is not an application as that will just result in returning
             // an application that is identical to `typ`

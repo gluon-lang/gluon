@@ -1,24 +1,25 @@
-use std::ops::Deref;
 use std::fmt;
 use std::hash::Hash;
 
+use pretty::{Arena, DocAllocator};
+
 use base::error::Errors;
 use base::fnv::FnvMap;
-use base::types::Type;
+use base::symbol::{Symbol, Symbols};
+use base::types::ToDoc;
 
-use substitution::{Substitutable, Substitution, Variable};
+use substitution::{self, Substitutable, Substitution, Variable};
 
 #[derive(Debug, PartialEq)]
 pub enum Error<T, E> {
     TypeMismatch(T, T),
-    Occurs(T, T),
+    Substitution(::substitution::Error<T, E>),
     Other(E),
 }
 
-impl<I, T, E> fmt::Display for Error<T, E>
+impl<T, E> fmt::Display for Error<T, E>
 where
-    I: AsRef<str>,
-    T: fmt::Display + Deref<Target = Type<I, T>>,
+    T: fmt::Display + for<'a> ToDoc<'a, Arena<'a>>,
     E: fmt::Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -26,28 +27,32 @@ where
 
         match *self {
             TypeMismatch(ref l, ref r) => {
-                use pretty::{Arena, DocAllocator};
 
                 let arena = Arena::new();
                 let doc = chain![&arena;
                     arena.newline(),
                     "Expected:",
                     arena.space(),
-                    l.pretty(&arena).group(),
+                    l.to_doc(&arena).group(),
                     arena.newline(),
                     "Found:",
                     arena.space(),
-                    r.pretty(&arena).group()
+                    r.to_doc(&arena).group()
                 ].group()
                     .nest(4);
                 write!(f, "Types do not match:{}", doc.1.pretty(80))
             }
-            Occurs(ref var, ref typ) => write!(f, "Variable `{}` occurs in `{}`.", var, typ),
+            Substitution(ref err) => err.fmt(f),
             Other(ref err) => write!(f, "{}", err),
         }
     }
 }
 
+impl<T, E> From<substitution::Error<T, E>> for Error<T, E> {
+    fn from(err: substitution::Error<T, E>) -> Self {
+        Error::Substitution(err)
+    }
+}
 
 pub struct UnifierState<S, U> {
     pub state: S,
@@ -131,6 +136,16 @@ pub trait Unifiable<S>: Substitutable + Sized {
         U: Unifier<S, Self>;
 }
 
+pub trait Fresh {
+    fn fresh(&self) -> Self;
+}
+
+impl Fresh for () {
+    fn fresh(&self) -> Self {
+        *self
+    }
+}
+
 /// Unify `l` and `r` taking into account and updating the substitution `subs` using the
 /// [Union-Find](https://en.wikipedia.org/wiki/Disjoint-set_data_structure) algorithm to
 /// resolve which types must be equal.
@@ -143,8 +158,10 @@ pub fn unify<S, T>(
     r: &T,
 ) -> Result<T, Errors<Error<T, T::Error>>>
 where
-    T: Unifiable<S> + PartialEq + Clone,
+    T: Unifiable<S> + PartialEq + fmt::Display + fmt::Debug + Clone,
     T::Variable: Clone,
+    T::Factory: Clone,
+    S: Fresh,
 {
     let mut state = UnifierState {
         state: state,
@@ -172,8 +189,10 @@ where
 
 impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
 where
-    T: Unifiable<S> + PartialEq + Clone + 'e,
+    T: Unifiable<S> + PartialEq + Clone + fmt::Display + 'e,
     T::Variable: Clone,
+    T::Factory: Clone,
+    S: Fresh,
 {
     fn report_error(unifier: &mut UnifierState<S, Self>, error: Error<T, T::Error>) {
         unifier.unifier.errors.push(error);
@@ -181,24 +200,41 @@ where
 
     fn try_match_res(
         unifier: &mut UnifierState<S, Self>,
-        l: &T,
-        r: &T,
+        l_orig: &T,
+        r_orig: &T,
     ) -> Result<Option<T>, Error<T, T::Error>> {
         let subs = unifier.unifier.subs;
         // Retrieve the 'real' types by resolving
-        let l = subs.real(l);
-        let r = subs.real(r);
+        let l = subs.real(l_orig);
+        let r = subs.real(r_orig);
+        fn test() {
+            debug!("");
+        }
+        if l as *const _ != l_orig as *const _ {
+            if l_orig.get_var().map_or(0, |x| x.get_id()) == 1949 {
+                test();
+            }
+            debug!("Real l: {} => {}", l_orig, l);
+        }
+        if r as *const _ != r_orig as *const _ {
+            if r_orig.get_var().map_or(0, |x| x.get_id()) == 1949 {
+                test();
+            }
+            debug!("Real r: {} => {}", r_orig, r);
+        }
         // `l` and `r` must have the same type, if one is a variable that variable is
         // unified with whatever the other type is
         match (l.get_var(), r.get_var()) {
-            (_, Some(r)) => match subs.union(r, l) {
-                Ok(()) => Ok(None),
-                Err(()) => Err(Error::Occurs(T::from_variable(r.clone()), l.clone())),
-            },
-            (Some(l), _) => match subs.union(l, r) {
-                Ok(()) => Ok(Some(r.clone())),
-                Err(()) => Err(Error::Occurs(T::from_variable(l.clone()), r.clone())),
-            },
+            (_, Some(r_var)) => {
+                let replacement = subs.union(|| unifier.state.fresh(), r_var, l)?;
+                debug!("Union {} <> {}", l, replacement.as_ref().unwrap_or(r));
+                Ok(replacement)
+            }
+            (Some(l_var), _) => {
+                let replacement = subs.union(|| unifier.state.fresh(), l_var, r)?;
+                debug!("Union {} <> {}", replacement.as_ref().unwrap_or(l), r);
+                Ok(replacement.or_else(|| Some(r.clone())))
+            }
             (None, None) => {
                 // Both sides are concrete types, the only way they can be equal is if
                 // the matcher finds their top level to be equal (and their sub-terms
@@ -213,37 +249,50 @@ where
     }
 }
 
+pub trait GenericVariant {
+    fn new_generic(symbol: Symbol, kind: &Self) -> Self;
+}
+
 /// Calculates the intersection between two types. The intersection between two types is the most
 /// specialized type which both types can sucessfully unify to.
 ///
 /// # Example
 /// intersect (Int -> Int -> Bool) <=> (Float -> Float -> Bool) ==> (a -> a -> Bool)
-pub fn intersection<S, T>(subs: &Substitution<T>, state: S, l: &T, r: &T) -> T
+pub fn intersection<S, T>(
+    subs: &Substitution<T>,
+    symbols: &mut Symbols,
+    state: S,
+    l: &T,
+    r: &T,
+) -> (FnvMap<(T, T), Symbol>, T)
 where
-    T: Unifiable<S> + Eq + Clone + Hash,
+    T: GenericVariant + Unifiable<S> + Eq + Clone + Hash,
     T::Variable: Clone,
 {
     let mut unifier = UnifierState {
         state: state,
         unifier: Intersect {
-            mismatch_map: FnvMap::default(),
+            constraints: FnvMap::default(),
+            symbols: symbols,
             subs: subs,
         },
     };
-    unifier.try_match(l, r).unwrap_or_else(|| l.clone())
+    let typ = unifier.try_match(l, r).unwrap_or_else(|| l.clone());
+    (unifier.unifier.constraints, typ)
 }
 
 struct Intersect<'m, T: 'm>
 where
     T: Substitutable,
 {
-    mismatch_map: FnvMap<(T, T), T>,
+    constraints: FnvMap<(T, T), Symbol>,
+    symbols: &'m mut Symbols,
     subs: &'m Substitution<T>,
 }
 
 impl<'m, S, T> Unifier<S, T> for Intersect<'m, T>
 where
-    T: Unifiable<S> + Eq + Hash + Clone,
+    T: GenericVariant + Unifiable<S> + Eq + Clone + Hash,
     T::Variable: Clone,
 {
     fn report_error(_unifier: &mut UnifierState<S, Self>, _error: Error<T, T::Error>) {}
@@ -265,14 +314,16 @@ where
                         // If the immediate level of `l` and `r` does not match, record
                         // the mismatched types return a type variable in their place
                         // (Reusing a variable if the same mismatch was already seen)
-                        Ok(Some(
-                            unifier
-                                .unifier
-                                .mismatch_map
-                                .entry((l.clone(), r.clone()))
-                                .or_insert_with(|| subs.new_var())
-                                .clone(),
-                        ))
+                        let symbols = &mut unifier.unifier.symbols;
+                        let generic_symbol = unifier
+                            .unifier
+                            .constraints
+                            .entry((l.clone(), r.clone()))
+                            .or_insert_with(|| {
+                                let len = symbols.len();
+                                symbols.symbol(format!("abc{}", len))
+                            });
+                        Ok(Some(T::new_generic(generic_symbol.clone(), l)))
                     }
                 }
             }
@@ -285,12 +336,16 @@ where
 
 #[cfg(test)]
 mod test {
+    use super::*;
+
+    use std::fmt;
+
     use base::error::Errors;
     use base::merge::merge;
+    use base::symbol::{Symbol, Symbols};
     use base::types::Walker;
 
-    use super::{Error, Unifiable, Unifier, UnifierState};
-    use substitution::{Substitutable, Substitution};
+    use substitution::{Constraints, Substitutable, Substitution};
 
     #[derive(Debug, Clone, Eq, PartialEq, Hash)]
     pub struct TType(Box<Type<TType>>);
@@ -300,6 +355,24 @@ mod test {
         Variable(u32),
         Ident(String),
         Arrow(T, T),
+    }
+
+    impl fmt::Display for TType {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "{:?}", self)
+        }
+    }
+
+    impl TType {
+        fn ident(s: &str) -> TType {
+            TType(Box::new(Type::Ident(s.into())))
+        }
+    }
+
+    impl GenericVariant for TType {
+        fn new_generic(symbol: Symbol, _: &TType) -> Self {
+            TType(Box::new(Type::Ident(symbol.to_string())))
+        }
     }
 
     impl Substitutable for TType {
@@ -329,6 +402,14 @@ mod test {
                 }
             }
             traverse_(self, f)
+        }
+
+        fn instantiate(
+            &self,
+            _subs: &Substitution<Self>,
+            _constraints: &FnvMap<Symbol, Constraints<Self>>,
+        ) -> Self {
+            self.clone()
         }
     }
 
@@ -436,14 +517,17 @@ mod test {
         let result = unify(&subs, &fun, &var1);
         assert_eq!(
             result,
-            Err(Errors::from(vec![Error::Occurs(var1, fun.clone())]))
+            Err(Errors::from(vec![
+                Error::Substitution(::substitution::Error::Occurs(var1, fun.clone())),
+            ]))
         );
     }
 
     #[test]
     fn intersection_test() {
         fn intersection(subs: &Substitution<TType>, l: &TType, r: &TType) -> TType {
-            super::intersection(subs, (), l, r)
+            let mut symbols = Symbols::new();
+            super::intersection(subs, &mut symbols, (), l, r).1
         }
 
         let subs = Substitution::<TType>::new(());
@@ -454,16 +538,10 @@ mod test {
         let string_fun = mk_fn(&string, &string);
         let int_fun = mk_fn(&int, &int);
         let result = intersection(&subs, &int_fun, &string_fun);
-        assert_eq!(
-            result,
-            mk_fn(&TType::from_variable(1), &TType::from_variable(1))
-        );
+        assert_eq!(result, mk_fn(&TType::ident("abc0"), &TType::ident("abc0")));
 
         let var_fun = mk_fn(&var1, &var1);
         let result = intersection(&subs, &int_fun, &var_fun);
-        assert_eq!(
-            result,
-            mk_fn(&TType::from_variable(2), &TType::from_variable(2))
-        );
+        assert_eq!(result, mk_fn(&TType::ident("abc0"), &TType::ident("abc0")));
     }
 }

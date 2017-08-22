@@ -5,6 +5,7 @@
 //! internal compiler error.
 #![doc(html_root_url = "https://docs.rs/gluon_check/0.5.0")] // # GLUON
 
+extern crate itertools;
 #[macro_use]
 extern crate log;
 #[cfg(test)]
@@ -20,8 +21,8 @@ pub mod typecheck;
 pub mod unify_type;
 pub mod unify;
 pub mod kindcheck;
-mod substitution;
-mod rename;
+pub mod substitution;
+pub mod rename;
 pub mod completion;
 pub mod metadata;
 
@@ -37,7 +38,12 @@ pub fn check_signature(env: &TypeEnv, signature: &ArcType, actual: &ArcType) -> 
 
     let subs = Substitution::new(Kind::typ());
     let state = unify_type::State::new(env, &subs);
-    let actual = unify_type::instantiate_generic_variables(&mut FnvMap::default(), &subs, actual);
+    let actual = unify_type::instantiate_generic_variables(
+        &mut FnvMap::default(),
+        &subs,
+        &FnvMap::default(),
+        actual,
+    );
     let result =
         unify_type::merge_signature(&subs, &mut ScopedMap::new(), 0, state, signature, &actual);
     if let Err(ref err) = result {

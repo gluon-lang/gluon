@@ -139,7 +139,7 @@ pub fn type_of_alias(
     }
 
     Some(types::walk_move_type(typ, &mut |typ| {
-        match *typ {
+        match **typ {
             Type::Generic(ref generic) => {
                 // Replace the generic variable with the type from the list
                 // or if it is not found the make a fresh variable

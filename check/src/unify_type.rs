@@ -5,14 +5,14 @@ use base::error::Errors;
 use base::fnv::FnvMap;
 use base::merge;
 use base::kind::ArcKind;
-use base::types::{self, AppVec, ArcType, Field, Type, TypeEnv, TypeVariable};
+use base::types::{self, AppVec, ArcType, Field, Generic, Type, TypeEnv, TypeVariable};
 use base::symbol::{Symbol, SymbolRef};
 use base::resolve::{self, Error as ResolveError};
 use base::scoped_map::ScopedMap;
 
 use unify;
-use unify::{Error as UnifyError, Unifiable, Unifier};
-use substitution::{Substitutable, Substitution, Variable, VariableFactory};
+use unify::{Error as UnifyError, Fresh, GenericVariant, Unifiable, Unifier};
+use substitution::{Constraints, Substitutable, Substitution, Variable, VariableFactory};
 
 impl VariableFactory for ArcKind {
     type Variable = TypeVariable;
@@ -24,8 +24,18 @@ impl VariableFactory for ArcKind {
     }
 }
 
+impl GenericVariant for ArcType {
+    fn new_generic(symbol: Symbol, kind: &Self) -> Self {
+        Type::generic(Generic {
+            id: symbol,
+            kind: kind.kind().into_owned(),
+        })
+    }
+}
+
 pub type Error<I> = UnifyError<ArcType<I>, TypeError<I>>;
 
+#[derive(Clone)]
 pub struct State<'a> {
     env: &'a (TypeEnv + 'a),
     /// A stack of which aliases are currently expanded. Used to determine when an alias is
@@ -33,6 +43,12 @@ pub struct State<'a> {
     reduced_aliases: Vec<Symbol>,
     subs: &'a Substitution<ArcType>,
     record_context: Option<(ArcType, ArcType)>,
+}
+
+impl<'a> Fresh for State<'a> {
+    fn fresh(&self) -> Self {
+        State::new(self.env, self.subs)
+    }
 }
 
 impl<'a> State<'a> {
@@ -141,11 +157,11 @@ impl Variable for TypeVariable {
     }
 }
 
-impl<I> Substitutable for ArcType<I> {
+impl Substitutable for ArcType<Symbol> {
     type Variable = TypeVariable;
     type Factory = ArcKind;
 
-    fn from_variable(var: TypeVariable) -> ArcType<I> {
+    fn from_variable(var: TypeVariable) -> Self {
         Type::variable(var)
     }
 
@@ -158,9 +174,18 @@ impl<I> Substitutable for ArcType<I> {
 
     fn traverse<F>(&self, f: &mut F)
     where
-        F: types::Walker<ArcType<I>>,
+        F: types::Walker<Self>,
     {
         types::walk_type_(self, f)
+    }
+
+    fn instantiate(
+        &self,
+        subs: &Substitution<Self>,
+        constraints: &FnvMap<Symbol, Constraints<Self>>,
+    ) -> Self {
+        let mut named_variables = FnvMap::default();
+        instantiate_generic_variables(&mut named_variables, subs, constraints, self)
     }
 }
 
@@ -176,7 +201,7 @@ impl<'a> Unifiable<State<'a>> for ArcType {
         U: Unifier<State<'a>, Self>,
     {
         let reduced_aliases = unifier.state.reduced_aliases.len();
-        debug!("{:?} <=> {:?}", self, other);
+        debug!("{} <=> {}", self, other);
         let (l_temp, r_temp);
         let (mut l, mut r) = (self, other);
         let mut through_alias = false;
@@ -211,11 +236,44 @@ fn do_zip_match<'a, U>(
 where
     U: Unifier<State<'a>, ArcType>,
 {
-    debug!("Unifying:\n{:?} <=> {:?}", expected, actual);
+    debug!("Unifying:\n{} <=> {}", expected, actual);
     match (&**expected, &**actual) {
         (&Type::App(ref l, ref l_args), &Type::App(ref r, ref r_args)) => {
             Ok(unify_app(unifier, l, l_args, r, r_args))
         }
+        (&Type::Variant(ref l_row), &Type::Variant(ref r_row)) => match (&**l_row, &**r_row) {
+            (
+                &Type::ExtendRow {
+                    fields: ref l_row,
+                    rest: ref l_rest,
+                    ..
+                },
+                &Type::ExtendRow {
+                    fields: ref r_row,
+                    rest: ref r_rest,
+                    ..
+                },
+            ) => if l_row.len() == r_row.len() &&
+                l_row
+                    .iter()
+                    .zip(r_row)
+                    .all(|(l, r)| l.name.name_eq(&r.name)) &&
+                l_rest == r_rest
+            {
+                let iter = l_row.iter().zip(r_row);
+                let new_fields = merge::merge_tuple_iter(iter, |l, r| {
+                    unifier
+                        .try_match(&l.typ, &r.typ)
+                        .map(|typ| Field::new(l.name.clone(), typ))
+                });
+                Ok(
+                    new_fields.map(|fields| Type::poly_variant(fields, l_rest.clone())),
+                )
+            } else {
+                Err(UnifyError::TypeMismatch(expected.clone(), actual.clone()))
+            },
+            _ => Err(UnifyError::TypeMismatch(expected.clone(), actual.clone())),
+        },
         (&Type::Record(ref l_row), &Type::Record(ref r_row)) => {
             // Store the current records so that they can be used when displaying field errors
             let previous = mem::replace(
@@ -660,14 +718,22 @@ where
 pub fn instantiate_generic_variables(
     named_variables: &mut FnvMap<Symbol, ArcType>,
     subs: &Substitution<ArcType>,
+    constraints: &FnvMap<Symbol, Constraints<ArcType>>,
     typ: &ArcType,
 ) -> ArcType {
     use std::collections::hash_map::Entry;
 
-    types::walk_move_type(typ.clone(), &mut |typ| match *typ {
+    types::walk_move_type(typ.clone(), &mut |typ| match **typ {
         Type::Generic(ref generic) => {
             let var = match named_variables.entry(generic.id.clone()) {
-                Entry::Vacant(entry) => entry.insert(subs.new_var()).clone(),
+                Entry::Vacant(entry) => {
+                    let constraint = constraints.get(&generic.id).cloned();
+                    entry
+                        .insert(subs.new_constrained_var(
+                            constraint.map(|constraint| (generic.id.clone(), constraint.clone())),
+                        ))
+                        .clone()
+                }
                 Entry::Occupied(entry) => entry.get().clone(),
             };
 
@@ -757,20 +823,18 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
                     }
                     None => l,
                 };
-                match subs.union(r_var, left) {
-                    Ok(()) => Ok(None),
-                    Err(()) => Err(UnifyError::Occurs(ArcType::from_variable(r_var.clone()), left.clone())),
-                }
+                subs.union(|| unifier.state.fresh(), r_var, left)?;
+                Ok(None)
 
             }
-            (_, &Type::Variable(ref r)) => match subs.union(r, l) {
-                Ok(()) => Ok(None),
-                Err(()) => Err(UnifyError::Occurs(ArcType::from_variable(r.clone()), l.clone())),
-            },
-            (&Type::Variable(ref l), _) => match subs.union(l, r) {
-                Ok(()) => Ok(Some(r.clone())),
-                Err(()) => Err(UnifyError::Occurs(ArcType::from_variable(l.clone()), r.clone())),
-            },
+            (_, &Type::Variable(ref r)) => {
+                subs.union(|| unifier.state.fresh(), r, l)?;
+                Ok(None)
+            }
+            (&Type::Variable(ref l), _) => {
+                subs.union(|| unifier.state.fresh(), l, r)?;
+                Ok(Some(r.clone()))
+            }
             _ => {
                 // Both sides are concrete types, the only way they can be equal is if
                 // the matcher finds their top level to be equal (and their sub-terms

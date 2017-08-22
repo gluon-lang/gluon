@@ -377,6 +377,10 @@ impl Symbols {
         }
         self.make_symbol(name.into())
     }
+
+    pub fn len(&self) -> usize {
+        self.strings.len()
+    }
 }
 
 /// `SymbolModule` wraps a `Symbols` struct and adds a prefix to all symbols created by the `symbol` method.
@@ -420,6 +424,14 @@ impl<'a> SymbolModule<'a> {
         let symbol = self.symbols.symbol(&*self.module);
         self.module.0.truncate(len);
         symbol
+    }
+
+    pub fn len(&self) -> usize {
+        self.symbols.len()
+    }
+
+    pub fn symbols(&mut self) -> &mut Symbols {
+        self.symbols
     }
 }
 
