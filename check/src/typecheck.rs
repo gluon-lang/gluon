@@ -93,7 +93,7 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
             }
             Unification(ref expected, ref actual, ref errors) => {
                 let arena = Arena::new();
-                let doc = chain![&arena;
+                let types = chain![&arena;
                     "Expected:",
                     chain![&arena;
                         arena.space(),
@@ -106,12 +106,15 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
                         actual.pretty(&arena)
                     ].nest(4).group()
                 ].group();
-                writeln!(
-                    f,
-                    "Expected the following types to be equal\n{}\n{} errors were found during unification:",
-                    doc.1.pretty(80),
-                    errors.len()
-                )?;
+                let doc = chain![&arena;
+                    "Expected the following types to be equal",
+                    arena.newline(),
+                    types,
+                    arena.newline(),
+                    arena.as_string(errors.len()),
+                    " errors were found during unification:"
+                ];
+                writeln!(f, "{}", doc.1.pretty(80))?;
                 if errors.is_empty() {
                     return Ok(());
                 }
@@ -342,11 +345,11 @@ impl<'a> Typecheck<'a> {
                 fields: fields.to_owned(),
             })
         } else {
-            self.environment.find_record(fields, selector).ok_or(
-                TypeError::UndefinedRecord {
+            self.environment
+                .find_record(fields, selector)
+                .ok_or(TypeError::UndefinedRecord {
                     fields: fields.to_owned(),
-                },
-            )
+                })
         }
     }
 
@@ -1205,8 +1208,7 @@ impl<'a> Typecheck<'a> {
             // Kindcheck all the types in the environment
             for bind in bindings.iter_mut() {
                 check.set_variables(&bind.alias.value.args);
-                check
-                    .kindcheck_type(bind.alias.value.unresolved_type_mut())?;
+                check.kindcheck_type(bind.alias.value.unresolved_type_mut())?;
             }
 
             // All kinds are now inferred so replace the kinds store in the AST
@@ -1271,16 +1273,18 @@ impl<'a> Typecheck<'a> {
                     *typ = finished;
                 }
                 let record_type = self.remove_alias(typ.clone());
-                with_pattern_types(fields, &record_type, |field_name, binding, field_type| {
-                    match *binding {
+                with_pattern_types(
+                    fields,
+                    &record_type,
+                    |field_name, binding, field_type| match *binding {
                         Some(ref mut pat) => {
                             self.finish_pattern(level, pat, field_type);
                         }
                         None => {
                             self.intersect_type(level, field_name, field_type);
                         }
-                    }
-                });
+                    },
+                );
             }
             Pattern::Tuple {
                 ref typ,
@@ -1643,16 +1647,15 @@ impl<'a> Typecheck<'a> {
         new_name: Spanned<Symbol, BytePos>,
     ) -> bool {
         let span = new_name.span;
-        duplicated_fields.replace(new_name.value).map_or(
-            true,
-            |name| {
+        duplicated_fields
+            .replace(new_name.value)
+            .map_or(true, |name| {
                 self.errors.push(Spanned {
                     span: span,
                     value: TypeError::DuplicateField(name),
                 });
                 false
-            },
-        )
+            })
     }
 }
 

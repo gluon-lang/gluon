@@ -14,12 +14,12 @@ use base::fnv::FnvMap;
 
 use interner::InternedStr;
 use compiler::DebugInfo;
-use gc::{Gc, GcPtr, Generation, Traverseable, DataDef, Move, WriteOnly};
+use gc::{DataDef, Gc, GcPtr, Generation, Move, Traverseable, WriteOnly};
 use array::Array;
-use thread::{Thread, Status};
+use thread::{Status, Thread};
 use {Error, Result, Variants};
 
-use self::Value::{Int, Float, String, Function, PartialApplication, Closure};
+use self::Value::{Closure, Float, Function, Int, PartialApplication, String};
 
 mopafy!(Userdata);
 pub trait Userdata: ::mopa::Any + Traverseable + fmt::Debug + Send + Sync {
@@ -104,20 +104,18 @@ unsafe impl DataDef for ClosureInitDef {
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct BytecodeFunction {
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::symbol"))]
-    pub name: Symbol,
+    pub name:
+        Symbol,
     pub args: VmIndex,
     pub max_stack_size: VmIndex,
     pub instructions: Vec<Instruction>,
     #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub inner_functions: Vec<GcPtr<BytecodeFunction>>,
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub strings: Vec<InternedStr>,
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub globals: Vec<Value>,
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub records: Vec<Vec<InternedStr>>,
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub debug_info: DebugInfo,
+    pub inner_functions:
+        Vec<GcPtr<BytecodeFunction>>,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub strings: Vec<InternedStr>,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub globals: Vec<Value>,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub records: Vec<Vec<InternedStr>>,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub debug_info: DebugInfo,
 }
 
 impl Traverseable for BytecodeFunction {
@@ -283,8 +281,7 @@ pub enum Value {
     Int(VmInt),
     Float(f64),
     String(
-        #[cfg_attr(feature = "serde_derive", serde(deserialize_state))]
-        GcStr,
+        #[cfg_attr(feature = "serde_derive", serde(deserialize_state))] GcStr,
     ),
     Tag(VmTag),
     Data(
@@ -300,12 +297,12 @@ pub enum Value {
         GcPtr<ValueArray>,
     ),
     Function(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        GcPtr<ExternFunction>,
+        #[cfg_attr(feature = "serde_derive", serde(state))] GcPtr<ExternFunction>,
     ),
     Closure(
         #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::closure"))]
-        GcPtr<ClosureData>,
+        
+            GcPtr<ClosureData>,
     ),
     PartialApplication(
         #[cfg_attr(feature = "serde_derive",
@@ -323,8 +320,7 @@ pub enum Value {
     #[cfg_attr(feature = "serde_derive", serde(skip_deserializing))]
     #[cfg_attr(feature = "serde_derive", serde(skip_serializing))]
     Thread(
-        #[cfg_attr(feature = "serde_derive", serde(deserialize_state))]
-        GcPtr<Thread>
+        #[cfg_attr(feature = "serde_derive", serde(deserialize_state))] GcPtr<Thread>,
     ),
 }
 
@@ -391,7 +387,6 @@ struct InternalPrinter<'a, 't> {
 
 impl<'a> fmt::Display for ValuePrinter<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-
         let arena = Arena::new();
         let mut s = Vec::new();
         InternalPrinter {
@@ -419,15 +414,12 @@ impl<'a, 't> InternalPrinter<'a, 't> {
             Value::String(s) => arena.text(format!("{:?}", s)),
             Value::Data(ref data) => self.pretty_data(data.tag, data.fields.iter().cloned()),
             Value::Tag(tag) => self.pretty_data(tag, iter::empty()),
-            Value::Function(ref function) => {
-                chain![arena;
+            Value::Function(ref function) => chain![arena;
                     "<extern ",
                     function.id.declared_name().to_string(),
                     ">"
-                ]
-            }
-            Value::Closure(ref closure) => {
-                chain![arena;
+                ],
+            Value::Closure(ref closure) => chain![arena;
                     "<",
                     arena.text(closure.function.name.declared_name().to_string()),
                     arena.concat(closure.upvars.iter().zip(&closure.function.debug_info.upvars)
@@ -441,10 +433,8 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                             ]
                         }).intersperse(arena.text(","))),
                     ">"
-                ]
-            }
-            Value::Array(ref array) => {
-                chain![arena;
+                ],
+            Value::Array(ref array) => chain![arena;
                     "[",
                     arena.concat(array.iter().map(|field| {
                         match **self.typ {
@@ -453,8 +443,7 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                         }
                     }).intersperse(arena.text(",").append(arena.space()))),
                     "]"
-                ]
-            }
+                ],
             Value::PartialApplication(p) => arena.text(format!("{:?}", p)),
             Value::Userdata(ref data) => arena.text(format!("{:?}", data)),
             Value::Thread(thread) => arena.text(format!("{:?}", thread)),
@@ -486,8 +475,7 @@ impl<'a, 't> InternalPrinter<'a, 't> {
         let typ = remove_aliases_cow(self.env, self.typ);
         let arena = self.arena;
         match **typ {
-            Type::Record(ref row) => {
-                chain![arena;
+            Type::Record(ref row) => chain![arena;
                             "{",
                             arena.concat(fields.into_iter().zip(row.row_iter())
                                 .map(|(field, type_field)| {
@@ -501,8 +489,7 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                                 }).intersperse(arena.text(","))),
                             arena.space(),
                             "}"
-                        ]
-            }
+                        ],
             Type::Variant(ref row) => {
                 let type_field = row.row_iter()
                     .nth(tag as usize)
@@ -522,16 +509,14 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                     enclose(self.prec, Constructor, arena, doc)
                 }
             }
-            _ => {
-                chain![arena;
+            _ => chain![arena;
                         "{",
                         arena.concat(fields.into_iter().map(|field| {
                             arena.space().append(self.p(&Type::hole(), Top).pretty(field))
                         }).intersperse(arena.text(","))),
                         arena.space(),
                         "}"
-                    ]
-            }
+                    ],
         }
     }
 
@@ -553,11 +538,11 @@ impl<'a, 't> InternalPrinter<'a, 't> {
 pub enum Callable {
     Closure(
         #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::closure"))]
-        GcPtr<ClosureData>,
+        
+            GcPtr<ClosureData>,
     ),
     Extern(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        GcPtr<ExternFunction>,
+        #[cfg_attr(feature = "serde_derive", serde(state))] GcPtr<ExternFunction>,
     ),
 }
 
@@ -596,10 +581,8 @@ impl Traverseable for Callable {
 #[cfg_attr(feature = "serde_derive", derive(SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct PartialApplicationData {
-    #[cfg_attr(feature = "serde_derive", serde(serialize_state))]
-    pub function: Callable,
-    #[cfg_attr(feature = "serde_derive", serde(serialize_state))]
-    pub args: Array<Value>,
+    #[cfg_attr(feature = "serde_derive", serde(serialize_state))] pub function: Callable,
+    #[cfg_attr(feature = "serde_derive", serde(serialize_state))] pub args: Array<Value>,
 }
 
 impl PartialEq for PartialApplicationData {
@@ -686,14 +669,12 @@ impl fmt::Debug for Value {
                     Float(x) => write!(f, "{:?}f", x),
                     String(x) => write!(f, "{:?}", &*x),
                     Value::Tag(tag) => write!(f, "{{{:?}: }}", tag),
-                    Value::Data(ref data) => {
-                        write!(
-                            f,
-                            "{{{:?}: {:?}}}",
-                            data.tag,
-                            LevelSlice(level - 1, &data.fields)
-                        )
-                    }
+                    Value::Data(ref data) => write!(
+                        f,
+                        "{{{:?}: {:?}}}",
+                        data.tag,
+                        LevelSlice(level - 1, &data.fields)
+                    ),
                     Value::Array(ref array) => {
                         let mut first = true;
                         write!(f, "[")?;
@@ -735,7 +716,8 @@ pub struct ExternFunction {
     pub id: Symbol,
     pub args: VmIndex,
     #[cfg_attr(feature = "serde_derive", serde(skip_serializing))]
-    pub function: extern "C" fn(&Thread) -> Status,
+    pub function:
+        extern "C" fn(&Thread) -> Status,
 }
 
 impl Clone for ExternFunction {
@@ -750,7 +732,8 @@ impl Clone for ExternFunction {
 
 impl PartialEq for ExternFunction {
     fn eq(&self, other: &ExternFunction) -> bool {
-        self.id == other.id && self.args == other.args && self.function as usize == other.function as usize
+        self.id == other.id && self.args == other.args &&
+            self.function as usize == other.function as usize
     }
 }
 
@@ -1152,11 +1135,9 @@ impl<'t> Cloner<'t> {
             Value::Array(data) => self.deep_clone_array(data).map(Value::Array),
             Closure(data) => self.deep_clone_closure(data).map(Value::Closure),
             PartialApplication(data) => self.deep_clone_app(data).map(Value::PartialApplication),
-            Function(f) => {
-                self.gc
-                    .alloc(Move(ExternFunction::clone(&f)))
-                    .map(Value::Function)
-            }
+            Function(f) => self.gc
+                .alloc(Move(ExternFunction::clone(&f)))
+                .map(Value::Function),
             Value::Tag(i) => Ok(Value::Tag(i)),
             Value::Byte(i) => Ok(Value::Byte(i)),
             Int(i) => Ok(Int(i)),

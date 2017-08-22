@@ -1,7 +1,7 @@
 extern crate env_logger;
+extern crate gluon;
 #[macro_use]
 extern crate gluon_vm;
-extern crate gluon;
 
 use gluon::base::types::Type;
 use gluon::vm::api::{FunctionRef, Hole, OpaqueValue};

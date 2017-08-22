@@ -4,7 +4,7 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::marker::PhantomData;
 
-use pretty::{DocAllocator, Arena, DocBuilder};
+use pretty::{Arena, DocAllocator, DocBuilder};
 
 use smallvec::{SmallVec, VecLike};
 
@@ -55,11 +55,9 @@ impl RecordSelector {
     {
         match *self {
             RecordSelector::Exact => record().into_iter().eq(needle),
-            RecordSelector::Subset => {
-                needle
-                    .into_iter()
-                    .all(|name| record().into_iter().any(|other| other == name))
-            }
+            RecordSelector::Subset => needle
+                .into_iter()
+                .all(|name| record().into_iter().any(|other| other == name)),
         }
     }
 }
@@ -224,8 +222,7 @@ impl BuiltinType {
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "Id, T"))]
 pub struct TypeVariable {
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub kind: ArcKind,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub kind: ArcKind,
     pub id: u32,
 }
 
@@ -233,15 +230,14 @@ pub struct TypeVariable {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(feature = "serde_derive",
-           serde(bound(deserialize = "Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
+           serde(bound(deserialize = "
+           Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "T"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(bound(serialize = "Id: SerializeState<SeSeed>")))]
 pub struct Generic<Id> {
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub id: Id,
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub kind: ArcKind,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub id: Id,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub kind: ArcKind,
 }
 
 impl<Id> Generic<Id> {
@@ -250,19 +246,19 @@ impl<Id> Generic<Id> {
     }
 }
 
-/// An alias is wrapper around `Type::Alias`, allowing it to be cheaply converted to a type and dereferenced
-/// to `AliasRef`
+/// An alias is wrapper around `Type::Alias`, allowing it to be cheaply converted to a type and
+/// dereferenced to `AliasRef`
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(feature = "serde_derive",
-           serde(bound(deserialize = "T: DeserializeState<'de, Seed<Id, T>> + Clone + From<Type<Id, T>> + ::std::any::Any,
-                             Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
+           serde(bound(deserialize = "
+           T: DeserializeState<'de, Seed<Id, T>> + Clone + From<Type<Id, T>> + ::std::any::Any,
+           Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(bound(serialize = "T: SerializeState<SeSeed>")))]
 pub struct Alias<Id, T> {
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    _typ: T,
+    #[cfg_attr(feature = "serde_derive", serde(state))] _typ: T,
     _marker: PhantomData<Id>,
 }
 
@@ -359,14 +355,15 @@ where
     }
 }
 
-/// Data for a type alias. Probably you want to use `Alias` instead of this directly as Alias allows for
-/// cheap conversion back into a type as well.
+/// Data for a type alias. Probably you want to use `Alias` instead of this directly as Alias allows
+/// for cheap conversion back into a type as well.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(feature = "serde_derive",
-           serde(bound(deserialize = "T: DeserializeState<'de, Seed<Id, T>> + Clone + From<Type<Id, T>> + ::std::any::Any,
-                 Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
+           serde(bound(deserialize = "
+           T: DeserializeState<'de, Seed<Id, T>> + Clone + From<Type<Id, T>> + ::std::any::Any,
+           Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive",
            serde(bound(serialize = "T: SerializeState<SeSeed>, Id: SerializeState<SeSeed>")))]
@@ -390,8 +387,8 @@ where
         let opt = walk_move_type_opt(&self.typ, &mut |typ: &T| {
             match **typ {
                 Type::Ident(ref id) => {
-                    // Replace `Ident` with the alias it resolves to so that a `TypeEnv` is not needed
-                    // to resolve the type later on
+                    // Replace `Ident` with the alias it resolves to so that a `TypeEnv` is not
+                    // needed to resolve the type later on
                     let index = self.group
                         .iter()
                         .position(|alias| alias.name == *id)
@@ -415,14 +412,14 @@ where
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(feature = "serde_derive",
-           serde(bound(deserialize = "T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeState<'de, Seed<Id, T>>,
-                             Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
+           serde(bound(deserialize = "
+           T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeState<'de, Seed<Id, T>>,
+           Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive",
            serde(bound(serialize = "T: SerializeState<SeSeed>, Id: SerializeState<SeSeed>")))]
 pub struct AliasData<Id, T> {
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub name: Id,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub name: Id,
     /// Arguments to the alias
     #[cfg_attr(feature = "serde_derive", serde(state))]
     pub args: Vec<Generic<Id>>,
@@ -464,17 +461,16 @@ impl<Id, T> Deref for AliasRef<Id, T> {
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, U>"))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "U"))]
 #[cfg_attr(feature = "serde_derive",
-           serde(bound(deserialize = "Id: DeserializeState<'de, Seed<Id, U>> + Clone + ::std::any::Any,
-                             T: DeserializeState<'de, Seed<Id, U>>
+           serde(bound(deserialize = "
+           Id: DeserializeState<'de, Seed<Id, U>> + Clone + ::std::any::Any,
+           T: DeserializeState<'de, Seed<Id, U>>
                              ")))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive",
            serde(bound(serialize = "T: SerializeState<SeSeed>, Id: SerializeState<SeSeed>")))]
 pub struct Field<Id, T = ArcType<Id>> {
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub name: Id,
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub typ: T,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub name: Id,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub typ: T,
 }
 
 /// `SmallVec` used in the `Type::App` constructor to avoid alloacting a `Vec` for every applied
@@ -502,8 +498,15 @@ impl<Id, T> Field<Id, T> {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(feature = "serde_derive",
-           serde(bound(deserialize = "T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeState<'de, Seed<Id, T>>,
-                             Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any + DeserializeState<'de, Seed<Id, T>>")))]
+           serde(bound(deserialize = "
+           T: Clone
+                + From<Type<Id, T>>
+                + ::std::any::Any
+                + DeserializeState<'de, Seed<Id, T>>,
+           Id: DeserializeState<'de, Seed<Id, T>>
+                + Clone
+                + ::std::any::Any
+                + DeserializeState<'de, Seed<Id, T>>")))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 pub enum Type<Id, T = ArcType<Id>> {
     /// An unbound type `_`, awaiting ascription.
@@ -525,15 +528,9 @@ pub enum Type<Id, T = ArcType<Id>> {
         AppVec<T>,
     ),
     /// Record constructor, of kind `Row -> Type`
-    Record(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        T,
-    ),
+    Record(#[cfg_attr(feature = "serde_derive", serde(state))] T),
     /// Variant constructor, of kind `Row -> Type`
-    Variant(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        T,
-    ),
+    Variant(#[cfg_attr(feature = "serde_derive", serde(state))] T),
     /// The empty row, of kind `Row`
     EmptyRow,
     /// Row extension, of kind `... -> Row -> Row`
@@ -554,25 +551,19 @@ pub enum Type<Id, T = ArcType<Id>> {
     /// Identifiers are also sometimes used inside aliased types to avoid cycles
     /// in reference counted pointers. This is a bit of a wart at the moment and
     /// _may_ cause spurious unification failures.
-    Ident(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        Id,
-    ),
+    Ident(#[cfg_attr(feature = "serde_derive", serde(state))] Id),
     /// An unbound type variable that may be unified with other types. These
     /// will eventually be converted into `Type::Generic`s during generalization.
     Variable(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        TypeVariable,
+        #[cfg_attr(feature = "serde_derive", serde(state))] TypeVariable,
     ),
     /// A variable that needs to be instantiated with a fresh type variable
     /// when the binding is refered to.
     Generic(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        Generic<Id>,
+        #[cfg_attr(feature = "serde_derive", serde(state))] Generic<Id>,
     ),
     Alias(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        AliasRef<Id, T>,
+        #[cfg_attr(feature = "serde_derive", serde(state))] AliasRef<Id, T>,
     ),
 }
 
@@ -795,12 +786,10 @@ where
         }
 
         match *self {
-            Type::App(ref id, _) => {
-                match **id {
-                    Type::Builtin(b) => Some(b.symbol()),
-                    _ => None,
-                }
-            }
+            Type::App(ref id, _) => match **id {
+                Type::Builtin(b) => Some(b.symbol()),
+                _ => None,
+            },
             Type::Builtin(b) => Some(b.symbol()),
             _ => None,
         }
@@ -1260,62 +1249,56 @@ where
             Type::Opaque => arena.text("<opaque>"),
             Type::Variable(ref var) => arena.text(format!("{}", var.id)),
             Type::Generic(ref gen) => arena.text(gen.id.as_ref()),
-            Type::App(ref t, ref args) => {
-                match self.typ.as_function() {
-                    Some((arg, ret)) => {
-                        let doc = chain![arena;
+            Type::App(ref t, ref args) => match self.typ.as_function() {
+                Some((arg, ret)) => {
+                    let doc = chain![arena;
                             dt(Prec::Function, arg).pretty(arena).group(),
                             arena.space(),
                             "-> ",
                             top(ret).pretty(arena)
                         ];
 
-                        p.enclose(Prec::Function, arena, doc)
-                    }
-                    None => {
-                        let doc = dt(Prec::Top, t).pretty(arena);
-                        let arg_doc = arena.concat(args.iter().map(|arg| {
-                            arena
-                                .space()
-                                .append(dt(Prec::Constructor, arg).pretty(arena))
-                        }));
-                        let doc = doc.append(arg_doc.nest(INDENT));
-                        p.enclose(Prec::Constructor, arena, doc).group()
-                    }
+                    p.enclose(Prec::Function, arena, doc)
                 }
-            }
+                None => {
+                    let doc = dt(Prec::Top, t).pretty(arena);
+                    let arg_doc = arena.concat(args.iter().map(|arg| {
+                        arena
+                            .space()
+                            .append(dt(Prec::Constructor, arg).pretty(arena))
+                    }));
+                    let doc = doc.append(arg_doc.nest(INDENT));
+                    p.enclose(Prec::Constructor, arena, doc).group()
+                }
+            },
             Type::Variant(ref row) => {
                 let mut first = true;
                 let mut doc = arena.nil();
 
                 match **row {
                     Type::EmptyRow => (),
-                    Type::ExtendRow { ref fields, .. } => {
-                        for field in fields.iter() {
-                            if !first {
-                                doc = doc.append(arena.space());
-                            }
-                            first = false;
-                            doc = doc.append("| ").append(field.name.as_ref());
-                            for arg in arg_iter(&field.typ) {
-                                doc = chain![arena;
+                    Type::ExtendRow { ref fields, .. } => for field in fields.iter() {
+                        if !first {
+                            doc = doc.append(arena.space());
+                        }
+                        first = false;
+                        doc = doc.append("| ").append(field.name.as_ref());
+                        for arg in arg_iter(&field.typ) {
+                            doc = chain![arena;
                                             doc,
                                             " ",
                                             dt(Prec::Constructor, &arg).pretty(arena)];
-                            }
                         }
-                    }
+                    },
                     ref typ => panic!("Unexpected type `{}` in variant", typ),
                 };
 
                 p.enclose(Prec::Constructor, arena, doc).group()
             }
-            Type::Builtin(ref t) => {
-                match *t {
-                    BuiltinType::Function => chain![arena; "(", t.to_str(), ")"],
-                    _ => arena.text(t.to_str()),
-                }
-            }
+            Type::Builtin(ref t) => match *t {
+                BuiltinType::Function => chain![arena; "(", t.to_str(), ")"],
+                _ => arena.text(t.to_str()),
+            },
             Type::Record(ref row) => {
                 // Empty records are always formatted as unit (`()`)
                 if let Type::EmptyRow = **row {
@@ -1330,12 +1313,10 @@ where
                 doc = match **row {
                     Type::EmptyRow => doc,
                     Type::ExtendRow { .. } => doc.append(top(row).pretty(arena)).nest(INDENT),
-                    _ => {
-                        doc.append(arena.space())
-                            .append("| ")
-                            .append(top(row).pretty(arena))
-                            .nest(INDENT)
-                    }
+                    _ => doc.append(arena.space())
+                        .append("| ")
+                        .append(top(row).pretty(arena))
+                        .nest(INDENT),
                 };
                 if !empty_fields {
                     doc = doc.append(arena.space());
@@ -1404,11 +1385,9 @@ where
                 }
                 match *typ {
                     Type::EmptyRow => doc,
-                    _ => {
-                        doc.append(arena.space())
-                            .append("| ")
-                            .append(top(typ).pretty(arena))
-                    }
+                    _ => doc.append(arena.space())
+                        .append("| ")
+                        .append(top(typ).pretty(arena)),
                 }
             }
             // This should not be displayed normally as it should only exist in `ExtendRow`

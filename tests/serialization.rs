@@ -20,7 +20,6 @@ use gluon::vm::serialization::{DeSeed, SeSeed};
 use gluon::vm::internal::Value;
 
 fn serialize_value(thread: &Thread, value: &Value) {
-
     let mut buffer = Vec::new();
     {
         let mut ser = serde_json::Serializer::pretty(&mut buffer);

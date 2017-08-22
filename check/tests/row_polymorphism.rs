@@ -3,8 +3,8 @@ extern crate collect_mac;
 extern crate env_logger;
 
 extern crate gluon_base as base;
-extern crate gluon_parser as parser;
 extern crate gluon_check as check;
+extern crate gluon_parser as parser;
 
 use base::kind::{Kind, KindCache};
 use base::types::{Field, Type};

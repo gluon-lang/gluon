@@ -1,10 +1,10 @@
 //! The thread/vm type
 use std::any::Any;
-use std::sync::{Mutex, RwLock, RwLockWriteGuard, RwLockReadGuard, MutexGuard};
+use std::sync::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::cmp::Ordering;
 use std::fmt;
 use std::mem;
-use std::ops::{Add, Sub, Mul, Div, Deref, DerefMut};
+use std::ops::{Add, Deref, DerefMut, Div, Mul, Sub};
 use std::string::String as StdString;
 use std::result::Result as StdResult;
 use std::sync::Arc;
@@ -19,7 +19,7 @@ use base::symbol::Symbol;
 use base::types::ArcType;
 use base::types;
 
-use {Variants, Error, Result};
+use {Error, Result, Variants};
 use field_map::FieldMap;
 use interner::InternedStr;
 use macros::MacroEnv;
@@ -30,10 +30,10 @@ use source_map::LocalIter;
 use stack::{Frame, Stack, StackFrame, State};
 use types::*;
 use vm::{GlobalVmState, VmEnv};
-use value::{Value, ClosureData, ClosureInitDef, ClosureDataDef, DataStruct, Def, ExternFunction,
-            GcStr, BytecodeFunction, Callable, PartialApplicationDataDef, RecordDef, Userdata};
+use value::{BytecodeFunction, Callable, ClosureData, ClosureDataDef, ClosureInitDef, DataStruct,
+            Def, ExternFunction, GcStr, PartialApplicationDataDef, RecordDef, Userdata, Value};
 
-use value::Value::{Int, Float, String, Data, Function, PartialApplication, Closure};
+use value::Value::{Closure, Data, Float, Function, Int, PartialApplication, String};
 
 pub use gc::Traverseable;
 
@@ -221,24 +221,21 @@ impl<'b> Traverseable for Roots<'b> {
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct Thread {
-    #[cfg_attr(feature = "serde_derive",
-               serde(state_with = "::base::serialization::shared"))]
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::base::serialization::shared"))]
     global_state: Arc<GlobalVmState>,
     // The parent of this thread, if it exists must live at least as long as this thread as this
     // thread can refer to any value in the parent thread
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    parent: Option<RootedThread>,
+    #[cfg_attr(feature = "serde_derive", serde(state))] parent: Option<RootedThread>,
     #[cfg_attr(feature = "serde_derive", serde(skip))]
-    roots: RwLock<Vec<GcPtr<Traverseable + Send + Sync>>>,
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    rooted_values: RwLock<Vec<Value>>,
+    roots:
+        RwLock<Vec<GcPtr<Traverseable + Send + Sync>>>,
+    #[cfg_attr(feature = "serde_derive", serde(state))] rooted_values: RwLock<Vec<Value>>,
     /// All threads which this thread have spawned in turn. Necessary as this thread needs to scan
     /// the roots of all its children as well since those may contain references to this threads
     /// garbage collected values
     #[cfg_attr(feature = "serde_derive", serde(state))]
     child_threads: RwLock<Vec<GcPtr<Thread>>>,
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    context: Mutex<Context>,
+    #[cfg_attr(feature = "serde_derive", serde(state))] context: Mutex<Context>,
 }
 
 impl fmt::Debug for Thread {
@@ -285,8 +282,8 @@ impl<'vm> Pushable<'vm> for RootedThread {
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct RootedThread(
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-        GcPtr<Thread>);
+    #[cfg_attr(feature = "serde_derive", serde(state))] GcPtr<Thread>,
+);
 
 impl Drop for RootedThread {
     fn drop(&mut self) {
@@ -920,13 +917,11 @@ impl<'a> StackInfo<'a> {
     pub fn line(&self) -> Option<Line> {
         let frame = self.frame();
         match frame.state {
-            State::Closure(ref closure) => {
-                closure
-                    .function
-                    .debug_info
-                    .source_map
-                    .line(self.instruction_index())
-            }
+            State::Closure(ref closure) => closure
+                .function
+                .debug_info
+                .source_map
+                .line(self.instruction_index()),
             _ => None,
         }
     }
@@ -952,13 +947,11 @@ impl<'a> StackInfo<'a> {
     pub fn locals(&self) -> LocalIter {
         let frame = self.frame();
         match frame.state {
-            State::Closure(ref closure) => {
-                closure
-                    .function
-                    .debug_info
-                    .local_map
-                    .locals(self.instruction_index())
-            }
+            State::Closure(ref closure) => closure
+                .function
+                .debug_info
+                .local_map
+                .locals(self.instruction_index()),
             _ => LocalIter::empty(),
         }
     }
@@ -995,18 +988,15 @@ struct Hook {
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct Context {
     // FIXME It is dangerous to write to gc and stack
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub stack: Stack,
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub gc: Gc,
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    record_map: FieldMap,
-    #[cfg_attr(feature = "serde_derive", serde(skip))]
-    hook: Hook,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub stack: Stack,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub gc: Gc,
+    #[cfg_attr(feature = "serde_derive", serde(state))] record_map: FieldMap,
+    #[cfg_attr(feature = "serde_derive", serde(skip))] hook: Hook,
     max_stack_size: VmIndex,
 
     #[cfg_attr(feature = "serde_derive", serde(skip))]
-    poll_fn: Option<Box<FnMut(&Thread, &mut Context) -> Result<Async<()>> + Send>>,
+    poll_fn:
+        Option<Box<FnMut(&Thread, &mut Context) -> Result<Async<()>> + Send>>,
 }
 
 impl Context {
@@ -1197,9 +1187,11 @@ impl<'b> OwnedContext<'b> {
                 State::Extern(ext) => {
                     let instruction_index = context.borrow_mut().stack.frame.instruction_index;
                     context.borrow_mut().stack.frame.instruction_index = 1;
-                    Some(try_ready!(
-                        context.execute_function(instruction_index == 0, &ext, polled,)
-                    ))
+                    Some(try_ready!(context.execute_function(
+                        instruction_index == 0,
+                        &ext,
+                        polled,
+                    )))
                 }
                 State::Closure(closure) => {
                     let max_stack_size = context.max_stack_size;
@@ -1314,27 +1306,22 @@ impl<'b> OwnedContext<'b> {
                 function.id
             );
         }
-        self = self.exit_scope()
-            .map_err(|_| {
-                Error::Message(StdString::from("Poped the last frame in execute_function"))
-            })?;
+        self = self.exit_scope().map_err(|_| {
+            Error::Message(StdString::from("Poped the last frame in execute_function"))
+        })?;
         self.stack.pop(); // Pop function
         self.stack.push(result);
 
         match status {
             Status::Ok => Ok(Async::Ready(self)),
             Status::Yield => Ok(Async::NotReady),
-            Status::Error => {
-                match self.stack.pop() {
-                    String(s) => Err(Error::Panic(s.to_string())),
-                    _ => {
-                        Err(Error::Message(format!(
-                            "Unexpected error calling function `{}`",
-                            function.id
-                        )))
-                    }
-                }
-            }
+            Status::Error => match self.stack.pop() {
+                String(s) => Err(Error::Panic(s.to_string())),
+                _ => Err(Error::Message(format!(
+                    "Unexpected error calling function `{}`",
+                    function.id
+                ))),
+            },
         }
     }
 
@@ -1649,15 +1636,13 @@ impl<'b> ExecuteContext<'b> {
                     }
                     self.stack.push(Value::Array(d));
                 }
-                GetOffset(i) => {
-                    match self.stack.pop() {
-                        Data(data) => {
-                            let v = data.fields[i as usize];
-                            self.stack.push(v);
-                        }
-                        x => return Err(Error::Message(format!("GetOffset on {:?}", x))),
+                GetOffset(i) => match self.stack.pop() {
+                    Data(data) => {
+                        let v = data.fields[i as usize];
+                        self.stack.push(v);
                     }
-                }
+                    x => return Err(Error::Message(format!("GetOffset on {:?}", x))),
+                },
                 GetField(i) => {
                     let field = function.strings[i as usize];
                     match self.stack.pop() {
@@ -1684,11 +1669,9 @@ impl<'b> ExecuteContext<'b> {
                 }
                 Split => {
                     match self.stack.pop() {
-                        Data(data) => {
-                            for field in &data.fields {
-                                self.stack.push(*field);
-                            }
-                        }
+                        Data(data) => for field in &data.fields {
+                            self.stack.push(*field);
+                        },
                         // Zero argument variant
                         Value::Tag(_) => (),
                         _ => {
@@ -1702,20 +1685,16 @@ impl<'b> ExecuteContext<'b> {
                     index = i as usize;
                     continue;
                 }
-                CJump(i) => {
-                    match self.stack.pop() {
-                        Value::Tag(0) => (),
-                        _ => {
-                            index = i as usize;
-                            continue;
-                        }
+                CJump(i) => match self.stack.pop() {
+                    Value::Tag(0) => (),
+                    _ => {
+                        index = i as usize;
+                        continue;
                     }
-                }
-                Pop(n) => {
-                    for _ in 0..n {
-                        self.stack.pop();
-                    }
-                }
+                },
+                Pop(n) => for _ in 0..n {
+                    self.stack.pop();
+                },
                 Slide(n) => {
                     debug!("{:?}", &self.stack[..]);
                     let v = self.stack.pop();

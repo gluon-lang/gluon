@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 
 
 fn lib_dir(out_dir: &Path, lib_name: &str) -> PathBuf {
-    // Just loading gluon through -L dir does not work as we compile gluon with different sets of flags which
-    // gives ambiguity errors.
+    // Just loading gluon through -L dir does not work as we compile gluon with different sets of
+    // flags which gives ambiguity errors.
     // Instead retrieve the latest compiled gluon library which should usually be the correct one
     let mut gluon_rlibs: Vec<_> = fs::read_dir(out_dir.join("deps"))
         .unwrap()

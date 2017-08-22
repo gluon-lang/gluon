@@ -7,7 +7,7 @@ extern crate gluon_parser as parser;
 
 mod support;
 
-use base::ast::{TypedIdent, Pattern, PatternField};
+use base::ast::{Pattern, PatternField, TypedIdent};
 use base::pos::{self, BytePos, Spanned};
 use base::types::Type;
 
@@ -61,7 +61,7 @@ fn missing_match_expr() {
         Some(case(
             error(),
             vec![(Pattern::Ident(TypedIdent::new(intern("x"))), id("x"))],
-        ))
+        ),)
     );
 
     let error = Error::UnexpectedToken("With".into(), vec![]);
@@ -181,7 +181,7 @@ fn incomplete_alternative() {
 
     let expr = r#"
     match 1 with
-    | 
+    | //
     "#;
     let result = parse(expr);
     assert!(result.is_err());
@@ -202,7 +202,7 @@ fn incomplete_alternative_before_complete_alternative() {
 
     let expr = r#"
     match 1 with
-    | 
+    | //
     | x -> x
     "#;
     let result = parse(expr);
@@ -216,7 +216,7 @@ fn incomplete_alternative_before_complete_alternative() {
                 (Pattern::Error, error()),
                 (Pattern::Ident(TypedIdent::new(intern("x"))), id("x")),
             ],
-        ))
+        ),)
     );
 
     let error = Error::UnexpectedToken("Pipe".into(), vec![]);
@@ -254,10 +254,10 @@ fn incomplete_alternative_with_partial_pattern() {
                             },
                         ],
                     },
-                    error()
+                    error(),
                 ),
             ],
-        ))
+        ),)
     );
 
     let errors = vec![

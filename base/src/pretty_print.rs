@@ -130,13 +130,19 @@ pub fn pretty_kind<'a>(
 
 macro_rules! newlines_iter {
     ($self_: ident, $iterable: expr) => {
-        $iterable.into_iter().tuple_windows().map(|(prev, next)| $self_.comments(Span::new(prev.end, next.start)))
+        $iterable
+            .into_iter()
+            .tuple_windows()
+            .map(|(prev, next)| $self_.comments(Span::new(prev.end, next.start)))
     }
 }
 
 macro_rules! rev_newlines_iter {
     ($self_: ident, $iterable: expr) => {
-        $iterable.into_iter().tuple_windows().map(|(prev, next)| $self_.rev_comments(Span::new(prev.end, next.start)))
+        $iterable
+            .into_iter()
+            .tuple_windows()
+            .map(|(prev, next)| $self_.rev_comments(Span::new(prev.end, next.start)))
     }
 }
 
@@ -404,12 +410,11 @@ impl<'a> ExprPrinter<'a> {
     where
         Id: AsRef<str>,
     {
-        self.pretty_expr_with_shebang_line(expr).append(
-            self.comments(Span::new(
+        self.pretty_expr_with_shebang_line(expr)
+            .append(self.comments(Span::new(
                 expr.span.end,
                 BytePos::from(self.source.src().len()),
-            )),
-        )
+            )))
     }
 
     fn find_shebang_line(&'a self) -> Option<&str> {
@@ -452,12 +457,13 @@ impl<'a> ExprPrinter<'a> {
         let comments = self.comments(Span::new(previous_end, expr.span.start));
         let doc = match expr.value {
             Expr::App(ref func, ref args) => {
-                let arg_iter = once(&**func).chain(args).tuple_windows().map(
-                    |(prev, arg)| {
+                let arg_iter = once(&**func)
+                    .chain(args)
+                    .tuple_windows()
+                    .map(|(prev, arg)| {
                         self.space(Span::new(prev.span.end, arg.span.start))
                             .append(pretty(arg))
-                    },
-                );
+                    });
                 pretty(func)
                     .append(arena.concat(arg_iter).nest(INDENT))
                     .group()
@@ -697,7 +703,8 @@ impl<'a> ExprPrinter<'a> {
                     .collect::<Vec<_>>();
 
                 let mut line = newline(arena, expr);
-                // If there are any explicit line breaks then we need put each field on a separate line
+                // If there are any explicit line breaks then we need put each field on a separate
+                // line
                 if newlines.iter().any(|&(ref l, ref r)| {
                     l.1 != arena.nil().1 || r.1 != arena.nil().1
                 }) {
@@ -730,10 +737,9 @@ impl<'a> ExprPrinter<'a> {
                     }),
                     |spanned| spanned.value))
                     .nest(INDENT)
-                    .append(self.whitespace(
-                        Span::new(last_field_end, expr.span.end),
-                        line.clone(),
-                    ))
+                    .append(
+                        self.whitespace(Span::new(last_field_end, expr.span.end), line.clone()),
+                    )
                     .group()
                     .append("}");
                 (arena.text("{"), record)

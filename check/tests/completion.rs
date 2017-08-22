@@ -3,8 +3,8 @@ extern crate collect_mac;
 extern crate env_logger;
 
 extern crate gluon_base as base;
-extern crate gluon_parser as parser;
 extern crate gluon_check as check;
+extern crate gluon_parser as parser;
 
 use base::metadata::Metadata;
 use base::pos::{self, BytePos, Span};
@@ -516,7 +516,7 @@ fn suggest_alternative() {
     let text = r#"
 type Test = | A Int | B Int String
 match A 3 with
-| 
+| //
 "#;
     let result = suggest(text, BytePos::from(53));
     let expected = Ok(vec!["A".into(), "B".into()]);
@@ -546,7 +546,7 @@ fn suggest_implicit_import() {
     let text = r#"
 type Test = | Abc Int
 match Abc 1 with
-| 
+| //
 "#;
     let env = MockEnv::new();
 
@@ -570,7 +570,7 @@ let { Test } =
     type Test = | Abc Int
     { Test }
 match Abc 1 with
-| 
+| //
 "#;
     let env = MockEnv::new();
 

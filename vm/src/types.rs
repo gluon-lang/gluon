@@ -1,7 +1,7 @@
 use base::fnv::FnvMap;
 use base::kind::{ArcKind, Kind, KindEnv};
 use base::symbol::{Symbol, SymbolRef};
-use base::types::{Alias, ArcType, RecordSelector, TypeEnv, Type};
+use base::types::{Alias, ArcType, RecordSelector, Type, TypeEnv};
 
 pub use self::Instruction::*;
 

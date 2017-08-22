@@ -3,34 +3,34 @@
 // # GLUON
 #![recursion_limit = "1024"]
 
-#[doc(hidden)]
-pub extern crate frunk_core;
 #[macro_use]
-extern crate log;
+extern crate bitflags;
+#[macro_use]
+extern crate collect_mac;
 #[cfg(test)]
 extern crate env_logger;
 #[macro_use]
-extern crate quick_error;
+extern crate futures;
+extern crate itertools;
+#[macro_use]
+extern crate log;
 #[macro_use]
 extern crate mopa;
-#[macro_use]
-extern crate collect_mac;
-#[macro_use]
-extern crate bitflags;
-extern crate itertools;
 extern crate pretty;
 #[macro_use]
-extern crate futures;
+extern crate quick_error;
+#[doc(hidden)]
+pub extern crate frunk_core;
 
-#[cfg(feature = "serde_state")]
-#[macro_use]
-extern crate serde_state as serde;
 #[cfg(feature = "serde_derive")]
 #[macro_use]
 extern crate serde_derive;
 #[cfg(feature = "serde_derive")]
 #[macro_use]
 extern crate serde_derive_state;
+#[cfg(feature = "serde_state")]
+#[macro_use]
+extern crate serde_state as serde;
 
 #[macro_use]
 extern crate gluon_base as base;

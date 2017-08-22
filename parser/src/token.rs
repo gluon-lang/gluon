@@ -1,4 +1,4 @@
-use base::ast::{Comment, CommentType, is_operator_char};
+use base::ast::{is_operator_char, Comment, CommentType};
 use base::pos::{self, BytePos, Column, Line, Location, Spanned};
 use std::fmt;
 use std::str::Chars;
@@ -367,9 +367,8 @@ impl<'input> Tokenizer<'input> {
     }
 
     fn shebang_line(&mut self, start: Location) -> Option<SpannedToken<'input>> {
-
         let (end, line) = self.take_until(start, |ch| ch == '\n');
-        
+
         if line.starts_with("#!") {
             let skip = 2;
             let result = line[skip..].trim_right();
@@ -417,13 +416,11 @@ impl<'input> Tokenizer<'input> {
                 }
             }
             Some((start, ch)) if is_ident_start(ch) => return self.error(start, UnexpectedChar(ch)),
-            None | Some(_) => {
-                if let Ok(val) = int.parse() {
-                    (start, end, Token::IntLiteral(val))
-                } else {
-                    return self.error(start, NonParseableInt);
-                }
-            }
+            None | Some(_) => if let Ok(val) = int.parse() {
+                (start, end, Token::IntLiteral(val))
+            } else {
+                return self.error(start, NonParseableInt);
+            },
         };
 
         Ok(pos::spanned2(start, end, token))
@@ -476,20 +473,18 @@ impl<'input> Iterator for Tokenizer<'input> {
                 '"' => Some(self.string_literal(start)),
                 '\'' => Some(self.char_literal(start)),
 
-                '/' if self.test_lookahead(|ch| ch == '/') => {
-                    match self.line_comment(start) {
-                        Some(token) => Some(Ok(token)),
-                        None => continue,
-                    }
-                }
-                '/' if self.test_lookahead(|ch| ch == '*') => {
-                    match self.block_comment(start) {
-                        Ok(Some(token)) => Some(Ok(token)),
-                        Ok(None) => continue,
-                        Err(err) => Some(Err(err)),
-                    }
-                }
-                '#' if start.absolute == BytePos::from(0) && self.test_lookahead(|ch| ch == '!') => {
+                '/' if self.test_lookahead(|ch| ch == '/') => match self.line_comment(start) {
+                    Some(token) => Some(Ok(token)),
+                    None => continue,
+                },
+                '/' if self.test_lookahead(|ch| ch == '*') => match self.block_comment(start) {
+                    Ok(Some(token)) => Some(Ok(token)),
+                    Ok(None) => continue,
+                    Err(err) => Some(Err(err)),
+                },
+                '#' if start.absolute == BytePos::from(0) &&
+                    self.test_lookahead(|ch| ch == '!') =>
+                {
                     match self.shebang_line(start) {
                         Some(token) => Some(Ok(token)),
                         None => continue,
@@ -522,7 +517,7 @@ mod test {
     use base::pos::{self, BytePos, Column, Line, Location, Spanned};
 
     use super::*;
-    use super::{Tokenizer, error};
+    use super::{error, Tokenizer};
     use token::Token;
     use token::Token::*;
 
@@ -538,7 +533,9 @@ mod test {
         input: &'input str,
     ) -> Box<Iterator<Item = Result<SpannedToken<'input>, SpError>> + 'input> where {
         Box::new(Tokenizer::new(input).take_while(|token| match *token {
-            Ok(Spanned { value: Token::EOF, .. }) => false,
+            Ok(Spanned {
+                value: Token::EOF, ..
+            }) => false,
             _ => true,
         }))
     }
@@ -647,16 +644,16 @@ mod test {
                 (r#"~~~                      "#, Identifier("foo")),
                 (
                     r#"    ~~~~~~~~~            "#,
-                    StringLiteral("bar\"\n".to_string())
+                    StringLiteral("bar\"\n".to_string()),
                 ),
                 (r#"              ~~~        "#, Identifier("baz")),
                 (
                     r#"                  ~~     "#,
-                    StringLiteral("".to_string())
+                    StringLiteral("".to_string()),
                 ),
                 (
                     r#"                     ~~~~"#,
-                    StringLiteral("\t".to_string())
+                    StringLiteral("\t".to_string()),
                 ),
             ],
         );
@@ -800,7 +797,7 @@ mod test {
                     DocComment(Comment {
                         typ: CommentType::Line,
                         content: "hellooo/// hi".to_string(),
-                    })
+                    }),
                 ),
             ],
         );
@@ -817,7 +814,7 @@ mod test {
                     DocComment(Comment {
                         typ: CommentType::Line,
                         content: "hellooo/// hi".to_string(),
-                    })
+                    }),
                 ),
             ],
         );
@@ -828,13 +825,17 @@ mod test {
         test(
             "#!/bin/gluon\nhi /// hellooo/// hi",
             vec![
-                (r#"~~~~~~~~~~~~                   "#, ShebangLine("/bin/gluon")),
+                (
+                    r#"~~~~~~~~~~~~                   "#,
+                    ShebangLine("/bin/gluon"),
+                ),
                 (r#"            ~~                 "#, Identifier("hi")),
-                (r#"              ~~~~~~~~~~~~~~~~~"#,
+                (
+                    r#"              ~~~~~~~~~~~~~~~~~"#,
                     DocComment(Comment {
                         typ: CommentType::Line,
                         content: "hellooo/// hi".to_string(),
-                    })
+                    }),
                 ),
             ],
         );

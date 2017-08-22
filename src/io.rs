@@ -195,7 +195,6 @@ fn load_script(WithVM { vm, value: name }: WithVM<&str>, expr: &str) -> IO<Strin
 }
 
 pub fn load(vm: &Thread) -> Result<()> {
-
     vm.register_type::<GluonFile>("File", &[])?;
 
     // io_flat_map f m : (a -> IO b) -> IO a -> IO b

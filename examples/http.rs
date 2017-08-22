@@ -5,10 +5,10 @@
 //!
 //! [hyper]:https://hyper.rs
 
+extern crate gluon;
 extern crate gluon_base as base;
 #[macro_use]
 extern crate gluon_vm as vm;
-extern crate gluon;
 
 #[macro_use]
 extern crate collect_mac;
@@ -246,7 +246,7 @@ type Response = record_type!{
 
 type HttpState = record_type!{
     request => Request,
-    response => ResponseBody 
+    response => ResponseBody
 };
 
 fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>) -> IO<()> {
@@ -257,7 +257,8 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
 
     use hyper::server::{Http, Request as HyperRequest, Response as HyperResponse};
 
-    // Retrieve the `handle` function from the http module which we use to evaluate values of type // `Handler Response`
+    // Retrieve the `handle` function from the http module which we use to evaluate values of type
+    // `Handler Response`
     type ListenFn = fn(OpaqueValue<RootedThread, Handler<Response>>, HttpState)
         -> IO<Response>;
     let handle: Function<RootedThread, ListenFn> = thread
@@ -359,10 +360,10 @@ pub fn load(vm: &Thread) -> VmResult<()> {
     vm.define_global(
         "http_prim",
         record! {
-        listen => primitive!(2 listen),
-        read_chunk => primitive!(1 read_chunk),
-        write_response => primitive!(2 write_response)
-    },
+            listen => primitive!(2 listen),
+            read_chunk => primitive!(1 read_chunk),
+            write_response => primitive!(2 write_response)
+        },
     )?;
     Ok(())
 }

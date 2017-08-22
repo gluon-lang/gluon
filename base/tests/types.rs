@@ -1,5 +1,6 @@
-extern crate gluon_base as base;
+
 extern crate collect_mac;
+extern crate gluon_base as base;
 extern crate pretty;
 
 use std::ops::Deref;
@@ -17,9 +18,7 @@ where
     assert!(s.len() != 0);
     match s.parse() {
         Ok(b) => Type::Builtin(b),
-        Err(()) if s.starts_with(char::is_lowercase) => {
-            Type::Generic(Generic::new(s, Kind::typ()))
-        }
+        Err(()) if s.starts_with(char::is_lowercase) => Type::Generic(Generic::new(s, Kind::typ())),
         Err(()) => Type::App(Type::ident(s), args.into_iter().collect()),
     }
 }
@@ -117,7 +116,6 @@ fn show_record() {
 
 #[test]
 fn show_record_multi_line() {
-
     let data = |s, a| ArcType::from(type_con(s, a));
     let f = Type::function(vec![data("a", vec![])], Type::string());
     let test = data("Test", vec![data("a", vec![])]);

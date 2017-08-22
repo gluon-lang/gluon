@@ -215,7 +215,8 @@ mod string {
 }
 
 fn parse<T>(s: &str) -> StdResult<T, ()>
-    where T: FromStr,
+where
+    T: FromStr,
 {
     s.parse().map_err(|_| ())
 }
@@ -346,14 +347,16 @@ pub fn load(vm: &Thread) -> Result<()> {
 
     type string_prim = str;
     use self::string;
-    vm.define_global("string_prim",
-                       record!(
+    vm.define_global(
+        "string_prim",
+        record!(
         len => primitive!(1 string_prim::len),
         is_empty => primitive!(1 string_prim::is_empty),
         split_at => primitive!(2 string_prim::split_at),
         find => named_primitive!(2, "string_prim.find", string_prim::find::<&str>),
         rfind => named_primitive!(2, "string_prim.rfind", string_prim::rfind::<&str>),
-        starts_with => named_primitive!(2, "string_prim.starts_with", string_prim::starts_with::<&str>),
+        starts_with =>
+            named_primitive!(2, "string_prim.starts_with", string_prim::starts_with::<&str>),
         ends_with => named_primitive!(2, "string_prim.ends_with", string_prim::ends_with::<&str>),
         trim => primitive!(1 string_prim::trim),
         trim_left => primitive!(1 string_prim::trim_left),

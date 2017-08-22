@@ -127,7 +127,6 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
                     match field.value {
                         Some(_) => (),
                         None => {
-
                             let name = field.name.value.clone();
                             let typ = unaliased.row_iter()
                                 .find(|f| f.name.name_eq(&name))
@@ -698,8 +697,9 @@ where
         stack: ScopedMap::new(),
         patterns: ScopedMap::new(),
     };
-    complete_at(&mut suggest, expr, pos).ok().and_then(
-        |found| match found.match_ {
+    complete_at(&mut suggest, expr, pos)
+        .ok()
+        .and_then(|found| match found.match_ {
             Some(match_) => match match_ {
                 Match::Expr(expr) => {
                     let suggestion = expr_iter(&suggest.stack, expr)
@@ -735,6 +735,5 @@ where
 
                 _ => None,
             },
-        },
-    )
+        })
 }

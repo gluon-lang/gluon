@@ -1,11 +1,12 @@
+
+extern crate difference;
 extern crate env_logger;
 extern crate pretty;
-extern crate difference;
 #[macro_use]
 extern crate pretty_assertions;
 
-extern crate gluon_parser as parser;
 extern crate gluon_base as base;
+extern crate gluon_parser as parser;
 
 use std::fs::File;
 use std::io::{Read, Write};

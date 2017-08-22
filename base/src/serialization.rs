@@ -294,15 +294,8 @@ impl<'seed, T, S> AsMut<S> for SharedSeed<'seed, T, S> {
 #[cfg_attr(feature = "serde_derive", serde(ser_parameters = "S"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "S"))]
 pub enum Variant<T> {
-    Marked(
-        Id,
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        T,
-    ),
-    Plain(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        T,
-    ),
+    Marked(Id, #[cfg_attr(feature = "serde_derive", serde(state))] T),
+    Plain(#[cfg_attr(feature = "serde_derive", serde(state))] T),
     Reference(Id),
 }
 

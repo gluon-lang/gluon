@@ -1,8 +1,9 @@
-extern crate env_logger;
-extern crate gluon;
+
 #[macro_use]
 extern crate collect_mac;
+extern crate env_logger;
 extern crate futures;
+extern crate gluon;
 
 use std::sync::{Arc, Mutex};
 use std::collections::BTreeMap;

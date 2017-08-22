@@ -1,6 +1,7 @@
+
+extern crate gluon;
 #[macro_use]
 extern crate gluon_vm;
-extern crate gluon;
 
 use std::thread::spawn;
 

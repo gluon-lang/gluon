@@ -60,11 +60,12 @@ pub struct Local {
     start: usize,
     end: usize,
     pub index: VmIndex,
-    #[cfg_attr(feature = "serde_derive",
-               serde(state_with = "::serialization::symbol"))]
-    pub name: Symbol,
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::symbol"))]
+    pub name:
+        Symbol,
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
-    pub typ: ArcType,
+    pub typ:
+        ArcType,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -73,8 +74,7 @@ pub struct Local {
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct LocalMap {
     // Instruction indexes marking [start, end) where the local variable `Symbol` exists
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    map: Vec<Local>,
+    #[cfg_attr(feature = "serde_derive", serde(state))] map: Vec<Local>,
 }
 
 impl LocalMap {

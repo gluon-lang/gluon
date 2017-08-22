@@ -1,7 +1,7 @@
 //! Collection types which allows insertion of new values while shared references to its contents
 //! are alive. This is done by storing each value in a stable memory location and preventing an
 //! earlier inserted value to be overwritten.
-use std::cell::{RefCell, Ref};
+use std::cell::{Ref, RefCell};
 use std::fmt;
 use std::hash::Hash;
 use std::iter::{FromIterator, IntoIterator};

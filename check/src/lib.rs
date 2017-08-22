@@ -6,13 +6,13 @@
 #![doc(html_root_url = "https://docs.rs/gluon_check/0.5.0")] // # GLUON
 
 extern crate itertools;
-#[macro_use]
-extern crate log;
 #[cfg(test)]
 extern crate env_logger;
-extern crate union_find;
+#[macro_use]
+extern crate log;
 extern crate pretty;
 extern crate smallvec;
+extern crate union_find;
 
 #[macro_use]
 extern crate gluon_base as base;
@@ -88,7 +88,7 @@ mod tests {
     /// Returns a reference to the interner stored in TLD
     pub fn get_local_interner() -> Rc<RefCell<Symbols>> {
         thread_local!(static INTERNER: Rc<RefCell<Symbols>>
-                      = Rc::new(RefCell::new(Symbols::new())));
+        = Rc::new(RefCell::new(Symbols::new())));
         INTERNER.with(|interner| interner.clone())
     }
 

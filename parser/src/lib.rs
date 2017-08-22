@@ -1,20 +1,20 @@
 //! The parser is a bit more complex than it needs to be as it needs to be fully specialized to
 //! avoid a recompilation every time a later part of the compiler is changed. Due to this the
 //! string interner and therefore also garbage collector needs to compiled before the parser.
-#![doc(html_root_url="https://docs.rs/gluon_parser/0.5.0")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon_parser/0.5.0")] // # GLUON
 
+extern crate gluon_base as base;
+extern crate itertools;
+extern crate lalrpop_util;
 #[macro_use]
 extern crate log;
-extern crate itertools;
 #[macro_use]
 extern crate quick_error;
-extern crate gluon_base as base;
-extern crate lalrpop_util;
 
 use std::cell::RefCell;
 use std::fmt;
 
-use base::ast::{Comment, Expr, IdentEnv, ValueBinding, SpannedExpr, SpannedPattern, TypedIdent};
+use base::ast::{Comment, Expr, IdentEnv, SpannedExpr, SpannedPattern, TypedIdent, ValueBinding};
 use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::symbol::Symbol;
@@ -55,19 +55,15 @@ fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
         Expr::LetBindings(_, ref last) |
         Expr::TypeBindings(_, ref last) => expr.span.end = last.span.end,
         Expr::Lambda(ref lambda) => expr.span.end = lambda.body.span.end,
-        Expr::Block(ref mut exprs) => {
-            match exprs.len() {
-                0 => (),
-                1 => return exprs.pop().unwrap(),
-                _ => expr.span.end = exprs.last().unwrap().span.end,
-            }
-        }
-        Expr::Match(_, ref alts) => {
-            if let Some(last_alt) = alts.last() {
-                let end = last_alt.expr.span.end;
-                expr.span.end = end;
-            }
-        }
+        Expr::Block(ref mut exprs) => match exprs.len() {
+            0 => (),
+            1 => return exprs.pop().unwrap(),
+            _ => expr.span.end = exprs.last().unwrap().span.end,
+        },
+        Expr::Match(_, ref alts) => if let Some(last_alt) = alts.last() {
+            let end = last_alt.expr.span.end;
+            expr.span.end = end;
+        },
         Expr::App(_, _) |
         Expr::Ident(_) |
         Expr::Literal(_) |
@@ -179,9 +175,9 @@ impl Error {
                 remove_extra_quotes(&mut expected);
                 pos::spanned2(0.into(), 0.into(), Error::UnexpectedEof(expected))
             }
-            ExtraToken { token: (lpos, token, rpos) } => {
-                pos::spanned2(lpos, rpos, Error::ExtraToken(token.to_string()))
-            }
+            ExtraToken {
+                token: (lpos, token, rpos),
+            } => pos::spanned2(lpos, rpos, Error::ExtraToken(token.to_string())),
             User { error } => error,
         }
     }
@@ -264,7 +260,11 @@ pub enum FieldPattern<Id> {
 
 pub enum FieldExpr<Id> {
     Type(Option<Comment>, Spanned<Id, BytePos>, Option<ArcType<Id>>),
-    Value(Option<Comment>, Spanned<Id, BytePos>, Option<SpannedExpr<Id>>),
+    Value(
+        Option<Comment>,
+        Spanned<Id, BytePos>,
+        Option<SpannedExpr<Id>>,
+    ),
 }
 
 // Hack around LALRPOP's limited type syntax
@@ -424,15 +424,13 @@ pub fn format_expr(input: &str) -> Result<String, ParseErrors> {
     use base::symbol::Symbols;
 
     let newline = match input.find(|c: char| c == '\n' || c == '\r') {
-        Some(i) => {
-            if input[i..].starts_with("\r\n") {
-                "\r\n"
-            } else if input[i..].starts_with("\r") {
-                "\r"
-            } else {
-                "\n"
-            }
-        }
+        Some(i) => if input[i..].starts_with("\r\n") {
+            "\r\n"
+        } else if input[i..].starts_with("\r") {
+            "\r"
+        } else {
+            "\n"
+        },
         None => "\n",
     };
 
