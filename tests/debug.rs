@@ -56,10 +56,7 @@ fn function_hook() {
     );
 }
 
-#[test]
-fn line_hook() {
-    let _ = env_logger::init();
-
+fn run_line_hook_test(source: &str) -> Vec<Line> {
     let thread = new_vm();
     {
         let mut context = thread.context();
@@ -68,7 +65,7 @@ fn line_hook() {
     }
     let mut execute = Compiler::new()
         .implicit_prelude(false)
-        .run_expr_async::<i32>(&thread, "test", SIMPLE_EXPR)
+        .run_expr_async::<i32>(&thread, "test", source)
         .map(|_| ());
     let mut result = Ok(Async::NotReady);
 
@@ -79,16 +76,49 @@ fn line_hook() {
             Ok(Async::NotReady) => {
                 let context = thread.context();
                 let debug_info = context.debug_info();
-                lines.push(debug_info.stack_info(0).unwrap().line().unwrap());
+                lines.push(
+                    debug_info
+                        .stack_info(0)
+                        .expect("stack info")
+                        .line()
+                        .expect("expected line"),
+                );
             }
             Err(err) => panic!("{}", err),
         }
         result = execute.poll();
     }
+    lines
+}
 
+#[test]
+fn line_hook() {
+    let _ = env_logger::init();
+
+    let lines = run_line_hook_test(SIMPLE_EXPR);
     assert_eq!(
         lines,
         vec![1, 3, 4, 3, 1]
+            .into_iter()
+            .map(Line::from)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn line_hook_recursive_functions() {
+    let _ = env_logger::init();
+
+    let expr = r#"
+let f x = x
+and g y = f
+1
+    "#;
+
+    let lines = run_line_hook_test(expr);
+    assert_eq!(
+        lines,
+        vec![1, 2, 3]
             .into_iter()
             .map(Line::from)
             .collect::<Vec<_>>()

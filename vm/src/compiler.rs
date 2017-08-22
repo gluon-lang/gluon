@@ -537,6 +537,16 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
+    fn update_line(&mut self, function: &mut FunctionEnvs, expr: CExpr) {
+        let is_macro_expanded = expr.span().expansion_id != NO_EXPANSION;
+
+        // Don't update the current_line for macro expanded code as the lines in that code do not
+        // come from this module
+        if !is_macro_expanded {
+            function.current_line = self.source.line_number_at_byte(expr.span().start);
+        }
+    }
+
     fn compile(
         &mut self,
         mut expr: CExpr,
@@ -546,16 +556,12 @@ impl<'a> Compiler<'a> {
         // Store a stack of expressions which need to be cleaned up after this "tailcall" loop is
         // done
         function.stack.enter_scope();
-        // Don't update the current_line for macro expanded code as the lines in that code do not come
-        // from this module
-        if expr.span().expansion_id == NO_EXPANSION {
-            function.current_line = self.source.line_number_at_byte(expr.span().start);
-        }
+
+        self.update_line(function, expr);
+
         while let Some(next) = self.compile_(expr, function, tail_position)? {
             expr = next;
-            if expr.span().expansion_id == NO_EXPANSION {
-                function.current_line = self.source.line_number_at_byte(expr.span().start);
-            }
+            self.update_line(function, expr);
         }
         let count = function.exit_scope(self);
         function.emit(Slide(count));
@@ -606,6 +612,7 @@ impl<'a> Compiler<'a> {
                             );
                         }
                         for (i, closure) in closures.iter().enumerate() {
+                            function.current_line = self.source.line_number_at_byte(closure.pos);
                             function.stack.enter_scope();
 
                             function.emit(Push(stack_start + i as VmIndex));

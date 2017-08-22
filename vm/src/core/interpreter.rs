@@ -503,6 +503,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
                                 };
                                 let new_body = new_body.map(|expr| {
                                     Closure {
+                                        pos: closure.pos,
                                         name: closure.name.clone(),
                                         args: closure.args.clone(),
                                         expr: expr.into_local(self.allocator),

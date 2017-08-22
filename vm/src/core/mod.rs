@@ -54,6 +54,7 @@ use base::types::{arg_iter, ArcType, PrimitiveEnv, Type, TypeEnv};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Closure<'a> {
+    pub pos: BytePos,
     pub name: TypedIdent<Symbol>,
     pub args: Vec<TypedIdent<Symbol>>,
     pub expr: &'a Expr<'a>,
@@ -496,6 +497,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                 )
             }
             ast::Expr::Lambda(ref lambda) => self.new_lambda(
+                expr.span.start,
                 lambda.id.clone(),
                 lambda.args.iter().map(|arg| arg.value.clone()).collect(),
                 self.translate_alloc(&lambda.body),
@@ -602,6 +604,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                 .iter()
                 .map(|bind| {
                     Closure {
+                        pos: bind.name.span.start,
                         name: match bind.name.value {
                             ast::Pattern::Ident(ref id) => id.clone(),
                             _ => unreachable!(),
@@ -643,6 +646,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                 } else {
                     Named::Recursive(vec![
                         Closure {
+                            pos: bind.name.span.start,
                             name: name.clone(),
                             args: bind.args.iter().map(|arg| arg.value.clone()).collect(),
                             expr: self.translate_alloc(&bind.expr),
@@ -725,6 +729,7 @@ impl<'a, 'e> Translator<'a, 'e> {
             data
         } else {
             self.new_lambda(
+                span.start,
                 TypedIdent {
                     name: Symbol::from(format!("${}", id.name)),
                     typ: typ,
@@ -738,6 +743,7 @@ impl<'a, 'e> Translator<'a, 'e> {
 
     fn new_lambda(
         &'a self,
+        pos: BytePos,
         name: TypedIdent<Symbol>,
         args: Vec<TypedIdent<Symbol>>,
         body: &'a Expr<'a>,
@@ -749,6 +755,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                 name: name.clone(),
                 expr: Named::Recursive(vec![
                     Closure {
+                        pos,
                         name: name.clone(),
                         args: args,
                         expr: body,
