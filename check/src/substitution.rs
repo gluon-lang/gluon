@@ -14,15 +14,14 @@ use base::types::{ArcType, Type, Walker};
 use base::symbol::Symbol;
 
 #[derive(Debug, PartialEq)]
-pub enum Error<T, E> {
+pub enum Error<T> {
     Occurs(T, T),
-    Constraint(T, Arc<Vec<T>>, Vec<UnifyError<T, E>>),
+    Constraint(T, Arc<Vec<T>>),
 }
 
-impl<T, E> fmt::Display for Error<T, E>
+impl<T> fmt::Display for Error<T>
 where
     T: fmt::Display,
-    E: fmt::Display,
     T: for<'a> types::ToDoc<'a, ::pretty::Arena<'a>>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -30,7 +29,7 @@ where
 
         match *self {
             Occurs(ref var, ref typ) => write!(f, "Variable `{}` occurs in `{}`.", var, typ),
-            Constraint(ref typ, ref constraints, ref errors) => {
+            Constraint(ref typ, ref constraints) => {
                 writeln!(
                     f,
                     "Type `{}` could not fullfill a constraint.\nPossible resolves:",
@@ -38,9 +37,6 @@ where
                 )?;
                 for constraint in &constraints[..] {
                     writeln!(f, "{}", constraint)?;
-                }
-                for err in errors {
-                    writeln!(f, "{}\n", err)?;
                 }
                 Ok(())
             }
@@ -386,12 +382,7 @@ impl<T: Substitutable + Clone> Substitution<T> {
 }
 impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
     /// Takes `id` and updates the substitution to say that it should have the same type as `typ`
-    pub fn union<P, S>(
-        &self,
-        state: P,
-        id: &T::Variable,
-        typ: &T,
-    ) -> Result<Option<T>, Error<T, T::Error>>
+    pub fn union<P, S>(&self, state: P, id: &T::Variable, typ: &T) -> Result<Option<T>, Error<T>>
     where
         T::Variable: Clone,
         T: Unifiable<S> + fmt::Display,
@@ -444,7 +435,7 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
         mut state: P,
         id: &T::Variable,
         typ: &T,
-    ) -> Result<Option<T>, Error<T, T::Error>>
+    ) -> Result<Option<T>, Error<T>>
     where
         T::Variable: Clone,
         T: Unifiable<S> + fmt::Display,
@@ -459,7 +450,6 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
             .clone();
 
         let mut typ = Cow::Borrowed(typ);
-        let mut all_errors = Vec::new();
         for (constraint_name, constraint) in &constraints {
             debug!(
                 "Attempting to resolve {} to the constraints {}:\n{}",
@@ -473,21 +463,14 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
                     let constraint_type = constraint_type.instantiate(self, &FnvMap::default());
                     match equivalent(state(), self, &constraint_type, &typ) {
                         Ok(()) => Some(constraint_type),
-                        Err(errors) => {
-                            all_errors.extend(errors);
-                            None
-                        }
+                        Err(()) => None,
                     }
                 })
                 .next();
             match resolved {
                 None => {
                     debug!("Unable to resolve {}", typ);
-                    return Err(Error::Constraint(
-                        typ.into_owned(),
-                        constraint.clone(),
-                        all_errors,
-                    ));
+                    return Err(Error::Constraint(typ.into_owned(), constraint.clone()));
                 }
                 Some(resolved) => {
                     // Only replace the type if it is replaced by a lower level variable or a
@@ -524,7 +507,7 @@ pub fn equivalent<S, T>(
     subs: &Substitution<T>,
     actual: &T,
     inferred: &T,
-) -> Result<(), Vec<UnifyError<T, T::Error>>>
+) -> Result<(), ()>
 where
     T: Unifiable<S> + PartialEq + Clone,
     T::Variable: Clone,
@@ -533,34 +516,31 @@ where
         state,
         unifier: Equivalent {
             equiv: true,
-            errors: Vec::new(),
             subs,
             temp_subs: FnvMap::default(),
         },
     };
     unifier.try_match(actual, inferred);
     if !unifier.unifier.equiv {
-        Err(unifier.unifier.errors)
+        Err(())
     } else {
         Ok(())
     }
 }
 
-struct Equivalent<'e, T: Substitutable + 'e, E> {
+struct Equivalent<'e, T: Substitutable + 'e> {
     equiv: bool,
-    errors: Vec<UnifyError<T, E>>,
     subs: &'e Substitution<T>,
     temp_subs: FnvMap<u32, T>,
 }
 
-impl<'e, S, T> Unifier<S, T> for Equivalent<'e, T, T::Error>
+impl<'e, S, T> Unifier<S, T> for Equivalent<'e, T>
 where
     T: Unifiable<S> + PartialEq + Clone + 'e,
     T::Variable: Clone,
 {
-    fn report_error(unifier: &mut UnifierState<S, Self>, error: UnifyError<T, T::Error>) {
+    fn report_error(unifier: &mut UnifierState<S, Self>, _error: UnifyError<T, T::Error>) {
         unifier.unifier.equiv = false;
-        unifier.unifier.errors.push(error);
     }
 
     fn try_match_res(

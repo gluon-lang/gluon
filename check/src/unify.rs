@@ -13,7 +13,7 @@ use substitution::{self, Substitutable, Substitution, Variable};
 #[derive(Debug, PartialEq)]
 pub enum Error<T, E> {
     TypeMismatch(T, T),
-    Substitution(::substitution::Error<T, E>),
+    Substitution(::substitution::Error<T>),
     Other(E),
 }
 
@@ -48,8 +48,8 @@ where
     }
 }
 
-impl<T, E> From<substitution::Error<T, E>> for Error<T, E> {
-    fn from(err: substitution::Error<T, E>) -> Self {
+impl<T, E> From<substitution::Error<T>> for Error<T, E> {
+    fn from(err: substitution::Error<T>) -> Self {
         Error::Substitution(err)
     }
 }

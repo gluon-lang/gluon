@@ -495,7 +495,6 @@ impl<'a> Typecheck<'a> {
                                 substitution::Error::Constraint(
                                     ref mut var,
                                     ref mut constraints,
-                                    ref mut todo
                                 ) => {
                                     for typ in Arc::make_mut(constraints) {
                                         self.generalize_type(0, typ);
@@ -1692,11 +1691,11 @@ fn apply_subs(
                 substitution::Error::Occurs(var, typ) => {
                     substitution::Error::Occurs(var, subs.set_type(typ))
                 }
-                substitution::Error::Constraint(typ, mut constraints, errors) => {
+                substitution::Error::Constraint(typ, mut constraints) => {
                     for typ in Arc::make_mut(&mut constraints) {
                         *typ = subs.set_type(typ.clone());
                     }
-                    substitution::Error::Constraint(subs.set_type(typ), constraints, errors)
+                    substitution::Error::Constraint(subs.set_type(typ), constraints)
                 }
             }),
             Other(err) => Other(err),
