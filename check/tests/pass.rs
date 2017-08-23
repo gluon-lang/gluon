@@ -5,8 +5,8 @@ extern crate env_logger;
 extern crate pretty_assertions;
 
 extern crate gluon_base as base;
-extern crate gluon_parser as parser;
 extern crate gluon_check as check;
+extern crate gluon_parser as parser;
 
 use base::ast::{self, Expr, Pattern, Typed};
 use base::kind::Kind;
@@ -313,7 +313,10 @@ in eq_Int
         &["a"],
         Type::record(
             vec![],
-            vec![Field::new(support::intern_unscoped("=="), Type::function(vec![typ("a"), typ("a")], bool))],
+            vec![Field::new(
+                support::intern_unscoped("=="),
+                Type::function(vec![typ("a"), typ("a")], bool))
+            ],
         ),
     );
     let expected = Ok(Type::app(eq, collect![typ("Int")]));
@@ -340,9 +343,9 @@ in option_Functor.map (\x -> x #Int- 1) (Some 2)
     let result = support::typecheck(text);
     let variants = Type::variant(
         vec![Field::new(support::intern_unscoped("None"), support::typ_a("Option", vec![typ("a")])),
-                                      Field::new(support::intern_unscoped("Some"), Type::function(vec![typ("a")],
-                                                                   support::typ_a("Option",
-                                                                                  vec![typ("a")])))],
+        Field::new(support::intern_unscoped("Some"), Type::function(vec![typ("a")],
+                                     support::typ_a("Option",
+                                                    vec![typ("a")])))],
     );
     let option = alias("Option", &["a"], variants);
 
@@ -380,9 +383,9 @@ test
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     let variants = Type::variant(vec![Field::new(support::intern_unscoped("T"),
-                                                 Type::function(vec![typ("a")],
-                                                                     support::typ_a("Test",
-                                                                                    vec![typ("a")])))]);
+    Type::function(vec![typ("a")],
+                        support::typ_a("Test",
+                                       vec![typ("a")])))]);
     let expected = Ok(Type::app(
         alias("Test", &["a"], variants),
         collect![Type::unit()],
@@ -525,7 +528,7 @@ type Test = | Test String Int in { Test, x = 1 }
     let test = Type::variant(vec![Field::new(intern("Test"), variant)]);
     let expected = Ok(Type::record(
         vec![Field::new(support::intern_unscoped("Test"),
-                                                   Alias::new(intern("Test"), vec![], test))],
+        Alias::new(intern("Test"), vec![], test))],
         vec![Field::new(intern("x"), typ("Int"))],
     ));
 
@@ -560,8 +563,8 @@ return 1
     let result = support::typecheck(text);
     let variant = |name| {
         Type::variant(vec![Field::new(intern(name),
-                                      Type::function(vec![typ("a")],
-                                                     Type::app(typ(name), collect![typ("a")])))])
+        Type::function(vec![typ("a")],
+                       Type::app(typ(name), collect![typ("a")])))])
     };
     let test = alias("Test", &["a"], variant("Test"));
     let m = Generic::new(intern("m"), Kind::function(Kind::typ(), Kind::typ()));
@@ -570,7 +573,7 @@ return 1
     let id_t = Type::alias(
         intern("IdT"),
         vec![m.clone(),
-                                Generic::new(intern("a"), Kind::typ())],
+        Generic::new(intern("a"), Kind::typ())],
         Type::app(
             Type::generic(m),
             collect![Type::app(id, collect![typ("a")])],
@@ -735,7 +738,10 @@ in f "123"
     assert!(result.is_err());
     let errors: Vec<_> = result.unwrap_err().errors().into();
     assert_eq!(errors.len(), 1);
-    assert_eq!(errors[0].span.map(|loc| loc.absolute), Span::new(BytePos::from(26), BytePos::from(31)));
+    assert_eq!(
+        errors[0].span.map(|loc| loc.absolute),
+        Span::new(BytePos::from(26), BytePos::from(31))
+    );
 }
 
 /// Test that overload resolution selects the closest implementation that matches even if another
@@ -1024,11 +1030,11 @@ type Test2 = {
     let result = support::typecheck(text);
 
     assert_eq!(result, Ok(Type::alias(intern("Test2"),
-                           vec![],
-                           Type::record(vec![], vec![Field {
-                               name: intern("x"),
-                               typ: Type::int()
-                           }]))));
+    vec![],
+    Type::record(vec![], vec![Field {
+        name: intern("x"),
+        typ: Type::int()
+    }]))));
 }
 
 #[test]

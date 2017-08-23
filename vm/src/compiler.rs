@@ -38,7 +38,8 @@ enum FieldAccess {
 pub struct UpvarInfo {
     pub name: String,
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
-    pub typ: ArcType,
+    pub typ:
+        ArcType,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -48,10 +49,8 @@ pub struct UpvarInfo {
 pub struct DebugInfo {
     /// Maps instruction indexes to the line that spawned them
     pub source_map: SourceMap,
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub local_map: LocalMap,
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub upvars: Vec<UpvarInfo>,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub local_map: LocalMap,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub upvars: Vec<UpvarInfo>,
     pub source_name: String,
 }
 
@@ -64,21 +63,22 @@ pub struct CompiledFunction {
     /// The maximum possible number of stack slots needed for this function
     pub max_stack_size: VmIndex,
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
-    pub id: Symbol,
+    pub id:
+        Symbol,
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
-    pub typ: ArcType,
+    pub typ:
+        ArcType,
     pub instructions: Vec<Instruction>,
     #[cfg_attr(feature = "serde_derive_state", serde(state))]
-    pub inner_functions: Vec<CompiledFunction>,
-    #[cfg_attr(feature = "serde_derive_state", serde(state))]
-    pub strings: Vec<InternedStr>,
+    pub inner_functions:
+        Vec<CompiledFunction>,
+    #[cfg_attr(feature = "serde_derive_state", serde(state))] pub strings: Vec<InternedStr>,
     /// Storage for globals which are needed by the module which is currently being compiled
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
     pub module_globals: Vec<Symbol>,
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
     pub records: Vec<Vec<Symbol>>,
-    #[cfg_attr(feature = "serde_derive_state", serde(state))]
-    pub debug_info: DebugInfo,
+    #[cfg_attr(feature = "serde_derive_state", serde(state))] pub debug_info: DebugInfo,
 }
 
 impl CompiledFunction {
@@ -537,6 +537,16 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
+    fn update_line(&mut self, function: &mut FunctionEnvs, expr: CExpr) {
+        let is_macro_expanded = expr.span().expansion_id != NO_EXPANSION;
+
+        // Don't update the current_line for macro expanded code as the lines in that code do not
+        // come from this module
+        if !is_macro_expanded {
+            function.current_line = self.source.line_number_at_byte(expr.span().start);
+        }
+    }
+
     fn compile(
         &mut self,
         mut expr: CExpr,
@@ -546,16 +556,12 @@ impl<'a> Compiler<'a> {
         // Store a stack of expressions which need to be cleaned up after this "tailcall" loop is
         // done
         function.stack.enter_scope();
-        // Don't update the current_line for macro expanded code as the lines in that code do not come
-        // from this module
-        if expr.span().expansion_id == NO_EXPANSION {
-            function.current_line = self.source.line_number_at_byte(expr.span().start);
-        }
+
+        self.update_line(function, expr);
+
         while let Some(next) = self.compile_(expr, function, tail_position)? {
             expr = next;
-            if expr.span().expansion_id == NO_EXPANSION {
-                function.current_line = self.source.line_number_at_byte(expr.span().start);
-            }
+            self.update_line(function, expr);
         }
         let count = function.exit_scope(self);
         function.emit(Slide(count));
@@ -606,6 +612,7 @@ impl<'a> Compiler<'a> {
                             );
                         }
                         for (i, closure) in closures.iter().enumerate() {
+                            function.current_line = self.source.line_number_at_byte(closure.pos);
                             function.stack.enter_scope();
 
                             function.emit(Push(stack_start + i as VmIndex));
@@ -893,16 +900,15 @@ impl<'a> Compiler<'a> {
                         } else {
                             function.emit(Split);
                             for field in typ.row_iter() {
-                                let (name, typ) = match fields
-                                    .iter()
-                                    .find(|tup| tup.0.name.name_eq(&field.name))
-                                {
-                                    Some(&(ref name, ref bind)) => (
-                                        bind.as_ref().unwrap_or(&name.name).clone(),
-                                        field.typ.clone(),
-                                    ),
-                                    None => (self.empty_symbol.clone(), Type::hole()),
-                                };
+                                let (name, typ) =
+                                    match fields.iter().find(|tup| tup.0.name.name_eq(&field.name))
+                                    {
+                                        Some(&(ref name, ref bind)) => (
+                                            bind.as_ref().unwrap_or(&name.name).clone(),
+                                            field.typ.clone(),
+                                        ),
+                                        None => (self.empty_symbol.clone(), Type::hole()),
+                                    };
                                 function.push_stack_var(self, name, typ);
                             }
                         }

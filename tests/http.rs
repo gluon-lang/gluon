@@ -45,9 +45,7 @@ fn test_server(
     match result {
         None => Err(None),
         Some(Err(err)) => return Err(Some(err)),
-        Some(Ok(())) => {
-            Ok(String::from_utf8(out.lock().unwrap().to_owned()).unwrap())
-        }
+        Some(Ok(())) => Ok(String::from_utf8(out.lock().unwrap().to_owned()).unwrap()),
     }
 }
 

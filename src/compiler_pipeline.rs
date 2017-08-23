@@ -66,7 +66,6 @@ impl<'s> MacroExpandable for &'s str {
         macros: &mut MacroExpander,
         file: &str,
     ) -> Result<MacroValue<Self::Expr>> {
-
         compiler
             .parse_expr(macros.vm.global_env().type_cache(), file, self)
             .map_err(From::from)
@@ -136,7 +135,6 @@ where
         expr_str: &str,
         expected_type: Option<&ArcType>,
     ) -> Result<TypecheckValue<Self::Expr>> {
-
         self.expand_macro(compiler, thread, file).and_then(|expr| {
             expr.typecheck_expected(compiler, thread, file, expr_str, expected_type)
         })
@@ -210,7 +208,6 @@ where
         expr_str: &str,
         expected_type: Option<&'b ArcType>,
     ) -> Result<CompileValue<Self::Expr>> {
-
         self.typecheck_expected(compiler, thread, file, expr_str, expected_type)
             .and_then(|tc_value| {
                 tc_value.compile(compiler, thread, file, expr_str, ())
@@ -305,7 +302,6 @@ where
         expr_str: &str,
         arg: Extra,
     ) -> BoxFutureValue<'vm, ExecuteValue<'vm, Self::Expr>, Error> {
-
         match self.compile(compiler, vm, name, expr_str, arg) {
             Ok(v) => v.run_expr(compiler, vm, name, expr_str, ()),
             Err(err) => FutureValue::Value(Err(err)),
@@ -319,7 +315,6 @@ where
         expr_str: &str,
         arg: Extra,
     ) -> BoxFutureValue<'vm, (), Error> {
-
         match self.compile(compiler, vm, filename, expr_str, arg) {
             Ok(v) => v.load_script(compiler, vm, filename, expr_str, ()),
             Err(err) => FutureValue::Value(Err(err)),
@@ -340,7 +335,6 @@ where
         _expr_str: &str,
         _: (),
     ) -> BoxFutureValue<'vm, ExecuteValue<'vm, Self::Expr>, Error> {
-
         let CompileValue {
             expr,
             typ,
@@ -406,8 +400,7 @@ pub struct Module {
     #[cfg_attr(feature = "serde_derive_state", serde(state_with = "::vm::serialization::borrow"))]
     pub typ: ArcType,
     pub metadata: Metadata,
-    #[cfg_attr(feature = "serde_derive_state", serde(state))]
-    pub function: CompiledFunction,
+    #[cfg_attr(feature = "serde_derive_state", serde(state))] pub function: CompiledFunction,
 }
 
 #[cfg(feature = "serde")]
@@ -434,12 +427,9 @@ where
         );
         let module_id = module.function.id.clone();
         if filename != module_id.as_ref() {
-            return FutureValue::sync(Err(format!(
-                "filenames do not match `{}` != `{}`",
-                filename,
-                module_id
-            ).into()))
-                .boxed();
+            return FutureValue::sync(Err(
+                format!("filenames do not match `{}` != `{}`", filename, module_id).into(),
+            )).boxed();
         }
         let typ = module.typ;
         let closure = try_future!(vm.global_env().new_global_thunk(module.function));
@@ -504,11 +494,16 @@ where
         expr: _,
         typ,
         function,
-    } = self_.compile(compiler, thread, file, expr_str, arg).map_err(Error::from).map_err(Either::Left)?;
+    } = self_
+        .compile(compiler, thread, file, expr_str, arg)
+        .map_err(Error::from)
+        .map_err(Either::Left)?;
     let module = Module {
         typ,
         metadata: Metadata::default(),
         function,
     };
-    module.serialize_state(serializer, &SeSeed::new(thread)).map_err(Either::Right)
+    module
+        .serialize_state(serializer, &SeSeed::new(thread))
+        .map_err(Either::Right)
 }

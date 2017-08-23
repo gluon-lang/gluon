@@ -5,8 +5,8 @@ extern crate env_logger;
 extern crate pretty_assertions;
 
 extern crate gluon_base as base;
-extern crate gluon_parser as parser;
 extern crate gluon_check as check;
+extern crate gluon_parser as parser;
 
 use base::pos::Spanned;
 use base::symbol::Symbol;
@@ -511,17 +511,20 @@ fn long_type_error_format() {
     let long_type: ArcType = Type::function(
         vec![Type::int()],
         Type::ident(Symbol::from(
-            "looooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong",
+            "loooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong",
         )),
     );
     let err = TypeError::Unification(Type::int(), long_type.clone(), vec![]);
-    assert_eq!(&*err.to_string(), r#"Expected the following types to be equal
+    assert_eq!(
+        &*err.to_string(),
+        r#"Expected the following types to be equal
 Expected: Int
 Found:
     Int
-    -> looooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong
+    -> loooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong
 0 errors were found during unification:
-"#);
+"#
+    );
 }
 
 #[test]

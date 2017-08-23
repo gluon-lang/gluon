@@ -83,6 +83,7 @@ LetBinding: LetBinding<'a> = {
     <name: Identifier> <args: Identifier+> "=" <expr: AllocExpr> => LetBinding {
         name: TypedIdent::new(name.clone()),
         expr: Named::Recursive(vec![Closure {
+            pos: BytePos::default(),
             name: TypedIdent::new(name),
             args: args.into_iter().map(TypedIdent::new).collect(),
             expr,

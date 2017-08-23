@@ -189,10 +189,8 @@ pub mod gc {
                                     + ::base::serialization::Shared,
                                S::Target: SerializeState<::serialization::SeSeed>"))]
     struct Data<F, S> {
-        #[serde(state)]
-        tag: DataTag<S>,
-        #[serde(state)]
-        fields: F,
+        #[serde(state)] tag: DataTag<S>,
+        #[serde(state)] fields: F,
     }
 
     #[derive(DeserializeState, SerializeState)]
@@ -205,10 +203,7 @@ pub mod gc {
                                     + ::base::serialization::Shared,
                                S::Target: SerializeState<::serialization::SeSeed>"))]
     enum DataTag<S> {
-        Record(
-            #[serde(state_with = "::base::serialization::shared")]
-            S,
-        ),
+        Record(#[serde(state_with = "::base::serialization::shared")] S),
         Data(VmTag),
     }
 
@@ -379,7 +374,10 @@ pub mod borrow {
     use super::*;
     use std::borrow::{Borrow, BorrowMut};
 
-    pub fn deserialize<'de, D, T, Seed, Seed2>(seed: &mut Seed, deserializer: D) -> Result<T, D::Error>
+    pub fn deserialize<'de, D, T, Seed, Seed2>(
+        seed: &mut Seed,
+        deserializer: D,
+    ) -> Result<T, D::Error>
     where
         D: Deserializer<'de>,
         T: DeserializeState<'de, Seed2>,
@@ -388,7 +386,11 @@ pub mod borrow {
         T::deserialize_state(seed.borrow_mut(), deserializer)
     }
 
-    pub fn serialize<S, T, Seed, Seed2>(symbol: &T, serializer: S, seed: &Seed) -> Result<S::Ok, S::Error>
+    pub fn serialize<S, T, Seed, Seed2>(
+        symbol: &T,
+        serializer: S,
+        seed: &Seed,
+    ) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
         T: SerializeState<Seed2>,
@@ -471,8 +473,7 @@ impl SerializeState<SeSeed> for ClosureData {
             serializer.serialize_element(&GraphVariant::Marked(len))?;
             node_to_id.insert(self_id, len);
         }
-        serializer
-            .serialize_element(&Seeded::new(seed, self.function))?;
+        serializer.serialize_element(&Seeded::new(seed, self.function))?;
         serializer.serialize_element(&self.upvars.len())?;
         for item in self.upvars.iter() {
             serializer.serialize_element(&Seeded::new(seed, item))?;
@@ -582,10 +583,8 @@ pub mod closure {
 #[derive(DeserializeState)]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "DeSeed"))]
 struct PartialApplicationModel {
-    #[cfg_attr(feature = "serde_derive", serde(deserialize_state))]
-    function: Callable,
-    #[cfg_attr(feature = "serde_derive", serde(deserialize_state))]
-    args: Vec<Value>,
+    #[cfg_attr(feature = "serde_derive", serde(deserialize_state))] function: Callable,
+    #[cfg_attr(feature = "serde_derive", serde(deserialize_state))] args: Vec<Value>,
 }
 
 unsafe impl DataDef for PartialApplicationModel {

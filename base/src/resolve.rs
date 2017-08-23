@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use types;
-use types::{AliasData, AppVec, Type, ArcType, TypeEnv};
+use types::{AliasData, AppVec, ArcType, Type, TypeEnv};
 use symbol::Symbol;
 
 quick_error! {
@@ -34,13 +34,11 @@ where
     F: Fn(&AliasData<Symbol, ArcType>) -> bool,
 {
     match peek_alias(env, typ) {
-        Ok(Some(alias)) if !canonical(alias) => {
-            type_of_alias(env, alias, typ.unapplied_args())
-                .map(|typ| {
-                    Cow::Owned(canonical_alias(env, &typ, canonical).into_owned())
-                })
-                .unwrap_or(Cow::Borrowed(typ))
-        }
+        Ok(Some(alias)) if !canonical(alias) => type_of_alias(env, alias, typ.unapplied_args())
+            .map(|typ| {
+                Cow::Owned(canonical_alias(env, &typ, canonical).into_owned())
+            })
+            .unwrap_or(Cow::Borrowed(typ)),
         _ => Cow::Borrowed(typ),
     }
 }
@@ -49,8 +47,7 @@ where
 /// Returns `None` if the type is not an alias or the alias could not be expanded.
 pub fn remove_alias(env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType>, Error> {
     Ok(
-        peek_alias(env, typ)?
-            .and_then(|alias| type_of_alias(env, alias, typ.unapplied_args())),
+        peek_alias(env, typ)?.and_then(|alias| type_of_alias(env, alias, typ.unapplied_args())),
     )
 }
 
@@ -60,12 +57,10 @@ pub fn peek_alias<'t>(
 ) -> Result<Option<&'t AliasData<Symbol, ArcType>>, Error> {
     let maybe_alias = match **typ {
         Type::Alias(ref alias) if alias.args.is_empty() => Some(alias),
-        Type::App(ref alias, ref args) => {
-            match **alias {
-                Type::Alias(ref alias) if alias.args.len() == args.len() => Some(alias),
-                _ => None,
-            }
-        }
+        Type::App(ref alias, ref args) => match **alias {
+            Type::Alias(ref alias) if alias.args.len() == args.len() => Some(alias),
+            _ => None,
+        },
         _ => None,
     };
 
@@ -73,11 +68,9 @@ pub fn peek_alias<'t>(
         Some(id) => {
             let alias = match maybe_alias {
                 Some(alias) => alias,
-                None => {
-                    env.find_type_info(id)
-                        .map(|a| &**a)
-                        .ok_or_else(|| Error::UndefinedType(id.clone()))?
-                }
+                None => env.find_type_info(id)
+                    .map(|a| &**a)
+                    .ok_or_else(|| Error::UndefinedType(id.clone()))?,
             };
             Ok(Some(alias))
         }
@@ -131,11 +124,9 @@ pub fn type_of_alias(
                 return None;
             }
         }
-        _ => {
-            if args.len() != alias_args.len() {
-                return None;
-            }
-        }
+        _ => if args.len() != alias_args.len() {
+            return None;
+        },
     }
 
     Some(types::walk_move_type(typ, &mut |typ| {

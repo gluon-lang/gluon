@@ -1,15 +1,15 @@
 //! A (WIP) C API allowing use of gluon in other langauges than Rust.
-#![doc(html_root_url="https://docs.rs/gluon_c-api/0.5.0")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon_c-api/0.5.0")] // # GLUON
 
-extern crate libc;
 extern crate gluon;
+extern crate libc;
 
 use std::str;
 use std::slice;
 
-use gluon::vm::api::{Getable, Pushable, CPrimitive, Hole, OpaqueValue};
+use gluon::vm::api::{CPrimitive, Getable, Hole, OpaqueValue, Pushable};
 use gluon::vm::types::{VmIndex, VmInt};
-use gluon::vm::thread::{RootedThread, Thread, ThreadInternal, Status};
+use gluon::vm::thread::{RootedThread, Status, Thread, ThreadInternal};
 
 use gluon::Compiler;
 
@@ -190,7 +190,8 @@ pub unsafe extern "C" fn glu_get_string(
     let stack = context.stack.current_frame();
     match stack
         .get_variants(index)
-        .and_then(|value| <&str>::from_value(vm, value)) {
+        .and_then(|value| <&str>::from_value(vm, value))
+    {
         Some(value) => {
             *out = &*value.as_ptr();
             *out_len = value.len();
@@ -221,7 +222,8 @@ where
     let stack = context.stack.current_frame();
     match stack
         .get_variants(index)
-        .and_then(|value| T::from_value(vm, value)) {
+        .and_then(|value| T::from_value(vm, value))
+    {
         Some(value) => {
             *out = value;
             Error::Ok

@@ -503,6 +503,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
                                 };
                                 let new_body = new_body.map(|expr| {
                                     Closure {
+                                        pos: closure.pos,
                                         name: closure.name.clone(),
                                         args: closure.args.clone(),
                                         expr: expr.into_local(self.allocator),
@@ -608,12 +609,14 @@ impl<'a, 'e> Compiler<'a, 'e> {
         pattern_expr: ReducedExpr<'e, 'a>,
         function: &mut FunctionEnvs<'e, 'a>,
     ) -> Result<()> {
-        fn peek_through_lets<'l, 'g, 'e>(compiler: &mut Compiler<'g, 'l>, function: &mut FunctionEnvs<'l, 'g>, expr: CExpr<'e>) -> Option<CExpr<'e>> {
+        fn peek_through_lets<'l, 'g, 'e>(
+            compiler: &mut Compiler<'g, 'l>,
+            function: &mut FunctionEnvs<'l, 'g>,
+            expr: CExpr<'e>,
+        ) -> Option<CExpr<'e>> {
             fn peek_through_lets_(expr: CExpr) -> CExpr {
                 match *expr {
-                    Expr::Let(_, body) => {
-                        peek_through_lets_(body)
-                    }
+                    Expr::Let(_, body) => peek_through_lets_(body),
                     _ => expr,
                 }
             }
@@ -626,8 +629,12 @@ impl<'a, 'e> Compiler<'a, 'e> {
             }
         }
         let pattern_expr = match pattern_expr {
-            Reduced::Local(expr) => Reduced::Local(peek_through_lets(self, function, expr).unwrap_or(expr)),
-            Reduced::Global(expr) => Reduced::Global(peek_through_lets(self, function, expr).unwrap_or(expr)),
+            Reduced::Local(expr) => {
+                Reduced::Local(peek_through_lets(self, function, expr).unwrap_or(expr))
+            }
+            Reduced::Global(expr) => {
+                Reduced::Global(peek_through_lets(self, function, expr).unwrap_or(expr))
+            }
         };
         match *pattern {
             Pattern::Ident(ref name) => {
@@ -896,15 +903,13 @@ mod tests {
             move |s: &Symbol| {
                 if s.as_ref() == "f" {
                     match *global {
-                        Expr::Let(ref bind, _) => {
-                            match bind.expr {
-                                Named::Recursive(ref closures) => {
-                                    Some(Binding::Closure((&closures[0].args[..], closures[0].expr)))
-                                }
-                                _ => unreachable!()
+                        Expr::Let(ref bind, _) => match bind.expr {
+                            Named::Recursive(ref closures) => {
+                                Some(Binding::Closure((&closures[0].args[..], closures[0].expr)))
                             }
-                        }
-                        _ => unreachable!()
+                            _ => unreachable!(),
+                        },
+                        _ => unreachable!(),
                     }
                 } else {
                     Some(Binding::Expr(global))

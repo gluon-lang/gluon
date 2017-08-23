@@ -12,7 +12,9 @@ use types::{VmIndex, VmTag};
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 struct Fields(
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::base::serialization::shared"))]
-    Arc<Vec<InternedStr>>);
+    
+        Arc<Vec<InternedStr>>,
+);
 
 impl Borrow<[InternedStr]> for Fields {
     fn borrow(&self) -> &[InternedStr] {
@@ -31,8 +33,7 @@ pub struct FieldMap {
     /// Maps the tag the record has and the field name onto the offset in the data
     #[cfg_attr(feature = "serde_derive", serde(state))]
     fields: FnvMap<(VmTag, InternedStr), VmIndex>,
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    field_list: FnvMap<VmTag, Fields>,
+    #[cfg_attr(feature = "serde_derive", serde(state))] field_list: FnvMap<VmTag, Fields>,
 }
 
 impl FieldMap {

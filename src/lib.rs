@@ -2,27 +2,28 @@
 //!
 //! Gluon is a programming language suitable for embedding in an existing application to extend its
 //! behaviour. For information about how to use this library the best resource currently is the
-//! [tutorial](https://github.com/gluon-lang/gluon/blob/master/TUTORIAL.md) which contains examples on
-//! how to write gluon programs as well as how to run them using this library.
+//! [tutorial](https://github.com/gluon-lang/gluon/blob/master/TUTORIAL.md) which contains examples
+//! on how to write gluon programs as well as how to run them using this library.
 #![doc(html_root_url = "https://docs.rs/gluon/0.5.0")] // # GLUON
+
+extern crate futures;
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate quick_error;
 pub extern crate either;
-extern crate futures;
 
-#[cfg(feature = "serde")]
-extern crate serde_state as serde;
 #[cfg(feature = "serde_derive_state")]
 #[macro_use]
 extern crate serde_derive_state;
+#[cfg(feature = "serde")]
+extern crate serde_state as serde;
 
+pub extern crate gluon_base as base;
+pub extern crate gluon_check as check;
+pub extern crate gluon_parser as parser;
 #[macro_use]
 pub extern crate gluon_vm as vm;
-pub extern crate gluon_base as base;
-pub extern crate gluon_parser as parser;
-pub extern crate gluon_check as check;
 
 pub mod compiler_pipeline;
 pub mod import;
@@ -170,7 +171,8 @@ impl Compiler {
         self
     }
 
-    /// Sets whether the compiler should emit debug information such as source maps and variable names.
+    /// Sets whether the compiler should emit debug information such as source maps and variable
+    /// names.
     /// (default: true)
     pub fn emit_debug_info(mut self, emit_debug_info: bool) -> Compiler {
         self.emit_debug_info = emit_debug_info;
@@ -228,8 +230,8 @@ impl Compiler {
         expr_str: &str,
         expected_type: Option<&ArcType>,
     ) -> Result<(SpannedExpr<Symbol>, ArcType)> {
-        let TypecheckValue { expr, typ } = expr_str
-            .typecheck_expected(self, vm, file, expr_str, expected_type)?;
+        let TypecheckValue { expr, typ } =
+            expr_str.typecheck_expected(self, vm, file, expr_str, expected_type)?;
         Ok((expr, typ))
     }
 
@@ -256,16 +258,12 @@ impl Compiler {
         name: &str,
         expr_str: &str,
         serializer: S,
-    ) -> StdResult<S::Ok, Either<Error, S::Error>> where S: serde::Serializer, S::Error: 'static {
-        compile_to(
-            expr_str,
-            self,
-            &thread,
-            name,
-            expr_str,
-            None,
-            serializer
-        )
+    ) -> StdResult<S::Ok, Either<Error, S::Error>>
+    where
+        S: serde::Serializer,
+        S::Error: 'static,
+    {
+        compile_to(expr_str, self, &thread, name, expr_str, None, serializer)
     }
 
     /// Loads bytecode from a `Deserializer` and stores it into the module `name`.
@@ -282,8 +280,7 @@ impl Compiler {
         D: serde::Deserializer<'vm> + 'vm,
         D::Error: Send + Sync,
     {
-        Precompiled(deserializer)
-            .load_script(self, thread, name, "", ())
+        Precompiled(deserializer).load_script(self, thread, name, "", ())
     }
 
     /// Parses and typechecks `expr_str` followed by extracting metadata from the created
@@ -343,7 +340,6 @@ impl Compiler {
             {
                 Some(import) => Ok(import.read_file(filename)?),
                 None => {
-
                     let mut buffer = StdString::new();
                     {
                         let mut file = File::open(filename)?;
@@ -373,7 +369,11 @@ impl Compiler {
     /// # fn main() {
     /// let vm = new_vm();
     /// let (result, _) = Compiler::new()
-    ///     .run_expr::<String>(&vm, "example", " let string  = import! \"std/string.glu\" in string.trim \"  Hello world  \t\" ")
+    ///     .run_expr::<String>(
+    ///         &vm,
+    ///         "example",
+    ///         " let string  = import! \"std/string.glu\" in string.trim \"  Hello world  \t\" "
+    ///     )
     ///     .unwrap();
     /// assert_eq!(result, "Hello world");
     /// # }

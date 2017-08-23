@@ -1,17 +1,17 @@
 //! REPL for the gluon programming language
-#![doc(html_root_url="https://docs.rs/gluon_repl/0.4.1")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon_repl/0.4.1")] // # GLUON
 
-#[macro_use]
-extern crate log;
-#[cfg(feature = "env_logger")]
-extern crate env_logger;
 #[macro_use]
 extern crate clap;
+#[cfg(feature = "env_logger")]
+extern crate env_logger;
 extern crate futures;
+#[macro_use]
+extern crate log;
 
+extern crate gluon;
 #[macro_use]
 extern crate gluon_vm;
-extern crate gluon;
 
 use std::io::{self, Write};
 
@@ -22,7 +22,7 @@ use gluon::vm;
 
 use base::error::InFile;
 
-use gluon::{new_vm, Compiler, Thread, Error, Result};
+use gluon::{new_vm, Compiler, Error, Result, Thread};
 use gluon::vm::thread::ThreadInternal;
 use gluon::vm::Error as VMError;
 
@@ -50,8 +50,7 @@ fn init_env_logger() {}
 fn format(writer: &mut Write, buffer: &str) -> Result<usize> {
     use gluon::parser::format_expr;
 
-    let output = format_expr(buffer)
-        .map_err(|err| InFile::new("", buffer, err))?;
+    let output = format_expr(buffer).map_err(|err| InFile::new("", buffer, err))?;
     writer.write_all(output.as_bytes())?;
     Ok(output.len())
 }
@@ -78,7 +77,7 @@ fn fmt_file(name: &str) -> Result<()> {
 }
 
 fn fmt_stdio() -> Result<()> {
-    use std::io::{Read, stdin, stdout};
+    use std::io::{stdin, stdout, Read};
 
     let mut buffer = String::new();
     stdin().read_to_string(&mut buffer)?;
@@ -88,7 +87,6 @@ fn fmt_stdio() -> Result<()> {
 }
 
 fn run() -> std::result::Result<(), Box<std::error::Error + Send + Sync>> {
-
     let matches = clap_app!(gluon =>
         (version: crate_version!())
         (long_version:
@@ -120,7 +118,9 @@ fn run() -> std::result::Result<(), Box<std::error::Error + Send + Sync>> {
         match run_files(&vm, args) {
             Ok(()) => (),
             Err(err @ Error::VM(VMError::Message(_))) => {
-                return Err(format!("{}\n{}", err, vm.context().stack.stacktrace(0)).into())
+                return Err(
+                    format!("{}\n{}", err, vm.context().stack.stacktrace(0)).into(),
+                )
             }
             Err(err) => return Err(err.into()),
         }

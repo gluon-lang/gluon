@@ -3,8 +3,8 @@ extern crate bencher;
 
 extern crate gluon;
 
-extern crate serde_state;
 extern crate bincode;
+extern crate serde_state;
 
 use std::fs::File;
 use std::io::Read;

@@ -16,12 +16,12 @@ use base::symbol::{Symbol, SymbolModule};
 use base::types::ArcType;
 use parser::parse_partial_let_or_expr;
 use vm::Error as VMError;
-use vm::api::{IO, Function, WithVM, VmType, Userdata};
+use vm::api::{Function, Userdata, VmType, WithVM, IO};
 use vm::gc::{Gc, Traverseable};
 use vm::internal::ValuePrinter;
-use vm::thread::{Thread, ThreadInternal, RootedValue, RootStr};
+use vm::thread::{RootStr, RootedValue, Thread, ThreadInternal};
 
-use gluon::{Compiler, new_vm, RootedThread, Result as GluonResult};
+use gluon::{new_vm, Compiler, Result as GluonResult, RootedThread};
 use gluon::compiler_pipeline::Executable;
 
 fn type_of_expr(args: WithVM<RootStr>) -> IO<Result<String, String>> {
@@ -99,12 +99,12 @@ fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonRe
 
     // The parser may find parse errors but still produce an expression
     // For that case still typecheck the expression but return the parse error afterwards
-    let (mut expr, _parse_result): (_, GluonResult<()>) = match compiler
-        .parse_partial_expr(thread.global_env().type_cache(), &name, fileinput) {
-        Ok(expr) => (expr, Ok(())),
-        Err((None, err)) => return Err(err.into()),
-        Err((Some(expr), err)) => (expr, Err(err.into())),
-    };
+    let (mut expr, _parse_result): (_, GluonResult<()>) =
+        match compiler.parse_partial_expr(thread.global_env().type_cache(), &name, fileinput) {
+            Ok(expr) => (expr, Ok(())),
+            Err((None, err)) => return Err(err.into()),
+            Err((Some(expr), err)) => (expr, Err(err.into())),
+        };
 
     expr.expand_macro(&mut compiler, thread, &name)?;
 
@@ -164,8 +164,7 @@ fn readline(editor: &Editor, prompt: &str) -> IO<Option<String>> {
     let mut editor = editor.0.lock().unwrap();
     let input = match editor.readline(prompt) {
         Ok(input) => input,
-        Err(ReadlineError::Eof) |
-        Err(ReadlineError::Interrupted) => return IO::Value(None),
+        Err(ReadlineError::Eof) | Err(ReadlineError::Interrupted) => return IO::Value(None),
         Err(err) => return IO::Exception(format!("{}", err)),
     };
     if !input.trim().is_empty() {
@@ -233,7 +232,6 @@ fn set_globals(
     typ: &ArcType,
     value: &RootedValue<&Thread>,
 ) -> GluonResult<()> {
-
     match pattern.value {
         Pattern::Ident(ref id) => {
             vm.set_global(id.name.clone(), typ.clone(), Default::default(), **value)?;
@@ -255,28 +253,23 @@ fn set_globals(
                     Some(ref field_pattern) => {
                         set_globals(vm, field_pattern, &field_type, &field_value)?
                     }
-                    None => {
-                        vm.set_global(
-                            field.name.value.clone(),
-                            field_type,
-                            Default::default(),
-                            *field_value,
-                        )?
-                    }
+                    None => vm.set_global(
+                        field.name.value.clone(),
+                        field_type,
+                        Default::default(),
+                        *field_value,
+                    )?,
                 }
             }
             Ok(())
         }
-        _ => {
-            Err(
-                VMError::Message("The repl cannot bind variables from this pattern".into()).into(),
-            )
-        }
+        _ => Err(
+            VMError::Message("The repl cannot bind variables from this pattern".into()).into(),
+        ),
     }
 }
 
 fn compile_repl(vm: &Thread) -> Result<(), Box<StdError + Send + Sync>> {
-
     vm.register_type::<Editor>("Editor", &[])?;
 
     vm.define_global(
@@ -319,7 +312,7 @@ pub fn run() -> Result<(), Box<StdError + Send + Sync>> {
 #[cfg(test)]
 mod tests {
     use super::compile_repl;
-    use vm::api::{IO, FunctionRef};
+    use vm::api::{FunctionRef, IO};
     use gluon::{self, RootedThread};
     use gluon::import::Import;
 

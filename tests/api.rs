@@ -1,9 +1,9 @@
 extern crate env_logger;
 extern crate futures;
 
+extern crate gluon;
 #[macro_use]
 extern crate gluon_vm;
-extern crate gluon;
 
 use futures::{BoxFuture, Future, IntoFuture};
 use futures::future::lazy;

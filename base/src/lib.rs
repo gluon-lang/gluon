@@ -2,23 +2,23 @@
 //! AST and some basic containers.
 #![doc(html_root_url = "https://docs.rs/gluon_base/0.5.0")] // # GLUON
 
-extern crate log;
-#[macro_use]
-extern crate quick_error;
-extern crate pretty;
-extern crate smallvec;
 #[macro_use]
 extern crate collect_mac;
 extern crate itertools;
+extern crate log;
+extern crate pretty;
+#[macro_use]
+extern crate quick_error;
+extern crate smallvec;
 
-#[cfg(feature = "serde")]
-extern crate serde_state as serde;
 #[cfg(feature = "serde_derive")]
 #[macro_use]
 extern crate serde_derive;
 #[cfg(feature = "serde_derive_state")]
 #[macro_use]
 extern crate serde_derive_state;
+#[cfg(feature = "serde")]
+extern crate serde_state as serde;
 
 macro_rules! type_cache {
     ($name: ident ($($args: ident),*) { $typ: ty, $inner_type: ident } $( $id: ident )+) => {

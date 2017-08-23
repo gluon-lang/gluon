@@ -1,9 +1,9 @@
-extern crate gluon_base as base;
-extern crate gluon_parser as parser;
-extern crate env_logger;
-extern crate log;
 #[macro_use]
 extern crate collect_mac;
+extern crate env_logger;
+extern crate gluon_base as base;
+extern crate gluon_parser as parser;
+extern crate log;
 #[macro_use]
 extern crate pretty_assertions;
 
@@ -42,7 +42,7 @@ fn expression() {
             "",
             vec![intern("x"), intern("y")],
             binop(id("x"), "+", id("y")),
-        ))
+        ),)
     );
     let e = parse(r#"type Test = Int in 0"#);
     assert_eq!(e, Ok(type_decl(intern("Test"), vec![], typ("Int"), int(0))));
@@ -112,7 +112,7 @@ fn type_mutually_recursive() {
     let test = Type::variant(vec![
         Field::new(
             intern("Test"),
-            Type::function(vec![typ("Int")], typ("Test"))
+            Type::function(vec![typ("Int")], typ("Test")),
         ),
     ]);
     let test2 = Type::record(
@@ -229,14 +229,14 @@ match None with
                         TypedIdent::new(intern("Some")),
                         vec![no_loc(Pattern::Ident(TypedIdent::new(intern("x"))))],
                     ),
-                    id("x")
+                    id("x"),
                 ),
                 (
                     Pattern::Constructor(TypedIdent::new(intern("None")), vec![]),
-                    int(0)
+                    int(0),
                 ),
             ],
-        ))
+        ),)
     );
 }
 #[test]
@@ -326,7 +326,7 @@ fn let_pattern() {
                 },
             ],
             Box::new(id("x")),
-        ))
+        ),)
     );
 }
 
@@ -472,7 +472,7 @@ id
                 },
             ],
             Box::new(id("id")),
-        ))
+        ),)
     );
 }
 
@@ -629,7 +629,7 @@ x
                 },
             ],
             Box::new(id("x")),
-        )))
+        ),),)
     );
 }
 

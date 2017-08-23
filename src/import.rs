@@ -234,8 +234,8 @@ where
 
                     let mut compiler = Compiler::new().implicit_prelude(modulename != "std.types");
                     let errors = macros.errors.len();
-                    let macro_result = file_contents
-                        .expand_macro_with(&mut compiler, macros, &modulename)?;
+                    let macro_result =
+                        file_contents.expand_macro_with(&mut compiler, macros, &modulename)?;
                     if errors != macros.errors.len() {
                         // If macro expansion of the imported module fails we need to stop
                         // compilation of that module. To return an error we return one of the

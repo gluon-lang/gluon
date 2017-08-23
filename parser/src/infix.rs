@@ -2,7 +2,7 @@
 //! associative with the same precedence. Therefore we need to rebalance them
 //! after the fact.
 
-use base::ast::{Expr, IdentEnv, Literal, MutVisitor, SpannedExpr, SpannedIdent, walk_mut_expr};
+use base::ast::{walk_mut_expr, Expr, IdentEnv, Literal, MutVisitor, SpannedExpr, SpannedIdent};
 use base::error::Errors;
 use base::fnv::FnvMap;
 use base::pos::{self, BytePos, Spanned};
@@ -119,13 +119,13 @@ impl<'a> Index<&'a str> for OpTable {
     type Output = OpMeta;
 
     fn index(&self, name: &'a str) -> &OpMeta {
-        self.operators.get(name).unwrap_or_else(
-            || if name.starts_with('#') {
+        self.operators
+            .get(name)
+            .unwrap_or_else(|| if name.starts_with('#') {
                 &self[name[1..].trim_left_matches(char::is_alphanumeric)]
             } else {
                 &self.default_meta
-            },
-        )
+            })
     }
 }
 
@@ -280,8 +280,7 @@ pub fn reparse<Id>(
                                 op_stack.push(next_op);
                             }
                             // Conflicting fixities at the same precedence level!
-                            (Fixity::Left, Fixity::Right) |
-                            (Fixity::Right, Fixity::Left) => {
+                            (Fixity::Left, Fixity::Right) | (Fixity::Right, Fixity::Left) => {
                                 let next_op_name = symbols.string(&next_op.value.name).to_string();
                                 let stack_op_name =
                                     symbols.string(&stack_op.value.name).to_string();
@@ -386,7 +385,7 @@ mod tests {
     use base::pos::{self, BytePos, Spanned};
     use std::marker::PhantomData;
 
-    use super::{Fixity, Infixes, InfixToken, OpMeta, OpTable, reparse};
+    use super::{reparse, Fixity, InfixToken, Infixes, OpMeta, OpTable};
     use super::Error::*;
 
     pub struct MockEnv<T>(PhantomData<T>);
@@ -559,10 +558,10 @@ mod tests {
 
         // 1 |> (2 <| 8)
         let expr = *op(int(1), "|>", op(int(2), "<|", int(8)));
-        let error = ConflictingFixities(("|>".to_string(), OpMeta::new(5, Fixity::Left)), (
-            "<|".to_string(),
-            OpMeta::new(5, Fixity::Right),
-        ));
+        let error = ConflictingFixities(
+            ("|>".to_string(), OpMeta::new(5, Fixity::Left)),
+            ("<|".to_string(), OpMeta::new(5, Fixity::Right)),
+        );
         let expected = Err(no_loc(error));
 
         assert_eq!(reparse(expr, &env, &ops), expected);
@@ -578,10 +577,10 @@ mod tests {
 
         // 1 + (1 |> (2 <| 8))
         let expr = *op(int(1), "+", op(int(1), "|>", op(int(2), "<|", int(8))));
-        let error = ConflictingFixities(("|>".to_string(), OpMeta::new(5, Fixity::Left)), (
-            "<|".to_string(),
-            OpMeta::new(5, Fixity::Right),
-        ));
+        let error = ConflictingFixities(
+            ("|>".to_string(), OpMeta::new(5, Fixity::Left)),
+            ("<|".to_string(), OpMeta::new(5, Fixity::Right)),
+        );
         let expected = Err(no_loc(error));
 
         assert_eq!(reparse(expr, &env, &ops), expected);

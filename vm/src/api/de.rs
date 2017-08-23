@@ -449,9 +449,11 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     where
         V: Visitor<'de>,
     {
-        let typ = resolve::canonical_alias(self.state.env, self.typ, |alias| {
-            alias.name.declared_name() == "std.types.Option"
-        });
+        let typ = resolve::canonical_alias(
+            self.state.env,
+            self.typ,
+            |alias| alias.name.declared_name() == "std.types.Option",
+        );
         let option_inner_typ = match **typ {
             Type::App(ref func, ref args) if args.len() == 1 => match **func {
                 Type::Alias(ref alias) if alias.name.declared_name() == "std.types.Option" => {
@@ -775,15 +777,12 @@ impl<'de, 'a, 't> VariantAccess<'de> for Enum<'a, 'de, 't> {
             (ValueRef::Data(data), &Type::Variant(ref row)) => {
                 match row.row_iter().nth(data.tag() as usize) {
                     Some(field) => seed.deserialize(&mut Deserializer {
-                        input: data.get_variants(0)
-                            .ok_or_else(|| {
-                                VmError::Message("Expected variant to have a value argument".into())
-                            })?,
-                        typ: arg_iter(&field.typ)
-                            .next()
-                            .ok_or_else(|| {
-                                VmError::Message("Expected variant to have a type argument".into())
-                            })?,
+                        input: data.get_variants(0).ok_or_else(|| {
+                            VmError::Message("Expected variant to have a value argument".into())
+                        })?,
+                        typ: arg_iter(&field.typ).next().ok_or_else(|| {
+                            VmError::Message("Expected variant to have a type argument".into())
+                        })?,
                         ..self.de.clone()
                     }),
                     None => seed.deserialize(self.de),

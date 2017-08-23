@@ -91,11 +91,11 @@ impl Contexts {
                 Context::Block { .. } if skip_block => continue,
                 Context::Brace | Context::Bracket | Context::Paren => return Ok(()),
                 // New context should not be unindented past the closest enclosing block context
-                Context::MatchClause |
-                Context::Type |
-                Context::Let |
-                Context::Block { .. }
-                    if offside.location.column < other_offside.location.column => (),
+                Context::MatchClause | Context::Type | Context::Let | Context::Block { .. }
+                    if offside.location.column < other_offside.location.column =>
+                {
+                    ()
+                }
                 _ => continue,
             }
             debug!("Unindentation error: {:?} < {:?}", offside, other_offside);
@@ -220,8 +220,9 @@ where
                                 if let Some(offside) = self.indent_levels.last_mut() {
                                     // The enclosing block should not emit a block separator for the next
                                     // expression
-                                    if let Context::Block { ref mut emit_semi, .. } =
-                                        offside.context
+                                    if let Context::Block {
+                                        ref mut emit_semi, ..
+                                    } = offside.context
                                     {
                                         *emit_semi = false;
                                     }
@@ -235,8 +236,9 @@ where
                                         .expect("No top level block found");
                                     // The enclosing block should not emit a block separator for the next
                                     // expression
-                                    if let Context::Block { ref mut emit_semi, .. } =
-                                        offside.context
+                                    if let Context::Block {
+                                        ref mut emit_semi, ..
+                                    } = offside.context
                                     {
                                         *emit_semi = false;
                                     }
@@ -282,7 +284,10 @@ where
                     if let Some(offside) = self.indent_levels.last_mut() {
                         // The enclosing block should not emit a block separator for the
                         // next expression
-                        if let Context::Block { ref mut emit_semi, .. } = offside.context {
+                        if let Context::Block {
+                            ref mut emit_semi, ..
+                        } = offside.context
+                        {
                             *emit_semi = false;
                         }
                     }
@@ -290,26 +295,25 @@ where
                 }
                 (Context::Block { emit_semi: false }, Ordering::Equal) => {
                     match token.value {
-                        Token::DocComment { .. } |
-                        Token::OpenBlock => (),
+                        Token::DocComment { .. } | Token::OpenBlock => (),
                         _ => {
                             // If it is the first token in a sequence we dont want to emit a
                             // separator
                             if let Some(offside) = self.indent_levels.last_mut() {
-                                if let Context::Block { ref mut emit_semi, .. } = offside.context {
+                                if let Context::Block {
+                                    ref mut emit_semi, ..
+                                } = offside.context
+                                {
                                     *emit_semi = true;
                                 }
                             }
                         }
                     }
                 }
-                (Context::Expr, _) |
-                (Context::Lambda, _) => {
-                    if ordering != Ordering::Greater {
-                        self.indent_levels.pop();
-                        continue;
-                    }
-                }
+                (Context::Expr, _) | (Context::Lambda, _) => if ordering != Ordering::Greater {
+                    self.indent_levels.pop();
+                    continue;
+                },
                 (Context::MatchClause, _) => {
                     // Must allow `|` to be on the same line
                     if ordering == Ordering::Less ||
@@ -320,9 +324,9 @@ where
                     }
                 }
                 // `and` and `}` are allowed to be on the same line as the `let` or `type`
-                (Context::Let, Ordering::Equal) |
-                (Context::Type, Ordering::Equal)
-                    if token.value != Token::And && token.value != Token::RBrace => {
+                (Context::Let, Ordering::Equal) | (Context::Type, Ordering::Equal)
+                    if token.value != Token::And && token.value != Token::RBrace =>
+                {
                     // Insert an `in` token
                     self.indent_levels.pop();
                     let location = {
@@ -331,7 +335,10 @@ where
                             .expect("No top level block found");
                         // The enclosing block should not emit a block separator for the next
                         // expression
-                        if let Context::Block { ref mut emit_semi, .. } = offside.context {
+                        if let Context::Block {
+                            ref mut emit_semi, ..
+                        } = offside.context
+                        {
                             *emit_semi = false;
                         }
                         offside.location
@@ -390,17 +397,17 @@ where
 
                 (&Token::Else, _) => {
                     let next = self.next_token();
-                    // Need to allow "else if" expressions so avoid inserting a block for those cases
-                    // (A block would be inserted at column 5 and we would then get unindentation
-                    // errors on the branches)
+                    // Need to allow "else if" expressions so avoid inserting a block for those
+                    // cases (A block would be inserted at column 5 and we would then get
+                    // unindentation errors on the branches)
                     // if x then
                     //     1
                     // else if y then
                     //     2
                     // else
                     //     3
-                    let add_block = next.value != Token::If ||
-                        next.span.start.line != token.span.start.line;
+                    let add_block =
+                        next.value != Token::If || next.span.start.line != token.span.start.line;
                     self.unprocessed_tokens.push(next);
                     if add_block {
                         self.scan_for_next_block(Context::Block { emit_semi: false })?;
@@ -411,7 +418,10 @@ where
                     if let Some(offside) = self.indent_levels.last_mut() {
                         // The enclosing block should not emit a block separator for the next
                         // expression
-                        if let Context::Block { ref mut emit_semi, .. } = offside.context {
+                        if let Context::Block {
+                            ref mut emit_semi, ..
+                        } = offside.context
+                        {
                             *emit_semi = false;
                         }
                     }
@@ -446,7 +456,9 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.layout_next_token() {
-            Ok(Spanned { value: Token::EOF, .. }) => None,
+            Ok(Spanned {
+                value: Token::EOF, ..
+            }) => None,
             token => Some(token),
         }
     }

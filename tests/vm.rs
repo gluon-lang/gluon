@@ -111,7 +111,6 @@ in add { x = 10, y = 5 } { x = 1, y = 2 }
         }
         _ => panic!(),
     }
-
 }
 #[test]
 fn adt() {

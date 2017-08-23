@@ -141,7 +141,6 @@ where
                         _ => " and ",
                     };
                     write!(f, "{}{}", sep, field)?;
-
                 }
                 Ok(())
             }
@@ -825,7 +824,6 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
                 };
                 subs.union(|| unifier.state.fresh(), r_var, left)?;
                 Ok(None)
-
             }
             (_, &Type::Variable(ref r)) => {
                 subs.union(|| unifier.state.fresh(), r, l)?;

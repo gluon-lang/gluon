@@ -2,10 +2,10 @@
 extern crate bencher;
 
 
-extern crate gluon_base as base;
-extern crate gluon_parser as parser;
-extern crate gluon_check as check;
 extern crate gluon;
+extern crate gluon_base as base;
+extern crate gluon_check as check;
+extern crate gluon_parser as parser;
 
 use std::fs::File;
 use std::io::Read;

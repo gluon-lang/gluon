@@ -1771,7 +1771,7 @@ impl<'vm, T, $($args,)* R> Function<T, fn($($args),*) -> R>
             }
         })
     }
-    
+
     fn return_value(vm: &Thread, value: Value) -> Result<R> {
         unsafe {
             R::from_value(vm, Variants::new(&value))

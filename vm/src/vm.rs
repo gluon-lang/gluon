@@ -16,9 +16,9 @@ use base::types::{Alias, AliasData, AppVec, ArcType, Generic, PrimitiveEnv, Reco
 use macros::MacroEnv;
 use {Error, Result};
 use types::*;
-use interner::{Interner, InternedStr};
-use gc::{Gc, GcPtr, Generation, Traverseable, Move};
-use compiler::{CompiledFunction, Variable, CompilerEnv};
+use interner::{InternedStr, Interner};
+use gc::{Gc, GcPtr, Generation, Move, Traverseable};
+use compiler::{CompiledFunction, CompilerEnv, Variable};
 use api::IO;
 use lazy::Lazy;
 
@@ -26,7 +26,7 @@ use value::{BytecodeFunction, ClosureData};
 
 pub use value::{ClosureDataDef, Userdata};
 pub use value::Value; //FIXME Value should not be exposed
-pub use thread::{Thread, RootedThread, Status, Root, RootStr, RootedValue};
+pub use thread::{Root, RootStr, RootedThread, RootedValue, Status, Thread};
 
 
 fn new_bytecode(
@@ -87,12 +87,13 @@ fn new_bytecode(
 #[cfg_attr(feature = "serde_derive_state", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct Global {
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::symbol"))]
-    pub id: Symbol,
+    pub id:
+        Symbol,
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
-    pub typ: ArcType,
+    pub typ:
+        ArcType,
     pub metadata: Metadata,
-    #[cfg_attr(feature = "serde_derive_state", serde(state))]
-    pub value: Value,
+    #[cfg_attr(feature = "serde_derive_state", serde(state))] pub value: Value,
 }
 
 
@@ -106,33 +107,29 @@ impl Traverseable for Global {
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct GlobalVmState {
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    env: RwLock<VmEnv>,
+    #[cfg_attr(feature = "serde_derive", serde(state))] env: RwLock<VmEnv>,
 
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
-    generics: RwLock<FnvMap<StdString, ArcType>>,
+    generics:
+        RwLock<FnvMap<StdString, ArcType>>,
 
-    #[cfg_attr(feature = "serde_derive", serde(skip))]
-    typeids: RwLock<FnvMap<TypeId, ArcType>>,
+    #[cfg_attr(feature = "serde_derive", serde(skip))] typeids: RwLock<FnvMap<TypeId, ArcType>>,
 
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    interner: RwLock<Interner>,
+    #[cfg_attr(feature = "serde_derive", serde(state))] interner: RwLock<Interner>,
 
-    #[cfg_attr(feature = "serde_derive", serde(skip))]
-    macros: MacroEnv,
+    #[cfg_attr(feature = "serde_derive", serde(skip))] macros: MacroEnv,
 
-    #[cfg_attr(feature = "serde_derive", serde(skip))]
-    type_cache: TypeCache<Symbol>,
+    #[cfg_attr(feature = "serde_derive", serde(skip))] type_cache: TypeCache<Symbol>,
 
     // FIXME These fields should not be public
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub gc: Mutex<Gc>,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub gc: Mutex<Gc>,
 
     // List of all generation 0 threads (ie, threads allocated by the global gc). when doing a
     // generation 0 sweep these threads are scanned as generation 0 values may be refered to by any
     // thread
     #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub generation_0_threads: RwLock<Vec<GcPtr<Thread>>>,
+    pub generation_0_threads:
+        RwLock<Vec<GcPtr<Thread>>>,
 }
 
 impl Traverseable for GlobalVmState {
@@ -153,10 +150,8 @@ impl Traverseable for GlobalVmState {
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct VmEnv {
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub type_infos: TypeInfos,
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub globals: FnvMap<StdString, Global>,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub type_infos: TypeInfos,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub globals: FnvMap<StdString, Global>,
 }
 
 impl CompilerEnv for VmEnv {
@@ -183,11 +178,9 @@ impl TypeEnv for VmEnv {
                     .id_to_type
                     .values()
                     .filter_map(|alias| match **alias.unresolved_type() {
-                        Type::Variant(ref row) => {
-                            row.row_iter()
-                                .find(|field| *field.name == *id)
-                                .map(|field| &field.typ)
-                        }
+                        Type::Variant(ref row) => row.row_iter()
+                            .find(|field| *field.name == *id)
+                            .map(|field| &field.typ),
                         _ => None,
                     })
                     .next()
@@ -322,10 +315,9 @@ impl VmEnv {
                         _ => panic!("Unexpected value {:?}", value),
                     })
             });
-            typ = next_type
-                .ok_or_else(move || {
-                    Error::UndefinedField(typ.into_owned(), field_name.into())
-                })?;
+            typ = next_type.ok_or_else(move || {
+                Error::UndefinedField(typ.into_owned(), field_name.into())
+            })?;
         }
         Ok((value, typ))
     }
@@ -335,15 +327,13 @@ impl VmEnv {
         let name = Name::new(name_str);
         let mut components = name.components();
         let global = match components.next() {
-            Some(comp) => {
-                globals
-                    .get(comp)
-                    .or_else(|| {
-                        components = name.name().components();
-                        globals.get(name.module().as_str())
-                    })
-                    .ok_or_else(|| Error::MetadataDoesNotExist(name_str.into()))?
-            }
+            Some(comp) => globals
+                .get(comp)
+                .or_else(|| {
+                    components = name.name().components();
+                    globals.get(name.module().as_str())
+                })
+                .ok_or_else(|| Error::MetadataDoesNotExist(name_str.into()))?,
             None => return Err(Error::MetadataDoesNotExist(name_str.into())),
         };
 
@@ -434,7 +424,12 @@ impl GlobalVmState {
             .unwrap()
             .get(&id)
             .cloned()
-            .unwrap_or_else(|| panic!("Expected type to be inserted before get_type call. Did you forget to call `Thread::register_type`?"))
+            .unwrap_or_else(|| {
+                panic!(
+                    "Expected type to be inserted before get_type call. \
+                     Did you forget to call `Thread::register_type`?"
+                )
+            })
     }
 
     /// Checks if a global exists called `name`

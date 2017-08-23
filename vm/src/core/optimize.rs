@@ -274,6 +274,7 @@ where
             |closure| {
                 visitor.visit_expr(closure.expr).map(|new_expr| {
                     Closure {
+                        pos: closure.pos,
                         name: closure.name.clone(),
                         args: closure.args.clone(),
                         expr: new_expr,
@@ -282,6 +283,7 @@ where
             },
             |closure| {
                 Closure {
+                    pos: closure.pos,
                     name: closure.name.clone(),
                     args: closure.args.clone(),
                     expr: V::Producer::new(allocator.expect("Allocator")).produce(closure.expr),

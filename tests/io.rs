@@ -1,5 +1,6 @@
-extern crate gluon;
+
 extern crate env_logger;
+extern crate gluon;
 
 use gluon::{new_vm, Compiler};
 use gluon::vm::api::IO;

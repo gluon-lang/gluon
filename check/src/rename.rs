@@ -179,7 +179,6 @@ pub fn rename(
             );
             self.env.stack.insert(old_id, (new_id.clone(), span, typ));
             new_id
-
         }
 
         fn stack_type(&mut self, id: Symbol, span: Span<BytePos>, alias: &Alias<Symbol, ArcType>) {
@@ -306,7 +305,8 @@ pub fn rename(
                         for bind in bindings {
                             self.env.stack.enter_scope();
                             for (typ, arg) in types::arg_iter(&bind.typ).zip(&mut bind.args) {
-                                arg.value.name = self.stack_var(arg.value.name.clone(), expr.span, typ.clone());
+                                arg.value.name =
+                                    self.stack_var(arg.value.name.clone(), expr.span, typ.clone());
                             }
                             self.visit_expr(&mut bind.expr);
                             self.env.stack.exit_scope();
@@ -319,7 +319,8 @@ pub fn rename(
                 Expr::Lambda(ref mut lambda) => {
                     self.env.stack.enter_scope();
                     for (typ, arg) in types::arg_iter(&lambda.id.typ).zip(&mut lambda.args) {
-                        arg.value.name = self.stack_var(arg.value.name.clone(), expr.span, typ.clone());
+                        arg.value.name =
+                            self.stack_var(arg.value.name.clone(), expr.span, typ.clone());
                     }
                     self.visit_expr(&mut lambda.body);
                     self.env.stack.exit_scope();

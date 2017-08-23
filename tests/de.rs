@@ -145,7 +145,6 @@ fn optional_field() {
         de::from_value(&thread, value.get_variants(), &typ).ok(),
         Some(OptionalFieldRecord { test: Some(1) })
     );
-
 }
 
 #[derive(Debug, PartialEq, Deserialize)]

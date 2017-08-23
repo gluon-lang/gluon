@@ -11,8 +11,8 @@ pub fn load(vm: &Thread) -> Result<()> {
     vm.define_global(
         "debug",
         record!{
-        trace => primitive!(1 trace)
-    },
+            trace => primitive!(1 trace)
+        },
     )?;
     Ok(())
 }

@@ -10,7 +10,8 @@ use ast::{DisplayEnv, IdentEnv};
 use fnv::FnvMap;
 
 // FIXME Don't have a double indirection (Arc + String)
-/// A symbol uniquely identifies something regardless of its name and which module it originated from
+/// A symbol uniquely identifies something regardless of its name and which module it originated
+/// from
 #[derive(Clone, Eq)]
 pub struct Symbol(Arc<NameBuf>);
 
@@ -18,7 +19,7 @@ pub struct Symbol(Arc<NameBuf>);
 mod serialization {
     use super::*;
 
-    use serde::{Serialize, Serializer, Deserialize, Deserializer};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use serde::de::DeserializeState;
     use serde::ser::SerializeState;
     use serialization::SeSeed;
@@ -344,7 +345,8 @@ impl<'a> From<&'a Name> for NameBuf {
     }
 }
 
-/// `Symbols` is a bidirectional mapping between `Symbol`s and their name as represented in a source file
+/// `Symbols` is a bidirectional mapping between `Symbol`s and their name as represented in a
+/// source file.
 /// Used to make identifiers within a single module point to the same symbol
 #[derive(Debug, Default)]
 pub struct Symbols {
@@ -383,9 +385,10 @@ impl Symbols {
     }
 }
 
-/// `SymbolModule` wraps a `Symbols` struct and adds a prefix to all symbols created by the `symbol` method.
-/// While this prefix does not affect the uniques of a `Symbol` in any way, it does make the origin of a
-/// symbol clearer when pretty printing it
+/// `SymbolModule` wraps a `Symbols` struct and adds a prefix to all symbols created by the
+/// `symbol` method.
+/// While this prefix does not affect the uniques of a `Symbol` in any way, it does make the origin
+/// of a symbol clearer when pretty printing it
 #[derive(Debug)]
 pub struct SymbolModule<'a> {
     symbols: &'a mut Symbols,

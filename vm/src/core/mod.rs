@@ -1,5 +1,5 @@
-extern crate typed_arena;
 extern crate smallvec;
+extern crate typed_arena;
 
 #[macro_export]
 #[cfg(test)]
@@ -54,6 +54,7 @@ use base::types::{arg_iter, ArcType, PrimitiveEnv, Type, TypeEnv};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Closure<'a> {
+    pub pos: BytePos,
     pub name: TypedIdent<Symbol>,
     pub args: Vec<TypedIdent<Symbol>>,
     pub expr: &'a Expr<'a>,
@@ -123,27 +124,21 @@ impl<'a> Expr<'a> {
         arena: &'a pretty::Arena<'a>,
     ) -> pretty::DocBuilder<'a, pretty::Arena<'a>> {
         match *self {
-            Expr::Call(f, args) => {
-                chain![arena;
+            Expr::Call(f, args) => chain![arena;
                     f.pretty(arena),
                     arena.concat(args.iter().map(|arg| {
                         arena.space().append(arg.pretty(arena))
                     }))
-                ].group()
-            }
-            Expr::Const(ref literal, _) => {
-                match *literal {
-                    Literal::Byte(b) => arena.text(format!("b{}", b)),
-                    Literal::Char(c) => arena.text(format!("{:?}", c)),
-                    Literal::Float(f) => arena.text(format!("{}", f)),
-                    Literal::Int(i) => arena.text(format!("{}", i)),
-                    Literal::String(ref s) => arena.text(format!("{:?}", s)),
-                }
-            }
-            Expr::Data(ref ctor, args, _, _) => {
-                match *ctor.typ {
-                    Type::Record(ref record) => {
-                        chain![arena;
+                ].group(),
+            Expr::Const(ref literal, _) => match *literal {
+                Literal::Byte(b) => arena.text(format!("b{}", b)),
+                Literal::Char(c) => arena.text(format!("{:?}", c)),
+                Literal::Float(f) => arena.text(format!("{}", f)),
+                Literal::Int(i) => arena.text(format!("{}", i)),
+                Literal::String(ref s) => arena.text(format!("{:?}", s)),
+            },
+            Expr::Data(ref ctor, args, _, _) => match *ctor.typ {
+                Type::Record(ref record) => chain![arena;
                             "{",
                             arena.space(),
                             arena.concat(record.row_iter().zip(args).map(|(field, arg)| {
@@ -157,21 +152,16 @@ impl<'a> Expr<'a> {
                             })),
                             arena.space(),
                             "}"
-                        ].group()
-                    }
-                    _ => {
-                        chain![arena;
+                        ].group(),
+                _ => chain![arena;
                             ctor.as_ref(),
                             arena.concat(args.iter().map(|arg| {
                                 arena.space().append(arg.pretty(arena))
                             }))
-                        ].group()
-                    }
-                }
-            }
+                        ].group(),
+            },
             Expr::Ident(ref id, _) => arena.text(id.as_ref()),
-            Expr::Let(ref bind, ref expr) => {
-                chain![arena;
+            Expr::Let(ref bind, ref expr) => chain![arena;
                     "let ",
                     match bind.expr {
                         Named::Expr(ref expr) => {
@@ -205,12 +195,16 @@ impl<'a> Expr<'a> {
                     },
                     arena.newline(),
                     expr.pretty(arena)
-                ]
-            }
-            Expr::Match(expr, alts) => {
-                match alts.first() {
-                    Some(alt @ &Alternative { pattern: Pattern::Record(..), .. }) if alts.len() == 1 => {
-                        chain![arena;
+                ],
+            Expr::Match(expr, alts) => match alts.first() {
+                Some(
+                    alt @ &Alternative {
+                        pattern: Pattern::Record(..),
+                        ..
+                    },
+                ) if alts.len() == 1 =>
+                {
+                    chain![arena;
                             "match ",
                             expr.pretty(arena),
                             " with",
@@ -223,9 +217,8 @@ impl<'a> Expr<'a> {
                             arena.newline(),
                             alt.expr.pretty(arena).group()
                         ].group()
-                    }
-                    _ => {
-                        chain![arena;
+                }
+                _ => chain![arena;
                             "match ",
                             expr.pretty(arena),
                             " with",
@@ -238,10 +231,8 @@ impl<'a> Expr<'a> {
                                     alt.expr.pretty(arena).nest(INDENT).group()
                                 ].nest(INDENT)
                             }).intersperse(arena.newline()))
-                        ].group()
-                    }
-                }
-            }
+                        ].group(),
+            },
         }
     }
 
@@ -283,17 +274,14 @@ impl Pattern {
         arena: &'a pretty::Arena<'a>,
     ) -> pretty::DocBuilder<'a, pretty::Arena<'a>> {
         match *self {
-            Pattern::Constructor(ref ctor, ref args) => {
-                chain![arena;
+            Pattern::Constructor(ref ctor, ref args) => chain![arena;
                     ctor.as_ref(),
                     arena.concat(args.iter().map(|arg| {
                         arena.space().append(arg.as_ref())
                     }))
-                ].group()
-            }
+                ].group(),
             Pattern::Ident(ref id) => arena.text(id.as_ref()),
-            Pattern::Record(ref fields) => {
-                chain![arena;
+            Pattern::Record(ref fields) => chain![arena;
                     "{",
                     arena.concat(fields.iter().map(|&(ref field, ref value)| {
                         chain![arena;
@@ -313,8 +301,7 @@ impl Pattern {
                     }).intersperse(arena.text(","))).nest(INDENT),
                     arena.space(),
                     "}"
-                ].group()
-            }
+                ].group(),
         }
     }
 }
@@ -412,10 +399,11 @@ impl<'a, 'e> Translator<'a, 'e> {
             current = tail;
         }
         let tail = self.translate_(current);
-        lets.iter().rev().fold(
-            tail,
-            |result, &(span_start, ref binds)| self.translate_let(binds, result, span_start),
-        )
+        lets.iter()
+            .rev()
+            .fold(tail, |result, &(span_start, ref binds)| {
+                self.translate_let(binds, result, span_start)
+            })
     }
 
     fn translate_(&'a self, expr: &SpannedExpr<Symbol>) -> Expr<'a> {
@@ -496,6 +484,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                 )
             }
             ast::Expr::Lambda(ref lambda) => self.new_lambda(
+                expr.span.start,
                 lambda.id.clone(),
                 lambda.args.iter().map(|arg| arg.value.clone()).collect(),
                 self.translate_alloc(&lambda.body),
@@ -602,6 +591,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                 .iter()
                 .map(|bind| {
                     Closure {
+                        pos: bind.name.span.start,
                         name: match bind.name.value {
                             ast::Pattern::Ident(ref id) => id.clone(),
                             _ => unreachable!(),
@@ -643,6 +633,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                 } else {
                     Named::Recursive(vec![
                         Closure {
+                            pos: bind.name.span.start,
                             name: name.clone(),
                             args: bind.args.iter().map(|arg| arg.value.clone()).collect(),
                             expr: self.translate_alloc(&bind.expr),
@@ -725,6 +716,7 @@ impl<'a, 'e> Translator<'a, 'e> {
             data
         } else {
             self.new_lambda(
+                span.start,
                 TypedIdent {
                     name: Symbol::from(format!("${}", id.name)),
                     typ: typ,
@@ -738,6 +730,7 @@ impl<'a, 'e> Translator<'a, 'e> {
 
     fn new_lambda(
         &'a self,
+        pos: BytePos,
         name: TypedIdent<Symbol>,
         args: Vec<TypedIdent<Symbol>>,
         body: &'a Expr<'a>,
@@ -749,6 +742,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                 name: name.clone(),
                 expr: Named::Recursive(vec![
                     Closure {
+                        pos,
                         name: name.clone(),
                         args: args,
                         expr: body,
@@ -863,7 +857,6 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
 
         match varcon {
             CType::Record => {
-
                 let new_alt = {
                     let pattern = self.pattern_identifiers(
                         equations
@@ -1042,7 +1035,6 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                         .alloc_extend(new_alts.into_iter()),
                 );
                 self.0.allocator.arena.alloc(expr)
-
             }
             CType::Variable => {
                 let expr = self.translate(
@@ -1154,13 +1146,13 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 .unwrap_or(default),
             Some(_) => {
                 let groups = (&groups).into_iter().collect::<Vec<_>>();
-                groups.into_iter().rev().fold(
-                    default,
-                    |expr, (key, group)| {
+                groups
+                    .into_iter()
+                    .rev()
+                    .fold(default, |expr, (key, group)| {
                         let equation_group = group.cloned().collect::<Vec<_>>();
                         self.varcons_compile(expr, variables, key, &equation_group)
-                    },
-                )
+                    })
             }
         };
         debug!(
@@ -1186,7 +1178,6 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
     where
         I: IntoIterator<Item = &'b SpannedPattern<Symbol>>,
     {
-
         let mut identifiers = Vec::new();
         let mut record_fields: Vec<(TypedIdent<Symbol>, _)> = Vec::new();
         let mut ident = None;

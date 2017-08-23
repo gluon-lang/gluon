@@ -1,6 +1,6 @@
 //! Source code locations (borrowed from rustc's [libsyntax_pos])
 //!
-//! [libsyntax_pos]: https://github.com/rust-lang/rust/blob/ae774103501337ed63b42b673c6c4fdbf369e80e/src/libsyntax_pos/lib.rs
+//! [libsyntax_pos]: https://github.com/rust-lang/rust/blob/master/src/libsyntax_pos/lib.rs
 
 use std::cmp::{self, Ordering};
 use std::fmt;
@@ -151,13 +151,13 @@ where
     Pos: PartialOrd,
 {
     fn partial_cmp(&self, other: &Span<Pos>) -> Option<Ordering> {
-        self.start.partial_cmp(&other.start).and_then(
-            |ord| if ord == Ordering::Equal {
+        self.start
+            .partial_cmp(&other.start)
+            .and_then(|ord| if ord == Ordering::Equal {
                 self.end.partial_cmp(&self.end)
             } else {
                 Some(ord)
-            },
-        )
+            })
     }
 }
 

@@ -43,10 +43,8 @@ pub enum Kind {
     Row,
     /// Constructor which takes two kinds, taking the first as argument and returning the second.
     Function(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        ArcKind,
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        ArcKind,
+        #[cfg_attr(feature = "serde_derive", serde(state))] ArcKind,
+        #[cfg_attr(feature = "serde_derive", serde(state))] ArcKind,
     ),
 }
 

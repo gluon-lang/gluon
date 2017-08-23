@@ -6,7 +6,7 @@ use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::kind::Kind;
 use base::types::{AliasData, ArcType, Field, Generic, Type};
-use parser::{Error, ParseErrors, parse_string};
+use parser::{parse_string, Error, ParseErrors};
 use std::marker::PhantomData;
 
 pub struct MockEnv<T>(PhantomData<T>);
@@ -81,7 +81,9 @@ pub fn let_a(s: &str, args: &[&str], e: SpExpr, b: SpExpr) -> SpExpr {
                 comment: None,
                 name: no_loc(Pattern::Ident(TypedIdent::new(intern(s)))),
                 typ: Type::hole(),
-                args: args.iter().map(|i| no_loc(TypedIdent::new(intern(i)))).collect(),
+                args: args.iter()
+                    .map(|i| no_loc(TypedIdent::new(intern(i))))
+                    .collect(),
                 expr: e,
             },
         ],
@@ -139,7 +141,9 @@ pub fn case(e: SpExpr, alts: Vec<(Pattern<String>, SpExpr)>) -> SpExpr {
 pub fn lambda(name: &str, args: Vec<String>, body: SpExpr) -> SpExpr {
     no_loc(Expr::Lambda(Lambda {
         id: TypedIdent::new(intern(name)),
-        args: args.into_iter().map(|id| no_loc(TypedIdent::new(id))).collect(),
+        args: args.into_iter()
+            .map(|id| no_loc(TypedIdent::new(id)))
+            .collect(),
         body: Box::new(body),
     }))
 }
