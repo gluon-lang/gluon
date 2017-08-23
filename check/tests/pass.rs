@@ -671,9 +671,8 @@ and u: HKT M2 = t
 in eq t u
 "#;
     let result = support::typecheck(text);
-    let expected = Ok(typ("Int"));
 
-    assert_eq!(result, expected);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
 }
 
 #[test]
