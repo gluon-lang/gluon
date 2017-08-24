@@ -1423,13 +1423,15 @@ where
             Type::Hole => arena.text("_"),
             Type::Opaque => arena.text("<opaque>"),
             Type::Forall(ref args, ref typ) => chain![arena;
-                       "forall ",
-                       arena.concat(args.iter().map(|arg| {
-                           arena.text(arg.id.as_ref()).append(" ")
-                       })),
-                       ".",
-                       arena.newline(),
-                       top(typ).pretty(printer)
+                chain![arena;
+                    "forall ",
+                    arena.concat(args.iter().map(|arg| {
+                        arena.text(arg.id.as_ref()).append(arena.space())
+                    })),
+                    "."
+                ].group(),
+                arena.space(),
+                top(typ).pretty(printer)
             ],
             Type::Variable(ref var) => arena.text(format!("{}", var.id)),
             Type::Generic(ref gen) => arena.text(gen.id.as_ref()),
