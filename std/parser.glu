@@ -14,7 +14,7 @@ let parser: Parser a -> Parser a = id
 
 let functor : Functor Parser = {
     map = \f m -> parser (\buffer ->
-        let result = parser m buffer 
+        let result = parser m buffer
         match result with
         | Ok a -> Ok { value = f a.value, buffer = a.buffer }
         | Err err -> Err err)
@@ -29,16 +29,16 @@ let applicative : Applicative Parser = {
         let result1 = parser f buffer
         match result1 with
         | Ok g ->
-            let result2 = parser m g.buffer 
+            let result2 = parser m g.buffer
             match result2 with
             | Ok a -> Ok { value = g.value a.value, buffer = a.buffer }
             | Err err -> Err err
         | Err err -> Err err),
 
-    pure = \value -> parser (\buffer -> Ok { value, buffer })
+    wrap = \value -> parser (\buffer -> Ok { value, buffer })
 }
 
-let { (*>), (<*), pure } = prelude.make_Applicative applicative
+let { (*>), (<*), wrap } = prelude.make_Applicative applicative
 
 let alternative: Alternative Parser = {
     applicative,
@@ -95,7 +95,7 @@ let fail message: String -> Parser a =
 let satisfy predicate: (Char -> Bool) -> Parser Char =
     let f c =
         if predicate c then
-            pure c
+            wrap c
         else
             fail ("Unexpected character " <> show.show c)
     flat_map f any
@@ -125,7 +125,7 @@ let take1 predicate : (Char -> Bool) -> Parser String =
         )
 
 let take predicate : (Char -> Bool) -> Parser String =
-    take1 predicate <|> pure ""
+    take1 predicate <|> wrap ""
 
 let take_string p : Parser a -> Parser String =
     parser (\stream ->
@@ -146,13 +146,13 @@ let between l r x: Parser a -> Parser b -> Parser c -> Parser c =
     l *> x <* r
 
 let many p : Parser a -> Parser (List a) =
-    many1 p <|> pure Nil
+    many1 p <|> wrap Nil
 
 and many1 p : Parser a -> Parser (List a) =
     p >>= (\h -> map (\t -> Cons h t) (many p))
 
 let skip_many p : Parser a -> Parser () =
-    skip_many1 p <|> pure ()
+    skip_many1 p <|> wrap ()
 and skip_many1 p : Parser a -> Parser () =
     p >>= (\_ -> skip_many p)
 
@@ -174,7 +174,7 @@ let parse p input: Parser a -> String -> Result String a =
     match p { start = 0, end = string.len input, buffer = input } with
     | Ok ok -> Ok ok.value
     | Err err -> Err err
-    
+
 {
     Position, Error, ParseResult, Parser,
 

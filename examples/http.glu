@@ -3,7 +3,7 @@ let string = import! "std/string.glu"
 let { (==) } = string.eq
 let { Functor, Applicative, Alternative, Monad } = prelude
 let { (<<), id } = prelude.make_Category prelude.category_Function
-let { pure } = prelude.applicative_IO
+let { wrap } = prelude.applicative_IO
 
 let {
     Method,
@@ -38,7 +38,7 @@ let applicative: Applicative Handler = {
     apply = \a m ->
         let m = make m
         flat_map (\f -> functor.map f m) a,
-    pure = \a -> make (\success _ state -> success a state)
+    wrap = \a -> make (\success _ state -> success a state)
 }
 let { (*>) } = prelude.make_Applicative applicative
 
@@ -123,8 +123,8 @@ let catch_error action catch : Handler a -> (String -> Handler a) -> Handler a =
 /// Takes a `Handler` and a `Request` tries to process the request
 let handle handler state : Handler Response -> HttpState -> IO Response =
     let not_found _ _ =
-        pure { status = NotFound, body = "Page not found" }
-    handler (\response _ -> pure response) not_found state
+        wrap { status = NotFound, body = "Page not found" }
+    handler (\response _ -> wrap response) not_found state
 
 {
     Method,

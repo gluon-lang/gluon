@@ -67,7 +67,7 @@ and make ord : Ord k -> _ =
 
         let go m =
             match m with
-            | Tip -> app.pure Tip
+            | Tip -> app.wrap Tip
             | Bin k v l r ->
                 map3 (prelude.flip (Bin k)) (go l) (f k v) (go r)
 

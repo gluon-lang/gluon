@@ -2,7 +2,7 @@ let prelude = import! "std/prelude.glu"
 let map = import! "std/map.glu"
 let string = import! "std/string.glu"
 let { Map } = map
-let { pure, (*>) } = prelude.make_Applicative prelude.applicative_IO
+let { wrap, (*>) } = prelude.make_Applicative prelude.applicative_IO
 let { (>>=), forM_ } = prelude.make_Monad prelude.monad_IO
 let { Eq, Result, Monoid } = prelude
 let { append = (++) } = string.monoid
@@ -17,12 +17,12 @@ let load_file filename : String -> IO String =
         | Some i -> i + 1
     let modulename = string.slice filename last_slash (string.len filename - 3)
     let read_result =
-        io.catch (io.read_file_to_string filename >>= \x -> pure (Ok x)) (\err -> pure (Err err))
+        io.catch (io.read_file_to_string filename >>= \x -> wrap (Ok x)) (\err -> wrap (Err err))
     read_result
         >>= \result ->
         match result with
         | Ok expr -> io.load_script modulename expr
-        | Err msg -> pure msg
+        | Err msg -> wrap msg
 
 type Cmd = { info : String, action : String -> IO Bool }
 
@@ -34,21 +34,21 @@ let commands : Map String Cmd =
 
     let commands = ref empty
     let cmds =
-        singleton "q" { info = "Quit the REPL", action = \_ -> pure False } <> singleton "t" {
+        singleton "q" { info = "Quit the REPL", action = \_ -> wrap False } <> singleton "t" {
                     info = "Prints the type with an expression",
-                    action = \arg -> repl_prim.type_of_expr arg >>= print_result *> pure True
+                    action = \arg -> repl_prim.type_of_expr arg >>= print_result *> wrap True
                 }
             <> singleton "i" {
                     info = "Prints information about the given name",
-                    action = \arg -> repl_prim.find_info arg >>= print_result *> pure True
+                    action = \arg -> repl_prim.find_info arg >>= print_result *> wrap True
                 }
             <> singleton "k" {
                     info = "Prints the kind with the given type",
-                    action = \arg -> repl_prim.find_kind arg >>= print_result *> pure True
+                    action = \arg -> repl_prim.find_kind arg >>= print_result *> wrap True
                 }
             <> singleton "l" {
                     info = "Loads the file at \'folder/module.ext\' and stores it at \'module\'",
-                    action = \arg -> load_file arg >>= io.println *> pure True
+                    action = \arg -> load_file arg >>= io.println *> wrap True
                 }
             <> singleton "h" {
                     info = "Print this help",
@@ -57,7 +57,7 @@ let commands : Map String Cmd =
                             *> forM_ (to_list (load commands)) (\cmd ->
                                 let cmd : { key : String, value : Cmd } = cmd
                                 io.println ("    :" ++ cmd.key ++ " " ++ cmd.value.info))
-                            *> pure True
+                            *> wrap True
                 }
     commands <- cmds
     load commands
@@ -71,10 +71,10 @@ let do_command line : String -> IO Bool =
             else ""
         match find cmd commands with
         | Some command -> command.action arg
-        | None -> io.println ("Unknown command \'" ++ cmd ++ "\'") *> pure True
+        | None -> io.println ("Unknown command \'" ++ cmd ++ "\'") *> wrap True
     else
         io.println "Expected a command such as `:h`"
-            *> pure True
+            *> wrap True
 
 let store line : String -> IO Bool =
     let line = string.trim line
@@ -82,23 +82,23 @@ let store line : String -> IO Bool =
     | Some bind_end ->
         let binding = string.slice line 0 bind_end
         let expr = string.slice line bind_end (string.len line)
-        io.load_script binding expr *> pure True
-    | None -> io.println "Expected binding in definition" *> pure True
+        io.load_script binding expr *> wrap True
+    | None -> io.println "Expected binding in definition" *> wrap True
 
 let loop editor : Editor -> IO () =
     let run_line line =
         if string.is_empty (string.trim line)
-        then pure True
+        then wrap True
         else
             if string.starts_with line ":"
             then do_command line
-            else io.catch (repl_prim.eval_line line) pure >>= io.println *> pure True
+            else io.catch (repl_prim.eval_line line) wrap >>= io.println *> wrap True
 
     rustyline.readline editor "> "
         >>= \line_opt ->
         match line_opt with
-        | None -> pure ()
-        | Some line -> run_line line >>= \continue -> if continue then loop editor else pure ()
+        | None -> wrap ()
+        | Some line -> run_line line >>= \continue -> if continue then loop editor else wrap ()
 
 let run x : () -> IO () =
     io.println "gluon (:h for help, :q to quit)"

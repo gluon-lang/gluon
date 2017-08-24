@@ -14,9 +14,9 @@ let applicative : Applicative (State s) =
         let { value, state } = mf state
         functor.map value n state
 
-    let pure value : a -> State s a = \state -> { value, state }
+    let wrap value : a -> State s a = \state -> { value, state }
 
-    { functor, apply, pure }
+    { functor, apply, wrap }
 
 let monad : Monad (State s) =
     let flat_map f m : (a -> State s b) -> State s a -> State s b = \state ->

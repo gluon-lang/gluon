@@ -26,7 +26,7 @@ let {
 
 let { (<>) } = prelude.make_Monoid string.monoid
 
-let { (<*), (*>), map2, pure } = prelude.make_Applicative applicative
+let { (<*), (*>), map2, wrap } = prelude.make_Applicative applicative
 let { (<|>) } = prelude.make_Alternative alternative
 let { (>>=) } = prelude.make_Monad monad
 
@@ -42,7 +42,7 @@ let parse_parser p f msg : Parser a -> (String -> Result () b) -> String -> Pars
     take_string p
         >>= (\s ->
         match f s with
-        | Ok i -> pure i
+        | Ok i -> wrap i
         | Err _ -> fail ("Expected " <> msg))
 
 let int : Parser Expr =

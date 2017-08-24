@@ -258,22 +258,22 @@ let functor_Result : Functor (Result e) = {
         | Err _ -> x
 }
 
-let functor_IO : Functor IO = { map = \f -> io_flat_map (\x -> io_pure (f x)) }
+let functor_IO : Functor IO = { map = \f -> io_flat_map (\x -> io_wrap (f x)) }
 
 type Applicative (f : Type -> Type) = {
     functor : Functor f,
     apply : f (a -> b) -> f a -> f b,
-    pure : a -> f a
+    wrap : a -> f a
 }
 
 let applicative_Function : Applicative ((->) a) = {
     functor = functor_Function,
     apply = \f g x -> f x (g x),
-    pure = \x -> \_ -> x
+    wrap = \x -> \_ -> x
 }
 
 /// const `x` creates a function which always returns `x`
-let const : a -> b -> a = applicative_Function.pure
+let const : a -> b -> a = applicative_Function.wrap
 
 let applicative_Option : Applicative Option = {
     functor = functor_Option,
@@ -281,7 +281,7 @@ let applicative_Option : Applicative Option = {
         match (f, x) with
         | (Some g, Some y) -> Some (g y)
         | _ -> None,
-    pure = \x -> Some x
+    wrap = \x -> Some x
 }
 
 let applicative_Result : Applicative (Result e) = {
@@ -291,17 +291,17 @@ let applicative_Result : Applicative (Result e) = {
         | (Ok g, Ok y) -> Ok (g y)
         | (Ok _, Err _) -> x
         | (Err x, _) -> Err x,
-    pure = \x -> Ok x
+    wrap = \x -> Ok x
 }
 
 let applicative_IO : Applicative IO =
-    let pure = io_pure
-    let apply f x = io_flat_map (\g -> io_flat_map (\y -> pure (g y)) x) f
+    let wrap = io_wrap
+    let apply f x = io_flat_map (\g -> io_flat_map (\y -> wrap (g y)) x) f
 
-    { functor = functor_IO, apply, pure }
+    { functor = functor_IO, apply, wrap }
 
 let make_Applicative app =
-    let { functor, apply, pure } = app
+    let { functor, apply, wrap } = app
 
     let (<*>) = apply
     let (<*) l r = functor.map const l <*> r
@@ -309,7 +309,7 @@ let make_Applicative app =
     let map2 f a b = (functor.map f a) <*> b
     let map3 f a b c = (functor.map f a) <*> b <*> c
 
-    { functor, apply, pure, (<*>), (<*), (*>), map2, map3 }
+    { functor, apply, wrap, (<*>), (<*), (*>), map2, map3 }
 
 type Alternative f = { applicative : Applicative f, or : f a -> f a -> f a, empty : f a }
 
@@ -324,15 +324,15 @@ let alternative_Option : Alternative Option = {
 
 let make_Alternative f =
     let { applicative, or, empty } = f
-    let { functor, (<*>), pure } = make_Applicative applicative
+    let { functor, (<*>), wrap } = make_Applicative applicative
 
     let (<|>) = or
     let many x =
-        let many_v _ = some_v () <|> pure Nil
+        let many_v _ = some_v () <|> wrap Nil
         and some_v _ = functor.map (\h l -> Cons h l) x <*> many_v ()
         many_v ()
     let some x =
-        let many_v _ = some_v () <|> pure Nil
+        let many_v _ = some_v () <|> wrap Nil
         and some_v _ = functor.map (\h l -> Cons h l) x <*> many_v ()
         some_v ()
 
@@ -368,7 +368,7 @@ let monad_IO : Monad IO = {
 
 let make_Monad m =
     let { applicative, flat_map } = m
-    let { (*>), pure } = make_Applicative applicative
+    let { (*>), wrap } = make_Applicative applicative
     let { id } = category_Function
 
     let (=<<) = flat_map
@@ -377,17 +377,17 @@ let make_Monad m =
     let forM_ xs f =
         match xs with
         | Cons y ys -> f y *> forM_ ys f
-        | Nil -> pure ()
+        | Nil -> wrap ()
 
     let foldM f x xs =
         match xs with
         | Cons y ys -> f x y >>= (\a -> foldM f a ys)
-        | Nil -> pure x
+        | Nil -> wrap x
 
     let mapM f xs =
         match xs with
-        | Cons y ys -> f y >>= (\a -> mapM f ys >>= \rest -> pure (Cons a rest))
-        | Nil -> pure Nil
+        | Cons y ys -> f y >>= (\a -> mapM f ys >>= \rest -> wrap (Cons a rest))
+        | Nil -> wrap Nil
 
     { applicative, flat_map, (=<<), (>>=), join, forM_, foldM, mapM }
 
@@ -450,9 +450,9 @@ let applicative_List : Applicative List =
         match f with
         | Cons g gs -> (functor_List.map g xs) <> (apply gs xs)
         | Nil -> Nil
-    let pure x = Cons x Nil
+    let wrap x = Cons x Nil
 
-    { functor = functor_List, apply, pure }
+    { functor = functor_List, apply, wrap }
 
 let alternative_List : Alternative List = {
     applicative = applicative_List,
@@ -598,7 +598,7 @@ let traversable_Option : Traversable Option = {
     foldable = foldable_Option,
     traverse = \app f o ->
         match o with
-        | None -> app.pure None
+        | None -> app.wrap None
         | Some x -> app.functor.map Some (f x)
 }
 
@@ -607,7 +607,7 @@ let traversable_Result : Traversable (Result e) = {
     foldable = foldable_Result,
     traverse = \app f r ->
         match r with
-        | Err e -> app.pure (Err e)
+        | Err e -> app.wrap (Err e)
         | Ok x -> app.functor.map Ok (f x)
 }
 
@@ -617,7 +617,7 @@ let traversable_List : Traversable List = {
     traverse = \app f ->
         foldable_List.foldr
             (\a b -> app.apply (app.functor.map Cons (f a)) b)
-            (app.pure Nil)
+            (app.wrap Nil)
 }
 
 /// Constructs a list from an array. Useful to emulate list literals

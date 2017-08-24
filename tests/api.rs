@@ -208,7 +208,7 @@ fn io_future() {
 
     let expr = r#"
     let { applicative_IO, monad_IO }  = import! "std/prelude.glu"
-    monad_IO.flat_map (\x -> applicative_IO.pure (x + 1)) (test ())
+    monad_IO.flat_map (\x -> applicative_IO.wrap (x + 1)) (test ())
 "#;
 
     let vm = make_vm();

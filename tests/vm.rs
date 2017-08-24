@@ -659,7 +659,7 @@ fn run_expr_int() {
 }
 
 test_expr!{ io run_expr_io,
-r#"io_flat_map (\x -> io_pure 100) (io.run_expr "io.print \"123\" ") "#,
+r#"io_flat_map (\x -> io_wrap 100) (io.run_expr "io.print \"123\" ") "#,
 100i32
 }
 
@@ -817,8 +817,8 @@ fn dont_execute_io_in_run_expr_async() {
     let vm = make_vm();
     let expr = r#"
 let prelude  = import! "std/prelude.glu"
-let { pure } = prelude.applicative_IO
-pure 123
+let { wrap } = prelude.applicative_IO
+wrap 123
 "#;
     let value = Compiler::new()
         .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr)
@@ -836,8 +836,8 @@ fn partially_applied_constructor_is_lambda() {
     let _ = ::env_logger::init();
     let vm = make_vm();
 
-    let result =
-        Compiler::new().run_expr::<FunctionRef<fn(i32) -> Option<i32>>>(&vm, "test", "Some");
+    let result = Compiler::new()
+        .run_expr::<FunctionRef<fn(i32) -> Option<i32>>>(&vm, "test", "Some");
     assert!(result.is_ok(), "{}", result.err().unwrap());
     assert_eq!(result.unwrap().0.call(123), Ok(Some(123)));
 }
