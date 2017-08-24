@@ -376,7 +376,7 @@ impl<'a> Typecheck<'a> {
             for field in row.row_iter().cloned() {
                 let symbol = self.symbols.symbol(field.name.as_ref());
                 self.original_symbols.insert(symbol, field.name.clone());
-                self.stack_var(field.name, field.typ);
+                self.stack_var(field.name, Type::forall(alias.params().to_owned(), field.typ));
             }
         }
         let generic_args = alias.params().iter().cloned().map(Type::generic).collect();
@@ -403,6 +403,15 @@ impl<'a> Typecheck<'a> {
         self.environment.stack.exit_scope();
         self.environment.stack_types.exit_scope();
         self.original_symbols.exit_scope();
+    }
+
+    fn generalize_binding(
+        &mut self,
+        level: u32,
+        binding: &mut ValueBinding<Symbol>,
+    ) {
+        self.generalize_type(level, &mut binding.typ);
+        self.generalize_variables(level, &mut binding.args, &mut binding.expr)
     }
 
     /// Generalizing updates all variables which are above `level` into "generic variables". A
@@ -1183,7 +1192,7 @@ impl<'a> Typecheck<'a> {
 
             if !is_recursive {
                 // Merge the type declaration and the actual type
-                self.generalize_variables(level, &mut bind.args, &mut bind.expr);
+                self.generalize_binding(level, bind);
                 self.typecheck_pattern(&mut bind.name, typ);
             } else {
                 types.push(typ);
@@ -1201,10 +1210,7 @@ impl<'a> Typecheck<'a> {
         // Once all variables inside the let has been unified we can quantify them
         debug!("Generalize {}", level);
         for bind in bindings.iter_mut() {
-            self.generalize_variables(level, &mut bind.args, &mut bind.expr);
-            if let Some(typ) = self.finish_type(level, &bind.resolved_type) {
-                bind.resolved_type = typ;
-            }
+            self.generalize_binding(level, bind);
             self.finish_pattern(level, &mut bind.name, &bind.resolved_type);
         }
         debug!("Typecheck `in`");
@@ -1345,9 +1351,12 @@ impl<'a> Typecheck<'a> {
     fn finish_pattern(&mut self, level: u32, pattern: &mut SpannedPattern<Symbol>, typ: &ArcType) {
         match pattern.value {
             Pattern::Ident(ref mut id) => {
-                if let Some(typ) = self.finish_type(level, &id.typ) {
-                    id.typ = typ;
-                }
+                id.typ = typ.clone();
+                self.environment
+                    .stack
+                    .get_mut(&id.name)
+                    .expect("ICE: Variable no inserted")
+                    .typ = id.typ.clone();
                 debug!("{}: {}", self.symbols.string(&id.name), id.typ);
                 self.intersect_type(level, &id.name, &id.typ);
             }
@@ -1461,19 +1470,19 @@ impl<'a> Typecheck<'a> {
     }
 
     /// Generate a generic variable name which is not used in the current scope
-    fn next_variable(&mut self, level: u32, s: &mut String) {
+    fn next_variable(&mut self, level: u32, s: &mut String) -> Symbol {
         for c in b'a'..(b'z' + 1) {
             s.push(c as char);
             let symbol = self.symbols.symbol(&s[..]);
             if self.type_variables.get(&symbol).is_none() {
                 self.type_variables.insert(
-                    symbol,
+                    symbol.clone(),
                     Type::variable(TypeVariable {
                         id: level,
                         kind: self.kind_cache.typ(),
                     }),
                 );
-                return;
+                return symbol;
             }
             s.pop();
         }
@@ -1485,7 +1494,23 @@ impl<'a> Typecheck<'a> {
     fn finish_type(&mut self, level: u32, typ: &ArcType) -> Option<ArcType> {
         let mut generic = None;
         let mut i = 0;
-        self.finish_type_(level, &mut generic, &mut i, typ)
+        self.type_variables.enter_scope();
+        let typ = self.finish_type_(level, &mut generic, &mut i, typ);
+        let variables = self.type_variables.exit_scope();
+        let typ = typ.map(|typ| {
+            Type::forall(
+                variables
+                    .map(|(id, typ)| {
+                        Generic {
+                            id,
+                            kind: typ.kind().into_owned(),
+                        }
+                    })
+                    .collect(),
+                typ,
+            )
+        });
+        typ
     }
 
     fn finish_type_(
@@ -1527,16 +1552,26 @@ impl<'a> Typecheck<'a> {
                         Some(resolved_type)
                     } else {
                         // Create a prefix if none exists
-                        if generic.is_none() {
+                        let id = if generic.is_none() {
                             let mut g = String::new();
-                            self.next_variable(level, &mut g);
+                            let symbol = self.next_variable(level, &mut g);
                             *generic = Some(g);
-                        }
-                        let generic = generic.as_ref().unwrap();
+                            symbol
+                        } else {
+                            let generic = generic.as_ref().unwrap();
 
-                        let generic = format!("{}{}", generic, i);
-                        *i += 1;
-                        let id = self.symbols.symbol(generic);
+                            let generic = format!("{}{}", generic, i);
+                            *i += 1;
+                            let symbol = self.symbols.symbol(generic);
+                            self.type_variables.insert(
+                                symbol.clone(),
+                                Type::variable(TypeVariable {
+                                    id: level,
+                                    kind: self.kind_cache.typ(),
+                                }),
+                            );
+                            symbol
+                        };
                         let gen: ArcType =
                             Type::generic(Generic::new(id.clone(), var.kind.clone()));
                         self.subs.insert(var.id, gen.clone());

@@ -365,8 +365,8 @@ fn app_app_unify() {
 
     let text = r"
 type Monad m = {
-    (>>=): m a -> (a -> m b) -> m b,
-    return: a -> m a
+    (>>=): forall a b. m a -> (a -> m b) -> m b,
+    return: forall a. a -> m a
 }
 
 type Test a = | T a
@@ -862,20 +862,20 @@ fn simplified_applicative() {
     let _ = ::env_logger::init();
     let text = r#"
 type Applicative f = {
-    map : (a -> b) -> f a -> f b,
-    apply : f (c -> d) -> f c -> f d
+    map : forall a b . (a -> b) -> f a -> f b,
+    apply : forall c d . f (c -> d) -> f c -> f d
 }
 
-let applicative_Function : Applicative ((->) a) = {
+let applicative_Function : forall a. Applicative ((->) a) = {
     map = \f g x -> f (g x),
     apply = \f g x -> f x (g x)
 }
 
-let id : a -> a = \x -> x
+let id : forall a. a -> a = \x -> x
 
-let const : a -> b -> a = \x _ -> x
+let const : forall a b. a -> b -> a = \x _ -> x
 
-let make_applicative app =
+let make_applicative app : forall f. Applicative f -> _ =
     let { map, apply } = app
 
     let (*>) l r = apply (map (const id) l) r

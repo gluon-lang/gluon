@@ -737,31 +737,23 @@ pub fn instantiate_generic_variables(
     named_variables: &mut FnvMap<Symbol, ArcType>,
     subs: &Substitution<ArcType>,
     constraints: &FnvMap<Symbol, Constraints<ArcType>>,
-    typ: &ArcType,
+    mut typ: &ArcType,
 ) -> ArcType {
-    use std::collections::hash_map::Entry;
+    if let Type::Forall(ref params, ref inner_type) = **typ {
+        for param in params {
+            let constraint = constraints.get(&param.id).cloned();
+            named_variables.insert(
+                param.id.clone(),
+                subs.new_constrained_var(
+                    constraint.map(|constraint| (param.id.clone(), constraint.clone())),
+                ),
+            );
+        }
+        typ = inner_type;
+    }
 
     types::walk_move_type(typ.clone(), &mut |typ| match **typ {
-        Type::Generic(ref generic) => {
-            let var = match named_variables.entry(generic.id.clone()) {
-                Entry::Vacant(entry) => {
-                    let constraint = constraints.get(&generic.id).cloned();
-                    entry
-                        .insert(subs.new_constrained_var(
-                            constraint.map(|constraint| (generic.id.clone(), constraint.clone())),
-                        ))
-                        .clone()
-                }
-                Entry::Occupied(entry) => entry.get().clone(),
-            };
-
-            let mut var = (*var).clone();
-            if let Type::Variable(ref mut var) = var {
-                var.kind = generic.kind.clone();
-            }
-
-            Some(ArcType::from(var))
-        }
+        Type::Generic(ref generic) => named_variables.get(&generic.id).cloned(),
         _ => None,
     })
 }
@@ -820,6 +812,10 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
         // unified with whatever the other type is
         match (&**l, &**r) {
             (&Type::Hole, _) => Ok(None),
+            (&Type::Forall(ref params, ref l), _) => Ok(
+                l.zip_match(r, unifier)?
+                    .map(|typ| Type::forall(params.clone(), typ)),
+            ),
             (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => Ok(None),
             (&Type::Generic(ref l_gen), &Type::Variable(ref r_var)) => {
                 let left = match unifier.unifier.variables.get(&l_gen.id) {
