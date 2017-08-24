@@ -256,7 +256,8 @@ where
                 l_row
                     .iter()
                     .zip(r_row)
-                    .all(|(l, r)| l.name.name_eq(&r.name)) && l_rest == r_rest
+                    .all(|(l, r)| l.name.name_eq(&r.name)) &&
+                l_rest == r_rest
             {
                 let iter = l_row.iter().zip(r_row);
                 let new_fields = merge::merge_tuple_iter(iter, |l, r| {
@@ -357,6 +358,25 @@ where
             Ok(Some(actual.clone()))
         }
         (&Type::Alias(ref alias), &Type::Ident(ref id)) if *id == alias.name => Ok(None),
+
+        (&Type::Forall(ref l_params, ref l), &Type::Forall(ref r_params, ref r))
+            if l_params.len() == r_params.len() =>
+        {
+            let subs = unifier.state.subs;
+            let mut variables = l_params
+                .iter()
+                .zip(r_params)
+                .flat_map(|(l, r)| {
+                    let var = subs.new_var();
+                    Some((l.id.clone(), var.clone()))
+                        .into_iter()
+                        .chain(Some((r.id.clone(), var)))
+                })
+                .collect();
+            let l = instantiate_generic_variables(&mut variables, subs, &FnvMap::default(), l);
+            let r = instantiate_generic_variables(&mut variables, subs, &FnvMap::default(), r);
+            unifier.try_match_res(&l, &r)
+        }
 
         // Successful unification!
         (lhs, rhs) if lhs == rhs => Ok(None),
