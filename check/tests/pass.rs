@@ -430,10 +430,7 @@ let function_test: Test ((->) a) = {
 function_test.test
 ";
     let result = support::typecheck(text);
-    let expected = Ok(Type::forall(
-        vec![Generic::new(intern("a"), Kind::typ())],
-        Type::function(vec![typ("a")], typ("Int")),
-    ));
+    let expected = Ok(Type::function(vec![typ("a")], typ("Int")));
 
     assert_req!(result, expected);
 }
