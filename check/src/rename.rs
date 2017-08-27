@@ -224,7 +224,7 @@ pub fn rename(
                 return Ok(candidates().next().map(|tup| tup.0.clone()));
             }
             candidates()
-                .find(|tup| equivalent(&self.env, tup.2, expected))
+                .find(|tup| equivalent(&self.env, tup.2.remove_forall(), expected))
                 .map(|tup| Some(tup.0.clone()))
                 .ok_or_else(|| {
                     RenameError::NoMatchingType {
