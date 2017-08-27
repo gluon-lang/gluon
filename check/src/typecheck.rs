@@ -376,7 +376,10 @@ impl<'a> Typecheck<'a> {
             for field in row.row_iter().cloned() {
                 let symbol = self.symbols.symbol(field.name.as_ref());
                 self.original_symbols.insert(symbol, field.name.clone());
-                self.stack_var(field.name, Type::forall(alias.params().to_owned(), field.typ));
+                self.stack_var(
+                    field.name,
+                    Type::forall(alias.params().to_owned(), field.typ),
+                );
             }
         }
         let generic_args = alias.params().iter().cloned().map(Type::generic).collect();
@@ -405,11 +408,7 @@ impl<'a> Typecheck<'a> {
         self.original_symbols.exit_scope();
     }
 
-    fn generalize_binding(
-        &mut self,
-        level: u32,
-        binding: &mut ValueBinding<Symbol>,
-    ) {
+    fn generalize_binding(&mut self, level: u32, binding: &mut ValueBinding<Symbol>) {
         self.generalize_type(level, &mut binding.typ);
         self.generalize_variables(level, &mut binding.args, &mut binding.expr)
     }
@@ -1623,9 +1622,12 @@ impl<'a> Typecheck<'a> {
     // Replaces `Type::Id` types with the actual `Type::Alias` type it refers to
     // Replaces variant names with the actual symbol they should refer to
     // Instantiates Type::Hole with a fresh type variable to ensure the hole only ever refers to a
-    // single type variable
+    // single type variable.
+    //
+    // Also inserts a `forall` for any implicitly declared variables.
     fn create_unifiable_signature(&mut self, typ: ArcType) -> ArcType {
-        let mut f = |typ: &ArcType| {
+        self.type_variables.enter_scope();
+        let typ = types::walk_move_type(typ, &mut |typ: &ArcType| {
             match **typ {
                 Type::Ident(ref id) => {
                     // Substitute the Id by its alias if possible
@@ -1663,10 +1665,19 @@ impl<'a> Typecheck<'a> {
                     }
                 }
                 Type::Hole => Some(self.subs.new_var()),
+                Type::Generic(ref generic) if self.type_variables.get(&generic.id).is_none() => {
+                    // Implicitly declared variable
+                    self.type_variables.insert(generic.id.clone(), typ.clone());
+                    None
+                }
                 _ => None,
             }
-        };
-        types::walk_move_type(typ, &mut f)
+        });
+        let params = self.type_variables
+            .exit_scope()
+            .map(|(var, typ)| Generic::new(var, typ.kind().into_owned()))
+            .collect();
+        Type::forall(params, typ)
     }
 
     fn merge_signature(
