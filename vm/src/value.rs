@@ -104,18 +104,20 @@ unsafe impl DataDef for ClosureInitDef {
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct BytecodeFunction {
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::symbol"))]
-    pub name:
-        Symbol,
+    pub name: Symbol,
     pub args: VmIndex,
     pub max_stack_size: VmIndex,
     pub instructions: Vec<Instruction>,
     #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub inner_functions:
-        Vec<GcPtr<BytecodeFunction>>,
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub strings: Vec<InternedStr>,
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub globals: Vec<Value>,
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub records: Vec<Vec<InternedStr>>,
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub debug_info: DebugInfo,
+    pub inner_functions: Vec<GcPtr<BytecodeFunction>>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub strings: Vec<InternedStr>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub globals: Vec<Value>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub records: Vec<Vec<InternedStr>>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub debug_info: DebugInfo,
 }
 
 impl Traverseable for BytecodeFunction {
@@ -281,7 +283,8 @@ pub enum Value {
     Int(VmInt),
     Float(f64),
     String(
-        #[cfg_attr(feature = "serde_derive", serde(deserialize_state))] GcStr,
+        #[cfg_attr(feature = "serde_derive", serde(deserialize_state))]
+        GcStr,
     ),
     Tag(VmTag),
     Data(
@@ -297,12 +300,12 @@ pub enum Value {
         GcPtr<ValueArray>,
     ),
     Function(
-        #[cfg_attr(feature = "serde_derive", serde(state))] GcPtr<ExternFunction>,
+        #[cfg_attr(feature = "serde_derive", serde(state))]
+        GcPtr<ExternFunction>,
     ),
     Closure(
         #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::closure"))]
-        
-            GcPtr<ClosureData>,
+        GcPtr<ClosureData>,
     ),
     PartialApplication(
         #[cfg_attr(feature = "serde_derive",
@@ -320,7 +323,8 @@ pub enum Value {
     #[cfg_attr(feature = "serde_derive", serde(skip_deserializing))]
     #[cfg_attr(feature = "serde_derive", serde(skip_serializing))]
     Thread(
-        #[cfg_attr(feature = "serde_derive", serde(deserialize_state))] GcPtr<Thread>,
+        #[cfg_attr(feature = "serde_derive", serde(deserialize_state))]
+        GcPtr<Thread>,
     ),
 }
 
@@ -538,11 +542,11 @@ impl<'a, 't> InternalPrinter<'a, 't> {
 pub enum Callable {
     Closure(
         #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::closure"))]
-        
-            GcPtr<ClosureData>,
+        GcPtr<ClosureData>,
     ),
     Extern(
-        #[cfg_attr(feature = "serde_derive", serde(state))] GcPtr<ExternFunction>,
+        #[cfg_attr(feature = "serde_derive", serde(state))]
+        GcPtr<ExternFunction>,
     ),
 }
 
@@ -581,8 +585,10 @@ impl Traverseable for Callable {
 #[cfg_attr(feature = "serde_derive", derive(SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct PartialApplicationData {
-    #[cfg_attr(feature = "serde_derive", serde(serialize_state))] pub function: Callable,
-    #[cfg_attr(feature = "serde_derive", serde(serialize_state))] pub args: Array<Value>,
+    #[cfg_attr(feature = "serde_derive", serde(serialize_state))]
+    pub function: Callable,
+    #[cfg_attr(feature = "serde_derive", serde(serialize_state))]
+    pub args: Array<Value>,
 }
 
 impl PartialEq for PartialApplicationData {
@@ -716,8 +722,7 @@ pub struct ExternFunction {
     pub id: Symbol,
     pub args: VmIndex,
     #[cfg_attr(feature = "serde_derive", serde(skip_serializing))]
-    pub function:
-        extern "C" fn(&Thread) -> Status,
+    pub function: extern "C" fn(&Thread) -> Status,
 }
 
 impl Clone for ExternFunction {
@@ -1342,7 +1347,7 @@ mod tests {
             },
         ]);
 
-        let env = MockEnv(Some(Alias::new(list.clone(), vec![], typ.clone())));
+        let env = MockEnv(Some(Alias::new(list.clone(), typ.clone())));
 
         let nil = Value::Tag(1);
         assert_eq!(format!("{}", ValuePrinter::new(&env, &typ, nil)), "Nil");

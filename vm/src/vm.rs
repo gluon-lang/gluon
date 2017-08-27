@@ -87,13 +87,12 @@ fn new_bytecode(
 #[cfg_attr(feature = "serde_derive_state", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct Global {
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::symbol"))]
-    pub id:
-        Symbol,
+    pub id: Symbol,
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
-    pub typ:
-        ArcType,
+    pub typ: ArcType,
     pub metadata: Metadata,
-    #[cfg_attr(feature = "serde_derive_state", serde(state))] pub value: Value,
+    #[cfg_attr(feature = "serde_derive_state", serde(state))]
+    pub value: Value,
 }
 
 
@@ -107,29 +106,32 @@ impl Traverseable for Global {
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct GlobalVmState {
-    #[cfg_attr(feature = "serde_derive", serde(state))] env: RwLock<VmEnv>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    env: RwLock<VmEnv>,
 
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
-    generics:
-        RwLock<FnvMap<StdString, ArcType>>,
+    generics: RwLock<FnvMap<StdString, ArcType>>,
 
-    #[cfg_attr(feature = "serde_derive", serde(skip))] typeids: RwLock<FnvMap<TypeId, ArcType>>,
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
+    typeids: RwLock<FnvMap<TypeId, ArcType>>,
 
-    #[cfg_attr(feature = "serde_derive", serde(state))] interner: RwLock<Interner>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    interner: RwLock<Interner>,
 
-    #[cfg_attr(feature = "serde_derive", serde(skip))] macros: MacroEnv,
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
+    macros: MacroEnv,
 
     #[cfg_attr(feature = "serde_derive", serde(skip))] type_cache: TypeCache<Symbol, ArcType>,
 
     // FIXME These fields should not be public
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub gc: Mutex<Gc>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub gc: Mutex<Gc>,
 
     // List of all generation 0 threads (ie, threads allocated by the global gc). when doing a
     // generation 0 sweep these threads are scanned as generation 0 values may be refered to by any
     // thread
     #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub generation_0_threads:
-        RwLock<Vec<GcPtr<Thread>>>,
+    pub generation_0_threads: RwLock<Vec<GcPtr<Thread>>>,
 }
 
 impl Traverseable for GlobalVmState {
@@ -150,8 +152,10 @@ impl Traverseable for GlobalVmState {
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct VmEnv {
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub type_infos: TypeInfos,
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub globals: FnvMap<StdString, Global>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub type_infos: TypeInfos,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub globals: FnvMap<StdString, Global>,
 }
 
 impl CompilerEnv for VmEnv {
@@ -315,9 +319,10 @@ impl VmEnv {
                         _ => ice!("Unexpected value {:?}", value),
                     })
             });
-            typ = next_type.ok_or_else(move || {
-                Error::UndefinedField(typ.into_owned(), field_name.into())
-            })?;
+            typ = next_type
+                .ok_or_else(move || {
+                    Error::UndefinedField(typ.into_owned(), field_name.into())
+                })?;
         }
         Ok((value, typ))
     }
@@ -385,6 +390,7 @@ impl GlobalVmState {
                 name.into(),
                 Alias::from(AliasData::new(
                     Symbol::from(name),
+                    vec![],
                     self_.type_cache.opaque(),
                 )),
             );
@@ -488,7 +494,7 @@ impl GlobalVmState {
             let t = self.typeids.read().unwrap().get(&id).unwrap().clone();
             type_infos.id_to_type.insert(
                 name.into(),
-                Alias::from(AliasData::new(n, Type::forall(args, self.type_cache.opaque())),
+                Alias::from(AliasData::new(n, args, self.type_cache.opaque())),
             );
             Ok(t)
         }

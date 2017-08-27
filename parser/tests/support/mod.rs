@@ -5,7 +5,7 @@ use base::ast::{Alternative, Array, AstType, DisplayEnv, Expr, ExprField, IdentE
 use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::kind::Kind;
-use base::types::{AliasData, ArcType, Field, Generic, Type};
+use base::types::{Alias, AliasData, ArcType, Field, Generic, Type};
 use parser::{parse_string, Error, ParseErrors};
 use std::marker::PhantomData;
 
@@ -160,7 +160,7 @@ pub fn type_decl(
             TypeBinding {
                 comment: None,
                 name: no_loc(name.clone()),
-                alias: Alias::new(name, Type::forall(args, typ)),
+                alias: no_loc(AliasData::new(name, args, typ)),
                 finalized_alias: None,
             },
         ],
