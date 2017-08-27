@@ -742,12 +742,10 @@ pub fn instantiate_generic_variables(
     if let Type::Forall(ref params, ref inner_type) = **typ {
         for param in params {
             let constraint = constraints.get(&param.id).cloned();
-            named_variables.insert(
-                param.id.clone(),
-                subs.new_constrained_var(
-                    constraint.map(|constraint| (param.id.clone(), constraint.clone())),
-                ),
+            let var = subs.new_constrained_var(
+                constraint.map(|constraint| (param.id.clone(), constraint.clone())),
             );
+            named_variables.insert(param.id.clone(), var);
         }
         typ = inner_type;
     }

@@ -1665,8 +1665,15 @@ impl<'a> Typecheck<'a> {
                     }
                 }
                 Type::Hole => Some(self.subs.new_var()),
+                Type::Forall(ref params, _) => {
+                    // Remove any implicit variables inserted inside the forall since
+                    // they were actually bound at this stage
+                    for param in params {
+                        self.type_variables.remove(&param.id);
+                    }
+                    None
+                }
                 Type::Generic(ref generic) if self.type_variables.get(&generic.id).is_none() => {
-                    // Implicitly declared variable
                     self.type_variables.insert(generic.id.clone(), typ.clone());
                     None
                 }

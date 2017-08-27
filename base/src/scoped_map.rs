@@ -169,6 +169,17 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
     }
 }
 
+impl<K: Eq + Hash + Clone, V> Extend<(K, V)> for ScopedMap<K, V> {
+    fn extend<T>(&mut self, iter: T)
+    where
+        T: IntoIterator<Item = (K, V)>,
+    {
+        for (k, v) in iter {
+            self.insert(k, v);
+        }
+    }
+}
+
 pub struct Iter<'a, K, V>
 where
     K: 'a,
