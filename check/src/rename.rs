@@ -100,7 +100,7 @@ pub fn rename(
     impl<'a, 'b> RenameVisitor<'a, 'b> {
         fn find_fields(&self, typ: &ArcType) -> Vec<types::Field<Symbol, ArcType>> {
             // Walk through all type aliases
-            let record = resolve::remove_aliases(&self.env, typ.clone());
+            let record = resolve::remove_aliases(&self.env, typ.remove_forall().clone());
             record.row_iter().cloned().collect()
         }
 
