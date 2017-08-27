@@ -1761,6 +1761,15 @@ where
     f.visit(&typ).unwrap_or(typ)
 }
 
+pub fn visit_type_opt<F: ?Sized, I, T>(typ: &T, f: &mut F) -> Option<T>
+where
+    F: TypeVisitor<I, T>,
+    T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
+    I: Clone,
+{
+    f.visit(typ)
+}
+
 pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
 where
     F: TypeVisitor<I, T>,

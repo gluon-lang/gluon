@@ -131,7 +131,7 @@ in Test2 (\x -> x #Int+ 2)
     );
     let expected = Ok(Alias::group(vec![test, test2])[1].as_type().clone());
 
-    assert_eq!(result, expected);
+    assert_req!(result, expected);
 }
 
 #[test]
@@ -162,13 +162,7 @@ let f: a -> b -> a = \x y -> x in f 1.0 ()
 ";
     let (expr, result) = support::typecheck_expr(text);
     let expected = Ok(typ("Float"));
-    let expr_expected = Type::forall(
-        vec![
-            Generic::new(intern("b"), Kind::typ()),
-            Generic::new(intern("a"), Kind::typ()),
-        ],
-        Type::function(vec![typ("a"), typ("b")], typ("a")),
-    );
+    let expr_expected = Type::function(vec![typ("a"), typ("b")], typ("a"));
 
     assert_req!(result, expected);
     match expr.value {

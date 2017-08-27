@@ -293,6 +293,13 @@ impl<'a> KindCheck<'a> {
                 }))
             }
             Type::Generic(ref var) => Some(Type::generic(self.finalize_generic(var))),
+            Type::Forall(ref params, ref typ) => Some(Type::forall(
+                params
+                    .iter()
+                    .map(|param| self.finalize_generic(&param))
+                    .collect(),
+                typ.clone(),
+            )),
             _ => None,
         })
     }
@@ -306,7 +313,7 @@ impl<'a> KindCheck<'a> {
 fn update_kind(subs: &Substitution<ArcKind>, kind: ArcKind, default: Option<&ArcKind>) -> ArcKind {
     walk_move_kind(kind, &mut |kind| match *kind {
         Kind::Variable(id) => subs.find_type_for_var(id)
-            .cloned()
+            .map(|kind| update_kind(subs, kind.clone(), default))
             .or_else(|| default.cloned()),
         _ => None,
     })
