@@ -15,6 +15,7 @@ use base::types::{Alias, AliasData, ArcType, Field, Generic, Type};
 
 use support::{alias, intern, typ, MockEnv};
 
+#[macro_use]
 mod support;
 
 macro_rules! assert_pass {
@@ -163,7 +164,7 @@ let f: a -> b -> a = \x y -> x in f 1.0 ()
     let expected = Ok(typ("Float"));
     let expr_expected = Type::function(vec![typ("a"), typ("b")], typ("a"));
 
-    assert_eq!(result, expected);
+    assert_req!(result, expected);
     match expr.value {
         ast::Expr::LetBindings(ref bindings, _) => {
             assert_eq!(bindings[0].expr.env_type_of(&env), expr_expected)

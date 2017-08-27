@@ -255,3 +255,42 @@ pub fn close_record(typ: ArcType) -> ArcType {
         _ => None,
     })
 }
+
+#[macro_export]
+macro_rules! assert_failed {
+    ($lhs: expr, $rhs: expr, $lhs_value: expr, $rhs_value: expr) => {
+        panic!(
+            "Assertion failed: `({} == {})`\
+                left: `{}`,
+                right: `{}`",
+            stringify!($lhs),
+            stringify!($rhs),
+            $lhs_value,
+            $rhs_value
+        )
+    };
+}
+
+#[macro_export]
+macro_rules! assert_req {
+    ($lhs: expr, $rhs: expr) => {
+        match ($lhs, $rhs) {
+            (Ok(lhs), Ok(rhs)) => {
+                if lhs != rhs {
+                    assert_failed!($lhs, $rhs, lhs, rhs)
+                }
+            }
+            (Err(lhs), Err(rhs)) => {
+                if lhs != rhs {
+                    assert_failed!($lhs, $rhs, lhs, rhs)
+                }
+            }
+            (Ok(lhs), Err(rhs)) => {
+                assert_failed!($lhs, $rhs, lhs, rhs)
+            }
+            (Err(lhs), Ok(rhs)) => {
+                assert_failed!($lhs, $rhs, lhs, rhs)
+            }
+        }
+    };
+}
