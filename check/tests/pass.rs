@@ -819,7 +819,7 @@ a.id
         },
         _ => panic!(),
     };
-    let expected = Type::function(vec![typ("a0")], typ("a0"));
+    let expected = Type::function(vec![typ("a")], typ("a"));
 
     assert_eq!(*t, expected);
 }
