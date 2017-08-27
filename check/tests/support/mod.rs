@@ -260,9 +260,9 @@ pub fn close_record(typ: ArcType) -> ArcType {
 macro_rules! assert_failed {
     ($lhs: expr, $rhs: expr, $lhs_value: expr, $rhs_value: expr) => {
         panic!(
-            "Assertion failed: `({} == {})`\
-                left: `{}`,
-                right: `{}`",
+            r#"Assertion failed: `({} == {})`
+left: `{}`,
+right: `{}`"#,
             stringify!($lhs),
             stringify!($rhs),
             $lhs_value,

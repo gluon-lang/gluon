@@ -162,12 +162,18 @@ let f: a -> b -> a = \x y -> x in f 1.0 ()
 ";
     let (expr, result) = support::typecheck_expr(text);
     let expected = Ok(typ("Float"));
-    let expr_expected = Type::function(vec![typ("a"), typ("b")], typ("a"));
+    let expr_expected = Type::forall(
+        vec![
+            Generic::new(intern("b"), Kind::typ()),
+            Generic::new(intern("a"), Kind::typ()),
+        ],
+        Type::function(vec![typ("a"), typ("b")], typ("a")),
+    );
 
     assert_req!(result, expected);
     match expr.value {
         ast::Expr::LetBindings(ref bindings, _) => {
-            assert_eq!(bindings[0].expr.env_type_of(&env), expr_expected)
+            assert_eq!(bindings[0].expr.env_type_of(&env), expr_expected);
         }
         _ => assert!(false),
     }
@@ -221,13 +227,13 @@ in test2 1";
     let (expr, result) = support::typecheck_expr(text);
     let expected = Ok(typ("Int"));
 
-    assert_eq!(result, expected);
+    assert_req!(result, expected);
     assert_match!(expr.value, ast::Expr::LetBindings(ref binds, _) => {
         assert_eq!(binds.len(), 2);
-        assert_match!(*binds[0].resolved_type, Type::App(_, ref args) => {
+        assert_match!(**binds[0].resolved_type.remove_forall(), Type::App(_, ref args) => {
             assert_match!(*args[0], Type::Generic(_) => ())
         });
-        assert_match!(*binds[1].resolved_type, Type::App(_, ref args) => {
+        assert_match!(**binds[1].resolved_type.remove_forall(), Type::App(_, ref args) => {
             assert_match!(*args[0], Type::Generic(_) => ())
         });
     });
@@ -357,7 +363,7 @@ in option_Functor.map (\x -> x #Int- 1) (Some 2)
 
     let expected = Ok(Type::app(option, collect![typ("Int")]));
 
-    assert_eq!(result, expected);
+    assert_req!(result, expected);
 }
 
 #[test]
@@ -430,9 +436,12 @@ let function_test: Test ((->) a) = {
 function_test.test
 ";
     let result = support::typecheck(text);
-    let expected = Ok(Type::function(vec![typ("a0")], typ("Int")));
+    let expected = Ok(Type::forall(
+        vec![Generic::new(intern("a"), Kind::typ())],
+        Type::function(vec![typ("a")], typ("Int")),
+    ));
 
-    assert_eq!(result, expected);
+    assert_req!(result, expected);
 }
 
 #[test]
@@ -589,7 +598,7 @@ return 1
         intern("IdT"),
         Type::forall(
             vec![m.clone(),
-        Generic::new(intern("a"), Kind::typ())],
+            Generic::new(intern("a"), Kind::typ())],
             Type::app(
                 Type::generic(m),
                 collect![Type::app(id, collect![typ("a")])],

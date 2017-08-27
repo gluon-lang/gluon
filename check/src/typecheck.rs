@@ -1598,6 +1598,17 @@ impl<'a> Typecheck<'a> {
                     let new_type = types::walk_move_type_opt(typ, &mut |typ: &ArcType| {
                         self.finish_type_(level, generic, i, typ)
                     });
+                    match **typ {
+                        Type::Forall(ref params, _) => {
+                            for param in params {
+                                self.type_variables.remove(&param.id);
+                            }
+                        }
+                        Type::Generic(ref generic) if self.type_variables.get(&generic.id).is_none() => {
+                            self.type_variables.insert(generic.id.clone(), typ.clone());
+                        }
+                        _ => ()
+                    }
                     new_type
                         .map(|t| unroll_typ(&t).unwrap_or(t))
                         .or_else(|| replacement.clone())
