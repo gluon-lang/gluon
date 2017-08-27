@@ -18,18 +18,22 @@ let unwrap_err res : Result e a -> e =
     | Ok _ -> error "Result was an Ok"
     | Err x -> x
 
-/**
-`Monoid m` represents an associative operation on `m` an which has an identity.
-This means the following laws must hold:
-
-* x <> empty = x
-
-* empty <> x = x
-
-* x <> (y <> z) = (x <> y) <> z
-
-*/
-type Monoid m = { append : m -> m -> m, empty : m }
+/// `Monoid m` represents an associative operation on `m` an which has an identity.
+/// This means the following laws must hold:
+///
+/// * `append x empty == x`
+/// * `append empty x == x`
+/// * `append x (append y z) == append (append x y) z`
+type Monoid m = {
+    /// # Note
+    ///
+    /// * Known as `mappend` in Haskell
+    append : m -> m -> m,
+    /// # Note
+    ///
+    /// * Known as `mempty` in Haskell
+    empty : m
+}
 
 let monoid_Function m : Monoid b -> Monoid (a -> b) = {
     append = \f g -> \x -> m.append (f x) (g x),
@@ -236,11 +240,28 @@ let (<<) : (b -> c) -> (a -> b) -> a -> c = (make_Category category_Function).(<
 /// Left-to-right function composition
 let (>>) : (a -> b) -> (b -> c) -> a -> c = (make_Category category_Function).(>>)
 
-/**
-A `Functor` represents an action on a parameterized type which does not change the structure with
-the mapped type.
-*/
-type Functor f = { map : (a -> b) -> f a -> f b }
+/// A `Functor` represents an action on a parameterized type which does not
+/// change the structure with the mapped type.
+///
+/// The following laws should hold:
+///
+/// * `map id == id`
+/// * `map (f << g) == map f << map g`
+type Functor f = {
+    /// Apply the supplied function to the contents of `f a`, converting it to
+    /// an `f b`
+    ///
+    /// # Examples
+    ///
+    /// * `applicative_Option.map show_Int.show (Some 1) == Some "1"`
+    /// * `applicative_Result.map show_Int.show (Some 1) == Ok "1"`
+    /// * `applicative_List.map show_Int.show (list [1, 2]) == list ["1", "2"]`
+    ///
+    /// # Note
+    ///
+    /// * Known as `fmap` in Haskell
+    map : (a -> b) -> f a -> f b
+}
 
 let functor_Function : Functor ((->) a) = { map = category_Function.compose }
 
@@ -262,7 +283,23 @@ let functor_IO : Functor IO = { map = \f -> io_flat_map (\x -> io_wrap (f x)) }
 
 type Applicative (f : Type -> Type) = {
     functor : Functor f,
+    /// Like `functor.map`, but this time the supplied function is embedded in `f`
+    ///
+    /// # Note
+    ///
+    /// * Known as `(<*>)` in Haskell
     apply : f (a -> b) -> f a -> f b,
+    /// Wrap the supplied value in `f`
+    ///
+    /// # Examples
+    ///
+    /// * `applicative_Option.wrap 1 == Some 1`
+    /// * `applicative_Result.wrap 1 == Ok 1`
+    /// * `applicative_List.wrap 1 == list [1]`
+    ///
+    /// # Note
+    ///
+    /// * Known as `pure` in Haskell
     wrap : a -> f a
 }
 
@@ -338,7 +375,37 @@ let make_Alternative f =
 
     { applicative, or, empty, (<|>), many, some }
 
-type Monad (m : Type -> Type) = { applicative : Applicative m, flat_map : (a -> m b) -> m a -> m b }
+/// A generalised interface for imperatively sequencing actions
+type Monad (m : Type -> Type) = {
+    applicative : Applicative m,
+    /// This can be seen as akin to sequential variable binding in an
+    /// imperative language. For example in Javascript:
+    ///
+    /// ```js
+    /// var x = call_fallible("hello");
+    /// do_something(x);
+    /// ```
+    ///
+    /// In gluon this would look like:
+    ///
+    /// ```gluon
+    /// monad_Result.flat_map (\x -> do_something x) (call_fallible "hello")
+    /// ```
+    ///
+    /// Note that it is sometimes more ergonomic to use the `(>>=)` operator:
+    ///
+    /// ```gluon
+    /// let { (>>=) } = make_Monad monad_Result
+    ///
+    /// call_fallible "hello" >>= (\x -> do_something x)
+    /// ```
+    ///
+    /// # Note
+    ///
+    /// * Known as `(=<<) or `flip (>>=)` in Haskell
+    /// * Known as `Option::and_then` and `Result::and_then` in Rust
+    flat_map : (a -> m b) -> m a -> m b
+}
 
 let monad_Function : Monad ((->) a) = {
     applicative = applicative_Function,
