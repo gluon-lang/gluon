@@ -694,7 +694,7 @@ in
     ];
     let expected = Ok(Type::record(vec![], fields));
 
-    assert_eq!(result.map(support::close_record), expected);
+    assert_req!(result.map(support::close_record), expected);
 }
 
 #[test]
