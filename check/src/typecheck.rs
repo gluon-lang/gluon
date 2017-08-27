@@ -1446,7 +1446,7 @@ impl<'a> Typecheck<'a> {
                     &self.subs,
                     self.symbols.symbols(),
                     state,
-                    &existing_binding.typ,
+                    &existing_binding.typ.remove_forall(),
                     symbol_type,
                 );
                 constraints = intersection_constraints

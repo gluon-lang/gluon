@@ -818,7 +818,6 @@ where
         match *self {
             Type::Alias(ref alias) => alias.typ.params(),
             Type::Forall(ref params, _) => params,
-            Type::App(ref id, _) => id.params(),
             _ => &[],
         }
     }

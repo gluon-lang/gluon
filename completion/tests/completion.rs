@@ -39,7 +39,10 @@ fn find_type(s: &str, pos: BytePos) -> Result<ArcType, ()> {
 fn suggest_types(s: &str, pos: BytePos) -> Result<Vec<Suggestion>, ()> {
     let env = MockEnv::new();
 
-    let (mut expr, _result) = support::typecheck_partial_expr(s);
+    let (mut expr, result) = support::typecheck_partial_expr(s);
+    if let Err(err) = result {
+        println!("{}", err);
+    }
     let mut vec = completion::suggest(&env, &mut expr, pos);
     vec.sort_by(|l, r| l.name.cmp(&r.name));
     Ok(vec)
