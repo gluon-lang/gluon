@@ -1607,7 +1607,21 @@ impl <$($args: VmType,)* R: VmType> VmType for fn ($($args),*) -> R {
     #[allow(non_snake_case)]
     fn make_type(vm: &Thread) -> ArcType {
         let args = vec![$(make_type::<$args>(vm)),*];
-        vm.global_env().type_cache().function(args, make_type::<R>(vm))
+        let typ = vm.global_env().type_cache().function(args, make_type::<R>(vm));
+        let mut params: Vec<types::Generic<_>> = Vec::new();
+        types::visit_type_opt(&typ, &mut |typ: &ArcType| {
+            match **typ {
+                Type::Generic(ref generic) => {
+                    if params.iter().all(|param| param.id != generic.id) {
+                        params.push(generic.clone());
+                    }
+                }
+                _ => (),
+            }
+            None
+        });
+
+        Type::forall(params, typ)
     }
 }
 
