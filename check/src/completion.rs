@@ -217,7 +217,12 @@ where
                 match e.value {
                     Expr::TypeBindings(ref type_bindings, ref e) => {
                         for type_binding in type_bindings {
-                            self.0.on_found.on_alias(&type_binding.alias.value);
+                            self.0.on_found.on_alias(
+                                type_binding
+                                    .finalized_alias
+                                    .as_ref()
+                                    .expect("ICE: Expected alias to be set"),
+                            );
                         }
                         self.0.visit_expr(e);
                     }
@@ -411,7 +416,12 @@ where
             }
             Expr::TypeBindings(ref type_bindings, ref expr) => {
                 for type_binding in type_bindings {
-                    self.on_found.on_alias(&type_binding.alias.value);
+                    self.on_found.on_alias(
+                        type_binding
+                            .finalized_alias
+                            .as_ref()
+                            .expect("ICE: Expected alias to be set"),
+                    );
                 }
                 self.visit_expr(expr)
             }
@@ -697,9 +707,8 @@ where
         stack: ScopedMap::new(),
         patterns: ScopedMap::new(),
     };
-    complete_at(&mut suggest, expr, pos)
-        .ok()
-        .and_then(|found| match found.match_ {
+    complete_at(&mut suggest, expr, pos).ok().and_then(
+        |found| match found.match_ {
             Some(match_) => match match_ {
                 Match::Expr(expr) => {
                     let suggestion = expr_iter(&suggest.stack, expr)
@@ -735,5 +744,6 @@ where
 
                 _ => None,
             },
-        })
+        },
+    )
 }

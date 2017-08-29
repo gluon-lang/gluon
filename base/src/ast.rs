@@ -1,7 +1,8 @@
 //! Module containing the types which make up `gluon`'s AST (Abstract Syntax Tree)
 use std::marker::PhantomData;
+use std::ops::Deref;
 
-use pos::{BytePos, Span, Spanned};
+use pos::{self, BytePos, Span, Spanned};
 use symbol::Symbol;
 use types::{self, Alias, AliasData, ArcType, Type, TypeEnv};
 
@@ -49,6 +50,45 @@ impl<'t, T: ?Sized + DisplayEnv> DisplayEnv for &'t mut T {
 impl<'a, T: ?Sized + IdentEnv> IdentEnv for &'a mut T {
     fn from_str(&mut self, s: &str) -> Self::Ident {
         (**self).from_str(s)
+    }
+}
+
+#[derive(Clone, Eq, PartialEq, Debug)]
+pub struct AstType<Id> {
+    _typ: Box<(Option<Comment>, Spanned<Type<Id, AstType<Id>>, BytePos>)>,
+}
+
+impl<Id> Deref for AstType<Id> {
+    type Target = Type<Id, AstType<Id>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self._typ.1.value
+    }
+}
+
+impl<Id> From<Spanned<Type<Id, AstType<Id>>, BytePos>> for AstType<Id> {
+    fn from(typ: Spanned<Type<Id, AstType<Id>>, BytePos>) -> Self {
+        AstType {
+            _typ: Box::new((None, typ)),
+        }
+    }
+}
+
+impl<Id> From<Type<Id, AstType<Id>>> for AstType<Id> {
+    fn from(typ: Type<Id, AstType<Id>>) -> Self {
+        Self::from(pos::spanned2(0.into(), 0.into(), typ))
+    }
+}
+
+impl<Id> AstType<Id> {
+    pub fn with_comment(comment: Comment, typ: Spanned<Type<Id, AstType<Id>>, BytePos>) -> Self {
+        AstType {
+            _typ: Box::new((Some(comment), typ)),
+        }
+    }
+
+    pub fn into_inner(self) -> Type<Id, Self> {
+        self._typ.1.value
     }
 }
 
@@ -202,7 +242,7 @@ pub enum Expr<Id> {
 pub struct TypeBinding<Id> {
     pub comment: Option<Comment>,
     pub name: Spanned<Id, BytePos>,
-    pub alias: Spanned<AliasData<Id, ArcType<Id>>, BytePos>,
+    pub alias: Spanned<AliasData<Id, AstType<Id>>, BytePos>,
     pub finalized_alias: Option<Alias<Id, ArcType<Id>>>,
 }
 
@@ -217,7 +257,7 @@ impl<Id> TypeBinding<Id> {
 pub struct ValueBinding<Id> {
     pub comment: Option<Comment>,
     pub name: SpannedPattern<Id>,
-    pub typ: ArcType<Id>,
+    pub typ: Option<AstType<Id>>,
     pub args: Vec<SpannedIdent<Id>>,
     pub expr: SpannedExpr<Id>,
 }
@@ -264,7 +304,6 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
                     v.visit_typ(&mut arg.value.typ);
                 }
                 v.visit_expr(&mut bind.expr);
-                v.visit_typ(&mut bind.typ);
             }
             v.visit_expr(body);
         }
@@ -393,7 +432,6 @@ pub fn walk_expr<'a, V: ?Sized + Visitor<'a>>(v: &mut V, e: &'a SpannedExpr<V::I
             for bind in bindings {
                 v.visit_pattern(&bind.name);
                 v.visit_expr(&bind.expr);
-                v.visit_typ(&bind.typ);
             }
             v.visit_expr(body);
         }

@@ -10,6 +10,8 @@ extern crate lalrpop_util;
 extern crate log;
 #[macro_use]
 extern crate quick_error;
+#[macro_use]
+extern crate collect_mac;
 
 use std::cell::RefCell;
 use std::fmt;

@@ -12,7 +12,10 @@ use types::{pretty_print as pretty_type, Prec, Type};
 
 const INDENT: usize = 4;
 
-struct CommaSeparated<'a, F, I, U> where I: Iterator {
+struct CommaSeparated<'a, F, I, U>
+where
+    I: Iterator,
+{
     printer: &'a ExprPrinter<'a>,
     iter: ::std::iter::Peekable<I>,
     f: F,
@@ -215,10 +218,10 @@ impl<'a> ExprPrinter<'a> {
     }
 
     fn comma_sep<F, I, T, U>(&'a self, iter: I, f: F) -> CommaSeparated<'a, F, I::IntoIter, U>
-        where
-            F: FnMut(T) -> DocBuilder<'a, Arena<'a>>,
-            I: IntoIterator<Item = T>,
-            T: ::std::borrow::Borrow<Spanned<U, BytePos>>,
+    where
+        F: FnMut(T) -> DocBuilder<'a, Arena<'a>>,
+        I: IntoIterator<Item = T>,
+        T: ::std::borrow::Borrow<Spanned<U, BytePos>>,
     {
         CommaSeparated {
             printer: self,
@@ -231,10 +234,10 @@ impl<'a> ExprPrinter<'a> {
     }
 
     fn comma_sep_paren<F, I, T, U>(&'a self, iter: I, f: F) -> CommaSeparated<'a, F, I::IntoIter, U>
-        where
-            F: FnMut(T) -> DocBuilder<'a, Arena<'a>>,
-            I: IntoIterator<Item = T>,
-            T: ::std::borrow::Borrow<Spanned<U, BytePos>>,
+    where
+        F: FnMut(T) -> DocBuilder<'a, Arena<'a>>,
+        I: IntoIterator<Item = T>,
+        T: ::std::borrow::Borrow<Spanned<U, BytePos>>,
     {
         CommaSeparated {
             printer: self,
@@ -378,7 +381,7 @@ impl<'a> ExprPrinter<'a> {
                             ];
                             pos::spanned(field.name.span, doc)
                         })),
-                    |spanned| spanned.value
+                    |spanned| spanned.value,
                 );
                 let doc = arena.concat(iter).nest(INDENT);
                 chain![arena;
@@ -410,11 +413,12 @@ impl<'a> ExprPrinter<'a> {
     where
         Id: AsRef<str>,
     {
-        self.pretty_expr_with_shebang_line(expr)
-            .append(self.comments(Span::new(
+        self.pretty_expr_with_shebang_line(expr).append(
+            self.comments(Span::new(
                 expr.span.end,
                 BytePos::from(self.source.src().len()),
-            )))
+            )),
+        )
     }
 
     fn find_shebang_line(&'a self) -> Option<&str> {
@@ -457,13 +461,12 @@ impl<'a> ExprPrinter<'a> {
         let comments = self.comments(Span::new(previous_end, expr.span.start));
         let doc = match expr.value {
             Expr::App(ref func, ref args) => {
-                let arg_iter = once(&**func)
-                    .chain(args)
-                    .tuple_windows()
-                    .map(|(prev, arg)| {
+                let arg_iter = once(&**func).chain(args).tuple_windows().map(
+                    |(prev, arg)| {
                         self.space(Span::new(prev.span.end, arg.span.start))
                             .append(pretty(arg))
-                    });
+                    },
+                );
                 pretty(func)
                     .append(arena.concat(arg_iter).nest(INDENT))
                     .group()
@@ -532,9 +535,9 @@ impl<'a> ExprPrinter<'a> {
                                 arena.text(arg.value.name.as_ref()).append(" ")
                             }))
                         ].group(),
-                        match *bind.typ {
-                            Type::Hole => arena.nil(),
-                            ref typ => arena.text(": ")
+                        match bind.typ {
+                            None => arena.nil(),
+                            Some(ref typ) => arena.text(": ")
                                 .append(pretty_type(arena, typ))
                                 .append(arena.space()),
                         },
@@ -581,8 +584,7 @@ impl<'a> ExprPrinter<'a> {
                 let (x, y) = self.pretty_lambda(previous_end, expr);
                 x.append(y).group()
             }
-            Expr::Tuple { ref elems, .. } => {
-                chain![arena;
+            Expr::Tuple { ref elems, .. } => chain![arena;
                     "(",
                     arena.concat(
                         self.comma_sep_paren(
@@ -593,9 +595,7 @@ impl<'a> ExprPrinter<'a> {
                         ),
                     ),
                     ")"
-                ]
-                .group()
-            }
+                ].group(),
             Expr::TypeBindings(ref binds, ref body) => {
                 let prefixes = once("type").chain(repeat("and"));
                 chain![arena;
@@ -713,74 +713,71 @@ impl<'a> ExprPrinter<'a> {
 
                 let last_field_end = spans().last().map_or(expr.span.start, |s| s.end);
 
-                let record =
-                    arena.concat(self.comma_sep(ordered_iter().map(|either| {
-                        match either {
+                let record = arena
+                    .concat(self.comma_sep(
+                        ordered_iter().map(|either| match either {
                             Either::Left(l) => {
                                 pos::spanned(l.name.span, ident(arena, l.name.value.as_ref()))
                             }
                             Either::Right(r) => {
                                 let id = ident(arena, r.name.value.as_ref());
-                                pos::spanned(r.name.span, match r.value {
-                                    Some(ref expr) => {
-                                        let x = chain![arena;
+                                pos::spanned(
+                                    r.name.span,
+                                    match r.value {
+                                        Some(ref expr) => {
+                                            let x = chain![arena;
                                             id,
                                             self.space_after(r.name.span.end),
                                             "="
                                         ];
-                                        self.hang(x, expr)
-                                    }
-                                    None => id,
-                                })
+                                            self.hang(x, expr)
+                                        }
+                                        None => id,
+                                    },
+                                )
                             }
-                        }
-                    }),
-                    |spanned| spanned.value))
+                        }),
+                        |spanned| spanned.value,
+                    ))
                     .nest(INDENT)
-                    .append(
-                        self.whitespace(Span::new(last_field_end, expr.span.end), line.clone()),
-                    )
+                    .append(self.whitespace(
+                        Span::new(last_field_end, expr.span.end),
+                        line.clone(),
+                    ))
                     .group()
                     .append("}");
                 (arena.text("{"), record)
             }
-                _ => (arena.nil(), self.pretty_expr_(previous_end, expr)),
-            }
+            _ => (arena.nil(), self.pretty_expr_(previous_end, expr)),
         }
+    }
 
-        fn hang<Id>(
-            &'a self,
-            from: DocBuilder<'a, Arena<'a>>,
-            expr: &'a SpannedExpr<Id>,
-        ) -> DocBuilder<'a, Arena<'a>>
-        where
-            Id: AsRef<str>,
-        {
-            let arena = &self.arena;
-            let (arguments, body) = self.pretty_lambda(expr.span.start, expr);
-            match expr.value {
-                Expr::Record { .. } => {
-                    chain![arena;
+    fn hang<Id>(
+        &'a self,
+        from: DocBuilder<'a, Arena<'a>>,
+        expr: &'a SpannedExpr<Id>,
+    ) -> DocBuilder<'a, Arena<'a>>
+    where
+        Id: AsRef<str>,
+    {
+        let arena = &self.arena;
+        let (arguments, body) = self.pretty_lambda(expr.span.start, expr);
+        match expr.value {
+            Expr::Record { .. } => chain![arena;
                         from,
                         self.space_before_(expr.span.start),
                         arguments
-                    ]
-                        .group()
-                        .append(body)
-                        .group()
-                }
-                _ => {
-                    from.append(
-                        chain![arena;
+                    ].group()
+                .append(body)
+                .group(),
+            _ => from.append(
+                chain![arena;
                             self.space_before_(expr.span.start),
                             arguments
-                        ]
-                        .group()
-                        .append(body)
-                        .nest(INDENT)
-                    )
-                    .group()
-                }
-            }
+                        ].group()
+                    .append(body)
+                    .nest(INDENT),
+            ).group(),
         }
     }
+}

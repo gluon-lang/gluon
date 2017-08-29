@@ -222,7 +222,8 @@ impl BuiltinType {
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "Id, T"))]
 pub struct TypeVariable {
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub kind: ArcKind,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub kind: ArcKind,
     pub id: u32,
 }
 
@@ -236,8 +237,10 @@ pub struct TypeVariable {
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(bound(serialize = "Id: SerializeState<SeSeed>")))]
 pub struct Generic<Id> {
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub id: Id,
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub kind: ArcKind,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub id: Id,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub kind: ArcKind,
 }
 
 impl<Id> Generic<Id> {
@@ -258,7 +261,8 @@ impl<Id> Generic<Id> {
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(bound(serialize = "T: SerializeState<SeSeed>")))]
 pub struct Alias<Id, T> {
-    #[cfg_attr(feature = "serde_derive", serde(state))] _typ: T,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    _typ: T,
     _marker: PhantomData<Id>,
 }
 
@@ -419,7 +423,8 @@ where
 #[cfg_attr(feature = "serde_derive",
            serde(bound(serialize = "T: SerializeState<SeSeed>, Id: SerializeState<SeSeed>")))]
 pub struct AliasData<Id, T> {
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub name: Id,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub name: Id,
     /// Arguments to the alias
     #[cfg_attr(feature = "serde_derive", serde(state))]
     pub args: Vec<Generic<Id>>,
@@ -469,8 +474,10 @@ impl<Id, T> Deref for AliasRef<Id, T> {
 #[cfg_attr(feature = "serde_derive",
            serde(bound(serialize = "T: SerializeState<SeSeed>, Id: SerializeState<SeSeed>")))]
 pub struct Field<Id, T = ArcType<Id>> {
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub name: Id,
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub typ: T,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub name: Id,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub typ: T,
 }
 
 /// `SmallVec` used in the `Type::App` constructor to avoid alloacting a `Vec` for every applied
@@ -528,9 +535,15 @@ pub enum Type<Id, T = ArcType<Id>> {
         AppVec<T>,
     ),
     /// Record constructor, of kind `Row -> Type`
-    Record(#[cfg_attr(feature = "serde_derive", serde(state))] T),
+    Record(
+        #[cfg_attr(feature = "serde_derive", serde(state))]
+        T,
+    ),
     /// Variant constructor, of kind `Row -> Type`
-    Variant(#[cfg_attr(feature = "serde_derive", serde(state))] T),
+    Variant(
+        #[cfg_attr(feature = "serde_derive", serde(state))]
+        T,
+    ),
     /// The empty row, of kind `Row`
     EmptyRow,
     /// Row extension, of kind `... -> Row -> Row`
@@ -551,19 +564,25 @@ pub enum Type<Id, T = ArcType<Id>> {
     /// Identifiers are also sometimes used inside aliased types to avoid cycles
     /// in reference counted pointers. This is a bit of a wart at the moment and
     /// _may_ cause spurious unification failures.
-    Ident(#[cfg_attr(feature = "serde_derive", serde(state))] Id),
+    Ident(
+        #[cfg_attr(feature = "serde_derive", serde(state))]
+        Id,
+    ),
     /// An unbound type variable that may be unified with other types. These
     /// will eventually be converted into `Type::Generic`s during generalization.
     Variable(
-        #[cfg_attr(feature = "serde_derive", serde(state))] TypeVariable,
+        #[cfg_attr(feature = "serde_derive", serde(state))]
+        TypeVariable,
     ),
     /// A variable that needs to be instantiated with a fresh type variable
     /// when the binding is refered to.
     Generic(
-        #[cfg_attr(feature = "serde_derive", serde(state))] Generic<Id>,
+        #[cfg_attr(feature = "serde_derive", serde(state))]
+        Generic<Id>,
     ),
     Alias(
-        #[cfg_attr(feature = "serde_derive", serde(state))] AliasRef<Id, T>,
+        #[cfg_attr(feature = "serde_derive", serde(state))]
+        AliasRef<Id, T>,
     ),
 }
 
@@ -608,7 +627,15 @@ where
         S: ?Sized + IdentEnv<Ident = Id>,
         I: IntoIterator<Item = T>,
     {
-        Type::record(
+        T::from(Type::tuple_(symbols, elems))
+    }
+
+    pub fn tuple_<S, I>(symbols: &mut S, elems: I) -> Type<Id, T>
+    where
+        S: ?Sized + IdentEnv<Ident = Id>,
+        I: IntoIterator<Item = T>,
+    {
+        Type::Record(Type::extend_row(
             vec![],
             elems
                 .into_iter()
@@ -620,7 +647,8 @@ where
                     }
                 })
                 .collect(),
-        )
+            Type::empty_row(),
+        ))
     }
 
     pub fn record(types: Vec<Field<Id, Alias<Id, T>>>, fields: Vec<Field<Id, T>>) -> T {
@@ -805,8 +833,7 @@ where
             Type::Hole | Type::Opaque | Type::Builtin(_) | Type::Record(_) | Type::Variant(_) => {
                 Cow::Owned(Kind::typ())
             }
-            Type::EmptyRow |
-            Type::ExtendRow { .. } => Cow::Owned(Kind::row().into()),
+            Type::EmptyRow | Type::ExtendRow { .. } => Cow::Owned(Kind::row().into()),
             Type::Variable(ref var) => Cow::Borrowed(&var.kind),
             Type::Generic(ref gen) => Cow::Borrowed(&gen.kind),
             // FIXME can be another kind
@@ -825,18 +852,14 @@ where
         };
         for _ in 0..applied_args {
             immediate_kind = match immediate_kind {
-                Cow::Borrowed(k) => {
-                    match **k {
-                        Kind::Function(_, ref ret) => Cow::Borrowed(ret),
-                        _ => return Cow::Borrowed(k),
-                    }
-                }
-                Cow::Owned(k) => {
-                    match *k {
-                        Kind::Function(_, ref ret) => Cow::Owned(ret.clone()),
-                        _ => return Cow::Owned(k.clone()),
-                    }
-                }
+                Cow::Borrowed(k) => match **k {
+                    Kind::Function(_, ref ret) => Cow::Borrowed(ret),
+                    _ => return Cow::Borrowed(k),
+                },
+                Cow::Owned(k) => match *k {
+                    Kind::Function(_, ref ret) => Cow::Owned(ret.clone()),
+                    _ => return Cow::Owned(k.clone()),
+                },
             };
         }
         immediate_kind
@@ -1214,7 +1237,10 @@ pub trait ToDoc<'a, A> {
         A: DocAllocator<'a>;
 }
 
-impl<'a, I> ToDoc<'a, Arena<'a>> for ArcType<I> where I: AsRef<str> {
+impl<'a, I> ToDoc<'a, Arena<'a>> for ArcType<I>
+where
+    I: AsRef<str>,
+{
     fn to_doc(&'a self, allocator: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
         dt(Prec::Top, self).pretty(allocator)
     }

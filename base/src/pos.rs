@@ -151,13 +151,13 @@ where
     Pos: PartialOrd,
 {
     fn partial_cmp(&self, other: &Span<Pos>) -> Option<Ordering> {
-        self.start
-            .partial_cmp(&other.start)
-            .and_then(|ord| if ord == Ordering::Equal {
+        self.start.partial_cmp(&other.start).and_then(
+            |ord| if ord == Ordering::Equal {
                 self.end.partial_cmp(&self.end)
             } else {
                 Some(ord)
-            })
+            },
+        )
     }
 }
 
@@ -238,7 +238,7 @@ impl<Pos: Ord> Span<Pos> {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq)]
 pub struct Spanned<T, Pos> {
     pub span: Span<Pos>,
     pub value: T,
