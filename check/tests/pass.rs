@@ -1163,3 +1163,31 @@ type Test = {
     let result = support::typecheck(text);
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn make_category() {
+    let _ = ::env_logger::init();
+    let text = r#"
+type Category (cat : Type -> Type -> Type) = {
+    id : cat a a,
+    compose : cat b c -> cat a b -> cat a c
+}
+
+let category_Function : Category (->) = {
+    id = \x -> x,
+    compose = \f g x -> f (g x)
+}
+
+let make_Category cat : Category cat -> _ =
+    let { id, compose } = cat
+
+    let (<<) : forall a b c . cat b c -> cat a b -> cat a c = compose
+
+    { id, compose, (<<) }
+
+make_Category category_Function
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
