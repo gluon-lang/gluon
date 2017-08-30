@@ -186,7 +186,7 @@ impl<'a> KindCheck<'a> {
                 Ok((gen.kind.clone(), Type::generic(gen)))
             }
             Type::Builtin(builtin_typ) => Ok((self.builtin_kind(builtin_typ), typ.clone())),
-            Type::Forall(ref params, ref typ) => {
+            Type::Forall(ref params, ref typ, _) => {
                 let mut params = params.clone();
                 for param in &mut params {
                     param.kind = self.subs.new_var();
@@ -293,7 +293,7 @@ impl<'a> KindCheck<'a> {
                 }))
             }
             Type::Generic(ref var) => Some(Type::generic(self.finalize_generic(var))),
-            Type::Forall(ref params, ref typ) => Some(Type::forall(
+            Type::Forall(ref params, ref typ, _) => Some(Type::forall(
                 params
                     .iter()
                     .map(|param| self.finalize_generic(&param))

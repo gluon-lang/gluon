@@ -261,7 +261,8 @@ Type_ = {
         Type::Forall(args.into_iter()
                          .map(|id| Generic::new(id, Kind::variable(0)))
                          .collect(),
-                     ty),
+                     ty,
+                     None),
 
     <lhs: AppType> <f: Sp<"->">> <rhs: Type> =>
         Type::App(

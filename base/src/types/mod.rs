@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::fmt;
+use std::hash::Hash;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::marker::PhantomData;
@@ -9,6 +10,7 @@ use pretty::{Arena, DocAllocator, DocBuilder};
 use smallvec::{SmallVec, VecLike};
 
 use ast::{Comment, Commented, IdentEnv};
+use fnv::FnvMap;
 use kind::{ArcKind, Kind, KindEnv};
 use merge::merge;
 use pos::{BytePos, HasSpan, Span};
@@ -227,8 +229,7 @@ impl BuiltinType {
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "Id, T"))]
 pub struct TypeVariable {
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub kind: ArcKind,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub kind: ArcKind,
     pub id: u32,
 }
 
@@ -242,10 +243,8 @@ pub struct TypeVariable {
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(bound(serialize = "Id: SerializeState<SeSeed>")))]
 pub struct Generic<Id> {
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub id: Id,
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub kind: ArcKind,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub id: Id,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub kind: ArcKind,
 }
 
 impl<Id> Generic<Id> {
@@ -266,10 +265,8 @@ impl<Id> Generic<Id> {
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(bound(serialize = "T: SerializeState<SeSeed>")))]
 pub struct Alias<Id, T> {
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    _typ: T,
-    #[cfg_attr(feature = "serde_derive", serde(skip))]
-    _marker: PhantomData<Id>,
+    #[cfg_attr(feature = "serde_derive", serde(state))] _typ: T,
+    #[cfg_attr(feature = "serde_derive", serde(skip))] _marker: PhantomData<Id>,
 }
 
 impl<Id, T> Deref for Alias<Id, T>
@@ -429,8 +426,7 @@ where
 #[cfg_attr(feature = "serde_derive",
            serde(bound(serialize = "T: SerializeState<SeSeed>, Id: SerializeState<SeSeed>")))]
 pub struct AliasData<Id, T> {
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub name: Id,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub name: Id,
     /// The type that is being aliased
     #[cfg_attr(feature = "serde_derive", serde(state))]
     typ: T,
@@ -488,10 +484,8 @@ impl<Id, T> Deref for AliasRef<Id, T> {
 #[cfg_attr(feature = "serde_derive",
            serde(bound(serialize = "T: SerializeState<SeSeed>, Id: SerializeState<SeSeed>")))]
 pub struct Field<Id, T = ArcType<Id>> {
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub name: Id,
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub typ: T,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub name: Id,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub typ: T,
 }
 
 /// `SmallVec` used in the `Type::App` constructor to avoid alloacting a `Vec` for every applied
@@ -538,10 +532,9 @@ pub enum Type<Id, T = ArcType<Id>> {
     Builtin(BuiltinType),
     /// Universally quantified types
     Forall(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        Vec<Generic<Id>>,
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        T,
+        #[cfg_attr(feature = "serde_derive", serde(state))] Vec<Generic<Id>>,
+        #[cfg_attr(feature = "serde_derive", serde(state))] T,
+        #[cfg_attr(feature = "serde_derive", serde(state))] Option<Vec<T>>,
     ),
     /// A type application with multiple arguments. For example,
     /// `Map String Int` would be represented as `App(Map, [String, Int])`.
@@ -550,15 +543,9 @@ pub enum Type<Id, T = ArcType<Id>> {
         #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::seq"))] AppVec<T>,
     ),
     /// Record constructor, of kind `Row -> Type`
-    Record(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        T,
-    ),
+    Record(#[cfg_attr(feature = "serde_derive", serde(state))] T),
     /// Variant constructor, of kind `Row -> Type`
-    Variant(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        T,
-    ),
+    Variant(#[cfg_attr(feature = "serde_derive", serde(state))] T),
     /// The empty row, of kind `Row`
     EmptyRow,
     /// Row extension, of kind `... -> Row -> Row`
@@ -579,25 +566,19 @@ pub enum Type<Id, T = ArcType<Id>> {
     /// Identifiers are also sometimes used inside aliased types to avoid cycles
     /// in reference counted pointers. This is a bit of a wart at the moment and
     /// _may_ cause spurious unification failures.
-    Ident(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        Id,
-    ),
+    Ident(#[cfg_attr(feature = "serde_derive", serde(state))] Id),
     /// An unbound type variable that may be unified with other types. These
     /// will eventually be converted into `Type::Generic`s during generalization.
     Variable(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        TypeVariable,
+        #[cfg_attr(feature = "serde_derive", serde(state))] TypeVariable,
     ),
     /// A variable that needs to be instantiated with a fresh type variable
     /// when the binding is refered to.
     Generic(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        Generic<Id>,
+        #[cfg_attr(feature = "serde_derive", serde(state))] Generic<Id>,
     ),
     Alias(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        AliasRef<Id, T>,
+        #[cfg_attr(feature = "serde_derive", serde(state))] AliasRef<Id, T>,
     ),
 }
 
@@ -621,7 +602,7 @@ where
         if params.is_empty() {
             typ
         } else {
-            T::from(Type::Forall(params, typ))
+            T::from(Type::Forall(params, typ, None))
         }
     }
 
@@ -817,7 +798,7 @@ where
     pub fn params(&self) -> &[Generic<Id>] {
         match *self {
             Type::Alias(ref alias) => alias.typ.params(),
-            Type::Forall(ref params, _) => params,
+            Type::Forall(ref params, _, _) => params,
             _ => &[],
         }
     }
@@ -857,7 +838,7 @@ where
                 Cow::Owned(Kind::typ())
             }
             Type::EmptyRow | Type::ExtendRow { .. } => Cow::Owned(Kind::row().into()),
-            Type::Forall(_, ref typ) => typ.kind_(applied_args),
+            Type::Forall(_, ref typ, _) => typ.kind_(applied_args),
             Type::Variable(ref var) => Cow::Borrowed(&var.kind),
             Type::Generic(ref gen) => Cow::Borrowed(&gen.kind),
             // FIXME can be another kind
@@ -985,9 +966,26 @@ impl<Id> ArcType<Id> {
 
     pub fn remove_forall(&self) -> &ArcType<Id> {
         match **self {
-            Type::Forall(_, ref typ) => typ,
+            Type::Forall(_, ref typ, _) => typ,
             _ => self,
         }
+    }
+
+    pub fn skolemize(&self, named_variables: &mut FnvMap<Id, ArcType<Id>>) -> ArcType<Id>
+    where
+        Id: Clone + Eq + Hash,
+    {
+        let mut typ = self;
+        if let Type::Forall(ref params, ref inner_type, Some(ref vars)) = **typ {
+            for (param, var) in params.iter().zip(vars) {
+                named_variables.insert(param.id.clone(), var.clone());
+            }
+            typ = inner_type;
+        }
+        walk_move_type(typ.clone(), &mut |typ| match **typ {
+            Type::Generic(ref generic) => named_variables.get(&generic.id).cloned(),
+            _ => None,
+        })
     }
 
     pub fn pretty<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>>
@@ -1009,7 +1007,7 @@ impl ArcType {
                 Arc::make_mut(alias.unresolved_type_mut().typ).params_mut()
             }
             */
-            Type::Forall(ref mut params, _) => params,
+            Type::Forall(ref mut params, _, _) => params,
             Type::App(ref mut id, _) => id.params_mut(),
             _ => &mut [],
         }
@@ -1421,7 +1419,7 @@ where
         let doc = match **typ {
             Type::Hole => arena.text("_"),
             Type::Opaque => arena.text("<opaque>"),
-            Type::Forall(ref args, ref typ) => chain![arena;
+            Type::Forall(ref args, ref typ, _) => chain![arena;
                 chain![arena;
                     "forall ",
                     arena.concat(args.iter().map(|arg| {
@@ -1650,7 +1648,7 @@ where
     T: Deref<Target = Type<I, T>>,
 {
     match **typ {
-        Type::Forall(_, ref typ) => f.walk(typ),
+        Type::Forall(_, ref typ, _) => f.walk(typ),
         Type::App(ref t, ref args) => {
             f.walk(t);
             for a in args {
@@ -1776,7 +1774,9 @@ where
     I: Clone,
 {
     match *typ {
-        Type::Forall(ref args, ref typ) => f.visit(typ).map(|typ| Type::forall(args.clone(), typ)),
+        Type::Forall(ref args, ref typ, _) => {
+            f.visit(typ).map(|typ| Type::forall(args.clone(), typ))
+        }
         Type::App(ref id, ref args) => {
             let new_args = walk_move_types(args, |t| f.visit(t));
             merge(id, f.visit(id), args, new_args, Type::app)
@@ -1875,9 +1875,13 @@ where
         ),
         Type::Record(ref row) => U::from(Type::Record(translate_type(cache, row))),
         Type::Variant(ref row) => U::from(Type::Variant(translate_type(cache, row))),
-        Type::Forall(ref params, ref typ) => {
-            U::from(Type::Forall(params.clone(), translate_type(cache, typ)))
-        }
+        Type::Forall(ref params, ref typ, ref skolem) => U::from(Type::Forall(
+            params.clone(),
+            translate_type(cache, typ),
+            skolem
+                .as_ref()
+                .map(|ts| ts.iter().map(|t| translate_type(cache, t)).collect()),
+        )),
         Type::ExtendRow {
             ref types,
             ref fields,
