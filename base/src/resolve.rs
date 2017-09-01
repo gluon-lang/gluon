@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use fnv::FnvMap;
 use types::{AliasData, ArcType, Type, TypeEnv};
 use symbol::Symbol;
 
@@ -47,7 +48,8 @@ where
 /// Expand `typ` if it is an alias that can be expanded and return the expanded type.
 /// Returns `None` if the type is not an alias or the alias could not be expanded.
 pub fn remove_alias(env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType>, Error> {
-    Ok(peek_alias(env, typ)?.and_then(|alias| {
+    let typ = typ.skolemize(&mut FnvMap::default());
+    Ok(peek_alias(env, &typ)?.and_then(|alias| {
         alias.unresolved_type().apply_args(typ.unapplied_args())
     }))
 }
