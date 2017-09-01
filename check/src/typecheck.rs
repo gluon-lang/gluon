@@ -1440,8 +1440,8 @@ impl<'a> Typecheck<'a> {
                     &self.subs,
                     self.symbols.symbols(),
                     state,
-                    &existing_binding.typ.remove_forall(),
-                    symbol_type,
+                    &existing_binding.typ.skolemize(&mut FnvMap::default()),
+                    &symbol_type.skolemize(&mut FnvMap::default()),
                 );
                 constraints = intersection_constraints
                     .into_iter()
