@@ -191,8 +191,7 @@ impl Substitutable for ArcType<Symbol> {
         subs: &Substitution<Self>,
         constraints: &FnvMap<Symbol, Constraints<Self>>,
     ) -> Self {
-        let mut named_variables = FnvMap::default();
-        new_skolem_scope(&mut named_variables, subs, constraints, self)
+        new_skolem_scope(subs, constraints, self)
     }
 }
 
@@ -264,8 +263,7 @@ where
                 l_row
                     .iter()
                     .zip(r_row)
-                    .all(|(l, r)| l.name.name_eq(&r.name)) &&
-                l_rest == r_rest
+                    .all(|(l, r)| l.name.name_eq(&r.name)) && l_rest == r_rest
             {
                 let iter = l_row.iter().zip(r_row);
                 let new_fields = merge::merge_tuple_iter(iter, |l, r| {
@@ -371,7 +369,6 @@ where
             &Type::Forall(ref l_params, ref l, Some(ref l_skolem)),
             &Type::Forall(ref r_params, ref r, Some(ref r_skolem)),
         ) => {
-            let subs = unifier.state.subs;
             let mut variables = FnvMap::default();
 
             variables.extend(
@@ -394,8 +391,6 @@ where
             l.zip_match(&r, unifier)
         }
         (&Type::Forall(ref l_params, ref l, Some(ref l_skolem)), _) => {
-            let subs = unifier.state.subs;
-
             let mut variables = l_params
                 .iter()
                 .zip(l_skolem)
@@ -406,8 +401,6 @@ where
         }
 
         (_, &Type::Forall(ref r_params, ref r, Some(ref r_skolem))) => {
-            let subs = unifier.state.subs;
-
             let mut variables = r_params
                 .iter()
                 .zip(r_skolem)
@@ -774,31 +767,30 @@ where
 
 /// Replaces all instances `Type::Generic` in `typ` with fresh type variables (`Type::Variable`)
 pub fn new_skolem_scope(
-    named_variables: &mut FnvMap<Symbol, ArcType>,
     subs: &Substitution<ArcType>,
     constraints: &FnvMap<Symbol, Constraints<ArcType>>,
     typ: &ArcType,
 ) -> ArcType {
-    let mut skolem = Vec::new();
-    let mut forall_params = None;
-    if let Type::Forall(ref params, ref inner_type, None) = **typ {
-        forall_params = Some(params);
-        for param in params {
-            let constraint = constraints.get(&param.id).cloned();
-            let var = subs.new_constrained_var(
-                constraint.map(|constraint| (param.id.clone(), constraint.clone())),
-            );
-            skolem.push(var.clone());
-            named_variables.insert(param.id.clone(), var);
-        }
-        ArcType::from(Type::Forall(
-            params.clone(),
-            inner_type.clone(),
-            Some(skolem),
-        ))
-    } else {
-        typ.clone()
-    }
+    types::walk_move_type(
+        typ.clone(),
+        &mut |typ| if let Type::Forall(ref params, ref inner_type, None) = **typ {
+            let mut skolem = Vec::new();
+            for param in params {
+                let constraint = constraints.get(&param.id).cloned();
+                let var = subs.new_constrained_var(
+                    constraint.map(|constraint| (param.id.clone(), constraint.clone())),
+                );
+                skolem.push(var.clone());
+            }
+            Some(ArcType::from(Type::Forall(
+                params.clone(),
+                inner_type.clone(),
+                Some(skolem),
+            )))
+        } else {
+            None
+        },
+    )
 }
 
 pub fn skolemize(named_variables: &mut FnvMap<Symbol, ArcType>, mut typ: &ArcType) -> ArcType {
@@ -819,7 +811,7 @@ pub fn merge_signature(
     variables: &mut ScopedMap<Symbol, ArcType>,
     level: u32,
     state: State,
-    l: &ArcType,
+    mut l: &ArcType,
     r: &ArcType,
 ) -> Result<ArcType, Errors<Error<Symbol>>> {
     let mut unifier = UnifierState {
@@ -831,6 +823,17 @@ pub fn merge_signature(
             level: level,
         },
     };
+
+    // Bring the variables into scope so that the unbound variables on the right hand side
+    // gets named the same as the left hand side
+    if let Type::Forall(ref params, ref l_inner, _) = **l {
+        unifier.unifier.variables.extend(
+            params
+                .iter()
+                .map(|param| (param.id.clone(), Type::generic(param.clone()))),
+        );
+        l = l_inner;
+    }
 
     let typ = unifier.try_match(l, r);
     if unifier.unifier.errors.has_errors() {
@@ -869,16 +872,6 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
         match (&**l, &**r) {
             (&Type::Hole, _) => Ok(None),
             (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => Ok(None),
-            // Bring the variables into scope so that the unbound variables on the right hand side
-            // gets named the same as the left hand side
-            (&Type::Forall(ref params, ref l, _), _) => {
-                unifier.unifier.variables.extend(params.iter().map(|param| (param.id.clone(), Type::generic(param.clone()))));
-                let result = l.zip_match(r, unifier);
-                for param in params {
-                    unifier.unifier.variables.remove(&param.id);
-                }
-                result
-            }
             (&Type::Generic(ref l_gen), &Type::Variable(ref r_var)) => {
                 let left = match unifier.unifier.variables.get(&l_gen.id) {
                     Some(generic_bound_var) => {
