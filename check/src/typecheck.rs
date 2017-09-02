@@ -804,6 +804,7 @@ impl<'a> Typecheck<'a> {
                         expr_typ = self.unify(&record_type, expr_typ)?;
                     }
                 }
+                expr_typ = self.skolemize(&expr_typ);
                 let record = self.remove_aliases(expr_typ.clone());
                 match *record {
                     Type::Variable(_) | Type::Record(_) => {
