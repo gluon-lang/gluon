@@ -895,6 +895,27 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
                 subs.union(|| unifier.state.fresh(), r_var, left)?;
                 Ok(None)
             }
+            // If we merge a forall with just a variable there is a chance that the variable
+            // may be unified again later on. If that happens we should treat it as if it was
+            // bound to the `forall` with a "skolem scope".
+            //
+            // ```gluon
+            // let make_Category cat : Category cat -> _ =
+            //     let { id, compose } = cat
+            // 
+            //     let (<<): forall a b c . cat b c -> cat a b -> cat a c = compose
+            //     // If we didn't add a new skolem scope before inserting the union the user of
+            //     // `compose` here would unify `Forall(params, .., None)` with the `forall` from
+            //     // the `Category` in the first signature which can't unify. By calling
+            //     // `new_skolem_scope` however `compose` will look as if it was loaded via
+            //     // `Typecheck::find`
+            //     { id, compose, (<<) }
+            // ```
+            (&Type::Forall(_, _, None), &Type::Variable(ref r)) => {
+                let l = new_skolem_scope(subs, &FnvMap::default(), l);
+                subs.union(|| unifier.state.fresh(), r, &l)?;
+                Ok(None)
+            }
             (_, &Type::Variable(ref r)) => {
                 subs.union(|| unifier.state.fresh(), r, l)?;
                 Ok(None)
