@@ -1435,14 +1435,17 @@ impl<'a> Typecheck<'a> {
                     self.subs.real(&existing_binding.typ),
                     self.subs.real(symbol_type)
                 );
-                let state = unify_type::State::new(&self.environment, &self.subs);
-                let (intersection_constraints, result) = unify::intersection(
-                    &self.subs,
-                    self.symbols.symbols(),
-                    state,
-                    &existing_binding.typ.skolemize(&mut FnvMap::default()),
-                    &symbol_type.skolemize(&mut FnvMap::default()),
-                );
+                let level = self.subs.var_id();
+                let (intersection_constraints, mut result) = {
+                    let state = unify_type::State::new(&self.environment, &self.subs);
+                    unify::intersection(
+                        &self.subs,
+                        self.symbols.symbols(),
+                        state,
+                        &existing_binding.typ.skolemize(&mut FnvMap::default()),
+                        &symbol_type.skolemize(&mut FnvMap::default()),
+                    )
+                };
                 constraints = intersection_constraints
                     .into_iter()
                     .map(|((l, r), name)| {
@@ -1464,7 +1467,8 @@ impl<'a> Typecheck<'a> {
                         )
                     })
                     .collect();
-                let result = Type::forall(
+
+                result = Type::forall(
                     constraints
                         .iter()
                         .map(|constraint| {
@@ -1587,6 +1591,12 @@ impl<'a> Typecheck<'a> {
                         self.subs.insert(var.id, gen.clone());
                         Some(gen)
                     }
+                }
+                Type::Forall(_, _, Some(_)) => {
+                    let typ = self.skolemize(typ);
+                    Some(types::walk_move_type(typ, &mut |typ: &ArcType| {
+                        self.finish_type_(level, generic, i, typ)
+                    }))
                 }
                 Type::ExtendRow {
                     ref types,
