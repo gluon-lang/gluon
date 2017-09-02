@@ -1425,13 +1425,18 @@ impl<'a> Typecheck<'a> {
                     self.subs.real(&existing_binding.typ),
                     self.subs.real(symbol_type)
                 );
+                let existing_type = new_skolem_scope(
+                    &self.subs,
+                    &existing_binding.constraints,
+                    &existing_binding.typ,
+                );
                 let (intersection_constraints, mut result) = {
                     let state = unify_type::State::new(&self.environment, &self.subs);
                     unify::intersection(
                         &self.subs,
                         self.symbols.symbols(),
                         state,
-                        &existing_binding.typ.skolemize(&mut FnvMap::default()),
+                        &existing_type,
                         &symbol_type.skolemize(&mut FnvMap::default()),
                     )
                 };
@@ -1440,6 +1445,18 @@ impl<'a> Typecheck<'a> {
                     .map(|((l, r), name)| {
                         let constraints = match *l {
                             Type::Generic(ref gen) => existing_binding.constraints.get(&gen.id),
+                            // Since we call `new_skolem_scope` we may find a variable as the constraint
+                            // but we really need to return the constraints bound by the generic
+                            // instantiating it
+                            Type::Variable(ref constraint_var) => match *existing_type {
+                                Type::Forall(ref params, _, Some(ref vars)) => vars.iter()
+                                    .position(|var| match **var {
+                                        Type::Variable(ref var) => var.id == constraint_var.id,
+                                        _ => unreachable!(),
+                                    })
+                                    .and_then(|i| existing_binding.constraints.get(&params[i].id)),
+                                _ => None,
+                            },
                             _ => None,
                         };
                         (
