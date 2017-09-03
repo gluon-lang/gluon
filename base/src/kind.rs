@@ -154,6 +154,12 @@ impl Deref for ArcKind {
     }
 }
 
+impl From<Kind> for ArcKind {
+    fn from(kind: Kind) -> ArcKind {
+        ArcKind(Arc::new(kind))
+    }
+}
+
 impl fmt::Debug for ArcKind {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         self.0.fmt(f)

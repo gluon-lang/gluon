@@ -186,7 +186,7 @@ impl Compiler {
     /// Parse `expr_str`, returning an expression if successful
     pub fn parse_expr(
         &mut self,
-        type_cache: &TypeCache<Symbol>,
+        type_cache: &TypeCache<Symbol, ArcType>,
         file: &str,
         expr_str: &str,
     ) -> StdResult<SpannedExpr<Symbol>, InFile<parser::Error>> {
@@ -197,7 +197,7 @@ impl Compiler {
     /// Parse `input`, returning an expression if successful
     pub fn parse_partial_expr(
         &mut self,
-        type_cache: &TypeCache<Symbol>,
+        type_cache: &TypeCache<Symbol, ArcType>,
         file: &str,
         expr_str: &str,
     ) -> StdResult<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, InFile<parser::Error>)> {
@@ -496,7 +496,7 @@ impl Compiler {
 
     fn include_implicit_prelude(
         &mut self,
-        type_cache: &TypeCache<Symbol>,
+        type_cache: &TypeCache<Symbol, ArcType>,
         name: &str,
         expr: &mut SpannedExpr<Symbol>,
     ) {

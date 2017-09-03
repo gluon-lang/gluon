@@ -3,6 +3,8 @@
 //! string interner and therefore also garbage collector needs to compiled before the parser.
 #![doc(html_root_url = "https://docs.rs/gluon_parser/0.5.0")] // # GLUON
 
+#[macro_use]
+extern crate collect_mac;
 extern crate gluon_base as base;
 extern crate itertools;
 extern crate lalrpop_util;
@@ -10,8 +12,6 @@ extern crate lalrpop_util;
 extern crate log;
 #[macro_use]
 extern crate quick_error;
-#[macro_use]
-extern crate collect_mac;
 
 use std::cell::RefCell;
 use std::fmt;
@@ -36,7 +36,7 @@ mod infix;
 mod layout;
 mod token;
 
-fn new_ident<Id>(type_cache: &TypeCache<Id>, name: Id) -> TypedIdent<Id> {
+fn new_ident<Id>(type_cache: &TypeCache<Id, ArcType<Id>>, name: Id) -> TypedIdent<Id> {
     TypedIdent {
         name: name,
         typ: type_cache.hole(),
@@ -299,7 +299,7 @@ macro_rules! layout {
 
 pub fn parse_partial_expr<Id>(
     symbols: &mut IdentEnv<Ident = Id>,
-    type_cache: &TypeCache<Id>,
+    type_cache: &TypeCache<Id, ArcType<Id>>,
     input: &str,
 ) -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, ParseErrors)>
 where
@@ -349,7 +349,7 @@ where
 
 pub fn parse_expr(
     symbols: &mut IdentEnv<Ident = Symbol>,
-    type_cache: &TypeCache<Symbol>,
+    type_cache: &TypeCache<Symbol, ArcType>,
     input: &str,
 ) -> Result<SpannedExpr<Symbol>, ParseErrors> {
     parse_partial_expr(symbols, type_cache, input).map_err(|t| t.1)

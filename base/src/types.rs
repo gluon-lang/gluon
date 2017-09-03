@@ -92,26 +92,29 @@ impl<'a, T: ?Sized + PrimitiveEnv> PrimitiveEnv for &'a T {
     }
 }
 
-type_cache! { TypeCache(Id) { ArcType<Id>, Type }
+type_cache! { TypeCache(Id, T) { T, Type }
     hole opaque int byte float string char
     function_builtin array_builtin unit empty_row
 }
 
-impl<Id> TypeCache<Id> {
-    pub fn function<I>(&self, args: I, ret: ArcType<Id>) -> ArcType<Id>
+impl<Id, T> TypeCache<Id, T>
+where
+    T: From<Type<Id, T>> + Clone,
+{
+    pub fn function<I>(&self, args: I, ret: T) -> T
     where
-        I: IntoIterator<Item = ArcType<Id>>,
-        I::IntoIter: DoubleEndedIterator<Item = ArcType<Id>>,
+        I: IntoIterator<Item = T>,
+        I::IntoIter: DoubleEndedIterator<Item = T>,
     {
         args.into_iter().rev().fold(ret, |body, arg| {
             Type::app(self.function_builtin(), collect![arg, body])
         })
     }
 
-    pub fn tuple<S, I>(&self, symbols: &mut S, elems: I) -> ArcType<Id>
+    pub fn tuple<S, I>(&self, symbols: &mut S, elems: I) -> T
     where
         S: ?Sized + IdentEnv<Ident = Id>,
-        I: IntoIterator<Item = ArcType<Id>>,
+        I: IntoIterator<Item = T>,
     {
         let fields: Vec<_> = elems
             .into_iter()
@@ -124,25 +127,21 @@ impl<Id> TypeCache<Id> {
             })
             .collect();
         if fields.is_empty() {
-            self.unit.clone()
+            self.unit()
         } else {
             self.record(vec![], fields)
         }
     }
 
-    pub fn variant(&self, fields: Vec<Field<Id, ArcType<Id>>>) -> ArcType<Id> {
+    pub fn variant(&self, fields: Vec<Field<Id, T>>) -> T {
         Type::poly_variant(fields, self.empty_row())
     }
 
-    pub fn record(
-        &self,
-        types: Vec<Field<Id, Alias<Id, ArcType<Id>>>>,
-        fields: Vec<Field<Id, ArcType<Id>>>,
-    ) -> ArcType<Id> {
+    pub fn record(&self, types: Vec<Field<Id, Alias<Id, T>>>, fields: Vec<Field<Id, T>>) -> T {
         Type::poly_record(types, fields, self.empty_row())
     }
 
-    pub fn builtin_type(&self, typ: BuiltinType) -> ArcType<Id> {
+    pub fn builtin_type(&self, typ: BuiltinType) -> T {
         match typ {
             BuiltinType::String => self.string(),
             BuiltinType::Byte => self.byte(),
@@ -154,7 +153,7 @@ impl<Id> TypeCache<Id> {
         }
     }
 
-    pub fn array(&self, typ: ArcType<Id>) -> ArcType<Id> {
+    pub fn array(&self, typ: T) -> T {
         Type::app(self.array_builtin(), collect![typ])
     }
 }
@@ -222,8 +221,7 @@ impl BuiltinType {
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "Id, T"))]
 pub struct TypeVariable {
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub kind: ArcKind,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub kind: ArcKind,
     pub id: u32,
 }
 
@@ -237,10 +235,8 @@ pub struct TypeVariable {
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(bound(serialize = "Id: SerializeState<SeSeed>")))]
 pub struct Generic<Id> {
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub id: Id,
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub kind: ArcKind,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub id: Id,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub kind: ArcKind,
 }
 
 impl<Id> Generic<Id> {
@@ -261,8 +257,7 @@ impl<Id> Generic<Id> {
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(bound(serialize = "T: SerializeState<SeSeed>")))]
 pub struct Alias<Id, T> {
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    _typ: T,
+    #[cfg_attr(feature = "serde_derive", serde(state))] _typ: T,
     _marker: PhantomData<Id>,
 }
 
@@ -423,8 +418,7 @@ where
 #[cfg_attr(feature = "serde_derive",
            serde(bound(serialize = "T: SerializeState<SeSeed>, Id: SerializeState<SeSeed>")))]
 pub struct AliasData<Id, T> {
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub name: Id,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub name: Id,
     /// Arguments to the alias
     #[cfg_attr(feature = "serde_derive", serde(state))]
     pub args: Vec<Generic<Id>>,
@@ -474,10 +468,8 @@ impl<Id, T> Deref for AliasRef<Id, T> {
 #[cfg_attr(feature = "serde_derive",
            serde(bound(serialize = "T: SerializeState<SeSeed>, Id: SerializeState<SeSeed>")))]
 pub struct Field<Id, T = ArcType<Id>> {
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub name: Id,
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub typ: T,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub name: Id,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub typ: T,
 }
 
 /// `SmallVec` used in the `Type::App` constructor to avoid alloacting a `Vec` for every applied
@@ -535,15 +527,9 @@ pub enum Type<Id, T = ArcType<Id>> {
         AppVec<T>,
     ),
     /// Record constructor, of kind `Row -> Type`
-    Record(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        T,
-    ),
+    Record(#[cfg_attr(feature = "serde_derive", serde(state))] T),
     /// Variant constructor, of kind `Row -> Type`
-    Variant(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        T,
-    ),
+    Variant(#[cfg_attr(feature = "serde_derive", serde(state))] T),
     /// The empty row, of kind `Row`
     EmptyRow,
     /// Row extension, of kind `... -> Row -> Row`
@@ -564,25 +550,19 @@ pub enum Type<Id, T = ArcType<Id>> {
     /// Identifiers are also sometimes used inside aliased types to avoid cycles
     /// in reference counted pointers. This is a bit of a wart at the moment and
     /// _may_ cause spurious unification failures.
-    Ident(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        Id,
-    ),
+    Ident(#[cfg_attr(feature = "serde_derive", serde(state))] Id),
     /// An unbound type variable that may be unified with other types. These
     /// will eventually be converted into `Type::Generic`s during generalization.
     Variable(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        TypeVariable,
+        #[cfg_attr(feature = "serde_derive", serde(state))] TypeVariable,
     ),
     /// A variable that needs to be instantiated with a fresh type variable
     /// when the binding is refered to.
     Generic(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        Generic<Id>,
+        #[cfg_attr(feature = "serde_derive", serde(state))] Generic<Id>,
     ),
     Alias(
-        #[cfg_attr(feature = "serde_derive", serde(state))]
-        AliasRef<Id, T>,
+        #[cfg_attr(feature = "serde_derive", serde(state))] AliasRef<Id, T>,
     ),
 }
 
@@ -1642,5 +1622,74 @@ where
             }
             None => (),
         }
+    }
+}
+
+pub fn translate_type<Id, T, U>(cache: &TypeCache<Id, U>, typ: &Type<Id, T>) -> U
+where
+    T: Deref<Target = Type<Id, T>>,
+    U: From<Type<Id, U>> + Clone,
+    Id: Clone,
+{
+    fn translate_alias<Id, T, U>(
+        cache: &TypeCache<Id, U>,
+        alias: &AliasData<Id, T>,
+    ) -> AliasData<Id, U>
+    where
+        T: Deref<Target = Type<Id, T>>,
+        U: From<Type<Id, U>> + Clone,
+        Id: Clone,
+    {
+        AliasData::new(
+            alias.name.clone(),
+            alias.args.clone(),
+            translate_type(cache, &alias.typ),
+        )
+    }
+    match *typ {
+        Type::App(ref f, ref args) => Type::app(
+            translate_type(cache, f),
+            args.iter().map(|typ| translate_type(cache, typ)).collect(),
+        ),
+        Type::Record(ref row) => U::from(Type::Record(translate_type(cache, row))),
+        Type::Variant(ref row) => U::from(Type::Variant(translate_type(cache, row))),
+        Type::ExtendRow {
+            ref types,
+            ref fields,
+            ref rest,
+        } => Type::extend_row(
+            types
+                .iter()
+                .map(|field| {
+                    Field {
+                        name: field.name.clone(),
+                        typ: Alias::from(translate_alias(cache, &field.typ)),
+                    }
+                })
+                .collect(),
+            fields
+                .iter()
+                .map(|field| {
+                    Field {
+                        name: field.name.clone(),
+                        typ: translate_type(cache, typ),
+                    }
+                })
+                .collect(),
+            translate_type(cache, rest),
+        ),
+        Type::Hole => cache.hole(),
+        Type::Opaque => cache.opaque(),
+        Type::Builtin(ref builtin) => cache.builtin_type(builtin.clone()),
+        Type::Variable(ref var) => Type::variable(var.clone()),
+        Type::Generic(ref gen) => Type::generic(gen.clone()),
+        Type::Ident(ref id) => Type::ident(id.clone()),
+        // This is not quite correct but currently only `AstType` -> `ArcType` translations are needed
+        // so this will not be used
+        Type::Alias(ref alias) => U::from(Type::Alias(AliasRef {
+            index: 0,
+            group: Arc::new(vec![translate_alias(cache, alias)]),
+        })),
+        Type::EmptyRow => cache.empty_row(),
     }
 }

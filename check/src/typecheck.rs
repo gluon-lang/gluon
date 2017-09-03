@@ -254,7 +254,7 @@ pub struct Typecheck<'a> {
     errors: Errors<SpannedTypeError<Symbol>>,
     /// Type variables `let test: a -> b` (`a` and `b`)
     type_variables: ScopedMap<Symbol, ArcType>,
-    type_cache: TypeCache<Symbol>,
+    type_cache: TypeCache<Symbol, ArcType>,
     kind_cache: KindCache,
 }
 
@@ -267,7 +267,7 @@ impl<'a> Typecheck<'a> {
         module: String,
         symbols: &'a mut Symbols,
         environment: &'a (PrimitiveEnv + 'a),
-        type_cache: TypeCache<Symbol>,
+        type_cache: TypeCache<Symbol, ArcType>,
     ) -> Typecheck<'a> {
         let symbols = SymbolModule::new(module, symbols);
         let kind_cache = KindCache::new();
@@ -1346,11 +1346,7 @@ impl<'a> Typecheck<'a> {
                                     .flat_map(|x| x.iter())
                                     .cloned()
                                     .chain(Some(r))
-                                    .chain(if constraints.is_none() {
-                                        Some(l)
-                                    } else {
-                                        None
-                                    })
+                                    .chain(if constraints.is_none() { Some(l) } else { None })
                                     .collect::<Vec<_>>(),
                             ),
                         )

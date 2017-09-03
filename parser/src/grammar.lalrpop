@@ -6,14 +6,14 @@ use base::ast::{Alternative, Array, AstType, Comment, Expr, ExprField, Lambda, L
     PatternField, SpannedExpr, SpannedIdent, TypeBinding, TypedIdent, ValueBinding};
 use base::kind::{ArcKind, Kind};
 use base::pos::{self, BytePos, Spanned};
-use base::types::{AliasData, BuiltinType, Field, Generic, Type, TypeCache};
+use base::types::{AliasData, ArcType, BuiltinType, Field, Generic, Type, TypeCache};
 
 use ::new_ident;
 use token::Token;
 
 use {Error, ErrorEnv, FieldExpr, FieldPattern, MutIdentEnv};
 
-grammar<'input, 'env, Id>(src: &'input str, type_cache: &TypeCache<Id>, env: MutIdentEnv<'env, Id>, errors: ErrorEnv<'env, 'input>)
+grammar<'input, 'env, Id>(src: &'input str, type_cache: &TypeCache<Id, ArcType<Id>>, env: MutIdentEnv<'env, Id>, errors: ErrorEnv<'env, 'input>)
     where Id: Clone;
 
 extern {

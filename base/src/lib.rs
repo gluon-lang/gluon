@@ -5,7 +5,6 @@
 #[macro_use]
 extern crate collect_mac;
 extern crate itertools;
-extern crate log;
 extern crate pretty;
 #[macro_use]
 extern crate quick_error;
@@ -25,21 +24,27 @@ macro_rules! type_cache {
 
         #[derive(Debug, Clone)]
         pub struct $name<$($args),*> {
-            $(pub $id : $typ),+
+            $(pub $id : $typ,)+
+            _marker: ::std::marker::PhantomData<( $($args),* )>,
         }
 
-        impl<$($args),*> Default for $name<$($args),*> {
+        impl<$($args),*> Default for $name<$($args),*>
+            where $typ: From<$inner_type<$($args,)*>> + Clone,
+        {
             fn default() -> Self {
                 $name::new()
             }
         }
 
-        impl<$($args),*> $name<$($args),*> {
+        impl<$($args),*> $name<$($args),*>
+            where $typ: From<$inner_type<$($args,)*>> + Clone,
+        {
             pub fn new() -> Self {
                 $name {
                     $(
                         $id : $inner_type::$id(),
                     )+
+                    _marker: ::std::marker::PhantomData,
                 }
             }
 

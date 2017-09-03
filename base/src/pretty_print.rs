@@ -40,9 +40,9 @@ where
             self.i += 1;
             chain![arena;
                 if i == 0 && self.parens {
-                    self.printer.space_before_indented(span.start)
+                    self.printer.space_beforeindented(span.start)
                 } else {
-                    self.printer.space_before_(span.start)
+                    self.printer.space_before(span.start)
                 },
                 (self.f)(item),
                 if self.iter.peek().is_some() {
@@ -263,18 +263,15 @@ impl<'a> ExprPrinter<'a> {
         }
     }
 
-    fn space_before<T>(&'a self, spanned: &Spanned<T, BytePos>) -> DocBuilder<'a, Arena<'a>> {
-        self.space_before_(spanned.span.start)
-    }
-    fn space_before_(&'a self, pos: BytePos) -> DocBuilder<'a, Arena<'a>> {
-        let doc = self.space_before_indented(pos);
+    fn space_before(&'a self, pos: BytePos) -> DocBuilder<'a, Arena<'a>> {
+        let doc = self.space_beforeindented(pos);
         if doc.1 == self.arena.nil().1 {
             self.arena.space()
         } else {
             doc
         }
     }
-    fn space_before_indented(&'a self, pos: BytePos) -> DocBuilder<'a, Arena<'a>> {
+    fn space_beforeindented(&'a self, pos: BytePos) -> DocBuilder<'a, Arena<'a>> {
         let arena = &self.arena;
         let mut doc = arena.nil();
         let mut comments = 0;
@@ -413,12 +410,11 @@ impl<'a> ExprPrinter<'a> {
     where
         Id: AsRef<str>,
     {
-        self.pretty_expr_with_shebang_line(expr).append(
-            self.comments(Span::new(
+        self.pretty_expr_with_shebang_line(expr)
+            .append(self.comments(Span::new(
                 expr.span.end,
                 BytePos::from(self.source.src().len()),
-            )),
-        )
+            )))
     }
 
     fn find_shebang_line(&'a self) -> Option<&str> {
@@ -461,12 +457,13 @@ impl<'a> ExprPrinter<'a> {
         let comments = self.comments(Span::new(previous_end, expr.span.start));
         let doc = match expr.value {
             Expr::App(ref func, ref args) => {
-                let arg_iter = once(&**func).chain(args).tuple_windows().map(
-                    |(prev, arg)| {
+                let arg_iter = once(&**func)
+                    .chain(args)
+                    .tuple_windows()
+                    .map(|(prev, arg)| {
                         self.space(Span::new(prev.span.end, arg.span.start))
                             .append(pretty(arg))
-                    },
-                );
+                    });
                 pretty(func)
                     .append(arena.concat(arg_iter).nest(INDENT))
                     .group()
@@ -661,7 +658,7 @@ impl<'a> ExprPrinter<'a> {
                 ];
                 let (next_lambda, body) = self.pretty_lambda(lambda.body.span.start, &lambda.body);
                 if next_lambda.1 == arena.nil().1 {
-                    let decl = decl.append(self.space_before_(lambda.body.span.start));
+                    let decl = decl.append(self.space_before(lambda.body.span.start));
                     (decl, body)
                 } else {
                     (decl.append(arena.space()).append(next_lambda), body)
@@ -740,10 +737,9 @@ impl<'a> ExprPrinter<'a> {
                         |spanned| spanned.value,
                     ))
                     .nest(INDENT)
-                    .append(self.whitespace(
-                        Span::new(last_field_end, expr.span.end),
-                        line.clone(),
-                    ))
+                    .append(
+                        self.whitespace(Span::new(last_field_end, expr.span.end), line.clone()),
+                    )
                     .group()
                     .append("}");
                 (arena.text("{"), record)
@@ -765,14 +761,14 @@ impl<'a> ExprPrinter<'a> {
         match expr.value {
             Expr::Record { .. } => chain![arena;
                         from,
-                        self.space_before_(expr.span.start),
+                        self.space_before(expr.span.start),
                         arguments
                     ].group()
                 .append(body)
                 .group(),
             _ => from.append(
                 chain![arena;
-                            self.space_before_(expr.span.start),
+                            self.space_before(expr.span.start),
                             arguments
                         ].group()
                     .append(body)
