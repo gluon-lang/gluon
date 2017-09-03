@@ -493,7 +493,10 @@ let make_Foldable f =
     let { foldr, foldl } = f
     let { (+) } = num_Int
 
-    let fold_map monoid f : Monoid m -> (a -> m) -> _ a -> m =
+    let concat monoid : Monoid m -> _ m -> m =
+        foldr monoid.append monoid.empty
+
+    let concat_map monoid f : Monoid m -> (a -> m) -> _ a -> m =
         foldr (f >> monoid.append) monoid.empty
 
     let find pred : (a -> Bool) -> _ a -> Option a =
@@ -527,7 +530,19 @@ let make_Foldable f =
     let count : _ a -> Int =
         foldl (\acc _ -> acc + 1) 0
 
-    { foldr, foldl, fold_map, find, find_map, all, any, elem, notElem, count }
+    {
+        foldr,
+        foldl,
+        concat,
+        concat_map,
+        find,
+        find_map,
+        all,
+        any,
+        elem,
+        notElem,
+        count
+    }
 
 let foldable_Option : Foldable Option = {
     foldr = \f z o ->
