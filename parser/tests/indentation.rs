@@ -1,5 +1,4 @@
 extern crate env_logger;
-extern crate log;
 
 extern crate gluon_base as base;
 extern crate gluon_parser as parser;

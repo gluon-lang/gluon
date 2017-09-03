@@ -19,10 +19,10 @@ fn function_type() {
         Expr::LetBindings(ref bindings, _) => {
             assert_eq!(
                 bindings[0].typ,
-                Type::function(
+                Some(Type::function(
                     vec![typ("Int")],
                     Type::function(vec![typ("Float")], typ("String")),
-                )
+                ),)
             );
         }
         _ => panic!("Expected let"),

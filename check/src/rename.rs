@@ -299,12 +299,14 @@ pub fn rename(
                         if !is_recursive {
                             self.visit_expr(&mut bind.expr);
                         }
-                        self.new_pattern(&bind.typ, &mut bind.name);
+                        self.new_pattern(&bind.resolved_type, &mut bind.name);
                     }
                     if is_recursive {
                         for bind in bindings {
                             self.env.stack.enter_scope();
-                            for (typ, arg) in types::arg_iter(&bind.typ).zip(&mut bind.args) {
+                            for (typ, arg) in
+                                types::arg_iter(&bind.resolved_type).zip(&mut bind.args)
+                            {
                                 arg.value.name =
                                     self.stack_var(arg.value.name.clone(), expr.span, typ.clone());
                             }

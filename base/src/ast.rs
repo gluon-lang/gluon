@@ -258,6 +258,7 @@ pub struct ValueBinding<Id> {
     pub comment: Option<Comment>,
     pub name: SpannedPattern<Id>,
     pub typ: Option<AstType<Id>>,
+    pub resolved_type: ArcType<Id>,
     pub args: Vec<SpannedIdent<Id>>,
     pub expr: SpannedExpr<Id>,
 }
@@ -303,6 +304,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
                 for arg in &mut bind.args {
                     v.visit_typ(&mut arg.value.typ);
                 }
+                v.visit_typ(&mut bind.resolved_type);
                 v.visit_expr(&mut bind.expr);
             }
             v.visit_expr(body);

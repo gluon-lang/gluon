@@ -925,6 +925,13 @@ impl<Id> ArcType<Id> {
     pub fn strong_count(typ: &ArcType<Id>) -> usize {
         Arc::strong_count(&typ.typ)
     }
+
+    pub fn pretty<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>>
+    where
+        Id: AsRef<str>,
+    {
+        top(self).pretty(&Printer::new(arena, &Source::new("")))
+    }
 }
 
 impl<Id> From<Type<Id, ArcType<Id>>> for ArcType<Id> {
@@ -1625,27 +1632,28 @@ where
     }
 }
 
+pub fn translate_alias<Id, T, U>(
+    cache: &TypeCache<Id, U>,
+    alias: &AliasData<Id, T>,
+) -> AliasData<Id, U>
+where
+    T: Deref<Target = Type<Id, T>>,
+    U: From<Type<Id, U>> + Clone,
+    Id: Clone,
+{
+    AliasData::new(
+        alias.name.clone(),
+        alias.args.clone(),
+        translate_type(cache, &alias.typ),
+    )
+}
+
 pub fn translate_type<Id, T, U>(cache: &TypeCache<Id, U>, typ: &Type<Id, T>) -> U
 where
     T: Deref<Target = Type<Id, T>>,
     U: From<Type<Id, U>> + Clone,
     Id: Clone,
 {
-    fn translate_alias<Id, T, U>(
-        cache: &TypeCache<Id, U>,
-        alias: &AliasData<Id, T>,
-    ) -> AliasData<Id, U>
-    where
-        T: Deref<Target = Type<Id, T>>,
-        U: From<Type<Id, U>> + Clone,
-        Id: Clone,
-    {
-        AliasData::new(
-            alias.name.clone(),
-            alias.args.clone(),
-            translate_type(cache, &alias.typ),
-        )
-    }
     match *typ {
         Type::App(ref f, ref args) => Type::app(
             translate_type(cache, f),
@@ -1672,7 +1680,7 @@ where
                 .map(|field| {
                     Field {
                         name: field.name.clone(),
-                        typ: translate_type(cache, typ),
+                        typ: translate_type(cache, &field.typ),
                     }
                 })
                 .collect(),

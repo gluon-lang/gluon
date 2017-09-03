@@ -164,7 +164,7 @@ TypeBinding: TypeBinding<Id> = {
         TypeBinding {
             comment: None,
             name: id.clone(),
-            alias: pos::spanned(row_span, AliasData::new(id.value, params, Type::variant(row))),
+            alias: pos::spanned(row_span, AliasData::new(id.value.clone(), params, Type::variant(row))),
             finalized_alias: None,
         }
     },
@@ -173,7 +173,7 @@ TypeBinding: TypeBinding<Id> = {
         TypeBinding {
             comment: None,
             name: id.clone(),
-            alias: pos::spanned(body.span, AliasData::new(id.value, params, body.value)),
+            alias: pos::spanned(body.span, AliasData::new(id.value.clone(), params, body.value)),
             finalized_alias: None,
         }
     },
@@ -383,6 +383,7 @@ ValueBinding: ValueBinding<Id> = {
             comment: comment,
             name: name,
             typ: typ,
+            resolved_type: type_cache.hole(),
             args: vec![],
             expr: body,
         },
@@ -392,6 +393,7 @@ ValueBinding: ValueBinding<Id> = {
             comment,
             name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
             typ: typ,
+            resolved_type: type_cache.hole(),
             args,
             expr: body,
         },

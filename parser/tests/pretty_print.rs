@@ -1,7 +1,6 @@
 #[macro_use(assert_diff)]
 extern crate difference;
 extern crate env_logger;
-extern crate pretty;
 #[macro_use]
 extern crate pretty_assertions;
 

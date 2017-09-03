@@ -1093,14 +1093,22 @@ impl<'a> Typecheck<'a> {
         self.enter_scope();
         self.type_variables.enter_scope();
         let level = self.subs.var_id();
+
+        for bind in bindings.iter_mut() {
+            if let Some(ref typ) = bind.typ {
+                bind.resolved_type = types::translate_type(&self.type_cache, typ);
+            }
+        }
+
         let is_recursive = bindings.iter().all(|bind| !bind.args.is_empty());
         // When the definitions are allowed to be mutually recursive
         if is_recursive {
             for bind in bindings.iter_mut() {
                 let typ = {
-                    bind.typ = self.create_unifiable_signature(bind.typ.clone());
-                    self.kindcheck(&mut bind.typ)?;
-                    self.instantiate_signature(&bind.typ)
+                    bind.resolved_type =
+                        self.create_unifiable_signature(bind.resolved_type.clone());
+                    self.kindcheck(&mut bind.resolved_type)?;
+                    self.instantiate_signature(&bind.resolved_type)
                 };
                 self.typecheck_pattern(&mut bind.name, typ);
                 if let Expr::Lambda(ref mut lambda) = bind.expr.value {
@@ -1117,18 +1125,18 @@ impl<'a> Typecheck<'a> {
             // Functions which are declared as `let f x = ...` are allowed to be self
             // recursive
             let mut typ = if bind.args.is_empty() {
-                self.instantiate_signature(&bind.typ);
-                bind.typ = self.create_unifiable_signature(bind.typ.clone());
-                self.kindcheck(&mut bind.typ)?;
+                self.instantiate_signature(&bind.resolved_type);
+                bind.resolved_type = self.create_unifiable_signature(bind.resolved_type.clone());
+                self.kindcheck(&mut bind.resolved_type)?;
                 self.typecheck(&mut bind.expr)
             } else {
-                let function_typ = self.instantiate(&bind.typ);
+                let function_typ = self.instantiate(&bind.resolved_type);
                 self.typecheck_lambda(function_typ, &mut bind.args, &mut bind.expr)
             };
 
             debug!("let {:?} : {}", bind.name, typ);
 
-            typ = self.merge_signature(bind.name.span, level, &bind.typ, typ);
+            typ = self.merge_signature(bind.name.span, level, &bind.resolved_type, typ);
 
 
             if !is_recursive {
@@ -1145,17 +1153,17 @@ impl<'a> Typecheck<'a> {
             for (found_typ, bind) in types.into_iter().zip(bindings.iter_mut()) {
                 // Merge the variable we bound to the name and the type inferred
                 // in the expression
-                self.unify_span(bind.name.span, &bind.typ, found_typ);
+                self.unify_span(bind.name.span, &bind.resolved_type, found_typ);
             }
         }
         // Once all variables inside the let has been unified we can quantify them
         debug!("Generalize {}", level);
-        for bind in bindings {
+        for bind in bindings.iter_mut() {
             self.generalize_variables(level, &mut bind.args, &mut bind.expr);
-            if let Some(typ) = self.finish_type(level, &bind.typ) {
-                bind.typ = typ;
+            if let Some(typ) = self.finish_type(level, &bind.resolved_type) {
+                bind.resolved_type = typ;
             }
-            self.finish_pattern(level, &mut bind.name, &bind.typ);
+            self.finish_pattern(level, &mut bind.name, &bind.resolved_type);
         }
         debug!("Typecheck `in`");
         self.type_variables.exit_scope();
@@ -1169,6 +1177,7 @@ impl<'a> Typecheck<'a> {
     ) -> TcResult<()> {
         self.enter_scope();
 
+        let mut resolved_aliases = Vec::new();
         // Rename the types so they get a name which is distinct from types from other
         // modules
         for bind in bindings.iter_mut() {
@@ -1178,11 +1187,13 @@ impl<'a> Typecheck<'a> {
                 .insert(bind.alias.value.name.clone(), new.clone());
             // Rename the aliase's name to its global name
             bind.alias.value.name = new;
+
+            resolved_aliases.push(types::translate_alias(&self.type_cache, &bind.alias.value));
         }
 
-        for bind in bindings.iter_mut() {
-            *bind.alias.value.unresolved_type_mut() =
-                self.create_unifiable_signature(bind.alias.value.unresolved_type().clone());
+        for (alias, bind) in resolved_aliases.iter_mut().zip(bindings.iter_mut()) {
+            *alias.unresolved_type_mut() =
+                self.create_unifiable_signature(alias.unresolved_type().clone());
         }
 
         {
@@ -1191,39 +1202,33 @@ impl<'a> Typecheck<'a> {
 
             // Setup kind variables for all holes and insert the types in the
             // the type expression into the kindcheck environment
-            for bind in bindings.iter_mut() {
+            for (alias, bind) in resolved_aliases.iter_mut().zip(bindings.iter_mut()) {
                 // Create the kind for this binding
                 // Test a b : 2 -> 1 -> Type
                 // and bind the same variables to the arguments of the type binding
                 // ('a' and 'b' in the example)
                 let mut id_kind = check.type_kind();
-                for generic in bind.alias.value.args.iter_mut().rev() {
+                for generic in alias.args.iter_mut().rev() {
                     check.instantiate_kinds(&mut generic.kind);
                     id_kind = Kind::function(generic.kind.clone(), id_kind);
                 }
-                check.add_local(bind.alias.value.name.clone(), id_kind);
+                check.add_local(alias.name.clone(), id_kind);
             }
 
             // Kindcheck all the types in the environment
-            for bind in bindings.iter_mut() {
-                check.set_variables(&bind.alias.value.args);
-                check.kindcheck_type(bind.alias.value.unresolved_type_mut())?;
+            for alias in resolved_aliases.iter_mut() {
+                check.set_variables(&alias.args);
+                check.kindcheck_type(alias.unresolved_type_mut())?;
             }
 
             // All kinds are now inferred so replace the kinds store in the AST
-            for bind in bindings.iter_mut() {
-                let alias = &mut bind.alias.value;
+            for alias in resolved_aliases.iter_mut() {
                 *alias.unresolved_type_mut() = check.finalize_type(alias.unresolved_type().clone());
                 for arg in &mut alias.args {
                     *arg = check.finalize_generic(arg);
                 }
             }
-            let alias_group = Alias::group(
-                bindings
-                    .iter()
-                    .map(|bind| bind.alias.value.clone())
-                    .collect(),
-            );
+            let alias_group = Alias::group(resolved_aliases);
             for (bind, alias) in bindings.iter_mut().zip(alias_group) {
                 bind.finalized_alias = Some(alias);
             }
