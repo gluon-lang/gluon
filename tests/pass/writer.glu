@@ -2,6 +2,7 @@ let prelude  = import! "std/prelude.glu"
 let { Writer }  = import! "std/writer.glu"
 let { Test, run, writer, assert, assert_ieq, assert_feq }  = import! "std/test.glu"
 let { (*>) } = prelude.make_Applicative writer.applicative
+let { foldl } = prelude.foldable_List
 
 let tests =
     assert_ieq 1 1
@@ -9,4 +10,4 @@ let tests =
         *> assert_ieq 1 1
         *> assert_feq 1.0 10.0
 
-assert (prelude.foldl (\acc _ -> 1 + acc) 0 tests.writer == 2)
+assert (foldl (\acc _ -> 1 + acc) 0 tests.writer == 2)

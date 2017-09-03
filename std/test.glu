@@ -1,10 +1,11 @@
 let string = import! "std/string.glu"
 and { Writer, make = make_Writer, tell } = import! "std/writer.glu"
 and prelude = import! "std/prelude.glu"
-and { Show, Num, Eq, Option, List, Applicative, Monad, Monoid, foldl } = prelude
+and { Show, Num, Eq, Option, List, Applicative, Monad, Monoid } = prelude
 and { (+) } = prelude.num_Int
 and { (==) } = prelude.eq_Int
 and { (<) } = prelude.make_Ord prelude.ord_Int
+and { foldl } = prelude.foldable_List
 
 let (++) = string.monoid.append
 
@@ -25,7 +26,7 @@ and assert_seq = assert_eq string.show string.eq
 
 let run test : Test a -> () =
     match test.writer with
-    | Cons _ _ -> error (prelude.foldl (\acc err -> acc ++ "\n" ++ err) "" test.writer)
+    | Cons _ _ -> error (foldl (\acc err -> acc ++ "\n" ++ err) "" test.writer)
     | Nil -> ()
 
 { Test, writer, assert, assert_eq, assert_ieq, assert_feq, assert_seq, run }
