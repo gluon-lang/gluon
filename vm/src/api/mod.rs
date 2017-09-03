@@ -18,7 +18,7 @@ use std::marker::PhantomData;
 use std::ops::Deref;
 use std::result::Result as StdResult;
 
-use futures::{Async, BoxFuture, Future};
+use futures::{Async, Future};
 
 pub use value::Userdata;
 
@@ -135,10 +135,9 @@ impl<'a> Data<'a> {
         match self.0 {
             DataInner::Tag(_) => None,
             DataInner::Data(data) => unsafe {
-                thread
-                    .lookup_field(data, name)
-                    .ok()
-                    .map(|v| Variants::with_root(v, data))
+                thread.lookup_field(data, name).ok().map(|v| {
+                    Variants::with_root(v, data)
+                })
             },
         }
     }
@@ -561,9 +560,9 @@ impl VmType for bool {
     type Type = Self;
     fn make_type(vm: &Thread) -> ArcType {
         (*vm.global_env()
-            .get_env()
-            .find_type_info("std.types.Bool")
-            .unwrap())
+             .get_env()
+             .find_type_info("std.types.Bool")
+             .unwrap())
             .clone()
             .into_type()
     }
@@ -816,11 +815,13 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T> {
 impl<'vm, T: Getable<'vm>> Getable<'vm> for Option<T> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<Option<T>> {
         match value.as_ref() {
-            ValueRef::Data(data) => if data.tag() == 0 {
-                Some(None)
-            } else {
-                T::from_value(vm, data.get_variants(0).unwrap()).map(Some)
-            },
+            ValueRef::Data(data) => {
+                if data.tag() == 0 {
+                    Some(None)
+                } else {
+                    T::from_value(vm, data.get_variants(0).unwrap()).map(Some)
+                }
+            }
             _ => None,
         }
     }
@@ -869,11 +870,13 @@ impl<'vm, T: Pushable<'vm>, E: Pushable<'vm>> Pushable<'vm> for StdResult<T, E> 
 impl<'vm, T: Getable<'vm>, E: Getable<'vm>> Getable<'vm> for StdResult<T, E> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<StdResult<T, E>> {
         match value.as_ref() {
-            ValueRef::Data(data) => match data.tag() {
-                0 => E::from_value(vm, data.get_variants(0).unwrap()).map(Err),
-                1 => T::from_value(vm, data.get_variants(0).unwrap()).map(Ok),
-                _ => None,
-            },
+            ValueRef::Data(data) => {
+                match data.tag() {
+                    0 => E::from_value(vm, data.get_variants(0).unwrap()).map(Err),
+                    1 => T::from_value(vm, data.get_variants(0).unwrap()).map(Ok),
+                    _ => None,
+                }
+            }
             _ => None,
         }
     }
@@ -1789,12 +1792,12 @@ impl<'vm, T, $($args,)* R> Function<T, fn($($args),*) -> R>
           R: VmType + for<'x> Getable<'x> + Send + 'static,
 {
     #[allow(non_snake_case)]
-    pub fn call_async(&'vm mut self $(, $args: $args)*) -> BoxFuture<R, Error> {
+    pub fn call_async(&'vm mut self $(, $args: $args)*) -> Box<Future<Item = R, Error = Error> + Send + 'static> {
         use futures::{failed, finished};
         use futures::future::Either;
         use thread::Execute;
 
-        match self.call_first($($args),*) {
+        Box::new(match self.call_first($($args),*) {
             Ok(ok) => {
                 Either::A(match ok {
                     Async::Ready(value) => Either::A(finished(value)),
@@ -1807,7 +1810,7 @@ impl<'vm, T, $($args,)* R> Function<T, fn($($args),*) -> R>
             Err(err) => {
                 Either::B(failed(err))
             }
-        }.boxed()
+        })
     }
 }
     )

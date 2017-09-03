@@ -1,4 +1,5 @@
 let { Bool, Option, Result, Ordering } = import! "std/types.glu"
+
 /// A linked list type
 type List a = | Nil | Cons a (List a)
 

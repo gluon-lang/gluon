@@ -1,4 +1,3 @@
-extern crate gluon_vm;
 extern crate gluon;
 use gluon::new_vm;
 use gluon::vm::thread::{Thread, Status};
