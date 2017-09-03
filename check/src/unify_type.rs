@@ -377,7 +377,7 @@ where
                     .zip(l_skolem)
                     .map(|(param, var)| (param.id.clone(), var.clone())),
             );
-            let l = skolemize(&mut variables, l);
+            let l = l.skolemize(&mut variables);
 
             variables.clear();
             variables.extend(
@@ -386,28 +386,22 @@ where
                     .zip(r_skolem)
                     .map(|(param, var)| (param.id.clone(), var.clone())),
             );
-            let r = skolemize(&mut variables, r);
+            let r = r.skolemize(&mut variables);
 
             l.zip_match(&r, unifier)
         }
-        (&Type::Forall(ref l_params, ref l, Some(ref l_skolem)), _) => {
-            let mut variables = l_params
-                .iter()
-                .zip(l_skolem)
-                .map(|(param, var)| (param.id.clone(), var.clone()))
-                .collect();
-            let l = skolemize(&mut variables, l);
-            unifier.try_match_res(&l, &actual)
+        (&Type::Forall(_, ref l, _), _) => {
+            let l = l.skolemize(&mut FnvMap::default());
+            unifier
+                .try_match_res(&l, &actual)
+                .map(|opt_type| Some(opt_type.unwrap_or_else(|| l.clone())))
         }
 
-        (_, &Type::Forall(ref r_params, ref r, Some(ref r_skolem))) => {
-            let mut variables = r_params
-                .iter()
-                .zip(r_skolem)
-                .map(|(param, var)| (param.id.clone(), var.clone()))
-                .collect();
-            let r = skolemize(&mut variables, r);
-            unifier.try_match_res(expected, &r)
+        (_, &Type::Forall(_, ref r, Some(_))) => {
+            let r = r.skolemize(&mut FnvMap::default());
+            unifier
+                .try_match_res(expected, &r)
+                .map(|opt_type| Some(opt_type.unwrap_or_else(|| r.clone())))
         }
 
         // Successful unification!
@@ -793,25 +787,12 @@ pub fn new_skolem_scope(
     )
 }
 
-pub fn skolemize(named_variables: &mut FnvMap<Symbol, ArcType>, mut typ: &ArcType) -> ArcType {
-    if let Type::Forall(ref params, ref inner_type, Some(ref vars)) = **typ {
-        for (param, var) in params.iter().zip(vars) {
-            named_variables.insert(param.id.clone(), var.clone());
-        }
-        typ = inner_type;
-    }
-    types::walk_move_type(typ.clone(), &mut |typ| match **typ {
-        Type::Generic(ref generic) => named_variables.get(&generic.id).cloned(),
-        _ => None,
-    })
-}
-
 pub fn merge_signature(
     subs: &Substitution<ArcType>,
     variables: &mut ScopedMap<Symbol, ArcType>,
     level: u32,
     state: State,
-    mut l: &ArcType,
+    l: &ArcType,
     r: &ArcType,
 ) -> Result<ArcType, Errors<Error<Symbol>>> {
     let mut unifier = UnifierState {
@@ -823,17 +804,6 @@ pub fn merge_signature(
             level: level,
         },
     };
-
-    // Bring the variables into scope so that the unbound variables on the right hand side
-    // gets named the same as the left hand side
-    if let Type::Forall(ref params, ref l_inner, _) = **l {
-        unifier.unifier.variables.extend(
-            params
-                .iter()
-                .map(|param| (param.id.clone(), Type::generic(param.clone()))),
-        );
-        l = l_inner;
-    }
 
     let typ = unifier.try_match(l, r);
     if unifier.unifier.errors.has_errors() {
@@ -902,7 +872,7 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
             // ```gluon
             // let make_Category cat : Category cat -> _ =
             //     let { id, compose } = cat
-            // 
+            //
             //     let (<<): forall a b c . cat b c -> cat a b -> cat a c = compose
             //     // If we didn't add a new skolem scope before inserting the union the user of
             //     // `compose` here would unify `Forall(params, .., None)` with the `forall` from
@@ -911,10 +881,9 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
             //     // `Typecheck::find`
             //     { id, compose, (<<) }
             // ```
-            (&Type::Forall(_, _, None), &Type::Variable(ref r)) => {
+            (&Type::Forall(_, _, None), _) => {
                 let l = new_skolem_scope(subs, &FnvMap::default(), l);
-                subs.union(|| unifier.state.fresh(), r, &l)?;
-                Ok(None)
+                unifier.try_match_res(&l, r)
             }
             (_, &Type::Variable(ref r)) => {
                 subs.union(|| unifier.state.fresh(), r, l)?;

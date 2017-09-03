@@ -242,6 +242,21 @@ pub struct TypeVariable {
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "T"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(bound(serialize = "Id: SerializeState<SeSeed>")))]
+pub struct Skolem<Id> {
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub name: Id,
+    pub id: u32,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub kind: ArcKind,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
+#[cfg_attr(feature = "serde_derive",
+           serde(bound(deserialize = "
+           Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
+#[cfg_attr(feature = "serde_derive", serde(de_parameters = "T"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(bound(serialize = "Id: SerializeState<SeSeed>")))]
 pub struct Generic<Id> {
     #[cfg_attr(feature = "serde_derive", serde(state))] pub id: Id,
     #[cfg_attr(feature = "serde_derive", serde(state))] pub kind: ArcKind,
@@ -580,6 +595,9 @@ pub enum Type<Id, T = ArcType<Id>> {
     Alias(
         #[cfg_attr(feature = "serde_derive", serde(state))] AliasRef<Id, T>,
     ),
+    Skolem(
+        #[cfg_attr(feature = "serde_derive", serde(state))] Skolem<Id>,
+    ),
 }
 
 impl<Id, T> Type<Id, T>
@@ -705,6 +723,10 @@ where
         T::from(Type::Generic(typ))
     }
 
+    pub fn skolem(typ: Skolem<Id>) -> T {
+        T::from(Type::Skolem(typ))
+    }
+
     pub fn variable(typ: TypeVariable) -> T {
         T::from(Type::Variable(typ))
     }
@@ -802,30 +824,6 @@ where
             _ => &[],
         }
     }
-}
-
-impl<T> Type<Symbol, T>
-where
-    T: Deref<Target = Type<Symbol, T>>,
-{
-    /// Returns the name of `self`
-    /// Example:
-    /// Option a => Option
-    /// Int => Int
-    pub fn name(&self) -> Option<&SymbolRef> {
-        if let Some(id) = self.alias_ident() {
-            return Some(&**id);
-        }
-
-        match *self {
-            Type::App(ref id, _) => match **id {
-                Type::Builtin(b) => Some(b.symbol()),
-                _ => None,
-            },
-            Type::Builtin(b) => Some(b.symbol()),
-            _ => None,
-        }
-    }
 
     pub fn kind(&self) -> Cow<ArcKind> {
         self.kind_(0)
@@ -840,6 +838,7 @@ where
             Type::EmptyRow | Type::ExtendRow { .. } => Cow::Owned(Kind::row().into()),
             Type::Forall(_, ref typ, _) => typ.kind_(applied_args),
             Type::Variable(ref var) => Cow::Borrowed(&var.kind),
+            Type::Skolem(ref skolem) => Cow::Borrowed(&skolem.kind),
             Type::Generic(ref gen) => Cow::Borrowed(&gen.kind),
             // FIXME can be another kind
             Type::Ident(_) => Cow::Owned(Kind::typ()),
@@ -868,6 +867,30 @@ where
             };
         }
         immediate_kind
+    }
+}
+
+impl<T> Type<Symbol, T>
+where
+    T: Deref<Target = Type<Symbol, T>>,
+{
+    /// Returns the name of `self`
+    /// Example:
+    /// Option a => Option
+    /// Int => Int
+    pub fn name(&self) -> Option<&SymbolRef> {
+        if let Some(id) = self.alias_ident() {
+            return Some(&**id);
+        }
+
+        match *self {
+            Type::App(ref id, _) => match **id {
+                Type::Builtin(b) => Some(b.symbol()),
+                _ => None,
+            },
+            Type::Builtin(b) => Some(b.symbol()),
+            _ => None,
+        }
     }
 }
 
@@ -972,6 +995,47 @@ impl<Id> ArcType<Id> {
     }
 
     pub fn skolemize(&self, named_variables: &mut FnvMap<Id, ArcType<Id>>) -> ArcType<Id>
+    where
+        Id: Clone + Eq + Hash,
+    {
+        self.skolemize_(named_variables)
+            .unwrap_or_else(|| self.clone())
+    }
+
+    fn skolemize_(&self, named_variables: &mut FnvMap<Id, ArcType<Id>>) -> Option<ArcType<Id>>
+    where
+        Id: Clone + Eq + Hash,
+    {
+        visit_type_opt(
+            self,
+            &mut ControlVisitation(|mut typ: &ArcType<Id>| match **typ {
+                Type::Generic(ref generic) => named_variables.get(&generic.id).cloned(),
+                _ => {
+                    if let Type::Forall(ref params, ref inner_type, Some(ref vars)) = **typ {
+                        let iter = params.iter().zip(vars).map(|(param, var)| match **var {
+                            Type::Variable(ref var) => (
+                                param.id.clone(),
+                                Type::skolem(Skolem {
+                                    name: param.id.clone(),
+                                    id: var.id,
+                                    kind: var.kind.clone(),
+                                }),
+                            ),
+                            _ => unreachable!(),
+                        });
+                        named_variables.extend(iter);
+                        typ = inner_type;
+                    }
+                    walk_move_type_opt(
+                        typ,
+                        &mut ControlVisitation(|typ: &ArcType<Id>| typ.skolemize_(named_variables)),
+                    )
+                }
+            }),
+        )
+    }
+
+    pub fn instantiate_generics(&self, named_variables: &mut FnvMap<Id, ArcType<Id>>) -> ArcType<Id>
     where
         Id: Clone + Eq + Hash,
     {
@@ -1431,6 +1495,7 @@ where
                 top(typ).pretty(printer)
             ],
             Type::Variable(ref var) => arena.text(format!("{}", var.id)),
+            Type::Skolem(ref skolem) => arena.text(skolem.name.as_ref()),
             Type::Generic(ref gen) => arena.text(gen.id.as_ref()),
             Type::App(ref t, ref args) => match self.typ.as_function() {
                 Some(_) => self.pretty_function(printer).nest(INDENT),
@@ -1674,6 +1739,7 @@ where
         Type::Builtin(_) |
         Type::Variable(_) |
         Type::Generic(_) |
+        Type::Skolem(_) |
         Type::Ident(_) |
         Type::Alias(_) |
         Type::EmptyRow => (),
@@ -1801,6 +1867,7 @@ where
         Type::Opaque |
         Type::Builtin(_) |
         Type::Variable(_) |
+        Type::Skolem(_) |
         Type::Generic(_) |
         Type::Ident(_) |
         Type::Alias(_) |
@@ -1882,6 +1949,11 @@ where
                 .as_ref()
                 .map(|ts| ts.iter().map(|t| translate_type(cache, t)).collect()),
         )),
+        Type::Skolem(ref skolem) => U::from(Type::Skolem(Skolem {
+            name: skolem.name.clone(),
+            id: skolem.id.clone(),
+            kind: skolem.kind.clone(),
+        })),
         Type::ExtendRow {
             ref types,
             ref fields,

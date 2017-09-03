@@ -26,7 +26,7 @@ use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
 use substitution::{self, Constraints, Substitution};
 use rename::RenameError;
 use unify::{self, Error as UnifyError};
-use unify_type::{self, new_skolem_scope, skolemize, Error as UnifyTypeError};
+use unify_type::{self, new_skolem_scope, Error as UnifyTypeError};
 
 /// Type representing a single error when checking a type
 #[derive(Debug, PartialEq)]
@@ -667,6 +667,7 @@ impl<'a> Typecheck<'a> {
                 for arg in args.iter_mut() {
                     let f = self.type_cache
                         .function(once(self.subs.new_var()), self.subs.new_var());
+                    func_type = self.instantiate_generics(&func_type);
                     func_type = self.unify(&f, func_type)?;
                     func_type = match func_type.as_function() {
                         Some((arg_ty, ret_ty)) => {
@@ -722,6 +723,9 @@ impl<'a> Typecheck<'a> {
                         }
                         _ => {
                             op.value.typ = self.find(&op.value.name)?;
+                            println!("{}", op.value.typ);
+                            op.value.typ = self.instantiate_generics(&op.value.typ);
+                            println!("{}", op.value.typ);
                             let func_type = self.type_cache
                                 .function(vec![lhs_type, rhs_type], self.subs.new_var());
                             let ret = self.unify(&op.value.typ, func_type)?
@@ -803,7 +807,7 @@ impl<'a> Typecheck<'a> {
                         expr_typ = self.unify(&record_type, expr_typ)?;
                     }
                 }
-                expr_typ = self.skolemize(&expr_typ);
+                expr_typ = self.instantiate_generics(&expr_typ);
                 let record = self.remove_aliases(expr_typ.clone());
                 match *record {
                     Type::Variable(_) | Type::Record(_) => {
@@ -1123,7 +1127,7 @@ impl<'a> Typecheck<'a> {
         let len = args.len();
         match args.split_first_mut() {
             Some((head, tail)) => {
-                let typ = self.skolemize(&typ);
+                let typ = self.instantiate_generics(&typ);
                 match typ.as_function() {
                     Some((arg, ret)) => {
                         self.typecheck_pattern(head, arg.clone());
@@ -1410,20 +1414,35 @@ impl<'a> Typecheck<'a> {
     }
 
     fn intersect_type(&mut self, level: u32, symbol: &Symbol, symbol_type: &ArcType) {
-        let mut typ;
+        fn no_type_variables(typ: &ArcType) -> bool {
+            let mut no_variables = true;
+            types::visit_type_opt(typ, &mut |typ: &ArcType| {
+                if let Type::Variable(_) = **typ {
+                    no_variables = false;
+                }
+                None
+            });
+            no_variables
+        }
+        let typ;
         let mut constraints = FnvMap::default();
+        let mut symbol_type = symbol_type.clone();
+        self.generalize_type(level, &mut symbol_type);
         {
             let existing_types = self.environment
                 .stack
                 .get_all(symbol)
                 .expect("Symbol is not in scope");
-            if existing_types.len() >= 2 {
+            // Only allow overloading for bindings whose types which do not contain type variables
+            // It might be possible to lift this restriction but currently it causes problems
+            // which I am not sure how to solve
+            if existing_types.len() >= 2 && no_type_variables(&symbol_type) {
                 let existing_binding = &existing_types[existing_types.len() - 2];
                 debug!(
                     "Intersect `{}`\n{} ∩ {}",
                     symbol,
                     self.subs.real(&existing_binding.typ),
-                    self.subs.real(symbol_type)
+                    self.subs.real(&symbol_type)
                 );
                 let existing_type = new_skolem_scope(
                     &self.subs,
@@ -1496,7 +1515,6 @@ impl<'a> Typecheck<'a> {
                 typ = symbol_type.clone()
             }
         }
-        self.generalize_type(level, &mut typ);
         let bind = self.environment.stack.get_mut(symbol).unwrap();
         bind.constraints = constraints;
         bind.typ = typ;
@@ -1648,11 +1666,13 @@ impl<'a> Typecheck<'a> {
     fn instantiate_signature(&mut self, typ: &ArcType) -> ArcType {
         let typ = self.instantiate(typ);
         // Put all new generic variable names into scope
-        for (generic, variable) in &self.named_variables {
-            if self.type_variables.get(generic).is_none() {
-                self.type_variables
-                    .insert(generic.clone(), variable.clone());
-            }
+        if let Type::Forall(ref params, _, Some(ref vars)) = *typ {
+            self.type_variables.extend(
+                params
+                    .iter()
+                    .zip(vars)
+                    .map(|(param, var)| (param.id.clone(), var.clone())),
+            );
         }
         typ
     }
@@ -1849,7 +1869,12 @@ impl<'a> Typecheck<'a> {
 
     fn skolemize(&mut self, typ: &ArcType) -> ArcType {
         self.named_variables.clear();
-        skolemize(&mut self.named_variables, typ)
+        typ.skolemize(&mut self.named_variables)
+    }
+
+    fn instantiate_generics(&mut self, typ: &ArcType) -> ArcType {
+        self.named_variables.clear();
+        typ.instantiate_generics(&mut self.named_variables)
     }
 
     fn instantiate(&mut self, typ: &ArcType) -> ArcType {

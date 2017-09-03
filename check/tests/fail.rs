@@ -360,9 +360,10 @@ fn declared_generic_variables_may_not_make_outer_bindings_more_general() {
     let text = r#"
 let make m =
     let m2: m = m
+    let _ = m2 1
     m
 
-make
+make 2
 "#;
     let result = support::typecheck(text);
     assert!(result.is_err());

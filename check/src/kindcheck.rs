@@ -180,6 +180,7 @@ impl<'a> KindCheck<'a> {
     fn kindcheck(&mut self, typ: &ArcType) -> Result<(ArcKind, ArcType)> {
         match **typ {
             Type::Hole | Type::Opaque | Type::Variable(_) => Ok((self.subs.new_var(), typ.clone())),
+            Type::Skolem(_) => panic!("ICE: Attempted to kindcheck a skolem variable"),
             Type::Generic(ref gen) => {
                 let mut gen = gen.clone();
                 gen.kind = self.find(&gen.id)?;

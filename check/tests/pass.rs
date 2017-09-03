@@ -162,7 +162,7 @@ let f: a -> b -> a = \x y -> x in f 1.0 ()
 ";
     let (expr, result) = support::typecheck_expr(text);
     let expected = Ok(typ("Float"));
-    let expr_expected = Type::function(vec![typ("a"), typ("b")], typ("a"));
+    let expr_expected = Type::function(vec![typ("a"), typ("a0")], typ("a"));
 
     assert_req!(result, expected);
     match expr.value {
@@ -715,7 +715,7 @@ in
     ];
     let expected = Ok(Type::record(vec![], fields));
 
-    assert_eq!(result.map(support::close_record), expected);
+    assert_req!(result.map(support::close_record), expected);
 }
 
 #[test]

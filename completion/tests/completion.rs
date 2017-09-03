@@ -40,9 +40,6 @@ fn suggest_types(s: &str, pos: BytePos) -> Result<Vec<Suggestion>, ()> {
     let env = MockEnv::new();
 
     let (mut expr, result) = support::typecheck_partial_expr(s);
-    if let Err(err) = result {
-        println!("{}", err);
-    }
     let mut vec = completion::suggest(&env, &mut expr, pos);
     vec.sort_by(|l, r| l.name.cmp(&r.name));
     Ok(vec)
@@ -211,7 +208,7 @@ r.x
 }
 
 #[test]
-fn parens() {
+fn parens_expr() {
     let _ = env_logger::init();
 
     let text = r#"
