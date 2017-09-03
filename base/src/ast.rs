@@ -2,7 +2,7 @@
 use std::marker::PhantomData;
 use std::ops::Deref;
 
-use pos::{self, BytePos, Span, Spanned};
+use pos::{self, BytePos, HasSpan, Span, Spanned};
 use symbol::Symbol;
 use types::{self, Alias, AliasData, ArcType, Type, TypeEnv};
 
@@ -79,6 +79,13 @@ impl<Id> From<Type<Id, AstType<Id>>> for AstType<Id> {
         Self::from(pos::spanned2(0.into(), 0.into(), typ))
     }
 }
+
+impl<Id> HasSpan for AstType<Id> {
+    fn span(&self) -> Span<BytePos> {
+        self._typ.1.span
+    }
+}
+
 
 impl<Id> AstType<Id> {
     pub fn with_comment(comment: Comment, typ: Spanned<Type<Id, AstType<Id>>, BytePos>) -> Self {

@@ -110,15 +110,15 @@ fn dont_lose_information_in_literals() {
 #[test]
 fn preserve_comment_between_let_in() {
     let expr = r#"
-// test
+// test1
 let x = 1
-// test
-type Test = Int
-// test
-1
 // test2
+type Test = Int
+// test3
+1
+// test4
 "#;
-    assert_eq!(&format_expr(expr).unwrap(), expr);
+    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
 }
 
 #[test]
@@ -131,7 +131,7 @@ fn preserve_whitespace_in_record() {
     bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbby = 2
 }
 "#;
-    assert_eq!(&format_expr(expr).unwrap(), expr);
+    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
 }
 
 
@@ -188,4 +188,26 @@ let {
 123
 "#;
     assert_eq!(&format_expr(expr).unwrap(), expr);
+}
+
+#[test]
+fn preserve_comments_in_function_types() {
+    let expr = r#"#!/bin/gluon
+let x : /* first */ Int /* Int */ ->
+    // Float
+    Float /* last */ = ()
+x
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+}
+
+#[test]
+fn preserve_comments_app_types() {
+    let expr = r#"#!/bin/gluon
+let x : Test /* first */ Int
+    // middle
+    Float /* last */ = ()
+x
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
 }

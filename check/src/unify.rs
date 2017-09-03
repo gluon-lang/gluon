@@ -19,7 +19,7 @@ pub enum Error<T, E> {
 
 impl<T, E> fmt::Display for Error<T, E>
 where
-    T: fmt::Display + for<'a> ToDoc<'a, Arena<'a>>,
+    T: fmt::Display + for<'a> ToDoc<'a, Arena<'a>, ()>,
     E: fmt::Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -27,17 +27,16 @@ where
 
         match *self {
             TypeMismatch(ref l, ref r) => {
-
                 let arena = Arena::new();
                 let doc = chain![&arena;
                     arena.newline(),
                     "Expected:",
                     arena.space(),
-                    l.to_doc(&arena).group(),
+                    l.to_doc(&arena, ()).group(),
                     arena.newline(),
                     "Found:",
                     arena.space(),
-                    r.to_doc(&arena).group()
+                    r.to_doc(&arena, ()).group()
                 ].group()
                     .nest(4);
                 write!(f, "Types do not match:{}", doc.1.pretty(80))

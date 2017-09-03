@@ -151,13 +151,13 @@ where
     Pos: PartialOrd,
 {
     fn partial_cmp(&self, other: &Span<Pos>) -> Option<Ordering> {
-        self.start.partial_cmp(&other.start).and_then(
-            |ord| if ord == Ordering::Equal {
+        self.start
+            .partial_cmp(&other.start)
+            .and_then(|ord| if ord == Ordering::Equal {
                 self.end.partial_cmp(&self.end)
             } else {
                 Some(ord)
-            },
-        )
+            })
     }
 }
 
@@ -288,4 +288,8 @@ pub fn spanned2<T, Pos>(start: Pos, end: Pos, value: T) -> Spanned<T, Pos> {
         span: span(start, end),
         value: value,
     }
+}
+
+pub trait HasSpan {
+    fn span(&self) -> Span<BytePos>;
 }

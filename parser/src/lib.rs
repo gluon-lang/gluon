@@ -10,6 +10,7 @@ extern crate itertools;
 extern crate lalrpop_util;
 #[macro_use]
 extern crate log;
+extern crate pretty;
 #[macro_use]
 extern crate quick_error;
 
@@ -421,7 +422,9 @@ pub fn parse_string<'env, 'input>(
 }
 
 pub fn format_expr(input: &str) -> Result<String, ParseErrors> {
-    use base::pretty_print::ExprPrinter;
+    use pretty::Arena;
+
+    use base::pretty_print::Printer;
     use base::source::Source;
     use base::symbol::Symbols;
 
@@ -440,6 +443,7 @@ pub fn format_expr(input: &str) -> Result<String, ParseErrors> {
     let expr = parse_expr(&mut Symbols::new(), &type_cache, input)?;
 
     let source = Source::new(input);
-    let printer = ExprPrinter::new(&source);
+    let arena = Arena::new();
+    let printer = Printer::new(&arena, &source);
     Ok(printer.format(100, newline, &expr))
 }

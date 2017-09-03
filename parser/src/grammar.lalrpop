@@ -164,7 +164,17 @@ TypeBinding: TypeBinding<Id> = {
         TypeBinding {
             comment: None,
             name: id.clone(),
-            alias: pos::spanned(row_span, AliasData::new(id.value.clone(), params, Type::variant(row))),
+            alias: pos::spanned(
+                row_span,
+                AliasData::new(
+                    id.value.clone(),
+                    params,
+                    AstType::from(pos::spanned(
+                        row_span,
+                        Type::Variant(Type::extend_row(vec![], row, Type::empty_row()))
+                    )),
+                )
+            ),
             finalized_alias: None,
         }
     },

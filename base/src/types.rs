@@ -11,6 +11,9 @@ use smallvec::{SmallVec, VecLike};
 use ast::IdentEnv;
 use kind::{ArcKind, Kind, KindEnv};
 use merge::merge;
+use pos::{BytePos, HasSpan, Span};
+use pretty_print::Printer;
+use source::Source;
 use symbol::{Symbol, SymbolRef};
 
 #[cfg(feature = "serde")]
@@ -771,13 +774,6 @@ where
             _ => false,
         }
     }
-
-    pub fn pretty<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>>
-    where
-        Id: AsRef<str>,
-    {
-        top(self).pretty(arena)
-    }
 }
 
 impl<T> Type<Symbol, T>
@@ -887,7 +883,7 @@ impl<Id: fmt::Debug> fmt::Debug for ArcType<Id> {
 
 impl<Id: AsRef<str>> fmt::Display for ArcType<Id> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        (**self).fmt(f)
+        write!(f, "{}", TypeFormatter::new(self))
     }
 }
 
@@ -896,6 +892,12 @@ impl<Id> Deref for ArcType<Id> {
 
     fn deref(&self) -> &Type<Id, ArcType<Id>> {
         &self.typ
+    }
+}
+
+impl<Id> HasSpan for ArcType<Id> {
+    fn span(&self) -> Span<BytePos> {
+        Span::new(0.into(), 0.into())
     }
 }
 
@@ -1152,40 +1154,39 @@ impl Prec {
 }
 
 
-fn dt<'a, I, T>(prec: Prec, typ: &'a Type<I, T>) -> DisplayType<'a, I, T> {
+fn dt<'a, T>(prec: Prec, typ: &'a T) -> DisplayType<'a, T> {
     DisplayType {
         prec: prec,
         typ: typ,
     }
 }
 
-fn top<'a, I, T>(typ: &'a Type<I, T>) -> DisplayType<'a, I, T> {
+fn top<'a, T>(typ: &'a T) -> DisplayType<'a, T> {
     dt(Prec::Top, typ)
 }
 
-pub fn display_type<'a, I, T>(typ: &'a Type<I, T>) -> TypeFormatter<'a, I, T> {
+pub fn display_type<'a, T>(typ: &'a T) -> TypeFormatter<'a, T> {
     TypeFormatter {
         width: 80,
         typ: typ,
     }
 }
 
-pub struct DisplayType<'a, I: 'a, T: 'a> {
+pub struct DisplayType<'a, T: 'a> {
     prec: Prec,
-    typ: &'a Type<I, T>,
+    typ: &'a T,
 }
 
-pub struct TypeFormatter<'a, I, T>
+pub struct TypeFormatter<'a, T>
 where
-    I: 'a,
     T: 'a,
 {
     width: usize,
-    typ: &'a Type<I, T>,
+    typ: &'a T,
 }
 
-impl<'a, I, T> TypeFormatter<'a, I, T> {
-    pub fn new(typ: &'a Type<I, T>) -> Self {
+impl<'a, T> TypeFormatter<'a, T> {
+    pub fn new(typ: &'a T) -> Self {
         TypeFormatter {
             width: 80,
             typ: typ,
@@ -1193,23 +1194,24 @@ impl<'a, I, T> TypeFormatter<'a, I, T> {
     }
 }
 
-impl<'a, I, T> TypeFormatter<'a, I, T> {
+impl<'a, T> TypeFormatter<'a, T> {
     pub fn width(mut self, width: usize) -> Self {
         self.width = width;
         self
     }
 }
 
-impl<'a, I, T> fmt::Display for TypeFormatter<'a, I, T>
+impl<'a, I, T> fmt::Display for TypeFormatter<'a, T>
 where
-    T: Deref<Target = Type<I, T>> + 'a,
+    T: Deref<Target = Type<I, T>> + HasSpan + 'a,
     I: AsRef<str>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let arena = Arena::new();
+        let source = Source::new("");
+        let printer = Printer::new(&arena, &source);
         let mut s = Vec::new();
-        dt(Prec::Top, self.typ)
-            .pretty(&arena)
+        pretty_print(&printer, self.typ)
             .group()
             .1
             .render(self.width, &mut s)
@@ -1218,18 +1220,28 @@ where
     }
 }
 
-pub trait ToDoc<'a, A> {
-    fn to_doc(&'a self, allocator: &'a A) -> DocBuilder<'a, A>
+pub trait ToDoc<'a, A, E> {
+    fn to_doc(&'a self, allocator: &'a A, env: E) -> DocBuilder<'a, A>
     where
         A: DocAllocator<'a>;
 }
 
-impl<'a, I> ToDoc<'a, Arena<'a>> for ArcType<I>
+impl<'a, I> ToDoc<'a, Arena<'a>, ()> for ArcType<I>
 where
     I: AsRef<str>,
 {
-    fn to_doc(&'a self, allocator: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
-        dt(Prec::Top, self).pretty(allocator)
+    fn to_doc(&'a self, arena: &'a Arena<'a>, _: ()) -> DocBuilder<'a, Arena<'a>> {
+        self.to_doc(arena, &Source::new(""))
+    }
+}
+
+impl<'a, 'e, I> ToDoc<'a, Arena<'a>, &'e Source<'a>> for ArcType<I>
+where
+    I: AsRef<str>,
+{
+    fn to_doc(&'a self, arena: &'a Arena<'a>, source: &'e Source<'a>) -> DocBuilder<'a, Arena<'a>> {
+        let printer = Printer { arena, source };
+        dt(Prec::Top, self).pretty(&printer)
     }
 }
 
@@ -1244,11 +1256,12 @@ macro_rules! chain {
     }}
 }
 
-impl<'a, I, T> DisplayType<'a, I, T>
+impl<'a, I, T> DisplayType<'a, T>
 where
-    T: Deref<Target = Type<I, T>> + 'a,
+    T: Deref<Target = Type<I, T>> + HasSpan + 'a,
+    I: 'a,
 {
-    pub fn pretty(&self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>>
+    pub fn pretty<'e>(&self, printer: &Printer<'a, 'e>) -> DocBuilder<'a, Arena<'a>>
     where
         I: AsRef<str>,
     {
@@ -1256,29 +1269,23 @@ where
 
         const INDENT: usize = 4;
 
+        let arena = printer.arena;
+
         let p = self.prec;
-        match *self.typ {
+        let typ = self.typ;
+        let doc = match **typ {
             Type::Hole => arena.text("_"),
             Type::Opaque => arena.text("<opaque>"),
             Type::Variable(ref var) => arena.text(format!("{}", var.id)),
             Type::Generic(ref gen) => arena.text(gen.id.as_ref()),
             Type::App(ref t, ref args) => match self.typ.as_function() {
-                Some((arg, ret)) => {
-                    let doc = chain![arena;
-                            dt(Prec::Function, arg).pretty(arena).group(),
-                            arena.space(),
-                            "-> ",
-                            top(ret).pretty(arena)
-                        ];
-
-                    p.enclose(Prec::Function, arena, doc)
-                }
+                Some(_) => self.pretty_function(printer).nest(INDENT),
                 None => {
-                    let doc = dt(Prec::Top, t).pretty(arena);
+                    let doc = dt(Prec::Top, t).pretty(printer);
                     let arg_doc = arena.concat(args.iter().map(|arg| {
                         arena
                             .space()
-                            .append(dt(Prec::Constructor, arg).pretty(arena))
+                            .append(dt(Prec::Constructor, arg).pretty(printer))
                     }));
                     let doc = doc.append(arg_doc.nest(INDENT));
                     p.enclose(Prec::Constructor, arena, doc).group()
@@ -1298,12 +1305,13 @@ where
                         doc = doc.append("| ").append(field.name.as_ref());
                         for arg in arg_iter(&field.typ) {
                             doc = chain![arena;
-                                            doc,
-                                            " ",
-                                            dt(Prec::Constructor, &arg).pretty(arena)];
+                                doc,
+                                " ",
+                                dt(Prec::Constructor, arg).pretty(printer)
+                            ];
                         }
                     },
-                    ref typ => panic!("Unexpected type `{}` in variant", typ),
+                    _ => panic!("Unexpected type in variant"),
                 };
 
                 p.enclose(Prec::Constructor, arena, doc).group()
@@ -1325,10 +1333,10 @@ where
 
                 doc = match **row {
                     Type::EmptyRow => doc,
-                    Type::ExtendRow { .. } => doc.append(top(row).pretty(arena)).nest(INDENT),
+                    Type::ExtendRow { .. } => doc.append(top(row).pretty(printer)).nest(INDENT),
                     _ => doc.append(arena.space())
                         .append("| ")
-                        .append(top(row).pretty(arena))
+                        .append(top(row).pretty(printer))
                         .nest(INDENT),
                 };
                 if !empty_fields {
@@ -1345,7 +1353,7 @@ where
                     ref types,
                     ref rest,
                     ..
-                } = *typ
+                } = **typ
                 {
                     for (i, field) in types.iter().enumerate() {
                         let f = chain![arena;
@@ -1355,7 +1363,7 @@ where
                                 arena.text(arg.id.as_ref()).append(" ")
                             })),
                             arena.text("= ")
-                                 .append(top(&field.typ.typ).pretty(arena)),
+                                 .append(top(&field.typ.typ).pretty(printer)),
                             if i + 1 != types.len() || !fields.is_empty() {
                                 arena.text(",")
                             } else {
@@ -1374,10 +1382,10 @@ where
                     ref fields,
                     ref rest,
                     ..
-                } = *typ
+                } = **typ
                 {
                     for (i, field) in fields.iter().enumerate() {
-                        let mut rhs = top(&*field.typ).pretty(arena);
+                        let mut rhs = top(&field.typ).pretty(printer);
                         match *field.typ {
                             // Records handle nesting on their own
                             Type::Record(_) => (),
@@ -1396,11 +1404,11 @@ where
                         typ = rest;
                     }
                 }
-                match *typ {
+                match **typ {
                     Type::EmptyRow => doc,
                     _ => doc.append(arena.space())
                         .append("| ")
-                        .append(top(typ).pretty(arena)),
+                        .append(top(typ).pretty(printer)),
                 }
             }
             // This should not be displayed normally as it should only exist in `ExtendRow`
@@ -1408,29 +1416,47 @@ where
             Type::EmptyRow => arena.text("EmptyRow"),
             Type::Ident(ref id) => arena.text(id.as_ref()),
             Type::Alias(ref alias) => arena.text(alias.name.as_ref()),
+        };
+        match **typ {
+            Type::App(..) | Type::ExtendRow { .. } | Type::Variant(..) => doc,
+            _ => {
+                let comment = printer.comments_before(typ.span().start);
+                comment.append(doc)
+            }
+        }
+    }
+
+    fn pretty_function<'e>(&self, printer: &Printer<'a, 'e>) -> DocBuilder<'a, Arena<'a>>
+    where
+        I: AsRef<str>,
+    {
+        let arena = printer.arena;
+        let p = self.prec;
+        match self.typ.as_function() {
+            Some((arg, ret)) => {
+                let doc = chain![arena;
+                    dt(Prec::Function, arg).pretty(printer).group(),
+                    printer.space_after(arg.span().end),
+                    "-> ",
+                    top(ret).pretty_function(printer)
+                ];
+
+                p.enclose(Prec::Function, arena, doc)
+            }
+            None => self.pretty(printer),
         }
     }
 }
 
-impl<I, T> fmt::Display for Type<I, T>
-where
-    I: AsRef<str>,
-    T: Deref<Target = Type<I, T>>,
-{
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", TypeFormatter::new(self))
-    }
-}
-
-pub fn pretty_print<'a, I, T>(
-    arena: &'a Arena<'a>,
-    typ: &'a Type<I, T>,
+pub fn pretty_print<'a, 'e, I, T>(
+    printer: &Printer<'a, 'e>,
+    typ: &'a T,
 ) -> DocBuilder<'a, Arena<'a>>
 where
-    I: AsRef<str>,
-    T: Deref<Target = Type<I, T>>,
+    I: AsRef<str> + 'a,
+    T: Deref<Target = Type<I, T>> + HasSpan,
 {
-    dt(Prec::Top, typ).pretty(arena)
+    dt(Prec::Top, typ).pretty(printer)
 }
 
 pub fn walk_type<I, T, F>(typ: &T, mut f: F)

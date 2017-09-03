@@ -1191,7 +1191,7 @@ impl<'a> Typecheck<'a> {
             resolved_aliases.push(types::translate_alias(&self.type_cache, &bind.alias.value));
         }
 
-        for (alias, bind) in resolved_aliases.iter_mut().zip(bindings.iter_mut()) {
+        for alias in &mut resolved_aliases {
             *alias.unresolved_type_mut() =
                 self.create_unifiable_signature(alias.unresolved_type().clone());
         }
@@ -1202,7 +1202,7 @@ impl<'a> Typecheck<'a> {
 
             // Setup kind variables for all holes and insert the types in the
             // the type expression into the kindcheck environment
-            for (alias, bind) in resolved_aliases.iter_mut().zip(bindings.iter_mut()) {
+            for alias in &mut resolved_aliases {
                 // Create the kind for this binding
                 // Test a b : 2 -> 1 -> Type
                 // and bind the same variables to the arguments of the type binding

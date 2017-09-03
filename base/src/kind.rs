@@ -87,8 +87,8 @@ impl fmt::Display for Kind {
     }
 }
 
-impl<'a, A> ToDoc<'a, A> for ArcKind {
-    fn to_doc(&'a self, allocator: &'a A) -> DocBuilder<'a, A>
+impl<'a, A, E> ToDoc<'a, A, E> for ArcKind {
+    fn to_doc(&'a self, allocator: &'a A, _: E) -> DocBuilder<'a, A>
     where
         A: DocAllocator<'a>,
     {
