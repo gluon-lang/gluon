@@ -539,7 +539,7 @@ let foldable_List : Foldable List =
 type Traversable t = {
     functor : Functor t,
     foldable : Foldable t,
-    traverse : Applicative m -> (a -> m b) -> t a -> m (t b),
+    traverse : Applicative m -> (a -> m b) -> t a -> m (t b)
 }
 
 let make_Traversable t =

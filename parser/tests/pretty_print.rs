@@ -1,4 +1,4 @@
-
+#[macro_use(assert_diff)]
 extern crate difference;
 extern crate env_logger;
 extern crate pretty;
@@ -11,8 +11,6 @@ extern crate gluon_parser as parser;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
-
-use difference::assert_diff;
 
 use parser::format_expr;
 
@@ -36,7 +34,8 @@ fn test_format(name: &str) {
             .unwrap()
             .write_all(out_str.as_bytes())
             .unwrap();
-        assert_diff(&contents, &out_str, " ", 0);
+
+        assert_diff!(&contents, &out_str, " ", 0);
     }
 }
 

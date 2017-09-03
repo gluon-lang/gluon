@@ -68,7 +68,11 @@ and make ord : Ord k -> _ =
         match m with
         | Tip -> app.pure Tip
         | Bin k v l r ->
-            map3 (prelude.flip (Bin k)) (traverse_with_key app f l) (f k v) (traverse_with_key app f r)
+            map3
+                (prelude.flip (Bin k))
+                (traverse_with_key app f l)
+                (f k v)
+                (traverse_with_key app f r)
 
     let traverse app f : Applicative t -> (a -> t b) -> Map k a -> t (Map k b) =
         traverse_with_key app (prelude.const f)
