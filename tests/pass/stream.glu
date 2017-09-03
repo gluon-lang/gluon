@@ -8,8 +8,14 @@ let { (*>) } = prelude.make_Applicative writer.applicative
 
 let s = stream.from (\i -> if i < 5 then Some i else None)
 
-let assert_leq = assert_eq (prelude.show_List prelude.show_Int) (prelude.eq_List prelude.eq_Int)
+let assert_leq s a =
+    assert_eq
+        (prelude.show_List prelude.show_Int)
+        (prelude.eq_List prelude.eq_Int)
+        (stream.to_list s)
+        (prelude.list a)
 
 assert_ieq (stream.fold (+) 0 s) 10
-    *> assert_leq (stream.fold (\h l -> Cons h l) Nil s)
-                  (Cons 4 (Cons 3 (Cons 2 (Cons 1 (Cons 0 Nil)))))
+    *> assert_leq s [4, 3, 2, 1, 0]
+    *> assert_leq (stream.functor.map (\x -> x + x) s) [8, 6, 4, 2, 0]
+    *> assert_leq (stream.zip_with (+) s s) [8, 6, 4, 2, 0]
