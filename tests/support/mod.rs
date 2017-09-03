@@ -1,4 +1,6 @@
+#[allow(unused_extern_crates)]
 extern crate env_logger;
+#[allow(unused_extern_crates)]
 extern crate gluon;
 pub extern crate futures;
 

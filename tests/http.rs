@@ -50,6 +50,7 @@ fn test_server(
 }
 
 #[test]
+#[ignore]
 fn http() {
     let mut easy = Easy::new();
     let result = test_server(&mut easy, "2345", "", b"");
@@ -59,6 +60,7 @@ fn http() {
 }
 
 #[test]
+#[ignore]
 fn echo() {
     let mut easy = Easy::new();
     easy.post(true).unwrap();

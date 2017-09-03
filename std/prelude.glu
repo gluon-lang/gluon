@@ -1,4 +1,5 @@
 let { Bool, Option, Result, Ordering } = import! "std/types.glu"
+
 /// A linked list type
 type List a = | Nil | Cons a (List a)
 
@@ -484,6 +485,141 @@ let show_List : Show a -> Show (List a) = \d ->
 let (==) = eq_Int.(==)
 let (-) = num_Int.(-)
 
+type Foldable (f : Type -> Type) = {
+    foldr : (a -> b -> b) -> b -> f a -> b,
+    foldl : (b -> a -> b) -> b -> f a -> b
+}
+
+let make_Foldable f =
+    let { foldr, foldl } = f
+    let { (+) } = num_Int
+
+    let concat monoid : Monoid m -> _ m -> m =
+        foldr monoid.append monoid.empty
+
+    let concat_map monoid f : Monoid m -> (a -> m) -> _ a -> m =
+        foldr (f >> monoid.append) monoid.empty
+
+    let find pred : (a -> Bool) -> _ a -> Option a =
+        let go acc next =
+            match acc with
+            | None -> if pred next then Some next else None
+            | Some _ -> acc
+
+        foldl go None
+
+    let find_map pred : (a -> Option b) -> _ a -> Option b =
+        let go acc next =
+            match acc with
+            | None -> pred next
+            | Some _ -> acc
+
+        foldl go None
+
+    let all pred : (a -> Bool) -> _ a -> Bool =
+        foldl (\acc x -> acc && pred x) True
+
+    let any pred : (a -> Bool) -> _ a -> Bool =
+        foldl (\acc x -> acc || pred x) False
+
+    let elem eq : Eq a -> a -> _ a -> Bool =
+        any << eq.(==)
+
+    let notElem eq x : Eq a -> a -> _ a -> Bool =
+        not << elem eq x
+
+    let count : _ a -> Int =
+        foldl (\acc _ -> acc + 1) 0
+
+    {
+        foldr,
+        foldl,
+        concat,
+        concat_map,
+        find,
+        find_map,
+        all,
+        any,
+        elem,
+        notElem,
+        count
+    }
+
+let foldable_Option : Foldable Option = {
+    foldr = \f z o ->
+        match o with
+        | None -> z
+        | Some x -> f x z,
+    foldl = \f z o ->
+        match o with
+        | None -> z
+        | Some x -> f z x
+}
+
+let foldable_Result : Foldable (Result e) = {
+    foldr = \f z r ->
+        match r with
+        | Err _ -> z
+        | Ok x -> f x z,
+    foldl = \f z r ->
+        match r with
+        | Err _ -> z
+        | Ok x -> f z x
+}
+
+let foldable_List : Foldable List =
+    let foldr f x xs =
+        match xs with
+        | Cons y ys -> f y (foldr f x ys)
+        | Nil -> x
+
+    let foldl f x xs =
+        match xs with
+        | Cons y ys -> foldl f (f x y) ys
+        | Nil -> x
+
+    { foldr, foldl }
+
+type Traversable t = {
+    functor : Functor t,
+    foldable : Foldable t,
+    traverse : Applicative m -> (a -> m b) -> t a -> m (t b)
+}
+
+let make_Traversable t =
+    let { functor, foldable, traverse } = t
+
+    let sequence app = traverse app id
+
+    { functor, foldable, traverse, sequence }
+
+let traversable_Option : Traversable Option = {
+    functor = functor_Option,
+    foldable = foldable_Option,
+    traverse = \app f o ->
+        match o with
+        | None -> app.pure None
+        | Some x -> app.functor.map Some (f x)
+}
+
+let traversable_Result : Traversable (Result e) = {
+    functor = functor_Result,
+    foldable = foldable_Result,
+    traverse = \app f r ->
+        match r with
+        | Err e -> app.pure (Err e)
+        | Ok x -> app.functor.map Ok (f x)
+}
+
+let traversable_List : Traversable List = {
+    functor = functor_List,
+    foldable = foldable_List,
+    traverse = \app f ->
+        foldable_List.foldr
+            (\a b -> app.apply (app.functor.map Cons (f a)) b)
+            (app.pure Nil)
+}
+
 /// Constructs a list from an array. Useful to emulate list literals
 ///
 /// ```
@@ -499,20 +635,6 @@ let list xs : Array a -> List a =
             list_ (i - 1) (Cons x ys)
     list_ len Nil
 
-/// Folds a lift from the left
-let foldl f x xs =
-    match xs with
-    | Cons y ys -> foldl f (f x y) ys
-    | Nil -> x
-
-/// Folds a lift from the right
-let foldr f x xs =
-    match xs with
-    | Cons y ys -> f y (foldr f x ys)
-    | Nil -> x
-
-let len = foldl (\x _ -> num_Int.(+) x 1) 0
-
 {
     Bool,
     Ordering,
@@ -526,9 +648,6 @@ let len = foldl (\x _ -> num_Int.(+) x 1) 0
 
     not,
     list,
-    foldl,
-    foldr,
-    len,
 
     Monoid,
     make_Monoid,
@@ -588,6 +707,18 @@ let len = foldl (\x _ -> num_Int.(+) x 1) 0
     monad_Result,
     monad_List,
     monad_IO,
+
+    Foldable,
+    make_Foldable,
+    foldable_Option,
+    foldable_Result,
+    foldable_List,
+
+    Traversable,
+    make_Traversable,
+    traversable_Option,
+    traversable_Result,
+    traversable_List,
 
     Num,
     num_Int,

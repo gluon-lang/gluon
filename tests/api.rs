@@ -5,7 +5,7 @@ extern crate gluon;
 #[macro_use]
 extern crate gluon_vm;
 
-use futures::{BoxFuture, Future, IntoFuture};
+use futures::{Future, IntoFuture};
 use futures::future::lazy;
 
 use gluon::base::types::Type;
@@ -74,8 +74,9 @@ fn root_data() {
     fn test(r: Root<Test>, i: VmInt) -> VmInt {
         r.0 + i
     }
-    vm.register_type::<Test>("Test", &[])
-        .unwrap_or_else(|_| panic!("Could not add type"));
+    vm.register_type::<Test>("Test", &[]).unwrap_or_else(|_| {
+        panic!("Could not add type")
+    });
     vm.define_global("test", primitive!(2 test)).unwrap();
     load_script(&vm, "script_fn", expr).unwrap_or_else(|err| panic!("{}", err));
     let mut script_fn: FunctionRef<fn(Test) -> VmInt> = vm.get_global("script_fn").unwrap();
@@ -134,8 +135,11 @@ sum_bytes [100b, 42b, 3b, 15b]
 fn return_finished_future() {
     let _ = ::env_logger::init();
 
-    fn add(x: i32, y: i32) -> FutureResult<BoxFuture<i32, Error>> {
-        FutureResult(Ok(x + y).into_future().boxed())
+    fn add(
+        x: i32,
+        y: i32,
+    ) -> FutureResult<Box<Future<Item = i32, Error = Error> + Send + 'static>> {
+        FutureResult(Box::new(Ok(x + y).into_future()))
     }
 
     let expr = r#"
@@ -157,7 +161,7 @@ fn return_finished_future() {
 fn return_delayed_future() {
     let _ = ::env_logger::init();
 
-    fn poll_n(i: i32) -> FutureResult<BoxFuture<i32, Error>> {
+    fn poll_n(i: i32) -> FutureResult<Box<Future<Item = i32, Error = Error> + Send + 'static>> {
         use std::thread::spawn;
         use futures::sync::oneshot::channel;
 
@@ -167,13 +171,14 @@ fn return_delayed_future() {
             ping_p.wait().expect("wait");
             pong_c.send(i).expect("send");
         });
-        FutureResult(
+        FutureResult(Box::new(
             lazy(move || {
                 ping_c.send(()).unwrap();
                 Ok(())
-            }).and_then(|_| pong_p.map_err(|err| Error::Message(format!("{}", err))))
-                .boxed(),
-        )
+            }).and_then(|_| {
+                pong_p.map_err(|err| Error::Message(format!("{}", err)))
+            }),
+        ))
     }
 
     let expr = r#"
@@ -197,8 +202,8 @@ fn io_future() {
 
     let _ = ::env_logger::init();
 
-    fn test(_: ()) -> FutureResult<BoxFuture<IO<i32>, Error>> {
-        FutureResult(Ok(IO::Value(123)).into_future().boxed())
+    fn test(_: ()) -> FutureResult<Box<Future<Item = IO<i32>, Error = Error> + Send + 'static>> {
+        FutureResult(Box::new(Ok(IO::Value(123)).into_future()))
     }
 
     let expr = r#"

@@ -1,4 +1,3 @@
-extern crate gluon_vm;
 extern crate gluon;
 use std::fmt;
 use std::sync::Mutex;

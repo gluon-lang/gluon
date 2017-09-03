@@ -1,5 +1,5 @@
 let prelude = import! "std/prelude.glu"
-let { List, Functor, Applicative, Monad, id, list, len = list_len, eq_Int = { (==) }, eq_Float = { (==) } } = prelude
+let { List, Functor, Applicative, Monad, id } = prelude
 
 let string = import! "std/string.glu"
 let { (==) } = string.eq

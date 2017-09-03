@@ -30,9 +30,9 @@ use hyper::{Chunk, Method, StatusCode};
 use hyper::server::Service;
 
 use futures::Async;
-use futures::future::{BoxFuture, Future};
+use futures::future::Future;
 use futures::sink::Sink;
-use futures::stream::{BoxStream, Stream};
+use futures::stream::Stream;
 use futures::sync::mpsc::Sender;
 
 use base::types::{ArcType, Type};
@@ -58,9 +58,9 @@ impl<T: VmType + 'static> VmType for Handler<T> {
     type Type = Self;
     fn make_type(vm: &Thread) -> ArcType {
         let typ = (*vm.global_env()
-            .get_env()
-            .find_type_info("examples.http_types.Handler")
-            .unwrap())
+                       .get_env()
+                       .find_type_info("examples.http_types.Handler")
+                       .unwrap())
             .clone()
             .into_type();
         Type::app(typ, collect![T::make_type(vm)])
@@ -125,7 +125,7 @@ impl<'vm> Getable<'vm> for Wrap<StatusCode> {
 }
 
 // Representation of a http body that is in the prograss of being read
-pub struct Body(Arc<Mutex<BoxStream<PushAsRef<Chunk, [u8]>, VmError>>>);
+pub struct Body(Arc<Mutex<Box<Stream<Item = PushAsRef<Chunk, [u8]>, Error = VmError> + Send + 'static>>>);
 
 // By implementing `Userdata` on `Body` it can be automatically pushed and retrieved from gluon
 // threads
@@ -155,19 +155,25 @@ impl VmType for Body {
 
 // Since `Body` implements `Userdata` gluon will automatically marshal the gluon representation
 // into `&Body` argument
-fn read_chunk(body: &Body) -> FutureResult<BoxFuture<IO<Option<PushAsRef<Chunk, [u8]>>>, VmError>> {
+fn read_chunk(
+    body: &Body,
+) -> FutureResult<
+    Box<
+        Future<Item = IO<Option<PushAsRef<Chunk, [u8]>>>, Error = VmError>
+            + Send
+            + 'static,
+    >,
+> {
     use futures::future::poll_fn;
 
     let body = body.0.clone();
     // `FutureResult` is a wrapper type around `Future` which when returned to the interpreter is
     // polled until completion. After `poll` returns `Ready` the value is then returned to the
     // gluon function which called `read_chunk`
-    FutureResult(
-        poll_fn(move || {
-            let mut stream = body.lock().unwrap();
-            stream.poll().map(|async| async.map(IO::Value))
-        }).boxed(),
-    )
+    FutureResult(Box::new(poll_fn(move || {
+        let mut stream = body.lock().unwrap();
+        stream.poll().map(|async| async.map(IO::Value))
+    })))
 }
 
 // A http body that is being written
@@ -192,42 +198,40 @@ impl VmType for ResponseBody {
 fn write_response(
     response: &ResponseBody,
     bytes: &[u8],
-) -> FutureResult<BoxFuture<IO<()>, VmError>> {
+) -> FutureResult<Box<Future<Item = IO<()>, Error = VmError> + Send + 'static>> {
     use futures::future::poll_fn;
     use futures::AsyncSink;
 
     // Turn `bytes´ into a `Chunk` which can be sent to the http body
     let mut unsent_chunk = Some(Ok(bytes.to_owned().into()));
     let response = response.0.clone();
-    FutureResult(
-        poll_fn(move || {
-            info!("Starting response send");
-            let mut sender = response.lock().unwrap();
-            let sender = sender
-                .as_mut()
-                .expect("Sender has been dropped while still in use");
-            if let Some(chunk) = unsent_chunk.take() {
-                match sender.start_send(chunk) {
-                    Ok(AsyncSink::NotReady(chunk)) => {
-                        unsent_chunk = Some(chunk);
-                        return Ok(Async::NotReady);
-                    }
-                    Ok(AsyncSink::Ready) => (),
-                    Err(_) => {
-                        info!("Could not send http response");
-                        return Ok(Async::Ready(IO::Value(())));
-                    }
+    FutureResult(Box::new(poll_fn(move || {
+        info!("Starting response send");
+        let mut sender = response.lock().unwrap();
+        let sender = sender.as_mut().expect(
+            "Sender has been dropped while still in use",
+        );
+        if let Some(chunk) = unsent_chunk.take() {
+            match sender.start_send(chunk) {
+                Ok(AsyncSink::NotReady(chunk)) => {
+                    unsent_chunk = Some(chunk);
+                    return Ok(Async::NotReady);
                 }
-            }
-            match sender.poll_complete() {
-                Ok(async) => Ok(async.map(IO::Value)),
+                Ok(AsyncSink::Ready) => (),
                 Err(_) => {
                     info!("Could not send http response");
-                    Ok(Async::Ready(IO::Value(())))
+                    return Ok(Async::Ready(IO::Value(())));
                 }
             }
-        }).boxed(),
-    )
+        }
+        match sender.poll_complete() {
+            Ok(async) => Ok(async.map(IO::Value)),
+            Err(_) => {
+                info!("Could not send http response");
+                Ok(Async::Ready(IO::Value(())))
+            }
+        }
+    })))
 }
 
 // Next we define some record types which are marshalled to and from gluon. These have equivalent
@@ -259,8 +263,7 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
 
     // Retrieve the `handle` function from the http module which we use to evaluate values of type
     // `Handler Response`
-    type ListenFn = fn(OpaqueValue<RootedThread, Handler<Response>>, HttpState)
-        -> IO<Response>;
+    type ListenFn = fn(OpaqueValue<RootedThread, Handler<Response>>, HttpState) -> IO<Response>;
     let handle: Function<RootedThread, ListenFn> = thread
         .get_global("examples.http.handle")
         .unwrap_or_else(|err| panic!("{}", err));
@@ -274,61 +277,61 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
         type Request = HyperRequest;
         type Response = HyperResponse;
         type Error = hyper::Error;
-        type Future = BoxFuture<HyperResponse, hyper::Error>;
+        type Future = Box<Future<Item = HyperResponse, Error = hyper::Error> + Send + 'static>;
 
         fn call(&self, request: HyperRequest) -> Self::Future {
-            let gluon_request = record_no_decl! {
+            let gluon_request =
+                record_no_decl! {
                 // Here we use to `Wrap` type to make `hyper::Request` into a type that can be
                 // pushed to gluon
                 method => Wrap(request.method().clone()),
                 uri => request.uri().to_string(),
                 // Since `Body` implements `Userdata` it can be directly pushed to gluon
-                body => Body(Arc::new(Mutex::new(request.body()
+                body => Body(Arc::new(Mutex::new(Box::new(request.body()
                     .map_err(|err| VmError::Message(format!("{}", err)))
                     // `PushAsRef` makes the `body` parameter act as a `&[u8]` which means it is
                     // marshalled to `Array Byte` in gluon
-                    .map(PushAsRef::<_, [u8]>::new)
-                    .boxed())))
+                    .map(PushAsRef::<_, [u8]>::new)))))
             };
             let (response_sender, response_body) = hyper::Body::pair();
             let response_sender = Arc::new(Mutex::new(Some(response_sender)));
-            let http_state = record_no_decl!{
+            let http_state =
+                record_no_decl!{
                 request => gluon_request,
                 response => ResponseBody(response_sender.clone())
             };
-            self.handle
-                .clone()
-                .call_async(self.handler.clone(), http_state)
-                .then(move |result| match result {
-                    Ok(value) => {
-                        match value {
-                            IO::Value(record_p!{ status }) => {
-                                // Drop the sender to so that it the receiver stops waiting for
-                                // more chunks
-                                *response_sender.lock().unwrap() = None;
-                                Ok(
-                                    HyperResponse::new()
-                                        .with_status(status.0)
-                                        .with_body(response_body),
-                                )
-                            }
-                            IO::Exception(err) => {
-                                let _ = stderr().write(err.as_bytes());
-                                Ok(
-                                    HyperResponse::new()
-                                        .with_status(StatusCode::InternalServerError),
-                                )
+
+            Box::new(
+                self.handle
+                    .clone()
+                    .call_async(self.handler.clone(), http_state)
+                    .then(move |result| match result {
+                        Ok(value) => {
+                            match value {
+                                IO::Value(record_p!{ status }) => {
+                                    // Drop the sender to so that it the receiver stops waiting for
+                                    // more chunks
+                                    *response_sender.lock().unwrap() = None;
+                                    Ok(HyperResponse::new().with_status(status.0).with_body(
+                                        response_body,
+                                    ))
+                                }
+                                IO::Exception(err) => {
+                                    let _ = stderr().write(err.as_bytes());
+                                    Ok(HyperResponse::new().with_status(
+                                        StatusCode::InternalServerError,
+                                    ))
+                                }
                             }
                         }
-                    }
-                    Err(err) => {
-                        let _ = stderr().write(format!("{}", err).as_bytes());
-                        Ok(
-                            HyperResponse::new().with_status(StatusCode::InternalServerError),
-                        )
-                    }
-                })
-                .boxed()
+                        Err(err) => {
+                            let _ = stderr().write(format!("{}", err).as_bytes());
+                            Ok(HyperResponse::new().with_status(
+                                StatusCode::InternalServerError,
+                            ))
+                        }
+                    }),
+            )
         }
     }
 
