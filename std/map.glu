@@ -1,5 +1,5 @@
 let prelude = import! "std/prelude.glu"
-and { Ordering, Ord, Option, List, Monoid } = prelude
+and { Ordering, Ord, Option, List, Monoid, Functor, Applicative, Foldable, Traversable } = prelude
 
 type Map k a = | Bin k a (Map k a) (Map k a) | Tip
 
@@ -7,8 +7,8 @@ let empty = Tip
 
 let singleton k v = Bin k v empty empty
 
-and make ord =
-    let find k m =
+and make ord : Ord k -> _ =
+    let find k m : k -> Map k a -> Option a =
         match m with
         | Bin k2 v l r ->
             match ord.compare k k2 with
@@ -16,7 +16,8 @@ and make ord =
             | EQ -> Some v
             | GT -> find k r
         | Tip -> None
-    and insert k v m =
+
+    let insert k v m : k -> a -> Map k a -> Map k a =
         match m with
         | Bin k2 v2 l r ->
             match ord.compare k k2 with
@@ -24,23 +25,74 @@ and make ord =
             | EQ -> Bin k v l r
             | GT -> Bin k2 v2 l (insert k v r)
         | Tip -> Bin k v empty empty
-    and to_list m =
+
+    let to_list m : Map k a -> List { key : k, value : a } =
         let (++) = prelude.monoid_List.append
         match m with
         | Bin key value l r -> to_list l ++ Cons { key, value } (to_list r)
         | Tip -> Nil
 
-    let fold f x m =
+    let map f m : (a -> b) -> Map k a -> Map k b =
         match m with
+        | Tip -> Tip
+        | Bin k x l r -> Bin k (f x) (map f l) (map f r)
+
+    let map_with_key f m : (k -> a -> b) -> Map k a -> Map k b =
+        match m with
+        | Tip -> Tip
+        | Bin k x l r -> Bin k (f k x) (map_with_key f l) (map_with_key f r)
+
+    let foldr f z m : (a -> b -> b) -> b -> Map k a -> b =
+        match m with
+        | Tip -> z
+        | Bin _ x l r -> foldr f (f x (foldr f z r)) l
+
+    let foldl f z m : (a -> b -> a) -> a -> Map k b -> a =
+        match m with
+        | Tip -> z
+        | Bin _ x l r -> foldl f (f (foldl f z l) x) r
+
+    let foldr_with_key f z m : (k -> a -> b -> b) -> b -> Map k a -> b =
+        match m with
+        | Tip -> z
+        | Bin k v l r -> foldr_with_key f (f k v (foldr_with_key f z r)) l
+
+    let foldl_with_key f z m : (a -> k -> b -> a) -> a -> Map k b -> a =
+        match m with
+        | Tip -> z
+        | Bin k x l r -> foldl_with_key f (f (foldl_with_key f z l) k x) r
+
+    let traverse_with_key app f m : Applicative t -> (k -> a -> t b) -> Map k a -> t (Map k b) =
+        let { map3 } = prelude.make_Applicative app
+
+        match m with
+        | Tip -> app.pure Tip
         | Bin k v l r ->
-            let y = f k v x
-            fold f (fold f y l) r
-        | Tip -> x
+            map3 (prelude.flip (Bin k)) (traverse_with_key app f l) (f k v) (traverse_with_key app f r)
 
-    let append l r = fold insert l r
+    let traverse app f : Applicative t -> (a -> t b) -> Map k a -> t (Map k b) =
+        traverse_with_key app (prelude.const f)
 
-    let monoid = { append, empty }
+    let append l r = foldr_with_key insert l r
 
-    { monoid, singleton, find, fold, insert, to_list }
+    let monoid : Monoid _ = { append, empty }
+    let functor : Functor _ = { map }
+    let foldable : Foldable _ = { foldr, foldl }
+    let traversable : Traversable _ = { functor, foldable, traverse }
+
+    {
+        monoid,
+        functor,
+        foldable,
+        traversable,
+        singleton,
+        find,
+        insert,
+        to_list,
+        map_with_key,
+        foldr_with_key,
+        foldl_with_key,
+        traverse_with_key
+    }
 
 { Map, make }
