@@ -493,7 +493,7 @@ id
                 TypeBinding {
                     comment: Some(Comment {
                         typ: CommentType::Block,
-                        content: "Test type ".into(),
+                        content: "Test type".into(),
                     }),
                     name: no_loc(intern("Test")),
                     alias: alias(intern("Test"), Vec::new(), typ("Int")),
@@ -527,7 +527,7 @@ id
                     TypeBinding {
                         comment: Some(Comment {
                             typ: CommentType::Block,
-                            content: "Test type ".into(),
+                            content: "Test type".into(),
                         }),
                         name: no_loc(intern("Test")),
                         alias: alias(intern("Test"), Vec::new(), typ("Int")),
