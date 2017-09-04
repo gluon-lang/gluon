@@ -89,9 +89,12 @@ fn newline<'a, Id>(arena: &'a Arena<'a>, expr: &'a SpannedExpr<Id>) -> DocBuilde
     }
 }
 
-fn doc_comment<'a>(arena: &'a Arena<'a>, text: &'a Option<Comment>) -> DocBuilder<'a, Arena<'a>> {
-    match *text {
-        Some(ref comment) => match comment.typ {
+pub fn doc_comment<'a>(
+    arena: &'a Arena<'a>,
+    text: Option<&'a Comment>,
+) -> DocBuilder<'a, Arena<'a>> {
+    match text {
+        Some(comment) => match comment.typ {
             CommentType::Line => arena.concat(comment.content.lines().map(|line| {
                 arena.text("/// ").append(line).append(arena.newline())
             })),
@@ -99,7 +102,16 @@ fn doc_comment<'a>(arena: &'a Arena<'a>, text: &'a Option<Comment>) -> DocBuilde
                         "/**",
                         arena.newline(),
                         arena.concat(comment.content.lines().map(|line| {
-                            arena.text(line).append(arena.newline())
+                            let line = line.trim();
+                            if line.is_empty() {
+                                arena.newline()
+                            } else {
+                                chain![arena;
+                                    " ",
+                                    line,
+                                    arena.newline()
+                                ]
+                            }
                         })),
                         "*/",
                         arena.newline()
@@ -546,7 +558,7 @@ impl<'a: 'e, 'e> Printer<'a, 'e> {
                         "="
                     ];
                     chain![arena;
-                        doc_comment(arena, &bind.comment),
+                        doc_comment(arena, bind.comment.as_ref()),
                         self.hang(decl, &bind.expr).group()
                     ]
                 };
@@ -601,7 +613,7 @@ impl<'a: 'e, 'e> Printer<'a, 'e> {
             Expr::TypeBindings(ref binds, ref body) => {
                 let prefixes = once("type").chain(repeat("and"));
                 chain![arena;
-                    doc_comment(arena, &binds.first().unwrap().comment),
+                    doc_comment(arena, binds.first().unwrap().comment.as_ref()),
                     arena.concat(binds.iter().zip(prefixes).map(|(bind, prefix)| {
                         let typ = bind.alias.value.unresolved_type();
                         let mut type_doc = pretty_type(self, typ);

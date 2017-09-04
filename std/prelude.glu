@@ -19,15 +19,13 @@ let unwrap_err res : Result e a -> e =
     | Err x -> x
 
 /**
-`Monoid m` represents an associative operation on `m` an which has an identity.
-This means the following laws must hold:
+ This means the following laws must hold:
 
-* x <> empty = x
+ * x <> empty = x
 
-* empty <> x = x
+ * empty <> x = x
 
-* x <> (y <> z) = (x <> y) <> z
-
+ * x <> (y <> z) = (x <> y) <> z
 */
 type Monoid m = { append : m -> m -> m, empty : m }
 
@@ -171,8 +169,8 @@ let make_Ord ord =
     }
 
 /**
-The basic operation on numbers.
-Defined for both the primitive type `Int` and `Float`
+ The basic operation on numbers.
+ Defined for both the primitive type `Int` and `Float`
 */
 type Num a = {
     ord : Ord a,
@@ -237,8 +235,8 @@ let (<<) : (b -> c) -> (a -> b) -> a -> c = (make_Category category_Function).(<
 let (>>) : (a -> b) -> (b -> c) -> a -> c = (make_Category category_Function).(>>)
 
 /**
-A `Functor` represents an action on a parameterized type which does not change the structure with
-the mapped type.
+ A `Functor` represents an action on a parameterized type which does not change the structure with
+ the mapped type.
 */
 type Functor f = { map : (a -> b) -> f a -> f b }
 

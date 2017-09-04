@@ -299,7 +299,7 @@ impl<'input> Tokenizer<'input> {
                         // FIXME: whitespace alignment
                         let doc = Token::DocComment(Comment {
                             typ: CommentType::Block,
-                            content: comment[3..].trim_left().to_string(),
+                            content: comment[3..].trim().to_string(),
                         });
                         return Ok(Some(pos::spanned2(start, end.shift('/'), doc)));
                     } else {

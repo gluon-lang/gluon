@@ -211,3 +211,19 @@ x
 "#;
     assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
 }
+
+#[test]
+fn preserve_doc_comments_in_record_types() {
+    let expr = r#"#!/bin/gluon
+type Test = {
+    /// test
+    field1 : Int,
+    /**
+     middle
+    */
+    field2 : Float
+}
+x
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+}

@@ -8,7 +8,7 @@ use pretty::{Arena, DocAllocator, DocBuilder};
 
 use smallvec::{SmallVec, VecLike};
 
-use ast::IdentEnv;
+use ast::{Comment, Commented, IdentEnv};
 use kind::{ArcKind, Kind, KindEnv};
 use merge::merge;
 use pos::{BytePos, HasSpan, Span};
@@ -901,6 +901,13 @@ impl<Id> HasSpan for ArcType<Id> {
     }
 }
 
+impl<Id> Commented for ArcType<Id> {
+    fn comment(&self) -> Option<&Comment> {
+        None
+    }
+}
+
+
 impl<Id> ArcType<Id> {
     pub fn new(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
         ArcType { typ: Arc::new(typ) }
@@ -1203,7 +1210,7 @@ impl<'a, T> TypeFormatter<'a, T> {
 
 impl<'a, I, T> fmt::Display for TypeFormatter<'a, T>
 where
-    T: Deref<Target = Type<I, T>> + HasSpan + 'a,
+    T: Deref<Target = Type<I, T>> + HasSpan + Commented + 'a,
     I: AsRef<str>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -1258,14 +1265,14 @@ macro_rules! chain {
 
 impl<'a, I, T> DisplayType<'a, T>
 where
-    T: Deref<Target = Type<I, T>> + HasSpan + 'a,
+    T: Deref<Target = Type<I, T>> + HasSpan + Commented + 'a,
     I: 'a,
 {
     pub fn pretty<'e>(&self, printer: &Printer<'a, 'e>) -> DocBuilder<'a, Arena<'a>>
     where
         I: AsRef<str>,
     {
-        use pretty_print::ident;
+        use pretty_print::{doc_comment, ident};
 
         const INDENT: usize = 4;
 
@@ -1321,6 +1328,19 @@ where
                 _ => arena.text(t.to_str()),
             },
             Type::Record(ref row) => {
+                let forced_newline = match **row {
+                    Type::ExtendRow { ref fields, .. } => {
+                        fields.iter().any(|field| field.typ.comment().is_some())
+                    }
+                    _ => false,
+                };
+
+                let newline = if forced_newline {
+                    arena.newline()
+                } else {
+                    arena.space()
+                };
+
                 // Empty records are always formatted as unit (`()`)
                 if let Type::EmptyRow = **row {
                     return arena.text("()");
@@ -1340,7 +1360,7 @@ where
                         .nest(INDENT),
                 };
                 if !empty_fields {
-                    doc = doc.append(arena.space());
+                    doc = doc.append(newline);
                 }
 
                 doc.append("}").group()
@@ -1348,6 +1368,13 @@ where
             Type::ExtendRow { ref fields, .. } => {
                 let mut doc = arena.nil();
                 let mut typ = self.typ;
+                let forced_newline = fields.iter().any(|field| field.typ.comment().is_some());
+
+                let newline = if forced_newline {
+                    arena.newline()
+                } else {
+                    arena.space()
+                };
 
                 while let Type::ExtendRow {
                     ref types,
@@ -1369,7 +1396,7 @@ where
                             } else {
                                 arena.nil()
                             }].group();
-                        doc = doc.append(arena.space()).append(f);
+                        doc = doc.append(newline.clone()).append(f);
                     }
                     typ = rest;
                 }
@@ -1392,6 +1419,7 @@ where
                             _ => rhs = rhs.nest(INDENT),
                         }
                         let f = chain![arena;
+                            doc_comment(arena, field.typ.comment()),
                             ident(arena, field.name.as_ref()),
                             " : ",
                             rhs.group(),
@@ -1400,7 +1428,7 @@ where
                             } else {
                                 arena.nil()
                             }].group();
-                        doc = doc.append(arena.space()).append(f);
+                        doc = doc.append(newline.clone()).append(f);
                         typ = rest;
                     }
                 }
@@ -1454,7 +1482,7 @@ pub fn pretty_print<'a, 'e, I, T>(
 ) -> DocBuilder<'a, Arena<'a>>
 where
     I: AsRef<str> + 'a,
-    T: Deref<Target = Type<I, T>> + HasSpan,
+    T: Deref<Target = Type<I, T>> + HasSpan + Commented,
 {
     dt(Prec::Top, typ).pretty(printer)
 }

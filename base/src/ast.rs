@@ -86,17 +86,36 @@ impl<Id> HasSpan for AstType<Id> {
     }
 }
 
+impl<Id> Commented for AstType<Id> {
+    fn comment(&self) -> Option<&Comment> {
+        self._typ.0.as_ref()
+    }
+}
 
 impl<Id> AstType<Id> {
-    pub fn with_comment(comment: Comment, typ: Spanned<Type<Id, AstType<Id>>, BytePos>) -> Self {
+    pub fn with_comment<T>(comment: T, typ: Spanned<Type<Id, AstType<Id>>, BytePos>) -> Self
+    where
+        T: Into<Option<Comment>>,
+    {
         AstType {
-            _typ: Box::new((Some(comment), typ)),
+            _typ: Box::new((comment.into(), typ)),
         }
+    }
+
+    pub fn set_comment<T>(&mut self, comment: T)
+    where
+        T: Into<Option<Comment>>,
+    {
+        self._typ.0 = comment.into();
     }
 
     pub fn into_inner(self) -> Type<Id, Self> {
         self._typ.1.value
     }
+}
+
+pub trait Commented {
+    fn comment(&self) -> Option<&Comment>;
 }
 
 #[derive(Clone, Copy, Eq, PartialEq, Debug)]

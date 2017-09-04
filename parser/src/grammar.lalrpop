@@ -146,7 +146,11 @@ TypeParam: Generic<Id> = {
 };
 
 RecordField: Field<Id, AstType<Id>> =
-    <Ident> ":" <Type> => Field::new(<>);
+    <comment: DocComment?> <id: Ident> ":" <typ: Sp<Type_>> =>
+        Field::new(
+            id,
+            AstType::with_comment(comment, typ),
+        );
 
 VariantField: (Id, Vec<AstType<Id>>) =
     "|" <Ident> <AtomicType*> => (<>);
