@@ -8,9 +8,12 @@ use pretty::{Arena, DocAllocator, DocBuilder};
 
 use smallvec::{SmallVec, VecLike};
 
-use ast::IdentEnv;
+use ast::{Comment, Commented, IdentEnv};
 use kind::{ArcKind, Kind, KindEnv};
 use merge::merge;
+use pos::{BytePos, HasSpan, Span};
+use pretty_print::Printer;
+use source::Source;
 use symbol::{Symbol, SymbolRef};
 
 #[cfg(feature = "serde")]
@@ -92,26 +95,29 @@ impl<'a, T: ?Sized + PrimitiveEnv> PrimitiveEnv for &'a T {
     }
 }
 
-type_cache! { TypeCache(Id) { ArcType<Id>, Type }
+type_cache! { TypeCache(Id, T) { T, Type }
     hole opaque int byte float string char
     function_builtin array_builtin unit empty_row
 }
 
-impl<Id> TypeCache<Id> {
-    pub fn function<I>(&self, args: I, ret: ArcType<Id>) -> ArcType<Id>
+impl<Id, T> TypeCache<Id, T>
+where
+    T: From<Type<Id, T>> + Clone,
+{
+    pub fn function<I>(&self, args: I, ret: T) -> T
     where
-        I: IntoIterator<Item = ArcType<Id>>,
-        I::IntoIter: DoubleEndedIterator<Item = ArcType<Id>>,
+        I: IntoIterator<Item = T>,
+        I::IntoIter: DoubleEndedIterator<Item = T>,
     {
         args.into_iter().rev().fold(ret, |body, arg| {
             Type::app(self.function_builtin(), collect![arg, body])
         })
     }
 
-    pub fn tuple<S, I>(&self, symbols: &mut S, elems: I) -> ArcType<Id>
+    pub fn tuple<S, I>(&self, symbols: &mut S, elems: I) -> T
     where
         S: ?Sized + IdentEnv<Ident = Id>,
-        I: IntoIterator<Item = ArcType<Id>>,
+        I: IntoIterator<Item = T>,
     {
         let fields: Vec<_> = elems
             .into_iter()
@@ -124,25 +130,21 @@ impl<Id> TypeCache<Id> {
             })
             .collect();
         if fields.is_empty() {
-            self.unit.clone()
+            self.unit()
         } else {
             self.record(vec![], fields)
         }
     }
 
-    pub fn variant(&self, fields: Vec<Field<Id, ArcType<Id>>>) -> ArcType<Id> {
+    pub fn variant(&self, fields: Vec<Field<Id, T>>) -> T {
         Type::poly_variant(fields, self.empty_row())
     }
 
-    pub fn record(
-        &self,
-        types: Vec<Field<Id, Alias<Id, ArcType<Id>>>>,
-        fields: Vec<Field<Id, ArcType<Id>>>,
-    ) -> ArcType<Id> {
+    pub fn record(&self, types: Vec<Field<Id, Alias<Id, T>>>, fields: Vec<Field<Id, T>>) -> T {
         Type::poly_record(types, fields, self.empty_row())
     }
 
-    pub fn builtin_type(&self, typ: BuiltinType) -> ArcType<Id> {
+    pub fn builtin_type(&self, typ: BuiltinType) -> T {
         match typ {
             BuiltinType::String => self.string(),
             BuiltinType::Byte => self.byte(),
@@ -154,7 +156,7 @@ impl<Id> TypeCache<Id> {
         }
     }
 
-    pub fn array(&self, typ: ArcType<Id>) -> ArcType<Id> {
+    pub fn array(&self, typ: T) -> T {
         Type::app(self.array_builtin(), collect![typ])
     }
 }
@@ -608,7 +610,15 @@ where
         S: ?Sized + IdentEnv<Ident = Id>,
         I: IntoIterator<Item = T>,
     {
-        Type::record(
+        T::from(Type::tuple_(symbols, elems))
+    }
+
+    pub fn tuple_<S, I>(symbols: &mut S, elems: I) -> Type<Id, T>
+    where
+        S: ?Sized + IdentEnv<Ident = Id>,
+        I: IntoIterator<Item = T>,
+    {
+        Type::Record(Type::extend_row(
             vec![],
             elems
                 .into_iter()
@@ -620,7 +630,8 @@ where
                     }
                 })
                 .collect(),
-        )
+            Type::empty_row(),
+        ))
     }
 
     pub fn record(types: Vec<Field<Id, Alias<Id, T>>>, fields: Vec<Field<Id, T>>) -> T {
@@ -763,13 +774,6 @@ where
             _ => false,
         }
     }
-
-    pub fn pretty<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>>
-    where
-        Id: AsRef<str>,
-    {
-        top(self).pretty(arena)
-    }
 }
 
 impl<T> Type<Symbol, T>
@@ -805,8 +809,7 @@ where
             Type::Hole | Type::Opaque | Type::Builtin(_) | Type::Record(_) | Type::Variant(_) => {
                 Cow::Owned(Kind::typ())
             }
-            Type::EmptyRow |
-            Type::ExtendRow { .. } => Cow::Owned(Kind::row().into()),
+            Type::EmptyRow | Type::ExtendRow { .. } => Cow::Owned(Kind::row().into()),
             Type::Variable(ref var) => Cow::Borrowed(&var.kind),
             Type::Generic(ref gen) => Cow::Borrowed(&gen.kind),
             // FIXME can be another kind
@@ -825,18 +828,14 @@ where
         };
         for _ in 0..applied_args {
             immediate_kind = match immediate_kind {
-                Cow::Borrowed(k) => {
-                    match **k {
-                        Kind::Function(_, ref ret) => Cow::Borrowed(ret),
-                        _ => return Cow::Borrowed(k),
-                    }
-                }
-                Cow::Owned(k) => {
-                    match *k {
-                        Kind::Function(_, ref ret) => Cow::Owned(ret.clone()),
-                        _ => return Cow::Owned(k.clone()),
-                    }
-                }
+                Cow::Borrowed(k) => match **k {
+                    Kind::Function(_, ref ret) => Cow::Borrowed(ret),
+                    _ => return Cow::Borrowed(k),
+                },
+                Cow::Owned(k) => match *k {
+                    Kind::Function(_, ref ret) => Cow::Owned(ret.clone()),
+                    _ => return Cow::Owned(k.clone()),
+                },
             };
         }
         immediate_kind
@@ -884,7 +883,7 @@ impl<Id: fmt::Debug> fmt::Debug for ArcType<Id> {
 
 impl<Id: AsRef<str>> fmt::Display for ArcType<Id> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        (**self).fmt(f)
+        write!(f, "{}", TypeFormatter::new(self))
     }
 }
 
@@ -895,6 +894,19 @@ impl<Id> Deref for ArcType<Id> {
         &self.typ
     }
 }
+
+impl<Id> HasSpan for ArcType<Id> {
+    fn span(&self) -> Span<BytePos> {
+        Span::new(0.into(), 0.into())
+    }
+}
+
+impl<Id> Commented for ArcType<Id> {
+    fn comment(&self) -> Option<&Comment> {
+        None
+    }
+}
+
 
 impl<Id> ArcType<Id> {
     pub fn new(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
@@ -921,6 +933,13 @@ impl<Id> ArcType<Id> {
 
     pub fn strong_count(typ: &ArcType<Id>) -> usize {
         Arc::strong_count(&typ.typ)
+    }
+
+    pub fn pretty<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>>
+    where
+        Id: AsRef<str>,
+    {
+        top(self).pretty(&Printer::new(arena, &Source::new("")))
     }
 }
 
@@ -1142,40 +1161,39 @@ impl Prec {
 }
 
 
-fn dt<'a, I, T>(prec: Prec, typ: &'a Type<I, T>) -> DisplayType<'a, I, T> {
+fn dt<'a, T>(prec: Prec, typ: &'a T) -> DisplayType<'a, T> {
     DisplayType {
         prec: prec,
         typ: typ,
     }
 }
 
-fn top<'a, I, T>(typ: &'a Type<I, T>) -> DisplayType<'a, I, T> {
+fn top<'a, T>(typ: &'a T) -> DisplayType<'a, T> {
     dt(Prec::Top, typ)
 }
 
-pub fn display_type<'a, I, T>(typ: &'a Type<I, T>) -> TypeFormatter<'a, I, T> {
+pub fn display_type<'a, T>(typ: &'a T) -> TypeFormatter<'a, T> {
     TypeFormatter {
         width: 80,
         typ: typ,
     }
 }
 
-pub struct DisplayType<'a, I: 'a, T: 'a> {
+pub struct DisplayType<'a, T: 'a> {
     prec: Prec,
-    typ: &'a Type<I, T>,
+    typ: &'a T,
 }
 
-pub struct TypeFormatter<'a, I, T>
+pub struct TypeFormatter<'a, T>
 where
-    I: 'a,
     T: 'a,
 {
     width: usize,
-    typ: &'a Type<I, T>,
+    typ: &'a T,
 }
 
-impl<'a, I, T> TypeFormatter<'a, I, T> {
-    pub fn new(typ: &'a Type<I, T>) -> Self {
+impl<'a, T> TypeFormatter<'a, T> {
+    pub fn new(typ: &'a T) -> Self {
         TypeFormatter {
             width: 80,
             typ: typ,
@@ -1183,23 +1201,24 @@ impl<'a, I, T> TypeFormatter<'a, I, T> {
     }
 }
 
-impl<'a, I, T> TypeFormatter<'a, I, T> {
+impl<'a, T> TypeFormatter<'a, T> {
     pub fn width(mut self, width: usize) -> Self {
         self.width = width;
         self
     }
 }
 
-impl<'a, I, T> fmt::Display for TypeFormatter<'a, I, T>
+impl<'a, I, T> fmt::Display for TypeFormatter<'a, T>
 where
-    T: Deref<Target = Type<I, T>> + 'a,
+    T: Deref<Target = Type<I, T>> + HasSpan + Commented + 'a,
     I: AsRef<str>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let arena = Arena::new();
+        let source = Source::new("");
+        let printer = Printer::new(&arena, &source);
         let mut s = Vec::new();
-        dt(Prec::Top, self.typ)
-            .pretty(&arena)
+        pretty_print(&printer, self.typ)
             .group()
             .1
             .render(self.width, &mut s)
@@ -1208,15 +1227,28 @@ where
     }
 }
 
-pub trait ToDoc<'a, A> {
-    fn to_doc(&'a self, allocator: &'a A) -> DocBuilder<'a, A>
+pub trait ToDoc<'a, A, E> {
+    fn to_doc(&'a self, allocator: &'a A, env: E) -> DocBuilder<'a, A>
     where
         A: DocAllocator<'a>;
 }
 
-impl<'a, I> ToDoc<'a, Arena<'a>> for ArcType<I> where I: AsRef<str> {
-    fn to_doc(&'a self, allocator: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>> {
-        dt(Prec::Top, self).pretty(allocator)
+impl<'a, I> ToDoc<'a, Arena<'a>, ()> for ArcType<I>
+where
+    I: AsRef<str>,
+{
+    fn to_doc(&'a self, arena: &'a Arena<'a>, _: ()) -> DocBuilder<'a, Arena<'a>> {
+        self.to_doc(arena, &Source::new(""))
+    }
+}
+
+impl<'a, 'e, I> ToDoc<'a, Arena<'a>, &'e Source<'a>> for ArcType<I>
+where
+    I: AsRef<str>,
+{
+    fn to_doc(&'a self, arena: &'a Arena<'a>, source: &'e Source<'a>) -> DocBuilder<'a, Arena<'a>> {
+        let printer = Printer { arena, source };
+        dt(Prec::Top, self).pretty(&printer)
     }
 }
 
@@ -1231,41 +1263,36 @@ macro_rules! chain {
     }}
 }
 
-impl<'a, I, T> DisplayType<'a, I, T>
+impl<'a, I, T> DisplayType<'a, T>
 where
-    T: Deref<Target = Type<I, T>> + 'a,
+    T: Deref<Target = Type<I, T>> + HasSpan + Commented + 'a,
+    I: 'a,
 {
-    pub fn pretty(&self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>>
+    pub fn pretty<'e>(&self, printer: &Printer<'a, 'e>) -> DocBuilder<'a, Arena<'a>>
     where
         I: AsRef<str>,
     {
-        use pretty_print::ident;
+        use pretty_print::{doc_comment, ident};
 
         const INDENT: usize = 4;
 
+        let arena = printer.arena;
+
         let p = self.prec;
-        match *self.typ {
+        let typ = self.typ;
+        let doc = match **typ {
             Type::Hole => arena.text("_"),
             Type::Opaque => arena.text("<opaque>"),
             Type::Variable(ref var) => arena.text(format!("{}", var.id)),
             Type::Generic(ref gen) => arena.text(gen.id.as_ref()),
             Type::App(ref t, ref args) => match self.typ.as_function() {
-                Some((arg, ret)) => {
-                    let doc = chain![arena;
-                            dt(Prec::Function, arg).pretty(arena).group(),
-                            arena.space(),
-                            "-> ",
-                            top(ret).pretty(arena)
-                        ];
-
-                    p.enclose(Prec::Function, arena, doc)
-                }
+                Some(_) => self.pretty_function(printer).nest(INDENT),
                 None => {
-                    let doc = dt(Prec::Top, t).pretty(arena);
+                    let doc = dt(Prec::Top, t).pretty(printer);
                     let arg_doc = arena.concat(args.iter().map(|arg| {
                         arena
                             .space()
-                            .append(dt(Prec::Constructor, arg).pretty(arena))
+                            .append(dt(Prec::Constructor, arg).pretty(printer))
                     }));
                     let doc = doc.append(arg_doc.nest(INDENT));
                     p.enclose(Prec::Constructor, arena, doc).group()
@@ -1285,12 +1312,13 @@ where
                         doc = doc.append("| ").append(field.name.as_ref());
                         for arg in arg_iter(&field.typ) {
                             doc = chain![arena;
-                                            doc,
-                                            " ",
-                                            dt(Prec::Constructor, &arg).pretty(arena)];
+                                doc,
+                                " ",
+                                dt(Prec::Constructor, arg).pretty(printer)
+                            ];
                         }
                     },
-                    ref typ => panic!("Unexpected type `{}` in variant", typ),
+                    _ => panic!("Unexpected type in variant"),
                 };
 
                 p.enclose(Prec::Constructor, arena, doc).group()
@@ -1300,6 +1328,19 @@ where
                 _ => arena.text(t.to_str()),
             },
             Type::Record(ref row) => {
+                let forced_newline = match **row {
+                    Type::ExtendRow { ref fields, .. } => {
+                        fields.iter().any(|field| field.typ.comment().is_some())
+                    }
+                    _ => false,
+                };
+
+                let newline = if forced_newline {
+                    arena.newline()
+                } else {
+                    arena.space()
+                };
+
                 // Empty records are always formatted as unit (`()`)
                 if let Type::EmptyRow = **row {
                     return arena.text("()");
@@ -1312,14 +1353,14 @@ where
 
                 doc = match **row {
                     Type::EmptyRow => doc,
-                    Type::ExtendRow { .. } => doc.append(top(row).pretty(arena)).nest(INDENT),
+                    Type::ExtendRow { .. } => doc.append(top(row).pretty(printer)).nest(INDENT),
                     _ => doc.append(arena.space())
                         .append("| ")
-                        .append(top(row).pretty(arena))
+                        .append(top(row).pretty(printer))
                         .nest(INDENT),
                 };
                 if !empty_fields {
-                    doc = doc.append(arena.space());
+                    doc = doc.append(newline);
                 }
 
                 doc.append("}").group()
@@ -1327,12 +1368,19 @@ where
             Type::ExtendRow { ref fields, .. } => {
                 let mut doc = arena.nil();
                 let mut typ = self.typ;
+                let forced_newline = fields.iter().any(|field| field.typ.comment().is_some());
+
+                let newline = if forced_newline {
+                    arena.newline()
+                } else {
+                    arena.space()
+                };
 
                 while let Type::ExtendRow {
                     ref types,
                     ref rest,
                     ..
-                } = *typ
+                } = **typ
                 {
                     for (i, field) in types.iter().enumerate() {
                         let f = chain![arena;
@@ -1342,13 +1390,13 @@ where
                                 arena.text(arg.id.as_ref()).append(" ")
                             })),
                             arena.text("= ")
-                                 .append(top(&field.typ.typ).pretty(arena)),
+                                 .append(top(&field.typ.typ).pretty(printer)),
                             if i + 1 != types.len() || !fields.is_empty() {
                                 arena.text(",")
                             } else {
                                 arena.nil()
                             }].group();
-                        doc = doc.append(arena.space()).append(f);
+                        doc = doc.append(newline.clone()).append(f);
                     }
                     typ = rest;
                 }
@@ -1361,16 +1409,17 @@ where
                     ref fields,
                     ref rest,
                     ..
-                } = *typ
+                } = **typ
                 {
                     for (i, field) in fields.iter().enumerate() {
-                        let mut rhs = top(&*field.typ).pretty(arena);
+                        let mut rhs = top(&field.typ).pretty(printer);
                         match *field.typ {
                             // Records handle nesting on their own
                             Type::Record(_) => (),
                             _ => rhs = rhs.nest(INDENT),
                         }
                         let f = chain![arena;
+                            doc_comment(arena, field.typ.comment()),
                             ident(arena, field.name.as_ref()),
                             " : ",
                             rhs.group(),
@@ -1379,15 +1428,15 @@ where
                             } else {
                                 arena.nil()
                             }].group();
-                        doc = doc.append(arena.space()).append(f);
+                        doc = doc.append(newline.clone()).append(f);
                         typ = rest;
                     }
                 }
-                match *typ {
+                match **typ {
                     Type::EmptyRow => doc,
                     _ => doc.append(arena.space())
                         .append("| ")
-                        .append(top(typ).pretty(arena)),
+                        .append(top(typ).pretty(printer)),
                 }
             }
             // This should not be displayed normally as it should only exist in `ExtendRow`
@@ -1395,29 +1444,47 @@ where
             Type::EmptyRow => arena.text("EmptyRow"),
             Type::Ident(ref id) => arena.text(id.as_ref()),
             Type::Alias(ref alias) => arena.text(alias.name.as_ref()),
+        };
+        match **typ {
+            Type::App(..) | Type::ExtendRow { .. } | Type::Variant(..) => doc,
+            _ => {
+                let comment = printer.comments_before(typ.span().start);
+                comment.append(doc)
+            }
+        }
+    }
+
+    fn pretty_function<'e>(&self, printer: &Printer<'a, 'e>) -> DocBuilder<'a, Arena<'a>>
+    where
+        I: AsRef<str>,
+    {
+        let arena = printer.arena;
+        let p = self.prec;
+        match self.typ.as_function() {
+            Some((arg, ret)) => {
+                let doc = chain![arena;
+                    dt(Prec::Function, arg).pretty(printer).group(),
+                    printer.space_after(arg.span().end),
+                    "-> ",
+                    top(ret).pretty_function(printer)
+                ];
+
+                p.enclose(Prec::Function, arena, doc)
+            }
+            None => self.pretty(printer),
         }
     }
 }
 
-impl<I, T> fmt::Display for Type<I, T>
-where
-    I: AsRef<str>,
-    T: Deref<Target = Type<I, T>>,
-{
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", TypeFormatter::new(self))
-    }
-}
-
-pub fn pretty_print<'a, I, T>(
-    arena: &'a Arena<'a>,
-    typ: &'a Type<I, T>,
+pub fn pretty_print<'a, 'e, I, T>(
+    printer: &Printer<'a, 'e>,
+    typ: &'a T,
 ) -> DocBuilder<'a, Arena<'a>>
 where
-    I: AsRef<str>,
-    T: Deref<Target = Type<I, T>>,
+    I: AsRef<str> + 'a,
+    T: Deref<Target = Type<I, T>> + HasSpan + Commented,
 {
-    dt(Prec::Top, typ).pretty(arena)
+    dt(Prec::Top, typ).pretty(printer)
 }
 
 pub fn walk_type<I, T, F>(typ: &T, mut f: F)
@@ -1616,5 +1683,75 @@ where
             }
             None => (),
         }
+    }
+}
+
+pub fn translate_alias<Id, T, U>(
+    cache: &TypeCache<Id, U>,
+    alias: &AliasData<Id, T>,
+) -> AliasData<Id, U>
+where
+    T: Deref<Target = Type<Id, T>>,
+    U: From<Type<Id, U>> + Clone,
+    Id: Clone,
+{
+    AliasData::new(
+        alias.name.clone(),
+        alias.args.clone(),
+        translate_type(cache, &alias.typ),
+    )
+}
+
+pub fn translate_type<Id, T, U>(cache: &TypeCache<Id, U>, typ: &Type<Id, T>) -> U
+where
+    T: Deref<Target = Type<Id, T>>,
+    U: From<Type<Id, U>> + Clone,
+    Id: Clone,
+{
+    match *typ {
+        Type::App(ref f, ref args) => Type::app(
+            translate_type(cache, f),
+            args.iter().map(|typ| translate_type(cache, typ)).collect(),
+        ),
+        Type::Record(ref row) => U::from(Type::Record(translate_type(cache, row))),
+        Type::Variant(ref row) => U::from(Type::Variant(translate_type(cache, row))),
+        Type::ExtendRow {
+            ref types,
+            ref fields,
+            ref rest,
+        } => Type::extend_row(
+            types
+                .iter()
+                .map(|field| {
+                    Field {
+                        name: field.name.clone(),
+                        typ: Alias::from(translate_alias(cache, &field.typ)),
+                    }
+                })
+                .collect(),
+            fields
+                .iter()
+                .map(|field| {
+                    Field {
+                        name: field.name.clone(),
+                        typ: translate_type(cache, &field.typ),
+                    }
+                })
+                .collect(),
+            translate_type(cache, rest),
+        ),
+        Type::Hole => cache.hole(),
+        Type::Opaque => cache.opaque(),
+        Type::Builtin(ref builtin) => cache.builtin_type(builtin.clone()),
+        Type::Variable(ref var) => Type::variable(var.clone()),
+        Type::Generic(ref gen) => Type::generic(gen.clone()),
+        Type::Ident(ref id) => Type::ident(id.clone()),
+        // This is not quite correct but currently only `AstType` -> `ArcType` translations are needed
+        // so this will not be used
+        Type::Alias(ref alias) => U::from(Type::Alias(AliasRef {
+            index: 0,
+            group: Arc::new(vec![translate_alias(cache, alias)]),
+        })),
+        Type::EmptyRow => cache.empty_row(),
     }
 }

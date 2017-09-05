@@ -119,7 +119,7 @@ pub struct GlobalVmState {
 
     #[cfg_attr(feature = "serde_derive", serde(skip))] macros: MacroEnv,
 
-    #[cfg_attr(feature = "serde_derive", serde(skip))] type_cache: TypeCache<Symbol>,
+    #[cfg_attr(feature = "serde_derive", serde(skip))] type_cache: TypeCache<Symbol, ArcType>,
 
     // FIXME These fields should not be public
     #[cfg_attr(feature = "serde_derive", serde(state))] pub gc: Mutex<Gc>,
@@ -407,7 +407,7 @@ impl GlobalVmState {
         Ok(())
     }
 
-    pub fn type_cache(&self) -> &TypeCache<Symbol> {
+    pub fn type_cache(&self) -> &TypeCache<Symbol, ArcType> {
         &self.type_cache
     }
 

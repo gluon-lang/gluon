@@ -3,7 +3,6 @@ extern crate collect_mac;
 extern crate env_logger;
 extern crate gluon_base as base;
 extern crate gluon_parser as parser;
-extern crate log;
 #[macro_use]
 extern crate pretty_assertions;
 
@@ -77,7 +76,7 @@ fn let_type_decl() {
     let _ = ::env_logger::init();
     let e = parse_new!("let f: Int = \\x y -> x + y in f 1 2");
     match e.value {
-        Expr::LetBindings(bind, _) => assert_eq!(bind[0].typ, typ("Int")),
+        Expr::LetBindings(bind, _) => assert_eq!(bind[0].typ, Some(typ("Int"))),
         _ => assert!(false),
     }
 }
@@ -320,7 +319,8 @@ fn let_pattern() {
                             },
                         ],
                     }),
-                    typ: Type::hole(),
+                    typ: None,
+                    resolved_type: Type::hole(),
                     args: vec![],
                     expr: id("test"),
                 },
@@ -466,7 +466,8 @@ id
                         content: "The identity function".into(),
                     }),
                     name: no_loc(Pattern::Ident(TypedIdent::new(intern("id")))),
-                    typ: Type::hole(),
+                    typ: None,
+                    resolved_type: Type::hole(),
                     args: vec![no_loc(TypedIdent::new(intern("x")))],
                     expr: id("x"),
                 },
@@ -492,7 +493,7 @@ id
                 TypeBinding {
                     comment: Some(Comment {
                         typ: CommentType::Block,
-                        content: "Test type ".into(),
+                        content: "Test type".into(),
                     }),
                     name: no_loc(intern("Test")),
                     alias: alias(intern("Test"), Vec::new(), typ("Int")),
@@ -526,7 +527,7 @@ id
                     TypeBinding {
                         comment: Some(Comment {
                             typ: CommentType::Block,
-                            content: "Test type ".into(),
+                            content: "Test type".into(),
                         }),
                         name: no_loc(intern("Test")),
                         alias: alias(intern("Test"), Vec::new(), typ("Int")),
@@ -623,7 +624,8 @@ x
                 ValueBinding {
                     comment: None,
                     name: no_loc(Pattern::Ident(TypedIdent::new(intern("x")))),
-                    typ: Type::app(typ("->"), collect![typ("Int"), typ("Int")]),
+                    typ: Some(Type::app(typ("->"), collect![typ("Int"), typ("Int")])),
+                    resolved_type: Type::hole(),
                     args: vec![],
                     expr: id("x"),
                 },

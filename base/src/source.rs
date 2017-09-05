@@ -83,7 +83,7 @@ impl<'a> Source<'a> {
     }
 
     /// Returns the string which defines the source
-    pub fn src(&self) -> &str {
+    pub fn src(&self) -> &'a str {
         self.src
     }
 
@@ -123,7 +123,7 @@ impl<'a> Source<'a> {
         BytePos::from(iter.src.len())
     }
 
-    pub fn comments_between(&self, span: Span<BytePos>) -> CommentIter {
+    pub fn comments_between(&self, span: Span<BytePos>) -> CommentIter<'a> {
         CommentIter {
             src: &self.src[span.start.to_usize()..span.end.to_usize()],
         }
@@ -184,7 +184,7 @@ impl<'a> DoubleEndedIterator for CommentIter<'a> {
                 self.src = &self.src[..(self.src.len() - newline_len)];
 
                 if trimmed.starts_with("//") && !trimmed.starts_with("///") {
-                    self.src = &self.src[..(self.src.len() - 2 - comment_line.len() - 1)];
+                    self.src = &self.src[..(self.src.len() - 2 - trimmed.len() - 1)];
                     Some(trimmed)
                 } else {
                     Some("")

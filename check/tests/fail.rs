@@ -521,7 +521,7 @@ fn long_type_error_format() {
 Expected: Int
 Found:
     Int
-    -> loooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong
+        -> loooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooong
 0 errors were found during unification:
 "#
     );

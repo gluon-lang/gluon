@@ -15,6 +15,7 @@ fn parse(text: &str) -> Result<SpannedExpr<String>, ParseErrors> {
 
 #[test]
 fn dont_stack_overflow_on_let_bindings() {
+    let _ = env_logger::init();
     let text = r#"
 let _ = 1
 in

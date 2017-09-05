@@ -238,7 +238,7 @@ impl<Pos: Ord> Span<Pos> {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq)]
 pub struct Spanned<T, Pos> {
     pub span: Span<Pos>,
     pub value: T,
@@ -288,4 +288,8 @@ pub fn spanned2<T, Pos>(start: Pos, end: Pos, value: T) -> Spanned<T, Pos> {
         span: span(start, end),
         value: value,
     }
+}
+
+pub trait HasSpan {
+    fn span(&self) -> Span<BytePos>;
 }
