@@ -24,6 +24,13 @@ fn find_span_type(s: &str, pos: BytePos) -> Result<(Span<BytePos>, ArcType), ()>
     completion::completion(extract, &mut expr, pos)
 }
 
+fn find_all_symbols(s: &str, pos: BytePos) -> Result<(String, Vec<Span<BytePos>>), ()> {
+    let (expr, result) = support::typecheck_expr(s);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+
+    completion::find_all_symbols(&expr, pos)
+}
+
 fn find_type(s: &str, pos: BytePos) -> Result<ArcType, ()> {
     find_span_type(s, pos).map(|t| t.1)
 }
@@ -688,4 +695,30 @@ module.ab
         ..Metadata::default()
     });
     assert_eq!(result, expected);
+}
+
+#[test]
+fn find_all_symbols_test() {
+    let _ = env_logger::init();
+
+    let text = r#"
+let test = 1
+let dummy =
+    let test = 3
+    test
+test #Int+ test #Int+ dummy
+"#;
+    let result = find_all_symbols(text, 6.into());
+
+    assert_eq!(
+        result,
+        Ok((
+            "test".to_string(),
+            vec![
+                Span::new(5.into(), 9.into()),
+                Span::new(52.into(), 56.into()),
+                Span::new(63.into(), 67.into()),
+            ]
+        ))
+    );
 }
