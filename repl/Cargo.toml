@@ -27,7 +27,7 @@ lazy_static = "0.2.0"
 rustyline = "1.0.0"
 
 [dev-dependencies]
-pretty_assertions = "0.2.0"
+pretty_assertions = "0.3.4"
 
 [features]
 default = ["env_logger"]

@@ -1,9 +1,8 @@
-use std::iter::once;
 use std::str::FromStr;
 
 use itertools::Itertools;
 
-use base::ast::{Alternative, Array, Comment, Expr, ExprField, Lambda, Literal, Pattern,
+use base::ast::{Alternative, Array, AstType, Comment, Expr, ExprField, Lambda, Literal, Pattern,
     PatternField, SpannedExpr, SpannedIdent, TypeBinding, TypedIdent, ValueBinding};
 use base::kind::{ArcKind, Kind};
 use base::pos::{self, BytePos, Spanned};
@@ -14,7 +13,7 @@ use token::Token;
 
 use {Error, ErrorEnv, FieldExpr, FieldPattern, MutIdentEnv};
 
-grammar<'input, 'env, Id>(src: &'input str, type_cache: &TypeCache<Id>, env: MutIdentEnv<'env, Id>, errors: ErrorEnv<'env, 'input>)
+grammar<'input, 'env, Id>(src: &'input str, type_cache: &TypeCache<Id, ArcType<Id>>, env: MutIdentEnv<'env, Id>, errors: ErrorEnv<'env, 'input>)
     where Id: Clone;
 
 extern {
@@ -146,26 +145,40 @@ TypeParam: Generic<Id> = {
         Generic::new(id, kind),
 };
 
-RecordField: Field<Id> =
-    <Ident> ":" <Type> => Field::new(<>);
+RecordField: Field<Id, AstType<Id>> =
+    <comment: DocComment?> <id: Ident> ":" <typ: Sp<Type_>> =>
+        Field::new(
+            id,
+            AstType::with_comment(comment, typ),
+        );
 
-VariantField: (Id, Vec<ArcType<Id>>) =
+VariantField: (Id, Vec<AstType<Id>>) =
     "|" <Ident> <AtomicType*> => (<>);
 
 TypeBinding: TypeBinding<Id> = {
     <id: Sp<Ident>> <params: TypeParam*> "=" <row: Sp<VariantField+>> => {
         let typ_args = params.iter().cloned().map(Type::generic).collect();
-        let typ: ArcType<Id> = Type::app(Type::ident(id.value.clone()), typ_args);
+        let typ: AstType<Id> = Type::app(Type::ident(id.value.clone()), typ_args);
 
         let row_span = row.span;
         let row = row.value.into_iter()
-            .map(|(id, params)| Field::new(id, type_cache.function(params, typ.clone())))
+            .map(|(id, params)| Field::new(id, Type::function(params, typ.clone())))
             .collect();
         
         TypeBinding {
             comment: None,
             name: id.clone(),
-            alias: pos::spanned(row_span, AliasData::new(id.value, params, type_cache.variant(row))),
+            alias: pos::spanned(
+                row_span,
+                AliasData::new(
+                    id.value.clone(),
+                    params,
+                    AstType::from(pos::spanned(
+                        row_span,
+                        Type::Variant(Type::extend_row(vec![], row, Type::empty_row()))
+                    )),
+                )
+            ),
             finalized_alias: None,
         }
     },
@@ -174,28 +187,28 @@ TypeBinding: TypeBinding<Id> = {
         TypeBinding {
             comment: None,
             name: id.clone(),
-            alias: pos::spanned(body.span, AliasData::new(id.value, params, body.value)),
+            alias: pos::spanned(body.span, AliasData::new(id.value.clone(), params, body.value)),
             finalized_alias: None,
         }
     },
 };
 
-AtomicType: ArcType<Id> = {
+AtomicType_: Type<Id, AstType<Id>> = {
     "(" "->" ")" =>
-        type_cache.function_builtin(),
+        Type::Builtin(BuiltinType::Function),
 
     <ids: (<IdentStr> ".")*> <last: IdentStr> => {
         if ids.is_empty() {
             if last == "_" {
-                type_cache.hole()
+                Type::Hole
             } else {
                 match BuiltinType::from_str(last) {
-                    Ok(ty) => type_cache.builtin_type(ty),
+                    Ok(ty) => Type::Builtin(ty),
                     Err(_) if last.starts_with(char::is_uppercase) => {
-                        Type::ident(env.from_str(last))
+                        Type::Ident(env.from_str(last))
                     }
                     Err(_) => {
-                        Type::generic(Generic::new(env.from_str(last), Kind::hole()))
+                        Type::Generic(Generic::new(env.from_str(last), Kind::hole()))
                     }
                 }
             }
@@ -206,33 +219,52 @@ AtomicType: ArcType<Id> = {
                 .chain(Some(last))
                 .intersperse(".")
                 .collect();
-            Type::ident(env.from_str(&project_id))
+            Type::Ident(env.from_str(&project_id))
         }
     },
 
     "(" <elems: Comma<Type>> ")" =>
         match elems.len() {
             // Parenthesized type
-            1 => elems.into_iter().next().unwrap(),
-            _ => type_cache.tuple(env, elems),
+            1 => elems.into_iter().next().unwrap().into_inner(),
+            _ => Type::tuple_(env, elems),
         },
 
     "{" <row: Comma<RecordField>> "}" =>
-        type_cache.record(vec![], row),
+        Type::Record(Type::extend_row(
+            vec![],
+            row,
+            Type::empty_row(),
+        )),
 };
 
-AppType = {
-    AtomicType,
+AtomicType : AstType<Id> = {
+    <typ: Sp<AtomicType_>> => AstType::from(typ),
+};
+
+AppType_ = {
+    AtomicType_,
 
     <ty: AtomicType> <args: AtomicType+> =>
-        Type::app(ty, args.into_iter().collect()),
+        Type::App(ty, args.into_iter().collect()),
 };
 
-Type = {
-    AppType,
+AppType : AstType<Id> = {
+    <typ: Sp<AppType_>> => AstType::from(typ),
+};
 
-    <lhs: AppType> "->" <rhs: Type> =>
-        type_cache.function(once(lhs), rhs),
+Type_ = {
+    AppType_,
+
+    <lhs: AppType> <f: Sp<"->">> <rhs: Type> =>
+        Type::App(
+            AstType::from(pos::spanned(f.span, Type::Builtin(BuiltinType::Function))),
+            collect![lhs, rhs]
+        )
+};
+
+Type : AstType<Id> = {
+    <typ: Sp<Type_>> => AstType::from(typ),
 };
 
 // Patterns
@@ -263,7 +295,7 @@ AtomicPattern: Pattern<Id> = {
         match elems.len() {
             // Parenthesized pattern
             1 => elems.into_iter().next().unwrap().value,
-            _ => Pattern::Tuple { typ: type_cache.hole(), elems: elems },
+            _ => Pattern::Tuple { typ: Type::hole(), elems: elems },
         },
 
     "{" <fields: Comma<FieldPattern>> "}" => {
@@ -284,7 +316,7 @@ AtomicPattern: Pattern<Id> = {
         }
 
         Pattern::Record {
-            typ: type_cache.hole(),
+            typ: Type::hole(),
             types: types,
             fields: values,
         }
@@ -364,7 +396,8 @@ ValueBinding: ValueBinding<Id> = {
         ValueBinding {
             comment: comment,
             name: name,
-            typ: typ.unwrap_or_else(|| type_cache.hole()),
+            typ: typ,
+            resolved_type: type_cache.hole(),
             args: vec![],
             expr: body,
         },
@@ -373,7 +406,8 @@ ValueBinding: ValueBinding<Id> = {
         ValueBinding {
             comment,
             name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
-            typ: typ.unwrap_or_else(|| type_cache.hole()),
+            typ: typ,
+            resolved_type: type_cache.hole(),
             args,
             expr: body,
         },
@@ -391,18 +425,18 @@ AtomicExpr: Expr<Id> = {
     //     Expr::Getter(id),
 
     <expr: SpAtomicExpr> "." <id: Ident> =>
-        Expr::Projection(Box::new(expr), id, type_cache.hole()),
+        Expr::Projection(Box::new(expr), id, Type::hole()),
 
     <expr: SpAtomicExpr> "." <err: !> => {
         errors.push(err.error);
-        Expr::Projection(Box::new(expr), env.from_str(""), type_cache.hole())
+        Expr::Projection(Box::new(expr), env.from_str(""), Type::hole())
     },
 
     "(" <elems: Comma<SpExpr>> ")" =>
-        Expr::Tuple { typ: type_cache.hole(), elems: elems },
+        Expr::Tuple { typ: Type::hole(), elems: elems },
 
     "[" <elems: Comma<SpExpr>> "]" => Expr::Array(Array {
-            typ: type_cache.hole(),
+            typ: Type::hole(),
             exprs: elems,
         }),
 
@@ -426,7 +460,7 @@ AtomicExpr: Expr<Id> = {
         }
 
         Expr::Record {
-            typ: type_cache.hole(),
+            typ: Type::hole(),
             types: types,
             exprs: values,
         }

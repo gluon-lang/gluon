@@ -175,8 +175,8 @@ let make_Ord ord =
     }
 
 /**
-The basic operation on numbers.
-Defined for both the primitive type `Int` and `Float`
+ The basic operation on numbers.
+ Defined for both the primitive type `Int` and `Float`
 */
 type Num a = {
     ord : Ord a,

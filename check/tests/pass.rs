@@ -223,10 +223,10 @@ in test2 1";
     assert_eq!(result, expected);
     assert_match!(expr.value, ast::Expr::LetBindings(ref binds, _) => {
         assert_eq!(binds.len(), 2);
-        assert_match!(*binds[0].typ, Type::App(_, ref args) => {
+        assert_match!(*binds[0].resolved_type, Type::App(_, ref args) => {
             assert_match!(*args[0], Type::Generic(_) => ())
         });
-        assert_match!(*binds[1].typ, Type::App(_, ref args) => {
+        assert_match!(*binds[1].resolved_type, Type::App(_, ref args) => {
             assert_match!(*args[0], Type::Generic(_) => ())
         });
     });

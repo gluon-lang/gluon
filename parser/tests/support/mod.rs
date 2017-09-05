@@ -1,7 +1,7 @@
 #![allow(unused)]
 
-use base::ast::{Alternative, Array, DisplayEnv, Expr, ExprField, IdentEnv, Lambda, Literal,
-                Pattern, SpannedExpr, TypeBinding, TypedIdent, ValueBinding};
+use base::ast::{Alternative, Array, AstType, DisplayEnv, Expr, ExprField, IdentEnv, Lambda,
+                Literal, Pattern, SpannedExpr, TypeBinding, TypedIdent, ValueBinding};
 use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::kind::Kind;
@@ -80,7 +80,8 @@ pub fn let_a(s: &str, args: &[&str], e: SpExpr, b: SpExpr) -> SpExpr {
             ValueBinding {
                 comment: None,
                 name: no_loc(Pattern::Ident(TypedIdent::new(intern(s)))),
-                typ: Type::hole(),
+                typ: None,
+                resolved_type: Type::hole(),
                 args: args.iter()
                     .map(|i| no_loc(TypedIdent::new(intern(i))))
                     .collect(),
@@ -95,7 +96,7 @@ pub fn id(s: &str) -> SpExpr {
     no_loc(Expr::Ident(TypedIdent::new(intern(s))))
 }
 
-pub fn typ(s: &str) -> ArcType<String> {
+pub fn typ(s: &str) -> AstType<String> {
     assert!(s.len() != 0);
     match s.parse() {
         Ok(b) => Type::builtin(b),
@@ -104,7 +105,7 @@ pub fn typ(s: &str) -> ArcType<String> {
     }
 }
 
-pub fn generic_ty(s: &str) -> ArcType<String> {
+pub fn generic_ty(s: &str) -> AstType<String> {
     Type::generic(generic(s))
 }
 
@@ -151,7 +152,7 @@ pub fn lambda(name: &str, args: Vec<String>, body: SpExpr) -> SpExpr {
 pub fn type_decl(
     name: String,
     args: Vec<Generic<String>>,
-    typ: ArcType<String>,
+    typ: AstType<String>,
     body: SpExpr,
 ) -> SpExpr {
     type_decls(
@@ -226,7 +227,7 @@ pub fn error() -> SpExpr {
 pub fn alias<Id>(
     name: Id,
     args: Vec<Generic<Id>>,
-    typ: ArcType<Id>,
-) -> Spanned<AliasData<Id, ArcType<Id>>, BytePos> {
+    typ: AstType<Id>,
+) -> Spanned<AliasData<Id, AstType<Id>>, BytePos> {
     no_loc(AliasData::new(name, args, typ))
 }

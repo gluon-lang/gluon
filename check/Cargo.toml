@@ -23,7 +23,7 @@ gluon_parser = { path = "../parser", version = "0.5.0", optional = true } # GLUO
 
 [dev-dependencies]
 collect-mac = "0.1.0"
-pretty_assertions = "0.2.0"
+pretty_assertions = "0.3.4"
 
 [features]
 test = ["gluon_parser", "env_logger"]

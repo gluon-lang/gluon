@@ -26,12 +26,6 @@ and make ord : Ord k -> _ =
             | GT -> Bin k2 v2 l (insert k v r)
         | Tip -> Bin k v empty empty
 
-    let to_list m : Map k a -> List { key : k, value : a } =
-        let (++) = prelude.monoid_List.append
-        match m with
-        | Bin key value l r -> to_list l ++ Cons { key, value } (to_list r)
-        | Tip -> Nil
-
     let map f m : (a -> b) -> Map k a -> Map k b =
         match m with
         | Tip -> Tip
@@ -76,12 +70,19 @@ and make ord : Ord k -> _ =
     let traverse app f : Applicative t -> (a -> t b) -> Map k a -> t (Map k b) =
         traverse_with_key app (prelude.const f)
 
-    let append l r = foldr_with_key insert l r
+    let append l r : Map k a -> Map k a -> Map k a = foldr_with_key insert l r
 
     let monoid : Monoid _ = { append, empty }
     let functor : Functor _ = { map }
     let foldable : Foldable _ = { foldr, foldl }
     let traversable : Traversable _ = { functor, foldable, traverse }
+
+    let to_list : Map k a -> List { key : k, value : a } =
+        foldr_with_key (\key value acc -> Cons { key, value } acc) Nil
+
+    let keys : Map k a -> List k = foldr_with_key (\k _ acc -> Cons k acc) Nil
+
+    let values : Map k a -> List a = foldr Cons Nil
 
     {
         monoid,
@@ -91,11 +92,13 @@ and make ord : Ord k -> _ =
         singleton,
         find,
         insert,
-        to_list,
         map_with_key,
         foldr_with_key,
         foldl_with_key,
-        traverse_with_key
+        traverse_with_key,
+        to_list,
+        keys,
+        values
     }
 
 { Map, make }

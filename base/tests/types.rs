@@ -1,5 +1,3 @@
-
-extern crate collect_mac;
 extern crate gluon_base as base;
 extern crate pretty;
 
@@ -9,6 +7,8 @@ use pretty::{Arena, DocAllocator};
 
 use base::kind::Kind;
 use base::types::*;
+use base::pretty_print::Printer;
+use base::source::Source;
 
 fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
 where
@@ -151,11 +151,11 @@ fn show_record_multi_line() {
     Test a = a -> String,
     x : Int,
     test : Test Int (a -> String)
-        -> Float
-        -> (a -> String)
-        -> (a -> String)
-        -> a
-        -> String,
+            -> Float
+            -> (a -> String)
+            -> (a -> String)
+            -> a
+            -> String,
     record_looooooooooooooooooooooooooooooooooong : {
         Test a = a -> String,
         x : Int,
@@ -225,9 +225,11 @@ fn break_record() {
         ],
     );
     let arena = Arena::new();
+    let source = Source::new("");
+    let printer = Printer::new(&arena, &source);
     let typ = arena
         .text("aaaaaaaaabbbbbbbbbbcccccccccc ")
-        .append(pretty_print(&arena, &typ))
+        .append(pretty_print(&printer, &typ))
         .append(arena.newline());
     assert_eq_display!(
         format!("{}", typ.1.pretty(80)),
