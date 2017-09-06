@@ -651,8 +651,15 @@ pub fn find_all_symbols(
 
 #[derive(Debug, PartialEq)]
 pub enum CompletionSymbol<'a> {
-    Value(&'a Symbol, &'a ArcType),
-    Type(&'a Symbol, &'a AliasData<Symbol, AstType<Symbol>>),
+    Value {
+        name: &'a Symbol,
+        typ: &'a ArcType,
+        expr: &'a SpannedExpr<Symbol>,
+    },
+    Type {
+        name: &'a Symbol,
+        alias: &'a AliasData<Symbol, AstType<Symbol>>,
+    },
 }
 
 pub fn all_symbols(expr: &SpannedExpr<Symbol>) -> Vec<Spanned<CompletionSymbol, BytePos>> {
@@ -668,7 +675,10 @@ pub fn all_symbols(expr: &SpannedExpr<Symbol>) -> Vec<Spanned<CompletionSymbol, 
                     self.result.extend(binds.iter().map(|bind| {
                         pos::spanned(
                             bind.name.span,
-                            CompletionSymbol::Type(&bind.name.value, &bind.alias.value),
+                            CompletionSymbol::Type {
+                                name: &bind.name.value,
+                                alias: &bind.alias.value,
+                            },
                         )
                     }));
                 }
@@ -676,7 +686,11 @@ pub fn all_symbols(expr: &SpannedExpr<Symbol>) -> Vec<Spanned<CompletionSymbol, 
                     binds.iter().flat_map(|bind| match bind.name.value {
                         Pattern::Ident(ref id) => Some(pos::spanned(
                             bind.name.span,
-                            CompletionSymbol::Value(&id.name, &id.typ),
+                            CompletionSymbol::Value {
+                                name: &id.name,
+                                typ: &id.typ,
+                                expr: &bind.expr,
+                            },
                         )),
                         _ => None,
                     }),
