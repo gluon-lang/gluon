@@ -722,3 +722,26 @@ test #Int+ test #Int+ dummy
         ))
     );
 }
+
+#[test]
+fn all_symbols_test() {
+    let _ = env_logger::init();
+
+    let text = r#"
+let test = 1
+let dummy =
+    let test = 3
+    test
+type Abc a = a Int
+// Unpacked values are not counted because they probably originated in another module
+let { x, y } = { x = 1, y = 2 }
+1
+"#;
+
+    let (expr, result) = support::typecheck_expr(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+
+    let symbols = completion::all_symbols(&expr);
+
+    assert_eq!(symbols.len(), 4);
+}

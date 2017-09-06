@@ -3,12 +3,12 @@
 use std::iter::once;
 use std::cmp::Ordering;
 
-use base::ast::{walk_expr, walk_pattern, Expr, Pattern, SpannedExpr, SpannedIdent, SpannedPattern,
-                Typed, TypedIdent, Visitor};
+use base::ast::{walk_expr, walk_pattern, AstType, Expr, Pattern, SpannedExpr, SpannedIdent,
+                SpannedPattern, Typed, TypedIdent, Visitor};
 use base::fnv::FnvMap;
 use base::metadata::Metadata;
 use base::resolve;
-use base::pos::{BytePos, Span, Spanned, NO_EXPANSION};
+use base::pos::{self, BytePos, Span, Spanned, NO_EXPANSION};
 use base::scoped_map::ScopedMap;
 use base::symbol::Symbol;
 use base::types::{AliasData, ArcType, Type, TypeEnv};
@@ -649,6 +649,47 @@ pub fn find_all_symbols(
     })
 }
 
+#[derive(Debug, PartialEq)]
+pub enum CompletionSymbol<'a> {
+    Value(&'a Symbol, &'a ArcType),
+    Type(&'a Symbol, &'a AliasData<Symbol, AstType<Symbol>>),
+}
+
+pub fn all_symbols(expr: &SpannedExpr<Symbol>) -> Vec<Spanned<CompletionSymbol, BytePos>> {
+    struct AllIdents<'a> {
+        result: Vec<Spanned<CompletionSymbol<'a>, BytePos>>,
+    }
+    impl<'a> Visitor<'a> for AllIdents<'a> {
+        type Ident = Symbol;
+
+        fn visit_expr(&mut self, e: &'a SpannedExpr<Self::Ident>) {
+            match e.value {
+                Expr::TypeBindings(ref binds, _) => {
+                    self.result.extend(binds.iter().map(|bind| {
+                        pos::spanned(
+                            bind.name.span,
+                            CompletionSymbol::Type(&bind.name.value, &bind.alias.value),
+                        )
+                    }));
+                }
+                Expr::LetBindings(ref binds, _) => self.result.extend(
+                    binds.iter().flat_map(|bind| match bind.name.value {
+                        Pattern::Ident(ref id) => Some(pos::spanned(
+                            bind.name.span,
+                            CompletionSymbol::Value(&id.name, &id.typ),
+                        )),
+                        _ => None,
+                    }),
+                ),
+                _ => (),
+            }
+            walk_expr(self, e)
+        }
+    }
+    let mut visitor = AllIdents { result: Vec::new() };
+    visitor.visit_expr(expr);
+    visitor.result
+}
 
 pub fn suggest<T>(env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Vec<Suggestion>
 where
