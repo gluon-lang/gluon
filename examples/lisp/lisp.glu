@@ -64,10 +64,10 @@ let applicative_Lisp : Applicative Lisp = {
                 | Ok r -> Ok { value = g.value r.value, state = r.state }
                 | Err err -> Err err
             | Err err -> Err err),
-    pure = \value -> lisp (\state -> Ok { value, state })
+    wrap = \value -> lisp (\state -> Ok { value, state })
 }
 
-let { pure } = applicative_Lisp
+let { wrap } = applicative_Lisp
 
 let monad_Lisp : Monad Lisp = {
     applicative = applicative_Lisp,
@@ -85,7 +85,7 @@ let set_state state : LispState -> Lisp () = lisp (\_ -> Ok { value = (), state 
 let modify_state f : (LispState -> LispState) -> Lisp () =
     get_state >>= \state -> set_state (f state)
 let scope_state run : Lisp a -> Lisp a =
-    get_state >>= \original -> run >>= \x -> set_state original >>= \_ -> pure x
+    get_state >>= \original -> run >>= \x -> set_state original >>= \_ -> wrap x
 
 let fail msg : String -> Lisp a = lisp (\_ -> Err msg)
 
@@ -96,11 +96,11 @@ type Binop a = a -> a -> a
 let primitive_binop name int_op float_op : _ -> Binop Int -> Binop Float -> Map String Expr =
     let unpack x : Expr -> Lisp Int =
         match x with
-        | Int i -> pure i
+        | Int i -> wrap i
         | _ -> fail "Expected integer"
     let unpack x : Expr -> Lisp Float =
         match x with
-        | Float f -> pure f
+        | Float f -> wrap f
         | _ -> fail "Expected float"
 
     let fold unpack op = foldM (\acc x -> map_lisp (\y -> op acc y) (unpack x))
@@ -121,7 +121,7 @@ let define xs =
         get_state
             >>= \state ->
             let new_state = prim_map.insert name value state
-            set_state new_state >>= \_ -> pure value
+            set_state new_state >>= \_ -> wrap value
     | Cons (List (Cons (Atom name) params)) body ->
         get_state
             >>= \closure ->
@@ -133,7 +133,7 @@ let define xs =
                 }
                 let new_state = prim_map.insert name function closure
                 set_state new_state
-                    >>= \_ -> pure function
+                    >>= \_ -> wrap function
     | _ -> fail "Unexpected parameters to define `define`"
 
 let primitives =
@@ -150,7 +150,7 @@ let apply f xs : Expr -> List Expr -> Lisp Expr =
         | (Cons name names, Cons value values) ->
             modify_state (\state -> prim_map.insert name value state)
                 >>= \_ -> add_args names values
-        | (Nil, _) -> pure ()
+        | (Nil, _) -> wrap ()
         | _ -> fail "Not enough arguments to function"
 
     match f with
@@ -165,11 +165,11 @@ and eval_lisp expr : Expr -> Lisp Expr =
         get_state
             >>= \state ->
             match prim_map.find name state with
-            | Some value -> pure value
+            | Some value -> wrap value
             | None -> fail ("Binding `" <> name <> "` is not defined")
-    | Int _ -> pure expr
-    | Float _ -> pure expr
-    | Function _ -> pure expr
+    | Int _ -> wrap expr
+    | Float _ -> wrap expr
+    | Function _ -> wrap expr
     | List list ->
         match list with
         | Cons x xs ->
@@ -186,7 +186,7 @@ and eval_lisp expr : Expr -> Lisp Expr =
                                 >>= \evaluated_args -> apply prim evaluated_args
                         | None -> fail ("Variable `" <> name <> "` does not exist")
             | _ -> fail ("Cant apply" <> show.show x)
-        | Nil -> pure expr
+        | Nil -> wrap expr
 
 and eval_exprs exprs = foldM (\_result expr -> eval_lisp expr) (List Nil) exprs
 

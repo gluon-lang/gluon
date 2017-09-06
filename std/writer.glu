@@ -17,7 +17,7 @@ let make w : Monoid w -> Impl w =
     let applicative : Applicative (Writer w) = {
         functor,
         apply = \mf m -> { value = mf.value m.value, writer = mf.writer <> m.writer },
-        pure = \value -> { value, writer = empty }
+        wrap = \value -> { value, writer = empty }
     }
 
     let monad : Monad (Writer w) = {

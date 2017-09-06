@@ -92,12 +92,16 @@ fn read_file_to_string(s: &str) -> IO<String> {
 
 fn read_char() -> IO<char> {
     match stdin().bytes().next() {
-        Some(result) => match result {
-            Ok(b) => ::std::char::from_u32(b as u32)
-                .map(IO::Value)
-                .unwrap_or_else(|| IO::Exception("Not a valid char".into())),
-            Err(err) => IO::Exception(format!("{}", err)),
-        },
+        Some(result) => {
+            match result {
+                Ok(b) => {
+                    ::std::char::from_u32(b as u32)
+                        .map(IO::Value)
+                        .unwrap_or_else(|| IO::Exception("Not a valid char".into()))
+                }
+                Err(err) => IO::Exception(format!("{}", err)),
+            }
+        }
         None => IO::Exception("No read".into()),
     }
 }
@@ -201,17 +205,22 @@ pub fn load(vm: &Thread) -> Result<()> {
     //     = f (m ())
     let io_flat_map = vec![
         // [f, m, ()]       Initial stack
-        Call(1),     // [f, m_ret]       Call m ()
-        PushInt(0),  // [f, m_ret, ()]   Add a dummy argument ()
-        TailCall(2), /* [f_ret]          Call f m_ret () */
+        Call(1), // [f, m_ret]       Call m ()
+        PushInt(0), // [f, m_ret, ()]   Add a dummy argument ()
+        TailCall(2) /* [f_ret]          Call f m_ret () */,
     ];
     let io_flat_map_type =
         <fn(fn(A) -> IO<B>, IO<A>) -> IO<B> as VmType>::make_type(vm);
-    vm.add_bytecode("io_flat_map", io_flat_map_type, 3, io_flat_map)?;
+    vm.add_bytecode(
+        "io_flat_map",
+        io_flat_map_type,
+        3,
+        io_flat_map,
+    )?;
 
 
     vm.add_bytecode(
-        "io_pure",
+        "io_wrap",
         <fn(A) -> IO<A> as VmType>::make_type(vm),
         2,
         vec![Pop(1)],

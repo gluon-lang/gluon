@@ -12,12 +12,12 @@ let (++) = string.monoid.append
 type Test a = Writer (List String) a
 
 let writer = make_Writer prelude.monoid_List
-let { pure } = writer.applicative
+let { wrap } = writer.applicative
 
 let assert x = if x then () else error "Assertion failed"
 and assert_eq show eq = \x y ->
     if eq.(==) x y
-    then pure ()
+    then wrap ()
     else tell (Cons ("Assertion failed: " ++ show.show x ++ " != " ++ show.show y) Nil)
 
 let assert_ieq = assert_eq prelude.show_Int prelude.eq_Int
