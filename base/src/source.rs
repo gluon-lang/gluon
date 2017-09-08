@@ -13,19 +13,25 @@ pub struct Lines {
 
 impl Lines {
     /// Creates a mapping for `src`
-    pub fn new(src: &str) -> Lines {
+    pub fn new<I>(src: I) -> Lines
+    where
+        I: IntoIterator<Item = u8>,
+    {
         use std::iter;
 
-        let input_indices = src.as_bytes()
-            .iter()
-            .enumerate()
-            .filter(|&(_, &b)| b == b'\n')
-            .map(|(i, _)| BytePos::from(i + 1)); // index of first char in the line
+        let mut len = 0;
+        let starting_bytes = {
+            let input_indices = src.into_iter()
+                .inspect(|_| len += 1)
+                .enumerate()
+                .filter(|&(_, b)| b == b'\n')
+                .map(|(i, _)| BytePos::from(i + 1)); // index of first char in the line
 
-        let starting_bytes = iter::once(BytePos::from(0)).chain(input_indices).collect();
+            iter::once(BytePos::from(0)).chain(input_indices).collect()
+        };
         Lines {
-            starting_bytes: starting_bytes,
-            end: src.len(),
+            starting_bytes,
+            end: len,
         }
     }
 
@@ -78,7 +84,7 @@ impl<'a> Source<'a> {
     pub fn new(src: &str) -> Source {
         Source {
             src: src,
-            lines: Lines::new(src),
+            lines: Lines::new(src.as_bytes().iter().cloned()),
         }
     }
 
