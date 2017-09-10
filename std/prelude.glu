@@ -570,24 +570,25 @@ let show_Float : Show Float = { show = prim.show_float }
 
 let show_Char : Show Char = { show = prim.show_char }
 
-let (++) = string_prim.append
-
 let show_Option : Show a -> Show (Option a) = \d ->
+    let (++) = string_prim.append
+
     let show o =
         match o with
         | Some x -> "Some (" ++ d.show x ++ ")"
         | None -> "None"
+
     { show }
 
 let show_Result : Show e -> Show t -> Show (Result e t) = \e t ->
+    let (++) = string_prim.append
+
     let show o =
         match o with
         | Ok x -> "Ok (" ++ t.show x ++ ")"
         | Err x -> "Err (" ++ e.show x ++ ")"
-    { show }
 
-let (==) = eq_Int.(==)
-let (-) = num_Int.(-)
+    { show }
 
 type Foldable (f : Type -> Type) = {
     foldr : (a -> b -> b) -> b -> f a -> b,
