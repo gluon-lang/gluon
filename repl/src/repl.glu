@@ -8,7 +8,7 @@ let { Eq, Result } = prelude
 let { append = (++) } = string.semigroup
 let ord_map = map.make string.ord
 let { singleton, find } = ord_map
-let for = (prelude.make_Traversable ord_map.traverable).for prelude.applicative_IO
+let for = (prelude.make_Traversable ord_map.traversable).for prelude.applicative_IO
 let { (<>) } = prelude.make_Semigroup ord_map.semigroup
 let { empty } = ord_map.monoid
 
