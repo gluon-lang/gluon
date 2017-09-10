@@ -35,6 +35,13 @@ type Monoid a = {
     empty : a
 }
 
+let make_Monoid monoid : Monoid a -> _ =
+    let { append, empty } = monoid
+
+    let (<>) : a -> a -> a = append
+
+    { append, empty, (<>) }
+
 let monoid_Function m : Monoid b -> Monoid (a -> b) = {
     append = \f g -> \x -> m.append (f x) (g x),
     empty = \_ -> m.empty
@@ -57,13 +64,6 @@ let monoid_Int_Mul = { append = \x y -> x #Int* y, empty = 1 }
 let monoid_Float_Add = { append = \x y -> x #Float+ y, empty = 0.0 }
 
 let monoid_Float_Mul = { append = \x y -> x #Float* y, empty = 1.0 }
-
-let make_Monoid monoid : Monoid a -> _ =
-    let { append, empty } = monoid
-
-    let (<>) : a -> a -> a = append
-
-    { append, empty, (<>) }
 
 let not x = if x then False else True
 
@@ -107,6 +107,36 @@ let monoid_Ordering = {
 /// `Ord a` defines an ordering on `a`
 type Ord a = { eq : Eq a, compare : a -> a -> Ordering }
 
+/// Creates the `<=`, `<`, `>` and `>=` operators from an instance with `Ord`
+let make_Ord ord : Ord a -> _ =
+    let { eq, compare } = ord
+
+    let (<=) : a -> a -> Bool = \l r ->
+        match compare l r with
+        | LT -> True
+        | EQ -> True
+        | GT -> False
+
+    let (<) : a -> a -> Bool = \l r ->
+        match compare l r with
+        | LT -> True
+        | EQ -> False
+        | GT -> False
+
+    let (>) : a -> a -> Bool = \l r ->
+        match compare l r with
+        | LT -> False
+        | EQ -> False
+        | GT -> True
+
+    let (>=) : a -> a -> Bool = \l r ->
+        match compare l r with
+        | LT -> False
+        | EQ -> True
+        | GT -> True
+
+    { eq, compare, (<=), (<), (>), (>=) }
+
 let ord_Unit = { eq = eq_Unit, compare = \l r -> EQ }
 
 let ord_Bool = { eq = eq_Bool, compare = \l r -> if l then if r then EQ else GT else LT }
@@ -146,36 +176,6 @@ let ord_Result e a : Ord e -> Ord a -> Ord (Result e a) = {
         | (Err _, Ok _) -> GT
 }
 
-/// Creates the `<=`, `<`, `>` and `>=` operators from an instance with `Ord`
-let make_Ord ord : Ord a -> _ =
-    let { eq, compare } = ord
-
-    let (<=) : a -> a -> Bool = \l r ->
-        match compare l r with
-        | LT -> True
-        | EQ -> True
-        | GT -> False
-
-    let (<) : a -> a -> Bool = \l r ->
-        match compare l r with
-        | LT -> True
-        | EQ -> False
-        | GT -> False
-
-    let (>) : a -> a -> Bool = \l r ->
-        match compare l r with
-        | LT -> False
-        | EQ -> False
-        | GT -> True
-
-    let (>=) : a -> a -> Bool = \l r ->
-        match compare l r with
-        | LT -> False
-        | EQ -> True
-        | GT -> True
-
-    { eq, compare, (<=), (<), (>), (>=) }
-
 /**
  The basic operation on numbers.
  Defined for both the primitive type `Int` and `Float`
@@ -209,11 +209,6 @@ let num_Float : Num Float = {
 
 type Category (cat : Type -> Type -> Type) = { id : cat a a, compose : cat b c -> cat a b -> cat a c }
 
-let category_Function : Category (->) = {
-    id = \x -> x,
-    compose = \f g x -> f (g x)
-}
-
 let make_Category category : Category cat -> _ =
     let { id, compose } = category
 
@@ -223,6 +218,11 @@ let make_Category category : Category cat -> _ =
     let (>>) f g : cat a b -> cat b c -> cat a c = compose g f
 
     { id, compose, (<<), (>>) }
+
+let category_Function : Category (->) = {
+    id = \x -> x,
+    compose = \f g x -> f (g x)
+}
 
 /// The identity function, where `id x == x`
 let id : a -> a = category_Function.id
@@ -411,32 +411,6 @@ type Monad (m : Type -> Type) = {
     flat_map : (a -> m b) -> m a -> m b
 }
 
-let monad_Function : Monad ((->) a) = {
-    applicative = applicative_Function,
-    flat_map = \f m x -> f (m x) x
-}
-
-let monad_Option : Monad Option = {
-    applicative = applicative_Option,
-    flat_map = \f m ->
-        match m with
-        | Some x -> f x
-        | None -> None
-}
-
-let monad_Result : Monad (Result e) = {
-    applicative = applicative_Result,
-    flat_map = \f m ->
-        match m with
-        | Ok x -> f x
-        | Err err -> Err err
-}
-
-let monad_IO : Monad IO = {
-    applicative = applicative_IO,
-    flat_map = io_flat_map
-}
-
 let make_Monad monad : Monad m -> _ =
     let { applicative, flat_map } = monad
     let { (*>), wrap } = make_Applicative applicative
@@ -463,6 +437,32 @@ let make_Monad monad : Monad m -> _ =
         | Nil -> wrap Nil
 
     { applicative, flat_map, (=<<), (>>=), join, forM_, foldM, mapM }
+
+let monad_Function : Monad ((->) a) = {
+    applicative = applicative_Function,
+    flat_map = \f m x -> f (m x) x
+}
+
+let monad_Option : Monad Option = {
+    applicative = applicative_Option,
+    flat_map = \f m ->
+        match m with
+        | Some x -> f x
+        | None -> None
+}
+
+let monad_Result : Monad (Result e) = {
+    applicative = applicative_Result,
+    flat_map = \f m ->
+        match m with
+        | Ok x -> f x
+        | Err err -> Err err
+}
+
+let monad_IO : Monad IO = {
+    applicative = applicative_IO,
+    flat_map = io_flat_map
+}
 
 /// `Show a` represents a conversion function from `a` to a readable string.
 type Show a = { show : a -> String }
