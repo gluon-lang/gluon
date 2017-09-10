@@ -9,15 +9,15 @@ type Impl w = {
     monad : Monad (Writer w)
 }
 
-let make w : Monoid w -> Impl w =
-    let { (<>), empty } = prelude.make_Monoid w
+let make monoid : Monoid w -> Impl w =
+    let { (<>) } = prelude.make_Semigroup monoid.semigroup
 
     let functor : Functor (Writer w) = { map = \f m -> { value = f m.value, writer = m.writer } }
 
     let applicative : Applicative (Writer w) = {
         functor,
         apply = \mf m -> { value = mf.value m.value, writer = mf.writer <> m.writer },
-        wrap = \value -> { value, writer = empty }
+        wrap = \value -> { value, writer = monoid.empty }
     }
 
     let monad : Monad (Writer w) = {

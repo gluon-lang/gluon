@@ -4,11 +4,13 @@ let string = import! "std/string.glu"
 let { Map } = map
 let { wrap, (*>) } = prelude.make_Applicative prelude.applicative_IO
 let { (>>=) } = prelude.make_Monad prelude.monad_IO
-let { Eq, Result, Monoid } = prelude
-let { append = (++) } = string.monoid
-let { singleton, find, monoid, traversable = traverable_Map } = map.make string.ord
-let for = (prelude.make_Traversable traverable_Map).for prelude.applicative_IO
-let { (<>), empty } = prelude.make_Monoid monoid
+let { Eq, Result } = prelude
+let { append = (++) } = string.semigroup
+let ord_map = map.make string.ord
+let { singleton, find } = ord_map
+let for = (prelude.make_Traversable ord_map.traverable).for prelude.applicative_IO
+let { (<>) } = prelude.make_Semigroup ord_map.semigroup
+let { empty } = ord_map.monoid
 
 
 let load_file filename : String -> IO String =

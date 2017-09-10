@@ -24,7 +24,7 @@ let {
 } =
     import! "std/parser.glu"
 
-let { (<>) } = prelude.make_Monoid string.monoid
+let { (<>) } = prelude.make_Semigroup string.semigroup
 
 let { (<*), (*>), map2, wrap } = prelude.make_Applicative applicative
 let { (<|>) } = prelude.make_Alternative alternative

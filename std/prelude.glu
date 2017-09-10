@@ -18,52 +18,113 @@ let unwrap_err res : Result e a -> e =
     | Ok _ -> error "Result was an Ok"
     | Err x -> x
 
-/// `Monoid a` represents an associative operation on `a` an which has an identity.
+/// `Semigroup a` represents an associative operation on `a`.
+/// This means the following laws must hold:
+///
+/// * `append x (append y z) == append (append x y) z`
+type Semigroup a = {
+    /// # Note
+    ///
+    /// * Known as `(<>)` or `mappend` in Haskell
+    append : a -> a -> a
+}
+
+let make_Semigroup semigroup : Semigroup a -> _ =
+    let { append } = semigroup
+
+    let (<>) : a -> a -> a = append
+
+    { append, (<>) }
+
+let semigroup_Function semigroup : Semigroup b -> Semigroup (a -> b) = {
+    append = \f g x -> semigroup.append (f x) (g x)
+}
+
+let semigroup_Option semigroup : Semigroup a -> Semigroup (Option a) = {
+    append = \l r ->
+        match (l, r) with
+        | (Some x, Some y) -> Some (semigroup.append x y)
+        | (Some _, None) -> l
+        | (None, Some _) -> r
+        | (None, None) -> None
+}
+
+let semigroup_Int_Add : Semigroup Int = { append = \x y -> x #Int+ y }
+
+let semigroup_Int_Mul : Semigroup Int = { append = \x y -> x #Int* y }
+
+let semigroup_Float_Add : Semigroup Float = { append = \x y -> x #Float+ y }
+
+let semigroup_Float_Mul : Semigroup Float = { append = \x y -> x #Float* y }
+
+let semigroup_Ordering : Semigroup Ordering = {
+    append = \x y ->
+        match x with
+        | EQ -> y
+        | _ -> x
+}
+
+let semigroup_List : Semigroup (List a) =
+    let append xs ys =
+        match xs with
+        | Cons x zs -> Cons x (append zs ys)
+        | Nil -> ys
+
+    { append }
+
+/// `Monoid a` represents an semigroup an which has an identity.
 /// This means the following laws must hold:
 ///
 /// * `append x empty == x`
 /// * `append empty x == x`
 /// * `append x (append y z) == append (append x y) z`
 type Monoid a = {
-    /// # Note
-    ///
-    /// * Known as `mappend` in Haskell
-    append : a -> a -> a,
+    semigroup : Semigroup a,
     /// # Note
     ///
     /// * Known as `mempty` in Haskell
     empty : a
 }
 
-let make_Monoid monoid : Monoid a -> _ =
-    let { append, empty } = monoid
-
-    let (<>) : a -> a -> a = append
-
-    { append, empty, (<>) }
-
-let monoid_Function m : Monoid b -> Monoid (a -> b) = {
-    append = \f g -> \x -> m.append (f x) (g x),
-    empty = \_ -> m.empty
+let monoid_Function monoid : Monoid b -> Monoid (a -> b) = {
+    semigroup = semigroup_Function monoid.semigroup,
+    empty = \_ -> monoid.empty
 }
 
-let monoid_Option m : Monoid a -> Monoid (Option a) = {
-    append = \l r ->
-        match (l, r) with
-        | (Some x, Some y) -> Some (m.append x y)
-        | (Some _, None) -> l
-        | (None, Some _) -> r
-        | (None, None) -> None,
+let monoid_Option semigroup : Semigroup a -> Monoid (Option a) = {
+    semigroup = semigroup_Option semigroup,
     empty = None
 }
 
-let monoid_Int_Add = { append = \x y -> x #Int+ y, empty = 0 }
+let monoid_Int_Add : Monoid Int = {
+    semigroup = semigroup_Int_Add,
+    empty = 0
+}
 
-let monoid_Int_Mul = { append = \x y -> x #Int* y, empty = 1 }
+let monoid_Int_Mul : Monoid Int = {
+    semigroup = semigroup_Int_Mul,
+    empty = 1
+}
 
-let monoid_Float_Add = { append = \x y -> x #Float+ y, empty = 0.0 }
+let monoid_Float_Add : Monoid Float = {
+    semigroup = semigroup_Float_Add,
+    empty = 0.0
+}
 
-let monoid_Float_Mul = { append = \x y -> x #Float* y, empty = 1.0 }
+let monoid_Float_Mul : Monoid Float = {
+    semigroup = semigroup_Float_Mul,
+    empty = 1.0
+}
+
+let monoid_Ordering : Monoid Ordering = {
+    semigroup = semigroup_Ordering,
+    empty = EQ
+}
+
+let monoid_List : Monoid (List a) = {
+    semigroup = semigroup_List,
+    empty = Nil
+}
 
 let not x = if x then False else True
 
@@ -94,14 +155,6 @@ let eq_Result e a : Eq e -> Eq a -> Eq (Result e a) = {
         | (Ok l_val, Ok r_val) -> a.(==) l_val r_val
         | (Err l_val, Err r_val) -> e.(==) l_val r_val
         | _ -> False
-}
-
-let monoid_Ordering = {
-    append = \x y ->
-        match x with
-        | EQ -> y
-        | _ -> x,
-    empty = EQ
 }
 
 /// `Ord a` defines an ordering on `a`
@@ -191,18 +244,18 @@ type Num a = {
 
 let num_Int = {
     ord = ord_Int,
-    (+) = monoid_Int_Add.append,
+    (+) = semigroup_Int_Add.append,
     (-) = \l r -> l #Int- r,
-    (*) = monoid_Int_Mul.append,
+    (*) = semigroup_Int_Mul.append,
     (/) = \l r -> l #Int/ r,
     negate = \x -> 0 #Int- x
 }
 
 let num_Float : Num Float = {
     ord = ord_Float,
-    (+) = monoid_Float_Add.append,
+    (+) = semigroup_Float_Add.append,
     (-) = \l r -> l #Float- r,
-    (*) = monoid_Float_Mul.append,
+    (*) = semigroup_Float_Mul.append,
     (/) = \l r -> l #Float/ r,
     negate = \x -> 0.0 #Float- x
 }
@@ -482,14 +535,6 @@ let show_Result : Show e -> Show t -> Show (Result e t) = \e t ->
         | Err x -> "Err (" ++ e.show x ++ ")"
     { show }
 
-let monoid_List =
-    let append xs ys =
-        match xs with
-        | Cons x zs -> Cons x (append zs ys)
-        | Nil -> ys
-
-    { append, empty = Nil }
-
 let eq_List a : Eq a -> Eq (List a) =
     let (==) l r =
         match (l, r) with
@@ -506,7 +551,7 @@ let functor_List : Functor List =
     { map }
 
 let applicative_List : Applicative List =
-    let { (<>) } = make_Monoid monoid_List
+    let { (<>) } = make_Semigroup semigroup_List
 
     let apply f xs =
         match f with
@@ -518,12 +563,12 @@ let applicative_List : Applicative List =
 
 let alternative_List : Alternative List = {
     applicative = applicative_List,
-    or = monoid_List.append,
+    or = semigroup_List.append,
     empty = Nil
 }
 
 let monad_List : Monad List =
-    let { (<>) } = make_Monoid monoid_List
+    let { (<>) } = make_Semigroup semigroup_List
 
     let flat_map f xs =
         match xs with
@@ -557,10 +602,10 @@ let make_Foldable foldable : Foldable t -> _ =
     let { (+) } = num_Int
 
     let concat monoid : Monoid m -> t m -> m =
-        foldr monoid.append monoid.empty
+        foldr monoid.semigroup.append monoid.empty
 
     let concat_map monoid f : Monoid m -> (a -> m) -> t a -> m =
-        foldr (f >> monoid.append) monoid.empty
+        foldr (f >> monoid.semigroup.append) monoid.empty
 
     let fold_m monad f z : Monad m -> (a -> b -> m a) -> a -> t b -> m a =
         foldl (\acc b -> monad.flat_map (flip f b) acc) (monad.applicative.wrap z)
@@ -717,8 +762,18 @@ let list xs : Array a -> List a =
     not,
     list,
 
+    Semigroup,
+    make_Semigroup,
+    semigroup_Function,
+    semigroup_List,
+    semigroup_Option,
+    semigroup_Int_Add,
+    semigroup_Int_Mul,
+    semigroup_Float_Add,
+    semigroup_Float_Mul,
+    semigroup_Ordering,
+
     Monoid,
-    make_Monoid,
     monoid_Function,
     monoid_List,
     monoid_Option,
@@ -726,6 +781,7 @@ let list xs : Array a -> List a =
     monoid_Int_Mul,
     monoid_Float_Add,
     monoid_Float_Mul,
+    monoid_Ordering,
 
     Eq,
     eq_Unit,

@@ -7,7 +7,7 @@ and { (==) } = prelude.eq_Int
 and { (<) } = prelude.make_Ord prelude.ord_Int
 and { foldl } = prelude.foldable_List
 
-let (++) = string.monoid.append
+let (++) = string.semigroup.append
 
 type Test a = Writer (List String) a
 

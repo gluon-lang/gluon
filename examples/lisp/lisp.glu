@@ -3,7 +3,7 @@ let { List, Functor, Applicative, Monad, id } = prelude
 
 let string = import! "std/string.glu"
 let { (==) } = string.eq
-let { (<>) } = prelude.make_Monoid string.monoid
+let { (<>) } = prelude.make_Semigroup string.semigroup
 
 let map = import! "std/map.glu"
 let { Map } = map
@@ -139,7 +139,7 @@ let define xs =
     | _ -> fail "Unexpected parameters to define `define`"
 
 let primitives =
-    let { (<>) = (++) } = prelude.make_Monoid prim_map.monoid
+    let { (<>) = (++) } = prelude.make_Semigroup prim_map.semigroup
     primitive_binop "+" (+) (+)
         ++ primitive_binop "-" (-) (-)
         ++ primitive_binop "*" (*) (*)

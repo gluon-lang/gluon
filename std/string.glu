@@ -1,8 +1,9 @@
 let prelude = import! "std/prelude.glu"
-let { Num, Option, Eq, Ord, Ordering, Monoid, Show } = prelude
-let { (==) } = prelude.eq_Int
+let { Num, Option, Eq, Ord, Ordering, Semigroup, Monoid, Show } = prelude
 
-let monoid = { append = string_prim.append, empty = "" }
+let semigroup : Semigroup String = { append = string_prim.append }
+
+let monoid : Monoid String = { semigroup, empty = "" }
 
 let eq : Eq String = { (==) = string_prim.eq }
 
@@ -28,5 +29,6 @@ let show : Show String = { show = prelude.id }
     from_utf8 = string_prim.from_utf8,
     char_at = string_prim.char_at,
     as_bytes = string_prim.as_bytes,
+    semigroup,
     monoid
 }

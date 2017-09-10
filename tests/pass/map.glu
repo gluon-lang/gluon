@@ -2,7 +2,7 @@ let prelude  = import! "std/prelude.glu"
 let { Option, List, Eq, Show, list } = prelude
 let string  = import! "std/string.glu"
 let { (==) } = string.eq
-let { (<>) } = prelude.make_Monoid string.monoid
+let { (<>) } = prelude.make_Semigroup string.semigroup
 let { Test, run, writer, assert, assert_eq }  = import! "std/test.glu"
 let map  = import! "std/map.glu"
 let { (*>) } = prelude.make_Applicative writer.applicative
@@ -31,8 +31,10 @@ let assert_opt =
     assert_eq (prelude.show_Option prelude.show_Int)
               (prelude.eq_Option prelude.eq_Int)
 
-let { singleton, find, insert, monoid, to_list, keys, values } = map.make string.ord
-let { (<>), empty } = prelude.make_Monoid monoid
+let ord_map = map.make string.ord
+let { singleton, find, insert, to_list, keys, values } = ord_map
+let { (<>) } = prelude.make_Semigroup ord_map.semigroup
+let { empty } = ord_map.monoid
 
 let basic_tests =
     let test_map = singleton "test" 1 <> singleton "asd" 2 <> singleton "a" 3
