@@ -227,6 +227,9 @@ let category_Function : Category (->) = {
 /// The identity function, where `id x == x`
 let id : a -> a = category_Function.id
 
+/// const `x` creates a function which always returns `x`
+let const x _ : a -> b -> a = x
+
 /// flip `f` takes creates a new function which takes its two arguments in reverse order
 let flip f : (a -> b -> c) -> b -> a -> c = \x y -> f y x
 
@@ -305,14 +308,26 @@ type Applicative (f : Type -> Type) = {
     wrap : a -> f a
 }
 
+// FIXME: Causes panic in VM: thread 'main' panicked at 'Op Split called on non data type', tests/main.rs:32:8
+// let make_Applicative applicative : Applicative f -> _ =
+let make_Applicative applicative =
+    let { functor, apply, wrap } = applicative
+
+    let (<*>) : _ (a -> b) -> _ a -> _ b = apply
+    let (<*) l r : _ a -> _ b -> _ a = functor.map const l <*> r
+    let (*>) l r : _ a -> _ b -> _ b = functor.map (const id) l <*> r
+
+    let map2 f a b : (a -> b -> c) -> _ a -> _ b -> _ c = (functor.map f a) <*> b
+    let map3 f a b c : (a -> b -> c -> d) -> _ a -> _ b -> _ c -> _ d =
+        (functor.map f a) <*> b <*> c
+
+    { functor, apply, wrap, (<*>), (<*), (*>), map2, map3 }
+
 let applicative_Function : Applicative ((->) a) = {
     functor = functor_Function,
     apply = \f g x -> f x (g x),
-    wrap = \x -> \_ -> x
+    wrap = const
 }
-
-/// const `x` creates a function which always returns `x`
-let const : a -> b -> a = applicative_Function.wrap
 
 let applicative_Option : Applicative Option = {
     functor = functor_Option,
@@ -338,17 +353,6 @@ let applicative_IO : Applicative IO =
     let apply f x = io_flat_map (\g -> io_flat_map (\y -> wrap (g y)) x) f
 
     { functor = functor_IO, apply, wrap }
-
-let make_Applicative app =
-    let { functor, apply, wrap } = app
-
-    let (<*>) = apply
-    let (<*) l r = functor.map const l <*> r
-    let (*>) l r = functor.map (const id) l <*> r
-    let map2 f a b = (functor.map f a) <*> b
-    let map3 f a b c = (functor.map f a) <*> b <*> c
-
-    { functor, apply, wrap, (<*>), (<*), (*>), map2, map3 }
 
 type Alternative f = { applicative : Applicative f, or : f a -> f a -> f a, empty : f a }
 
