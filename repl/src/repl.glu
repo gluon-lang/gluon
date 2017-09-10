@@ -3,10 +3,11 @@ let map = import! "std/map.glu"
 let string = import! "std/string.glu"
 let { Map } = map
 let { wrap, (*>) } = prelude.make_Applicative prelude.applicative_IO
-let { (>>=), forM_ } = prelude.make_Monad prelude.monad_IO
+let { (>>=) } = prelude.make_Monad prelude.monad_IO
 let { Eq, Result, Monoid } = prelude
 let { append = (++) } = string.monoid
-let { singleton, find, monoid, to_list } = map.make string.ord
+let { singleton, find, monoid, traversable = traverable_Map } = map.make string.ord
+let for = (prelude.make_Traversable traverable_Map).for prelude.applicative_IO
 let { (<>), empty } = prelude.make_Monoid monoid
 
 
@@ -53,10 +54,11 @@ let commands : Map String Cmd =
             <> singleton "h" {
                     info = "Print this help",
                     action = \_ ->
-                        io.println "Available commands\n"
-                            *> forM_ (to_list (load commands)) (\cmd ->
-                                let cmd : { key : String, value : Cmd } = cmd
-                                io.println ("    :" ++ cmd.key ++ " " ++ cmd.value.info))
+                        let print_header = io.println "Available commands\n"
+                        let print_cmd cmd : { key : String, value : Cmd } -> IO () =
+                            io.println ("    :" ++ cmd.key ++ " " ++ cmd.value.info)
+
+                        print_header *> for (load commands) print_cmd
                             *> wrap True
                 }
     commands <- cmds

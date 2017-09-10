@@ -425,22 +425,7 @@ let make_Monad monad : Monad m -> _ =
 
     let join mm : m (m a) -> m a = mm >>= id
 
-    let forM_ xs f : List a -> (a -> m b) -> m () =
-        match xs with
-        | Cons y ys -> f y *> forM_ ys f
-        | Nil -> wrap ()
-
-    let foldM f x xs : (b -> a -> m b) -> b -> List a -> m b =
-        match xs with
-        | Cons y ys -> f x y >>= (\a -> foldM f a ys)
-        | Nil -> wrap x
-
-    let mapM f xs : (a -> m b) -> List a -> m (List b) =
-        match xs with
-        | Cons y ys -> f y >>= (\a -> mapM f ys >>= \rest -> wrap (Cons a rest))
-        | Nil -> wrap Nil
-
-    { applicative, flat_map, (=<<), (>>=), join, forM_, foldM, mapM }
+    { applicative, flat_map, (=<<), (>>=), join }
 
 let monad_Function : Monad ((->) a) = {
     applicative = applicative_Function,
@@ -577,6 +562,9 @@ let make_Foldable foldable : Foldable t -> _ =
     let concat_map monoid f : Monoid m -> (a -> m) -> t a -> m =
         foldr (f >> monoid.append) monoid.empty
 
+    let fold_m monad f z : Monad m -> (a -> b -> m a) -> a -> t b -> m a =
+        foldl (\acc b -> monad.flat_map (flip f b) acc) (monad.applicative.wrap z)
+
     let find pred : (a -> Bool) -> t a -> Option a =
         let go acc next =
             match acc with
@@ -611,6 +599,7 @@ let make_Foldable foldable : Foldable t -> _ =
     {
         foldr,
         foldl,
+        fold_m,
         concat,
         concat_map,
         find,
@@ -666,9 +655,11 @@ type Traversable t = {
 let make_Traversable traversable : Traversable t -> _ =
     let { functor, foldable, traverse } = traversable
 
-    let sequence app : Applicative m -> t (m a) -> m (t a) = traverse app id
+    let sequence applicative : Applicative m -> t (m a) -> m (t a) = traverse applicative id
+    let for applicative x f : Applicative m -> t a -> (a -> m b) -> m (t b) =
+        traverse applicative f x
 
-    { functor, foldable, traverse, sequence }
+    { functor, foldable, traverse, sequence, for }
 
 let traversable_Option : Traversable Option = {
     functor = functor_Option,

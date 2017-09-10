@@ -77,7 +77,9 @@ let monad_Lisp : Monad Lisp = {
             | Err err -> Err err)
 }
 
-let { (>>=), foldM, mapM } = prelude.make_Monad monad_Lisp
+let { (>>=) } = prelude.make_Monad monad_Lisp
+let fold_m = (prelude.make_Foldable prelude.foldable_List).fold_m monad_Lisp
+let traverse = prelude.traversable_List.traverse applicative_Lisp
 let { map = map_lisp } = functor_Lisp
 
 let get_state : Lisp LispState = lisp (\state -> Ok { value = state, state = state })
@@ -103,7 +105,7 @@ let primitive_binop name int_op float_op : _ -> Binop Int -> Binop Float -> Map 
         | Float f -> wrap f
         | _ -> fail "Expected float"
 
-    let fold unpack op = foldM (\acc x -> map_lisp (\y -> op acc y) (unpack x))
+    let fold unpack op = fold_m (\acc x -> map_lisp (\y -> op acc y) (unpack x))
 
     let f xs : List Expr -> Lisp Expr =
         match xs with
@@ -182,13 +184,13 @@ and eval_lisp expr : Expr -> Lisp Expr =
                     else
                         match prim_map.find name state with
                         | Some prim ->
-                            mapM eval_lisp xs
+                            traverse eval_lisp xs
                                 >>= \evaluated_args -> apply prim evaluated_args
                         | None -> fail ("Variable `" <> name <> "` does not exist")
             | _ -> fail ("Cant apply" <> show.show x)
         | Nil -> wrap expr
 
-and eval_exprs exprs = foldM (\_result expr -> eval_lisp expr) (List Nil) exprs
+and eval_exprs exprs = fold_m (\_result expr -> eval_lisp expr) (List Nil) exprs
 
 let run_lisp expr env : Lisp a -> Map String Expr -> Result String a =
     prelude.functor_Result.map (\r -> r.value) (lisp expr env)
