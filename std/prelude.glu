@@ -18,21 +18,21 @@ let unwrap_err res : Result e a -> e =
     | Ok _ -> error "Result was an Ok"
     | Err x -> x
 
-/// `Monoid m` represents an associative operation on `m` an which has an identity.
+/// `Monoid a` represents an associative operation on `a` an which has an identity.
 /// This means the following laws must hold:
 ///
 /// * `append x empty == x`
 /// * `append empty x == x`
 /// * `append x (append y z) == append (append x y) z`
-type Monoid m = {
+type Monoid a = {
     /// # Note
     ///
     /// * Known as `mappend` in Haskell
-    append : m -> m -> m,
+    append : a -> a -> a,
     /// # Note
     ///
     /// * Known as `mempty` in Haskell
-    empty : m
+    empty : a
 }
 
 let monoid_Function m : Monoid b -> Monoid (a -> b) = {
@@ -58,10 +58,10 @@ let monoid_Float_Add = { append = \x y -> x #Float+ y, empty = 0.0 }
 
 let monoid_Float_Mul = { append = \x y -> x #Float* y, empty = 1.0 }
 
-let make_Monoid m =
-    let { append, empty } = m
+let make_Monoid monoid : Monoid a -> _ =
+    let { append, empty } = monoid
 
-    let (<>) = append
+    let (<>) : a -> a -> a = append
 
     { append, empty, (<>) }
 
@@ -147,32 +147,34 @@ let ord_Result e a : Ord e -> Ord a -> Ord (Result e a) = {
 }
 
 /// Creates the `<=`, `<`, `>` and `>=` operators from an instance with `Ord`
-let make_Ord ord =
+let make_Ord ord : Ord a -> _ =
     let { eq, compare } = ord
-    {
-        eq,
-        compare,
-        (<=) = \l r ->
-            match compare l r with
-            | LT -> True
-            | EQ -> True
-            | GT -> False,
-        (<) = \l r ->
-            match compare l r with
-            | LT -> True
-            | EQ -> False
-            | GT -> False,
-        (>) = \l r ->
-            match compare l r with
-            | LT -> False
-            | EQ -> False
-            | GT -> True,
-        (>=) = \l r ->
-            match compare l r with
-            | LT -> False
-            | EQ -> True
-            | GT -> True
-    }
+
+    let (<=) : a -> a -> Bool = \l r ->
+        match compare l r with
+        | LT -> True
+        | EQ -> True
+        | GT -> False
+
+    let (<) : a -> a -> Bool = \l r ->
+        match compare l r with
+        | LT -> True
+        | EQ -> False
+        | GT -> False
+
+    let (>) : a -> a -> Bool = \l r ->
+        match compare l r with
+        | LT -> False
+        | EQ -> False
+        | GT -> True
+
+    let (>=) : a -> a -> Bool = \l r ->
+        match compare l r with
+        | LT -> False
+        | EQ -> True
+        | GT -> True
+
+    { eq, compare, (<=), (<), (>), (>=) }
 
 /**
  The basic operation on numbers.
@@ -212,13 +214,13 @@ let category_Function : Category (->) = {
     compose = \f g x -> f (g x)
 }
 
-let make_Category cat =
-    let { id, compose } = cat
+let make_Category category : Category cat -> _ =
+    let { id, compose } = category
 
     /// Right-to-left composition. Alias for `compose`.
-    let (<<) = compose
+    let (<<) : cat b c -> cat a b -> cat a c = compose
     /// Left-to-right composition. Alias for `compose`, but with the arguments flipped.
-    let (>>) f g = compose g f
+    let (>>) f g : cat a b -> cat b c -> cat a c = compose g f
 
     { id, compose, (<<), (>>) }
 
@@ -359,16 +361,18 @@ let alternative_Option : Alternative Option = {
     empty = None
 }
 
-let make_Alternative f =
-    let { applicative, or, empty } = f
+let make_Alternative alternative : Alternative f -> _ =
+    let { applicative, or, empty } = alternative
     let { functor, (<*>), wrap } = make_Applicative applicative
 
-    let (<|>) = or
-    let many x =
+    let (<|>) : f a -> f a -> f a = or
+
+    let many x : f a -> f (List a) =
         let many_v _ = some_v () <|> wrap Nil
         and some_v _ = functor.map (\h l -> Cons h l) x <*> many_v ()
         many_v ()
-    let some x =
+
+    let some x : f a -> f (List a) =
         let many_v _ = some_v () <|> wrap Nil
         and some_v _ = functor.map (\h l -> Cons h l) x <*> many_v ()
         some_v ()
@@ -433,25 +437,27 @@ let monad_IO : Monad IO = {
     flat_map = io_flat_map
 }
 
-let make_Monad m =
-    let { applicative, flat_map } = m
+let make_Monad monad : Monad m -> _ =
+    let { applicative, flat_map } = monad
     let { (*>), wrap } = make_Applicative applicative
     let { id } = category_Function
 
-    let (=<<) = flat_map
-    let (>>=) = flip flat_map
-    let join mm = mm >>= id
-    let forM_ xs f =
+    let (=<<) : (a -> m b) -> m a -> m b = flat_map
+    let (>>=) : m a -> (a -> m b) -> m b = flip flat_map
+
+    let join mm : m (m a) -> m a = mm >>= id
+
+    let forM_ xs f : List a -> (a -> m b) -> m () =
         match xs with
         | Cons y ys -> f y *> forM_ ys f
         | Nil -> wrap ()
 
-    let foldM f x xs =
+    let foldM f x xs : (b -> a -> m b) -> b -> List a -> m b =
         match xs with
         | Cons y ys -> f x y >>= (\a -> foldM f a ys)
         | Nil -> wrap x
 
-    let mapM f xs =
+    let mapM f xs : (a -> m b) -> List a -> m (List b) =
         match xs with
         | Cons y ys -> f y >>= (\a -> mapM f ys >>= \rest -> wrap (Cons a rest))
         | Nil -> wrap Nil
@@ -557,17 +563,17 @@ type Foldable (f : Type -> Type) = {
     foldl : (b -> a -> b) -> b -> f a -> b
 }
 
-let make_Foldable f =
-    let { foldr, foldl } = f
+let make_Foldable foldable : Foldable t -> _ =
+    let { foldr, foldl } = foldable
     let { (+) } = num_Int
 
-    let concat monoid : Monoid m -> _ m -> m =
+    let concat monoid : Monoid m -> t m -> m =
         foldr monoid.append monoid.empty
 
-    let concat_map monoid f : Monoid m -> (a -> m) -> _ a -> m =
+    let concat_map monoid f : Monoid m -> (a -> m) -> t a -> m =
         foldr (f >> monoid.append) monoid.empty
 
-    let find pred : (a -> Bool) -> _ a -> Option a =
+    let find pred : (a -> Bool) -> t a -> Option a =
         let go acc next =
             match acc with
             | None -> if pred next then Some next else None
@@ -575,7 +581,7 @@ let make_Foldable f =
 
         foldl go None
 
-    let find_map pred : (a -> Option b) -> _ a -> Option b =
+    let find_map pred : (a -> Option b) -> t a -> Option b =
         let go acc next =
             match acc with
             | None -> pred next
@@ -583,19 +589,19 @@ let make_Foldable f =
 
         foldl go None
 
-    let all pred : (a -> Bool) -> _ a -> Bool =
+    let all pred : (a -> Bool) -> t a -> Bool =
         foldl (\acc x -> acc && pred x) True
 
-    let any pred : (a -> Bool) -> _ a -> Bool =
+    let any pred : (a -> Bool) -> t a -> Bool =
         foldl (\acc x -> acc || pred x) False
 
-    let elem eq : Eq a -> a -> _ a -> Bool =
+    let elem eq : Eq a -> a -> t a -> Bool =
         any << eq.(==)
 
-    let notElem eq x : Eq a -> a -> _ a -> Bool =
+    let notElem eq x : Eq a -> a -> t a -> Bool =
         not << elem eq x
 
-    let count : _ a -> Int =
+    let count : t a -> Int =
         foldl (\acc _ -> acc + 1) 0
 
     {
@@ -653,10 +659,10 @@ type Traversable t = {
     traverse : Applicative m -> (a -> m b) -> t a -> m (t b)
 }
 
-let make_Traversable t =
-    let { functor, foldable, traverse } = t
+let make_Traversable traversable : Traversable t -> _ =
+    let { functor, foldable, traverse } = traversable
 
-    let sequence app = traverse app id
+    let sequence app : Applicative m -> t (m a) -> m (t a) = traverse app id
 
     { functor, foldable, traverse, sequence }
 
