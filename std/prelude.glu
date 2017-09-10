@@ -55,6 +55,20 @@ let semigroup_Option semigroup : Semigroup a -> Semigroup (Option a) = {
         | (None, None) -> None
 }
 
+let semigroup_Option_First : Semigroup (Option a) = {
+    append = \l r ->
+        match l with
+        | Some x -> Some x
+        | None -> r
+}
+
+let semigroup_Option_Last : Semigroup (Option a) = {
+    append = \l r ->
+        match r with
+        | Some x -> Some x
+        | None -> l
+}
+
 let semigroup_Int_Add : Semigroup Int = { append = \x y -> x #Int+ y }
 
 let semigroup_Int_Mul : Semigroup Int = { append = \x y -> x #Int* y }
@@ -104,6 +118,16 @@ let monoid_Function monoid : Monoid b -> Monoid (a -> b) = {
 
 let monoid_Option semigroup : Semigroup a -> Monoid (Option a) = {
     semigroup = semigroup_Option semigroup,
+    empty = None
+}
+
+let monoid_Option_First : Monoid (Option a) = {
+    semigroup = semigroup_Option_First,
+    empty = None
+}
+
+let monoid_Option_Last : Monoid (Option a) = {
+    semigroup = semigroup_Option_Last,
     empty = None
 }
 
@@ -822,6 +846,8 @@ let list xs : Array a -> List a =
     semigroup_Function,
     semigroup_List,
     semigroup_Option,
+    semigroup_Option_First,
+    semigroup_Option_Last,
     semigroup_Int_Add,
     semigroup_Int_Mul,
     semigroup_Float_Add,
@@ -835,6 +861,8 @@ let list xs : Array a -> List a =
     monoid_Function,
     monoid_List,
     monoid_Option,
+    monoid_Option_First,
+    monoid_Option_Last,
     monoid_Int_Add,
     monoid_Int_Mul,
     monoid_Float_Add,
