@@ -1,6 +1,6 @@
 let prelude  = import! "std/prelude.glu"
 let { run, writer, assert_eq, assert_seq, assert_ieq }  = import! "std/test.glu"
-let { List, Option } = prelude
+let { Option } = prelude
 let { (<) } = prelude.make_Ord prelude.ord_Int
 let { (+) } = prelude.num_Int
 let { (*>) } = prelude.make_Applicative writer.applicative

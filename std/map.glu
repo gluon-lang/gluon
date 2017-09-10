@@ -1,6 +1,9 @@
 let prelude = import! "std/prelude.glu"
-and { Ordering, Ord, Option, List, Semigroup, Monoid } = prelude
+and { Ordering, Ord, Option, Semigroup, Monoid } = prelude
 and { Functor, Applicative, Foldable, Traversable } = prelude
+
+let list = import! "std/list.glu"
+and { List } = list
 
 type Map k a = | Bin k a (Map k a) (Map k a) | Tip
 

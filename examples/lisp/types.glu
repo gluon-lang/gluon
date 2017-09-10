@@ -1,4 +1,4 @@
-let { List } = import! "std/prelude.glu"
+let { List } = import! "std/list.glu"
 let { Map } = import! "std/map.glu"
 
 type Expr =

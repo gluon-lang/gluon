@@ -2,7 +2,6 @@ let prelude = import! "std/prelude.glu"
 let { show } = prelude.show_Int
 let string = import! "std/string.glu"
 let { (<>) } = prelude.make_Semigroup string.semigroup
-
 let { (*>) } = prelude.make_Applicative prelude.applicative_IO
 
 let {

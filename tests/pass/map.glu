@@ -1,11 +1,13 @@
 let prelude  = import! "std/prelude.glu"
-let { Option, List, Eq, Show, list } = prelude
+let { Option, Eq, Show } = prelude
 let string  = import! "std/string.glu"
 let { (==) } = string.eq
 let { (<>) } = prelude.make_Semigroup string.semigroup
 let { Test, run, writer, assert, assert_eq }  = import! "std/test.glu"
 let map  = import! "std/map.glu"
 let { (*>) } = prelude.make_Applicative writer.applicative
+let list = import! "std/list.glu"
+let { List } = list
 
 let show_Entry : Show { key : String, value : Int } = {
     show = \e -> e.key <> prelude.show_Int.show e.value
@@ -16,16 +18,16 @@ let eq_Entry : Eq { key : String, value : Int } = {
 }
 
 let assert_entries =
-    assert_eq (prelude.show_List show_Entry)
-              (prelude.eq_List eq_Entry)
+    assert_eq (list.show show_Entry)
+              (list.eq eq_Entry)
 
 let assert_keys =
-    assert_eq (prelude.show_List string.show)
-              (prelude.eq_List string.eq)
+    assert_eq (list.show string.show)
+              (list.eq string.eq)
 
 let assert_values =
-    assert_eq (prelude.show_List prelude.show_Int)
-              (prelude.eq_List prelude.eq_Int)
+    assert_eq (list.show prelude.show_Int)
+              (list.eq prelude.eq_Int)
 
 let assert_opt =
     assert_eq (prelude.show_Option prelude.show_Int)
@@ -44,11 +46,11 @@ let basic_tests =
         *> assert_opt (find "b" test_map) None
         *> assert_opt (find "test" (insert "test" 10 test_map)) (Some 10)
         *> assert_opt (find "test" test_map) (Some 1)
-        *> assert_entries (to_list test_map) (list [{ key = "a", value = 3 },
-                                                    { key = "asd", value = 2 },
-                                                    { key = "test", value = 1 }])
-        *> assert_keys (keys test_map) (list ["a", "asd", "test"])
-        *> assert_values (values test_map) (list [3, 2, 1])
+        *> assert_entries (to_list test_map) (list.of [{ key = "a", value = 3 },
+                                                       { key = "asd", value = 2 },
+                                                       { key = "test", value = 1 }])
+        *> assert_keys (keys test_map) (list.of ["a", "asd", "test"])
+        *> assert_values (values test_map) (list.of [3, 2, 1])
         *> assert_entries (to_list (test_map <> empty)) (to_list test_map)
         *> assert_entries (to_list (empty <> test_map)) (to_list test_map)
 

@@ -21,8 +21,8 @@ fn metadata_from_other_module() {
     let _ = ::env_logger::init();
     let vm = make_vm();
     let text = r#"
-let { List, id }  = import! "std/prelude.hs"
-{ List, id }
+let { List, of }  = import! "std/list.glu"
+{ List, of }
 "#;
     Compiler::new()
         .load_script_async(&vm, "test", text)
@@ -30,6 +30,6 @@ let { List, id }  = import! "std/prelude.hs"
         .unwrap();
 
     let env = vm.get_env();
-    assert!(env.get_metadata("test.id").is_ok());
+    assert!(env.get_metadata("test.of").is_ok());
     assert!(env.get_metadata("test.List").is_ok());
 }

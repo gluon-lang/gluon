@@ -1,7 +1,9 @@
 let prelude = import! "std/prelude.glu"
-let { Functor, Applicative, Alternative, Monad, List, id, show_Char = show } = prelude
+let { Functor, Applicative, Alternative, Monad, id, show_Char = show } = prelude
 let string = import! "std/string.glu"
 let { (<>) } = prelude.make_Semigroup string.semigroup
+let list = import! "std/list.glu"
+let { List } = list
 
 type OffsetString = { start: Int, end: Int, buffer: String }
 type Position = Int

@@ -1,8 +1,5 @@
 let { Bool, Option, Result, Ordering } = import! "std/types.glu"
 
-/// A linked list type
-type List a = | Nil | Cons a (List a)
-
 let unwrap opt : Option a -> a =
     match opt with
     | Some x -> x
@@ -90,14 +87,6 @@ let semigroup_Ordering : Semigroup Ordering = {
         | _ -> x
 }
 
-let semigroup_List : Semigroup (List a) =
-    let append xs ys =
-        match xs with
-        | Cons x zs -> Cons x (append zs ys)
-        | Nil -> ys
-
-    { append }
-
 /// `Monoid a` represents an semigroup an which has an identity. This means
 /// the following additional laws must hold:
 ///
@@ -169,11 +158,6 @@ let monoid_Bool_Xor : Monoid Bool = {
 let monoid_Ordering : Monoid Ordering = {
     semigroup = semigroup_Ordering,
     empty = EQ
-}
-
-let monoid_List : Monoid (List a) = {
-    semigroup = semigroup_List,
-    empty = Nil
 }
 
 /// `Group a` represents an monoid an which has an inverse element. This means
@@ -391,7 +375,7 @@ type Functor f = {
     ///
     /// * `applicative_Option.map show_Int.show (Some 1) == Some "1"`
     /// * `applicative_Result.map show_Int.show (Some 1) == Ok "1"`
-    /// * `applicative_List.map show_Int.show (list [1, 2]) == list ["1", "2"]`
+    /// * `list.functor.map show_Int.show (list.of [1, 2]) == list.of ["1", "2"]`
     ///
     /// # Note
     ///
@@ -431,7 +415,7 @@ type Applicative (f : Type -> Type) = {
     ///
     /// * `applicative_Option.wrap 1 == Some 1`
     /// * `applicative_Result.wrap 1 == Ok 1`
-    /// * `applicative_List.wrap 1 == list [1]`
+    /// * `list.applicative.wrap 1 == list.of [1]`
     ///
     /// # Note
     ///
@@ -498,21 +482,10 @@ let alternative_Option : Alternative Option = {
 
 let make_Alternative alternative : Alternative f -> _ =
     let { applicative, or, empty } = alternative
-    let { functor, (<*>), wrap } = make_Applicative applicative
 
     let (<|>) : f a -> f a -> f a = or
 
-    let many x : f a -> f (List a) =
-        let many_v _ = some_v () <|> wrap Nil
-        and some_v _ = functor.map (\h l -> Cons h l) x <*> many_v ()
-        many_v ()
-
-    let some x : f a -> f (List a) =
-        let many_v _ = some_v () <|> wrap Nil
-        and some_v _ = functor.map (\h l -> Cons h l) x <*> many_v ()
-        some_v ()
-
-    { applicative, or, empty, (<|>), many, some }
+    { applicative, or, empty, (<|>) }
 
 /// A generalised interface for imperatively sequencing actions
 type Monad (m : Type -> Type) = {
@@ -613,60 +586,6 @@ let show_Result : Show e -> Show t -> Show (Result e t) = \e t ->
         | Err x -> "Err (" ++ e.show x ++ ")"
     { show }
 
-let eq_List a : Eq a -> Eq (List a) =
-    let (==) l r =
-        match (l, r) with
-        | (Nil, Nil) -> True
-        | (Cons x xs, Cons y ys) -> a.(==) x y && xs == ys
-        | _ -> False
-    { (==) }
-
-let functor_List : Functor List =
-    let map f xs =
-        match xs with
-        | Cons y ys -> Cons (f y) (map f ys)
-        | Nil -> Nil
-    { map }
-
-let applicative_List : Applicative List =
-    let { (<>) } = make_Semigroup semigroup_List
-
-    let apply f xs =
-        match f with
-        | Cons g gs -> (functor_List.map g xs) <> (apply gs xs)
-        | Nil -> Nil
-    let wrap x = Cons x Nil
-
-    { functor = functor_List, apply, wrap }
-
-let alternative_List : Alternative List = {
-    applicative = applicative_List,
-    or = semigroup_List.append,
-    empty = Nil
-}
-
-let monad_List : Monad List =
-    let { (<>) } = make_Semigroup semigroup_List
-
-    let flat_map f xs =
-        match xs with
-        | Cons x ys -> (f x) <> (flat_map f ys)
-        | Nil -> Nil
-
-    { applicative = applicative_List, flat_map }
-
-let show_List : Show a -> Show (List a) = \d ->
-    let show xs =
-        let show2 ys =
-            match ys with
-            | Cons y ys2 ->
-                match ys2 with
-                | Cons z zs -> d.show y ++ ", " ++ show2 ys2
-                | Nil -> d.show y ++ "]"
-            | Nil -> "]"
-        "[" ++ show2 xs
-    { show }
-
 let (==) = eq_Int.(==)
 let (-) = num_Int.(-)
 
@@ -756,19 +675,6 @@ let foldable_Result : Foldable (Result e) = {
         | Ok x -> f z x
 }
 
-let foldable_List : Foldable List =
-    let foldr f x xs =
-        match xs with
-        | Cons y ys -> f y (foldr f x ys)
-        | Nil -> x
-
-    let foldl f x xs =
-        match xs with
-        | Cons y ys -> foldl f (f x y) ys
-        | Nil -> x
-
-    { foldr, foldl }
-
 type Traversable t = {
     functor : Functor t,
     foldable : Foldable t,
@@ -802,36 +708,11 @@ let traversable_Result : Traversable (Result e) = {
         | Ok x -> app.functor.map Ok (f x)
 }
 
-let traversable_List : Traversable List = {
-    functor = functor_List,
-    foldable = foldable_List,
-    traverse = \app f ->
-        foldable_List.foldr
-            (\a b -> app.apply (app.functor.map Cons (f a)) b)
-            (app.wrap Nil)
-}
-
-/// Constructs a list from an array. Useful to emulate list literals
-///
-/// ```
-/// list [1, 2, 3]
-/// ```
-let list xs : Array a -> List a =
-    let len = array.len xs
-    let list_ i ys =
-        if i == 0 then
-            ys
-        else
-            let x = array.index xs (i - 1)
-            list_ (i - 1) (Cons x ys)
-    list_ len Nil
-
 {
     Bool,
     Ordering,
     Option,
     Result,
-    List,
 
     unwrap,
     unwrap_ok,
@@ -839,12 +720,10 @@ let list xs : Array a -> List a =
 
     not,
     xor,
-    list,
 
     Semigroup,
     make_Semigroup,
     semigroup_Function,
-    semigroup_List,
     semigroup_Option,
     semigroup_Option_First,
     semigroup_Option_Last,
@@ -859,7 +738,6 @@ let list xs : Array a -> List a =
 
     Monoid,
     monoid_Function,
-    monoid_List,
     monoid_Option,
     monoid_Option_First,
     monoid_Option_Last,
@@ -881,7 +759,6 @@ let list xs : Array a -> List a =
     Eq,
     eq_Unit,
     eq_Bool,
-    eq_List,
     eq_Option,
     eq_Result,
     eq_Float,
@@ -905,39 +782,33 @@ let list xs : Array a -> List a =
     Functor,
     functor_Option,
     functor_Result,
-    functor_List,
     functor_IO,
 
     Applicative,
     make_Applicative,
     applicative_Option,
     applicative_Result,
-    applicative_List,
     applicative_IO,
 
     Alternative,
     make_Alternative,
     alternative_Option,
-    alternative_List,
 
     Monad,
     make_Monad,
     monad_Option,
     monad_Result,
-    monad_List,
     monad_IO,
 
     Foldable,
     make_Foldable,
     foldable_Option,
     foldable_Result,
-    foldable_List,
 
     Traversable,
     make_Traversable,
     traversable_Option,
     traversable_Result,
-    traversable_List,
 
     Num,
     num_Int,
@@ -957,7 +828,6 @@ let list xs : Array a -> List a =
     show_Int,
     show_Float,
     show_Char,
-    show_List,
     show_Option,
     show_Result
 }

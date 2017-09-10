@@ -1,0 +1,149 @@
+let prelude = import! "std/prelude.glu"
+let { Semigroup, Monoid, Eq, Show } = prelude
+let { Functor, Applicative, Alternative, Monad, Foldable, Traversable } = prelude
+let string = import! "std/string.glu"
+
+/// A linked list type
+type List a = | Nil | Cons a (List a)
+
+/// Constructs a list from an array. Useful to emulate list literals
+///
+/// ```
+/// list.of [1, 2, 3]
+/// ```
+let of xs : Array a -> List a =
+    let len = array.len xs
+    let of_ i ys =
+        if i == 0 then
+            ys
+        else
+            let x = array.index xs (i - 1)
+            of_ (i - 1) (Cons x ys)
+    of_ len Nil
+
+let semigroup : Semigroup (List a) =
+    let append xs ys =
+        match xs with
+        | Cons x zs -> Cons x (append zs ys)
+        | Nil -> ys
+
+    { append }
+
+let monoid : Monoid (List a) = {
+    semigroup = semigroup,
+    empty = Nil
+}
+
+let eq a : Eq a -> Eq (List a) =
+    let (==) l r =
+        match (l, r) with
+        | (Nil, Nil) -> True
+        | (Cons x xs, Cons y ys) -> a.(==) x y && xs == ys
+        | _ -> False
+    { (==) }
+
+let functor : Functor List =
+    let map f xs =
+        match xs with
+        | Cons y ys -> Cons (f y) (map f ys)
+        | Nil -> Nil
+    { map }
+
+let applicative : Applicative List =
+    let { (<>) } = prelude.make_Semigroup semigroup
+
+    let apply f xs =
+        match f with
+        | Cons g gs -> (functor.map g xs) <> (apply gs xs)
+        | Nil -> Nil
+    let wrap x = Cons x Nil
+
+    { functor = functor, apply, wrap }
+
+
+let many alternative x : Alternative f -> f a -> f (List a) =
+    let { applicative, (<|>) } = prelude.make_Alternative alternative
+    let { functor, (<*>), wrap } = prelude.make_Applicative applicative
+
+    let many_v _ = some_v () <|> wrap Nil
+    and some_v _ = functor.map (\h l -> Cons h l) x <*> many_v ()
+    many_v ()
+
+let some alternative x : Alternative f -> f a -> f (List a) =
+    let { applicative, (<|>) } = prelude.make_Alternative alternative
+    let { functor, (<*>), wrap } = prelude.make_Applicative applicative
+
+    let many_v _ = some_v () <|> wrap Nil
+    and some_v _ = functor.map (\h l -> Cons h l) x <*> many_v ()
+    some_v ()
+
+let alternative : Alternative List = {
+    applicative = applicative,
+    or = semigroup.append,
+    empty = Nil
+}
+
+let monad : Monad List =
+    let { (<>) } = prelude.make_Semigroup semigroup
+
+    let flat_map f xs =
+        match xs with
+        | Cons x ys -> (f x) <> (flat_map f ys)
+        | Nil -> Nil
+
+    { applicative = applicative, flat_map }
+
+let show : Show a -> Show (List a) = \d ->
+    let (++) = string.semigroup.append
+
+    {
+        show = \xs ->
+            let show_elems ys =
+                match ys with
+                | Cons y ys2 ->
+                    match ys2 with
+                    | Cons z zs -> d.show y ++ ", " ++ show_elems ys2
+                    | Nil -> d.show y
+                | Nil -> ""
+
+            "[" ++ show_elems xs ++ "]"
+    }
+
+let foldable : Foldable List =
+    let foldr f x xs =
+        match xs with
+        | Cons y ys -> f y (foldr f x ys)
+        | Nil -> x
+
+    let foldl f x xs =
+        match xs with
+        | Cons y ys -> foldl f (f x y) ys
+        | Nil -> x
+
+    { foldr, foldl }
+
+let traversable : Traversable List = {
+    functor = functor,
+    foldable = foldable,
+    traverse = \app f ->
+        foldable.foldr
+            (\a b -> app.apply (app.functor.map Cons (f a)) b)
+            (app.wrap Nil)
+}
+
+{
+    List,
+    of,
+    semigroup,
+    monoid,
+    eq,
+    functor,
+    applicative,
+    many,
+    some,
+    alternative,
+    monad,
+    show,
+    foldable,
+    traversable
+}
