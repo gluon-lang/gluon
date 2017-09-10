@@ -18,10 +18,16 @@ let unwrap_err res : Result e a -> e =
     | Ok _ -> error "Result was an Ok"
     | Err x -> x
 
+/// Boolean 'not'
+let not x : Bool -> Bool = if x then False else True
+
+/// Boolean 'exclusive or'
+let xor x y : Bool -> Bool -> Bool = if x then not y else y
+
 /// `Semigroup a` represents an associative operation on `a`.
 /// This means the following laws must hold:
 ///
-/// * `append x (append y z) == append (append x y) z`
+/// * `forall x . append x (append y z) == append (append x y) z`
 type Semigroup a = {
     /// # Note
     ///
@@ -57,6 +63,12 @@ let semigroup_Float_Add : Semigroup Float = { append = \x y -> x #Float+ y }
 
 let semigroup_Float_Mul : Semigroup Float = { append = \x y -> x #Float* y }
 
+let semigroup_Bool_And : Semigroup Bool = { append = \x y -> x && y }
+
+let semigroup_Bool_Or : Semigroup Bool = { append = \x y -> x || y }
+
+let semigroup_Bool_Xor : Semigroup Bool = { append = xor }
+
 let semigroup_Ordering : Semigroup Ordering = {
     append = \x y ->
         match x with
@@ -72,12 +84,11 @@ let semigroup_List : Semigroup (List a) =
 
     { append }
 
-/// `Monoid a` represents an semigroup an which has an identity.
-/// This means the following laws must hold:
+/// `Monoid a` represents an semigroup an which has an identity. This means
+/// the following additional laws must hold:
 ///
-/// * `append x empty == x`
-/// * `append empty x == x`
-/// * `append x (append y z) == append (append x y) z`
+/// * `forall x . append x empty == x`
+/// * `forall x . append empty x == x`
 type Monoid a = {
     semigroup : Semigroup a,
     /// # Note
@@ -116,6 +127,21 @@ let monoid_Float_Mul : Monoid Float = {
     empty = 1.0
 }
 
+let monoid_Bool_And : Monoid Bool = {
+    semigroup = semigroup_Bool_And,
+    empty = True
+}
+
+let monoid_Bool_Or : Monoid Bool = {
+    semigroup = semigroup_Bool_Or,
+    empty = False
+}
+
+let monoid_Bool_Xor : Monoid Bool = {
+    semigroup = semigroup_Bool_Xor,
+    empty = False
+}
+
 let monoid_Ordering : Monoid Ordering = {
     semigroup = semigroup_Ordering,
     empty = EQ
@@ -126,7 +152,35 @@ let monoid_List : Monoid (List a) = {
     empty = Nil
 }
 
-let not x = if x then False else True
+/// `Group a` represents an monoid an which has an inverse element. This means
+/// the following additional laws must hold:
+///
+/// * `forall x . append (inverse x) x = empty = append x (inverse x)`
+type Group a = {
+    monoid : Monoid a,
+    /// The inverse operation
+    inverse : a -> a
+}
+
+let group_Int_Add : Group Int = {
+    monoid = monoid_Int_Add,
+    inverse = \x -> 0 #Int- x
+}
+
+let group_Float_Add : Group Float = {
+    monoid = monoid_Float_Add,
+    inverse = \x -> 0.0 #Float- x
+}
+
+let group_Float_Mul : Group Float = {
+    monoid = monoid_Float_Mul,
+    inverse = \x -> 1.0 #Float/ x
+}
+
+let group_Bool_Xor : Group Bool = {
+    monoid = monoid_Bool_Xor,
+    inverse = \x -> x
+}
 
 /// `Eq a` defines equality (==) on `a`
 type Eq a = { (==) : a -> a -> Bool }
@@ -760,6 +814,7 @@ let list xs : Array a -> List a =
     unwrap_err,
 
     not,
+    xor,
     list,
 
     Semigroup,
@@ -771,6 +826,9 @@ let list xs : Array a -> List a =
     semigroup_Int_Mul,
     semigroup_Float_Add,
     semigroup_Float_Mul,
+    semigroup_Bool_And,
+    semigroup_Bool_Or,
+    semigroup_Bool_Xor,
     semigroup_Ordering,
 
     Monoid,
@@ -781,7 +839,16 @@ let list xs : Array a -> List a =
     monoid_Int_Mul,
     monoid_Float_Add,
     monoid_Float_Mul,
+    monoid_Bool_And,
+    monoid_Bool_Or,
+    monoid_Bool_Xor,
     monoid_Ordering,
+
+    Group,
+    group_Int_Add,
+    group_Float_Add,
+    group_Float_Mul,
+    group_Bool_Xor,
 
     Eq,
     eq_Unit,
