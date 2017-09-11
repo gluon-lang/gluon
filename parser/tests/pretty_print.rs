@@ -44,8 +44,18 @@ fn map() {
 }
 
 #[test]
+fn option() {
+    test_format("std/option.glu");
+}
+
+#[test]
 fn prelude() {
     test_format("std/prelude.glu");
+}
+
+#[test]
+fn result() {
+    test_format("std/result.glu");
 }
 
 #[test]

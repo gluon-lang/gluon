@@ -1,15 +1,16 @@
 let prelude  = import! "std/prelude.glu"
 let { run, writer, assert_eq, assert_seq, assert_ieq }  = import! "std/test.glu"
-let { Option } = prelude
 let { (<) } = prelude.make_Ord prelude.ord_Int
 let { (+) } = prelude.num_Int
 let { (*>) } = prelude.make_Applicative writer.applicative
 
+let option = import! "std/option.glu"
+let { Option } = option
 let string = import! "std/string.glu"
 let result = import! "std/result.glu"
 let { Result } = result
 
-let assert_oieq = assert_eq (prelude.show_Option prelude.show_Int) (prelude.eq_Option prelude.eq_Int)
+let assert_oieq = assert_eq (option.show prelude.show_Int) (option.eq prelude.eq_Int)
 let assert_beq = assert_eq prelude.show_Bool prelude.eq_Bool
 let assert_req =
     assert_eq (result.show prelude.show_Unit string.show)

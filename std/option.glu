@@ -1,0 +1,148 @@
+let prelude = import! "std/prelude.glu"
+let { Semigroup, Monoid, Eq, Ord, Ordering, Show } = prelude
+let { Functor, Applicative, Alternative, Monad, Foldable, Traversable } = prelude
+let { Option } = import! "std/types.glu"
+
+let unwrap opt : Option a -> a =
+    match opt with
+    | Some x -> x
+    | None -> error "Option was None"
+
+let semigroup a : Semigroup a -> Semigroup (Option a) = {
+    append = \l r ->
+        match (l, r) with
+        | (Some x, Some y) -> Some (a.append x y)
+        | (Some _, None) -> l
+        | (None, Some _) -> r
+        | (None, None) -> None
+}
+
+let semigroup_First : Semigroup (Option a) = {
+    append = \l r ->
+        match l with
+        | Some x -> Some x
+        | None -> r
+}
+
+let semigroup_Last : Semigroup (Option a) = {
+    append = \l r ->
+        match r with
+        | Some x -> Some x
+        | None -> l
+}
+
+let monoid a : Semigroup a -> Monoid (Option a) = {
+    semigroup = semigroup a,
+    empty = None
+}
+
+let monoid_First : Monoid (Option a) = {
+    semigroup = semigroup_First,
+    empty = None
+}
+
+let monoid_Last : Monoid (Option a) = {
+    semigroup = semigroup_Last,
+    empty = None
+}
+
+let eq a : Eq a -> Eq (Option a) = {
+    (==) = \l r ->
+        match (l, r) with
+        | (Some l_val, Some r_val) -> a.(==) l_val r_val
+        | (None, None) -> True
+        | _ -> False
+}
+
+let ord a : Ord a -> Ord (Option a) = {
+    eq = eq a.eq,
+    compare = \l r ->
+        match (l, r) with
+        | (Some l_val, Some r_val) -> a.compare l_val r_val
+        | (None, Some _) -> LT
+        | (Some _, None) -> GT
+        | (None, None) -> EQ
+}
+
+let functor : Functor Option = {
+    map = \f x ->
+        match x with
+        | Some y -> Some (f y)
+        | None -> None
+}
+
+let applicative : Applicative Option = {
+    functor = functor,
+    apply = \f x ->
+        match (f, x) with
+        | (Some g, Some y) -> Some (g y)
+        | _ -> None,
+    wrap = \x -> Some x
+}
+
+let alternative : Alternative Option = {
+    applicative = applicative,
+    or = \x y ->
+        match x with
+        | Some _ -> x
+        | None -> y,
+    empty = None
+}
+
+let monad : Monad Option = {
+    applicative = applicative,
+    flat_map = \f m ->
+        match m with
+        | Some x -> f x
+        | None -> None
+}
+
+let show : Show a -> Show (Option a) = \d ->
+    let (++) = string_prim.append
+
+    let show o =
+        match o with
+        | Some x -> "Some (" ++ d.show x ++ ")"
+        | None -> "None"
+
+    { show }
+
+let foldable : Foldable Option = {
+    foldr = \f z o ->
+        match o with
+        | None -> z
+        | Some x -> f x z,
+    foldl = \f z o ->
+        match o with
+        | None -> z
+        | Some x -> f z x
+}
+
+let traversable : Traversable Option = {
+    functor = functor,
+    foldable = foldable,
+    traverse = \app f o ->
+        match o with
+        | None -> app.wrap None
+        | Some x -> app.functor.map Some (f x)
+}
+
+{
+    Option,
+    unwrap,
+    semigroup,
+    semigroup_First,
+    semigroup_Last,
+    monoid,
+    monoid_First,
+    monoid_Last,
+    eq,
+    ord,
+    functor,
+    applicative,
+    alternative,
+    monad,
+    show,
+    foldable,
+    traversable
+}

@@ -687,7 +687,7 @@ in Cons 1 Nil == Nil
 #[test]
 fn test_implicit_prelude() {
     let _ = ::env_logger::init();
-    let text = r#"Some (1.0 + 3.0 - 2.0)"#;
+    let text = r#"1.0 + 3.0 - 2.0"#;
     let mut vm = make_vm();
     Compiler::new()
         .run_expr_async::<OpaqueValue<&Thread, Hole>>(&mut vm, "<top>", text)
@@ -761,10 +761,10 @@ fn access_types_by_path() {
     let _ = ::env_logger::init();
 
     let vm = make_vm();
-    run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import! "std/prelude.glu" "#);
+    run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import! "std/option.glu" "#);
     run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import! "std/result.glu" "#);
 
-    assert!(vm.find_type_info("std.prelude.Option").is_ok());
+    assert!(vm.find_type_info("std.option.Option").is_ok());
     assert!(vm.find_type_info("std.result.Result").is_ok());
 
     let text = r#" type T a = | T a in { x = 0, inner = { T, y = 1.0 } } "#;
@@ -837,8 +837,11 @@ fn partially_applied_constructor_is_lambda() {
     let _ = ::env_logger::init();
     let vm = make_vm();
 
-    let result = Compiler::new()
-        .run_expr::<FunctionRef<fn(i32) -> Option<i32>>>(&vm, "test", "Some");
+    let result = Compiler::new().run_expr::<FunctionRef<fn(i32) -> Option<i32>>>(
+        &vm,
+        "test",
+        r#"let { Option } = import! "std/option.glu" in Some"#,
+    );
     assert!(result.is_ok(), "{}", result.err().unwrap());
     assert_eq!(result.unwrap().0.call(123), Ok(Some(123)));
 }
@@ -914,7 +917,8 @@ fn completion_with_prelude() {
 
     let expr = r#"
 let prelude  = import! "std/prelude.glu"
-and { Option, Num } = prelude
+and { Option } = import! "std/option.glu"
+and { Num } = prelude
 and { (+) } = prelude.num_Int
 
 type Stream_ a =
@@ -938,7 +942,7 @@ let from f : (Int -> Option a) -> Stream a =
         .typecheck_str(&vm, "example", expr, None)
         .unwrap_or_else(|err| panic!("{}", err));
 
-    let result = completion::find(&*vm.get_env(), &expr, BytePos::from(313));
+    let result = completion::find(&*vm.get_env(), &expr, BytePos::from(348));
     assert_eq!(result, Ok(Type::int()));
 }
 
