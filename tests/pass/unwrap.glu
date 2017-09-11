@@ -1,6 +1,5 @@
-let {
-    Option, Result, unwrap, unwrap_ok, unwrap_err, (|>)
-}  = import! "std/prelude.glu"
+let { Option, unwrap, (|>) } = import! "std/prelude.glu"
+let { Result, unwrap_ok, unwrap_err } = import! "std/result.glu"
 let { assert_ieq }  = import! "std/test.glu"
 
 let one = Some 1 |> unwrap

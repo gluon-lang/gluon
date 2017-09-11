@@ -1,19 +1,9 @@
-let { Bool, Option, Result, Ordering } = import! "std/types.glu"
+let { Bool, Option, Ordering } = import! "std/types.glu"
 
 let unwrap opt : Option a -> a =
     match opt with
     | Some x -> x
     | None -> error "Option was None"
-
-let unwrap_ok res : Result e a -> a =
-    match res with
-    | Ok x -> x
-    | Err _ -> error "Result was an Err"
-
-let unwrap_err res : Result e a -> e =
-    match res with
-    | Ok _ -> error "Result was an Ok"
-    | Err x -> x
 
 /// Boolean 'not'
 let not x : Bool -> Bool = if x then False else True
@@ -211,14 +201,6 @@ let eq_Option a : Eq a -> Eq (Option a) = {
         | _ -> False
 }
 
-let eq_Result e a : Eq e -> Eq a -> Eq (Result e a) = {
-    (==) = \l r ->
-        match (l, r) with
-        | (Ok l_val, Ok r_val) -> a.(==) l_val r_val
-        | (Err l_val, Err r_val) -> e.(==) l_val r_val
-        | _ -> False
-}
-
 /// `Ord a` defines an ordering on `a`
 type Ord a = { eq : Eq a, compare : a -> a -> Ordering }
 
@@ -279,16 +261,6 @@ let ord_Option a : Ord a -> Ord (Option a) = {
         | (None, Some _) -> LT
         | (Some _, None) -> GT
         | (None, None) -> EQ
-}
-
-let ord_Result e a : Ord e -> Ord a -> Ord (Result e a) = {
-    eq = eq_Result e.eq a.eq,
-    compare = \l r ->
-        match (l, r) with
-        | (Ok l_val, Ok r_val) -> a.compare l_val r_val
-        | (Err l_val, Err r_val) -> e.compare l_val r_val
-        | (Ok _, Err _) -> LT
-        | (Err _, Ok _) -> GT
 }
 
 /**
@@ -374,7 +346,7 @@ type Functor f = {
     /// # Examples
     ///
     /// * `applicative_Option.map show_Int.show (Some 1) == Some "1"`
-    /// * `applicative_Result.map show_Int.show (Some 1) == Ok "1"`
+    /// * `result.applicative.map show_Int.show (Some 1) == Ok "1"`
     /// * `list.functor.map show_Int.show (list.of [1, 2]) == list.of ["1", "2"]`
     ///
     /// # Note
@@ -392,13 +364,6 @@ let functor_Option : Functor Option = {
         | None -> None
 }
 
-let functor_Result : Functor (Result e) = {
-    map = \f x ->
-        match x with
-        | Ok y -> Ok (f y)
-        | Err _ -> x
-}
-
 let functor_IO : Functor IO = { map = \f -> io_flat_map (\x -> io_wrap (f x)) }
 
 type Applicative (f : Type -> Type) = {
@@ -414,7 +379,7 @@ type Applicative (f : Type -> Type) = {
     /// # Examples
     ///
     /// * `applicative_Option.wrap 1 == Some 1`
-    /// * `applicative_Result.wrap 1 == Ok 1`
+    /// * `result.applicative.wrap 1 == Ok 1`
     /// * `list.applicative.wrap 1 == list.of [1]`
     ///
     /// # Note
@@ -451,16 +416,6 @@ let applicative_Option : Applicative Option = {
         | (Some g, Some y) -> Some (g y)
         | _ -> None,
     wrap = \x -> Some x
-}
-
-let applicative_Result : Applicative (Result e) = {
-    functor = functor_Result,
-    apply = \f x ->
-        match (f, x) with
-        | (Ok g, Ok y) -> Ok (g y)
-        | (Ok _, Err _) -> x
-        | (Err x, _) -> Err x,
-    wrap = \x -> Ok x
 }
 
 let applicative_IO : Applicative IO =
@@ -501,13 +456,13 @@ type Monad (m : Type -> Type) = {
     /// In gluon this would look like:
     ///
     /// ```gluon
-    /// monad_Result.flat_map (\x -> do_something x) (call_fallible "hello")
+    /// result.monad.flat_map (\x -> do_something x) (call_fallible "hello")
     /// ```
     ///
     /// Note that it is sometimes more ergonomic to use the `(>>=)` operator:
     ///
     /// ```gluon
-    /// let { (>>=) } = make_Monad monad_Result
+    /// let { (>>=) } = make_Monad result.monad
     ///
     /// call_fallible "hello" >>= (\x -> do_something x)
     /// ```
@@ -544,14 +499,6 @@ let monad_Option : Monad Option = {
         | None -> None
 }
 
-let monad_Result : Monad (Result e) = {
-    applicative = applicative_Result,
-    flat_map = \f m ->
-        match m with
-        | Ok x -> f x
-        | Err err -> Err err
-}
-
 let monad_IO : Monad IO = {
     applicative = applicative_IO,
     flat_map = io_flat_map
@@ -577,16 +524,6 @@ let show_Option : Show a -> Show (Option a) = \d ->
         match o with
         | Some x -> "Some (" ++ d.show x ++ ")"
         | None -> "None"
-
-    { show }
-
-let show_Result : Show e -> Show t -> Show (Result e t) = \e t ->
-    let (++) = string_prim.append
-
-    let show o =
-        match o with
-        | Ok x -> "Ok (" ++ t.show x ++ ")"
-        | Err x -> "Err (" ++ e.show x ++ ")"
 
     { show }
 
@@ -665,17 +602,6 @@ let foldable_Option : Foldable Option = {
         | Some x -> f z x
 }
 
-let foldable_Result : Foldable (Result e) = {
-    foldr = \f z r ->
-        match r with
-        | Err _ -> z
-        | Ok x -> f x z,
-    foldl = \f z r ->
-        match r with
-        | Err _ -> z
-        | Ok x -> f z x
-}
-
 type Traversable t = {
     functor : Functor t,
     foldable : Foldable t,
@@ -700,24 +626,12 @@ let traversable_Option : Traversable Option = {
         | Some x -> app.functor.map Some (f x)
 }
 
-let traversable_Result : Traversable (Result e) = {
-    functor = functor_Result,
-    foldable = foldable_Result,
-    traverse = \app f r ->
-        match r with
-        | Err e -> app.wrap (Err e)
-        | Ok x -> app.functor.map Ok (f x)
-}
-
 {
     Bool,
     Ordering,
     Option,
-    Result,
 
     unwrap,
-    unwrap_ok,
-    unwrap_err,
 
     not,
     xor,
@@ -761,7 +675,6 @@ let traversable_Result : Traversable (Result e) = {
     eq_Unit,
     eq_Bool,
     eq_Option,
-    eq_Result,
     eq_Float,
     eq_Int,
     eq_Char,
@@ -771,7 +684,6 @@ let traversable_Result : Traversable (Result e) = {
     ord_Unit,
     ord_Bool,
     ord_Option,
-    ord_Result,
     ord_Float,
     ord_Int,
     ord_Char,
@@ -782,13 +694,11 @@ let traversable_Result : Traversable (Result e) = {
 
     Functor,
     functor_Option,
-    functor_Result,
     functor_IO,
 
     Applicative,
     make_Applicative,
     applicative_Option,
-    applicative_Result,
     applicative_IO,
 
     Alternative,
@@ -798,18 +708,15 @@ let traversable_Result : Traversable (Result e) = {
     Monad,
     make_Monad,
     monad_Option,
-    monad_Result,
     monad_IO,
 
     Foldable,
     make_Foldable,
     foldable_Option,
-    foldable_Result,
 
     Traversable,
     make_Traversable,
     traversable_Option,
-    traversable_Result,
 
     Num,
     num_Int,
@@ -829,6 +736,5 @@ let traversable_Result : Traversable (Result e) = {
     show_Int,
     show_Float,
     show_Char,
-    show_Option,
-    show_Result
+    show_Option
 }

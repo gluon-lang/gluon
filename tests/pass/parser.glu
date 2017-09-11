@@ -1,5 +1,7 @@
 let prelude = import! "std/prelude.glu"
-let { show = show_String, eq = eq_String } = import! "std/string.glu"
+let string = import! "std/string.glu"
+let result = import! "std/result.glu"
+let { Result } = result
 let { Test, run, writer, assert, assert_eq } = import! "std/test.glu"
 let { Writer } = import! "std/writer.glu"
 
@@ -9,8 +11,8 @@ let { (<|>) } = prelude.make_Alternative alternative
 
 let assert_parse show eq =
     assert_eq
-        (prelude.show_Result show_String show)
-        (prelude.eq_Result eq_String eq)
+        (result.show string.show show)
+        (result.eq string.eq eq)
 
 let tests =
     assert_parse prelude.show_Char prelude.eq_Char (parse any "abc") (Ok 'a')

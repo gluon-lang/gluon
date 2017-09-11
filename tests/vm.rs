@@ -687,7 +687,7 @@ in Cons 1 Nil == Nil
 #[test]
 fn test_implicit_prelude() {
     let _ = ::env_logger::init();
-    let text = r#"Ok (Some (1.0 + 3.0 - 2.0)) "#;
+    let text = r#"Some (1.0 + 3.0 - 2.0)"#;
     let mut vm = make_vm();
     Compiler::new()
         .run_expr_async::<OpaqueValue<&Thread, Hole>>(&mut vm, "<top>", text)
@@ -762,9 +762,10 @@ fn access_types_by_path() {
 
     let vm = make_vm();
     run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import! "std/prelude.glu" "#);
+    run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import! "std/result.glu" "#);
 
     assert!(vm.find_type_info("std.prelude.Option").is_ok());
-    assert!(vm.find_type_info("std.prelude.Result").is_ok());
+    assert!(vm.find_type_info("std.result.Result").is_ok());
 
     let text = r#" type T a = | T a in { x = 0, inner = { T, y = 1.0 } } "#;
     load_script(&vm, "test", text).unwrap_or_else(|err| panic!("{}", err));

@@ -5,6 +5,9 @@ let string = import! "std/string.glu"
 let { (==) } = string.eq
 let { (<>) } = prelude.make_Semigroup string.semigroup
 
+let result = import! "std/result.glu"
+let { Result } = result
+
 let list = import! "std/list.glu"
 let { List } = list
 
@@ -196,7 +199,7 @@ and eval_lisp expr : Expr -> Lisp Expr =
 and eval_exprs exprs = fold_m (\_result expr -> eval_lisp expr) (List Nil) exprs
 
 let run_lisp expr env : Lisp a -> Map String Expr -> Result String a =
-    prelude.functor_Result.map (\r -> r.value) (lisp expr env)
+    result.functor.map (\r -> r.value) (lisp expr env)
 
 let eval expr : Expr -> Result String Expr = run_lisp (eval_lisp expr) primitives
 let eval_seq exprs =

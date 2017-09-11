@@ -50,6 +50,8 @@ fn parallel_() -> Result<(), Error> {
     let handle2 = spawn(move || -> Result<(), Error> {
         let expr = r#"
         let { assert }  = import! "std/test.glu"
+        let { Result }  = import! "std/result.glu"
+
         let f receiver =
             match recv receiver with
             | Ok x -> assert (x == 1)
@@ -57,6 +59,7 @@ fn parallel_() -> Result<(), Error> {
             match recv receiver with
             | Ok x -> assert (x == 2)
             | Err _ -> assert False
+
         f
         "#;
         let mut compiler = Compiler::new();

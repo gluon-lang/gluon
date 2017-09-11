@@ -1,5 +1,6 @@
 let { List } = import! "std/list.glu"
 let { Map } = import! "std/map.glu"
+let { Result } = import! "std/result.glu"
 
 type Expr =
     | Atom String

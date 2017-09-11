@@ -1,10 +1,11 @@
 let prelude = import! "std/prelude.glu"
 let map = import! "std/map.glu"
+let { Result } = import! "std/result.glu"
 let string = import! "std/string.glu"
 let { Map } = map
 let { wrap, (*>) } = prelude.make_Applicative prelude.applicative_IO
 let { (>>=) } = prelude.make_Monad prelude.monad_IO
-let { Eq, Result } = prelude
+let { Eq } = prelude
 let { append = (++) } = string.semigroup
 let ord_map = map.make string.ord
 let { singleton, find } = ord_map
