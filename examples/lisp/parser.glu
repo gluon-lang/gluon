@@ -1,6 +1,6 @@
 let prelude = import! "std/prelude.glu"
-let { List } = prelude
 let { Expr } = import! "examples/lisp/types.glu"
+let { List } = import! "std/list.glu"
 let string = import! "std/string.glu"
 
 let {
@@ -24,7 +24,7 @@ let {
 } =
     import! "std/parser.glu"
 
-let { (<>) } = prelude.make_Monoid string.monoid
+let { (<>) } = prelude.make_Semigroup string.semigroup
 
 let { (<*), (*>), map2, wrap } = prelude.make_Applicative applicative
 let { (<|>) } = prelude.make_Alternative alternative

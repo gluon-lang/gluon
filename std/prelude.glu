@@ -1,8 +1,5 @@
 let { Bool, Option, Result, Ordering } = import! "std/types.glu"
 
-/// A linked list type
-type List a = | Nil | Cons a (List a)
-
 let unwrap opt : Option a -> a =
     match opt with
     | Some x -> x
@@ -18,54 +15,180 @@ let unwrap_err res : Result e a -> e =
     | Ok _ -> error "Result was an Ok"
     | Err x -> x
 
-/// `Monoid m` represents an associative operation on `m` an which has an identity.
+/// Boolean 'not'
+let not x : Bool -> Bool = if x then False else True
+
+/// Boolean 'exclusive or'
+let xor x y : Bool -> Bool -> Bool = if x then not y else y
+
+/// `Semigroup a` represents an associative operation on `a`.
 /// This means the following laws must hold:
 ///
-/// * `append x empty == x`
-/// * `append empty x == x`
-/// * `append x (append y z) == append (append x y) z`
-type Monoid m = {
+/// * `forall x . append x (append y z) == append (append x y) z`
+type Semigroup a = {
     /// # Note
     ///
-    /// * Known as `mappend` in Haskell
-    append : m -> m -> m,
+    /// * Known as `(<>)` or `mappend` in Haskell
+    append : a -> a -> a
+}
+
+let make_Semigroup semigroup : Semigroup a -> _ =
+    let { append } = semigroup
+
+    let (<>) : a -> a -> a = append
+
+    { append, (<>) }
+
+let semigroup_Function semigroup : Semigroup b -> Semigroup (a -> b) = {
+    append = \f g x -> semigroup.append (f x) (g x)
+}
+
+let semigroup_Option semigroup : Semigroup a -> Semigroup (Option a) = {
+    append = \l r ->
+        match (l, r) with
+        | (Some x, Some y) -> Some (semigroup.append x y)
+        | (Some _, None) -> l
+        | (None, Some _) -> r
+        | (None, None) -> None
+}
+
+let semigroup_Option_First : Semigroup (Option a) = {
+    append = \l r ->
+        match l with
+        | Some x -> Some x
+        | None -> r
+}
+
+let semigroup_Option_Last : Semigroup (Option a) = {
+    append = \l r ->
+        match r with
+        | Some x -> Some x
+        | None -> l
+}
+
+let semigroup_Int_Add : Semigroup Int = { append = \x y -> x #Int+ y }
+
+let semigroup_Int_Mul : Semigroup Int = { append = \x y -> x #Int* y }
+
+let semigroup_Float_Add : Semigroup Float = { append = \x y -> x #Float+ y }
+
+let semigroup_Float_Mul : Semigroup Float = { append = \x y -> x #Float* y }
+
+let semigroup_Bool_And : Semigroup Bool = { append = \x y -> x && y }
+
+let semigroup_Bool_Or : Semigroup Bool = { append = \x y -> x || y }
+
+let semigroup_Bool_Xor : Semigroup Bool = { append = xor }
+
+let semigroup_Ordering : Semigroup Ordering = {
+    append = \x y ->
+        match x with
+        | EQ -> y
+        | _ -> x
+}
+
+/// `Monoid a` represents an semigroup an which has an identity. This means
+/// the following additional laws must hold:
+///
+/// * `forall x . append x empty == x`
+/// * `forall x . append empty x == x`
+type Monoid a = {
+    semigroup : Semigroup a,
     /// # Note
     ///
     /// * Known as `mempty` in Haskell
-    empty : m
+    empty : a
 }
 
-let monoid_Function m : Monoid b -> Monoid (a -> b) = {
-    append = \f g -> \x -> m.append (f x) (g x),
-    empty = \_ -> m.empty
+let monoid_Function monoid : Monoid b -> Monoid (a -> b) = {
+    semigroup = semigroup_Function monoid.semigroup,
+    empty = \_ -> monoid.empty
 }
 
-let monoid_Option m : Monoid a -> Monoid (Option a) = {
-    append = \l r ->
-        match (l, r) with
-        | (Some x, Some y) -> Some (m.append x y)
-        | (Some _, None) -> l
-        | (None, Some _) -> r
-        | (None, None) -> None,
+let monoid_Option semigroup : Semigroup a -> Monoid (Option a) = {
+    semigroup = semigroup_Option semigroup,
     empty = None
 }
 
-let monoid_Int_Add = { append = \x y -> x #Int+ y, empty = 0 }
+let monoid_Option_First : Monoid (Option a) = {
+    semigroup = semigroup_Option_First,
+    empty = None
+}
 
-let monoid_Int_Mul = { append = \x y -> x #Int* y, empty = 1 }
+let monoid_Option_Last : Monoid (Option a) = {
+    semigroup = semigroup_Option_Last,
+    empty = None
+}
 
-let monoid_Float_Add = { append = \x y -> x #Float+ y, empty = 0.0 }
+let monoid_Int_Add : Monoid Int = {
+    semigroup = semigroup_Int_Add,
+    empty = 0
+}
 
-let monoid_Float_Mul = { append = \x y -> x #Float* y, empty = 1.0 }
+let monoid_Int_Mul : Monoid Int = {
+    semigroup = semigroup_Int_Mul,
+    empty = 1
+}
 
-let make_Monoid m =
-    let { append, empty } = m
+let monoid_Float_Add : Monoid Float = {
+    semigroup = semigroup_Float_Add,
+    empty = 0.0
+}
 
-    let (<>) = append
+let monoid_Float_Mul : Monoid Float = {
+    semigroup = semigroup_Float_Mul,
+    empty = 1.0
+}
 
-    { append, empty, (<>) }
+let monoid_Bool_And : Monoid Bool = {
+    semigroup = semigroup_Bool_And,
+    empty = True
+}
 
-let not x = if x then False else True
+let monoid_Bool_Or : Monoid Bool = {
+    semigroup = semigroup_Bool_Or,
+    empty = False
+}
+
+let monoid_Bool_Xor : Monoid Bool = {
+    semigroup = semigroup_Bool_Xor,
+    empty = False
+}
+
+let monoid_Ordering : Monoid Ordering = {
+    semigroup = semigroup_Ordering,
+    empty = EQ
+}
+
+/// `Group a` represents an monoid an which has an inverse element. This means
+/// the following additional laws must hold:
+///
+/// * `forall x . append (inverse x) x = empty = append x (inverse x)`
+type Group a = {
+    monoid : Monoid a,
+    /// The inverse operation
+    inverse : a -> a
+}
+
+let group_Int_Add : Group Int = {
+    monoid = monoid_Int_Add,
+    inverse = \x -> 0 #Int- x
+}
+
+let group_Float_Add : Group Float = {
+    monoid = monoid_Float_Add,
+    inverse = \x -> 0.0 #Float- x
+}
+
+let group_Float_Mul : Group Float = {
+    monoid = monoid_Float_Mul,
+    inverse = \x -> 1.0 #Float/ x
+}
+
+let group_Bool_Xor : Group Bool = {
+    monoid = monoid_Bool_Xor,
+    inverse = \x -> x
+}
 
 /// `Eq a` defines equality (==) on `a`
 type Eq a = { (==) : a -> a -> Bool }
@@ -96,16 +219,38 @@ let eq_Result e a : Eq e -> Eq a -> Eq (Result e a) = {
         | _ -> False
 }
 
-let monoid_Ordering = {
-    append = \x y ->
-        match x with
-        | EQ -> y
-        | _ -> x,
-    empty = EQ
-}
-
 /// `Ord a` defines an ordering on `a`
 type Ord a = { eq : Eq a, compare : a -> a -> Ordering }
+
+/// Creates the `<=`, `<`, `>` and `>=` operators from an instance with `Ord`
+let make_Ord ord : Ord a -> _ =
+    let { eq, compare } = ord
+
+    let (<=) : a -> a -> Bool = \l r ->
+        match compare l r with
+        | LT -> True
+        | EQ -> True
+        | GT -> False
+
+    let (<) : a -> a -> Bool = \l r ->
+        match compare l r with
+        | LT -> True
+        | EQ -> False
+        | GT -> False
+
+    let (>) : a -> a -> Bool = \l r ->
+        match compare l r with
+        | LT -> False
+        | EQ -> False
+        | GT -> True
+
+    let (>=) : a -> a -> Bool = \l r ->
+        match compare l r with
+        | LT -> False
+        | EQ -> True
+        | GT -> True
+
+    { eq, compare, (<=), (<), (>), (>=) }
 
 let ord_Unit = { eq = eq_Unit, compare = \l r -> EQ }
 
@@ -146,34 +291,6 @@ let ord_Result e a : Ord e -> Ord a -> Ord (Result e a) = {
         | (Err _, Ok _) -> GT
 }
 
-/// Creates the `<=`, `<`, `>` and `>=` operators from an instance with `Ord`
-let make_Ord ord =
-    let { eq, compare } = ord
-    {
-        eq,
-        compare,
-        (<=) = \l r ->
-            match compare l r with
-            | LT -> True
-            | EQ -> True
-            | GT -> False,
-        (<) = \l r ->
-            match compare l r with
-            | LT -> True
-            | EQ -> False
-            | GT -> False,
-        (>) = \l r ->
-            match compare l r with
-            | LT -> False
-            | EQ -> False
-            | GT -> True,
-        (>=) = \l r ->
-            match compare l r with
-            | LT -> False
-            | EQ -> True
-            | GT -> True
-    }
-
 /**
  The basic operation on numbers.
  Defined for both the primitive type `Int` and `Float`
@@ -189,41 +306,44 @@ type Num a = {
 
 let num_Int = {
     ord = ord_Int,
-    (+) = monoid_Int_Add.append,
+    (+) = semigroup_Int_Add.append,
     (-) = \l r -> l #Int- r,
-    (*) = monoid_Int_Mul.append,
+    (*) = semigroup_Int_Mul.append,
     (/) = \l r -> l #Int/ r,
     negate = \x -> 0 #Int- x
 }
 
 let num_Float : Num Float = {
     ord = ord_Float,
-    (+) = monoid_Float_Add.append,
+    (+) = semigroup_Float_Add.append,
     (-) = \l r -> l #Float- r,
-    (*) = monoid_Float_Mul.append,
+    (*) = semigroup_Float_Mul.append,
     (/) = \l r -> l #Float/ r,
     negate = \x -> 0.0 #Float- x
 }
 
 type Category (cat : Type -> Type -> Type) = { id : cat a a, compose : cat b c -> cat a b -> cat a c }
 
+let make_Category category : Category cat -> _ =
+    let { id, compose } = category
+
+    /// Right-to-left composition. Alias for `compose`.
+    let (<<) : cat b c -> cat a b -> cat a c = compose
+    /// Left-to-right composition. Alias for `compose`, but with the arguments flipped.
+    let (>>) f g : cat a b -> cat b c -> cat a c = compose g f
+
+    { id, compose, (<<), (>>) }
+
 let category_Function : Category (->) = {
     id = \x -> x,
     compose = \f g x -> f (g x)
 }
 
-let make_Category cat =
-    let { id, compose } = cat
-
-    /// Right-to-left composition. Alias for `compose`.
-    let (<<) = compose
-    /// Left-to-right composition. Alias for `compose`, but with the arguments flipped.
-    let (>>) f g = compose g f
-
-    { id, compose, (<<), (>>) }
-
 /// The identity function, where `id x == x`
 let id : a -> a = category_Function.id
+
+/// const `x` creates a function which always returns `x`
+let const x _ : a -> b -> a = x
 
 /// flip `f` takes creates a new function which takes its two arguments in reverse order
 let flip f : (a -> b -> c) -> b -> a -> c = \x y -> f y x
@@ -255,7 +375,7 @@ type Functor f = {
     ///
     /// * `applicative_Option.map show_Int.show (Some 1) == Some "1"`
     /// * `applicative_Result.map show_Int.show (Some 1) == Ok "1"`
-    /// * `applicative_List.map show_Int.show (list [1, 2]) == list ["1", "2"]`
+    /// * `list.functor.map show_Int.show (list.of [1, 2]) == list.of ["1", "2"]`
     ///
     /// # Note
     ///
@@ -295,7 +415,7 @@ type Applicative (f : Type -> Type) = {
     ///
     /// * `applicative_Option.wrap 1 == Some 1`
     /// * `applicative_Result.wrap 1 == Ok 1`
-    /// * `applicative_List.wrap 1 == list [1]`
+    /// * `list.applicative.wrap 1 == list.of [1]`
     ///
     /// # Note
     ///
@@ -303,14 +423,26 @@ type Applicative (f : Type -> Type) = {
     wrap : a -> f a
 }
 
+// FIXME: Causes panic in VM: thread 'main' panicked at 'Op Split called on non data type', tests/main.rs:32:8
+// let make_Applicative applicative : Applicative f -> _ =
+let make_Applicative applicative =
+    let { functor, apply, wrap } = applicative
+
+    let (<*>) : _ (a -> b) -> _ a -> _ b = apply
+    let (<*) l r : _ a -> _ b -> _ a = functor.map const l <*> r
+    let (*>) l r : _ a -> _ b -> _ b = functor.map (const id) l <*> r
+
+    let map2 f a b : (a -> b -> c) -> _ a -> _ b -> _ c = (functor.map f a) <*> b
+    let map3 f a b c : (a -> b -> c -> d) -> _ a -> _ b -> _ c -> _ d =
+        (functor.map f a) <*> b <*> c
+
+    { functor, apply, wrap, (<*>), (<*), (*>), map2, map3 }
+
 let applicative_Function : Applicative ((->) a) = {
     functor = functor_Function,
     apply = \f g x -> f x (g x),
-    wrap = \x -> \_ -> x
+    wrap = const
 }
-
-/// const `x` creates a function which always returns `x`
-let const : a -> b -> a = applicative_Function.wrap
 
 let applicative_Option : Applicative Option = {
     functor = functor_Option,
@@ -337,17 +469,6 @@ let applicative_IO : Applicative IO =
 
     { functor = functor_IO, apply, wrap }
 
-let make_Applicative app =
-    let { functor, apply, wrap } = app
-
-    let (<*>) = apply
-    let (<*) l r = functor.map const l <*> r
-    let (*>) l r = functor.map (const id) l <*> r
-    let map2 f a b = (functor.map f a) <*> b
-    let map3 f a b c = (functor.map f a) <*> b <*> c
-
-    { functor, apply, wrap, (<*>), (<*), (*>), map2, map3 }
-
 type Alternative f = { applicative : Applicative f, or : f a -> f a -> f a, empty : f a }
 
 let alternative_Option : Alternative Option = {
@@ -359,21 +480,12 @@ let alternative_Option : Alternative Option = {
     empty = None
 }
 
-let make_Alternative f =
-    let { applicative, or, empty } = f
-    let { functor, (<*>), wrap } = make_Applicative applicative
+let make_Alternative alternative : Alternative f -> _ =
+    let { applicative, or, empty } = alternative
 
-    let (<|>) = or
-    let many x =
-        let many_v _ = some_v () <|> wrap Nil
-        and some_v _ = functor.map (\h l -> Cons h l) x <*> many_v ()
-        many_v ()
-    let some x =
-        let many_v _ = some_v () <|> wrap Nil
-        and some_v _ = functor.map (\h l -> Cons h l) x <*> many_v ()
-        some_v ()
+    let (<|>) : f a -> f a -> f a = or
 
-    { applicative, or, empty, (<|>), many, some }
+    { applicative, or, empty, (<|>) }
 
 /// A generalised interface for imperatively sequencing actions
 type Monad (m : Type -> Type) = {
@@ -407,6 +519,18 @@ type Monad (m : Type -> Type) = {
     flat_map : (a -> m b) -> m a -> m b
 }
 
+let make_Monad monad : Monad m -> _ =
+    let { applicative, flat_map } = monad
+    let { (*>), wrap } = make_Applicative applicative
+    let { id } = category_Function
+
+    let (=<<) : (a -> m b) -> m a -> m b = flat_map
+    let (>>=) : m a -> (a -> m b) -> m b = flip flat_map
+
+    let join mm : m (m a) -> m a = mm >>= id
+
+    { applicative, flat_map, (=<<), (>>=), join }
+
 let monad_Function : Monad ((->) a) = {
     applicative = applicative_Function,
     flat_map = \f m x -> f (m x) x
@@ -433,31 +557,6 @@ let monad_IO : Monad IO = {
     flat_map = io_flat_map
 }
 
-let make_Monad m =
-    let { applicative, flat_map } = m
-    let { (*>), wrap } = make_Applicative applicative
-    let { id } = category_Function
-
-    let (=<<) = flat_map
-    let (>>=) = flip flat_map
-    let join mm = mm >>= id
-    let forM_ xs f =
-        match xs with
-        | Cons y ys -> f y *> forM_ ys f
-        | Nil -> wrap ()
-
-    let foldM f x xs =
-        match xs with
-        | Cons y ys -> f x y >>= (\a -> foldM f a ys)
-        | Nil -> wrap x
-
-    let mapM f xs =
-        match xs with
-        | Cons y ys -> f y >>= (\a -> mapM f ys >>= \rest -> wrap (Cons a rest))
-        | Nil -> wrap Nil
-
-    { applicative, flat_map, (=<<), (>>=), join, forM_, foldM, mapM }
-
 /// `Show a` represents a conversion function from `a` to a readable string.
 type Show a = { show : a -> String }
 
@@ -471,103 +570,45 @@ let show_Float : Show Float = { show = prim.show_float }
 
 let show_Char : Show Char = { show = prim.show_char }
 
-let (++) = string_prim.append
-
 let show_Option : Show a -> Show (Option a) = \d ->
+    let (++) = string_prim.append
+
     let show o =
         match o with
         | Some x -> "Some (" ++ d.show x ++ ")"
         | None -> "None"
+
     { show }
 
 let show_Result : Show e -> Show t -> Show (Result e t) = \e t ->
+    let (++) = string_prim.append
+
     let show o =
         match o with
         | Ok x -> "Ok (" ++ t.show x ++ ")"
         | Err x -> "Err (" ++ e.show x ++ ")"
+
     { show }
-
-let monoid_List =
-    let append xs ys =
-        match xs with
-        | Cons x zs -> Cons x (append zs ys)
-        | Nil -> ys
-
-    { append, empty = Nil }
-
-let eq_List a : Eq a -> Eq (List a) =
-    let (==) l r =
-        match (l, r) with
-        | (Nil, Nil) -> True
-        | (Cons x xs, Cons y ys) -> a.(==) x y && xs == ys
-        | _ -> False
-    { (==) }
-
-let functor_List : Functor List =
-    let map f xs =
-        match xs with
-        | Cons y ys -> Cons (f y) (map f ys)
-        | Nil -> Nil
-    { map }
-
-let applicative_List : Applicative List =
-    let { (<>) } = make_Monoid monoid_List
-
-    let apply f xs =
-        match f with
-        | Cons g gs -> (functor_List.map g xs) <> (apply gs xs)
-        | Nil -> Nil
-    let wrap x = Cons x Nil
-
-    { functor = functor_List, apply, wrap }
-
-let alternative_List : Alternative List = {
-    applicative = applicative_List,
-    or = monoid_List.append,
-    empty = Nil
-}
-
-let monad_List : Monad List =
-    let { (<>) } = make_Monoid monoid_List
-
-    let flat_map f xs =
-        match xs with
-        | Cons x ys -> (f x) <> (flat_map f ys)
-        | Nil -> Nil
-
-    { applicative = applicative_List, flat_map }
-
-let show_List : Show a -> Show (List a) = \d ->
-    let show xs =
-        let show2 ys =
-            match ys with
-            | Cons y ys2 ->
-                match ys2 with
-                | Cons z zs -> d.show y ++ ", " ++ show2 ys2
-                | Nil -> d.show y ++ "]"
-            | Nil -> "]"
-        "[" ++ show2 xs
-    { show }
-
-let (==) = eq_Int.(==)
-let (-) = num_Int.(-)
 
 type Foldable (f : Type -> Type) = {
     foldr : (a -> b -> b) -> b -> f a -> b,
     foldl : (b -> a -> b) -> b -> f a -> b
 }
 
-let make_Foldable f =
-    let { foldr, foldl } = f
+let make_Foldable foldable : Foldable t -> _ =
+    let { foldr, foldl } = foldable
     let { (+) } = num_Int
 
-    let concat monoid : Monoid m -> _ m -> m =
-        foldr monoid.append monoid.empty
+    let concat monoid : Monoid m -> t m -> m =
+        foldr monoid.semigroup.append monoid.empty
 
-    let concat_map monoid f : Monoid m -> (a -> m) -> _ a -> m =
-        foldr (f >> monoid.append) monoid.empty
+    let concat_map monoid f : Monoid m -> (a -> m) -> t a -> m =
+        foldr (f >> monoid.semigroup.append) monoid.empty
 
-    let find pred : (a -> Bool) -> _ a -> Option a =
+    let fold_m monad f z : Monad m -> (a -> b -> m a) -> a -> t b -> m a =
+        foldl (\acc b -> monad.flat_map (flip f b) acc) (monad.applicative.wrap z)
+
+    let find pred : (a -> Bool) -> t a -> Option a =
         let go acc next =
             match acc with
             | None -> if pred next then Some next else None
@@ -575,7 +616,7 @@ let make_Foldable f =
 
         foldl go None
 
-    let find_map pred : (a -> Option b) -> _ a -> Option b =
+    let find_map pred : (a -> Option b) -> t a -> Option b =
         let go acc next =
             match acc with
             | None -> pred next
@@ -583,24 +624,25 @@ let make_Foldable f =
 
         foldl go None
 
-    let all pred : (a -> Bool) -> _ a -> Bool =
+    let all pred : (a -> Bool) -> t a -> Bool =
         foldl (\acc x -> acc && pred x) True
 
-    let any pred : (a -> Bool) -> _ a -> Bool =
+    let any pred : (a -> Bool) -> t a -> Bool =
         foldl (\acc x -> acc || pred x) False
 
-    let elem eq : Eq a -> a -> _ a -> Bool =
+    let elem eq : Eq a -> a -> t a -> Bool =
         any << eq.(==)
 
-    let notElem eq x : Eq a -> a -> _ a -> Bool =
+    let notElem eq x : Eq a -> a -> t a -> Bool =
         not << elem eq x
 
-    let count : _ a -> Int =
+    let count : t a -> Int =
         foldl (\acc _ -> acc + 1) 0
 
     {
         foldr,
         foldl,
+        fold_m,
         concat,
         concat_map,
         find,
@@ -634,31 +676,20 @@ let foldable_Result : Foldable (Result e) = {
         | Ok x -> f z x
 }
 
-let foldable_List : Foldable List =
-    let foldr f x xs =
-        match xs with
-        | Cons y ys -> f y (foldr f x ys)
-        | Nil -> x
-
-    let foldl f x xs =
-        match xs with
-        | Cons y ys -> foldl f (f x y) ys
-        | Nil -> x
-
-    { foldr, foldl }
-
 type Traversable t = {
     functor : Functor t,
     foldable : Foldable t,
     traverse : Applicative m -> (a -> m b) -> t a -> m (t b)
 }
 
-let make_Traversable t =
-    let { functor, foldable, traverse } = t
+let make_Traversable traversable : Traversable t -> _ =
+    let { functor, foldable, traverse } = traversable
 
-    let sequence app = traverse app id
+    let sequence applicative : Applicative m -> t (m a) -> m (t a) = traverse applicative id
+    let for applicative x f : Applicative m -> t a -> (a -> m b) -> m (t b) =
+        traverse applicative f x
 
-    { functor, foldable, traverse, sequence }
+    { functor, foldable, traverse, sequence, for }
 
 let traversable_Option : Traversable Option = {
     functor = functor_Option,
@@ -678,58 +709,57 @@ let traversable_Result : Traversable (Result e) = {
         | Ok x -> app.functor.map Ok (f x)
 }
 
-let traversable_List : Traversable List = {
-    functor = functor_List,
-    foldable = foldable_List,
-    traverse = \app f ->
-        foldable_List.foldr
-            (\a b -> app.apply (app.functor.map Cons (f a)) b)
-            (app.wrap Nil)
-}
-
-/// Constructs a list from an array. Useful to emulate list literals
-///
-/// ```
-/// list [1, 2, 3]
-/// ```
-let list xs : Array a -> List a =
-    let len = array.len xs
-    let list_ i ys =
-        if i == 0 then
-            ys
-        else
-            let x = array.index xs (i - 1)
-            list_ (i - 1) (Cons x ys)
-    list_ len Nil
-
 {
     Bool,
     Ordering,
     Option,
     Result,
-    List,
 
     unwrap,
     unwrap_ok,
     unwrap_err,
 
     not,
-    list,
+    xor,
+
+    Semigroup,
+    make_Semigroup,
+    semigroup_Function,
+    semigroup_Option,
+    semigroup_Option_First,
+    semigroup_Option_Last,
+    semigroup_Int_Add,
+    semigroup_Int_Mul,
+    semigroup_Float_Add,
+    semigroup_Float_Mul,
+    semigroup_Bool_And,
+    semigroup_Bool_Or,
+    semigroup_Bool_Xor,
+    semigroup_Ordering,
 
     Monoid,
-    make_Monoid,
     monoid_Function,
-    monoid_List,
     monoid_Option,
+    monoid_Option_First,
+    monoid_Option_Last,
     monoid_Int_Add,
     monoid_Int_Mul,
     monoid_Float_Add,
     monoid_Float_Mul,
+    monoid_Bool_And,
+    monoid_Bool_Or,
+    monoid_Bool_Xor,
+    monoid_Ordering,
+
+    Group,
+    group_Int_Add,
+    group_Float_Add,
+    group_Float_Mul,
+    group_Bool_Xor,
 
     Eq,
     eq_Unit,
     eq_Bool,
-    eq_List,
     eq_Option,
     eq_Result,
     eq_Float,
@@ -753,39 +783,33 @@ let list xs : Array a -> List a =
     Functor,
     functor_Option,
     functor_Result,
-    functor_List,
     functor_IO,
 
     Applicative,
     make_Applicative,
     applicative_Option,
     applicative_Result,
-    applicative_List,
     applicative_IO,
 
     Alternative,
     make_Alternative,
     alternative_Option,
-    alternative_List,
 
     Monad,
     make_Monad,
     monad_Option,
     monad_Result,
-    monad_List,
     monad_IO,
 
     Foldable,
     make_Foldable,
     foldable_Option,
     foldable_Result,
-    foldable_List,
 
     Traversable,
     make_Traversable,
     traversable_Option,
     traversable_Result,
-    traversable_List,
 
     Num,
     num_Int,
@@ -805,7 +829,6 @@ let list xs : Array a -> List a =
     show_Int,
     show_Float,
     show_Char,
-    show_List,
     show_Option,
     show_Result
 }

@@ -1,8 +1,9 @@
 let prelude  = import! "std/prelude.glu"
+let list  = import! "std/list.glu"
 let { Writer }  = import! "std/writer.glu"
 let { Test, run, writer, assert, assert_ieq, assert_feq }  = import! "std/test.glu"
 let { (*>) } = prelude.make_Applicative writer.applicative
-let { count } = prelude.make_Foldable prelude.foldable_List
+let { count } = prelude.make_Foldable list.foldable
 
 let tests =
     assert_ieq 1 1

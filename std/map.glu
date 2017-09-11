@@ -1,5 +1,9 @@
 let prelude = import! "std/prelude.glu"
-and { Ordering, Ord, Option, List, Monoid, Functor, Applicative, Foldable, Traversable } = prelude
+and { Ordering, Ord, Option, Semigroup, Monoid } = prelude
+and { Functor, Applicative, Foldable, Traversable } = prelude
+
+let list = import! "std/list.glu"
+and { List } = list
 
 type Map k a = | Bin k a (Map k a) (Map k a) | Tip
 
@@ -72,10 +76,12 @@ and make ord : Ord k -> _ =
 
     let append l r : Map k a -> Map k a -> Map k a = foldr_with_key insert l r
 
-    let monoid : Monoid _ = { append, empty }
-    let functor : Functor _ = { map }
-    let foldable : Foldable _ = { foldr, foldl }
-    let traversable : Traversable _ = { functor, foldable, traverse }
+    let semigroup : Semigroup (Map k a) = { append }
+    let monoid : Monoid (Map k a) = { semigroup, empty }
+
+    let functor : Functor (Map k) = { map }
+    let foldable : Foldable (Map k) = { foldr, foldl }
+    let traversable : Traversable (Map k) = { functor, foldable, traverse }
 
     let to_list : Map k a -> List { key : k, value : a } =
         foldr_with_key (\key value acc -> Cons { key, value } acc) Nil
@@ -85,6 +91,7 @@ and make ord : Ord k -> _ =
     let values : Map k a -> List a = foldr Cons Nil
 
     {
+        semigroup,
         monoid,
         functor,
         foldable,

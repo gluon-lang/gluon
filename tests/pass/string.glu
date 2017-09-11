@@ -1,6 +1,6 @@
 let prelude  = import! "std/prelude.glu"
 let { run, writer, assert_eq, assert_seq, assert_ieq }  = import! "std/test.glu"
-let { Ord, Num, List, Option, Monoid } = prelude
+let { Option } = prelude
 let { (<) } = prelude.make_Ord prelude.ord_Int
 let { (+) } = prelude.num_Int
 let { (*>) } = prelude.make_Applicative writer.applicative
@@ -19,7 +19,7 @@ let slice_tests =
         *> assert_seq (string.slice "abcd" 2 4) "cd"
 
 let append_tests =
-    let { (<>) } = prelude.make_Monoid string.monoid
+    let { (<>) } = prelude.make_Semigroup string.semigroup
     assert_seq ("ab" <> "cd") "abcd"
         *> assert_seq ("ab" <> "") "ab"
         *> assert_seq ("" <> "cd") "cd"

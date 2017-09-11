@@ -1,8 +1,9 @@
 let prelude = import! "std/prelude.glu"
-let { List } = prelude
 let { Test, run, writer, assert_eq, assert_seq, assert_ieq } = import! "std/test.glu"
-let { Ord, Num, List, Option, Monoid } = prelude
+let { Option } = prelude
 let { (*>) } = prelude.make_Applicative writer.applicative
+let list = import! "std/list.glu"
+let { List } = list
 
 let string = import! "std/string.glu"
 let parser = import! "std/parser.glu"
