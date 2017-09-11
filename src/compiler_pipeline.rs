@@ -15,9 +15,10 @@ use either::Either;
 use base::ast::SpannedExpr;
 use base::error::InFile;
 use base::metadata::Metadata;
-use base::types::ArcType;
+use base::types::{ArcType, Type};
 use base::source::Source;
 use base::symbol::{Name, NameBuf, Symbol, SymbolModule};
+use base::resolve;
 
 use vm::compiler::CompiledFunction;
 use vm::future::{BoxFutureValue, FutureValue};
@@ -521,7 +522,15 @@ pub fn run_io<'vm, E>(
     } = v;
     if check_signature(&*vm.get_env(), &actual, &IO::<A>::make_type(vm)) {
         vm.execute_io(*value)
-            .map(move |(_, value)| (vm.root_value(value), actual))
+            .map(move |(_, value)| {
+                // The type of the new value will be `a` instead of `IO a`
+                let actual = resolve::remove_aliases_cow(&*vm.get_env(), &actual);
+                let actual = match **actual {
+                    Type::App(_, ref arg) => arg[0].clone(),
+                    _ => panic!("ICE: Expected IO type found: `{}`", actual),
+                };
+                (vm.root_value(value), actual)
+            })
             .map_err(Error::from)
             .boxed()
     } else {
