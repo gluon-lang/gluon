@@ -507,3 +507,24 @@ where
         .serialize_state(serializer, &SeSeed::new(thread))
         .map_err(Either::Right)
 }
+
+pub fn run_io<'vm, E>(
+    vm: &'vm Thread,
+    v: ExecuteValue<'vm, E>,
+) -> BoxFutureValue<'vm, (RootedValue<&'vm Thread>, ArcType), Error> {
+    use check::check_signature;
+    use vm::api::{VmType, IO};
+    use vm::api::generic::A;
+
+    let ExecuteValue {
+        typ: actual, value, ..
+    } = v;
+    if check_signature(&*vm.get_env(), &actual, &IO::<A>::make_type(vm)) {
+        vm.execute_io(*value)
+            .map(move |(_, value)| (vm.root_value(value), actual))
+            .map_err(Error::from)
+            .boxed()
+    } else {
+        FutureValue::sync(Ok((value, actual))).boxed()
+    }
+}
