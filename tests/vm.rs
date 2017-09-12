@@ -309,6 +309,7 @@ Value::Tag(0)
 
 test_expr!{ prelude match_on_bool,
 r#"
+let { Bool } = import! "std/bool.glu"
 match True with
 | False -> 10
 | True -> 11
@@ -474,6 +475,7 @@ true
 
 test_expr!{ prelude true_branch_not_affected_by_false_branch,
 r#"
+let { Bool } = import! "std/bool.glu"
 if True then
     let x = 1
     x
@@ -509,6 +511,7 @@ id (match Test 0 with
 
 test_expr!{ prelude and_operator_stack,
 r#"
+let { Bool } = import! "std/bool.glu"
 let b = True && True
 let b2 = False
 b
@@ -518,6 +521,7 @@ true
 
 test_expr!{ prelude or_operator_stack,
 r#"
+let { Bool } = import! "std/bool.glu"
 let b = False || True
 let b2 = False
 b

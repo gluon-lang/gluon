@@ -5,6 +5,7 @@ let string = import! "std/string.glu"
 let { (==) } = string.eq
 let { (<>) } = prelude.make_Semigroup string.semigroup
 
+let { Bool } = import! "std/bool.glu"
 let result = import! "std/result.glu"
 let { Result } = result
 let { Option } = import! "std/option.glu"

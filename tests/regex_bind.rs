@@ -11,6 +11,7 @@ fn regex_match() {
     let thread = new_vm();
     let text = r#"
         let { (|>) } = import! "std/prelude.glu"
+        let { not } = import! "std/bool.glu"
         let { unwrap_ok } = import! "std/result.glu"
         let { assert }  = import! "std/test.glu"
 

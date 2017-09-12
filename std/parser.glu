@@ -1,5 +1,6 @@
 let prelude = import! "std/prelude.glu"
 let { Functor, Applicative, Alternative, Monad, id, show_Char = show } = prelude
+let { Bool } = import! "std/bool.glu"
 let { Result } = import! "std/result.glu"
 let string = import! "std/string.glu"
 let { (<>) } = prelude.make_Semigroup string.semigroup

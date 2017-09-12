@@ -39,6 +39,11 @@ fn test_format(name: &str) {
 }
 
 #[test]
+fn bool() {
+    test_format("std/bool.glu");
+}
+
+#[test]
 fn map() {
     test_format("std/map.glu");
 }

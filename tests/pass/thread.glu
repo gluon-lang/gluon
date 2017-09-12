@@ -1,5 +1,6 @@
 let { run, writer, assert_eq }  = import! "std/test.glu"
 let prelude  = import! "std/prelude.glu"
+let { Bool } = import! "std/bool.glu"
 let result = import! "std/result.glu"
 let { Result } = result
 let string  = import! "std/string.glu"

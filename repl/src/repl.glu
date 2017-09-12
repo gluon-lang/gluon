@@ -1,5 +1,6 @@
 let prelude = import! "std/prelude.glu"
 let map = import! "std/map.glu"
+let { Bool } = import! "std/bool.glu"
 let { Option } = import! "std/option.glu"
 let { Result } = import! "std/result.glu"
 let string = import! "std/string.glu"

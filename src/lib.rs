@@ -529,7 +529,7 @@ impl Compiler {
 
 pub const PRELUDE: &'static str = r#"
 let __implicit_prelude = import! "std/prelude.glu"
-and { Num, Eq, Ord, Show, Functor, Monad, Bool, not } = __implicit_prelude
+and { Num, Eq, Ord, Show, Functor, Monad } = __implicit_prelude
 
 let { (+), (-), (*), (/) } = __implicit_prelude.num_Int
 and { (==) } = __implicit_prelude.eq_Int

@@ -18,7 +18,11 @@ fn bool() {
 
     let thread = new_vm();
     let (De(b), _) = Compiler::new()
-        .run_expr::<De<bool>>(&thread, "test", "True")
+        .run_expr::<De<bool>>(
+            &thread,
+            "test",
+            r#"let { Bool } = import! "std/bool.glu" in True"#,
+        )
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(b, true);
 }

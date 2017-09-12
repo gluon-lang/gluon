@@ -2,6 +2,7 @@ let prelude = import! "std/prelude.glu"
 and { Num, Functor, Applicative } = prelude
 and { (+) } = prelude.num_Int
 let list = import! "std/list.glu"
+let { Bool } = import! "std/bool.glu"
 let { List } = list
 let { Option } = import! "std/option.glu"
 

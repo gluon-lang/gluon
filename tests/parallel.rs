@@ -50,6 +50,7 @@ fn parallel_() -> Result<(), Error> {
     let handle2 = spawn(move || -> Result<(), Error> {
         let expr = r#"
         let { assert }  = import! "std/test.glu"
+        let { Bool } = import! "std/bool.glu"
         let { Result }  = import! "std/result.glu"
 
         let f receiver =

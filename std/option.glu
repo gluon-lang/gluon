@@ -1,6 +1,7 @@
 let prelude = import! "std/prelude.glu"
 let { Semigroup, Monoid, Eq, Ord, Ordering, Show } = prelude
 let { Functor, Applicative, Alternative, Monad, Foldable, Traversable } = prelude
+let { Bool } = import! "std/bool.glu"
 let { Option } = import! "std/types.glu"
 
 let unwrap opt : Option a -> a =

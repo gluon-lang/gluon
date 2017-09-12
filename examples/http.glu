@@ -1,5 +1,6 @@
 let prelude = import! "std/prelude.glu"
 let string = import! "std/string.glu"
+let { Bool } = import! "std/bool.glu"
 let { (==) } = string.eq
 let { Functor, Applicative, Alternative, Monad } = prelude
 let { (<<), id } = prelude.make_Category prelude.category_Function

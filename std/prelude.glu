@@ -1,11 +1,5 @@
 let { Bool, Option, Ordering } = import! "std/types.glu"
 
-/// Boolean 'not'
-let not x : Bool -> Bool = if x then False else True
-
-/// Boolean 'exclusive or'
-let xor x y : Bool -> Bool -> Bool = if x then not y else y
-
 /// `Semigroup a` represents an associative operation on `a`.
 /// This means the following laws must hold:
 ///
@@ -35,12 +29,6 @@ let semigroup_Int_Mul : Semigroup Int = { append = \x y -> x #Int* y }
 let semigroup_Float_Add : Semigroup Float = { append = \x y -> x #Float+ y }
 
 let semigroup_Float_Mul : Semigroup Float = { append = \x y -> x #Float* y }
-
-let semigroup_Bool_And : Semigroup Bool = { append = \x y -> x && y }
-
-let semigroup_Bool_Or : Semigroup Bool = { append = \x y -> x || y }
-
-let semigroup_Bool_Xor : Semigroup Bool = { append = xor }
 
 let semigroup_Ordering : Semigroup Ordering = {
     append = \x y ->
@@ -87,21 +75,6 @@ let monoid_Float_Mul : Monoid Float = {
     empty = 1.0
 }
 
-let monoid_Bool_And : Monoid Bool = {
-    semigroup = semigroup_Bool_And,
-    empty = True
-}
-
-let monoid_Bool_Or : Monoid Bool = {
-    semigroup = semigroup_Bool_Or,
-    empty = False
-}
-
-let monoid_Bool_Xor : Monoid Bool = {
-    semigroup = semigroup_Bool_Xor,
-    empty = False
-}
-
 let monoid_Ordering : Monoid Ordering = {
     semigroup = semigroup_Ordering,
     empty = EQ
@@ -132,17 +105,10 @@ let group_Float_Mul : Group Float = {
     inverse = \x -> 1.0 #Float/ x
 }
 
-let group_Bool_Xor : Group Bool = {
-    monoid = monoid_Bool_Xor,
-    inverse = \x -> x
-}
-
 /// `Eq a` defines equality (==) on `a`
 type Eq a = { (==) : a -> a -> Bool }
 
 let eq_Unit : Eq () = { (==) = \l r -> True }
-
-let eq_Bool : Eq Bool = { (==) = \l r -> if l then r else not r }
 
 let eq_Int = { (==) = \l r -> l #Int== r }
 
@@ -184,8 +150,6 @@ let make_Ord ord : Ord a -> _ =
     { eq, compare, (<=), (<), (>), (>=) }
 
 let ord_Unit = { eq = eq_Unit, compare = \l r -> EQ }
-
-let ord_Bool = { eq = eq_Bool, compare = \l r -> if l then if r then EQ else GT else LT }
 
 let ord_Int = {
     eq = eq_Int,
@@ -415,8 +379,6 @@ type Show a = { show : a -> String }
 
 let show_Unit : Show () = { show = const "()" }
 
-let show_Bool : Show Bool = { show = \x -> if x then "True" else "False" }
-
 let show_Int : Show Int = { show = prim.show_int }
 
 let show_Float : Show Float = { show = prim.show_float }
@@ -466,9 +428,6 @@ let make_Foldable foldable : Foldable t -> _ =
     let elem eq : Eq a -> a -> t a -> Bool =
         any << eq.(==)
 
-    let notElem eq x : Eq a -> a -> t a -> Bool =
-        not << elem eq x
-
     let count : t a -> Int =
         foldl (\acc _ -> acc + 1) 0
 
@@ -483,7 +442,6 @@ let make_Foldable foldable : Foldable t -> _ =
         all,
         any,
         elem,
-        notElem,
         count
     }
 
@@ -503,11 +461,7 @@ let make_Traversable traversable : Traversable t -> _ =
     { functor, foldable, traverse, sequence, for }
 
 {
-    Bool,
     Ordering,
-
-    not,
-    xor,
 
     Semigroup,
     make_Semigroup,
@@ -516,9 +470,6 @@ let make_Traversable traversable : Traversable t -> _ =
     semigroup_Int_Mul,
     semigroup_Float_Add,
     semigroup_Float_Mul,
-    semigroup_Bool_And,
-    semigroup_Bool_Or,
-    semigroup_Bool_Xor,
     semigroup_Ordering,
 
     Monoid,
@@ -527,20 +478,15 @@ let make_Traversable traversable : Traversable t -> _ =
     monoid_Int_Mul,
     monoid_Float_Add,
     monoid_Float_Mul,
-    monoid_Bool_And,
-    monoid_Bool_Or,
-    monoid_Bool_Xor,
     monoid_Ordering,
 
     Group,
     group_Int_Add,
     group_Float_Add,
     group_Float_Mul,
-    group_Bool_Xor,
 
     Eq,
     eq_Unit,
-    eq_Bool,
     eq_Float,
     eq_Int,
     eq_Char,
@@ -548,7 +494,6 @@ let make_Traversable traversable : Traversable t -> _ =
     Ord,
     make_Ord,
     ord_Unit,
-    ord_Bool,
     ord_Float,
     ord_Int,
     ord_Char,
@@ -591,7 +536,6 @@ let make_Traversable traversable : Traversable t -> _ =
 
     Show,
     show_Unit,
-    show_Bool,
     show_Int,
     show_Float,
     show_Char
