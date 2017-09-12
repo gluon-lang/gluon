@@ -1,0 +1,14 @@
+let { Eq, Ord, Ordering, Show, const } = import! "std/prelude.glu"
+let { Bool } = import! "std/bool.glu"
+
+let eq : Eq () = { (==) = const (const True) }
+
+let ord : Ord () = { eq = eq, compare = const (const EQ) }
+
+let show : Show () = { show = const "()" }
+
+{
+    eq,
+    ord,
+    show
+}

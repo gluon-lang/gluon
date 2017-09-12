@@ -89,6 +89,11 @@ fn types() {
 }
 
 #[test]
+fn unit() {
+    test_format("std/unit.glu");
+}
+
+#[test]
 fn writer() {
     test_format("std/writer.glu");
 }

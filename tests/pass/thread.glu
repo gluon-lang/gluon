@@ -3,16 +3,17 @@ let prelude  = import! "std/prelude.glu"
 let { Bool } = import! "std/bool.glu"
 let result = import! "std/result.glu"
 let { Result } = result
-let string  = import! "std/string.glu"
+let string = import! "std/string.glu"
+let unit = import! "std/unit.glu"
 let { (*>) } = prelude.make_Applicative writer.applicative
 let { (>>=) } = prelude.make_Monad writer.monad
 
 let assert =
-    assert_eq (result.show prelude.show_Unit prelude.show_Int)
-              (result.eq prelude.eq_Unit prelude.eq_Int)
+    assert_eq (result.show unit.show prelude.show_Int)
+              (result.eq unit.eq prelude.eq_Int)
 let assert_any_err =
-    assert_eq (result.show string.show prelude.show_Unit)
-              (result.eq { (==) = \x y -> True } prelude.eq_Unit)
+    assert_eq (result.show string.show unit.show)
+              (result.eq { (==) = \x y -> True } unit.eq)
 
 let { sender, receiver } = channel 0
 

@@ -11,12 +11,11 @@ let { Option } = option
 let string = import! "std/string.glu"
 let result = import! "std/result.glu"
 let { Result } = result
+let unit = import! "std/unit.glu"
 
 let assert_oieq = assert_eq (option.show prelude.show_Int) (option.eq prelude.eq_Int)
 let assert_beq = assert_eq bool.show bool.eq
-let assert_req =
-    assert_eq (result.show prelude.show_Unit string.show)
-              (result.eq prelude.eq_Unit string.eq)
+let assert_req = assert_eq (result.show unit.show string.show) (result.eq unit.eq string.eq)
 
 let slice_tests =
     assert_seq (string.slice "ab" 0 1) "a"

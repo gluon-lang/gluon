@@ -108,8 +108,6 @@ let group_Float_Mul : Group Float = {
 /// `Eq a` defines equality (==) on `a`
 type Eq a = { (==) : a -> a -> Bool }
 
-let eq_Unit : Eq () = { (==) = \l r -> True }
-
 let eq_Int = { (==) = \l r -> l #Int== r }
 
 let eq_Float = { (==) = \l r -> l #Float== r }
@@ -149,7 +147,6 @@ let make_Ord ord : Ord a -> _ =
 
     { eq, compare, (<=), (<), (>), (>=) }
 
-let ord_Unit = { eq = eq_Unit, compare = \l r -> EQ }
 
 let ord_Int = {
     eq = eq_Int,
@@ -377,7 +374,6 @@ let monad_IO : Monad IO = {
 /// `Show a` represents a conversion function from `a` to a readable string.
 type Show a = { show : a -> String }
 
-let show_Unit : Show () = { show = const "()" }
 
 let show_Int : Show Int = { show = prim.show_int }
 
@@ -486,14 +482,12 @@ let make_Traversable traversable : Traversable t -> _ =
     group_Float_Mul,
 
     Eq,
-    eq_Unit,
     eq_Float,
     eq_Int,
     eq_Char,
 
     Ord,
     make_Ord,
-    ord_Unit,
     ord_Float,
     ord_Int,
     ord_Char,
@@ -535,7 +529,6 @@ let make_Traversable traversable : Traversable t -> _ =
     (>>),
 
     Show,
-    show_Unit,
     show_Int,
     show_Float,
     show_Char
