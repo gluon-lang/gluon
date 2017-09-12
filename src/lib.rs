@@ -230,13 +230,8 @@ impl Compiler {
         expr_str: &str,
         expected_type: Option<&ArcType>,
     ) -> Result<(SpannedExpr<Symbol>, ArcType)> {
-        let TypecheckValue { expr, typ } = expr_str.typecheck_expected(
-            self,
-            vm,
-            file,
-            expr_str,
-            expected_type,
-        )?;
+        let TypecheckValue { expr, typ } =
+            expr_str.typecheck_expected(self, vm, file, expr_str, expected_type)?;
         Ok((expr, typ))
     }
 
@@ -339,9 +334,10 @@ impl Compiler {
             // Use the import macro's path resolution if it exists so that we mimick the import
             // macro as close as possible
             let opt_macro = vm.get_macros().get("import");
-            match opt_macro.as_ref().and_then(
-                |mac| mac.downcast_ref::<Import>(),
-            ) {
+            match opt_macro
+                .as_ref()
+                .and_then(|mac| mac.downcast_ref::<Import>())
+            {
                 Some(import) => Ok(import.read_file(filename)?),
                 None => {
                     let mut buffer = StdString::new();
@@ -432,7 +428,9 @@ impl Compiler {
         expr_str
             .run_expr(self, vm, name, expr_str, Some(&expected))
             .and_then(move |v| {
-                let ExecuteValue { typ: actual, value, .. } = v;
+                let ExecuteValue {
+                    typ: actual, value, ..
+                } = v;
                 unsafe {
                     FutureValue::sync(match T::from_value(vm, Variants::new(&value)) {
                         Some(value) => Ok((value, actual)),
@@ -468,24 +466,11 @@ impl Compiler {
         T: Getable<'vm> + VmType + Send + 'vm,
         T::Type: Sized,
     {
-        use check::check_signature;
-        use vm::api::IO;
-        use vm::api::generic::A;
-
         let expected = T::make_type(vm);
         expr_str
             .run_expr(self, vm, name, expr_str, Some(&expected))
-            .and_then(move |v| {
-                let ExecuteValue { typ: actual, value, .. } = v;
-                if check_signature(&*vm.get_env(), &actual, &IO::<A>::make_type(vm)) {
-                    vm.execute_io(*value)
-                        .map(move |(_, value)| (value, expected, actual))
-                        .map_err(Error::from)
-                } else {
-                    FutureValue::Value(Ok((*value, expected, actual)))
-                }
-            })
-            .and_then(move |(value, expected, actual)| unsafe {
+            .and_then(move |v| run_io(vm, v))
+            .and_then(move |(value, actual)| unsafe {
                 FutureValue::sync(match T::from_value(vm, Variants::new(&value)) {
                     Some(value) => Ok((value, actual)),
                     None => Err(Error::from(VmError::WrongType(expected, actual))),

@@ -93,6 +93,11 @@ pub fn type_of_alias(
     let alias_args = &alias.args;
     let mut typ = alias.unresolved_type().clone();
 
+    // Opaque types should only exist as the alias itself
+    if **alias.unresolved_type() == Type::Opaque {
+        return None;
+    }
+
     // It is ok to take the aliased type only if the alias is fully applied or if it
     // the missing argument only appear in order at the end of the alias
     // i.e
