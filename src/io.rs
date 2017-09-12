@@ -209,38 +209,30 @@ pub fn load(vm: &Thread) -> Result<()> {
         PushInt(0), // [f, m_ret, ()]   Add a dummy argument ()
         TailCall(2) /* [f_ret]          Call f m_ret () */,
     ];
-    let io_flat_map_type =
-        <fn(fn(A) -> IO<B>, IO<A>) -> IO<B> as VmType>::make_type(vm);
-    vm.add_bytecode(
-        "io_flat_map",
-        io_flat_map_type,
-        3,
-        io_flat_map,
-    )?;
 
+    type FlatMap = fn(fn(A) -> IO<B>, IO<A>) -> IO<B>;
+    type Wrap = fn(A) -> IO<A>;
+    let flat_map_ty = <FlatMap as VmType>::make_type(vm);
+    let wrap_ty = <Wrap as VmType>::make_type(vm);
 
-    vm.add_bytecode(
-        "io_wrap",
-        <fn(A) -> IO<A> as VmType>::make_type(vm),
-        2,
-        vec![Pop(1)],
-    )?;
+    vm.add_bytecode("io_flat_map", flat_map_ty, 3, io_flat_map)?;
+    vm.add_bytecode("io_wrap", wrap_ty, 2, vec![Pop(1)])?;
+
     // IO functions
     vm.define_global(
-        "io",
-        record!(
-        open_file => primitive!(1 open_file),
-        read_file => primitive!(2 read_file),
-        read_file_to_string => primitive!(1 read_file_to_string),
-        read_char => primitive!(0 read_char),
-        read_line => primitive!(0 read_line),
-        print => primitive!(1 print),
-        println => primitive!(1 println),
-        catch =>
-            primitive!(2 catch),
-        run_expr => primitive!(1 run_expr),
-        load_script => primitive!(2 load_script)
-    ),
+        "io_prim",
+        record! {
+            open_file => primitive!(1 open_file),
+            read_file => primitive!(2 read_file),
+            read_file_to_string => primitive!(1 read_file_to_string),
+            read_char => primitive!(0 read_char),
+            read_line => primitive!(0 read_line),
+            print => primitive!(1 print),
+            println => primitive!(1 println),
+            catch => primitive!(2 catch),
+            run_expr => primitive!(1 run_expr),
+            load_script => primitive!(2 load_script)
+        },
     )?;
     Ok(())
 }

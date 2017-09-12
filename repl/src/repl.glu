@@ -1,17 +1,18 @@
 let prelude = import! "std/prelude.glu"
+let io = import! "std/io.glu"
 let map = import! "std/map.glu"
 let { Bool } = import! "std/bool.glu"
 let { Option } = import! "std/option.glu"
 let { Result } = import! "std/result.glu"
 let string = import! "std/string.glu"
 let { Map } = map
-let { wrap, (*>) } = prelude.make_Applicative prelude.applicative_IO
-let { (>>=) } = prelude.make_Monad prelude.monad_IO
+let { wrap, (*>) } = prelude.make_Applicative io.applicative
+let { (>>=) } = prelude.make_Monad io.monad
 let { Eq } = prelude
 let { append = (++) } = string.semigroup
 let ord_map = map.make string.ord
 let { singleton, find } = ord_map
-let for = (prelude.make_Traversable ord_map.traversable).for prelude.applicative_IO
+let for = (prelude.make_Traversable ord_map.traversable).for io.applicative
 let { (<>) } = prelude.make_Semigroup ord_map.semigroup
 let { empty } = ord_map.monoid
 

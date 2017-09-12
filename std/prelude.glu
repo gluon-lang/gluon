@@ -250,8 +250,6 @@ type Functor f = {
 
 let functor_Function : Functor ((->) a) = { map = category_Function.compose }
 
-let functor_IO : Functor IO = { map = \f -> io_flat_map (\x -> io_wrap (f x)) }
-
 type Applicative (f : Type -> Type) = {
     functor : Functor f,
     /// Like `functor.map`, but this time the supplied function is embedded in `f`
@@ -294,12 +292,6 @@ let applicative_Function : Applicative ((->) a) = {
     apply = \f g x -> f x (g x),
     wrap = const
 }
-
-let applicative_IO : Applicative IO =
-    let wrap = io_wrap
-    let apply f x = io_flat_map (\g -> io_flat_map (\y -> wrap (g y)) x) f
-
-    { functor = functor_IO, apply, wrap }
 
 type Alternative f = { applicative : Applicative f, or : f a -> f a -> f a, empty : f a }
 
@@ -357,11 +349,6 @@ let make_Monad monad : Monad m -> _ =
 let monad_Function : Monad ((->) a) = {
     applicative = applicative_Function,
     flat_map = \f m x -> f (m x) x
-}
-
-let monad_IO : Monad IO = {
-    applicative = applicative_IO,
-    flat_map = io_flat_map
 }
 
 /// `Show a` represents a conversion function from `a` to a readable string.
@@ -487,18 +474,15 @@ let make_Traversable traversable : Traversable t -> _ =
     category_Function,
 
     Functor,
-    functor_IO,
 
     Applicative,
     make_Applicative,
-    applicative_IO,
 
     Alternative,
     make_Alternative,
 
     Monad,
     make_Monad,
-    monad_IO,
 
     Foldable,
     make_Foldable,

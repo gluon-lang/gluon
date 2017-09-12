@@ -263,6 +263,7 @@ let f a b c = c
 
 test_expr!{ no_io_eval,
 r#"
+let io = import! "std/io.glu"
 let x = io_flat_map (\x -> error "NOOOOOOOO") (io.println "1")
 in { x }
 "#
@@ -414,7 +415,10 @@ r#"let x = string_prim.len "test" in x"#,
 }
 
 test_expr!{ io_print,
-r#"io.print "123" "#
+r#"
+let io = import! "std/io.glu"
+io.print "123"
+"#
 }
 
 test_expr!{ array,
@@ -647,7 +651,10 @@ in id 1
 fn run_expr_int() {
     let _ = ::env_logger::init();
 
-    let text = r#"io.run_expr "123" "#;
+    let text = r#"
+        let io = import! "std/io.glu"
+        io.run_expr "123"
+    "#;
     let mut vm = make_vm();
     let (result, _) = Compiler::new()
         .run_io_expr_async::<IO<String>>(&mut vm, "<top>", text)
@@ -663,7 +670,14 @@ fn run_expr_int() {
 }
 
 test_expr!{ io run_expr_io,
-r#"io_flat_map (\x -> io_wrap 100) (io.run_expr "io.print \"123\" ") "#,
+r#"
+let io = import! "std/io.glu"
+io_flat_map (\x -> io_wrap 100)
+            (io.run_expr "
+                let io = import! \"std/io.glu\"
+                io.print \"123\"
+            ")
+"#,
 100i32
 }
 
@@ -822,7 +836,8 @@ fn dont_execute_io_in_run_expr_async() {
     let vm = make_vm();
     let expr = r#"
 let prelude  = import! "std/prelude.glu"
-let { wrap } = prelude.applicative_IO
+let io = import! "std/io.glu"
+let { wrap } = io.applicative
 wrap 123
 "#;
     let value = Compiler::new()

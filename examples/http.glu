@@ -1,10 +1,11 @@
 let prelude = import! "std/prelude.glu"
+let io = import! "std/io.glu"
 let string = import! "std/string.glu"
 let { Bool } = import! "std/bool.glu"
 let { (==) } = string.eq
 let { Functor, Applicative, Alternative, Monad } = prelude
 let { (<<), id } = prelude.make_Category prelude.category_Function
-let { wrap } = prelude.applicative_IO
+let { wrap } = io.applicative
 
 let {
     Method,
@@ -101,8 +102,8 @@ let get_response_body : Handler ResponseBody =
 let empty_response = { status = OK }
 
 /// Converts an `IO` into a `Handler`
-let io_handler io: IO a -> Handler a =
-    make (\success _ state -> prelude.monad_IO.flat_map (\a -> success a state) io)
+let io_handler action : IO a -> Handler a =
+    make (\success _ state -> io.monad.flat_map (\a -> success a state) action)
 
 /// Write `bytes` to the http response
 let write_response bytes : Array Byte -> Handler () =
