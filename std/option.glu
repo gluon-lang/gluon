@@ -18,34 +18,40 @@ let semigroup a : Semigroup a -> Semigroup (Option a) = {
         | (None, None) -> None
 }
 
-let semigroup_First : Semigroup (Option a) = {
-    append = \l r ->
-        match l with
-        | Some x -> Some x
-        | None -> r
-}
-
-let semigroup_Last : Semigroup (Option a) = {
-    append = \l r ->
-        match r with
-        | Some x -> Some x
-        | None -> l
-}
-
 let monoid a : Semigroup a -> Monoid (Option a) = {
     semigroup = semigroup a,
     empty = None
 }
 
-let monoid_First : Monoid (Option a) = {
-    semigroup = semigroup_First,
-    empty = None
-}
+let former =
+    let semigroup : Semigroup (Option a) = {
+        append = \l r ->
+            match l with
+            | Some x -> Some x
+            | None -> r
+    }
 
-let monoid_Last : Monoid (Option a) = {
-    semigroup = semigroup_Last,
-    empty = None
-}
+    let monoid : Monoid (Option a) = {
+        semigroup = semigroup,
+        empty = None
+    }
+
+    { semigroup, monoid }
+
+let latter =
+    let semigroup : Semigroup (Option a) = {
+        append = \l r ->
+            match r with
+            | Some x -> Some x
+            | None -> l
+    }
+
+    let monoid : Monoid (Option a) = {
+        semigroup = semigroup,
+        empty = None
+    }
+
+    { semigroup, monoid }
 
 let eq a : Eq a -> Eq (Option a) = {
     (==) = \l r ->
@@ -132,11 +138,9 @@ let traversable : Traversable Option = {
     Option,
     unwrap,
     semigroup,
-    semigroup_First,
-    semigroup_Last,
     monoid,
-    monoid_First,
-    monoid_Last,
+    former,
+    latter,
     eq,
     ord,
     functor,

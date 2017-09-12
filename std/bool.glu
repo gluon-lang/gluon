@@ -7,49 +7,64 @@ let not x : Bool -> Bool = if x then False else True
 /// Boolean 'exclusive or'
 let xor x y : Bool -> Bool -> Bool = if x then not y else y
 
-let semigroup_And : Semigroup Bool = { append = \x y -> x && y }
+let conjunctive =
+    let semigroup : Semigroup Bool = {
+        append = \x y -> x && y
+    }
 
-let semigroup_Or : Semigroup Bool = { append = \x y -> x || y }
+    let monoid : Monoid Bool = {
+        semigroup = semigroup,
+        empty = True
+    }
 
-let semigroup_Xor : Semigroup Bool = { append = xor }
+    { semigroup, monoid }
 
-let monoid_And : Monoid Bool = {
-    semigroup = semigroup_And,
-    empty = True
+let disjunctive =
+    let semigroup : Semigroup Bool = {
+        append = \x y -> x || y
+    }
+
+    let monoid : Monoid Bool = {
+        semigroup = semigroup,
+        empty = False
+    }
+
+    { semigroup, monoid }
+
+let exclusive =
+    let semigroup : Semigroup Bool = { append = xor }
+
+    let monoid : Monoid Bool = {
+        semigroup = semigroup,
+        empty = False
+    }
+
+    let group : Group Bool = {
+        monoid = monoid,
+        inverse = id
+    }
+
+    { semigroup, monoid, group }
+
+let eq : Eq Bool = {
+    (==) = \l r -> if l then r else not r
 }
 
-let monoid_Or : Monoid Bool = {
-    semigroup = semigroup_Or,
-    empty = False
+let ord : Ord Bool = {
+    eq = eq, compare = \l r -> if l then if r then EQ else GT else LT
 }
 
-let monoid_Xor : Monoid Bool = {
-    semigroup = semigroup_Xor,
-    empty = False
+let show : Show Bool = {
+    show = \x -> if x then "True" else "False"
 }
-
-let group_Xor : Group Bool = {
-    monoid = monoid_Xor,
-    inverse = id
-}
-
-let eq : Eq Bool = { (==) = \l r -> if l then r else not r }
-
-let ord : Ord Bool = { eq = eq, compare = \l r -> if l then if r then EQ else GT else LT }
-
-let show : Show Bool = { show = \x -> if x then "True" else "False" }
 
 {
     Bool,
     not,
     xor,
-    semigroup_And,
-    semigroup_Or,
-    semigroup_Xor,
-    monoid_And,
-    monoid_Or,
-    monoid_Xor,
-    group_Xor,
+    conjunctive,
+    disjunctive,
+    exclusive,
     eq,
     ord,
     show
