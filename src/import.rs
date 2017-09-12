@@ -47,13 +47,22 @@ macro_rules! std_libs {
     }
 }
 // Include the standard library distribution in the binary
-static STD_LIBS: [(&'static str, &'static str); 7] = std_libs!(
+static STD_LIBS: [(&str, &str); 15] = std_libs!(
     "prelude",
     "types",
+
+    "bool",
+    "char",
+    "list",
     "map",
-    "string",
+    "option",
+    "parser",
+    "result",
     "state",
+    "stream",
+    "string",
     "test",
+    "unit",
     "writer"
 );
 
@@ -111,8 +120,12 @@ impl Importer for CheckImporter {
         self.0.lock().unwrap().insert(module_name.into(), expr);
         let metadata = Metadata::default();
         // Insert a global to ensure the globals type can be looked up
-        vm.global_env()
-            .set_global(Symbol::from(module_name), typ, metadata, Value::Int(0))?;
+        vm.global_env().set_global(
+            Symbol::from(module_name),
+            typ,
+            metadata,
+            Value::Int(0),
+        )?;
         Ok(())
     }
 }
@@ -149,9 +162,9 @@ impl<I> Import<I> {
 
         // Retrieve the source, first looking in the standard library included in the
         // binary
-        let std_file = filename
-            .to_str()
-            .and_then(|filename| STD_LIBS.iter().find(|tup| tup.0 == filename));
+        let std_file = filename.to_str().and_then(|filename| {
+            STD_LIBS.iter().find(|tup| tup.0 == filename)
+        });
         Ok(match std_file {
             Some(tup) => Cow::Borrowed(tup.1),
             None => {
@@ -181,11 +194,7 @@ fn get_state<'m>(macros: &'m mut MacroExpander) -> &'m mut State {
     macros
         .state
         .entry(String::from("import"))
-        .or_insert_with(|| {
-            Box::new(State {
-                visited: Vec::new(),
-            })
-        })
+        .or_insert_with(|| Box::new(State { visited: Vec::new() }))
         .downcast_mut::<State>()
         .unwrap()
 }
@@ -234,8 +243,11 @@ where
 
                     let mut compiler = Compiler::new().implicit_prelude(modulename != "std.types");
                     let errors = macros.errors.len();
-                    let macro_result =
-                        file_contents.expand_macro_with(&mut compiler, macros, &modulename)?;
+                    let macro_result = file_contents.expand_macro_with(
+                        &mut compiler,
+                        macros,
+                        &modulename,
+                    )?;
                     if errors != macros.errors.len() {
                         // If macro expansion of the imported module fails we need to stop
                         // compilation of that module. To return an error we return one of the
