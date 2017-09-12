@@ -1,4 +1,5 @@
 let prelude = import! "std/prelude.glu"
+let char = import! "std/char.glu"
 let string = import! "std/string.glu"
 let result = import! "std/result.glu"
 let { Result } = result
@@ -15,6 +16,6 @@ let assert_parse show eq =
         (result.eq string.eq eq)
 
 let tests =
-    assert_parse prelude.show_Char prelude.eq_Char (parse any "abc") (Ok 'a')
+    assert_parse char.show char.eq (parse any "abc") (Ok 'a')
 
 run tests

@@ -44,6 +44,11 @@ fn bool() {
 }
 
 #[test]
+fn char() {
+    test_format("std/char.glu");
+}
+
+#[test]
 fn map() {
     test_format("std/map.glu");
 }

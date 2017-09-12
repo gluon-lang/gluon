@@ -1,6 +1,8 @@
 let prelude = import! "std/prelude.glu"
-let { Functor, Applicative, Alternative, Monad, id, show_Char = show } = prelude
+let { Functor, Applicative, Alternative, Monad, id } = prelude
 let { Bool } = import! "std/bool.glu"
+let char = import! "std/char.glu"
+let { (==) } = char.eq
 let { Result } = import! "std/result.glu"
 let string = import! "std/string.glu"
 let { (<>) } = prelude.make_Semigroup string.semigroup
@@ -102,7 +104,7 @@ let satisfy predicate: (Char -> Bool) -> Parser Char =
         if predicate c then
             wrap c
         else
-            fail ("Unexpected character " <> show.show c)
+            fail ("Unexpected character " <> char.show.show c)
     flat_map f any
 
 let token expected: Char -> Parser Char =

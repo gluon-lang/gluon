@@ -112,8 +112,6 @@ let eq_Int = { (==) = \l r -> l #Int== r }
 
 let eq_Float = { (==) = \l r -> l #Float== r }
 
-let eq_Char = { (==) = \l r -> l #Char== r }
-
 /// `Ord a` defines an ordering on `a`
 type Ord a = { eq : Eq a, compare : a -> a -> Ordering }
 
@@ -156,11 +154,6 @@ let ord_Int = {
 let ord_Float = {
     eq = eq_Float,
     compare = \l r -> if l #Float< r then LT else if l #Float== r then EQ else GT
-}
-
-let ord_Char = {
-    eq = eq_Char,
-    compare = \l r -> if l #Char< r then LT else if l #Char== r then EQ else GT
 }
 
 /**
@@ -379,7 +372,6 @@ let show_Int : Show Int = { show = prim.show_int }
 
 let show_Float : Show Float = { show = prim.show_float }
 
-let show_Char : Show Char = { show = prim.show_char }
 
 type Foldable (f : Type -> Type) = {
     foldr : (a -> b -> b) -> b -> f a -> b,
@@ -484,13 +476,11 @@ let make_Traversable traversable : Traversable t -> _ =
     Eq,
     eq_Float,
     eq_Int,
-    eq_Char,
 
     Ord,
     make_Ord,
     ord_Float,
     ord_Int,
-    ord_Char,
 
     Category,
     make_Category,
@@ -530,6 +520,5 @@ let make_Traversable traversable : Traversable t -> _ =
 
     Show,
     show_Int,
-    show_Float,
-    show_Char
+    show_Float
 }
