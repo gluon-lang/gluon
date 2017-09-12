@@ -3,12 +3,12 @@
 use std::iter::once;
 use std::cmp::Ordering;
 
-use base::ast::{walk_expr, walk_pattern, Expr, Pattern, SpannedExpr, SpannedIdent, SpannedPattern,
-                Typed, TypedIdent, Visitor};
+use base::ast::{walk_expr, walk_pattern, AstType, Expr, Pattern, SpannedExpr, SpannedIdent,
+                SpannedPattern, Typed, TypedIdent, Visitor};
 use base::fnv::FnvMap;
 use base::metadata::Metadata;
 use base::resolve;
-use base::pos::{BytePos, Span, Spanned, NO_EXPANSION};
+use base::pos::{self, BytePos, Span, Spanned, NO_EXPANSION};
 use base::scoped_map::ScopedMap;
 use base::symbol::Symbol;
 use base::types::{AliasData, ArcType, Type, TypeEnv};
@@ -518,6 +518,33 @@ impl<'a> Extract for TypeAt<'a> {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct IdentAt;
+impl Extract for IdentAt {
+    type Output = Symbol;
+    fn extract(self, found: &Found) -> Result<Self::Output, ()> {
+        match found.match_ {
+            Some(ref match_) => self.match_extract(match_),
+            None => self.match_extract(&found.enclosing_match),
+        }
+    }
+
+    fn match_extract(self, found: &Match) -> Result<Self::Output, ()> {
+        Ok(match *found {
+            Match::Expr(&Spanned {
+                value: Expr::Ident(ref id),
+                ..
+            }) => id.name.clone(),
+            Match::Ident(_, id, _) => id.clone(),
+            Match::Pattern(&Spanned {
+                value: Pattern::Ident(ref id),
+                ..
+            }) => id.name.clone(),
+            _ => return Err(()),
+        })
+    }
+}
+
 #[derive(Copy, Clone)]
 pub struct SpanAt;
 impl Extract for SpanAt {
@@ -580,6 +607,102 @@ where
 {
     let extract = TypeAt { env };
     completion(extract, expr, pos)
+}
+
+pub fn find_all_symbols(
+    expr: &SpannedExpr<Symbol>,
+    pos: BytePos,
+) -> Result<(String, Vec<Span<BytePos>>), ()> {
+    let extract = IdentAt;
+    completion(extract, expr, pos).map(|symbol| {
+        struct ExtractIdents {
+            result: Vec<Span<BytePos>>,
+            symbol: Symbol,
+        }
+        impl<'a> Visitor<'a> for ExtractIdents {
+            type Ident = Symbol;
+
+            fn visit_expr(&mut self, e: &'a SpannedExpr<Self::Ident>) {
+                match e.value {
+                    Expr::Ident(ref id) if id.name == self.symbol => {
+                        self.result.push(e.span);
+                    }
+                    _ => walk_expr(self, e),
+                }
+            }
+
+            fn visit_pattern(&mut self, p: &'a SpannedPattern<Self::Ident>) {
+                match p.value {
+                    Pattern::Ident(ref id) if id.name == self.symbol => {
+                        self.result.push(p.span);
+                    }
+                    _ => walk_pattern(self, &p.value),
+                }
+            }
+        }
+        let mut visitor = ExtractIdents {
+            result: Vec::new(),
+            symbol,
+        };
+        visitor.visit_expr(expr);
+        (visitor.symbol.declared_name().to_string(), visitor.result)
+    })
+}
+
+#[derive(Debug, PartialEq)]
+pub enum CompletionSymbol<'a> {
+    Value {
+        name: &'a Symbol,
+        typ: &'a ArcType,
+        expr: &'a SpannedExpr<Symbol>,
+    },
+    Type {
+        name: &'a Symbol,
+        alias: &'a AliasData<Symbol, AstType<Symbol>>,
+    },
+}
+
+pub fn all_symbols(expr: &SpannedExpr<Symbol>) -> Vec<Spanned<CompletionSymbol, BytePos>> {
+    struct AllIdents<'a> {
+        result: Vec<Spanned<CompletionSymbol<'a>, BytePos>>,
+    }
+    impl<'a> Visitor<'a> for AllIdents<'a> {
+        type Ident = Symbol;
+
+        fn visit_expr(&mut self, e: &'a SpannedExpr<Self::Ident>) {
+            match e.value {
+                Expr::TypeBindings(ref binds, _) => {
+                    self.result.extend(binds.iter().map(|bind| {
+                        pos::spanned(
+                            bind.name.span,
+                            CompletionSymbol::Type {
+                                name: &bind.name.value,
+                                alias: &bind.alias.value,
+                            },
+                        )
+                    }));
+                }
+                Expr::LetBindings(ref binds, _) => self.result.extend(
+                    binds.iter().flat_map(|bind| match bind.name.value {
+                        Pattern::Ident(ref id) => Some(pos::spanned(
+                            bind.name.span,
+                            CompletionSymbol::Value {
+                                name: &id.name,
+                                typ: &id.typ,
+                                expr: &bind.expr,
+                            },
+                        )),
+                        _ => None,
+                    }),
+                ),
+                _ => (),
+            }
+            walk_expr(self, e)
+        }
+    }
+    let mut visitor = AllIdents { result: Vec::new() };
+    visitor.visit_expr(expr);
+    visitor.result
 }
 
 pub fn suggest<T>(env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Vec<Suggestion>
@@ -707,8 +830,9 @@ where
         stack: ScopedMap::new(),
         patterns: ScopedMap::new(),
     };
-    complete_at(&mut suggest, expr, pos).ok().and_then(
-        |found| match found.match_ {
+    complete_at(&mut suggest, expr, pos)
+        .ok()
+        .and_then(|found| match found.match_ {
             Some(match_) => match match_ {
                 Match::Expr(expr) => {
                     let suggestion = expr_iter(&suggest.stack, expr)
@@ -744,6 +868,5 @@ where
 
                 _ => None,
             },
-        },
-    )
+        })
 }
