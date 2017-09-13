@@ -1,9 +1,10 @@
-let prelude  = import! "std/prelude.glu"
-let { run, writer, assert_eq, assert_ieq }  = import! "std/test.glu"
+let prelude = import! "std/prelude.glu"
+let { run, writer, assert_eq, assert_ieq } = import! "std/test.glu"
+let int = import! "std/int.glu"
 let stream  = import! "std/stream.glu"
 let { Ord, Num } = prelude
-let { (<) } = prelude.make_Ord prelude.ord_Int
-let { (+) } = prelude.num_Int
+let { (<) } = prelude.make_Ord int.ord
+let { (+) } = int.num
 let { (*>) } = prelude.make_Applicative writer.applicative
 let list = import! "std/list.glu"
 let { List } = list
@@ -13,8 +14,8 @@ let s = stream.from (\i -> if i < 5 then Some i else None)
 
 let assert_leq s a =
     assert_eq
-        (list.show prelude.show_Int)
-        (list.eq prelude.eq_Int)
+        (list.show int.show)
+        (list.eq int.eq)
         (stream.to_list s)
         (list.of a)
 

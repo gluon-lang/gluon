@@ -1,7 +1,8 @@
 let prelude  = import! "std/prelude.glu"
 let { run, writer, assert_eq, assert_seq, assert_ieq }  = import! "std/test.glu"
-let { (<) } = prelude.make_Ord prelude.ord_Int
-let { (+) } = prelude.num_Int
+let int = import! "std/int.glu"
+let { (<) } = prelude.make_Ord int.ord
+let { (+) } = int.num
 let { (*>) } = prelude.make_Applicative writer.applicative
 
 let bool = import! "std/bool.glu"
@@ -13,7 +14,7 @@ let result = import! "std/result.glu"
 let { Result } = result
 let unit = import! "std/unit.glu"
 
-let assert_oieq = assert_eq (option.show prelude.show_Int) (option.eq prelude.eq_Int)
+let assert_oieq = assert_eq (option.show int.show) (option.eq int.eq)
 let assert_beq = assert_eq bool.show bool.eq
 let assert_req = assert_eq (result.show unit.show string.show) (result.eq unit.eq string.eq)
 

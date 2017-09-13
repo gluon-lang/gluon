@@ -1,8 +1,8 @@
 let { run, writer, assert_ieq }  = import! "std/test.glu"
 let prelude  = import! "std/prelude.glu"
-let { Num } = prelude
 let { (*>), wrap } = prelude.make_Applicative writer.applicative
-let { (+), (-), (*) } = prelude.num_Int
+let int = import! "std/int.glu"
+let { (+), (-), (*) } = int.num
 
 let l = lazy (\_ -> 123 + 57)
 

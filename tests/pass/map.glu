@@ -1,5 +1,6 @@
 let prelude  = import! "std/prelude.glu"
 let { Eq, Show } = prelude
+let int = import! "std/int.glu"
 let option = import! "std/option.glu"
 let { Option } = option
 let string  = import! "std/string.glu"
@@ -12,28 +13,17 @@ let list = import! "std/list.glu"
 let { List } = list
 
 let show_Entry : Show { key : String, value : Int } = {
-    show = \e -> e.key <> prelude.show_Int.show e.value
+    show = \e -> e.key <> int.show.show e.value
 }
 
 let eq_Entry : Eq { key : String, value : Int } = {
     (==) = \l r -> l.key == r.key && l.value == r.value
 }
 
-let assert_entries =
-    assert_eq (list.show show_Entry)
-              (list.eq eq_Entry)
-
-let assert_keys =
-    assert_eq (list.show string.show)
-              (list.eq string.eq)
-
-let assert_values =
-    assert_eq (list.show prelude.show_Int)
-              (list.eq prelude.eq_Int)
-
-let assert_opt =
-    assert_eq (option.show prelude.show_Int)
-              (option.eq prelude.eq_Int)
+let assert_entries = assert_eq (list.show show_Entry) (list.eq eq_Entry)
+let assert_keys = assert_eq (list.show string.show) (list.eq string.eq)
+let assert_values = assert_eq (list.show int.show) (list.eq int.eq)
+let assert_opt = assert_eq (option.show int.show) (option.eq int.eq)
 
 let ord_map = map.make string.ord
 let { singleton, find, insert, to_list, keys, values } = ord_map

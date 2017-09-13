@@ -1,13 +1,14 @@
 let { run, writer, assert_eq }  = import! "std/test.glu"
 let prelude  = import! "std/prelude.glu"
 let { (*>) } = prelude.make_Applicative writer.applicative
+let int = import! "std/int.glu"
 let result = import! "std/result.glu"
 let { Result } = result
 let unit = import! "std/unit.glu"
 
 let assert =
-    assert_eq (result.show unit.show prelude.show_Int )
-              (result.eq unit.eq prelude.eq_Int)
+    assert_eq (result.show unit.show int.show )
+              (result.eq unit.eq int.eq)
 
 let { sender, receiver } = channel 0
 
