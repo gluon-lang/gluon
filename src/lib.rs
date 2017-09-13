@@ -534,13 +534,15 @@ let __implicit_prelude = import! "std/prelude.glu"
 and { Num, Eq, Ord, Show, Functor, Monad } = __implicit_prelude
 and { not } = import! "std/bool.glu"
 
-let { (+), (-), (*), (/) } = __implicit_prelude.num_Int
-and { (==) } = __implicit_prelude.eq_Int
-and { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Int
+let __implicit_float = import! "std/float.glu"
+let { (+), (-), (*), (/) } = __implicit_float.num
+and { (==) } = __implicit_float.eq
+and { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_float.ord
 
-let { (+), (-), (*), (/) } = __implicit_prelude.num_Float
-and { (==) } = __implicit_prelude.eq_Float
-and { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Float
+let __implicit_int = import! "std/int.glu"
+let { (+), (-), (*), (/) } = __implicit_int.num
+and { (==) } = __implicit_int.eq
+and { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_int.ord
 
 let __string = import! "std/string.glu"
 and { eq = { (==) } } = __string

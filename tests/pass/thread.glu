@@ -1,6 +1,7 @@
 let { run, writer, assert_eq }  = import! "std/test.glu"
 let prelude  = import! "std/prelude.glu"
 let { Bool } = import! "std/bool.glu"
+let int = import! "std/int.glu"
 let result = import! "std/result.glu"
 let { Result } = result
 let string = import! "std/string.glu"
@@ -9,8 +10,7 @@ let { (*>) } = prelude.make_Applicative writer.applicative
 let { (>>=) } = prelude.make_Monad writer.monad
 
 let assert =
-    assert_eq (result.show unit.show prelude.show_Int)
-              (result.eq unit.eq prelude.eq_Int)
+    assert_eq (result.show unit.show int.show) (result.eq unit.eq int.eq)
 let assert_any_err =
     assert_eq (result.show string.show unit.show)
               (result.eq { (==) = \x y -> True } unit.eq)
