@@ -1,6 +1,8 @@
 let prelude = import! "std/prelude.glu"
 let { Expr } = import! "examples/lisp/types.glu"
+let char = import! "std/char.glu"
 let { List } = import! "std/list.glu"
+let { Result } = import! "std/result.glu"
 let string = import! "std/string.glu"
 
 let {

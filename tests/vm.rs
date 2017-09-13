@@ -263,6 +263,7 @@ let f a b c = c
 
 test_expr!{ no_io_eval,
 r#"
+let io = import! "std/io.glu"
 let x = io_flat_map (\x -> error "NOOOOOOOO") (io.println "1")
 in { x }
 "#
@@ -309,6 +310,7 @@ Value::Tag(0)
 
 test_expr!{ prelude match_on_bool,
 r#"
+let { Bool } = import! "std/bool.glu"
 match True with
 | False -> 10
 | True -> 11
@@ -413,7 +415,10 @@ r#"let x = string_prim.len "test" in x"#,
 }
 
 test_expr!{ io_print,
-r#"io.print "123" "#
+r#"
+let io = import! "std/io.glu"
+io.print "123"
+"#
 }
 
 test_expr!{ array,
@@ -474,6 +479,7 @@ true
 
 test_expr!{ prelude true_branch_not_affected_by_false_branch,
 r#"
+let { Bool } = import! "std/bool.glu"
 if True then
     let x = 1
     x
@@ -509,6 +515,7 @@ id (match Test 0 with
 
 test_expr!{ prelude and_operator_stack,
 r#"
+let { Bool } = import! "std/bool.glu"
 let b = True && True
 let b2 = False
 b
@@ -518,6 +525,7 @@ true
 
 test_expr!{ prelude or_operator_stack,
 r#"
+let { Bool } = import! "std/bool.glu"
 let b = False || True
 let b2 = False
 b
@@ -643,7 +651,10 @@ in id 1
 fn run_expr_int() {
     let _ = ::env_logger::init();
 
-    let text = r#"io.run_expr "123" "#;
+    let text = r#"
+        let io = import! "std/io.glu"
+        io.run_expr "123"
+    "#;
     let mut vm = make_vm();
     let (result, _) = Compiler::new()
         .run_io_expr_async::<IO<String>>(&mut vm, "<top>", text)
@@ -659,7 +670,14 @@ fn run_expr_int() {
 }
 
 test_expr!{ io run_expr_io,
-r#"io_flat_map (\x -> io_wrap 100) (io.run_expr "io.print \"123\" ") "#,
+r#"
+let io = import! "std/io.glu"
+io_flat_map (\x -> io_wrap 100)
+            (io.run_expr "
+                let io = import! \"std/io.glu\"
+                io.print \"123\"
+            ")
+"#,
 100i32
 }
 
@@ -687,7 +705,7 @@ in Cons 1 Nil == Nil
 #[test]
 fn test_implicit_prelude() {
     let _ = ::env_logger::init();
-    let text = r#"Ok (Some (1.0 + 3.0 - 2.0)) "#;
+    let text = r#"1.0 + 3.0 - 2.0"#;
     let mut vm = make_vm();
     Compiler::new()
         .run_expr_async::<OpaqueValue<&Thread, Hole>>(&mut vm, "<top>", text)
@@ -761,10 +779,11 @@ fn access_types_by_path() {
     let _ = ::env_logger::init();
 
     let vm = make_vm();
-    run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import! "std/prelude.glu" "#);
+    run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import! "std/option.glu" "#);
+    run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import! "std/result.glu" "#);
 
-    assert!(vm.find_type_info("std.prelude.Option").is_ok());
-    assert!(vm.find_type_info("std.prelude.Result").is_ok());
+    assert!(vm.find_type_info("std.option.Option").is_ok());
+    assert!(vm.find_type_info("std.result.Result").is_ok());
 
     let text = r#" type T a = | T a in { x = 0, inner = { T, y = 1.0 } } "#;
     load_script(&vm, "test", text).unwrap_or_else(|err| panic!("{}", err));
@@ -817,7 +836,8 @@ fn dont_execute_io_in_run_expr_async() {
     let vm = make_vm();
     let expr = r#"
 let prelude  = import! "std/prelude.glu"
-let { wrap } = prelude.applicative_IO
+let io = import! "std/io.glu"
+let { wrap } = io.applicative
 wrap 123
 "#;
     let value = Compiler::new()
@@ -836,8 +856,11 @@ fn partially_applied_constructor_is_lambda() {
     let _ = ::env_logger::init();
     let vm = make_vm();
 
-    let result = Compiler::new()
-        .run_expr::<FunctionRef<fn(i32) -> Option<i32>>>(&vm, "test", "Some");
+    let result = Compiler::new().run_expr::<FunctionRef<fn(i32) -> Option<i32>>>(
+        &vm,
+        "test",
+        r#"let { Option } = import! "std/option.glu" in Some"#,
+    );
     assert!(result.is_ok(), "{}", result.err().unwrap());
     assert_eq!(result.unwrap().0.call(123), Ok(Some(123)));
 }
@@ -913,7 +936,8 @@ fn completion_with_prelude() {
 
     let expr = r#"
 let prelude  = import! "std/prelude.glu"
-and { Option, Num } = prelude
+and { Option } = import! "std/option.glu"
+and { Num } = prelude
 and { (+) } = prelude.num_Int
 
 type Stream_ a =
@@ -937,7 +961,7 @@ let from f : (Int -> Option a) -> Stream a =
         .typecheck_str(&vm, "example", expr, None)
         .unwrap_or_else(|err| panic!("{}", err));
 
-    let result = completion::find(&*vm.get_env(), &expr, BytePos::from(313));
+    let result = completion::find(&*vm.get_env(), &expr, BytePos::from(348));
     assert_eq!(result, Ok(Type::int()));
 }
 

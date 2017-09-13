@@ -1,25 +1,4 @@
-let { Bool, Option, Result, Ordering } = import! "std/types.glu"
-
-let unwrap opt : Option a -> a =
-    match opt with
-    | Some x -> x
-    | None -> error "Option was None"
-
-let unwrap_ok res : Result e a -> a =
-    match res with
-    | Ok x -> x
-    | Err _ -> error "Result was an Err"
-
-let unwrap_err res : Result e a -> e =
-    match res with
-    | Ok _ -> error "Result was an Ok"
-    | Err x -> x
-
-/// Boolean 'not'
-let not x : Bool -> Bool = if x then False else True
-
-/// Boolean 'exclusive or'
-let xor x y : Bool -> Bool -> Bool = if x then not y else y
+let { Bool, Option, Ordering } = import! "std/types.glu"
 
 /// `Semigroup a` represents an associative operation on `a`.
 /// This means the following laws must hold:
@@ -43,29 +22,6 @@ let semigroup_Function semigroup : Semigroup b -> Semigroup (a -> b) = {
     append = \f g x -> semigroup.append (f x) (g x)
 }
 
-let semigroup_Option semigroup : Semigroup a -> Semigroup (Option a) = {
-    append = \l r ->
-        match (l, r) with
-        | (Some x, Some y) -> Some (semigroup.append x y)
-        | (Some _, None) -> l
-        | (None, Some _) -> r
-        | (None, None) -> None
-}
-
-let semigroup_Option_First : Semigroup (Option a) = {
-    append = \l r ->
-        match l with
-        | Some x -> Some x
-        | None -> r
-}
-
-let semigroup_Option_Last : Semigroup (Option a) = {
-    append = \l r ->
-        match r with
-        | Some x -> Some x
-        | None -> l
-}
-
 let semigroup_Int_Add : Semigroup Int = { append = \x y -> x #Int+ y }
 
 let semigroup_Int_Mul : Semigroup Int = { append = \x y -> x #Int* y }
@@ -73,12 +29,6 @@ let semigroup_Int_Mul : Semigroup Int = { append = \x y -> x #Int* y }
 let semigroup_Float_Add : Semigroup Float = { append = \x y -> x #Float+ y }
 
 let semigroup_Float_Mul : Semigroup Float = { append = \x y -> x #Float* y }
-
-let semigroup_Bool_And : Semigroup Bool = { append = \x y -> x && y }
-
-let semigroup_Bool_Or : Semigroup Bool = { append = \x y -> x || y }
-
-let semigroup_Bool_Xor : Semigroup Bool = { append = xor }
 
 let semigroup_Ordering : Semigroup Ordering = {
     append = \x y ->
@@ -105,21 +55,6 @@ let monoid_Function monoid : Monoid b -> Monoid (a -> b) = {
     empty = \_ -> monoid.empty
 }
 
-let monoid_Option semigroup : Semigroup a -> Monoid (Option a) = {
-    semigroup = semigroup_Option semigroup,
-    empty = None
-}
-
-let monoid_Option_First : Monoid (Option a) = {
-    semigroup = semigroup_Option_First,
-    empty = None
-}
-
-let monoid_Option_Last : Monoid (Option a) = {
-    semigroup = semigroup_Option_Last,
-    empty = None
-}
-
 let monoid_Int_Add : Monoid Int = {
     semigroup = semigroup_Int_Add,
     empty = 0
@@ -138,21 +73,6 @@ let monoid_Float_Add : Monoid Float = {
 let monoid_Float_Mul : Monoid Float = {
     semigroup = semigroup_Float_Mul,
     empty = 1.0
-}
-
-let monoid_Bool_And : Monoid Bool = {
-    semigroup = semigroup_Bool_And,
-    empty = True
-}
-
-let monoid_Bool_Or : Monoid Bool = {
-    semigroup = semigroup_Bool_Or,
-    empty = False
-}
-
-let monoid_Bool_Xor : Monoid Bool = {
-    semigroup = semigroup_Bool_Xor,
-    empty = False
 }
 
 let monoid_Ordering : Monoid Ordering = {
@@ -185,39 +105,12 @@ let group_Float_Mul : Group Float = {
     inverse = \x -> 1.0 #Float/ x
 }
 
-let group_Bool_Xor : Group Bool = {
-    monoid = monoid_Bool_Xor,
-    inverse = \x -> x
-}
-
 /// `Eq a` defines equality (==) on `a`
 type Eq a = { (==) : a -> a -> Bool }
-
-let eq_Unit : Eq () = { (==) = \l r -> True }
-
-let eq_Bool : Eq Bool = { (==) = \l r -> if l then r else not r }
 
 let eq_Int = { (==) = \l r -> l #Int== r }
 
 let eq_Float = { (==) = \l r -> l #Float== r }
-
-let eq_Char = { (==) = \l r -> l #Char== r }
-
-let eq_Option a : Eq a -> Eq (Option a) = {
-    (==) = \l r ->
-        match (l, r) with
-        | (Some l_val, Some r_val) -> a.(==) l_val r_val
-        | (None, None) -> True
-        | _ -> False
-}
-
-let eq_Result e a : Eq e -> Eq a -> Eq (Result e a) = {
-    (==) = \l r ->
-        match (l, r) with
-        | (Ok l_val, Ok r_val) -> a.(==) l_val r_val
-        | (Err l_val, Err r_val) -> e.(==) l_val r_val
-        | _ -> False
-}
 
 /// `Ord a` defines an ordering on `a`
 type Ord a = { eq : Eq a, compare : a -> a -> Ordering }
@@ -252,9 +145,6 @@ let make_Ord ord : Ord a -> _ =
 
     { eq, compare, (<=), (<), (>), (>=) }
 
-let ord_Unit = { eq = eq_Unit, compare = \l r -> EQ }
-
-let ord_Bool = { eq = eq_Bool, compare = \l r -> if l then if r then EQ else GT else LT }
 
 let ord_Int = {
     eq = eq_Int,
@@ -264,31 +154,6 @@ let ord_Int = {
 let ord_Float = {
     eq = eq_Float,
     compare = \l r -> if l #Float< r then LT else if l #Float== r then EQ else GT
-}
-
-let ord_Char = {
-    eq = eq_Char,
-    compare = \l r -> if l #Char< r then LT else if l #Char== r then EQ else GT
-}
-
-let ord_Option a : Ord a -> Ord (Option a) = {
-    eq = eq_Option a.eq,
-    compare = \l r ->
-        match (l, r) with
-        | (Some l_val, Some r_val) -> a.compare l_val r_val
-        | (None, Some _) -> LT
-        | (Some _, None) -> GT
-        | (None, None) -> EQ
-}
-
-let ord_Result e a : Ord e -> Ord a -> Ord (Result e a) = {
-    eq = eq_Result e.eq a.eq,
-    compare = \l r ->
-        match (l, r) with
-        | (Ok l_val, Ok r_val) -> a.compare l_val r_val
-        | (Err l_val, Err r_val) -> e.compare l_val r_val
-        | (Ok _, Err _) -> LT
-        | (Err _, Ok _) -> GT
 }
 
 /**
@@ -373,8 +238,8 @@ type Functor f = {
     ///
     /// # Examples
     ///
-    /// * `applicative_Option.map show_Int.show (Some 1) == Some "1"`
-    /// * `applicative_Result.map show_Int.show (Some 1) == Ok "1"`
+    /// * `option.functor.map show_Int.show (Some 1) == Some "1"`
+    /// * `result.functor.map show_Int.show (Some 1) == Ok "1"`
     /// * `list.functor.map show_Int.show (list.of [1, 2]) == list.of ["1", "2"]`
     ///
     /// # Note
@@ -384,22 +249,6 @@ type Functor f = {
 }
 
 let functor_Function : Functor ((->) a) = { map = category_Function.compose }
-
-let functor_Option : Functor Option = {
-    map = \f x ->
-        match x with
-        | Some y -> Some (f y)
-        | None -> None
-}
-
-let functor_Result : Functor (Result e) = {
-    map = \f x ->
-        match x with
-        | Ok y -> Ok (f y)
-        | Err _ -> x
-}
-
-let functor_IO : Functor IO = { map = \f -> io_flat_map (\x -> io_wrap (f x)) }
 
 type Applicative (f : Type -> Type) = {
     functor : Functor f,
@@ -413,8 +262,8 @@ type Applicative (f : Type -> Type) = {
     ///
     /// # Examples
     ///
-    /// * `applicative_Option.wrap 1 == Some 1`
-    /// * `applicative_Result.wrap 1 == Ok 1`
+    /// * `option.applicative.wrap 1 == Some 1`
+    /// * `result.applicative.wrap 1 == Ok 1`
     /// * `list.applicative.wrap 1 == list.of [1]`
     ///
     /// # Note
@@ -444,41 +293,7 @@ let applicative_Function : Applicative ((->) a) = {
     wrap = const
 }
 
-let applicative_Option : Applicative Option = {
-    functor = functor_Option,
-    apply = \f x ->
-        match (f, x) with
-        | (Some g, Some y) -> Some (g y)
-        | _ -> None,
-    wrap = \x -> Some x
-}
-
-let applicative_Result : Applicative (Result e) = {
-    functor = functor_Result,
-    apply = \f x ->
-        match (f, x) with
-        | (Ok g, Ok y) -> Ok (g y)
-        | (Ok _, Err _) -> x
-        | (Err x, _) -> Err x,
-    wrap = \x -> Ok x
-}
-
-let applicative_IO : Applicative IO =
-    let wrap = io_wrap
-    let apply f x = io_flat_map (\g -> io_flat_map (\y -> wrap (g y)) x) f
-
-    { functor = functor_IO, apply, wrap }
-
 type Alternative f = { applicative : Applicative f, or : f a -> f a -> f a, empty : f a }
-
-let alternative_Option : Alternative Option = {
-    applicative = applicative_Option,
-    or = \x y ->
-        match x with
-        | Some _ -> x
-        | None -> y,
-    empty = None
-}
 
 let make_Alternative alternative : Alternative f -> _ =
     let { applicative, or, empty } = alternative
@@ -501,13 +316,13 @@ type Monad (m : Type -> Type) = {
     /// In gluon this would look like:
     ///
     /// ```gluon
-    /// monad_Result.flat_map (\x -> do_something x) (call_fallible "hello")
+    /// result.monad.flat_map (\x -> do_something x) (call_fallible "hello")
     /// ```
     ///
     /// Note that it is sometimes more ergonomic to use the `(>>=)` operator:
     ///
     /// ```gluon
-    /// let { (>>=) } = make_Monad monad_Result
+    /// let { (>>=) } = make_Monad result.monad
     ///
     /// call_fallible "hello" >>= (\x -> do_something x)
     /// ```
@@ -536,59 +351,14 @@ let monad_Function : Monad ((->) a) = {
     flat_map = \f m x -> f (m x) x
 }
 
-let monad_Option : Monad Option = {
-    applicative = applicative_Option,
-    flat_map = \f m ->
-        match m with
-        | Some x -> f x
-        | None -> None
-}
-
-let monad_Result : Monad (Result e) = {
-    applicative = applicative_Result,
-    flat_map = \f m ->
-        match m with
-        | Ok x -> f x
-        | Err err -> Err err
-}
-
-let monad_IO : Monad IO = {
-    applicative = applicative_IO,
-    flat_map = io_flat_map
-}
-
 /// `Show a` represents a conversion function from `a` to a readable string.
 type Show a = { show : a -> String }
 
-let show_Unit : Show () = { show = const "()" }
-
-let show_Bool : Show Bool = { show = \x -> if x then "True" else "False" }
 
 let show_Int : Show Int = { show = prim.show_int }
 
 let show_Float : Show Float = { show = prim.show_float }
 
-let show_Char : Show Char = { show = prim.show_char }
-
-let show_Option : Show a -> Show (Option a) = \d ->
-    let (++) = string_prim.append
-
-    let show o =
-        match o with
-        | Some x -> "Some (" ++ d.show x ++ ")"
-        | None -> "None"
-
-    { show }
-
-let show_Result : Show e -> Show t -> Show (Result e t) = \e t ->
-    let (++) = string_prim.append
-
-    let show o =
-        match o with
-        | Ok x -> "Ok (" ++ t.show x ++ ")"
-        | Err x -> "Err (" ++ e.show x ++ ")"
-
-    { show }
 
 type Foldable (f : Type -> Type) = {
     foldr : (a -> b -> b) -> b -> f a -> b,
@@ -633,9 +403,6 @@ let make_Foldable foldable : Foldable t -> _ =
     let elem eq : Eq a -> a -> t a -> Bool =
         any << eq.(==)
 
-    let notElem eq x : Eq a -> a -> t a -> Bool =
-        not << elem eq x
-
     let count : t a -> Int =
         foldl (\acc _ -> acc + 1) 0
 
@@ -650,31 +417,8 @@ let make_Foldable foldable : Foldable t -> _ =
         all,
         any,
         elem,
-        notElem,
         count
     }
-
-let foldable_Option : Foldable Option = {
-    foldr = \f z o ->
-        match o with
-        | None -> z
-        | Some x -> f x z,
-    foldl = \f z o ->
-        match o with
-        | None -> z
-        | Some x -> f z x
-}
-
-let foldable_Result : Foldable (Result e) = {
-    foldr = \f z r ->
-        match r with
-        | Err _ -> z
-        | Ok x -> f x z,
-    foldl = \f z r ->
-        match r with
-        | Err _ -> z
-        | Ok x -> f z x
-}
 
 type Traversable t = {
     functor : Functor t,
@@ -691,125 +435,60 @@ let make_Traversable traversable : Traversable t -> _ =
 
     { functor, foldable, traverse, sequence, for }
 
-let traversable_Option : Traversable Option = {
-    functor = functor_Option,
-    foldable = foldable_Option,
-    traverse = \app f o ->
-        match o with
-        | None -> app.wrap None
-        | Some x -> app.functor.map Some (f x)
-}
-
-let traversable_Result : Traversable (Result e) = {
-    functor = functor_Result,
-    foldable = foldable_Result,
-    traverse = \app f r ->
-        match r with
-        | Err e -> app.wrap (Err e)
-        | Ok x -> app.functor.map Ok (f x)
-}
-
 {
-    Bool,
     Ordering,
-    Option,
-    Result,
-
-    unwrap,
-    unwrap_ok,
-    unwrap_err,
-
-    not,
-    xor,
 
     Semigroup,
     make_Semigroup,
     semigroup_Function,
-    semigroup_Option,
-    semigroup_Option_First,
-    semigroup_Option_Last,
     semigroup_Int_Add,
     semigroup_Int_Mul,
     semigroup_Float_Add,
     semigroup_Float_Mul,
-    semigroup_Bool_And,
-    semigroup_Bool_Or,
-    semigroup_Bool_Xor,
     semigroup_Ordering,
 
     Monoid,
     monoid_Function,
-    monoid_Option,
-    monoid_Option_First,
-    monoid_Option_Last,
     monoid_Int_Add,
     monoid_Int_Mul,
     monoid_Float_Add,
     monoid_Float_Mul,
-    monoid_Bool_And,
-    monoid_Bool_Or,
-    monoid_Bool_Xor,
     monoid_Ordering,
 
     Group,
     group_Int_Add,
     group_Float_Add,
     group_Float_Mul,
-    group_Bool_Xor,
 
     Eq,
-    eq_Unit,
-    eq_Bool,
-    eq_Option,
-    eq_Result,
     eq_Float,
     eq_Int,
-    eq_Char,
 
     Ord,
     make_Ord,
-    ord_Unit,
-    ord_Bool,
-    ord_Option,
-    ord_Result,
     ord_Float,
     ord_Int,
-    ord_Char,
 
     Category,
     make_Category,
     category_Function,
 
     Functor,
-    functor_Option,
-    functor_Result,
-    functor_IO,
 
     Applicative,
     make_Applicative,
-    applicative_Option,
-    applicative_Result,
-    applicative_IO,
 
     Alternative,
     make_Alternative,
-    alternative_Option,
 
     Monad,
     make_Monad,
-    monad_Option,
-    monad_Result,
-    monad_IO,
 
     Foldable,
     make_Foldable,
-    foldable_Option,
-    foldable_Result,
 
     Traversable,
     make_Traversable,
-    traversable_Option,
-    traversable_Result,
 
     Num,
     num_Int,
@@ -824,11 +503,6 @@ let traversable_Result : Traversable (Result e) = {
     (>>),
 
     Show,
-    show_Unit,
-    show_Bool,
     show_Int,
-    show_Float,
-    show_Char,
-    show_Option,
-    show_Result
+    show_Float
 }

@@ -1,10 +1,11 @@
 let prelude = import! "std/prelude.glu"
 let { Test, run, writer, assert_eq, assert_seq, assert_ieq } = import! "std/test.glu"
-let { Option } = prelude
 let { (*>) } = prelude.make_Applicative writer.applicative
 let list = import! "std/list.glu"
 let { List } = list
 
+let result = import! "std/result.glu"
+let { Result } = result
 let string = import! "std/string.glu"
 let parser = import! "std/parser.glu"
 
@@ -12,7 +13,7 @@ let lisp = import! "examples/lisp/lisp.glu"
 let { Expr } = lisp
 
 let assert_leq =
-    assert_eq (prelude.show_Result string.show lisp.show) (prelude.eq_Result string.eq lisp.eq)
+    assert_eq (result.show string.show lisp.show) (result.eq string.eq lisp.eq)
 
 let parser_tests =
     assert_leq (parser.parse lisp.expr "test") (Ok (Atom "test"))
@@ -35,7 +36,7 @@ let parser_tests =
             (Ok (List (Cons (Atom "test") (Cons (Int 123) Nil))))
         *> assert_leq (parser.parse lisp.expr "123.45") (Ok (Float 123.45))
 
-let { (>>=) } = prelude.make_Monad prelude.monad_Result
+let { (>>=) } = prelude.make_Monad result.monad
 let eval_string s = parser.parse lisp.expr s >>= lisp.eval
 let eval_string_seq s = parser.parse (parser.many lisp.expr) s >>= lisp.eval_seq
 

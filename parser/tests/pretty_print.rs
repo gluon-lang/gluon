@@ -39,13 +39,33 @@ fn test_format(name: &str) {
 }
 
 #[test]
+fn bool() {
+    test_format("std/bool.glu");
+}
+
+#[test]
+fn char() {
+    test_format("std/char.glu");
+}
+
+#[test]
 fn map() {
     test_format("std/map.glu");
 }
 
 #[test]
+fn option() {
+    test_format("std/option.glu");
+}
+
+#[test]
 fn prelude() {
     test_format("std/prelude.glu");
+}
+
+#[test]
+fn result() {
+    test_format("std/result.glu");
 }
 
 #[test]
@@ -71,6 +91,11 @@ fn test() {
 #[test]
 fn types() {
     test_format("std/types.glu");
+}
+
+#[test]
+fn unit() {
+    test_format("std/unit.glu");
 }
 
 #[test]

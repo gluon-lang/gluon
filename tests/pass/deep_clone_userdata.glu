@@ -1,6 +1,7 @@
 let { run, writer, assert, assert_ieq, assert_feq }  = import! "std/test.glu"
 let prelude  = import! "std/prelude.glu"
 let { (*>) } = prelude.make_Applicative writer.applicative
+let { Result } = import! "std/result.glu"
 
 
 let _ =
@@ -12,7 +13,7 @@ let _ =
         force l
         send sender l
         ())
-    
+
     resume thread
 
     match recv receiver with
@@ -29,7 +30,7 @@ let _ =
     let thread = spawn (\_ ->
         send sender (ref 3)
         ())
-        
+
     resume thread
 
     match recv receiver with

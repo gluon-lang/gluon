@@ -18,7 +18,11 @@ fn bool() {
 
     let thread = new_vm();
     let (De(b), _) = Compiler::new()
-        .run_expr::<De<bool>>(&thread, "test", "True")
+        .run_expr::<De<bool>>(
+            &thread,
+            "test",
+            r#"let { Bool } = import! "std/bool.glu" in True"#,
+        )
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(b, true);
 }
@@ -56,7 +60,11 @@ fn option() {
 
     let thread = new_vm();
     let (De(opt), _) = Compiler::new()
-        .run_expr::<De<Option<f64>>>(&thread, "test", r#" Some 1.0 "#)
+        .run_expr::<De<Option<f64>>>(
+            &thread,
+            "test",
+            r#"let { Option } = import! "std/option.glu" in Some 1.0 "#,
+        )
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(opt, Some(1.0));
 }
@@ -120,7 +128,11 @@ fn optional_field() {
     );
 
     let (value, _) = Compiler::new()
-        .run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "test", r#" { test = Some 2 } "#)
+        .run_expr::<OpaqueValue<&Thread, Hole>>(
+            &thread,
+            "test",
+            r#"let { Option } = import! "std/option.glu" in { test = Some 2 } "#,
+        )
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(
         De::<OptionalFieldRecord>::from_value(&thread, value.get_variants()).map(|x| x.0),

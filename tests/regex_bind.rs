@@ -10,7 +10,9 @@ fn regex_match() {
 
     let thread = new_vm();
     let text = r#"
-        let { unwrap_ok, (|>) }  = import! "std/prelude.glu"
+        let { (|>) } = import! "std/prelude.glu"
+        let { not } = import! "std/bool.glu"
+        let { unwrap_ok } = import! "std/result.glu"
         let { assert }  = import! "std/test.glu"
 
         let match_a = regex.new "a" |> unwrap_ok
@@ -32,7 +34,8 @@ fn regex_error() {
 
     let thread = new_vm();
     let text = r#"
-        let { unwrap_err, (|>) }  = import! "std/prelude.glu"
+        let { (|>) } = import! "std/prelude.glu"
+        let { unwrap_err } = import! "std/result.glu"
 
         regex.new ")" |> unwrap_err |> regex.error_to_string
         "#;

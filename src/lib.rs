@@ -230,8 +230,13 @@ impl Compiler {
         expr_str: &str,
         expected_type: Option<&ArcType>,
     ) -> Result<(SpannedExpr<Symbol>, ArcType)> {
-        let TypecheckValue { expr, typ } =
-            expr_str.typecheck_expected(self, vm, file, expr_str, expected_type)?;
+        let TypecheckValue { expr, typ } = expr_str.typecheck_expected(
+            self,
+            vm,
+            file,
+            expr_str,
+            expected_type,
+        )?;
         Ok((expr, typ))
     }
 
@@ -334,10 +339,9 @@ impl Compiler {
             // Use the import macro's path resolution if it exists so that we mimick the import
             // macro as close as possible
             let opt_macro = vm.get_macros().get("import");
-            match opt_macro
-                .as_ref()
-                .and_then(|mac| mac.downcast_ref::<Import>())
-            {
+            match opt_macro.as_ref().and_then(
+                |mac| mac.downcast_ref::<Import>(),
+            ) {
                 Some(import) => Ok(import.read_file(filename)?),
                 None => {
                     let mut buffer = StdString::new();
@@ -428,9 +432,7 @@ impl Compiler {
         expr_str
             .run_expr(self, vm, name, expr_str, Some(&expected))
             .and_then(move |v| {
-                let ExecuteValue {
-                    typ: actual, value, ..
-                } = v;
+                let ExecuteValue { typ: actual, value, .. } = v;
                 unsafe {
                     FutureValue::sync(match T::from_value(vm, Variants::new(&value)) {
                         Some(value) => Ok((value, actual)),
@@ -529,7 +531,7 @@ impl Compiler {
 
 pub const PRELUDE: &'static str = r#"
 let __implicit_prelude = import! "std/prelude.glu"
-and { Num, Eq, Ord, Show, Functor, Monad, Bool, Option, Result, not } = __implicit_prelude
+and { Num, Eq, Ord, Show, Functor, Monad } = __implicit_prelude
 
 let { (+), (-), (*), (/) } = __implicit_prelude.num_Int
 and { (==) } = __implicit_prelude.eq_Int
@@ -538,9 +540,6 @@ and { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_prelude.or
 let { (+), (-), (*), (/) } = __implicit_prelude.num_Float
 and { (==) } = __implicit_prelude.eq_Float
 and { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Float
-
-let { (==) } = __implicit_prelude.eq_Char
-and { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Char
 
 in 0
 "#;

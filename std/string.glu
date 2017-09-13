@@ -1,5 +1,5 @@
 let prelude = import! "std/prelude.glu"
-let { Num, Option, Eq, Ord, Ordering, Semigroup, Monoid, Show } = prelude
+let { Num, Eq, Ord, Ordering, Semigroup, Monoid, Show } = prelude
 
 let semigroup : Semigroup String = { append = string_prim.append }
 

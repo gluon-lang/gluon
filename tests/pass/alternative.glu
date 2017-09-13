@@ -1,7 +1,8 @@
 let { run, writer, assert_eq }  = import! "std/test.glu"
 let prelude  = import! "std/prelude.glu"
 let { (*>) } = prelude.make_Applicative writer.applicative
-let list  = import! "std/list.glu"
+let list = import! "std/list.glu"
+let option = import! "std/option.glu"
 
 let test_alt show eq alt =
     let { (<|>), or, empty } = prelude.make_Alternative alt
@@ -15,5 +16,5 @@ let test_alt show eq alt =
         *> assert (empty <|> empty) empty
         *> assert (empty <|> empty <|> wrap 10) (wrap 10)
 
-test_alt prelude.show_Option prelude.eq_Option prelude.alternative_Option
+test_alt option.show option.eq option.alternative
     *> test_alt list.show list.eq list.alternative

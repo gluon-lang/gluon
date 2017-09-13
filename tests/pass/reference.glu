@@ -1,6 +1,7 @@
 let { assert }  = import! "std/test.glu"
 let prelude  = import! "std/prelude.glu"
 let { (==) } = prelude.eq_Int
+let { Bool } = import! "std/bool.glu"
 
 let ri = ref 0
 assert (0 == load ri)

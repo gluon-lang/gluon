@@ -1,5 +1,7 @@
 let prelude  = import! "std/prelude.glu"
-let { Option, Eq, Show } = prelude
+let { Eq, Show } = prelude
+let option = import! "std/option.glu"
+let { Option } = option
 let string  = import! "std/string.glu"
 let { (==) } = string.eq
 let { (<>) } = prelude.make_Semigroup string.semigroup
@@ -30,8 +32,8 @@ let assert_values =
               (list.eq prelude.eq_Int)
 
 let assert_opt =
-    assert_eq (prelude.show_Option prelude.show_Int)
-              (prelude.eq_Option prelude.eq_Int)
+    assert_eq (option.show prelude.show_Int)
+              (option.eq prelude.eq_Int)
 
 let ord_map = map.make string.ord
 let { singleton, find, insert, to_list, keys, values } = ord_map
