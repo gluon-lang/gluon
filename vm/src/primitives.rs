@@ -244,7 +244,6 @@ extern "C" fn error(_: &Thread) -> Status {
 #[allow(non_camel_case_types)]
 pub fn load(vm: &Thread) -> Result<()> {
     use std::f64;
-    use std::char;
     type float = f64;
     vm.define_global(
         "float",
@@ -335,20 +334,18 @@ pub fn load(vm: &Thread) -> Result<()> {
         },
     )?;
 
-    {
-        use self::array;
-        vm.define_global(
-            "array",
-            record! {
-                len => primitive!(1 array::len),
-                index => primitive!(2 array::index),
-                append => primitive!(2 array::append)
-            },
-        )?;
-    }
+    use self::array;
+    vm.define_global(
+        "array",
+        record! {
+            len => primitive!(1 array::len),
+            index => primitive!(2 array::index),
+            append => primitive!(2 array::append)
+        },
+    )?;
 
-    type string_prim = str;
     use self::string;
+    type string_prim = str;
     vm.define_global(
         "string_prim",
         record! {
@@ -371,22 +368,26 @@ pub fn load(vm: &Thread) -> Result<()> {
             as_bytes => primitive!(1 string_prim::as_bytes)
         },
     )?;
+
+    use std::char;
+    type char_prim = char;
     vm.define_global(
         "char_prim",
         record! {
-            is_digit => primitive!(2 char::is_digit),
-            to_digit => primitive!(2 char::to_digit),
-            len_utf8 => primitive!(1 char::len_utf8),
-            len_utf16 => primitive!(1 char::len_utf16),
-            is_alphabetic => primitive!(1 char::is_alphabetic),
-            is_lowercase => primitive!(1 char::is_lowercase),
-            is_uppercase => primitive!(1 char::is_uppercase),
-            is_whitespace => primitive!(1 char::is_whitespace),
-            is_alphanumeric => primitive!(1 char::is_alphanumeric),
-            is_control => primitive!(1 char::is_control),
-            is_numeric => primitive!(1 char::is_numeric)
+            is_digit => primitive!(2 char_prim::is_digit),
+            to_digit => primitive!(2 char_prim::to_digit),
+            len_utf8 => primitive!(1 char_prim::len_utf8),
+            len_utf16 => primitive!(1 char_prim::len_utf16),
+            is_alphabetic => primitive!(1 char_prim::is_alphabetic),
+            is_lowercase => primitive!(1 char_prim::is_lowercase),
+            is_uppercase => primitive!(1 char_prim::is_uppercase),
+            is_whitespace => primitive!(1 char_prim::is_whitespace),
+            is_alphanumeric => primitive!(1 char_prim::is_alphanumeric),
+            is_control => primitive!(1 char_prim::is_control),
+            is_numeric => primitive!(1 char_prim::is_numeric)
         },
     )?;
+
     vm.define_global(
         "prim",
         record! {
@@ -403,6 +404,7 @@ pub fn load(vm: &Thread) -> Result<()> {
             prim::error,
         ),
     )?;
+
     vm.define_global(
         "error",
         primitive::<fn(StdString) -> Generic<A>>(

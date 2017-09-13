@@ -219,19 +219,20 @@ pub fn load(vm: &Thread) -> Result<()> {
     vm.add_bytecode("io_wrap", wrap_ty, 2, vec![Pop(1)])?;
 
     // IO functions
+    use super::io as io_prim;
     vm.define_global(
         "io_prim",
         record! {
-            open_file => primitive!(1 open_file),
-            read_file => primitive!(2 read_file),
-            read_file_to_string => primitive!(1 read_file_to_string),
-            read_char => primitive!(0 read_char),
-            read_line => primitive!(0 read_line),
-            print => primitive!(1 print),
-            println => primitive!(1 println),
-            catch => primitive!(2 catch),
-            run_expr => primitive!(1 run_expr),
-            load_script => primitive!(2 load_script)
+            open_file => primitive!(1 io_prim::open_file),
+            read_file => primitive!(2 io_prim::read_file),
+            read_file_to_string => primitive!(1 io_prim::read_file_to_string),
+            read_char => primitive!(0 io_prim::read_char),
+            read_line => primitive!(0 io_prim::read_line),
+            print => primitive!(1 io_prim::print),
+            println => primitive!(1 io_prim::println),
+            catch => primitive!(2 io_prim::catch),
+            run_expr => primitive!(1 io_prim::run_expr),
+            load_script => primitive!(2 io_prim::load_script)
         },
     )?;
     Ok(())
