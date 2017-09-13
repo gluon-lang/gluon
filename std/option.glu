@@ -9,20 +9,6 @@ let unwrap opt : Option a -> a =
     | Some x -> x
     | None -> error "Option was None"
 
-let semigroup a : Semigroup a -> Semigroup (Option a) = {
-    append = \l r ->
-        match (l, r) with
-        | (Some x, Some y) -> Some (a.append x y)
-        | (Some _, None) -> l
-        | (None, Some _) -> r
-        | (None, None) -> None
-}
-
-let monoid a : Semigroup a -> Monoid (Option a) = {
-    semigroup = semigroup a,
-    empty = None
-}
-
 let former =
     let semigroup : Semigroup (Option a) = {
         append = \l r ->
@@ -52,6 +38,20 @@ let latter =
     }
 
     { semigroup, monoid }
+
+let semigroup a : Semigroup a -> Semigroup (Option a) = {
+    append = \l r ->
+        match (l, r) with
+        | (Some x, Some y) -> Some (a.append x y)
+        | (Some _, None) -> l
+        | (None, Some _) -> r
+        | (None, None) -> None
+}
+
+let monoid a : Semigroup a -> Monoid (Option a) = {
+    semigroup = semigroup a,
+    empty = None
+}
 
 let eq a : Eq a -> Eq (Option a) = {
     (==) = \l r ->
