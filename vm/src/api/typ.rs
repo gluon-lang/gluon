@@ -10,8 +10,23 @@ use thread::Thread;
 use serde::de::{self, DeserializeOwned, DeserializeSeed, EnumAccess, Error, IntoDeserializer,
                 MapAccess, SeqAccess, VariantAccess, Visitor};
 
+pub fn make_source<T>(thread: &Thread) -> Result<String>
+where
+    T: DeserializeOwned,
+{
+    let (name, typ) = from_rust::<T>(thread)?;
+    Ok(format!(
+        r#"
+type {0} = {1}
+{{ {0} }}
+"#,
+        name,
+        typ
+    ))
+}
+
 /// Deserializes `T` from a gluon value assuming that `value` is of type `typ`.
-pub fn from_rust<T>(thread: &Thread) -> Result<ArcType>
+pub fn from_rust<T>(thread: &Thread) -> Result<(String, ArcType)>
 where
     T: DeserializeOwned,
 {
@@ -19,7 +34,7 @@ where
     from_rust_::<T>(&mut symbols, thread)
 }
 
-fn from_rust_<T>(symbols: &mut Symbols, thread: &Thread) -> Result<ArcType>
+fn from_rust_<T>(symbols: &mut Symbols, thread: &Thread) -> Result<(String, ArcType)>
 where
     T: DeserializeOwned,
 {
@@ -36,11 +51,12 @@ where
             Err(err) => return Err(err),
         }
     }
-    if variants.is_empty() {
-        Ok(deserializer.typ.expect("typ"))
+    let typ = if variants.is_empty() {
+        deserializer.typ.expect("typ")
     } else {
-        Ok(type_cache.variant(variants))
-    }
+        type_cache.variant(variants)
+    };
+    Ok((deserializer.name.to_string(), typ))
 }
 
 struct State<'de> {
@@ -54,6 +70,7 @@ struct Deserializer<'de> {
     typ: Option<ArcType>,
     variant: Option<Field<Symbol, ArcType>>,
     variant_index: usize,
+    name: &'static str,
 }
 
 impl<'de> Deserializer<'de> {
@@ -71,6 +88,7 @@ impl<'de> Deserializer<'de> {
             typ: None,
             variant: None,
             variant_index: 0,
+            name: "",
         }
     }
 }
@@ -239,17 +257,19 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         visitor.visit_unit()
     }
 
-    fn deserialize_unit_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
+    fn deserialize_unit_struct<V>(self, name: &'static str, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
+        self.name = name;
         self.deserialize_unit(visitor)
     }
 
-    fn deserialize_newtype_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
+    fn deserialize_newtype_struct<V>(self, name: &'static str, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
+        self.name = name;
         visitor.visit_newtype_struct(self)
     }
 
@@ -303,13 +323,14 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
 
     fn deserialize_struct<V>(
         self,
-        _name: &'static str,
+        name: &'static str,
         fields: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
+        self.name = name;
         let (value, types) = {
             let mut map_deserializer = MapDeserializer::new(&mut *self, fields.iter().cloned());
             (
@@ -330,6 +351,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
+        self.name = name;
         match variants.get(self.variant_index) {
             Some(variant) => visitor.visit_enum(Enum::new(self, name, variant)),
             None => Err(VmError::Message("".to_string())),
@@ -533,16 +555,17 @@ mod tests {
     #[test]
     fn struct_type() {
         let mut symbols = Symbols::new();
-        let typ = from_rust_::<Test>(&mut symbols, &RootedThread::new());
+        let (name, typ) = from_rust_::<Test>(&mut symbols, &RootedThread::new()).unwrap();
+        assert_eq!(name, "Test");
         assert_eq!(
             typ,
-            Ok(Type::record(
+            Type::record(
                 vec![],
                 vec![
                     Field::new(symbols.symbol("x"), Type::int()),
                     Field::new(symbols.symbol("name"), Type::string()),
                 ]
-            ))
+            )
         );
     }
 
@@ -557,10 +580,11 @@ mod tests {
     #[test]
     fn enum_type() {
         let mut symbols = Symbols::new();
-        let typ = from_rust_::<Enum>(&mut symbols, &RootedThread::new());
+        let (name, typ) = from_rust_::<Enum>(&mut symbols, &RootedThread::new()).unwrap();
+        assert_eq!(name, "Enum");
         assert_eq!(
             typ,
-            Ok(Type::variant(vec![
+            Type::variant(vec![
                 Field::new(symbols.symbol("A"), Type::ident(symbols.symbol("Enum"))),
                 Field::new(
                     symbols.symbol("B"),
@@ -573,7 +597,7 @@ mod tests {
                         Type::ident(symbols.symbol("Enum")),
                     ),
                 ),
-            ]))
+            ])
         );
     }
 }
