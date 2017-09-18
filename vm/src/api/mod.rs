@@ -28,6 +28,8 @@ pub mod mac;
 pub mod ser;
 #[cfg(feature = "serde")]
 pub mod de;
+#[cfg(feature = "serde")]
+pub mod typ;
 
 macro_rules! count {
     () => { 0 };
