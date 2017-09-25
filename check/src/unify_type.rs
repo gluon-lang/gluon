@@ -390,18 +390,22 @@ where
 
             l.zip_match(&r, unifier)
         }
-        (&Type::Forall(_, ref l, _), _) => {
-            let l = l.skolemize(&mut FnvMap::default());
-            unifier
-                .try_match_res(&l, &actual)
-                .map(|opt_type| Some(opt_type.unwrap_or_else(|| l.clone())))
+        (&Type::Forall(ref params, ref l, Some(_)), _) => {
+            let l = expected.instantiate_generics(&mut FnvMap::default());
+            Ok(
+                unifier
+                    .try_match_res(&l, &actual)?
+                    .map(|l| Type::forall(params.clone(), l)),
+            )
         }
 
-        (_, &Type::Forall(_, ref r, Some(_))) => {
-            let r = r.skolemize(&mut FnvMap::default());
-            unifier
-                .try_match_res(expected, &r)
-                .map(|opt_type| Some(opt_type.unwrap_or_else(|| r.clone())))
+        (_, &Type::Forall(ref params, ref r, Some(_))) => {
+            let r = actual.instantiate_generics(&mut FnvMap::default());
+            Ok(
+                unifier
+                    .try_match_res(expected, &r)?
+                    .map(|r| Type::forall(params.clone(), r)),
+            )
         }
 
         // Successful unification!
@@ -862,6 +866,7 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
                     }
                     None => l,
                 };
+                debug!("Union merge {} <> {}", left, r_var);
                 subs.union(|| unifier.state.fresh(), r_var, left)?;
                 Ok(None)
             }
@@ -886,10 +891,12 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
                 unifier.try_match_res(&l, r)
             }
             (_, &Type::Variable(ref r)) => {
+                debug!("Union merge {} <> {}", l, r);
                 subs.union(|| unifier.state.fresh(), r, l)?;
                 Ok(None)
             }
             (&Type::Variable(ref l), _) => {
+                debug!("Union merge {} <> {}", l, r);
                 subs.union(|| unifier.state.fresh(), l, r)?;
                 Ok(Some(r.clone()))
             }

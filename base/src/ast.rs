@@ -1,9 +1,10 @@
 //! Module containing the types which make up `gluon`'s AST (Abstract Syntax Tree)
+use std::fmt;
 use std::marker::PhantomData;
 use std::ops::Deref;
 
 use fnv::FnvMap;
-use pos::{self, BytePos, Span, Spanned, HasSpan};
+use pos::{self, BytePos, HasSpan, Span, Spanned};
 use symbol::Symbol;
 use types::{self, Alias, AliasData, ArcType, Type, TypeEnv};
 
@@ -64,6 +65,12 @@ impl<Id> Deref for AstType<Id> {
 
     fn deref(&self) -> &Self::Target {
         &self._typ.1.value
+    }
+}
+
+impl<Id: AsRef<str>> fmt::Display for AstType<Id> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", types::TypeFormatter::new(self))
     }
 }
 

@@ -307,7 +307,11 @@ impl<T: Substitutable> Substitution<T> {
     }
 
     pub fn find_type_for_var(&self, var: u32) -> Option<&T> {
-        let index = self.union.borrow_mut().find(var as usize) as u32;
+        let mut union = self.union.borrow_mut();
+        if var as usize >= union.size() {
+            return None;
+        }
+        let index = union.find(var as usize) as u32;
         self.types.get(&index).or_else(|| if var == index {
             None
         } else {

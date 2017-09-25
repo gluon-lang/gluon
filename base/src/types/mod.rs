@@ -1922,11 +1922,10 @@ where
     U: From<Type<Id, U>> + Clone,
     Id: Clone,
 {
-    AliasData::new(
-        alias.name.clone(),
-        alias.params().to_owned(),
-        translate_type(cache, &alias.typ),
-    )
+    AliasData {
+        name: alias.name.clone(),
+        typ: translate_type(cache, &alias.typ),
+    }
 }
 
 pub fn translate_type<Id, T, U>(cache: &TypeCache<Id, U>, typ: &Type<Id, T>) -> U
