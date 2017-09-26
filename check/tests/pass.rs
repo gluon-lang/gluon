@@ -40,11 +40,11 @@ fn make_ident_type(typ: ArcType) -> ArcType {
 #[test]
 fn function_type_new() {
     let text = r"
-\x -> x
+\x -> x #Int+ 1
 ";
     let result = support::typecheck(text);
 
-    assert!(result.unwrap().as_function().is_some());
+    assert_req!(result, Ok(Type::function(vec![typ("Int")], typ("Int"))));
 }
 
 #[test]
