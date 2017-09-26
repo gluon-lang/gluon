@@ -1048,6 +1048,7 @@ impl<Id> ArcType<Id> {
         }
         walk_move_type(typ.clone(), &mut |typ| match **typ {
             Type::Generic(ref generic) => named_variables.get(&generic.id).cloned(),
+            Type::Skolem(ref skolem) => named_variables.get(&skolem.name).cloned(),
             _ => None,
         })
     }

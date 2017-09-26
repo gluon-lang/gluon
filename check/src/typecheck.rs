@@ -22,10 +22,10 @@ use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
 use base::types::{self, Alias, AliasData, AppVec, ArcType, Field, Generic, PrimitiveEnv,
                   RecordSelector, Skolem, Type, TypeCache, TypeEnv, TypeVariable};
 
-use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
+use kindcheck::{self, Error as KindCheckError, KindCheck};
 use substitution::{self, Constraints, Substitution};
 use rename::RenameError;
-use unify::{self, Error as UnifyError};
+use unify;
 use unify_type::{self, new_skolem_scope, Error as UnifyTypeError};
 
 /// Type representing a single error when checking a type
@@ -44,7 +44,7 @@ pub enum TypeError<I> {
     /// Errors found when trying to unify two types
     Unification(ArcType<I>, ArcType<I>, Vec<UnifyTypeError<I>>),
     /// Error were found when trying to unify the kinds of two types
-    KindError(KindCheckError<I>),
+    KindError(KindCheckError<I>, ArcType<I>),
     /// Errors found during renaming (overload resolution)
     Rename(RenameError),
     /// Multiple types were declared with the same name in the same expression
@@ -60,18 +60,6 @@ pub enum TypeError<I> {
     /// An `Error` ast node was found indicating an invalid parse
     ErrorAst(&'static str),
     Message(String),
-}
-
-impl<I> From<KindCheckError<I>> for TypeError<I>
-where
-    I: PartialEq + Clone,
-{
-    fn from(e: KindCheckError<I>) -> TypeError<I> {
-        match e {
-            UnifyError::Other(KindError::UndefinedType(name)) => TypeError::UndefinedType(name),
-            e => TypeError::KindError(e),
-        }
-    }
 }
 
 impl<I> From<RenameError> for TypeError<I> {
@@ -126,7 +114,11 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
             PatternError(ref typ, expected_len) => {
                 write!(f, "Type {} has {} to few arguments", typ, expected_len)
             }
-            KindError(ref err) => kindcheck::fmt_kind_error(err, f),
+            KindError(ref err, ref typ) => {
+                kindcheck::fmt_kind_error(err, f)?;
+                writeln!(f)?;
+                write!(f, "In type {}", typ)
+            }
             Rename(ref err) => write!(f, "{}", err),
             DuplicateTypeDefinition(ref id) => write!(
                 f,
@@ -475,8 +467,8 @@ impl<'a> Typecheck<'a> {
                 EmptyCase |
                 ErrorAst(_) |
                 Rename(_) |
-                KindError(_) |
                 Message(_) => (),
+                KindError(_, ref mut typ) |
                 NotAFunction(ref mut typ) |
                 UndefinedField(ref mut typ, _) |
                 PatternError(ref mut typ, _) |
@@ -970,20 +962,12 @@ impl<'a> Typecheck<'a> {
         body: &mut SpannedExpr<Symbol>,
     ) -> ArcType {
         self.enter_scope();
-        println!(
-            "----------- {};;;\n{:?}",
-            function_type,
-            self.type_variables
-        );
         function_type = self.skolemize(&function_type);
-        println!(">>{}", function_type);
-        println!(">>{}", self.subs.set_type(function_type.clone()));
         let mut arg_types = Vec::new();
         let body_type = {
             let mut iter1 = function_arg_iter(self, function_type);
             let mut iter2 = args.iter_mut();
             while let (Some(arg_type), Some(arg)) = (iter1.next(), iter2.next()) {
-                println!("{} {:?}", arg.value.name, arg_type);
                 let arg = &mut arg.value;
 
                 arg.typ = arg_type;
@@ -1336,12 +1320,16 @@ impl<'a> Typecheck<'a> {
                 *alias.unresolved_type_mut() = match **alias.unresolved_type() {
                     Type::Forall(ref args, ref typ, _) => {
                         let mut typ = typ.clone();
-                        check.kindcheck_type(&mut typ)?;
+                        check
+                            .kindcheck_type(&mut typ)
+                            .map_err(|err| TypeError::KindError(err, typ.clone()))?;
                         Type::forall(args.clone(), typ.clone())
                     }
                     _ => {
                         let mut typ = alias.unresolved_type().clone();
-                        check.kindcheck_type(&mut typ)?;
+                        check
+                            .kindcheck_type(&mut typ)
+                            .map_err(|err| TypeError::KindError(err, typ.clone()))?;
                         typ
                     }
                 };
@@ -1380,7 +1368,9 @@ impl<'a> Typecheck<'a> {
 
     fn kindcheck(&self, typ: &mut ArcType) -> TcResult<()> {
         let mut check = KindCheck::new(&self.environment, &self.symbols, self.kind_cache.clone());
-        check.kindcheck_type(typ)?;
+        check
+            .kindcheck_type(typ)
+            .map_err(|err| TypeError::KindError(err, typ.clone()))?;
         Ok(())
     }
 
@@ -1754,9 +1744,12 @@ impl<'a> Typecheck<'a> {
                             })
                     }
                     Type::Variant(ref row) => {
-                        let replacement = types::walk_move_type_opt(typ, &mut |typ: &ArcType| {
-                            self.create_unifiable_signature_(typ)
-                        });
+                        let replacement = types::visit_type_opt(
+                            row,
+                            &mut types::ControlVisitation(
+                                |typ: &ArcType| self.create_unifiable_signature_(typ),
+                            ),
+                        );
                         let row = replacement.as_ref().unwrap_or(row);
                         let iter = || {
                             row.row_iter()
@@ -1777,7 +1770,9 @@ impl<'a> Typecheck<'a> {
                                 ),
                             )
                         } else {
-                            replacement.clone()
+                            replacement
+                                .clone()
+                                .map(|row| ArcType::from(Type::Variant(row)))
                         }
                     }
                     Type::Hole => Some(self.subs.new_var()),
@@ -1797,27 +1792,36 @@ impl<'a> Typecheck<'a> {
                     }
                     Type::Forall(ref params, ref typ, _) => {
                         for param in params {
-                            self.type_variables.insert(param.id.clone(), typ.clone());
+                            self.named_variables.insert(param.id.clone(), typ.clone());
                         }
                         let result = self.create_unifiable_signature_(typ);
                         // Remove any implicit variables inserted inside the forall since
                         // they were actually bound at this stage
                         for param in params {
-                            self.type_variables.remove(&param.id);
+                            self.named_variables.remove(&param.id);
                         }
                         result.map(|typ| Type::forall(params.clone(), typ))
                     }
-                    Type::Generic(ref generic) => {
+                    Type::Generic(ref generic)
+                        if self.named_variables.get(&generic.id).is_none() =>
+                    {
                         match self.type_variables.get(&generic.id).cloned() {
                             Some(typ) => Some(typ),
                             None => {
+                                let kind = typ.kind().into_owned();
+                                let var = self.subs.new_constrained_var_fn(None, |id| {
+                                    Type::variable(TypeVariable {
+                                        kind: kind.clone(),
+                                        id: id,
+                                    })
+                                });
                                 let skolem: ArcType = Type::skolem(Skolem {
                                     name: generic.id.clone(),
-                                    id: match *self.subs.new_var() {
+                                    id: match *var {
                                         Type::Variable(ref var) => var.id,
                                         _ => unreachable!(),
                                     },
-                                    kind: typ.kind().into_owned(),
+                                    kind,
                                 });
                                 self.type_variables
                                     .insert(generic.id.clone(), skolem.clone());

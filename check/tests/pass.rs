@@ -164,10 +164,10 @@ let f: a -> b -> a = \x y -> x in f 1.0 ()
     let expected = Ok(typ("Float"));
     let expr_expected = Type::forall(
         vec![
-            Generic::new(intern("b"), Kind::typ()),
+            Generic::new(intern("a0"), Kind::typ()),
             Generic::new(intern("a"), Kind::typ()),
         ],
-        Type::function(vec![typ("a"), typ("b")], typ("a")),
+        Type::function(vec![typ("a"), typ("a0")], typ("a")),
     );
 
     assert_req!(result, expected);
@@ -292,7 +292,7 @@ in match Some 1 with
     let result = support::typecheck(text);
     let expected = Ok(typ("Int"));
 
-    assert_eq!(result, expected);
+    assert_req!(result, expected);
 }
 
 #[test]

@@ -281,6 +281,14 @@ impl<T: Substitutable> Substitution<T> {
     where
         T: Clone,
     {
+        self.new_constrained_var_fn(constraint, |var| T::from_variable(self.factory.new(var)))
+    }
+
+    pub fn new_constrained_var_fn<F>(&self, constraint: Option<(Symbol, Constraints<T>)>, f: F) -> T
+    where
+        T: Clone,
+        F: FnOnce(u32) -> T,
+    {
         let var_id = self.variables.len() as u32;
         let id = self.union.borrow_mut().insert(UnionByLevel {
             constraints: constraint.into_iter().collect(),
@@ -288,7 +296,7 @@ impl<T: Substitutable> Substitution<T> {
         });
         assert!(id == self.variables.len());
 
-        let var = T::from_variable(self.factory.new(var_id));
+        let var = f(var_id);
         self.variables.push(var.clone());
         var
     }
@@ -405,8 +413,8 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
         {
             let id_type = self.find_type_for_var(id.get_id());
             let other_type = self.real(typ);
-            if id_type.map_or(false, |x| x == other_type) ||
-                other_type.get_var().map(|y| y.get_id()) == Some(id.get_id())
+            if id_type.map_or(false, |x| x == other_type)
+                || other_type.get_var().map(|y| y.get_id()) == Some(id.get_id())
             {
                 return Ok(None);
             }
