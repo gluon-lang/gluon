@@ -162,18 +162,14 @@ let f: a -> b -> a = \x y -> x in f 1.0 ()
 ";
     let (expr, result) = support::typecheck_expr(text);
     let expected = Ok(typ("Float"));
-    let expr_expected = Type::forall(
-        vec![
-            Generic::new(intern("a0"), Kind::typ()),
-            Generic::new(intern("a"), Kind::typ()),
-        ],
-        Type::function(vec![typ("a"), typ("a0")], typ("a")),
-    );
 
     assert_req!(result, expected);
     match expr.value {
         ast::Expr::LetBindings(ref bindings, _) => {
-            assert_eq!(bindings[0].expr.env_type_of(&env), expr_expected);
+            assert_eq!(
+                bindings[0].expr.env_type_of(&env).to_string(),
+                "a -> b -> a"
+            );
         }
         _ => assert!(false),
     }
@@ -436,9 +432,9 @@ let function_test: Test ((->) a) = {
 function_test.test
 ";
     let result = support::typecheck(text);
-    let expected = Ok(Type::function(vec![typ("a")], typ("Int")));
+    let expected = Ok("forall a . a -> Int".to_string());
 
-    assert_req!(result, expected);
+    assert_req!(result.map(|typ| typ.to_string()), expected);
 }
 
 #[test]
@@ -830,7 +826,10 @@ a.id
         },
         _ => panic!(),
     };
-    let expected = Type::function(vec![typ("a")], typ("a"));
+    let expected = Type::forall(
+        vec![Generic::new(intern("a"), Kind::typ())],
+        Type::function(vec![typ("a")], typ("a")),
+    );
 
     assert_eq!(*t, expected);
 }
