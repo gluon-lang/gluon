@@ -1285,12 +1285,18 @@ impl<'a> Typecheck<'a> {
         }
 
         for alias in &mut resolved_aliases {
-
             // alias.unresolved_type() is a dummy in this context
-            self.named_variables.extend(alias.params().iter().map(|param| (param.id.clone(), alias.unresolved_type().clone())));
+            self.named_variables.extend(
+                alias
+                    .params()
+                    .iter()
+                    .map(|param| (param.id.clone(), alias.unresolved_type().clone())),
+            );
 
 
-            if let Some(typ) = self.create_unifiable_signature2(alias.unresolved_type().remove_forall()) {
+            if let Some(typ) =
+                self.create_unifiable_signature2(alias.unresolved_type().remove_forall())
+            {
                 *alias.unresolved_type_mut() = Type::forall(alias.params().to_owned(), typ);
             }
         }
@@ -1664,6 +1670,46 @@ impl<'a> Typecheck<'a> {
                         Type::extend_row(types.clone(), fields, rest)
                     }).or_else(|| replacement.clone())
                 }
+
+                Type::Forall(ref params, ref typ, Some(ref vars)) => {
+                    let typ = {
+                        let subs = &self.subs;
+                        self.named_variables.extend(
+                            params
+                                .iter()
+                                .zip(vars)
+                                .filter(|&(_, var)| match **var {
+                                    Type::Variable(ref var) => {
+                                        subs.find_type_for_var(var.id).is_some()
+                                    }
+                                    _ => unreachable!(),
+                                })
+                                .map(|(param, var)| (param.id.clone(), var.clone())),
+                        );
+                        typ.instantiate_generics(&mut self.named_variables)
+                    };
+
+                    let new_type = types::walk_move_type_opt(&typ, &mut |typ: &ArcType| {
+                        self.finish_type_(level, generic, i, typ)
+                    });
+                    new_type.map(|typ| {
+                        Type::forall(
+                            params
+                                .iter()
+                                .zip(vars)
+                                .filter(|&(_, var)| match **var {
+                                    Type::Variable(ref var) => {
+                                        self.subs.find_type_for_var(var.id).is_none()
+                                    }
+                                    _ => unreachable!(),
+                                })
+                                .map(|(param, _)| param.clone())
+                                .collect(),
+                            typ,
+                        )
+                    })
+                }
+
                 _ => {
                     let new_type = types::walk_move_type_opt(typ, &mut |typ: &ArcType| {
                         self.finish_type_(level, generic, i, typ)
