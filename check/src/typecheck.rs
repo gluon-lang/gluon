@@ -867,11 +867,6 @@ impl<'a> Typecheck<'a> {
                 exprs: ref mut fields,
                 ref mut base,
             } => {
-                debug!(
-                    "aaaaaaaaaa {:?}",
-                    self.subs.find_type_for_var(8).map(|x| self.subs.real(x))
-                );
-                debug!("{:?}", self.environment.stack);
                 let mut new_types: Vec<Field<_, _>> = Vec::with_capacity(types.len());
 
                 let mut duplicated_fields = FnvSet::default();
@@ -1290,8 +1285,13 @@ impl<'a> Typecheck<'a> {
         }
 
         for alias in &mut resolved_aliases {
-            if let Some(typ) = self.create_unifiable_signature(alias.unresolved_type()) {
-                *alias.unresolved_type_mut() = typ;
+
+            // alias.unresolved_type() is a dummy in this context
+            self.named_variables.extend(alias.params().iter().map(|param| (param.id.clone(), alias.unresolved_type().clone())));
+
+
+            if let Some(typ) = self.create_unifiable_signature2(alias.unresolved_type().remove_forall()) {
+                *alias.unresolved_type_mut() = Type::forall(alias.params().to_owned(), typ);
             }
         }
 
@@ -1710,6 +1710,11 @@ impl<'a> Typecheck<'a> {
     //
     // Also inserts a `forall` for any implicitly declared variables.
     fn create_unifiable_signature(&mut self, typ: &ArcType) -> Option<ArcType> {
+        self.named_variables.clear();
+        self.create_unifiable_signature2(typ)
+    }
+
+    fn create_unifiable_signature2(&mut self, typ: &ArcType) -> Option<ArcType> {
         self.type_variables.enter_scope();
         let result_type = self.create_unifiable_signature_(typ);
         let params = self.type_variables
@@ -1782,7 +1787,7 @@ impl<'a> Typecheck<'a> {
                         ref rest,
                     } => {
                         let new_fields = types::walk_move_types(fields, |field| {
-                            self.create_unifiable_signature(&field.typ)
+                            self.create_unifiable_signature2(&field.typ)
                                 .map(|typ| Field::new(field.name.clone(), typ))
                         });
                         let new_rest = self.create_unifiable_signature_(rest);

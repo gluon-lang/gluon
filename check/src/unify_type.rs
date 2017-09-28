@@ -390,7 +390,7 @@ where
 
             l.zip_match(&r, unifier)
         }
-        (&Type::Forall(ref params, ref l, Some(_)), _) => {
+        (&Type::Forall(ref params, _, Some(_)), _) => {
             let l = expected.instantiate_generics(&mut FnvMap::default());
             Ok(
                 unifier
@@ -399,7 +399,7 @@ where
             )
         }
 
-        (_, &Type::Forall(ref params, ref r, Some(_))) => {
+        (_, &Type::Forall(ref params, _, Some(_))) => {
             let r = actual.instantiate_generics(&mut FnvMap::default());
             Ok(
                 unifier
@@ -407,6 +407,8 @@ where
                     .map(|r| Type::forall(params.clone(), r)),
             )
         }
+
+        (&Type::Skolem(ref l), &Type::Skolem(ref r)) if r.name == l.name => Ok(None),
 
         // Successful unification!
         (lhs, rhs) if lhs == rhs => Ok(None),
@@ -886,8 +888,8 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
             //     // `Typecheck::find`
             //     { id, compose, (<<) }
             // ```
-            (&Type::Forall(_, _, None), _) => {
-                let l = new_skolem_scope(subs, &FnvMap::default(), l);
+            (&Type::Forall(ref params, ref l, None), _) => {
+                unifier.unifier.variables.extend(params.iter().map(|param| (param.id.clone(), subs.new_var())));
                 unifier.try_match_res(&l, r)
             }
             (_, &Type::Variable(ref r)) => {
