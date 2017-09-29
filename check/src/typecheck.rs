@@ -22,10 +22,10 @@ use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
 use base::types::{self, Alias, AliasData, AppVec, ArcType, Field, Generic, PrimitiveEnv,
                   RecordSelector, Skolem, Type, TypeCache, TypeEnv, TypeVariable};
 
-use kindcheck::{self, Error as KindCheckError, KindCheck};
+use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
 use substitution::{self, Constraints, Substitution};
 use rename::RenameError;
-use unify;
+use unify::{self, Error as UnifyError};
 use unify_type::{self, new_skolem_scope, Error as UnifyTypeError};
 
 /// Type representing a single error when checking a type
@@ -60,6 +60,15 @@ pub enum TypeError<I> {
     /// An `Error` ast node was found indicating an invalid parse
     ErrorAst(&'static str),
     Message(String),
+}
+
+impl<I> TypeError<I> {
+    fn from_kind_error(e: KindCheckError<I>, typ: ArcType<I>) -> Self {
+           match e {
+            UnifyError::Other(KindError::UndefinedType(name)) => TypeError::UndefinedType(name),
+            e => TypeError::KindError(e, typ),
+        }
+    }
 }
 
 impl<I> From<RenameError> for TypeError<I> {
@@ -1328,14 +1337,14 @@ impl<'a> Typecheck<'a> {
                         let mut typ = typ.clone();
                         check
                             .kindcheck_type(&mut typ)
-                            .map_err(|err| TypeError::KindError(err, typ.clone()))?;
+                            .map_err(|err| TypeError::from_kind_error(err, typ.clone()))?;
                         Type::forall(args.clone(), typ.clone())
                     }
                     _ => {
                         let mut typ = alias.unresolved_type().clone();
                         check
                             .kindcheck_type(&mut typ)
-                            .map_err(|err| TypeError::KindError(err, typ.clone()))?;
+                            .map_err(|err| TypeError::from_kind_error(err, typ.clone()))?;
                         typ
                     }
                 };
@@ -1376,7 +1385,7 @@ impl<'a> Typecheck<'a> {
         let mut check = KindCheck::new(&self.environment, &self.symbols, self.kind_cache.clone());
         check
             .kindcheck_type(typ)
-            .map_err(|err| TypeError::KindError(err, typ.clone()))?;
+            .map_err(|err| TypeError::from_kind_error(err, typ.clone()))?;
         Ok(())
     }
 
