@@ -224,7 +224,7 @@ pub fn rename(
                 return Ok(candidates().next().map(|tup| tup.0.clone()));
             }
             candidates()
-                .find(|tup| equivalent(&self.env, tup.2.remove_forall(), expected))
+                .find(|tup| equivalent(&self.env, tup.2.remove_forall(), expected.remove_forall()))
                 .map(|tup| Some(tup.0.clone()))
                 .ok_or_else(|| {
                     RenameError::NoMatchingType {
@@ -415,9 +415,18 @@ impl<'a> Unifier<State<'a>, ArcType> for Equivalent {
         match (&**l, &**r) {
             (&Type::Generic(ref gl), &Type::Generic(ref gr)) if gl == gr => Ok(None),
             (&Type::Generic(ref gl), _) => match unifier.unifier.map.get(&gl.id).cloned() {
-                Some(ref typ) => unifier.try_match_res(typ, r),
+                Some(ref typ) => 
+                    unifier.try_match_res(typ, r),
                 None => {
                     unifier.unifier.map.insert(gl.id.clone(), r.clone());
+                    Ok(None)
+                }
+            },
+            (&Type::Skolem(ref gl), _) => match unifier.unifier.map.get(&gl.name).cloned() {
+                Some(ref typ) => 
+                    unifier.try_match_res(typ, r),
+                None => {
+                    unifier.unifier.map.insert(gl.name.clone(), r.clone());
                     Ok(None)
                 }
             },

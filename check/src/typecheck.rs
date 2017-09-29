@@ -1480,7 +1480,7 @@ impl<'a> Typecheck<'a> {
                         self.symbols.symbols(),
                         state,
                         &existing_type,
-                        &symbol_type.skolemize(&mut FnvMap::default()),
+                        &new_skolem_scope(&self.subs, &FnvMap::default(), &&&&&&&&&symbol_type),
                     )
                 };
                 constraints = intersection_constraints
