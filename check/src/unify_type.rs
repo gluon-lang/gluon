@@ -390,21 +390,19 @@ where
 
             l.zip_match(&r, unifier)
         }
-        (&Type::Forall(ref params, _, Some(_)), _) => {
+        (&Type::Forall(_, _, Some(_)), _) => {
             let l = expected.instantiate_generics(&mut FnvMap::default());
             Ok(
                 unifier
                     .try_match_res(&l, &actual)?
-                    .map(|l| Type::forall(params.clone(), l)),
             )
         }
 
-        (_, &Type::Forall(ref params, _, Some(_))) => {
+        (_, &Type::Forall(_, _, Some(_))) => {
             let r = actual.instantiate_generics(&mut FnvMap::default());
             Ok(
                 unifier
                     .try_match_res(expected, &r)?
-                    .map(|r| Type::forall(params.clone(), r)),
             )
         }
 
