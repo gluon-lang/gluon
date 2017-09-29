@@ -39,7 +39,7 @@ fn find_type(s: &str, pos: BytePos) -> Result<ArcType, ()> {
 fn suggest_types(s: &str, pos: BytePos) -> Result<Vec<Suggestion>, ()> {
     let env = MockEnv::new();
 
-    let (mut expr, result) = support::typecheck_partial_expr(s);
+    let (mut expr, _result) = support::typecheck_partial_expr(s);
     let mut vec = completion::suggest(&env, &mut expr, pos);
     vec.sort_by(|l, r| l.name.cmp(&r.name));
     Ok(vec)
@@ -146,9 +146,9 @@ let f x = f x
 "#,
         BytePos::from(11),
     );
-    let expected = Ok(Type::function(vec![typ("a0")], typ("a1")));
+    let expected = Ok("forall a0 a . a -> a0".to_string());
 
-    assert_eq!(result, expected);
+    assert_eq!(result.map(|typ| typ.to_string()), expected);
 }
 
 #[test]
