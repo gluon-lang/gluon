@@ -1006,33 +1006,29 @@ impl<Id> ArcType<Id> {
     where
         Id: Clone + Eq + Hash,
     {
-        visit_type_opt(
-            self,
-            &mut ControlVisitation(|mut typ: &ArcType<Id>| match **typ {
-                Type::Generic(ref generic) => named_variables.get(&generic.id).cloned(),
-                _ => {
-                    if let Type::Forall(ref params, ref inner_type, Some(ref vars)) = **typ {
-                        let iter = params.iter().zip(vars).map(|(param, var)| match **var {
-                            Type::Variable(ref var) => (
-                                param.id.clone(),
-                                Type::skolem(Skolem {
-                                    name: param.id.clone(),
-                                    id: var.id,
-                                    kind: var.kind.clone(),
-                                }),
-                            ),
-                            _ => unreachable!(),
-                        });
-                        named_variables.extend(iter);
-                        typ = inner_type;
-                    }
-                    walk_move_type_opt(
-                        typ,
-                        &mut ControlVisitation(|typ: &ArcType<Id>| typ.skolemize_(named_variables)),
-                    )
+        match **self {
+            Type::Generic(ref generic) => named_variables.get(&generic.id).cloned(),
+            _ => {
+                if let Type::Forall(ref params, _, Some(ref vars)) = **self {
+                    let iter = params.iter().zip(vars).map(|(param, var)| match **var {
+                        Type::Variable(ref var) => (
+                            param.id.clone(),
+                            Type::skolem(Skolem {
+                                name: param.id.clone(),
+                                id: var.id,
+                                kind: var.kind.clone(),
+                            }),
+                        ),
+                        _ => unreachable!(),
+                    });
+                    named_variables.extend(iter);
                 }
-            }),
-        )
+                walk_move_type_opt(
+                    self,
+                    &mut ControlVisitation(|typ: &ArcType<Id>| typ.skolemize_(named_variables)),
+                )
+            }
+        }
     }
 
     pub fn instantiate_generics(&self, named_variables: &mut FnvMap<Id, ArcType<Id>>) -> ArcType<Id>
@@ -1484,17 +1480,20 @@ where
         let doc = match **typ {
             Type::Hole => arena.text("_"),
             Type::Opaque => arena.text("<opaque>"),
-            Type::Forall(ref args, ref typ, _) => chain![arena;
-                chain![arena;
-                    "forall ",
-                    arena.concat(args.iter().map(|arg| {
-                        arena.text(arg.id.as_ref()).append(arena.space())
-                    })),
-                    "."
-                ].group(),
-                arena.space(),
-                top(typ).pretty(printer)
-            ],
+            Type::Forall(ref args, ref typ, _) => {
+                let doc = chain![arena;
+                    chain![arena;
+                        "forall ",
+                        arena.concat(args.iter().map(|arg| {
+                            arena.text(arg.id.as_ref()).append(arena.space())
+                        })),
+                        "."
+                    ].group(),
+                    arena.space(),
+                    top(typ).pretty(printer)
+                ];
+                p.enclose(Prec::Function, arena, doc)
+            }
             Type::Variable(ref var) => arena.text(format!("{}", var.id)),
             Type::Skolem(ref skolem) => arena.text(skolem.name.as_ref()),
             Type::Generic(ref gen) => arena.text(gen.id.as_ref()),
@@ -1841,9 +1840,8 @@ where
     I: Clone,
 {
     match *typ {
-        Type::Forall(ref args, ref typ, _) => {
-            f.visit(typ).map(|typ| Type::forall(args.clone(), typ))
-        }
+        Type::Forall(ref args, ref typ, ref vars) => f.visit(typ)
+            .map(|typ| T::from(Type::Forall(args.clone(), typ, vars.clone()))),
         Type::App(ref id, ref args) => {
             let new_args = walk_move_types(args, |t| f.visit(t));
             merge(id, f.visit(id), args, new_args, Type::app)

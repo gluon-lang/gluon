@@ -3,7 +3,6 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::ops::Deref;
 
-use fnv::FnvMap;
 use pos::{self, BytePos, HasSpan, Span, Spanned};
 use symbol::Symbol;
 use types::{self, Alias, AliasData, ArcType, Type, TypeEnv};
@@ -657,7 +656,7 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
         return alias_type.clone();
     }
 
-    let alias_type = alias_type.skolemize(&mut FnvMap::default());
+    let alias_type = alias_type.remove_forall();
     if let Some((_, ret)) = alias_type.as_function() {
         return get_return_type(env, ret, arg_count - 1);
     }

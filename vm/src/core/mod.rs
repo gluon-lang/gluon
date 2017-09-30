@@ -868,10 +868,11 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
     let function_type = remove_aliases_cow(env, alias_type);
 
     let ret = function_type
+        .remove_forall()
         .as_function()
         .map(|t| Cow::Borrowed(t.1))
         .unwrap_or_else(|| {
-            debug!(
+            warn!(
                 "Call expression with a non function type `{}`",
                 function_type
             );

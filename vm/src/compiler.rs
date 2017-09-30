@@ -473,7 +473,7 @@ impl<'a> Compiler<'a> {
     fn find_field(&self, typ: &ArcType, field: &Symbol) -> Option<FieldAccess> {
         // Remove all type aliases to get the actual record type
         let typ = resolve::remove_aliases_cow(self, typ);
-        let mut iter = typ.row_iter();
+        let mut iter = typ.remove_forall().row_iter();
         match iter.by_ref().position(|f| f.name.name_eq(field)) {
             Some(index) => {
                 for _ in iter.by_ref() {}
@@ -754,7 +754,7 @@ impl<'a> Compiler<'a> {
                     self.compile(expr, function, false)?;
                 }
                 let typ = resolve::remove_aliases_cow(self, &id.typ);
-                match **typ {
+                match **typ.remove_forall() {
                     Type::Record(_) => {
                         let index = function.add_record_map(
                             typ.row_iter().map(|field| field.name.clone()).collect(),
@@ -799,8 +799,8 @@ impl<'a> Compiler<'a> {
             function.emit(CJump(lhs_end as VmIndex + 3)); //Jump to rhs evaluation
             function.emit(Construct { tag: 0, args: 0 });
             function.emit(Jump(0)); //lhs false, jump to after rhs
-            // Dont count the integer added added above as the next part of the code never
-            // pushed it
+                                    // Dont count the integer added added above as the next part of the code never
+                                    // pushed it
             function.stack_size -= 1;
             self.compile(rhs, function, tail_position)?;
             // replace jump instruction
@@ -863,7 +863,8 @@ impl<'a> Compiler<'a> {
             }
             Pattern::Record(ref fields) => {
                 let typ = resolve::remove_aliases(self, pattern_type.clone());
-                match *typ {
+                let typ = typ.remove_forall();
+                match **typ {
                     Type::Record(_) => {
                         let mut field_iter = typ.row_iter();
                         let number_of_fields = field_iter.by_ref().count();

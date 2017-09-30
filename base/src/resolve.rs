@@ -50,6 +50,10 @@ where
 pub fn remove_alias(env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType>, Error> {
     let typ = typ.skolemize(&mut FnvMap::default());
     Ok(peek_alias(env, &typ)?.and_then(|alias| {
+        // Opaque types should only exist as the alias itself
+        if **alias.unresolved_type().remove_forall() == Type::Opaque {
+            return None;
+        }
         alias.unresolved_type().apply_args(typ.unapplied_args())
     }))
 }

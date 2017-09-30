@@ -276,10 +276,35 @@ pub mod generic {
     make_generics!{A B C D E F G H I J K L M N O P Q R X Y Z}
 }
 
+fn gather_generics(params: &mut Vec<types::Generic<Symbol>>, typ: &ArcType) {
+    match **typ {
+        Type::Generic(ref generic) => {
+            if params.iter().all(|param| param.id != generic.id) {
+                params.push(generic.clone());
+            }
+        }
+        Type::Forall(..) => (),
+        _ => {
+            types::walk_move_type_opt(typ, &mut types::ControlVisitation(|typ: &ArcType| {
+                gather_generics(params, typ);
+                None
+            }));
+        }
+    }
+}
+
 /// Trait which maps a type in rust to a type in gluon
 pub trait VmType {
     /// A version of `Self` which implements `Any` allowing a `TypeId` to be retrieved
     type Type: ?Sized + Any;
+
+    fn make_forall_type(vm: &Thread) -> ArcType {
+        let typ = Self::make_type(vm);
+        let mut params: Vec<types::Generic<_>> = Vec::new();
+        gather_generics(&mut params, &typ);
+
+        Type::forall(params, typ)
+    }
 
     /// Creates an gluon type which maps to `Self` in rust
     fn make_type(vm: &Thread) -> ArcType {
@@ -1301,7 +1326,7 @@ pub mod record {
     {
         type Type = HCons<(&'static str, H::Type), T::Type>;
         fn field_types(vm: &Thread, fields: &mut Vec<types::Field<Symbol, ArcType>>) {
-            fields.push(types::Field::new(Symbol::from(F::name()), H::make_type(vm)));
+            fields.push(types::Field::new(Symbol::from(F::name()), H::make_forall_type(vm)));
             T::field_types(vm, fields);
         }
     }
@@ -1604,24 +1629,11 @@ macro_rules! make_vm_function {
 impl <$($args: VmType,)* R: VmType> VmType for fn ($($args),*) -> R {
     #[allow(non_snake_case)]
     type Type = fn ($($args::Type),*) -> R::Type;
+
     #[allow(non_snake_case)]
     fn make_type(vm: &Thread) -> ArcType {
         let args = vec![$(make_type::<$args>(vm)),*];
-        let typ = vm.global_env().type_cache().function(args, make_type::<R>(vm));
-        let mut params: Vec<types::Generic<_>> = Vec::new();
-        types::visit_type_opt(&typ, &mut |typ: &ArcType| {
-            match **typ {
-                Type::Generic(ref generic) => {
-                    if params.iter().all(|param| param.id != generic.id) {
-                        params.push(generic.clone());
-                    }
-                }
-                _ => (),
-            }
-            None
-        });
-
-        Type::forall(params, typ)
+        vm.global_env().type_cache().function(args, make_type::<R>(vm))
     }
 }
 

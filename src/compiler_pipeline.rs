@@ -522,7 +522,7 @@ pub fn run_io<'vm, E>(
     let ExecuteValue {
         typ: actual, value, ..
     } = v;
-    if check_signature(&*vm.get_env(), &actual, &IO::<A>::make_type(vm)) {
+    if check_signature(&*vm.get_env(), &actual, &IO::<A>::make_forall_type(vm)) {
         vm.execute_io(*value)
             .map(move |(_, value)| {
                 // The type of the new value will be `a` instead of `IO a`

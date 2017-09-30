@@ -438,7 +438,7 @@ impl Thread {
         };
         self.set_global(
             Symbol::from(name),
-            T::make_type(self),
+            T::make_forall_type(self),
             Metadata::default(),
             value,
         )

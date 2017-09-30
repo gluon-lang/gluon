@@ -432,7 +432,7 @@ let function_test: Test ((->) a) = {
 function_test.test
 ";
     let result = support::typecheck(text);
-    let expected = Ok("forall a . a -> Int".to_string());
+    let expected = Ok("a -> Int".to_string());
 
     assert_req!(result.map(|typ| typ.to_string()), expected);
 }
@@ -468,7 +468,7 @@ c
 ";
     let result = support::typecheck(text);
 
-    assert!(result.is_ok());
+    assert!(result.is_ok(), "{}", result.unwrap_err());
 }
 
 #[test]
@@ -1199,6 +1199,54 @@ let make_Category cat : Category cat -> _ =
     { id, compose, (<<) }
 
 make_Category category_Function
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn functor_function() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+type Category (cat : Type -> Type -> Type) = {
+    id : cat a a,
+    compose : cat b c -> cat a b -> cat a c
+}
+
+let category_Function : Category (->) = {
+    id = \x -> x,
+    compose = \f g x -> f (g x)
+}
+
+let id : a -> a = category_Function.id
+
+type Functor f = {
+    map : forall a b . (a -> b) -> f a -> f b
+}
+
+let functor_Function : Functor ((->) a) = { map = category_Function.compose }
+0
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn type_field_and_make_function_do_not_introduce_forall() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+type Test a = { x : a }
+let id x : forall a . a -> a = x
+let make_Category id : (forall a . a -> a) -> _ =
+
+    { id, }
+let x = { Test, make_Category }
+let { Test } = x
+1
 "#;
     let result = support::typecheck(text);
 

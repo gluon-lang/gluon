@@ -478,7 +478,10 @@ impl Compiler {
             .and_then(move |(value, actual)| unsafe {
                 FutureValue::sync(match T::from_value(vm, Variants::new(&value)) {
                     Some(value) => Ok((value, actual)),
-                    None => Err(Error::from(VmError::WrongType(expected, actual))),
+                    None => {
+                        error!("Unable to extract value {:?}", value);
+                        Err(Error::from(VmError::WrongType(expected, actual)))
+                    }
                 })
             })
             .boxed()

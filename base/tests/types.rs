@@ -1,4 +1,3 @@
-extern crate collect_mac;
 extern crate gluon_base as base;
 extern crate pretty;
 

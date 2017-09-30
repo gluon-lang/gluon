@@ -102,7 +102,7 @@ type Num a = {
     negate : a -> a
 }
 
-type Category (cat : Type -> Type -> Type) = { id : cat a a, compose : cat b c -> cat a b -> cat a c }
+type Category (cat : Type -> Type -> Type) = { id : forall a . cat a a, compose : forall a b c . cat b c -> cat a b -> cat a c }
 
 let make_Category category : Category cat -> _ =
     let { id, compose } = category
@@ -135,7 +135,7 @@ type Functor f = {
     /// # Note
     ///
     /// * Known as `fmap` in Haskell
-    map : (a -> b) -> f a -> f b
+    map : forall a b . (a -> b) -> f a -> f b
 }
 
 type Applicative (f : Type -> Type) = {
@@ -145,7 +145,7 @@ type Applicative (f : Type -> Type) = {
     /// # Note
     ///
     /// * Known as `(<*>)` in Haskell
-    apply : f (a -> b) -> f a -> f b,
+    apply : forall a b . f (a -> b) -> f a -> f b,
     /// Wrap the supplied value in `f`
     ///
     /// # Examples
@@ -157,12 +157,10 @@ type Applicative (f : Type -> Type) = {
     /// # Note
     ///
     /// * Known as `pure` in Haskell
-    wrap : a -> f a
+    wrap : forall a . a -> f a
 }
 
-// FIXME: Causes panic in VM: thread 'main' panicked at 'Op Split called on non data type', tests/main.rs:32:8
-// let make_Applicative applicative : Applicative f -> _ =
-let make_Applicative applicative =
+let make_Applicative applicative : Applicative f -> _ =
     let { functor, apply, wrap } = applicative
 
     let (<*>) : _ (a -> b) -> _ a -> _ b = apply
@@ -175,7 +173,8 @@ let make_Applicative applicative =
 
     { functor, apply, wrap, (<*>), (<*), (*>), map2, map3 }
 
-type Alternative f = { applicative : Applicative f, or : f a -> f a -> f a, empty : f a }
+type Alternative f = { applicative : Applicative f,
+    or : forall a . f a -> f a -> f a, empty : forall a . f a }
 
 let make_Alternative alternative : Alternative f -> _ =
     let { applicative, or, empty } = alternative
@@ -213,7 +212,7 @@ type Monad (m : Type -> Type) = {
     ///
     /// * Known as `(=<<) or `flip (>>=)` in Haskell
     /// * Known as `Option::and_then` and `Result::and_then` in Rust
-    flat_map : (a -> m b) -> m a -> m b
+    flat_map : forall a b . (a -> m b) -> m a -> m b
 }
 
 let make_Monad monad : Monad m -> _ =
@@ -228,11 +227,11 @@ let make_Monad monad : Monad m -> _ =
     { applicative, flat_map, (=<<), (>>=), join }
 
 /// `Show a` represents a conversion function from `a` to a readable string.
-type Show a = { show : a -> String }
+type Show a = { show : forall a . a -> String }
 
 type Foldable (f : Type -> Type) = {
-    foldr : (a -> b -> b) -> b -> f a -> b,
-    foldl : (b -> a -> b) -> b -> f a -> b
+    foldr : forall a b . (a -> b -> b) -> b -> f a -> b,
+    foldl : forall a b . (b -> a -> b) -> b -> f a -> b
 }
 
 let make_Foldable foldable : Foldable t -> _ =
@@ -292,7 +291,7 @@ let make_Foldable foldable : Foldable t -> _ =
 type Traversable t = {
     functor : Functor t,
     foldable : Foldable t,
-    traverse : Applicative m -> (a -> m b) -> t a -> m (t b)
+    traverse : forall a b m . Applicative m -> (a -> m b) -> t a -> m (t b)
 }
 
 let make_Traversable traversable : Traversable t -> _ =
@@ -346,3 +345,5 @@ let make_Traversable traversable : Traversable t -> _ =
 
     Show,
 }
+let { Functor } = x
+x
