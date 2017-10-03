@@ -90,7 +90,7 @@ REPL features:
 
 [Tutorial (WIP)](https://github.com/gluon-lang/gluon/blob/master/TUTORIAL.md)
 
-[Rustdoc](https://gluon-lang.github.io/gluon/gluon/index.html)
+[Rustdoc](https://docs.rs/gluon/*/gluon/index.html)
 
 ## Examples
 
