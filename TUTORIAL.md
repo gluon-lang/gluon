@@ -510,13 +510,13 @@ let (result, _) = Compiler::new()
 assert_eq!(result, "Hello world");
 ```
 
-[Rustdoc]:https://gluon-lang.github.io/gluon/gluon/index.html
-[new_vm]:https://gluon-lang.github.io/gluon/gluon/fn.new_vm.html
-[RootedThread]:https://gluon-lang.github.io/gluon/gluon/struct.RootedThread.html
-[Thread]:https://gluon-lang.github.io/gluon/gluon/struct.Thread.html
-[run_expr]:https://gluon-lang.github.io/gluon/gluon/struct.Compiler.html#method.run_expr
-[Compiler struct]:https://gluon-lang.github.io/gluon/gluon/struct.Compiler.html
-[define_global]:https://gluon-lang.github.io/gluon/vm/thread/struct.Thread.html#method.define_global
+[Rustdoc]:https://docs.rs/gluon/*/gluon/index.html
+[new_vm]:https://docs.rs/gluon/*/gluon/fn.new_vm.html
+[RootedThread]:https://docs.rs/gluon/*/gluon/struct.RootedThread.html
+[Thread]:https://docs.rs/gluon/*/gluon/struct.Thread.html
+[run_expr]:https://docs.rs/gluon/*/gluon/struct.Compiler.html#method.run_expr
+[Compiler struct]:https://docs.rs/gluon/*/gluon/struct.Compiler.html
+[define_global]:https://docs.rs/gluon/*/vm/thread/struct.Thread.html#method.define_global
 [primitives]:https://github.com/gluon-lang/gluon/blob/master/vm/src/primitives.rs
 [string]:http://doc.rust-lang.org/std/primitive.str.html
 [float]:http://doc.rust-lang.org/std/primitive.f64.html
