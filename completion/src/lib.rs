@@ -1,4 +1,7 @@
 //! Primitive auto completion and type quering on ASTs
+#![doc(html_root_url = "https://docs.rs/gluon_completion/0.5.0")] // # GLUON
+
+extern crate gluon_base as base;
 
 use std::iter::once;
 use std::cmp::Ordering;
