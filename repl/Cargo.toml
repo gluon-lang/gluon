@@ -16,8 +16,9 @@ doc = false
 
 [dependencies]
 
-gluon_vm = { version = "0.5.0", path = "../vm" } # GLUON
 gluon = { version = "0.5.0", path = ".." } # GLUON
+gluon_vm = { version = "0.5.0", path = "../vm" } # GLUON
+gluon_format = { version = "0.5.0", path = "../format" } # GLUON
 
 futures = "0.1.11"
 clap = "2.22.0"

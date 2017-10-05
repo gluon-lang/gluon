@@ -24,6 +24,7 @@ pub extern crate gluon_check as check;
 pub extern crate gluon_parser as parser;
 #[macro_use]
 pub extern crate gluon_vm as vm;
+pub extern crate gluon_format as format;
 
 pub mod compiler_pipeline;
 pub mod import;

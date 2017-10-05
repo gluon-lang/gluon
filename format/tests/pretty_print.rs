@@ -13,8 +13,6 @@ use std::path::Path;
 
 use parser::format_expr;
 
-mod support;
-
 fn test_format(name: &str) {
     let _ = env_logger::init();
 

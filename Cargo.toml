@@ -26,6 +26,7 @@ gluon_base = { path = "base", version = "0.5.0" } # GLUON
 gluon_check = { path = "check", version = "0.5.0" } # GLUON
 gluon_parser = { path = "parser", version = "0.5.0" } # GLUON
 gluon_vm = { path = "vm", version = "0.5.0" } # GLUON
+gluon_format = { path = "format", version = "0.5.0" } #GLUON
 
 log = "0.3.6"
 quick-error = "1.0.0"
@@ -65,7 +66,7 @@ bincode = "0.8.0"
 default = ["regex"]
 serialization = ["serde", "serde_state", "serde_derive_state", "gluon_vm/serialization"]
 
-test = ["serialization", "gluon_vm/test", "gluon_check/test", "gluon_parser/test"]
+test = ["serialization", "gluon_vm/test", "gluon_check/test", "gluon_parser/test", "gluon_format/test"]
 nightly = ["compiletest_rs"]
 
 
