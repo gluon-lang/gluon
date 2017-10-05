@@ -5,14 +5,14 @@ extern crate env_logger;
 extern crate pretty_assertions;
 
 extern crate gluon_base as base;
-extern crate gluon_parser as parser;
+extern crate gluon_format as format;
 
 use std::env;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
 
-use parser::format_expr;
+use format::format_expr;
 
 fn test_format(name: &str) {
     let _ = env_logger::init();
@@ -27,7 +27,7 @@ fn test_format(name: &str) {
     let out_str = format_expr(&contents).unwrap();
 
     if contents != out_str {
-        let out_path = Path::new(env::var("OUT_DIR").unwrap()).join(name.file_name().unwrap());
+        let out_path = Path::new(&env::var("OUT_DIR").unwrap()).join(name.file_name().unwrap());
         File::create(out_path)
             .unwrap()
             .write_all(out_str.as_bytes())
