@@ -16,6 +16,7 @@ doc = false
 
 [dependencies]
 
+gluon_completion = { path = "../completion", version = "0.5.0" } # GLUON
 gluon_vm = { version = "0.5.0", path = "../vm" } # GLUON
 gluon = { version = "0.5.0", path = ".." } # GLUON
 

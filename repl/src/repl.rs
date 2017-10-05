@@ -1,5 +1,7 @@
 extern crate rustyline;
 
+extern crate gluon_completion as completion;
+
 use std::error::Error as StdError;
 use std::fmt;
 use std::sync::Mutex;
@@ -91,7 +93,6 @@ fn find_info(args: WithVM<RootStr>) -> IO<Result<String, String>> {
 
 fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonResult<Vec<String>> {
     use base::pos::BytePos;
-    use check::completion;
     use gluon::compiler_pipeline::*;
 
     let mut compiler = Compiler::new();
