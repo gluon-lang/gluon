@@ -8,8 +8,10 @@
 //! difficult to forget a stage.
 
 use std::borrow::{Borrow, BorrowMut};
+#[cfg(feature = "serde")]
 use std::result::Result as StdResult;
 
+#[cfg(feature = "serde")]
 use either::Either;
 
 use base::ast::SpannedExpr;
