@@ -35,6 +35,7 @@ pub use vm::thread::{RootedThread, Thread};
 
 pub use futures::Future;
 
+#[cfg(feature = "serialization")]
 use either::Either;
 
 use std::result::Result as StdResult;
