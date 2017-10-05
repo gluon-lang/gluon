@@ -123,7 +123,6 @@ pub struct BytecodeFunction {
 impl Traverseable for BytecodeFunction {
     fn traverse(&self, gc: &mut Gc) {
         self.inner_functions.traverse(gc);
-        self.globals.traverse(gc);
     }
 }
 

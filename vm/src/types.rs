@@ -29,8 +29,6 @@ pub enum Instruction {
     PushUpVar(VmIndex),
     /// Push the value at `index`
     Push(VmIndex),
-    /// Push the value at `index`
-    PushGlobal(VmIndex),
     /// Call a function by passing it `args` number of arguments. The function is at the index in
     /// the stack just before the arguments. After the call is all arguments are removed and the
     /// function is replaced by the result of the call.
@@ -123,7 +121,7 @@ impl Instruction {
     /// Returns by how much the stack is adjusted when executing the instruction `self`.
     pub fn adjust(&self) -> i32 {
         match *self {
-            PushInt(_) | PushByte(_) | PushFloat(_) | PushString(_) | Push(_) | PushGlobal(_) => 1,
+            PushInt(_) | PushByte(_) | PushFloat(_) | PushString(_) | Push(_) => 1,
             Call(n) => -(n as i32),
             TailCall(n) => -(n as i32),
             Construct { args, .. } | ConstructRecord { args, .. } | ConstructArray(args) => {

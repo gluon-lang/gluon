@@ -24,7 +24,7 @@ use field_map::FieldMap;
 use interner::InternedStr;
 use macros::MacroEnv;
 use api::{Getable, Pushable, VmType};
-use compiler::{CompiledFunction, UpvarInfo};
+use compiler::{CompiledFunction, CompiledModule, UpvarInfo};
 use gc::{DataDef, Gc, GcPtr, Generation, Move};
 use source_map::LocalIter;
 use stack::{Frame, Stack, StackFrame, State};
@@ -714,9 +714,14 @@ impl ThreadInternal for Thread {
         instructions: Vec<Instruction>,
     ) -> Result<()> {
         let id = Symbol::from(name);
-        let mut compiled_fn = CompiledFunction::new(args, id.clone(), typ.clone(), "".into());
-        compiled_fn.instructions = instructions;
-        let closure = self.global_env().new_global_thunk(compiled_fn)?;
+        let mut compiled_module = CompiledModule::from(CompiledFunction::new(
+            args,
+            id.clone(),
+            typ.clone(),
+            "".into(),
+        ));
+        compiled_module.function.instructions = instructions;
+        let closure = self.global_env().new_global_thunk(compiled_module)?;
         self.set_global(id, typ, Metadata::default(), Closure(closure))
             .unwrap();
         Ok(())
@@ -1481,7 +1486,7 @@ impl<'b> ExecuteContext<'b> {
             );
         }
         while let Some(&instr) = instructions.get(index) {
-            debug_instruction(&self.stack, index, instr, function);
+            debug_instruction(&self.stack, index, instr);
 
             if self.hook.flags.contains(LINE_FLAG) {
                 if let Some(ref mut hook) = self.hook.function {
@@ -1517,10 +1522,6 @@ impl<'b> ExecuteContext<'b> {
                 PushString(string_index) => {
                     self.stack
                         .push(String(function.strings[string_index as usize].inner()));
-                }
-                PushGlobal(i) => {
-                    let x = function.globals[i as usize];
-                    self.stack.push(x);
                 }
                 PushFloat(f) => self.stack.push(Float(f)),
                 Call(args) => {
@@ -1876,12 +1877,7 @@ where
     stack.stack.push(result);
 }
 
-fn debug_instruction(
-    stack: &StackFrame,
-    index: usize,
-    instr: Instruction,
-    function: &BytecodeFunction,
-) {
+fn debug_instruction(stack: &StackFrame, index: usize, instr: Instruction) {
     debug!(
         "{:?}: {:?} -> {:?} {:?}",
         index,
@@ -1895,7 +1891,6 @@ fn debug_instruction(
                 }
                 x
             }
-            PushGlobal(i) => function.globals.get(i as usize).cloned(),
             NewClosure { .. } | MakeClosure { .. } => Some(Int(stack.len() as isize)),
             _ => None,
         }

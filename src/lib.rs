@@ -57,7 +57,7 @@ use vm::Variants;
 use vm::api::{Getable, Hole, OpaqueValue, VmType};
 use vm::Error as VmError;
 use vm::future::{BoxFutureValue, FutureValue};
-use vm::compiler::CompiledFunction;
+use vm::compiler::CompiledModule;
 use vm::thread::ThreadInternal;
 use vm::macros;
 use compiler_pipeline::*;
@@ -257,12 +257,12 @@ impl Compiler {
         filename: &str,
         expr_str: &str,
         expr: &SpannedExpr<Symbol>,
-    ) -> Result<CompiledFunction> {
+    ) -> Result<CompiledModule> {
         TypecheckValue {
             expr: expr,
             typ: vm.global_env().type_cache().hole(),
         }.compile(self, vm, filename, expr_str, ())
-            .map(|result| result.function)
+            .map(|result| result.module)
     }
 
     /// Compiles the source code `expr_str` into bytecode serialized using `serializer`
