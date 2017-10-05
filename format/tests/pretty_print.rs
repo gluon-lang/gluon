@@ -7,6 +7,7 @@ extern crate pretty_assertions;
 extern crate gluon_base as base;
 extern crate gluon_parser as parser;
 
+use std::env;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
@@ -26,7 +27,7 @@ fn test_format(name: &str) {
     let out_str = format_expr(&contents).unwrap();
 
     if contents != out_str {
-        let out_path = Path::new(env!("OUT_DIR")).join(name.file_name().unwrap());
+        let out_path = Path::new(env::var("OUT_DIR").unwrap()).join(name.file_name().unwrap());
         File::create(out_path)
             .unwrap()
             .write_all(out_str.as_bytes())
