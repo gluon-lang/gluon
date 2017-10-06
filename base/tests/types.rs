@@ -7,7 +7,6 @@ use pretty::{Arena, DocAllocator};
 
 use base::kind::Kind;
 use base::types::*;
-use base::pretty_print::Printer;
 use base::source::Source;
 
 fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
@@ -226,7 +225,7 @@ fn break_record() {
     );
     let arena = Arena::new();
     let source = Source::new("");
-    let printer = Printer::new(&arena, &source);
+    let printer = pretty_print::Printer::new(&arena, &source);
     let typ = arena
         .text("aaaaaaaaabbbbbbbbbbcccccccccc ")
         .append(pretty_print(&printer, &typ))

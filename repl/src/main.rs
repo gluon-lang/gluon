@@ -12,12 +12,14 @@ extern crate log;
 extern crate gluon;
 #[macro_use]
 extern crate gluon_vm;
+extern crate gluon_format;
 
 use std::io::{self, Write};
 
 use gluon::base;
 use gluon::parser;
 use gluon::vm;
+use gluon::format;
 
 use base::error::InFile;
 
@@ -47,7 +49,7 @@ fn init_env_logger() {
 fn init_env_logger() {}
 
 fn format(writer: &mut Write, buffer: &str) -> Result<usize> {
-    use gluon::parser::format_expr;
+    use format::format_expr;
 
     let output = format_expr(buffer).map_err(|err| InFile::new("", buffer, err))?;
     writer.write_all(output.as_bytes())?;

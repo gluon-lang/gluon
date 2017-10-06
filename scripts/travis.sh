@@ -8,6 +8,7 @@
   cargo test --features test --package gluon_check &&
   cargo test --features test --package gluon_completion &&
   cargo test --features test --package gluon_vm &&
+  cargo test --features test --package gluon_format &&
   cargo test --features test --package gluon &&
   cargo test --features test --package gluon_repl &&
   cargo test --features test --package gluon_c-api &&
