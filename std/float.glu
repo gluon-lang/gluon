@@ -62,5 +62,5 @@ let show : Show Float = {
     num,
     show,
     ..
-    float_prim
+    import! "float_prim"
 }

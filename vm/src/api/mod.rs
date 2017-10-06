@@ -6,7 +6,7 @@ use base::scoped_map::ScopedMap;
 use stack::StackFrame;
 use vm::{self, Root, RootStr, RootedValue, Status, Thread};
 use value::{ArrayDef, ArrayRepr, Cloner, DataStruct, Def, ExternFunction, GcStr, Value, ValueArray};
-use thread::{self, Context, RootedThread};
+use thread::{self, Context, RootedThread, VmRoot};
 use thread::ThreadInternal;
 use base::types::{self, ArcType, Type};
 use types::{VmIndex, VmInt, VmTag};
@@ -390,6 +390,16 @@ pub trait Pushable<'vm>: AsyncPushable<'vm> {
     /// to the stack and `Ok(())` should be returned. If the call is unsuccessful `Status:Error`
     /// should be returned and the stack should be left intact
     fn push(self, vm: &'vm Thread, context: &mut Context) -> Result<()>;
+
+    fn marshal<T>(self, vm: &'vm Thread) -> Result<RootedValue<T>>
+    where
+        Self: Sized,
+        T: VmRoot<'vm>,
+    {
+        let mut context = vm.context();
+        self.push(vm, &mut context)?;
+        Ok(vm.root_value(context.stack.pop()))
+    }
 }
 
 /// Trait which allows rust values to be retrieved from the virtual machine

@@ -1,7 +1,8 @@
-let { assert }  = import! "std/test.glu"
+let { assert } = import! "std/test.glu"
 let int = import! "std/int.glu"
 let { (==) } = int.eq
 let { Bool } = import! "std/bool.glu"
+let { ref, (<-), load } = import! "reference"
 
 let ri = ref 0
 assert (0 == load ri)

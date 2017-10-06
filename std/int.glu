@@ -61,5 +61,5 @@ let show : Show Int = {
     num,
     show,
     ..
-    int_prim
+    import! "int_prim"
 }

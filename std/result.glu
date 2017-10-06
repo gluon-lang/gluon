@@ -3,6 +3,7 @@ let { Eq, Ord, Ordering, Show } = prelude
 let { Functor, Applicative, Monad, Foldable, Traversable } = prelude
 let { Result } = import! "std/types.glu"
 let { Bool } = import! "std/bool.glu"
+let string = import! "std/string.glu"
 
 let unwrap_ok res : Result e a -> a =
     match res with
@@ -78,7 +79,7 @@ let traversable : Traversable (Result e) = {
 }
 
 let show : Show e -> Show t -> Show (Result e t) = \e t ->
-    let (++) = string_prim.append
+    let (++) = string.append
 
     let show o =
         match o with

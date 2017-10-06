@@ -26,13 +26,19 @@ where
     pub fn sync_or_error(self) -> Result<F::Item, F::Error> {
         match self {
             FutureValue::Value(v) => v,
-            FutureValue::Future(_) => Err(
-                Error::Message("Future needs to be resolved asynchronously".into()).into(),
-            ),
+            FutureValue::Future(_) => {
+                Err(Error::Message("Future needs to be resolved asynchronously".into()).into())
+            }
             FutureValue::Polled => {
                 ice!("`FutureValue` may not be polled again if it contained a value")
             }
         }
+    }
+}
+
+impl<T, E> From<Result<T, E>> for FutureValue<FutureResult<T, E>> {
+    fn from(result: Result<T, E>) -> FutureValue<FutureResult<T, E>> {
+        FutureValue::Value(result)
     }
 }
 

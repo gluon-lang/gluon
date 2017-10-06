@@ -3,7 +3,7 @@ use std::result::Result as StdResult;
 use std::string::String as StdString;
 use std::str::FromStr;
 
-use {Error, Variants};
+use {Error, ExternModule, Variants};
 use primitives as prim;
 use api::{generic, primitive, Array, Generic, Getable, RuntimeResult, WithVM};
 use api::generic::A;
@@ -240,11 +240,12 @@ extern "C" fn error(_: &Thread) -> Status {
 }
 
 #[allow(non_camel_case_types)]
-pub fn load(vm: &Thread) -> Result<()> {
+pub fn load_float(thread: &Thread) -> Result<ExternModule> {
     use std::f64;
     type float_prim = f64;
-    vm.define_global(
-        "float_prim",
+
+    ExternModule::new(
+        thread,
         record! {
             digits => f64::DIGITS,
             epsilon => f64::EPSILON,
@@ -307,11 +308,14 @@ pub fn load(vm: &Thread) -> Result<()> {
             atanh => primitive!(1 float_prim::atanh),
             parse => named_primitive!(1, "float_prim.parse", parse::<f64>)
         },
-    )?;
+    )
+}
 
+#[allow(non_camel_case_types)]
+pub fn load_int(vm: &Thread) -> Result<ExternModule> {
     use types::VmInt as int_prim;
-    vm.define_global(
-        "int_prim",
+    ExternModule::new(
+        vm,
         record! {
             min_value => int_prim::min_value(),
             max_value => int_prim::max_value(),
@@ -330,18 +334,24 @@ pub fn load(vm: &Thread) -> Result<()> {
             is_negative => primitive!(1 int_prim::is_negative),
             parse => named_primitive!(1, "int_prim.parse", parse::<VmInt>)
         },
-    )?;
+    )
+}
 
+#[allow(non_camel_case_types)]
+pub fn load_array(vm: &Thread) -> Result<ExternModule> {
     use self::array;
-    vm.define_global(
-        "array",
+    ExternModule::new(
+        vm,
         record! {
             len => primitive!(1 array::len),
             index => primitive!(2 array::index),
             append => primitive!(2 array::append)
         },
-    )?;
+    )
+}
 
+#[allow(non_camel_case_types)]
+pub fn load_string(vm: &Thread) -> Result<ExternModule> {
     use self::string;
     type string_prim = str;
     vm.define_global(
@@ -352,8 +362,8 @@ pub fn load(vm: &Thread) -> Result<()> {
         "string_eq",
         named_primitive!(2, "string_eq", <str as PartialEq>::eq),
     )?;
-    vm.define_global(
-        "string_prim",
+    ExternModule::new(
+        vm,
         record! {
             len => primitive!(1 string_prim::len),
             is_empty => primitive!(1 string_prim::is_empty),
@@ -382,12 +392,15 @@ pub fn load(vm: &Thread) -> Result<()> {
             char_at => named_primitive!(2, "string_prim.char_at", string::char_at),
             as_bytes => primitive!(1 string_prim::as_bytes)
         },
-    )?;
+    )
+}
 
+#[allow(non_camel_case_types)]
+pub fn load_char(vm: &Thread) -> Result<ExternModule> {
     use std::char;
     type char_prim = char;
-    vm.define_global(
-        "char_prim",
+    ExternModule::new(
+        vm,
         record! {
             is_digit => primitive!(2 char_prim::is_digit),
             to_digit => primitive!(2 char_prim::to_digit),
@@ -401,8 +414,11 @@ pub fn load(vm: &Thread) -> Result<()> {
             is_control => primitive!(1 char_prim::is_control),
             is_numeric => primitive!(1 char_prim::is_numeric)
         },
-    )?;
+    )
+}
 
+#[allow(non_camel_case_types)]
+pub fn load(vm: &Thread) -> Result<()> {
     vm.define_global(
         "prim",
         record! {
@@ -422,7 +438,5 @@ pub fn load(vm: &Thread) -> Result<()> {
         primitive::<fn(StdString) -> Generic<A>>("error", prim::error),
     )?;
 
-    ::lazy::load(vm)?;
-    ::reference::load(vm)?;
     Ok(())
 }

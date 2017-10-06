@@ -341,34 +341,28 @@ impl Compiler {
         vm: &'vm Thread,
         filename: &str,
     ) -> BoxFutureValue<'vm, (), Error> {
-        use std::borrow::Cow;
-        use std::fs::File;
-        use std::io::Read;
+        use macros::MacroExpander;
 
-        let result = (|| -> Result<_> {
-            // Use the import macro's path resolution if it exists so that we mimick the import
-            // macro as close as possible
-            let opt_macro = vm.get_macros().get("import");
-            match opt_macro
-                .as_ref()
-                .and_then(|mac| mac.downcast_ref::<Import>())
-            {
-                Some(import) => Ok(import.read_file(filename)?),
-                None => {
-                    let mut buffer = StdString::new();
-                    {
-                        let mut file = File::open(filename)?;
-                        file.read_to_string(&mut buffer)?;
-                    }
-                    Ok(Cow::Owned(buffer))
-                }
+        // Use the import macro's path resolution if it exists so that we mimick the import
+        // macro as close as possible
+        let opt_macro = vm.get_macros().get("import");
+        let owned_import;
+        let import = match opt_macro
+            .as_ref()
+            .and_then(|mac| mac.downcast_ref::<Import>())
+        {
+            Some(import) => import,
+            None => {
+                owned_import = Import::new(DefaultImporter);
+                &owned_import
             }
-        })();
-        let name = filename_to_module(filename);
-        match result {
-            Ok(buffer) => self.load_script_async(vm, &name, &buffer),
-            Err(err) => FutureValue::Value(Err(err)),
-        }
+        };
+        let module_name = Symbol::from(filename_to_module(filename));
+        FutureValue::from(
+            import
+                .load_module(vm, &mut MacroExpander::new(vm), &module_name)
+                .map_err(Error::from),
+        ).boxed()
     }
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
@@ -540,6 +534,8 @@ pub fn filename_to_module(filename: &str) -> StdString {
 /// Creates a new virtual machine with support for importing other modules and with all primitives
 /// loaded.
 pub fn new_vm() -> RootedThread {
+    use import::add_extern_module;
+
     let vm = RootedThread::new();
     let gluon_path = env::var("GLUON_PATH").unwrap_or_else(|_| String::from("."));
     let import = Import::new(DefaultImporter);
@@ -552,6 +548,16 @@ pub fn new_vm() -> RootedThread {
         .sync_or_error()
         .unwrap();
     ::vm::primitives::load(&vm).expect("Loaded primitives library");
+
+    add_extern_module(&vm, "int_prim", ::vm::primitives::load_int);
+    add_extern_module(&vm, "float_prim", ::vm::primitives::load_float);
+    add_extern_module(&vm, "string_prim", ::vm::primitives::load_string);
+    add_extern_module(&vm, "char_prim", ::vm::primitives::load_char);
+    add_extern_module(&vm, "array", ::vm::primitives::load_array);
+
+    add_extern_module(&vm, "lazy", ::vm::lazy::load);
+    add_extern_module(&vm, "reference", ::vm::reference::load);
+
     ::vm::channel::load(&vm).expect("Loaded channel library");
     ::vm::debug::load(&vm).expect("Loaded debug library");
     ::io::load(&vm).expect("Loaded IO library");

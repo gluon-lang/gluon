@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::fs::File;
 use std::io;
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use itertools::Itertools;
 
@@ -14,9 +14,12 @@ use base::ast::{Expr, Literal, SpannedExpr, TypedIdent};
 use base::metadata::Metadata;
 use base::pos;
 use base::symbol::Symbol;
+
+use vm::{ExternLoader, ExternModule};
 use vm::macros::{Error as MacroError, Macro, MacroExpander};
 use vm::thread::{Thread, ThreadInternal};
 use vm::internal::Value;
+
 use super::{filename_to_module, Compiler};
 use base::fnv::FnvMap;
 
@@ -135,10 +138,16 @@ impl Importer for CheckImporter {
     }
 }
 
+enum UnloadedModule {
+    Source(Cow<'static, str>),
+    Extern(ExternModule),
+}
+
 /// Macro which rewrites occurances of `import! "filename"` to a load of that file if it is not
 /// already loaded and then a global access to the loaded module
 pub struct Import<I = DefaultImporter> {
     pub paths: RwLock<Vec<PathBuf>>,
+    loaders: RwLock<FnvMap<String, ExternLoader>>,
     pub importer: I,
 }
 
@@ -147,6 +156,7 @@ impl<I> Import<I> {
     pub fn new(importer: I) -> Import<I> {
         Import {
             paths: RwLock::new(vec![PathBuf::from(".")]),
+            loaders: RwLock::default(),
             importer: importer,
         }
     }
@@ -156,23 +166,37 @@ impl<I> Import<I> {
         self.paths.write().unwrap().push(path.into());
     }
 
-    pub fn read_file<P>(&self, filename: P) -> Result<Cow<'static, str>, MacroError>
-    where
-        P: AsRef<Path>,
-    {
-        self.read_file_(filename.as_ref())
+    pub fn add_loader(&self, module: &str, loader: ExternLoader) {
+        self.loaders
+            .write()
+            .unwrap()
+            .insert(String::from(module), loader);
     }
-    fn read_file_(&self, filename: &Path) -> Result<Cow<'static, str>, MacroError> {
+
+    fn get_unloaded_module(
+        &self,
+        vm: &Thread,
+        module: &str,
+        filename: &str,
+    ) -> Result<UnloadedModule, MacroError> {
         let mut buffer = String::new();
 
         // Retrieve the source, first looking in the standard library included in the
         // binary
-        let std_file = filename
-            .to_str()
-            .and_then(|filename| STD_LIBS.iter().find(|tup| tup.0 == filename));
+        let std_file = STD_LIBS.iter().find(|tup| tup.0 == module);
+        if let Some(tup) = std_file {
+            return Ok(UnloadedModule::Source(Cow::Borrowed(tup.1)));
+        }
         Ok(match std_file {
-            Some(tup) => Cow::Borrowed(tup.1),
+            Some(tup) => UnloadedModule::Source(Cow::Borrowed(tup.1)),
             None => {
+                {
+                    let loaders = self.loaders.read().unwrap();
+                    if let Some(loader) = loaders.get(module) {
+                        let value = loader(vm)?;
+                        return Ok(UnloadedModule::Extern(value));
+                    }
+                }
                 let file = self.paths
                     .read()
                     .unwrap()
@@ -186,13 +210,131 @@ impl<I> Import<I> {
                     })
                     .next();
                 let mut file = file.ok_or_else(|| {
-                    Error::String(format!("Could not find file '{}'", filename.display()))
+                    Error::String(format!("Could not find module '{}'", module))
                 })?;
                 file.read_to_string(&mut buffer)?;
-                Cow::Owned(buffer)
+                UnloadedModule::Source(Cow::Owned(buffer))
             }
         })
     }
+
+    pub fn load_module(
+        &self,
+        vm: &Thread,
+        macros: &mut MacroExpander,
+        module_id: &Symbol,
+    ) -> Result<(), MacroError>
+    where
+        I: Importer,
+    {
+        let modulename = module_id.declared_name();
+        use compiler_pipeline::*;
+        let mut filename = modulename.replace(".", "/");
+        filename.push_str(".glu");
+
+        {
+            let state = get_state(macros);
+            if state.visited.iter().any(|m| **m == *filename) {
+                let cycle = state
+                    .visited
+                    .iter()
+                    .skip_while(|m| **m != *filename)
+                    .cloned()
+                    .collect();
+                return Err(Error::CyclicDependency(filename.clone(), cycle).into());
+            }
+            state.visited.push(filename.clone());
+        }
+
+        // Retrieve the source, first looking in the standard library included in the
+        // binary
+        let unloaded_module = self.get_unloaded_module(vm, &modulename, &filename)?;
+
+        match unloaded_module {
+            UnloadedModule::Extern(ExternModule {
+                value,
+                typ,
+                metadata,
+            }) => {
+                vm.set_global(module_id.clone(), typ, metadata, *value)?;
+            }
+            UnloadedModule::Source(file_contents) => {
+                // Modules marked as this would create a cyclic dependency if they included the implicit
+                // prelude
+                let implicit_prelude = !file_contents.starts_with("//@NO-IMPLICIT-PRELUDE");
+                let mut compiler = Compiler::new().implicit_prelude(implicit_prelude);
+                let errors = macros.errors.len();
+                let macro_result =
+                    file_contents.expand_macro_with(&mut compiler, macros, &modulename)?;
+                if errors != macros.errors.len() {
+                    // If macro expansion of the imported module fails we need to stop
+                    // compilation of that module. To return an error we return one of the
+                    // already emitted errors (which will be pushed back after this function
+                    // returns)
+                    if let Some(err) = macros.errors.pop() {
+                        return Err(err);
+                    }
+                }
+                get_state(macros).visited.pop();
+                self.importer.import(
+                    &mut compiler,
+                    vm,
+                    &modulename,
+                    &file_contents,
+                    macro_result.expr,
+                )?;
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Adds an extern module to `thread`, letting it be loaded with `import! name` from gluon code.
+/// 
+/// ```
+/// # extern crate gluon;
+/// use gluon::vm::{self, ExternModule, Thread};
+/// use gluon::Thread;
+/// use gluon::import::add_extern_module;
+/// 
+/// fn yell(s: &str) -> String {
+///     s.to_upper()
+/// }
+/// 
+/// fn my_module(thread: &Thread) -> vm::Result<ExternModule> {
+///     ExternModule::new(
+///         thread,
+///         record!{
+///             message => "Hello World!",
+///             yell => primitive!(1, yell)
+///         }
+///     )
+/// }
+/// 
+/// fn main_() -> gluon::Result<()> {
+///     let thread = gluon::new_vm();
+///     add_extern_module(&thread, "my_module", my_module)?;
+///     let script = r#"
+///         let module = import! "my_module"
+///         module.yell module.message
+///     "#;
+///     let (result, _) = Compiler::new().run_expr(&thread, "example", script)?;
+///     assert_eq!(result, "HELLO WORLD!");
+///     Ok(())
+/// }
+/// fn main() {
+///     if let Err(err) = main_() {
+///         panic!("{}", err)
+///     }
+/// }
+/// ```
+pub fn add_extern_module(thread: &Thread, name: &str, loader: ExternLoader) {
+    let opt_macro = thread.get_macros().get("import");
+    let import = opt_macro
+        .as_ref()
+        .and_then(|mac| mac.downcast_ref::<Import>())
+        .unwrap_or_else(|| ice!("Can't add an extern module with a import macro. Did you mean to create this `Thread` with `gluon::new_vm`"));
+    import.add_loader(name, loader);
 }
 
 fn get_state<'m>(macros: &'m mut MacroExpander) -> &'m mut State {
@@ -222,8 +364,6 @@ where
         macros: &mut MacroExpander,
         args: &mut [SpannedExpr<Symbol>],
     ) -> Result<SpannedExpr<Symbol>, MacroError> {
-        use compiler_pipeline::*;
-
         if args.len() != 1 {
             return Err(Error::String("Expected import to get 1 argument".into()).into());
         }
@@ -236,48 +376,7 @@ where
                 let name = Symbol::from(&*modulename);
                 debug!("Import '{}' {:?}", modulename, get_state(macros).visited);
                 if !vm.global_env().global_exists(&modulename) {
-                    {
-                        let state = get_state(macros);
-                        if state.visited.iter().any(|m| **m == **filename) {
-                            let cycle = state
-                                .visited
-                                .iter()
-                                .skip_while(|m| **m != **filename)
-                                .cloned()
-                                .collect();
-                            return Err(Error::CyclicDependency(filename.clone(), cycle).into());
-                        }
-                        state.visited.push(filename.clone());
-                    }
-
-                    // Retrieve the source, first looking in the standard library included in the
-                    // binary
-                    let file_contents = self.read_file(filename)?;
-
-                    // Modules marked as this would create a cyclic dependency if they included the implicit
-                    // prelude
-                    let implicit_prelude = !file_contents.starts_with("//@NO-IMPLICIT-PRELUDE");
-                    let mut compiler = Compiler::new().implicit_prelude(implicit_prelude);
-                    let errors = macros.errors.len();
-                    let macro_result =
-                        file_contents.expand_macro_with(&mut compiler, macros, &modulename)?;
-                    if errors != macros.errors.len() {
-                        // If macro expansion of the imported module fails we need to stop
-                        // compilation of that module. To return an error we return one of the
-                        // already emitted errors (which will be pushed back after this function
-                        // returns)
-                        if let Some(err) = macros.errors.pop() {
-                            return Err(err);
-                        }
-                    }
-                    get_state(macros).visited.pop();
-                    self.importer.import(
-                        &mut compiler,
-                        vm,
-                        &modulename,
-                        &file_contents,
-                        macro_result.expr,
-                    )?;
+                    self.load_module(vm, macros, &name)?;
                 }
                 // FIXME Does not handle shadowing
                 Ok(pos::spanned(

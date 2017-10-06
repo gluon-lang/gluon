@@ -14,5 +14,5 @@ let show : Show Char = { show = prim.show_char }
     ord,
     show,
     ..
-    char_prim
+    import! "char_prim"
 }

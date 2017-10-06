@@ -5,6 +5,7 @@ let { Semigroup, Monoid, Eq, Ord, Ordering, Show } = prelude
 let { Functor, Applicative, Alternative, Monad, Foldable, Traversable } = prelude
 let { Bool } = import! "std/bool.glu"
 let { Option } = import! "std/types.glu"
+let string = import! "std/string.glu"
 
 let unwrap opt : Option a -> a =
     match opt with
@@ -107,7 +108,7 @@ let monad : Monad Option = {
 }
 
 let show : Show a -> Show (Option a) = \d ->
-    let (++) = string_prim.append
+    let (++) = string.append
 
     let show o =
         match o with

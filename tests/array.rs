@@ -7,6 +7,7 @@ mod support;
 
 test_expr!{ array,
 r#"
+let array = import! "array"
 let arr = [1,2,3]
 
 array.index arr 0 #Int== 1
@@ -17,6 +18,7 @@ true
 
 test_expr!{ array_byte,
 r#"
+let array = import! "array"
 let arr = [1b,2b,3b]
 
 let b = array.index arr 2 #Byte== 3b && array.len arr #Int== 3
@@ -29,6 +31,7 @@ true
 
 test_expr!{ array_float,
 r#"
+let array = import! "array"
 let arr = [1.0,2.0,3.0]
 
 let b = array.index arr 2 #Float== 3.0 && array.len arr #Int== 3
@@ -41,6 +44,7 @@ true
 
 test_expr!{ array_data,
 r#"
+let array = import! "array"
 let arr = [{x = 1, y = "a" }, { x = 2, y = "b" }]
 
 let b = (array.index arr 1).x #Int== 2 && array.len arr #Int== 2
@@ -52,6 +56,7 @@ true
 
 test_expr!{ array_array,
 r#"
+let array = import! "array"
 let arr = [[], [1], [2, 3]]
 
 let b = array.len (array.index arr 1) #Int== 1 && array.len arr #Int== 3
@@ -64,6 +69,7 @@ true
 // Test that empty variants are handled correctly in arrays
 test_expr!{ array_empty_variant,
 r#"
+let array = import! "array"
 type Test = | Empty | Some Int
 let arr = [Empty, Some 1]
 match array.index arr 0 with
@@ -76,6 +82,7 @@ match array.index arr 0 with
 // Test that array append handles array types correctly
 test_expr!{ array_empty_append,
 r#"
+let array = import! "array"
 type Test = | Empty | Some Int
 let arr = array.append [] [Empty, Some 1]
 match array.index arr 0 with

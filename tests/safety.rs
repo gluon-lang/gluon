@@ -11,7 +11,10 @@ use gluon::{Compiler, RootedThread, Thread};
 use support::*;
 
 fn verify_value_cloned(from: &Thread, to: &Thread) {
-    let expr = r#" ref 0 "#;
+    let expr = r#"
+        let { ref } = import! "reference"
+        ref 0
+        "#;
 
     let (value, _) = Compiler::new()
         .run_expr_async::<OpaqueValue<RootedThread, Reference<i32>>>(&from, "example", expr)
@@ -20,14 +23,18 @@ fn verify_value_cloned(from: &Thread, to: &Thread) {
 
     // Load the prelude
     type Fn<'t> = FunctionRef<'t, fn(OpaqueValue<RootedThread, Reference<i32>>)>;
+    let store_expr = r#"
+        let { (<-) } import! "reference"
+        \r -> r <- 1
+        "#;
     let (mut store_1, _) = Compiler::new()
-        .run_expr_async::<Fn>(&to, "store_1", r#"\r -> r <- 1"#)
+        .run_expr_async::<Fn>(&to, "store_1", store_expr)
         .sync_or_error()
         .unwrap();
     assert_eq!(store_1.call(value.clone()), Ok(()));
 
     let mut load: FunctionRef<fn(OpaqueValue<RootedThread, Reference<i32>>) -> i32> =
-        from.get_global("load").unwrap();
+        from.get_global("reference.load").unwrap();
     assert_eq!(load.call(value), Ok(0));
 }
 

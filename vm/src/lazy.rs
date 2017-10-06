@@ -11,7 +11,7 @@ use api::{FunctionRef, Getable, OpaqueValue, RuntimeResult, Userdata, VmType, Wi
 use api::Generic;
 use api::generic::A;
 use vm::Thread;
-use {Error, Result, Variants};
+use {Error, ExternModule, Result, Variants};
 use value::{Cloner, Value};
 use thread::ThreadInternal;
 
@@ -110,8 +110,13 @@ fn lazy(f: OpaqueValue<&Thread, fn(()) -> A>) -> Lazy<A> {
     }
 }
 
-pub fn load<'vm>(vm: &'vm Thread) -> Result<()> {
-    vm.define_global("lazy", primitive!(1 lazy))?;
-    vm.define_global("force", primitive!(1 force))?;
-    Ok(())
+pub fn load(vm: &Thread) -> Result<ExternModule> {
+    use lazy;
+    ExternModule::new(
+        vm,
+        record!{
+            lazy => primitive!(1 lazy::lazy),
+            force => primitive!(1 lazy::force)
+        },
+    )
 }
