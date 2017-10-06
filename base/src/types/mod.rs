@@ -12,7 +12,6 @@ use ast::{Comment, Commented, IdentEnv};
 use kind::{ArcKind, Kind, KindEnv};
 use merge::merge;
 use pos::{BytePos, HasSpan, Span};
-use pretty_print::Printer;
 use source::Source;
 use symbol::{Symbol, SymbolRef};
 
@@ -22,6 +21,9 @@ use serialization::{SeSeed, Seed};
 use serde::de::DeserializeState;
 #[cfg(feature = "serde")]
 use serde::ser::SerializeState;
+
+mod pretty_print;
+pub use self::pretty_print::Printer as Printer;
 
 /// Trait for values which contains typed values which can be refered by name
 pub trait TypeEnv: KindEnv {
@@ -1272,7 +1274,7 @@ where
     where
         I: AsRef<str>,
     {
-        use pretty_print::{doc_comment, ident};
+        use self::pretty_print::{doc_comment, ident};
 
         const INDENT: usize = 4;
 

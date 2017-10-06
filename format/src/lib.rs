@@ -1,16 +1,33 @@
 //! Code formatter.
 #![doc(html_root_url = "https://docs.rs/gluon_formatter/0.5.0")] // # GLUON
 
+extern crate pretty;
 extern crate gluon_base as base;
 extern crate gluon_parser as parser;
-extern crate pretty;
 
+use pretty::Arena;
+
+use base::source::Source;
 use parser::ParseErrors;
+
+struct Printer<'a: 'e, 'e>(base::types::Printer<'a, 'e>);
+
+impl<'a: 'e, 'e> Printer<'a, 'e> {
+    fn new(arena: &'a Arena<'a>, source: &'e Source<'a>) -> Self {
+        Printer(base::types::Printer { arena, source })
+    }
+}
+
+impl<'a: 'e, 'e> std::ops::Deref for Printer<'a, 'e> {
+    type Target = base::types::Printer<'a, 'e>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 pub fn format_expr(input: &str) -> Result<String, ParseErrors> {
     use pretty::Arena;
 
-    use base::pretty_print::Printer;
     use base::source::Source;
     use base::symbol::Symbols;
     use base::types::TypeCache;

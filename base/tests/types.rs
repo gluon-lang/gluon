@@ -7,7 +7,6 @@ use pretty::{Arena, DocAllocator};
 
 use base::kind::Kind;
 use base::types::*;
-use base::pretty_print::Printer;
 use base::source::Source;
 
 fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>

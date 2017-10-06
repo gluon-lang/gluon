@@ -74,7 +74,6 @@ pub mod fnv;
 pub mod kind;
 pub mod merge;
 pub mod metadata;
-pub mod pretty_print;
 pub mod pos;
 pub mod resolve;
 pub mod scoped_map;
