@@ -225,7 +225,7 @@ fn break_record() {
     );
     let arena = Arena::new();
     let source = Source::new("");
-    let printer = Printer::new(&arena, &source);
+    let printer = pretty_print::Printer::new(&arena, &source);
     let typ = arena
         .text("aaaaaaaaabbbbbbbbbbcccccccccc ")
         .append(pretty_print(&printer, &typ))

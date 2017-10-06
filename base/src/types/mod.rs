@@ -22,8 +22,9 @@ use serde::de::DeserializeState;
 #[cfg(feature = "serde")]
 use serde::ser::SerializeState;
 
-mod pretty_print;
-pub use self::pretty_print::Printer as Printer;
+use self::pretty_print::Printer;
+
+pub mod pretty_print;
 
 /// Trait for values which contains typed values which can be refered by name
 pub trait TypeEnv: KindEnv {
@@ -1274,8 +1275,6 @@ where
     where
         I: AsRef<str>,
     {
-        use self::pretty_print::{doc_comment, ident};
-
         const INDENT: usize = 4;
 
         let arena = printer.arena;
@@ -1421,8 +1420,8 @@ where
                             _ => rhs = rhs.nest(INDENT),
                         }
                         let f = chain![arena;
-                            doc_comment(arena, field.typ.comment()),
-                            ident(arena, field.name.as_ref()),
+                            pretty_print::doc_comment(arena, field.typ.comment()),
+                            pretty_print::ident(arena, field.name.as_ref()),
                             " : ",
                             rhs.group(),
                             if i + 1 != fields.len() {
