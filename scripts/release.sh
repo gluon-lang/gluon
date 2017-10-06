@@ -3,6 +3,7 @@
 (cd base && cargo publish $@) &&
     (cd parser && cargo publish $@) &&
     (cd check && cargo publish $@) &&
+    (cd completion && cargo publish $@) &&
     (cd vm && cargo publish $@) &&
     (cd format && cargo publish $@) &&
     cargo publish $@ &&
