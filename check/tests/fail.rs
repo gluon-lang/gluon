@@ -305,7 +305,7 @@ let ord_Int = {
         then EQ
         else GT
 }
-let make_Ord ord =
+let make_Ord ord : forall a . Ord a -> _ =
     let compare = ord.compare
     in {
         (<=) = \l r ->
@@ -470,11 +470,11 @@ fn no_inference_variable_in_error() {
     assert_eq!(
         &*format!("{}", result.unwrap_err()).replace("\t", "        "),
         r#"test:Line: 2, Column: 1: Expected the following types to be equal
-Expected: forall a0 a . a -> a0
+Expected: forall a a0 . a -> a0
 Found: ()
 1 errors were found during unification:
 Types do not match:
-    Expected: forall a0 a . a -> a0
+    Expected: forall a a0 . a -> a0
     Found: ()
 () 1
 ^~~~

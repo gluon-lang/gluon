@@ -432,7 +432,7 @@ let function_test: Test ((->) a) = {
 function_test.test
 ";
     let result = support::typecheck(text);
-    let expected = Ok("a -> Int".to_string());
+    let expected = Ok("forall a . a -> Int".to_string());
 
     assert_req!(result.map(|typ| typ.to_string()), expected);
 }

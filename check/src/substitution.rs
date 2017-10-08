@@ -413,8 +413,8 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
         {
             let id_type = self.find_type_for_var(id.get_id());
             let other_type = self.real(typ);
-            if id_type.map_or(false, |x| x == other_type)
-                || other_type.get_var().map(|y| y.get_id()) == Some(id.get_id())
+            if id_type.map_or(false, |x| x == other_type) ||
+                other_type.get_var().map(|y| y.get_id()) == Some(id.get_id())
             {
                 return Ok(None);
             }
@@ -464,7 +464,7 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
         let mut typ = Cow::Borrowed(typ);
         for (constraint_name, constraint) in &constraints {
             debug!(
-                "Attempting to resolve {} to the constraints {}:\n{}",
+                "Attempting to resolve `{}` to the constraints {}:\n{}",
                 typ,
                 constraint_name,
                 constraint.iter().format("\n")

@@ -536,13 +536,13 @@ impl<'a> Typecheck<'a> {
         }
 
         result_type = result_type.map(|typ| {
-            Type::forall(
-                unbound_variables
-                    .into_iter()
-                    .map(|(_, generic)| generic)
-                    .collect(),
-                typ,
-            )
+            let mut params = unbound_variables
+                .into_iter()
+                .map(|(_, generic)| generic)
+                .collect::<Vec<_>>();
+            params.sort_unstable_by(|l, r| l.id.declared_name().cmp(r.id.declared_name()));
+
+            Type::forall(params, typ)
         });
         if let Some(finished) = result_type {
             *typ = finished;
@@ -1230,9 +1230,10 @@ impl<'a> Typecheck<'a> {
 
             if !is_recursive {
                 // Merge the type declaration and the actual type
-                debug!("Generalize {}", bind.resolved_type);
+                debug!("Generalize at {} = {}", level, bind.resolved_type);
                 self.generalize_binding(level, bind);
                 self.typecheck_pattern(&mut bind.name, typ);
+                debug!("Generalized to {}", bind.resolved_type);
             } else {
                 types.push(typ);
             }
@@ -1245,6 +1246,7 @@ impl<'a> Typecheck<'a> {
             debug!("Generalize {}", bind.resolved_type);
             self.generalize_binding(level, bind);
             self.finish_pattern(level, &mut bind.name, &bind.resolved_type);
+            debug!("Generalized to {}", bind.resolved_type);
         }
         debug!("Typecheck `in`");
         self.type_variables.exit_scope();
@@ -1585,21 +1587,27 @@ impl<'a> Typecheck<'a> {
     }
 
     /// Finish a type by replacing all unbound type variables above `level` with generics
-    fn finish_type(&mut self, level: u32, typ: &ArcType) -> Option<ArcType> {
+    fn finish_type(&mut self, level: u32, original: &ArcType) -> Option<ArcType> {
         let mut generic = None;
         let mut i = 0;
         self.type_variables.enter_scope();
         let mut unbound_variables = FnvMap::default();
-        let typ = self.finish_type_(level, &mut unbound_variables, &mut generic, &mut i, typ);
+        let typ = self.finish_type_(
+            level,
+            &mut unbound_variables,
+            &mut generic,
+            &mut i,
+            original,
+        );
         self.type_variables.exit_scope();
         typ.map(|typ| {
-            let typ = Type::forall(
-                unbound_variables
-                    .into_iter()
-                    .map(|(_, generic)| generic)
-                    .collect(),
-                typ,
-            );
+            let mut params = unbound_variables
+                .into_iter()
+                .map(|(_, generic)| generic)
+                .collect::<Vec<_>>();
+            params.sort_unstable_by(|l, r| l.id.declared_name().cmp(r.id.declared_name()));
+            let typ = Type::forall(params, typ);
+            debug!("Finished `{}` as `{}`", original, typ);
             typ
         })
     }
@@ -1620,6 +1628,11 @@ impl<'a> Typecheck<'a> {
         if let Some(ref t) = replacement {
             debug!("{} ==> {}", typ, t);
             typ = t;
+        }
+        if let Type::Variable(ref var) = **typ {
+            if var.id == 8 {
+                self.subs.get_constraints(var.id);
+            }
         }
         match **typ {
             Type::Variable(ref var) if { self.subs.get_level(var.id) >= level } => {
@@ -1664,6 +1677,9 @@ impl<'a> Typecheck<'a> {
                     };
                     let gen: ArcType = Type::generic(Generic::new(id.clone(), var.kind.clone()));
                     self.subs.insert(var.id, gen.clone());
+
+                    unbound_variables.insert(id.clone(), Generic::new(id, var.kind.clone()));
+
                     Some(gen)
                 }
             }
@@ -1686,6 +1702,35 @@ impl<'a> Typecheck<'a> {
             }
 
             Type::Forall(ref params, ref typ, Some(ref vars)) => {
+                fn is_variable_unified(
+                    subs: &Substitution<ArcType>,
+                    param: &Generic<Symbol>,
+                    var: &ArcType,
+                ) -> bool {
+                    match **var {
+                        Type::Variable(ref var) => match subs.find_type_for_var(var.id) {
+                            Some(t) => match **t {
+                                Type::Skolem(ref s) => s.name != param.id,
+                                _ => true,
+                            },
+                            None => false,
+                        },
+                        _ => unreachable!(),
+                    }
+                }
+
+                let typ = {
+                    let subs = &self.subs;
+                    self.named_variables.extend(
+                        params
+                            .iter()
+                            .zip(vars)
+                            .filter(|&(param, var)| is_variable_unified(subs, param, var))
+                            .map(|(param, var)| (param.id.clone(), var.clone())),
+                    );
+                    typ.instantiate_generics(&mut self.named_variables)
+                };
+
                 self.type_variables.enter_scope();
                 self.type_variables.extend(
                     params
@@ -1704,7 +1749,12 @@ impl<'a> Typecheck<'a> {
 
                 // Remove the skolem scope (`Some(ref vars)`) so it does not leak
                 Some(Type::forall(
-                    params.clone(),
+                    params
+                        .iter()
+                        .zip(vars)
+                        .filter(|&(param, var)| !is_variable_unified(&self.subs, param, var))
+                        .map(|(param, _)| param.clone())
+                        .collect(),
                     new_type.unwrap_or_else(|| typ.clone()),
                 ))
             }

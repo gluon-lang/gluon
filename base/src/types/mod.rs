@@ -584,20 +584,12 @@ pub enum Type<Id, T = ArcType<Id>> {
     Ident(#[cfg_attr(feature = "serde_derive", serde(state))] Id),
     /// An unbound type variable that may be unified with other types. These
     /// will eventually be converted into `Type::Generic`s during generalization.
-    Variable(
-        #[cfg_attr(feature = "serde_derive", serde(state))] TypeVariable,
-    ),
+    Variable(#[cfg_attr(feature = "serde_derive", serde(state))] TypeVariable),
     /// A variable that needs to be instantiated with a fresh type variable
     /// when the binding is refered to.
-    Generic(
-        #[cfg_attr(feature = "serde_derive", serde(state))] Generic<Id>,
-    ),
-    Alias(
-        #[cfg_attr(feature = "serde_derive", serde(state))] AliasRef<Id, T>,
-    ),
-    Skolem(
-        #[cfg_attr(feature = "serde_derive", serde(state))] Skolem<Id>,
-    ),
+    Generic(#[cfg_attr(feature = "serde_derive", serde(state))] Generic<Id>),
+    Alias(#[cfg_attr(feature = "serde_derive", serde(state))] AliasRef<Id, T>),
+    Skolem(#[cfg_attr(feature = "serde_derive", serde(state))] Skolem<Id>),
 }
 
 impl<Id, T> Type<Id, T>
@@ -1042,11 +1034,38 @@ impl<Id> ArcType<Id> {
             }
             typ = inner_type;
         }
-        walk_move_type(typ.clone(), &mut |typ| match **typ {
+        typ.instantiate_generics_(named_variables)
+            .unwrap_or_else(|| typ.clone())
+    }
+
+    fn instantiate_generics_(
+        &self,
+        named_variables: &FnvMap<Id, ArcType<Id>>,
+    ) -> Option<ArcType<Id>>
+    where
+        Id: Clone + Eq + Hash,
+    {
+        match **self {
             Type::Generic(ref generic) => named_variables.get(&generic.id).cloned(),
             Type::Skolem(ref skolem) => named_variables.get(&skolem.name).cloned(),
-            _ => None,
-        })
+            Type::Forall(ref params, ref typ, ref vars) => {
+                // TODO This clone is inneficient
+                let mut named_variables = named_variables.clone();
+                // forall a . { x : forall a . a -> a } -> a
+                // Should not instantiate the `a -> a` part so we must remove the parameters
+                // before visiting that part
+                for param in params {
+                    named_variables.remove(&param.id);
+                }
+
+                typ.instantiate_generics_(&mut named_variables)
+                    .map(|typ| Type::Forall(params.clone(), typ, vars.clone()).into())
+            }
+            _ => walk_move_type_opt(
+                self,
+                &mut ControlVisitation(|typ: &Self| typ.instantiate_generics_(named_variables)),
+            ),
+        }
     }
 
     pub fn pretty<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>>
