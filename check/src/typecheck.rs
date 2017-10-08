@@ -442,7 +442,16 @@ impl<'a> Typecheck<'a> {
             type Ident = Symbol;
 
             fn visit_typ(&mut self, typ: &mut ArcType) {
-                if let Some(finished) = self.tc.finish_type(self.level, typ) {
+                let mut generic = None;
+                let mut i = 0;
+                let mut unbound_variables = FnvMap::default();
+                if let Some(finished) = self.tc.finish_type_(
+                    self.level,
+                    &mut unbound_variables,
+                    &mut generic,
+                    &mut i,
+                    typ,
+                ) {
                     *typ = finished;
                 }
             }

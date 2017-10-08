@@ -639,8 +639,8 @@ impl<'a> Compiler<'a> {
             }
             Expr::Call(func, args) => {
                 if let Expr::Ident(ref id, _) = *func {
-                    if id.name.as_ref() == "&&" || id.name.as_ref() == "||" ||
-                        id.name.as_ref().starts_with('#')
+                    if id.name.as_ref() == "&&" || id.name.as_ref() == "||"
+                        || id.name.as_ref().starts_with('#')
                     {
                         self.compile_primitive(&id.name, args, function, tail_position)?;
                         return Ok(None);
@@ -674,15 +674,17 @@ impl<'a> Compiler<'a> {
                 for alt in alts.iter() {
                     match alt.pattern {
                         Pattern::Constructor(ref id, _) => {
-                            let tag = self.find_tag(&typ, &id.name).unwrap_or_else(|| {
-                                ice!(
-                                    "ICE: Could not find tag for {}::{} when matching on \
-                                     expression `{}`",
-                                    typ,
-                                    self.symbols.string(&id.name),
-                                    expr
-                                )
-                            });
+                            let tag = self.find_tag(typ.remove_forall(), &id.name).unwrap_or_else(
+                                || {
+                                    ice!(
+                                        "ICE: Could not find tag for {}::{} when matching on \
+                                         expression `{}`",
+                                        typ,
+                                        self.symbols.string(&id.name),
+                                        expr
+                                    )
+                                },
+                            );
                             function.emit(TestTag(tag));
                             start_jumps.push(function.function.instructions.len());
                             function.emit(CJump(0));
@@ -753,7 +755,7 @@ impl<'a> Compiler<'a> {
                 for expr in exprs {
                     self.compile(expr, function, false)?;
                 }
-                let typ = resolve::remove_aliases_cow(self, &id.typ);
+                let typ = resolve::remove_aliases_cow(self, &id.typ.remove_forall());
                 match **typ.remove_forall() {
                     Type::Record(_) => {
                         let index = function.add_record_map(
@@ -869,9 +871,9 @@ impl<'a> Compiler<'a> {
                         let mut field_iter = typ.row_iter();
                         let number_of_fields = field_iter.by_ref().count();
                         let is_polymorphic = **field_iter.current_type() != Type::EmptyRow;
-                        if fields.len() == 0 ||
-                            (number_of_fields > 4 && number_of_fields / fields.len() >= 4) ||
-                            is_polymorphic
+                        if fields.len() == 0
+                            || (number_of_fields > 4 && number_of_fields / fields.len() >= 4)
+                            || is_polymorphic
                         {
                             // For pattern matches on large records where only a few of the fields
                             // are used we instead emit a series of GetOffset instructions to avoid
