@@ -1,4 +1,4 @@
-use base::ast::{SpannedExpr};
+use base::ast::SpannedExpr;
 use base::error::InFile;
 use base::kind::{ArcKind, Kind, KindEnv};
 use base::metadata::{Metadata, MetadataEnv};
@@ -52,7 +52,7 @@ impl MockEnv {
         let bool_ty = Type::app(Type::ident(bool_sym.clone()), collect![]);
 
         MockEnv {
-            bool: Alias::new(bool_sym, vec![], bool_ty),
+            bool: Alias::new(bool_sym, bool_ty),
         }
     }
 }

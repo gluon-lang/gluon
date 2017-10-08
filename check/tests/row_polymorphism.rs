@@ -12,6 +12,7 @@ use check::kindcheck::KindCheck;
 
 use support::{intern, typ, MockEnv, MockIdentEnv};
 
+#[macro_use]
 mod support;
 
 #[test]
@@ -23,16 +24,9 @@ let f vec = vec.x #Int+ vec.y
 f
 "#;
     let result = support::typecheck(text);
-    let record = Type::record(
-        vec![],
-        vec![
-            Field::new(intern("x"), typ("Int")),
-            Field::new(intern("y"), typ("Int")),
-        ],
-    );
-    assert_eq!(
-        result.map(support::close_record),
-        Ok(Type::function(vec![record], typ("Int")))
+    assert_req!(
+        result.map(|t| t.to_string()),
+        Ok("forall a . { x : Int, y : Int | a } -> Int".to_string())
     );
 }
 

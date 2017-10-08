@@ -900,8 +900,13 @@ impl<'a> Typecheck<'a> {
 
                 let mut new_fields: Vec<Field<_, _>> = Vec::with_capacity(fields.len());
                 for field in fields {
+                    let level = self.subs.var_id();
                     let typ = match field.value {
-                        Some(ref mut expr) => self.infer_expr(expr),
+                        Some(ref mut expr) => {
+                            let mut typ = self.infer_expr(expr);
+                            self.generalize_type(level, &mut typ);
+                            new_skolem_scope(&self.subs, &FnvMap::default(), &typ)
+                        }
                         None => self.find(&field.name.value)?,
                     };
                     if self.error_on_duplicated_field(&mut duplicated_fields, field.name.clone()) {
@@ -1635,7 +1640,7 @@ impl<'a> Typecheck<'a> {
             }
         }
         match **typ {
-            Type::Variable(ref var) if { self.subs.get_level(var.id) >= level } => {
+            Type::Variable(ref var) if self.subs.get_level(var.id) >= level => {
                 if self.subs.get_constraints(var.id).is_some() {
                     let resolved_result = {
                         let state = unify_type::State::new(&self.environment, &self.subs);
@@ -1692,10 +1697,10 @@ impl<'a> Typecheck<'a> {
                     // Make a new name base for any unbound variables in the record field
                     // Gives { id : a0 -> a0, const : b0 -> b1 -> b1 }
                     // instead of { id : a0 -> a0, const : a1 -> a2 -> a2 }
-                    self.finish_type(level, &field.typ)
+                    self.finish_type_(level, unbound_variables, generic, i, &field.typ)
                         .map(|typ| Field::new(field.name.clone(), typ))
                 });
-                let new_rest = self.finish_type(level, rest);
+                let new_rest = self.finish_type_(level, unbound_variables, generic, i, rest);
                 merge::merge(fields, new_fields, rest, new_rest, |fields, rest| {
                     Type::extend_row(types.clone(), fields, rest)
                 }).or_else(|| replacement.clone())
@@ -1760,6 +1765,11 @@ impl<'a> Typecheck<'a> {
             }
 
             _ => {
+                if let Type::Forall(ref params, _, None) = **typ {
+                    self.type_variables
+                        .extend(params.iter().map(|param| (param.id.clone(), typ.clone())));
+                }
+
                 let new_type = types::walk_move_type_opt(
                     typ,
                     &mut types::ControlVisitation(|typ: &ArcType| {
