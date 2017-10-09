@@ -259,8 +259,8 @@ where
                     rest: ref r_rest,
                     ..
                 },
-            ) => if l_row.len() == r_row.len() &&
-                l_row
+            ) => if l_row.len() == r_row.len()
+                && l_row
                     .iter()
                     .zip(r_row)
                     .all(|(l, r)| l.name.name_eq(&r.name)) && l_rest == r_rest
@@ -271,9 +271,7 @@ where
                         .try_match(&l.typ, &r.typ)
                         .map(|typ| Field::new(l.name.clone(), typ))
                 });
-                Ok(
-                    new_fields.map(|fields| Type::poly_variant(fields, l_rest.clone())),
-                )
+                Ok(new_fields.map(|fields| Type::poly_variant(fields, l_rest.clone())))
             } else {
                 Err(UnifyError::TypeMismatch(expected.clone(), actual.clone()))
             },
@@ -305,8 +303,8 @@ where
         ) => {
             // When the field names of both rows match exactly we special case
             // unification to maximize sharing through `merge` and `walk_move_type`
-            if l_args.len() == r_args.len() &&
-                l_args
+            if l_args.len() == r_args.len()
+                && l_args
                     .iter()
                     .zip(r_args)
                     .all(|(l, r)| l.name.name_eq(&r.name)) && l_types == r_types
@@ -721,6 +719,7 @@ where
     }
     let mut r = actual.clone();
     if let Some(l_id) = expected.name() {
+        debug!("aaaaaaaaaaaaaaaa {:?}", expected);
         r = match find_alias(unifier, r.clone(), l_id)? {
             None => r,
             Some(typ) => {

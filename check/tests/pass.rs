@@ -8,10 +8,11 @@ extern crate gluon_base as base;
 extern crate gluon_check as check;
 extern crate gluon_parser as parser;
 
-use base::ast::{self, Expr, Pattern, Typed};
+use base::ast::{self, Expr, Pattern, SpannedExpr, Typed};
 use base::kind::Kind;
 use base::pos::{BytePos, Span};
 use base::types::{Alias, AliasData, ArcType, Field, Generic, Type};
+use base::symbol::Symbol;
 
 use support::{alias, intern, typ, MockEnv};
 
@@ -1251,4 +1252,56 @@ let { Test } = x
     let result = support::typecheck(text);
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn type_constructor_is_specialized() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+type Option a = | None | Some a
+
+type Functor f = {
+    map : forall a b . (a -> b) -> f a -> f b
+}
+
+type Applicative (f : Type -> Type) = {
+    functor : Functor f,
+    apply : forall a b . f (a -> b) -> f a -> f b,
+    wrap : forall a . a -> f a
+}
+
+type Traversable t = {
+    traverse : forall a b m . Applicative m -> (a -> m b) -> t a -> m (t b)
+}
+
+let any x = any x
+
+let traversable : Traversable Option = {
+    traverse = \app f o ->
+        match o with
+        | None -> app.wrap None
+        | Some x -> app.functor.map Some (f x)
+}
+
+1
+"#;
+    let (expr, result) = support::typecheck_expr(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+
+    struct Visitor;
+    impl<'a> base::ast::Visitor<'a> for Visitor {
+        type Ident = Symbol;
+
+        fn visit_expr(&mut self, expr: &'a SpannedExpr<Symbol>) {
+            match expr.value {
+                Expr::Ident(ref id) if id.name.declared_name() == "Some" => {
+                    assert_eq!(id.typ.to_string(), "b -> test.Option b");
+                }
+                _ => base::ast::walk_expr(self, expr),
+            }
+        }
+    }
+    base::ast::Visitor::visit_expr(&mut Visitor, &expr)
 }
