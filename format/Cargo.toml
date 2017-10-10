@@ -1,6 +1,6 @@
 [package]
 name = "gluon_format"
-version = "0.5.0" # GLUON
+version = "0.6.0" # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 
 license = "MIT"
@@ -16,8 +16,8 @@ log = "0.3.6"
 pretty = "0.3.2"
 itertools = "0.5.6"
 
-gluon_base = { path = "../base", version = "0.5.0" } # GLUON
-gluon_parser = { path = "../parser", version = "0.5.0" } # GLUON
+gluon_base = { path = "../base", version = "0.6.0" } # GLUON
+gluon_parser = { path = "../parser", version = "0.6.0" } # GLUON
 
 [dev-dependencies]
 difference = "1.0"

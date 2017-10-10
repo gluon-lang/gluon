@@ -4,7 +4,7 @@
 //! behaviour. For information about how to use this library the best resource currently is the
 //! [tutorial](https://github.com/gluon-lang/gluon/blob/master/TUTORIAL.md) which contains examples
 //! on how to write gluon programs as well as how to run them using this library.
-#![doc(html_root_url = "https://docs.rs/gluon/0.5.0")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon/0.6.0")] // # GLUON
 
 extern crate futures;
 #[macro_use]

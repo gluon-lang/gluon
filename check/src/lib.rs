@@ -3,7 +3,7 @@
 //! If an AST passes the checks in `Typecheck::typecheck_expr` (which runs all of theses checks
 //! the expression is expected to compile succesfully (if it does not it should be considered an
 //! internal compiler error.
-#![doc(html_root_url = "https://docs.rs/gluon_check/0.5.0")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon_check/0.6.0")] // # GLUON
 
 #[cfg(test)]
 extern crate env_logger;

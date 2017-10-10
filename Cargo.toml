@@ -1,7 +1,7 @@
 [package]
 
 name = "gluon"
-version = "0.5.0" # GLUON
+version = "0.6.0" # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 build = "build.rs"
 
@@ -22,11 +22,11 @@ name = "gluon"
 path = "src/lib.rs"
 
 [dependencies]
-gluon_base = { path = "base", version = "0.5.0" } # GLUON
-gluon_check = { path = "check", version = "0.5.0" } # GLUON
-gluon_parser = { path = "parser", version = "0.5.0" } # GLUON
-gluon_vm = { path = "vm", version = "0.5.0" } # GLUON
-gluon_format = { path = "format", version = "0.5.0" } #GLUON
+gluon_base = { path = "base", version = "0.6.0" } # GLUON
+gluon_check = { path = "check", version = "0.6.0" } # GLUON
+gluon_parser = { path = "parser", version = "0.6.0" } # GLUON
+gluon_vm = { path = "vm", version = "0.6.0" } # GLUON
+gluon_format = { path = "format", version = "0.6.0" } #GLUON
 
 log = "0.3.6"
 quick-error = "1.0.0"
@@ -62,7 +62,7 @@ serde_derive_state = { version = "0.4.0" }
 serde_json = "1.0.0"
 bincode = "0.8.0"
 
-gluon_completion = { path = "completion", version = "0.5.0" } # GLUON
+gluon_completion = { path = "completion", version = "0.6.0" } # GLUON
 
 [features]
 default = ["regex"]
