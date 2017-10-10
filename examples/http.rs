@@ -24,7 +24,6 @@ use std::error::Error as StdError;
 use std::fs::File;
 use std::io::{stderr, Read, Write};
 use std::marker::PhantomData;
-use std::str;
 use std::sync::{Arc, Mutex};
 
 use hyper::{Chunk, Method, StatusCode};
@@ -327,9 +326,7 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
                         }
                         Err(err) => {
                             let _ = stderr().write(format!("{}", err).as_bytes());
-                            Ok(
-                                HyperResponse::new().with_status(StatusCode::InternalServerError),
-                            )
+                            Ok(HyperResponse::new().with_status(StatusCode::InternalServerError))
                         }
                     }),
             )
