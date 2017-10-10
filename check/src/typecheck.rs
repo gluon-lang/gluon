@@ -318,10 +318,16 @@ impl<'a> Typecheck<'a> {
                     .map(|bind| Cow::Borrowed(&bind.constraints))
                     .unwrap_or_else(|| Cow::Owned(FnvMap::default()));
                 let typ = self.subs.set_type(typ);
+                debug!(
+                    "set {:?} Find {} : {}",
+                    self.subs.find_type_for_var(1026),
+                    self.symbols.string(id),
+                    typ
+                );
 
                 self.named_variables.clear();
                 let typ = new_skolem_scope(&self.subs, &constraints, &typ);
-                debug!("Find {} : {:?}", self.symbols.string(id), typ);
+                debug!("Find {} : {}", self.symbols.string(id), typ);
                 Ok(typ)
             }
             None => Err(TypeError::UndefinedVariable(id.clone())),
@@ -407,7 +413,7 @@ impl<'a> Typecheck<'a> {
 
     fn generalize_binding(&mut self, level: u32, binding: &mut ValueBinding<Symbol>) {
         self.generalize_type(level, &mut binding.resolved_type);
-        self.generalize_variables(level, &mut binding.args, &mut binding.expr)
+        self.generalize_variables(level, &mut binding.args, &mut binding.expr);
     }
 
     /// Generalizing updates all variables which are above `level` into "generic variables". A
@@ -1267,6 +1273,7 @@ impl<'a> Typecheck<'a> {
                 debug!("Generalize at {} = {}", level, bind.resolved_type);
                 self.generalize_binding(level, bind);
                 self.typecheck_pattern(&mut bind.name, typ);
+                self.finish_pattern(level, &mut bind.name, &bind.resolved_type);
                 debug!("Generalized to {}", bind.resolved_type);
             } else {
                 types.push(typ);

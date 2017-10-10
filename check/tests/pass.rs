@@ -1327,3 +1327,36 @@ let functor : Functor (Writer w) = {
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn test_bug() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+type List a = | Cons a (List a) | Nil
+
+type Writer w a = { value : a, writer : w }
+
+type Applicative (f : Type -> Type) = {
+    apply : forall a b . f (a -> b) -> f a -> f b,
+    wrap : forall a . a -> f a
+}
+
+let any x = any x
+
+let writer : { applicative : Applicative (Writer (List b)) } = any ()
+let { wrap } = writer.applicative
+
+let tell : List String -> Writer (List String) () = any ()
+
+let assert_eq show eq = \x y ->
+    if True
+    then wrap ()
+    else tell (Cons ("Assertion failed: ") Nil)
+
+1
+"#;
+    let (expr, result) = support::typecheck_expr(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
