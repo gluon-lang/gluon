@@ -1,3 +1,61 @@
+<a name="v0.6.0"></a>
+## v0.6.0 (2017-10-10)
+
+
+#### Bug Fixes
+
+*   format/tests/pretty_print.rs ([de858796](https://github.com/gluon-lang/gluon/commit/de8587969c759711cb041fffab8c065a251f785f))
+*   Replace 'env!("OUT_DIR")' with 'env::var("OUT_DIR").unwrap()' ([366c6306](https://github.com/gluon-lang/gluon/commit/366c6306401353038b7561a0df5736bf3730bbb8))
+*   Preserve comments inside types ([4a216da8](https://github.com/gluon-lang/gluon/commit/4a216da8b1084e806b843232550f0a89eaebb762))
+*   Mark lines of recursive function definitions ([4d5a4b67](https://github.com/gluon-lang/gluon/commit/4d5a4b674b26f3df2acce5817a6a78eca5c0d0a1))
+*   Don't crash when querying types on unit expressions ([1c36bbbd](https://github.com/gluon-lang/gluon/commit/1c36bbbd149aef1f57236b3ce114d73ea95ab21b))
+*   Report completions in let patterns ([c6172991](https://github.com/gluon-lang/gluon/commit/c6172991a83eb5945f90ac7b2b98ef00ee1a552e))
+*   Visit `Expr::Tuple { typ }` ([640154b2](https://github.com/gluon-lang/gluon/commit/640154b29024e09c54f812bef0e12d11cde9ea88))
+*   Deserilize partial applications properly ([0efed42b](https://github.com/gluon-lang/gluon/commit/0efed42b6c90bfbf8ed1f5f165c39990e103f991))
+*   Preserve parentheses in nested patterns ([d7e238da](https://github.com/gluon-lang/gluon/commit/d7e238da8dd916f5c4e430fb31694afdfb1c721c))
+*   Correctly visit all core expressions when walking the tree ([0ad8ce00](https://github.com/gluon-lang/gluon/commit/0ad8ce0055fe93027c96576b505621b3766fcca4))
+*   Preserve newlines between record fields properly ([8f169ad3](https://github.com/gluon-lang/gluon/commit/8f169ad351463f938cc2a801e455842291a450b6))
+*   Don't lose parts of literals when formatting ([7b538496](https://github.com/gluon-lang/gluon/commit/7b5384968365f83c7a258799cde7ac2bebb4e93d))
+* **check:**  Indent types in error messages correctly ([6ff9a217](https://github.com/gluon-lang/gluon/commit/6ff9a217c1fe3f27366841dc6e6492bb4a86417b))
+* **completion:**
+  *  Complete type constructors which are implicitly imported ([d336ad37](https://github.com/gluon-lang/gluon/commit/d336ad379cbe0221911a1769dd7d2643476e3c36))
+* **format:**
+  *  Indent long record pattern matches ([c2a5cf34](https://github.com/gluon-lang/gluon/commit/c2a5cf347934fe03978cf2b390fc8771c736d486))
+  *  Preserve block comments in some places ([ca125bf1](https://github.com/gluon-lang/gluon/commit/ca125bf126f8ede4ccd3fb0ab8e0252deaba2a12))
+  *  Preserve comments between let bindings and their bodies ([f9836f9c](https://github.com/gluon-lang/gluon/commit/f9836f9c3e9c14b82f436d0dfe5034c3bc79c48d))
+* **repl:**  Evaluate IO expressions automatically in the repl ([d9e6e952](https://github.com/gluon-lang/gluon/commit/d9e6e95246ffd7ec59b00c3deee57ce465e5fe97), closes [#334](https://github.com/gluon-lang/gluon/issues/334))
+* **resolve:**  Leave aliases over opque types alone ([3ac0fd61](https://github.com/gluon-lang/gluon/commit/3ac0fd6127cae059ca58e6b60635515d629fa533))
+
+#### Features
+
+*   Add impls of VmType, Pushable, Getable for all integer types ([0a53bd52](https://github.com/gluon-lang/gluon/commit/0a53bd52bfb99b20be7eb936246588ff501d9177))
+*   Allow gluon types to be generated from rust types ([35d9b804](https://github.com/gluon-lang/gluon/commit/35d9b804365ec43a422fbcd89e124fc506c3434d))
+*   Provide a way to get all* symbols of a module ([d6df46fd](https://github.com/gluon-lang/gluon/commit/d6df46fd105d0fa145a78968fdabb99cbc027341))
+*   Add find_all_symbols ([0602f8d6](https://github.com/gluon-lang/gluon/commit/0602f8d62229d3aad5c0623746e661ddd2b555b6))
+*   Allow doc comments on fields in types ([3e9ce940](https://github.com/gluon-lang/gluon/commit/3e9ce940a4a36906e5617d97a972b5875802bc29))
+*   Vastly improve when comments are kept during formatting ([91522578](https://github.com/gluon-lang/gluon/commit/91522578cccdae0592c3c06ceda8a6a56a821a1f))
+*   Display type information about function arguments ([fe2ec28d](https://github.com/gluon-lang/gluon/commit/fe2ec28d39b281b676b86cad95b0f35033062b46))
+*   Fallback to returning information about the enclosing expression ([3a8e4c0b](https://github.com/gluon-lang/gluon/commit/3a8e4c0be7bef1b53a291fa897dab862002b8e9b))
+*   Give more control over what data is returned for completions ([7d0bc359](https://github.com/gluon-lang/gluon/commit/7d0bc35961881955abfc9f68f065246ecb578a5b))
+*   Constant fold binary expressions ([10b77ac3](https://github.com/gluon-lang/gluon/commit/10b77ac34218f469766170620f6f4543bdaaf07b))
+*   Print the commit hash when passing --version to the gluon executable ([3a1e5969](https://github.com/gluon-lang/gluon/commit/3a1e5969c094f6a1a5587811a86254337cb77201))
+*   Rewrite the parser to be Result based instead of continuation based ([488b6bdf](https://github.com/gluon-lang/gluon/commit/488b6bdf8000a06feede43f93c781a89adb214a5))
+*   Add bytecode serialization and loading ([f5d6c752](https://github.com/gluon-lang/gluon/commit/f5d6c752f81d767851fbafeaea0a75f1a01e6463))
+*   Make serde an optional dependency ([a17c0c75](https://github.com/gluon-lang/gluon/commit/a17c0c75418d5713e9d0240701ecdec639e5bb43))
+* **base:**  Allow the width to be adjusted before displaying types ([2d1d3867](https://github.com/gluon-lang/gluon/commit/2d1d3867a7cbe314d581ed938c55f1a5cf01aa6d))
+* **parser:**
+  *  Allow projection on types in the parser ([b3aaabdf](https://github.com/gluon-lang/gluon/commit/b3aaabdf4661fde1bc03a42f8336a2d8412b602a))
+  *  Let gluon files specify shebang ([d104deea](https://github.com/gluon-lang/gluon/commit/d104deeaa44a77cc8ea45297df97a76a6d410a85))
+* **vm:**
+  *  Allow generating a simple ffi binding for rust types ([31034b5a](https://github.com/gluon-lang/gluon/commit/31034b5a639781ef1e522d2750a7c154fcd10e5d))
+  *  Add parse functions for floats and integers ([7e5f70d0](https://github.com/gluon-lang/gluon/commit/7e5f70d0177da7681c35d7d126d49ddeb8e52530))
+
+#### Performance
+
+* **vm:**  Avoid generating unnecessary catch-alls ([ebcdba96](https://github.com/gluon-lang/gluon/commit/ebcdba96751fc3a5706c69d061e7a4d9e5adbba6))
+
+
+
 <a name="v.0.5.0"></a>
 ## v0.5.0 (2017-07-01)
 

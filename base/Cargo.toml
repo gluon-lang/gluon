@@ -1,6 +1,6 @@
 [package]
 name = "gluon_base"
-version = "0.5.0" # GLUON
+version = "0.6.0" # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 
 license = "MIT"
