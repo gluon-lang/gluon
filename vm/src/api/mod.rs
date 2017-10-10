@@ -4,7 +4,7 @@ use gc::{DataDef, Gc, Move, Traverseable};
 use base::symbol::Symbol;
 use stack::StackFrame;
 use vm::{self, Root, RootStr, RootedValue, Status, Thread};
-use value::{ArrayRepr, Cloner, DataStruct, Def, ExternFunction, GcStr, Value, ValueArray};
+use value::{ArrayDef, ArrayRepr, Cloner, DataStruct, Def, ExternFunction, GcStr, Value, ValueArray};
 use thread::{self, Context, RootedThread};
 use thread::ThreadInternal;
 use base::types::{self, ArcType, Type};
@@ -755,16 +755,13 @@ where
                 gc,
                 thread,
                 stack,
-                Def {
-                    tag: 0,
-                    elems: values,
-                },
+                ArrayDef(values)
             )?
         };
         for _ in 0..len {
             context.stack.pop();
         }
-        context.stack.push(Value::Data(result));
+        context.stack.push(Value::Array(result));
         Ok(())
     }
 }
