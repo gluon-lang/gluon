@@ -473,74 +473,32 @@ impl<'vm> Getable<'vm> for u8 {
     }
 }
 
-impl VmType for i32 {
-    type Type = VmInt;
-}
-impl<'vm> Pushable<'vm> for i32 {
-    fn push(self, _: &'vm Thread, context: &mut Context) -> Result<()> {
-        context.stack.push(Value::Int(self as VmInt));
-        Ok(())
-    }
-}
-impl<'vm> Getable<'vm> for i32 {
-    fn from_value(_: &'vm Thread, value: Variants) -> Option<i32> {
-        match value.as_ref() {
-            ValueRef::Int(i) => Some(i as i32),
-            _ => None,
+macro_rules! int_impls {
+    ($($id: ident)*) => {
+        $(
+        impl VmType for $id {
+            type Type = VmInt;
         }
-    }
-}
-impl VmType for u32 {
-    type Type = VmInt;
-}
-impl<'vm> Pushable<'vm> for u32 {
-    fn push(self, _: &'vm Thread, context: &mut Context) -> Result<()> {
-        context.stack.push(Value::Int(self as VmInt));
-        Ok(())
-    }
-}
-impl<'vm> Getable<'vm> for u32 {
-    fn from_value(_: &'vm Thread, value: Variants) -> Option<u32> {
-        match value.as_ref() {
-            ValueRef::Int(i) => Some(i as u32),
-            _ => None,
+        impl<'vm> Pushable<'vm> for $id {
+            fn push(self, _: &'vm Thread, context: &mut Context) -> Result<()> {
+                context.stack.push(Value::Int(self as VmInt));
+                Ok(())
+            }
         }
-    }
-}
-impl VmType for usize {
-    type Type = VmInt;
-}
-impl<'vm> Pushable<'vm> for usize {
-    fn push(self, _: &'vm Thread, context: &mut Context) -> Result<()> {
-        context.stack.push(Value::Int(self as VmInt));
-        Ok(())
-    }
-}
-impl<'vm> Getable<'vm> for usize {
-    fn from_value(_: &'vm Thread, value: Variants) -> Option<usize> {
-        match value.as_ref() {
-            ValueRef::Int(i) => Some(i as usize),
-            _ => None,
+        impl<'vm> Getable<'vm> for $id {
+            fn from_value(_: &'vm Thread, value: Variants) -> Option<Self> {
+                match value.as_ref() {
+                    ValueRef::Int(i) => Some(i as $id),
+                    _ => None,
+                }
+            }
         }
-    }
+        )*
+    };
 }
-impl VmType for VmInt {
-    type Type = Self;
-}
-impl<'vm> Pushable<'vm> for VmInt {
-    fn push(self, _: &'vm Thread, context: &mut Context) -> Result<()> {
-        context.stack.push(Value::Int(self));
-        Ok(())
-    }
-}
-impl<'vm> Getable<'vm> for VmInt {
-    fn from_value(_: &'vm Thread, value: Variants) -> Option<VmInt> {
-        match value.as_ref() {
-            ValueRef::Int(i) => Some(i),
-            _ => None,
-        }
-    }
-}
+
+int_impls!{ i16 i32 i64 u16 u32 u64 usize isize }
+
 impl VmType for f64 {
     type Type = Self;
 }
