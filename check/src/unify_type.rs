@@ -393,7 +393,7 @@ where
 
             match (&lhs, &rhs) {
                 (&None, &None) => {
-                    debug!("Unify error: {} <=> {}", expected, actual);
+                    debug!("Unify error: {:?} <=> {}", expected, actual);
                     Err(UnifyError::TypeMismatch(expected.clone(), actual.clone()))
                 }
                 (_, _) => {
@@ -719,7 +719,6 @@ where
     }
     let mut r = actual.clone();
     if let Some(l_id) = expected.name() {
-        debug!("aaaaaaaaaaaaaaaa {:?}", expected);
         r = match find_alias(unifier, r.clone(), l_id)? {
             None => r,
             Some(typ) => {

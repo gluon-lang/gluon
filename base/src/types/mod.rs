@@ -783,10 +783,27 @@ where
         None
     }
 
-    pub fn unapplied_args(&self) -> &[T] {
+    pub fn unapplied_args(&self) -> Cow<[T]>
+    where
+        T: Clone,
+    {
         match *self {
-            Type::App(_, ref args) => args,
-            _ => &[],
+            Type::App(ref f, ref args) => {
+                let mut f = f;
+                let mut extra_args = Vec::new();
+                while let Type::App(ref f2, ref args2) = **f {
+                    f = f2;
+                    extra_args.extend(args2.iter().rev().cloned());
+                }
+                if extra_args.is_empty() {
+                    Cow::Borrowed(args)
+                } else {
+                    extra_args.reverse();
+                    extra_args.extend(args.iter().cloned());
+                    Cow::Owned(extra_args)
+                }
+            }
+            _ => Cow::Borrowed(&[]),
         }
     }
 

@@ -1305,3 +1305,25 @@ let traversable : Traversable Option = {
     }
     base::ast::Visitor::visit_expr(&mut Visitor, &expr)
 }
+
+#[test]
+fn writer_bug() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+type Writer w a = { value : a, writer : w }
+
+type Functor f = {
+    map : forall a b . (a -> b) -> f a -> f b
+}
+
+let functor : Functor (Writer w) = {
+    map = \f m -> { value = f m.value, writer = m.writer }
+}
+
+1
+"#;
+    let (_expr, result) = support::typecheck_expr(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}

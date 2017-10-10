@@ -36,7 +36,7 @@ where
     match peek_alias(env, typ) {
         Ok(Some(alias)) if !canonical(alias) => alias
             .unresolved_type()
-            .apply_args(typ.unapplied_args())
+            .apply_args(&typ.unapplied_args())
             .map(|typ| {
                 Cow::Owned(canonical_alias(env, &typ, canonical).into_owned())
             })
@@ -54,7 +54,7 @@ pub fn remove_alias(env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType>, Err
         if **alias.unresolved_type().remove_forall() == Type::Opaque {
             return None;
         }
-        alias.unresolved_type().apply_args(typ.unapplied_args())
+        alias.unresolved_type().apply_args(&typ.unapplied_args())
     }))
 }
 

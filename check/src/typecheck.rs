@@ -2164,11 +2164,11 @@ pub fn extract_generics(args: &[ArcType]) -> Vec<Generic<Symbol>> {
 fn get_alias_app<'a>(
     env: &'a TypeEnv,
     typ: &'a ArcType,
-) -> Option<(&'a AliasData<Symbol, ArcType>, &'a [ArcType])> {
+) -> Option<(&'a AliasData<Symbol, ArcType>, Cow<'a, [ArcType]>)> {
     match **typ {
-        Type::Alias(ref alias) => Some((alias, &[][..])),
+        Type::Alias(ref alias) => Some((alias, Cow::Borrowed(&[][..]))),
         Type::App(ref alias, ref args) => match **alias {
-            Type::Alias(ref alias) => Some((alias, args)),
+            Type::Alias(ref alias) => Some((alias, Cow::Borrowed(&args[..]))),
             _ => None,
         },
         _ => typ.alias_ident().and_then(|id| {
@@ -2190,7 +2190,7 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
             let (arg, new) = match self.typ.remove_forall().as_function() {
                 Some((arg, ret)) => (Some(arg.clone()), ret.clone()),
                 None => match get_alias_app(&self.tc.environment, &self.typ) {
-                    Some((alias, args)) => match alias.unresolved_type().apply_args(args) {
+                    Some((alias, args)) => match alias.unresolved_type().apply_args(&args) {
                         Some(typ) => (None, typ.clone()),
                         None => return None,
                     },

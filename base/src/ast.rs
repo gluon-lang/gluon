@@ -683,7 +683,7 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
                 alias
                     .params()
                     .iter()
-                    .zip(alias_type.unapplied_args())
+                    .zip(&*alias_type.unapplied_args())
                     .find(|&(arg, _)| arg.id == generic.id)
                     .map(|(_, typ)| typ.clone())
             }
