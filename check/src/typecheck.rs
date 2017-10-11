@@ -962,7 +962,7 @@ impl<'a> Typecheck<'a> {
                 let record_guess = match *match_type {
                     // If the type we are matching on already an alias we don't guess as it is
                     // possible that we guess the wrong type (and we already have an alias anyway)
-                    Type::Alias(_) => None,
+                    Type::Alias(_) | Type::Record(_) => None,
                     _ => self.find_record(&pattern_fields, RecordSelector::Subset)
                         .map(|t| (t.0.clone(), t.1.clone()))
                         .ok(),
