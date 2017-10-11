@@ -544,9 +544,9 @@ let { (+), (-), (*), (/) } = __implicit_int.num
 and { (==) } = __implicit_int.eq
 and { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_int.ord
 
-let __string = import! "std/string.glu"
-and { eq = { (==) } } = __string
-and { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __string.ord
+let __implicit_string = import! "std/string.glu"
+and { eq = { (==) } } = __implicit_string
+and { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_string.ord
 
 in 0
 "#;
