@@ -1,3 +1,5 @@
+//@NO-IMPLICIT-PRELUDE
+
 let { Bool, Option, Ordering } = import! "std/types.glu"
 
 /// `Semigroup a` represents an associative operation on `a`.

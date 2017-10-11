@@ -1,3 +1,5 @@
+//@NO-IMPLICIT-PRELUDE
+
 // Definition of standard types separate from the prelude to allow primitives to use them
 
 /// `Bool` represents a value which can only be `True` or `False`
