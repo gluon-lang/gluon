@@ -59,7 +59,7 @@ pub enum TypeError<I> {
     EmptyCase,
     /// An `Error` ast node was found indicating an invalid parse
     ErrorAst(&'static str),
-    Message(&'static str),
+    Message(String),
 }
 
 impl<I> From<KindCheckError<I>> for TypeError<I>
@@ -151,7 +151,7 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
             }
             EmptyCase => write!(f, "`case` expression with no alternatives"),
             ErrorAst(typ) => write!(f, "`Error` {} found during typechecking", typ),
-            Message(msg) => write!(f, "{}", msg),
+            Message(ref msg) => write!(f, "{}", msg),
         }
     }
 }
@@ -674,9 +674,9 @@ impl<'a> Typecheck<'a> {
                     // Handle primitives
                     let arg_type = self.unify(&lhs_type, rhs_type)?;
                     let op_type = op_name.trim_matches(|c: char| !c.is_alphabetic());
-                    let builtin_type = op_type
-                        .parse()
-                        .map_err(|_| TypeError::Message("Invalid builtin type for operator"))?;
+                    let builtin_type = op_type.parse().map_err(|_| {
+                        TypeError::Message("Invalid builtin type for operator".to_string())
+                    })?;
                     let prim_type = self.type_cache.builtin_type(builtin_type);
                     let typ = self.unify(&prim_type, arg_type)?;
                     let return_type = match &op_name[1 + op_type.len()..] {
@@ -1104,6 +1104,19 @@ impl<'a> Typecheck<'a> {
         // When the definitions are allowed to be mutually recursive
         if is_recursive {
             for bind in bindings.iter_mut() {
+                match bind.name.value {
+                    Pattern::Constructor(ref id, _) | Pattern::Ident(ref id)
+                        if id.name.declared_name().starts_with(char::is_uppercase) =>
+                    {
+                        self.error(
+                            bind.name.span,
+                            TypeError::Message(
+                                format!("Unexpected type constructor `{}`", id.name),
+                            ),
+                        );
+                    }
+                    _ => (),
+                }
                 let typ = {
                     bind.resolved_type =
                         self.create_unifiable_signature(bind.resolved_type.clone());

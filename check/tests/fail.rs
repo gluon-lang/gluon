@@ -541,3 +541,15 @@ r.y
     let result = support::typecheck(text);
     assert_err!(result, InvalidProjection(..));
 }
+
+
+#[test]
+fn type_constructor_in_function_name() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let Test x = x
+1
+"#;
+    let result = support::typecheck(text);
+    assert_err!(result, Message(..));
+}
