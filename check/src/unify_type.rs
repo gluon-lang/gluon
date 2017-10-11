@@ -365,7 +365,11 @@ where
 
         (&Type::Forall(_, _, Some(_)), _) => {
             let l = expected.instantiate_generics(&mut FnvMap::default());
-            Ok(unifier.try_match_res(&l, &actual)?)
+            Ok(
+                unifier
+                    .try_match_res(&l, &actual)?
+                    .or_else(|| Some(l.clone())),
+            )
         }
 
         (_, &Type::Forall(_, _, Some(_))) => {

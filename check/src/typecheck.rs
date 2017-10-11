@@ -1273,8 +1273,8 @@ impl<'a> Typecheck<'a> {
                 debug!("Generalize at {} = {}", level, bind.resolved_type);
                 self.generalize_binding(level, bind);
                 self.typecheck_pattern(&mut bind.name, typ);
-                self.finish_pattern(level, &mut bind.name, &bind.resolved_type);
                 debug!("Generalized to {}", bind.resolved_type);
+                self.finish_pattern(level, &mut bind.name, &bind.resolved_type);
             } else {
                 types.push(typ);
             }
@@ -1463,7 +1463,12 @@ impl<'a> Typecheck<'a> {
                 if let Some(finished) = self.finish_type(level, typ) {
                     *typ = finished;
                 }
+                let typ = self.instantiate(typ);
+                let typ = self.instantiate_generics(&typ);
                 let record_type = self.remove_alias(typ.clone());
+                if record_type.to_string().contains("List 1969") {
+                    record_type.to_string().contains("List 1969");
+                }
                 with_pattern_types(
                     fields,
                     &record_type,
@@ -1480,9 +1485,13 @@ impl<'a> Typecheck<'a> {
             Pattern::Tuple {
                 ref typ,
                 ref mut elems,
-            } => for (elem, field) in elems.iter_mut().zip(typ.row_iter()) {
-                self.finish_pattern(level, elem, &field.typ);
-            },
+            } => {
+                let typ = self.instantiate(typ);
+                let typ = self.instantiate_generics(&typ);
+                for (elem, field) in elems.iter_mut().zip(typ.row_iter()) {
+                    self.finish_pattern(level, elem, &field.typ);
+                }
+            }
             Pattern::Constructor(ref id, ref mut args) => {
                 debug!("{}: {}", self.symbols.string(&id.name), typ);
                 let len = args.len();
@@ -1604,6 +1613,7 @@ impl<'a> Typecheck<'a> {
         let bind = self.environment.stack.get_mut(symbol).unwrap();
         bind.constraints = constraints;
         bind.typ = typ;
+        debug!("Updated {} to `{}`", symbol, bind.typ);
     }
 
     /// Generate a generic variable name which is not used in the current scope

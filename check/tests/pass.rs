@@ -1323,7 +1323,7 @@ let functor : Functor (Writer w) = {
 
 1
 "#;
-    let (_expr, result) = support::typecheck_expr(text);
+    let result = support::typecheck(text);
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
@@ -1356,7 +1356,7 @@ let assert_eq show eq = \x y ->
 
 1
 "#;
-    let (expr, result) = support::typecheck_expr(text);
+    let result = support::typecheck(text);
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
