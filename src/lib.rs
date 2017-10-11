@@ -21,10 +21,10 @@ extern crate serde_state as serde;
 
 pub extern crate gluon_base as base;
 pub extern crate gluon_check as check;
+pub extern crate gluon_format as format;
 pub extern crate gluon_parser as parser;
 #[macro_use]
 pub extern crate gluon_vm as vm;
-pub extern crate gluon_format as format;
 
 pub mod compiler_pipeline;
 pub mod import;
@@ -232,13 +232,8 @@ impl Compiler {
         expr_str: &str,
         expected_type: Option<&ArcType>,
     ) -> Result<(SpannedExpr<Symbol>, ArcType)> {
-        let TypecheckValue { expr, typ } = expr_str.typecheck_expected(
-            self,
-            vm,
-            file,
-            expr_str,
-            expected_type,
-        )?;
+        let TypecheckValue { expr, typ } =
+            expr_str.typecheck_expected(self, vm, file, expr_str, expected_type)?;
         Ok((expr, typ))
     }
 
@@ -341,9 +336,10 @@ impl Compiler {
             // Use the import macro's path resolution if it exists so that we mimick the import
             // macro as close as possible
             let opt_macro = vm.get_macros().get("import");
-            match opt_macro.as_ref().and_then(
-                |mac| mac.downcast_ref::<Import>(),
-            ) {
+            match opt_macro
+                .as_ref()
+                .and_then(|mac| mac.downcast_ref::<Import>())
+            {
                 Some(import) => Ok(import.read_file(filename)?),
                 None => {
                     let mut buffer = StdString::new();
@@ -434,7 +430,9 @@ impl Compiler {
         expr_str
             .run_expr(self, vm, name, expr_str, Some(&expected))
             .and_then(move |v| {
-                let ExecuteValue { typ: actual, value, .. } = v;
+                let ExecuteValue {
+                    typ: actual, value, ..
+                } = v;
                 unsafe {
                     FutureValue::sync(match T::from_value(vm, Variants::new(&value)) {
                         Some(value) => Ok((value, actual)),
@@ -534,6 +532,7 @@ impl Compiler {
 pub const PRELUDE: &'static str = r#"
 let __implicit_prelude = import! "std/prelude.glu"
 and { Num, Eq, Ord, Show, Functor, Monad } = __implicit_prelude
+and { not } = import! "std/bool.glu"
 
 let { (+), (-), (*), (/) } = __implicit_prelude.num_Int
 and { (==) } = __implicit_prelude.eq_Int
