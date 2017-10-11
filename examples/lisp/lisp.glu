@@ -6,6 +6,8 @@ let { (==) } = string.eq
 let { (<>) } = prelude.make_Semigroup string.semigroup
 
 let { Bool } = import! "std/bool.glu"
+let float = import! "std/float.glu"
+let int = import! "std/int.glu"
 let result = import! "std/result.glu"
 let { Result } = result
 let { Option } = import! "std/option.glu"
@@ -44,8 +46,8 @@ let show : Show Expr =
     let show expr =
         match expr with
         | Atom s -> s
-        | Int i -> prelude.show_Int.show i
-        | Float f -> prelude.show_Float.show f
+        | Int i -> int.show.show i
+        | Float f -> float.show.show f
         | List ls -> "(" <> spaced show ls <> ")"
         | Function f ->
             let vararg =

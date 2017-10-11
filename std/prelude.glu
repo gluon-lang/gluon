@@ -22,14 +22,6 @@ let semigroup_Function semigroup : Semigroup b -> Semigroup (a -> b) = {
     append = \f g x -> semigroup.append (f x) (g x)
 }
 
-let semigroup_Int_Add : Semigroup Int = { append = \x y -> x #Int+ y }
-
-let semigroup_Int_Mul : Semigroup Int = { append = \x y -> x #Int* y }
-
-let semigroup_Float_Add : Semigroup Float = { append = \x y -> x #Float+ y }
-
-let semigroup_Float_Mul : Semigroup Float = { append = \x y -> x #Float* y }
-
 let semigroup_Ordering : Semigroup Ordering = {
     append = \x y ->
         match x with
@@ -55,26 +47,6 @@ let monoid_Function monoid : Monoid b -> Monoid (a -> b) = {
     empty = \_ -> monoid.empty
 }
 
-let monoid_Int_Add : Monoid Int = {
-    semigroup = semigroup_Int_Add,
-    empty = 0
-}
-
-let monoid_Int_Mul : Monoid Int = {
-    semigroup = semigroup_Int_Mul,
-    empty = 1
-}
-
-let monoid_Float_Add : Monoid Float = {
-    semigroup = semigroup_Float_Add,
-    empty = 0.0
-}
-
-let monoid_Float_Mul : Monoid Float = {
-    semigroup = semigroup_Float_Mul,
-    empty = 1.0
-}
-
 let monoid_Ordering : Monoid Ordering = {
     semigroup = semigroup_Ordering,
     empty = EQ
@@ -90,27 +62,8 @@ type Group a = {
     inverse : a -> a
 }
 
-let group_Int_Add : Group Int = {
-    monoid = monoid_Int_Add,
-    inverse = \x -> 0 #Int- x
-}
-
-let group_Float_Add : Group Float = {
-    monoid = monoid_Float_Add,
-    inverse = \x -> 0.0 #Float- x
-}
-
-let group_Float_Mul : Group Float = {
-    monoid = monoid_Float_Mul,
-    inverse = \x -> 1.0 #Float/ x
-}
-
 /// `Eq a` defines equality (==) on `a`
 type Eq a = { (==) : a -> a -> Bool }
-
-let eq_Int = { (==) = \l r -> l #Int== r }
-
-let eq_Float = { (==) = \l r -> l #Float== r }
 
 /// `Ord a` defines an ordering on `a`
 type Ord a = { eq : Eq a, compare : a -> a -> Ordering }
@@ -145,21 +98,8 @@ let make_Ord ord : Ord a -> _ =
 
     { eq, compare, (<=), (<), (>), (>=) }
 
-
-let ord_Int = {
-    eq = eq_Int,
-    compare = \l r -> if l #Int< r then LT else if l #Int== r then EQ else GT
-}
-
-let ord_Float = {
-    eq = eq_Float,
-    compare = \l r -> if l #Float< r then LT else if l #Float== r then EQ else GT
-}
-
-/**
- The basic operation on numbers.
- Defined for both the primitive type `Int` and `Float`
-*/
+/// The basic operation on numbers.
+/// Defined for both the primitive type `Int` and `Float`
 type Num a = {
     ord : Ord a,
     (+) : a -> a -> a,
@@ -167,24 +107,6 @@ type Num a = {
     (*) : a -> a -> a,
     (/) : a -> a -> a,
     negate : a -> a
-}
-
-let num_Int = {
-    ord = ord_Int,
-    (+) = semigroup_Int_Add.append,
-    (-) = \l r -> l #Int- r,
-    (*) = semigroup_Int_Mul.append,
-    (/) = \l r -> l #Int/ r,
-    negate = \x -> 0 #Int- x
-}
-
-let num_Float : Num Float = {
-    ord = ord_Float,
-    (+) = semigroup_Float_Add.append,
-    (-) = \l r -> l #Float- r,
-    (*) = semigroup_Float_Mul.append,
-    (/) = \l r -> l #Float/ r,
-    negate = \x -> 0.0 #Float- x
 }
 
 type Category (cat : Type -> Type -> Type) = { id : cat a a, compose : cat b c -> cat a b -> cat a c }
@@ -354,12 +276,6 @@ let monad_Function : Monad ((->) a) = {
 /// `Show a` represents a conversion function from `a` to a readable string.
 type Show a = { show : a -> String }
 
-
-let show_Int : Show Int = { show = prim.show_int }
-
-let show_Float : Show Float = { show = prim.show_float }
-
-
 type Foldable (f : Type -> Type) = {
     foldr : (a -> b -> b) -> b -> f a -> b,
     foldl : (b -> a -> b) -> b -> f a -> b
@@ -367,7 +283,6 @@ type Foldable (f : Type -> Type) = {
 
 let make_Foldable foldable : Foldable t -> _ =
     let { foldr, foldl } = foldable
-    let { (+) } = num_Int
 
     let concat monoid : Monoid m -> t m -> m =
         foldr monoid.semigroup.append monoid.empty
@@ -404,7 +319,7 @@ let make_Foldable foldable : Foldable t -> _ =
         any << eq.(==)
 
     let count : t a -> Int =
-        foldl (\acc _ -> acc + 1) 0
+        foldl (\acc _ -> acc #Int+ 1) 0
 
     {
         foldr,
@@ -441,33 +356,18 @@ let make_Traversable traversable : Traversable t -> _ =
     Semigroup,
     make_Semigroup,
     semigroup_Function,
-    semigroup_Int_Add,
-    semigroup_Int_Mul,
-    semigroup_Float_Add,
-    semigroup_Float_Mul,
     semigroup_Ordering,
 
     Monoid,
     monoid_Function,
-    monoid_Int_Add,
-    monoid_Int_Mul,
-    monoid_Float_Add,
-    monoid_Float_Mul,
     monoid_Ordering,
 
     Group,
-    group_Int_Add,
-    group_Float_Add,
-    group_Float_Mul,
 
     Eq,
-    eq_Float,
-    eq_Int,
 
     Ord,
     make_Ord,
-    ord_Float,
-    ord_Int,
 
     Category,
     make_Category,
@@ -491,8 +391,6 @@ let make_Traversable traversable : Traversable t -> _ =
     make_Traversable,
 
     Num,
-    num_Int,
-    num_Float,
 
     id,
     const,
@@ -502,7 +400,5 @@ let make_Traversable traversable : Traversable t -> _ =
     (<<),
     (>>),
 
-    Show,
-    show_Int,
-    show_Float
+    Show
 }

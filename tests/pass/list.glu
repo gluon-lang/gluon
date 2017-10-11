@@ -1,11 +1,12 @@
 let prelude  = import! "std/prelude.glu"
 let { Test, run, writer, assert, assert_eq }  = import! "std/test.glu"
 let { (*>) } = prelude.make_Applicative writer.applicative
+let int = import! "std/int.glu"
 let list = import! "std/list.glu"
 let { List } = list
 
 let assert_list show eq = assert_eq (list.show show) (list.eq eq)
-let assert_int_list = assert_list prelude.show_Int prelude.eq_Int
+let assert_int_list = assert_list int.show int.eq
 
 let test_list =
     assert_int_list (list.of []) Nil *>
