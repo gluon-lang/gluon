@@ -2,7 +2,7 @@ let { run, writer, assert, assert_ieq, assert_feq }  = import! "std/test.glu"
 let prelude  = import! "std/prelude.glu"
 let { (*>) } = prelude.make_Applicative writer.applicative
 let int = import! "std/int.glu"
-let int = import! "std/float.glu"
+let float = import! "std/float.glu"
 
 let int_tests =
     let { (+), (-), (*) } = int.num

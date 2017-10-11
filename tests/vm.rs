@@ -9,6 +9,7 @@ use support::*;
 
 use gluon::base::pos::BytePos;
 use gluon::base::types::Type;
+use gluon::base::source;
 use gluon::vm::api::{FunctionRef, Hole, OpaqueValue, ValueRef, IO};
 use gluon::vm::thread::{Thread, ThreadInternal};
 use gluon::vm::internal::Value;
@@ -934,11 +935,10 @@ fn completion_with_prelude() {
     let _ = ::env_logger::init();
     let vm = make_vm();
 
-    let expr = r#"
+    let source = r#"
 let prelude  = import! "std/prelude.glu"
 and { Option } = import! "std/option.glu"
 and { Num } = prelude
-and { (+) } = prelude.num_Int
 
 type Stream_ a =
     | Value a (Stream a)
@@ -958,10 +958,15 @@ let from f : (Int -> Option a) -> Stream a =
 "#;
 
     let (expr, _) = Compiler::new()
-        .typecheck_str(&vm, "example", expr, None)
+        .typecheck_str(&vm, "example", source, None)
         .unwrap_or_else(|err| panic!("{}", err));
 
-    let result = completion::find(&*vm.get_env(), &expr, BytePos::from(348));
+    let lines = source::Lines::new(source.as_bytes().iter().cloned());
+    let result = completion::find(
+        &*vm.get_env(),
+        &expr,
+        lines.offset(13.into(), 29.into()).unwrap(),
+    );
     assert_eq!(result, Ok(Type::int()));
 }
 

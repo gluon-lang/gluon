@@ -41,6 +41,17 @@ impl Lines {
         self.starting_bytes.get(line_number).cloned()
     }
 
+    pub fn offset(&self, line: Line, column: Column) -> Option<BytePos> {
+        self.line(line).and_then(|mut offset| {
+            offset += BytePos::from(column.to_usize());
+            if offset.to_usize() >= self.end {
+                None
+            } else {
+                Some(offset)
+            }
+        })
+    }
+
     /// Returns the line and column location of `byte`
     pub fn location(&self, byte: BytePos) -> Option<Location> {
         if byte.to_usize() <= self.end {

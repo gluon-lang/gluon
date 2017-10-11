@@ -281,9 +281,7 @@ impl<'vm> Pushable<'vm> for RootedThread {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
-pub struct RootedThread(
-    #[cfg_attr(feature = "serde_derive", serde(state))] GcPtr<Thread>,
-);
+pub struct RootedThread(#[cfg_attr(feature = "serde_derive", serde(state))] GcPtr<Thread>);
 
 impl Drop for RootedThread {
     fn drop(&mut self) {
@@ -461,11 +459,11 @@ impl Thread {
     /// let vm = new_vm();
     /// Compiler::new()
     ///     .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example",
-    ///         r#" import! "std/prelude.glu" "#)
+    ///         r#" import! "std/int.glu" "#)
     ///     .sync_or_error()
     ///     .unwrap();
     /// let mut add: FunctionRef<fn(i32, i32) -> i32> =
-    ///     vm.get_global("std.prelude.num_Int.(+)").unwrap();
+    ///     vm.get_global("std.int.num.(+)").unwrap();
     /// let result = add.call(1, 2);
     /// assert_eq!(result, Ok(3));
     /// # }
@@ -574,8 +572,8 @@ impl Thread {
         // For this to be safe we require that the received stack is the same one that is in this
         // VM
         assert!(unsafe {
-            context as *const _ as usize >= &self.context as *const _ as usize &&
-                context as *const _ as usize <= (&self.context as *const _).offset(1) as usize
+            context as *const _ as usize >= &self.context as *const _ as usize
+                && context as *const _ as usize <= (&self.context as *const _).offset(1) as usize
         });
         let roots = Roots {
             vm: unsafe {
@@ -821,8 +819,8 @@ impl ThreadInternal for Thread {
         }
         // If the threads do not share the same global state then they are disjoint and can't share
         // values
-        if &*self.global_state as *const GlobalVmState !=
-            &*other.global_state as *const GlobalVmState
+        if &*self.global_state as *const GlobalVmState
+            != &*other.global_state as *const GlobalVmState
         {
             return false;
         }
@@ -1209,8 +1207,8 @@ impl<'b> OwnedContext<'b> {
                         let function_size = closure.function.max_stack_size;
 
                         // Before entering a function check that the stack cannot exceed `max_stack_size`
-                        if instruction_index == 0 &&
-                            context.stack.stack.len() + function_size > max_stack_size
+                        if instruction_index == 0
+                            && context.stack.stack.len() + function_size > max_stack_size
                         {
                             return Err(Error::StackOverflow(max_stack_size));
                         }

@@ -43,9 +43,10 @@ fn find_kind(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     let args = args.value.trim();
     IO::Value(match vm.find_type_info(args) {
         Ok(ref alias) => {
-            let kind = alias.args.iter().rev().fold(Kind::typ(), |acc, arg| {
-                Kind::function(arg.kind.clone(), acc)
-            });
+            let kind = alias.args.iter().rev().fold(
+                Kind::typ(),
+                |acc, arg| Kind::function(arg.kind.clone(), acc),
+            );
             Ok(format!("{}", kind))
         }
         Err(err) => Err(format!("{}", err)),
@@ -80,9 +81,9 @@ fn find_info(args: WithVM<RootStr>) -> IO<Result<String, String>> {
             }
         }
     }
-    let maybe_comment = env.get_metadata(args).ok().and_then(|metadata| {
-        metadata.comment.as_ref()
-    });
+    let maybe_comment = env.get_metadata(args)
+        .ok()
+        .and_then(|metadata| metadata.comment.as_ref());
     if let Some(comment) = maybe_comment {
         for line in comment.lines() {
             write!(&mut buffer, "\n/// {}", line).unwrap();
@@ -164,8 +165,7 @@ fn readline(editor: &Editor, prompt: &str) -> IO<Option<String>> {
     let mut editor = editor.0.lock().unwrap();
     let input = match editor.readline(prompt) {
         Ok(input) => input,
-        Err(ReadlineError::Eof) |
-        Err(ReadlineError::Interrupted) => return IO::Value(None),
+        Err(ReadlineError::Eof) | Err(ReadlineError::Interrupted) => return IO::Value(None),
         Err(err) => return IO::Exception(format!("{}", err)),
     };
     if !input.trim().is_empty() {
@@ -232,12 +232,7 @@ fn set_globals(
 ) -> GluonResult<()> {
     match pattern.value {
         Pattern::Ident(ref id) => {
-            vm.set_global(
-                id.name.clone(),
-                typ.clone(),
-                Default::default(),
-                **value,
-            )?;
+            vm.set_global(id.name.clone(), typ.clone(), Default::default(), **value)?;
             Ok(())
         }
         Pattern::Tuple { ref elems, .. } => {
@@ -248,29 +243,27 @@ fn set_globals(
             Ok(())
         }
         Pattern::Record { ref fields, .. } => {
-            let iter = fields.iter().zip(
-                ::vm::dynamic::field_iter(&value, typ, vm),
-            );
+            let iter = fields
+                .iter()
+                .zip(::vm::dynamic::field_iter(&value, typ, vm));
             for (field, (field_value, field_type)) in iter {
                 match field.value {
                     Some(ref field_pattern) => {
                         set_globals(vm, field_pattern, &field_type, &field_value)?
                     }
-                    None => {
-                        vm.set_global(
-                            field.name.value.clone(),
-                            field_type,
-                            Default::default(),
-                            *field_value,
-                        )?
-                    }
+                    None => vm.set_global(
+                        field.name.value.clone(),
+                        field_type,
+                        Default::default(),
+                        *field_value,
+                    )?,
                 }
             }
             Ok(())
         }
-        _ => Err(
-            VMError::Message("The repl cannot bind variables from this pattern".into()).into(),
-        ),
+        _ => {
+            Err(VMError::Message("The repl cannot bind variables from this pattern".into()).into())
+        }
     }
 }
 
@@ -378,7 +371,7 @@ mod tests {
             Ok(IO::Value(Ok(_))) => (),
             x => assert!(false, "{:?}", x),
         }
-        match find_info.call("float") {
+        match find_info.call("float_prim") {
             Ok(IO::Value(Ok(_))) => (),
             x => assert!(false, "{:?}", x),
         }
