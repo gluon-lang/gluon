@@ -107,8 +107,11 @@ fn roundtrip_std_libs() {
         let path = entry.unwrap().path();
         // Can't check the extension since vim swap files ".glu.swp" will report ".glu" as the
         // extension
-        if path.to_str().unwrap().ends_with(".glu") &&
-            path.file_stem().unwrap().to_str() != Some("repl")
+        let file_stem = path.file_stem().unwrap().to_str();
+        if path.to_str().unwrap().ends_with(".glu") && file_stem != Some("repl")
+            // floats cannot be roundtripped with serde json
+            // https://github.com/serde-rs/json/issues/128
+            && file_stem != Some("float")
         {
             expr.push_str(&format!(
                 "    {} = import! {:?},\n",

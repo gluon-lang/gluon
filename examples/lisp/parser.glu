@@ -4,6 +4,8 @@ let char = import! "std/char.glu"
 let { List } = import! "std/list.glu"
 let { Result } = import! "std/result.glu"
 let string = import! "std/string.glu"
+let float = import! "std/float.glu"
+let int = import! "std/int.glu"
 
 let {
     Parser,
@@ -47,19 +49,19 @@ let parse_parser p f msg : Parser a -> (String -> Result () b) -> String -> Pars
         | Ok i -> wrap i
         | Err _ -> fail ("Expected " <> msg))
 
-let int : Parser Expr =
+let int_parser : Parser Expr =
     functor.map
         (\i -> Int i)
         (parse_parser (skip_many1 (satisfy char.is_numeric)) int.parse "integer")
 
-let float : Parser Expr =
+let float_parser : Parser Expr =
     let number = skip_many1 (satisfy char.is_numeric)
     functor.map (\f -> Float f) (parse_parser (number *> token '.' *> number) float.parse "float")
 
 let list _ : () -> Parser Expr =
     let e = expr ()
     between (token '(') (token ')') (spaces *> functor.map (\x -> List x) (many e))
-and expr _ : () -> Parser Expr = (atom <|> float <|> int <|> lazy_parser list) <* spaces
+and expr _ : () -> Parser Expr = (atom <|> float_parser <|> int_parser <|> lazy_parser list) <* spaces
 
 {
     expr = spaces *> lazy_parser expr,

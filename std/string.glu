@@ -1,3 +1,5 @@
+//@NO-IMPLICIT-PRELUDE
+
 let prelude = import! "std/prelude.glu"
 let { Num, Eq, Ord, Ordering, Semigroup, Monoid, Show } = prelude
 

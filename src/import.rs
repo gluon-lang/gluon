@@ -47,11 +47,12 @@ macro_rules! std_libs {
     }
 }
 // Include the standard library distribution in the binary
-static STD_LIBS: [(&str, &str); 16] = std_libs!(
+static STD_LIBS: [(&str, &str); 18] = std_libs!(
     "prelude",
     "types",
-
     "bool",
+    "float",
+    "int",
     "char",
     "io",
     "list",
@@ -121,12 +122,8 @@ impl Importer for CheckImporter {
         self.0.lock().unwrap().insert(module_name.into(), expr);
         let metadata = Metadata::default();
         // Insert a global to ensure the globals type can be looked up
-        vm.global_env().set_global(
-            Symbol::from(module_name),
-            typ,
-            metadata,
-            Value::Int(0),
-        )?;
+        vm.global_env()
+            .set_global(Symbol::from(module_name), typ, metadata, Value::Int(0))?;
         Ok(())
     }
 }
@@ -163,9 +160,9 @@ impl<I> Import<I> {
 
         // Retrieve the source, first looking in the standard library included in the
         // binary
-        let std_file = filename.to_str().and_then(|filename| {
-            STD_LIBS.iter().find(|tup| tup.0 == filename)
-        });
+        let std_file = filename
+            .to_str()
+            .and_then(|filename| STD_LIBS.iter().find(|tup| tup.0 == filename));
         Ok(match std_file {
             Some(tup) => Cow::Borrowed(tup.1),
             None => {
@@ -195,7 +192,11 @@ fn get_state<'m>(macros: &'m mut MacroExpander) -> &'m mut State {
     macros
         .state
         .entry(String::from("import"))
-        .or_insert_with(|| Box::new(State { visited: Vec::new() }))
+        .or_insert_with(|| {
+            Box::new(State {
+                visited: Vec::new(),
+            })
+        })
         .downcast_mut::<State>()
         .unwrap()
 }
@@ -217,9 +218,7 @@ where
         use compiler_pipeline::*;
 
         if args.len() != 1 {
-            return Err(
-                Error::String("Expected import to get 1 argument".into()).into(),
-            );
+            return Err(Error::String("Expected import to get 1 argument".into()).into());
         }
         match args[0].value {
             Expr::Literal(Literal::String(ref filename)) => {
@@ -242,13 +241,13 @@ where
                     // binary
                     let file_contents = self.read_file(filename)?;
 
-                    let mut compiler = Compiler::new().implicit_prelude(modulename != "std.types");
+                    // Modules marked as this would create a cyclic dependency if they included the implicit
+                    // prelude
+                    let implicit_prelude = !file_contents.starts_with("//@NO-IMPLICIT-PRELUDE");
+                    let mut compiler = Compiler::new().implicit_prelude(implicit_prelude);
                     let errors = macros.errors.len();
-                    let macro_result = file_contents.expand_macro_with(
-                        &mut compiler,
-                        macros,
-                        &modulename,
-                    )?;
+                    let macro_result =
+                        file_contents.expand_macro_with(&mut compiler, macros, &modulename)?;
                     if errors != macros.errors.len() {
                         // If macro expansion of the imported module fails we need to stop
                         // compilation of that module. To return an error we return one of the
@@ -273,9 +272,7 @@ where
                     Expr::Ident(TypedIdent::new(name)),
                 ))
             }
-            _ => Err(
-                Error::String("Expected a string literal to import".into()).into(),
-            ),
+            _ => Err(Error::String("Expected a string literal to import".into()).into()),
         }
     }
 }

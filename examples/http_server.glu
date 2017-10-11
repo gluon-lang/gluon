@@ -1,6 +1,6 @@
 let prelude = import! "std/prelude.glu"
+let int = import! "std/int.glu"
 let io = import! "std/io.glu"
-let { show } = prelude.show_Int
 let string = import! "std/string.glu"
 let { (<>) } = prelude.make_Semigroup string.semigroup
 let { (*>) } = prelude.make_Applicative io.applicative
@@ -36,5 +36,5 @@ let handler =
 let print_error h = catch_error h (\msg -> io_handler (io.println msg))
 
 \port ->
-    io.println ("Opened server on port " <> show port) *>
+    io.println ("Opened server on port " <> int.show.show port) *>
         listen port handler

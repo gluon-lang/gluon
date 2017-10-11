@@ -19,6 +19,7 @@ fn out_of_memory() {
 
     let expr = " [1, 2, 3, 4] ";
     let result = Compiler::new()
+        .implicit_prelude(false)
         .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr)
         .sync_or_error();
 
@@ -39,6 +40,7 @@ fn stack_overflow() {
 
     let expr = " [1, 2, 3, 4] ";
     let result = Compiler::new()
+        .implicit_prelude(false)
         .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr)
         .sync_or_error();
 

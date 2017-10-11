@@ -25,15 +25,10 @@ fn access_field_through_alias() {
     let _ = ::env_logger::init();
     let vm = new_vm();
     Compiler::new()
-        .run_expr_async::<OpaqueValue<&Thread, Hole>>(
-            &vm,
-            "example",
-            r#" import! "std/prelude.glu" "#,
-        )
+        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example", r#" import! "std/int.glu" "#)
         .sync_or_error()
         .unwrap();
-    let mut add: FunctionRef<fn(i32, i32) -> i32> =
-        vm.get_global("std.prelude.num_Int.(+)").unwrap();
+    let mut add: FunctionRef<fn(i32, i32) -> i32> = vm.get_global("std.int.num.(+)").unwrap();
     let result = add.call(1, 2);
     assert_eq!(result, Ok(3));
 }
