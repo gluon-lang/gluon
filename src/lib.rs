@@ -542,6 +542,10 @@ let { (+), (-), (*), (/) } = __implicit_prelude.num_Float
 and { (==) } = __implicit_prelude.eq_Float
 and { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_prelude.ord_Float
 
+let __string = import! "std/string.glu"
+and { eq = { (==) } } = __string
+and { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __string.ord
+
 in 0
 "#;
 
