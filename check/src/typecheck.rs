@@ -50,7 +50,7 @@ pub enum TypeError<I> {
     /// Multiple types were declared with the same name in the same expression
     DuplicateTypeDefinition(I),
     /// A field was defined more than once in a record constructor or pattern match
-    DuplicateField(I),
+    DuplicateField(String),
     /// Type is not a type which has any fields
     InvalidProjection(ArcType<I>),
     /// Expected to find a record with the following fields
@@ -624,6 +624,7 @@ impl<'a> Typecheck<'a> {
         &mut self,
         expr: &mut SpannedExpr<Symbol>,
     ) -> Result<TailCall, TypeError<Symbol>> {
+        let expr_span = expr.span;
         match expr.value {
             Expr::Ident(ref mut id) => {
                 if let Some(new) = self.original_symbols.get(&id.name) {
@@ -871,7 +872,7 @@ impl<'a> Typecheck<'a> {
                             .filter(|field| {
                                 self.error_on_duplicated_field(
                                     &mut duplicated_fields,
-                                    pos::spanned(base.span, field.name.clone()),
+                                    pos::spanned(expr_span, field.name.clone()),
                                 )
                             })
                             .cloned(),
@@ -882,7 +883,7 @@ impl<'a> Typecheck<'a> {
                             .filter(|field| {
                                 self.error_on_duplicated_field(
                                     &mut duplicated_fields,
-                                    pos::spanned(base.span, field.name.clone()),
+                                    pos::spanned(expr_span, field.name.clone()),
                                 )
                             })
                             .cloned(),
@@ -1691,12 +1692,12 @@ impl<'a> Typecheck<'a> {
 
     fn error_on_duplicated_field(
         &mut self,
-        duplicated_fields: &mut FnvSet<Symbol>,
+        duplicated_fields: &mut FnvSet<String>,
         new_name: Spanned<Symbol, BytePos>,
     ) -> bool {
         let span = new_name.span;
         duplicated_fields
-            .replace(new_name.value)
+            .replace(new_name.value.declared_name().to_string())
             .map_or(true, |name| {
                 self.errors.push(Spanned {
                     span: span,

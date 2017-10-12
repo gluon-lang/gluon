@@ -304,7 +304,7 @@ Value::Tag(0)
 
 test_expr!{ any marshalled_ordering_is_int,
 r#"
-string_prim.compare "a" "b"
+string_compare "a" "b"
 "#,
 Value::Tag(0)
 }

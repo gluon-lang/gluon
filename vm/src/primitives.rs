@@ -168,34 +168,32 @@ mod string {
         let mut context = thread.context();
         let value = StackFrame::current(&mut context.stack)[0];
         match value {
-            Value::Array(array) => {
-                match GcStr::from_utf8(array) {
-                    Ok(string) => {
-                        let value = Value::String(string);
-                        let result = context.alloc_with(
-                            thread,
-                            Def {
-                                tag: 1,
-                                elems: &[value],
-                            },
-                        );
-                        match result {
-                            Ok(data) => {
-                                context.stack.push(Value::Data(data));
-                                Status::Ok
-                            }
-                            Err(err) => {
-                                let result: RuntimeResult<(), _> = RuntimeResult::Panic(err);
-                                result.status_push(thread, &mut context)
-                            }
+            Value::Array(array) => match GcStr::from_utf8(array) {
+                Ok(string) => {
+                    let value = Value::String(string);
+                    let result = context.alloc_with(
+                        thread,
+                        Def {
+                            tag: 1,
+                            elems: &[value],
+                        },
+                    );
+                    match result {
+                        Ok(data) => {
+                            context.stack.push(Value::Data(data));
+                            Status::Ok
+                        }
+                        Err(err) => {
+                            let result: RuntimeResult<(), _> = RuntimeResult::Panic(err);
+                            result.status_push(thread, &mut context)
                         }
                     }
-                    Err(()) => {
+                }
+                Err(()) => {
                     let err: StdResult<&str, ()> = Err(());
                     err.status_push(thread, &mut context)
                 }
-                }
-            }
+            },
             _ => unreachable!(),
         }
     }
@@ -347,6 +345,14 @@ pub fn load(vm: &Thread) -> Result<()> {
     use self::string;
     type string_prim = str;
     vm.define_global(
+        "string_compare",
+        named_primitive!(2, "string_compare", string_prim::cmp),
+    )?;
+    vm.define_global(
+        "string_eq",
+        named_primitive!(2, "string_eq", <str as PartialEq>::eq),
+    )?;
+    vm.define_global(
         "string_prim",
         record! {
             len => primitive!(1 string_prim::len),
@@ -354,16 +360,25 @@ pub fn load(vm: &Thread) -> Result<()> {
             split_at => primitive!(2 string_prim::split_at),
             find => named_primitive!(2, "string_prim.find", string_prim::find::<&str>),
             rfind => named_primitive!(2, "string_prim.rfind", string_prim::rfind::<&str>),
-            starts_with => named_primitive!(2, "string_prim.starts_with", string_prim::starts_with::<&str>),
-            ends_with => named_primitive!(2, "string_prim.ends_with", string_prim::ends_with::<&str>),
+            starts_with => named_primitive!(
+                2,
+                "string_prim.starts_with",
+                string_prim::starts_with::<&str>
+            ),
+            ends_with => named_primitive!(
+                2,
+                "string_prim.ends_with",
+                string_prim::ends_with::<&str>
+            ),
             trim => primitive!(1 string_prim::trim),
             trim_left => primitive!(1 string_prim::trim_left),
             trim_right => primitive!(1 string_prim::trim_right),
-            compare => named_primitive!(2, "string_prim.compare", string_prim::cmp),
             append => named_primitive!(2, "string_prim.append", string::append),
-            eq => named_primitive!(2, "string_prim.eq", <str as PartialEq>::eq),
             slice => named_primitive!(3, "string_prim.slice", string::slice),
-            from_utf8 => primitive::<fn(Vec<u8>) -> StdResult<String, ()>>("string_prim.from_utf8", string::from_utf8),
+            from_utf8 => primitive::<fn(Vec<u8>) -> StdResult<String, ()>>(
+                "string_prim.from_utf8",
+                string::from_utf8
+            ),
             char_at => named_primitive!(2, "string_prim.char_at", string::char_at),
             as_bytes => primitive!(1 string_prim::as_bytes)
         },
@@ -399,18 +414,12 @@ pub fn load(vm: &Thread) -> Result<()> {
 
     vm.define_global(
         "#error",
-        primitive::<fn(StdString) -> Generic<A>>(
-            "#error",
-            prim::error,
-        ),
+        primitive::<fn(StdString) -> Generic<A>>("#error", prim::error),
     )?;
 
     vm.define_global(
         "error",
-        primitive::<fn(StdString) -> Generic<A>>(
-            "error",
-            prim::error,
-        ),
+        primitive::<fn(StdString) -> Generic<A>>("error", prim::error),
     )?;
 
     ::lazy::load(vm)?;

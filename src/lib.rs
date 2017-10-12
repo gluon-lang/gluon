@@ -6,6 +6,9 @@
 //! on how to write gluon programs as well as how to run them using this library.
 #![doc(html_root_url = "https://docs.rs/gluon/0.6.1")] // # GLUON
 
+#[cfg(test)]
+extern crate env_logger;
+
 extern crate futures;
 #[macro_use]
 extern crate log;
@@ -548,7 +551,7 @@ let __implicit_string = import! "std/string.glu"
 and { eq = { (==) } } = __implicit_string
 and { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_string.ord
 
-in 0
+in ()
 "#;
 
 pub fn filename_to_module(filename: &str) -> StdString {
@@ -591,3 +594,19 @@ fn load_regex(vm: &Thread) {
 }
 #[cfg(not(feature = "regex"))]
 fn load_regex(_: &Thread) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn implicit_prelude() {
+        let _ = ::env_logger::init();
+
+        let thread = new_vm();
+        Compiler::new()
+            .implicit_prelude(false)
+            .run_expr::<()>(&thread, "prelude", PRELUDE)
+            .unwrap_or_else(|err| panic!("{}", err));
+    }
+}

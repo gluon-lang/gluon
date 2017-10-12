@@ -7,9 +7,9 @@ let semigroup : Semigroup String = { append = string_prim.append }
 
 let monoid : Monoid String = { semigroup, empty = "" }
 
-let eq : Eq String = { (==) = string_prim.eq }
+let eq : Eq String = { (==) = string_eq }
 
-let ord : Ord String = { eq, compare = string_prim.compare }
+let ord : Ord String = { eq, compare = string_compare }
 
 let show : Show String = { show = prelude.id }
 
