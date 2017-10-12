@@ -298,12 +298,14 @@ impl<'a: 'e, 'e> Printer<'a, 'e> {
         default: DocBuilder<'a, Arena<'a>>,
     ) -> DocBuilder<'a, Arena<'a>> {
         let arena = self.arena;
-        let (doc, count) = self.comments_count(span);
+        let (doc, count, ends_with_newline) = self.comments_count(span);
         if doc.1 == arena.nil().1 {
             default
         } else if count == 0 {
             // No comments, only newlines from the iterator
             doc
+        } else if ends_with_newline {
+            arena.space().append(doc)
         } else {
             arena.space().append(doc).append(arena.space())
         }
@@ -338,6 +340,7 @@ impl<'a: 'e, 'e> Printer<'a, 'e> {
             Expr::Record {
                 ref types,
                 ref exprs,
+                ref base,
                 ..
             } => {
                 let ordered_iter = || {
@@ -373,13 +376,18 @@ impl<'a: 'e, 'e> Printer<'a, 'e> {
                 let mut line = newline(arena, expr);
                 // If there are any explicit line breaks then we need put each field on a separate
                 // line
-                if newlines.iter().any(|&(ref l, ref r)| {
+                let newline_in_fields = newlines.iter().any(|&(ref l, ref r)| {
                     l.1 != arena.nil().1 || r.1 != arena.nil().1
-                }) {
+                });
+                let newline_in_base = base.as_ref().map_or(false, |base| {
+                    self.space_before(base.span.start).1 != arena.nil().1
+                });
+                if newline_in_fields || newline_in_base {
                     line = arena.newline();
                 }
 
-                let last_field_end = spans().last().map_or(expr.span.start, |s| s.end);
+                let last_field_end = spans().last().map_or(expr.span.start + 1.into(), |s| s.end);
+                let last_element_end = base.as_ref().map_or(last_field_end, |base| base.span.end);
 
                 let record = arena
                     .concat(self.comma_sep(
@@ -408,8 +416,19 @@ impl<'a: 'e, 'e> Printer<'a, 'e> {
                         }),
                         |spanned| spanned.value,
                     ))
+                    .append(match *base {
+                        Some(ref base) => chain![arena;
+                            self.space_after(last_field_end),
+                            "..",
+                            self.space_before(base.span.start),
+                            self.pretty_expr_(base.span.start, base)
+                        ],
+                        None => arena.nil(),
+                    })
                     .nest(INDENT)
-                    .append(self.whitespace(Span::new(last_field_end, expr.span.end), line.clone()))
+                    .append(
+                        self.whitespace(Span::new(last_element_end, expr.span.end), line.clone()),
+                    )
                     .group()
                     .append("}");
                 (arena.text("{"), record)
@@ -672,11 +691,16 @@ fn forced_new_line<Id>(expr: &SpannedExpr<Id>) -> bool {
         Expr::LetBindings(..) | Expr::Match(..) | Expr::TypeBindings(..) => true,
         Expr::Lambda(ref lambda) => forced_new_line(&lambda.body),
         Expr::Tuple { ref elems, .. } => elems.iter().any(forced_new_line),
-        Expr::Record { ref exprs, .. } => exprs.iter().any(|field| {
+        Expr::Record {
+            ref exprs,
+            ref base,
+            ..
+        } => exprs.iter().any(|field| {
             field
                 .value
                 .as_ref()
                 .map_or(false, |expr| forced_new_line(expr))
+                || base.as_ref().map_or(false, |base| forced_new_line(base))
         }),
         Expr::IfElse(_, ref t, ref f) => forced_new_line(t) || forced_new_line(f),
         Expr::Infix(ref l, _, ref r) => forced_new_line(l) || forced_new_line(r),

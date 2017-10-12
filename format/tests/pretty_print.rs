@@ -251,3 +251,27 @@ x
 "#;
     assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
 }
+
+#[test]
+fn preserve_comments_in_empty_record() {
+    let expr = r#"
+{
+// 123
+}
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+}
+
+#[test]
+fn preserve_comments_in_record_base() {
+    let expr = r#"
+{
+    // 123
+    ..
+    // abc
+    test
+/* x */
+}
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+}
