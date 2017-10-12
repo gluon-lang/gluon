@@ -37,6 +37,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::fmt;
 use std::iter::once;
+use std::mem;
 
 use itertools::Itertools;
 
@@ -117,6 +118,36 @@ impl<'a> fmt::Display for Expr<'a> {
 }
 
 const INDENT: usize = 4;
+
+
+#[derive(Default)]
+#[must_use]
+struct Binder<'a> {
+    bindings: Vec<LetBinding<'a>>,
+}
+
+impl<'a> Binder<'a> {
+    fn bind(&mut self, expr: CExpr<'a>, typ: ArcType) -> Expr<'a> {
+        let name = TypedIdent {
+            name: Symbol::from(format!("bind_arg{}", self.bindings.len())),
+            typ,
+        };
+        let ident_expr = Expr::Ident(name.clone(), expr.span());
+        self.bindings.push(LetBinding {
+            name,
+            expr: Named::Expr(expr),
+            span_start: ident_expr.span().start,
+        });
+        ident_expr
+    }
+
+    fn into_expr(self, arena: &'a Arena<Expr<'a>>, expr: Expr<'a>) -> Expr<'a> {
+        self.bindings
+            .into_iter()
+            .rev()
+            .fold(expr, |expr, bind| Expr::Let(bind, arena.alloc(expr)))
+    }
+}
 
 impl<'a> Expr<'a> {
     pub fn pretty(
@@ -355,7 +386,6 @@ impl<'a> Allocator<'a> {
 }
 
 pub fn translate(env: &PrimitiveEnv, expr: &SpannedExpr<Symbol>) -> CoreExpr {
-    use std::mem::transmute;
     // Here we temporarily forget the lifetime of `translator` so it can be moved into a
     // `CoreExpr`. After we have it in `CoreExpr` the expression is then guaranteed to live as
     // long as the `CoreExpr` making it safe again
@@ -363,10 +393,10 @@ pub fn translate(env: &PrimitiveEnv, expr: &SpannedExpr<Symbol>) -> CoreExpr {
         let translator = Translator::new(env);
         let core_expr = {
             let core_expr = (*(&translator as *const Translator)).translate(expr);
-            transmute::<Expr, Expr<'static>>(core_expr)
+            mem::transmute::<Expr, Expr<'static>>(core_expr)
         };
         CoreExpr::new(
-            transmute::<Allocator, Allocator<'static>>(translator.allocator),
+            mem::transmute::<Allocator, Allocator<'static>>(translator.allocator),
             core_expr,
         )
     }
@@ -520,59 +550,63 @@ impl<'a, 'e> Translator<'a, 'e> {
                 ref base,
                 ..
             } => {
-                let base_binding = base.as_ref().map(|base_expr| {
-                    let core_base = self.translate_alloc(base_expr);
-                    let typ = remove_aliases_cow(&self.env, &base_expr.env_type_of(&self.env))
-                        .into_owned();
-                    let name = TypedIdent {
-                        name: Symbol::from("base_expr"),
-                        typ: typ.clone(),
-                    };
-                    (
-                        &*arena.alloc(Expr::Ident(name.clone(), base_expr.span)),
-                        LetBinding {
-                            name,
-                            expr: Named::Expr(core_base),
-                            span_start: expr.span.start,
-                        },
-                        typ,
-                    )
+                let mut binder = Binder::default();
+
+                // If `base` exists and is non-trivial we need to introduce bindings for each
+                // value to ensure that the expressions are evaluated in the correct order
+                let needs_bindings = base.as_ref().map_or(false, |base| match base.value {
+                    ast::Expr::Ident(_) => false,
+                    _ => true,
                 });
 
                 let mut last_span = expr.span;
-                let args: SmallVec<[_; 16]> = exprs
-                    .iter()
-                    .map(|field| match field.value {
+                let mut args = SmallVec::<[_; 16]>::new();
+                args.extend(exprs.iter().map(|field| {
+                    let expr = match field.value {
                         Some(ref expr) => {
                             last_span = expr.span;
                             self.translate(expr)
                         }
                         None => Expr::Ident(TypedIdent::new(field.name.value.clone()), last_span),
-                    })
-                    .chain(base_binding.as_ref().iter().flat_map(
-                        |&&(ref ident, _, ref base_type)| {
-                            base_type.row_iter().map(move |field| {
-                                self.project_expr(ident.span(), ident, &field.name, &field.typ)
-                            })
-                        },
-                    ))
-                    .collect();
+                    };
+                    if needs_bindings {
+                        let typ = expr.env_type_of(&self.env);
+                        binder.bind(arena.alloc(expr), typ)
+                    } else {
+                        expr
+                    }
+                }));
+
+                let base_binding = base.as_ref().map(|base_expr| {
+                    let core_base = self.translate_alloc(base_expr);
+                    let typ = remove_aliases_cow(&self.env, &base_expr.env_type_of(&self.env))
+                        .into_owned();
+
+                    let core_base = if needs_bindings {
+                        &*arena.alloc(binder.bind(core_base, base_expr.env_type_of(&self.env)))
+                    } else {
+                        core_base
+                    };
+                    (core_base, typ)
+                });
+                args.extend(base_binding.as_ref().into_iter().flat_map(
+                    |&(ident, ref base_type)| {
+                        base_type.row_iter().map(move |field| {
+                            self.project_expr(ident.span(), ident, &field.name, &field.typ)
+                        })
+                    },
+                ));
 
                 let record_constructor = Expr::Data(
                     TypedIdent {
                         name: self.dummy_symbol.name.clone(),
                         typ: typ.clone(),
                     },
-                    arena.alloc_extend(args.into_iter()),
+                    arena.alloc_extend(args),
                     expr.span.start,
                     expr.span.expansion_id,
                 );
-                match base_binding {
-                    Some((_, let_binding, _)) => {
-                        Expr::Let(let_binding, arena.alloc(record_constructor))
-                    }
-                    None => record_constructor,
-                }
+                binder.into_expr(arena, record_constructor)
             }
             ast::Expr::Tuple { ref elems, .. } => if elems.len() == 1 {
                 self.translate(&elems[0])
