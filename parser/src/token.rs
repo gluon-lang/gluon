@@ -612,12 +612,12 @@ mod test {
     #[test]
     fn user_defined_operators() {
         test(
-            r#"+-* * /&|=<>: .. <->"#,
+            r#"+-* * /&|=<>: ... <->"#,
             vec![
                 (r#"~~~                 "#, Operator("+-*")), // Horiffic!
                 (r#"    ~               "#, Operator("*")),
                 (r#"      ~~~~~~~       "#, Operator("/&|=<>:")), // Oh my...
-                (r#"              ~~    "#, Operator("..")),
+                (r#"              ~~    "#, Operator("...")),
                 (r#"                 ~~~"#, Operator("<->")),
             ],
         );
