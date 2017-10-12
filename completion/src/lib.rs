@@ -437,8 +437,15 @@ where
                 }
             }
             Expr::Array(ref array) => self.visit_one(&array.exprs),
-            Expr::Record { ref exprs, .. } => {
-                let exprs = exprs.iter().filter_map(|tup| tup.value.as_ref());
+            Expr::Record {
+                ref exprs,
+                ref base,
+                ..
+            } => {
+                let exprs = exprs
+                    .iter()
+                    .filter_map(|tup| tup.value.as_ref())
+                    .chain(base.as_ref().map(|base| &**base));
                 if let (_, Some(expr)) = self.select_spanned(exprs, |e| e.span) {
                     self.visit_expr(expr);
                 }
