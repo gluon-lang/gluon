@@ -248,6 +248,7 @@ pub enum Expr<Id> {
         typ: ArcType<Id>,
         types: Vec<ExprField<Id, ArcType<Id>>>,
         exprs: Vec<ExprField<Id, SpannedExpr<Id>>>,
+        base: Option<Box<SpannedExpr<Id>>>,
     },
     /// Tuple construction
     Tuple {
@@ -361,6 +362,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
         Expr::Record {
             ref mut typ,
             ref mut exprs,
+            ref mut base,
             ..
         } => {
             v.visit_typ(typ);
@@ -368,6 +370,9 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
                 if let Some(ref mut expr) = field.value {
                     v.visit_expr(expr);
                 }
+            }
+            if let Some(ref mut base) = *base {
+                v.visit_expr(base);
             }
         }
         Expr::Tuple {
@@ -487,13 +492,19 @@ pub fn walk_expr<'a, V: ?Sized + Visitor<'a>>(v: &mut V, e: &'a SpannedExpr<V::I
             }
         }
         Expr::Record {
-            ref typ, ref exprs, ..
+            ref typ,
+            ref exprs,
+            ref base,
+            ..
         } => {
             v.visit_typ(typ);
             for field in exprs {
                 if let Some(ref expr) = field.value {
                     v.visit_expr(expr);
                 }
+            }
+            if let Some(ref base) = *base {
+                v.visit_expr(base);
             }
         }
         Expr::Tuple {

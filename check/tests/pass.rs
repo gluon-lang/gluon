@@ -1107,3 +1107,26 @@ x
 
     assert_eq!(result, Ok(Type::int()));
 }
+
+
+#[test]
+fn record_expr_base() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let vec2 = { x = 1, y = 2 }
+{ z = 3, .. vec2 }
+"#;
+    let result = support::typecheck(text);
+
+    assert_eq!(
+        result,
+        Ok(Type::record(
+            vec![],
+            vec![
+                Field::new(intern("z"), typ("Int")),
+                Field::new(intern("x"), typ("Int")),
+                Field::new(intern("y"), typ("Int")),
+            ]
+        ))
+    );
+}

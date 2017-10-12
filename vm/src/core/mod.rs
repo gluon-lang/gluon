@@ -511,32 +511,34 @@ impl<'a, 'e> Translator<'a, 'e> {
             // match expr with
             // | { projection } -> projection
             ast::Expr::Projection(ref projected_expr, ref projection, ref projected_type) => {
-                let alt = Alternative {
-                    pattern: Pattern::Record(vec![
-                        (
-                            TypedIdent {
-                                name: projection.clone(),
-                                typ: projected_type.clone(),
-                            },
-                            None,
-                        ),
-                    ]),
-                    expr: arena.alloc(Expr::Ident(
-                        TypedIdent {
-                            name: projection.clone(),
-                            typ: projected_type.clone(),
-                        },
-                        expr.span,
-                    )),
-                };
-                Expr::Match(
-                    self.translate_alloc(projected_expr),
-                    self.allocator.alternative_arena.alloc_extend(once(alt)),
-                )
+                let projected_expr = self.translate_alloc(projected_expr);
+                self.project_expr(expr.span, projected_expr, projection, projected_type)
             }
             ast::Expr::Record {
-                ref typ, ref exprs, ..
+                ref typ,
+                ref exprs,
+                ref base,
+                ..
             } => {
+                let base_binding = base.as_ref().map(|base_expr| {
+                    let core_base = self.translate_alloc(base_expr);
+                    let typ = remove_aliases_cow(&self.env, &base_expr.env_type_of(&self.env))
+                        .into_owned();
+                    let name = TypedIdent {
+                        name: Symbol::from("base_expr"),
+                        typ: typ.clone(),
+                    };
+                    (
+                        &*arena.alloc(Expr::Ident(name.clone(), base_expr.span)),
+                        LetBinding {
+                            name,
+                            expr: Named::Expr(core_base),
+                            span_start: expr.span.start,
+                        },
+                        typ,
+                    )
+                });
+
                 let mut last_span = expr.span;
                 let args: SmallVec<[_; 16]> = exprs
                     .iter()
@@ -547,8 +549,16 @@ impl<'a, 'e> Translator<'a, 'e> {
                         }
                         None => Expr::Ident(TypedIdent::new(field.name.value.clone()), last_span),
                     })
+                    .chain(base_binding.as_ref().iter().flat_map(
+                        |&&(ref ident, _, ref base_type)| {
+                            base_type.row_iter().map(move |field| {
+                                self.project_expr(ident.span(), ident, &field.name, &field.typ)
+                            })
+                        },
+                    ))
                     .collect();
-                Expr::Data(
+
+                let record_constructor = Expr::Data(
                     TypedIdent {
                         name: self.dummy_symbol.name.clone(),
                         typ: typ.clone(),
@@ -556,7 +566,13 @@ impl<'a, 'e> Translator<'a, 'e> {
                     arena.alloc_extend(args.into_iter()),
                     expr.span.start,
                     expr.span.expansion_id,
-                )
+                );
+                match base_binding {
+                    Some((_, let_binding, _)) => {
+                        Expr::Let(let_binding, arena.alloc(record_constructor))
+                    }
+                    None => record_constructor,
+                }
             }
             ast::Expr::Tuple { ref elems, .. } => if elems.len() == 1 {
                 self.translate(&elems[0])
@@ -576,6 +592,38 @@ impl<'a, 'e> Translator<'a, 'e> {
             ast::Expr::TypeBindings(_, ref expr) => self.translate(expr),
             ast::Expr::Error => panic!("ICE: Error expression found in the compiler"),
         }
+    }
+
+    fn project_expr(
+        &'a self,
+        span: Span<BytePos>,
+        projected_expr: CExpr<'a>,
+        projection: &Symbol,
+        projected_type: &ArcType,
+    ) -> Expr<'a> {
+        let arena = &self.allocator.arena;
+        let alt = Alternative {
+            pattern: Pattern::Record(vec![
+                (
+                    TypedIdent {
+                        name: projection.clone(),
+                        typ: projected_type.clone(),
+                    },
+                    None,
+                ),
+            ]),
+            expr: arena.alloc(Expr::Ident(
+                TypedIdent {
+                    name: projection.clone(),
+                    typ: projected_type.clone(),
+                },
+                span,
+            )),
+        };
+        Expr::Match(
+            projected_expr,
+            self.allocator.alternative_arena.alloc_extend(once(alt)),
+        )
     }
 
     fn translate_let(
@@ -770,8 +818,6 @@ impl<'a> Typed for Expr<'a> {
     }
 }
 fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> ArcType {
-    use base::resolve::remove_aliases_cow;
-
     if arg_count == 0 {
         return alias_type.clone();
     }
@@ -954,8 +1000,8 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                         ast::Pattern::Error => unreachable!(),
                     }
                 }
-                let complete = groups.len() ==
-                    remove_aliases_cow(&self.0.env, &variables[0].env_type_of(&self.0.env))
+                let complete = groups.len()
+                    == remove_aliases_cow(&self.0.env, &variables[0].env_type_of(&self.0.env))
                         .row_iter()
                         .count();
 
@@ -1398,8 +1444,8 @@ mod tests {
                             &Pattern::Constructor(ref l, ref l_ids),
                             &Pattern::Constructor(ref r, ref r_ids),
                         ) => {
-                            check(map, &l.name, &r.name) &&
-                                l_ids
+                            check(map, &l.name, &r.name)
+                                && l_ids
                                     .iter()
                                     .zip(r_ids)
                                     .all(|(l, r)| check(map, &l.name, &r.name))
@@ -1434,12 +1480,12 @@ mod tests {
                 check(map, &lb.name.name, &rb.name.name) && b && expr_eq(map, l, r)
             }
             (&Expr::Call(lf, l_args), &Expr::Call(rf, r_args)) => {
-                expr_eq(map, lf, rf) && l_args.len() == r_args.len() &&
-                    l_args.iter().zip(r_args).all(|(l, r)| expr_eq(map, l, r))
+                expr_eq(map, lf, rf) && l_args.len() == r_args.len()
+                    && l_args.iter().zip(r_args).all(|(l, r)| expr_eq(map, l, r))
             }
             (&Expr::Data(ref l, l_args, ..), &Expr::Data(ref r, r_args, ..)) => {
-                check(map, &l.name, &r.name) && l_args.len() == r_args.len() &&
-                    l_args.iter().zip(r_args).all(|(l, r)| expr_eq(map, l, r))
+                check(map, &l.name, &r.name) && l_args.len() == r_args.len()
+                    && l_args.iter().zip(r_args).all(|(l, r)| expr_eq(map, l, r))
             }
             _ => false,
         }

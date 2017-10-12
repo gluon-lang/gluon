@@ -140,6 +140,20 @@ let id x = x
 in { id }
 ```
 
+The `..` operator can be used at the end of a record expression to take all fields of one record and fill the constructed record.
+
+```f#, rust
+let large_record = { x = 1, y = 2, name = "gluon" }
+in
+// Results in a record with type
+// { field : Bool, x : Int, y : Int, name : String }
+{
+    field = True,
+    ..
+    large_record
+}
+```
+
 ### Array expressions
 
 Arrays can be constructed with array literals.

@@ -542,7 +542,6 @@ r.y
     assert_err!(result, InvalidProjection(..));
 }
 
-
 #[test]
 fn type_constructor_in_function_name() {
     let _ = ::env_logger::init();
@@ -552,4 +551,14 @@ let Test x = x
 "#;
     let result = support::typecheck(text);
     assert_err!(result, Message(..));
+}
+
+#[test]
+fn record_base_not_record() {
+    let _ = ::env_logger::init();
+    let text = r#"
+{ .. 1 }
+"#;
+    let result = support::typecheck(text);
+    assert_unify_err!(result, TypeMismatch(..));
 }
