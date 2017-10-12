@@ -231,7 +231,6 @@ impl<'de, 't> Deserializer<'de, 't> {
         T: Getable<'de>,
     {
         let typ = resolve::remove_aliases_cow(self.state.env, self.typ);
-        println!("{}   {:?}", typ, typ);
         match T::from_value(self.state.thread, self.input) {
             Some(c) => if expected(&typ) {
                 visit(c)
@@ -429,8 +428,8 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
         self.deserialize_leaf(
             |typ| match *typ {
                 Type::App(ref func, ref args) if args.len() == 1 => {
-                    **func == Type::Builtin(BuiltinType::Array) &&
-                        *args[0] == Type::Builtin(BuiltinType::Byte)
+                    **func == Type::Builtin(BuiltinType::Array)
+                        && *args[0] == Type::Builtin(BuiltinType::Byte)
                 }
                 _ => false,
             },
@@ -449,11 +448,9 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     where
         V: Visitor<'de>,
     {
-        let typ = resolve::canonical_alias(
-            self.state.env,
-            self.typ,
-            |alias| alias.name.declared_name() == "std.types.Option",
-        );
+        let typ = resolve::canonical_alias(self.state.env, self.typ, |alias| {
+            alias.name.declared_name() == "std.types.Option"
+        });
         let option_inner_typ = match **typ {
             Type::App(ref func, ref args) if args.len() == 1 => match **func {
                 Type::Alias(ref alias) if alias.name.declared_name() == "std.types.Option" => {
