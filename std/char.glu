@@ -13,15 +13,6 @@ let show : Show Char = { show = prim.show_char }
     eq,
     ord,
     show,
-    is_digit = char_prim.is_digit,
-    to_digit = char_prim.to_digit,
-    len_utf8 = char_prim.len_utf8,
-    len_utf16 = char_prim.len_utf16,
-    is_alphabetic = char_prim.is_alphabetic,
-    is_lowercase = char_prim.is_lowercase,
-    is_uppercase = char_prim.is_uppercase,
-    is_whitespace = char_prim.is_whitespace,
-    is_alphanumeric = char_prim.is_alphanumeric,
-    is_control = char_prim.is_control,
-    is_numeric = char_prim.is_numeric
+    ..
+    char_prim
 }
