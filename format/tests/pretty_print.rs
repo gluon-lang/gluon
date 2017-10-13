@@ -27,7 +27,12 @@ fn test_format(name: &str) {
     let out_str = format_expr(&contents).unwrap();
 
     if contents != out_str {
-        let out_path = Path::new(&env::var("OUT_DIR").unwrap()).join(name.file_name().unwrap());
+        let args: Vec<_> = env::args().collect();
+        let out_path = Path::new(&args[0][..])
+            .parent()
+            .and_then(|p| p.parent())
+            .expect("folder")
+            .join(name.file_name().unwrap());
         File::create(out_path)
             .unwrap()
             .write_all(out_str.as_bytes())
@@ -103,6 +108,11 @@ fn writer() {
 }
 
 #[test]
+fn parser() {
+    test_format("std/parser.glu");
+}
+
+#[test]
 fn repl() {
     test_format("repl/src/repl.glu");
 }
@@ -152,7 +162,7 @@ fn preserve_whitespace_in_record() {
     aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaax = 1,
 
 
-    bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbby = 2
+    bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbby = 2,
 }
 "#;
     assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);

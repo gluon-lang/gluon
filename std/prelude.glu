@@ -28,7 +28,7 @@ let semigroup_Ordering : Semigroup Ordering = {
     append = \x y ->
         match x with
         | EQ -> y
-        | _ -> x
+        | _ -> x,
 }
 
 /// `Monoid a` represents an semigroup an which has an identity. This means
@@ -46,12 +46,12 @@ type Monoid a = {
 
 let monoid_Function monoid : Monoid b -> Monoid (a -> b) = {
     semigroup = semigroup_Function monoid.semigroup,
-    empty = \_ -> monoid.empty
+    empty = \_ -> monoid.empty,
 }
 
 let monoid_Ordering : Monoid Ordering = {
     semigroup = semigroup_Ordering,
-    empty = EQ
+    empty = EQ,
 }
 
 /// `Group a` represents an monoid an which has an inverse element. This means
@@ -125,7 +125,7 @@ let make_Category category : Category cat -> _ =
 
 let category_Function : Category (->) = {
     id = \x -> x,
-    compose = \f g x -> f (g x)
+    compose = \f g x -> f (g x),
 }
 
 /// The identity function, where `id x == x`
@@ -214,7 +214,7 @@ let make_Applicative applicative =
 let applicative_Function : Applicative ((->) a) = {
     functor = functor_Function,
     apply = \f g x -> f x (g x),
-    wrap = const
+    wrap = const,
 }
 
 type Alternative f = { applicative : Applicative f, or : f a -> f a -> f a, empty : f a }
@@ -272,7 +272,7 @@ let make_Monad monad : Monad m -> _ =
 
 let monad_Function : Monad ((->) a) = {
     applicative = applicative_Function,
-    flat_map = \f m x -> f (m x) x
+    flat_map = \f m x -> f (m x) x,
 }
 
 /// `Show a` represents a conversion function from `a` to a readable string.
@@ -334,7 +334,7 @@ let make_Foldable foldable : Foldable t -> _ =
         all,
         any,
         elem,
-        count
+        count,
     }
 
 type Traversable t = {
@@ -402,5 +402,5 @@ let make_Traversable traversable : Traversable t -> _ =
     (<<),
     (>>),
 
-    Show
+    Show,
 }

@@ -61,5 +61,5 @@ let functor : Functor Stream =
     fold,
     to_list,
     zip_with,
-    functor
+    functor,
 }

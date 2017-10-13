@@ -4,7 +4,7 @@ let eq : Eq Char = { (==) = \l r -> l #Char== r }
 
 let ord : Ord Char = {
     eq = eq,
-    compare = \l r -> if l #Char< r then LT else if l #Char== r then EQ else GT
+    compare = \l r -> if l #Char< r then LT else if l #Char== r then EQ else GT,
 }
 
 let show : Show Char = { show = prim.show_char }

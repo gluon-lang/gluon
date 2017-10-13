@@ -32,7 +32,7 @@ let semigroup : Semigroup (List a) =
 
 let monoid : Monoid (List a) = {
     semigroup = semigroup,
-    empty = Nil
+    empty = Nil,
 }
 
 let eq a : Eq a -> Eq (List a) =
@@ -81,7 +81,7 @@ let some alternative x : Alternative f -> f a -> f (List a) =
 let alternative : Alternative List = {
     applicative = applicative,
     or = semigroup.append,
-    empty = Nil
+    empty = Nil,
 }
 
 let monad : Monad List =
@@ -107,7 +107,7 @@ let show : Show a -> Show (List a) = \d ->
                     | Nil -> d.show y
                 | Nil -> ""
 
-            "[" ++ show_elems xs ++ "]"
+            "[" ++ show_elems xs ++ "]",
     }
 
 let foldable : Foldable List =
@@ -129,7 +129,7 @@ let traversable : Traversable List = {
     traverse = \app f ->
         foldable.foldr
             (\a b -> app.apply (app.functor.map Cons (f a)) b)
-            (app.wrap Nil)
+            (app.wrap Nil),
 }
 
 {
@@ -146,5 +146,5 @@ let traversable : Traversable List = {
     monad,
     show,
     foldable,
-    traversable
+    traversable,
 }

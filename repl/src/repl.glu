@@ -43,19 +43,19 @@ let commands : Map String Cmd =
     let cmds =
         singleton "q" { info = "Quit the REPL", action = \_ -> wrap False } <> singleton "t" {
                     info = "Prints the type with an expression",
-                    action = \arg -> repl_prim.type_of_expr arg >>= print_result *> wrap True
+                    action = \arg -> repl_prim.type_of_expr arg >>= print_result *> wrap True,
                 }
             <> singleton "i" {
                     info = "Prints information about the given name",
-                    action = \arg -> repl_prim.find_info arg >>= print_result *> wrap True
+                    action = \arg -> repl_prim.find_info arg >>= print_result *> wrap True,
                 }
             <> singleton "k" {
                     info = "Prints the kind with the given type",
-                    action = \arg -> repl_prim.find_kind arg >>= print_result *> wrap True
+                    action = \arg -> repl_prim.find_kind arg >>= print_result *> wrap True,
                 }
             <> singleton "l" {
                     info = "Loads the file at \'folder/module.ext\' and stores it at \'module\'",
-                    action = \arg -> load_file arg >>= io.println *> wrap True
+                    action = \arg -> load_file arg >>= io.println *> wrap True,
                 }
             <> singleton "h" {
                     info = "Print this help",
@@ -65,7 +65,7 @@ let commands : Map String Cmd =
                             io.println ("    :" ++ cmd.key ++ " " ++ cmd.value.info)
 
                         print_header *> for (load commands) print_cmd
-                            *> wrap True
+                            *> wrap True,
                 }
     commands <- cmds
     load commands

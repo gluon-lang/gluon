@@ -416,13 +416,27 @@ impl<'a: 'e, 'e> Printer<'a, 'e> {
                         }),
                         |spanned| spanned.value,
                     ))
+                    .append(
+                        if (!exprs.is_empty() || !types.is_empty()) && line.1 == arena.newline().1 {
+                            arena.text(",")
+                        } else {
+                            arena.nil()
+                        },
+                    )
                     .append(match *base {
-                        Some(ref base) => chain![arena;
-                            self.space_after(last_field_end),
-                            "..",
-                            self.space_before(base.span.start),
-                            self.pretty_expr_(base.span.start, base)
-                        ],
+                        Some(ref base) => {
+                            let comments = self.comments_after(last_field_end);
+                            chain![arena;
+                                if comments.1 == arena.nil().1 {
+                                    line.clone()
+                                } else {
+                                    comments
+                                },
+                                "..",
+                                self.space_before(base.span.start),
+                                self.pretty_expr_(base.span.start, base)
+                            ]
+                        }
                         None => arena.nil(),
                     })
                     .nest(INDENT)

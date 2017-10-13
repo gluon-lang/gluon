@@ -106,7 +106,7 @@ and make ord : Ord k -> _ =
         traverse_with_key,
         to_list,
         keys,
-        values
+        values,
     }
 
 { Map, make }

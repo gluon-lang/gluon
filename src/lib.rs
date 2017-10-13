@@ -24,7 +24,6 @@ extern crate serde_state as serde;
 
 pub extern crate gluon_base as base;
 pub extern crate gluon_check as check;
-pub extern crate gluon_format as format;
 pub extern crate gluon_parser as parser;
 #[macro_use]
 pub extern crate gluon_vm as vm;

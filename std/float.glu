@@ -7,12 +7,12 @@ let additive =
 
     let monoid : Monoid Float = {
         semigroup = semigroup,
-        empty = 0.0
+        empty = 0.0,
     }
 
     let group : Group Float = {
         monoid = monoid,
-        inverse = \x -> 0.0 #Float- x
+        inverse = \x -> 0.0 #Float- x,
     }
 
     { semigroup, monoid, group }
@@ -22,12 +22,12 @@ let multiplicative =
 
     let monoid : Monoid Float = {
         semigroup = semigroup,
-        empty = 1.0
+        empty = 1.0,
     }
 
     let group : Group Float = {
         monoid = monoid,
-        inverse = \x -> 1.0 #Float/ x
+        inverse = \x -> 1.0 #Float/ x,
     }
 
     { semigroup, monoid, group }
@@ -38,7 +38,7 @@ let eq : Eq Float = {
 
 let ord : Ord Float = {
     eq = eq,
-    compare = \l r -> if l #Float< r then LT else if l #Float== r then EQ else GT
+    compare = \l r -> if l #Float< r then LT else if l #Float== r then EQ else GT,
 }
 
 let num : Num Float = {
@@ -47,7 +47,7 @@ let num : Num Float = {
     (-) = \l r -> l #Float- r,
     (*) = multiplicative.semigroup.append,
     (/) = \l r -> l #Float/ r,
-    negate = additive.group.inverse
+    negate = additive.group.inverse,
 }
 
 let show : Show Float = {

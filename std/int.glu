@@ -9,12 +9,12 @@ let additive =
 
     let monoid : Monoid Int = {
         semigroup = semigroup,
-        empty = 0
+        empty = 0,
     }
 
     let group : Group Int = {
         monoid = monoid,
-        inverse = \x -> 0 #Int- x
+        inverse = \x -> 0 #Int- x,
     }
 
     { semigroup, monoid, group }
@@ -26,7 +26,7 @@ let multiplicative =
 
     let monoid : Monoid Int = {
         semigroup = semigroup,
-        empty = 1
+        empty = 1,
     }
 
     { semigroup, monoid }
@@ -37,7 +37,7 @@ let eq = {
 
 let ord = {
     eq = eq,
-    compare = \l r -> if l #Int< r then LT else if l #Int== r then EQ else GT
+    compare = \l r -> if l #Int< r then LT else if l #Int== r then EQ else GT,
 }
 
 let num = {
@@ -46,7 +46,7 @@ let num = {
     (-) = \l r -> l #Int- r,
     (*) = multiplicative.semigroup.append,
     (/) = \l r -> l #Int/ r,
-    negate = additive.group.inverse
+    negate = additive.group.inverse,
 }
 
 let show : Show Int = {

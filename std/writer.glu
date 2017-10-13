@@ -17,14 +17,14 @@ let make monoid : Monoid w -> Impl w =
     let applicative : Applicative (Writer w) = {
         functor,
         apply = \mf m -> { value = mf.value m.value, writer = mf.writer <> m.writer },
-        wrap = \value -> { value, writer = monoid.empty }
+        wrap = \value -> { value, writer = monoid.empty },
     }
 
     let monad : Monad (Writer w) = {
         applicative,
         flat_map = \f m ->
             let { value, writer } = f m.value
-            { value, writer = m.writer <> writer }
+            { value, writer = m.writer <> writer },
     }
 
     { functor, applicative, monad }

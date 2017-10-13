@@ -12,7 +12,7 @@ let applicative : Applicative IO =
 
 let monad : Monad IO = {
     applicative = applicative,
-    flat_map = io_flat_map
+    flat_map = io_flat_map,
 }
 
 {
