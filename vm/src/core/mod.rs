@@ -48,6 +48,7 @@ use self::smallvec::SmallVec;
 use pretty::{self, DocAllocator};
 
 use base::ast::{self, Literal, SpannedExpr, SpannedPattern, Typed, TypedIdent};
+use base::fnv::FnvSet;
 use base::pos::{spanned, BytePos, ExpansionId, Span};
 use base::resolve::remove_aliases_cow;
 use base::symbol::Symbol;
@@ -589,11 +590,20 @@ impl<'a, 'e> Translator<'a, 'e> {
                     };
                     (core_base, typ)
                 });
+
+                let defined_fields: FnvSet<&str> = exprs
+                    .iter()
+                    .map(|field| field.name.value.declared_name())
+                    .collect();
                 args.extend(base_binding.as_ref().into_iter().flat_map(
                     |&(ident, ref base_type)| {
-                        base_type.row_iter().map(move |field| {
-                            self.project_expr(ident.span(), ident, &field.name, &field.typ)
-                        })
+                        base_type
+                            .row_iter()
+                            // Only load fields that aren't named in this record constructor
+                            .filter(|field| !defined_fields.contains(field.name.declared_name()))
+                            .map(move |field| {
+                                self.project_expr(ident.span(), ident, &field.name, &field.typ)
+                            })
                     },
                 ));
 

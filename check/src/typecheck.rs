@@ -17,7 +17,7 @@ use base::fnv::{FnvMap, FnvSet};
 use base::resolve;
 use base::kind::{ArcKind, Kind, KindCache, KindEnv};
 use base::merge;
-use base::pos::{self, BytePos, Span, Spanned};
+use base::pos::{BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
 use base::types::{self, Alias, AliasData, AppVec, ArcType, Field, Generic};
 use base::types::{PrimitiveEnv, RecordSelector, Type, TypeCache, TypeEnv, TypeVariable};
@@ -624,7 +624,6 @@ impl<'a> Typecheck<'a> {
         &mut self,
         expr: &mut SpannedExpr<Symbol>,
     ) -> Result<TailCall, TypeError<Symbol>> {
-        let expr_span = expr.span;
         match expr.value {
             Expr::Ident(ref mut id) => {
                 if let Some(new) = self.original_symbols.get(&id.name) {
@@ -870,10 +869,7 @@ impl<'a> Typecheck<'a> {
                         base_type
                             .type_field_iter()
                             .filter(|field| {
-                                self.error_on_duplicated_field(
-                                    &mut duplicated_fields,
-                                    pos::spanned(expr_span, field.name.clone()),
-                                )
+                                !duplicated_fields.contains(field.name.declared_name())
                             })
                             .cloned(),
                     );
@@ -881,10 +877,7 @@ impl<'a> Typecheck<'a> {
                         base_type
                             .row_iter()
                             .filter(|field| {
-                                self.error_on_duplicated_field(
-                                    &mut duplicated_fields,
-                                    pos::spanned(expr_span, field.name.clone()),
-                                )
+                                !duplicated_fields.contains(field.name.declared_name())
                             })
                             .cloned(),
                     );

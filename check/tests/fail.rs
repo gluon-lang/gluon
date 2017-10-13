@@ -562,13 +562,3 @@ fn record_base_not_record() {
     let result = support::typecheck(text);
     assert_unify_err!(result, TypeMismatch(..));
 }
-
-#[test]
-fn duplicate_fields_from_record_base() {
-    let _ = ::env_logger::init();
-    let text = r#"
-{ x = 1 .. { y = "", x = "" } }
-"#;
-    let result = support::typecheck(text);
-    assert_err!(result, DuplicateField(..));
-}

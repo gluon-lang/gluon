@@ -1130,3 +1130,21 @@ let vec2 = { x = 1, y = 2 }
         ))
     );
 }
+
+#[test]
+fn record_expr_base_overwrite_field() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let record = { x = 1 }
+{ x = "", .. record }
+"#;
+    let result = support::typecheck(text);
+
+    assert_eq!(
+        result,
+        Ok(Type::record(
+            vec![],
+            vec![Field::new(intern("x"), typ("String"))]
+        ))
+    );
+}

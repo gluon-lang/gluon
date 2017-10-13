@@ -682,6 +682,20 @@ io_flat_map (\x -> io_wrap 100)
 100i32
 }
 
+test_expr!{ record_base_duplicate_fields,
+r#"
+{ x = "" ..  { x = 1 } }.x
+"#,
+""
+}
+
+test_expr!{ record_base_duplicate_fields2,
+r#"
+{ x = "" ..  { x = 1, y = 2 } }.y
+"#,
+2
+}
+
 #[test]
 fn rename_types_after_binding() {
     let _ = ::env_logger::init();
