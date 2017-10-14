@@ -85,7 +85,8 @@ macro_rules! assert_multi_unify_err {
                                     }
                                     None => {
                                         assert!(false,
-                                            "Found less errors than expected at {}.\nErrors:\n{}\nbut expected {}",
+                                            "Found less errors than expected at {}.\n\
+                                            Errors:\n{}\nbut expected {}",
                                             i,
                                             error,
                                             stringify!($id)
@@ -99,7 +100,8 @@ macro_rules! assert_multi_unify_err {
                                         error);
                             }
                             _ => assert!(false,
-                                        "Found errors at {}:\n{}\nbut expected an unification error",
+                                        "Found errors at {}:\n\
+                                        {}\nbut expected an unification error",
                                         i,
                                         error)
                         }
@@ -561,4 +563,26 @@ fn record_base_not_record() {
 "#;
     let result = support::typecheck(text);
     assert_unify_err!(result, TypeMismatch(..));
+}
+
+#[test]
+fn undefined_type_variable() {
+    let _ = ::env_logger::init();
+    let text = r#"
+type Test = a
+()
+"#;
+    let result = support::typecheck(text);
+    assert_err!(result, UndefinedVariable(..));
+}
+
+#[test]
+fn undefined_type_variable_in_enum() {
+    let _ = ::env_logger::init();
+    let text = r#"
+type Test = | Test a
+()
+"#;
+    let result = support::typecheck(text);
+    assert_err!(result, UndefinedVariable(..));
 }

@@ -1148,3 +1148,16 @@ let record = { x = 1 }
         ))
     );
 }
+
+#[test]
+fn undefined_type_variable_in_record() {
+    let _ = ::env_logger::init();
+    let text = r#"
+type Test = {
+    x: a
+}
+()
+"#;
+    let result = support::typecheck(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
