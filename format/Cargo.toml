@@ -11,7 +11,6 @@ repository = "https://github.com/gluon-lang/gluon"
 documentation = "https://docs.rs/gluon"
 
 [dependencies]
-env_logger = { version = "0.3.4", optional = true }
 log = "0.3.6"
 pretty = "0.3.2"
 itertools = "0.5.6"
@@ -20,8 +19,9 @@ gluon_base = { path = "../base", version = "0.6.1" } # GLUON
 gluon_parser = { path = "../parser", version = "0.6.1" } # GLUON
 
 [dev-dependencies]
+env_logger = "0.3.4"
 difference = "1.0"
 pretty_assertions = "0.3.0"
 
 [features]
-test = ["env_logger"]
+test = []

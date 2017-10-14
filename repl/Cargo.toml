@@ -27,6 +27,7 @@ log = "0.3.6"
 env_logger = { version = "0.3.4", optional = true }
 lazy_static = "0.2.0"
 rustyline = "1.0.0"
+walkdir = "1"
 
 [dev-dependencies]
 pretty_assertions = "0.3.4"

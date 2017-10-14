@@ -50,7 +50,7 @@ pub enum TypeError<I> {
     /// Multiple types were declared with the same name in the same expression
     DuplicateTypeDefinition(I),
     /// A field was defined more than once in a record constructor or pattern match
-    DuplicateField(I),
+    DuplicateField(String),
     /// Type is not a type which has any fields
     InvalidProjection(ArcType<I>),
     /// Expected to find a record with the following fields
@@ -832,6 +832,7 @@ impl<'a> Typecheck<'a> {
                 ref mut typ,
                 ref mut types,
                 exprs: ref mut fields,
+                ref mut base,
             } => {
                 let mut new_types: Vec<Field<_, _>> = Vec::with_capacity(types.len());
 
@@ -856,6 +857,32 @@ impl<'a> Typecheck<'a> {
                         new_fields.push(Field::new(field.name.value.clone(), typ));
                     }
                 }
+
+                if let Some(ref mut base) = *base {
+                    let base_type = self.typecheck(base);
+                    let base_type = self.remove_aliases(base_type);
+
+                    let record_type = Type::poly_record(vec![], vec![], self.subs.new_var());
+                    let base_type = self.unify_span(base.span, &record_type, base_type);
+
+                    new_types.extend(
+                        base_type
+                            .type_field_iter()
+                            .filter(|field| {
+                                !duplicated_fields.contains(field.name.declared_name())
+                            })
+                            .cloned(),
+                    );
+                    new_fields.extend(
+                        base_type
+                            .row_iter()
+                            .filter(|field| {
+                                !duplicated_fields.contains(field.name.declared_name())
+                            })
+                            .cloned(),
+                    );
+                }
+
                 let record_fields = new_fields
                     .iter()
                     .map(|f| f.name.clone())
@@ -870,6 +897,7 @@ impl<'a> Typecheck<'a> {
                         return Ok(TailCall::Type(typ.clone()));
                     }
                 };
+
                 let id_type = self.instantiate(&id_type);
                 let record_type = instantiate_generic_variables(
                     &mut self.named_variables,
@@ -878,6 +906,7 @@ impl<'a> Typecheck<'a> {
                     &record_type,
                 );
                 self.unify(&self.type_cache.record(new_types, new_fields), record_type)?;
+
                 *typ = id_type.clone();
                 Ok(TailCall::Type(id_type.clone()))
             }
@@ -1656,12 +1685,12 @@ impl<'a> Typecheck<'a> {
 
     fn error_on_duplicated_field(
         &mut self,
-        duplicated_fields: &mut FnvSet<Symbol>,
+        duplicated_fields: &mut FnvSet<String>,
         new_name: Spanned<Symbol, BytePos>,
     ) -> bool {
         let span = new_name.span;
         duplicated_fields
-            .replace(new_name.value)
+            .replace(new_name.value.declared_name().to_string())
             .map_or(true, |name| {
                 self.errors.push(Spanned {
                     span: span,

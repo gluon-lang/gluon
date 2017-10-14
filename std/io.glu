@@ -12,22 +12,13 @@ let applicative : Applicative IO =
 
 let monad : Monad IO = {
     applicative = applicative,
-    flat_map = io_flat_map
+    flat_map = io_flat_map,
 }
 
 {
     functor,
     applicative,
     monad,
-
-    open_file = io_prim.open_file,
-    read_file = io_prim.read_file,
-    read_file_to_string = io_prim.read_file_to_string,
-    read_char = io_prim.read_char,
-    read_line = io_prim.read_line,
-    print = io_prim.print,
-    println = io_prim.println,
-    catch = io_prim.catch,
-    run_expr = io_prim.run_expr,
-    load_script = io_prim.load_script,
+    ..
+    io_prim
 }

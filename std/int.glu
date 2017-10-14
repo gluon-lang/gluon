@@ -9,12 +9,12 @@ let additive =
 
     let monoid : Monoid Int = {
         semigroup = semigroup,
-        empty = 0
+        empty = 0,
     }
 
     let group : Group Int = {
         monoid = monoid,
-        inverse = \x -> 0 #Int- x
+        inverse = \x -> 0 #Int- x,
     }
 
     { semigroup, monoid, group }
@@ -26,7 +26,7 @@ let multiplicative =
 
     let monoid : Monoid Int = {
         semigroup = semigroup,
-        empty = 1
+        empty = 1,
     }
 
     { semigroup, monoid }
@@ -37,7 +37,7 @@ let eq = {
 
 let ord = {
     eq = eq,
-    compare = \l r -> if l #Int< r then LT else if l #Int== r then EQ else GT
+    compare = \l r -> if l #Int< r then LT else if l #Int== r then EQ else GT,
 }
 
 let num = {
@@ -46,7 +46,7 @@ let num = {
     (-) = \l r -> l #Int- r,
     (*) = multiplicative.semigroup.append,
     (/) = \l r -> l #Int/ r,
-    negate = additive.group.inverse
+    negate = additive.group.inverse,
 }
 
 let show : Show Int = {
@@ -60,21 +60,6 @@ let show : Show Int = {
     ord,
     num,
     show,
-
-    min_value = int_prim.min_value,
-    max_value = int_prim.max_value,
-    count_ones = int_prim.count_ones,
-    rotate_left = int_prim.rotate_left,
-    rotate_right = int_prim.rotate_right,
-    swap_bytes = int_prim.swap_bytes,
-    from_be = int_prim.from_be,
-    from_le = int_prim.from_le,
-    to_be = int_prim.to_be,
-    to_le = int_prim.to_le,
-    pow = int_prim.pow,
-    abs = int_prim.abs,
-    signum = int_prim.signum,
-    is_positive = int_prim.is_positive,
-    is_negative = int_prim.is_negative,
-    parse = int_prim.parse
+    ..
+    int_prim
 }

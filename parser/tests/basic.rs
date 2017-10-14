@@ -733,6 +733,7 @@ fn doc_comment_on_record_field() {
                     value: Some(int(1)),
                 },
             ],
+            base: None,
         })
     )
 }

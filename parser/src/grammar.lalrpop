@@ -44,6 +44,7 @@ extern {
         ":" => Token::Colon,
         "," => Token::Comma,
         "." => Token::Dot,
+        ".." => Token::DotDot,
         "=" => Token::Equals,
         "\\" => Token::Lambda,
         "|" => Token::Pipe,
@@ -413,6 +414,11 @@ ValueBinding: ValueBinding<Id> = {
         },
 };
 
+RecordExprBase: Option<SpannedExpr<Id>> = {
+    ".." <SpExpr> => Some(<>),
+    => None
+};
+
 AtomicExpr: Expr<Id> = {
     <id: Ident> =>
         Expr::Ident(new_ident(type_cache, id)),
@@ -440,7 +446,7 @@ AtomicExpr: Expr<Id> = {
             exprs: elems,
         }),
 
-    "{" <fields: Comma<FieldExpr>> "}" => {
+    "{" <fields: Comma<FieldExpr>> <base: RecordExprBase> "}" => {
         let mut types = Vec::new();
         let mut values = Vec::new();
 
@@ -463,6 +469,7 @@ AtomicExpr: Expr<Id> = {
             typ: Type::hole(),
             types: types,
             exprs: values,
+            base: base.map(Box::new),
         }
     },
 };

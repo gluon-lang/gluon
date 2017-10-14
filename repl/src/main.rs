@@ -8,18 +8,22 @@ extern crate env_logger;
 extern crate futures;
 #[macro_use]
 extern crate log;
+extern crate walkdir;
 
 extern crate gluon;
+extern crate gluon_format;
 #[macro_use]
 extern crate gluon_vm;
-extern crate gluon_format;
 
 use std::io::{self, Write};
+use std::ffi::OsStr;
+use std::path::Path;
+
+use walkdir::WalkDir;
 
 use gluon::base;
 use gluon::parser;
 use gluon::vm;
-use gluon::format;
 
 use base::error::InFile;
 
@@ -49,14 +53,14 @@ fn init_env_logger() {
 fn init_env_logger() {}
 
 fn format(writer: &mut Write, buffer: &str) -> Result<usize> {
-    use format::format_expr;
+    use gluon_format::format_expr;
 
     let output = format_expr(buffer).map_err(|err| InFile::new("", buffer, err))?;
     writer.write_all(output.as_bytes())?;
     Ok(output.len())
 }
 
-fn fmt_file(name: &str) -> Result<()> {
+fn fmt_file(name: &Path) -> Result<()> {
     use std::io::{Read, Seek, SeekFrom};
     use std::fs::{File, OpenOptions};
 
@@ -66,7 +70,7 @@ fn fmt_file(name: &str) -> Result<()> {
     input_file.read_to_string(&mut buffer)?;
 
     {
-        let mut backup = File::create(&format!("{}.bk", name))?;
+        let mut backup = File::create(name.with_extension("glu.bk"))?;
         backup.write_all(buffer.as_bytes())?;
     }
 
@@ -106,8 +110,26 @@ fn run() -> std::result::Result<(), Box<std::error::Error + Send + Sync>> {
     ).get_matches();
     if let Some(fmt_matches) = matches.subcommand_matches("fmt") {
         if let Some(args) = fmt_matches.values_of("INPUT") {
-            for arg in args {
-                fmt_file(arg)?;
+            let mut gluon_files = args.into_iter()
+                .flat_map(|arg| {
+                    WalkDir::new(arg).into_iter().filter_map(|entry| {
+                        entry.ok().and_then(|entry| {
+                            if entry.file_type().is_file()
+                                && entry.path().extension() == Some(OsStr::new("glu"))
+                            {
+                                Some(entry.path().to_owned())
+                            } else {
+                                None
+                            }
+                        })
+                    })
+                })
+                .collect::<Vec<_>>();
+            gluon_files.sort();
+            gluon_files.dedup();
+
+            for file in gluon_files {
+                fmt_file(&file)?;
             }
         } else {
             fmt_stdio()?;
@@ -119,9 +141,7 @@ fn run() -> std::result::Result<(), Box<std::error::Error + Send + Sync>> {
         match run_files(&vm, args) {
             Ok(()) => (),
             Err(err @ Error::VM(VMError::Message(_))) => {
-                return Err(
-                    format!("{}\n{}", err, vm.context().stack.stacktrace(0)).into(),
-                )
+                return Err(format!("{}\n{}", err, vm.context().stack.stacktrace(0)).into())
             }
             Err(err) => return Err(err.into()),
         }

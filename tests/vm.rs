@@ -304,7 +304,7 @@ Value::Tag(0)
 
 test_expr!{ any marshalled_ordering_is_int,
 r#"
-string_prim.compare "a" "b"
+string_compare "a" "b"
 "#,
 Value::Tag(0)
 }
@@ -680,6 +680,20 @@ io_flat_map (\x -> io_wrap 100)
             ")
 "#,
 100i32
+}
+
+test_expr!{ record_base_duplicate_fields,
+r#"
+{ x = "" ..  { x = 1 } }.x
+"#,
+""
+}
+
+test_expr!{ record_base_duplicate_fields2,
+r#"
+{ x = "" ..  { x = 1, y = 2 } }.y
+"#,
+2
 }
 
 #[test]

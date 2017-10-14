@@ -16,7 +16,7 @@ let conjunctive =
 
     let monoid : Monoid Bool = {
         semigroup = semigroup,
-        empty = True
+        empty = True,
     }
 
     { semigroup, monoid }
@@ -28,7 +28,7 @@ let disjunctive =
 
     let monoid : Monoid Bool = {
         semigroup = semigroup,
-        empty = False
+        empty = False,
     }
 
     { semigroup, monoid }
@@ -38,12 +38,12 @@ let exclusive =
 
     let monoid : Monoid Bool = {
         semigroup = semigroup,
-        empty = False
+        empty = False,
     }
 
     let group : Group Bool = {
         monoid = monoid,
-        inverse = id
+        inverse = id,
     }
 
     { semigroup, monoid, group }
@@ -69,5 +69,5 @@ let show : Show Bool = {
     exclusive,
     eq,
     ord,
-    show
+    show,
 }

@@ -19,7 +19,7 @@ let eq e a : Eq e -> Eq a -> Eq (Result e a) = {
         match (l, r) with
         | (Ok l_val, Ok r_val) -> a.(==) l_val r_val
         | (Err l_val, Err r_val) -> e.(==) l_val r_val
-        | _ -> False
+        | _ -> False,
 }
 
 let ord e a : Ord e -> Ord a -> Ord (Result e a) = {
@@ -29,14 +29,14 @@ let ord e a : Ord e -> Ord a -> Ord (Result e a) = {
         | (Ok l_val, Ok r_val) -> a.compare l_val r_val
         | (Err l_val, Err r_val) -> e.compare l_val r_val
         | (Ok _, Err _) -> LT
-        | (Err _, Ok _) -> GT
+        | (Err _, Ok _) -> GT,
 }
 
 let functor : Functor (Result e) = {
     map = \f x ->
         match x with
         | Ok y -> Ok (f y)
-        | Err _ -> x
+        | Err _ -> x,
 }
 
 let applicative : Applicative (Result e) = {
@@ -46,7 +46,7 @@ let applicative : Applicative (Result e) = {
         | (Ok g, Ok y) -> Ok (g y)
         | (Ok _, Err _) -> x
         | (Err x, _) -> Err x,
-    wrap = \x -> Ok x
+    wrap = \x -> Ok x,
 }
 
 let monad : Monad (Result e) = {
@@ -54,7 +54,7 @@ let monad : Monad (Result e) = {
     flat_map = \f m ->
         match m with
         | Ok x -> f x
-        | Err err -> Err err
+        | Err err -> Err err,
 }
 
 let foldable : Foldable (Result e) = {
@@ -65,7 +65,7 @@ let foldable : Foldable (Result e) = {
     foldl = \f z r ->
         match r with
         | Err _ -> z
-        | Ok x -> f z x
+        | Ok x -> f z x,
 }
 
 let traversable : Traversable (Result e) = {
@@ -74,7 +74,7 @@ let traversable : Traversable (Result e) = {
     traverse = \app f r ->
         match r with
         | Err e -> app.wrap (Err e)
-        | Ok x -> app.functor.map Ok (f x)
+        | Ok x -> app.functor.map Ok (f x),
 }
 
 let show : Show e -> Show t -> Show (Result e t) = \e t ->
@@ -98,5 +98,5 @@ let show : Show e -> Show t -> Show (Result e t) = \e t ->
     monad,
     foldable,
     traversable,
-    show
+    show,
 }

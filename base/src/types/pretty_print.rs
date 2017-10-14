@@ -17,15 +17,11 @@ pub fn doc_comment<'a>(
     text: Option<&'a Comment>,
 ) -> DocBuilder<'a, Arena<'a>> {
     match text {
-        Some(comment) => {
-            match comment.typ {
-                CommentType::Line => {
-                    arena.concat(comment.content.lines().map(|line| {
-                        arena.text("/// ").append(line).append(arena.newline())
-                    }))
-                }
-                CommentType::Block => {
-                    chain![arena;
+        Some(comment) => match comment.typ {
+            CommentType::Line => arena.concat(comment.content.lines().map(|line| {
+                arena.text("/// ").append(line).append(arena.newline())
+            })),
+            CommentType::Block => chain![arena;
                         "/**",
                         arena.newline(),
                         arena.concat(comment.content.lines().map(|line| {
@@ -42,10 +38,8 @@ pub fn doc_comment<'a>(
                         })),
                         "*/",
                         arena.newline()
-                    ]
-                }
-            }
-        }
+                    ],
+        },
         None => arena.nil(),
     }
 }
@@ -109,7 +103,7 @@ impl<'a: 'e, 'e> Printer<'a, 'e> {
     }
 
     pub fn comments_after(&self, end: BytePos) -> DocBuilder<'a, Arena<'a>> {
-        let (doc, block_comments) =
+        let (doc, block_comments, _) =
             self.comments_count(Span::new(end, self.source.src().len().into()));
         if block_comments == 0 {
             doc
@@ -122,11 +116,14 @@ impl<'a: 'e, 'e> Printer<'a, 'e> {
         }
     }
 
-    pub fn comments_count(&self, span: Span<BytePos>) -> (DocBuilder<'a, Arena<'a>>, usize) {
+    pub fn comments_count(&self, span: Span<BytePos>) -> (DocBuilder<'a, Arena<'a>>, usize, bool) {
         let arena = self.arena;
         let mut comments = 0;
+        let mut ends_with_newline = false;
         let doc = arena.concat(self.source.comments_between(span).map(|comment| {
+            ends_with_newline = false;
             if comment.is_empty() {
+                ends_with_newline = true;
                 arena.newline()
             } else if comment.starts_with("//") {
                 arena.text(comment).append(arena.newline())
@@ -135,6 +132,6 @@ impl<'a: 'e, 'e> Printer<'a, 'e> {
                 arena.text(comment)
             }
         }));
-        (doc, comments)
+        (doc, comments, ends_with_newline)
     }
 }

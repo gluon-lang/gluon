@@ -31,6 +31,7 @@ pub enum Token<'input> {
     Colon,
     Comma,
     Dot,
+    DotDot,
     Equals,
     Lambda,
     Pipe,
@@ -86,6 +87,7 @@ impl<'input> fmt::Display for Token<'input> {
             Colon => "Colon",
             Comma => "Comma",
             Dot => "Dot",
+            DotDot => "DotDot",
             Equals => "Equal",
             Lambda => "Lambda",
             Pipe => "Pipe",
@@ -317,6 +319,7 @@ impl<'input> Tokenizer<'input> {
 
         let token = match op {
             "." => Token::Dot,
+            ".." => Token::DotDot,
             ":" => Token::Colon,
             "=" => Token::Equals,
             "|" => Token::Pipe,
@@ -482,8 +485,8 @@ impl<'input> Iterator for Tokenizer<'input> {
                     Ok(None) => continue,
                     Err(err) => Some(Err(err)),
                 },
-                '#' if start.absolute == BytePos::from(0) &&
-                    self.test_lookahead(|ch| ch == '!') =>
+                '#' if start.absolute == BytePos::from(0)
+                    && self.test_lookahead(|ch| ch == '!') =>
                 {
                     match self.shebang_line(start) {
                         Some(token) => Some(Ok(token)),
@@ -609,12 +612,12 @@ mod test {
     #[test]
     fn user_defined_operators() {
         test(
-            r#"+-* * /&|=<>: .. <->"#,
+            r#"+-* * /&|=<>: ... <->"#,
             vec![
                 (r#"~~~                 "#, Operator("+-*")), // Horiffic!
                 (r#"    ~               "#, Operator("*")),
                 (r#"      ~~~~~~~       "#, Operator("/&|=<>:")), // Oh my...
-                (r#"              ~~    "#, Operator("..")),
+                (r#"              ~~    "#, Operator("...")),
                 (r#"                 ~~~"#, Operator("<->")),
             ],
         );

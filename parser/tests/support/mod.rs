@@ -202,6 +202,7 @@ pub fn record_a(
                 }
             })
             .collect(),
+        base: None,
     })
 }
 

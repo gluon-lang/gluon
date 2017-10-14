@@ -14,12 +14,12 @@ let former =
         append = \l r ->
             match l with
             | Some x -> Some x
-            | None -> r
+            | None -> r,
     }
 
     let monoid : Monoid (Option a) = {
         semigroup = semigroup,
-        empty = None
+        empty = None,
     }
 
     { semigroup, monoid }
@@ -29,12 +29,12 @@ let latter =
         append = \l r ->
             match r with
             | Some x -> Some x
-            | None -> l
+            | None -> l,
     }
 
     let monoid : Monoid (Option a) = {
         semigroup = semigroup,
-        empty = None
+        empty = None,
     }
 
     { semigroup, monoid }
@@ -45,12 +45,12 @@ let semigroup a : Semigroup a -> Semigroup (Option a) = {
         | (Some x, Some y) -> Some (a.append x y)
         | (Some _, None) -> l
         | (None, Some _) -> r
-        | (None, None) -> None
+        | (None, None) -> None,
 }
 
 let monoid a : Semigroup a -> Monoid (Option a) = {
     semigroup = semigroup a,
-    empty = None
+    empty = None,
 }
 
 let eq a : Eq a -> Eq (Option a) = {
@@ -58,7 +58,7 @@ let eq a : Eq a -> Eq (Option a) = {
         match (l, r) with
         | (Some l_val, Some r_val) -> a.(==) l_val r_val
         | (None, None) -> True
-        | _ -> False
+        | _ -> False,
 }
 
 let ord a : Ord a -> Ord (Option a) = {
@@ -68,14 +68,14 @@ let ord a : Ord a -> Ord (Option a) = {
         | (Some l_val, Some r_val) -> a.compare l_val r_val
         | (None, Some _) -> LT
         | (Some _, None) -> GT
-        | (None, None) -> EQ
+        | (None, None) -> EQ,
 }
 
 let functor : Functor Option = {
     map = \f x ->
         match x with
         | Some y -> Some (f y)
-        | None -> None
+        | None -> None,
 }
 
 let applicative : Applicative Option = {
@@ -84,7 +84,7 @@ let applicative : Applicative Option = {
         match (f, x) with
         | (Some g, Some y) -> Some (g y)
         | _ -> None,
-    wrap = \x -> Some x
+    wrap = \x -> Some x,
 }
 
 let alternative : Alternative Option = {
@@ -93,7 +93,7 @@ let alternative : Alternative Option = {
         match x with
         | Some _ -> x
         | None -> y,
-    empty = None
+    empty = None,
 }
 
 let monad : Monad Option = {
@@ -101,7 +101,7 @@ let monad : Monad Option = {
     flat_map = \f m ->
         match m with
         | Some x -> f x
-        | None -> None
+        | None -> None,
 }
 
 let show : Show a -> Show (Option a) = \d ->
@@ -122,7 +122,7 @@ let foldable : Foldable Option = {
     foldl = \f z o ->
         match o with
         | None -> z
-        | Some x -> f z x
+        | Some x -> f z x,
 }
 
 let traversable : Traversable Option = {
@@ -131,7 +131,7 @@ let traversable : Traversable Option = {
     traverse = \app f o ->
         match o with
         | None -> app.wrap None
-        | Some x -> app.functor.map Some (f x)
+        | Some x -> app.functor.map Some (f x),
 }
 
 {
@@ -149,5 +149,5 @@ let traversable : Traversable Option = {
     monad,
     show,
     foldable,
-    traversable
+    traversable,
 }

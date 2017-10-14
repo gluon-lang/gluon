@@ -10,5 +10,5 @@ let show : Show () = { show = const "()" }
 {
     eq,
     ord,
-    show
+    show,
 }
