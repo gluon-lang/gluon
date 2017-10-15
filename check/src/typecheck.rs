@@ -11,7 +11,7 @@ use itertools::Itertools;
 
 use base::scoped_map::ScopedMap;
 use base::ast::{DisplayEnv, Expr, Literal, MutVisitor, Pattern, PatternField, SpannedExpr};
-use base::ast::{SpannedIdent, SpannedPattern, TypeBinding, ValueBinding};
+use base::ast::{AstType, SpannedIdent, SpannedPattern, TypeBinding, ValueBinding};
 use base::error::Errors;
 use base::fnv::{FnvMap, FnvSet};
 use base::resolve;
@@ -1230,7 +1230,38 @@ impl<'a> Typecheck<'a> {
             // Rename the aliase's name to its global name
             bind.alias.value.name = new;
 
-            resolved_aliases.push(types::translate_alias(&self.type_cache, &bind.alias.value));
+            fn check_undefined_variables(
+                self_: &mut Typecheck,
+                args: &[Generic<Symbol>],
+                typ: &AstType<Symbol>,
+            ) {
+                use base::pos::HasSpan;
+                match **typ {
+                    Type::Generic(ref id) => if args.iter().all(|arg| arg.id != id.id) {
+                        self_.error(
+                            typ.span(),
+                            TypeError::UndefinedVariable(id.id.clone()).into(),
+                        );
+                    },
+                    Type::Record(_) => {
+                        // Inside records variables are bound implicitly to the closest field
+                        // so variables are allowed to be undefined/implicit
+                    }
+                    _ => {
+                        types::walk_move_type_opt(
+                            typ,
+                            &mut types::ControlVisitation(|typ: &AstType<_>| {
+                                check_undefined_variables(self_, args, typ);
+                                None
+                            }),
+                        );
+                    }
+                }
+            }
+            check_undefined_variables(self, &bind.alias.value.args, bind.alias.value.unresolved_type());
+
+            let alias = types::translate_alias(&self.type_cache, &bind.alias.value);
+            resolved_aliases.push(alias);
         }
 
         for alias in &mut resolved_aliases {
