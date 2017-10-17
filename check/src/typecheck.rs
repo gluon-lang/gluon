@@ -448,14 +448,13 @@ impl<'a> Typecheck<'a> {
             type Ident = Symbol;
 
             fn visit_typ(&mut self, typ: &mut ArcType) {
-                let mut generic = None;
-                let mut i = 0;
                 let mut unbound_variables = FnvMap::default();
+                let mut variable_generator =
+                    TypeVariableGenerator::new(self.level, &self.tc.subs, typ);
                 if let Some(finished) = self.tc.finish_type_(
                     self.level,
                     &mut unbound_variables,
-                    &mut generic,
-                    &mut i,
+                    &mut variable_generator,
                     typ,
                 ) {
                     *typ = finished;
@@ -537,13 +536,13 @@ impl<'a> Typecheck<'a> {
     }
 
     fn generalize_type(&mut self, level: u32, typ: &mut ArcType) {
-        let mut generic = None;
-        let mut i = 0;
-
         self.type_variables.enter_scope();
+
         let mut unbound_variables = FnvMap::default();
+        let mut variable_generator = TypeVariableGenerator::new(level, &self.subs, typ);
         let mut result_type =
-            self.finish_type_(level, &mut unbound_variables, &mut generic, &mut i, typ);
+            self.finish_type_(level, &mut unbound_variables, &mut variable_generator, typ);
+
         self.type_variables.exit_scope();
 
         if result_type.is_none() && !unbound_variables.is_empty() {
@@ -1616,41 +1615,21 @@ impl<'a> Typecheck<'a> {
         debug!("Updated {} to `{}`", symbol, bind.typ);
     }
 
-    /// Generate a generic variable name which is not used in the current scope
-    fn next_variable(&mut self, level: u32, s: &mut String) -> Symbol {
-        for c in b'a'..(b'z' + 1) {
-            s.push(c as char);
-            let symbol = self.symbols.symbol(&s[..]);
-            if self.type_variables.get(&symbol).is_none() {
-                self.type_variables.insert(
-                    symbol.clone(),
-                    Type::variable(TypeVariable {
-                        id: level,
-                        kind: self.kind_cache.typ(),
-                    }),
-                );
-                return symbol;
-            }
-            s.pop();
-        }
-        s.push('a');
-        self.next_variable(level, s)
-    }
-
     /// Finish a type by replacing all unbound type variables above `level` with generics
     fn finish_type(&mut self, level: u32, original: &ArcType) -> Option<ArcType> {
-        let mut generic = None;
-        let mut i = 0;
         self.type_variables.enter_scope();
+
         let mut unbound_variables = FnvMap::default();
+        let mut variable_generator = TypeVariableGenerator::new(level, &self.subs, original);
         let typ = self.finish_type_(
             level,
             &mut unbound_variables,
-            &mut generic,
-            &mut i,
+            &mut variable_generator,
             original,
         );
+
         self.type_variables.exit_scope();
+
         typ.map(|typ| {
             let mut params = unbound_variables
                 .into_iter()
@@ -1667,12 +1646,11 @@ impl<'a> Typecheck<'a> {
         &mut self,
         level: u32,
         unbound_variables: &mut FnvMap<Symbol, Generic<Symbol>>,
-        generic: &mut Option<String>,
-        i: &mut i32,
+        variable_generator: &mut TypeVariableGenerator,
         typ: &ArcType,
     ) -> Option<ArcType> {
         let replacement = self.subs.replace_variable(typ).map(|t| {
-            self.finish_type_(level, unbound_variables, generic, i, &t)
+            self.finish_type_(level, unbound_variables, variable_generator, &t)
                 .unwrap_or(t)
         });
         let mut typ = typ;
@@ -1706,26 +1684,8 @@ impl<'a> Typecheck<'a> {
                     Some(resolved_type)
                 } else {
                     // Create a prefix if none exists
-                    let id = if generic.is_none() {
-                        let mut g = String::new();
-                        let symbol = self.next_variable(level, &mut g);
-                        *generic = Some(g);
-                        symbol
-                    } else {
-                        let generic = generic.as_ref().unwrap();
+                    let id = variable_generator.next_variable(self);
 
-                        let generic = format!("{}{}", generic, i);
-                        *i += 1;
-                        let symbol = self.symbols.symbol(generic);
-                        self.type_variables.insert(
-                            symbol.clone(),
-                            Type::variable(TypeVariable {
-                                id: level,
-                                kind: self.kind_cache.typ(),
-                            }),
-                        );
-                        symbol
-                    };
                     let gen: ArcType = Type::generic(Generic::new(id.clone(), var.kind.clone()));
                     self.subs.insert(var.id, gen.clone());
 
@@ -1743,10 +1703,11 @@ impl<'a> Typecheck<'a> {
                     // Make a new name base for any unbound variables in the record field
                     // Gives { id : a0 -> a0, const : b0 -> b1 -> b1 }
                     // instead of { id : a0 -> a0, const : a1 -> a2 -> a2 }
-                    self.finish_type_(level, unbound_variables, generic, i, &field.typ)
+                    self.finish_type_(level, unbound_variables, variable_generator, &field.typ)
                         .map(|typ| Field::new(field.name.clone(), typ))
                 });
-                let new_rest = self.finish_type_(level, unbound_variables, generic, i, rest);
+                let new_rest =
+                    self.finish_type_(level, unbound_variables, variable_generator, rest);
                 merge::merge(fields, new_fields, rest, new_rest, |fields, rest| {
                     Type::extend_row(types.clone(), fields, rest)
                 }).or_else(|| replacement.clone())
@@ -1793,7 +1754,7 @@ impl<'a> Typecheck<'a> {
                 let new_type = types::walk_move_type_opt(
                     &typ,
                     &mut types::ControlVisitation(|typ: &ArcType| {
-                        self.finish_type_(level, unbound_variables, generic, i, typ)
+                        self.finish_type_(level, unbound_variables, variable_generator, typ)
                     }),
                 );
                 self.type_variables.exit_scope();
@@ -1819,7 +1780,7 @@ impl<'a> Typecheck<'a> {
                 let new_type = types::walk_move_type_opt(
                     typ,
                     &mut types::ControlVisitation(|typ: &ArcType| {
-                        self.finish_type_(level, unbound_variables, generic, i, typ)
+                        self.finish_type_(level, unbound_variables, variable_generator, typ)
                     }),
                 );
                 match **typ {
@@ -2330,5 +2291,70 @@ fn unroll_record(typ: &Type<Symbol>) -> Option<ArcType> {
         None
     } else {
         Some(Type::extend_row(new_types, new_fields, current.clone()))
+    }
+}
+
+struct TypeVariableGenerator {
+    map: FnvSet<Symbol>,
+    level: u32,
+    name: String,
+    i: u32,
+}
+
+impl TypeVariableGenerator {
+    fn new(level: u32, subs: &Substitution<ArcType>, typ: &ArcType) -> TypeVariableGenerator {
+        fn gather_foralls(map: &mut FnvSet<Symbol>, subs: &Substitution<ArcType>, typ: &ArcType) {
+            let typ = subs.real(typ);
+            if let Type::Forall(ref params, _, _) = **typ {
+                map.extend(params.iter().map(|param| param.id.clone()));
+            }
+            types::walk_move_type_opt(
+                typ,
+                &mut types::ControlVisitation(|typ: &ArcType| {
+                    gather_foralls(map, subs, typ);
+                    None
+                }),
+            );
+        }
+        let mut map = FnvSet::default();
+        gather_foralls(&mut map, subs, typ);
+        TypeVariableGenerator {
+            map,
+            name: "".to_string(),
+            i: 0,
+            level,
+        }
+    }
+    /// Generate a generic variable name which is not used in the current scope
+    fn next_variable(&mut self, tc: &mut Typecheck) -> Symbol {
+        let symbol = if self.name.is_empty() {
+            self.next_variable_(tc)
+        } else {
+            let name = format!("{}{}", self.name, self.i);
+            self.i += 1;
+            tc.symbols.symbol(&name[..])
+        };
+        self.map.insert(symbol.clone());
+        tc.type_variables.insert(
+            symbol.clone(),
+            Type::variable(TypeVariable {
+                id: self.level,
+                kind: tc.kind_cache.typ(),
+            }),
+        );
+        symbol
+    }
+
+    fn next_variable_(&mut self, tc: &mut Typecheck) -> Symbol {
+        for c in b'a'..(b'z' + 1) {
+            self.name.push(c as char);
+            let symbol = tc.symbols.symbol(&self.name[..]);
+            if !self.map.contains(&symbol) && tc.type_variables.get(&symbol).is_none() {
+                return symbol;
+            }
+            self.name.pop();
+        }
+        self.name.push('a');
+        self.next_variable_(tc)
     }
 }

@@ -778,7 +778,7 @@ impl<'a, 'e> Translator<'a, 'e> {
         // has no effect and `typ` itself will be used
         let data_type;
         {
-            let mut args = arg_iter(&typ);
+            let mut args = arg_iter(typ.remove_forall());
             unapplied_args = args.by_ref()
                 .enumerate()
                 .map(|(i, arg)| {
@@ -972,8 +972,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                                                 .row_iter()
                                                 .find(|f| f.name.name_eq(&field.name.value))
                                                 .map(|f| f.typ.clone())
-                                                
-                                            .unwrap_or_else(|| Type::hole());
+                                                .unwrap_or_else(|| Type::hole());
                                             Cow::Owned(spanned(
                                                 Span::default(),
                                                 ast::Pattern::Ident(TypedIdent {

@@ -2,6 +2,7 @@
 use {forget_lifetime, Error, Result, Variants};
 use gc::{DataDef, Gc, Move, Traverseable};
 use base::symbol::Symbol;
+use base::scoped_map::ScopedMap;
 use stack::StackFrame;
 use vm::{self, Root, RootStr, RootedValue, Status, Thread};
 use value::{ArrayDef, ArrayRepr, Cloner, DataStruct, Def, ExternFunction, GcStr, Value, ValueArray};
@@ -137,9 +138,10 @@ impl<'a> Data<'a> {
         match self.0 {
             DataInner::Tag(_) => None,
             DataInner::Data(data) => unsafe {
-                thread.lookup_field(data, name).ok().map(|v| {
-                    Variants::with_root(v, data)
-                })
+                thread
+                    .lookup_field(data, name)
+                    .ok()
+                    .map(|v| Variants::with_root(v, data))
             },
         }
     }
@@ -276,20 +278,46 @@ pub mod generic {
     make_generics!{A B C D E F G H I J K L M N O P Q R X Y Z}
 }
 
-fn gather_generics(params: &mut Vec<types::Generic<Symbol>>, typ: &ArcType) {
+fn insert_forall(
+    variables: &mut ScopedMap<Symbol, types::Generic<Symbol>>,
+    typ: &ArcType,
+) -> Option<ArcType> {
+    variables.enter_scope();
+    let new_type = insert_forall_walker(variables, typ);
+    let params: Vec<_> = variables.exit_scope().map(|(_, generic)| generic).collect();
+
+    if !params.is_empty() {
+        Some(Type::forall(
+            params,
+            new_type.unwrap_or_else(|| typ.clone()),
+        ))
+    } else {
+        new_type
+    }
+}
+
+fn insert_forall_walker(
+    variables: &mut ScopedMap<Symbol, types::Generic<Symbol>>,
+    typ: &ArcType,
+) -> Option<ArcType> {
     match **typ {
         Type::Generic(ref generic) => {
-            if params.iter().all(|param| param.id != generic.id) {
-                params.push(generic.clone());
+            if variables.get(&generic.id).is_none() {
+                variables.insert(generic.id.clone(), generic.clone());
             }
+            None
         }
-        Type::Forall(..) => (),
-        _ => {
-            types::walk_move_type_opt(typ, &mut types::ControlVisitation(|typ: &ArcType| {
-                gather_generics(params, typ);
-                None
-            }));
-        }
+        Type::Record(ref typ) => match **typ {
+            Type::ExtendRow { .. } => types::walk_move_type_opt(
+                typ,
+                &mut types::ControlVisitation(|typ: &ArcType| insert_forall(variables, typ)),
+            ).map(|typ| ArcType::from(Type::Record(typ))),
+            _ => None,
+        },
+        _ => types::walk_move_type_opt(
+            typ,
+            &mut types::ControlVisitation(|typ: &ArcType| insert_forall_walker(variables, typ)),
+        ),
     }
 }
 
@@ -300,10 +328,8 @@ pub trait VmType {
 
     fn make_forall_type(vm: &Thread) -> ArcType {
         let typ = Self::make_type(vm);
-        let mut params: Vec<types::Generic<_>> = Vec::new();
-        gather_generics(&mut params, &typ);
-
-        Type::forall(params, typ)
+        let mut variables = ScopedMap::new();
+        insert_forall(&mut variables, &typ).unwrap_or(typ)
     }
 
     /// Creates an gluon type which maps to `Self` in rust
@@ -545,9 +571,9 @@ impl VmType for bool {
     type Type = Self;
     fn make_type(vm: &Thread) -> ArcType {
         (*vm.global_env()
-             .get_env()
-             .find_type_info("std.types.Bool")
-             .unwrap())
+            .get_env()
+            .find_type_info("std.types.Bool")
+            .unwrap())
             .clone()
             .into_type()
     }
@@ -734,12 +760,7 @@ where
                 ..
             } = *context;
             let values = &stack[stack.len() - len..];
-            thread::alloc(
-                gc,
-                thread,
-                stack,
-                ArrayDef(values)
-            )?
+            thread::alloc(gc, thread, stack, ArrayDef(values))?
         };
         for _ in 0..len {
             context.stack.pop();
@@ -797,13 +818,11 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T> {
 impl<'vm, T: Getable<'vm>> Getable<'vm> for Option<T> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<Option<T>> {
         match value.as_ref() {
-            ValueRef::Data(data) => {
-                if data.tag() == 0 {
-                    Some(None)
-                } else {
-                    T::from_value(vm, data.get_variants(0).unwrap()).map(Some)
-                }
-            }
+            ValueRef::Data(data) => if data.tag() == 0 {
+                Some(None)
+            } else {
+                T::from_value(vm, data.get_variants(0).unwrap()).map(Some)
+            },
             _ => None,
         }
     }
@@ -852,13 +871,11 @@ impl<'vm, T: Pushable<'vm>, E: Pushable<'vm>> Pushable<'vm> for StdResult<T, E> 
 impl<'vm, T: Getable<'vm>, E: Getable<'vm>> Getable<'vm> for StdResult<T, E> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<StdResult<T, E>> {
         match value.as_ref() {
-            ValueRef::Data(data) => {
-                match data.tag() {
-                    0 => E::from_value(vm, data.get_variants(0).unwrap()).map(Err),
-                    1 => T::from_value(vm, data.get_variants(0).unwrap()).map(Ok),
-                    _ => None,
-                }
-            }
+            ValueRef::Data(data) => match data.tag() {
+                0 => E::from_value(vm, data.get_variants(0).unwrap()).map(Err),
+                1 => T::from_value(vm, data.get_variants(0).unwrap()).map(Ok),
+                _ => None,
+            },
             _ => None,
         }
     }
@@ -1326,7 +1343,7 @@ pub mod record {
     {
         type Type = HCons<(&'static str, H::Type), T::Type>;
         fn field_types(vm: &Thread, fields: &mut Vec<types::Field<Symbol, ArcType>>) {
-            fields.push(types::Field::new(Symbol::from(F::name()), H::make_forall_type(vm)));
+            fields.push(types::Field::new(Symbol::from(F::name()), H::make_type(vm)));
             T::field_types(vm, fields);
         }
     }
@@ -1775,7 +1792,11 @@ impl<'vm, T, $($args,)* R> Function<T, fn($($args),*) -> R>
           R: VmType + for<'x> Getable<'x> + Send + 'static,
 {
     #[allow(non_snake_case)]
-    pub fn call_async(&'vm mut self $(, $args: $args)*) -> Box<Future<Item = R, Error = Error> + Send + 'static> {
+    pub fn call_async(
+        &'vm mut self
+        $(, $args: $args)*
+        ) -> Box<Future<Item = R, Error = Error> + Send + 'static>
+    {
         use futures::{failed, finished};
         use futures::future::Either;
         use thread::Execute;

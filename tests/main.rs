@@ -50,6 +50,7 @@ fn test_files(path: &str) -> Result<Vec<PathBuf>, Box<Error>> {
 }
 
 fn main_() -> Result<(), Box<Error>> {
+    let _ = ::env_logger::init();
     let args: Vec<_> = ::std::env::args().collect();
     let filter = if args.len() > 1 && args.last().unwrap() != "main" {
         args.last()
@@ -63,7 +64,6 @@ fn main_() -> Result<(), Box<Error>> {
         .load_file_async(&vm, "std/prelude.glu")
         .sync_or_error()?;
     let mut text = String::new();
-    let _ = ::env_logger::init();
 
     let iter = test_files("tests/pass")?.into_iter().filter(|filename| {
         filter.map_or(true, |filter| filename.to_string_lossy().contains(filter))
