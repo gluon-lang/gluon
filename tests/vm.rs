@@ -10,7 +10,7 @@ use support::*;
 use gluon::base::pos::BytePos;
 use gluon::base::types::Type;
 use gluon::base::source;
-use gluon::vm::api::{FunctionRef, Hole, OpaqueValue, ValueRef, IO};
+use gluon::vm::api::{FunctionRef, Hole, OpaqueValue, ValueRef};
 use gluon::vm::thread::{Thread, ThreadInternal};
 use gluon::vm::internal::Value;
 use gluon::vm::internal::Value::{Float, Int};
@@ -217,6 +217,20 @@ r"
 false
 }
 
+test_expr!{ prelude overloaded_compare_int,
+r"
+99 < 100
+",
+true
+}
+
+test_expr!{ prelude overloaded_compare_float,
+r"
+99.0 < 100.0
+",
+true
+}
+
 test_expr!{ partial_application,
 r"
 let f x y = x #Int+ y in
@@ -262,14 +276,6 @@ let f a b c = c
 4i32
 }
 
-test_expr!{ no_io_eval,
-r#"
-let io = import! "std/io.glu"
-let x = io_flat_map (\x -> error "NOOOOOOOO") (io.println "1")
-in { x }
-"#
-}
-
 test_expr!{ char,
 r#"
 'a'
@@ -285,16 +291,6 @@ B
 Value::Tag(1)
 }
 
-test_expr!{ match_on_zero_argument_variant,
-r#"
-type Test = | A Int | B
-match B with
-| A x -> x
-| B -> 0
-"#,
-0i32
-}
-
 test_expr!{ any marshalled_option_none_is_int,
 r#"
 string_prim.find "a" "b"
@@ -307,78 +303,6 @@ r#"
 string_compare "a" "b"
 "#,
 Value::Tag(0)
-}
-
-test_expr!{ prelude match_on_bool,
-r#"
-let { Bool } = import! "std/bool.glu"
-match True with
-| False -> 10
-| True -> 11
-"#,
-11i32
-}
-
-#[test]
-fn non_exhaustive_pattern() {
-    let _ = ::env_logger::init();
-    let text = r"
-type AB = | A | B in
-match A with
-| B -> True
-";
-    let mut vm = make_vm();
-    let result = Compiler::new()
-        .run_expr_async::<bool>(&mut vm, "<top>", text)
-        .sync_or_error();
-    assert!(result.is_err());
-}
-
-test_expr!{ match_record_pattern,
-r#"
-match { x = 1, y = "abc" } with
-| { x, y = z } -> x #Int+ string_prim.len z
-"#,
-4i32
-}
-
-test_expr!{ match_stack,
-r#"
-1 #Int+ (match string_prim with
-         | { len } -> len "abc")
-"#,
-4i32
-}
-
-test_expr!{ let_record_pattern,
-r#"
-let (+) x y = x #Int+ y
-in
-let a = { x = 10, y = "abc" }
-in
-let {x, y = z} = a
-in x + string_prim.len z
-"#,
-13i32
-}
-
-test_expr!{ partial_record_pattern,
-r#"
-type A = { x: Int, y: Float } in
-let x = { x = 1, y = 2.0 }
-in match x with
-| { y } -> y
-"#,
-2.0f64
-}
-
-test_expr!{ record_let_adjust,
-r#"
-let x = \z -> let { x, y } = { x = 1, y = 2 } in z in
-let a = 3
-in a
-"#,
-3i32
 }
 
 test_expr!{ unit_expr,
@@ -415,69 +339,6 @@ r#"let x = string_prim.len "test" in x"#,
 4i32
 }
 
-test_expr!{ io_print,
-r#"
-let io = import! "std/io.glu"
-io.print "123"
-"#
-}
-
-test_expr!{ array,
-r#"
-let arr = [1,2,3]
-
-array.index arr 0 #Int== 1
-    && array.len arr #Int== 3
-    && array.len (array.append arr arr) #Int== array.len arr #Int* 2"#,
-true
-}
-
-test_expr!{ array_byte,
-r#"
-let arr = [1b,2b,3b]
-
-let b = array.index arr 2 #Byte== 3b && array.len arr #Int== 3
-let arr2 = array.append arr arr
-b && array.len arr2 #Int== array.len arr #Int* 2
-  && array.index arr2 1 #Byte== array.index arr2 4
-"#,
-true
-}
-
-test_expr!{ array_float,
-r#"
-let arr = [1.0,2.0,3.0]
-
-let b = array.index arr 2 #Float== 3.0 && array.len arr #Int== 3
-let arr2 = array.append arr arr
-b && array.len arr2 #Int== array.len arr #Int* 2
-  && array.index arr2 1 #Float== array.index arr2 4
-"#,
-true
-}
-
-test_expr!{ array_data,
-r#"
-let arr = [{x = 1, y = "a" }, { x = 2, y = "b" }]
-
-let b = (array.index arr 1).x #Int== 2 && array.len arr #Int== 2
-let arr2 = array.append arr arr
-b && array.len arr2 #Int== array.len arr #Int* 2
-"#,
-true
-}
-
-test_expr!{ array_array,
-r#"
-let arr = [[], [1], [2, 3]]
-
-let b = array.len (array.index arr 1) #Int== 1 && array.len arr #Int== 3
-let arr2 = array.append arr arr
-b && array.len arr2 #Int== array.len arr #Int* 2
-"#,
-true
-}
-
 test_expr!{ prelude true_branch_not_affected_by_false_branch,
 r#"
 let { Bool } = import! "std/bool.glu"
@@ -486,30 +347,6 @@ if True then
     x
 else
     0
-"#,
-1i32
-}
-
-test_expr!{ access_only_a_few_fields_from_large_record,
-r#"
-let record = { a = 0, b = 1, c = 2, d = 3, e = 4, f = 5, g = 6,
-               h = 7, i = 8, j = 9, k = 10, l = 11, m = 12 }
-let { a } = record
-let { i, m } = record
-
-a #Int+ i #Int+ m
-"#,
-20i32
-}
-
-// Without a slide instruction after the alternatives code this code would try to call `x 1`
-// instead of `id 1`
-test_expr!{ slide_down_case_alternative,
-r#"
-type Test = | Test Int
-let id x = x
-id (match Test 0 with
-    | Test x -> 1)
 "#,
 1i32
 }
@@ -534,30 +371,6 @@ b
 true
 }
 
-// Test that empty variants are handled correctly in arrays
-test_expr!{ array_empty_variant,
-r#"
-type Test = | Empty | Some Int
-let arr = [Empty, Some 1]
-match array.index arr 0 with
-| Empty -> 0
-| Some x -> x
-"#,
-0i32
-}
-
-// Test that array append handles array types correctly
-test_expr!{ array_empty_append,
-r#"
-type Test = | Empty | Some Int
-let arr = array.append [] [Empty, Some 1]
-match array.index arr 0 with
-| Empty -> 0
-| Some x -> x
-"#,
-0i32
-}
-
 test_expr!{ overload_resolution_with_record_pattern,
 r#"
 let f =
@@ -568,49 +381,6 @@ f 0 (\r -> { x = r #Int+ 1 })
 "#,
 1i32
 }
-
-test_expr!{ nested_pattern,
-r#"
-type Option a = | Some a | None
-match Some (Some 123) with
-| None -> 0
-| Some None -> 1
-| Some (Some x) -> x
-"#,
-123i32
-}
-
-test_expr!{ nested_pattern2,
-r#"
-type Option a = | Some a | None
-match Some None with
-| None -> 0
-| Some None -> 1
-| Some (Some x) -> x
-"#,
-1i32
-}
-
-test_expr!{ nested_record_pattern,
-r#"
-type Test a = | A a | B
-match { x = A 1 } with
-| { x = A y } -> y
-| { x = B } -> 100
-"#,
-1i32
-}
-
-test_expr!{ nested_record_pattern2,
-r#"
-type Test a = | A a | B
-match { x = B } with
-| { x = A y } -> y
-| { x = B } -> 100
-"#,
-100i32
-}
-
 
 #[test]
 fn overloaded_bindings() {
@@ -646,40 +416,6 @@ let { id } = test_String
 in id 1
 "#,
 0i32
-}
-
-#[test]
-fn run_expr_int() {
-    let _ = ::env_logger::init();
-
-    let text = r#"
-        let io = import! "std/io.glu"
-        io.run_expr "123"
-    "#;
-    let mut vm = make_vm();
-    let (result, _) = Compiler::new()
-        .run_io_expr_async::<IO<String>>(&mut vm, "<top>", text)
-        .sync_or_error()
-        .unwrap();
-    match result {
-        IO::Value(result) => {
-            let expected = "123 : Int";
-            assert_eq!(result, expected);
-        }
-        IO::Exception(err) => panic!("{}", err),
-    }
-}
-
-test_expr!{ io run_expr_io,
-r#"
-let io = import! "std/io.glu"
-io_flat_map (\x -> io_wrap 100)
-            (io.run_expr "
-                let io = import! \"std/io.glu\"
-                io.print \"123\"
-            ")
-"#,
-100i32
 }
 
 test_expr!{ record_base_duplicate_fields,
@@ -843,27 +579,6 @@ string.slice s 1 (string.len s)
         Err(err) => panic!("Unexpected error `{}`", err),
         Ok(_) => panic!("Expected an error"),
     }
-}
-
-#[test]
-fn dont_execute_io_in_run_expr_async() {
-    let _ = ::env_logger::init();
-    let vm = make_vm();
-    let expr = r#"
-let prelude  = import! "std/prelude.glu"
-let io = import! "std/io.glu"
-let { wrap } = io.applicative
-wrap 123
-"#;
-    let value = Compiler::new()
-        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr)
-        .sync_or_error()
-        .unwrap_or_else(|err| panic!("{}", err));
-    assert!(
-        value.0.get_ref() != Value::Int(123),
-        "Unexpected {:?}",
-        value.0
-    );
 }
 
 #[test]

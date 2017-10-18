@@ -56,8 +56,8 @@ macro_rules! test_expr {
         #[test]
         fn $name() {
             let _ = ::env_logger::init();
-            let mut vm = make_vm();
-            let value = run_expr_(&mut vm, $expr, true);
+            let mut vm = $crate::support::make_vm();
+            let value = $crate::support::run_expr_(&mut vm, $expr, true);
             assert_eq!(value, $value);
 
             // Help out the type inference by forcing that left and right are the same types
@@ -68,9 +68,11 @@ macro_rules! test_expr {
     (io $name: ident, $expr: expr, $value: expr) => {
         #[test]
         fn $name() {
+            use gluon::vm::api::IO;
+
             let _ = ::env_logger::init();
-            let mut vm = make_vm();
-            let (value, _) = Compiler::new()
+            let mut vm = $crate::support::make_vm();
+            let (value, _) = ::gluon::Compiler::new()
                 .implicit_prelude(false)
                 .run_io_expr(&mut vm, "<top>", $expr)
                 .unwrap_or_else(|err| panic!("{}", err));
@@ -90,8 +92,8 @@ macro_rules! test_expr {
         #[test]
         fn $name() {
             let _ = ::env_logger::init();
-            let mut vm = make_vm();
-            let value = run_expr::<OpaqueValue<&Thread, Hole>>(&mut vm, $expr);
+            let mut vm = $crate::support::make_vm();
+            let value = $crate::support::run_expr::<OpaqueValue<&Thread, Hole>>(&mut vm, $expr);
             assert_eq!(value.get_ref(), $value);
         }
     };
@@ -99,8 +101,8 @@ macro_rules! test_expr {
         #[test]
         fn $name() {
             let _ = ::env_logger::init();
-            let mut vm = make_vm();
-            let value = run_expr(&mut vm, $expr);
+            let mut vm = $crate::support::make_vm();
+            let value = $crate::support::run_expr(&mut vm, $expr);
             assert_eq!(value, $value);
 
             // Help out the type inference by forcing that left and right are the same types
@@ -112,8 +114,8 @@ macro_rules! test_expr {
         #[test]
         fn $name() {
             let _ = ::env_logger::init();
-            let mut vm = make_vm();
-            run_expr::<OpaqueValue<&Thread, Hole>>(&mut vm, $expr);
+            let mut vm = $crate::support::make_vm();
+            $crate::support::run_expr::<OpaqueValue<&Thread, Hole>>(&mut vm, $expr);
         }
     }
 }

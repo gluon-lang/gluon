@@ -4,7 +4,7 @@
 //! behaviour. For information about how to use this library the best resource currently is the
 //! [tutorial](https://github.com/gluon-lang/gluon/blob/master/TUTORIAL.md) which contains examples
 //! on how to write gluon programs as well as how to run them using this library.
-#![doc(html_root_url = "https://docs.rs/gluon/0.6.1")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon/0.6.2")] // # GLUON
 
 #[cfg(test)]
 extern crate env_logger;
@@ -534,21 +534,34 @@ impl Compiler {
 pub const PRELUDE: &'static str = r#"
 let __implicit_prelude = import! "std/prelude.glu"
 and { Num, Eq, Ord, Show, Functor, Monad } = __implicit_prelude
-and { not } = import! "std/bool.glu"
+and { Bool, not } = import! "std/bool.glu"
 
 let __implicit_float = import! "std/float.glu"
 let { (+), (-), (*), (/) } = __implicit_float.num
 and { (==) } = __implicit_float.eq
-and { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_float.ord
+
+// HACK Workaround for make_Ord bug until forall works
+let { (<), (<=), (>=), (>) } =
+    let x = __implicit_prelude.make_Ord __implicit_float.ord
+    let infer y : (Float -> Float -> Bool) -> (Float -> Float -> Bool) = y
+    { (<) = infer x.(<), (<=) = infer x.(<=), (>=) = infer x.(>=), (>) = infer x.(>) }
 
 let __implicit_int = import! "std/int.glu"
 let { (+), (-), (*), (/) } = __implicit_int.num
 and { (==) } = __implicit_int.eq
-and { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_int.ord
+
+let { (<), (<=), (>=), (>) } =
+    let x = __implicit_prelude.make_Ord __implicit_int.ord
+    let infer y : (Int -> Int -> Bool) -> (Int -> Int -> Bool) = y
+    { (<) = infer x.(<), (<=) = infer x.(<=), (>=) = infer x.(>=), (>) = infer x.(>) }
 
 let __implicit_string = import! "std/string.glu"
 and { eq = { (==) } } = __implicit_string
-and { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_string.ord
+
+let { (<), (<=), (>=), (>) } =
+    let x = __implicit_prelude.make_Ord __implicit_string.ord
+    let infer y : (String -> String -> Bool) -> (String -> String -> Bool) = y
+    { (<) = infer x.(<), (<=) = infer x.(<=), (>=) = infer x.(>=), (>) = infer x.(>) }
 
 in ()
 "#;
