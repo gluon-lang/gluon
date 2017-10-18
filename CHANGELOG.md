@@ -1,3 +1,21 @@
+<a name="0.6.2"></a>
+## v0.6.2 (2017-10-18)
+
+
+#### Features
+
+*   Format all files (recusively) when a directory is given ([6ce97c6f](https://github.com/gluon-lang/gluon/commit/6ce97c6fc3ef6064e32bcce40bc10f3a05bd9ba3))
+*   Add a trailing comman on records that take multiple lines ([8c3aa951](https://github.com/gluon-lang/gluon/commit/8c3aa951396b5111d693b86daecdbbcacf95909a))
+*   Pretty print record expressions with the `..` operator ([aeb1d75b](https://github.com/gluon-lang/gluon/commit/aeb1d75b75e6176745200817563c115b476315e9))
+*   Add the '..' operator to distribute the fields of a record ([d6b03cc9](https://github.com/gluon-lang/gluon/commit/d6b03cc99c68d91ddfddd787ab562ccb515377c5))
+
+#### Bug Fixes
+
+*   Error on undefined variables in type bindings ([ed442110](https://github.com/gluon-lang/gluon/commit/ed4421102641f994a1474465a339b0cb34759a06))
+*   Return and error on duplicate fields defined in another module ([0973b264](https://github.com/gluon-lang/gluon/commit/0973b264ee1063de82ca9d32bebf5cc20a254e6e))
+
+
+
 <a name="v0.6.0"></a>
 ## v0.6.0 (2017-10-10)
 
