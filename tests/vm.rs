@@ -217,6 +217,20 @@ r"
 false
 }
 
+test_expr!{ prelude overloaded_compare_int,
+r"
+99 < 100
+",
+true
+}
+
+test_expr!{ prelude overloaded_compare_float,
+r"
+99.0 < 100.0
+",
+true
+}
+
 test_expr!{ partial_application,
 r"
 let f x y = x #Int+ y in
