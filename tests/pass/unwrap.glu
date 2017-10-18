@@ -1,4 +1,4 @@
-let { (|>) } = import! "std/prelude.glu"
+let { (|>) } = import! "std/function.glu"
 let { Option, unwrap } = import! "std/option.glu"
 let { Result, unwrap_ok, unwrap_err } = import! "std/result.glu"
 let { assert_ieq }  = import! "std/test.glu"
