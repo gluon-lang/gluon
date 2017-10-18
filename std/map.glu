@@ -2,6 +2,7 @@ let prelude = import! "std/prelude.glu"
 let { Ordering, Ord, Semigroup, Monoid } = prelude
 let { Functor, Applicative, Foldable, Traversable } = prelude
 
+let { flip, const } = import! "std/function.glu"
 let list = import! "std/list.glu"
 let { List } = list
 let { Option } = import! "std/option.glu"
@@ -68,12 +69,12 @@ and make ord : Ord k -> _ =
             match m with
             | Tip -> app.wrap Tip
             | Bin k v l r ->
-                map3 (prelude.flip (Bin k)) (go l) (f k v) (go r)
+                map3 (flip (Bin k)) (go l) (f k v) (go r)
 
         go m
 
     let traverse app f : Applicative t -> (a -> t b) -> Map k a -> t (Map k b) =
-        traverse_with_key app (prelude.const f)
+        traverse_with_key app (const f)
 
     let append l r : Map k a -> Map k a -> Map k a = foldr_with_key insert l r
 

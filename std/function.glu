@@ -1,0 +1,68 @@
+//@NO-IMPLICIT-PRELUDE
+
+let prelude = import! "std/prelude.glu"
+let { Semigroup, Monoid, Category, make_Category } = prelude
+let { Functor, Applicative, Monad } = prelude
+
+let semigroup s : Semigroup b -> Semigroup (a -> b) = {
+    append = \f g x -> s.append (f x) (g x) }
+
+let monoid m : Monoid b -> Monoid (a -> b) = {
+    semigroup = semigroup m.semigroup,
+    empty = \_ -> m.empty,
+}
+
+let category : Category (->) = {
+    id = \x -> x,
+    compose = \f g x -> f (g x),
+}
+
+let functor : Functor ((->) a) = { map = category.compose }
+
+let applicative : Applicative ((->) a) = {
+    functor = functor,
+    apply = \f g x -> f x (g x),
+    wrap = \x y -> x,
+}
+
+let monad : Monad ((->) a) = {
+    applicative = applicative,
+    flat_map = \f m x -> f (m x) x,
+}
+
+/// The identity function, where `id x == x`
+let id : a -> a = category.id
+
+/// const `x` creates a function that always returns `x`
+let const : a -> b -> a = applicative.wrap
+
+/// flip `f` creates a new function that takes its two arguments in reverse order
+let flip f x y : (a -> b -> c) -> b -> a -> c = f y x
+
+/// Backward function application, where `f <| x == f x`
+let (<|) f x : (a -> b) -> a -> b = f x
+
+/// Forward function application, where `x |> f == f x`
+let (|>) x f : a -> (a -> b) -> b = f x
+
+/// Right-to-left function composition
+let (<<) : (b -> c) -> (a -> b) -> a -> c = category.compose
+
+/// Left-to-right function composition
+let (>>) : (a -> b) -> (b -> c) -> a -> c = flip category.compose
+
+{
+    semigroup,
+    monoid,
+    category,
+    functor,
+    applicative,
+    monad,
+    id,
+    const,
+    flip,
+    (<|),
+    (|>),
+    (<<),
+    (>>),
+}

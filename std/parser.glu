@@ -1,5 +1,6 @@
 let prelude = import! "std/prelude.glu"
-let { Functor, Applicative, Alternative, Monad, id } = prelude
+let { Functor, Applicative, Alternative, Monad } = prelude
+let { id } = import! "std/function.glu"
 let { Bool } = import! "std/bool.glu"
 let char = import! "std/char.glu"
 let { (==) } = char.eq

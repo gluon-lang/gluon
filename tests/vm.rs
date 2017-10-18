@@ -776,8 +776,8 @@ fn get_binding_with_generic_params() {
     let _ = ::env_logger::init();
 
     let vm = make_vm();
-    run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import! "std/prelude.glu" "#);
-    let mut id: FunctionRef<fn(String) -> String> = vm.get_global("std.prelude.id")
+    run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import! "std/function.glu" "#);
+    let mut id: FunctionRef<fn(String) -> String> = vm.get_global("std.function.id")
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(id.call("test".to_string()), Ok("test".to_string()));
 }

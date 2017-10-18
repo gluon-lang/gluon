@@ -178,15 +178,13 @@ fn implicit_prelude_lines_not_counted() {
     let thread = new_vm();
     {
         let mut context = thread.context();
-        context.set_hook(Some(Box::new(
-            move |_, debug_info| if debug_info.stack_info(0).unwrap().source_name() ==
-                "test"
-            {
+        context.set_hook(Some(Box::new(move |_, debug_info| {
+            if debug_info.stack_info(0).unwrap().source_name() == "test" {
                 Ok(Async::NotReady)
             } else {
                 Ok(Async::Ready(()))
-            },
-        )));
+            }
+        })));
         context.set_hook_mask(LINE_FLAG);
     }
     let mut execute = Compiler::new()
@@ -338,7 +336,7 @@ fn argument_types() {
                 vec![
                     ("int_function".to_string(), int_function.clone()),
                     ("g".to_string(), int_function.clone()),
-                ]
+                ],
             ),
             (
                 4,
@@ -346,7 +344,7 @@ fn argument_types() {
                     ("int_function".to_string(), int_function.clone()),
                     ("g".to_string(), int_function.clone()),
                     ("f".to_string(), int_function.clone()),
-                ]
+                ],
             ),
             (3, vec![("z".to_string(), Type::int())]),
             (2, vec![("y".to_string(), Type::int())]),
@@ -476,9 +474,10 @@ fn implicit_prelude_variable_names() {
     let f = functions.lock().unwrap();
     match *f[0] {
         Type::Record(ref row) => {
-            assert!(row.row_iter().any(
-                |field| field.name.declared_name() == "id",
-            ));
+            assert!(
+                row.row_iter()
+                    .any(|field| { field.name.declared_name() == "make_Semigroup" })
+            );
         }
         _ => panic!(),
     }

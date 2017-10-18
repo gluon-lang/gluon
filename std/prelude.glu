@@ -20,10 +20,6 @@ let make_Semigroup semigroup : Semigroup a -> _ =
 
     { append, (<>) }
 
-let semigroup_Function semigroup : Semigroup b -> Semigroup (a -> b) = {
-    append = \f g x -> semigroup.append (f x) (g x)
-}
-
 let semigroup_Ordering : Semigroup Ordering = {
     append = \x y ->
         match x with
@@ -42,11 +38,6 @@ type Monoid a = {
     ///
     /// * Known as `mempty` in Haskell
     empty : a
-}
-
-let monoid_Function monoid : Monoid b -> Monoid (a -> b) = {
-    semigroup = semigroup_Function monoid.semigroup,
-    empty = \_ -> monoid.empty,
 }
 
 let monoid_Ordering : Monoid Ordering = {
@@ -123,32 +114,6 @@ let make_Category category : Category cat -> _ =
 
     { id, compose, (<<), (>>) }
 
-let category_Function : Category (->) = {
-    id = \x -> x,
-    compose = \f g x -> f (g x),
-}
-
-/// The identity function, where `id x == x`
-let id : a -> a = category_Function.id
-
-/// const `x` creates a function which always returns `x`
-let const x _ : a -> b -> a = x
-
-/// flip `f` takes creates a new function which takes its two arguments in reverse order
-let flip f : (a -> b -> c) -> b -> a -> c = \x y -> f y x
-
-/// Backward function application, where `f <| x == f x`
-let (<|) f x : (a -> b) -> a -> b = f x
-
-/// Forward function application, where `x |> f == f x`
-let (|>) x f : a -> (a -> b) -> b = f x
-
-/// Right-to-left function composition
-let (<<) : (b -> c) -> (a -> b) -> a -> c = (make_Category category_Function).(<<)
-
-/// Left-to-right function composition
-let (>>) : (a -> b) -> (b -> c) -> a -> c = (make_Category category_Function).(>>)
-
 /// A `Functor` represents an action on a parameterized type which does not
 /// change the structure with the mapped type.
 ///
@@ -171,8 +136,6 @@ type Functor f = {
     /// * Known as `fmap` in Haskell
     map : (a -> b) -> f a -> f b
 }
-
-let functor_Function : Functor ((->) a) = { map = category_Function.compose }
 
 type Applicative (f : Type -> Type) = {
     functor : Functor f,
@@ -202,20 +165,14 @@ let make_Applicative applicative =
     let { functor, apply, wrap } = applicative
 
     let (<*>) : _ (a -> b) -> _ a -> _ b = apply
-    let (<*) l r : _ a -> _ b -> _ a = functor.map const l <*> r
-    let (*>) l r : _ a -> _ b -> _ b = functor.map (const id) l <*> r
+    let (<*) l r : _ a -> _ b -> _ a = functor.map (\x _ -> x) l <*> r
+    let (*>) l r : _ a -> _ b -> _ b = functor.map (\_ x -> x) l <*> r
 
     let map2 f a b : (a -> b -> c) -> _ a -> _ b -> _ c = (functor.map f a) <*> b
     let map3 f a b c : (a -> b -> c -> d) -> _ a -> _ b -> _ c -> _ d =
         (functor.map f a) <*> b <*> c
 
     { functor, apply, wrap, (<*>), (<*), (*>), map2, map3 }
-
-let applicative_Function : Applicative ((->) a) = {
-    functor = functor_Function,
-    apply = \f g x -> f x (g x),
-    wrap = const,
-}
 
 type Alternative f = { applicative : Applicative f, or : f a -> f a -> f a, empty : f a }
 
@@ -261,19 +218,13 @@ type Monad (m : Type -> Type) = {
 let make_Monad monad : Monad m -> _ =
     let { applicative, flat_map } = monad
     let { (*>), wrap } = make_Applicative applicative
-    let { id } = category_Function
 
     let (=<<) : (a -> m b) -> m a -> m b = flat_map
-    let (>>=) : m a -> (a -> m b) -> m b = flip flat_map
+    let (>>=) x f : m a -> (a -> m b) -> m b = flat_map f x
 
-    let join mm : m (m a) -> m a = mm >>= id
+    let join mm : m (m a) -> m a = mm >>= (\x -> x)
 
     { applicative, flat_map, (=<<), (>>=), join }
-
-let monad_Function : Monad ((->) a) = {
-    applicative = applicative_Function,
-    flat_map = \f m x -> f (m x) x,
-}
 
 /// `Show a` represents a conversion function from `a` to a readable string.
 type Show a = { show : a -> String }
@@ -290,10 +241,10 @@ let make_Foldable foldable : Foldable t -> _ =
         foldr monoid.semigroup.append monoid.empty
 
     let concat_map monoid f : Monoid m -> (a -> m) -> t a -> m =
-        foldr (f >> monoid.semigroup.append) monoid.empty
+        foldr (\x -> monoid.semigroup.append (f x)) monoid.empty
 
     let fold_m monad f z : Monad m -> (a -> b -> m a) -> a -> t b -> m a =
-        foldl (\acc b -> monad.flat_map (flip f b) acc) (monad.applicative.wrap z)
+        foldl (\acc y -> monad.flat_map (\x -> f x y) acc) (monad.applicative.wrap z)
 
     let find pred : (a -> Bool) -> t a -> Option a =
         let go acc next =
@@ -317,8 +268,8 @@ let make_Foldable foldable : Foldable t -> _ =
     let any pred : (a -> Bool) -> t a -> Bool =
         foldl (\acc x -> acc || pred x) False
 
-    let elem eq : Eq a -> a -> t a -> Bool =
-        any << eq.(==)
+    let elem eq x : Eq a -> a -> t a -> Bool =
+        any (eq.(==) x)
 
     let count : t a -> Int =
         foldl (\acc _ -> acc #Int+ 1) 0
@@ -346,7 +297,8 @@ type Traversable t = {
 let make_Traversable traversable : Traversable t -> _ =
     let { functor, foldable, traverse } = traversable
 
-    let sequence applicative : Applicative m -> t (m a) -> m (t a) = traverse applicative id
+    let sequence applicative : Applicative m -> t (m a) -> m (t a) =
+        traverse applicative (\x -> x)
     let for applicative x f : Applicative m -> t a -> (a -> m b) -> m (t b) =
         traverse applicative f x
 
@@ -357,11 +309,9 @@ let make_Traversable traversable : Traversable t -> _ =
 
     Semigroup,
     make_Semigroup,
-    semigroup_Function,
     semigroup_Ordering,
 
     Monoid,
-    monoid_Function,
     monoid_Ordering,
 
     Group,
@@ -373,7 +323,6 @@ let make_Traversable traversable : Traversable t -> _ =
 
     Category,
     make_Category,
-    category_Function,
 
     Functor,
 
@@ -393,14 +342,6 @@ let make_Traversable traversable : Traversable t -> _ =
     make_Traversable,
 
     Num,
-
-    id,
-    const,
-    flip,
-    (<|),
-    (|>),
-    (<<),
-    (>>),
 
     Show,
 }

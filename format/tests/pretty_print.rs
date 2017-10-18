@@ -53,6 +53,11 @@ fn char() {
 }
 
 #[test]
+fn function() {
+    test_format("std/function.glu");
+}
+
+#[test]
 fn map() {
     test_format("std/map.glu");
 }

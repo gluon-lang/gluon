@@ -2,6 +2,7 @@
 
 let prelude = import! "std/prelude.glu"
 let { Num, Eq, Ord, Ordering, Semigroup, Monoid, Show } = prelude
+let function = import! "std/function.glu"
 
 let semigroup : Semigroup String = { append = string_prim.append }
 
@@ -11,7 +12,7 @@ let eq : Eq String = { (==) = string_eq }
 
 let ord : Ord String = { eq, compare = string_compare }
 
-let show : Show String = { show = prelude.id }
+let show : Show String = { show = function.id }
 
 {
     eq,
