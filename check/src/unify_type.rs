@@ -193,6 +193,10 @@ impl Substitutable for ArcType<Symbol> {
     ) -> Self {
         new_skolem_scope(subs, constraints, self)
     }
+
+    fn on_union(&self) -> &Self {
+        unpack_single_forall(self)
+    }
 }
 
 impl<'a> Unifiable<State<'a>> for ArcType {
@@ -732,6 +736,34 @@ where
         };
     }
     Ok((l, r))
+}
+
+
+// HACK
+// Currently the substitution assumes that once a variable has been unified to a
+// concrete type it cannot be unified to another type later.
+//
+// This is true in ever case except `forall a . a`, while `forall a . a` looks
+// like a concrete type it can actually turn into just an unknown type variable
+// breaking this assumption (by replacing `a` with the bound unkown variable).
+//
+// So to guard against this we unpack the forall into the unknown variable which
+// might cause some valid programs fail to compile but should not let invalid
+// programs compile
+fn unpack_single_forall(l: &ArcType) -> &ArcType {
+    match **l {
+        Type::Forall(ref params, ref l_inner, Some(ref vars)) if params.len() == 1 => {
+            match **l_inner {
+                Type::Skolem(ref skolem) if skolem.name == params[0].id => &vars[0],
+                // FIXME
+                // Since `Type::Forall` contains `Some` the `Generic` should have
+                // been skolemized
+                Type::Generic(ref gen) if gen.id == params[0].id => &vars[0],
+                _ => l,
+            }
+        }
+        _ => l,
+    }
 }
 
 /// Replaces all instances `Type::Generic` in `typ` with fresh type variables (`Type::Variable`)

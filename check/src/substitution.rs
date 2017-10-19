@@ -117,6 +117,10 @@ pub trait Substitutable: Sized {
         subs: &Substitution<Self>,
         constraints: &FnvMap<Symbol, Constraints<Self>>,
     ) -> Self;
+
+    fn on_union(&self) -> &Self {
+        self
+    }
 }
 
 fn occurs<T>(typ: &T, subs: &Substitution<T>, var: &T::Variable) -> bool
@@ -400,6 +404,7 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
         T: Unifiable<S> + fmt::Display,
         P: FnMut() -> S,
     {
+        let typ = typ.on_union();
         // Nothing needs to be done if both are the same variable already (also prevents the occurs
         // check from failing)
         if typ.get_var()
@@ -413,8 +418,8 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
         {
             let id_type = self.find_type_for_var(id.get_id());
             let other_type = self.real(typ);
-            if id_type.map_or(false, |x| x == other_type) ||
-                other_type.get_var().map(|y| y.get_id()) == Some(id.get_id())
+            if id_type.map_or(false, |x| x == other_type)
+                || other_type.get_var().map(|y| y.get_id()) == Some(id.get_id())
             {
                 return Ok(None);
             }

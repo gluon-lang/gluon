@@ -1360,3 +1360,22 @@ let assert_eq show eq = \x y ->
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn unpack_make_record_with_alias() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+type List a = | Cons a (List a) | Nil
+
+let make x : b -> _ =
+    let f y : b -> b = x
+    { List, x, f }
+
+let { List, f } = make 1
+1
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
