@@ -546,10 +546,7 @@ impl Thread {
     }
 
     fn current_context(&self) -> OwnedContext {
-        OwnedContext {
-            thread: self,
-            context: self.context.lock().unwrap(),
-        }
+        self.context()
     }
 
     fn traverse_fields_except_stack(&self, gc: &mut Gc) {
@@ -739,10 +736,7 @@ impl ThreadInternal for Thread {
     /// Calls a module, allowed to to run IO expressions
     fn execute_io(&self, value: Value) -> FutureValue<Execute<&Self>> {
         debug!("Run IO {:?}", value);
-        let mut context = OwnedContext {
-            thread: self,
-            context: self.context.lock().unwrap(),
-        };
+        let mut context = self.context();
         // Dummy value to fill the place of the function for TailCall
         context.stack.push(Int(0));
 

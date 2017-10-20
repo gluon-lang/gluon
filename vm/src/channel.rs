@@ -155,7 +155,10 @@ extern "C" fn resume(vm: &Thread) -> Status {
             context = vm.context();
             context.stack.release_lock(lock);
             match result {
-                Ok(_) => {
+                Ok(child_context) => {
+                    // Prevent dead lock if the following status_push call allocates
+                    drop(child_context);
+
                     let value: Result<(), &str> = Ok(());
                     value.status_push(vm, &mut context)
                 }
