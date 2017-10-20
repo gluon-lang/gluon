@@ -10,7 +10,7 @@ use union_find::{QuickFindUf, Union, UnionByRank, UnionFind, UnionResult};
 use base::fnv::FnvMap;
 use base::fixed::{FixedMap, FixedVec};
 use base::types;
-use base::types::{ArcType, Type, Walker};
+use base::types::{ArcType, Generic, Type, Walker};
 use base::symbol::Symbol;
 
 #[derive(Debug, PartialEq)]
@@ -369,6 +369,23 @@ impl<T: Substitutable> Substitution<T> {
     }
 }
 
+pub fn is_variable_unified(
+    subs: &Substitution<ArcType>,
+    param: &Generic<Symbol>,
+    var: &ArcType,
+) -> bool {
+    match **var {
+        Type::Variable(ref var) => match subs.find_type_for_var(var.id) {
+            Some(t) => match **t {
+                Type::Skolem(ref s) => s.name != param.id,
+                _ => true,
+            },
+            None => false,
+        },
+        _ => unreachable!(),
+    }
+}
+
 impl Substitution<ArcType> {
     fn replace_variable_(&self, typ: &Type<Symbol>) -> Option<ArcType> {
         match *typ {
@@ -376,18 +393,52 @@ impl Substitution<ArcType> {
             _ => None,
         }
     }
+
     pub fn set_type(&self, t: ArcType) -> ArcType {
-        types::walk_move_type(t, &mut |typ| {
-            let replacement = self.replace_variable_(typ);
-            let result = {
-                let mut typ = typ;
-                if let Some(ref t) = replacement {
-                    typ = t;
-                }
-                unroll_typ(typ)
-            };
-            result.or(replacement)
-        })
+        self.set_type_(&t).unwrap_or(t)
+    }
+    fn set_type_(&self, typ: &ArcType) -> Option<ArcType> {
+        match **typ {
+            Type::Forall(ref params, ref typ, Some(ref vars)) => {
+                let subs = self;
+                let mut named_variables: FnvMap<_, _> = params
+                    .iter()
+                    .zip(vars)
+                    .filter(|&(param, var)| is_variable_unified(subs, param, var))
+                    .map(|(param, var)| (param.id.clone(), var.clone()))
+                    .collect();
+                let typ = typ.instantiate_generics(&mut named_variables);
+                self.set_type_(&typ)
+                    .map(|typ| if params.len() != named_variables.len() {
+                        let mut new_params = Vec::new();
+                        let mut new_vars = Vec::new();
+                        for (param, var) in params.iter().zip(vars) {
+                            if !is_variable_unified(subs, param, var) {
+                                new_params.push(param.clone());
+                                new_vars.push(var.clone());
+                            }
+                        }
+                        ArcType::from(Type::Forall(new_params, typ, Some(new_vars)))
+                    } else {
+                        typ
+                    })
+            }
+            Type::Variable(_) => {
+                let replacement = self.replace_variable_(typ);
+                let result = {
+                    let mut typ = typ;
+                    if let Some(ref t) = replacement {
+                        typ = t;
+                    }
+                    unroll_typ(typ)
+                };
+                result.or(replacement)
+            }
+            _ => types::walk_move_type_opt(
+                typ,
+                &mut types::ControlVisitation(|typ: &ArcType| self.set_type_(typ)),
+            ),
+        }
     }
 }
 

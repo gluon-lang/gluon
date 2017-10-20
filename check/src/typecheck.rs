@@ -1713,23 +1713,7 @@ impl<'a> Typecheck<'a> {
             }
 
             Type::Forall(ref params, ref typ, Some(ref vars)) => {
-                fn is_variable_unified(
-                    subs: &Substitution<ArcType>,
-                    param: &Generic<Symbol>,
-                    var: &ArcType,
-                ) -> bool {
-                    match **var {
-                        Type::Variable(ref var) => match subs.find_type_for_var(var.id) {
-                            Some(t) => match **t {
-                                Type::Skolem(ref s) => s.name != param.id,
-                                _ => true,
-                            },
-                            None => false,
-                        },
-                        _ => unreachable!(),
-                    }
-                }
-
+                use substitution::is_variable_unified;
                 let typ = {
                     let subs = &self.subs;
                     self.named_variables.clear();

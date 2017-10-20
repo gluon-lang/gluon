@@ -1404,3 +1404,26 @@ make 1
         Ok("{ x : Int, cons : forall a . a -> test.List a }".to_string())
     );
 }
+
+#[test]
+fn resolve_app_app() {
+    use base::resolve;
+
+    let record = Type::record(
+        vec![],
+        vec![
+            Field::new(support::intern_unscoped("x"), typ("a")),
+            Field::new(support::intern_unscoped("y"), typ("b")),
+        ],
+    );
+    let alias = Type::app(
+        Type::app(
+            alias("Test", &["a", "b"], record.clone()),
+            collect![Type::unit()],
+        ),
+        collect![Type::int()],
+    );
+
+    let actual = resolve::remove_aliases(&MockEnv::new(), alias);
+    assert_eq!(actual.to_string(), "{ x : (), y : Int }");
+}
