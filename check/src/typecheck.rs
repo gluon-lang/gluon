@@ -946,7 +946,7 @@ impl<'a> Typecheck<'a> {
                 }
 
                 if let Some(ref mut base) = *base {
-                    let base_type = self.typecheck(base);
+                    let base_type = self.infer_expr(base);
                     let base_type = self.remove_aliases(base_type);
 
                     let record_type = Type::poly_record(vec![], vec![], self.subs.new_var());
@@ -1339,7 +1339,11 @@ impl<'a> Typecheck<'a> {
                     }
                 }
             }
-            check_undefined_variables(self, &bind.alias.value.args, bind.alias.value.unresolved_type());
+            check_undefined_variables(
+                self,
+                bind.alias.value.params(),
+                bind.alias.value.unresolved_type(),
+            );
 
             let alias = types::translate_alias(&self.type_cache, &bind.alias.value);
             resolved_aliases.push(alias);
