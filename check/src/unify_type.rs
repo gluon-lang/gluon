@@ -194,7 +194,7 @@ impl Substitutable for ArcType<Symbol> {
         new_skolem_scope(subs, constraints, self)
     }
 
-    fn on_union(&self) -> &Self {
+    fn on_union(&self) -> Option<&Self> {
         unpack_single_forall(self)
     }
 }
@@ -750,19 +750,22 @@ where
 // So to guard against this we unpack the forall into the unknown variable which
 // might cause some valid programs fail to compile but should not let invalid
 // programs compile
-fn unpack_single_forall(l: &ArcType) -> &ArcType {
+fn unpack_single_forall(l: &ArcType) -> Option<&ArcType> {
     match **l {
         Type::Forall(ref params, ref l_inner, Some(ref vars)) if params.len() == 1 => {
+            if params[0].id.declared_name() == "abc182" {
+                l.clone();
+            }
             match **l_inner {
-                Type::Skolem(ref skolem) if skolem.name == params[0].id => &vars[0],
+                Type::Skolem(ref skolem) if skolem.name == params[0].id => Some(&vars[0]),
                 // FIXME
                 // Since `Type::Forall` contains `Some` the `Generic` should have
                 // been skolemized
-                Type::Generic(ref gen) if gen.id == params[0].id => &vars[0],
-                _ => l,
+                Type::Generic(ref gen) if gen.id == params[0].id => Some(&vars[0]),
+                _ => None,
             }
         }
-        _ => l,
+        _ => None,
     }
 }
 

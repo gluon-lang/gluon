@@ -318,16 +318,17 @@ impl<'a> Typecheck<'a> {
                     .map(|bind| Cow::Borrowed(&bind.constraints))
                     .unwrap_or_else(|| Cow::Owned(FnvMap::default()));
                 let typ = self.subs.set_type(typ);
-                debug!(
-                    "set {:?} Find {} : {}",
-                    self.subs.find_type_for_var(1026),
-                    self.symbols.string(id),
-                    typ
-                );
 
                 self.named_variables.clear();
                 let typ = new_skolem_scope(&self.subs, &constraints, &typ);
                 debug!("Find {} : {}", self.symbols.string(id), typ);
+                debug!(
+                    "Constraints [{}]",
+                    constraints
+                        .iter()
+                        .map(|t| format!("({}, [{}])", t.0, t.1.iter().format(", ")))
+                        .format(", ")
+                );
                 Ok(typ)
             }
             None => Err(TypeError::UndefinedVariable(id.clone())),
@@ -1665,6 +1666,9 @@ impl<'a> Typecheck<'a> {
         match **typ {
             Type::Variable(ref var) if self.subs.get_level(var.id) >= level => {
                 if self.subs.get_constraints(var.id).is_some() {
+                    if var.id == 1600 || var.id == 1601 {
+                        typ.clone();
+                    }
                     let resolved_result = {
                         let state = unify_type::State::new(&self.environment, &self.subs);
                         self.subs.resolve_constraints(|| state.clone(), var, typ)
@@ -1714,6 +1718,9 @@ impl<'a> Typecheck<'a> {
 
             Type::Forall(ref params, ref typ, Some(ref vars)) => {
                 use substitution::is_variable_unified;
+                if params.len() == 1 && params[0].id.declared_name() == "abc182" {
+                    println!("params {:?} {:?} {:?}", params, typ, vars);
+                }
                 let typ = {
                     let subs = &self.subs;
                     self.named_variables.clear();
@@ -1735,7 +1742,7 @@ impl<'a> Typecheck<'a> {
                         .map(|(param, var)| (param.id.clone(), var.clone())),
                 );
 
-                let new_type = types::walk_move_type_opt(
+                let new_type = types::visit_type_opt(
                     &typ,
                     &mut types::ControlVisitation(|typ: &ArcType| {
                         self.finish_type_(level, unbound_variables, variable_generator, typ)
@@ -1743,16 +1750,43 @@ impl<'a> Typecheck<'a> {
                 );
                 self.type_variables.exit_scope();
 
+                let mut retained_params = Vec::new();
+                let mut new_params = Vec::new();
+                let mut new_vars = Vec::new();
+                for (param, var) in params.iter().zip(vars) {
+                    match **var {
+                        Type::Variable(ref variable) => {
+                            match self.subs.find_type_for_var(variable.id) {
+                                Some(t) => match **t {
+                                    Type::Skolem(ref s) => if s.name == param.id {
+                                        retained_params.push(param.clone());
+                                    },
+                                    _ => (),
+                                },
+                                None => {
+                                    new_params.push(param.clone());
+                                    new_vars.push(var.clone());
+                                }
+                            }
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+
+
                 // Remove the skolem scope (`Some(ref vars)`) so it does not leak
-                Some(Type::forall(
-                    params
-                        .iter()
-                        .zip(vars)
-                        .filter(|&(param, var)| !is_variable_unified(&self.subs, param, var))
-                        .map(|(param, _)| param.clone())
-                        .collect(),
-                    new_type.unwrap_or_else(|| typ.clone()),
-                ))
+                let typ = Type::forall(
+                    retained_params,
+                    Type::forall_with_vars(
+                        new_params,
+                        new_type.clone().unwrap_or_else(|| typ.clone()),
+                        Some(new_vars),
+                    ),
+                );
+                if params.len() == 1 && params[0].id.declared_name() == "abc182" {
+                    println!("params {:?} {:?}", new_type, typ);
+                }
+                Some(typ)
             }
 
             _ => {

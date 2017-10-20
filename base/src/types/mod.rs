@@ -609,10 +609,17 @@ where
     }
 
     pub fn forall(params: Vec<Generic<Id>>, typ: T) -> T {
+        Type::forall_with_vars(params, typ, None)
+    }
+
+    pub fn forall_with_vars(params: Vec<Generic<Id>>, typ: T, vars: Option<Vec<T>>) -> T {
+        if let Some(ref vars) = vars {
+            debug_assert!(vars.len() == params.len());
+        }
         if params.is_empty() {
             typ
         } else {
-            T::from(Type::Forall(params, typ, None))
+            T::from(Type::Forall(params, typ, vars))
         }
     }
 

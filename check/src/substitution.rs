@@ -118,8 +118,8 @@ pub trait Substitutable: Sized {
         constraints: &FnvMap<Symbol, Constraints<Self>>,
     ) -> Self;
 
-    fn on_union(&self) -> &Self {
-        self
+    fn on_union(&self) -> Option<&Self> {
+        None
     }
 }
 
@@ -299,6 +299,10 @@ impl<T: Substitutable> Substitution<T> {
             ..UnionByLevel::default()
         });
         assert!(id == self.variables.len());
+        debug!("VARHERE {}", self.variables.len());
+        if self.variables.len() == 1600 || self.variables.len() == 1601 {
+            self.variables.len();
+        }
 
         let var = f(var_id);
         self.variables.push(var.clone());
@@ -455,7 +459,8 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
         T: Unifiable<S> + fmt::Display,
         P: FnMut() -> S,
     {
-        let typ = typ.on_union();
+        let resolved_type = typ.on_union();
+        let typ = resolved_type.unwrap_or(typ);
         // Nothing needs to be done if both are the same variable already (also prevents the occurs
         // check from failing)
         if typ.get_var()
@@ -478,7 +483,7 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
         let resolved_type = if typ.get_var().is_none() {
             self.resolve_constraints(state, id, typ)?
         } else {
-            None
+            resolved_type.cloned()
         };
         {
             let typ = resolved_type.as_ref().unwrap_or(typ);
