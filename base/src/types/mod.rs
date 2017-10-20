@@ -1062,7 +1062,7 @@ impl<Id> ArcType<Id> {
             .unwrap_or_else(|| typ.clone())
     }
 
-    fn instantiate_generics_(
+    pub fn instantiate_generics_(
         &self,
         named_variables: &FnvMap<Id, ArcType<Id>>,
     ) -> Option<ArcType<Id>>

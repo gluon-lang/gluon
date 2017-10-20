@@ -456,6 +456,7 @@ impl<'a> Typecheck<'a> {
                     self.level,
                     &mut unbound_variables,
                     &mut variable_generator,
+                    false,
                     typ,
                 ) {
                     *typ = finished;
@@ -537,12 +538,18 @@ impl<'a> Typecheck<'a> {
     }
 
     fn generalize_type(&mut self, level: u32, typ: &mut ArcType) {
+        debug!("Start generalize {}", typ);
         self.type_variables.enter_scope();
 
         let mut unbound_variables = FnvMap::default();
         let mut variable_generator = TypeVariableGenerator::new(level, &self.subs, typ);
-        let mut result_type =
-            self.finish_type_(level, &mut unbound_variables, &mut variable_generator, typ);
+        let mut result_type = self.finish_type_(
+            level,
+            &mut unbound_variables,
+            &mut variable_generator,
+            true,
+            typ,
+        );
 
         self.type_variables.exit_scope();
 
@@ -1652,11 +1659,18 @@ impl<'a> Typecheck<'a> {
         level: u32,
         unbound_variables: &mut FnvMap<Symbol, Generic<Symbol>>,
         variable_generator: &mut TypeVariableGenerator,
+        preserve_forall_variables: bool,
         typ: &ArcType,
     ) -> Option<ArcType> {
+        debug!("Finishing {}", typ);
         let replacement = self.subs.replace_variable(typ).map(|t| {
-            self.finish_type_(level, unbound_variables, variable_generator, &t)
-                .unwrap_or(t)
+            self.finish_type_(
+                level,
+                unbound_variables,
+                variable_generator,
+                preserve_forall_variables,
+                &t,
+            ).unwrap_or(t)
         });
         let mut typ = typ;
         if let Some(ref t) = replacement {
@@ -1706,11 +1720,21 @@ impl<'a> Typecheck<'a> {
                     // Make a new name base for any unbound variables in the record field
                     // Gives { id : a0 -> a0, const : b0 -> b1 -> b1 }
                     // instead of { id : a0 -> a0, const : a1 -> a2 -> a2 }
-                    self.finish_type_(level, unbound_variables, variable_generator, &field.typ)
-                        .map(|typ| Field::new(field.name.clone(), typ))
+                    self.finish_type_(
+                        level,
+                        unbound_variables,
+                        variable_generator,
+                        preserve_forall_variables,
+                        &field.typ,
+                    ).map(|typ| Field::new(field.name.clone(), typ))
                 });
-                let new_rest =
-                    self.finish_type_(level, unbound_variables, variable_generator, rest);
+                let new_rest = self.finish_type_(
+                    level,
+                    unbound_variables,
+                    variable_generator,
+                    preserve_forall_variables,
+                    rest,
+                );
                 merge::merge(fields, new_fields, rest, new_rest, |fields, rest| {
                     Type::extend_row(types.clone(), fields, rest)
                 }).or_else(|| replacement.clone())
@@ -1731,7 +1755,9 @@ impl<'a> Typecheck<'a> {
                             .filter(|&(param, var)| is_variable_unified(subs, param, var))
                             .map(|(param, var)| (param.id.clone(), var.clone())),
                     );
-                    typ.instantiate_generics(&mut self.named_variables)
+                    debug!("VARS {:?}", self.named_variables);
+                    typ.instantiate_generics_(&mut self.named_variables)
+                        .unwrap_or(typ.clone())
                 };
 
                 self.type_variables.enter_scope();
@@ -1742,11 +1768,12 @@ impl<'a> Typecheck<'a> {
                         .map(|(param, var)| (param.id.clone(), var.clone())),
                 );
 
-                let new_type = types::visit_type_opt(
+                let new_type = self.finish_type_(
+                    level,
+                    unbound_variables,
+                    variable_generator,
+                    preserve_forall_variables,
                     &typ,
-                    &mut types::ControlVisitation(|typ: &ArcType| {
-                        self.finish_type_(level, unbound_variables, variable_generator, typ)
-                    }),
                 );
                 self.type_variables.exit_scope();
 
@@ -1758,15 +1785,17 @@ impl<'a> Typecheck<'a> {
                         Type::Variable(ref variable) => {
                             match self.subs.find_type_for_var(variable.id) {
                                 Some(t) => match **t {
-                                    Type::Skolem(ref s) => if s.name == param.id {
+                                    Type::Skolem(ref s) if s.name == param.id => {
                                         retained_params.push(param.clone());
-                                    },
+                                    }
                                     _ => (),
                                 },
-                                None => {
+                                None => if preserve_forall_variables {
                                     new_params.push(param.clone());
                                     new_vars.push(var.clone());
-                                }
+                                } else {
+                                    retained_params.push(param.clone());
+                                },
                             }
                         }
                         _ => unreachable!(),
@@ -1798,7 +1827,13 @@ impl<'a> Typecheck<'a> {
                 let new_type = types::walk_move_type_opt(
                     typ,
                     &mut types::ControlVisitation(|typ: &ArcType| {
-                        self.finish_type_(level, unbound_variables, variable_generator, typ)
+                        self.finish_type_(
+                            level,
+                            unbound_variables,
+                            variable_generator,
+                            preserve_forall_variables,
+                            typ,
+                        )
                     }),
                 );
                 match **typ {
