@@ -1379,3 +1379,28 @@ let { List, f } = make 1
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+
+// Unsure if this should be able to compile as is (without  type annotations)
+#[test]
+#[ignore]
+fn preserve_forall_when_lifting_into_record() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+type Map k a = | Bin k a (Map k a) (Map k a) | Tip
+type List a = | Cons a
+
+let cons x = Cons x
+
+and make x : b -> _ =
+    { x, cons }
+make 1
+"#;
+    let result = support::typecheck(text);
+
+    assert_eq!(
+        result.map(|x| x.to_string()),
+        Ok("{ x : Int, cons : forall a . a -> test.List a }".to_string())
+    );
+}

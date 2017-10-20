@@ -13,7 +13,7 @@ let empty = Tip
 
 let singleton k v = Bin k v empty empty
 
-and make ord : Ord k -> _ =
+let make ord : Ord k -> _ =
     let find k m : k -> Map k a -> Option a =
         match m with
         | Bin k2 v l r ->

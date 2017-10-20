@@ -1662,11 +1662,6 @@ impl<'a> Typecheck<'a> {
             debug!("{} ==> {}", typ, t);
             typ = t;
         }
-        if let Type::Variable(ref var) = **typ {
-            if var.id == 8 {
-                self.subs.get_constraints(var.id);
-            }
-        }
         match **typ {
             Type::Variable(ref var) if self.subs.get_level(var.id) >= level => {
                 if self.subs.get_constraints(var.id).is_some() {
@@ -1737,6 +1732,7 @@ impl<'a> Typecheck<'a> {
 
                 let typ = {
                     let subs = &self.subs;
+                    self.named_variables.clear();
                     self.named_variables.extend(
                         params
                             .iter()
