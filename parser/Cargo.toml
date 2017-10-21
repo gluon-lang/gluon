@@ -24,7 +24,7 @@ gluon_base = { path = "../base", version = "0.6.2" } # GLUON
 
 [dev-dependencies]
 difference = "1.0"
-pretty_assertions = "0.3.0"
+pretty_assertions = "0.4"
 
 [build-dependencies]
 lalrpop = "0.13.1"

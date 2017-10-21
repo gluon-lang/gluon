@@ -21,7 +21,7 @@ gluon_parser = { path = "../parser", version = "0.6.2" } # GLUON
 [dev-dependencies]
 env_logger = "0.3.4"
 difference = "1.0"
-pretty_assertions = "0.3.0"
+pretty_assertions = "0.4"
 
 [features]
 test = []

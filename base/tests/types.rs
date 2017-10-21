@@ -1,5 +1,7 @@
 extern crate gluon_base as base;
 extern crate pretty;
+#[macro_use]
+extern crate pretty_assertions;
 
 use std::ops::Deref;
 
@@ -24,12 +26,7 @@ where
 
 macro_rules! assert_eq_display {
     ($l: expr, $r: expr) => {
-        let l = $l;
-        let r = $r;
-        if l != r {
-            panic!("Assertion failed: {} != {}\nleft:\n{}\nright:\n{}",
-                stringify!($l), stringify!($r), l, r);
-        }
+        assert_eq!($l.to_string(), $r.to_string());
     }
 }
 
