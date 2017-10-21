@@ -10,7 +10,7 @@ extern crate gluon_parser as parser;
 use base::metadata::Metadata;
 use base::pos::{self, BytePos, Span};
 use base::types::{ArcType, Field, Type};
-use completion::{Suggestion};
+use completion::Suggestion;
 
 mod support;
 use support::{intern, typ, MockEnv};
@@ -146,7 +146,7 @@ let f x = f x
 "#,
         BytePos::from(11),
     );
-    let expected = Ok("forall a0 a . a -> a0".to_string());
+    let expected = Ok("a -> a0".to_string());
 
     assert_eq!(result.map(|typ| typ.to_string()), expected);
 }
