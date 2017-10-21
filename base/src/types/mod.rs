@@ -288,11 +288,11 @@ impl<Id, T> Deref for Alias<Id, T>
 where
     T: Deref<Target = Type<Id, T>>,
 {
-    type Target = AliasData<Id, T>;
+    type Target = AliasRef<Id, T>;
 
     fn deref(&self) -> &Self::Target {
         match *self._typ {
-            Type::Alias(ref alias) => &alias.group[alias.index],
+            Type::Alias(ref alias) => alias,
             _ => unreachable!(),
         }
     }
@@ -1005,7 +1005,7 @@ impl<Id> ArcType<Id> {
 
     pub fn remove_forall(&self) -> &ArcType<Id> {
         match **self {
-            Type::Forall(_, ref typ, _) => typ,
+            Type::Forall(_, ref typ, _) => typ.remove_forall(),
             _ => self,
         }
     }

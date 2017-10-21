@@ -384,7 +384,7 @@ pub fn is_variable_unified(
                 Type::Skolem(ref s) => s.name != param.id,
                 _ => true,
             },
-            None => false,
+            None => subs.get_constraints(var.id).is_some(),
         },
         _ => unreachable!(),
     }

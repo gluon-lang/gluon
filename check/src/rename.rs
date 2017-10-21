@@ -313,8 +313,8 @@ pub fn rename(
                     if is_recursive {
                         for bind in bindings {
                             self.env.stack.enter_scope();
-                            for (typ, arg) in
-                                types::arg_iter(&bind.resolved_type).zip(&mut bind.args)
+                            for (typ, arg) in types::arg_iter(bind.resolved_type.remove_forall())
+                                .zip(&mut bind.args)
                             {
                                 arg.value.name =
                                     self.stack_var(arg.value.name.clone(), expr.span, typ.clone());

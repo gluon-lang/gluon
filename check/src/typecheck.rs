@@ -19,7 +19,7 @@ use base::kind::{ArcKind, Kind, KindCache, KindEnv};
 use base::merge;
 use base::pos::{BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
-use base::types::{self, Alias, AliasData, AppVec, ArcType, Field, Generic, PrimitiveEnv,
+use base::types::{self, Alias, AliasRef, AppVec, ArcType, Field, Generic, PrimitiveEnv,
                   RecordSelector, Skolem, Type, TypeCache, TypeEnv, TypeVariable};
 
 use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
@@ -215,16 +215,16 @@ impl<'a> TypeEnv for Environment<'a> {
             .iter()
             .find(|&(_, &(_, ref alias))| match **alias.unresolved_type() {
                 Type::Record(ref row) => {
-                        let record_fields = || row.row_iter()
+                    let record_fields = || {
+                        row.row_iter()
                             .map(|f| f.name.name())
-                            .chain(row.type_field_iter ().map(|f| f.name.name()));
-                        selector.matches(record_fields, fields.iter().map(|field| field.name()))
-                    }
-                    _ => false,
+                            .chain(row.type_field_iter().map(|f| f.name.name()))
+                    };
+                    selector.matches(record_fields, fields.iter().map(|field| field.name()))
                 }
-            )
-            // FIXME Don't use unresolved_type
-            .map(|t| ((t.1).0.clone(), (t.1).1.unresolved_type().clone()))
+                _ => false,
+            })
+            .map(|t| ((t.1).0.clone(), (t.1).1.typ().into_owned()))
             .or_else(|| self.environment.find_record(fields, selector))
     }
 }
@@ -456,7 +456,6 @@ impl<'a> Typecheck<'a> {
                     self.level,
                     &mut unbound_variables,
                     &mut variable_generator,
-                    false,
                     typ,
                 ) {
                     *typ = finished;
@@ -543,13 +542,8 @@ impl<'a> Typecheck<'a> {
 
         let mut unbound_variables = FnvMap::default();
         let mut variable_generator = TypeVariableGenerator::new(level, &self.subs, typ);
-        let mut result_type = self.finish_type_(
-            level,
-            &mut unbound_variables,
-            &mut variable_generator,
-            true,
-            typ,
-        );
+        let mut result_type =
+            self.finish_type_(level, &mut unbound_variables, &mut variable_generator, typ);
 
         self.type_variables.exit_scope();
 
@@ -1215,6 +1209,7 @@ impl<'a> Typecheck<'a> {
         self.enter_scope();
         self.type_variables.enter_scope();
         let level = self.subs.var_id();
+        debug!("ENTER {:?}", self.type_variables);
 
         for bind in bindings.iter_mut() {
             if let Some(ref typ) = bind.typ {
@@ -1226,6 +1221,8 @@ impl<'a> Typecheck<'a> {
         // When the definitions are allowed to be mutually recursive
         if is_recursive {
             for bind in bindings.iter_mut() {
+                self.type_variables.enter_scope();
+
                 match bind.name.value {
                     Pattern::Constructor(ref id, _) | Pattern::Ident(ref id)
                         if id.name.declared_name().starts_with(char::is_uppercase) =>
@@ -1251,8 +1248,11 @@ impl<'a> Typecheck<'a> {
                         lambda.id.name = name.name.clone();
                     }
                 }
+
+                self.type_variables.exit_scope();
             }
         }
+        debug!("FIRST {:?}", self.type_variables);
         let mut types = Vec::new();
         for bind in bindings.iter_mut() {
             self.type_variables.enter_scope();
@@ -1272,6 +1272,7 @@ impl<'a> Typecheck<'a> {
 
             debug!("let {:?} : {:?}", bind.name, typ);
 
+            debug!("BEFORE MERGE {:?}", self.type_variables);
             typ = self.merge_signature(bind.name.span, level, &bind.resolved_type, typ);
 
 
@@ -1288,10 +1289,12 @@ impl<'a> Typecheck<'a> {
 
             self.type_variables.exit_scope();
         }
+        debug!("BEFORE GENERALIZe {:?}", self.type_variables);
         // Once all variables inside the let has been unified we can quantify them
         debug!("Generalize at {}", level);
         for bind in bindings.iter_mut() {
             debug!("Generalize {}", bind.resolved_type);
+            debug!("aaaa {:?}", self.type_variables);
             self.generalize_binding(level, bind);
             self.finish_pattern(level, &mut bind.name, &bind.resolved_type);
             debug!("Generalized to {}", bind.resolved_type);
@@ -1629,6 +1632,7 @@ impl<'a> Typecheck<'a> {
 
     /// Finish a type by replacing all unbound type variables above `level` with generics
     fn finish_type(&mut self, level: u32, original: &ArcType) -> Option<ArcType> {
+        debug!("Start finish {}", original);
         self.type_variables.enter_scope();
 
         let mut unbound_variables = FnvMap::default();
@@ -1659,22 +1663,20 @@ impl<'a> Typecheck<'a> {
         level: u32,
         unbound_variables: &mut FnvMap<Symbol, Generic<Symbol>>,
         variable_generator: &mut TypeVariableGenerator,
-        preserve_forall_variables: bool,
         typ: &ArcType,
     ) -> Option<ArcType> {
-        debug!("Finishing {}", typ);
         let replacement = self.subs.replace_variable(typ).map(|t| {
-            self.finish_type_(
-                level,
-                unbound_variables,
-                variable_generator,
-                preserve_forall_variables,
-                &t,
-            ).unwrap_or(t)
+            self.finish_type_(level, unbound_variables, variable_generator, &t)
+                .unwrap_or(t)
         });
         let mut typ = typ;
         if let Some(ref t) = replacement {
-            debug!("{} ==> {}", typ, t);
+            if let Type::Variable(ref v) = **typ {
+                if v.id == 1775 {
+                    typ.to_string();
+                }
+            }
+            debug!("{}  {}", typ, t);
             typ = t;
         }
         match **typ {
@@ -1720,21 +1722,11 @@ impl<'a> Typecheck<'a> {
                     // Make a new name base for any unbound variables in the record field
                     // Gives { id : a0 -> a0, const : b0 -> b1 -> b1 }
                     // instead of { id : a0 -> a0, const : a1 -> a2 -> a2 }
-                    self.finish_type_(
-                        level,
-                        unbound_variables,
-                        variable_generator,
-                        preserve_forall_variables,
-                        &field.typ,
-                    ).map(|typ| Field::new(field.name.clone(), typ))
+                    self.finish_type_(level, unbound_variables, variable_generator, &field.typ)
+                        .map(|typ| Field::new(field.name.clone(), typ))
                 });
-                let new_rest = self.finish_type_(
-                    level,
-                    unbound_variables,
-                    variable_generator,
-                    preserve_forall_variables,
-                    rest,
-                );
+                let new_rest =
+                    self.finish_type_(level, unbound_variables, variable_generator, rest);
                 merge::merge(fields, new_fields, rest, new_rest, |fields, rest| {
                     Type::extend_row(types.clone(), fields, rest)
                 }).or_else(|| replacement.clone())
@@ -1768,54 +1760,19 @@ impl<'a> Typecheck<'a> {
                         .map(|(param, var)| (param.id.clone(), var.clone())),
                 );
 
-                let new_type = self.finish_type_(
-                    level,
-                    unbound_variables,
-                    variable_generator,
-                    preserve_forall_variables,
-                    &typ,
-                );
+                let new_type =
+                    self.finish_type_(level, unbound_variables, variable_generator, &typ);
                 self.type_variables.exit_scope();
 
-                let mut retained_params = Vec::new();
-                let mut new_params = Vec::new();
-                let mut new_vars = Vec::new();
-                for (param, var) in params.iter().zip(vars) {
-                    match **var {
-                        Type::Variable(ref variable) => {
-                            match self.subs.find_type_for_var(variable.id) {
-                                Some(t) => match **t {
-                                    Type::Skolem(ref s) if s.name == param.id => {
-                                        retained_params.push(param.clone());
-                                    }
-                                    _ => (),
-                                },
-                                None => if preserve_forall_variables {
-                                    new_params.push(param.clone());
-                                    new_vars.push(var.clone());
-                                } else {
-                                    retained_params.push(param.clone());
-                                },
-                            }
-                        }
-                        _ => unreachable!(),
-                    }
-                }
-
-
-                // Remove the skolem scope (`Some(ref vars)`) so it does not leak
-                let typ = Type::forall(
-                    retained_params,
-                    Type::forall_with_vars(
-                        new_params,
-                        new_type.clone().unwrap_or_else(|| typ.clone()),
-                        Some(new_vars),
-                    ),
-                );
-                if params.len() == 1 && params[0].id.declared_name() == "abc182" {
-                    println!("params {:?} {:?}", new_type, typ);
-                }
-                Some(typ)
+                Some(Type::forall(
+                    params
+                        .iter()
+                        .zip(vars)
+                        .filter(|&(param, var)| !is_variable_unified(&self.subs, param, var))
+                        .map(|(param, _)| param.clone())
+                        .collect(),
+                    new_type.unwrap_or_else(|| typ.clone()),
+                ))
             }
 
             _ => {
@@ -1827,13 +1784,7 @@ impl<'a> Typecheck<'a> {
                 let new_type = types::walk_move_type_opt(
                     typ,
                     &mut types::ControlVisitation(|typ: &ArcType| {
-                        self.finish_type_(
-                            level,
-                            unbound_variables,
-                            variable_generator,
-                            preserve_forall_variables,
-                            typ,
-                        )
+                        self.finish_type_(level, unbound_variables, variable_generator, typ)
                     }),
                 );
                 match **typ {
@@ -2195,7 +2146,7 @@ pub fn extract_generics(args: &[ArcType]) -> Vec<Generic<Symbol>> {
 fn get_alias_app<'a>(
     env: &'a TypeEnv,
     typ: &'a ArcType,
-) -> Option<(&'a AliasData<Symbol, ArcType>, Cow<'a, [ArcType]>)> {
+) -> Option<(&'a AliasRef<Symbol, ArcType>, Cow<'a, [ArcType]>)> {
     match **typ {
         Type::Alias(ref alias) => Some((alias, Cow::Borrowed(&[][..]))),
         Type::App(ref alias, ref args) => match **alias {
@@ -2221,7 +2172,7 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
             let (arg, new) = match self.typ.remove_forall().as_function() {
                 Some((arg, ret)) => (Some(arg.clone()), ret.clone()),
                 None => match get_alias_app(&self.tc.environment, &self.typ) {
-                    Some((alias, args)) => match alias.unresolved_type().apply_args(&args) {
+                    Some((alias, args)) => match alias.typ().apply_args(&args) {
                         Some(typ) => (None, typ.clone()),
                         None => return None,
                     },

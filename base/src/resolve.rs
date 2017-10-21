@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use fnv::FnvMap;
-use types::{AliasData, ArcType, Type, TypeEnv};
+use types::{AliasData, AliasRef, ArcType, Type, TypeEnv};
 use symbol::Symbol;
 
 quick_error! {
@@ -35,7 +35,7 @@ where
 {
     match peek_alias(env, typ) {
         Ok(Some(alias)) if !canonical(alias) => alias
-            .unresolved_type()
+            .typ()
             .apply_args(&typ.unapplied_args())
             .map(|typ| {
                 Cow::Owned(canonical_alias(env, &typ, canonical).into_owned())
@@ -54,18 +54,18 @@ pub fn remove_alias(env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType>, Err
         if **alias.unresolved_type().remove_forall() == Type::Opaque {
             return None;
         }
-        alias.unresolved_type().apply_args(&typ.unapplied_args())
+        alias.typ().apply_args(&typ.unapplied_args())
     }))
 }
 
 pub fn peek_alias<'t>(
     env: &'t TypeEnv,
     typ: &'t ArcType,
-) -> Result<Option<&'t AliasData<Symbol, ArcType>>, Error> {
+) -> Result<Option<&'t AliasRef<Symbol, ArcType>>, Error> {
     fn extract_alias(
         typ: &ArcType,
         given_arguments_count: usize,
-    ) -> Option<&AliasData<Symbol, ArcType>> {
+    ) -> Option<&AliasRef<Symbol, ArcType>> {
         match **typ {
             Type::Alias(ref alias) if alias.params().len() == given_arguments_count => Some(alias),
             Type::App(ref alias, ref args) => {
@@ -82,7 +82,6 @@ pub fn peek_alias<'t>(
             let alias = match maybe_alias {
                 Some(alias) => alias,
                 None => env.find_type_info(id)
-                    .map(|a| &**a)
                     .ok_or_else(|| Error::UndefinedType(id.clone()))?,
             };
             Ok(Some(alias))

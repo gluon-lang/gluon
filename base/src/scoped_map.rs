@@ -2,6 +2,7 @@
 use std::borrow::Borrow;
 use std::collections::hash_map;
 use std::collections::hash_map::{Entry, IterMut};
+use std::fmt;
 use std::hash::Hash;
 
 use fnv::FnvMap;
@@ -10,14 +11,23 @@ use fnv::FnvMap;
 /// Introducing a new scope will make it possible to introduce additional
 /// variables with names already defined, shadowing the old name
 /// After exiting a scope the shadowed variable will again be re introduced
-#[derive(Debug)]
-pub struct ScopedMap<K: Eq + Hash + Clone, V> {
+pub struct ScopedMap<K: Eq + Hash, V> {
     /// A hashmap storing a key -> value mapping
     /// Stores a vector of values in which the value at the top is value returned from 'get'
     map: FnvMap<K, Vec<V>>,
     /// A vector of scopes, when entering a scope, None is added as a marker
     /// when later exiting a scope, values are removed from the map until the marker is found
     scopes: Vec<Option<K>>,
+}
+
+impl<K, V> fmt::Debug for ScopedMap<K, V>
+where
+    K: Eq + Hash + fmt::Debug + Clone,
+    V: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_map().entries(self.iter()).finish()
+    }
 }
 
 #[allow(dead_code)]
@@ -70,11 +80,6 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
             }
         }
         false
-    }
-
-    /// Returns an iterator of the (key, values) pairs inserted in the map
-    pub fn iter_mut(&mut self) -> IterMut<K, Vec<V>> {
-        self.map.iter_mut()
     }
 
     /// Returns a reference to the last inserted value corresponding to the key
@@ -160,6 +165,13 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
         vec.push(v);
         self.scopes.push(Some(k));
         vec.len() == 1
+    }
+}
+
+impl<K: Eq + Hash, V> ScopedMap<K, V> {
+    /// Returns an iterator of the (key, values) pairs inserted in the map
+    pub fn iter_mut(&mut self) -> IterMut<K, Vec<V>> {
+        self.map.iter_mut()
     }
 
     pub fn iter(&self) -> Iter<K, V> {

@@ -317,6 +317,9 @@ pub trait MutVisitor {
         walk_mut_pattern(self, &mut e.value);
     }
 
+    fn visit_ident(&mut self, id: &mut TypedIdent<Self::Ident>) {
+        self.visit_typ(&mut id.typ)
+    }
     fn visit_typ(&mut self, _: &mut ArcType<Self::Ident>) {}
 }
 
@@ -329,14 +332,14 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
         }
         Expr::Infix(ref mut lhs, ref mut id, ref mut rhs) => {
             v.visit_expr(lhs);
-            v.visit_typ(&mut id.value.typ);
+            v.visit_ident(&mut id.value);
             v.visit_expr(rhs);
         }
         Expr::LetBindings(ref mut bindings, ref mut body) => {
             for bind in bindings {
                 v.visit_pattern(&mut bind.name);
                 for arg in &mut bind.args {
-                    v.visit_typ(&mut arg.value.typ);
+                    v.visit_ident(&mut arg.value);
                 }
                 v.visit_typ(&mut bind.resolved_type);
                 v.visit_expr(&mut bind.expr);
@@ -395,14 +398,14 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
             v.visit_expr(expr);
         },
         Expr::Lambda(ref mut lambda) => {
-            v.visit_typ(&mut lambda.id.typ);
+            v.visit_ident(&mut lambda.id);
             for arg in &mut lambda.args {
-                v.visit_typ(&mut arg.value.typ);
+                v.visit_ident(&mut arg.value);
             }
             v.visit_expr(&mut lambda.body);
         }
         Expr::TypeBindings(_, ref mut expr) => v.visit_expr(expr),
-        Expr::Ident(ref mut id) => v.visit_typ(&mut id.typ),
+        Expr::Ident(ref mut id) => v.visit_ident(id),
         Expr::Literal(..) | Expr::Error => (),
     }
 }
@@ -411,7 +414,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
 pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::Ident>) {
     match *p {
         Pattern::Constructor(ref mut id, ref mut args) => {
-            v.visit_typ(&mut id.typ);
+            v.visit_ident(id);
             for arg in args {
                 v.visit_pattern(arg);
             }
@@ -437,7 +440,7 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::Id
                 v.visit_pattern(elem);
             }
         }
-        Pattern::Ident(ref mut id) => v.visit_typ(&mut id.typ),
+        Pattern::Ident(ref mut id) => v.visit_ident(id),
         Pattern::Error => (),
     }
 }

@@ -489,12 +489,19 @@ impl<'a> Compiler<'a> {
     }
 
     fn find_tag(&self, typ: &ArcType, constructor: &Symbol) -> Option<VmTag> {
-        match **resolve::remove_aliases_cow(self, typ) {
+        if typ.to_string().contains("Stream_") {
+            typ.to_string();
+        }
+        let x = resolve::remove_aliases_cow(self, typ);
+        match **x {
             Type::Variant(ref row) => row.row_iter()
                 .enumerate()
                 .find(|&(_, field)| field.name == *constructor)
                 .map(|(tag, _)| tag as VmTag),
-            _ => None,
+            _ => {
+                println!("{} + {}", typ, x);
+                None
+            }
         }
     }
 
@@ -864,7 +871,7 @@ impl<'a> Compiler<'a> {
                 function.new_stack_var(self, name.name.clone(), pattern_type.clone());
             }
             Pattern::Record(ref fields) => {
-                let typ = resolve::remove_aliases(self, pattern_type.clone());
+                let typ = resolve::remove_aliases(self, pattern_type.remove_forall().clone());
                 let typ = typ.remove_forall();
                 match **typ {
                     Type::Record(_) => {
