@@ -102,7 +102,10 @@ type Num a = {
     negate : a -> a
 }
 
-type Category (cat : Type -> Type -> Type) = { id : forall a . cat a a, compose : forall a b c . cat b c -> cat a b -> cat a c }
+type Category (cat : Type -> Type -> Type) = {
+    id : forall a . cat a a,
+    compose : forall a b c . cat b c -> cat a b -> cat a c
+}
 
 let make_Category category : Category cat -> _ =
     let { id, compose } = category
@@ -173,8 +176,11 @@ let make_Applicative applicative : Applicative f -> _ =
 
     { functor, apply, wrap, (<*>), (<*), (*>), map2, map3 }
 
-type Alternative f = { applicative : Applicative f,
-    or : forall a . f a -> f a -> f a, empty : forall a . f a }
+type Alternative f = {
+    applicative : Applicative f,
+    or : forall a . f a -> f a -> f a,
+    empty : forall a . f a
+}
 
 let make_Alternative alternative : Alternative f -> _ =
     let { applicative, or, empty } = alternative
