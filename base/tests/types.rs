@@ -58,7 +58,7 @@ fn show_forall() {
 #[test]
 fn show_record_empty() {
     let record: ArcType<&str> = Type::record(vec![], vec![]);
-    assert_eq_display!(format!("{}", record), "{}");
+    assert_eq_display!(format!("{}", record), "()");
 }
 
 #[test]
