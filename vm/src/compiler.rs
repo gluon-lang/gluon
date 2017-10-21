@@ -489,19 +489,13 @@ impl<'a> Compiler<'a> {
     }
 
     fn find_tag(&self, typ: &ArcType, constructor: &Symbol) -> Option<VmTag> {
-        if typ.to_string().contains("Stream_") {
-            typ.to_string();
-        }
         let x = resolve::remove_aliases_cow(self, typ);
         match **x {
             Type::Variant(ref row) => row.row_iter()
                 .enumerate()
                 .find(|&(_, field)| field.name == *constructor)
                 .map(|(tag, _)| tag as VmTag),
-            _ => {
-                println!("{} + {}", typ, x);
-                None
-            }
+            _ => None,
         }
     }
 

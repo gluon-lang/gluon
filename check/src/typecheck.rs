@@ -700,16 +700,11 @@ impl<'a> Typecheck<'a> {
             })),
             Expr::App(ref mut func, ref mut args) => {
                 let mut func_type = self.infer_expr(&mut **func);
-                debug!(":::: {}", func_type);
-                debug!(":::: {:?}", func_type);
                 for arg in args.iter_mut() {
                     let f = self.type_cache
                         .function(once(self.subs.new_var()), self.subs.new_var());
-                    debug!("1----- {}", func_type);
                     func_type = self.instantiate_generics(&func_type);
-                    debug!("2----- {}", func_type);
                     func_type = self.unify(&f, func_type)?;
-                    debug!("------ {}", func_type);
                     func_type = match func_type.as_function() {
                         Some((arg_ty, ret_ty)) => {
                             let actual = self.typecheck(arg, arg_ty);
@@ -1209,7 +1204,6 @@ impl<'a> Typecheck<'a> {
         self.enter_scope();
         self.type_variables.enter_scope();
         let level = self.subs.var_id();
-        debug!("ENTER {:?}", self.type_variables);
 
         for bind in bindings.iter_mut() {
             if let Some(ref typ) = bind.typ {
@@ -1252,7 +1246,6 @@ impl<'a> Typecheck<'a> {
                 self.type_variables.exit_scope();
             }
         }
-        debug!("FIRST {:?}", self.type_variables);
         let mut types = Vec::new();
         for bind in bindings.iter_mut() {
             self.type_variables.enter_scope();
@@ -1270,9 +1263,8 @@ impl<'a> Typecheck<'a> {
                 self.typecheck_lambda(bind.resolved_type.clone(), &mut bind.args, &mut bind.expr)
             };
 
-            debug!("let {:?} : {:?}", bind.name, typ);
+            debug!("let {:?} : {}", bind.name, typ);
 
-            debug!("BEFORE MERGE {:?}", self.type_variables);
             typ = self.merge_signature(bind.name.span, level, &bind.resolved_type, typ);
 
 
@@ -1289,12 +1281,10 @@ impl<'a> Typecheck<'a> {
 
             self.type_variables.exit_scope();
         }
-        debug!("BEFORE GENERALIZe {:?}", self.type_variables);
         // Once all variables inside the let has been unified we can quantify them
         debug!("Generalize at {}", level);
         for bind in bindings.iter_mut() {
             debug!("Generalize {}", bind.resolved_type);
-            debug!("aaaa {:?}", self.type_variables);
             self.generalize_binding(level, bind);
             self.finish_pattern(level, &mut bind.name, &bind.resolved_type);
             debug!("Generalized to {}", bind.resolved_type);
@@ -1632,7 +1622,6 @@ impl<'a> Typecheck<'a> {
 
     /// Finish a type by replacing all unbound type variables above `level` with generics
     fn finish_type(&mut self, level: u32, original: &ArcType) -> Option<ArcType> {
-        debug!("Start finish {}", original);
         self.type_variables.enter_scope();
 
         let mut unbound_variables = FnvMap::default();
@@ -1671,12 +1660,6 @@ impl<'a> Typecheck<'a> {
         });
         let mut typ = typ;
         if let Some(ref t) = replacement {
-            if let Type::Variable(ref v) = **typ {
-                if v.id == 1775 {
-                    typ.to_string();
-                }
-            }
-            debug!("{}  {}", typ, t);
             typ = t;
         }
         match **typ {
@@ -1734,9 +1717,6 @@ impl<'a> Typecheck<'a> {
 
             Type::Forall(ref params, ref typ, Some(ref vars)) => {
                 use substitution::is_variable_unified;
-                if params.len() == 1 && params[0].id.declared_name() == "abc182" {
-                    println!("params {:?} {:?} {:?}", params, typ, vars);
-                }
                 let typ = {
                     let subs = &self.subs;
                     self.named_variables.clear();
@@ -1747,7 +1727,6 @@ impl<'a> Typecheck<'a> {
                             .filter(|&(param, var)| is_variable_unified(subs, param, var))
                             .map(|(param, var)| (param.id.clone(), var.clone())),
                     );
-                    debug!("VARS {:?}", self.named_variables);
                     typ.instantiate_generics_(&mut self.named_variables)
                         .unwrap_or(typ.clone())
                 };
