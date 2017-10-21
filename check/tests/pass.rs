@@ -1427,3 +1427,22 @@ fn resolve_app_app() {
     let actual = resolve::remove_aliases(&MockEnv::new(), alias);
     assert_eq!(actual.to_string(), "{ x : (), y : Int }");
 }
+
+#[test]
+fn make_with_explicit_types() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+let make x : b -> _ =
+    let f y : b -> b = x
+    { f }
+
+make
+"#;
+    let result = support::typecheck(text);
+
+    assert_eq!(
+        result.map(|x| x.to_string()),
+        Ok("forall b . b -> { f : b -> b }".to_string())
+    );
+}

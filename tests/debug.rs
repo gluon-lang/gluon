@@ -172,8 +172,6 @@ fn line_hook_after_call() {
 }
 
 #[test]
-// FIXME
-#[ignore]
 fn implicit_prelude_lines_not_counted() {
     let _ = env_logger::init();
 

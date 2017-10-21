@@ -1266,7 +1266,7 @@ impl<'a> Typecheck<'a> {
                 self.kindcheck(&mut bind.resolved_type)?;
                 self.typecheck(&mut bind.expr, &bind.resolved_type)
             } else {
-                bind.resolved_type = self.instantiate(&bind.resolved_type);
+                bind.resolved_type = self.instantiate_signature(&bind.resolved_type);
                 self.typecheck_lambda(bind.resolved_type.clone(), &mut bind.args, &mut bind.expr)
             };
 
