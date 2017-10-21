@@ -452,7 +452,7 @@ impl<'a> Typecheck<'a> {
                 let mut unbound_variables = FnvMap::default();
                 let mut variable_generator =
                     TypeVariableGenerator::new(self.level, &self.tc.subs, typ);
-                if let Some(finished) = self.tc.finish_type_(
+                if let Some(finished) = self.tc.generalize_type_(
                     self.level,
                     &mut unbound_variables,
                     &mut variable_generator,
@@ -536,35 +536,6 @@ impl<'a> Typecheck<'a> {
         self.type_variables.exit_scope();
     }
 
-    fn generalize_type(&mut self, level: u32, typ: &mut ArcType) {
-        debug!("Start generalize {}", typ);
-        self.type_variables.enter_scope();
-
-        let mut unbound_variables = FnvMap::default();
-        let mut variable_generator = TypeVariableGenerator::new(level, &self.subs, typ);
-        let mut result_type =
-            self.finish_type_(level, &mut unbound_variables, &mut variable_generator, typ);
-
-        self.type_variables.exit_scope();
-
-        if result_type.is_none() && !unbound_variables.is_empty() {
-            result_type = Some(typ.clone());
-        }
-
-        result_type = result_type.map(|typ| {
-            let mut params = unbound_variables
-                .into_iter()
-                .map(|(_, generic)| generic)
-                .collect::<Vec<_>>();
-            params.sort_unstable_by(|l, r| l.id.declared_name().cmp(r.id.declared_name()));
-
-            Type::forall(params, typ)
-        });
-        if let Some(finished) = result_type {
-            *typ = finished;
-        }
-    }
-
     /// Typecheck `expr`. If successful the type of the expression will be returned and all
     /// identifiers in `expr` will be filled with the inferred type
     pub fn typecheck_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> Result<ArcType, Error> {
@@ -591,7 +562,7 @@ impl<'a> Typecheck<'a> {
                 .unwrap_or_else(|| expected.clone());
             typ = self.merge_signature(expr_check_span(expr), 0, &expected, typ);
         }
-        typ = self.finish_type(0, &typ).unwrap_or(typ);
+        self.generalize_type(0, &mut typ);
         typ = types::walk_move_type(typ, &mut unroll_typ);
         // Only the 'tail' expression need to be generalized at this point as all bindings
         // will have already been generalized
@@ -1464,9 +1435,7 @@ impl<'a> Typecheck<'a> {
                 ..
             } => {
                 debug!("{{ .. }}: {}", typ);
-                if let Some(finished) = self.finish_type(level, typ) {
-                    *typ = finished;
-                }
+                self.generalize_type(level, typ);
                 let typ = self.instantiate(typ);
                 let typ = self.instantiate_generics(&typ);
                 let record_type = self.remove_alias(typ.clone());
@@ -1620,34 +1589,36 @@ impl<'a> Typecheck<'a> {
         debug!("Updated {} to `{}`", symbol, bind.typ);
     }
 
-    /// Finish a type by replacing all unbound type variables above `level` with generics
-    fn finish_type(&mut self, level: u32, original: &ArcType) -> Option<ArcType> {
+    fn generalize_type(&mut self, level: u32, typ: &mut ArcType) {
+        debug!("Start generalize {}", typ);
         self.type_variables.enter_scope();
 
         let mut unbound_variables = FnvMap::default();
-        let mut variable_generator = TypeVariableGenerator::new(level, &self.subs, original);
-        let typ = self.finish_type_(
-            level,
-            &mut unbound_variables,
-            &mut variable_generator,
-            original,
-        );
+        let mut variable_generator = TypeVariableGenerator::new(level, &self.subs, typ);
+        let mut result_type =
+            self.generalize_type_(level, &mut unbound_variables, &mut variable_generator, typ);
 
         self.type_variables.exit_scope();
 
-        typ.map(|typ| {
+        if result_type.is_none() && !unbound_variables.is_empty() {
+            result_type = Some(typ.clone());
+        }
+
+        result_type = result_type.map(|typ| {
             let mut params = unbound_variables
                 .into_iter()
                 .map(|(_, generic)| generic)
                 .collect::<Vec<_>>();
             params.sort_unstable_by(|l, r| l.id.declared_name().cmp(r.id.declared_name()));
-            let typ = Type::forall(params, typ);
-            debug!("Finished `{}` as `{}`", original, typ);
-            typ
-        })
+
+            Type::forall(params, typ)
+        });
+        if let Some(finished) = result_type {
+            *typ = finished;
+        }
     }
 
-    fn finish_type_(
+    fn generalize_type_(
         &mut self,
         level: u32,
         unbound_variables: &mut FnvMap<Symbol, Generic<Symbol>>,
@@ -1655,7 +1626,7 @@ impl<'a> Typecheck<'a> {
         typ: &ArcType,
     ) -> Option<ArcType> {
         let replacement = self.subs.replace_variable(typ).map(|t| {
-            self.finish_type_(level, unbound_variables, variable_generator, &t)
+            self.generalize_type_(level, unbound_variables, variable_generator, &t)
                 .unwrap_or(t)
         });
         let mut typ = typ;
@@ -1705,11 +1676,11 @@ impl<'a> Typecheck<'a> {
                     // Make a new name base for any unbound variables in the record field
                     // Gives { id : a0 -> a0, const : b0 -> b1 -> b1 }
                     // instead of { id : a0 -> a0, const : a1 -> a2 -> a2 }
-                    self.finish_type_(level, unbound_variables, variable_generator, &field.typ)
+                    self.generalize_type_(level, unbound_variables, variable_generator, &field.typ)
                         .map(|typ| Field::new(field.name.clone(), typ))
                 });
                 let new_rest =
-                    self.finish_type_(level, unbound_variables, variable_generator, rest);
+                    self.generalize_type_(level, unbound_variables, variable_generator, rest);
                 merge::merge(fields, new_fields, rest, new_rest, |fields, rest| {
                     Type::extend_row(types.clone(), fields, rest)
                 }).or_else(|| replacement.clone())
@@ -1740,7 +1711,7 @@ impl<'a> Typecheck<'a> {
                 );
 
                 let new_type =
-                    self.finish_type_(level, unbound_variables, variable_generator, &typ);
+                    self.generalize_type_(level, unbound_variables, variable_generator, &typ);
                 self.type_variables.exit_scope();
 
                 Some(Type::forall(
@@ -1763,7 +1734,7 @@ impl<'a> Typecheck<'a> {
                 let new_type = types::walk_move_type_opt(
                     typ,
                     &mut types::ControlVisitation(|typ: &ArcType| {
-                        self.finish_type_(level, unbound_variables, variable_generator, typ)
+                        self.generalize_type_(level, unbound_variables, variable_generator, typ)
                     }),
                 );
                 match **typ {

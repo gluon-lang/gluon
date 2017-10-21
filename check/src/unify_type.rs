@@ -863,7 +863,6 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
                             }
                             // `r_var` is outside the scope of the generic variable.
                             Type::Variable(ref var) if var.id > r_var.id => {
-                                debug!("{} {}", var.id, r_var.id);
                                 return Err(UnifyError::Other(
                                     TypeError::UnableToGeneralize(l_gen.id.clone()),
                                 ));
