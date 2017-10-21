@@ -1641,9 +1641,6 @@ where
                         let f = chain![arena;
                             field.name.as_ref(),
                             arena.space(),
-                            arena.concat(field.typ.params().iter().map(|arg| {
-                                arena.text(arg.id.as_ref()).append(" ")
-                            })),
                             arena.text("= ")
                                  .append(top(&field.typ.typ).pretty(printer)),
                             if i + 1 != types.len() || !fields.is_empty() {
