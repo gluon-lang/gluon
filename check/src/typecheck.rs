@@ -614,7 +614,7 @@ impl<'a> Typecheck<'a> {
         let mut scope_count = 0;
         let returned_type;
         loop {
-            let expected_type = expected_type.map(|t| self.instantiate(t));
+            let expected_type = expected_type.map(|t| self.new_skolem_scope(t));
             match self.typecheck_(expr, expected_type.as_ref()) {
                 Ok(tailcall) => {
                     match tailcall {
@@ -808,7 +808,7 @@ impl<'a> Typecheck<'a> {
                         self.find_record(&[field_id.clone()], RecordSelector::Subset)
                             .map(|t| t.0.clone())
                     {
-                        let record_type = self.instantiate(&record_type);
+                        let record_type = self.new_skolem_scope(&record_type);
                         expr_typ = self.unify(&record_type, expr_typ)?;
                     }
                 }
@@ -821,7 +821,7 @@ impl<'a> Typecheck<'a> {
                             .find(|field| field.name.name_eq(field_id))
                             .map(|field| field.typ.clone());
                         *ast_field_typ = match field_type {
-                            Some(typ) => self.instantiate(&typ),
+                            Some(typ) => self.new_skolem_scope(&typ),
                             None => {
                                 // FIXME As the polymorphic `record_type` do not have the type
                                 // fields which `typ` this unification is only done after we
@@ -953,7 +953,7 @@ impl<'a> Typecheck<'a> {
                     }
                 };
 
-                let id_type = self.instantiate(&id_type);
+                let id_type = self.new_skolem_scope(&id_type);
                 let record_type = new_skolem_scope(&self.subs, &FnvMap::default(), &record_type);
                 self.unify(&self.type_cache.record(new_types, new_fields), record_type)?;
 
@@ -1078,7 +1078,7 @@ impl<'a> Typecheck<'a> {
                         (t.clone(), t)
                     }
                 };
-                typ = self.instantiate(&typ);
+                typ = self.new_skolem_scope(&typ);
                 actual_type = new_skolem_scope(&self.subs, &FnvMap::default(), &actual_type);
                 self.unify_span(span, &match_type, typ);
                 let match_type = actual_type;
@@ -1205,7 +1205,7 @@ impl<'a> Typecheck<'a> {
                     bind.resolved_type = self.create_unifiable_signature(&bind.resolved_type)
                         .unwrap_or_else(|| bind.resolved_type.clone());
                     self.kindcheck(&mut bind.resolved_type)?;
-                    self.instantiate_signature(&bind.resolved_type)
+                    self.new_skolem_scope_signature(&bind.resolved_type)
                 };
                 self.typecheck_pattern(&mut bind.name, typ);
                 if let Expr::Lambda(ref mut lambda) = bind.expr.value {
@@ -1224,13 +1224,13 @@ impl<'a> Typecheck<'a> {
             // Functions which are declared as `let f x = ...` are allowed to be self
             // recursive
             let mut typ = if bind.args.is_empty() {
-                self.instantiate_signature(&bind.resolved_type);
+                self.new_skolem_scope_signature(&bind.resolved_type);
                 bind.resolved_type = self.create_unifiable_signature(&bind.resolved_type)
                     .unwrap_or_else(|| bind.resolved_type.clone());
                 self.kindcheck(&mut bind.resolved_type)?;
                 self.typecheck(&mut bind.expr, &bind.resolved_type)
             } else {
-                bind.resolved_type = self.instantiate_signature(&bind.resolved_type);
+                bind.resolved_type = self.new_skolem_scope_signature(&bind.resolved_type);
                 self.typecheck_lambda(bind.resolved_type.clone(), &mut bind.args, &mut bind.expr)
             };
 
@@ -1436,7 +1436,7 @@ impl<'a> Typecheck<'a> {
             } => {
                 debug!("{{ .. }}: {}", typ);
                 self.generalize_type(level, typ);
-                let typ = self.instantiate(typ);
+                let typ = self.new_skolem_scope(typ);
                 let typ = self.instantiate_generics(&typ);
                 let record_type = self.remove_alias(typ.clone());
                 if record_type.to_string().contains("List 1969") {
@@ -1459,7 +1459,7 @@ impl<'a> Typecheck<'a> {
                 ref typ,
                 ref mut elems,
             } => {
-                let typ = self.instantiate(typ);
+                let typ = self.new_skolem_scope(typ);
                 let typ = self.instantiate_generics(&typ);
                 for (elem, field) in elems.iter_mut().zip(typ.row_iter()) {
                     self.finish_pattern(level, elem, &field.typ);
@@ -1524,7 +1524,7 @@ impl<'a> Typecheck<'a> {
                         self.symbols.symbols(),
                         state,
                         &existing_type,
-                        &new_skolem_scope(&self.subs, &FnvMap::default(), &&&&&&&&&symbol_type),
+                        &new_skolem_scope(&self.subs, &FnvMap::default(), &symbol_type),
                     )
                 };
                 constraints = intersection_constraints
@@ -1752,8 +1752,8 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn instantiate_signature(&mut self, typ: &ArcType) -> ArcType {
-        let typ = self.instantiate(typ);
+    fn new_skolem_scope_signature(&mut self, typ: &ArcType) -> ArcType {
+        let typ = self.new_skolem_scope(typ);
         // Put all new generic variable names into scope
         if let Type::Forall(ref params, _, Some(ref vars)) = *typ {
             self.type_variables.extend(
@@ -2009,16 +2009,8 @@ impl<'a> Typecheck<'a> {
         typ.instantiate_generics(&mut self.named_variables)
     }
 
-    fn instantiate(&mut self, typ: &ArcType) -> ArcType {
-        self.instantiate_constrained(&FnvMap::default(), typ)
-    }
-
-    fn instantiate_constrained(
-        &mut self,
-        constraints: &FnvMap<Symbol, Constraints<ArcType>>,
-        typ: &ArcType,
-    ) -> ArcType {
-        new_skolem_scope(&self.subs, constraints, typ)
+    fn new_skolem_scope(&mut self, typ: &ArcType) -> ArcType {
+        new_skolem_scope(&self.subs, &FnvMap::default(), typ)
     }
 
     fn error_on_duplicated_field(
