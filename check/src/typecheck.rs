@@ -1544,6 +1544,7 @@ impl<'a> Typecheck<'a> {
                     .map(|((l, r), name)| {
                         let constraints = match *l {
                             Type::Generic(ref gen) => existing_binding.constraints.get(&gen.id),
+                            Type::Skolem(ref skolem) => existing_binding.constraints.get(&skolem.name),
                             // Since we call `new_skolem_scope` we may find a variable as the constraint
                             // but we really need to return the constraints bound by the generic
                             // instantiating it

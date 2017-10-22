@@ -733,6 +733,28 @@ in
 }
 
 #[test]
+fn overloaded_bindings_3() {
+    let _ = env_logger::init();
+
+    let text = r#"
+let (+) x y = x #Int+ y
+let (+) x y = x #Float+ y
+let (+) x y : () -> () -> () = y
+
+{ x = 1 + 2, y = 1.0 + 2.0, z = () + () }
+"#;
+    let result = support::typecheck(text);
+    let fields = vec![
+        Field::new(intern("x"), typ("Int")),
+        Field::new(intern("y"), typ("Float")),
+        Field::new(intern("z"), Type::unit()),
+    ];
+    let expected = Ok(Type::record(vec![], fields));
+
+    assert_req!(result.map(support::close_record), expected);
+}
+
+#[test]
 fn module() {
     let _ = env_logger::init();
 
