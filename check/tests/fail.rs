@@ -587,3 +587,20 @@ type Test = | Test a
     let result = support::typecheck(text);
     assert_err!(result, UndefinedVariable(..));
 }
+
+
+#[test]
+fn make_with_explicit_types_with_wrong_variable() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+let make x : b -> _ =
+    let f y : b -> a = x
+    { f }
+
+make
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_err(), "{}", result.unwrap_err());
+}

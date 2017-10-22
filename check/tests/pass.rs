@@ -641,12 +641,16 @@ fn mutually_recursive_types() {
 type Tree a = | Empty | Node (Data a) (Data a)
 and Data a = { value: a, tree: Tree a }
 in
-let rhs = { value = 123, tree = Node { value = 0, tree = Empty } { value = 42, tree = Empty } }
+let rhs : Data Int = {
+    value = 123,
+    tree = Node { value = 0, tree = Empty } { value = 42, tree = Empty }
+}
 in Node { value = 1, tree = Empty } rhs
 "#;
     let result = support::typecheck(text);
     let expected = Ok(support::typ_a("Tree", vec![typ("Int")]));
 
+    panic!("{}", result.unwrap_err());
     assert_eq!(result.map(make_ident_type), expected);
 }
 
@@ -1445,4 +1449,17 @@ make
         result.map(|x| x.to_string()),
         Ok("forall b . b -> { f : b -> b }".to_string())
     );
+}
+
+#[test]
+fn universally_quantified_argument() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+let test x : (forall a . a -> a) -> () = ()
+1
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
 }

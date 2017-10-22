@@ -368,7 +368,7 @@ where
         (&Type::Alias(ref alias), &Type::Ident(ref id)) if *id == alias.name => Ok(None),
 
         (&Type::Forall(_, _, Some(_)), _) => {
-            let l = expected.instantiate_generics(&mut FnvMap::default());
+            let l = expected.skolemize(&mut FnvMap::default());
             Ok(
                 unifier
                     .try_match_res(&l, &actual)?
@@ -377,7 +377,7 @@ where
         }
 
         (_, &Type::Forall(_, _, Some(_))) => {
-            let r = actual.instantiate_generics(&mut FnvMap::default());
+            let r = actual.skolemize(&mut FnvMap::default());
             Ok(unifier.try_match_res(expected, &r)?)
         }
 
@@ -753,9 +753,6 @@ where
 fn unpack_single_forall(l: &ArcType) -> Option<&ArcType> {
     match **l {
         Type::Forall(ref params, ref l_inner, Some(ref vars)) if params.len() == 1 => {
-            if params[0].id.declared_name() == "abc182" {
-                l.clone();
-            }
             match **l_inner {
                 Type::Skolem(ref skolem) if skolem.name == params[0].id => Some(&vars[0]),
                 // FIXME
@@ -835,6 +832,7 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
         unifier: &mut UnifierState<Self>,
         error: UnifyError<ArcType, TypeError<Symbol>>,
     ) {
+        debug!("Error {}", error);
         unifier.unifier.errors.push(error);
     }
 

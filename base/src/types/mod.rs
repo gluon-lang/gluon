@@ -785,6 +785,12 @@ where
                 if let Type::Builtin(BuiltinType::Function) = **app {
                     return Some((&args[0], &args[1]));
                 }
+            } else if args.len() == 1 {
+                if let Type::App(ref app, ref args2) = **app {
+                    if let Type::Builtin(BuiltinType::Function) = **app {
+                        return Some((&args2[0], &args[0]));
+                    }
+                }
             }
         }
         None
@@ -1014,8 +1020,24 @@ impl<Id> ArcType<Id> {
     where
         Id: Clone + Eq + Hash,
     {
-        self.skolemize_(named_variables)
-            .unwrap_or_else(|| self.clone())
+        let mut typ = self;
+        while let Type::Forall(ref params, ref inner_type, Some(ref vars)) = **typ {
+            let iter = params.iter().zip(vars).map(|(param, var)| match **var {
+                Type::Variable(ref var) => (
+                    param.id.clone(),
+                    Type::skolem(Skolem {
+                        name: param.id.clone(),
+                        id: var.id,
+                        kind: var.kind.clone(),
+                    }),
+                ),
+                _ => unreachable!(),
+            });
+            named_variables.extend(iter);
+            typ = inner_type;
+        }
+        typ.skolemize_(named_variables)
+            .unwrap_or_else(|| typ.clone())
     }
 
     fn skolemize_(&self, named_variables: &mut FnvMap<Id, ArcType<Id>>) -> Option<ArcType<Id>>
@@ -1024,26 +1046,10 @@ impl<Id> ArcType<Id> {
     {
         match **self {
             Type::Generic(ref generic) => named_variables.get(&generic.id).cloned(),
-            _ => {
-                if let Type::Forall(ref params, _, Some(ref vars)) = **self {
-                    let iter = params.iter().zip(vars).map(|(param, var)| match **var {
-                        Type::Variable(ref var) => (
-                            param.id.clone(),
-                            Type::skolem(Skolem {
-                                name: param.id.clone(),
-                                id: var.id,
-                                kind: var.kind.clone(),
-                            }),
-                        ),
-                        _ => unreachable!(),
-                    });
-                    named_variables.extend(iter);
-                }
-                walk_move_type_opt(
-                    self,
-                    &mut ControlVisitation(|typ: &ArcType<Id>| typ.skolemize_(named_variables)),
-                )
-            }
+            _ => walk_move_type_opt(
+                self,
+                &mut ControlVisitation(|typ: &ArcType<Id>| typ.skolemize_(named_variables)),
+            ),
         }
     }
 
@@ -1052,10 +1058,13 @@ impl<Id> ArcType<Id> {
         Id: Clone + Eq + Hash,
     {
         let mut typ = self;
-        if let Type::Forall(ref params, ref inner_type, Some(ref vars)) = **typ {
-            for (param, var) in params.iter().zip(vars) {
-                named_variables.insert(param.id.clone(), var.clone());
-            }
+        while let Type::Forall(ref params, ref inner_type, Some(ref vars)) = **typ {
+            named_variables.extend(
+                params
+                    .iter()
+                    .zip(vars)
+                    .map(|(param, var)| (param.id.clone(), var.clone())),
+            );
             typ = inner_type;
         }
         typ.instantiate_generics_(named_variables)

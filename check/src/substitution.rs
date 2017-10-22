@@ -299,10 +299,7 @@ impl<T: Substitutable> Substitution<T> {
             ..UnionByLevel::default()
         });
         assert!(id == self.variables.len());
-        debug!("VARHERE {}", self.variables.len());
-        if self.variables.len() == 1600 || self.variables.len() == 1601 {
-            self.variables.len();
-        }
+        debug!("New var {}", self.variables.len());
 
         let var = f(var_id);
         self.variables.push(var.clone());

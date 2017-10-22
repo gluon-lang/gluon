@@ -679,6 +679,7 @@ impl<'a> Typecheck<'a> {
                     func_type = match func_type.as_function() {
                         Some((arg_ty, ret_ty)) => {
                             let actual = self.typecheck(arg, arg_ty);
+                            let actual = self.instantiate_generics(&actual);
                             self.unify_span(expr_check_span(arg), arg_ty, actual);
                             ret_ty.clone()
                         }
@@ -901,6 +902,9 @@ impl<'a> Typecheck<'a> {
                                         .find(|expected_field| expected_field.name.name_eq(&name))
                                 })
                                 .map(|field| &field.typ);
+                            if let Some(ref expected_type) = expected_type {
+                                debug!("Check that field {} is {}", name, expected_type);
+                            }
                             let mut typ = self.typecheck_opt(expr, expected_type);
 
                             self.generalize_type(level, &mut typ);
