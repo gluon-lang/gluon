@@ -680,7 +680,10 @@ impl<'a> Typecheck<'a> {
                         Some((arg_ty, ret_ty)) => {
                             let actual = self.typecheck(arg, arg_ty);
                             let actual = self.instantiate_generics(&actual);
-                            self.unify_span(expr_check_span(arg), arg_ty, actual);
+
+                            let level = self.subs.var_id();
+                            self.merge_signature(expr_check_span(arg), level, arg_ty, actual);
+
                             ret_ty.clone()
                         }
                         None => return Err(TypeError::NotAFunction(func_type.clone())),
@@ -892,6 +895,8 @@ impl<'a> Typecheck<'a> {
 
                 let mut new_fields: Vec<Field<_, _>> = Vec::with_capacity(fields.len());
                 for field in fields {
+                    let level = self.subs.var_id();
+
                     let typ = match field.value {
                         Some(ref mut expr) => {
                             let name = &field.name.value;
@@ -902,9 +907,11 @@ impl<'a> Typecheck<'a> {
                                         .find(|expected_field| expected_field.name.name_eq(&name))
                                 })
                                 .map(|field| &field.typ);
-                            let typ = self.typecheck_opt(expr, expected_type);
 
-                            self.instantiate_generics(&typ)
+                            let mut typ = self.typecheck_opt(expr, expected_type);
+
+                            self.generalize_type(level, &mut typ);
+                            new_skolem_scope(&self.subs, &FnvMap::default(), &typ)
                         }
                         None => self.find(&field.name.value)?,
                     };
