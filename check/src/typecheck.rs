@@ -772,12 +772,13 @@ impl<'a> Typecheck<'a> {
             }
             Expr::Match(ref mut expr, ref mut alts) => {
                 let typ = self.infer_expr(&mut **expr);
-                let mut expected_alt_type = None;
+                let mut expected_alt_type = expected_type.cloned();
 
                 for alt in alts.iter_mut() {
                     self.enter_scope();
                     self.typecheck_pattern(&mut alt.pattern, typ.clone());
                     let mut alt_type = self.typecheck_opt(&mut alt.expr, expected_type);
+                    alt_type = self.instantiate_generics(&alt_type);
                     self.exit_scope();
                     // All alternatives must unify to the same type
                     if let Some(ref expected) = expected_alt_type {
@@ -902,13 +903,9 @@ impl<'a> Typecheck<'a> {
                                         .find(|expected_field| expected_field.name.name_eq(&name))
                                 })
                                 .map(|field| &field.typ);
-                            if let Some(ref expected_type) = expected_type {
-                                debug!("Check that field {} is {}", name, expected_type);
-                            }
-                            let mut typ = self.typecheck_opt(expr, expected_type);
+                            let typ = self.typecheck_opt(expr, expected_type);
 
-                            self.generalize_type(level, &mut typ);
-                            new_skolem_scope(&self.subs, &FnvMap::default(), &typ)
+                            self.instantiate_generics(&typ)
                         }
                         None => self.find(&field.name.value)?,
                     };
@@ -1022,6 +1019,7 @@ impl<'a> Typecheck<'a> {
                     Ok(return_type) => return_type,
                     Err(err) => self.error(span, err),
                 };
+                let return_type = self.instantiate_generics(&return_type);
                 self.unify_span(span, &match_type, return_type)
             }
             Pattern::Record {
@@ -2122,7 +2120,7 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
                         Some(typ) => (None, typ.clone()),
                         None => return None,
                     },
-                    None => return Some(self.tc.subs.new_var()),
+                    None => (Some(self.tc.subs.new_var()), self.tc.subs.new_var()),
                 },
             };
             self.typ = new;

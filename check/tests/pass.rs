@@ -330,7 +330,7 @@ in eq_Int
 }
 
 #[test]
-fn functor() {
+fn functor_option() {
     let _ = env_logger::init();
 
     let text = r"
@@ -618,7 +618,7 @@ fn normalize_function_type() {
 
     let text = r#"
 type Cat cat = {
-    id : cat a a,
+    id : forall a . cat a a,
 }
 let cat: Cat (->) = {
     id = \x -> x,
@@ -650,7 +650,6 @@ in Node { value = 1, tree = Empty } rhs
     let result = support::typecheck(text);
     let expected = Ok(support::typ_a("Tree", vec![typ("Int")]));
 
-    panic!("{}", result.unwrap_err());
     assert_eq!(result.map(make_ident_type), expected);
 }
 

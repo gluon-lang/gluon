@@ -367,6 +367,15 @@ where
         }
         (&Type::Alias(ref alias), &Type::Ident(ref id)) if *id == alias.name => Ok(None),
 
+        (&Type::Forall(_, _, Some(_)), &Type::Forall(_, _, Some(_))) => {
+            let l = expected.skolemize(&mut FnvMap::default());
+            let r = actual.skolemize(&mut FnvMap::default());
+            Ok(unifier.try_match_res(&l, &r)?.map(|_| {
+                // Preserve the forall
+                expected.clone()
+            }))
+        }
+
         (&Type::Forall(_, _, Some(_)), _) => {
             let l = expected.skolemize(&mut FnvMap::default());
             Ok(
