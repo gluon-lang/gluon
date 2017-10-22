@@ -699,6 +699,10 @@ impl<'a> Typecheck<'a> {
                 // Both branches must unify to the same type
                 let true_type = self.typecheck_opt(&mut **if_true, expected_type);
                 let false_type = self.typecheck_opt(&mut **if_false, expected_type);
+
+                let true_type = self.instantiate_generics(&true_type);
+                let false_type = self.instantiate_generics(&false_type);
+
                 self.unify(&true_type, false_type).map(TailCall::Type)
             }
             Expr::Infix(ref mut lhs, ref mut op, ref mut rhs) => {
