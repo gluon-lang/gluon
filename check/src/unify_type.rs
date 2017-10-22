@@ -883,6 +883,12 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
                 subs.union(|| unifier.state.fresh(), r_var, left)?;
                 Ok(None)
             }
+
+            (_, &Type::Forall(_, _, Some(_))) => {
+                let r = r.instantiate_generics(&mut FnvMap::default());
+                Ok(unifier.try_match_res(l, &r)?)
+            }
+
             // If we merge a forall with just a variable there is a chance that the variable
             // may be unified again later on. If that happens we should treat it as if it was
             // bound to the `forall` with a "skolem scope".

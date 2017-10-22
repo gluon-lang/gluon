@@ -892,7 +892,6 @@ impl<'a> Typecheck<'a> {
 
                 let mut new_fields: Vec<Field<_, _>> = Vec::with_capacity(fields.len());
                 for field in fields {
-                    let level = self.subs.var_id();
                     let typ = match field.value {
                         Some(ref mut expr) => {
                             let name = &field.name.value;
