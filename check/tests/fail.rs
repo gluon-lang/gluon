@@ -45,6 +45,15 @@ macro_rules! assert_err {
     }}
 }
 
+macro_rules! count {
+    ($e: pat) => {
+        1
+    };
+    ($e: pat, $($id: pat),+) => {
+        1 + count!($($id),+)
+    }
+}
+
 macro_rules! assert_unify_err {
     ($e: expr, $($id: pat),+) => {
         assert_multi_unify_err!($e, [$($id),+])
@@ -71,6 +80,7 @@ macro_rules! assert_multi_unify_err {
                         match *error {
                             Spanned { value: Unification(_, _, ref errors), .. } => {
                                 let mut iter = errors.iter();
+                                let expected_count = count!($($id),+);
                                 $(
                                 match iter.next() {
                                     Some(&$id) => (),
@@ -85,8 +95,9 @@ macro_rules! assert_multi_unify_err {
                                     }
                                     None => {
                                         assert!(false,
-                                            "Found less errors than expected at {}.\n\
+                                            "Found {} less errors than expected at {}.\n\
                                             Errors:\n{}\nbut expected {}",
+                                            expected_count - errors.len(),
                                             i,
                                             error,
                                             stringify!($id)
@@ -94,8 +105,10 @@ macro_rules! assert_multi_unify_err {
                                     }
                                 }
                                 )+
-                                assert!(iter.count() == 0,
-                                        "Found more errors than expected at {}\n{}",
+                                let count = iter.count();
+                                assert!(count == 0,
+                                        "Found {} more errors than expected at {}\n{}",
+                                        count,
                                         i,
                                         error);
                             }
@@ -222,7 +235,11 @@ f ""
 "#;
     let result = support::typecheck(text);
 
-    assert_unify_err!(result, Substitution(Constraint(..)));
+    assert_multi_unify_err!(
+        result,
+        [Substitution(Constraint(..))],
+        [Substitution(Constraint(..))]
+    );
 }
 
 #[test]
@@ -237,7 +254,7 @@ let (++) x y = x #Float+ y
 
     assert_multi_unify_err!(
         result,
-        [Substitution(Constraint(..)), Substitution(Constraint(..))],
+        [Substitution(Constraint(..))],
         [Substitution(Constraint(..))]
     );
 }
@@ -320,7 +337,7 @@ let (<=) = (make_Ord ord_Int).(<=)
 "#;
     let result = support::typecheck(text);
 
-    assert_unify_err!(result, TypeMismatch(..), TypeMismatch(..));
+    assert_multi_unify_err!(result, [TypeMismatch(..)], [TypeMismatch(..)]);
 }
 
 #[test]

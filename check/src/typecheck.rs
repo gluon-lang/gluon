@@ -739,15 +739,25 @@ impl<'a> Typecheck<'a> {
                         _ => {
                             op.value.typ = self.find(&op.value.name)?;
                             op.value.typ = self.instantiate_generics(&op.value.typ);
-                            let func_type = self.type_cache
-                                .function(vec![lhs_type, rhs_type], self.subs.new_var());
-                            let ret = self.unify(&op.value.typ, func_type)?
+
+                            let lhs_var = self.subs.new_var();
+                            let rhs_var = self.subs.new_var();
+                            let func_type = self.type_cache.function(
+                                vec![lhs_var.clone(), rhs_var.clone()],
+                                self.subs.new_var(),
+                            );
+
+                            let func_type = self.unify_span(op.span, &op.value.typ, func_type);
+
+                            let level = self.subs.var_id();
+                            self.merge_signature(expr_check_span(lhs), level, &lhs_var, lhs_type);
+                            self.merge_signature(expr_check_span(rhs), level, &rhs_var, rhs_type);
+
+                            func_type
                                 .as_function()
                                 .and_then(|(_, ret)| ret.as_function())
                                 .map(|(_, ret)| ret.clone())
-                                .expect("ICE: unify binop");
-
-                            ret
+                                .expect("ICE: unify binop")
                         }
                     }
                 };
@@ -1544,7 +1554,9 @@ impl<'a> Typecheck<'a> {
                     .map(|((l, r), name)| {
                         let constraints = match *l {
                             Type::Generic(ref gen) => existing_binding.constraints.get(&gen.id),
-                            Type::Skolem(ref skolem) => existing_binding.constraints.get(&skolem.name),
+                            Type::Skolem(ref skolem) => {
+                                existing_binding.constraints.get(&skolem.name)
+                            }
                             // Since we call `new_skolem_scope` we may find a variable as the constraint
                             // but we really need to return the constraints bound by the generic
                             // instantiating it

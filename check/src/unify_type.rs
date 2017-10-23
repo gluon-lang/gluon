@@ -811,6 +811,7 @@ pub fn merge_signature(
     l: &ArcType,
     r: &ArcType,
 ) -> Result<ArcType, Errors<Error<Symbol>>> {
+    debug!("Subsume {} <=> {}", l, r);
     let mut unifier = UnifierState {
         state: state,
         unifier: Merge {

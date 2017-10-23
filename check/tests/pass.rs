@@ -1484,3 +1484,37 @@ let test x : (forall a . a -> a) -> () = ()
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn alternative_dont_unify_skolem() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+type Option a = | None | Some a
+
+type Applicative (f : Type -> Type) = {
+    wrap : forall a . a -> f a
+}
+
+type Alternative f = {
+    or : forall a . f a -> f a -> f a,
+}
+
+let alternative : Alternative Option = {
+    or = \x y ->
+        match x with
+        | Some _ -> x
+        | None -> y,
+}
+
+let make_Alternative alternative : Alternative f -> _ =
+    { (<|>) = alternative.or }
+
+let { (<|>) } = make_Alternative alternative
+
+None <|> Some 1
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
