@@ -1518,3 +1518,25 @@ None <|> Some 1
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn unify_record_field_with_forall() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+type Option a = | None | Some a
+
+type Function = {
+    vararg : Option String,
+}
+
+type Expr = | Function Function
+
+Function {
+    vararg = None,
+}
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}

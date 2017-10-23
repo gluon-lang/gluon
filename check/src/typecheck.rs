@@ -976,7 +976,10 @@ impl<'a> Typecheck<'a> {
 
                 let id_type = self.new_skolem_scope(&id_type);
                 let record_type = new_skolem_scope(&self.subs, &FnvMap::default(), &record_type);
-                self.unify(&self.type_cache.record(new_types, new_fields), record_type)?;
+
+                let level = self.subs.var_id();
+                let actual_record = self.type_cache.record(new_types, new_fields);
+                self.merge_signature(expr.span, level, &record_type, actual_record);
 
                 *typ = id_type.clone();
                 Ok(TailCall::Type(id_type.clone()))
