@@ -36,7 +36,7 @@ let functor : Functor (Result e) = {
     map = \f x ->
         match x with
         | Ok y -> Ok (f y)
-        | Err _ -> x,
+        | Err e -> Err e,
 }
 
 let applicative : Applicative (Result e) = {
@@ -44,7 +44,7 @@ let applicative : Applicative (Result e) = {
     apply = \f x ->
         match (f, x) with
         | (Ok g, Ok y) -> Ok (g y)
-        | (Ok _, Err _) -> x
+        | (Ok _, Err e) -> Err e
         | (Err x, _) -> Err x,
     wrap = \x -> Ok x,
 }
