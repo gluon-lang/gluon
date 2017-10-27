@@ -592,6 +592,15 @@ pub enum Type<Id, T = ArcType<Id>> {
     Skolem(#[cfg_attr(feature = "serde_derive", serde(state))] Skolem<Id>),
 }
 
+impl<Id, T> Type<Id, T> {
+    pub fn as_variable(&self) -> Option<&TypeVariable> {
+        match *self {
+            Type::Variable(ref var) => Some(var),
+            _ => None,
+        }
+    }
+}
+
 impl<Id, T> Type<Id, T>
 where
     T: From<Type<Id, T>>,
@@ -1022,16 +1031,16 @@ impl<Id> ArcType<Id> {
     {
         let mut typ = self;
         while let Type::Forall(ref params, ref inner_type, Some(ref vars)) = **typ {
-            let iter = params.iter().zip(vars).map(|(param, var)| match **var {
-                Type::Variable(ref var) => (
+            let iter = params.iter().zip(vars).map(|(param, var)| {
+                let var = var.as_variable().unwrap();
+                (
                     param.id.clone(),
                     Type::skolem(Skolem {
                         name: param.id.clone(),
                         id: var.id,
                         kind: var.kind.clone(),
                     }),
-                ),
-                _ => unreachable!(),
+                )
             });
             named_variables.extend(iter);
             typ = inner_type;
@@ -1080,7 +1089,6 @@ impl<Id> ArcType<Id> {
     {
         match **self {
             Type::Generic(ref generic) => named_variables.get(&generic.id).cloned(),
-            Type::Skolem(ref skolem) => named_variables.get(&skolem.name).cloned(),
             Type::Forall(ref params, ref typ, ref vars) => {
                 // TODO This clone is inneficient
                 let mut named_variables = named_variables.clone();
@@ -1101,11 +1109,47 @@ impl<Id> ArcType<Id> {
         }
     }
 
+    pub fn forall_scope_iter(&self) -> ForallScopeIter<Id> {
+        ForallScopeIter {
+            typ: self,
+            offset: 0,
+        }
+    }
+
     pub fn pretty<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>>
     where
         Id: AsRef<str>,
     {
         top(self).pretty(&Printer::new(arena, &Source::new("")))
+    }
+}
+
+pub struct ForallScopeIter<'a, Id: 'a> {
+    pub typ: &'a ArcType<Id>,
+    offset: usize,
+}
+
+impl<'a, Id> Iterator for ForallScopeIter<'a, Id> {
+    type Item = (&'a Generic<Id>, &'a ArcType<Id>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match **self.typ {
+            Type::Forall(ref params, ref typ, Some(ref vars)) => {
+                let offset = self.offset;
+                let item = params.get(offset).map(|param| {
+                    self.offset += 1;
+                    (param, &vars[offset])
+                });
+                match item {
+                    Some(_) => item,
+                    None => {
+                        self.typ = typ;
+                        self.next()
+                    }
+                }
+            }
+            _ => None,
+        }
     }
 }
 
@@ -1547,7 +1591,12 @@ where
                 p.enclose(Prec::Function, arena, doc)
             }
             Type::Variable(ref var) => arena.text(format!("{}", var.id)),
-            Type::Skolem(ref skolem) => arena.text(skolem.name.as_ref()),
+            Type::Skolem(ref skolem) => chain![
+                    arena;
+                    skolem.name.as_ref(),
+                    "@",
+                    skolem.id.to_string()
+                ],
             Type::Generic(ref gen) => arena.text(gen.id.as_ref()),
             Type::App(ref t, ref args) => match self.typ.as_function() {
                 Some(_) => self.pretty_function(printer).nest(INDENT),

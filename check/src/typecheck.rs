@@ -161,7 +161,7 @@ pub type SpannedTypeError<Id> = Spanned<TypeError<Id>, BytePos>;
 
 type TcResult<T> = Result<T, TypeError<Symbol>>;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct StackBinding {
     constraints: FnvMap<Symbol, Constraints<ArcType>>,
     typ: ArcType,
@@ -322,6 +322,7 @@ impl<'a> Typecheck<'a> {
                 self.named_variables.clear();
                 let typ = new_skolem_scope(&self.subs, &constraints, &typ);
                 debug!("Find {} : {}", self.symbols.string(id), typ);
+                debug!("Find {} : {:?}", self.symbols.string(id), typ);
                 debug!(
                     "Constraints [{}]",
                     constraints
@@ -559,6 +560,7 @@ impl<'a> Typecheck<'a> {
         let mut typ = self.typecheck_opt(expr, expected_type);
         if let Some(expected) = expected_type {
             let expected = self.create_unifiable_signature(expected)
+                .0
                 .unwrap_or_else(|| expected.clone());
             typ = self.merge_signature(expr_check_span(expr), 0, &expected, typ);
         }
@@ -614,7 +616,7 @@ impl<'a> Typecheck<'a> {
         let mut scope_count = 0;
         let returned_type;
         loop {
-            let expected_type = expected_type.map(|t| self.new_skolem_scope(t));
+            let expected_type = expected_type.map(|t| self.skolemize(t));
             match self.typecheck_(expr, expected_type.as_ref()) {
                 Ok(tailcall) => {
                     match tailcall {
@@ -675,11 +677,17 @@ impl<'a> Typecheck<'a> {
                     let f = self.type_cache
                         .function(once(self.subs.new_var()), self.subs.new_var());
                     func_type = self.instantiate_generics(&func_type);
+                    debug!("-------{}", func_type);
+                    debug!("-------{:?}", func_type);
                     func_type = self.unify(&f, func_type)?;
+                    debug!("{}", func_type);
                     func_type = match func_type.as_function() {
                         Some((arg_ty, ret_ty)) => {
+                            debug!("123 {}", arg_ty);
                             let actual = self.typecheck(arg, arg_ty);
+                            debug!("a123 {}", actual);
                             let actual = self.instantiate_generics(&actual);
+                            debug!("b123 {}", actual);
 
                             let level = self.subs.var_id();
                             self.merge_signature(expr_check_span(arg), level, arg_ty, actual);
@@ -835,10 +843,12 @@ impl<'a> Typecheck<'a> {
                 let record = self.remove_aliases(expr_typ.clone());
                 match *record {
                     Type::Variable(_) | Type::Record(_) => {
+                        debug!("><< {}", record);
                         let field_type = record
                             .row_iter()
                             .find(|field| field.name.name_eq(field_id))
                             .map(|field| field.typ.clone());
+                        debug!("><< {}", field_type.as_ref().unwrap());
                         *ast_field_typ = match field_type {
                             Some(typ) => self.new_skolem_scope(&typ),
                             None => {
@@ -854,6 +864,7 @@ impl<'a> Typecheck<'a> {
                                 field_var
                             }
                         };
+                        debug!("><< {}", ast_field_typ);
                         Ok(TailCall::Type(ast_field_typ.clone()))
                     }
                     _ => Err(TypeError::InvalidProjection(record)),
@@ -899,6 +910,7 @@ impl<'a> Typecheck<'a> {
                 for field in types {
                     if let Some(ref mut typ) = field.value {
                         *typ = self.create_unifiable_signature(typ)
+                            .0
                             .unwrap_or_else(|| typ.clone());
                     }
                     let alias = self.find_type_info(&field.name.value)?.clone();
@@ -1027,7 +1039,7 @@ impl<'a> Typecheck<'a> {
     fn typecheck_pattern(
         &mut self,
         pattern: &mut SpannedPattern<Symbol>,
-        match_type: ArcType,
+        mut match_type: ArcType,
     ) -> ArcType {
         let span = pattern.span;
         match pattern.value {
@@ -1050,6 +1062,7 @@ impl<'a> Typecheck<'a> {
                 types: ref mut associated_types,
                 ref mut fields,
             } => {
+                match_type = self.instantiate_generics(&match_type);
                 *curr_typ = match_type.clone();
 
                 let mut pattern_fields = Vec::with_capacity(associated_types.len() + fields.len());
@@ -1103,8 +1116,8 @@ impl<'a> Typecheck<'a> {
                         (t.clone(), t)
                     }
                 };
-                typ = self.new_skolem_scope(&typ);
-                actual_type = new_skolem_scope(&self.subs, &FnvMap::default(), &actual_type);
+                typ = self.top_skolem_scope(&typ);
+                actual_type = self.top_skolem_scope(&actual_type);
                 self.unify_span(span, &match_type, typ);
                 let match_type = actual_type;
 
@@ -1208,6 +1221,7 @@ impl<'a> Typecheck<'a> {
         }
 
         let is_recursive = bindings.iter().all(|bind| !bind.args.is_empty());
+        let mut type_variables = Vec::new();
         // When the definitions are allowed to be mutually recursive
         if is_recursive {
             for bind in bindings.iter_mut() {
@@ -1227,9 +1241,15 @@ impl<'a> Typecheck<'a> {
                     _ => (),
                 }
                 let typ = {
-                    bind.resolved_type = self.create_unifiable_signature(&bind.resolved_type)
-                        .unwrap_or_else(|| bind.resolved_type.clone());
+                    debug!("!!!! {}", bind.resolved_type);
+                    let (typ, new_variables) = self.create_unifiable_signature(&bind.resolved_type);
+                    type_variables.push(new_variables);
+                    if let Some(typ) = typ {
+                        bind.resolved_type = typ;
+                    }
+
                     self.kindcheck(&mut bind.resolved_type)?;
+                    debug!("!!!! {}", bind.resolved_type);
                     self.new_skolem_scope_signature(&bind.resolved_type)
                 };
                 self.typecheck_pattern(&mut bind.name, typ);
@@ -1242,6 +1262,9 @@ impl<'a> Typecheck<'a> {
                 self.type_variables.exit_scope();
             }
         }
+
+        type_variables.reverse();
+
         let mut types = Vec::new();
         for bind in bindings.iter_mut() {
             self.type_variables.enter_scope();
@@ -1249,12 +1272,21 @@ impl<'a> Typecheck<'a> {
             // Functions which are declared as `let f x = ...` are allowed to be self
             // recursive
             let mut typ = if bind.args.is_empty() {
-                self.new_skolem_scope_signature(&bind.resolved_type);
-                bind.resolved_type = self.create_unifiable_signature(&bind.resolved_type)
-                    .unwrap_or_else(|| bind.resolved_type.clone());
+                let (typ, new_variables) = self.create_unifiable_signature(&bind.resolved_type);
+                self.type_variables.extend(new_variables);
+                if let Some(typ) = typ {
+                    bind.resolved_type = typ;
+                }
+
                 self.kindcheck(&mut bind.resolved_type)?;
+
+                bind.resolved_type = self.new_skolem_scope_signature(&bind.resolved_type);
                 self.typecheck(&mut bind.expr, &bind.resolved_type)
             } else {
+                debug!("++++ {}", bind.resolved_type);
+                debug!("{:?}", self.type_variables);
+                self.type_variables.extend(type_variables.pop().unwrap());
+                debug!("{:?}", self.type_variables);
                 bind.resolved_type = self.new_skolem_scope_signature(&bind.resolved_type);
                 self.typecheck_lambda(bind.resolved_type.clone(), &mut bind.args, &mut bind.expr)
             };
@@ -1268,6 +1300,7 @@ impl<'a> Typecheck<'a> {
                 // Merge the type declaration and the actual type
                 debug!("Generalize at {} = {}", level, bind.resolved_type);
                 self.generalize_binding(level, bind);
+                typ = self.new_skolem_scope(&bind.resolved_type);
                 self.typecheck_pattern(&mut bind.name, typ);
                 debug!("Generalized to {}", bind.resolved_type);
                 self.finish_pattern(level, &mut bind.name, &bind.resolved_type);
@@ -1355,10 +1388,10 @@ impl<'a> Typecheck<'a> {
                     .map(|param| (param.id.clone(), alias.unresolved_type().clone())),
             );
 
-
-            if let Some(typ) =
-                self.create_unifiable_signature2(alias.unresolved_type().remove_forall())
-            {
+            let replacement = self.create_unifiable_signature2(
+                alias.unresolved_type().remove_forall(),
+            ).0;
+            if let Some(typ) = replacement {
                 *alias.unresolved_type_mut() = Type::forall(alias.params().to_owned(), typ);
             }
         }
@@ -1442,10 +1475,15 @@ impl<'a> Typecheck<'a> {
         Ok(())
     }
 
-    fn finish_pattern(&mut self, level: u32, pattern: &mut SpannedPattern<Symbol>, typ: &ArcType) {
+    fn finish_pattern(
+        &mut self,
+        level: u32,
+        pattern: &mut SpannedPattern<Symbol>,
+        final_type: &ArcType,
+    ) {
         match pattern.value {
             Pattern::Ident(ref mut id) => {
-                id.typ = typ.clone();
+                id.typ = final_type.clone();
                 self.environment
                     .stack
                     .get_mut(&id.name)
@@ -1459,14 +1497,12 @@ impl<'a> Typecheck<'a> {
                 ref mut fields,
                 ..
             } => {
-                debug!("{{ .. }}: {}", typ);
+                *typ = final_type.clone();
+                debug!("{{ .. }}: {}", final_type);
                 self.generalize_type(level, typ);
-                let typ = self.new_skolem_scope(typ);
+                let typ = self.top_skolem_scope(typ);
                 let typ = self.instantiate_generics(&typ);
                 let record_type = self.remove_alias(typ.clone());
-                if record_type.to_string().contains("List 1969") {
-                    record_type.to_string().contains("List 1969");
-                }
                 with_pattern_types(
                     fields,
                     &record_type,
@@ -1475,26 +1511,35 @@ impl<'a> Typecheck<'a> {
                             self.finish_pattern(level, pat, field_type);
                         }
                         None => {
+                            self.environment
+                                .stack
+                                .get_mut(field_name)
+                                .expect("ICE: Variable no inserted")
+                                .typ = field_type.clone();
+                            debug!("{}: {}", field_name, field_type);
+
                             self.intersect_type(level, field_name, field_type);
                         }
                     },
                 );
             }
             Pattern::Tuple {
-                ref typ,
+                ref mut typ,
                 ref mut elems,
             } => {
-                let typ = self.new_skolem_scope(typ);
+                *typ = final_type.clone();
+
+                let typ = self.top_skolem_scope(typ);
                 let typ = self.instantiate_generics(&typ);
                 for (elem, field) in elems.iter_mut().zip(typ.row_iter()) {
                     self.finish_pattern(level, elem, &field.typ);
                 }
             }
             Pattern::Constructor(ref id, ref mut args) => {
-                debug!("{}: {}", self.symbols.string(&id.name), typ);
+                debug!("{}: {}", self.symbols.string(&id.name), final_type);
                 let len = args.len();
                 let iter = args.iter_mut().zip(
-                    function_arg_iter(self, typ.clone())
+                    function_arg_iter(self, final_type.clone())
                         .take(len)
                         .collect::<Vec<_>>(),
                 );
@@ -1517,11 +1562,8 @@ impl<'a> Typecheck<'a> {
             });
             no_variables
         }
-        let typ;
-        let mut constraints = FnvMap::default();
-        let mut symbol_type = symbol_type.clone();
-        self.generalize_type(level, &mut symbol_type);
-        {
+
+        let intersection_update = {
             let existing_types = self.environment
                 .stack
                 .get_all(symbol)
@@ -1542,7 +1584,8 @@ impl<'a> Typecheck<'a> {
                     &existing_binding.constraints,
                     &existing_binding.typ,
                 );
-                let (intersection_constraints, mut result) = {
+
+                let result = {
                     let state = unify_type::State::new(&self.environment, &self.subs);
                     unify::intersection(
                         &self.subs,
@@ -1552,69 +1595,83 @@ impl<'a> Typecheck<'a> {
                         &new_skolem_scope(&self.subs, &FnvMap::default(), &symbol_type),
                     )
                 };
-                constraints = intersection_constraints
-                    .into_iter()
-                    .map(|((l, r), name)| {
-                        let constraints = match *l {
-                            Type::Generic(ref gen) => existing_binding.constraints.get(&gen.id),
-                            Type::Skolem(ref skolem) => {
-                                existing_binding.constraints.get(&skolem.name)
-                            }
-                            // Since we call `new_skolem_scope` we may find a variable as the constraint
-                            // but we really need to return the constraints bound by the generic
-                            // instantiating it
-                            Type::Variable(ref constraint_var) => match *existing_type {
-                                Type::Forall(ref params, _, Some(ref vars)) => vars.iter()
-                                    .position(|var| match **var {
-                                        Type::Variable(ref var) => var.id == constraint_var.id,
-                                        _ => unreachable!(),
-                                    })
-                                    .and_then(|i| existing_binding.constraints.get(&params[i].id)),
-                                _ => None,
-                            },
-                            _ => None,
-                        };
-                        (
-                            name,
-                            Arc::new(
-                                constraints
-                                    .iter()
-                                    .flat_map(|x| x.iter())
-                                    .cloned()
-                                    .chain(Some(r))
-                                    .chain(if constraints.is_none() { Some(l) } else { None })
-                                    .collect::<Vec<_>>(),
-                            ),
-                        )
-                    })
-                    .collect();
 
-                result = Type::forall(
-                    constraints
-                        .iter()
-                        .map(|constraint| {
-                            Generic::new(constraint.0.clone(), constraint.1[0].kind().into_owned())
-                        })
-                        .collect(),
-                    result,
-                );
-                debug!(
-                    "Intersect result {}\n\t{}",
-                    result,
-                    constraints
-                        .iter()
-                        .map(|t| format!("{}:{}", t.0, t.1.iter().format("\n\t\t")))
-                        .format("\n")
-                );
-                typ = result
+                // Avoid cloning existing_binding
+                Some((
+                    result.0,
+                    result.1,
+                    existing_type,
+                    existing_binding.clone(),
+                ))
             } else {
-                typ = symbol_type.clone()
+                None
             }
+        };
+
+        if let Some((intersection_constraints, mut typ, existing_type, existing_binding)) =
+            intersection_update
+        {
+            let constraints: FnvMap<_, _> = intersection_constraints
+                .into_iter()
+                .map(|((l, mut r), name)| {
+                    let constraints = match *l {
+                        Type::Generic(ref gen) => existing_binding.constraints.get(&gen.id),
+                        Type::Skolem(ref skolem) => existing_binding.constraints.get(&skolem.name),
+                        // Since we call `new_skolem_scope` we may find a variable as the constraint
+                        // but we really need to return the constraints bound by the generic
+                        // instantiating it
+                        Type::Variable(ref constraint_var) => match *existing_type {
+                            Type::Forall(ref params, _, Some(ref vars)) => vars.iter()
+                                .position(|var| match **var {
+                                    Type::Variable(ref var) => var.id == constraint_var.id,
+                                    _ => unreachable!(),
+                                })
+                                .and_then(|i| existing_binding.constraints.get(&params[i].id)),
+                            _ => None,
+                        },
+                        _ => None,
+                    };
+
+                    self.generalize_type(level, &mut r);
+
+                    (
+                        name,
+                        Arc::new(
+                            constraints
+                                .iter()
+                                .flat_map(|x| x.iter())
+                                .cloned()
+                                .chain(Some(r))
+                                .chain(if constraints.is_none() { Some(l) } else { None })
+                                .collect::<Vec<_>>(),
+                        ),
+                    )
+                })
+                .collect();
+
+            typ = Type::forall(
+                constraints
+                    .iter()
+                    .map(|constraint| {
+                        Generic::new(constraint.0.clone(), constraint.1[0].kind().into_owned())
+                    })
+                    .collect(),
+                typ,
+            );
+            debug!(
+                "Intersect result {}\n\t{}",
+                typ,
+                constraints
+                    .iter()
+                    .map(|t| format!("{}:{}", t.0, t.1.iter().format("\n\t\t")))
+                    .format("\n")
+            );
+            let bind = self.environment.stack.get_mut(symbol).unwrap();
+            bind.constraints = constraints;
+            bind.typ = typ;
+            debug!("Updated {} to `{}`", symbol, bind.typ);
+            debug!("Updated {} to `{:?}`", symbol, bind.typ);
         }
-        let bind = self.environment.stack.get_mut(symbol).unwrap();
-        bind.constraints = constraints;
-        bind.typ = typ;
-        debug!("Updated {} to `{}`", symbol, bind.typ);
     }
 
     fn generalize_type(&mut self, level: u32, typ: &mut ArcType) {
@@ -1642,6 +1699,7 @@ impl<'a> Typecheck<'a> {
             Type::forall(params, typ)
         });
         if let Some(finished) = result_type {
+            debug!("End generalize {}", finished);
             *typ = finished;
         }
     }
@@ -1664,9 +1722,6 @@ impl<'a> Typecheck<'a> {
         match **typ {
             Type::Variable(ref var) if self.subs.get_level(var.id) >= level => {
                 if self.subs.get_constraints(var.id).is_some() {
-                    if var.id == 1600 || var.id == 1601 {
-                        typ.clone();
-                    }
                     let resolved_result = {
                         let state = unify_type::State::new(&self.environment, &self.subs);
                         self.subs.resolve_constraints(|| state.clone(), var, typ)
@@ -1688,6 +1743,7 @@ impl<'a> Typecheck<'a> {
                     let id = variable_generator.next_variable(self);
 
                     let gen: ArcType = Type::generic(Generic::new(id.clone(), var.kind.clone()));
+                    debug!("Gen {} to {}", var.id, gen);
                     self.subs.insert(var.id, gen.clone());
 
                     unbound_variables.insert(id.clone(), Generic::new(id, var.kind.clone()));
@@ -1753,6 +1809,15 @@ impl<'a> Typecheck<'a> {
                 ))
             }
 
+            Type::Skolem(ref skolem) if skolem.id >= level => {
+                let generic = Generic {
+                    id: skolem.name.clone(),
+                    kind: skolem.kind.clone(),
+                };
+                unbound_variables.insert(skolem.name.clone(), generic.clone());
+                Some(Type::generic(generic))
+            }
+
             _ => {
                 if let Type::Forall(ref params, _, None) = **typ {
                     self.type_variables
@@ -1800,26 +1865,22 @@ impl<'a> Typecheck<'a> {
     // single type variable.
     //
     // Also inserts a `forall` for any implicitly declared variables.
-    fn create_unifiable_signature(&mut self, typ: &ArcType) -> Option<ArcType> {
+    fn create_unifiable_signature(
+        &mut self,
+        typ: &ArcType,
+    ) -> (Option<ArcType>, Vec<(Symbol, ArcType)>) {
         self.named_variables.clear();
         self.create_unifiable_signature2(typ)
     }
 
-    fn create_unifiable_signature2(&mut self, typ: &ArcType) -> Option<ArcType> {
+    fn create_unifiable_signature2(
+        &mut self,
+        typ: &ArcType,
+    ) -> (Option<ArcType>, Vec<(Symbol, ArcType)>) {
         self.type_variables.enter_scope();
         let result_type = self.create_unifiable_signature_(typ);
-        let params = self.type_variables
-            .exit_scope()
-            .map(|(var, typ)| Generic::new(var, typ.kind().into_owned()))
-            .collect::<Vec<_>>();
-        if params.is_empty() {
-            result_type
-        } else {
-            Some(Type::forall(
-                params,
-                result_type.unwrap_or_else(|| typ.clone()),
-            ))
-        }
+        let new_variables = self.type_variables.exit_scope().collect();
+        (result_type, new_variables)
     }
 
     fn create_unifiable_signature_(&mut self, typ: &ArcType) -> Option<ArcType> {
@@ -1879,6 +1940,7 @@ impl<'a> Typecheck<'a> {
                     } => {
                         let new_fields = types::walk_move_types(fields, |field| {
                             self.create_unifiable_signature2(&field.typ)
+                                .0
                                 .map(|typ| Field::new(field.name.clone(), typ))
                         });
                         let new_rest = self.create_unifiable_signature_(rest);
@@ -2039,6 +2101,10 @@ impl<'a> Typecheck<'a> {
 
     fn new_skolem_scope(&mut self, typ: &ArcType) -> ArcType {
         new_skolem_scope(&self.subs, &FnvMap::default(), typ)
+    }
+
+    fn top_skolem_scope(&mut self, typ: &ArcType) -> ArcType {
+        ::unify_type::top_skolem_scope(&self.subs, &FnvMap::default(), typ)
     }
 
     fn error_on_duplicated_field(

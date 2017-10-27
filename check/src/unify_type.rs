@@ -5,7 +5,7 @@ use base::error::Errors;
 use base::fnv::FnvMap;
 use base::merge;
 use base::kind::ArcKind;
-use base::types::{self, AppVec, ArcType, Field, Generic, Type, TypeEnv, TypeVariable};
+use base::types::{self, AppVec, ArcType, Field, Generic, Skolem, Type, TypeEnv, TypeVariable};
 use base::symbol::{Symbol, SymbolRef};
 use base::resolve::{self, Error as ResolveError};
 use base::scoped_map::ScopedMap;
@@ -368,8 +368,40 @@ where
         (&Type::Alias(ref alias), &Type::Ident(ref id)) if *id == alias.name => Ok(None),
 
         (&Type::Forall(_, _, Some(_)), &Type::Forall(_, _, Some(_))) => {
-            let l = expected.skolemize(&mut FnvMap::default());
-            let r = actual.skolemize(&mut FnvMap::default());
+            let mut named_variables = FnvMap::default();
+
+            let mut expected_iter = expected.forall_scope_iter();
+            named_variables.extend(expected_iter.by_ref().map(|(l_param, l_var)| {
+                let l_var = l_var.as_variable().unwrap();
+                (
+                    l_param.id.clone(),
+                    Type::skolem(Skolem {
+                        name: l_param.id.clone(),
+                        id: l_var.id,
+                        kind: l_var.kind.clone(),
+                    }),
+                )
+            }));
+            let l = expected_iter.typ.skolemize(&mut named_variables);
+
+            named_variables.clear();
+            let mut actual_iter = actual.forall_scope_iter();
+            named_variables.extend(expected_iter.by_ref().zip(actual_iter.by_ref()).map(
+                |((_, l_var), (r_param, r_var))| {
+                    let l_var = l_var.as_variable().unwrap();
+                    let r_var = r_var.as_variable().unwrap();
+                    (
+                        r_param.id.clone(),
+                        Type::skolem(Skolem {
+                            name: r_param.id.clone(),
+                            id: l_var.id,
+                            kind: r_var.kind.clone(),
+                        }),
+                    )
+                },
+            ));
+            let r = actual_iter.typ.skolemize(&mut named_variables);
+
             Ok(unifier.try_match_res(&l, &r)?.map(|_| {
                 // Preserve the forall
                 expected.clone()
@@ -390,7 +422,7 @@ where
             Ok(unifier.try_match_res(expected, &r)?)
         }
 
-        (&Type::Skolem(ref l), &Type::Skolem(ref r)) if r.name == l.name => Ok(None),
+        (&Type::Skolem(ref l), &Type::Skolem(ref r)) if r.id == l.id => Ok(None),
 
         // Successful unification!
         (lhs, rhs) if lhs == rhs => Ok(None),
@@ -410,7 +442,7 @@ where
 
             match (&lhs, &rhs) {
                 (&None, &None) => {
-                    debug!("Unify error: {:?} <=> {}", expected, actual);
+                    debug!("Unify error: {} <=> {}", expected, actual);
                     Err(UnifyError::TypeMismatch(expected.clone(), actual.clone()))
                 }
                 (_, _) => {
@@ -803,6 +835,30 @@ pub fn new_skolem_scope(
     )
 }
 
+pub fn top_skolem_scope(
+    subs: &Substitution<ArcType>,
+    constraints: &FnvMap<Symbol, Constraints<ArcType>>,
+    typ: &ArcType,
+) -> ArcType {
+    if let Type::Forall(ref params, ref inner_type, None) = **typ {
+        let mut skolem = Vec::new();
+        for param in params {
+            let constraint = constraints.get(&param.id).cloned();
+            let var = subs.new_constrained_var(
+                constraint.map(|constraint| (param.id.clone(), constraint.clone())),
+            );
+            skolem.push(var.clone());
+        }
+        ArcType::from(Type::Forall(
+            params.clone(),
+            inner_type.clone(),
+            Some(skolem),
+        ))
+    } else {
+        typ.clone()
+    }
+}
+
 pub fn merge_signature(
     subs: &Substitution<ArcType>,
     variables: &mut ScopedMap<Symbol, ArcType>,
@@ -871,6 +927,11 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
                             }
                             // `r_var` is outside the scope of the generic variable.
                             Type::Variable(ref var) if var.id > r_var.id => {
+                                return Err(UnifyError::Other(
+                                    TypeError::UnableToGeneralize(l_gen.id.clone()),
+                                ));
+                            }
+                            Type::Skolem(ref skolem) if skolem.id > r_var.id => {
                                 return Err(UnifyError::Other(
                                     TypeError::UnableToGeneralize(l_gen.id.clone()),
                                 ));

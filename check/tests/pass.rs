@@ -273,7 +273,7 @@ in Some 1
     let result = support::typecheck(text);
     let expected = Ok(support::typ_a("Option", vec![typ("Int")]));
 
-    assert_eq!(result.map(make_ident_type), expected);
+    assert_req!(result.map(make_ident_type), expected);
 }
 
 #[test]
@@ -335,7 +335,7 @@ fn functor_option() {
 
     let text = r"
 type Functor f = {
-    map : (a -> b) -> f a -> f b
+    map : forall a b . (a -> b) -> f a -> f b
 } in
 type Option a = | None | Some a in
 let option_Functor: Functor Option = {
@@ -609,7 +609,7 @@ return 1
     );
     let expected = Ok(Type::app(id_t, collect![test, typ("Int")]));
 
-    assert_eq!(result, expected);
+    assert_req!(result, expected);
 }
 
 #[test]
@@ -1208,8 +1208,8 @@ fn make_category() {
     let _ = ::env_logger::init();
     let text = r#"
 type Category (cat : Type -> Type -> Type) = {
-    id : cat a a,
-    compose : cat b c -> cat a b -> cat a c
+    id : forall a a . cat a a,
+    compose : forall a b c . cat b c -> cat a b -> cat a c
 }
 
 let category_Function : Category (->) = {
@@ -1237,8 +1237,8 @@ fn functor_function() {
 
     let text = r#"
 type Category (cat : Type -> Type -> Type) = {
-    id : cat a a,
-    compose : cat b c -> cat a b -> cat a c
+    id : forall a . cat a a,
+    compose : forall a b c . cat b c -> cat a b -> cat a c
 }
 
 let category_Function : Category (->) = {
@@ -1466,7 +1466,7 @@ make
 "#;
     let result = support::typecheck(text);
 
-    assert_eq!(
+    assert_req!(
         result.map(|x| x.to_string()),
         Ok("forall b . b -> { f : b -> b }".to_string())
     );
@@ -1535,6 +1535,67 @@ type Expr = | Function Function
 Function {
     vararg = None,
 }
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn make_singleton() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+
+type Map k a = | Bin k a (Map k a) (Map k a) | Tip
+
+let empty = Tip
+
+let singleton_ k v = Bin k v empty empty
+
+let make ord : k -> _ =
+    { singleton = singleton_ }
+
+let { singleton } = make ()
+
+singleton "" ()
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn foldable_bug() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+type Option a = | None | Some a
+
+type Semigroup a = {
+    append : a -> a -> a
+}
+type Monoid a = {
+    semigroup : Semigroup a,
+    empty : a
+}
+
+type Foldable (f : Type -> Type) = {
+    foldr : forall a b . (a -> b -> b) -> b -> f a -> b,
+    foldl : forall a b . (b -> a -> b) -> b -> f a -> b
+}
+
+let make_Foldable foldable : Foldable t -> _ =
+    let { foldr, foldl } = foldable
+
+    let concat monoid : Monoid m -> t m -> m =
+        foldr monoid.semigroup.append monoid.empty
+
+    let concat_map monoid f : Monoid m -> (a -> m) -> t a -> m =
+        foldr (\x -> monoid.semigroup.append (f x)) monoid.empty
+
+    ()
+()
 "#;
     let result = support::typecheck(text);
 

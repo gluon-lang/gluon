@@ -420,7 +420,7 @@ impl Thread {
     /// let result = Compiler::new()
     ///     .run_expr_async::<i32>(&vm, "example", "factorial 5")
     ///     .sync_or_error()
-    ///     .unwrap();
+    ///     .unwrap_or_else(|err| panic!("{}", err));
     /// let expected = (120, Type::int());
     ///
     /// assert_eq!(result, expected);
@@ -461,7 +461,7 @@ impl Thread {
     ///     .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example",
     ///         r#" import! "std/int.glu" "#)
     ///     .sync_or_error()
-    ///     .unwrap();
+    ///     .unwrap_or_else(|err| panic!("{}", err));
     /// let mut add: FunctionRef<fn(i32, i32) -> i32> =
     ///     vm.get_global("std.int.num.(+)").unwrap();
     /// let result = add.call(1, 2);
