@@ -1601,3 +1601,66 @@ let make_Foldable foldable : Foldable t -> _ =
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn parser_bug() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+type Result e t = | Err e | Ok t
+type Functor f = {
+    map : forall a b . (a -> b) -> f a -> f b
+}
+
+type OffsetString = { start : Int, end : Int, buffer : String }
+type Position = Int
+type Parser a =
+        OffsetString -> { value : a }
+
+let parser x : Parser a -> Parser a = x
+
+let functor : Functor Parser = {
+    map = \f m -> parser (\buffer ->
+            let result = parser m buffer
+            { value = f result.value })
+}
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn make_writer_bug() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+
+type Monoid a = {
+    append : a -> a -> a,
+    empty : a
+}
+
+type Applicative (f : Type -> Type) = {
+    apply : forall a b . f (a -> b) -> f a -> f b,
+    wrap : forall a . a -> f a
+}
+
+type Writer w a = { value : a, writer : w }
+
+let make monoid : Monoid w -> () =
+    let { append = (<>) } = monoid
+
+    let applicative : Applicative (Writer w) = {
+        apply = \mf m -> { value = mf.value m.value, writer = mf.writer <> m.writer },
+        wrap = \value -> { value, writer = monoid.empty },
+    }
+    ()
+
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}

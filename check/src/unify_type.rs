@@ -43,6 +43,7 @@ pub struct State<'a> {
     reduced_aliases: Vec<Symbol>,
     subs: &'a Substitution<ArcType>,
     record_context: Option<(ArcType, ArcType)>,
+    in_alias: bool,
 }
 
 impl<'a> Fresh for State<'a> {
@@ -58,6 +59,19 @@ impl<'a> State<'a> {
             reduced_aliases: Vec::new(),
             subs: subs,
             record_context: None,
+            in_alias: false,
+        }
+    }
+
+    fn replace_forall(
+        &mut self,
+        typ: &ArcType,
+        named_variables: &mut FnvMap<Symbol, ArcType>,
+    ) -> ArcType {
+        if self.in_alias {
+            typ.instantiate_generics(named_variables)
+        } else {
+            typ.skolemize(named_variables)
         }
     }
 
@@ -224,6 +238,10 @@ impl<'a> Unifiable<State<'a>> for ArcType {
             }
             Err(()) => (),
         }
+        let old_in_alias = unifier.state.in_alias;
+        if through_alias {
+            unifier.state.in_alias = true;
+        }
         let result = do_zip_match(unifier, l, r).map(|mut unified_type| {
             // If the match was done through an alias the unified type is likely less precise than
             // `self` or `other`.
@@ -233,6 +251,7 @@ impl<'a> Unifiable<State<'a>> for ArcType {
             }
             unified_type
         });
+        unifier.state.in_alias = old_in_alias;
         unifier.state.reduced_aliases.truncate(reduced_aliases);
         result
     }
@@ -382,7 +401,9 @@ where
                     }),
                 )
             }));
-            let l = expected_iter.typ.skolemize(&mut named_variables);
+            let l = unifier
+                .state
+                .replace_forall(expected_iter.typ, &mut named_variables);
 
             named_variables.clear();
             let mut actual_iter = actual.forall_scope_iter();
@@ -400,7 +421,10 @@ where
                     )
                 },
             ));
-            let r = actual_iter.typ.skolemize(&mut named_variables);
+            let r = unifier
+                .state
+                .replace_forall(actual_iter.typ, &mut named_variables);
+
 
             Ok(unifier.try_match_res(&l, &r)?.map(|_| {
                 // Preserve the forall
@@ -409,7 +433,9 @@ where
         }
 
         (&Type::Forall(_, _, Some(_)), _) => {
-            let l = expected.skolemize(&mut FnvMap::default());
+            let l = unifier
+                .state
+                .replace_forall(expected, &mut FnvMap::default());
             Ok(
                 unifier
                     .try_match_res(&l, &actual)?
@@ -418,7 +444,7 @@ where
         }
 
         (_, &Type::Forall(_, _, Some(_))) => {
-            let r = actual.skolemize(&mut FnvMap::default());
+            let r = unifier.state.replace_forall(actual, &mut FnvMap::default());
             Ok(unifier.try_match_res(expected, &r)?)
         }
 
@@ -448,9 +474,13 @@ where
                 (_, _) => {
                     let lhs = lhs.as_ref().unwrap_or(expected);
                     let rhs = rhs.as_ref().unwrap_or(actual);
+
+                    let old_in_alias = unifier.state.in_alias;
+                    unifier.state.in_alias = true;
+
                     // FIXME Maybe always return `None` here since the types before we removed the
                     // aliases are probably more specific.
-                    unifier.try_match_res(lhs, rhs).map_err(|_err| {
+                    let result = unifier.try_match_res(lhs, rhs).map_err(|_err| {
                         // We failed to unify `lhs` and `rhs` at the spine. Replace that error with
                         // a mismatch between the aliases instead as that should be less verbose
                         // Example
@@ -459,7 +489,11 @@ where
                         // A <=> B
                         // Gives `A` != `B` instead of `| A Int` != `| B Float`
                         UnifyError::TypeMismatch(expected.clone(), actual.clone())
-                    })
+                    });
+
+                    unifier.state.in_alias = old_in_alias;
+
+                    result
                 }
             }
         }

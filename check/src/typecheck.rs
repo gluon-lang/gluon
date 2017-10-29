@@ -364,7 +364,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn stack_var(&mut self, id: Symbol, typ: ArcType) {
-        debug!("Insert {} : {:?}", id, typ);
+        debug!("Insert {} : {}", id, typ);
         self.environment.stack.insert(
             id,
             StackBinding {
@@ -848,7 +848,6 @@ impl<'a> Typecheck<'a> {
                             .row_iter()
                             .find(|field| field.name.name_eq(field_id))
                             .map(|field| field.typ.clone());
-                        debug!("><< {}", field_type.as_ref().unwrap());
                         *ast_field_typ = match field_type {
                             Some(typ) => self.new_skolem_scope(&typ),
                             None => {
@@ -900,9 +899,11 @@ impl<'a> Typecheck<'a> {
                 ref mut base,
             } => {
                 let expected_type = expected_type.map(|expected_type| {
-                    resolve::remove_aliases_cow(&self.environment, expected_type)
+                    let typ = resolve::remove_aliases_cow(&self.environment, expected_type);
+                    self.new_skolem_scope(&typ)
                 });
-                let expected_type = expected_type.as_ref().map(|t| &**t);
+                let expected_type = expected_type.as_ref();
+                info!("___ {}", expected_type.unwrap());
 
                 let mut new_types: Vec<Field<_, _>> = Vec::with_capacity(types.len());
 
@@ -1014,7 +1015,9 @@ impl<'a> Typecheck<'a> {
         body: &mut SpannedExpr<Symbol>,
     ) -> ArcType {
         self.enter_scope();
+        info!("____ {}", function_type);
         function_type = self.skolemize(&function_type);
+        info!("____ {}", function_type);
         let mut arg_types = Vec::new();
         let body_type = {
             let mut iter1 = function_arg_iter(self, function_type);
@@ -2205,7 +2208,11 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
     type Item = ArcType;
     fn next(&mut self) -> Option<ArcType> {
         loop {
-            let (arg, new) = match self.typ.remove_forall().as_function() {
+            if let Type::Forall(_, _, None) = *self.typ {
+                panic!("Found forall without scope in function argument iterator")
+            }
+            self.typ = self.tc.skolemize(&self.typ);
+            let (arg, new) = match self.typ.as_function() {
                 Some((arg, ret)) => (Some(arg.clone()), ret.clone()),
                 None => match get_alias_app(&self.tc.environment, &self.typ) {
                     Some((alias, args)) => match alias.typ().apply_args(&args) {
