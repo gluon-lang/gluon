@@ -1063,7 +1063,7 @@ impl<'vm, T> Array<'vm, T> {
     pub fn get_value_array(&self) -> &ValueArray {
         match *self.0 {
             Value::Array(ref array) => array,
-            _ => panic!("Expected an array found {:?}", self.0),
+            _ => ice!("Expected an array found {:?}", self.0),
         }
     }
 }

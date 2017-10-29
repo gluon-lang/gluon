@@ -67,6 +67,8 @@ macro_rules! chain {
     }}
 }
 
+#[macro_use]
+pub mod macros;
 pub mod ast;
 pub mod error;
 pub mod fixed;

@@ -8,7 +8,7 @@ macro_rules! assert_deq {
         match (&$left, &$right) {
             (left_val, right_val) => {
                 if !(*left_val == *right_val) {
-                    panic!("assertion failed: `(left == right)` \
+                    ice!("assertion failed: `(left == right)` \
                         (left: `{}`, right: `{}`)", left_val, right_val)
                 }
             }
@@ -18,7 +18,7 @@ macro_rules! assert_deq {
         match (&($left), &($right)) {
             (left_val, right_val) => {
                 if !(*left_val == *right_val) {
-                    panic!("assertion failed: `(left == right)` \
+                    ice!("assertion failed: `(left == right)` \
                         (left: `{}`, right: `{}`): {}", left_val, right_val,
                         format_args!($($arg)+))
                 }
@@ -634,7 +634,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                 )
             },
             ast::Expr::TypeBindings(_, ref expr) => self.translate(expr),
-            ast::Expr::Error => panic!("ICE: Error expression found in the compiler"),
+            ast::Expr::Error => ice!("ICE: Error expression found in the compiler"),
         }
     }
 
@@ -757,9 +757,9 @@ impl<'a, 'e> Translator<'a, 'e> {
                         .clone(),
                     typ: b.clone(),
                 },
-                _ => panic!(),
+                _ => ice!(),
             },
-            _ => panic!(),
+            _ => ice!(),
         }
     }
 
@@ -1224,7 +1224,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 ast::Pattern::Ident(_) => CType::Variable,
                 ast::Pattern::Record { .. } | ast::Pattern::Tuple { .. } => CType::Record,
                 ast::Pattern::Constructor(_, _) => CType::Constructor,
-                ast::Pattern::Error => panic!("ICE: Error pattern survived typechecking"),
+                ast::Pattern::Error => ice!("ICE: Error pattern survived typechecking"),
             }
         }
 

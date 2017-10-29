@@ -206,7 +206,7 @@ impl PrimitiveEnv for VmEnv {
         self.find_type_info("std.types.Bool")
             .map(|alias| match alias {
                 Cow::Borrowed(alias) => alias.as_type(),
-                Cow::Owned(_) => panic!("Expected to be able to retrieve a borrowed bool type"),
+                Cow::Owned(_) => ice!("Expected to be able to retrieve a borrowed bool type"),
             })
             .expect("std.types.Bool")
     }
@@ -312,7 +312,7 @@ impl VmEnv {
                             value = data.fields[index];
                             &field.typ
                         }
-                        _ => panic!("Unexpected value {:?}", value),
+                        _ => ice!("Unexpected value {:?}", value),
                     })
             });
             typ = next_type.ok_or_else(move || {
@@ -425,7 +425,7 @@ impl GlobalVmState {
             .get(&id)
             .cloned()
             .unwrap_or_else(|| {
-                panic!(
+                ice!(
                     "Expected type to be inserted before get_type call. \
                      Did you forget to call `Thread::register_type`?"
                 )

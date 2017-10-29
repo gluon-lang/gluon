@@ -521,7 +521,7 @@ impl<'a> Compiler<'a> {
 
     fn load_identifier(&self, id: &Symbol, function: &mut FunctionEnvs) -> Result<()> {
         match self.find(id, function)
-            .unwrap_or_else(|| panic!("Undefined variable {}", self.symbols.string(&id)))
+            .unwrap_or_else(|| ice!("Undefined variable {}", self.symbols.string(&id)))
         {
             Stack(index) => function.emit(Push(index)),
             UpVar(index) => function.emit(PushUpVar(index)),
@@ -675,7 +675,7 @@ impl<'a> Compiler<'a> {
                     match alt.pattern {
                         Pattern::Constructor(ref id, _) => {
                             let tag = self.find_tag(&typ, &id.name).unwrap_or_else(|| {
-                                panic!(
+                                ice!(
                                     "ICE: Could not find tag for {}::{} when matching on \
                                      expression `{}`",
                                     typ,
@@ -776,7 +776,7 @@ impl<'a> Compiler<'a> {
                             args: exprs.len() as u32,
                         });
                     }
-                    _ => panic!("ICE: Unexpected data type: {}", typ),
+                    _ => ice!("ICE: Unexpected data type: {}", typ),
                 }
             }
         }
@@ -913,10 +913,10 @@ impl<'a> Compiler<'a> {
                             }
                         }
                     }
-                    _ => panic!("Expected record, got {} at {:?}", typ, pattern),
+                    _ => ice!("Expected record, got {} at {:?}", typ, pattern),
                 }
             }
-            Pattern::Constructor(..) => panic!("constructor pattern in let"),
+            Pattern::Constructor(..) => ice!("constructor pattern in let"),
         }
         Ok(())
     }
@@ -946,7 +946,7 @@ impl<'a> Compiler<'a> {
             match self.find(var, function).expect("free_vars: find") {
                 Stack(index) => function.emit(Push(index)),
                 UpVar(index) => function.emit(PushUpVar(index)),
-                _ => panic!("Free variables can only be on the stack or another upvar"),
+                _ => ice!("Free variables can only be on the stack or another upvar"),
             }
         }
         let function_index = function.function.inner_functions.len() as VmIndex;

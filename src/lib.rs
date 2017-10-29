@@ -22,6 +22,7 @@ extern crate serde_derive_state;
 #[cfg(feature = "serde")]
 extern crate serde_state as serde;
 
+#[macro_use]
 pub extern crate gluon_base as base;
 pub extern crate gluon_check as check;
 pub extern crate gluon_parser as parser;

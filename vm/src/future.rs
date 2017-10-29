@@ -30,7 +30,7 @@ where
                 Error::Message("Future needs to be resolved asynchronously".into()).into(),
             ),
             FutureValue::Polled => {
-                panic!("`FutureValue` may not be polled again if it contained a value")
+                ice!("`FutureValue` may not be polled again if it contained a value")
             }
         }
     }
@@ -149,7 +149,7 @@ where
             },
             FutureValue::Future(ref mut f) => f.poll(),
             FutureValue::Polled => {
-                panic!("`FutureValue` may not be polled again if it contained a value")
+                ice!("`FutureValue` may not be polled again if it contained a value")
             }
         }
     }
@@ -159,7 +159,7 @@ where
             FutureValue::Value(v) => v,
             FutureValue::Future(f) => f.wait(),
             FutureValue::Polled => {
-                panic!("`FutureValue` may not be polled again if it contained a value")
+                ice!("`FutureValue` may not be polled again if it contained a value")
             }
         }
     }

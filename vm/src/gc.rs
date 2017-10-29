@@ -849,11 +849,11 @@ mod tests {
         assert_eq!(object_count(&gc), 2);
         match stack[0] {
             Data(ref data) => assert_eq!(data.fields[0], Int(1)),
-            _ => panic!(),
+            _ => ice!(),
         }
         match stack[1] {
             Data(ref data) => assert_eq!(data.fields[0], stack[0]),
-            _ => panic!(),
+            _ => ice!(),
         }
         stack.pop();
         stack.pop();

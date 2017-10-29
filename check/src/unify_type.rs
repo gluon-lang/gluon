@@ -912,7 +912,7 @@ mod tests {
                 let expected = Type::poly_record(vec![], vec![x.clone(), y.clone()], row_variable);
                 assert_eq!(result, expected);
             }
-            Err(err) => panic!("{}", err),
+            Err(err) => ice!("{}", err),
         }
     }
 }

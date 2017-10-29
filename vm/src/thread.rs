@@ -958,7 +958,7 @@ impl<'a> StackInfo<'a> {
     pub fn upvars(&self) -> &[UpvarInfo] {
         match self.frame().state {
             State::Closure(ref closure) => &closure.function.debug_info.upvars,
-            _ => panic!("Attempted to access upvar in non closure function"),
+            _ => ice!("Attempted to access upvar in non closure function"),
         }
     }
 }
@@ -1545,7 +1545,7 @@ impl<'b> ExecuteContext<'b> {
                                 }
                                 args += excess.fields.len() as VmIndex;
                             }
-                            None => panic!("Expected excess args"),
+                            None => ice!("Expected excess args"),
                         }
                     }
                     debug_assert!(
@@ -1750,7 +1750,7 @@ impl<'b> ExecuteContext<'b> {
                             }
                             self.stack.pop(); //Remove the closure
                         }
-                        x => panic!("Expected closure, got {:?}", x),
+                        x => ice!("Expected closure, got {:?}", x),
                     }
                 }
                 PushUpVar(i) => {
@@ -1817,7 +1817,7 @@ impl<'b> ExecuteContext<'b> {
                     self.do_call(excess.fields.len() as VmIndex)
                         .map(|x| Async::Ready(Some(x)))
                 }
-                x => panic!("Expected excess arguments found {:?}", x),
+                x => ice!("Expected excess arguments found {:?}", x),
             }
         } else {
             Ok(Async::Ready(if stack_exists { Some(()) } else { None }))
@@ -1873,7 +1873,7 @@ where
         let l = stack.get_variants(stack.len() - 2).unwrap();
         match (T::from_value(vm, l), T::from_value(vm, r)) {
             (Some(l), Some(r)) => (l, r),
-            _ => panic!("{:?} `op` {:?}", l, r),
+            _ => ice!("{:?} `op` {:?}", l, r),
         }
     };
     let result = f(l, r);

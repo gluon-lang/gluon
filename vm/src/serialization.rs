@@ -751,7 +751,7 @@ mod tests {
         let value: Value = DeSeed::new(&thread).deserialize(&mut de).unwrap();
         match value {
             Value::String(s) => assert_eq!(&*s, "test"),
-            _ => panic!(),
+            _ => ice!(),
         }
     }
 
@@ -778,7 +778,7 @@ mod tests {
                 s.iter().collect::<Vec<_>>(),
                 [Value::Int(1), Value::Int(2), Value::Int(3)]
             ),
-            _ => panic!(),
+            _ => ice!(),
         }
     }
 }

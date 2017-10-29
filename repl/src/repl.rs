@@ -330,7 +330,7 @@ mod tests {
     fn compile_repl_test() {
         let _ = ::env_logger::init();
         let vm = new_vm();
-        compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
+        compile_repl(&vm).unwrap_or_else(|err| ice!("{}", err));
         let repl: Result<FunctionRef<fn(()) -> IO<()>>, _> = vm.get_global("std.repl");
         assert!(repl.is_ok(), "{}", repl.err().unwrap());
     }
@@ -341,7 +341,7 @@ mod tests {
     fn type_of_expr() {
         let _ = ::env_logger::init();
         let vm = new_vm();
-        compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
+        compile_repl(&vm).unwrap_or_else(|err| ice!("{}", err));
         let mut type_of: FunctionRef<QueryFn> = vm.get_global("repl_prim.type_of_expr").unwrap();
         assert_eq!(type_of.call("123"), Ok(IO::Value(Ok("Int".into()))));
     }
@@ -350,7 +350,7 @@ mod tests {
     fn find_kind() {
         let _ = ::env_logger::init();
         let vm = new_vm();
-        compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
+        compile_repl(&vm).unwrap_or_else(|err| ice!("{}", err));
         let mut find_kind: FunctionRef<QueryFn> = vm.get_global("repl_prim.find_kind").unwrap();
         assert_eq!(
             find_kind.call("std.prelude.Semigroup"),
@@ -362,7 +362,7 @@ mod tests {
     fn find_info() {
         let _ = ::env_logger::init();
         let vm = new_vm();
-        compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
+        compile_repl(&vm).unwrap_or_else(|err| ice!("{}", err));
         let mut find_info: FunctionRef<QueryFn> = vm.get_global("repl_prim.find_info").unwrap();
         match find_info.call("std.prelude.Semigroup") {
             Ok(IO::Value(Ok(_))) => (),

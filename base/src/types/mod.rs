@@ -1319,7 +1319,7 @@ where
                             ];
                         }
                     },
-                    _ => panic!("Unexpected type in variant"),
+                    _ => ice!("Unexpected type in variant"),
                 };
 
                 p.enclose(Prec::Constructor, arena, doc).group()
