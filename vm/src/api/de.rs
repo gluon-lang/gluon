@@ -65,7 +65,7 @@ let thread = new_vm();
 let (De(vec), _) = Compiler::new()
 #   .implicit_prelude(false)
     .run_expr::<De<Vec2>>(&thread, "test", "{ x = 1.0, y = 2.0 }")
-    .unwrap_or_else(|err| ice!("{}", err));
+    .unwrap_or_else(|err| panic!("{}", err));
 assert_eq!(vec, Vec2 {
         x: 1.0,
         y: 2.0
@@ -113,7 +113,7 @@ Compiler::new()
         "test",
         r#" type Enum = | A Int | B String Float in { Enum } "#,
     )
-    .unwrap_or_else(|err| ice!("{}", err));
+    .unwrap_or_else(|err| panic!("{}", err));
 
 let (De(enum_), _) = Compiler::new()
 #   .implicit_prelude(false)
@@ -122,7 +122,7 @@ let (De(enum_), _) = Compiler::new()
         "test",
         r#" let { Enum } = import! "test" in A 123 "#,
     )
-    .unwrap_or_else(|err| ice!("{}", err));
+    .unwrap_or_else(|err| panic!("{}", err));
 assert_eq!(enum_, Enum::A(123));
 
 // The field names of record variants are ignored so make sure the fields are declared correctly
@@ -133,7 +133,7 @@ let (De(enum_), _) = Compiler::new()
         "test",
         r#" let { Enum } = import! "test" in B "abc" 3.14 "#,
     )
-    .unwrap_or_else(|err| ice!("{}", err));
+    .unwrap_or_else(|err| panic!("{}", err));
 assert_eq!(
     enum_,
     Enum::B {

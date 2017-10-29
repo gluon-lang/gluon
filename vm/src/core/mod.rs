@@ -8,7 +8,7 @@ macro_rules! assert_deq {
         match (&$left, &$right) {
             (left_val, right_val) => {
                 if !(*left_val == *right_val) {
-                    ice!("assertion failed: `(left == right)` \
+                    panic!("assertion failed: `(left == right)` \
                         (left: `{}`, right: `{}`)", left_val, right_val)
                 }
             }
@@ -18,7 +18,7 @@ macro_rules! assert_deq {
         match (&($left), &($right)) {
             (left_val, right_val) => {
                 if !(*left_val == *right_val) {
-                    ice!("assertion failed: `(left == right)` \
+                    panic!("assertion failed: `(left == right)` \
                         (left: `{}`, right: `{}`): {}", left_val, right_val,
                         format_args!($($arg)+))
                 }

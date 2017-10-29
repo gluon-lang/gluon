@@ -18,7 +18,7 @@ macro_rules! primitive_cast {
 /// #[macro_use]
 /// extern crate gluon_vm;
 /// fn test(_x: i32, _y: String) -> f64 {
-///     ice!()
+///     panic!()
 /// }
 ///
 /// fn main() {

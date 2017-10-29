@@ -53,12 +53,12 @@ impl VmType for Vec2 {
 let thread = new_vm();
 let (mut f, _): (FunctionRef<fn (Ser<Vec2>) -> i32>, _) = Compiler::new()
     .run_expr(&thread, "", r#"let f v: _ -> Int = v.x + v.y in f"#)
-    .unwrap_or_else(|err| ice!("{}", err));
+    .unwrap_or_else(|err| panic!("{}", err));
 let vec = Vec2 {
     x: 3,
     y: 10
 };
-let result = f.call(Ser(vec)).unwrap_or_else(|err| ice!("{}", err));
+let result = f.call(Ser(vec)).unwrap_or_else(|err| panic!("{}", err));
 assert_eq!(result, 13);
 # }
 ```
@@ -110,13 +110,13 @@ let f e =
 Compiler::new()
 #   .implicit_prelude(false)
     .load_script(&thread, "test", expr)
-    .unwrap_or_else(|err| ice!("{}", err));
+    .unwrap_or_else(|err| panic!("{}", err));
 
 let mut f: FunctionRef<fn (Ser<Enum>) -> i32> = thread
     .get_global("test.f")
-    .unwrap_or_else(|err| ice!("{}", err));
+    .unwrap_or_else(|err| panic!("{}", err));
 
-let result = f.call(Ser(Enum::B("".to_string(), 4))).unwrap_or_else(|err| ice!("{}", err));
+let result = f.call(Ser(Enum::B("".to_string(), 4))).unwrap_or_else(|err| panic!("{}", err));
 assert_eq!(result, 4);
 
 # }
