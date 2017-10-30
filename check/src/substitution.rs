@@ -258,13 +258,13 @@ impl<T: Substitutable> Substitution<T> {
 
     pub fn insert(&self, var: u32, t: T) {
         match t.get_var() {
-            Some(_) => panic!(
+            Some(_) => ice!(
                 "Tried to insert variable which is not allowed as that would cause memory \
                  unsafety"
             ),
             None => match self.types.try_insert(var, t) {
                 Ok(()) => (),
-                Err(_) => panic!("Expected variable to not have a type associated with it"),
+                Err(_) => ice!("Expected variable to not have a type associated with it"),
             },
         }
     }

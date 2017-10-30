@@ -529,7 +529,7 @@ pub fn run_io<'vm, E>(
                 let actual = resolve::remove_aliases_cow(&*vm.get_env(), &actual);
                 let actual = match **actual {
                     Type::App(_, ref arg) => arg[0].clone(),
-                    _ => panic!("ICE: Expected IO type found: `{}`", actual),
+                    _ => ice!("ICE: Expected IO type found: `{}`", actual),
                 };
                 (vm.root_value(value), actual)
             })

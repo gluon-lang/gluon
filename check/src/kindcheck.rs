@@ -109,7 +109,7 @@ impl<'a> KindCheck<'a> {
             // Can't assign a new var to `kind` here because it is borrowed mutably...
             // We'll rely on fall-through instead.
             Kind::Hole => (),
-            Kind::Variable(_) => panic!("Unexpected kind variable while instantiating"),
+            Kind::Variable(_) => ice!("Unexpected kind variable while instantiating"),
             Kind::Function(ref mut lhs, ref mut rhs) => {
                 self.instantiate_kinds(lhs);
                 self.instantiate_kinds(rhs);

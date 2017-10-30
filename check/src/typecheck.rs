@@ -594,7 +594,7 @@ impl<'a> Typecheck<'a> {
                             expr = match moving(expr).value {
                                 Expr::LetBindings(_, ref mut new_expr) |
                                 Expr::TypeBindings(_, ref mut new_expr) => new_expr,
-                                _ => panic!("Only Let and Type expressions can tailcall"),
+                                _ => ice!("Only Let and Type expressions can tailcall"),
                             };
                             scope_count += 1;
                         }
@@ -1781,7 +1781,7 @@ pub fn extract_generics(args: &[ArcType]) -> Vec<Generic<Symbol>> {
     args.iter()
         .map(|arg| match **arg {
             Type::Generic(ref gen) => gen.clone(),
-            _ => panic!("The type on the lhs of a type binding did not have all generic arguments"),
+            _ => ice!("The type on the lhs of a type binding did not have all generic arguments"),
         })
         .collect()
 }

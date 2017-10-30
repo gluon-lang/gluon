@@ -660,10 +660,10 @@ impl<'a, 'e> Compiler<'a, 'e> {
                             function.push_stack_var(self, field_name, expr);
                         }
                     },
-                    _ => panic!("Expected record, got `{}` at {:?}", pattern_expr.as_ref(), pattern)
+                    _ => ice!("Expected record, got `{}` at {:?}", pattern_expr.as_ref(), pattern)
                 }
             }
-            Pattern::Constructor(..) => panic!("constructor pattern in let"),
+            Pattern::Constructor(..) => ice!("constructor pattern in let"),
         }
         Ok(())
     }

@@ -602,7 +602,7 @@ impl Typed for Expr<Symbol> {
                         return args[1].clone();
                     }
                 }
-                panic!("Expected function type in binop");
+                ice!("Expected function type in binop");
             }
             Expr::LetBindings(_, ref expr) | Expr::TypeBindings(_, ref expr) => {
                 expr.env_type_of(env)
@@ -655,7 +655,7 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
 
     let alias = {
         let alias_ident = alias_type.alias_ident().unwrap_or_else(|| {
-            panic!(
+            ice!(
                 "ICE: Expected function with {} more arguments, found {:?}",
                 arg_count,
                 alias_type
@@ -663,7 +663,7 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
         });
 
         env.find_type_info(alias_ident).unwrap_or_else(|| {
-            panic!("Unexpected type {} is not a function", alias_type)
+            ice!("Unexpected type {} is not a function", alias_type)
         })
     };
 
