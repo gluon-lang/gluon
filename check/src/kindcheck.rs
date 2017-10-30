@@ -191,7 +191,7 @@ impl<'a> KindCheck<'a> {
                 Ok((gen.kind.clone(), Type::generic(gen)))
             }
             Type::Builtin(builtin_typ) => Ok((self.builtin_kind(builtin_typ), typ.clone())),
-            Type::Forall(ref params, ref typ, _) => {
+            Type::Forall(ref params, ref typ, ref vars) => {
                 let mut params = params.clone();
                 for param in &mut params {
                     param.kind = self.subs.new_var();
@@ -202,7 +202,10 @@ impl<'a> KindCheck<'a> {
                 let offset = self.locals.len() - params.len();
                 self.locals.drain(offset..);
 
-                Ok((ret_kind, Type::forall(params, ret_typ.clone())))
+                Ok((
+                    ret_kind,
+                    Type::forall_with_vars(params, ret_typ.clone(), vars.clone()),
+                ))
             }
             Type::App(ref ctor, ref args) => {
                 let (mut kind, ctor) = self.kindcheck(ctor)?;
@@ -298,12 +301,13 @@ impl<'a> KindCheck<'a> {
                 }))
             }
             Type::Generic(ref var) => Some(Type::generic(self.finalize_generic(var))),
-            Type::Forall(ref params, ref typ, _) => Some(Type::forall(
+            Type::Forall(ref params, ref typ, ref vars) => Some(Type::forall_with_vars(
                 params
                     .iter()
                     .map(|param| self.finalize_generic(&param))
                     .collect(),
                 typ.clone(),
+                vars.clone(),
             )),
             _ => None,
         })

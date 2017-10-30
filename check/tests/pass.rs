@@ -1664,3 +1664,17 @@ let make monoid : Monoid w -> () =
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn mutually_recursive_with_type_signature() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+let test x : a -> () = test2 x
+and test2 x : a -> () = test x
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}

@@ -20,7 +20,7 @@ use base::merge;
 use base::pos::{BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
 use base::types::{self, Alias, AliasRef, AppVec, ArcType, Field, Generic, PrimitiveEnv,
-                  RecordSelector, Skolem, Type, TypeCache, TypeEnv, TypeVariable};
+                  RecordSelector, Type, TypeCache, TypeEnv, TypeVariable};
 
 use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
 use substitution::{self, Constraints, Substitution};
@@ -560,7 +560,6 @@ impl<'a> Typecheck<'a> {
         let mut typ = self.typecheck_opt(expr, expected_type);
         if let Some(expected) = expected_type {
             let expected = self.create_unifiable_signature(expected)
-                .0
                 .unwrap_or_else(|| expected.clone());
             typ = self.merge_signature(expr_check_span(expr), 0, &expected, typ);
         }
@@ -911,7 +910,6 @@ impl<'a> Typecheck<'a> {
                 for field in types {
                     if let Some(ref mut typ) = field.value {
                         *typ = self.create_unifiable_signature(typ)
-                            .0
                             .unwrap_or_else(|| typ.clone());
                     }
                     let alias = self.find_type_info(&field.name.value)?.clone();
@@ -1224,7 +1222,6 @@ impl<'a> Typecheck<'a> {
         }
 
         let is_recursive = bindings.iter().all(|bind| !bind.args.is_empty());
-        let mut type_variables = Vec::new();
         // When the definitions are allowed to be mutually recursive
         if is_recursive {
             for bind in bindings.iter_mut() {
@@ -1245,14 +1242,14 @@ impl<'a> Typecheck<'a> {
                 }
                 let typ = {
                     debug!("!!!! {}", bind.resolved_type);
-                    let (typ, new_variables) = self.create_unifiable_signature(&bind.resolved_type);
-                    type_variables.push(new_variables);
+                    debug!("!!!! {:?}", self.type_variables);
+                    let typ = self.create_unifiable_signature(&bind.resolved_type);
                     if let Some(typ) = typ {
                         bind.resolved_type = typ;
                     }
 
                     self.kindcheck(&mut bind.resolved_type)?;
-                    debug!("!!!! {}", bind.resolved_type);
+                    debug!("!!!2 {}", bind.resolved_type);
                     self.new_skolem_scope_signature(&bind.resolved_type)
                 };
                 self.typecheck_pattern(&mut bind.name, typ);
@@ -1266,8 +1263,6 @@ impl<'a> Typecheck<'a> {
             }
         }
 
-        type_variables.reverse();
-
         let mut types = Vec::new();
         for bind in bindings.iter_mut() {
             self.type_variables.enter_scope();
@@ -1275,8 +1270,7 @@ impl<'a> Typecheck<'a> {
             // Functions which are declared as `let f x = ...` are allowed to be self
             // recursive
             let mut typ = if bind.args.is_empty() {
-                let (typ, new_variables) = self.create_unifiable_signature(&bind.resolved_type);
-                self.type_variables.extend(new_variables);
+                let typ = self.create_unifiable_signature(&bind.resolved_type);
                 if let Some(typ) = typ {
                     bind.resolved_type = typ;
                 }
@@ -1288,10 +1282,9 @@ impl<'a> Typecheck<'a> {
             } else {
                 debug!("++++ {}", bind.resolved_type);
                 debug!("{:?}", self.type_variables);
-                self.type_variables.extend(type_variables.pop().unwrap());
-                debug!("{:?}", self.type_variables);
                 bind.resolved_type = self.new_skolem_scope_signature(&bind.resolved_type);
-                self.typecheck_lambda(bind.resolved_type.clone(), &mut bind.args, &mut bind.expr)
+                let function_type = self.instantiate_generics(&bind.resolved_type);
+                self.typecheck_lambda(function_type, &mut bind.args, &mut bind.expr)
             };
 
             debug!("let {:?} : {}", bind.name, typ);
@@ -1391,9 +1384,8 @@ impl<'a> Typecheck<'a> {
                     .map(|param| (param.id.clone(), alias.unresolved_type().clone())),
             );
 
-            let replacement = self.create_unifiable_signature2(
-                alias.unresolved_type().remove_forall(),
-            ).0;
+            let replacement =
+                self.create_unifiable_signature2(alias.unresolved_type().remove_forall());
             if let Some(typ) = replacement {
                 *alias.unresolved_type_mut() = Type::forall(alias.params().to_owned(), typ);
             }
@@ -1784,7 +1776,7 @@ impl<'a> Typecheck<'a> {
                             .zip(vars)
                             .filter(|&(param, var)| is_variable_unified(subs, param, var))
                             .map(|(param, var)| (param.id.clone(), var.clone())),
-                    );
+                    );;
                     typ.instantiate_generics_(&mut self.named_variables)
                         .unwrap_or(typ.clone())
                 };
@@ -1817,7 +1809,6 @@ impl<'a> Typecheck<'a> {
                     id: skolem.name.clone(),
                     kind: skolem.kind.clone(),
                 };
-                unbound_variables.insert(skolem.name.clone(), generic.clone());
                 Some(Type::generic(generic))
             }
 
@@ -1849,6 +1840,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn new_skolem_scope_signature(&mut self, typ: &ArcType) -> ArcType {
+        info!("SIGNA {}", typ);
         let typ = self.new_skolem_scope(typ);
         // Put all new generic variable names into scope
         if let Type::Forall(ref params, _, Some(ref vars)) = *typ {
@@ -1868,137 +1860,130 @@ impl<'a> Typecheck<'a> {
     // single type variable.
     //
     // Also inserts a `forall` for any implicitly declared variables.
-    fn create_unifiable_signature(
-        &mut self,
-        typ: &ArcType,
-    ) -> (Option<ArcType>, Vec<(Symbol, ArcType)>) {
+    fn create_unifiable_signature(&mut self, typ: &ArcType) -> Option<ArcType> {
         self.named_variables.clear();
         self.create_unifiable_signature2(typ)
     }
 
-    fn create_unifiable_signature2(
-        &mut self,
-        typ: &ArcType,
-    ) -> (Option<ArcType>, Vec<(Symbol, ArcType)>) {
+    fn create_unifiable_signature2(&mut self, typ: &ArcType) -> Option<ArcType> {
         self.type_variables.enter_scope();
         let result_type = self.create_unifiable_signature_(typ);
-        let new_variables = self.type_variables.exit_scope().collect();
-        (result_type, new_variables)
+
+        let params = self.type_variables
+            .exit_scope()
+            .map(|(id, var)| {
+                let kind = var.kind().into_owned();
+                Generic::new(id, kind)
+            })
+            .collect::<Vec<_>>();
+
+        if params.is_empty() {
+            result_type
+        } else {
+            Some(ArcType::new(Type::Forall(
+                params,
+                result_type.unwrap_or_else(|| typ.clone()),
+                None,
+            )))
+        }
     }
 
     fn create_unifiable_signature_(&mut self, typ: &ArcType) -> Option<ArcType> {
-        types::visit_type_opt(
-            typ,
-            &mut types::ControlVisitation(|typ: &ArcType| {
-                match **typ {
-                    Type::Ident(ref id) => {
-                        // Substitute the Id by its alias if possible
-                        let new_id = self.original_symbols.get(id).unwrap_or(id);
-                        self.environment
-                            .find_type_info(new_id)
-                            .map(|alias| alias.clone().into_type())
-                            .or_else(|| if id == new_id {
-                                None
-                            } else {
-                                Some(Type::ident(new_id.clone()))
-                            })
-                    }
-                    Type::Variant(ref row) => {
-                        let replacement = types::visit_type_opt(
-                            row,
-                            &mut types::ControlVisitation(
-                                |typ: &ArcType| self.create_unifiable_signature_(typ),
-                            ),
-                        );
-                        let row = replacement.as_ref().unwrap_or(row);
-                        let iter = || {
-                            row.row_iter()
-                                .map(|var| self.original_symbols.get(&var.name))
-                        };
-                        if iter().any(|opt| opt.is_some()) {
-                            // If any of the variants requires a symbol replacement
-                            // we create a new type
-                            Some(
-                                self.type_cache.variant(
-                                    iter()
-                                        .zip(row.row_iter())
-                                        .map(|(new, old)| match new {
-                                            Some(new) => Field::new(new.clone(), old.typ.clone()),
-                                            None => old.clone(),
-                                        })
-                                        .collect(),
-                                ),
-                            )
-                        } else {
-                            replacement
-                                .clone()
-                                .map(|row| ArcType::from(Type::Variant(row)))
-                        }
-                    }
-                    Type::Hole => Some(self.subs.new_var()),
-                    Type::ExtendRow {
-                        ref types,
-                        ref fields,
-                        ref rest,
-                    } => {
-                        let new_fields = types::walk_move_types(fields, |field| {
-                            self.create_unifiable_signature2(&field.typ)
-                                .0
-                                .map(|typ| Field::new(field.name.clone(), typ))
-                        });
-                        let new_rest = self.create_unifiable_signature_(rest);
-                        merge::merge(fields, new_fields, rest, new_rest, |fields, rest| {
-                            Type::extend_row(types.clone(), fields, rest)
-                        })
-                    }
-                    Type::Forall(ref params, ref typ, _) => {
-                        for param in params {
-                            self.named_variables.insert(param.id.clone(), typ.clone());
-                        }
-                        let result = self.create_unifiable_signature_(typ);
-                        // Remove any implicit variables inserted inside the forall since
-                        // they were actually bound at this stage
-                        for param in params {
-                            self.named_variables.remove(&param.id);
-                        }
-                        result.map(|typ| Type::forall(params.clone(), typ))
-                    }
-                    Type::Generic(ref generic)
-                        if self.named_variables.get(&generic.id).is_none() =>
-                    {
-                        match self.type_variables.get(&generic.id).cloned() {
-                            Some(typ) => Some(typ),
-                            None => {
-                                let kind = typ.kind().into_owned();
-                                let var = self.subs.new_constrained_var_fn(None, |id| {
-                                    Type::variable(TypeVariable {
-                                        kind: kind.clone(),
-                                        id: id,
-                                    })
-                                });
-                                let skolem: ArcType = Type::skolem(Skolem {
-                                    name: generic.id.clone(),
-                                    id: match *var {
-                                        Type::Variable(ref var) => var.id,
-                                        _ => unreachable!(),
-                                    },
-                                    kind,
-                                });
-                                self.type_variables
-                                    .insert(generic.id.clone(), skolem.clone());
-                                Some(skolem)
-                            }
-                        }
-                    }
-                    _ => types::walk_move_type_opt(
-                        typ,
-                        &mut types::ControlVisitation(
-                            |typ: &ArcType| self.create_unifiable_signature_(typ),
-                        ),
+        match **typ {
+            Type::Ident(ref id) => {
+                // Substitute the Id by its alias if possible
+                let new_id = self.original_symbols.get(id).unwrap_or(id);
+                self.environment
+                    .find_type_info(new_id)
+                    .map(|alias| alias.clone().into_type())
+                    .or_else(|| if id == new_id {
+                        None
+                    } else {
+                        Some(Type::ident(new_id.clone()))
+                    })
+            }
+            Type::Variant(ref row) => {
+                let replacement = types::visit_type_opt(
+                    row,
+                    &mut types::ControlVisitation(
+                        |typ: &ArcType| self.create_unifiable_signature_(typ),
                     ),
+                );
+                let row = replacement.as_ref().unwrap_or(row);
+                let iter = || {
+                    row.row_iter()
+                        .map(|var| self.original_symbols.get(&var.name))
+                };
+                if iter().any(|opt| opt.is_some()) {
+                    // If any of the variants requires a symbol replacement
+                    // we create a new type
+                    Some(
+                        self.type_cache.variant(
+                            iter()
+                                .zip(row.row_iter())
+                                .map(|(new, old)| match new {
+                                    Some(new) => Field::new(new.clone(), old.typ.clone()),
+                                    None => old.clone(),
+                                })
+                                .collect(),
+                        ),
+                    )
+                } else {
+                    replacement
+                        .clone()
+                        .map(|row| ArcType::from(Type::Variant(row)))
                 }
-            }),
-        )
+            }
+            Type::Hole => Some(self.subs.new_var()),
+            Type::ExtendRow {
+                ref types,
+                ref fields,
+                ref rest,
+            } => {
+                let new_fields = types::walk_move_types(fields, |field| {
+                    self.create_unifiable_signature2(&field.typ)
+                        .map(|typ| Field::new(field.name.clone(), typ))
+                });
+                let new_rest = self.create_unifiable_signature_(rest);
+                merge::merge(fields, new_fields, rest, new_rest, |fields, rest| {
+                    Type::extend_row(types.clone(), fields, rest)
+                })
+            }
+            Type::Forall(ref params, ref typ, _) => {
+                for param in params {
+                    self.named_variables.insert(param.id.clone(), typ.clone());
+                }
+                let result = self.create_unifiable_signature_(typ);
+                // Remove any implicit variables inserted inside the forall since
+                // they were actually bound at this stage
+                for param in params {
+                    self.named_variables.remove(&param.id);
+                }
+                result.map(|typ| Type::forall(params.clone(), typ))
+            }
+            Type::Generic(ref generic) if self.named_variables.get(&generic.id).is_none() => {
+                match self.type_variables.get(&generic.id).cloned() {
+                    Some(typ) => Some(typ),
+                    None => {
+                        let kind = typ.kind().into_owned();
+                        let var = self.subs.new_constrained_var_fn(None, |id| {
+                            Type::variable(TypeVariable {
+                                kind: kind.clone(),
+                                id: id,
+                            })
+                        });
+                        self.type_variables.insert(generic.id.clone(), var);
+                        None
+                    }
+                }
+            }
+            _ => types::walk_move_type_opt(
+                typ,
+                &mut types::ControlVisitation(
+                    |typ: &ArcType| self.create_unifiable_signature_(typ),
+                ),
+            ),
+        }
     }
 
     fn merge_signature(
