@@ -12,7 +12,7 @@ let { Eq } = prelude
 let { append = (++) } = string.semigroup
 let ord_map = map.make string.ord
 let { singleton, find } = ord_map
-let for = (prelude.make_Traversable ord_map.traversable).for io.applicative
+let traverse_with_key = ord_map.traverse_with_key io.applicative
 let { (<>) } = prelude.make_Semigroup ord_map.semigroup
 let { empty } = ord_map.monoid
 
@@ -61,10 +61,10 @@ let commands : Map String Cmd =
                     info = "Print this help",
                     action = \_ ->
                         let print_header = io.println "Available commands\n"
-                        let print_cmd cmd : { key : String, value : Cmd } -> IO () =
-                            io.println ("    :" ++ cmd.key ++ " " ++ cmd.value.info)
+                        let print_cmd key cmd : String -> Cmd -> IO () =
+                            io.println ("    :" ++ key ++ " " ++ cmd.info)
 
-                        print_header *> for (load commands) print_cmd
+                        print_header *> traverse_with_key print_cmd (load commands)
                             *> wrap True,
                 }
     commands <- cmds
