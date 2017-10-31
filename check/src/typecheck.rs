@@ -322,7 +322,6 @@ impl<'a> Typecheck<'a> {
                 self.named_variables.clear();
                 let typ = new_skolem_scope(&self.subs, &constraints, &typ);
                 debug!("Find {} : {}", self.symbols.string(id), typ);
-                debug!("Find {} : {:?}", self.symbols.string(id), typ);
                 debug!(
                     "Constraints [{}]",
                     constraints
@@ -672,21 +671,17 @@ impl<'a> Typecheck<'a> {
             })),
             Expr::App(ref mut func, ref mut args) => {
                 let mut func_type = self.infer_expr(&mut **func);
+
                 for arg in args.iter_mut() {
                     let f = self.type_cache
                         .function(once(self.subs.new_var()), self.subs.new_var());
                     func_type = self.instantiate_generics(&func_type);
-                    debug!("-------{}", func_type);
-                    debug!("-------{:?}", func_type);
                     func_type = self.unify(&f, func_type)?;
-                    debug!("{}", func_type);
+
                     func_type = match func_type.as_function() {
                         Some((arg_ty, ret_ty)) => {
-                            debug!("123 {}", arg_ty);
                             let actual = self.typecheck(arg, arg_ty);
-                            debug!("a123 {}", actual);
                             let actual = self.instantiate_generics(&actual);
-                            debug!("b123 {}", actual);
 
                             let level = self.subs.var_id();
                             self.merge_signature(expr_check_span(arg), level, arg_ty, actual);
@@ -842,7 +837,6 @@ impl<'a> Typecheck<'a> {
                 let record = self.remove_aliases(expr_typ.clone());
                 match *record {
                     Type::Variable(_) | Type::Record(_) => {
-                        debug!("><< {}", record);
                         let field_type = record
                             .row_iter()
                             .find(|field| field.name.name_eq(field_id))
@@ -862,7 +856,6 @@ impl<'a> Typecheck<'a> {
                                 field_var
                             }
                         };
-                        debug!("><< {}", ast_field_typ);
                         Ok(TailCall::Type(ast_field_typ.clone()))
                     }
                     _ => Err(TypeError::InvalidProjection(record)),
@@ -1012,9 +1005,7 @@ impl<'a> Typecheck<'a> {
         body: &mut SpannedExpr<Symbol>,
     ) -> ArcType {
         self.enter_scope();
-        info!("____ {}", function_type);
         function_type = self.skolemize(&function_type);
-        info!("____ {}", function_type);
         let mut arg_types = Vec::new();
         let body_type = {
             let mut iter1 = function_arg_iter(self, function_type);
@@ -1242,15 +1233,12 @@ impl<'a> Typecheck<'a> {
                     _ => (),
                 }
                 let typ = {
-                    debug!("!!!! {}", bind.resolved_type);
-                    debug!("!!!! {:?}", self.type_variables);
                     let typ = self.create_unifiable_signature(&bind.resolved_type);
                     if let Some(typ) = typ {
                         bind.resolved_type = typ;
                     }
 
                     self.kindcheck(&mut bind.resolved_type)?;
-                    debug!("!!!2 {}", bind.resolved_type);
                     self.new_skolem_scope_signature(&bind.resolved_type)
                 };
                 self.typecheck_pattern(&mut bind.name, typ);
@@ -1281,8 +1269,6 @@ impl<'a> Typecheck<'a> {
                 bind.resolved_type = self.new_skolem_scope_signature(&bind.resolved_type);
                 self.typecheck(&mut bind.expr, &bind.resolved_type)
             } else {
-                debug!("++++ {}", bind.resolved_type);
-                debug!("{:?}", self.type_variables);
                 bind.resolved_type = self.new_skolem_scope_signature(&bind.resolved_type);
                 let function_type = self.instantiate_generics(&bind.resolved_type);
                 self.typecheck_lambda(function_type, &mut bind.args, &mut bind.expr)
@@ -1657,7 +1643,6 @@ impl<'a> Typecheck<'a> {
             bind.constraints = constraints;
             bind.typ = typ;
             debug!("Updated {} to `{}`", symbol, bind.typ);
-            debug!("Updated {} to `{:?}`", symbol, bind.typ);
         }
     }
 
@@ -1832,7 +1817,6 @@ impl<'a> Typecheck<'a> {
     }
 
     fn new_skolem_scope_signature(&mut self, typ: &ArcType) -> ArcType {
-        info!("SIGNA {}", typ);
         let typ = self.new_skolem_scope(typ);
         // Put all new generic variable names into scope
         if let Type::Forall(ref params, _, Some(ref vars)) = *typ {
