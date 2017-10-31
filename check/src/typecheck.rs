@@ -670,28 +670,8 @@ impl<'a> Typecheck<'a> {
                 Literal::Char(_) => self.type_cache.char(),
             })),
             Expr::App(ref mut func, ref mut args) => {
-                let mut func_type = self.infer_expr(&mut **func);
-
-                for arg in args.iter_mut() {
-                    let f = self.type_cache
-                        .function(once(self.subs.new_var()), self.subs.new_var());
-                    func_type = self.instantiate_generics(&func_type);
-                    func_type = self.unify(&f, func_type)?;
-
-                    func_type = match func_type.as_function() {
-                        Some((arg_ty, ret_ty)) => {
-                            let actual = self.typecheck(arg, arg_ty);
-                            let actual = self.instantiate_generics(&actual);
-
-                            let level = self.subs.var_id();
-                            self.merge_signature(expr_check_span(arg), level, arg_ty, actual);
-
-                            ret_ty.clone()
-                        }
-                        None => return Err(TypeError::NotAFunction(func_type.clone())),
-                    };
-                }
-                Ok(TailCall::Type(func_type))
+                let func_type = self.infer_expr(func);
+                self.typecheck_application(func_type, args)
             }
             Expr::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
                 let bool_type = self.bool();
@@ -708,62 +688,37 @@ impl<'a> Typecheck<'a> {
                 self.unify(&true_type, false_type).map(TailCall::Type)
             }
             Expr::Infix(ref mut lhs, ref mut op, ref mut rhs) => {
-                let lhs_type = self.infer_expr(&mut **lhs);
-                let rhs_type = self.infer_expr(&mut **rhs);
                 let op_name = String::from(self.symbols.string(&op.value.name));
-                let return_type = if op_name.starts_with('#') {
+                let func_type = if op_name.starts_with('#') {
                     // Handle primitives
-                    let arg_type = self.unify(&lhs_type, rhs_type)?;
                     let op_type = op_name.trim_matches(|c: char| !c.is_alphabetic());
                     let builtin_type = op_type.parse().map_err(|_| {
                         TypeError::Message("Invalid builtin type for operator".to_string())
                     })?;
                     let prim_type = self.type_cache.builtin_type(builtin_type);
-                    let typ = self.unify(&prim_type, arg_type)?;
                     let return_type = match &op_name[1 + op_type.len()..] {
-                        "+" | "-" | "*" | "/" => typ,
+                        "+" | "-" | "*" | "/" => prim_type.clone(),
                         "==" | "<" => self.bool(),
                         _ => return Err(TypeError::UndefinedVariable(op.value.name.clone())),
                     };
-                    op.value.typ = self.type_cache.function(
+                    self.type_cache.function(
                         vec![prim_type.clone(), prim_type.clone()],
                         return_type.clone(),
-                    );
-                    return_type
+                    )
                 } else {
                     match &*op_name {
-                        "&&" | "||" => {
-                            self.unify(&lhs_type, rhs_type.clone())?;
-                            op.value.typ = self.type_cache
-                                .function(vec![self.bool(), self.bool()], self.bool());
-                            self.unify(&self.bool(), lhs_type)?
-                        }
-                        _ => {
-                            op.value.typ = self.find(&op.value.name)?;
-                            op.value.typ = self.instantiate_generics(&op.value.typ);
-
-                            let lhs_var = self.subs.new_var();
-                            let rhs_var = self.subs.new_var();
-                            let func_type = self.type_cache.function(
-                                vec![lhs_var.clone(), rhs_var.clone()],
-                                self.subs.new_var(),
-                            );
-
-                            let func_type = self.unify_span(op.span, &op.value.typ, func_type);
-
-                            let level = self.subs.var_id();
-                            self.merge_signature(expr_check_span(lhs), level, &lhs_var, lhs_type);
-                            self.merge_signature(expr_check_span(rhs), level, &rhs_var, rhs_type);
-
-                            func_type
-                                .as_function()
-                                .and_then(|(_, ret)| ret.as_function())
-                                .map(|(_, ret)| ret.clone())
-                                .expect("ICE: unify binop")
-                        }
+                        "&&" | "||" => self.type_cache
+                            .function(vec![self.bool(), self.bool()], self.bool()),
+                        _ => self.find(&op.value.name)?,
                     }
                 };
-                Ok(TailCall::Type(return_type))
+
+                op.value.typ = func_type.clone();
+
+                self.typecheck_application(
+                    func_type,
+                    Some(&mut **lhs).into_iter().chain(Some(&mut **rhs)),
+                )
             }
             Expr::Tuple {
                 ref mut typ,
@@ -996,6 +951,36 @@ impl<'a> Typecheck<'a> {
             }
             Expr::Error => Err(TypeError::ErrorAst("expression")),
         }
+    }
+
+    fn typecheck_application<'e, I>(
+        &mut self,
+        mut func_type: ArcType,
+        args: I,
+    ) -> Result<TailCall, TypeError<Symbol>>
+    where
+        I: IntoIterator<Item = &'e mut SpannedExpr<Symbol>>,
+    {
+        for arg in args {
+            let f = self.type_cache
+                .function(once(self.subs.new_var()), self.subs.new_var());
+            func_type = self.instantiate_generics(&func_type);
+            func_type = self.unify(&f, func_type)?;
+
+            func_type = match func_type.as_function() {
+                Some((arg_ty, ret_ty)) => {
+                    let actual = self.typecheck(arg, arg_ty);
+                    let actual = self.instantiate_generics(&actual);
+
+                    let level = self.subs.var_id();
+                    self.merge_signature(expr_check_span(arg), level, arg_ty, actual);
+
+                    ret_ty.clone()
+                }
+                None => return Err(TypeError::NotAFunction(func_type.clone())),
+            };
+        }
+        Ok(TailCall::Type(func_type))
     }
 
     fn typecheck_lambda(
