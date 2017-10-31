@@ -500,31 +500,31 @@ impl<'a> Typecheck<'a> {
                     self.generalize_type(0, typ);
                 }
                 Unification(ref mut expected, ref mut actual, ref mut errors) => {
-                    self.generalize_type(0, expected);
-                    self.generalize_type(0, actual);
+                    self.generalize_type_without_forall(0, expected);
+                    self.generalize_type_without_forall(0, actual);
                     for err in errors {
                         match *err {
                             unify::Error::TypeMismatch(ref mut l, ref mut r) => {
-                                self.generalize_type(0, l);
-                                self.generalize_type(0, r);
+                                self.generalize_type_without_forall(0, l);
+                                self.generalize_type_without_forall(0, r);
                             }
                             unify::Error::Substitution(ref mut err) => match *err {
                                 substitution::Error::Occurs(_, ref mut typ) => {
-                                    self.generalize_type(0, typ);
+                                    self.generalize_type_without_forall(0, typ);
                                 }
                                 substitution::Error::Constraint(
                                     ref mut var,
                                     ref mut constraints,
                                 ) => {
                                     for typ in Arc::make_mut(constraints) {
-                                        self.generalize_type(0, typ);
+                                        self.generalize_type_without_forall(0, typ);
                                     }
-                                    self.generalize_type(0, var);
+                                    self.generalize_type_without_forall(0, var);
                                 }
                             },
                             unify::Error::Other(ref mut err) => {
                                 if let unify_type::TypeError::MissingFields(ref mut typ, _) = *err {
-                                    self.generalize_type(0, typ);
+                                    self.generalize_type_without_forall(0, typ);
                                 }
                             }
                         }
@@ -1657,6 +1657,21 @@ impl<'a> Typecheck<'a> {
         });
         if let Some(finished) = result_type {
             debug!("End generalize {}", finished);
+            *typ = finished;
+        }
+    }
+
+    fn generalize_type_without_forall(&mut self, level: u32, typ: &mut ArcType) {
+        self.type_variables.enter_scope();
+
+        let mut unbound_variables = FnvMap::default();
+        let mut variable_generator = TypeVariableGenerator::new(level, &self.subs, typ);
+        let result_type =
+            self.generalize_type_(level, &mut unbound_variables, &mut variable_generator, typ);
+
+        self.type_variables.exit_scope();
+
+        if let Some(finished) = result_type {
             *typ = finished;
         }
     }
