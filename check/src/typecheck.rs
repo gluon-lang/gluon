@@ -902,7 +902,6 @@ impl<'a> Typecheck<'a> {
                     self.new_skolem_scope(&typ)
                 });
                 let expected_type = expected_type.as_ref();
-                info!("___ {}", expected_type.unwrap());
 
                 let mut new_types: Vec<Field<_, _>> = Vec::with_capacity(types.len());
 
@@ -1045,6 +1044,8 @@ impl<'a> Typecheck<'a> {
         let span = pattern.span;
         match pattern.value {
             Pattern::Constructor(ref mut id, ref mut args) => {
+                match_type = self.subs.real(&match_type).clone();
+                match_type = self.instantiate_generics(&match_type);
                 if let Some(new) = self.original_symbols.get(&id.name) {
                     id.name = new.clone();
                 }
@@ -1547,17 +1548,6 @@ impl<'a> Typecheck<'a> {
     }
 
     fn intersect_type(&mut self, level: u32, symbol: &Symbol, symbol_type: &ArcType) {
-        fn no_type_variables(typ: &ArcType) -> bool {
-            let mut no_variables = true;
-            types::visit_type_opt(typ, &mut |typ: &ArcType| {
-                if let Type::Variable(_) = **typ {
-                    no_variables = false;
-                }
-                None
-            });
-            no_variables
-        }
-
         let intersection_update = {
             let existing_types = self.environment
                 .stack
@@ -1566,7 +1556,8 @@ impl<'a> Typecheck<'a> {
             // Only allow overloading for bindings whose types which do not contain type variables
             // It might be possible to lift this restriction but currently it causes problems
             // which I am not sure how to solve
-            if existing_types.len() >= 2 && no_type_variables(&symbol_type) {
+            debug!("Looking for intersection `{}`", symbol_type);
+            if existing_types.len() >= 2 {
                 let existing_binding = &existing_types[existing_types.len() - 2];
                 debug!(
                     "Intersect `{}`\n{} ∩ {}",
@@ -1581,7 +1572,8 @@ impl<'a> Typecheck<'a> {
                 );
 
                 let result = {
-                    let state = unify_type::State::new(&self.environment, &self.subs);
+                    let mut state = unify_type::State::new(&self.environment, &self.subs);
+                    state.in_alias = true;
                     unify::intersection(
                         &self.subs,
                         self.symbols.symbols(),

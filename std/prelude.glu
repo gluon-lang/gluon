@@ -166,12 +166,12 @@ type Applicative (f : Type -> Type) = {
 let make_Applicative applicative : Applicative f -> _ =
     let { functor, apply, wrap } = applicative
 
-    let (<*>) : _ (a -> b) -> _ a -> _ b = apply
-    let (<*) l r : _ a -> _ b -> _ a = functor.map (\x _ -> x) l <*> r
-    let (*>) l r : _ a -> _ b -> _ b = functor.map (\_ x -> x) l <*> r
+    let (<*>) : f (a -> b) -> f a -> f b = apply
+    let (<*) l r : f a -> f b -> f a = functor.map (\x _ -> x) l <*> r
+    let (*>) l r : f a -> f b -> f b = functor.map (\_ x -> x) l <*> r
 
-    let map2 f a b : (a -> b -> c) -> _ a -> _ b -> _ c = (functor.map f a) <*> b
-    let map3 f a b c : (a -> b -> c -> d) -> _ a -> _ b -> _ c -> _ d =
+    let map2 f a b : (a -> b -> c) -> f a -> f b -> f c = (functor.map f a) <*> b
+    let map3 f a b c : (a -> b -> c -> d) -> f a -> f b -> f c -> f d =
         (functor.map f a) <*> b <*> c
 
     { functor, apply, wrap, (<*>), (<*), (*>), map2, map3 }
