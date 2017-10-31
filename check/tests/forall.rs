@@ -944,3 +944,38 @@ and test2 x : a -> () = test x
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn show_list_bug() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+type List a = | Nil | Cons a (List a)
+
+type Show a = {
+    show : a -> String,
+}
+
+let any x = any x
+
+let show : Show a -> Show (List a) = \d ->
+    let (++) : String -> String -> String = any ()
+
+    {
+        show = \xs ->
+            let show_elems ys =
+                match ys with
+                | Cons y ys2 ->
+                    match ys2 with
+                    | Cons z zs -> d.show y ++ ", " ++ show_elems ys2
+                    | Nil -> d.show y
+                | Nil -> ""
+
+            "[" ++ show_elems xs ++ "]",
+    }
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}

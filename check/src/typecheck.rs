@@ -20,7 +20,7 @@ use base::merge;
 use base::pos::{BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
 use base::types::{self, Alias, AliasRef, AppVec, ArcType, Field, Generic, PrimitiveEnv,
-                  RecordSelector, Type, TypeCache, TypeEnv, TypeVariable};
+                  RecordSelector, Skolem, Type, TypeCache, TypeEnv, TypeVariable};
 
 use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
 use substitution::{self, Constraints, Substitution};
@@ -1805,12 +1805,17 @@ impl<'a> Typecheck<'a> {
         let typ = self.new_skolem_scope(typ);
         // Put all new generic variable names into scope
         if let Type::Forall(ref params, _, Some(ref vars)) = *typ {
-            self.type_variables.extend(
-                params
-                    .iter()
-                    .zip(vars)
-                    .map(|(param, var)| (param.id.clone(), var.clone())),
-            );
+            self.type_variables
+                .extend(params.iter().zip(vars).map(|(param, var)| {
+                    (
+                        param.id.clone(),
+                        Type::skolem(Skolem {
+                            id: var.as_variable().unwrap().id,
+                            name: param.id.clone(),
+                            kind: param.kind.clone(),
+                        }),
+                    )
+                }));
         }
         typ
     }
@@ -1924,7 +1929,10 @@ impl<'a> Typecheck<'a> {
             }
             Type::Generic(ref generic) if self.named_variables.get(&generic.id).is_none() => {
                 match self.type_variables.get(&generic.id).cloned() {
-                    Some(typ) => Some(typ),
+                    Some(typ) => match *typ {
+                        Type::Variable(_) => None,
+                        _ => Some(typ),
+                    },
                     None => {
                         let kind = typ.kind().into_owned();
                         let var = self.subs.new_constrained_var_fn(None, |id| {

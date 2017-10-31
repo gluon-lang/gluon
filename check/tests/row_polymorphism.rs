@@ -77,7 +77,7 @@ fn late_merge_with_signature() {
     let _ = env_logger::init();
 
     let text = r#"
-type Monad m = { flat_map : (a -> m b) -> m a -> m b }
+type Monad m = { flat_map : forall a b . (a -> m b) -> m a -> m b }
 type Test a = { value : a }
 let monad : Monad Test = {
     flat_map = \f x -> f x.value

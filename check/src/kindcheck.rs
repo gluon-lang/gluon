@@ -157,11 +157,11 @@ impl<'a> KindCheck<'a> {
     }
 
     pub fn kindcheck_expected(&mut self, typ: &mut ArcType, expected: &ArcKind) -> Result<ArcKind> {
-        debug!("Kindcheck {:?}", typ);
+        debug!("Kindcheck {}", typ);
         let (kind, t) = self.kindcheck(typ)?;
         let kind = self.unify(expected, kind)?;
         *typ = self.finalize_type(t);
-        debug!("Done {:?}", typ);
+        debug!("Done {}", typ);
         Ok(kind)
     }
 

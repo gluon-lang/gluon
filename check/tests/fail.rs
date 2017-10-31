@@ -372,7 +372,6 @@ let g x: A a -> () = x
 }
 
 #[test]
-#[ignore]
 fn declared_generic_variables_may_not_make_outer_bindings_more_general() {
     let _ = ::env_logger::init();
     let text = r#"

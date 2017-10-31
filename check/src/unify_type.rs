@@ -957,6 +957,13 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
         match (&**l, &**r) {
             (&Type::Hole, _) => Ok(None),
             (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => Ok(None),
+            (&Type::Skolem(ref skolem), &Type::Variable(ref r_var))
+                if subs.get_level(skolem.id) > r_var.id =>
+            {
+                return Err(UnifyError::Other(
+                    TypeError::UnableToGeneralize(skolem.name.clone()),
+                ));
+            }
             (&Type::Generic(ref l_gen), &Type::Variable(ref r_var)) => {
                 let left = match unifier.unifier.variables.get(&l_gen.id) {
                     Some(generic_bound_var) => {
