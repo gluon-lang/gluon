@@ -23,6 +23,7 @@ This tutorial aims the explain the basics of gluon's syntax and semantics.
 In traditional form, we will begin with the classic hello world program.
 
 ```f#,rust
+let io = import! "std/io.glu"
 io.println "Hello world"
 ```
 
@@ -215,7 +216,7 @@ match { x = Some (Some 123) } with
 
 `let` bindings can also match and unpack on data but only with irrefutable patterns. In other words, only with patterns which cannot fail.
 
-```f#
+```f#,ignore
 // Matching on records will always succeed since they are the only variant
 let { x = y, pi } = { x = 1.0, pi = 3.14 }
 in y + pi
@@ -411,7 +412,7 @@ Just as all values such as `0 : Int`, `"Hello World!" : String` and `Some 4.0 : 
 
 Universal quantification is what gluon's "generic types" are called. Consider the identity function in Rust.
 
-```rust
+```rust,ignore
 fn id<T>(x: T) -> T {
     x
 }
@@ -445,7 +446,7 @@ module.id ""
 
 If we were to emulate the above code in Rust we would probably end up with something like this code.
 
-```rust
+```rust,ignore
 struct Module<T> {
     id : Box<Fn(T) -> T>,
 }

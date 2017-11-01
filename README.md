@@ -97,6 +97,7 @@ REPL features:
 ## Hello world
 
 ```f#,rust
+let io = import! "std/io.glu"
 io.print "Hello world!"
 ```
 
@@ -116,6 +117,8 @@ factorial 10
 Larger example which display most if not all of the syntactical elements in the language.
 
 ```f#,rust
+let io = import! "std/io.glu"
+
 // `let` declares new variables.
 let id x = x
 
@@ -164,6 +167,8 @@ let { count } : Countable (List Int) = countable_List countable_Int
 if count (Cons 20 (Cons 22 Nil)) == 41 then
     error "This branch is not executed"
 else
+    // `import! <filename>` loads a module stored at `filename`
+    let io = import! "std/io.glu"
     io.print "Hello world!"
 ```
 
