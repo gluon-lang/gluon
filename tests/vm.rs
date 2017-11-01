@@ -283,6 +283,14 @@ r#"
 'a'
 }
 
+test_expr!{ prelude handle_fields_being_ignored_in_optimize,
+    r#"
+let large_record = { x = 1, y = 2 }
+large_record.x
+"#,
+1
+}
+
 test_expr!{ any zero_argument_variant_is_int,
 r#"
 type Test = | A Int | B

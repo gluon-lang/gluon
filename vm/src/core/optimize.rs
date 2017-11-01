@@ -1,8 +1,10 @@
 use std::marker::PhantomData;
 
 use base::ast::TypedIdent;
+use base::types::{ArcType, Field};
 use base::merge::{merge_fn, merge_iter};
 use base::pos;
+use base::symbol::Symbol;
 
 use core::{Allocator, Alternative, CExpr, Closure, Expr, LetBinding, Named, Pattern};
 
@@ -88,6 +90,37 @@ impl<'a> Visitor<'a, 'a> for RecognizeUnnecessaryAllocation<'a> {
     type Producer = SameLifetime<'a>;
 
     fn visit_expr(&mut self, expr: &'a Expr<'a>) -> Option<&'a Expr<'a>> {
+        fn make_let<'b>(
+            self_: &mut RecognizeUnnecessaryAllocation<'b>,
+            fields: &[(TypedIdent<Symbol>, Option<Symbol>)],
+            next_expr: &'b Expr<'b>,
+            field: &Field<Symbol, ArcType>,
+            expr: &'b Expr<'b>,
+        ) -> &'b Expr<'b> {
+            let pattern_field = fields
+                .iter()
+                .find(|f| f.0.name.name_eq(&field.name))
+                .map(|pattern_field| {
+                    pattern_field
+                        .1
+                        .as_ref()
+                        .unwrap_or(&pattern_field.0.name)
+                        .clone()
+                })
+                .unwrap_or_else(|| Symbol::from("dummy"));
+            let new_expr = Expr::Let(
+                LetBinding {
+                    name: TypedIdent {
+                        name: pattern_field.clone(),
+                        typ: field.typ.clone(),
+                    },
+                    expr: Named::Expr(expr),
+                    span_start: pos::BytePos::default(),
+                },
+                next_expr,
+            );
+            &*self_.allocator().arena.alloc(new_expr)
+        }
         // Avoids boxing data which are destructured immediately after creation
         // match { l, r } with
         // | { l, r } -> ...
@@ -111,24 +144,7 @@ impl<'a> Visitor<'a, 'a> for RecognizeUnnecessaryAllocation<'a> {
                                 .into_iter()
                                 .rev()
                                 .fold(next_expr, |next_expr, (field, expr)| {
-                                    let pattern_field = fields
-                                        .iter()
-                                        .find(|f| f.0.name.name_eq(&field.name))
-                                        .unwrap();
-                                    let pattern_field =
-                                        pattern_field.1.as_ref().unwrap_or(&pattern_field.0.name);
-                                    let new_expr = Expr::Let(
-                                        LetBinding {
-                                            name: TypedIdent {
-                                                name: pattern_field.clone(),
-                                                typ: field.typ.clone(),
-                                            },
-                                            expr: Named::Expr(expr),
-                                            span_start: pos::BytePos::default(),
-                                        },
-                                        next_expr,
-                                    );
-                                    &*self.allocator().arena.alloc(new_expr)
+                                    make_let(self, fields, next_expr, field, expr)
                                 }),
                         )
                     }
@@ -334,9 +350,9 @@ mod tests {
             | { l, r } -> l
             end
             "#;
-        let initial_expr = allocator.arena.alloc(
-            parse_core_expr(&mut symbols, &allocator, initial_str).unwrap(),
-        );
+        let initial_expr = allocator
+            .arena
+            .alloc(parse_core_expr(&mut symbols, &allocator, initial_str).unwrap());
 
         let optimized_expr = optimize(&allocator, initial_expr);
 
