@@ -540,6 +540,7 @@ pub const PRELUDE: &'static str = r#"
 let __implicit_prelude = import! "std/prelude.glu"
 and { Num, Eq, Ord, Show, Functor, Monad } = __implicit_prelude
 and { Bool, not } = import! "std/bool.glu"
+and { Option } = import! "std/option.glu"
 
 let __implicit_float = import! "std/float.glu"
 let { (+), (-), (*), (/) } = __implicit_float.num
