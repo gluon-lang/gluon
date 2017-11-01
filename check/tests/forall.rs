@@ -463,10 +463,14 @@ fn undefined_type_variable_in_record() {
 type Test = {
     x: a
 }
-()
+let any x = any x
+{ x = any () }.x
 "#;
     let result = support::typecheck(text);
-    assert!(result.is_ok(), "{}", result.unwrap_err());
+    assert_req!(
+        result.map(|x| x.to_string()),
+        Ok("forall a . a".to_string())
+    );
 }
 
 #[test]

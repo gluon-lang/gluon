@@ -1309,36 +1309,7 @@ impl<'a> Typecheck<'a> {
             // Rename the aliase's name to its global name
             bind.alias.value.name = new;
 
-            fn check_undefined_variables(
-                self_: &mut Typecheck,
-                args: &[Generic<Symbol>],
-                typ: &AstType<Symbol>,
-            ) {
-                use base::pos::HasSpan;
-                match **typ {
-                    Type::Generic(ref id) => if args.iter().all(|arg| arg.id != id.id) {
-                        self_.error(
-                            typ.span(),
-                            TypeError::UndefinedVariable(id.id.clone()).into(),
-                        );
-                    },
-                    Type::Record(_) => {
-                        // Inside records variables are bound implicitly to the closest field
-                        // so variables are allowed to be undefined/implicit
-                    }
-                    _ => {
-                        types::walk_move_type_opt(
-                            typ,
-                            &mut types::ControlVisitation(|typ: &AstType<_>| {
-                                check_undefined_variables(self_, args, typ);
-                                None
-                            }),
-                        );
-                    }
-                }
-            }
-            check_undefined_variables(
-                self,
+            self.check_undefined_variables(
                 bind.alias.value.params(),
                 bind.alias.value.unresolved_type(),
             );
@@ -1440,6 +1411,32 @@ impl<'a> Typecheck<'a> {
             .kindcheck_type(typ)
             .map_err(|err| TypeError::from_kind_error(err, typ.clone()))?;
         Ok(())
+    }
+
+
+    fn check_undefined_variables(&mut self, args: &[Generic<Symbol>], typ: &AstType<Symbol>) {
+        use base::pos::HasSpan;
+        match **typ {
+            Type::Generic(ref id) => if args.iter().all(|arg| arg.id != id.id) {
+                self.error(
+                    typ.span(),
+                    TypeError::UndefinedVariable(id.id.clone()).into(),
+                );
+            },
+            Type::Record(_) => {
+                // Inside records variables are bound implicitly to the closest field
+                // so variables are allowed to be undefined/implicit
+            }
+            _ => {
+                types::walk_move_type_opt(
+                    typ,
+                    &mut types::ControlVisitation(|typ: &AstType<_>| {
+                        self.check_undefined_variables(args, typ);
+                        None
+                    }),
+                );
+            }
+        }
     }
 
     fn finish_pattern(
