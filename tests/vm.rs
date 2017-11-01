@@ -462,6 +462,26 @@ in Cons 1 Nil == Nil
 }
 
 #[test]
+fn record_splat_ice() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+let large_record = { x = 1 }
+{
+    field = 123,
+    ..
+    large_record
+}
+"#;
+    let mut vm = make_vm();
+    let result = Compiler::new()
+        .implicit_prelude(false)
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&mut vm, "example", text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
 fn test_implicit_prelude() {
     let _ = ::env_logger::init();
     let text = r#"1.0 + 3.0 - 2.0"#;

@@ -255,6 +255,7 @@ pub fn rename(
                 Expr::Record {
                     ref mut typ,
                     ref mut exprs,
+                    ref mut base,
                     ..
                 } => {
                     let field_types = self.find_fields(typ);
@@ -274,6 +275,10 @@ pub fn rename(
                                 ));
                             },
                         }
+                    }
+
+                    if let Some(ref mut base) = *base {
+                        self.visit_expr(base);
                     }
                 }
                 Expr::Infix(ref mut lhs, ref mut op, ref mut rhs) => {

@@ -506,6 +506,9 @@ impl<'a> Compiler<'a> {
         let translator = core::Translator::new(&*env);
         let expr = {
             let expr = translator.allocator.arena.alloc(translator.translate(expr));
+
+            debug!("Translation returned: {}", expr);
+
             core::optimize::optimize(&translator.allocator, expr)
         };
         let mut env = FunctionEnvs::new();

@@ -596,13 +596,13 @@ impl<'a, 'e> Translator<'a, 'e> {
                     .map(|field| field.name.value.declared_name())
                     .collect();
                 args.extend(base_binding.as_ref().into_iter().flat_map(
-                    |&(ident, ref base_type)| {
+                    |&(base_ident_expr, ref base_type)| {
                         base_type
                             .row_iter()
                             // Only load fields that aren't named in this record constructor
                             .filter(|field| !defined_fields.contains(field.name.declared_name()))
                             .map(move |field| {
-                                self.project_expr(ident.span(), ident, &field.name, &field.typ)
+                                self.project_expr(base_ident_expr.span(), base_ident_expr, &field.name, &field.typ)
                             })
                     },
                 ));
