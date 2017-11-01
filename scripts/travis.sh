@@ -9,7 +9,7 @@
   cargo test --features test --package gluon_completion &&
   cargo test --features test --package gluon_vm &&
   cargo test --features test --package gluon_format &&
-  cargo test --features test --package gluon &&
+  cargo test --features "test skeptic" --package gluon &&
   cargo test --features test --package gluon_repl &&
   cargo test --features test --package gluon_c-api &&
   travis-cargo --only nightly test -- --features "test nightly" -p gluon compile_test &&

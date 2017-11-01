@@ -11,7 +11,7 @@ mod gen_skeptic {
     /// ```f#,rust
     /// ```
     /// gives f# syntax highlight while still running the tests through the template
-    const TEMPLATE: &'static str = r##"
+    const TEMPLATE: &'static str = r#####"
 ```rust,skeptic-template
 extern crate env_logger;
 extern crate gluon;
@@ -21,19 +21,19 @@ use gluon::{{new_vm, Compiler, Thread}};
 
 fn main() {{
     let _ = ::env_logger::init();
-    let text = r#\"{}\"#;
+    let text = r##"{}"##;
     let vm = new_vm();
-    match Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, \"example\", text) .sync_or_error() {{
+    match Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", text) {{
         Ok(_value) => (),
         Err(err) => {{
-            panic!(\"{{}}\", err);
+            panic!("{{}}", err);
         }}
     }}
     return;
 }}
 ```
 
-"##;
+"#####;
 
     fn generate_skeptic_tests(file: &str) -> String {
         // Preprocess the readme to inject the skeptic template needed to to run the examples
