@@ -523,14 +523,8 @@ pub enum Type<Id, T = ArcType<Id>> {
     /// A type application with multiple arguments. For example,
     /// `Map String Int` would be represented as `App(Map, [String, Int])`.
     App(
-        #[cfg_attr(feature = "serde_derive", serde(deserialize_state))]
-        #[cfg_attr(feature = "serde_derive", serde(serialize_state))]
-        T,
-        #[cfg_attr(feature = "serde_derive",
-                   serde(deserialize_state_with = "::serialization::deserialize_type_vec"))]
-        #[cfg_attr(feature = "serde_derive",
-                   serde(serialize_state_with = "::serialization::serialize_seq"))]
-        AppVec<T>,
+        #[cfg_attr(feature = "serde_derive", serde(state))] T,
+        #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::seq"))] AppVec<T>,
     ),
     /// Record constructor, of kind `Row -> Type`
     Record(#[cfg_attr(feature = "serde_derive", serde(state))] T),
@@ -559,17 +553,11 @@ pub enum Type<Id, T = ArcType<Id>> {
     Ident(#[cfg_attr(feature = "serde_derive", serde(state))] Id),
     /// An unbound type variable that may be unified with other types. These
     /// will eventually be converted into `Type::Generic`s during generalization.
-    Variable(
-        #[cfg_attr(feature = "serde_derive", serde(state))] TypeVariable,
-    ),
+    Variable(#[cfg_attr(feature = "serde_derive", serde(state))] TypeVariable),
     /// A variable that needs to be instantiated with a fresh type variable
     /// when the binding is refered to.
-    Generic(
-        #[cfg_attr(feature = "serde_derive", serde(state))] Generic<Id>,
-    ),
-    Alias(
-        #[cfg_attr(feature = "serde_derive", serde(state))] AliasRef<Id, T>,
-    ),
+    Generic(#[cfg_attr(feature = "serde_derive", serde(state))] Generic<Id>),
+    Alias(#[cfg_attr(feature = "serde_derive", serde(state))] AliasRef<Id, T>),
 }
 
 impl<Id, T> Type<Id, T>

@@ -8,12 +8,12 @@ use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use serde::de::{Deserialize, DeserializeSeed, DeserializeState, Deserializer, Error};
+use serde::de::{DeserializeSeed, DeserializeState, Deserializer, Error};
 use serde::ser::{SerializeState, Serializer};
 
 use kind::ArcKind;
 use symbol::Symbol;
-use types::{AliasData, AppVec, ArcType, Type};
+use types::{AliasData, ArcType, Type};
 
 #[derive(Default)]
 pub struct SeSeed {
@@ -76,23 +76,6 @@ impl<Id, T> Clone for Seed<Id, T> {
 }
 
 
-pub fn deserialize_type_vec<'de, Id, T, D>(
-    seed: &mut Seed<Id, T>,
-    deserializer: D,
-) -> Result<AppVec<T>, D::Error>
-where
-    D: ::serde::Deserializer<'de>,
-    T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeState<'de, Seed<Id, T>>,
-    Id: DeserializeState<'de, Seed<Id, T>>
-        + Clone
-        + ::std::any::Any
-        + DeserializeState<'de, Seed<Id, T>>,
-{
-    DeserializeSeed::deserialize(
-        ::serde::de::SeqSeedEx::new(seed, |_| AppVec::default()),
-        deserializer,
-    )
-}
 pub fn deserialize_group<'de, Id, T, D>(
     seed: &mut Seed<Id, T>,
     deserializer: D,
@@ -157,76 +140,6 @@ impl Shared for Symbol {
 
     fn as_ptr(&self) -> *const () {
         &**self as *const _ as *const ()
-    }
-}
-
-
-#[derive(Clone)]
-pub struct IdSeed<Id>(NodeMap, PhantomData<Id>);
-
-impl<Id> IdSeed<Id> {
-    pub fn new(map: NodeMap) -> Self {
-        IdSeed(map, PhantomData)
-    }
-}
-
-impl<'de, Id> DeserializeSeed<'de> for IdSeed<Id>
-where
-    Id: Deserialize<'de>,
-{
-    type Value = Id;
-
-    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Id::deserialize(deserializer)
-    }
-}
-
-impl<Id> AsMut<NodeMap> for IdSeed<Id> {
-    fn as_mut(&mut self) -> &mut NodeMap {
-        &mut self.0
-    }
-}
-
-#[derive(Clone)]
-pub struct MapSeed<S, F> {
-    seed: S,
-    map: F,
-}
-
-impl<S, F> MapSeed<S, F> {
-    pub fn new(seed: S, map: F) -> MapSeed<S, F> {
-        MapSeed {
-            seed: seed,
-            map: map,
-        }
-    }
-}
-
-impl<S, T, F> AsMut<T> for MapSeed<S, F>
-where
-    S: AsMut<T>,
-{
-    fn as_mut(&mut self) -> &mut T {
-        self.seed.as_mut()
-    }
-}
-
-
-impl<'de, S, F, R> DeserializeSeed<'de> for MapSeed<S, F>
-where
-    S: DeserializeSeed<'de>,
-    F: FnOnce(S::Value) -> R,
-{
-    type Value = R;
-
-    fn deserialize<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        self.seed.deserialize(deserializer).map(self.map)
     }
 }
 
@@ -354,18 +267,33 @@ where
     Lookup::Inserted(id)
 }
 
+pub mod seq {
+    use super::*;
 
-pub fn serialize_seq<'a, S, T, V, Seed>(
-    self_: &'a T,
-    serializer: S,
-    seed: &Seed,
-) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-    T: Deref<Target = [V]>,
-    V: SerializeState<Seed>,
-{
-    (**self_).serialize_state(serializer, seed)
+    pub fn deserialize<'de, S, T, U, D>(seed: &mut S, deserializer: D) -> Result<T, D::Error>
+    where
+        D: ::serde::Deserializer<'de>,
+        T: Extend<U> + Default + ::std::any::Any,
+        U: DeserializeState<'de, S> + Clone + ::std::any::Any + DeserializeState<'de, S>,
+    {
+        DeserializeSeed::deserialize(
+            ::serde::de::SeqSeedEx::new(seed, |_| T::default()),
+            deserializer,
+        )
+    }
+
+    pub fn serialize<'a, S, T, V, Seed>(
+        self_: &'a T,
+        serializer: S,
+        seed: &Seed,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+        T: Deref<Target = [V]>,
+        V: SerializeState<Seed>,
+    {
+        (**self_).serialize_state(serializer, seed)
+    }
 }
 
 impl<Id> SerializeState<SeSeed> for ArcType<Id>
