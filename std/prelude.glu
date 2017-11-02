@@ -2,6 +2,9 @@
 
 let { Bool, Option, Ordering } = import! "std/types.glu"
 
+/// Flips the application order of type arguments
+type Flip (f : Type -> Type -> Type) (a : Type) (b : Type) = f b a
+
 /// `Semigroup a` represents an associative operation on `a`.
 /// This means the following laws must hold:
 ///
@@ -311,6 +314,8 @@ let make_Traversable traversable : Traversable t -> _ =
     { functor, foldable, traverse, sequence, for }
 
 {
+    Flip,
+
     Ordering,
 
     Semigroup,
