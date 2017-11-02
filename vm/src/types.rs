@@ -177,7 +177,7 @@ impl KindEnv for TypeInfos {
     fn find_kind(&self, type_name: &SymbolRef) -> Option<ArcKind> {
         let type_name = AsRef::<str>::as_ref(type_name);
         self.id_to_type.get(type_name).map(|alias| {
-            alias.args.iter().rev().fold(
+            alias.params().iter().rev().fold(
                 Kind::typ(),
                 |acc, arg| Kind::function(arg.kind.clone(), acc),
             )

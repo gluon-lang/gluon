@@ -596,13 +596,13 @@ impl<'a, 'e> Translator<'a, 'e> {
                     .map(|field| field.name.value.declared_name())
                     .collect();
                 args.extend(base_binding.as_ref().into_iter().flat_map(
-                    |&(ident, ref base_type)| {
+                    |&(base_ident_expr, ref base_type)| {
                         base_type
                             .row_iter()
                             // Only load fields that aren't named in this record constructor
                             .filter(|field| !defined_fields.contains(field.name.declared_name()))
                             .map(move |field| {
-                                self.project_expr(ident.span(), ident, &field.name, &field.typ)
+                                self.project_expr(base_ident_expr.span(), base_ident_expr, &field.name, &field.typ)
                             })
                     },
                 ));
@@ -778,7 +778,7 @@ impl<'a, 'e> Translator<'a, 'e> {
         // has no effect and `typ` itself will be used
         let data_type;
         {
-            let mut args = arg_iter(&typ);
+            let mut args = arg_iter(typ.remove_forall());
             unapplied_args = args.by_ref()
                 .enumerate()
                 .map(|(i, arg)| {
@@ -868,10 +868,11 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
     let function_type = remove_aliases_cow(env, alias_type);
 
     let ret = function_type
+        .remove_forall()
         .as_function()
         .map(|t| Cow::Borrowed(t.1))
         .unwrap_or_else(|| {
-            debug!(
+            warn!(
                 "Call expression with a non function type `{}`",
                 function_type
             );
@@ -960,25 +961,29 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                                 ref typ,
                                 ref fields,
                                 ..
-                            } => fields
-                                .iter()
-                                .map(|field| {
-                                    field.value.as_ref().map(Cow::Borrowed).unwrap_or_else(|| {
-                                        let field_type = remove_aliases_cow(&self.0.env, typ)
-                                            .row_iter()
-                                            .find(|f| f.name.name_eq(&field.name.value))
-                                            .map(|f| f.typ.clone())
-                                            .unwrap_or_else(|| Type::hole());
-                                        Cow::Owned(spanned(
-                                            Span::default(),
-                                            ast::Pattern::Ident(TypedIdent {
-                                                name: field.name.value.clone(),
-                                                typ: field_type,
-                                            }),
-                                        ))
+                            } => {
+                                let record_type = remove_aliases_cow(&self.0.env, typ);
+
+                                fields
+                                    .iter()
+                                    .map(|field| {
+                                        field.value.as_ref().map(Cow::Borrowed).unwrap_or_else(|| {
+                                            let field_type = record_type
+                                                .row_iter()
+                                                .find(|f| f.name.name_eq(&field.name.value))
+                                                .map(|f| f.typ.clone())
+                                                .unwrap_or_else(|| Type::hole());
+                                            Cow::Owned(spanned(
+                                                Span::default(),
+                                                ast::Pattern::Ident(TypedIdent {
+                                                    name: field.name.value.clone(),
+                                                    typ: field_type,
+                                                }),
+                                            ))
+                                        })
                                     })
-                                })
-                                .collect::<Vec<_>>(),
+                                    .collect::<Vec<_>>()
+                            }
                             ast::Pattern::Tuple { ref elems, .. } => {
                                 elems.iter().map(Cow::Borrowed).collect::<Vec<_>>()
                             }

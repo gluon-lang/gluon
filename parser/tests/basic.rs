@@ -80,6 +80,7 @@ fn let_type_decl() {
         _ => assert!(false),
     }
 }
+
 #[test]
 fn let_args() {
     let _ = ::env_logger::init();
@@ -190,6 +191,7 @@ fn op_identifier() {
         )
     );
 }
+
 #[test]
 fn variant_type() {
     let _ = ::env_logger::init();
@@ -210,6 +212,7 @@ fn variant_type() {
         )
     );
 }
+
 #[test]
 fn case_expr() {
     let _ = ::env_logger::init();
@@ -238,12 +241,14 @@ match None with
         ),)
     );
 }
+
 #[test]
 fn array_expr() {
     let _ = ::env_logger::init();
     let e = parse_new!("[1, a]");
     assert_eq!(e, array(vec![int(1), id("a")]));
 }
+
 #[test]
 fn operator_expr() {
     let _ = ::env_logger::init();
@@ -295,6 +300,7 @@ fn record_pattern() {
     };
     assert_eq!(e, case(id("x"), vec![(pattern, id("z"))]));
 }
+
 #[test]
 fn let_pattern() {
     let _ = ::env_logger::init();

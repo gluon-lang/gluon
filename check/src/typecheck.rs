@@ -19,14 +19,14 @@ use base::kind::{ArcKind, Kind, KindCache, KindEnv};
 use base::merge;
 use base::pos::{BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
-use base::types::{self, Alias, AliasData, AppVec, ArcType, Field, Generic};
-use base::types::{PrimitiveEnv, RecordSelector, Type, TypeCache, TypeEnv, TypeVariable};
+use base::types::{self, Alias, AliasRef, AppVec, ArcType, Field, Generic, PrimitiveEnv,
+                  RecordSelector, Skolem, Type, TypeCache, TypeEnv, TypeVariable};
 
 use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
 use substitution::{self, Constraints, Substitution};
 use rename::RenameError;
 use unify::{self, Error as UnifyError};
-use unify_type::{self, instantiate_generic_variables, Error as UnifyTypeError};
+use unify_type::{self, new_skolem_scope, Error as UnifyTypeError};
 
 /// Type representing a single error when checking a type
 #[derive(Debug, PartialEq)]
@@ -44,7 +44,7 @@ pub enum TypeError<I> {
     /// Errors found when trying to unify two types
     Unification(ArcType<I>, ArcType<I>, Vec<UnifyTypeError<I>>),
     /// Error were found when trying to unify the kinds of two types
-    KindError(KindCheckError<I>),
+    KindError(KindCheckError<I>, ArcType<I>),
     /// Errors found during renaming (overload resolution)
     Rename(RenameError),
     /// Multiple types were declared with the same name in the same expression
@@ -62,14 +62,11 @@ pub enum TypeError<I> {
     Message(String),
 }
 
-impl<I> From<KindCheckError<I>> for TypeError<I>
-where
-    I: PartialEq + Clone,
-{
-    fn from(e: KindCheckError<I>) -> TypeError<I> {
+impl<I> TypeError<I> {
+    fn from_kind_error(e: KindCheckError<I>, typ: ArcType<I>) -> Self {
         match e {
             UnifyError::Other(KindError::UndefinedType(name)) => TypeError::UndefinedType(name),
-            e => TypeError::KindError(e),
+            e => TypeError::KindError(e, typ),
         }
     }
 }
@@ -126,7 +123,11 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
             PatternError(ref typ, expected_len) => {
                 write!(f, "Type {} has {} to few arguments", typ, expected_len)
             }
-            KindError(ref err) => kindcheck::fmt_kind_error(err, f),
+            KindError(ref err, ref typ) => {
+                kindcheck::fmt_kind_error(err, f)?;
+                writeln!(f)?;
+                write!(f, "In type {}", typ)
+            }
             Rename(ref err) => write!(f, "{}", err),
             DuplicateTypeDefinition(ref id) => write!(
                 f,
@@ -160,6 +161,7 @@ pub type SpannedTypeError<Id> = Spanned<TypeError<Id>, BytePos>;
 
 type TcResult<T> = Result<T, TypeError<Symbol>>;
 
+#[derive(Clone, Debug)]
 struct StackBinding {
     constraints: FnvMap<Symbol, Constraints<ArcType>>,
     typ: ArcType,
@@ -180,7 +182,7 @@ impl<'a> KindEnv for Environment<'a> {
             .get(type_name)
             .map(|&(_, ref alias)| {
                 let mut kind = Kind::typ();
-                for arg in alias.args.iter().rev() {
+                for arg in alias.params().iter().rev() {
                     kind = Kind::function(arg.kind.clone(), kind);
                 }
                 kind
@@ -213,16 +215,16 @@ impl<'a> TypeEnv for Environment<'a> {
             .iter()
             .find(|&(_, &(_, ref alias))| match **alias.unresolved_type() {
                 Type::Record(ref row) => {
-                        let record_fields = || row.row_iter()
+                    let record_fields = || {
+                        row.row_iter()
                             .map(|f| f.name.name())
-                            .chain(row.type_field_iter ().map(|f| f.name.name()));
-                        selector.matches(record_fields, fields.iter().map(|field| field.name()))
-                    }
-                    _ => false,
+                            .chain(row.type_field_iter().map(|f| f.name.name()))
+                    };
+                    selector.matches(record_fields, fields.iter().map(|field| field.name()))
                 }
-            )
-            // FIXME Don't use unresolved_type
-            .map(|t| ((t.1).0.clone(), (t.1).1.unresolved_type().clone()))
+                _ => false,
+            })
+            .map(|t| ((t.1).0.clone(), (t.1).1.typ().into_owned()))
             .or_else(|| self.environment.find_record(fields, selector))
     }
 }
@@ -318,14 +320,15 @@ impl<'a> Typecheck<'a> {
                 let typ = self.subs.set_type(typ);
 
                 self.named_variables.clear();
-                let typ = instantiate_generic_variables(
-                    &mut self.named_variables,
-                    &self.subs,
-                    &constraints,
-                    &typ,
-                );
-
+                let typ = new_skolem_scope(&self.subs, &constraints, &typ);
                 debug!("Find {} : {}", self.symbols.string(id), typ);
+                debug!(
+                    "Constraints [{}]",
+                    constraints
+                        .iter()
+                        .map(|t| format!("({}, [{}])", t.0, t.1.iter().format(", ")))
+                        .format(", ")
+                );
                 Ok(typ)
             }
             None => Err(TypeError::UndefinedVariable(id.clone())),
@@ -360,6 +363,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn stack_var(&mut self, id: Symbol, typ: ArcType) {
+        debug!("Insert {} : {}", id, typ);
         self.environment.stack.insert(
             id,
             StackBinding {
@@ -372,14 +376,17 @@ impl<'a> Typecheck<'a> {
     fn stack_type(&mut self, id: Symbol, alias: &Alias<Symbol, ArcType>) {
         // Insert variant constructors into the local scope
         let aliased_type = alias.typ();
-        if let Type::Variant(ref row) = **aliased_type {
+        if let Type::Variant(ref row) = **aliased_type.remove_forall() {
             for field in row.row_iter().cloned() {
                 let symbol = self.symbols.symbol(field.name.as_ref());
                 self.original_symbols.insert(symbol, field.name.clone());
-                self.stack_var(field.name, field.typ);
+                self.stack_var(
+                    field.name,
+                    Type::forall(alias.params().to_owned(), field.typ),
+                );
             }
         }
-        let generic_args = alias.args.iter().cloned().map(Type::generic).collect();
+        let generic_args = alias.params().iter().cloned().map(Type::generic).collect();
         let typ = Type::<_, ArcType>::app(alias.as_ref().clone(), generic_args);
         {
             // FIXME: Workaround so that both the types name in this module and its global
@@ -403,6 +410,11 @@ impl<'a> Typecheck<'a> {
         self.environment.stack.exit_scope();
         self.environment.stack_types.exit_scope();
         self.original_symbols.exit_scope();
+    }
+
+    fn generalize_binding(&mut self, level: u32, binding: &mut ValueBinding<Symbol>) {
+        self.generalize_type(level, &mut binding.resolved_type);
+        self.generalize_variables(level, &mut binding.args, &mut binding.expr);
     }
 
     /// Generalizing updates all variables which are above `level` into "generic variables". A
@@ -437,7 +449,15 @@ impl<'a> Typecheck<'a> {
             type Ident = Symbol;
 
             fn visit_typ(&mut self, typ: &mut ArcType) {
-                if let Some(finished) = self.tc.finish_type(self.level, typ) {
+                let mut unbound_variables = FnvMap::default();
+                let mut variable_generator =
+                    TypeVariableGenerator::new(self.level, &self.tc.subs, typ);
+                if let Some(finished) = self.tc.generalize_type_(
+                    self.level,
+                    &mut unbound_variables,
+                    &mut variable_generator,
+                    typ,
+                ) {
                     *typ = finished;
                 }
             }
@@ -471,8 +491,8 @@ impl<'a> Typecheck<'a> {
                 EmptyCase |
                 ErrorAst(_) |
                 Rename(_) |
-                KindError(_) |
                 Message(_) => (),
+                KindError(_, ref mut typ) |
                 NotAFunction(ref mut typ) |
                 UndefinedField(ref mut typ, _) |
                 PatternError(ref mut typ, _) |
@@ -480,31 +500,31 @@ impl<'a> Typecheck<'a> {
                     self.generalize_type(0, typ);
                 }
                 Unification(ref mut expected, ref mut actual, ref mut errors) => {
-                    self.generalize_type(0, expected);
-                    self.generalize_type(0, actual);
+                    self.generalize_type_without_forall(0, expected);
+                    self.generalize_type_without_forall(0, actual);
                     for err in errors {
                         match *err {
                             unify::Error::TypeMismatch(ref mut l, ref mut r) => {
-                                self.generalize_type(0, l);
-                                self.generalize_type(0, r);
+                                self.generalize_type_without_forall(0, l);
+                                self.generalize_type_without_forall(0, r);
                             }
                             unify::Error::Substitution(ref mut err) => match *err {
                                 substitution::Error::Occurs(_, ref mut typ) => {
-                                    self.generalize_type(0, typ);
+                                    self.generalize_type_without_forall(0, typ);
                                 }
                                 substitution::Error::Constraint(
                                     ref mut var,
                                     ref mut constraints,
                                 ) => {
                                     for typ in Arc::make_mut(constraints) {
-                                        self.generalize_type(0, typ);
+                                        self.generalize_type_without_forall(0, typ);
                                     }
-                                    self.generalize_type(0, var);
+                                    self.generalize_type_without_forall(0, var);
                                 }
                             },
                             unify::Error::Other(ref mut err) => {
                                 if let unify_type::TypeError::MissingFields(ref mut typ, _) = *err {
-                                    self.generalize_type(0, typ);
+                                    self.generalize_type_without_forall(0, typ);
                                 }
                             }
                         }
@@ -514,12 +534,6 @@ impl<'a> Typecheck<'a> {
         }
 
         self.type_variables.exit_scope();
-    }
-
-    fn generalize_type(&mut self, level: u32, typ: &mut ArcType) {
-        if let Some(finished) = self.finish_type(level, typ) {
-            *typ = finished;
-        }
     }
 
     /// Typecheck `expr`. If successful the type of the expression will be returned and all
@@ -542,12 +556,13 @@ impl<'a> Typecheck<'a> {
         self.subs.clear();
         self.environment.stack.clear();
 
-        let mut typ = self.typecheck(expr);
+        let mut typ = self.typecheck_opt(expr, expected_type);
         if let Some(expected) = expected_type {
-            let expected = self.create_unifiable_signature(expected.clone());
+            let expected = self.create_unifiable_signature(expected)
+                .unwrap_or_else(|| expected.clone());
             typ = self.merge_signature(expr_check_span(expr), 0, &expected, typ);
         }
-        typ = self.finish_type(0, &typ).unwrap_or(typ);
+        self.generalize_type(0, &mut typ);
         typ = types::walk_move_type(typ, &mut unroll_typ);
         // Only the 'tail' expression need to be generalized at this point as all bindings
         // will have already been generalized
@@ -576,9 +591,22 @@ impl<'a> Typecheck<'a> {
         }
     }
 
+    fn infer_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> ArcType {
+        self.typecheck_opt(expr, None)
+    }
+
+
+    fn typecheck(&mut self, expr: &mut SpannedExpr<Symbol>, expected_type: &ArcType) -> ArcType {
+        self.typecheck_opt(expr, Some(expected_type))
+    }
+
     /// Main typechecking function. Returns the type of the expression if typechecking was
     /// successful
-    fn typecheck(&mut self, mut expr: &mut SpannedExpr<Symbol>) -> ArcType {
+    fn typecheck_opt(
+        &mut self,
+        mut expr: &mut SpannedExpr<Symbol>,
+        expected_type: Option<&ArcType>,
+    ) -> ArcType {
         fn moving<T>(t: T) -> T {
             t
         }
@@ -586,7 +614,8 @@ impl<'a> Typecheck<'a> {
         let mut scope_count = 0;
         let returned_type;
         loop {
-            match self.typecheck_(expr) {
+            let expected_type = expected_type.map(|t| self.skolemize(t));
+            match self.typecheck_(expr, expected_type.as_ref()) {
                 Ok(tailcall) => {
                     match tailcall {
                         TailCall::TailCall => {
@@ -623,6 +652,7 @@ impl<'a> Typecheck<'a> {
     fn typecheck_(
         &mut self,
         expr: &mut SpannedExpr<Symbol>,
+        expected_type: Option<&ArcType<Symbol>>,
     ) -> Result<TailCall, TypeError<Symbol>> {
         match expr.value {
             Expr::Ident(ref mut id) => {
@@ -640,78 +670,55 @@ impl<'a> Typecheck<'a> {
                 Literal::Char(_) => self.type_cache.char(),
             })),
             Expr::App(ref mut func, ref mut args) => {
-                let mut func_type = self.typecheck(&mut **func);
-                for arg in args.iter_mut() {
-                    let f = self.type_cache
-                        .function(once(self.subs.new_var()), self.subs.new_var());
-                    func_type = self.unify(&f, func_type)?;
-                    func_type = match func_type.as_function() {
-                        Some((arg_ty, ret_ty)) => {
-                            let actual = self.typecheck(arg);
-                            self.unify_span(expr_check_span(arg), arg_ty, actual);
-                            ret_ty.clone()
-                        }
-                        None => return Err(TypeError::NotAFunction(func_type.clone())),
-                    };
-                }
-                Ok(TailCall::Type(func_type))
+                let func_type = self.infer_expr(func);
+                self.typecheck_application(func_type, args)
             }
             Expr::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
-                let pred_type = self.typecheck(&mut **pred);
                 let bool_type = self.bool();
+                let pred_type = self.typecheck(&mut **pred, &bool_type);
                 self.unify_span(expr_check_span(pred), &bool_type, pred_type);
 
                 // Both branches must unify to the same type
-                let true_type = self.typecheck(&mut **if_true);
-                let false_type = self.typecheck(&mut **if_false);
+                let true_type = self.typecheck_opt(&mut **if_true, expected_type);
+                let false_type = self.typecheck_opt(&mut **if_false, expected_type);
+
+                let true_type = self.instantiate_generics(&true_type);
+                let false_type = self.instantiate_generics(&false_type);
+
                 self.unify(&true_type, false_type).map(TailCall::Type)
             }
             Expr::Infix(ref mut lhs, ref mut op, ref mut rhs) => {
-                let lhs_type = self.typecheck(&mut **lhs);
-                let rhs_type = self.typecheck(&mut **rhs);
                 let op_name = String::from(self.symbols.string(&op.value.name));
-                let return_type = if op_name.starts_with('#') {
+                let func_type = if op_name.starts_with('#') {
                     // Handle primitives
-                    let arg_type = self.unify(&lhs_type, rhs_type)?;
                     let op_type = op_name.trim_matches(|c: char| !c.is_alphabetic());
                     let builtin_type = op_type.parse().map_err(|_| {
                         TypeError::Message("Invalid builtin type for operator".to_string())
                     })?;
                     let prim_type = self.type_cache.builtin_type(builtin_type);
-                    let typ = self.unify(&prim_type, arg_type)?;
                     let return_type = match &op_name[1 + op_type.len()..] {
-                        "+" | "-" | "*" | "/" => typ,
+                        "+" | "-" | "*" | "/" => prim_type.clone(),
                         "==" | "<" => self.bool(),
                         _ => return Err(TypeError::UndefinedVariable(op.value.name.clone())),
                     };
-                    op.value.typ = self.type_cache.function(
+                    self.type_cache.function(
                         vec![prim_type.clone(), prim_type.clone()],
                         return_type.clone(),
-                    );
-                    return_type
+                    )
                 } else {
                     match &*op_name {
-                        "&&" | "||" => {
-                            self.unify(&lhs_type, rhs_type.clone())?;
-                            op.value.typ = self.type_cache
-                                .function(vec![self.bool(), self.bool()], self.bool());
-                            self.unify(&self.bool(), lhs_type)?
-                        }
-                        _ => {
-                            op.value.typ = self.find(&op.value.name)?;
-                            let func_type = self.type_cache
-                                .function(vec![lhs_type, rhs_type], self.subs.new_var());
-                            let ret = self.unify(&op.value.typ, func_type)?
-                                .as_function()
-                                .and_then(|(_, ret)| ret.as_function())
-                                .map(|(_, ret)| ret.clone())
-                                .expect("ICE: unify binop");
-
-                            ret
-                        }
+                        "&&" | "||" => self.type_cache
+                            .function(vec![self.bool(), self.bool()], self.bool()),
+                        _ => self.find(&op.value.name)?,
                     }
                 };
-                Ok(TailCall::Type(return_type))
+
+                op.value.typ = func_type.clone();
+
+                self.typecheck_application(
+                    func_type,
+                    Some(&mut **lhs).into_iter().chain(Some(&mut **rhs)),
+                )
             }
             Expr::Tuple {
                 ref mut typ,
@@ -719,13 +726,13 @@ impl<'a> Typecheck<'a> {
             } => {
                 *typ = match exprs.len() {
                     0 => Type::unit(),
-                    1 => self.typecheck(&mut exprs[0]),
+                    1 => self.typecheck_opt(&mut exprs[0], expected_type),
                     _ => {
                         let fields = exprs
                             .iter_mut()
                             .enumerate()
                             .map(|(i, expr)| {
-                                let typ = self.typecheck(expr);
+                                let typ = self.infer_expr(expr);
                                 Field {
                                     name: self.symbols.symbol(format!("_{}", i)),
                                     typ: typ,
@@ -738,13 +745,14 @@ impl<'a> Typecheck<'a> {
                 Ok(TailCall::Type(typ.clone()))
             }
             Expr::Match(ref mut expr, ref mut alts) => {
-                let typ = self.typecheck(&mut **expr);
-                let mut expected_alt_type = None;
+                let typ = self.infer_expr(&mut **expr);
+                let mut expected_alt_type = expected_type.cloned();
 
                 for alt in alts.iter_mut() {
                     self.enter_scope();
                     self.typecheck_pattern(&mut alt.pattern, typ.clone());
-                    let mut alt_type = self.typecheck(&mut alt.expr);
+                    let mut alt_type = self.typecheck_opt(&mut alt.expr, expected_type);
+                    alt_type = self.instantiate_generics(&alt_type);
                     self.exit_scope();
                     // All alternatives must unify to the same type
                     if let Some(ref expected) = expected_alt_type {
@@ -761,7 +769,7 @@ impl<'a> Typecheck<'a> {
                 Ok(TailCall::TailCall)
             }
             Expr::Projection(ref mut expr, ref field_id, ref mut ast_field_typ) => {
-                let mut expr_typ = self.typecheck(&mut **expr);
+                let mut expr_typ = self.infer_expr(&mut **expr);
                 debug!(
                     "Projection {} . {:?}",
                     &expr_typ,
@@ -776,10 +784,11 @@ impl<'a> Typecheck<'a> {
                         self.find_record(&[field_id.clone()], RecordSelector::Subset)
                             .map(|t| t.0.clone())
                     {
-                        let record_type = self.instantiate(&record_type);
+                        let record_type = self.new_skolem_scope(&record_type);
                         expr_typ = self.unify(&record_type, expr_typ)?;
                     }
                 }
+                expr_typ = self.instantiate_generics(&expr_typ);
                 let record = self.remove_aliases(expr_typ.clone());
                 match *record {
                     Type::Variable(_) | Type::Record(_) => {
@@ -788,7 +797,7 @@ impl<'a> Typecheck<'a> {
                             .find(|field| field.name.name_eq(field_id))
                             .map(|field| field.typ.clone());
                         *ast_field_typ = match field_type {
-                            Some(typ) => self.instantiate(&typ),
+                            Some(typ) => self.new_skolem_scope(&typ),
                             None => {
                                 // FIXME As the polymorphic `record_type` do not have the type
                                 // fields which `typ` this unification is only done after we
@@ -810,7 +819,7 @@ impl<'a> Typecheck<'a> {
             Expr::Array(ref mut array) => {
                 let mut expected_type = self.subs.new_var();
                 for expr in &mut array.exprs {
-                    let typ = self.typecheck(expr);
+                    let typ = self.typecheck(expr, &expected_type);
                     expected_type = self.unify_span(expr.span, &expected_type, typ);
                 }
                 array.typ = self.type_cache.array(expected_type);
@@ -819,7 +828,9 @@ impl<'a> Typecheck<'a> {
             Expr::Lambda(ref mut lambda) => {
                 let loc = format!("lambda:{}", expr.span.start);
                 lambda.id.name = self.symbols.symbol(loc);
-                let function_type = self.subs.new_var();
+                let function_type = expected_type
+                    .cloned()
+                    .unwrap_or_else(|| self.subs.new_var());
                 let typ = self.typecheck_lambda(function_type, &mut lambda.args, &mut lambda.body);
                 lambda.id.typ = typ.clone();
                 Ok(TailCall::Type(typ))
@@ -834,12 +845,19 @@ impl<'a> Typecheck<'a> {
                 exprs: ref mut fields,
                 ref mut base,
             } => {
+                let expected_type = expected_type.map(|expected_type| {
+                    let typ = resolve::remove_aliases_cow(&self.environment, expected_type);
+                    self.new_skolem_scope(&typ)
+                });
+                let expected_type = expected_type.as_ref();
+
                 let mut new_types: Vec<Field<_, _>> = Vec::with_capacity(types.len());
 
                 let mut duplicated_fields = FnvSet::default();
                 for field in types {
                     if let Some(ref mut typ) = field.value {
-                        *typ = self.create_unifiable_signature(typ.clone());
+                        *typ = self.create_unifiable_signature(typ)
+                            .unwrap_or_else(|| typ.clone());
                     }
                     let alias = self.find_type_info(&field.name.value)?.clone();
                     if self.error_on_duplicated_field(&mut duplicated_fields, field.name.clone()) {
@@ -849,8 +867,24 @@ impl<'a> Typecheck<'a> {
 
                 let mut new_fields: Vec<Field<_, _>> = Vec::with_capacity(fields.len());
                 for field in fields {
+                    let level = self.subs.var_id();
+
                     let typ = match field.value {
-                        Some(ref mut expr) => self.typecheck(expr),
+                        Some(ref mut expr) => {
+                            let name = &field.name.value;
+                            let expected_type = expected_type
+                                .and_then(|expected_type| {
+                                    expected_type
+                                        .row_iter()
+                                        .find(|expected_field| expected_field.name.name_eq(&name))
+                                })
+                                .map(|field| &field.typ);
+
+                            let mut typ = self.typecheck_opt(expr, expected_type);
+
+                            self.generalize_type(level, &mut typ);
+                            new_skolem_scope(&self.subs, &FnvMap::default(), &typ)
+                        }
                         None => self.find(&field.name.value)?,
                     };
                     if self.error_on_duplicated_field(&mut duplicated_fields, field.name.clone()) {
@@ -859,7 +893,7 @@ impl<'a> Typecheck<'a> {
                 }
 
                 if let Some(ref mut base) = *base {
-                    let base_type = self.typecheck(base);
+                    let base_type = self.infer_expr(base);
                     let base_type = self.remove_aliases(base_type);
 
                     let record_type = Type::poly_record(vec![], vec![], self.subs.new_var());
@@ -898,14 +932,12 @@ impl<'a> Typecheck<'a> {
                     }
                 };
 
-                let id_type = self.instantiate(&id_type);
-                let record_type = instantiate_generic_variables(
-                    &mut self.named_variables,
-                    &self.subs,
-                    &FnvMap::default(),
-                    &record_type,
-                );
-                self.unify(&self.type_cache.record(new_types, new_fields), record_type)?;
+                let id_type = self.new_skolem_scope(&id_type);
+                let record_type = new_skolem_scope(&self.subs, &FnvMap::default(), &record_type);
+
+                let level = self.subs.var_id();
+                let actual_record = self.type_cache.record(new_types, new_fields);
+                self.merge_signature(expr.span, level, &record_type, actual_record);
 
                 *typ = id_type.clone();
                 Ok(TailCall::Type(id_type.clone()))
@@ -913,34 +945,69 @@ impl<'a> Typecheck<'a> {
             Expr::Block(ref mut exprs) => {
                 let (last, exprs) = exprs.split_last_mut().expect("Expr in block");
                 for expr in exprs {
-                    self.typecheck(expr);
+                    self.infer_expr(expr);
                 }
-                Ok(TailCall::Type(self.typecheck(last)))
+                Ok(TailCall::Type(self.typecheck_opt(last, expected_type)))
             }
             Expr::Error => Err(TypeError::ErrorAst("expression")),
         }
     }
 
+    fn typecheck_application<'e, I>(
+        &mut self,
+        mut func_type: ArcType,
+        args: I,
+    ) -> Result<TailCall, TypeError<Symbol>>
+    where
+        I: IntoIterator<Item = &'e mut SpannedExpr<Symbol>>,
+    {
+        for arg in args {
+            let f = self.type_cache
+                .function(once(self.subs.new_var()), self.subs.new_var());
+            func_type = self.instantiate_generics(&func_type);
+            func_type = self.unify(&f, func_type)?;
+
+            func_type = match func_type.as_function() {
+                Some((arg_ty, ret_ty)) => {
+                    let actual = self.typecheck(arg, arg_ty);
+                    let actual = self.instantiate_generics(&actual);
+
+                    let level = self.subs.var_id();
+                    self.merge_signature(expr_check_span(arg), level, arg_ty, actual);
+
+                    ret_ty.clone()
+                }
+                None => return Err(TypeError::NotAFunction(func_type.clone())),
+            };
+        }
+        Ok(TailCall::Type(func_type))
+    }
+
     fn typecheck_lambda(
         &mut self,
-        function_type: ArcType,
+        mut function_type: ArcType,
         args: &mut [SpannedIdent<Symbol>],
         body: &mut SpannedExpr<Symbol>,
     ) -> ArcType {
         self.enter_scope();
+        function_type = self.skolemize(&function_type);
         let mut arg_types = Vec::new();
-        {
+        let body_type = {
             let mut iter1 = function_arg_iter(self, function_type);
-            let mut iter2 = args.iter_mut();
-            while let (Some(arg_type), Some(arg)) = (iter1.next(), iter2.next()) {
+            for arg in args {
+                let arg_type = match iter1.next() {
+                    Some(arg_type) => arg_type,
+                    None => break,
+                };
                 let arg = &mut arg.value;
 
                 arg.typ = arg_type;
                 arg_types.push(arg.typ.clone());
                 iter1.tc.stack_var(arg.name.clone(), arg.typ.clone());
             }
-        }
-        let body_type = self.typecheck(body);
+            iter1.typ
+        };
+        let body_type = self.typecheck(body, &body_type);
         self.exit_scope();
         self.type_cache.function(arg_types, body_type)
     }
@@ -948,11 +1015,13 @@ impl<'a> Typecheck<'a> {
     fn typecheck_pattern(
         &mut self,
         pattern: &mut SpannedPattern<Symbol>,
-        match_type: ArcType,
+        mut match_type: ArcType,
     ) -> ArcType {
         let span = pattern.span;
         match pattern.value {
             Pattern::Constructor(ref mut id, ref mut args) => {
+                match_type = self.subs.real(&match_type).clone();
+                match_type = self.instantiate_generics(&match_type);
                 if let Some(new) = self.original_symbols.get(&id.name) {
                     id.name = new.clone();
                 }
@@ -963,6 +1032,7 @@ impl<'a> Typecheck<'a> {
                     Ok(return_type) => return_type,
                     Err(err) => self.error(span, err),
                 };
+                let return_type = self.instantiate_generics(&return_type);
                 self.unify_span(span, &match_type, return_type)
             }
             Pattern::Record {
@@ -970,6 +1040,7 @@ impl<'a> Typecheck<'a> {
                 types: ref mut associated_types,
                 ref mut fields,
             } => {
+                match_type = self.instantiate_generics(&match_type);
                 *curr_typ = match_type.clone();
 
                 let mut pattern_fields = Vec::with_capacity(associated_types.len() + fields.len());
@@ -1003,8 +1074,8 @@ impl<'a> Typecheck<'a> {
                         // need to take the types from the matched type. This leaves the `types`
                         // list incomplete however since it may miss some fields defined in the
                         // pattern. These are catched later in this function.
-                        let types = self.remove_alias(match_type.clone())
-                            .type_field_iter()
+                        let x = self.remove_alias(match_type.clone());
+                        let types = x.type_field_iter()
                             .filter(|field| {
                                 associated_types
                                     .iter()
@@ -1023,13 +1094,8 @@ impl<'a> Typecheck<'a> {
                         (t.clone(), t)
                     }
                 };
-                typ = self.instantiate(&typ);
-                actual_type = instantiate_generic_variables(
-                    &mut self.named_variables,
-                    &self.subs,
-                    &FnvMap::default(),
-                    &actual_type,
-                );
+                typ = self.top_skolem_scope(&typ);
+                actual_type = self.top_skolem_scope(&actual_type);
                 self.unify_span(span, &match_type, typ);
                 let match_type = actual_type;
 
@@ -1107,13 +1173,16 @@ impl<'a> Typecheck<'a> {
     ) -> TcResult<ArcType> {
         let len = args.len();
         match args.split_first_mut() {
-            Some((head, tail)) => match typ.as_function() {
-                Some((arg, ret)) => {
-                    self.typecheck_pattern(head, arg.clone());
-                    self.typecheck_pattern_rec(tail, ret.clone())
+            Some((head, tail)) => {
+                let typ = self.instantiate_generics(&typ);
+                match typ.as_function() {
+                    Some((arg, ret)) => {
+                        self.typecheck_pattern(head, arg.clone());
+                        self.typecheck_pattern_rec(tail, ret.clone())
+                    }
+                    None => Err(TypeError::PatternError(typ.clone(), len)),
                 }
-                None => Err(TypeError::PatternError(typ.clone(), len)),
-            },
+            }
             None => Ok(typ),
         }
     }
@@ -1133,6 +1202,8 @@ impl<'a> Typecheck<'a> {
         // When the definitions are allowed to be mutually recursive
         if is_recursive {
             for bind in bindings.iter_mut() {
+                self.type_variables.enter_scope();
+
                 match bind.name.value {
                     Pattern::Constructor(ref id, _) | Pattern::Ident(ref id)
                         if id.name.declared_name().starts_with(char::is_uppercase) =>
@@ -1147,10 +1218,13 @@ impl<'a> Typecheck<'a> {
                     _ => (),
                 }
                 let typ = {
-                    bind.resolved_type =
-                        self.create_unifiable_signature(bind.resolved_type.clone());
+                    let typ = self.create_unifiable_signature(&bind.resolved_type);
+                    if let Some(typ) = typ {
+                        bind.resolved_type = typ;
+                    }
+
                     self.kindcheck(&mut bind.resolved_type)?;
-                    self.instantiate_signature(&bind.resolved_type)
+                    self.new_skolem_scope_signature(&bind.resolved_type)
                 };
                 self.typecheck_pattern(&mut bind.name, typ);
                 if let Expr::Lambda(ref mut lambda) = bind.expr.value {
@@ -1158,8 +1232,11 @@ impl<'a> Typecheck<'a> {
                         lambda.id.name = name.name.clone();
                     }
                 }
+
+                self.type_variables.exit_scope();
             }
         }
+
         let mut types = Vec::new();
         for bind in bindings.iter_mut() {
             self.type_variables.enter_scope();
@@ -1167,13 +1244,19 @@ impl<'a> Typecheck<'a> {
             // Functions which are declared as `let f x = ...` are allowed to be self
             // recursive
             let mut typ = if bind.args.is_empty() {
-                self.instantiate_signature(&bind.resolved_type);
-                bind.resolved_type = self.create_unifiable_signature(bind.resolved_type.clone());
+                let typ = self.create_unifiable_signature(&bind.resolved_type);
+                if let Some(typ) = typ {
+                    bind.resolved_type = typ;
+                }
+
                 self.kindcheck(&mut bind.resolved_type)?;
-                self.typecheck(&mut bind.expr)
+
+                bind.resolved_type = self.new_skolem_scope_signature(&bind.resolved_type);
+                self.typecheck(&mut bind.expr, &bind.resolved_type)
             } else {
-                let function_typ = self.instantiate(&bind.resolved_type);
-                self.typecheck_lambda(function_typ, &mut bind.args, &mut bind.expr)
+                bind.resolved_type = self.new_skolem_scope_signature(&bind.resolved_type);
+                let function_type = self.instantiate_generics(&bind.resolved_type);
+                self.typecheck_lambda(function_type, &mut bind.args, &mut bind.expr)
             };
 
             debug!("let {:?} : {}", bind.name, typ);
@@ -1183,29 +1266,25 @@ impl<'a> Typecheck<'a> {
 
             if !is_recursive {
                 // Merge the type declaration and the actual type
-                self.generalize_variables(level, &mut bind.args, &mut bind.expr);
+                debug!("Generalize at {} = {}", level, bind.resolved_type);
+                self.generalize_binding(level, bind);
+                typ = self.new_skolem_scope(&bind.resolved_type);
                 self.typecheck_pattern(&mut bind.name, typ);
+                debug!("Generalized to {}", bind.resolved_type);
+                self.finish_pattern(level, &mut bind.name, &bind.resolved_type);
             } else {
                 types.push(typ);
             }
 
             self.type_variables.exit_scope();
         }
-        if is_recursive {
-            for (found_typ, bind) in types.into_iter().zip(bindings.iter_mut()) {
-                // Merge the variable we bound to the name and the type inferred
-                // in the expression
-                self.unify_span(bind.name.span, &bind.resolved_type, found_typ);
-            }
-        }
         // Once all variables inside the let has been unified we can quantify them
-        debug!("Generalize {}", level);
+        debug!("Generalize at {}", level);
         for bind in bindings.iter_mut() {
-            self.generalize_variables(level, &mut bind.args, &mut bind.expr);
-            if let Some(typ) = self.finish_type(level, &bind.resolved_type) {
-                bind.resolved_type = typ;
-            }
+            debug!("Generalize {}", bind.resolved_type);
+            self.generalize_binding(level, bind);
             self.finish_pattern(level, &mut bind.name, &bind.resolved_type);
+            debug!("Generalized to {}", bind.resolved_type);
         }
         debug!("Typecheck `in`");
         self.type_variables.exit_scope();
@@ -1230,43 +1309,29 @@ impl<'a> Typecheck<'a> {
             // Rename the aliase's name to its global name
             bind.alias.value.name = new;
 
-            fn check_undefined_variables(
-                self_: &mut Typecheck,
-                args: &[Generic<Symbol>],
-                typ: &AstType<Symbol>,
-            ) {
-                use base::pos::HasSpan;
-                match **typ {
-                    Type::Generic(ref id) => if args.iter().all(|arg| arg.id != id.id) {
-                        self_.error(
-                            typ.span(),
-                            TypeError::UndefinedVariable(id.id.clone()).into(),
-                        );
-                    },
-                    Type::Record(_) => {
-                        // Inside records variables are bound implicitly to the closest field
-                        // so variables are allowed to be undefined/implicit
-                    }
-                    _ => {
-                        types::walk_move_type_opt(
-                            typ,
-                            &mut types::ControlVisitation(|typ: &AstType<_>| {
-                                check_undefined_variables(self_, args, typ);
-                                None
-                            }),
-                        );
-                    }
-                }
-            }
-            check_undefined_variables(self, &bind.alias.value.args, bind.alias.value.unresolved_type());
+            self.check_undefined_variables(
+                bind.alias.value.params(),
+                bind.alias.value.unresolved_type(),
+            );
 
             let alias = types::translate_alias(&self.type_cache, &bind.alias.value);
             resolved_aliases.push(alias);
         }
 
         for alias in &mut resolved_aliases {
-            *alias.unresolved_type_mut() =
-                self.create_unifiable_signature(alias.unresolved_type().clone());
+            // alias.unresolved_type() is a dummy in this context
+            self.named_variables.extend(
+                alias
+                    .params()
+                    .iter()
+                    .map(|param| (param.id.clone(), alias.unresolved_type().clone())),
+            );
+
+            let replacement =
+                self.create_unifiable_signature2(alias.unresolved_type().remove_forall());
+            if let Some(typ) = replacement {
+                *alias.unresolved_type_mut() = Type::forall(alias.params().to_owned(), typ);
+            }
         }
 
         {
@@ -1281,7 +1346,7 @@ impl<'a> Typecheck<'a> {
                 // and bind the same variables to the arguments of the type binding
                 // ('a' and 'b' in the example)
                 let mut id_kind = check.type_kind();
-                for generic in alias.args.iter_mut().rev() {
+                for generic in alias.unresolved_type_mut().params_mut().iter_mut().rev() {
                     check.instantiate_kinds(&mut generic.kind);
                     id_kind = Kind::function(generic.kind.clone(), id_kind);
                 }
@@ -1290,14 +1355,29 @@ impl<'a> Typecheck<'a> {
 
             // Kindcheck all the types in the environment
             for alias in resolved_aliases.iter_mut() {
-                check.set_variables(&alias.args);
-                check.kindcheck_type(alias.unresolved_type_mut())?;
+                check.set_variables(alias.params());
+                *alias.unresolved_type_mut() = match **alias.unresolved_type() {
+                    Type::Forall(ref args, ref typ, _) => {
+                        let mut typ = typ.clone();
+                        check
+                            .kindcheck_type(&mut typ)
+                            .map_err(|err| TypeError::from_kind_error(err, typ.clone()))?;
+                        Type::forall(args.clone(), typ.clone())
+                    }
+                    _ => {
+                        let mut typ = alias.unresolved_type().clone();
+                        check
+                            .kindcheck_type(&mut typ)
+                            .map_err(|err| TypeError::from_kind_error(err, typ.clone()))?;
+                        typ
+                    }
+                };
             }
 
             // All kinds are now inferred so replace the kinds store in the AST
             for alias in resolved_aliases.iter_mut() {
                 *alias.unresolved_type_mut() = check.finalize_type(alias.unresolved_type().clone());
-                for arg in &mut alias.args {
+                for arg in alias.unresolved_type_mut().params_mut() {
                     *arg = check.finalize_generic(arg);
                 }
             }
@@ -1327,16 +1407,52 @@ impl<'a> Typecheck<'a> {
 
     fn kindcheck(&self, typ: &mut ArcType) -> TcResult<()> {
         let mut check = KindCheck::new(&self.environment, &self.symbols, self.kind_cache.clone());
-        check.kindcheck_type(typ)?;
+        check
+            .kindcheck_type(typ)
+            .map_err(|err| TypeError::from_kind_error(err, typ.clone()))?;
         Ok(())
     }
 
-    fn finish_pattern(&mut self, level: u32, pattern: &mut SpannedPattern<Symbol>, typ: &ArcType) {
+
+    fn check_undefined_variables(&mut self, args: &[Generic<Symbol>], typ: &AstType<Symbol>) {
+        use base::pos::HasSpan;
+        match **typ {
+            Type::Generic(ref id) => if args.iter().all(|arg| arg.id != id.id) {
+                self.error(
+                    typ.span(),
+                    TypeError::UndefinedVariable(id.id.clone()).into(),
+                );
+            },
+            Type::Record(_) => {
+                // Inside records variables are bound implicitly to the closest field
+                // so variables are allowed to be undefined/implicit
+            }
+            _ => {
+                types::walk_move_type_opt(
+                    typ,
+                    &mut types::ControlVisitation(|typ: &AstType<_>| {
+                        self.check_undefined_variables(args, typ);
+                        None
+                    }),
+                );
+            }
+        }
+    }
+
+    fn finish_pattern(
+        &mut self,
+        level: u32,
+        pattern: &mut SpannedPattern<Symbol>,
+        final_type: &ArcType,
+    ) {
         match pattern.value {
             Pattern::Ident(ref mut id) => {
-                if let Some(typ) = self.finish_type(level, &id.typ) {
-                    id.typ = typ;
-                }
+                id.typ = final_type.clone();
+                self.environment
+                    .stack
+                    .get_mut(&id.name)
+                    .expect("ICE: Variable no inserted")
+                    .typ = id.typ.clone();
                 debug!("{}: {}", self.symbols.string(&id.name), id.typ);
                 self.intersect_type(level, &id.name, &id.typ);
             }
@@ -1345,10 +1461,11 @@ impl<'a> Typecheck<'a> {
                 ref mut fields,
                 ..
             } => {
-                debug!("{{ .. }}: {}", typ);
-                if let Some(finished) = self.finish_type(level, typ) {
-                    *typ = finished;
-                }
+                *typ = final_type.clone();
+                debug!("{{ .. }}: {}", final_type);
+                self.generalize_type(level, typ);
+                let typ = self.top_skolem_scope(typ);
+                let typ = self.instantiate_generics(&typ);
                 let record_type = self.remove_alias(typ.clone());
                 with_pattern_types(
                     fields,
@@ -1358,22 +1475,35 @@ impl<'a> Typecheck<'a> {
                             self.finish_pattern(level, pat, field_type);
                         }
                         None => {
+                            self.environment
+                                .stack
+                                .get_mut(field_name)
+                                .expect("ICE: Variable no inserted")
+                                .typ = field_type.clone();
+                            debug!("{}: {}", field_name, field_type);
+
                             self.intersect_type(level, field_name, field_type);
                         }
                     },
                 );
             }
             Pattern::Tuple {
-                ref typ,
+                ref mut typ,
                 ref mut elems,
-            } => for (elem, field) in elems.iter_mut().zip(typ.row_iter()) {
-                self.finish_pattern(level, elem, &field.typ);
-            },
+            } => {
+                *typ = final_type.clone();
+
+                let typ = self.top_skolem_scope(typ);
+                let typ = self.instantiate_generics(&typ);
+                for (elem, field) in elems.iter_mut().zip(typ.row_iter()) {
+                    self.finish_pattern(level, elem, &field.typ);
+                }
+            }
             Pattern::Constructor(ref id, ref mut args) => {
-                debug!("{}: {}", self.symbols.string(&id.name), typ);
+                debug!("{}: {}", self.symbols.string(&id.name), final_type);
                 let len = args.len();
                 let iter = args.iter_mut().zip(
-                    function_arg_iter(self, typ.clone())
+                    function_arg_iter(self, final_type.clone())
                         .take(len)
                         .collect::<Vec<_>>(),
                 );
@@ -1386,190 +1516,318 @@ impl<'a> Typecheck<'a> {
     }
 
     fn intersect_type(&mut self, level: u32, symbol: &Symbol, symbol_type: &ArcType) {
-        let typ;
-        let mut constraints = FnvMap::default();
-        {
+        let intersection_update = {
             let existing_types = self.environment
                 .stack
                 .get_all(symbol)
                 .expect("Symbol is not in scope");
+            // Only allow overloading for bindings whose types which do not contain type variables
+            // It might be possible to lift this restriction but currently it causes problems
+            // which I am not sure how to solve
+            debug!("Looking for intersection `{}`", symbol_type);
             if existing_types.len() >= 2 {
                 let existing_binding = &existing_types[existing_types.len() - 2];
                 debug!(
                     "Intersect `{}`\n{} ∩ {}",
                     symbol,
                     self.subs.real(&existing_binding.typ),
-                    self.subs.real(symbol_type)
+                    self.subs.real(&symbol_type)
                 );
-                let state = unify_type::State::new(&self.environment, &self.subs);
-                let (intersection_constraints, result) = unify::intersection(
+                let existing_type = new_skolem_scope(
                     &self.subs,
-                    self.symbols.symbols(),
-                    state,
+                    &existing_binding.constraints,
                     &existing_binding.typ,
-                    symbol_type,
                 );
-                constraints = intersection_constraints
-                    .into_iter()
-                    .map(|((l, r), name)| {
-                        let constraints = match *l {
-                            Type::Generic(ref gen) => existing_binding.constraints.get(&gen.id),
-                            _ => None,
-                        };
-                        (
-                            name,
-                            Arc::new(
-                                constraints
-                                    .iter()
-                                    .flat_map(|x| x.iter())
-                                    .cloned()
-                                    .chain(Some(r))
-                                    .chain(if constraints.is_none() { Some(l) } else { None })
-                                    .collect::<Vec<_>>(),
-                            ),
-                        )
-                    })
-                    .collect();
-                debug!(
-                    "Intersect result {}\n\t{}",
-                    result,
-                    constraints
-                        .iter()
-                        .map(|t| format!("{}:{}", t.0, t.1.iter().format("\n\t\t")))
-                        .format("\n")
-                );
-                typ = result
+
+                let result = {
+                    let mut state = unify_type::State::new(&self.environment, &self.subs);
+                    state.in_alias = true;
+                    unify::intersection(
+                        &self.subs,
+                        self.symbols.symbols(),
+                        state,
+                        &existing_type,
+                        &new_skolem_scope(&self.subs, &FnvMap::default(), &symbol_type),
+                    )
+                };
+
+                // Avoid cloning existing_binding
+                Some((
+                    result.0,
+                    result.1,
+                    existing_type,
+                    existing_binding.clone(),
+                ))
             } else {
-                typ = symbol_type.clone()
+                None
             }
+        };
+
+        if let Some((intersection_constraints, mut typ, existing_type, existing_binding)) =
+            intersection_update
+        {
+            let constraints: FnvMap<_, _> = intersection_constraints
+                .into_iter()
+                .map(|((l, mut r), name)| {
+                    let constraints = match *l {
+                        Type::Generic(ref gen) => existing_binding.constraints.get(&gen.id),
+                        Type::Skolem(ref skolem) => existing_binding.constraints.get(&skolem.name),
+                        // Since we call `new_skolem_scope` we may find a variable as the constraint
+                        // but we really need to return the constraints bound by the generic
+                        // instantiating it
+                        Type::Variable(ref constraint_var) => match *existing_type {
+                            Type::Forall(ref params, _, Some(ref vars)) => vars.iter()
+                                .position(|var| match **var {
+                                    Type::Variable(ref var) => var.id == constraint_var.id,
+                                    _ => unreachable!(),
+                                })
+                                .and_then(|i| existing_binding.constraints.get(&params[i].id)),
+                            _ => None,
+                        },
+                        _ => None,
+                    };
+
+                    self.generalize_type(level, &mut r);
+
+                    (
+                        name,
+                        Arc::new(
+                            constraints
+                                .iter()
+                                .flat_map(|x| x.iter())
+                                .cloned()
+                                .chain(Some(r))
+                                .chain(if constraints.is_none() { Some(l) } else { None })
+                                .collect::<Vec<_>>(),
+                        ),
+                    )
+                })
+                .collect();
+
+            typ = Type::forall(
+                constraints
+                    .iter()
+                    .map(|constraint| {
+                        Generic::new(constraint.0.clone(), constraint.1[0].kind().into_owned())
+                    })
+                    .collect(),
+                typ,
+            );
+            debug!(
+                "Intersect result {}\n\t{}",
+                typ,
+                constraints
+                    .iter()
+                    .map(|t| format!("{}:{}", t.0, t.1.iter().format("\n\t\t")))
+                    .format("\n")
+            );
+            let bind = self.environment.stack.get_mut(symbol).unwrap();
+            bind.constraints = constraints;
+            bind.typ = typ;
+            debug!("Updated {} to `{}`", symbol, bind.typ);
         }
-        let typ = self.finish_type(level, &typ).unwrap_or(typ);
-        let bind = self.environment.stack.get_mut(symbol).unwrap();
-        bind.constraints = constraints;
-        bind.typ = typ;
     }
 
-    /// Generate a generic variable name which is not used in the current scope
-    fn next_variable(&mut self, level: u32, s: &mut String) {
-        for c in b'a'..(b'z' + 1) {
-            s.push(c as char);
-            let symbol = self.symbols.symbol(&s[..]);
-            if self.type_variables.get(&symbol).is_none() {
-                self.type_variables.insert(
-                    symbol,
-                    Type::variable(TypeVariable {
-                        id: level,
-                        kind: self.kind_cache.typ(),
-                    }),
-                );
-                return;
-            }
-            s.pop();
+    fn generalize_type(&mut self, level: u32, typ: &mut ArcType) {
+        debug!("Start generalize {}", typ);
+        self.type_variables.enter_scope();
+
+        let mut unbound_variables = FnvMap::default();
+        let mut variable_generator = TypeVariableGenerator::new(level, &self.subs, typ);
+        let mut result_type =
+            self.generalize_type_(level, &mut unbound_variables, &mut variable_generator, typ);
+
+        self.type_variables.exit_scope();
+
+        if result_type.is_none() && !unbound_variables.is_empty() {
+            result_type = Some(typ.clone());
         }
-        s.push('a');
-        self.next_variable(level, s)
+
+        result_type = result_type.map(|typ| {
+            let mut params = unbound_variables
+                .into_iter()
+                .map(|(_, generic)| generic)
+                .collect::<Vec<_>>();
+            params.sort_unstable_by(|l, r| l.id.declared_name().cmp(r.id.declared_name()));
+
+            Type::forall(params, typ)
+        });
+        if let Some(finished) = result_type {
+            debug!("End generalize {}", finished);
+            *typ = finished;
+        }
     }
 
-    /// Finish a type by replacing all unbound type variables above `level` with generics
-    fn finish_type(&mut self, level: u32, typ: &ArcType) -> Option<ArcType> {
-        let mut generic = None;
-        let mut i = 0;
-        self.finish_type_(level, &mut generic, &mut i, typ)
+    fn generalize_type_without_forall(&mut self, level: u32, typ: &mut ArcType) {
+        self.type_variables.enter_scope();
+
+        let mut unbound_variables = FnvMap::default();
+        let mut variable_generator = TypeVariableGenerator::new(level, &self.subs, typ);
+        let result_type =
+            self.generalize_type_(level, &mut unbound_variables, &mut variable_generator, typ);
+
+        self.type_variables.exit_scope();
+
+        if let Some(finished) = result_type {
+            *typ = finished;
+        }
     }
 
-    fn finish_type_(
+    fn generalize_type_(
         &mut self,
         level: u32,
-        generic: &mut Option<String>,
-        i: &mut i32,
+        unbound_variables: &mut FnvMap<Symbol, Generic<Symbol>>,
+        variable_generator: &mut TypeVariableGenerator,
         typ: &ArcType,
     ) -> Option<ArcType> {
-        use base::types::TypeVisitor;
-
-        let mut visitor = types::ControlVisitation(|typ: &ArcType| {
-            let replacement = self.subs
-                .replace_variable(typ)
-                .map(|t| self.finish_type_(level, generic, i, &t).unwrap_or(t));
-            let mut typ = typ;
-            if let Some(ref t) = replacement {
-                debug!("{} ==> {}", typ, t);
-                typ = t;
-            }
-            match **typ {
-                Type::Variable(ref var) if self.subs.get_level(var.id) >= level => {
-                    if self.subs.get_constraints(var.id).is_some() {
-                        let resolved_result = {
-                            let state = unify_type::State::new(&self.environment, &self.subs);
-                            self.subs.resolve_constraints(|| state.clone(), var, typ)
-                        };
-                        let resolved_type = match resolved_result {
-                            Ok(x) => x.unwrap_or_else(|| typ.clone()),
-                            Err(err) => self.error(
-                                Span::new(0.into(), 0.into()),
-                                TypeError::Unification(
-                                    typ.clone(),
-                                    typ.clone(),
-                                    vec![unify::Error::Substitution(err)],
-                                ),
-                            ),
-                        };
-                        Some(resolved_type)
-                    } else {
-                        // Create a prefix if none exists
-                        if generic.is_none() {
-                            let mut g = String::new();
-                            self.next_variable(level, &mut g);
-                            *generic = Some(g);
-                        }
-                        let generic = generic.as_ref().unwrap();
-
-                        let generic = format!("{}{}", generic, i);
-                        *i += 1;
-                        let id = self.symbols.symbol(generic);
-                        let gen: ArcType =
-                            Type::generic(Generic::new(id.clone(), var.kind.clone()));
-                        self.subs.insert(var.id, gen.clone());
-                        Some(gen)
-                    }
-                }
-                Type::ExtendRow {
-                    ref types,
-                    ref fields,
-                    ref rest,
-                } => {
-                    let new_fields = types::walk_move_types(fields, |field| {
-                        // Make a new name base for any unbound variables in the record field
-                        // Gives { id : a0 -> a0, const : b0 -> b1 -> b1 }
-                        // instead of { id : a0 -> a0, const : a1 -> a2 -> a2 }
-                        self.finish_type(level, &field.typ)
-                            .map(|typ| Field::new(field.name.clone(), typ))
-                    });
-                    let new_rest = self.finish_type(level, rest);
-                    merge::merge(fields, new_fields, rest, new_rest, |fields, rest| {
-                        Type::extend_row(types.clone(), fields, rest)
-                    }).or_else(|| replacement.clone())
-                }
-                _ => {
-                    let new_type = types::walk_move_type_opt(typ, &mut |typ: &ArcType| {
-                        self.finish_type_(level, generic, i, typ)
-                    });
-                    new_type
-                        .map(|t| unroll_typ(&t).unwrap_or(t))
-                        .or_else(|| replacement.clone())
-                }
-            }
+        let replacement = self.subs.replace_variable(typ).map(|t| {
+            self.generalize_type_(level, unbound_variables, variable_generator, &t)
+                .unwrap_or(t)
         });
-        visitor.visit(typ)
+        let mut typ = typ;
+        if let Some(ref t) = replacement {
+            typ = t;
+        }
+        match **typ {
+            Type::Variable(ref var) if self.subs.get_level(var.id) >= level => {
+                if self.subs.get_constraints(var.id).is_some() {
+                    let resolved_result = {
+                        let state = unify_type::State::new(&self.environment, &self.subs);
+                        self.subs.resolve_constraints(|| state.clone(), var, typ)
+                    };
+                    let resolved_type = match resolved_result {
+                        Ok(x) => x.unwrap_or_else(|| typ.clone()),
+                        Err(err) => self.error(
+                            Span::new(0.into(), 0.into()),
+                            TypeError::Unification(
+                                typ.clone(),
+                                typ.clone(),
+                                vec![unify::Error::Substitution(err)],
+                            ),
+                        ),
+                    };
+                    Some(resolved_type)
+                } else {
+                    // Create a prefix if none exists
+                    let id = variable_generator.next_variable(self);
+
+                    let gen: ArcType = Type::generic(Generic::new(id.clone(), var.kind.clone()));
+                    debug!("Gen {} to {}", var.id, gen);
+                    self.subs.insert(var.id, gen.clone());
+
+                    unbound_variables.insert(id.clone(), Generic::new(id, var.kind.clone()));
+
+                    Some(gen)
+                }
+            }
+            Type::ExtendRow {
+                ref types,
+                ref fields,
+                ref rest,
+            } => {
+                let new_fields = types::walk_move_types(fields, |field| {
+                    // Make a new name base for any unbound variables in the record field
+                    // Gives { id : a0 -> a0, const : b0 -> b1 -> b1 }
+                    // instead of { id : a0 -> a0, const : a1 -> a2 -> a2 }
+                    self.generalize_type_(level, unbound_variables, variable_generator, &field.typ)
+                        .map(|typ| Field::new(field.name.clone(), typ))
+                });
+                let new_rest =
+                    self.generalize_type_(level, unbound_variables, variable_generator, rest);
+                merge::merge(fields, new_fields, rest, new_rest, |fields, rest| {
+                    Type::extend_row(types.clone(), fields, rest)
+                }).or_else(|| replacement.clone())
+            }
+
+            Type::Forall(ref params, ref typ, Some(ref vars)) => {
+                use substitution::is_variable_unified;
+                let typ = {
+                    let subs = &self.subs;
+                    self.named_variables.clear();
+                    self.named_variables.extend(
+                        params
+                            .iter()
+                            .zip(vars)
+                            .filter(|&(param, var)| is_variable_unified(subs, param, var))
+                            .map(|(param, var)| (param.id.clone(), var.clone())),
+                    );;
+                    typ.instantiate_generics_(&mut self.named_variables)
+                        .unwrap_or(typ.clone())
+                };
+
+                self.type_variables.enter_scope();
+                self.type_variables.extend(
+                    params
+                        .iter()
+                        .zip(vars)
+                        .map(|(param, var)| (param.id.clone(), var.clone())),
+                );
+
+                let new_type =
+                    self.generalize_type_(level, unbound_variables, variable_generator, &typ);
+                self.type_variables.exit_scope();
+
+                Some(Type::forall(
+                    params
+                        .iter()
+                        .zip(vars)
+                        .filter(|&(param, var)| !is_variable_unified(&self.subs, param, var))
+                        .map(|(param, _)| param.clone())
+                        .collect(),
+                    new_type.unwrap_or_else(|| typ.clone()),
+                ))
+            }
+
+            Type::Skolem(ref skolem) if skolem.id >= level => {
+                let generic = Generic {
+                    id: skolem.name.clone(),
+                    kind: skolem.kind.clone(),
+                };
+                Some(Type::generic(generic))
+            }
+
+            _ => {
+                if let Type::Forall(ref params, _, None) = **typ {
+                    self.type_variables
+                        .extend(params.iter().map(|param| (param.id.clone(), typ.clone())));
+                }
+
+                let new_type = types::walk_move_type_opt(
+                    typ,
+                    &mut types::ControlVisitation(|typ: &ArcType| {
+                        self.generalize_type_(level, unbound_variables, variable_generator, typ)
+                    }),
+                );
+                match **typ {
+                    Type::Generic(ref generic)
+                        if self.type_variables.get(&generic.id).is_none() =>
+                    {
+                        unbound_variables.insert(generic.id.clone(), generic.clone());
+                    }
+                    _ => (),
+                }
+                new_type
+                    .map(|t| unroll_typ(&t).unwrap_or(t))
+                    .or_else(|| replacement.clone())
+            }
+        }
     }
 
-    fn instantiate_signature(&mut self, typ: &ArcType) -> ArcType {
-        let typ = self.instantiate(typ);
+    fn new_skolem_scope_signature(&mut self, typ: &ArcType) -> ArcType {
+        let typ = self.new_skolem_scope(typ);
         // Put all new generic variable names into scope
-        for (generic, variable) in &self.named_variables {
-            if self.type_variables.get(generic).is_none() {
-                self.type_variables
-                    .insert(generic.clone(), variable.clone());
-            }
+        if let Type::Forall(ref params, _, Some(ref vars)) = *typ {
+            self.type_variables
+                .extend(params.iter().zip(vars).map(|(param, var)| {
+                    (
+                        param.id.clone(),
+                        Type::skolem(Skolem {
+                            id: var.as_variable().unwrap().id,
+                            name: param.id.clone(),
+                            kind: param.kind.clone(),
+                        }),
+                    )
+                }));
         }
         typ
     }
@@ -1577,50 +1835,136 @@ impl<'a> Typecheck<'a> {
     // Replaces `Type::Id` types with the actual `Type::Alias` type it refers to
     // Replaces variant names with the actual symbol they should refer to
     // Instantiates Type::Hole with a fresh type variable to ensure the hole only ever refers to a
-    // single type variable
-    fn create_unifiable_signature(&mut self, typ: ArcType) -> ArcType {
-        let mut f = |typ: &ArcType| {
-            match **typ {
-                Type::Ident(ref id) => {
-                    // Substitute the Id by its alias if possible
-                    let new_id = self.original_symbols.get(id).unwrap_or(id);
-                    self.environment
-                        .find_type_info(new_id)
-                        .map(|alias| alias.clone().into_type())
-                        .or_else(|| if id == new_id {
-                            None
-                        } else {
-                            Some(Type::ident(new_id.clone()))
-                        })
-                }
-                Type::Variant(ref row) => {
-                    let iter = || {
-                        row.row_iter()
-                            .map(|var| self.original_symbols.get(&var.name))
-                    };
-                    if iter().any(|opt| opt.is_some()) {
-                        // If any of the variants requires a symbol replacement
-                        // we create a new type
-                        Some(
-                            self.type_cache.variant(
-                                iter()
-                                    .zip(row.row_iter())
-                                    .map(|(new, old)| match new {
-                                        Some(new) => Field::new(new.clone(), old.typ.clone()),
-                                        None => old.clone(),
-                                    })
-                                    .collect(),
-                            ),
-                        )
+    // single type variable.
+    //
+    // Also inserts a `forall` for any implicitly declared variables.
+    fn create_unifiable_signature(&mut self, typ: &ArcType) -> Option<ArcType> {
+        self.named_variables.clear();
+        self.create_unifiable_signature2(typ)
+    }
+
+    fn create_unifiable_signature2(&mut self, typ: &ArcType) -> Option<ArcType> {
+        self.type_variables.enter_scope();
+        let result_type = self.create_unifiable_signature_(typ);
+
+        let params = self.type_variables
+            .exit_scope()
+            .map(|(id, var)| {
+                let kind = var.kind().into_owned();
+                Generic::new(id, kind)
+            })
+            .collect::<Vec<_>>();
+
+        if params.is_empty() {
+            result_type
+        } else {
+            Some(ArcType::new(Type::Forall(
+                params,
+                result_type.unwrap_or_else(|| typ.clone()),
+                None,
+            )))
+        }
+    }
+
+    fn create_unifiable_signature_(&mut self, typ: &ArcType) -> Option<ArcType> {
+        match **typ {
+            Type::Ident(ref id) => {
+                // Substitute the Id by its alias if possible
+                let new_id = self.original_symbols.get(id).unwrap_or(id);
+                self.environment
+                    .find_type_info(new_id)
+                    .map(|alias| alias.clone().into_type())
+                    .or_else(|| if id == new_id {
+                        None
                     } else {
+                        Some(Type::ident(new_id.clone()))
+                    })
+            }
+            Type::Variant(ref row) => {
+                let replacement = types::visit_type_opt(
+                    row,
+                    &mut types::ControlVisitation(
+                        |typ: &ArcType| self.create_unifiable_signature_(typ),
+                    ),
+                );
+                let row = replacement.as_ref().unwrap_or(row);
+                let iter = || {
+                    row.row_iter()
+                        .map(|var| self.original_symbols.get(&var.name))
+                };
+                if iter().any(|opt| opt.is_some()) {
+                    // If any of the variants requires a symbol replacement
+                    // we create a new type
+                    Some(
+                        self.type_cache.variant(
+                            iter()
+                                .zip(row.row_iter())
+                                .map(|(new, old)| match new {
+                                    Some(new) => Field::new(new.clone(), old.typ.clone()),
+                                    None => old.clone(),
+                                })
+                                .collect(),
+                        ),
+                    )
+                } else {
+                    replacement
+                        .clone()
+                        .map(|row| ArcType::from(Type::Variant(row)))
+                }
+            }
+            Type::Hole => Some(self.subs.new_var()),
+            Type::ExtendRow {
+                ref types,
+                ref fields,
+                ref rest,
+            } => {
+                let new_fields = types::walk_move_types(fields, |field| {
+                    self.create_unifiable_signature2(&field.typ)
+                        .map(|typ| Field::new(field.name.clone(), typ))
+                });
+                let new_rest = self.create_unifiable_signature_(rest);
+                merge::merge(fields, new_fields, rest, new_rest, |fields, rest| {
+                    Type::extend_row(types.clone(), fields, rest)
+                })
+            }
+            Type::Forall(ref params, ref typ, _) => {
+                for param in params {
+                    self.named_variables.insert(param.id.clone(), typ.clone());
+                }
+                let result = self.create_unifiable_signature_(typ);
+                // Remove any implicit variables inserted inside the forall since
+                // they were actually bound at this stage
+                for param in params {
+                    self.named_variables.remove(&param.id);
+                }
+                result.map(|typ| Type::forall(params.clone(), typ))
+            }
+            Type::Generic(ref generic) if self.named_variables.get(&generic.id).is_none() => {
+                match self.type_variables.get(&generic.id).cloned() {
+                    Some(typ) => match *typ {
+                        Type::Variable(_) => None,
+                        _ => Some(typ),
+                    },
+                    None => {
+                        let kind = typ.kind().into_owned();
+                        let var = self.subs.new_constrained_var_fn(None, |id| {
+                            Type::variable(TypeVariable {
+                                kind: kind.clone(),
+                                id: id,
+                            })
+                        });
+                        self.type_variables.insert(generic.id.clone(), var);
                         None
                     }
                 }
-                Type::Hole => Some(self.subs.new_var()),
-                _ => None,
             }
-        };
-        types::walk_move_type(typ, &mut f)
+            _ => types::walk_move_type_opt(
+                typ,
+                &mut types::ControlVisitation(
+                    |typ: &ArcType| self.create_unifiable_signature_(typ),
+                ),
+            ),
+        }
     }
 
     fn merge_signature(
@@ -1630,13 +1974,15 @@ impl<'a> Typecheck<'a> {
         expected: &ArcType,
         mut actual: ArcType,
     ) -> ArcType {
+        debug!("Merge {} : {}", expected, actual);
+        let expected = self.skolemize(&expected);
         let state = unify_type::State::new(&self.environment, &self.subs);
         match unify_type::merge_signature(
             &self.subs,
             &mut self.type_variables,
             level,
             state,
-            expected,
+            &expected,
             &actual,
         ) {
             Ok(typ) => self.subs.set_type(typ),
@@ -1644,6 +1990,12 @@ impl<'a> Typecheck<'a> {
                 let mut expected = expected.clone();
                 expected = self.subs.set_type(expected);
                 actual = self.subs.set_type(actual);
+                debug!(
+                    "Error '{:?}' between:\n>> {}\n>> {}",
+                    errors,
+                    expected,
+                    actual
+                );
                 let err = TypeError::Unification(expected, actual, apply_subs(&self.subs, errors));
                 self.errors.push(Spanned {
                     span: span,
@@ -1668,7 +2020,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn unify(&self, expected: &ArcType, mut actual: ArcType) -> TcResult<ArcType> {
-        debug!("Unify {} <=> {}", expected, actual);
+        debug!("Unify start {} <=> {}", expected, actual);
         let state = unify_type::State::new(&self.environment, &self.subs);
         match unify::unify(&self.subs, state, expected, &actual) {
             Ok(typ) => Ok(self.subs.set_type(typ)),
@@ -1701,17 +2053,27 @@ impl<'a> Typecheck<'a> {
         resolve::remove_aliases(&self.environment, typ)
     }
 
-    fn instantiate(&mut self, typ: &ArcType) -> ArcType {
-        self.instantiate_constrained(&FnvMap::default(), typ)
+    fn skolemize(&mut self, typ: &ArcType) -> ArcType {
+        self.named_variables.clear();
+        self.named_variables.extend(
+            self.type_variables
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone())),
+        );
+        typ.skolemize(&mut self.named_variables)
     }
 
-    fn instantiate_constrained(
-        &mut self,
-        constraints: &FnvMap<Symbol, Constraints<ArcType>>,
-        typ: &ArcType,
-    ) -> ArcType {
+    fn instantiate_generics(&mut self, typ: &ArcType) -> ArcType {
         self.named_variables.clear();
-        instantiate_generic_variables(&mut self.named_variables, &self.subs, constraints, typ)
+        typ.instantiate_generics(&mut self.named_variables)
+    }
+
+    fn new_skolem_scope(&mut self, typ: &ArcType) -> ArcType {
+        new_skolem_scope(&self.subs, &FnvMap::default(), typ)
+    }
+
+    fn top_skolem_scope(&mut self, typ: &ArcType) -> ArcType {
+        ::unify_type::top_skolem_scope(&self.subs, &FnvMap::default(), typ)
     }
 
     fn error_on_duplicated_field(
@@ -1789,11 +2151,11 @@ pub fn extract_generics(args: &[ArcType]) -> Vec<Generic<Symbol>> {
 fn get_alias_app<'a>(
     env: &'a TypeEnv,
     typ: &'a ArcType,
-) -> Option<(&'a AliasData<Symbol, ArcType>, &'a [ArcType])> {
+) -> Option<(&'a AliasRef<Symbol, ArcType>, Cow<'a, [ArcType]>)> {
     match **typ {
-        Type::Alias(ref alias) => Some((alias, &[][..])),
+        Type::Alias(ref alias) => Some((alias, Cow::Borrowed(&[][..]))),
         Type::App(ref alias, ref args) => match **alias {
-            Type::Alias(ref alias) => Some((alias, args)),
+            Type::Alias(ref alias) => Some((alias, Cow::Borrowed(&args[..]))),
             _ => None,
         },
         _ => typ.alias_ident().and_then(|id| {
@@ -1812,16 +2174,18 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
     type Item = ArcType;
     fn next(&mut self) -> Option<ArcType> {
         loop {
+            if let Type::Forall(_, _, None) = *self.typ {
+                panic!("Found forall without scope in function argument iterator")
+            }
+            self.typ = self.tc.skolemize(&self.typ);
             let (arg, new) = match self.typ.as_function() {
                 Some((arg, ret)) => (Some(arg.clone()), ret.clone()),
                 None => match get_alias_app(&self.tc.environment, &self.typ) {
-                    Some((alias, args)) => {
-                        match resolve::type_of_alias(&self.tc.environment, alias, args) {
-                            Some(typ) => (None, typ.clone()),
-                            None => return None,
-                        }
-                    }
-                    None => return Some(self.tc.subs.new_var()),
+                    Some((alias, args)) => match alias.typ().apply_args(&args) {
+                        Some(typ) => (None, typ.clone()),
+                        None => return None,
+                    },
+                    None => (Some(self.tc.subs.new_var()), self.tc.subs.new_var()),
                 },
             };
             self.typ = new;
@@ -1940,5 +2304,70 @@ fn unroll_record(typ: &Type<Symbol>) -> Option<ArcType> {
         None
     } else {
         Some(Type::extend_row(new_types, new_fields, current.clone()))
+    }
+}
+
+struct TypeVariableGenerator {
+    map: FnvSet<Symbol>,
+    level: u32,
+    name: String,
+    i: u32,
+}
+
+impl TypeVariableGenerator {
+    fn new(level: u32, subs: &Substitution<ArcType>, typ: &ArcType) -> TypeVariableGenerator {
+        fn gather_foralls(map: &mut FnvSet<Symbol>, subs: &Substitution<ArcType>, typ: &ArcType) {
+            let typ = subs.real(typ);
+            if let Type::Forall(ref params, _, _) = **typ {
+                map.extend(params.iter().map(|param| param.id.clone()));
+            }
+            types::walk_move_type_opt(
+                typ,
+                &mut types::ControlVisitation(|typ: &ArcType| {
+                    gather_foralls(map, subs, typ);
+                    None
+                }),
+            );
+        }
+        let mut map = FnvSet::default();
+        gather_foralls(&mut map, subs, typ);
+        TypeVariableGenerator {
+            map,
+            name: "".to_string(),
+            i: 0,
+            level,
+        }
+    }
+    /// Generate a generic variable name which is not used in the current scope
+    fn next_variable(&mut self, tc: &mut Typecheck) -> Symbol {
+        let symbol = if self.name.is_empty() {
+            self.next_variable_(tc)
+        } else {
+            let name = format!("{}{}", self.name, self.i);
+            self.i += 1;
+            tc.symbols.symbol(&name[..])
+        };
+        self.map.insert(symbol.clone());
+        tc.type_variables.insert(
+            symbol.clone(),
+            Type::variable(TypeVariable {
+                id: self.level,
+                kind: tc.kind_cache.typ(),
+            }),
+        );
+        symbol
+    }
+
+    fn next_variable_(&mut self, tc: &mut Typecheck) -> Symbol {
+        for c in b'a'..(b'z' + 1) {
+            self.name.push(c as char);
+            let symbol = tc.symbols.symbol(&self.name[..]);
+            if !self.map.contains(&symbol) && tc.type_variables.get(&symbol).is_none() {
+                return symbol;
+            }
+            self.name.pop();
+        }
+        self.name.push('a');
+        self.next_variable_(tc)
     }
 }

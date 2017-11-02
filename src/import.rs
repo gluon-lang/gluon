@@ -8,6 +8,8 @@ use std::io;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use itertools::Itertools;
+
 use base::ast::{Expr, Literal, SpannedExpr, TypedIdent};
 use base::metadata::Metadata;
 use base::pos;
@@ -23,9 +25,13 @@ quick_error! {
     #[derive(Debug)]
     pub enum Error {
         /// The importer found a cyclic dependency when loading files
-        CyclicDependency(module: String) {
+        CyclicDependency(module: String, cycle: Vec<String>) {
             description("Cyclic dependency")
-            display("Module '{}' occurs in a cyclic dependency", module)
+            display(
+                "Module '{}' occurs in a cyclic dependency: `{}`",
+                module,
+                cycle.iter().chain(Some(module)).format(" -> ")
+            )
         }
         /// Generic message error
         String(message: String) {
@@ -233,7 +239,13 @@ where
                     {
                         let state = get_state(macros);
                         if state.visited.iter().any(|m| **m == **filename) {
-                            return Err(Error::CyclicDependency(filename.clone()).into());
+                            let cycle = state
+                                .visited
+                                .iter()
+                                .skip_while(|m| **m != **filename)
+                                .cloned()
+                                .collect();
+                            return Err(Error::CyclicDependency(filename.clone(), cycle).into());
                         }
                         state.visited.push(filename.clone());
                     }

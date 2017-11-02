@@ -8,13 +8,13 @@ extern crate gluon_base as base;
 extern crate gluon_check as check;
 extern crate gluon_parser as parser;
 
-use base::ast::{self, Expr, Pattern, Typed};
+use base::ast::{self, Typed};
 use base::kind::Kind;
-use base::pos::{BytePos, Span};
 use base::types::{Alias, AliasData, ArcType, Field, Generic, Type};
 
 use support::{alias, intern, typ, MockEnv};
 
+#[macro_use]
 mod support;
 
 macro_rules! assert_pass {
@@ -39,11 +39,11 @@ fn make_ident_type(typ: ArcType) -> ArcType {
 #[test]
 fn function_type_new() {
     let text = r"
-\x -> x
+\x -> x #Int+ 1
 ";
     let result = support::typecheck(text);
 
-    assert!(result.unwrap().as_function().is_some());
+    assert_req!(result, Ok(Type::function(vec![typ("Int")], typ("Int"))));
 }
 
 #[test]
@@ -130,7 +130,7 @@ in Test2 (\x -> x #Int+ 2)
     );
     let expected = Ok(Alias::group(vec![test, test2])[1].as_type().clone());
 
-    assert_eq!(result, expected);
+    assert_req!(result, expected);
 }
 
 #[test]
@@ -161,12 +161,14 @@ let f: a -> b -> a = \x y -> x in f 1.0 ()
 ";
     let (expr, result) = support::typecheck_expr(text);
     let expected = Ok(typ("Float"));
-    let expr_expected = Type::function(vec![typ("a"), typ("b")], typ("a"));
 
-    assert_eq!(result, expected);
+    assert_req!(result, expected);
     match expr.value {
         ast::Expr::LetBindings(ref bindings, _) => {
-            assert_eq!(bindings[0].expr.env_type_of(&env), expr_expected)
+            assert_eq!(
+                bindings[0].expr.env_type_of(&env).to_string(),
+                "a -> b -> a"
+            );
         }
         _ => assert!(false),
     }
@@ -220,13 +222,13 @@ in test2 1";
     let (expr, result) = support::typecheck_expr(text);
     let expected = Ok(typ("Int"));
 
-    assert_eq!(result, expected);
+    assert_req!(result, expected);
     assert_match!(expr.value, ast::Expr::LetBindings(ref binds, _) => {
         assert_eq!(binds.len(), 2);
-        assert_match!(*binds[0].resolved_type, Type::App(_, ref args) => {
+        assert_match!(**binds[0].resolved_type.remove_forall(), Type::App(_, ref args) => {
             assert_match!(*args[0], Type::Generic(_) => ())
         });
-        assert_match!(*binds[1].resolved_type, Type::App(_, ref args) => {
+        assert_match!(**binds[1].resolved_type.remove_forall(), Type::App(_, ref args) => {
             assert_match!(*args[0], Type::Generic(_) => ())
         });
     });
@@ -269,7 +271,7 @@ in Some 1
     let result = support::typecheck(text);
     let expected = Ok(support::typ_a("Option", vec![typ("Int")]));
 
-    assert_eq!(result.map(make_ident_type), expected);
+    assert_req!(result.map(make_ident_type), expected);
 }
 
 #[test]
@@ -285,7 +287,7 @@ in match Some 1 with
     let result = support::typecheck(text);
     let expected = Ok(typ("Int"));
 
-    assert_eq!(result, expected);
+    assert_req!(result, expected);
 }
 
 #[test]
@@ -305,7 +307,6 @@ in eq_Int
     let result = support::typecheck(text);
     let bool = Type::alias(
         support::intern_unscoped("Bool"),
-        vec![],
         Type::ident(support::intern_unscoped("Bool")),
     );
     let eq = alias(
@@ -327,12 +328,12 @@ in eq_Int
 }
 
 #[test]
-fn functor() {
+fn functor_option() {
     let _ = env_logger::init();
 
     let text = r"
 type Functor f = {
-    map : (a -> b) -> f a -> f b
+    map : forall a b . (a -> b) -> f a -> f b
 } in
 type Option a = | None | Some a in
 let option_Functor: Functor Option = {
@@ -357,7 +358,7 @@ in option_Functor.map (\x -> x #Int- 1) (Some 2)
 
     let expected = Ok(Type::app(option, collect![typ("Int")]));
 
-    assert_eq!(result, expected);
+    assert_req!(result, expected);
 }
 
 #[test]
@@ -366,8 +367,8 @@ fn app_app_unify() {
 
     let text = r"
 type Monad m = {
-    (>>=): m a -> (a -> m b) -> m b,
-    return: a -> m a
+    (>>=): forall a b. m a -> (a -> m b) -> m b,
+    return: forall a. a -> m a
 }
 
 type Test a = | T a
@@ -430,9 +431,9 @@ let function_test: Test ((->) a) = {
 function_test.test
 ";
     let result = support::typecheck(text);
-    let expected = Ok(Type::function(vec![typ("a0")], typ("Int")));
+    let expected = Ok("forall a . a -> Int".to_string());
 
-    assert_eq!(result, expected);
+    assert_req!(result.map(|typ| typ.to_string()), expected);
 }
 
 #[test]
@@ -466,7 +467,7 @@ c
 ";
     let result = support::typecheck(text);
 
-    assert!(result.is_ok());
+    assert!(result.is_ok(), "{}", result.unwrap_err());
 }
 
 #[test]
@@ -533,16 +534,25 @@ type Test = | Test String Int in { Test, x = 1 }
 "#;
     let result = support::typecheck(text);
     let variant = Type::function(vec![typ("String"), typ("Int")], typ("Test"));
-    let test = Type::variant(vec![Field::new(intern("Test"), variant)]);
-    let expected = Ok(Type::record(
-        vec![
-            Field::new(
-                support::intern_unscoped("Test"),
-                Alias::new(intern("Test"), vec![], test),
-            ),
-        ],
-        vec![Field::new(intern("x"), typ("Int"))],
-    ));
+    let test = Type::variant(vec![
+        Field {
+            name: intern("Test"),
+            typ: variant,
+        },
+    ]);
+    let types = vec![
+        Field {
+            name: support::intern_unscoped("Test"),
+            typ: Alias::new(intern("Test"), test),
+        },
+    ];
+    let fields = vec![
+        Field {
+            name: intern("x"),
+            typ: typ("Int"),
+        },
+    ];
+    let expected = Ok(Type::record(types, fields));
 
     assert_eq!(result.map(support::close_record), expected);
 }
@@ -587,15 +597,17 @@ return 1
     let id = alias("Id", &["a"], variant("Id"));
     let id_t = Type::alias(
         intern("IdT"),
-        vec![m.clone(), Generic::new(intern("a"), Kind::typ())],
-        Type::app(
-            Type::generic(m),
-            collect![Type::app(id, collect![typ("a")])],
+        Type::forall(
+            vec![m.clone(), Generic::new(intern("a"), Kind::typ())],
+            Type::app(
+                Type::generic(m),
+                collect![Type::app(id, collect![typ("a")])],
+            ),
         ),
     );
     let expected = Ok(Type::app(id_t, collect![test, typ("Int")]));
 
-    assert_eq!(result, expected);
+    assert_req!(result, expected);
 }
 
 #[test]
@@ -604,7 +616,7 @@ fn normalize_function_type() {
 
     let text = r#"
 type Cat cat = {
-    id : cat a a,
+    id : forall a . cat a a,
 }
 let cat: Cat (->) = {
     id = \x -> x,
@@ -627,7 +639,10 @@ fn mutually_recursive_types() {
 type Tree a = | Empty | Node (Data a) (Data a)
 and Data a = { value: a, tree: Tree a }
 in
-let rhs = { value = 123, tree = Node { value = 0, tree = Empty } { value = 42, tree = Empty } }
+let rhs : Data Int = {
+    value = 123,
+    tree = Node { value = 0, tree = Empty } { value = 42, tree = Empty }
+}
 in Node { value = 1, tree = Empty } rhs
 "#;
     let result = support::typecheck(text);
@@ -669,9 +684,8 @@ and u: HKT M2 = t
 in eq t u
 "#;
     let result = support::typecheck(text);
-    let expected = Ok(typ("Int"));
 
-    assert_eq!(result, expected);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
 }
 
 #[test]
@@ -692,7 +706,7 @@ in
     ];
     let expected = Ok(Type::record(vec![], fields));
 
-    assert_eq!(result.map(support::close_record), expected);
+    assert_req!(result.map(support::close_record), expected);
 }
 
 #[test]
@@ -713,451 +727,27 @@ in
     ];
     let expected = Ok(Type::record(vec![], fields));
 
-    assert_eq!(result.map(support::close_record), expected);
+    assert_req!(result.map(support::close_record), expected);
 }
 
 #[test]
-fn module() {
-    let _ = env_logger::init();
-
-    let text = r"
-type SortedList a = | Cons a (SortedList a)
-                | Nil
-in \(<) ->
-    let empty = Nil
-    let insert x xs =
-        match xs with
-        | Nil -> Cons x Nil
-        | Cons y ys -> if x < y
-                       then Cons x xs
-                       else Cons y (insert x ys)
-    let ret = { empty, insert }
-    ret
-";
-    let result = support::typecheck(text);
-
-    assert!(result.is_ok(), "{}", result.unwrap_err());
-}
-
-#[test]
-fn call_error_span() {
+fn overloaded_bindings_3() {
     let _ = env_logger::init();
 
     let text = r#"
-let f x = x #Int+ 1
-in f "123"
+let (+) x y = x #Int+ y
+let (+) x y = x #Float+ y
+let (+) x y : () -> () -> () = y
+
+{ x = 1 + 2, y = 1.0 + 2.0, z = () + () }
 "#;
     let result = support::typecheck(text);
+    let fields = vec![
+        Field::new(intern("x"), typ("Int")),
+        Field::new(intern("y"), typ("Float")),
+        Field::new(intern("z"), Type::unit()),
+    ];
+    let expected = Ok(Type::record(vec![], fields));
 
-    assert!(result.is_err());
-    let errors: Vec<_> = result.unwrap_err().errors().into();
-    assert_eq!(errors.len(), 1);
-    assert_eq!(
-        errors[0].span.map(|loc| loc.absolute),
-        Span::new(BytePos::from(26), BytePos::from(31))
-    );
-}
-
-/// Test that overload resolution selects the closest implementation that matches even if another
-/// overload has a better match. If this wasn't the case it would be possible to get diffferent
-/// selection depending on the order that types are infered.
-#[test]
-fn overloaded_with_equal_aliases() {
-    let _ = env_logger::init();
-
-    let text = r"
-type Test = Int
-let test x: Int -> Int = 1
-let test x: Test -> Test = 0
-test 1
-";
-    let (expr, result) = support::typecheck_expr(text);
-
-    assert!(result.is_ok());
-    let (bind, call) = match expr.value {
-        Expr::TypeBindings(_, ref body) => match body.value {
-            Expr::LetBindings(_, ref body) => match body.value {
-                Expr::LetBindings(ref binds, ref body) => (&binds[0], body),
-                _ => panic!(),
-            },
-            _ => panic!(),
-        },
-        _ => panic!(),
-    };
-    let call_id = match call.value {
-        Expr::App(ref f, _) => match f.value {
-            Expr::Ident(ref id) => id,
-            _ => panic!(),
-        },
-        _ => panic!(),
-    };
-    let test_id = match bind.name.value {
-        Pattern::Ident(ref id) => id,
-        _ => panic!(),
-    };
-    assert_eq!(test_id.name, call_id.name);
-}
-
-#[test]
-fn types_should_be_fully_instantiated_even_on_errors() {
-    let _ = env_logger::init();
-
-    let text = r#"
-let a = { id = \x -> x, z = 1 #Int== 2.0 }
-a.id
-"#;
-    let (expr, _result) = support::typecheck_expr(text);
-    let t = match expr.value {
-        Expr::LetBindings(_, ref body) => match body.value {
-            Expr::Projection(_, _, ref typ) => typ,
-            _ => panic!(),
-        },
-        _ => panic!(),
-    };
-    let expected = Type::function(vec![typ("a0")], typ("a0"));
-
-    assert_eq!(*t, expected);
-}
-
-#[test]
-fn non_self_recursive_alias() {
-    let _ = env_logger::init();
-
-    let text = r#"
-type Type1 = { x: Int }
-type Type2 = Type1
-type Type3 = { x: Int }
-let r1: Type1 = { x = 0 }
-let r2: Type2 = r1
-let r3: Type3 = r2
-in r1"#;
-    let result = support::typecheck(text);
-    let expected = Ok(alias(
-        "Type1",
-        &[],
-        Type::record(vec![], vec![Field::new(intern("x"), typ("Int"))]),
-    ));
-
-    assert_eq!(result, expected);
-}
-
-#[test]
-fn scoped_generic_variable() {
-    let _ = ::env_logger::init();
-    let text = r#"
-let any x = any x
-let make m: m -> { test: m, test2: m } =
-    let m2: m = any ()
-    { test = m, test2 = m2 }
-
-make
-"#;
-    let result = support::typecheck(text);
-    assert!(result.is_ok(), "{}", result.unwrap_err());
-}
-
-#[test]
-fn simplified_applicative() {
-    let _ = ::env_logger::init();
-    let text = r#"
-type Applicative f = {
-    map : (a -> b) -> f a -> f b,
-    apply : f (c -> d) -> f c -> f d
-}
-
-let applicative_Function : Applicative ((->) a) = {
-    map = \f g x -> f (g x),
-    apply = \f g x -> f x (g x)
-}
-
-let id : a -> a = \x -> x
-
-let const : a -> b -> a = \x _ -> x
-
-let make_applicative app =
-    let { map, apply } = app
-
-    let (*>) l r = apply (map (const id) l) r
-
-    ()
-
-make_applicative applicative_Function
-"#;
-    let result = support::typecheck(text);
-    assert!(result.is_ok(), "{}", result.unwrap_err());
-}
-
-#[test]
-fn type_alias_with_explicit_hole_kind() {
-    let _ = ::env_logger::init();
-    let text = r#"
-type Test (a : _) = a
-type Bar = Test Int
-()
-"#;
-    let result = support::typecheck(text);
-    assert!(result.is_ok(), "{}", result.unwrap_err());
-}
-
-#[test]
-fn type_alias_with_explicit_type_kind() {
-    let _ = ::env_logger::init();
-    let text = r#"
-type Test (a : Type) = a
-type Bar = Test Int
-()
-"#;
-    let result = support::typecheck(text);
-    assert!(result.is_ok(), "{}", result.unwrap_err());
-}
-
-#[test]
-fn type_alias_with_explicit_row_kind() {
-    let _ = ::env_logger::init();
-    let text = r#"
-type Test (a : Row -> Type) (b : Row) = a b
-()
-"#;
-    let result = support::typecheck(text);
-    assert!(result.is_ok(), "{}", result.unwrap_err());
-}
-
-#[test]
-fn type_alias_with_explicit_function_kind() {
-    let _ = ::env_logger::init();
-    let text = r#"
-type Test (a : Type -> Type) = a Int
-type Foo a = a
-type Bar = Test Foo
-()
-"#;
-    let result = support::typecheck(text);
-    assert!(result.is_ok(), "{}", result.unwrap_err());
-}
-
-/// Check that after typechecking, the resulting types are `Alias`, not `Ident`. This is necessary
-/// so that when the type is later propagated it knows what its internal representation are without
-/// any extra information
-#[test]
-fn applied_constructor_returns_alias_type() {
-    let _ = ::env_logger::init();
-    let text = r#"
-type Test = | Test Int
-Test 0
-"#;
-    let result = support::typecheck(text);
-    assert!(result.is_ok(), "{}", result.unwrap_err());
-    match *result.unwrap() {
-        Type::Alias(_) => (),
-        ref typ => panic!("Expected alias, got {:?}", typ),
-    }
-}
-#[test]
-fn dont_guess_a_record_when_the_construction_has_no_fields() {
-    let _ = ::env_logger::init();
-    let text = r#"
-type Test = { x : Int }
-type Test2 = Int
-
-{ Test2 }
-"#;
-    let result = support::typecheck(text);
-    assert!(result.is_ok(), "{}", result.unwrap_err());
-}
-
-#[test]
-fn simple_tuple_type() {
-    let _ = ::env_logger::init();
-    let text = r#"
-("test", 123)
-"#;
-    let result = support::typecheck(text);
-
-    let interner = support::get_local_interner();
-    let mut interner = interner.borrow_mut();
-    assert_eq!(
-        result,
-        Ok(Type::tuple(
-            &mut *interner,
-            vec![Type::string(), Type::int()]
-        ))
-    );
-}
-
-#[test]
-fn match_tuple_type() {
-    let _ = ::env_logger::init();
-    let text = r#"
-match (1, "test") with
-| (x, y) -> (y, x)
-"#;
-    let result = support::typecheck(text);
-
-    let interner = support::get_local_interner();
-    let mut interner = interner.borrow_mut();
-    assert_eq!(
-        result,
-        Ok(Type::tuple(
-            &mut *interner,
-            vec![Type::string(), Type::int()]
-        ))
-    );
-}
-
-#[test]
-fn match_tuple_record() {
-    let _ = ::env_logger::init();
-    let text = r#"
-match (1, "test") with
-| { _1, _0 } -> _1
-"#;
-    let result = support::typecheck(text);
-
-    assert_eq!(result, Ok(Type::string()));
-}
-
-#[test]
-fn field_access_tuple() {
-    let _ = ::env_logger::init();
-    let text = r#"
-(1, "test")._0
-"#;
-    let result = support::typecheck(text);
-
-    assert_eq!(result, Ok(Type::int()));
-}
-
-
-#[test]
-fn unit_tuple_match() {
-    let _ = ::env_logger::init();
-    let text = r#"
-match () with
-| () -> ()
-"#;
-    let result = support::typecheck(text);
-
-    assert_eq!(result, Ok(Type::unit()));
-}
-
-#[test]
-fn precise_alias_selection_on_record_construction() {
-    let _ = ::env_logger::init();
-    let text = r#"
-type Test = {
-    x : Int,
-    y : Float
-}
-type Test2 = {
-    x : Int
-}
-{ x = 1 }
-"#;
-    let result = support::typecheck(text);
-
-    assert_eq!(
-        result,
-        Ok(Type::alias(
-            intern("Test2"),
-            vec![],
-            Type::record(
-                vec![],
-                vec![
-                    Field {
-                        name: intern("x"),
-                        typ: Type::int(),
-                    },
-                ]
-            )
-        ))
-    );
-}
-
-#[test]
-fn alias_selection_on_pattern_match() {
-    let _ = ::env_logger::init();
-    let text = r#"
-type Test = {
-    x : Float,
-    y : Float
-}
-type Test2 = {
-    x : Int
-}
-let { x } = { x = 1 }
-x
-"#;
-    let result = support::typecheck(text);
-
-    assert_eq!(result, Ok(Type::int()));
-}
-
-#[test]
-fn dont_lookup_record_alias_on_pattern_match() {
-    let _ = ::env_logger::init();
-    let text = r#"
-type Test = {
-    x : Float,
-    y : Float
-}
-let { x } = { x = 1, z = 3 }
-x
-"#;
-    let result = support::typecheck(text);
-
-    assert_eq!(result, Ok(Type::int()));
-}
-
-
-#[test]
-fn record_expr_base() {
-    let _ = ::env_logger::init();
-    let text = r#"
-let vec2 = { x = 1, y = 2 }
-{ z = 3, .. vec2 }
-"#;
-    let result = support::typecheck(text);
-
-    assert_eq!(
-        result,
-        Ok(Type::record(
-            vec![],
-            vec![
-                Field::new(intern("z"), typ("Int")),
-                Field::new(intern("x"), typ("Int")),
-                Field::new(intern("y"), typ("Int")),
-            ]
-        ))
-    );
-}
-
-#[test]
-fn record_expr_base_overwrite_field() {
-    let _ = ::env_logger::init();
-    let text = r#"
-let record = { x = 1 }
-{ x = "", .. record }
-"#;
-    let result = support::typecheck(text);
-
-    assert_eq!(
-        result,
-        Ok(Type::record(
-            vec![],
-            vec![Field::new(intern("x"), typ("String"))]
-        ))
-    );
-}
-
-#[test]
-fn undefined_type_variable_in_record() {
-    let _ = ::env_logger::init();
-    let text = r#"
-type Test = {
-    x: a
-}
-()
-"#;
-    let result = support::typecheck(text);
-    assert!(result.is_ok(), "{}", result.unwrap_err());
+    assert_req!(result.map(support::close_record), expected);
 }

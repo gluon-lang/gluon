@@ -420,7 +420,7 @@ impl Thread {
     /// let result = Compiler::new()
     ///     .run_expr_async::<i32>(&vm, "example", "factorial 5")
     ///     .sync_or_error()
-    ///     .unwrap();
+    ///     .unwrap_or_else(|err| panic!("{}", err));
     /// let expected = (120, Type::int());
     ///
     /// assert_eq!(result, expected);
@@ -438,7 +438,7 @@ impl Thread {
         };
         self.set_global(
             Symbol::from(name),
-            T::make_type(self),
+            T::make_forall_type(self),
             Metadata::default(),
             value,
         )
@@ -461,7 +461,7 @@ impl Thread {
     ///     .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example",
     ///         r#" import! "std/int.glu" "#)
     ///     .sync_or_error()
-    ///     .unwrap();
+    ///     .unwrap_or_else(|err| panic!("{}", err));
     /// let mut add: FunctionRef<fn(i32, i32) -> i32> =
     ///     vm.get_global("std.int.num.(+)").unwrap();
     /// let result = add.call(1, 2);
@@ -546,10 +546,7 @@ impl Thread {
     }
 
     fn current_context(&self) -> OwnedContext {
-        OwnedContext {
-            thread: self,
-            context: self.context.lock().unwrap(),
-        }
+        self.context()
     }
 
     fn traverse_fields_except_stack(&self, gc: &mut Gc) {
@@ -739,10 +736,7 @@ impl ThreadInternal for Thread {
     /// Calls a module, allowed to to run IO expressions
     fn execute_io(&self, value: Value) -> FutureValue<Execute<&Self>> {
         debug!("Run IO {:?}", value);
-        let mut context = OwnedContext {
-            thread: self,
-            context: self.context.lock().unwrap(),
-        };
+        let mut context = self.context();
         // Dummy value to fill the place of the function for TailCall
         context.stack.push(Int(0));
 

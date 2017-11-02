@@ -23,6 +23,7 @@ This tutorial aims the explain the basics of gluon's syntax and semantics.
 In traditional form, we will begin with the classic hello world program.
 
 ```f#,rust
+let io = import! "std/io.glu"
 io.println "Hello world"
 ```
 
@@ -215,7 +216,7 @@ match { x = Some (Some 123) } with
 
 `let` bindings can also match and unpack on data but only with irrefutable patterns. In other words, only with patterns which cannot fail.
 
-```f#
+```f#,ignore
 // Matching on records will always succeed since they are the only variant
 let { x = y, pi } = { x = 1.0, pi = 3.14 }
 in y + pi
@@ -404,6 +405,64 @@ The last kind of type which gluon has is the alias type. An alias type explicitl
 Higher-kinded types are a fairly abstract concept in gluon and you may create entire programs without any knowledge about them. Sometimes they are a very valuable tool to have, as they can be used to create very powerful abstractions.
 
 Just as all values such as `0 : Int`, `"Hello World!" : String` and `Some 4.0 : Option Float` each have a type, these types themselves have their own 'type' or the 'kind' as it is called. For the types of concrete values the `Kind` is always `Type` so for the earlier examples `Int : Type`, `String : Type` and `Option Float : Type`. That is not very useful on its own but it becomes more interesting when we consider the kind of `Option : Type -> Type`. `Type -> Type` looks rather like the type of a function such as `show_int : Int -> String` but, instead of taking a value, it takes a type and produces a new type. In effect, this lets us abstract over types instead of just over values. This abstraction facility can be seen in the `Functor : (Type -> Type) -> Type` type which takes a type with kind `Type -> Type` as argument which is exactly the kind of `Option` (or `List`, `Result a`).
+
+### Universal quantification
+
+*First draft*
+
+Universal quantification is what gluon's "generic types" are called. Consider the identity function in Rust.
+
+```rust,ignore
+fn id<T>(x: T) -> T {
+    x
+}
+```
+
+In gluon the same function would be written in the following way if it were fully annotated.
+
+```f#
+let id x : forall a . a -> a = x
+```
+
+```f#
+// Types can of course be omitted in which the same type as above will be inferred
+let id x = x
+// Unbound type variables (`a` in this example) are allowed, in which case a `forall` will be
+// inserted at the at the "top" of the type (same place as the type above)
+let id x : a -> a = x
+```
+
+So in simple case, `forall` is no different from declaring type parameters to a function in Rust. But `forall` also serves more advanced use cases and is at the center when it comes to making gluon's records work as modules.
+
+```f#
+let module =
+    let id = x
+
+    { id }
+
+module.id 0
+module.id ""
+```
+
+If we were to emulate the above code in Rust we would probably end up with something like this code.
+
+```rust,ignore
+struct Module<T> {
+    id : Box<Fn(T) -> T>,
+}
+
+let module = Module {
+    id: Box::new(|x| x),
+};
+(module.id)(0);
+(module.id)("");
+```
+
+Alas, this does not work in Rust since `module` will be inferred to the type `Module<i32>` which makes the second call to `id` a type error. In gluon it works as the type of `module` is actually `{ id : forall a . a -> a }` and not `forall a . { id : a -> a }` which is the closest analogue to the Rust example.
+
+Intuitively, we can say that since gluon lets `forall` be specified inside types we can avoid specializing the type (in this case `forall a . a -> a`) which lets us specialize `module.id` once for each call to `id` instead of specializing the entire module at once.
+
+While all of this looks quite complex, it should for the most part not matter when writing code and common idioms will just work as expected!
 
 ### Overloading
 

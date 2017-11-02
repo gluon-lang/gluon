@@ -30,7 +30,7 @@ rustyline = "1.0.0"
 walkdir = "1"
 
 [dev-dependencies]
-pretty_assertions = "0.3.4"
+pretty_assertions = "0.4"
 
 [features]
 default = ["env_logger"]

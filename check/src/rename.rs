@@ -100,7 +100,7 @@ pub fn rename(
     impl<'a, 'b> RenameVisitor<'a, 'b> {
         fn find_fields(&self, typ: &ArcType) -> Vec<types::Field<Symbol, ArcType>> {
             // Walk through all type aliases
-            let record = resolve::remove_aliases(&self.env, typ.clone());
+            let record = resolve::remove_aliases(&self.env, typ.remove_forall().clone());
             record.row_iter().cloned().collect()
         }
 
@@ -134,9 +134,16 @@ pub fn rename(
                     let record_type = resolve::remove_aliases(&self.env, typ.clone()).clone();
                     for ast_field in types {
                         let field_type = record_type
+                            .remove_forall()
                             .type_field_iter()
                             .find(|field| field.name.name_eq(&ast_field.name.value))
-                            .expect("field_type");
+                            .unwrap_or_else(|| {
+                                panic!(
+                                    "ICE: Type `{}` does not have type field `{}`",
+                                    record_type,
+                                    ast_field.name.value
+                                )
+                            });
                         self.stack_type(
                             ast_field.name.value.clone(),
                             pattern.span,
@@ -157,7 +164,7 @@ pub fn rename(
                 ast::Pattern::Constructor(ref mut id, ref mut args) => {
                     let typ = self.env
                         .find_type(&id.name)
-                        .expect("ICE: Expected constructor")
+                        .unwrap_or_else(|| panic!("ICE: Expected constructor: {}", id.name))
                         .clone();
                     for (arg_type, arg) in types::arg_iter(&typ).zip(args) {
                         self.new_pattern(arg_type, arg);
@@ -184,7 +191,7 @@ pub fn rename(
         fn stack_type(&mut self, id: Symbol, span: Span<BytePos>, alias: &Alias<Symbol, ArcType>) {
             // Insert variant constructors into the local scope
             let aliased_type = alias.typ();
-            if let Type::Variant(ref row) = **aliased_type {
+            if let Type::Variant(ref row) = **aliased_type.remove_forall() {
                 for field in row.row_iter().cloned() {
                     self.env
                         .stack
@@ -224,7 +231,9 @@ pub fn rename(
                 return Ok(candidates().next().map(|tup| tup.0.clone()));
             }
             candidates()
-                .find(|tup| equivalent(&self.env, tup.2, expected))
+                .find(|tup| {
+                    equivalent(&self.env, tup.2.remove_forall(), expected.remove_forall())
+                })
                 .map(|tup| Some(tup.0.clone()))
                 .ok_or_else(|| {
                     RenameError::NoMatchingType {
@@ -246,6 +255,7 @@ pub fn rename(
                 Expr::Record {
                     ref mut typ,
                     ref mut exprs,
+                    ref mut base,
                     ..
                 } => {
                     let field_types = self.find_fields(typ);
@@ -265,6 +275,10 @@ pub fn rename(
                                 ));
                             },
                         }
+                    }
+
+                    if let Some(ref mut base) = *base {
+                        self.visit_expr(base);
                     }
                 }
                 Expr::Infix(ref mut lhs, ref mut op, ref mut rhs) => {
@@ -304,8 +318,8 @@ pub fn rename(
                     if is_recursive {
                         for bind in bindings {
                             self.env.stack.enter_scope();
-                            for (typ, arg) in
-                                types::arg_iter(&bind.resolved_type).zip(&mut bind.args)
+                            for (typ, arg) in types::arg_iter(bind.resolved_type.remove_forall())
+                                .zip(&mut bind.args)
                             {
                                 arg.value.name =
                                     self.stack_var(arg.value.name.clone(), expr.span, typ.clone());
@@ -414,10 +428,18 @@ impl<'a> Unifier<State<'a>, ArcType> for Equivalent {
         debug!("{} ====> {}", l, r);
         match (&**l, &**r) {
             (&Type::Generic(ref gl), &Type::Generic(ref gr)) if gl == gr => Ok(None),
+            (&Type::Skolem(ref gl), &Type::Skolem(ref gr)) if gl == gr => Ok(None),
             (&Type::Generic(ref gl), _) => match unifier.unifier.map.get(&gl.id).cloned() {
                 Some(ref typ) => unifier.try_match_res(typ, r),
                 None => {
                     unifier.unifier.map.insert(gl.id.clone(), r.clone());
+                    Ok(None)
+                }
+            },
+            (&Type::Skolem(ref gl), _) => match unifier.unifier.map.get(&gl.name).cloned() {
+                Some(ref typ) => unifier.try_match_res(typ, r),
+                None => {
+                    unifier.unifier.map.insert(gl.name.clone(), r.clone());
                     Ok(None)
                 }
             },

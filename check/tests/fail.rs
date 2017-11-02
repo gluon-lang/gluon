@@ -45,6 +45,15 @@ macro_rules! assert_err {
     }}
 }
 
+macro_rules! count {
+    ($e: pat) => {
+        1
+    };
+    ($e: pat, $($id: pat),+) => {
+        1 + count!($($id),+)
+    }
+}
+
 macro_rules! assert_unify_err {
     ($e: expr, $($id: pat),+) => {
         assert_multi_unify_err!($e, [$($id),+])
@@ -71,6 +80,7 @@ macro_rules! assert_multi_unify_err {
                         match *error {
                             Spanned { value: Unification(_, _, ref errors), .. } => {
                                 let mut iter = errors.iter();
+                                let expected_count = count!($($id),+);
                                 $(
                                 match iter.next() {
                                     Some(&$id) => (),
@@ -85,8 +95,9 @@ macro_rules! assert_multi_unify_err {
                                     }
                                     None => {
                                         assert!(false,
-                                            "Found less errors than expected at {}.\n\
+                                            "Found {} less errors than expected at {}.\n\
                                             Errors:\n{}\nbut expected {}",
+                                            expected_count - errors.len(),
                                             i,
                                             error,
                                             stringify!($id)
@@ -94,8 +105,10 @@ macro_rules! assert_multi_unify_err {
                                     }
                                 }
                                 )+
-                                assert!(iter.count() == 0,
-                                        "Found more errors than expected at {}\n{}",
+                                let count = iter.count();
+                                assert!(count == 0,
+                                        "Found {} more errors than expected at {}\n{}",
+                                        count,
                                         i,
                                         error);
                             }
@@ -169,7 +182,7 @@ in 1
 "#;
     let result = support::typecheck(text);
 
-    assert_err!(result, KindError(TypeMismatch(..)));
+    assert_err!(result, KindError(TypeMismatch(..), _));
 }
 
 #[test]
@@ -222,7 +235,11 @@ f ""
 "#;
     let result = support::typecheck(text);
 
-    assert_unify_err!(result, Substitution(Constraint(..)));
+    assert_multi_unify_err!(
+        result,
+        [Substitution(Constraint(..))],
+        [Substitution(Constraint(..))]
+    );
 }
 
 #[test]
@@ -237,7 +254,7 @@ let (++) x y = x #Float+ y
 
     assert_multi_unify_err!(
         result,
-        [Substitution(Constraint(..)), Substitution(Constraint(..))],
+        [Substitution(Constraint(..))],
         [Substitution(Constraint(..))]
     );
 }
@@ -305,7 +322,7 @@ let ord_Int = {
         then EQ
         else GT
 }
-let make_Ord ord =
+let make_Ord ord : forall a . Ord a -> _ =
     let compare = ord.compare
     in {
         (<=) = \l r ->
@@ -320,7 +337,7 @@ let (<=) = (make_Ord ord_Int).(<=)
 "#;
     let result = support::typecheck(text);
 
-    assert_unify_err!(result, TypeMismatch(..), TypeMismatch(..));
+    assert_multi_unify_err!(result, [TypeMismatch(..)], [TypeMismatch(..)]);
 }
 
 #[test]
@@ -360,9 +377,10 @@ fn declared_generic_variables_may_not_make_outer_bindings_more_general() {
     let text = r#"
 let make m =
     let m2: m = m
+    let _ = m2 1
     m
 
-make
+make 2
 "#;
     let result = support::typecheck(text);
     assert!(result.is_err());
@@ -402,7 +420,7 @@ type Bar = Test Foo
 ()
 "#;
     let result = support::typecheck(text);
-    assert_err!(result, KindError(TypeMismatch(..)));
+    assert_err!(result, KindError(TypeMismatch(..), _));
 }
 
 #[test]
@@ -414,7 +432,7 @@ type Bar = Test Int
 ()
 "#;
     let result = support::typecheck(text);
-    assert_err!(result, KindError(TypeMismatch(..)));
+    assert_err!(result, KindError(TypeMismatch(..), _));
 }
 
 #[test]
@@ -426,7 +444,7 @@ type Foo = Test Int
 ()
 "#;
     let result = support::typecheck(text);
-    assert_err!(result, KindError(TypeMismatch(..)));
+    assert_err!(result, KindError(TypeMismatch(..), _));
 }
 
 #[test]
@@ -469,11 +487,11 @@ fn no_inference_variable_in_error() {
     assert_eq!(
         &*format!("{}", result.unwrap_err()).replace("\t", "        "),
         r#"test:Line: 2, Column: 1: Expected the following types to be equal
-Expected: b0 -> b1
+Expected: a -> a0
 Found: ()
 1 errors were found during unification:
 Types do not match:
-    Expected: b0 -> b1
+    Expected: a -> a0
     Found: ()
 () 1
 ^~~~
@@ -585,4 +603,21 @@ type Test = | Test a
 "#;
     let result = support::typecheck(text);
     assert_err!(result, UndefinedVariable(..));
+}
+
+
+#[test]
+fn make_with_explicit_types_with_wrong_variable() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+let make x : b -> _ =
+    let f y : b -> a = x
+    { f }
+
+make
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_err(), "{}", result.unwrap_err());
 }

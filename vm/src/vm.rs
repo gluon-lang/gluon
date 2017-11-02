@@ -385,7 +385,7 @@ impl GlobalVmState {
                 name.into(),
                 Alias::from(AliasData::new(
                     Symbol::from(name),
-                    Vec::new(),
+                    vec![],
                     self_.type_cache.opaque(),
                 )),
             );

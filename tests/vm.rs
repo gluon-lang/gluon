@@ -283,6 +283,14 @@ r#"
 'a'
 }
 
+test_expr!{ prelude handle_fields_being_ignored_in_optimize,
+    r#"
+let large_record = { x = 1, y = 2 }
+large_record.x
+"#,
+1
+}
+
 test_expr!{ any zero_argument_variant_is_int,
 r#"
 type Test = | A Int | B
@@ -451,6 +459,26 @@ in Cons 1 Nil == Nil
     let expected = false;
 
     assert_eq!(result, expected);
+}
+
+#[test]
+fn record_splat_ice() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+let large_record = { x = 1 }
+{
+    field = 123,
+    ..
+    large_record
+}
+"#;
+    let mut vm = make_vm();
+    let result = Compiler::new()
+        .implicit_prelude(false)
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&mut vm, "example", text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
 }
 
 #[test]

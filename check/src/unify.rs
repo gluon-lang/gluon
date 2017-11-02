@@ -203,24 +203,11 @@ where
         r_orig: &T,
     ) -> Result<Option<T>, Error<T, T::Error>> {
         let subs = unifier.unifier.subs;
+
         // Retrieve the 'real' types by resolving
         let l = subs.real(l_orig);
         let r = subs.real(r_orig);
-        fn test() {
-            debug!("");
-        }
-        if l as *const _ != l_orig as *const _ {
-            if l_orig.get_var().map_or(0, |x| x.get_id()) == 1949 {
-                test();
-            }
-            debug!("Real l: {} => {}", l_orig, l);
-        }
-        if r as *const _ != r_orig as *const _ {
-            if r_orig.get_var().map_or(0, |x| x.get_id()) == 1949 {
-                test();
-            }
-            debug!("Real r: {} => {}", r_orig, r);
-        }
+
         // `l` and `r` must have the same type, if one is a variable that variable is
         // unified with whatever the other type is
         match (l.get_var(), r.get_var()) {

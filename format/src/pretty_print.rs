@@ -247,6 +247,11 @@ impl<'a: 'e, 'e> Printer<'a, 'e> {
                     pretty_types::doc_comment(arena, binds.first().unwrap().comment.as_ref()),
                     arena.concat(binds.iter().zip(prefixes).map(|(bind, prefix)| {
                         let typ = bind.alias.value.unresolved_type();
+                        let typ = match **typ {
+                            // Remove the "parameters"
+                            Type::Forall(_, ref typ, _) => typ,
+                            _ => typ
+                        };
                         let mut type_doc = types::pretty_print(self, typ);
                         match **typ {
                             Type::Record(_) => (),
@@ -257,7 +262,7 @@ impl<'a: 'e, 'e> Printer<'a, 'e> {
                             " ",
                             bind.name.value.as_ref(),
                             " ",
-                            arena.concat(bind.alias.value.args.iter().map(|arg| {
+                            arena.concat(bind.alias.value.params().iter().map(|arg| {
                                 chain![arena;
                                     if *arg.kind != Kind::Type && *arg.kind != Kind::Hole {
                                         chain![arena;

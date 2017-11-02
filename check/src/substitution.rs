@@ -10,7 +10,7 @@ use union_find::{QuickFindUf, Union, UnionByRank, UnionFind, UnionResult};
 use base::fnv::FnvMap;
 use base::fixed::{FixedMap, FixedVec};
 use base::types;
-use base::types::{ArcType, Type, Walker};
+use base::types::{ArcType, Generic, Type, Walker};
 use base::symbol::Symbol;
 
 #[derive(Debug, PartialEq)]
@@ -117,6 +117,10 @@ pub trait Substitutable: Sized {
         subs: &Substitution<Self>,
         constraints: &FnvMap<Symbol, Constraints<Self>>,
     ) -> Self;
+
+    fn on_union(&self) -> Option<&Self> {
+        None
+    }
 }
 
 fn occurs<T>(typ: &T, subs: &Substitution<T>, var: &T::Variable) -> bool
@@ -281,14 +285,23 @@ impl<T: Substitutable> Substitution<T> {
     where
         T: Clone,
     {
+        self.new_constrained_var_fn(constraint, |var| T::from_variable(self.factory.new(var)))
+    }
+
+    pub fn new_constrained_var_fn<F>(&self, constraint: Option<(Symbol, Constraints<T>)>, f: F) -> T
+    where
+        T: Clone,
+        F: FnOnce(u32) -> T,
+    {
         let var_id = self.variables.len() as u32;
         let id = self.union.borrow_mut().insert(UnionByLevel {
             constraints: constraint.into_iter().collect(),
             ..UnionByLevel::default()
         });
         assert!(id == self.variables.len());
+        debug!("New var {}", self.variables.len());
 
-        let var = T::from_variable(self.factory.new(var_id));
+        let var = f(var_id);
         self.variables.push(var.clone());
         var
     }
@@ -307,7 +320,11 @@ impl<T: Substitutable> Substitution<T> {
     }
 
     pub fn find_type_for_var(&self, var: u32) -> Option<&T> {
-        let index = self.union.borrow_mut().find(var as usize) as u32;
+        let mut union = self.union.borrow_mut();
+        if var as usize >= union.size() {
+            return None;
+        }
+        let index = union.find(var as usize) as u32;
         self.types.get(&index).or_else(|| if var == index {
             None
         } else {
@@ -353,6 +370,23 @@ impl<T: Substitutable> Substitution<T> {
     }
 }
 
+pub fn is_variable_unified(
+    subs: &Substitution<ArcType>,
+    param: &Generic<Symbol>,
+    var: &ArcType,
+) -> bool {
+    match **var {
+        Type::Variable(ref var) => match subs.find_type_for_var(var.id) {
+            Some(t) => match **t {
+                Type::Skolem(ref s) => s.name != param.id,
+                _ => true,
+            },
+            None => subs.get_constraints(var.id).is_some(),
+        },
+        _ => unreachable!(),
+    }
+}
+
 impl Substitution<ArcType> {
     fn replace_variable_(&self, typ: &Type<Symbol>) -> Option<ArcType> {
         match *typ {
@@ -360,18 +394,52 @@ impl Substitution<ArcType> {
             _ => None,
         }
     }
+
     pub fn set_type(&self, t: ArcType) -> ArcType {
-        types::walk_move_type(t, &mut |typ| {
-            let replacement = self.replace_variable_(typ);
-            let result = {
-                let mut typ = typ;
-                if let Some(ref t) = replacement {
-                    typ = t;
-                }
-                unroll_typ(typ)
-            };
-            result.or(replacement)
-        })
+        self.set_type_(&t).unwrap_or(t)
+    }
+    fn set_type_(&self, typ: &ArcType) -> Option<ArcType> {
+        match **typ {
+            Type::Forall(ref params, ref typ, Some(ref vars)) => {
+                let subs = self;
+                let mut named_variables: FnvMap<_, _> = params
+                    .iter()
+                    .zip(vars)
+                    .filter(|&(param, var)| is_variable_unified(subs, param, var))
+                    .map(|(param, var)| (param.id.clone(), var.clone()))
+                    .collect();
+                let typ = typ.instantiate_generics(&mut named_variables);
+                self.set_type_(&typ)
+                    .map(|typ| if params.len() != named_variables.len() {
+                        let mut new_params = Vec::new();
+                        let mut new_vars = Vec::new();
+                        for (param, var) in params.iter().zip(vars) {
+                            if !is_variable_unified(subs, param, var) {
+                                new_params.push(param.clone());
+                                new_vars.push(var.clone());
+                            }
+                        }
+                        ArcType::from(Type::Forall(new_params, typ, Some(new_vars)))
+                    } else {
+                        typ
+                    })
+            }
+            Type::Variable(_) => {
+                let replacement = self.replace_variable_(typ);
+                let result = {
+                    let mut typ = typ;
+                    if let Some(ref t) = replacement {
+                        typ = t;
+                    }
+                    unroll_typ(typ)
+                };
+                result.or(replacement)
+            }
+            _ => types::walk_move_type_opt(
+                typ,
+                &mut types::ControlVisitation(|typ: &ArcType| self.set_type_(typ)),
+            ),
+        }
     }
 }
 
@@ -388,6 +456,8 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
         T: Unifiable<S> + fmt::Display,
         P: FnMut() -> S,
     {
+        let resolved_type = typ.on_union();
+        let typ = resolved_type.unwrap_or(typ);
         // Nothing needs to be done if both are the same variable already (also prevents the occurs
         // check from failing)
         if typ.get_var()
@@ -401,8 +471,8 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
         {
             let id_type = self.find_type_for_var(id.get_id());
             let other_type = self.real(typ);
-            if id_type.map_or(false, |x| x == other_type) ||
-                other_type.get_var().map(|y| y.get_id()) == Some(id.get_id())
+            if id_type.map_or(false, |x| x == other_type)
+                || other_type.get_var().map(|y| y.get_id()) == Some(id.get_id())
             {
                 return Ok(None);
             }
@@ -410,7 +480,7 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
         let resolved_type = if typ.get_var().is_none() {
             self.resolve_constraints(state, id, typ)?
         } else {
-            None
+            resolved_type.cloned()
         };
         {
             let typ = resolved_type.as_ref().unwrap_or(typ);
@@ -452,7 +522,7 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
         let mut typ = Cow::Borrowed(typ);
         for (constraint_name, constraint) in &constraints {
             debug!(
-                "Attempting to resolve {} to the constraints {}:\n{}",
+                "Attempting to resolve `{}` to the constraints {}:\n{}",
                 typ,
                 constraint_name,
                 constraint.iter().format("\n")

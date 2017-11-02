@@ -4,8 +4,6 @@ extern crate gluon;
 #[macro_use]
 mod support;
 
-use support::*;
-
 test_expr! { polymorphic_field_access,
 r#"
 let f record = record.x

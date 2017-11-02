@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::fmt;
+use std::hash::Hash;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::marker::PhantomData;
@@ -9,6 +10,7 @@ use pretty::{Arena, DocAllocator, DocBuilder};
 use smallvec::{SmallVec, VecLike};
 
 use ast::{Comment, Commented, IdentEnv};
+use fnv::FnvMap;
 use kind::{ArcKind, Kind, KindEnv};
 use merge::merge;
 use pos::{BytePos, HasSpan, Span};
@@ -240,6 +242,21 @@ pub struct TypeVariable {
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "T"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(bound(serialize = "Id: SerializeState<SeSeed>")))]
+pub struct Skolem<Id> {
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub name: Id,
+    pub id: u32,
+    #[cfg_attr(feature = "serde_derive", serde(state))] pub kind: ArcKind,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
+#[cfg_attr(feature = "serde_derive",
+           serde(bound(deserialize = "
+           Id: DeserializeState<'de, Seed<Id, T>> + Clone + ::std::any::Any")))]
+#[cfg_attr(feature = "serde_derive", serde(de_parameters = "T"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(bound(serialize = "Id: SerializeState<SeSeed>")))]
 pub struct Generic<Id> {
     #[cfg_attr(feature = "serde_derive", serde(state))] pub id: Id,
     #[cfg_attr(feature = "serde_derive", serde(state))] pub kind: ArcKind,
@@ -264,18 +281,18 @@ impl<Id> Generic<Id> {
 #[cfg_attr(feature = "serde_derive", serde(bound(serialize = "T: SerializeState<SeSeed>")))]
 pub struct Alias<Id, T> {
     #[cfg_attr(feature = "serde_derive", serde(state))] _typ: T,
-    _marker: PhantomData<Id>,
+    #[cfg_attr(feature = "serde_derive", serde(skip))] _marker: PhantomData<Id>,
 }
 
 impl<Id, T> Deref for Alias<Id, T>
 where
     T: Deref<Target = Type<Id, T>>,
 {
-    type Target = AliasData<Id, T>;
+    type Target = AliasRef<Id, T>;
 
     fn deref(&self) -> &Self::Target {
         match *self._typ {
-            Type::Alias(ref alias) => &alias.group[alias.index],
+            Type::Alias(ref alias) => alias,
             _ => unreachable!(),
         }
     }
@@ -287,7 +304,7 @@ where
 {
     fn from(data: AliasData<Id, T>) -> Alias<Id, T> {
         Alias {
-            _typ: Type::alias(data.name, data.args, data.typ),
+            _typ: Type::alias(data.name, data.typ),
             _marker: PhantomData,
         }
     }
@@ -303,9 +320,9 @@ impl<Id, T> Alias<Id, T>
 where
     T: From<Type<Id, T>>,
 {
-    pub fn new(name: Id, args: Vec<Generic<Id>>, typ: T) -> Alias<Id, T> {
+    pub fn new(name: Id, typ: T) -> Alias<Id, T> {
         Alias {
-            _typ: Type::alias(name, args, typ),
+            _typ: Type::alias(name, typ),
             _marker: PhantomData,
         }
     }
@@ -425,20 +442,19 @@ where
            serde(bound(serialize = "T: SerializeState<SeSeed>, Id: SerializeState<SeSeed>")))]
 pub struct AliasData<Id, T> {
     #[cfg_attr(feature = "serde_derive", serde(state))] pub name: Id,
-    /// Arguments to the alias
-    #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub args: Vec<Generic<Id>>,
     /// The type that is being aliased
     #[cfg_attr(feature = "serde_derive", serde(state))]
     typ: T,
 }
 
-impl<Id, T> AliasData<Id, T> {
+impl<Id, T> AliasData<Id, T>
+where
+    T: From<Type<Id, T>>,
+{
     pub fn new(name: Id, args: Vec<Generic<Id>>, typ: T) -> AliasData<Id, T> {
         AliasData {
             name: name,
-            args: args,
-            typ: typ,
+            typ: Type::forall(args, typ),
         }
     }
 
@@ -450,6 +466,15 @@ impl<Id, T> AliasData<Id, T> {
 
     pub fn unresolved_type_mut(&mut self) -> &mut T {
         &mut self.typ
+    }
+}
+
+impl<Id, T> AliasData<Id, T>
+where
+    T: Deref<Target = Type<Id, T>>,
+{
+    pub fn params(&self) -> &[Generic<Id>] {
+        self.typ.params()
     }
 }
 
@@ -520,6 +545,12 @@ pub enum Type<Id, T = ArcType<Id>> {
     Opaque,
     /// A builtin type
     Builtin(BuiltinType),
+    /// Universally quantified types
+    Forall(
+        #[cfg_attr(feature = "serde_derive", serde(state))] Vec<Generic<Id>>,
+        #[cfg_attr(feature = "serde_derive", serde(state))] T,
+        #[cfg_attr(feature = "serde_derive", serde(state))] Option<Vec<T>>,
+    ),
     /// A type application with multiple arguments. For example,
     /// `Map String Int` would be represented as `App(Map, [String, Int])`.
     App(
@@ -558,6 +589,16 @@ pub enum Type<Id, T = ArcType<Id>> {
     /// when the binding is refered to.
     Generic(#[cfg_attr(feature = "serde_derive", serde(state))] Generic<Id>),
     Alias(#[cfg_attr(feature = "serde_derive", serde(state))] AliasRef<Id, T>),
+    Skolem(#[cfg_attr(feature = "serde_derive", serde(state))] Skolem<Id>),
+}
+
+impl<Id, T> Type<Id, T> {
+    pub fn as_variable(&self) -> Option<&TypeVariable> {
+        match *self {
+            Type::Variable(ref var) => Some(var),
+            _ => None,
+        }
+    }
 }
 
 impl<Id, T> Type<Id, T>
@@ -570,6 +611,25 @@ where
 
     pub fn opaque() -> T {
         T::from(Type::Opaque)
+    }
+
+    pub fn builtin(typ: BuiltinType) -> T {
+        T::from(Type::Builtin(typ))
+    }
+
+    pub fn forall(params: Vec<Generic<Id>>, typ: T) -> T {
+        Type::forall_with_vars(params, typ, None)
+    }
+
+    pub fn forall_with_vars(params: Vec<Generic<Id>>, typ: T, vars: Option<Vec<T>>) -> T {
+        if let Some(ref vars) = vars {
+            debug_assert!(vars.len() == params.len());
+        }
+        if params.is_empty() {
+            typ
+        } else {
+            T::from(Type::Forall(params, typ, vars))
+        }
     }
 
     pub fn array(typ: T) -> T {
@@ -671,21 +731,20 @@ where
         T::from(Type::Generic(typ))
     }
 
-    pub fn builtin(typ: BuiltinType) -> T {
-        T::from(Type::Builtin(typ))
+    pub fn skolem(typ: Skolem<Id>) -> T {
+        T::from(Type::Skolem(typ))
     }
 
     pub fn variable(typ: TypeVariable) -> T {
         T::from(Type::Variable(typ))
     }
 
-    pub fn alias(name: Id, args: Vec<Generic<Id>>, typ: T) -> T {
+    pub fn alias(name: Id, typ: T) -> T {
         T::from(Type::Alias(AliasRef {
             index: 0,
             group: Arc::new(vec![
                 AliasData {
                     name: name,
-                    args: args,
                     typ: typ,
                 },
             ]),
@@ -735,15 +794,38 @@ where
                 if let Type::Builtin(BuiltinType::Function) = **app {
                     return Some((&args[0], &args[1]));
                 }
+            } else if args.len() == 1 {
+                if let Type::App(ref app, ref args2) = **app {
+                    if let Type::Builtin(BuiltinType::Function) = **app {
+                        return Some((&args2[0], &args[0]));
+                    }
+                }
             }
         }
         None
     }
 
-    pub fn unapplied_args(&self) -> &[T] {
+    pub fn unapplied_args(&self) -> Cow<[T]>
+    where
+        T: Clone,
+    {
         match *self {
-            Type::App(_, ref args) => args,
-            _ => &[],
+            Type::App(ref f, ref args) => {
+                let mut f = f;
+                let mut extra_args = Vec::new();
+                while let Type::App(ref f2, ref args2) = **f {
+                    f = f2;
+                    extra_args.extend(args2.iter().rev().cloned());
+                }
+                if extra_args.is_empty() {
+                    Cow::Borrowed(args)
+                } else {
+                    extra_args.reverse();
+                    extra_args.extend(args.iter().cloned());
+                    Cow::Owned(extra_args)
+                }
+            }
+            _ => Cow::Borrowed(&[]),
         }
     }
 
@@ -764,6 +846,58 @@ where
             Type::EmptyRow => true,
             _ => false,
         }
+    }
+
+    pub fn params(&self) -> &[Generic<Id>] {
+        match *self {
+            Type::Alias(ref alias) => alias.typ.params(),
+            Type::Forall(ref params, _, _) => params,
+            _ => &[],
+        }
+    }
+
+    pub fn kind(&self) -> Cow<ArcKind> {
+        self.kind_(0)
+    }
+
+    fn kind_(&self, applied_args: usize) -> Cow<ArcKind> {
+        let mut immediate_kind = match *self {
+            Type::App(ref t, ref args) => t.kind_(args.len()),
+            Type::Hole | Type::Opaque | Type::Builtin(_) | Type::Record(_) | Type::Variant(_) => {
+                Cow::Owned(Kind::typ())
+            }
+            Type::EmptyRow | Type::ExtendRow { .. } => Cow::Owned(Kind::row().into()),
+            Type::Forall(_, ref typ, _) => typ.kind_(applied_args),
+            Type::Variable(ref var) => Cow::Borrowed(&var.kind),
+            Type::Skolem(ref skolem) => Cow::Borrowed(&skolem.kind),
+            Type::Generic(ref gen) => Cow::Borrowed(&gen.kind),
+            // FIXME can be another kind
+            Type::Ident(_) => Cow::Owned(Kind::typ()),
+            Type::Alias(ref alias) => {
+                return if alias.params().len() < applied_args {
+                    alias.typ.kind_(applied_args - alias.params().len())
+                } else {
+                    let mut kind = alias.typ.kind_(0).into_owned();
+                    for arg in &alias.params()[applied_args..] {
+                        kind = Kind::function(arg.kind.clone(), kind)
+                    }
+                    Cow::Owned(kind)
+                }
+            }
+        };
+        for _ in 0..applied_args {
+            immediate_kind = match immediate_kind {
+                Cow::Borrowed(k) => match **k {
+                    Kind::Function(_, ref ret) => Cow::Borrowed(ret),
+                    _ => return Cow::Borrowed(k),
+                },
+                Cow::Owned(k) => match *k {
+                    Kind::Function(_, ref ret) => Cow::Owned(ret.clone()),
+                    _ => return Cow::Owned(k.clone()),
+                },
+            };
+        }
+        immediate_kind
     }
 }
 
@@ -788,48 +922,6 @@ where
             Type::Builtin(b) => Some(b.symbol()),
             _ => None,
         }
-    }
-
-    pub fn kind(&self) -> Cow<ArcKind> {
-        self.kind_(0)
-    }
-
-    fn kind_(&self, applied_args: usize) -> Cow<ArcKind> {
-        let mut immediate_kind = match *self {
-            Type::App(ref t, ref args) => t.kind_(args.len()),
-            Type::Hole | Type::Opaque | Type::Builtin(_) | Type::Record(_) | Type::Variant(_) => {
-                Cow::Owned(Kind::typ())
-            }
-            Type::EmptyRow | Type::ExtendRow { .. } => Cow::Owned(Kind::row().into()),
-            Type::Variable(ref var) => Cow::Borrowed(&var.kind),
-            Type::Generic(ref gen) => Cow::Borrowed(&gen.kind),
-            // FIXME can be another kind
-            Type::Ident(_) => Cow::Owned(Kind::typ()),
-            Type::Alias(ref alias) => {
-                return if alias.args.len() < applied_args {
-                    alias.typ.kind_(applied_args - alias.args.len())
-                } else {
-                    let mut kind = alias.typ.kind_(0).into_owned();
-                    for arg in &alias.args[applied_args..] {
-                        kind = Kind::function(arg.kind.clone(), kind)
-                    }
-                    Cow::Owned(kind)
-                }
-            }
-        };
-        for _ in 0..applied_args {
-            immediate_kind = match immediate_kind {
-                Cow::Borrowed(k) => match **k {
-                    Kind::Function(_, ref ret) => Cow::Borrowed(ret),
-                    _ => return Cow::Borrowed(k),
-                },
-                Cow::Owned(k) => match *k {
-                    Kind::Function(_, ref ret) => Cow::Owned(ret.clone()),
-                    _ => return Cow::Owned(k.clone()),
-                },
-            };
-        }
-        immediate_kind
     }
 }
 
@@ -926,11 +1018,223 @@ impl<Id> ArcType<Id> {
         Arc::strong_count(&typ.typ)
     }
 
+    pub fn remove_forall(&self) -> &ArcType<Id> {
+        match **self {
+            Type::Forall(_, ref typ, _) => typ.remove_forall(),
+            _ => self,
+        }
+    }
+
+    pub fn skolemize(&self, named_variables: &mut FnvMap<Id, ArcType<Id>>) -> ArcType<Id>
+    where
+        Id: Clone + Eq + Hash,
+    {
+        let mut typ = self;
+        while let Type::Forall(ref params, ref inner_type, Some(ref vars)) = **typ {
+            let iter = params.iter().zip(vars).map(|(param, var)| {
+                let var = var.as_variable().unwrap();
+                (
+                    param.id.clone(),
+                    Type::skolem(Skolem {
+                        name: param.id.clone(),
+                        id: var.id,
+                        kind: var.kind.clone(),
+                    }),
+                )
+            });
+            named_variables.extend(iter);
+            typ = inner_type;
+        }
+        typ.skolemize_(named_variables)
+            .unwrap_or_else(|| typ.clone())
+    }
+
+    fn skolemize_(&self, named_variables: &mut FnvMap<Id, ArcType<Id>>) -> Option<ArcType<Id>>
+    where
+        Id: Clone + Eq + Hash,
+    {
+        match **self {
+            Type::Generic(ref generic) => named_variables.get(&generic.id).cloned(),
+            _ => walk_move_type_opt(
+                self,
+                &mut ControlVisitation(|typ: &ArcType<Id>| typ.skolemize_(named_variables)),
+            ),
+        }
+    }
+
+    pub fn instantiate_generics(&self, named_variables: &mut FnvMap<Id, ArcType<Id>>) -> ArcType<Id>
+    where
+        Id: Clone + Eq + Hash,
+    {
+        let mut typ = self;
+        while let Type::Forall(ref params, ref inner_type, Some(ref vars)) = **typ {
+            named_variables.extend(
+                params
+                    .iter()
+                    .zip(vars)
+                    .map(|(param, var)| (param.id.clone(), var.clone())),
+            );
+            typ = inner_type;
+        }
+        typ.instantiate_generics_(named_variables)
+            .unwrap_or_else(|| typ.clone())
+    }
+
+    pub fn instantiate_generics_(
+        &self,
+        named_variables: &FnvMap<Id, ArcType<Id>>,
+    ) -> Option<ArcType<Id>>
+    where
+        Id: Clone + Eq + Hash,
+    {
+        match **self {
+            Type::Generic(ref generic) => named_variables.get(&generic.id).cloned(),
+            Type::Forall(ref params, ref typ, ref vars) => {
+                // TODO This clone is inneficient
+                let mut named_variables = named_variables.clone();
+                // forall a . { x : forall a . a -> a } -> a
+                // Should not instantiate the `a -> a` part so we must remove the parameters
+                // before visiting that part
+                for param in params {
+                    named_variables.remove(&param.id);
+                }
+
+                typ.instantiate_generics_(&mut named_variables)
+                    .map(|typ| Type::Forall(params.clone(), typ, vars.clone()).into())
+            }
+            _ => walk_move_type_opt(
+                self,
+                &mut ControlVisitation(|typ: &Self| typ.instantiate_generics_(named_variables)),
+            ),
+        }
+    }
+
+    pub fn forall_scope_iter(&self) -> ForallScopeIter<Id> {
+        ForallScopeIter {
+            typ: self,
+            offset: 0,
+        }
+    }
+
     pub fn pretty<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>>
     where
         Id: AsRef<str>,
     {
         top(self).pretty(&Printer::new(arena, &Source::new("")))
+    }
+}
+
+pub struct ForallScopeIter<'a, Id: 'a> {
+    pub typ: &'a ArcType<Id>,
+    offset: usize,
+}
+
+impl<'a, Id> Iterator for ForallScopeIter<'a, Id> {
+    type Item = (&'a Generic<Id>, &'a ArcType<Id>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match **self.typ {
+            Type::Forall(ref params, ref typ, Some(ref vars)) => {
+                let offset = self.offset;
+                let item = params.get(offset).map(|param| {
+                    self.offset += 1;
+                    (param, &vars[offset])
+                });
+                match item {
+                    Some(_) => item,
+                    None => {
+                        self.typ = typ;
+                        self.next()
+                    }
+                }
+            }
+            _ => None,
+        }
+    }
+}
+
+impl ArcType {
+    pub fn params_mut(&mut self) -> &mut [Generic<Symbol>] {
+        use std::sync::Arc;
+
+        match *Arc::make_mut(&mut self.typ) {
+            /*
+            // TODO
+            Type::Alias(ref mut alias) => {
+                Arc::make_mut(alias.unresolved_type_mut().typ).params_mut()
+            }
+            */
+            Type::Forall(ref mut params, _, _) => params,
+            Type::App(ref mut id, _) => id.params_mut(),
+            _ => &mut [],
+        }
+    }
+
+    /// Applies a list of arguments to a parameterised type, returning `Some`
+    /// if the substitution was successful.
+    ///
+    /// Example:
+    ///
+    /// ```text
+    /// self = forall e t . | Err e | Ok t
+    /// args = [Error, Option a]
+    /// result = | Err Error | Ok (Option a)
+    /// ```
+    pub fn apply_args(&self, args: &[ArcType]) -> Option<ArcType> {
+        let params = self.params();
+        let mut typ = self.remove_forall().clone();
+
+        // It is ok to take the type only if it is fully applied or if it
+        // the missing argument only appears in order at the end, i.e:
+        //
+        // type Test a b c = Type (a Int) b c
+        //
+        // Test a b == Type (a Int) b
+        // Test a == Type (a Int)
+        // Test == ??? (Impossible to do a sane substitution)
+        match *typ.clone() {
+            Type::App(ref d, ref arg_types) => {
+                let allowed_missing_args = arg_types
+                    .iter()
+                    .rev()
+                    .zip(params.iter().rev())
+                    .take_while(|&(l, r)| match **l {
+                        Type::Generic(ref g) => g == r,
+                        _ => false,
+                    })
+                    .count();
+
+                if params.len() - args.len() <= allowed_missing_args {
+                    // Remove the args at the end of the aliased type
+                    let arg_types: AppVec<_> = arg_types
+                        .iter()
+                        .take(arg_types.len() - (params.len() - args.len()))
+                        .cloned()
+                        .collect();
+                    typ = Type::app(d.clone(), arg_types);
+                } else {
+                    return None;
+                }
+            }
+            _ => if args.len() != params.len() {
+                return None;
+            },
+        }
+
+        Some(walk_move_type(typ.remove_forall().clone(), &mut |typ| {
+            match **typ {
+                Type::Generic(ref generic) => {
+                    // Replace the generic variable with the type from the list
+                    // or if it is not found the make a fresh variable
+                    params
+                        .iter()
+                        .zip(args)
+                        .find(|&(arg, _)| arg.id == generic.id)
+                        .map(|(_, typ)| typ.clone())
+                }
+                _ => None,
+            }
+        }))
     }
 }
 
@@ -1272,7 +1576,27 @@ where
         let doc = match **typ {
             Type::Hole => arena.text("_"),
             Type::Opaque => arena.text("<opaque>"),
+            Type::Forall(ref args, ref typ, _) => {
+                let doc = chain![arena;
+                    chain![arena;
+                        "forall ",
+                        arena.concat(args.iter().map(|arg| {
+                            arena.text(arg.id.as_ref()).append(arena.space())
+                        })),
+                        "."
+                    ].group(),
+                    arena.space(),
+                    top(typ).pretty(printer)
+                ];
+                p.enclose(Prec::Function, arena, doc)
+            }
             Type::Variable(ref var) => arena.text(format!("{}", var.id)),
+            Type::Skolem(ref skolem) => chain![
+                    arena;
+                    skolem.name.as_ref(),
+                    "@",
+                    skolem.id.to_string()
+                ],
             Type::Generic(ref gen) => arena.text(gen.id.as_ref()),
             Type::App(ref t, ref args) => match self.typ.as_function() {
                 Some(_) => self.pretty_function(printer).nest(INDENT),
@@ -1375,9 +1699,6 @@ where
                         let f = chain![arena;
                             field.name.as_ref(),
                             arena.space(),
-                            arena.concat(field.typ.args.iter().map(|arg| {
-                                arena.text(arg.id.as_ref()).append(" ")
-                            })),
                             arena.text("= ")
                                  .append(top(&field.typ.typ).pretty(printer)),
                             if i + 1 != types.len() || !fields.is_empty() {
@@ -1490,6 +1811,7 @@ where
     T: Deref<Target = Type<I, T>>,
 {
     match **typ {
+        Type::Forall(_, ref typ, _) => f.walk(typ),
         Type::App(ref t, ref args) => {
             f.walk(t);
             for a in args {
@@ -1515,6 +1837,7 @@ where
         Type::Builtin(_) |
         Type::Variable(_) |
         Type::Generic(_) |
+        Type::Skolem(_) |
         Type::Ident(_) |
         Type::Alias(_) |
         Type::EmptyRow => (),
@@ -1599,6 +1922,15 @@ where
     f.visit(&typ).unwrap_or(typ)
 }
 
+pub fn visit_type_opt<F: ?Sized, I, T>(typ: &T, f: &mut F) -> Option<T>
+where
+    F: TypeVisitor<I, T>,
+    T: Deref<Target = Type<I, T>> + From<Type<I, T>> + Clone,
+    I: Clone,
+{
+    f.visit(typ)
+}
+
 pub fn walk_move_type_opt<F: ?Sized, I, T>(typ: &Type<I, T>, f: &mut F) -> Option<T>
 where
     F: TypeVisitor<I, T>,
@@ -1606,6 +1938,8 @@ where
     I: Clone,
 {
     match *typ {
+        Type::Forall(ref args, ref typ, ref vars) => f.visit(typ)
+            .map(|typ| T::from(Type::Forall(args.clone(), typ, vars.clone()))),
         Type::App(ref id, ref args) => {
             let new_args = walk_move_types(args, |t| f.visit(t));
             merge(id, f.visit(id), args, new_args, Type::app)
@@ -1630,6 +1964,7 @@ where
         Type::Opaque |
         Type::Builtin(_) |
         Type::Variable(_) |
+        Type::Skolem(_) |
         Type::Generic(_) |
         Type::Ident(_) |
         Type::Alias(_) |
@@ -1684,11 +2019,10 @@ where
     U: From<Type<Id, U>> + Clone,
     Id: Clone,
 {
-    AliasData::new(
-        alias.name.clone(),
-        alias.args.clone(),
-        translate_type(cache, &alias.typ),
-    )
+    AliasData {
+        name: alias.name.clone(),
+        typ: translate_type(cache, &alias.typ),
+    }
 }
 
 pub fn translate_type<Id, T, U>(cache: &TypeCache<Id, U>, typ: &Type<Id, T>) -> U
@@ -1704,6 +2038,18 @@ where
         ),
         Type::Record(ref row) => U::from(Type::Record(translate_type(cache, row))),
         Type::Variant(ref row) => U::from(Type::Variant(translate_type(cache, row))),
+        Type::Forall(ref params, ref typ, ref skolem) => U::from(Type::Forall(
+            params.clone(),
+            translate_type(cache, typ),
+            skolem
+                .as_ref()
+                .map(|ts| ts.iter().map(|t| translate_type(cache, t)).collect()),
+        )),
+        Type::Skolem(ref skolem) => U::from(Type::Skolem(Skolem {
+            name: skolem.name.clone(),
+            id: skolem.id.clone(),
+            kind: skolem.kind.clone(),
+        })),
         Type::ExtendRow {
             ref types,
             ref fields,

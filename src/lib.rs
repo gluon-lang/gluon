@@ -10,6 +10,7 @@
 extern crate env_logger;
 
 extern crate futures;
+extern crate itertools;
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -478,7 +479,10 @@ impl Compiler {
             .and_then(move |(value, actual)| unsafe {
                 FutureValue::sync(match T::from_value(vm, Variants::new(&value)) {
                     Some(value) => Ok((value, actual)),
-                    None => Err(Error::from(VmError::WrongType(expected, actual))),
+                    None => {
+                        error!("Unable to extract value {:?}", value);
+                        Err(Error::from(VmError::WrongType(expected, actual)))
+                    }
                 })
             })
             .boxed()
@@ -536,33 +540,22 @@ pub const PRELUDE: &'static str = r#"
 let __implicit_prelude = import! "std/prelude.glu"
 and { Num, Eq, Ord, Show, Functor, Monad } = __implicit_prelude
 and { Bool, not } = import! "std/bool.glu"
+and { Option } = import! "std/option.glu"
 
 let __implicit_float = import! "std/float.glu"
 let { (+), (-), (*), (/) } = __implicit_float.num
 and { (==) } = __implicit_float.eq
 
-// HACK Workaround for make_Ord bug until forall works
-let { (<), (<=), (>=), (>) } =
-    let x = __implicit_prelude.make_Ord __implicit_float.ord
-    let infer y : (Float -> Float -> Bool) -> (Float -> Float -> Bool) = y
-    { (<) = infer x.(<), (<=) = infer x.(<=), (>=) = infer x.(>=), (>) = infer x.(>) }
+let { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_float.ord
 
 let __implicit_int = import! "std/int.glu"
 let { (+), (-), (*), (/) } = __implicit_int.num
 and { (==) } = __implicit_int.eq
-
-let { (<), (<=), (>=), (>) } =
-    let x = __implicit_prelude.make_Ord __implicit_int.ord
-    let infer y : (Int -> Int -> Bool) -> (Int -> Int -> Bool) = y
-    { (<) = infer x.(<), (<=) = infer x.(<=), (>=) = infer x.(>=), (>) = infer x.(>) }
+let { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_int.ord
 
 let __implicit_string = import! "std/string.glu"
 and { eq = { (==) } } = __implicit_string
-
-let { (<), (<=), (>=), (>) } =
-    let x = __implicit_prelude.make_Ord __implicit_string.ord
-    let infer y : (String -> String -> Bool) -> (String -> String -> Bool) = y
-    { (<) = infer x.(<), (<=) = infer x.(<=), (>=) = infer x.(>=), (>) = infer x.(>) }
+let { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_string.ord
 
 in ()
 "#;

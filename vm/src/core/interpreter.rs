@@ -560,8 +560,9 @@ impl<'a, 'e> Compiler<'a, 'e> {
                 }
             }
             Expr::Match(expr, alts) => {
-                let expr = self.compile(expr, function)?
-                    .unwrap_or(Reduced::Local(expr));
+                let expr = self.compile(expr, function)?.unwrap_or(
+                    Reduced::Local(expr),
+                );
                 for alt in alts {
                     self.stack_constructors.enter_scope();
                     function.stack.enter_scope();

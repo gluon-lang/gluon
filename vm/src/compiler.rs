@@ -473,7 +473,7 @@ impl<'a> Compiler<'a> {
     fn find_field(&self, typ: &ArcType, field: &Symbol) -> Option<FieldAccess> {
         // Remove all type aliases to get the actual record type
         let typ = resolve::remove_aliases_cow(self, typ);
-        let mut iter = typ.row_iter();
+        let mut iter = typ.remove_forall().row_iter();
         match iter.by_ref().position(|f| f.name.name_eq(field)) {
             Some(index) => {
                 for _ in iter.by_ref() {}
@@ -489,7 +489,8 @@ impl<'a> Compiler<'a> {
     }
 
     fn find_tag(&self, typ: &ArcType, constructor: &Symbol) -> Option<VmTag> {
-        match **resolve::remove_aliases_cow(self, typ) {
+        let x = resolve::remove_aliases_cow(self, typ);
+        match **x {
             Type::Variant(ref row) => row.row_iter()
                 .enumerate()
                 .find(|&(_, field)| field.name == *constructor)
@@ -505,6 +506,9 @@ impl<'a> Compiler<'a> {
         let translator = core::Translator::new(&*env);
         let expr = {
             let expr = translator.allocator.arena.alloc(translator.translate(expr));
+
+            debug!("Translation returned: {}", expr);
+
             core::optimize::optimize(&translator.allocator, expr)
         };
         let mut env = FunctionEnvs::new();
@@ -639,8 +643,8 @@ impl<'a> Compiler<'a> {
             }
             Expr::Call(func, args) => {
                 if let Expr::Ident(ref id, _) = *func {
-                    if id.name.as_ref() == "&&" || id.name.as_ref() == "||" ||
-                        id.name.as_ref().starts_with('#')
+                    if id.name.as_ref() == "&&" || id.name.as_ref() == "||"
+                        || id.name.as_ref().starts_with('#')
                     {
                         self.compile_primitive(&id.name, args, function, tail_position)?;
                         return Ok(None);
@@ -674,15 +678,17 @@ impl<'a> Compiler<'a> {
                 for alt in alts.iter() {
                     match alt.pattern {
                         Pattern::Constructor(ref id, _) => {
-                            let tag = self.find_tag(&typ, &id.name).unwrap_or_else(|| {
-                                ice!(
-                                    "ICE: Could not find tag for {}::{} when matching on \
-                                     expression `{}`",
-                                    typ,
-                                    self.symbols.string(&id.name),
-                                    expr
-                                )
-                            });
+                            let tag = self.find_tag(typ.remove_forall(), &id.name).unwrap_or_else(
+                                || {
+                                    ice!(
+                                        "ICE: Could not find tag for {}::{} when matching on \
+                                         expression `{}`",
+                                        typ,
+                                        self.symbols.string(&id.name),
+                                        expr
+                                    )
+                                },
+                            );
                             function.emit(TestTag(tag));
                             start_jumps.push(function.function.instructions.len());
                             function.emit(CJump(0));
@@ -753,8 +759,8 @@ impl<'a> Compiler<'a> {
                 for expr in exprs {
                     self.compile(expr, function, false)?;
                 }
-                let typ = resolve::remove_aliases_cow(self, &id.typ);
-                match **typ {
+                let typ = resolve::remove_aliases_cow(self, &id.typ.remove_forall());
+                match **typ.remove_forall() {
                     Type::Record(_) => {
                         let index = function.add_record_map(
                             typ.row_iter().map(|field| field.name.clone()).collect(),
@@ -799,8 +805,8 @@ impl<'a> Compiler<'a> {
             function.emit(CJump(lhs_end as VmIndex + 3)); //Jump to rhs evaluation
             function.emit(Construct { tag: 0, args: 0 });
             function.emit(Jump(0)); //lhs false, jump to after rhs
-            // Dont count the integer added added above as the next part of the code never
-            // pushed it
+                                    // Dont count the integer added added above as the next part of the code never
+                                    // pushed it
             function.stack_size -= 1;
             self.compile(rhs, function, tail_position)?;
             // replace jump instruction
@@ -862,15 +868,16 @@ impl<'a> Compiler<'a> {
                 function.new_stack_var(self, name.name.clone(), pattern_type.clone());
             }
             Pattern::Record(ref fields) => {
-                let typ = resolve::remove_aliases(self, pattern_type.clone());
-                match *typ {
+                let typ = resolve::remove_aliases(self, pattern_type.remove_forall().clone());
+                let typ = typ.remove_forall();
+                match **typ {
                     Type::Record(_) => {
                         let mut field_iter = typ.row_iter();
                         let number_of_fields = field_iter.by_ref().count();
                         let is_polymorphic = **field_iter.current_type() != Type::EmptyRow;
-                        if fields.len() == 0 ||
-                            (number_of_fields > 4 && number_of_fields / fields.len() >= 4) ||
-                            is_polymorphic
+                        if fields.len() == 0
+                            || (number_of_fields > 4 && number_of_fields / fields.len() >= 4)
+                            || is_polymorphic
                         {
                             // For pattern matches on large records where only a few of the fields
                             // are used we instead emit a series of GetOffset instructions to avoid

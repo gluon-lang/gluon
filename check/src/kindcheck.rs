@@ -157,11 +157,11 @@ impl<'a> KindCheck<'a> {
     }
 
     pub fn kindcheck_expected(&mut self, typ: &mut ArcType, expected: &ArcKind) -> Result<ArcKind> {
-        debug!("Kindcheck {:?}", typ);
+        debug!("Kindcheck {}", typ);
         let (kind, t) = self.kindcheck(typ)?;
         let kind = self.unify(expected, kind)?;
         *typ = self.finalize_type(t);
-        debug!("Done {:?}", typ);
+        debug!("Done {}", typ);
         Ok(kind)
     }
 
@@ -180,12 +180,33 @@ impl<'a> KindCheck<'a> {
     fn kindcheck(&mut self, typ: &ArcType) -> Result<(ArcKind, ArcType)> {
         match **typ {
             Type::Hole | Type::Opaque | Type::Variable(_) => Ok((self.subs.new_var(), typ.clone())),
+            Type::Skolem(ref skolem) => {
+                let mut skolem = skolem.clone();
+                skolem.kind = self.find(&skolem.name)?;
+                Ok((skolem.kind.clone(), Type::skolem(skolem)))
+            }
             Type::Generic(ref gen) => {
                 let mut gen = gen.clone();
                 gen.kind = self.find(&gen.id)?;
                 Ok((gen.kind.clone(), Type::generic(gen)))
             }
             Type::Builtin(builtin_typ) => Ok((self.builtin_kind(builtin_typ), typ.clone())),
+            Type::Forall(ref params, ref typ, ref vars) => {
+                let mut params = params.clone();
+                for param in &mut params {
+                    param.kind = self.subs.new_var();
+                    self.locals.push((param.id.clone(), param.kind.clone()));
+                }
+                let (ret_kind, ret_typ) = self.kindcheck(typ)?;
+
+                let offset = self.locals.len() - params.len();
+                self.locals.drain(offset..);
+
+                Ok((
+                    ret_kind,
+                    Type::forall_with_vars(params, ret_typ.clone(), vars.clone()),
+                ))
+            }
             Type::App(ref ctor, ref args) => {
                 let (mut kind, ctor) = self.kindcheck(ctor)?;
                 let mut new_args = AppVec::new();
@@ -280,6 +301,14 @@ impl<'a> KindCheck<'a> {
                 }))
             }
             Type::Generic(ref var) => Some(Type::generic(self.finalize_generic(var))),
+            Type::Forall(ref params, ref typ, ref vars) => Some(Type::forall_with_vars(
+                params
+                    .iter()
+                    .map(|param| self.finalize_generic(&param))
+                    .collect(),
+                typ.clone(),
+                vars.clone(),
+            )),
             _ => None,
         })
     }
@@ -293,7 +322,7 @@ impl<'a> KindCheck<'a> {
 fn update_kind(subs: &Substitution<ArcKind>, kind: ArcKind, default: Option<&ArcKind>) -> ArcKind {
     walk_move_kind(kind, &mut |kind| match *kind {
         Kind::Variable(id) => subs.find_type_for_var(id)
-            .cloned()
+            .map(|kind| update_kind(subs, kind.clone(), default))
             .or_else(|| default.cloned()),
         _ => None,
     })

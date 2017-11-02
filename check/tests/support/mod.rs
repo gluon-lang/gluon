@@ -67,7 +67,7 @@ impl MockEnv {
         let bool_ty = Type::app(Type::ident(bool_sym.clone()), collect![]);
 
         MockEnv {
-            bool: Alias::new(bool_sym, vec![], bool_ty),
+            bool: Alias::new(bool_sym, bool_ty),
         }
     }
 }
@@ -226,10 +226,12 @@ pub fn alias(s: &str, args: &[&str], typ: ArcType) -> ArcType {
     assert!(s.len() != 0);
     Type::alias(
         intern(s),
-        args.iter()
-            .map(|id| Generic::new(intern(id), Kind::typ()))
-            .collect(),
-        typ,
+        Type::forall(
+            args.iter()
+                .map(|id| Generic::new(intern(id), Kind::typ()))
+                .collect(),
+            typ,
+        ),
     )
 }
 
@@ -252,4 +254,43 @@ pub fn close_record(typ: ArcType) -> ArcType {
         },
         _ => None,
     })
+}
+
+#[macro_export]
+macro_rules! assert_failed {
+    ($lhs: expr, $rhs: expr, $lhs_value: expr, $rhs_value: expr) => {
+        panic!(
+            r#"Assertion failed: `({} == {})`
+left: `{}`,
+right: `{}`"#,
+            stringify!($lhs),
+            stringify!($rhs),
+            $lhs_value,
+            $rhs_value
+        )
+    };
+}
+
+#[macro_export]
+macro_rules! assert_req {
+    ($lhs: expr, $rhs: expr) => {
+        match ($lhs, $rhs) {
+            (Ok(lhs), Ok(rhs)) => {
+                if lhs != rhs {
+                    assert_failed!($lhs, $rhs, lhs, rhs)
+                }
+            }
+            (Err(lhs), Err(rhs)) => {
+                if lhs != rhs {
+                    assert_failed!($lhs, $rhs, lhs, rhs)
+                }
+            }
+            (Ok(lhs), Err(rhs)) => {
+                assert_failed!($lhs, $rhs, lhs, rhs)
+            }
+            (Err(lhs), Ok(rhs)) => {
+                assert_failed!($lhs, $rhs, lhs, rhs)
+            }
+        }
+    };
 }
