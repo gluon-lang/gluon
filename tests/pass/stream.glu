@@ -1,13 +1,10 @@
 let prelude = import! std.prelude
 let { run, writer, assert_eq, assert_ieq } = import! std.test
-let int = import! std.int
-let stream  = import! std.stream
-let { Ord, Num } = prelude
-let { (<) } = prelude.make_Ord int.ord
-let { (+) } = int.num
 let { (*>) } = prelude.make_Applicative writer.applicative
-let list = import! std.list
-let { List } = list
+let int @ { num = { (+) } } = import! std.int
+let { (<) } = prelude.make_Ord int.ord
+let stream  = import! std.stream
+let list @ { List } = import! std.list
 let { Option } = import! std.option
 
 let s = stream.from (\i -> if i < 5 then Some i else None)

@@ -2,8 +2,7 @@ let { run, writer, assert_eq }  = import! std.test
 let prelude  = import! std.prelude
 let { (*>) } = prelude.make_Applicative writer.applicative
 let int = import! std.int
-let result = import! std.result
-let { Result } = result
+let result @ { Result } = import! std.result
 let unit = import! std.unit
 let { send, recv, channel } = import! std.channel
 

@@ -1,16 +1,12 @@
-let prelude  = import! std.prelude
-let { Eq, Show } = prelude
+let prelude @ { Eq, Show } = import! std.prelude
 let int = import! std.int
-let option = import! std.option
-let { Option } = option
-let string  = import! std.string
-let { (==) } = string.eq
+let option @ { Option } = import! std.option
+let string @ { eq = { (==) } } = import! std.string
 let { (<>) } = prelude.make_Semigroup string.semigroup
 let { Test, run, writer, assert, assert_eq }  = import! std.test
 let map  = import! std.map
 let { (*>) } = prelude.make_Applicative writer.applicative
-let list = import! std.list
-let { List } = list
+let list @ { List } = import! std.list
 
 let show_Entry : Show { key : String, value : Int } = {
     show = \e -> e.key <> int.show.show e.value

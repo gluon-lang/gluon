@@ -1,12 +1,9 @@
-let prelude  = import! std.prelude
-let { Monad, Num } = prelude
+let prelude = import! std.prelude
 let { Test, run, writer, assert, assert_ieq, assert_feq, assert_seq }  = import! std.test
-let int = import! std.int
-let state  = import! std.state
-let { State, put, get, modify, runState, evalState, execState }  = import! std.state
+let int @ { num = { (+), (-), (*) } } = import! std.int
+let state @ { State, put, get, modify, runState, evalState, execState } = import! std.state
 let { (*>) } = prelude.make_Applicative writer.applicative
 let { (*>) } = prelude.make_Applicative state.applicative
-let { (+), (-), (*) } = int.num
 
 let tests =
     assert_ieq (execState (modify (\x -> x + 2) *> modify (\x -> x * 4)) 0) 8

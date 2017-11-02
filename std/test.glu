@@ -1,29 +1,21 @@
-let string = import! std.string
-and { Writer, make = make_Writer, tell } = import! std.writer
-and prelude = import! std.prelude
-and { Show, Num, Eq, Applicative, Monad, Monoid } = prelude
+let string @ { semigroup = { append = (++) } } = import! std.string
+let writer @ { Writer } = import! std.writer
+let prelude @ { Show, Num, Eq, Applicative, Monad, Monoid } = import! std.prelude
 let float = import! std.float
-let int = import! std.int
-and { (+) } = int.num
-and { (==) } = int.eq
-and { (<) } = prelude.make_Ord int.ord
-let list = import! std.list
-let { List } = list
-and { foldl } = list.foldable
+let int @ { num = { (+) }, eq = { (==) } } = import! std.int
+let { (<) } = prelude.make_Ord int.ord
+let list @ { List, foldable = { foldl } } = import! std.list
 let { Option } = import! std.option
-
-let (++) = string.semigroup.append
 
 type Test a = Writer (List String) a
 
-let writer = make_Writer list.monoid
-let { wrap } = writer.applicative
+let testWriter @ { applicative = { wrap } } = writer.make list.monoid
 
 let assert x = if x then () else error "Assertion failed"
 and assert_eq show eq = \x y ->
     if eq.(==) x y
     then wrap ()
-    else tell (Cons ("Assertion failed: " ++ show.show x ++ " != " ++ show.show y) Nil)
+    else writer.tell (Cons ("Assertion failed: " ++ show.show x ++ " != " ++ show.show y) Nil)
 
 let assert_ieq = assert_eq int.show int.eq
 and assert_feq = assert_eq float.show float.eq
@@ -34,4 +26,4 @@ let run test : Test a -> () =
     | Cons _ _ -> error (foldl (\acc err -> acc ++ "\n" ++ err) "" test.writer)
     | Nil -> ()
 
-{ Test, writer, assert, assert_eq, assert_ieq, assert_feq, assert_seq, run }
+{ Test, writer = testWriter, assert, assert_eq, assert_ieq, assert_feq, assert_seq, run }

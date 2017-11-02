@@ -1,16 +1,13 @@
 let prelude = import! std.prelude
 let { Test, run, writer, assert_eq, assert_seq, assert_ieq } = import! std.test
 let { (*>) } = prelude.make_Applicative writer.applicative
-let list = import! std.list
-let { List } = list
+let list @ { List } = import! std.list
 
-let result = import! std.result
-let { Result } = result
+let result @ { Result } = import! std.result
 let string = import! std.string
 let parser = import! std.parser
 
-let lisp = import! "examples/lisp/lisp.glu"
-let { Expr } = lisp
+let lisp @ { Expr } = import! "examples/lisp/lisp.glu"
 
 let assert_leq =
     assert_eq (result.show string.show lisp.show) (result.eq string.eq lisp.eq)

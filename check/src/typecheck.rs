@@ -1013,6 +1013,11 @@ impl<'a> Typecheck<'a> {
     ) -> ArcType {
         let span = pattern.span;
         match pattern.value {
+            Pattern::As(ref id, ref mut pat) => {
+                self.stack_var(id.clone(), match_type.clone());
+                self.typecheck_pattern(pat, match_type.clone());
+                match_type
+            }
             Pattern::Constructor(ref mut id, ref mut args) => {
                 match_type = self.subs.real(&match_type).clone();
                 match_type = self.instantiate_generics(&match_type);
@@ -1495,6 +1500,9 @@ impl<'a> Typecheck<'a> {
         final_type: &ArcType,
     ) {
         match pattern.value {
+            Pattern::As(_, ref mut pat) => {
+                self.finish_pattern(level, pat, &final_type);
+            }
             Pattern::Ident(ref mut id) => {
                 id.typ = final_type.clone();
                 self.environment

@@ -5,13 +5,10 @@ let { (<) } = prelude.make_Ord int.ord
 let { (+) } = int.num
 let { (*>) } = prelude.make_Applicative writer.applicative
 
-let bool = import! std.bool
-let { Bool } = bool
-let option = import! std.option
-let { Option } = option
+let bool @ { Bool } = import! std.bool
+let option @ { Option } = import! std.option
 let string = import! std.string
-let result = import! std.result
-let { Result } = result
+let result @ { Result } = import! std.result
 let unit = import! std.unit
 
 let assert_oieq = assert_eq (option.show int.show) (option.eq int.eq)

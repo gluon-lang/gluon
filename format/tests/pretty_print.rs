@@ -24,7 +24,7 @@ fn test_format(name: &str) {
         .read_to_string(&mut contents)
         .unwrap();
 
-    let out_str = format_expr(&contents).unwrap();
+    let out_str = format_expr(&contents).unwrap_or_else(|err| panic!("{}", err));
 
     if contents != out_str {
         let args: Vec<_> = env::args().collect();

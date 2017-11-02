@@ -1,6 +1,6 @@
 let prelude = import! std.prelude
 let io = import! std.io
-let map = import! std.map
+let map @ { Map } = import! std.map
 let { Bool } = import! std.bool
 let { Option } = import! std.option
 let { Result } = import! std.result
@@ -8,13 +8,10 @@ let string = import! std.string
 let { ref, load, (<-) } = import! std.reference
 let rustyline = import! rustyline
 let repl_prim = import! repl.prim
-let { Map } = map
 let { wrap, (*>) } = prelude.make_Applicative io.applicative
 let { (>>=) } = prelude.make_Monad io.monad
-let { Eq } = prelude
 let { append = (++) } = string.semigroup
-let ord_map = map.make string.ord
-let { singleton, find } = ord_map
+let ord_map @ { singleton, find } = map.make string.ord
 let traverse_with_key = ord_map.traverse_with_key io.applicative
 let { (<>) } = prelude.make_Semigroup ord_map.semigroup
 let { empty } = ord_map.monoid

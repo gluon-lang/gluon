@@ -445,9 +445,10 @@ impl<'a: 'e, 'e> Printer<'a, 'e> {
                         None => arena.nil(),
                     })
                     .nest(INDENT)
-                    .append(
-                        self.whitespace(Span::new(last_element_end, expr.span.end), line.clone()),
-                    )
+                    .append(self.whitespace(
+                        Span::new(last_element_end, expr.span.end),
+                        line.clone(),
+                    ))
                     .group()
                     .append("}");
                 (arena.text("{"), record)
@@ -489,6 +490,15 @@ impl<'a: 'e, 'e> Printer<'a, 'e> {
     {
         let arena = self.arena;
         match pattern.value {
+            Pattern::As(ref ident, ref pat) => prec.enclose(
+                Prec::Constructor,
+                arena,
+                chain![arena;
+                        ident.as_ref(),
+                        " @ ",
+                        self.pretty_pattern_(pat, Prec::Constructor)
+                    ],
+            ),
             Pattern::Constructor(ref ctor, ref args) => {
                 let doc = chain![arena;
                 ctor.as_ref(),

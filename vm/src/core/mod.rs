@@ -1086,6 +1086,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                         })
                         .push(equation);
                 }
+                ast::Pattern::As(_, _) |
                 ast::Pattern::Tuple { .. } |
                 ast::Pattern::Record { .. } |
                 ast::Pattern::Ident(_) |
@@ -1291,7 +1292,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
     ) -> &'a Expr<'a> {
         fn varcon(equation: &Equation) -> CType {
             match equation.patterns.first().expect("Pattern").value {
-                ast::Pattern::Ident(_) => CType::Variable,
+                ast::Pattern::As(_, _) | ast::Pattern::Ident(_) => CType::Variable,
                 ast::Pattern::Record { .. } | ast::Pattern::Tuple { .. } => CType::Record,
                 ast::Pattern::Constructor(_, _) => CType::Constructor,
                 ast::Pattern::Error => ice!("ICE: Error pattern survived typechecking"),
@@ -1332,6 +1333,10 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
     fn extract_ident(&self, index: usize, pattern: &ast::Pattern<Symbol>) -> TypedIdent<Symbol> {
         match *pattern {
             ast::Pattern::Ident(ref id) => id.clone(),
+            ast::Pattern::As(ref id, ref pat) => TypedIdent {
+                name: id.clone(),
+                typ: pat.env_type_of(&self.0.env),
+            },
             _ => TypedIdent {
                 name: Symbol::from(format!("pattern_{}", index)),
                 typ: pattern.env_type_of(&self.0.env),
@@ -1362,6 +1367,12 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     // Just extract the patterns of the first constructor found
                     return Pattern::Constructor(id.clone(), identifiers);
                 }
+                ast::Pattern::As(ref id, ref pat) => if ident.is_none() {
+                    ident = Some(TypedIdent {
+                        name: id.clone(),
+                        typ: pat.env_type_of(&self.0.env),
+                    });
+                },
                 ast::Pattern::Ident(ref id) => if ident.is_none() {
                     ident = Some(id.clone())
                 },

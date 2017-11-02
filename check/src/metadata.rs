@@ -23,6 +23,16 @@ pub fn metadata(
     impl<'b> MetadataVisitor<'b> {
         fn new_binding(&mut self, metadata: Metadata, bind: &ValueBinding<Symbol>) {
             match bind.name.value {
+                Pattern::As(ref id, _) => {
+                    let metadata = bind.comment.as_ref().map_or(metadata, |comment| {
+                        Metadata {
+                            comment: Some(comment.content.clone()),
+                            module: BTreeMap::new(),
+                        }
+                    });
+                    self.stack_var(id.clone(), metadata.clone());
+                    self.new_pattern(metadata, &bind.name);
+                }
                 Pattern::Ident(ref id) => {
                     let metadata = bind.comment.as_ref().map_or(metadata, |comment| {
                         Metadata {
@@ -32,7 +42,10 @@ pub fn metadata(
                     });
                     self.stack_var(id.name.clone(), metadata);
                 }
-                _ => self.new_pattern(metadata, &bind.name),
+                Pattern::Constructor(..) |
+                Pattern::Tuple { .. } |
+                Pattern::Record { .. } |
+                Pattern::Error => self.new_pattern(metadata, &bind.name),
             }
         }
 
@@ -66,8 +79,10 @@ pub fn metadata(
                         }
                     }
                 }
-                Pattern::Ident(ref id) => {
-                    self.stack_var(id.name.clone(), metadata);
+                Pattern::Ident(ref id) => self.stack_var(id.name.clone(), metadata),
+                Pattern::As(ref id, ref pat) => {
+                    self.stack_var(id.clone(), metadata.clone());
+                    self.new_pattern(metadata, pat);
                 }
                 Pattern::Tuple { .. } | Pattern::Constructor(..) | Pattern::Error => (),
             }

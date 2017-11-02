@@ -139,6 +139,12 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
 
     fn on_pattern(&mut self, pattern: &SpannedPattern<Symbol>) {
         match pattern.value {
+            Pattern::As(_, ref pat) => {
+                self.on_pattern(pat);
+            }
+            Pattern::Ident(ref id) => {
+                self.stack.insert(id.name.clone(), id.typ.clone());
+            }
             Pattern::Record {
                 ref typ,
                 fields: ref field_ids,
@@ -169,9 +175,6 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
                         }
                     }
                 }
-            }
-            Pattern::Ident(ref id) => {
-                self.stack.insert(id.name.clone(), id.typ.clone());
             }
             Pattern::Tuple {
                 elems: ref args, ..
@@ -301,6 +304,7 @@ where
             self.enclosing_match = Match::Pattern(current);
         }
         match current.value {
+            Pattern::As(_, ref pat) => self.visit_pattern(pat),
             Pattern::Constructor(ref id, ref args) => {
                 let id_span = Span::new(
                     current.span.start,
@@ -648,6 +652,10 @@ impl Extract for IdentAt {
                 value: Pattern::Ident(ref id),
                 ..
             }) => id.name.clone(),
+            Match::Pattern(&Spanned {
+                value: Pattern::As(ref id, _),
+                ..
+            }) => id.clone(),
             _ => return Err(()),
         })
     }
@@ -742,6 +750,10 @@ pub fn find_all_symbols(
 
             fn visit_pattern(&mut self, p: &'a SpannedPattern<Self::Ident>) {
                 match p.value {
+                    Pattern::As(ref id, ref pat) if id == &self.symbol => {
+                        self.result.push(p.span);
+                        walk_pattern(self, &pat.value);
+                    }
                     Pattern::Ident(ref id) if id.name == self.symbol => {
                         self.result.push(p.span);
                     }
