@@ -1,3 +1,5 @@
+#![allow(unused_macros)]
+
 use base::ast::{DisplayEnv, IdentEnv, SpannedExpr};
 use base::error::InFile;
 use base::kind::{ArcKind, Kind, KindEnv};
@@ -5,12 +7,14 @@ use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
 use base::types::{self, Alias, ArcType, Generic, PrimitiveEnv, RecordSelector, Type, TypeCache,
                   TypeEnv};
+
 use check::typecheck::{self, Typecheck};
 use parser::{parse_partial_expr, ParseErrors};
 
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;
+
 
 /// Returns a reference to the interner stored in TLD
 pub fn get_local_interner() -> Rc<RefCell<Symbols>> {
@@ -293,4 +297,133 @@ macro_rules! assert_req {
             }
         }
     };
+}
+
+macro_rules! test_check {
+    ($name : ident, $source: expr, $typ: expr) => {
+        #[test]
+        fn $name() {
+            let _ = env_logger::init();
+
+            let text = $source;
+            let result = support::typecheck(text);
+
+            assert_req!(result.map(|x| x.to_string()), Ok($typ.to_string()));
+        }
+    }
+}
+
+macro_rules! assert_err {
+    ($e: expr, $($id: pat),+) => {{
+        #[allow(unused_imports)]
+        use check::typecheck::TypeError::*;
+        #[allow(unused_imports)]
+        use check::unify::Error::{TypeMismatch, Substitution, Other};
+        #[allow(unused_imports)]
+        use check::substitution::Error::{Occurs, Constraint};
+        #[allow(unused_imports)]
+        use check::unify_type::TypeError::FieldMismatch;
+
+        match $e {
+            Ok(x) => assert!(false, "Expected error, got {}", x),
+            Err(err) => {
+                let errors = err.errors();
+                let mut iter = (&errors).into_iter();
+                $(
+                match iter.next() {
+                    Some(&::base::pos::Spanned { value: $id, .. }) => (),
+                    _ => assert!(false, "Found errors:\n{}\nbut expected {}",
+                                        errors, stringify!($id)),
+                }
+                )+
+                assert!(iter.count() == 0, "Found more errors than expected\n{}", errors);
+            }
+        }
+    }}
+}
+
+macro_rules! count {
+    ($e: pat) => {
+        1
+    };
+    ($e: pat, $($id: pat),+) => {
+        1 + count!($($id),+)
+    }
+}
+
+macro_rules! assert_unify_err {
+    ($e: expr, $($id: pat),+) => {
+        assert_multi_unify_err!($e, [$($id),+])
+    }
+}
+
+macro_rules! assert_multi_unify_err {
+    ($e: expr, $( [ $( $id: pat ),+ ] ),+) => {{
+        use check::typecheck::TypeError::*;
+        #[allow(unused_imports)]
+        use check::unify::Error::{TypeMismatch, Substitution, Other};
+        #[allow(unused_imports)]
+        use check::substitution::Error::{Occurs, Constraint};
+        #[allow(unused_imports)]
+        use check::unify_type::TypeError::{FieldMismatch, SelfRecursive, MissingFields};
+
+        match $e {
+            Ok(x) => assert!(false, "Expected error, got {}", x),
+            Err(err) => {
+                let errors = err.errors();
+                let mut errors_iter = (&errors).into_iter().enumerate();
+                $(
+                match errors_iter.next() {
+                    Some((i, error)) => {
+                        match *error {
+                            ::base::pos::Spanned { value: Unification(_, _, ref errors), .. } => {
+                                let mut iter = errors.iter();
+                                let expected_count = count!($($id),+);
+                                $(
+                                match iter.next() {
+                                    Some(&$id) => (),
+                                    Some(error2) => {
+                                        assert!(false,
+                                            "Found errors at {}:\n{}\nExpected:\n{}\nFound\n:{:?}",
+                                            i,
+                                            error,
+                                            stringify!($id),
+                                            error2
+                                        );
+                                    }
+                                    None => {
+                                        assert!(false,
+                                            "Found {} less errors than expected at {}.\n\
+                                            Errors:\n{}\nbut expected {}",
+                                            expected_count - errors.len(),
+                                            i,
+                                            error,
+                                            stringify!($id)
+                                        );
+                                    }
+                                }
+                                )+
+                                let count = iter.count();
+                                assert!(count == 0,
+                                        "Found {} more errors than expected at {}\n{}",
+                                        count,
+                                        i,
+                                        error);
+                            }
+                            _ => assert!(false,
+                                        "Found errors at {}:\n\
+                                        {}\nbut expected an unification error",
+                                        i,
+                                        error)
+                        }
+                    }
+                    None => ()
+                }
+                )+
+                assert!(errors_iter.count() == 0,
+                        "Found more unification errors than expected\n{}",
+                        errors);
+            }
+        }
+    }}
 }

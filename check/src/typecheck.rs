@@ -1187,6 +1187,48 @@ impl<'a> Typecheck<'a> {
         }
     }
 
+    fn translate_projected_type(&mut self, id: &Symbol) -> TcResult<ArcType> {
+        let mut lookup_type: Option<ArcType> = None;
+        for component in id.name().module().components() {
+            let symbol = self.symbols.symbol(component);
+            lookup_type = match lookup_type {
+                Some(typ) => Some(self.remove_aliases(typ.clone())
+                    .row_iter()
+                    .find(|field| field.name.name_eq(&symbol))
+                    .map(|field| field.typ.clone())
+                    .ok_or_else(|| TypeError::UndefinedField(typ, symbol))?),
+                None => Some(self.find(&symbol)?),
+            };
+        }
+        let typ = lookup_type.unwrap();
+        let type_symbol = self.symbols.symbol(id.name().name());
+        self.remove_aliases(typ.clone())
+            .type_field_iter()
+            .find(|field| field.name.name_eq(&type_symbol))
+            .map(|field| field.typ.clone().into_type())
+            .ok_or_else(|| TypeError::UndefinedField(typ, type_symbol))
+    }
+
+    fn translate_ast_type(
+        &mut self,
+        type_cache: &TypeCache<Symbol, ArcType>,
+        ast_type: &AstType<Symbol>,
+    ) -> ArcType {
+        use base::pos::HasSpan;
+
+        match **ast_type {
+            Type::Ident(ref id) if id.name().module().as_str() != "" => {
+                match self.translate_projected_type(id) {
+                    Ok(typ) => typ,
+                    Err(err) => self.error(ast_type.span(), err),
+                }
+            }
+            _ => types::translate_type_with(type_cache, ast_type, |typ| {
+                self.translate_ast_type(type_cache, typ)
+            }),
+        }
+    }
+
     fn typecheck_bindings(&mut self, bindings: &mut [ValueBinding<Symbol>]) -> TcResult<()> {
         self.enter_scope();
         self.type_variables.enter_scope();
@@ -1194,7 +1236,8 @@ impl<'a> Typecheck<'a> {
 
         for bind in bindings.iter_mut() {
             if let Some(ref typ) = bind.typ {
-                bind.resolved_type = types::translate_type(&self.type_cache, typ);
+                let type_cache = self.type_cache.clone();
+                bind.resolved_type = self.translate_ast_type(&type_cache, typ);
             }
         }
 
@@ -1314,7 +1357,10 @@ impl<'a> Typecheck<'a> {
                 bind.alias.value.unresolved_type(),
             );
 
-            let alias = types::translate_alias(&self.type_cache, &bind.alias.value);
+            let alias = types::translate_alias(&bind.alias.value, |typ| {
+                let type_cache = self.type_cache.clone();
+                self.translate_ast_type(&type_cache, typ)
+            });
             resolved_aliases.push(alias);
         }
 

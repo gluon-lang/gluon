@@ -8,127 +8,13 @@ extern crate gluon_base as base;
 extern crate gluon_check as check;
 extern crate gluon_parser as parser;
 
-use base::pos::Spanned;
 use base::symbol::Symbol;
 use base::types::{ArcType, Type};
 
 use check::typecheck::TypeError;
 
+#[macro_use]
 mod support;
-
-macro_rules! assert_err {
-    ($e: expr, $($id: pat),+) => {{
-        #[allow(unused_imports)]
-        use check::typecheck::TypeError::*;
-        #[allow(unused_imports)]
-        use check::unify::Error::{TypeMismatch, Substitution, Other};
-        #[allow(unused_imports)]
-        use check::substitution::Error::{Occurs, Constraint};
-        #[allow(unused_imports)]
-        use check::unify_type::TypeError::FieldMismatch;
-
-        match $e {
-            Ok(x) => assert!(false, "Expected error, got {}", x),
-            Err(err) => {
-                let errors = err.errors();
-                let mut iter = (&errors).into_iter();
-                $(
-                match iter.next() {
-                    Some(&Spanned { value: $id, .. }) => (),
-                    _ => assert!(false, "Found errors:\n{}\nbut expected {}",
-                                        errors, stringify!($id)),
-                }
-                )+
-                assert!(iter.count() == 0, "Found more errors than expected\n{}", errors);
-            }
-        }
-    }}
-}
-
-macro_rules! count {
-    ($e: pat) => {
-        1
-    };
-    ($e: pat, $($id: pat),+) => {
-        1 + count!($($id),+)
-    }
-}
-
-macro_rules! assert_unify_err {
-    ($e: expr, $($id: pat),+) => {
-        assert_multi_unify_err!($e, [$($id),+])
-    }
-}
-macro_rules! assert_multi_unify_err {
-    ($e: expr, $( [ $( $id: pat ),+ ] ),+) => {{
-        use check::typecheck::TypeError::*;
-        #[allow(unused_imports)]
-        use check::unify::Error::{TypeMismatch, Substitution, Other};
-        #[allow(unused_imports)]
-        use check::substitution::Error::{Occurs, Constraint};
-        #[allow(unused_imports)]
-        use check::unify_type::TypeError::{FieldMismatch, SelfRecursive, MissingFields};
-
-        match $e {
-            Ok(x) => assert!(false, "Expected error, got {}", x),
-            Err(err) => {
-                let errors = err.errors();
-                let mut errors_iter = (&errors).into_iter().enumerate();
-                $(
-                match errors_iter.next() {
-                    Some((i, error)) => {
-                        match *error {
-                            Spanned { value: Unification(_, _, ref errors), .. } => {
-                                let mut iter = errors.iter();
-                                let expected_count = count!($($id),+);
-                                $(
-                                match iter.next() {
-                                    Some(&$id) => (),
-                                    Some(error2) => {
-                                        assert!(false,
-                                            "Found errors at {}:\n{}\nExpected:\n{}\nFound\n:{:?}",
-                                            i,
-                                            error,
-                                            stringify!($id),
-                                            error2
-                                        );
-                                    }
-                                    None => {
-                                        assert!(false,
-                                            "Found {} less errors than expected at {}.\n\
-                                            Errors:\n{}\nbut expected {}",
-                                            expected_count - errors.len(),
-                                            i,
-                                            error,
-                                            stringify!($id)
-                                        );
-                                    }
-                                }
-                                )+
-                                let count = iter.count();
-                                assert!(count == 0,
-                                        "Found {} more errors than expected at {}\n{}",
-                                        count,
-                                        i,
-                                        error);
-                            }
-                            _ => assert!(false,
-                                        "Found errors at {}:\n\
-                                        {}\nbut expected an unification error",
-                                        i,
-                                        error)
-                        }
-                    }
-                    None => ()
-                }
-                )+
-                assert!(errors_iter.count() == 0,
-                        "Found more unification errors than expected\n{}",
-                        errors);
-            }
-        }
-    }}
-}
 
 #[test]
 fn record_missing_field() {
