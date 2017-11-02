@@ -332,7 +332,7 @@ where
 
     fn run_expr(
         self,
-        _compiler: &mut Compiler,
+        compiler: &mut Compiler,
         vm: &'vm Thread,
         name: &str,
         _expr_str: &str,
@@ -343,6 +343,7 @@ where
             typ,
             mut function,
         } = self;
+        let run_io = compiler.run_io;
         let module_id = Symbol::from(name);
         function.id = module_id.clone();
         let closure = try_future!(vm.global_env().new_global_thunk(function));
@@ -356,6 +357,11 @@ where
                 }
             })
             .map_err(Error::from)
+            .and_then(move |v| if run_io {
+                ::compiler_pipeline::run_io(vm, v)
+            } else {
+                FutureValue::sync(Ok(v)).boxed()
+            })
             .boxed()
     }
     fn load_script(

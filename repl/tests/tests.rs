@@ -1,9 +1,11 @@
 #[macro_use]
 extern crate pretty_assertions;
 
+use std::env;
 use std::fs::File;
 use std::io::Read;
-use std::process::Command;
+use std::path::Path;
+use std::process::{Command, Stdio};
 
 #[test]
 fn fmt_repl() {
@@ -30,4 +32,25 @@ fn fmt_repl() {
         .unwrap();
 
     assert_eq!(before, after);
+}
+
+#[test]
+fn issue_365_run_io_from_command_line() {
+    let path = env::args().next().unwrap();
+    let gluon_path = Path::new(&path[..])
+        .parent()
+        .and_then(|p| p.parent())
+        .expect("folder")
+        .join("gluon");
+    let output = Command::new(&*gluon_path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .arg("tests/print.glu")
+        .output()
+        .unwrap_or_else(|err| {
+            panic!("{}\nWhen opening `{}`", err, gluon_path.display())
+        });
+
+    assert_eq!(String::from_utf8(output.stderr).unwrap(), "");
+    assert_eq!(String::from_utf8(output.stdout).unwrap(), "123\n");
 }

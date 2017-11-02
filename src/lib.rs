@@ -439,15 +439,9 @@ impl Compiler {
     where
         T: Getable<'vm> + VmType + Send + 'vm,
     {
-        let run_io = self.run_io;
         let expected = T::make_type(vm);
         expr_str
             .run_expr(self, vm, name, expr_str, Some(&expected))
-            .and_then(move |v| if run_io {
-                compiler_pipeline::run_io(vm, v)
-            } else {
-                FutureValue::sync(Ok(v)).boxed()
-            })
             .and_then(move |execute_value| unsafe {
                 FutureValue::sync(
                     match T::from_value(vm, Variants::new(&execute_value.value)) {

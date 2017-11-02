@@ -37,7 +37,7 @@ fn run_files<'s, I>(vm: &Thread, files: I) -> Result<()>
 where
     I: Iterator<Item = &'s str>,
 {
-    let mut compiler = Compiler::new();
+    let mut compiler = Compiler::new().run_io(true);
     for file in files {
         compiler.load_file(&vm, file)?;
     }
