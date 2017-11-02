@@ -1,18 +1,10 @@
+//@NO-IMPLICIT-PRELUDE
+
 let prelude = import! "std/prelude.glu"
-let { Eq, Ord, Ordering, Show } = prelude
+let { Flip, Eq, Ord, Ordering, Show } = prelude
 let { Functor, Applicative, Monad, Foldable, Traversable } = prelude
 let { Result } = import! "std/types.glu"
 let { Bool } = import! "std/bool.glu"
-
-let unwrap_ok res : Result e a -> a =
-    match res with
-    | Ok x -> x
-    | Err _ -> error "Result was an Err"
-
-let unwrap_err res : Result e a -> e =
-    match res with
-    | Ok _ -> error "Result was an Ok"
-    | Err x -> x
 
 let eq e a : Eq e -> Eq a -> Eq (Result e a) = {
     (==) = \l r ->
@@ -32,51 +24,6 @@ let ord e a : Ord e -> Ord a -> Ord (Result e a) = {
         | (Err _, Ok _) -> GT,
 }
 
-let functor : Functor (Result e) = {
-    map = \f x ->
-        match x with
-        | Ok y -> Ok (f y)
-        | Err e -> Err e,
-}
-
-let applicative : Applicative (Result e) = {
-    functor = functor,
-    apply = \f x ->
-        match (f, x) with
-        | (Ok g, Ok y) -> Ok (g y)
-        | (Ok _, Err e) -> Err e
-        | (Err x, _) -> Err x,
-    wrap = \x -> Ok x,
-}
-
-let monad : Monad (Result e) = {
-    applicative = applicative,
-    flat_map = \f m ->
-        match m with
-        | Ok x -> f x
-        | Err err -> Err err,
-}
-
-let foldable : Foldable (Result e) = {
-    foldr = \f z r ->
-        match r with
-        | Err _ -> z
-        | Ok x -> f x z,
-    foldl = \f z r ->
-        match r with
-        | Err _ -> z
-        | Ok x -> f z x,
-}
-
-let traversable : Traversable (Result e) = {
-    functor = functor,
-    foldable = foldable,
-    traverse = \app f r ->
-        match r with
-        | Err e -> app.wrap (Err e)
-        | Ok x -> app.functor.map Ok (f x),
-}
-
 let show : Show e -> Show t -> Show (Result e t) = \e t ->
     let (++) = string_prim.append
 
@@ -87,16 +34,117 @@ let show : Show e -> Show t -> Show (Result e t) = \e t ->
 
     { show }
 
+let ok =
+    let unwrap res : Result e a -> a =
+        match res with
+        | Ok x -> x
+        | Err _ -> error "Result was an Err"
+
+    let functor : Functor (Result e) = {
+        map = \f x ->
+            match x with
+            | Ok y -> Ok (f y)
+            | Err e -> Err e,
+    }
+
+    let applicative : Applicative (Result e) = {
+        functor = functor,
+        apply = \f x ->
+            match (f, x) with
+            | (Ok g, Ok y) -> Ok (g y)
+            | (Ok _, Err e) -> Err e
+            | (Err x, _) -> Err x,
+        wrap = \x -> Ok x,
+    }
+
+    let monad : Monad (Result e) = {
+        applicative = applicative,
+        flat_map = \f m ->
+            match m with
+            | Ok x -> f x
+            | Err err -> Err err,
+    }
+
+    let foldable : Foldable (Result e) = {
+        foldr = \f z r ->
+            match r with
+            | Err _ -> z
+            | Ok x -> f x z,
+        foldl = \f z r ->
+            match r with
+            | Err _ -> z
+            | Ok x -> f z x,
+    }
+
+    let traversable : Traversable (Result e) = {
+        functor = functor,
+        foldable = foldable,
+        traverse = \app f r ->
+            match r with
+            | Err e -> app.wrap (Err e)
+            | Ok x -> app.functor.map Ok (f x),
+    }
+
+    { unwrap, functor, applicative, monad, foldable, traversable }
+
+let err =
+    let unwrap res : Result e a -> e =
+        match res with
+        | Ok _ -> error "Result was an Ok"
+        | Err x -> x
+
+    let functor : Functor (Flip Result a) = {
+        map = \f x ->
+            match x with
+            | Ok y -> Ok y
+            | Err e -> Err (f e),
+    }
+
+    let applicative : Applicative (Flip Result a) = {
+        functor = functor,
+        apply = \f x ->
+            match (f, x) with
+            | (Err g, Err e) -> Err (g e)
+            | (Err _, Ok x) -> Ok x
+            | (Ok e, _) -> Ok e,
+        wrap = \e -> Err e,
+    }
+
+    let monad : Monad (Flip Result a) = {
+        applicative = applicative,
+        flat_map = \f m ->
+            match m with
+            | Ok x -> Ok x
+            | Err e -> f e,
+    }
+
+    let foldable : Foldable (Flip Result a) = {
+        foldr = \f z r ->
+            match r with
+            | Err e -> f e z
+            | Ok _ -> z,
+        foldl = \f z r ->
+            match r with
+            | Err e -> f e z
+            | Ok _ -> z,
+    }
+
+    let traversable : Traversable (Flip Result a) = {
+        functor = functor,
+        foldable = foldable,
+        traverse = \app f r ->
+            match r with
+            | Err e -> app.functor.map Err (f e)
+            | Ok x -> app.wrap (Ok x),
+    }
+
+    { unwrap, functor, applicative, monad, foldable, traversable }
+
 {
     Result,
-    unwrap_ok,
-    unwrap_err,
     eq,
     ord,
-    functor,
-    applicative,
-    monad,
-    foldable,
-    traversable,
     show,
+    ok,
+    err,
 }
