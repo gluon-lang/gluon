@@ -212,7 +212,8 @@ fn io_future() {
     vm.define_global("test", primitive!(1 test)).unwrap();
 
     let result = Compiler::new()
-        .run_io_expr::<IO<i32>>(&vm, "<top>", expr)
+        .run_io(true)
+        .run_expr::<IO<i32>>(&vm, "<top>", expr)
         .unwrap_or_else(|err| panic!("{}", err));
 
     assert_eq!(result.0, IO::Value(124));

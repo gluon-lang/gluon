@@ -74,7 +74,8 @@ macro_rules! test_expr {
             let mut vm = $crate::support::make_vm();
             let (value, _) = ::gluon::Compiler::new()
                 .implicit_prelude(false)
-                .run_io_expr(&mut vm, "<top>", $expr)
+                .run_io(true)
+                .run_expr(&mut vm, "<top>", $expr)
                 .unwrap_or_else(|err| panic!("{}", err));
             match value {
                 IO::Value(value) => {

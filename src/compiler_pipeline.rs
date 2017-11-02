@@ -360,30 +360,30 @@ where
     }
     fn load_script(
         self,
-        _compiler: &mut Compiler,
+        compiler: &mut Compiler,
         vm: &'vm Thread,
         filename: &str,
-        _expr_str: &str,
+        expr_str: &str,
         _: (),
     ) -> BoxFutureValue<'vm, (), Error> {
         use check::metadata;
 
-        let CompileValue {
-            mut expr,
-            typ,
-            function,
-        } = self;
-        let (metadata, _) = metadata::metadata(&*vm.get_env(), expr.borrow_mut());
-        let closure = try_future!(vm.global_env().new_global_thunk(function));
+        let run_io = compiler.run_io;
         let filename = filename.to_string();
-        vm.call_thunk(closure)
-            .map_err(Error::from)
-            .and_then(move |(_, value)| {
+
+        self.run_expr(compiler, vm, &filename, expr_str, ())
+            .and_then(move |v| if run_io {
+                ::compiler_pipeline::run_io(vm, v)
+            } else {
+                FutureValue::sync(Ok(v)).boxed()
+            })
+            .and_then(move |mut value| {
+                let (metadata, _) = metadata::metadata(&*vm.get_env(), value.expr.borrow_mut());
                 try_future!(vm.set_global(
-                    closure.function.name.clone(),
-                    typ,
+                    value.id.clone(),
+                    value.typ,
                     metadata,
-                    value,
+                    *value.value,
                 ));
                 info!("Loaded module `{}` filename", filename);
                 FutureValue::sync(Ok(()))
@@ -514,28 +514,39 @@ where
 pub fn run_io<'vm, E>(
     vm: &'vm Thread,
     v: ExecuteValue<'vm, E>,
-) -> BoxFutureValue<'vm, (RootedValue<&'vm Thread>, ArcType), Error> {
+) -> BoxFutureValue<'vm, ExecuteValue<'vm, E>, Error>
+where
+    E: Send + 'vm,
+{
     use check::check_signature;
     use vm::api::{VmType, IO};
     use vm::api::generic::A;
 
-    let ExecuteValue {
-        typ: actual, value, ..
-    } = v;
-    if check_signature(&*vm.get_env(), &actual, &IO::<A>::make_forall_type(vm)) {
+    if check_signature(&*vm.get_env(), &v.typ, &IO::<A>::make_forall_type(vm)) {
+        let ExecuteValue {
+            id,
+            expr,
+            typ,
+            value,
+        } = v;
         vm.execute_io(*value)
             .map(move |(_, value)| {
                 // The type of the new value will be `a` instead of `IO a`
-                let actual = resolve::remove_aliases_cow(&*vm.get_env(), &actual);
+                let actual = resolve::remove_aliases_cow(&*vm.get_env(), &typ);
                 let actual = match **actual {
                     Type::App(_, ref arg) => arg[0].clone(),
                     _ => ice!("ICE: Expected IO type found: `{}`", actual),
                 };
-                (vm.root_value(value), actual)
+                ExecuteValue {
+                    id,
+                    expr,
+                    value: vm.root_value(value),
+                    typ: actual,
+                }
             })
             .map_err(Error::from)
             .boxed()
     } else {
-        FutureValue::sync(Ok((value, actual))).boxed()
+        FutureValue::sync(Ok(v)).boxed()
     }
 }
