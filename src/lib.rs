@@ -152,6 +152,7 @@ pub struct Compiler {
     symbols: Symbols,
     implicit_prelude: bool,
     emit_debug_info: bool,
+    run_io: bool,
 }
 
 impl Default for Compiler {
@@ -167,6 +168,7 @@ impl Compiler {
             symbols: Symbols::new(),
             implicit_prelude: true,
             emit_debug_info: true,
+            run_io: false,
         }
     }
 
@@ -182,6 +184,13 @@ impl Compiler {
     /// (default: true)
     pub fn emit_debug_info(mut self, emit_debug_info: bool) -> Compiler {
         self.emit_debug_info = emit_debug_info;
+        self
+    }
+
+    /// Sets whether `IO` expressions are evaluated.
+    /// (default: false)
+    pub fn run_io(mut self, run_io: bool) -> Compiler {
+        self.run_io = run_io;
         self
     }
 
@@ -433,57 +442,13 @@ impl Compiler {
         let expected = T::make_type(vm);
         expr_str
             .run_expr(self, vm, name, expr_str, Some(&expected))
-            .and_then(move |v| {
-                let ExecuteValue {
-                    typ: actual, value, ..
-                } = v;
-                unsafe {
-                    FutureValue::sync(match T::from_value(vm, Variants::new(&value)) {
-                        Some(value) => Ok((value, actual)),
-                        None => Err(Error::from(VmError::WrongType(expected, actual))),
-                    })
-                }
-            })
-            .boxed()
-    }
-
-    /// Compiles and runs `expr_str`. If the expression is of type `IO a` the action is evaluated
-    /// and a value of type `a` is returned
-    pub fn run_io_expr<'vm, T>(
-        &mut self,
-        vm: &'vm Thread,
-        name: &str,
-        expr_str: &str,
-    ) -> Result<(T, ArcType)>
-    where
-        T: Getable<'vm> + VmType + Send + 'vm,
-        T::Type: Sized,
-    {
-        self.run_io_expr_async(vm, name, expr_str).wait()
-    }
-
-    pub fn run_io_expr_async<'vm, T>(
-        &mut self,
-        vm: &'vm Thread,
-        name: &str,
-        expr_str: &str,
-    ) -> BoxFutureValue<'vm, (T, ArcType), Error>
-    where
-        T: Getable<'vm> + VmType + Send + 'vm,
-        T::Type: Sized,
-    {
-        let expected = T::make_type(vm);
-        expr_str
-            .run_expr(self, vm, name, expr_str, Some(&expected))
-            .and_then(move |v| run_io(vm, v))
-            .and_then(move |(value, actual)| unsafe {
-                FutureValue::sync(match T::from_value(vm, Variants::new(&value)) {
-                    Some(value) => Ok((value, actual)),
-                    None => {
-                        error!("Unable to extract value {:?}", value);
-                        Err(Error::from(VmError::WrongType(expected, actual)))
-                    }
-                })
+            .and_then(move |execute_value| unsafe {
+                FutureValue::sync(
+                    match T::from_value(vm, Variants::new(&execute_value.value)) {
+                        Some(value) => Ok((value, execute_value.typ)),
+                        None => Err(Error::from(VmError::WrongType(expected, execute_value.typ))),
+                    },
+                )
             })
             .boxed()
     }

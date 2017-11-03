@@ -542,6 +542,28 @@ let (result, _) = Compiler::new()
 assert_eq!(result, Some(3));
 ```
 
+Notably, if we were to execute a script with side effects the code above will actually not run the side effects. To make gluon run side effects we need to set the [run_io][] flag on [Compiler][].
+
+[run_io]:https://docs.rs/gluon/*/gluon/struct.Compiler.html#method.run_io
+
+```rust,ignore
+let vm = new_vm();
+
+let script = r#"
+let io = import! "std/io.glu"
+io.print "123"
+"#;
+// Returns an action which prints `123` when evaluated
+Compiler::new()
+    .run_expr::<IO<()>>(&vm, "example", script)
+    .unwrap();
+// Prints `123` to stdout
+Compiler::new()
+    .run_io(true)
+    .run_expr::<IO<()>>(&vm, "example", script)
+    .unwrap();
+```
+
 Often, it is either inconvenient or inefficient to compile and run code directly from source code. To write the above example in a more efficient way, we could instead load the `(+)` function and call it directly.
 
 ```rust,ignore

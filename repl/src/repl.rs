@@ -25,7 +25,7 @@ use vm::internal::ValuePrinter;
 use vm::thread::{RootStr, RootedValue, Thread, ThreadInternal};
 
 use gluon::{new_vm, Compiler, Result as GluonResult, RootedThread};
-use gluon::compiler_pipeline::{run_io, Executable};
+use gluon::compiler_pipeline::{Executable, ExecuteValue};
 
 fn type_of_expr(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     let WithVM { vm, value: args } = args;
@@ -193,12 +193,12 @@ fn eval_line_(vm: &Thread, line: &str) -> GluonResult<String> {
         }
     };
     let mut eval_expr;
-    let (value, typ) = match let_or_expr {
+    let ExecuteValue { value, typ, .. } = match let_or_expr {
         Ok(expr) => {
             eval_expr = expr;
+            compiler = compiler.run_io(true);
             eval_expr
                 .run_expr(&mut compiler, vm, "<line>", line, None)
-                .and_then(|v| run_io(vm, v))
                 .wait()?
         }
         Err(let_binding) => {
@@ -217,7 +217,7 @@ fn eval_line_(vm: &Thread, line: &str) -> GluonResult<String> {
                 .run_expr(&mut compiler, vm, "<line>", line, None)
                 .wait()?;
             set_globals(vm, &unpack_pattern, &value.typ, &value.value)?;
-            (value.value, value.typ)
+            value
         }
     };
 

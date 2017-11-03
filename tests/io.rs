@@ -31,7 +31,8 @@ fn read_file() {
             wrap (array.index bytes 8)
         "#;
     let result = Compiler::new()
-        .run_io_expr_async::<IO<u8>>(&thread, "<top>", text)
+        .run_io(true)
+        .run_expr_async::<IO<u8>>(&thread, "<top>", text)
         .sync_or_error();
 
     match result {
@@ -66,7 +67,8 @@ fn run_expr_int() {
     "#;
     let mut vm = make_vm();
     let (result, _) = Compiler::new()
-        .run_io_expr_async::<IO<String>>(&mut vm, "<top>", text)
+        .run_io(true)
+        .run_expr_async::<IO<String>>(&mut vm, "<top>", text)
         .sync_or_error()
         .unwrap();
     match result {
