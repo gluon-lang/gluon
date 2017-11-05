@@ -507,3 +507,18 @@ make
 
     assert!(result.is_err(), "{}", result.unwrap_err());
 }
+
+
+#[test]
+fn double_type_variable_unification_bug() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+\k ->
+    let { k } = k
+    insert k
+"#;
+    let result = support::typecheck(text);
+
+    assert_err!(result, UndefinedVariable(..));
+}
