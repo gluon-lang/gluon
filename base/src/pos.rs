@@ -121,7 +121,7 @@ impl fmt::Display for Location {
     }
 }
 
-/// An expansion identifier tracks wheter a span originated from a macro expansion or not
+/// An expansion identifier tracks whether a span originated from a macro expansion or not.
 #[derive(Copy, Clone, Default, Ord, PartialOrd, Eq, PartialEq, Debug)]
 pub struct ExpansionId(pub u32);
 

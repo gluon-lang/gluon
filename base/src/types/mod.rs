@@ -503,7 +503,7 @@ pub struct Field<Id, T = ArcType<Id>> {
     #[cfg_attr(feature = "serde_derive", serde(state))] pub typ: T,
 }
 
-/// `SmallVec` used in the `Type::App` constructor to avoid alloacting a `Vec` for every applied
+/// `SmallVec` used in the `Type::App` constructor to avoid allocating a `Vec` for every applied
 /// type. If `Type` is changed in a way that changes its size it is likely a good idea to change
 /// the number of elements in the `SmallVec` so that it fills out the entire `Type` enum while not
 /// increasing the size of `Type`.
@@ -520,7 +520,7 @@ impl<Id, T> Field<Id, T> {
 
 /// The representation of gluon's types.
 ///
-/// For efficency this enum is not stored directly but instead a pointer wrapper which derefs to
+/// For efficiency this enum is not stored directly but instead a pointer wrapper which derefs to
 /// `Type` is used to enable types to be shared. It is recommended to use the static functions on
 /// `Type` such as `Type::app` and `Type::record` when constructing types as those will construct
 /// the pointer wrapper directly.
@@ -586,7 +586,7 @@ pub enum Type<Id, T = ArcType<Id>> {
     /// will eventually be converted into `Type::Generic`s during generalization.
     Variable(#[cfg_attr(feature = "serde_derive", serde(state))] TypeVariable),
     /// A variable that needs to be instantiated with a fresh type variable
-    /// when the binding is refered to.
+    /// when the binding is referred to.
     Generic(#[cfg_attr(feature = "serde_derive", serde(state))] Generic<Id>),
     Alias(#[cfg_attr(feature = "serde_derive", serde(state))] AliasRef<Id, T>),
     Skolem(#[cfg_attr(feature = "serde_derive", serde(state))] Skolem<Id>),

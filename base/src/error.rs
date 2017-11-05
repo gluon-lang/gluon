@@ -144,7 +144,7 @@ impl<E> SourceContext<E> {
     }
 }
 
-/// Error type which contains information of which file and where in the file the error occured
+/// Error type which contains information of which file and where in the file the error occurred
 #[derive(Debug, PartialEq)]
 pub struct InFile<E> {
     pub source_name: String,
@@ -152,7 +152,7 @@ pub struct InFile<E> {
 }
 
 impl<E: fmt::Display> InFile<E> {
-    /// Creates a new `InFile` error which states that the error occured in `file` using the file
+    /// Creates a new `InFile` error which states that the error occurred in `file` using the file
     /// contents in `source` to provide a context to the span.
     pub fn new(source_name: &str, source: &str, error: Errors<Spanned<E, BytePos>>) -> InFile<E> {
         let source = Source::new(source);
