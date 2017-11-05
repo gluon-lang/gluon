@@ -1,7 +1,7 @@
 //! The marshalling api
 use {forget_lifetime, Error, Result, Variants};
 use gc::{DataDef, Gc, Move, Traverseable};
-use base::symbol::Symbol;
+use base::symbol::{Symbol, Symbols};
 use base::scoped_map::ScopedMap;
 use stack::StackFrame;
 use vm::{self, Root, RootStr, RootedValue, Status, Thread};
@@ -1218,9 +1218,10 @@ macro_rules! define_tuple {
 
             fn make_type(vm: &Thread) -> ArcType {
                 let type_cache = vm.global_env().type_cache();
-                type_cache.record(Vec::new(),
-                             vec![$(types::Field::new(Symbol::from(stringify!($id)),
-                                                      $id::make_type(vm))),+])
+                type_cache.tuple(
+                    &mut Symbols::new(),
+                    vec![$( $id::make_type(vm) ),+]
+                )
             }
         }
         impl<'vm, $($id: Getable<'vm>),+> Getable<'vm> for ($($id),+) {
@@ -1276,7 +1277,7 @@ macro_rules! define_tuples {
         define_tuples!{ $($rest)+ }
     }
 }
-define_tuples! { _0 _1 _2 _3 _4 _5 _6 }
+define_tuples! { A B C D E F G H I J K L }
 
 
 pub use self::record::Record;
