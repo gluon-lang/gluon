@@ -53,7 +53,7 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
         }
     }
 
-    /// Removes a previusly inserted value from the map.
+    /// Removes a previously inserted value from the map.
     pub fn remove(&mut self, k: &K) -> bool {
         match self.map.get_mut(k).map(|x| x.pop()) {
             Some(..) => {

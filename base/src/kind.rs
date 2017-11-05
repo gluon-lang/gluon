@@ -7,7 +7,7 @@ use pretty::{Doc, DocAllocator, DocBuilder};
 use symbol::SymbolRef;
 use types::{ToDoc, Walker};
 
-/// Trait for values which contains kinded values which can be refered by name
+/// Trait for values which contains kinded values which can be referred by name
 pub trait KindEnv {
     /// Returns the kind of the type `type_name`
     fn find_kind(&self, type_name: &SymbolRef) -> Option<ArcKind>;

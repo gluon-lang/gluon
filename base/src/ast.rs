@@ -304,7 +304,7 @@ impl<Id> ValueBinding<Id> {
 }
 
 /// Visitor trait which walks over expressions calling `visit_*` on all encountered elements. By
-/// default the `visit_*` functions just walk the tree. If they are overriden the user will need to
+/// default the `visit_*` functions just walk the tree. If they are overridden the user will need to
 /// call `walk_mut_*` to continue traversing the tree.
 pub trait MutVisitor {
     type Ident;
