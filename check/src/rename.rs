@@ -212,7 +212,6 @@ pub fn rename(
         /// as `id` was currently unique (#Int+, #Float*, etc)
         fn rename(&self, id: &Symbol, expected: &ArcType) -> Result<Option<Symbol>, RenameError> {
             let locals = self.env.stack.get_all(id);
-            let global = self.env.env.find_type(id).map(|typ| (id, None, typ));
             let candidates = || {
                 locals
                     .iter()
@@ -222,7 +221,6 @@ pub fn rename(
                             .rev()
                             .map(|bind| (&bind.0, Some(&bind.1), &bind.2))
                     })
-                    .chain(global)
             };
             // If there is a single binding (or no binding in case of primitives such as #Int+)
             // there is no need to check for equivalency as typechecker couldnt have infered a
