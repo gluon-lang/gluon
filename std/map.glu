@@ -99,6 +99,7 @@ let make ord : Ord k -> _ =
         foldable,
         traversable,
         singleton,
+        empty,
         find,
         insert,
         map_with_key,
