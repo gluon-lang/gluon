@@ -1742,7 +1742,8 @@ impl<'a> Typecheck<'a> {
                         self.subs.resolve_constraints(|| state.clone(), var, typ)
                     };
                     let resolved_type = match resolved_result {
-                        Ok(x) => x.unwrap_or_else(|| typ.clone()),
+                        Ok(x) => x.map(|x| self.subs.real(&x).clone())
+                            .unwrap_or_else(|| typ.clone()),
                         Err(err) => self.error(
                             Span::new(0.into(), 0.into()),
                             TypeError::Unification(
