@@ -445,6 +445,7 @@ impl GlobalVmState {
         metadata: Metadata,
         value: Value,
     ) -> Result<()> {
+        assert!(value.generation().is_root());
         let mut env = self.env.write().unwrap();
         let globals = &mut env.globals;
         let global = Global {

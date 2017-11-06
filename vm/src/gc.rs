@@ -98,6 +98,10 @@ impl<'s> WriteOnly<'s, str> {
 pub struct Generation(i32);
 
 impl Generation {
+    pub fn is_root(self) -> bool {
+        self.0 == 0
+    }
+
     /// Returns a generation which compared to any normal generation is always younger.
     pub fn disjoint() -> Generation {
         Generation(-1)
