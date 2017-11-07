@@ -357,10 +357,12 @@ where
                 }
             })
             .map_err(Error::from)
-            .and_then(move |v| if run_io {
-                ::compiler_pipeline::run_io(vm, v)
-            } else {
-                FutureValue::sync(Ok(v)).boxed()
+            .and_then(move |v| {
+                if run_io {
+                    ::compiler_pipeline::run_io(vm, v)
+                } else {
+                    FutureValue::sync(Ok(v)).boxed()
+                }
             })
             .boxed()
     }
@@ -378,10 +380,12 @@ where
         let filename = filename.to_string();
 
         self.run_expr(compiler, vm, &filename, expr_str, ())
-            .and_then(move |v| if run_io {
-                ::compiler_pipeline::run_io(vm, v)
-            } else {
-                FutureValue::sync(Ok(v)).boxed()
+            .and_then(move |v| {
+                if run_io {
+                    ::compiler_pipeline::run_io(vm, v)
+                } else {
+                    FutureValue::sync(Ok(v)).boxed()
+                }
             })
             .and_then(move |mut value| {
                 let (metadata, _) = metadata::metadata(&*vm.get_env(), value.expr.borrow_mut());

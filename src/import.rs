@@ -265,8 +265,7 @@ impl<I> Import<I> {
                 let implicit_prelude = !file_contents.starts_with("//@NO-IMPLICIT-PRELUDE");
                 compiler.set_implicit_prelude(implicit_prelude);
                 let errors = macros.errors.len();
-                let macro_result =
-                    file_contents.expand_macro_with(compiler, macros, &modulename)?;
+                let macro_result = file_contents.expand_macro_with(compiler, macros, &modulename)?;
                 if errors != macros.errors.len() {
                     // If macro expansion of the imported module fails we need to stop
                     // compilation of that module. To return an error we return one of the
@@ -277,13 +276,8 @@ impl<I> Import<I> {
                     }
                 }
                 get_state(macros).visited.pop();
-                self.importer.import(
-                    compiler,
-                    vm,
-                    &modulename,
-                    &file_contents,
-                    macro_result.expr,
-                )?;
+                self.importer
+                    .import(compiler, vm, &modulename, &file_contents, macro_result.expr)?;
             }
         }
         Ok(())
@@ -291,20 +285,20 @@ impl<I> Import<I> {
 }
 
 /// Adds an extern module to `thread`, letting it be loaded with `import! name` from gluon code.
-/// 
+///
 /// ```
 /// extern crate gluon;
 /// #[macro_use]
 /// extern crate gluon_vm;
-/// 
+///
 /// use gluon::vm::{self, ExternModule};
 /// use gluon::{Compiler, Thread};
 /// use gluon::import::add_extern_module;
-/// 
+///
 /// fn yell(s: &str) -> String {
 ///     s.to_uppercase()
 /// }
-/// 
+///
 /// fn my_module(thread: &Thread) -> vm::Result<ExternModule> {
 ///     ExternModule::new(
 ///         thread,
@@ -314,7 +308,7 @@ impl<I> Import<I> {
 ///         }
 ///     )
 /// }
-/// 
+///
 /// fn main_() -> gluon::Result<()> {
 ///     let thread = gluon::new_vm();
 ///     add_extern_module(&thread, "my_module", my_module);
@@ -337,7 +331,12 @@ pub fn add_extern_module(thread: &Thread, name: &str, loader: ExternLoader) {
     let import = opt_macro
         .as_ref()
         .and_then(|mac| mac.downcast_ref::<Import>())
-        .unwrap_or_else(|| ice!("Can't add an extern module with a import macro. Did you mean to create this `Thread` with `gluon::new_vm`"));
+        .unwrap_or_else(|| {
+            ice!(
+                "Can't add an extern module with a import macro. \
+                 Did you mean to create this `Thread` with `gluon::new_vm`"
+            )
+        });
     import.add_loader(name, loader);
 }
 
@@ -371,24 +370,52 @@ where
         if args.len() != 1 {
             return Err(Error::String("Expected import to get 1 argument".into()).into());
         }
-        match args[0].value {
-            Expr::Literal(Literal::String(ref filename)) => {
-                let vm = macros.vm;
 
-                let modulename = filename_to_module(filename);
-                // Only load the script if it is not already loaded
-                let name = Symbol::from(&*modulename);
-                debug!("Import '{}' {:?}", modulename, get_state(macros).visited);
-                if !vm.global_env().global_exists(&modulename) {
-                    self.load_module(&mut Compiler::new(), vm, macros, &name)?;
+        fn expr_to_path(expr: &SpannedExpr<Symbol>, path: &mut String) -> Result<(), MacroError> {
+            match expr.value {
+                Expr::Ident(ref id) => {
+                    path.push_str(id.name.declared_name());
+                    Ok(())
                 }
-                // FIXME Does not handle shadowing
-                Ok(pos::spanned(
-                    args[0].span,
-                    Expr::Ident(TypedIdent::new(name)),
-                ))
+                Expr::Projection(ref expr, ref id, _) => {
+                    expr_to_path(expr, path)?;
+                    path.push('.');
+                    path.push_str(id.declared_name());
+                    Ok(())
+                }
+                _ => {
+                    return Err(
+                        Error::String("Expected a string literal or path to import".into()).into(),
+                    )
+                }
             }
-            _ => Err(Error::String("Expected a string literal to import".into()).into()),
         }
+
+        let modulename = match args[0].value {
+            Expr::Ident(_) | Expr::Projection(..) => {
+                let mut modulename = String::new();
+                expr_to_path(&args[0], &mut modulename)?;
+                modulename
+            }
+            Expr::Literal(Literal::String(ref filename)) => filename_to_module(filename),
+            _ => {
+                return Err(
+                    Error::String("Expected a string literal or path to import".into()).into(),
+                )
+            }
+        };
+
+        let vm = macros.vm;
+        // Only load the script if it is not already loaded
+        let name = Symbol::from(&*modulename);
+        debug!("Import '{}' {:?}", modulename, get_state(macros).visited);
+        if !vm.global_env().global_exists(&modulename) {
+            self.load_module(&mut Compiler::new(), vm, macros, &name)?;
+        }
+        // FIXME Does not handle shadowing
+        Ok(pos::spanned(
+            args[0].span,
+            Expr::Ident(TypedIdent::new(name)),
+        ))
     }
 }
