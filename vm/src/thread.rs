@@ -254,7 +254,6 @@ impl Traverseable for Thread {
     fn traverse(&self, gc: &mut Gc) {
         self.traverse_fields_except_stack(gc);
         self.context.lock().unwrap().stack.get_values().traverse(gc);
-        self.child_threads.read().unwrap().traverse(gc);
     }
 }
 
@@ -553,6 +552,7 @@ impl Thread {
         self.global_state.traverse(gc);
         self.roots.read().unwrap().traverse(gc);
         self.rooted_values.read().unwrap().traverse(gc);
+        self.child_threads.read().unwrap().traverse(gc);
     }
 
     fn parent_threads(&self) -> RwLockWriteGuard<Vec<GcPtr<Thread>>> {
