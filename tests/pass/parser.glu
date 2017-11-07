@@ -1,12 +1,12 @@
-let prelude = import! "std/prelude.glu"
-let char = import! "std/char.glu"
-let string = import! "std/string.glu"
-let result = import! "std/result.glu"
+let prelude = import! std.prelude
+let char = import! std.char
+let string = import! std.string
+let result = import! std.result
 let { Result } = result
-let { Test, run, writer, assert, assert_eq } = import! "std/test.glu"
-let { Writer } = import! "std/writer.glu"
+let { Test, run, writer, assert, assert_eq } = import! std.test
+let { Writer } = import! std.writer
 
-let { Parser, applicative, functor, alternative, monad, any, parse } = import! "std/parser.glu"
+let { Parser, applicative, functor, alternative, monad, any, parse } = import! std.parser
 let { (*>), wrap } = prelude.make_Applicative applicative
 let { (<|>) } = prelude.make_Alternative alternative
 

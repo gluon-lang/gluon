@@ -204,7 +204,7 @@ fn io_future() {
     }
 
     let expr = r#"
-    let { applicative, monad }  = import! "std/io.glu"
+    let { applicative, monad }  = import! std.io
     monad.flat_map (\x -> applicative.wrap (x + 1)) (test ())
 "#;
 

@@ -1,15 +1,15 @@
-let prelude  = import! "std/prelude.glu"
+let prelude  = import! std.prelude
 let { Eq, Show } = prelude
-let int = import! "std/int.glu"
-let option = import! "std/option.glu"
+let int = import! std.int
+let option = import! std.option
 let { Option } = option
-let string  = import! "std/string.glu"
+let string  = import! std.string
 let { (==) } = string.eq
 let { (<>) } = prelude.make_Semigroup string.semigroup
-let { Test, run, writer, assert, assert_eq }  = import! "std/test.glu"
-let map  = import! "std/map.glu"
+let { Test, run, writer, assert, assert_eq }  = import! std.test
+let map  = import! std.map
 let { (*>) } = prelude.make_Applicative writer.applicative
-let list = import! "std/list.glu"
+let list = import! std.list
 let { List } = list
 
 let show_Entry : Show { key : String, value : Int } = {

@@ -1,9 +1,9 @@
 //@NO-IMPLICIT-PRELUDE
 
 let string_prim = import! "string_prim"
-let prelude = import! "std/prelude.glu"
+let prelude = import! std.prelude
 let { Num, Eq, Ord, Ordering, Semigroup, Monoid, Show } = prelude
-let function = import! "std/function.glu"
+let function = import! std.function
 
 let semigroup : Semigroup String = { append = string_prim.append }
 

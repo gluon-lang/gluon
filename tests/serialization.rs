@@ -92,7 +92,7 @@ fn roundtrip_recursive_closure() {
 #[test]
 fn roundtrip_std_prelude() {
     let thread = new_vm();
-    let expr = r#" import! "std/prelude.glu" "#;
+    let expr = r#" import! std.prelude "#;
     let (value, _) = Compiler::new()
         .run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "test", expr)
         .unwrap();

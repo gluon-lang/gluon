@@ -1,9 +1,9 @@
-let prelude = import! "std/prelude.glu"
+let prelude = import! std.prelude
 let { Eq, Ord, Ordering, Show } = prelude
 let { Functor, Applicative, Monad, Foldable, Traversable } = prelude
-let { Result } = import! "std/types.glu"
-let { Bool } = import! "std/bool.glu"
-let string = import! "std/string.glu"
+let { Result } = import! std.types
+let { Bool } = import! std.bool
+let string = import! std.string
 
 let unwrap_ok res : Result e a -> a =
     match res with

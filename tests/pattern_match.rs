@@ -10,7 +10,7 @@ use support::*;
 
 test_expr!{ prelude match_on_bool,
 r#"
-let { Bool } = import! "std/bool.glu"
+let { Bool } = import! std.bool
 match True with
 | False -> 10
 | True -> 11

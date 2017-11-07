@@ -505,23 +505,23 @@ impl Compiler {
 }
 
 pub const PRELUDE: &'static str = r#"
-let __implicit_prelude = import! "std/prelude.glu"
+let __implicit_prelude = import! std.prelude
 and { Num, Eq, Ord, Show, Functor, Monad } = __implicit_prelude
-and { Bool, not } = import! "std/bool.glu"
-and { Option } = import! "std/option.glu"
+and { Bool, not } = import! std.bool
+and { Option } = import! std.option
 
-let __implicit_float = import! "std/float.glu"
+let __implicit_float = import! std.float
 let { (+), (-), (*), (/) } = __implicit_float.num
 and { (==) } = __implicit_float.eq
 
 let { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_float.ord
 
-let __implicit_int = import! "std/int.glu"
+let __implicit_int = import! std.int
 let { (+), (-), (*), (/) } = __implicit_int.num
 and { (==) } = __implicit_int.eq
 let { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_int.ord
 
-let __implicit_string = import! "std/string.glu"
+let __implicit_string = import! std.string
 and { eq = { (==) } } = __implicit_string
 let { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_string.ord
 
@@ -553,7 +553,7 @@ pub fn new_vm() -> RootedThread {
 
     Compiler::new()
         .implicit_prelude(false)
-        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "", r#" import! "std/types.glu" "#)
+        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "", r#" import! std.types "#)
         .sync_or_error()
         .unwrap();
     ::vm::primitives::load(&vm).expect("Loaded primitives library");

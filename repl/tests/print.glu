@@ -1,2 +1,2 @@
-let io = import! "std/io.glu"
+let io = import! std.io
 io.println "123"

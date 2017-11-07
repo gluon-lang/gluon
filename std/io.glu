@@ -1,4 +1,4 @@
-let { Functor, Applicative, Monad } = import! "std/prelude.glu"
+let { Functor, Applicative, Monad } = import! std.prelude
 
 let functor : Functor IO = {
     map = \f -> io_flat_map (\x -> io_wrap (f x))

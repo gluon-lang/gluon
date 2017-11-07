@@ -1,7 +1,7 @@
-let { run, writer, assert_ieq } = import! "std/test.glu"
-let prelude = import! "std/prelude.glu"
+let { run, writer, assert_ieq } = import! std.test
+let prelude = import! std.prelude
 let { (*>), wrap } = prelude.make_Applicative writer.applicative
-let int = import! "std/int.glu"
+let int = import! std.int
 let { (+), (-), (*) } = int.num
 let { lazy, force } = import! "lazy"
 

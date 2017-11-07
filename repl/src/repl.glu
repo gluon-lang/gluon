@@ -1,10 +1,10 @@
-let prelude = import! "std/prelude.glu"
-let io = import! "std/io.glu"
-let map = import! "std/map.glu"
-let { Bool } = import! "std/bool.glu"
-let { Option } = import! "std/option.glu"
-let { Result } = import! "std/result.glu"
-let string = import! "std/string.glu"
+let prelude = import! std.prelude
+let io = import! std.io
+let map = import! std.map
+let { Bool } = import! std.bool
+let { Option } = import! std.option
+let { Result } = import! std.result
+let string = import! std.string
 let { ref, load, (<-) } = import! "reference"
 let { Map } = map
 let { wrap, (*>) } = prelude.make_Applicative io.applicative

@@ -1,8 +1,8 @@
-let prelude = import! "std/prelude.glu"
+let prelude = import! std.prelude
 let { Semigroup, Monoid, Eq, Show } = prelude
 let { Functor, Applicative, Alternative, Monad, Foldable, Traversable } = prelude
-let { Bool } = import! "std/bool.glu"
-let string = import! "std/string.glu"
+let { Bool } = import! std.bool
+let string = import! std.string
 let array = import! "array"
 
 /// A linked list type

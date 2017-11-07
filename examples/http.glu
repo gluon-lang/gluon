@@ -1,8 +1,8 @@
-let prelude = import! "std/prelude.glu"
-let function = import! "std/function.glu"
-let io = import! "std/io.glu"
-let string = import! "std/string.glu"
-let { Bool } = import! "std/bool.glu"
+let prelude = import! std.prelude
+let function = import! std.function
+let io = import! std.io
+let string = import! std.string
+let { Bool } = import! std.bool
 let { (==) } = string.eq
 let { Functor, Applicative, Alternative, Monad } = prelude
 let { (<<), id } = prelude.make_Category function.category

@@ -49,9 +49,9 @@ fn parallel_() -> Result<(), Error> {
     let child2 = vm.new_thread()?;
     let handle2 = spawn(move || -> Result<(), Error> {
         let expr = r#"
-        let { assert }  = import! "std/test.glu"
-        let { Bool } = import! "std/bool.glu"
-        let { Result }  = import! "std/result.glu"
+        let { assert }  = import! std.test
+        let { Bool } = import! std.bool
+        let { Result }  = import! std.result
 
         let f receiver =
             match recv receiver with

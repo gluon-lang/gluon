@@ -17,10 +17,10 @@ fn read_file() {
 
     let thread = new_vm();
     let text = r#"
-        let prelude = import! "std/prelude.glu"
+        let prelude = import! std.prelude
         let array = import! "array"
-        let { assert }  = import! "std/test.glu"
-        let io = import! "std/io.glu"
+        let { assert }  = import! std.test
+        let io = import! std.io
         let { wrap } = io.applicative
         let { (>>=) } = prelude.make_Monad io.monad
 
@@ -45,7 +45,7 @@ fn read_file() {
 
 test_expr!{ no_io_eval,
 r#"
-let io = import! "std/io.glu"
+let io = import! std.io
 let x = io_flat_map (\x -> error "NOOOOOOOO") (io.println "1")
 in { x }
 "#
@@ -53,7 +53,7 @@ in { x }
 
 test_expr!{ io_print,
 r#"
-let io = import! "std/io.glu"
+let io = import! std.io
 io.print "123"
 "#
 }
@@ -63,7 +63,7 @@ fn run_expr_int() {
     let _ = ::env_logger::init();
 
     let text = r#"
-        let io = import! "std/io.glu"
+        let io = import! std.io
         io.run_expr "123"
     "#;
     let mut vm = make_vm();
@@ -83,7 +83,7 @@ fn run_expr_int() {
 
 test_expr!{ io run_expr_io,
 r#"
-let io = import! "std/io.glu"
+let io = import! std.io
 io_flat_map (\x -> io_wrap 100)
             (io.run_expr "
                 let io = import! \"std/io.glu\"
@@ -99,8 +99,8 @@ fn dont_execute_io_in_run_expr_async() {
     let _ = ::env_logger::init();
     let vm = make_vm();
     let expr = r#"
-let prelude  = import! "std/prelude.glu"
-let io = import! "std/io.glu"
+let prelude  = import! std.prelude
+let io = import! std.io
 let { wrap } = io.applicative
 wrap 123
 "#;

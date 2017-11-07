@@ -1,6 +1,6 @@
 //@NO-IMPLICIT-PRELUDE
 
-let prelude = import! "std/prelude.glu"
+let prelude = import! std.prelude
 let { Semigroup, Monoid, Category, make_Category } = prelude
 let { Functor, Applicative, Monad } = prelude
 

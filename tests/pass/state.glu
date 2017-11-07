@@ -1,9 +1,9 @@
-let prelude  = import! "std/prelude.glu"
+let prelude  = import! std.prelude
 let { Monad, Num } = prelude
-let { Test, run, writer, assert, assert_ieq, assert_feq, assert_seq }  = import! "std/test.glu"
-let int = import! "std/int.glu"
-let state  = import! "std/state.glu"
-let { State, put, get, modify, runState, evalState, execState }  = import! "std/state.glu"
+let { Test, run, writer, assert, assert_ieq, assert_feq, assert_seq }  = import! std.test
+let int = import! std.int
+let state  = import! std.state
+let { State, put, get, modify, runState, evalState, execState }  = import! std.state
 let { (*>) } = prelude.make_Applicative writer.applicative
 let { (*>) } = prelude.make_Applicative state.applicative
 let { (+), (-), (*) } = int.num

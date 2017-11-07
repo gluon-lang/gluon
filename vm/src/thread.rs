@@ -227,8 +227,7 @@ pub struct Thread {
     // thread can refer to any value in the parent thread
     #[cfg_attr(feature = "serde_derive", serde(state))] parent: Option<RootedThread>,
     #[cfg_attr(feature = "serde_derive", serde(skip))]
-    roots:
-        RwLock<Vec<GcPtr<Traverseable + Send + Sync>>>,
+    roots: RwLock<Vec<GcPtr<Traverseable + Send + Sync>>>,
     #[cfg_attr(feature = "serde_derive", serde(state))] rooted_values: RwLock<Vec<Value>>,
     /// All threads which this thread have spawned in turn. Necessary as this thread needs to scan
     /// the roots of all its children as well since those may contain references to this threads
@@ -458,7 +457,7 @@ impl Thread {
     /// let vm = new_vm();
     /// Compiler::new()
     ///     .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example",
-    ///         r#" import! "std/int.glu" "#)
+    ///         r#" import! std.int "#)
     ///     .sync_or_error()
     ///     .unwrap_or_else(|err| panic!("{}", err));
     /// let mut add: FunctionRef<fn(i32, i32) -> i32> =
@@ -992,8 +991,7 @@ pub struct Context {
     max_stack_size: VmIndex,
 
     #[cfg_attr(feature = "serde_derive", serde(skip))]
-    poll_fn:
-        Option<Box<FnMut(&Thread, &mut Context) -> Result<Async<()>> + Send>>,
+    poll_fn: Option<Box<FnMut(&Thread, &mut Context) -> Result<Async<()>> + Send>>,
 }
 
 impl Context {

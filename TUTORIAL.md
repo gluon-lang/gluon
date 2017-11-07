@@ -23,7 +23,7 @@ This tutorial aims the explain the basics of gluon's syntax and semantics.
 In traditional form, we will begin with the classic hello world program.
 
 ```f#,rust
-let io = import! "std/io.glu"
+let io = import! std.io
 io.println "Hello world"
 ```
 
@@ -490,7 +490,7 @@ As is often the case, it is convenient to separate code into multiple files whic
 For example, say that we need the `assert` function from the `test` module which can be found at `std/test.glu`. We might write something like this:
 
 ```f#,rust
-let { assert }  = import! "std/test.glu"
+let { assert }  = import! std.test
 assert (1 == 1)
 ```
 
@@ -550,7 +550,7 @@ Notably, if we were to execute a script with side effects the code above will ac
 let vm = new_vm();
 
 let script = r#"
-let io = import! "std/io.glu"
+let io = import! std.io
 io.print "123"
 "#;
 // Returns an action which prints `123` when evaluated
@@ -570,7 +570,7 @@ Often, it is either inconvenient or inefficient to compile and run code directly
 let vm = new_vm();
 // Ensure that the prelude module is loaded before trying to access something from it
 Compiler::new()
-    .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", r#" import! "std/prelude.glu" "#)
+    .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", r#" import! std.prelude "#)
     .unwrap();
 let mut add: FunctionRef<fn (i32, i32) -> i32> = vm.get_global("std.prelude.num_Int.(+)")
     .unwrap();

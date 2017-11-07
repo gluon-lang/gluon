@@ -1,16 +1,16 @@
-let string = import! "std/string.glu"
-and { Writer, make = make_Writer, tell } = import! "std/writer.glu"
-and prelude = import! "std/prelude.glu"
+let string = import! std.string
+and { Writer, make = make_Writer, tell } = import! std.writer
+and prelude = import! std.prelude
 and { Show, Num, Eq, Applicative, Monad, Monoid } = prelude
-let float = import! "std/float.glu"
-let int = import! "std/int.glu"
+let float = import! std.float
+let int = import! std.int
 and { (+) } = int.num
 and { (==) } = int.eq
 and { (<) } = prelude.make_Ord int.ord
-let list = import! "std/list.glu"
+let list = import! std.list
 let { List } = list
 and { foldl } = list.foldable
-let { Option } = import! "std/option.glu"
+let { Option } = import! std.option
 
 let (++) = string.semigroup.append
 

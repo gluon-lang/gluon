@@ -1,9 +1,9 @@
-let { run, writer, assert_eq }  = import! "std/test.glu"
-let prelude  = import! "std/prelude.glu"
+let { run, writer, assert_eq }  = import! std.test
+let prelude  = import! std.prelude
 let { (*>) } = prelude.make_Applicative writer.applicative
-let int = import! "std/int.glu"
-let list = import! "std/list.glu"
-let option = import! "std/option.glu"
+let int = import! std.int
+let list = import! std.list
+let option = import! std.option
 
 let test_alt show eq alt =
     let { (<|>), or, empty } = prelude.make_Alternative alt
