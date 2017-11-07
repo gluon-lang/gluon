@@ -161,6 +161,20 @@ impl Default for Compiler {
     }
 }
 
+macro_rules! option {
+    ($(#[$attr:meta])* $name: ident $set_name: ident : $typ: ty) => {
+        $(#[$attr])*
+        pub fn $name(mut self, $name: $typ) -> Compiler {
+            self.$name = $name;
+            self
+        }
+
+        pub fn $set_name(&mut self, $name: $typ) {
+            self.$name = $name;
+        }
+    };
+}
+
 impl Compiler {
     /// Creates a new compiler with default settings
     pub fn new() -> Compiler {
@@ -172,26 +186,23 @@ impl Compiler {
         }
     }
 
-    /// Sets whether the implicit prelude should be include when compiling a file using this
-    /// compiler (default: true)
-    pub fn implicit_prelude(mut self, implicit_prelude: bool) -> Compiler {
-        self.implicit_prelude = implicit_prelude;
-        self
+    option!{
+        /// Sets whether the implicit prelude should be include when compiling a file using this
+        /// compiler (default: true)
+        implicit_prelude set_implicit_prelude: bool
     }
 
-    /// Sets whether the compiler should emit debug information such as source maps and variable
-    /// names.
-    /// (default: true)
-    pub fn emit_debug_info(mut self, emit_debug_info: bool) -> Compiler {
-        self.emit_debug_info = emit_debug_info;
-        self
+    option!{
+        /// Sets whether the compiler should emit debug information such as source maps and variable
+        /// names.
+        /// (default: true)
+        emit_debug_info set_emit_debug_info: bool
     }
 
-    /// Sets whether `IO` expressions are evaluated.
-    /// (default: false)
-    pub fn run_io(mut self, run_io: bool) -> Compiler {
-        self.run_io = run_io;
-        self
+    option!{
+        /// Sets whether `IO` expressions are evaluated.
+        /// (default: false)
+        run_io set_run_io: bool
     }
 
     pub fn mut_symbols(&mut self) -> &mut Symbols {
@@ -360,7 +371,7 @@ impl Compiler {
         let module_name = Symbol::from(filename_to_module(filename));
         FutureValue::from(
             import
-                .load_module(vm, &mut MacroExpander::new(vm), &module_name)
+                .load_module(self, vm, &mut MacroExpander::new(vm), &module_name)
                 .map_err(Error::from),
         ).boxed()
     }

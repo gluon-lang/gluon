@@ -452,7 +452,7 @@ impl Thread {
     ///
     /// ```rust
     /// # extern crate gluon;
-    /// # use gluon::{new_vm,Compiler,RootedThread, Thread};
+    /// # use gluon::{new_vm, Compiler, Thread};
     /// # use gluon::vm::api::{FunctionRef, Hole, OpaqueValue};
     /// # fn main() {
     /// let vm = new_vm();

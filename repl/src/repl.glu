@@ -5,6 +5,7 @@ let { Bool } = import! "std/bool.glu"
 let { Option } = import! "std/option.glu"
 let { Result } = import! "std/result.glu"
 let string = import! "std/string.glu"
+let { ref, load, (<-) } = import! "reference"
 let { Map } = map
 let { wrap, (*>) } = prelude.make_Applicative io.applicative
 let { (>>=) } = prelude.make_Monad io.monad

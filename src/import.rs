@@ -52,7 +52,7 @@ quick_error! {
 
 macro_rules! std_libs {
     ($($file: expr),*) => {
-        [$((concat!("std/", $file, ".glu"), include_str!(concat!("../std/", $file, ".glu")))),*]
+        [$((concat!("std.", $file), include_str!(concat!("../std/", $file, ".glu")))),*]
     }
 }
 // Include the standard library distribution in the binary
@@ -220,6 +220,7 @@ impl<I> Import<I> {
 
     pub fn load_module(
         &self,
+        compiler: &mut Compiler,
         vm: &Thread,
         macros: &mut MacroExpander,
         module_id: &Symbol,
@@ -262,10 +263,10 @@ impl<I> Import<I> {
                 // Modules marked as this would create a cyclic dependency if they included the implicit
                 // prelude
                 let implicit_prelude = !file_contents.starts_with("//@NO-IMPLICIT-PRELUDE");
-                let mut compiler = Compiler::new().implicit_prelude(implicit_prelude);
+                compiler.set_implicit_prelude(implicit_prelude);
                 let errors = macros.errors.len();
                 let macro_result =
-                    file_contents.expand_macro_with(&mut compiler, macros, &modulename)?;
+                    file_contents.expand_macro_with(compiler, macros, &modulename)?;
                 if errors != macros.errors.len() {
                     // If macro expansion of the imported module fails we need to stop
                     // compilation of that module. To return an error we return one of the
@@ -277,7 +278,7 @@ impl<I> Import<I> {
                 }
                 get_state(macros).visited.pop();
                 self.importer.import(
-                    &mut compiler,
+                    compiler,
                     vm,
                     &modulename,
                     &file_contents,
@@ -292,13 +293,16 @@ impl<I> Import<I> {
 /// Adds an extern module to `thread`, letting it be loaded with `import! name` from gluon code.
 /// 
 /// ```
-/// # extern crate gluon;
-/// use gluon::vm::{self, ExternModule, Thread};
-/// use gluon::Thread;
+/// extern crate gluon;
+/// #[macro_use]
+/// extern crate gluon_vm;
+/// 
+/// use gluon::vm::{self, ExternModule};
+/// use gluon::{Compiler, Thread};
 /// use gluon::import::add_extern_module;
 /// 
 /// fn yell(s: &str) -> String {
-///     s.to_upper()
+///     s.to_uppercase()
 /// }
 /// 
 /// fn my_module(thread: &Thread) -> vm::Result<ExternModule> {
@@ -306,19 +310,19 @@ impl<I> Import<I> {
 ///         thread,
 ///         record!{
 ///             message => "Hello World!",
-///             yell => primitive!(1, yell)
+///             yell => primitive!(1 yell)
 ///         }
 ///     )
 /// }
 /// 
 /// fn main_() -> gluon::Result<()> {
 ///     let thread = gluon::new_vm();
-///     add_extern_module(&thread, "my_module", my_module)?;
+///     add_extern_module(&thread, "my_module", my_module);
 ///     let script = r#"
 ///         let module = import! "my_module"
 ///         module.yell module.message
 ///     "#;
-///     let (result, _) = Compiler::new().run_expr(&thread, "example", script)?;
+///     let (result, _) = Compiler::new().run_expr::<String>(&thread, "example", script)?;
 ///     assert_eq!(result, "HELLO WORLD!");
 ///     Ok(())
 /// }
@@ -376,7 +380,7 @@ where
                 let name = Symbol::from(&*modulename);
                 debug!("Import '{}' {:?}", modulename, get_state(macros).visited);
                 if !vm.global_env().global_exists(&modulename) {
-                    self.load_module(vm, macros, &name)?;
+                    self.load_module(&mut Compiler::new(), vm, macros, &name)?;
                 }
                 // FIXME Does not handle shadowing
                 Ok(pos::spanned(

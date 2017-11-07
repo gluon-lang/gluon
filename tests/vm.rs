@@ -301,6 +301,7 @@ Value::Tag(1)
 
 test_expr!{ any marshalled_option_none_is_int,
 r#"
+import! "string_prim"
 string_prim.find "a" "b"
 "#,
 Value::Tag(0)
@@ -308,6 +309,7 @@ Value::Tag(0)
 
 test_expr!{ any marshalled_ordering_is_int,
 r#"
+import! "string_prim"
 string_compare "a" "b"
 "#,
 Value::Tag(0)
@@ -343,7 +345,10 @@ in (id { x = 1 }).x
 }
 
 test_expr!{ module_function,
-r#"let x = string_prim.len "test" in x"#,
+r#"
+import! "string_prim"
+let x = string_prim.len "test" in x
+"#,
 4i32
 }
 
@@ -696,6 +701,7 @@ fn completion_with_prelude() {
 let prelude  = import! "std/prelude.glu"
 and { Option } = import! "std/option.glu"
 and { Num } = prelude
+let { lazy } = import! "lazy"
 
 type Stream_ a =
     | Value a (Stream a)
@@ -722,7 +728,7 @@ let from f : (Int -> Option a) -> Stream a =
     let result = completion::find(
         &*vm.get_env(),
         &expr,
-        lines.offset(13.into(), 29.into()).unwrap(),
+        lines.offset(14.into(), 29.into()).unwrap(),
     );
     assert_eq!(result, Ok(Type::int()));
 }
