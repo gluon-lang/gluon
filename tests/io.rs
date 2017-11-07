@@ -18,7 +18,7 @@ fn read_file() {
     let thread = new_vm();
     let text = r#"
         let prelude = import! std.prelude
-        let array = import! "array"
+        let array = import! std.array
         let { assert }  = import! std.test
         let io = import! std.io
         let { wrap } = io.applicative

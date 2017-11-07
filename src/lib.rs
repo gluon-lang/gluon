@@ -562,7 +562,7 @@ pub fn new_vm() -> RootedThread {
     add_extern_module(&vm, "float_prim", ::vm::primitives::load_float);
     add_extern_module(&vm, "string_prim", ::vm::primitives::load_string);
     add_extern_module(&vm, "char_prim", ::vm::primitives::load_char);
-    add_extern_module(&vm, "array", ::vm::primitives::load_array);
+    add_extern_module(&vm, "std.array", ::vm::primitives::load_array);
 
     add_extern_module(&vm, "std.lazy", ::vm::lazy::load);
     add_extern_module(&vm, "std.reference", ::vm::reference::load);

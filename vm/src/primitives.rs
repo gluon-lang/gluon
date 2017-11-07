@@ -14,7 +14,8 @@ use value::{Def, GcStr, Repr, Value, ValueArray};
 use stack::StackFrame;
 use types::VmInt;
 
-mod array {
+#[doc(hidden)]
+pub mod array {
     use super::*;
     use thread::ThreadInternal;
 
@@ -337,15 +338,19 @@ pub fn load_int(vm: &Thread) -> Result<ExternModule> {
     )
 }
 
+mod std {
+    pub use super::array;
+}
+
 #[allow(non_camel_case_types)]
 pub fn load_array(vm: &Thread) -> Result<ExternModule> {
-    use self::array;
+    use self::std;
     ExternModule::new(
         vm,
         record! {
-            len => primitive!(1 array::len),
-            index => primitive!(2 array::index),
-            append => primitive!(2 array::append)
+            len => primitive!(1 std::array::len),
+            index => primitive!(2 std::array::index),
+            append => primitive!(2 std::array::append)
         },
     )
 }
