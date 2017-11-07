@@ -110,13 +110,18 @@ fn lazy(f: OpaqueValue<&Thread, fn(()) -> A>) -> Lazy<A> {
     }
 }
 
+mod std {
+    pub use lazy;
+}
+
 pub fn load(vm: &Thread) -> Result<ExternModule> {
-    use lazy;
+    use self::std;
+
     ExternModule::new(
         vm,
         record!{
-            lazy => primitive!(1 lazy::lazy),
-            force => primitive!(1 lazy::force)
+            lazy => primitive!(1 std::lazy::lazy),
+            force => primitive!(1 std::lazy::force)
         },
     )
 }

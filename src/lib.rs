@@ -564,8 +564,8 @@ pub fn new_vm() -> RootedThread {
     add_extern_module(&vm, "char_prim", ::vm::primitives::load_char);
     add_extern_module(&vm, "array", ::vm::primitives::load_array);
 
-    add_extern_module(&vm, "lazy", ::vm::lazy::load);
-    add_extern_module(&vm, "reference", ::vm::reference::load);
+    add_extern_module(&vm, "std.lazy", ::vm::lazy::load);
+    add_extern_module(&vm, "std.reference", ::vm::reference::load);
 
     ::vm::channel::load(&vm).expect("Loaded channel library");
     ::vm::debug::load(&vm).expect("Loaded debug library");

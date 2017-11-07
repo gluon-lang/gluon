@@ -2,7 +2,7 @@ let { assert } = import! std.test
 let int = import! std.int
 let { (==) } = int.eq
 let { Bool } = import! std.bool
-let { ref, (<-), load } = import! "reference"
+let { ref, (<-), load } = import! std.reference
 
 let ri = ref 0
 assert (0 == load ri)

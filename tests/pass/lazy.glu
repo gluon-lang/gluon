@@ -3,7 +3,7 @@ let prelude = import! std.prelude
 let { (*>), wrap } = prelude.make_Applicative writer.applicative
 let int = import! std.int
 let { (+), (-), (*) } = int.num
-let { lazy, force } = import! "lazy"
+let { lazy, force } = import! std.lazy
 
 let l = lazy (\_ -> 123 + 57)
 

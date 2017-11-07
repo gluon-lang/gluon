@@ -697,7 +697,7 @@ fn completion_with_prelude() {
 let prelude  = import! std.prelude
 and { Option } = import! std.option
 and { Num } = prelude
-let { lazy } = import! "lazy"
+let { lazy } = import! std.lazy
 
 type Stream_ a =
     | Value a (Stream a)

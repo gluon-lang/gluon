@@ -164,3 +164,23 @@ fn precompile() {
         serialize_value(&thread, &precompiled_result.value)
     );
 }
+
+#[test]
+fn roundtrip_reference() {
+    let thread = new_vm();
+    let expr = r#" import! std.reference "#;
+    let (value, _) = Compiler::new()
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "test", &expr)
+        .unwrap_or_else(|err| panic!("{}", err));
+    roundtrip(&thread, &value);
+}
+
+#[test]
+fn roundtrip_lazy() {
+    let thread = new_vm();
+    let expr = r#" import! std.lazy "#;
+    let (value, _) = Compiler::new()
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "test", &expr)
+        .unwrap_or_else(|err| panic!("{}", err));
+    roundtrip(&thread, &value);
+}

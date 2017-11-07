@@ -6,7 +6,7 @@ let list = import! std.list
 let { Bool } = import! std.bool
 let { List } = list
 let { Option } = import! std.option
-let { lazy, force } = import! "lazy"
+let { lazy, force } = import! std.lazy
 
 type Stream_ a = | Value a (Stream a) | Empty
 and Stream a = Lazy (Stream_ a)

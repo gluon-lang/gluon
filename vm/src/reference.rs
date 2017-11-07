@@ -4,7 +4,7 @@ use std::sync::Mutex;
 use std::marker::PhantomData;
 
 use base::types::{ArcType, Type};
-use {Result, ExternModule};
+use {ExternModule, Result};
 use gc::{Gc, GcPtr, Move, Traverseable};
 use vm::Thread;
 use thread::ThreadInternal;
@@ -83,14 +83,20 @@ fn make_ref(a: WithVM<Generic<A>>) -> Reference<A> {
     }
 }
 
+mod std {
+    pub use reference;
+}
+
 pub fn load(vm: &Thread) -> Result<ExternModule> {
+    use self::std;
+
     let _ = vm.register_type::<Reference<A>>("Ref", &["a"]);
     ExternModule::new(
         vm,
         record!{
-            (store "<-") => primitive!(2 set),
-            load => primitive!(1 get),
-            (ref_ "ref") => primitive!(1 make_ref),
-        }
+            (store "<-") => named_primitive!(2, "std.reference.(<-)", std::reference::set),
+            load => named_primitive!(1, "std.reference.load", std::reference::get),
+            (ref_ "ref") =>  named_primitive!(1, "std.reference.ref", std::reference::make_ref),
+        },
     )
 }
