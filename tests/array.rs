@@ -91,3 +91,11 @@ match array.index arr 0 with
 "#,
 0i32
 }
+
+test_expr!{ array_load,
+r#"
+let array = import! std.array
+0
+"#,
+0i32
+}
