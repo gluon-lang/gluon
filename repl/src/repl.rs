@@ -372,7 +372,7 @@ mod tests {
             Ok(IO::Value(Ok(_))) => (),
             x => assert!(false, "{:?}", x),
         }
-        match find_info.call("float_prim") {
+        match find_info.call("std.float.prim") {
             Ok(IO::Value(Ok(_))) => (),
             x => assert!(false, "{:?}", x),
         }

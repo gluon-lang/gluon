@@ -50,7 +50,7 @@ let num = {
 }
 
 let show : Show Int = {
-    show = prim.show_int
+    show = (import! std.prim).show_int
 }
 
 {
@@ -61,5 +61,5 @@ let show : Show Int = {
     num,
     show,
     ..
-    import! "int_prim"
+    import! std.int.prim
 }

@@ -525,6 +525,8 @@ let __implicit_string = import! std.string
 and { eq = { (==) } } = __implicit_string
 let { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_string.ord
 
+let { error } = import! std.prim
+
 in ()
 "#;
 
@@ -556,13 +558,13 @@ pub fn new_vm() -> RootedThread {
         .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "", r#" import! std.types "#)
         .sync_or_error()
         .unwrap();
-    ::vm::primitives::load(&vm).expect("Loaded primitives library");
 
-    add_extern_module(&vm, "int_prim", ::vm::primitives::load_int);
-    add_extern_module(&vm, "float_prim", ::vm::primitives::load_float);
-    add_extern_module(&vm, "string_prim", ::vm::primitives::load_string);
-    add_extern_module(&vm, "char_prim", ::vm::primitives::load_char);
-    add_extern_module(&vm, "std.array", ::vm::primitives::load_array);
+    add_extern_module(&vm, "std.prim", ::vm::primitives::load);
+    add_extern_module(&vm, "std.int.prim", ::vm::primitives::load_int);
+    add_extern_module(&vm, "std.float.prim", ::vm::primitives::load_float);
+    add_extern_module(&vm, "std.string.prim", ::vm::primitives::load_string);
+    add_extern_module(&vm, "std.char.prim", ::vm::primitives::load_char);
+    add_extern_module(&vm, "std.array.prim", ::vm::primitives::load_array);
 
     add_extern_module(&vm, "std.lazy", ::vm::lazy::load);
     add_extern_module(&vm, "std.reference", ::vm::reference::load);

@@ -37,8 +37,7 @@ enum FieldAccess {
 pub struct UpvarInfo {
     pub name: String,
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
-    pub typ:
-        ArcType,
+    pub typ: ArcType,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -75,17 +74,14 @@ pub struct CompiledFunction {
     pub max_stack_size: VmIndex,
 
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
-    pub id:
-        Symbol,
+    pub id: Symbol,
 
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
-    pub typ:
-        ArcType,
+    pub typ: ArcType,
     pub instructions: Vec<Instruction>,
 
     #[cfg_attr(feature = "serde_derive_state", serde(state))]
-    pub inner_functions:
-        Vec<CompiledFunction>,
+    pub inner_functions: Vec<CompiledFunction>,
 
     #[cfg_attr(feature = "serde_derive_state", serde(state))] pub strings: Vec<InternedStr>,
 
@@ -554,9 +550,13 @@ impl<'a> Compiler<'a> {
     }
 
     fn load_identifier(&self, id: &Symbol, function: &mut FunctionEnvs) -> Result<()> {
-        match self.find(id, function)
-            .unwrap_or_else(|| ice!("Undefined variable {}", self.symbols.string(&id)))
-        {
+        match self.find(id, function).unwrap_or_else(|| {
+            ice!(
+                "Undefined variable `{}` in {}",
+                self.symbols.string(&id),
+                self.source_name,
+            )
+        }) {
             Stack(index) => function.emit(Push(index)),
             UpVar(index) => function.emit(PushUpVar(index)),
             // Zero argument constructors can be compiled as integers
@@ -673,7 +673,8 @@ impl<'a> Compiler<'a> {
             Expr::Call(func, args) => {
                 if let Expr::Ident(ref id, _) = *func {
                     if id.name.as_ref() == "&&" || id.name.as_ref() == "||"
-                        || id.name.as_ref().starts_with('#')
+                        || (id.name.as_ref().starts_with('#')
+                            && id.name.declared_name() != "#error")
                     {
                         self.compile_primitive(&id.name, args, function, tail_position)?;
                         return Ok(None);

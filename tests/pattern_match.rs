@@ -35,7 +35,7 @@ match A with
 
 test_expr!{ match_record_pattern,
 r#"
-let string_prim = import! "string_prim"
+let string_prim = import! std.string.prim
 match { x = 1, y = "abc" } with
 | { x, y = z } -> x #Int+ string_prim.len z
 "#,
@@ -44,7 +44,7 @@ match { x = 1, y = "abc" } with
 
 test_expr!{ match_stack,
 r#"
-let string_prim = import! "string_prim"
+let string_prim = import! std.string.prim
 1 #Int+ (match string_prim with
          | { len } -> len "abc")
 "#,
@@ -53,7 +53,7 @@ let string_prim = import! "string_prim"
 
 test_expr!{ let_record_pattern,
 r#"
-let string_prim = import! "string_prim"
+let string_prim = import! std.string.prim
 let (+) x y = x #Int+ y
 in
 let a = { x = 10, y = "abc" }

@@ -51,7 +51,7 @@ let num : Num Float = {
 }
 
 let show : Show Float = {
-    show = prim.show_float
+    show = (import! std.prim).show_float
 }
 
 {
@@ -62,5 +62,5 @@ let show : Show Float = {
     num,
     show,
     ..
-    import! "float_prim"
+    import! std.float.prim
 }

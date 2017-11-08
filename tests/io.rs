@@ -45,6 +45,7 @@ fn read_file() {
 
 test_expr!{ no_io_eval,
 r#"
+let { error } = import! std.prim
 let io = import! std.io
 let x = io_flat_map (\x -> error "NOOOOOOOO") (io.println "1")
 in { x }

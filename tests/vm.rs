@@ -301,7 +301,7 @@ Value::Tag(1)
 
 test_expr!{ any marshalled_option_none_is_int,
 r#"
-import! "string_prim"
+let string_prim = import! std.string.prim
 string_prim.find "a" "b"
 "#,
 Value::Tag(0)
@@ -309,7 +309,7 @@ Value::Tag(0)
 
 test_expr!{ any marshalled_ordering_is_int,
 r#"
-import! "string_prim"
+let { string_compare } = import! std.prim
 string_compare "a" "b"
 "#,
 Value::Tag(0)
@@ -346,7 +346,7 @@ in (id { x = 1 }).x
 
 test_expr!{ module_function,
 r#"
-import! "string_prim"
+let string_prim = import! std.string.prim
 let x = string_prim.len "test" in x
 "#,
 4i32

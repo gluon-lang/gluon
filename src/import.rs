@@ -56,7 +56,7 @@ macro_rules! std_libs {
     }
 }
 // Include the standard library distribution in the binary
-static STD_LIBS: [(&str, &str); 19] = std_libs!(
+static STD_LIBS: &[(&str, &str)] = &std_libs!(
     "prelude",
     "types",
     "function",
@@ -75,7 +75,8 @@ static STD_LIBS: [(&str, &str); 19] = std_libs!(
     "string",
     "test",
     "unit",
-    "writer"
+    "writer",
+    "array"
 );
 
 pub trait Importer: Any + Clone + Sync + Send {

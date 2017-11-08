@@ -1,6 +1,7 @@
 //@NO-IMPLICIT-PRELUDE
 
 let prelude = import! std.prelude
+let { error } = import! std.prim
 let { Semigroup, Monoid, Eq, Ord, Ordering, Show } = prelude
 let { Functor, Applicative, Alternative, Monad, Foldable, Traversable } = prelude
 let { Bool } = import! std.bool
