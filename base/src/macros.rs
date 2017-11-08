@@ -2,7 +2,7 @@
 #[macro_export]
 macro_rules! ice {
     () => ({
-        ice!("ICE: Please report an issue at https://github.com/gluon-lang/gluon/issues")
+        panic!("ICE: Please report an issue at https://github.com/gluon-lang/gluon/issues")
     });
     ($msg:expr) => ({
         panic!(concat!($msg, ". Please report an issue at https://github.com/gluon-lang/gluon/issues"))
