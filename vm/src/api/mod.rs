@@ -1224,6 +1224,8 @@ macro_rules! define_tuple {
                 )
             }
         }
+
+        #[allow(non_snake_case)]
         impl<'vm, $($id: Getable<'vm>),+> Getable<'vm> for ($($id),+) {
             #[allow(unused_assignments)]
             fn from_value(vm: &'vm Thread, value: Variants) -> Option<($($id),+)> {
@@ -1243,6 +1245,8 @@ macro_rules! define_tuple {
                 }
             }
         }
+
+        #[allow(non_snake_case)]
         impl<'vm, $($id),+> Pushable<'vm> for ($($id),+)
         where $($id: Pushable<'vm>),+
         {
