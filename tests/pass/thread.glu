@@ -8,6 +8,8 @@ let string = import! std.string
 let unit = import! std.unit
 let { (*>) } = prelude.make_Applicative writer.applicative
 let { (>>=) } = prelude.make_Monad writer.monad
+let { send, recv, channel } = import! std.channel
+let { spawn, yield, resume } = import! std.thread
 
 let assert =
     assert_eq (result.show unit.show int.show) (result.eq unit.eq int.eq)

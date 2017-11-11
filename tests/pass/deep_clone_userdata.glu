@@ -4,6 +4,8 @@ let { (*>) } = prelude.make_Applicative writer.applicative
 let { Result } = import! std.result
 let { ref, load } = import! std.reference
 let { lazy, force } = import! std.lazy
+let { channel, send, recv } = import! std.channel
+let { resume, spawn } = import! std.thread
 
 
 let _ =

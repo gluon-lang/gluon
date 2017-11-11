@@ -4,7 +4,7 @@ extern crate regex;
 
 use std::error::Error as StdError;
 
-use vm;
+use vm::{self, ExternModule};
 use vm::api::{Userdata, VmType};
 use vm::gc::{Gc, Traverseable};
 use vm::thread::Thread;
@@ -52,15 +52,22 @@ fn error_to_string(err: &Error) -> &str {
     err.description()
 }
 
+mod std {
+    pub use regex_bind as regex;
+}
 
-pub fn load(vm: &Thread) -> vm::Result<()> {
+pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
+    use self::std;
+
     vm.register_type::<Regex>("Regex", &[])?;
     vm.register_type::<Error>("Error", &[])?;
-    vm.define_global(
-        "regex",
-        record!(new => primitive!(1 new),
-                             is_match => primitive!(2 is_match),
-                             error_to_string => primitive!(1 error_to_string)
-                            ),
+
+    ExternModule::new(
+        vm,
+        record!{
+            new => primitive!(1 std::regex::new),
+            is_match => primitive!(2 std::regex::is_match),
+            error_to_string => primitive!(1 std::regex::error_to_string)
+        },
     )
 }

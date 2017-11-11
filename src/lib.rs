@@ -61,7 +61,7 @@ use vm::compiler::CompiledModule;
 use vm::thread::ThreadInternal;
 use vm::macros;
 use compiler_pipeline::*;
-use import::{DefaultImporter, Import};
+use import::{add_extern_module, DefaultImporter, Import};
 
 quick_error! {
     /// Error type wrapping all possible errors that can be generated from gluon
@@ -545,8 +545,6 @@ pub fn filename_to_module(filename: &str) -> StdString {
 /// Creates a new virtual machine with support for importing other modules and with all primitives
 /// loaded.
 pub fn new_vm() -> RootedThread {
-    use import::add_extern_module;
-
     let vm = RootedThread::new();
     let gluon_path = env::var("GLUON_PATH").unwrap_or_else(|_| String::from("."));
     let import = Import::new(DefaultImporter);
@@ -569,16 +567,19 @@ pub fn new_vm() -> RootedThread {
     add_extern_module(&vm, "std.lazy", ::vm::lazy::load);
     add_extern_module(&vm, "std.reference", ::vm::reference::load);
 
-    ::vm::channel::load(&vm).expect("Loaded channel library");
-    ::vm::debug::load(&vm).expect("Loaded debug library");
-    ::io::load(&vm).expect("Loaded IO library");
+    add_extern_module(&vm, "std.channel", ::vm::channel::load_channel);
+    add_extern_module(&vm, "std.thread", ::vm::channel::load_thread);
+    add_extern_module(&vm, "std.debug", ::vm::debug::load);
+    add_extern_module(&vm, "std.io.prim", ::io::load);
+
     load_regex(&vm);
+
     vm
 }
 
 #[cfg(feature = "regex")]
 fn load_regex(vm: &Thread) {
-    ::regex_bind::load(&vm).expect("Loaded regex library");
+    add_extern_module(&vm, "std.regex", ::regex_bind::load);
 }
 #[cfg(not(feature = "regex"))]
 fn load_regex(_: &Thread) {}

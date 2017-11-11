@@ -3,13 +3,13 @@ use std::fmt;
 use std::fs::File;
 use std::sync::Mutex;
 
-use vm::{self, Result, Variants};
+use vm::{self, ExternModule, Result, Variants};
 use vm::gc::{Gc, Traverseable};
 use vm::types::*;
 use vm::thread::ThreadInternal;
 use vm::thread::Thread;
-use vm::api::{Array, FunctionRef, Generic, Getable, Hole, OpaqueValue, Userdata, VmType, WithVM,
-              IO};
+use vm::api::{Array, FunctionRef, Generic, Getable, Hole, OpaqueValue, TypedBytecode, Userdata,
+              VmType, WithVM, IO};
 use vm::api::generic::{A, B};
 use vm::stack::StackFrame;
 use vm::internal::ValuePrinter;
@@ -194,12 +194,18 @@ fn load_script(WithVM { vm, value: name }: WithVM<&str>, expr: &str) -> IO<Strin
     }
 }
 
-pub fn load(vm: &Thread) -> Result<()> {
+mod std {
+    pub mod io {
+        pub use io as prim;
+    }
+}
+
+pub fn load(vm: &Thread) -> Result<ExternModule> {
     vm.register_type::<GluonFile>("File", &[])?;
 
-    // io_flat_map f m : (a -> IO b) -> IO a -> IO b
+    // flat_map f m : (a -> IO b) -> IO a -> IO b
     //     = f (m ())
-    let io_flat_map = vec![
+    let flat_map = vec![
         // [f, m, ()]       Initial stack
         Call(1),     // [f, m_ret]       Call m ()
         PushInt(0),  // [f, m_ret, ()]   Add a dummy argument ()
@@ -208,28 +214,27 @@ pub fn load(vm: &Thread) -> Result<()> {
 
     type FlatMap = fn(fn(A) -> IO<B>, IO<A>) -> IO<B>;
     type Wrap = fn(A) -> IO<A>;
-    let flat_map_ty = <FlatMap as VmType>::make_forall_type(vm);
-    let wrap_ty = <Wrap as VmType>::make_forall_type(vm);
 
-    vm.add_bytecode("io_flat_map", flat_map_ty, 3, io_flat_map)?;
-    vm.add_bytecode("io_wrap", wrap_ty, 2, vec![Pop(1)])?;
+    let wrap = vec![Pop(1)];
+
+    use self::std;
 
     // IO functions
-    use super::io as io_prim;
-    vm.define_global(
-        "io_prim",
+    ExternModule::new(
+        vm,
         record! {
-            open_file => primitive!(1 io_prim::open_file),
-            read_file => primitive!(2 io_prim::read_file),
-            read_file_to_string => primitive!(1 io_prim::read_file_to_string),
-            read_char => primitive!(0 io_prim::read_char),
-            read_line => primitive!(0 io_prim::read_line),
-            print => primitive!(1 io_prim::print),
-            println => primitive!(1 io_prim::println),
-            catch => primitive!(2 io_prim::catch),
-            run_expr => primitive!(1 io_prim::run_expr),
-            load_script => primitive!(2 io_prim::load_script)
+            flat_map => TypedBytecode::<FlatMap>::new("std.io.prim.flat_map", 3, flat_map),
+            wrap => TypedBytecode::<Wrap>::new("std.io.prim.wrap", 2, wrap),
+            open_file => primitive!(1 std::io::prim::open_file),
+            read_file => primitive!(2 std::io::prim::read_file),
+            read_file_to_string => primitive!(1 std::io::prim::read_file_to_string),
+            read_char => primitive!(0 std::io::prim::read_char),
+            read_line => primitive!(0 std::io::prim::read_line),
+            print => primitive!(1 std::io::prim::print),
+            println => primitive!(1 std::io::prim::println),
+            catch => primitive!(2 std::io::prim::catch),
+            run_expr => primitive!(1 std::io::prim::run_expr),
+            load_script => primitive!(2 std::io::prim::load_script)
         },
-    )?;
-    Ok(())
+    )
 }

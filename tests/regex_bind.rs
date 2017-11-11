@@ -10,6 +10,7 @@ fn regex_match() {
 
     let thread = new_vm();
     let text = r#"
+        let regex = import! std.regex
         let { (|>) } = import! std.function
         let { not } = import! std.bool
         let { unwrap_ok } = import! std.result
@@ -25,7 +26,7 @@ fn regex_match() {
         .run_expr_async::<bool>(&thread, "<top>", text)
         .sync_or_error();
 
-    assert!(result.unwrap().0);
+    assert!(result.unwrap_or_else(|err| panic!("{}", err)).0);
 }
 
 #[test]
@@ -34,6 +35,7 @@ fn regex_error() {
 
     let thread = new_vm();
     let text = r#"
+        let regex = import! std.regex
         let { (|>) } = import! std.function
         let { unwrap_err } = import! std.result
 
@@ -44,7 +46,7 @@ fn regex_error() {
         .sync_or_error();
 
     assert_eq!(
-        result.unwrap().0,
+        result.unwrap_or_else(|err| panic!("{}", err)).0,
         "Error parsing regex near \')\' at character offset 0: Unopened parenthesis."
     );
 }

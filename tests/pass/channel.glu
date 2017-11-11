@@ -5,6 +5,7 @@ let int = import! std.int
 let result = import! std.result
 let { Result } = result
 let unit = import! std.unit
+let { send, recv, channel } = import! std.channel
 
 let assert =
     assert_eq (result.show unit.show int.show )

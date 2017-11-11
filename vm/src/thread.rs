@@ -24,7 +24,7 @@ use field_map::FieldMap;
 use interner::InternedStr;
 use macros::MacroEnv;
 use api::{Getable, Pushable, VmType};
-use compiler::{CompiledFunction, CompiledModule, UpvarInfo};
+use compiler::UpvarInfo;
 use gc::{DataDef, Gc, GcPtr, Generation, Move};
 use source_map::LocalIter;
 use stack::{Frame, Stack, StackFrame, State};
@@ -620,14 +620,6 @@ where
         T: VmRoot<'vm>;
 
 
-    fn add_bytecode(
-        &self,
-        name: &str,
-        typ: ArcType,
-        args: VmIndex,
-        instructions: Vec<Instruction>,
-    ) -> Result<()>;
-
     /// Evaluates a zero argument function (a thunk)
     fn call_thunk(&self, closure: GcPtr<ClosureData>) -> FutureValue<Execute<&Self>>;
 
@@ -703,27 +695,6 @@ impl ThreadInternal for Thread {
             vm: T::root(self),
             value: value,
         }
-    }
-
-    fn add_bytecode(
-        &self,
-        name: &str,
-        typ: ArcType,
-        args: VmIndex,
-        instructions: Vec<Instruction>,
-    ) -> Result<()> {
-        let id = Symbol::from(name);
-        let mut compiled_module = CompiledModule::from(CompiledFunction::new(
-            args,
-            id.clone(),
-            typ.clone(),
-            "".into(),
-        ));
-        compiled_module.function.instructions = instructions;
-        let closure = self.global_env().new_global_thunk(compiled_module)?;
-        self.set_global(id, typ, Metadata::default(), Closure(closure))
-            .unwrap();
-        Ok(())
     }
 
     fn call_thunk(&self, closure: GcPtr<ClosureData>) -> FutureValue<Execute<&Thread>> {

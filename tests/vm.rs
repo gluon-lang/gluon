@@ -575,6 +575,13 @@ fn access_types_by_path() {
 fn opaque_value_type_mismatch() {
     let _ = ::env_logger::init();
     let vm = make_vm();
+
+    Compiler::new()
+        .implicit_prelude(false)
+        .run_expr_async::<()>(&vm, "<top>", "let _ = import! std.channel in ()")
+        .sync_or_error()
+        .unwrap();
+
     let expr = r#"
 let { sender, receiver } = channel 0
 send sender 1
