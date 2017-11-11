@@ -148,7 +148,7 @@ enum UnloadedModule {
 /// already loaded and then a global access to the loaded module
 pub struct Import<I = DefaultImporter> {
     pub paths: RwLock<Vec<PathBuf>>,
-    loaders: RwLock<FnvMap<String, ExternLoader>>,
+    pub loaders: RwLock<FnvMap<String, ExternLoader>>,
     pub importer: I,
 }
 
@@ -184,6 +184,7 @@ impl<I> Import<I> {
 
         // Retrieve the source, first looking in the standard library included in the
         // binary
+
         let std_file = STD_LIBS.iter().find(|tup| tup.0 == module);
         if let Some(tup) = std_file {
             return Ok(UnloadedModule::Source(Cow::Borrowed(tup.1)));
