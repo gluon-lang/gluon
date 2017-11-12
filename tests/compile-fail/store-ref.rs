@@ -3,8 +3,10 @@ use std::fmt;
 use std::sync::Mutex;
 
 use gluon::new_vm;
-use gluon::vm::thread::{Thread, Status};
-use gluon::vm::api::{Userdata, VmType, primitive_f};
+use gluon::import::add_extern_module;
+use gluon::vm::ExternModule;
+use gluon::vm::thread::{Status, Thread};
+use gluon::vm::api::{primitive_f, Userdata, VmType};
 use gluon::vm::gc::Traverseable;
 
 struct Test<'vm>(Mutex<&'vm str>);
@@ -33,6 +35,8 @@ fn f<'vm>(test: &'vm Test<'vm>, s: &'vm str) {
 #[cfg_attr(rustfmt, rustfmt_skip)]
 fn main() {
     let vm = new_vm();
-    vm.define_global("test", unsafe { primitive_f("f", dummy, f as fn (_, _)) });
-    //~^ `vm` does not live long enough
+    add_extern_module(&vm, "test", |vm| {
+        ExternModule::new(vm, unsafe { primitive_f("f", dummy, f as fn (_, _)) })
+        //~^ cannot infer an appropriate lifetime for lifetime parameter `'vm` due to conflicting requirements
+    });
 }

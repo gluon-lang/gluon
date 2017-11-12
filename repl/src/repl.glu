@@ -6,6 +6,8 @@ let { Option } = import! std.option
 let { Result } = import! std.result
 let string = import! std.string
 let { ref, load, (<-) } = import! std.reference
+let rustyline = import! rustyline
+let repl_prim = import! repl.prim
 let { Map } = map
 let { wrap, (*>) } = prelude.make_Applicative io.applicative
 let { (>>=) } = prelude.make_Monad io.monad

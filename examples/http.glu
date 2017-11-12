@@ -3,6 +3,7 @@ let function = import! std.function
 let io = import! std.io
 let string = import! std.string
 let { Bool } = import! std.bool
+let http_prim = import! http.prim
 let { (==) } = string.eq
 let { Functor, Applicative, Alternative, Monad } = prelude
 let { (<<), id } = prelude.make_Category function.category
@@ -19,16 +20,16 @@ let {
 
 /// Force the value to be a Handler. Necessary to make the the type inference work for
 /// higher-kinded types
-let make: Handler a -> Handler a = id
+let make : Handler a -> Handler a = id
 
-let functor: Functor Handler = {
+let functor : Functor Handler = {
     map = \f handler ->
         // FIXME type inference fails without this
         let handler = make handler
-        make (\success failure state -> handler (success << f) failure state)
+        make (\success failure state -> handler (success << f) failure state),
 }
 
-let flat_map f handler: (a -> Handler b) -> Handler a -> Handler b =
+let flat_map f handler : (a -> Handler b) -> Handler a -> Handler b =
     // FIXME type inference fails without this
     let handler = make handler
     make (\success failure state ->
@@ -36,42 +37,41 @@ let flat_map f handler: (a -> Handler b) -> Handler a -> Handler b =
         handler success2 failure state)
 
 
-let applicative: Applicative Handler = {
+let applicative : Applicative Handler = {
     functor,
     apply = \a m ->
         let m = make m
         flat_map (\f -> functor.map f m) a,
-    wrap = \a -> make (\success _ state -> success a state)
+    wrap = \a -> make (\success _ state -> success a state),
 }
 let { (*>) } = prelude.make_Applicative applicative
 
-let alternative: Alternative Handler = {
+let alternative : Alternative Handler = {
     applicative,
     // Tries to handle the request with `l`, if it fails with `DontProcess` then `r` is tried instead
     or = \l r -> make (\success failure state ->
-        let failure2 reason state2 =
-            match reason with
-            | DontProcess -> make r success failure state2
-            | Error _ -> failure reason state2
+            let failure2 reason state2 =
+                match reason with
+                | DontProcess -> make r success failure state2
+                | Error _ -> failure reason state2
 
-        make l success failure2 state),
-    empty = make (\_ failure state -> failure DontProcess state)
+            make l success failure2 state),
+    empty = make (\_ failure state -> failure DontProcess state),
 }
 let { or, empty, (<|>) } = prelude.make_Alternative alternative
 
-let monad: Monad Handler = {
+let monad : Monad Handler = {
     applicative,
-    flat_map
+    flat_map,
 }
 let { (>>=) } = prelude.make_Monad monad
 
 /// Handles the request if `predicate` returns `True
-let test predicate: (Request -> Bool) -> Handler () =
+let test predicate : (Request -> Bool) -> Handler () =
     \success failure state ->
-        if predicate state.request then
-            success () state
-        else
-            failure DontProcess state
+    if predicate state.request
+    then success () state
+    else failure DontProcess state
 
 /// Handles `Get` requests
 let get : Handler () =
@@ -88,7 +88,7 @@ let post : Handler () =
         | _ -> False)
 
 /// Processes this handler if `uri` matches the request's uri
-let path uri: String -> Handler () =
+let path uri : String -> Handler () =
     test (\request -> request.uri == uri)
 
 /// Retrieves the HTTP request
@@ -108,7 +108,8 @@ let io_handler action : IO a -> Handler a =
 
 /// Write `bytes` to the http response
 let write_response bytes : Array Byte -> Handler () =
-    get_response_body >>= (\response -> io_handler (http_prim.write_response response bytes))
+    get_response_body
+        >>= (\response -> io_handler (http_prim.write_response response bytes))
 
 /// Throws an exception which aborts the current handler. Can be caught with `catch_error`
 let fail msg : String -> Handler a =
@@ -153,5 +154,5 @@ let handle handler state : Handler Response -> HttpState -> IO Response =
     write_response,
     io_handler,
     fail,
-    catch_error
+    catch_error,
 }
