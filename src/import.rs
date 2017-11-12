@@ -2,7 +2,7 @@
 
 use std::any::Any;
 use std::borrow::Cow;
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::RwLock;
 use std::fs::File;
 use std::io;
 use std::io::Read;
@@ -10,18 +10,18 @@ use std::path::PathBuf;
 
 use itertools::Itertools;
 
-use base::ast::{Expr, Literal, SpannedExpr, TypedIdent};
-use base::metadata::Metadata;
+use base::ast::{Expr, Literal, SpannedExpr, Typed, TypedIdent};
+use base::fnv::FnvMap;
 use base::pos;
 use base::symbol::Symbol;
+use base::types::ArcType;
+
 
 use vm::{ExternLoader, ExternModule};
 use vm::macros::{Error as MacroError, Macro, MacroExpander};
 use vm::thread::{Thread, ThreadInternal};
-use vm::internal::Value;
 
 use super::{filename_to_module, Compiler};
-use base::fnv::FnvMap;
 
 quick_error! {
     /// Error type for the import macro
@@ -84,10 +84,11 @@ pub trait Importer: Any + Clone + Sync + Send {
         &self,
         compiler: &mut Compiler,
         vm: &Thread,
+        earlier_errors_exist: bool,
         modulename: &str,
         input: &str,
         expr: SpannedExpr<Symbol>,
-    ) -> Result<(), MacroError>;
+    ) -> Result<(), (Option<ArcType>, MacroError)>;
 }
 
 #[derive(Clone)]
@@ -97,45 +98,33 @@ impl Importer for DefaultImporter {
         &self,
         compiler: &mut Compiler,
         vm: &Thread,
+        earlier_errors_exist: bool,
         modulename: &str,
         input: &str,
-        expr: SpannedExpr<Symbol>,
-    ) -> Result<(), MacroError> {
+        mut expr: SpannedExpr<Symbol>,
+    ) -> Result<(), (Option<ArcType>, MacroError)> {
         use compiler_pipeline::*;
 
-        MacroValue { expr: expr }
-            .load_script(compiler, vm, modulename, input, None)
-            .sync_or_error()?;
-        Ok(())
-    }
-}
+        let result = {
+            let expr = &mut expr;
+            let result = MacroValue { expr }
+                .typecheck(compiler, vm, modulename, input)
+                .map_err(|err| err.into());
 
-#[derive(Clone, Default)]
-pub struct CheckImporter(pub Arc<Mutex<FnvMap<String, SpannedExpr<Symbol>>>>);
-impl CheckImporter {
-    pub fn new() -> CheckImporter {
-        CheckImporter::default()
-    }
-}
-impl Importer for CheckImporter {
-    fn import(
-        &self,
-        compiler: &mut Compiler,
-        vm: &Thread,
-        module_name: &str,
-        input: &str,
-        expr: SpannedExpr<Symbol>,
-    ) -> Result<(), MacroError> {
-        use compiler_pipeline::*;
+            if result.is_ok() && earlier_errors_exist {
+                // We must not pass error patterns or expressions to the core translator so break
+                // early. An error will be returned by the macro expander so we can just return Ok
+                return Ok(());
+            }
 
-        let macro_value = MacroValue { expr: expr };
-        let TypecheckValue { expr, typ } = macro_value.typecheck(compiler, vm, module_name, input)?;
-        self.0.lock().unwrap().insert(module_name.into(), expr);
-        let metadata = Metadata::default();
-        // Insert a global to ensure the globals type can be looked up
-        vm.global_env()
-            .set_global(Symbol::from(module_name), typ, metadata, Value::Int(0))?;
-        Ok(())
+            result.and_then(|value| {
+                value
+                    .load_script(compiler, vm, modulename, input, ())
+                    .sync_or_error()
+            })
+        };
+
+        result.map_err(|err| (Some(expr.env_type_of(&*vm.get_env())), err.into()))
     }
 }
 
@@ -226,7 +215,7 @@ impl<I> Import<I> {
         vm: &Thread,
         macros: &mut MacroExpander,
         module_id: &Symbol,
-    ) -> Result<(), MacroError>
+    ) -> Result<(), (Option<ArcType>, MacroError)>
     where
         I: Importer,
     {
@@ -244,14 +233,18 @@ impl<I> Import<I> {
                     .skip_while(|m| **m != *filename)
                     .cloned()
                     .collect();
-                return Err(Error::CyclicDependency(filename.clone(), cycle).into());
+                return Err((
+                    None,
+                    Error::CyclicDependency(filename.clone(), cycle).into(),
+                ));
             }
             state.visited.push(filename.clone());
         }
 
         // Retrieve the source, first looking in the standard library included in the
         // binary
-        let unloaded_module = self.get_unloaded_module(vm, &modulename, &filename)?;
+        let unloaded_module = self.get_unloaded_module(vm, &modulename, &filename)
+            .map_err(|err| (None, err.into()))?;
 
         match unloaded_module {
             UnloadedModule::Extern(ExternModule {
@@ -259,27 +252,36 @@ impl<I> Import<I> {
                 typ,
                 metadata,
             }) => {
-                vm.set_global(module_id.clone(), typ, metadata, *value)?;
+                vm.set_global(module_id.clone(), typ, metadata, *value)
+                    .map_err(|err| (None, err.into()))?;
             }
             UnloadedModule::Source(file_contents) => {
                 // Modules marked as this would create a cyclic dependency if they included the implicit
                 // prelude
                 let implicit_prelude = !file_contents.starts_with("//@NO-IMPLICIT-PRELUDE");
                 compiler.set_implicit_prelude(implicit_prelude);
-                let errors = macros.errors.len();
-                let macro_result = file_contents.expand_macro_with(compiler, macros, &modulename)?;
-                if errors != macros.errors.len() {
-                    // If macro expansion of the imported module fails we need to stop
-                    // compilation of that module. To return an error we return one of the
-                    // already emitted errors (which will be pushed back after this function
-                    // returns)
-                    if let Some(err) = macros.errors.pop() {
-                        return Err(err);
-                    }
-                }
+
+                let errors_before = macros.errors.len();
+                let macro_result =
+                    match file_contents.expand_macro_with(compiler, macros, &modulename) {
+                        Ok(m) => m,
+                        Err((None, err)) => return Err((None, err.into())),
+                        Err((Some(m), err)) => {
+                            macros.errors.push(err.into());
+                            m
+                        }
+                    };
+
                 get_state(macros).visited.pop();
-                self.importer
-                    .import(compiler, vm, &modulename, &file_contents, macro_result.expr)?;
+                let earlier_errors_exist = errors_before != macros.errors.len();
+                self.importer.import(
+                    compiler,
+                    vm,
+                    earlier_errors_exist,
+                    &modulename,
+                    &file_contents,
+                    macro_result.expr,
+                )?;
             }
         }
         Ok(())
@@ -412,7 +414,15 @@ where
         let name = Symbol::from(&*modulename);
         debug!("Import '{}' {:?}", modulename, get_state(macros).visited);
         if !vm.global_env().global_exists(&modulename) {
-            self.load_module(&mut Compiler::new(), vm, macros, &name)?;
+            if let Err((typ, err)) = self.load_module(&mut Compiler::new(), vm, macros, &name) {
+                match typ {
+                    Some(typ) => {
+                        macros.errors.push(err);
+                        return Ok(pos::spanned(args[0].span, Expr::Error(Some(typ))));
+                    }
+                    None => return Err(err),
+                }
+            }
         }
         // FIXME Does not handle shadowing
         Ok(pos::spanned(

@@ -288,7 +288,7 @@ impl<'a: 'e, 'e> Printer<'a, 'e> {
                     self.pretty_expr_(binds.last().unwrap().alias.span.end, body)
                 ].group()
                 }
-                Expr::Error => arena.text("<error>"),
+                Expr::Error(_) => arena.text("<error>"),
             };
         comments.append(doc)
     }

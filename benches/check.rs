@@ -25,7 +25,7 @@ fn typecheck_prelude(b: &mut Bencher) {
             .read_to_string(&mut text)
             .unwrap();
         text.expand_macro(&mut compiler, &vm, "std.prelude")
-            .unwrap_or_else(|err| panic!("{}", err))
+            .unwrap_or_else(|(_, err)| panic!("{}", err))
     };
     b.iter(|| {
         let result = MacroValue { expr: expr.clone() }.typecheck(&mut compiler, &vm, "<top>", "");

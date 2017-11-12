@@ -57,8 +57,6 @@ pub enum TypeError<I> {
     UndefinedRecord { fields: Vec<I> },
     /// Found a case expression without any alternatives
     EmptyCase,
-    /// An `Error` ast node was found indicating an invalid parse
-    ErrorAst(&'static str),
     Message(String),
 }
 
@@ -151,7 +149,6 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
                 Ok(())
             }
             EmptyCase => write!(f, "`case` expression with no alternatives"),
-            ErrorAst(typ) => write!(f, "`Error` {} found during typechecking", typ),
             Message(ref msg) => write!(f, "{}", msg),
         }
     }
@@ -489,7 +486,6 @@ impl<'a> Typecheck<'a> {
                 DuplicateField(_) |
                 UndefinedRecord { .. } |
                 EmptyCase |
-                ErrorAst(_) |
                 Rename(_) |
                 Message(_) => (),
                 KindError(_, ref mut typ) |
@@ -949,7 +945,9 @@ impl<'a> Typecheck<'a> {
                 }
                 Ok(TailCall::Type(self.typecheck_opt(last, expected_type)))
             }
-            Expr::Error => Err(TypeError::ErrorAst("expression")),
+            Expr::Error(ref typ) => Ok(TailCall::Type(
+                typ.clone().unwrap_or_else(|| self.subs.new_var()),
+            )),
         }
     }
 
@@ -1162,7 +1160,7 @@ impl<'a> Typecheck<'a> {
                 id.typ = match_type.clone();
                 match_type
             }
-            Pattern::Error => self.error(span, TypeError::ErrorAst("pattern")),
+            Pattern::Error => self.subs.new_var(),
         }
     }
 
@@ -1223,9 +1221,11 @@ impl<'a> Typecheck<'a> {
                     Err(err) => self.error(ast_type.span(), err),
                 }
             }
-            _ => types::translate_type_with(type_cache, ast_type, |typ| {
-                self.translate_ast_type(type_cache, typ)
-            }),
+            _ => types::translate_type_with(
+                type_cache,
+                ast_type,
+                |typ| self.translate_ast_type(type_cache, typ),
+            ),
         }
     }
 
@@ -1921,10 +1921,12 @@ impl<'a> Typecheck<'a> {
                 self.environment
                     .find_type_info(new_id)
                     .map(|alias| alias.clone().into_type())
-                    .or_else(|| if id == new_id {
-                        None
-                    } else {
-                        Some(Type::ident(new_id.clone()))
+                    .or_else(|| {
+                        if id == new_id {
+                            None
+                        } else {
+                            Some(Type::ident(new_id.clone()))
+                        }
                     })
             }
             Type::Variant(ref row) => {

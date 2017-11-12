@@ -123,7 +123,7 @@ impl<'a> MutVisitor for MacroExpander<'a> {
                             Ok(e) => e,
                             Err(err) => {
                                 self.errors.push(err);
-                                pos::spanned(expr.span, Expr::Error)
+                                pos::spanned(expr.span, Expr::Error(None))
                             }
                         }),
                         None => None,
