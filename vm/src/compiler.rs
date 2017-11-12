@@ -702,7 +702,6 @@ impl<'a> Compiler<'a> {
                 // Indexes for each alternative for a successful match to the alternatives code
                 let mut start_jumps = Vec::new();
                 let typ = expr.env_type_of(self);
-                let mut catch_all = false;
                 // Emit a TestTag + Jump instuction for each alternative which jumps to the
                 // alternatives code if TestTag is sucessesful
                 for alt in alts.iter() {
@@ -724,29 +723,13 @@ impl<'a> Compiler<'a> {
                             function.emit(CJump(0));
                         }
                         Pattern::Record { .. } => {
-                            catch_all = true;
                             start_jumps.push(function.function.instructions.len());
                         }
                         _ => {
-                            catch_all = true;
                             start_jumps.push(function.function.instructions.len());
                             function.emit(Jump(0));
                         }
                     }
-                }
-                let constructors_in_type =
-                    resolve::remove_aliases_cow(self, &typ).row_iter().count();
-                // Create a catch all to prevent us from running into undefined behaviour
-                // If a catch all already exists or all constructors have been matched then we can
-                // skip it
-                if !catch_all && alts.len() != constructors_in_type {
-                    let error_fn = self.symbols.symbol("#error");
-                    self.load_identifier(&error_fn, function)?;
-                    function.emit_string(self.intern("Non-exhaustive pattern")?);
-                    function.emit(Call(1));
-                    // The stack has been increased by 1 here but it should not affect compiling the
-                    // alternatives
-                    function.stack_size -= 1;
                 }
                 // Indexes for each alternative from the end of the alternatives code to code
                 // after the alternative

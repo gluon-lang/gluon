@@ -426,7 +426,7 @@ pub fn load_char(vm: &Thread) -> Result<ExternModule> {
     )
 }
 
-#[allow(non_camel_case_types)]
+#[allow(non_camel_case_types, deprecated)]
 pub fn load(vm: &Thread) -> Result<ExternModule> {
     use self::std;
 

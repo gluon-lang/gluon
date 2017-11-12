@@ -425,6 +425,7 @@ impl Thread {
     /// # }
     /// ```
     ///
+    #[deprecated(since = "0.7.0", note = "Use `gluon::import::add_extern_module` instead")]
     pub fn define_global<'vm, T>(&'vm self, name: &str, value: T) -> Result<()>
     where
         T: Pushable<'vm> + VmType,

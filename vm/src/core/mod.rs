@@ -602,7 +602,12 @@ impl<'a, 'e> Translator<'a, 'e> {
                             // Only load fields that aren't named in this record constructor
                             .filter(|field| !defined_fields.contains(field.name.declared_name()))
                             .map(move |field| {
-                                self.project_expr(base_ident_expr.span(), base_ident_expr, &field.name, &field.typ)
+                                self.project_expr(
+                                    base_ident_expr.span(),
+                                    base_ident_expr,
+                                    &field.name,
+                                    &field.typ
+                                )
                             })
                     },
                 ));

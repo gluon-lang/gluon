@@ -24,7 +24,8 @@ use vm::gc::{Gc, Traverseable};
 use vm::internal::ValuePrinter;
 use vm::thread::{RootStr, RootedValue, Thread, ThreadInternal};
 
-use gluon::{add_extern_module, new_vm, Compiler, Result as GluonResult, RootedThread};
+use gluon::{new_vm, Compiler, Result as GluonResult, RootedThread};
+use gluon::import::add_extern_module;
 use gluon::compiler_pipeline::{Executable, ExecuteValue};
 
 fn type_of_expr(args: WithVM<RootStr>) -> IO<Result<String, String>> {
@@ -271,24 +272,29 @@ fn set_globals(
 fn load_rustyline(vm: &Thread) -> vm::Result<vm::ExternModule> {
     vm.register_type::<Editor>("Editor", &[])?;
 
-    vm::ExternModule::new(record!(
+    vm::ExternModule::new(
+        vm,
+        record!(
             new_editor => primitive!(1 new_editor),
             readline => primitive!(2 readline)
-        ))
+        ),
+    )
 }
 
 fn load_repl(vm: &Thread) -> vm::Result<vm::ExternModule> {
-    vm::ExternModule::new(record!(
+    vm::ExternModule::new(
+        vm,
+        record!(
             type_of_expr => primitive!(1 type_of_expr),
             find_info => primitive!(1 find_info),
             find_kind => primitive!(1 find_kind),
             eval_line => primitive!(1 eval_line)
-        ))
+        ),
+    )
 }
 
 fn compile_repl(vm: &Thread) -> Result<(), Box<StdError + Send + Sync>> {
-
-    add_extern_module(vm, "repl.prim" load_repl);
+    add_extern_module(vm, "repl.prim", load_repl);
     add_extern_module(vm, "rustyline", load_rustyline);
 
     const REPL_SOURCE: &'static str =
@@ -334,7 +340,7 @@ mod tests {
         let _ = ::env_logger::init();
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
-        let repl: Result<FunctionRef<fn(()) -> IO<()>>, _> = vm.get_global("std.repl");
+        let repl: Result<FunctionRef<fn(()) -> IO<()>>, _> = vm.get_global("repl");
         assert!(repl.is_ok(), "{}", repl.err().unwrap());
     }
 
