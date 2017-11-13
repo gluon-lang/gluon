@@ -47,14 +47,6 @@ Currently the easiest way to interact with the gluon virtual machine is through 
 
 ## Tools
 
-### Visual Studio Code Extension
-
-The [gluon extension][] for Visual Studio Code provides syntax highlighting and completion. To install it, search for `gluon` among the extensions. ([Github](https://github.com/gluon-lang/gluon_language-server)) 
-
-![example](http://i.imgur.com/44bH0ww.gif)
-
-[gluon extension]:https://marketplace.visualstudio.com/items?itemName=Marwes.gluon
-
 ### REPL
 
 Gluon has a small executable which can be used to run gluon programs directly or in a small REPL. The REPL can be started by passing the `-i` flag to the built repl executable which can be run with `cargo run -- -i`.
@@ -82,9 +74,36 @@ REPL features:
     ![repl completion](http://i.imgur.com/IXLQFtV.gif)
 * Exit the REPL by writing `:q`
 
+### Language server
+
+Gluon has a [language server](https://github.com/gluon-lang/gluon_language-server) which provides code completion and formatting support. Installation is done with `cargo install gluon_language-server`.
+
+### Visual Studio Code Extension
+
+The [gluon extension][] for Visual Studio Code provides syntax highlighting and completion. To install it, search for `gluon` among the extensions. ([Github](https://github.com/gluon-lang/gluon_language-server)) 
+
+![example](http://i.imgur.com/44bH0ww.gif)
+
+[gluon extension]:https://marketplace.visualstudio.com/items?itemName=Marwes.gluon
+
 ### Vim plugin
 
-[vim-gluon](https://github.com/salpalvv/vim-gluon) is a vim plugin which provides basic syntax highlighting and indentation.
+[vim-gluon](https://github.com/salpalvv/vim-gluon) provides syntax highlighting and indentation.
+
+The gluon language server has been tested to work with https://github.com/autozimu/LanguageClient-neovim and https://github.com/prabirshrestha/vim-lsp. 
+
+#### Example configuration (autozimu/LanguageClient-neovim)
+```
+let g:LanguageClient_serverCommands = {
+    \ 'gluon': ['gluon_language-server'],
+    \ }
+
+" Automatically start language servers.
+let g:LanguageClient_autoStart = 1
+
+nnoremap <silent> K :call LanguageClient_textDocument_hover()<CR>
+nnoremap <silent> gd :call LanguageClient_textDocument_definition()<CR>
+```
 
 ## Documentation
 
