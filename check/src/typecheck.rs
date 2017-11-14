@@ -17,7 +17,7 @@ use base::fnv::{FnvMap, FnvSet};
 use base::resolve;
 use base::kind::{ArcKind, Kind, KindCache, KindEnv};
 use base::merge;
-use base::pos::{BytePos, Span, Spanned};
+use base::pos::{self, BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
 use base::types::{self, Alias, AliasRef, AppVec, ArcType, Field, Generic, PrimitiveEnv,
                   RecordSelector, Skolem, Type, TypeCache, TypeEnv, TypeVariable};
@@ -836,7 +836,7 @@ impl<'a> Typecheck<'a> {
                 Ok(TailCall::Type(typ))
             }
             Expr::TypeBindings(ref mut bindings, ref expr) => {
-                self.typecheck_type_bindings(bindings, expr)?;
+                self.typecheck_type_bindings(bindings, expr);
                 Ok(TailCall::TailCall)
             }
             Expr::Record {
@@ -1223,9 +1223,11 @@ impl<'a> Typecheck<'a> {
                     Err(err) => self.error(ast_type.span(), err),
                 }
             }
-            _ => types::translate_type_with(type_cache, ast_type, |typ| {
-                self.translate_ast_type(type_cache, typ)
-            }),
+            _ => types::translate_type_with(
+                type_cache,
+                ast_type,
+                |typ| self.translate_ast_type(type_cache, typ),
+            ),
         }
     }
 
@@ -1338,7 +1340,7 @@ impl<'a> Typecheck<'a> {
         &mut self,
         bindings: &mut [TypeBinding<Symbol>],
         expr: &SpannedExpr<Symbol>,
-    ) -> TcResult<()> {
+    ) {
         self.enter_scope();
 
         let mut resolved_aliases = Vec::new();
@@ -1400,21 +1402,27 @@ impl<'a> Typecheck<'a> {
             }
 
             // Kindcheck all the types in the environment
-            for alias in resolved_aliases.iter_mut() {
+            for (alias, bind) in resolved_aliases.iter_mut().zip(&mut *bindings) {
                 check.set_variables(alias.params());
                 *alias.unresolved_type_mut() = match **alias.unresolved_type() {
                     Type::Forall(ref args, ref typ, _) => {
                         let mut typ = typ.clone();
-                        check
+                        if let Err(err) = check
                             .kindcheck_type(&mut typ)
-                            .map_err(|err| TypeError::from_kind_error(err, typ.clone()))?;
+                            .map_err(|err| TypeError::from_kind_error(err, typ.clone()))
+                        {
+                            self.errors.push(pos::spanned(bind.name.span, err));
+                        }
                         Type::forall(args.clone(), typ.clone())
                     }
                     _ => {
                         let mut typ = alias.unresolved_type().clone();
-                        check
+                        if let Err(err) = check
                             .kindcheck_type(&mut typ)
-                            .map_err(|err| TypeError::from_kind_error(err, typ.clone()))?;
+                            .map_err(|err| TypeError::from_kind_error(err, typ.clone()))
+                        {
+                            self.errors.push(pos::spanned(bind.name.span, err));
+                        };
                         typ
                     }
                 };
@@ -1447,8 +1455,6 @@ impl<'a> Typecheck<'a> {
                 );
             }
         }
-
-        Ok(())
     }
 
     fn kindcheck(&self, typ: &mut ArcType) -> TcResult<()> {
@@ -1921,10 +1927,12 @@ impl<'a> Typecheck<'a> {
                 self.environment
                     .find_type_info(new_id)
                     .map(|alias| alias.clone().into_type())
-                    .or_else(|| if id == new_id {
-                        None
-                    } else {
-                        Some(Type::ident(new_id.clone()))
+                    .or_else(|| {
+                        if id == new_id {
+                            None
+                        } else {
+                            Some(Type::ident(new_id.clone()))
+                        }
                     })
             }
             Type::Variant(ref row) => {

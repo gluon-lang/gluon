@@ -104,6 +104,10 @@ impl<'a> Source<'a> {
         self.src
     }
 
+    pub fn lines(&self) -> &Lines {
+        &self.lines
+    }
+
     /// Returns the byte offset and source of `line_number`
     pub fn line(&self, line_number: Line) -> Option<(BytePos, &str)> {
         self.lines.line(line_number).map(|start| {

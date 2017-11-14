@@ -378,9 +378,9 @@ impl Substitutable for ArcKind {
         }
     }
 
-    fn traverse<F>(&self, f: &mut F)
+    fn traverse<'a, F>(&'a self, f: &mut F)
     where
-        F: Walker<ArcKind>,
+        F: Walker<'a, ArcKind>,
     {
         kind::walk_kind(self, f);
     }

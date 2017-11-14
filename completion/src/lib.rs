@@ -1,20 +1,25 @@
 //! Primitive auto completion and type quering on ASTs
 #![doc(html_root_url = "https://docs.rs/gluon_completion/0.6.2")] // # GLUON
 
+extern crate either;
+
 extern crate gluon_base as base;
 
 use std::iter::once;
 use std::cmp::Ordering;
+
+use either::Either;
 
 use base::ast::{walk_expr, walk_pattern, AstType, Expr, Pattern, SpannedExpr, SpannedIdent,
                 SpannedPattern, Typed, TypedIdent, Visitor};
 use base::fnv::FnvMap;
 use base::metadata::Metadata;
 use base::resolve;
-use base::pos::{self, BytePos, Span, Spanned, NO_EXPANSION};
+use base::pos::{self, BytePos, HasSpan, Span, Spanned, NO_EXPANSION};
 use base::scoped_map::ScopedMap;
 use base::symbol::Symbol;
-use base::types::{AliasData, ArcType, Type, TypeEnv};
+use base::types::{walk_type_, AliasData, ArcType, ControlVisitation, Type, TypeEnv};
+use base::kind::ArcKind;
 
 pub struct Found<'a> {
     pub match_: Option<Match<'a>>,
@@ -26,6 +31,7 @@ pub enum Match<'a> {
     Expr(&'a SpannedExpr<Symbol>),
     Pattern(&'a SpannedPattern<Symbol>),
     Ident(Span<BytePos>, &'a Symbol, &'a ArcType),
+    Type(Span<BytePos>, &'a Symbol),
 }
 
 trait OnFound {
@@ -70,6 +76,7 @@ pub struct Suggestion {
 struct Suggest<E> {
     env: E,
     stack: ScopedMap<Symbol, ArcType>,
+    type_stack: ScopedMap<Symbol, ()>,
     patterns: ScopedMap<Symbol, ArcType>,
 }
 
@@ -90,6 +97,15 @@ impl<E> Suggest<E>
 where
     E: TypeEnv,
 {
+    fn new(env: E) -> Suggest<E> {
+        Suggest {
+            env,
+            stack: ScopedMap::new(),
+            type_stack: ScopedMap::new(),
+            patterns: ScopedMap::new(),
+        }
+    }
+
     fn ident_iter(&self, context: &SpannedExpr<Symbol>, ident: &Symbol) -> Vec<(Symbol, ArcType)> {
         if let Expr::Projection(ref expr, _, _) = context.value {
             let typ = resolve::remove_aliases(&self.env, expr.env_type_of(&self.env));
@@ -164,6 +180,7 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
                 self.patterns.insert(field.name, field.typ);
             }
         }
+        self.type_stack.insert(alias.name.clone(), ());
     }
 }
 
@@ -379,10 +396,8 @@ where
                 for bind in bindings {
                     self.on_found.on_pattern(&bind.name);
                 }
-                match self.select_spanned(
-                    bindings,
-                    |b| Span::new(b.name.span.start, b.expr.span.end),
-                ) {
+                match self.select_spanned(bindings, |b| Span::new(b.name.span.start, b.expr.span.end))
+                {
                     (false, Some(bind)) => {
                         for arg in &bind.args {
                             self.on_found.on_ident(&arg.value);
@@ -426,7 +441,24 @@ where
                             .expect("ICE: Expected alias to be set"),
                     );
                 }
-                self.visit_expr(expr)
+                let iter = type_bindings
+                    .iter()
+                    .map(Either::Left)
+                    .chain(Some(Either::Right(expr)));
+                match self.select_spanned(iter, |x| x.either(|b| b.span(), |e| e.span)) {
+                    (_, Some(either)) => match either {
+                        Either::Left(bind) => {
+                            if bind.name.span.containment(&self.pos) == Ordering::Equal {
+                                self.found =
+                                    Some(Some(Match::Type(bind.name.span, &bind.alias.value.name)));
+                            } else {
+                                self.visit_ast_type(bind.alias.value.unresolved_type())
+                            }
+                        }
+                        Either::Right(expr) => self.visit_expr(expr),
+                    },
+                    _ => unreachable!(),
+                }
             }
             Expr::Projection(ref expr, ref id, ref typ) => {
                 if expr.span.containment(&self.pos) <= Ordering::Equal {
@@ -476,6 +508,26 @@ where
             Expr::Error => (),
         }
     }
+
+    fn visit_ast_type(&mut self, typ: &'a AstType<Symbol>) {
+        if typ.span().containment(&self.pos) != Ordering::Equal {
+            return;
+        }
+        match **typ {
+            Type::Ident(ref id) => {
+                self.found = Some(Some(Match::Type(typ.span(), id)));
+            }
+
+            Type::Alias(ref alias) => {
+                self.found = Some(Some(Match::Type(typ.span(), &alias.name)));
+            }
+
+            _ => walk_type_(
+                typ,
+                &mut ControlVisitation(|typ: &'a AstType<Symbol>| self.visit_ast_type(typ)),
+            ),
+        }
+    }
 }
 
 fn complete_at<F>(on_found: F, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Result<Found, ()>
@@ -523,6 +575,7 @@ impl<'a> Extract for TypeAt<'a> {
         Ok(match *found {
             Match::Expr(expr) => expr.env_type_of(self.env),
             Match::Ident(_, _, typ) => typ.clone(),
+            Match::Type(_, _) => return Err(()),
             Match::Pattern(pattern) => pattern.env_type_of(self.env),
         })
     }
@@ -570,6 +623,7 @@ impl Extract for SpanAt {
         Ok(match *found {
             Match::Expr(expr) => expr.span,
             Match::Ident(span, _, _) => span,
+            Match::Type(span, _) => span,
             Match::Pattern(pattern) => pattern.span,
         })
     }
@@ -719,11 +773,7 @@ pub fn suggest<T>(env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Vec<Sugg
 where
     T: TypeEnv,
 {
-    let mut suggest = Suggest {
-        env: env,
-        stack: ScopedMap::new(),
-        patterns: ScopedMap::new(),
-    };
+    let mut suggest = Suggest::new(env);
 
     let found = match complete_at(&mut suggest, expr, pos) {
         Ok(x) => x,
@@ -768,6 +818,23 @@ where
                     }
                 }));
             },
+
+            Match::Type(_, ident) => {
+                result.extend(
+                    suggest
+                        .type_stack
+                        .iter()
+                        .filter(|&(k, _)| {
+                            k.declared_name().starts_with(ident.declared_name())
+                        })
+                        .map(|(name, _)| {
+                            Suggestion {
+                                name: name.declared_name().into(),
+                                typ: Type::hole(),
+                            }
+                        }),
+                );
+            }
         },
 
         None => match found.enclosing_match {
@@ -778,6 +845,23 @@ where
                         typ: typ.clone(),
                     }
                 }));
+            }
+
+            Match::Type(_, ident) => {
+                result.extend(
+                    suggest
+                        .type_stack
+                        .iter()
+                        .filter(|&(k, _)| {
+                            k.declared_name().starts_with(ident.declared_name())
+                        })
+                        .map(|(name, _)| {
+                            Suggestion {
+                                name: name.declared_name().into(),
+                                typ: Type::hole(),
+                            }
+                        }),
+                );
             }
 
             Match::Pattern(..) => result.extend(suggest.patterns.iter().map(|(name, typ)| {
@@ -835,11 +919,7 @@ pub fn suggest_metadata<'a, T>(
 where
     T: TypeEnv,
 {
-    let mut suggest = Suggest {
-        env: type_env,
-        stack: ScopedMap::new(),
-        patterns: ScopedMap::new(),
-    };
+    let mut suggest = Suggest::new(type_env);
     complete_at(&mut suggest, expr, pos)
         .ok()
         .and_then(|found| match found.match_ {

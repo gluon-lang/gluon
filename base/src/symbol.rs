@@ -202,10 +202,16 @@ impl SymbolRef {
         Name::new(self)
     }
 
-    /// Returns the name of this symbol as it was originally declared (strips location information)
+    /// Returns the name of this symbol as it was originally declared (strips location information
+    /// and module information)
     pub fn declared_name(&self) -> &str {
         let name = self.as_ref();
-        name.split(':').next().unwrap_or(name)
+        name.split(':')
+            .next()
+            .unwrap_or(name)
+            .rsplit('.')
+            .next()
+            .unwrap_or(name)
     }
 
     fn ptr(&self) -> *const () {

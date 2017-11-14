@@ -1797,18 +1797,20 @@ where
     dt(Prec::Top, typ).pretty(printer)
 }
 
-pub fn walk_type<I, T, F>(typ: &T, mut f: F)
+pub fn walk_type<'a, I, T, F>(typ: &'a T, mut f: F)
 where
-    F: FnMut(&T),
-    T: Deref<Target = Type<I, T>>,
+    F: Walker<'a, T>,
+    T: Deref<Target = Type<I, T>> + 'a,
+    I: 'a,
 {
     f.walk(typ)
 }
 
-pub fn walk_type_<I, T, F: ?Sized>(typ: &T, f: &mut F)
+pub fn walk_type_<'a, I, T, F: ?Sized>(typ: &'a T, f: &mut F)
 where
-    F: Walker<T>,
-    T: Deref<Target = Type<I, T>>,
+    F: Walker<'a, T>,
+    T: Deref<Target = Type<I, T>> + 'a,
+    I: 'a,
 {
     match **typ {
         Type::Forall(_, ref typ, _) => f.walk(typ),
@@ -1866,8 +1868,8 @@ pub trait TypeVisitor<I, T> {
     }
 }
 
-pub trait Walker<T> {
-    fn walk(&mut self, typ: &T);
+pub trait Walker<'a, T> {
+    fn walk(&mut self, typ: &'a T);
 }
 
 impl<I, T, F: ?Sized> TypeVisitor<I, T> for F
@@ -1886,7 +1888,7 @@ where
 }
 
 /// Wrapper type which allows functions to control how to traverse the members of the type
-pub struct ControlVisitation<F>(pub F);
+pub struct ControlVisitation<F: ?Sized>(pub F);
 
 impl<F, I, T> TypeVisitor<I, T> for ControlVisitation<F>
 where
@@ -1901,12 +1903,23 @@ where
     }
 }
 
-impl<I, T, F: ?Sized> Walker<T> for F
+impl<'a, F, T> Walker<'a, T> for ControlVisitation<F>
 where
-    F: FnMut(&T),
-    T: Deref<Target = Type<I, T>>,
+    F: ?Sized + FnMut(&'a T),
+    T: 'a,
 {
-    fn walk(&mut self, typ: &T) {
+    fn walk(&mut self, typ: &'a T) {
+        (self.0)(typ)
+    }
+}
+
+impl<'a, I, T, F: ?Sized> Walker<'a, T> for F
+where
+    F: FnMut(&'a T),
+    T: Deref<Target = Type<I, T>> + 'a,
+    I: 'a,
+{
+    fn walk(&mut self, typ: &'a T) {
         self(typ);
         walk_type_(typ, self)
     }
