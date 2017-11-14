@@ -301,6 +301,7 @@ Value::Tag(1)
 
 test_expr!{ any marshalled_option_none_is_int,
 r#"
+let string_prim = import! std.string.prim
 string_prim.find "a" "b"
 "#,
 Value::Tag(0)
@@ -308,6 +309,7 @@ Value::Tag(0)
 
 test_expr!{ any marshalled_ordering_is_int,
 r#"
+let { string_compare } = import! std.prim
 string_compare "a" "b"
 "#,
 Value::Tag(0)
@@ -343,13 +345,16 @@ in (id { x = 1 }).x
 }
 
 test_expr!{ module_function,
-r#"let x = string_prim.len "test" in x"#,
+r#"
+let string_prim = import! std.string.prim
+let x = string_prim.len "test" in x
+"#,
 4i32
 }
 
 test_expr!{ prelude true_branch_not_affected_by_false_branch,
 r#"
-let { Bool } = import! "std/bool.glu"
+let { Bool } = import! std.bool
 if True then
     let x = 1
     x
@@ -361,7 +366,7 @@ else
 
 test_expr!{ prelude and_operator_stack,
 r#"
-let { Bool } = import! "std/bool.glu"
+let { Bool } = import! std.bool
 let b = True && True
 let b2 = False
 b
@@ -371,7 +376,7 @@ true
 
 test_expr!{ prelude or_operator_stack,
 r#"
-let { Bool } = import! "std/bool.glu"
+let { Bool } = import! std.bool
 let b = False || True
 let b2 = False
 b
@@ -445,7 +450,7 @@ fn rename_types_after_binding() {
     let _ = ::env_logger::init();
 
     let text = r#"
-let list  = import! "std/list.glu"
+let list  = import! std.list
 in
 let { List } = list
 and { (==) }: Eq (List Int) = list.eq { (==) }
@@ -509,11 +514,7 @@ fn access_operator_without_parentheses() {
     let _ = ::env_logger::init();
     let vm = make_vm();
     Compiler::new()
-        .run_expr_async::<OpaqueValue<&Thread, Hole>>(
-            &vm,
-            "example",
-            r#" import! "std/prelude.glu" "#,
-        )
+        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example", r#" import! std.prelude "#)
         .sync_or_error()
         .unwrap();
     let result: Result<FunctionRef<fn(i32, i32) -> i32>, _> =
@@ -540,7 +541,7 @@ fn get_binding_with_generic_params() {
     let _ = ::env_logger::init();
 
     let vm = make_vm();
-    run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import! "std/function.glu" "#);
+    run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import! std.function "#);
     let mut id: FunctionRef<fn(String) -> String> = vm.get_global("std.function.id")
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(id.call("test".to_string()), Ok("test".to_string()));
@@ -550,7 +551,7 @@ fn get_binding_with_generic_params() {
 fn test_prelude() {
     let _ = ::env_logger::init();
     let vm = make_vm();
-    run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import! "std/prelude.glu" "#);
+    run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import! std.prelude "#);
 }
 
 #[test]
@@ -558,8 +559,8 @@ fn access_types_by_path() {
     let _ = ::env_logger::init();
 
     let vm = make_vm();
-    run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import! "std/option.glu" "#);
-    run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import! "std/result.glu" "#);
+    run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import! std.option "#);
+    run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import! std.result "#);
 
     assert!(vm.find_type_info("std.option.Option").is_ok());
     assert!(vm.find_type_info("std.result.Result").is_ok());
@@ -574,6 +575,13 @@ fn access_types_by_path() {
 fn opaque_value_type_mismatch() {
     let _ = ::env_logger::init();
     let vm = make_vm();
+
+    Compiler::new()
+        .implicit_prelude(false)
+        .run_expr_async::<()>(&vm, "<top>", "let _ = import! std.channel in ()")
+        .sync_or_error()
+        .unwrap();
+
     let expr = r#"
 let { sender, receiver } = channel 0
 send sender 1
@@ -594,7 +602,7 @@ sender
 fn invalid_string_slice_dont_panic() {
     let _ = ::env_logger::init();
     let text = r#"
-let string = import! "std/string.glu"
+let string = import! std.string
 let s = "åäö"
 string.slice s 1 (string.len s)
 "#;
@@ -617,7 +625,7 @@ fn partially_applied_constructor_is_lambda() {
     let result = Compiler::new().run_expr::<FunctionRef<fn(i32) -> Option<i32>>>(
         &vm,
         "test",
-        r#"let { Option } = import! "std/option.glu" in Some"#,
+        r#"let { Option } = import! std.option in Some"#,
     );
     assert!(result.is_ok(), "{}", result.err().unwrap());
     assert_eq!(result.unwrap().0.call(123), Ok(Some(123)));
@@ -693,9 +701,10 @@ fn completion_with_prelude() {
     let vm = make_vm();
 
     let source = r#"
-let prelude  = import! "std/prelude.glu"
-and { Option } = import! "std/option.glu"
+let prelude  = import! std.prelude
+and { Option } = import! std.option
 and { Num } = prelude
+let { lazy } = import! std.lazy
 
 type Stream_ a =
     | Value a (Stream a)
@@ -722,7 +731,7 @@ let from f : (Int -> Option a) -> Stream a =
     let result = completion::find(
         &*vm.get_env(),
         &expr,
-        lines.offset(13.into(), 29.into()).unwrap(),
+        lines.offset(14.into(), 29.into()).unwrap(),
     );
     assert_eq!(result, Ok(Type::int()));
 }

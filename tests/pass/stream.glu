@@ -1,14 +1,14 @@
-let prelude = import! "std/prelude.glu"
-let { run, writer, assert_eq, assert_ieq } = import! "std/test.glu"
-let int = import! "std/int.glu"
-let stream  = import! "std/stream.glu"
+let prelude = import! std.prelude
+let { run, writer, assert_eq, assert_ieq } = import! std.test
+let int = import! std.int
+let stream  = import! std.stream
 let { Ord, Num } = prelude
 let { (<) } = prelude.make_Ord int.ord
 let { (+) } = int.num
 let { (*>) } = prelude.make_Applicative writer.applicative
-let list = import! "std/list.glu"
+let list = import! std.list
 let { List } = list
-let { Option } = import! "std/option.glu"
+let { Option } = import! std.option
 
 let s = stream.from (\i -> if i < 5 then Some i else None)
 

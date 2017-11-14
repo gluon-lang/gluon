@@ -1,10 +1,11 @@
-let { run, writer, assert_eq }  = import! "std/test.glu"
-let prelude  = import! "std/prelude.glu"
+let { run, writer, assert_eq }  = import! std.test
+let prelude  = import! std.prelude
 let { (*>) } = prelude.make_Applicative writer.applicative
-let int = import! "std/int.glu"
-let result = import! "std/result.glu"
+let int = import! std.int
+let result = import! std.result
 let { Result } = result
-let unit = import! "std/unit.glu"
+let unit = import! std.unit
+let { send, recv, channel } = import! std.channel
 
 let assert =
     assert_eq (result.show unit.show int.show )

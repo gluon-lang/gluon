@@ -1,7 +1,7 @@
-let { List } = import! "std/list.glu"
-let { Map } = import! "std/map.glu"
-let { Option } = import! "std/option.glu"
-let { Result } = import! "std/result.glu"
+let { List } = import! std.list
+let { Map } = import! std.map
+let { Option } = import! std.option
+let { Result } = import! std.result
 
 type Expr =
     | Atom String

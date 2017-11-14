@@ -1,25 +1,27 @@
-let { run, writer, assert, assert_ieq, assert_feq }  = import! "std/test.glu"
-let prelude  = import! "std/prelude.glu"
+let { run, writer, assert, assert_ieq, assert_feq } = import! std.test
+let prelude = import! std.prelude
 let { (*>) } = prelude.make_Applicative writer.applicative
-let { Result } = import! "std/result.glu"
+let { Result } = import! std.result
+let { ref, load } = import! std.reference
+let { lazy, force } = import! std.lazy
+let { channel, send, recv } = import! std.channel
+let { resume, spawn } = import! std.thread
 
 
 let _ =
     let { sender, receiver } = channel (lazy (\_ -> 0))
 
     let thread = spawn (\_ ->
-        send sender (lazy (\_ -> 1))
-        let l = lazy (\_ -> 2)
-        force l
-        send sender l
-        ())
+            send sender (lazy (\_ -> 1))
+            let l = lazy (\_ -> 2)
+            force l
+            send sender l
+            ())
 
     resume thread
-
     match recv receiver with
     | Ok x -> assert (force x == 1)
     | Err e -> error "Receive 1 error"
-
     match recv receiver with
     | Ok x -> assert (force x == 2)
     | Err e -> error "Receive 2 error"
@@ -28,11 +30,10 @@ let _ =
     let { sender, receiver } = channel (ref 0)
 
     let thread = spawn (\_ ->
-        send sender (ref 3)
-        ())
+            send sender (ref 3)
+            ())
 
     resume thread
-
     match recv receiver with
     | Ok x -> assert (load x == 3)
     | Err e -> error "Receive 3 error"

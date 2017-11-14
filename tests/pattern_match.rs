@@ -10,7 +10,7 @@ use support::*;
 
 test_expr!{ prelude match_on_bool,
 r#"
-let { Bool } = import! "std/bool.glu"
+let { Bool } = import! std.bool
 match True with
 | False -> 10
 | True -> 11
@@ -35,6 +35,7 @@ match A with
 
 test_expr!{ match_record_pattern,
 r#"
+let string_prim = import! std.string.prim
 match { x = 1, y = "abc" } with
 | { x, y = z } -> x #Int+ string_prim.len z
 "#,
@@ -43,6 +44,7 @@ match { x = 1, y = "abc" } with
 
 test_expr!{ match_stack,
 r#"
+let string_prim = import! std.string.prim
 1 #Int+ (match string_prim with
          | { len } -> len "abc")
 "#,
@@ -51,6 +53,7 @@ r#"
 
 test_expr!{ let_record_pattern,
 r#"
+let string_prim = import! std.string.prim
 let (+) x y = x #Int+ y
 in
 let a = { x = 10, y = "abc" }

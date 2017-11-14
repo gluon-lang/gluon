@@ -1249,9 +1249,8 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         equations: &[Equation<'a, 'p>],
     ) -> Expr<'a> {
         let arena = &self.0.allocator.arena;
-        // FIXME Symbol::from
         let error = arena.alloc(Expr::Ident(
-            TypedIdent::new(Symbol::from("error")),
+            TypedIdent::new(Symbol::from("#error")),
             Span::default(),
         ));
         let args = arena.alloc_extend(

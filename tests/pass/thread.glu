@@ -1,13 +1,15 @@
-let { run, writer, assert_eq }  = import! "std/test.glu"
-let prelude  = import! "std/prelude.glu"
-let { Bool } = import! "std/bool.glu"
-let int = import! "std/int.glu"
-let result = import! "std/result.glu"
+let { run, writer, assert_eq }  = import! std.test
+let prelude  = import! std.prelude
+let { Bool } = import! std.bool
+let int = import! std.int
+let result = import! std.result
 let { Result } = result
-let string = import! "std/string.glu"
-let unit = import! "std/unit.glu"
+let string = import! std.string
+let unit = import! std.unit
 let { (*>) } = prelude.make_Applicative writer.applicative
 let { (>>=) } = prelude.make_Monad writer.monad
+let { send, recv, channel } = import! std.channel
+let { spawn, yield, resume } = import! std.thread
 
 let assert =
     assert_eq (result.show unit.show int.show) (result.eq unit.eq int.eq)

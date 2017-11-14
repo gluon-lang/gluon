@@ -81,8 +81,6 @@ assert_eq!(vec, Vec2 {
 extern crate serde_derive;
 
 extern crate gluon;
-#[macro_use]
-extern crate gluon_vm;
 
 use gluon::{Compiler, Thread, new_vm};
 use gluon::base::types::ArcType;

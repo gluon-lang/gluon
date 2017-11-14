@@ -19,9 +19,8 @@ use {Error, Result};
 #[derive(Clone, Debug)]
 pub enum Variable<G> {
     Stack(VmIndex),
-    Global(G),
     Constructor(VmTag, VmIndex),
-    UpVar(VmIndex),
+    UpVar(G),
 }
 
 /// Field accesses on records can either be by name in the case of polymorphic records or by offset
@@ -38,8 +37,7 @@ enum FieldAccess {
 pub struct UpvarInfo {
     pub name: String,
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
-    pub typ:
-        ArcType,
+    pub typ: ArcType,
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -58,27 +56,48 @@ pub struct DebugInfo {
 #[cfg_attr(feature = "serde_derive_state", derive(SerializeState, DeserializeState))]
 #[cfg_attr(feature = "serde_derive_state", serde(deserialize_state = "::serialization::DeSeed"))]
 #[cfg_attr(feature = "serde_derive_state", serde(serialize_state = "::serialization::SeSeed"))]
-pub struct CompiledFunction {
-    pub args: VmIndex,
-    /// The maximum possible number of stack slots needed for this function
-    pub max_stack_size: VmIndex,
-    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
-    pub id:
-        Symbol,
-    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
-    pub typ:
-        ArcType,
-    pub instructions: Vec<Instruction>,
-    #[cfg_attr(feature = "serde_derive_state", serde(state))]
-    pub inner_functions:
-        Vec<CompiledFunction>,
-    #[cfg_attr(feature = "serde_derive_state", serde(state))] pub strings: Vec<InternedStr>,
+pub struct CompiledModule {
     /// Storage for globals which are needed by the module which is currently being compiled
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
     pub module_globals: Vec<Symbol>,
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
+    pub function: CompiledFunction,
+}
+
+#[derive(Debug)]
+#[cfg_attr(feature = "serde_derive_state", derive(SerializeState, DeserializeState))]
+#[cfg_attr(feature = "serde_derive_state", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive_state", serde(serialize_state = "::serialization::SeSeed"))]
+pub struct CompiledFunction {
+    pub args: VmIndex,
+    /// The maximum possible number of stack slots needed for this function
+    pub max_stack_size: VmIndex,
+
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
+    pub id: Symbol,
+
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
+    pub typ: ArcType,
+    pub instructions: Vec<Instruction>,
+
+    #[cfg_attr(feature = "serde_derive_state", serde(state))]
+    pub inner_functions: Vec<CompiledFunction>,
+
+    #[cfg_attr(feature = "serde_derive_state", serde(state))] pub strings: Vec<InternedStr>,
+
+    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
     pub records: Vec<Vec<Symbol>>,
+
     #[cfg_attr(feature = "serde_derive_state", serde(state))] pub debug_info: DebugInfo,
+}
+
+impl From<CompiledFunction> for CompiledModule {
+    fn from(function: CompiledFunction) -> Self {
+        CompiledModule {
+            module_globals: Vec::new(),
+            function,
+        }
+    }
 }
 
 impl CompiledFunction {
@@ -91,7 +110,6 @@ impl CompiledFunction {
             instructions: Vec::new(),
             inner_functions: Vec::new(),
             strings: Vec::new(),
-            module_globals: Vec::new(),
             records: Vec::new(),
             debug_info: DebugInfo {
                 source_map: SourceMap::new(),
@@ -155,21 +173,27 @@ impl FunctionEnvs {
         compiler.stack_types.exit_scope();
         compiler.stack_constructors.exit_scope();
         let instructions = self.function.instructions.len();
+
         if compiler.emit_debug_info {
             self.function
                 .debug_info
                 .source_map
                 .close(instructions, current_line);
-            let function = &mut **self;
-            function.function.debug_info.upvars.extend(
-                function.free_vars.iter().map(|&(ref name, ref typ)| {
-                    UpvarInfo {
-                        name: name.declared_name().to_string(),
-                        typ: typ.clone(),
-                    }
-                }),
-            );
+
+            let upvars_are_globals = self.envs.len() == 1;
+            if !upvars_are_globals {
+                let function = &mut **self;
+                function.function.debug_info.upvars.extend(
+                    function.free_vars.iter().map(|&(ref name, ref typ)| {
+                        UpvarInfo {
+                            name: name.declared_name().to_string(),
+                            typ: typ.clone(),
+                        }
+                    }),
+                );
+            }
         }
+
         self.envs.pop().expect("FunctionEnv in scope")
     }
 }
@@ -322,11 +346,11 @@ impl FunctionEnv {
 }
 
 pub trait CompilerEnv: TypeEnv {
-    fn find_var(&self, id: &Symbol) -> Option<Variable<Symbol>>;
+    fn find_var(&self, id: &Symbol) -> Option<(Variable<Symbol>, ArcType)>;
 }
 
 impl CompilerEnv for TypeInfos {
-    fn find_var(&self, id: &Symbol) -> Option<Variable<Symbol>> {
+    fn find_var(&self, id: &Symbol) -> Option<(Variable<Symbol>, ArcType)> {
         fn count_function_args(typ: &ArcType) -> VmIndex {
             match typ.as_function() {
                 Some((_, ret)) => 1 + count_function_args(ret),
@@ -344,7 +368,10 @@ impl CompilerEnv for TypeInfos {
             })
             .next()
             .map(|(tag, field)| {
-                Variable::Constructor(tag as VmTag, count_function_args(&field.typ))
+                (
+                    Variable::Constructor(tag as VmTag, count_function_args(&field.typ)),
+                    field.typ.clone(),
+                )
             })
     }
 }
@@ -386,7 +413,7 @@ impl<'a> TypeEnv for Compiler<'a> {
 }
 
 impl<'a, T: CompilerEnv> CompilerEnv for &'a T {
-    fn find_var(&self, s: &Symbol) -> Option<Variable<Symbol>> {
+    fn find_var(&self, s: &Symbol) -> Option<(Variable<Symbol>, ArcType)> {
         (**self).find_var(s)
     }
 }
@@ -418,7 +445,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn find(&self, id: &Symbol, current: &mut FunctionEnvs) -> Option<Variable<VmIndex>> {
-        let variable = self.stack_constructors
+        self.stack_constructors
             .iter()
             .filter_map(|(_, typ)| match **typ {
                 Type::Variant(ref row) => row.row_iter()
@@ -451,23 +478,15 @@ impl<'a> Compiler<'a> {
                             .next()
                     })
             })
-            .or_else(|| self.globals.find_var(&id));
-        variable.map(|variable| match variable {
-            Stack(i) => Stack(i),
-            Global(s) => {
-                let existing = current
-                    .function
-                    .module_globals
-                    .iter()
-                    .position(|existing| existing == &s);
-                Global(existing.unwrap_or_else(|| {
-                    current.function.module_globals.push(s);
-                    current.function.module_globals.len() - 1
-                }) as VmIndex)
-            }
-            Constructor(tag, args) => Constructor(tag, args),
-            UpVar(i) => UpVar(i),
-        })
+            .or_else(|| {
+                self.globals
+                    .find_var(&id)
+                    .map(|(variable, typ)| match variable {
+                        Stack(i) => Stack(i),
+                        UpVar(id) => UpVar(current.upvar(&id, &typ)),
+                        Constructor(tag, args) => Constructor(tag, args),
+                    })
+            })
     }
 
     fn find_field(&self, typ: &ArcType, field: &Symbol) -> Option<FieldAccess> {
@@ -501,7 +520,7 @@ impl<'a> Compiler<'a> {
 
     /// Compiles an expression to a zero argument function which can be directly fed to the
     /// interpreter
-    pub fn compile_expr(&mut self, expr: &SpannedExpr<Symbol>) -> Result<CompiledFunction> {
+    pub fn compile_expr(&mut self, expr: &SpannedExpr<Symbol>) -> Result<CompiledModule> {
         let env = self.vm.get_env();
         let translator = core::Translator::new(&*env);
         let expr = {
@@ -519,17 +538,27 @@ impl<'a> Compiler<'a> {
         info!("COMPILING: {}", expr);
         self.compile(&expr, &mut env, true)?;
         let current_line = self.source.line_number_at_byte(expr.span().end);
-        let FunctionEnv { function, .. } = env.end_function(self, current_line);
-        Ok(function)
+        let FunctionEnv {
+            function,
+            free_vars,
+            ..
+        } = env.end_function(self, current_line);
+        Ok(CompiledModule {
+            module_globals: free_vars.into_iter().map(|(symbol, _)| symbol).collect(),
+            function,
+        })
     }
 
     fn load_identifier(&self, id: &Symbol, function: &mut FunctionEnvs) -> Result<()> {
-        match self.find(id, function)
-            .unwrap_or_else(|| ice!("Undefined variable {}", self.symbols.string(&id)))
-        {
+        match self.find(id, function).unwrap_or_else(|| {
+            ice!(
+                "Undefined variable `{}` in {}",
+                self.symbols.string(&id),
+                self.source_name,
+            )
+        }) {
             Stack(index) => function.emit(Push(index)),
             UpVar(index) => function.emit(PushUpVar(index)),
-            Global(index) => function.emit(PushGlobal(index)),
             // Zero argument constructors can be compiled as integers
             Constructor(tag, 0) => function.emit(Construct { tag: tag, args: 0 }),
             Constructor(..) => {
@@ -644,7 +673,8 @@ impl<'a> Compiler<'a> {
             Expr::Call(func, args) => {
                 if let Expr::Ident(ref id, _) = *func {
                     if id.name.as_ref() == "&&" || id.name.as_ref() == "||"
-                        || id.name.as_ref().starts_with('#')
+                        || (id.name.as_ref().starts_with('#')
+                            && id.name.declared_name() != "#error")
                     {
                         self.compile_primitive(&id.name, args, function, tail_position)?;
                         return Ok(None);
@@ -672,7 +702,6 @@ impl<'a> Compiler<'a> {
                 // Indexes for each alternative for a successful match to the alternatives code
                 let mut start_jumps = Vec::new();
                 let typ = expr.env_type_of(self);
-                let mut catch_all = false;
                 // Emit a TestTag + Jump instuction for each alternative which jumps to the
                 // alternatives code if TestTag is sucessesful
                 for alt in alts.iter() {
@@ -694,29 +723,13 @@ impl<'a> Compiler<'a> {
                             function.emit(CJump(0));
                         }
                         Pattern::Record { .. } => {
-                            catch_all = true;
                             start_jumps.push(function.function.instructions.len());
                         }
                         _ => {
-                            catch_all = true;
                             start_jumps.push(function.function.instructions.len());
                             function.emit(Jump(0));
                         }
                     }
-                }
-                let constructors_in_type =
-                    resolve::remove_aliases_cow(self, &typ).row_iter().count();
-                // Create a catch all to prevent us from running into undefined behaviour
-                // If a catch all already exists or all constructors have been matched then we can
-                // skip it
-                if !catch_all && alts.len() != constructors_in_type {
-                    let error_fn = self.symbols.symbol("#error");
-                    self.load_identifier(&error_fn, function)?;
-                    function.emit_string(self.intern("Non-exhaustive pattern")?);
-                    function.emit(Call(1));
-                    // The stack has been increased by 1 here but it should not affect compiling the
-                    // alternatives
-                    function.stack_size -= 1;
                 }
                 // Indexes for each alternative from the end of the alternatives code to code
                 // after the alternative

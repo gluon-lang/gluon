@@ -10,10 +10,11 @@ fn regex_match() {
 
     let thread = new_vm();
     let text = r#"
-        let { (|>) } = import! "std/function.glu"
-        let { not } = import! "std/bool.glu"
-        let { unwrap_ok } = import! "std/result.glu"
-        let { assert }  = import! "std/test.glu"
+        let regex = import! std.regex
+        let { (|>) } = import! std.function
+        let { not } = import! std.bool
+        let { unwrap_ok } = import! std.result
+        let { assert }  = import! std.test
 
         let match_a = regex.new "a" |> unwrap_ok
         assert (regex.is_match match_a "a")
@@ -25,7 +26,7 @@ fn regex_match() {
         .run_expr_async::<bool>(&thread, "<top>", text)
         .sync_or_error();
 
-    assert!(result.unwrap().0);
+    assert!(result.unwrap_or_else(|err| panic!("{}", err)).0);
 }
 
 #[test]
@@ -34,8 +35,9 @@ fn regex_error() {
 
     let thread = new_vm();
     let text = r#"
-        let { (|>) } = import! "std/function.glu"
-        let { unwrap_err } = import! "std/result.glu"
+        let regex = import! std.regex
+        let { (|>) } = import! std.function
+        let { unwrap_err } = import! std.result
 
         regex.new ")" |> unwrap_err |> regex.error_to_string
         "#;
@@ -44,7 +46,7 @@ fn regex_error() {
         .sync_or_error();
 
     assert_eq!(
-        result.unwrap().0,
+        result.unwrap_or_else(|err| panic!("{}", err)).0,
         "Error parsing regex near \')\' at character offset 0: Unopened parenthesis."
     );
 }

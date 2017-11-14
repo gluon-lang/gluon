@@ -1,8 +1,8 @@
-let prelude  = import! "std/prelude.glu"
-let { Test, run, writer, assert, assert_eq }  = import! "std/test.glu"
+let prelude  = import! std.prelude
+let { Test, run, writer, assert, assert_eq }  = import! std.test
 let { (*>) } = prelude.make_Applicative writer.applicative
-let int = import! "std/int.glu"
-let list = import! "std/list.glu"
+let int = import! std.int
+let list = import! std.list
 let { List } = list
 
 let assert_list show eq = assert_eq (list.show show) (list.eq eq)

@@ -1,8 +1,8 @@
 //@NO-IMPLICIT-PRELUDE
 
-let { Bool, Ordering } = import! "std/types.glu"
-let { Semigroup, Monoid, Group, Eq, Ord, Show } = import! "std/prelude.glu"
-let { id } = import! "std/function.glu"
+let { Bool, Ordering } = import! std.types
+let { Semigroup, Monoid, Group, Eq, Ord, Show } = import! std.prelude
+let { id } = import! std.function
 
 /// Boolean 'not'
 let not x : Bool -> Bool = if x then False else True

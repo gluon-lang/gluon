@@ -1,16 +1,18 @@
 //@NO-IMPLICIT-PRELUDE
 
-let prelude = import! "std/prelude.glu"
+let string_prim = import! std.string.prim
+let prim = import! std.prim
+let prelude = import! std.prelude
 let { Num, Eq, Ord, Ordering, Semigroup, Monoid, Show } = prelude
-let function = import! "std/function.glu"
+let function = import! std.function
 
 let semigroup : Semigroup String = { append = string_prim.append }
 
 let monoid : Monoid String = { semigroup, empty = "" }
 
-let eq : Eq String = { (==) = string_eq }
+let eq : Eq String = { (==) = prim.string_eq }
 
-let ord : Ord String = { eq, compare = string_compare }
+let ord : Ord String = { eq, compare = prim.string_compare }
 
 let show : Show String = { show = function.id }
 

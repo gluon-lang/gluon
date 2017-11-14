@@ -18,13 +18,14 @@ use base::pos;
 use base::symbol::{Symbol, SymbolModule};
 use base::types::ArcType;
 use parser::parse_partial_let_or_expr;
-use vm::Error as VMError;
+use vm::{self, Error as VMError};
 use vm::api::{Function, Userdata, VmType, WithVM, IO};
 use vm::gc::{Gc, Traverseable};
 use vm::internal::ValuePrinter;
 use vm::thread::{RootStr, RootedValue, Thread, ThreadInternal};
 
 use gluon::{new_vm, Compiler, Result as GluonResult, RootedThread};
+use gluon::import::add_extern_module;
 use gluon::compiler_pipeline::{Executable, ExecuteValue};
 
 fn type_of_expr(args: WithVM<RootStr>) -> IO<Result<String, String>> {
@@ -268,32 +269,40 @@ fn set_globals(
     }
 }
 
-fn compile_repl(vm: &Thread) -> Result<(), Box<StdError + Send + Sync>> {
+fn load_rustyline(vm: &Thread) -> vm::Result<vm::ExternModule> {
     vm.register_type::<Editor>("Editor", &[])?;
 
-    vm.define_global(
-        "rustyline",
+    vm::ExternModule::new(
+        vm,
         record!(
-        new_editor => primitive!(1 new_editor),
-        readline => primitive!(2 readline)
-    ),
-    )?;
-    vm.define_global(
-        "repl_prim",
+            new_editor => primitive!(1 new_editor),
+            readline => primitive!(2 readline)
+        ),
+    )
+}
+
+fn load_repl(vm: &Thread) -> vm::Result<vm::ExternModule> {
+    vm::ExternModule::new(
+        vm,
         record!(
-        type_of_expr => primitive!(1 type_of_expr),
-        find_info => primitive!(1 find_info),
-        find_kind => primitive!(1 find_kind),
-        eval_line => primitive!(1 eval_line)
-    ),
-    )?;
+            type_of_expr => primitive!(1 type_of_expr),
+            find_info => primitive!(1 find_info),
+            find_kind => primitive!(1 find_kind),
+            eval_line => primitive!(1 eval_line)
+        ),
+    )
+}
+
+fn compile_repl(vm: &Thread) -> Result<(), Box<StdError + Send + Sync>> {
+    add_extern_module(vm, "repl.prim", load_repl);
+    add_extern_module(vm, "rustyline", load_rustyline);
 
     const REPL_SOURCE: &'static str =
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/repl.glu"));
 
     let mut compiler = Compiler::new();
     compiler
-        .load_script_async(vm, "std.repl", REPL_SOURCE)
+        .load_script_async(vm, "repl", REPL_SOURCE)
         .sync_or_error()?;
     Ok(())
 }
@@ -302,7 +311,7 @@ fn compile_repl(vm: &Thread) -> Result<(), Box<StdError + Send + Sync>> {
 pub fn run() -> Result<(), Box<StdError + Send + Sync>> {
     let vm = new_vm();
     compile_repl(&vm)?;
-    let mut repl: Function<&Thread, fn(()) -> IO<()>> = vm.get_global("std.repl")?;
+    let mut repl: Function<&Thread, fn(()) -> IO<()>> = vm.get_global("repl")?;
     debug!("Starting repl");
     repl.call(())?;
     Ok(())
@@ -331,7 +340,7 @@ mod tests {
         let _ = ::env_logger::init();
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
-        let repl: Result<FunctionRef<fn(()) -> IO<()>>, _> = vm.get_global("std.repl");
+        let repl: Result<FunctionRef<fn(()) -> IO<()>>, _> = vm.get_global("repl");
         assert!(repl.is_ok(), "{}", repl.err().unwrap());
     }
 
@@ -342,7 +351,7 @@ mod tests {
         let _ = ::env_logger::init();
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
-        let mut type_of: FunctionRef<QueryFn> = vm.get_global("repl_prim.type_of_expr").unwrap();
+        let mut type_of: FunctionRef<QueryFn> = vm.get_global("repl.prim.type_of_expr").unwrap();
         assert_eq!(type_of.call("123"), Ok(IO::Value(Ok("Int".into()))));
     }
 
@@ -351,7 +360,7 @@ mod tests {
         let _ = ::env_logger::init();
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
-        let mut find_kind: FunctionRef<QueryFn> = vm.get_global("repl_prim.find_kind").unwrap();
+        let mut find_kind: FunctionRef<QueryFn> = vm.get_global("repl.prim.find_kind").unwrap();
         assert_eq!(
             find_kind.call("std.prelude.Semigroup"),
             Ok(IO::Value(Ok("Type -> Type".into())))
@@ -363,7 +372,7 @@ mod tests {
         let _ = ::env_logger::init();
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
-        let mut find_info: FunctionRef<QueryFn> = vm.get_global("repl_prim.find_info").unwrap();
+        let mut find_info: FunctionRef<QueryFn> = vm.get_global("repl.prim.find_info").unwrap();
         match find_info.call("std.prelude.Semigroup") {
             Ok(IO::Value(Ok(_))) => (),
             x => assert!(false, "{:?}", x),
@@ -372,7 +381,7 @@ mod tests {
             Ok(IO::Value(Ok(_))) => (),
             x => assert!(false, "{:?}", x),
         }
-        match find_info.call("float_prim") {
+        match find_info.call("std.float.prim") {
             Ok(IO::Value(Ok(_))) => (),
             x => assert!(false, "{:?}", x),
         }

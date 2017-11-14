@@ -1,4 +1,4 @@
-let { Applicative, Functor, Monad } = import! "std/prelude.glu"
+let { Applicative, Functor, Monad } = import! std.prelude
 
 type State s a = s -> { value : a, state : s }
 

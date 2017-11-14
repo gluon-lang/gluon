@@ -21,8 +21,17 @@ fn parallel() {
 fn parallel_() -> Result<(), Error> {
     let vm = new_vm();
     let mut compiler = Compiler::new();
+
+    compiler
+        .run_expr_async::<()>(&vm, "<top>", " let _ = import! std.channel in () ")
+        .sync_or_error()?;
+
     let (value, _) = compiler
-        .run_expr_async(&vm, "<top>", " channel 0 ")
+        .run_expr_async(
+            &vm,
+            "<top>",
+            " let { channel } = import! std.channel in channel 0 ",
+        )
         .sync_or_error()?;
     let record_p!{ sender, receiver }: ChannelRecord<
         OpaqueValue<RootedThread, Sender<i32>>,
@@ -32,6 +41,7 @@ fn parallel_() -> Result<(), Error> {
     let child = vm.new_thread()?;
     let handle1 = spawn(move || -> Result<(), Error> {
         let expr = r#"
+        let { send } = import! std.channel
         let f sender =
             send sender 1
             send sender 2
@@ -49,9 +59,10 @@ fn parallel_() -> Result<(), Error> {
     let child2 = vm.new_thread()?;
     let handle2 = spawn(move || -> Result<(), Error> {
         let expr = r#"
-        let { assert }  = import! "std/test.glu"
-        let { Bool } = import! "std/bool.glu"
-        let { Result }  = import! "std/result.glu"
+        let { assert }  = import! std.test
+        let { Bool } = import! std.bool
+        let { Result }  = import! std.result
+        let { recv } = import! std.channel
 
         let f receiver =
             match recv receiver with

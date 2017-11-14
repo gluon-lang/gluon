@@ -6,10 +6,11 @@ use base::scoped_map::ScopedMap;
 use stack::StackFrame;
 use vm::{self, Root, RootStr, RootedValue, Status, Thread};
 use value::{ArrayDef, ArrayRepr, Cloner, DataStruct, Def, ExternFunction, GcStr, Value, ValueArray};
-use thread::{self, Context, RootedThread};
+use thread::{self, Context, RootedThread, VmRoot};
 use thread::ThreadInternal;
 use base::types::{self, ArcType, Type};
-use types::{VmIndex, VmInt, VmTag};
+use types::{Instruction, VmIndex, VmInt, VmTag};
+use compiler::{CompiledFunction, CompiledModule};
 
 use std::any::Any;
 use std::cell::Ref;
@@ -390,6 +391,16 @@ pub trait Pushable<'vm>: AsyncPushable<'vm> {
     /// to the stack and `Ok(())` should be returned. If the call is unsuccessful `Status:Error`
     /// should be returned and the stack should be left intact
     fn push(self, vm: &'vm Thread, context: &mut Context) -> Result<()>;
+
+    fn marshal<T>(self, vm: &'vm Thread) -> Result<RootedValue<T>>
+    where
+        Self: Sized,
+        T: VmRoot<'vm>,
+    {
+        let mut context = vm.context();
+        self.push(vm, &mut context)?;
+        Ok(vm.root_value(context.stack.pop()))
+    }
 }
 
 /// Trait which allows rust values to be retrieved from the virtual machine
@@ -1833,3 +1844,57 @@ make_vm_function!(A, B, C, D);
 make_vm_function!(A, B, C, D, E);
 make_vm_function!(A, B, C, D, E, F);
 make_vm_function!(A, B, C, D, E, F, G);
+
+
+pub struct TypedBytecode<T> {
+    id: Symbol,
+    args: VmIndex,
+    instructions: Vec<Instruction>,
+    _marker: PhantomData<T>,
+}
+
+
+impl<T> TypedBytecode<T> {
+    pub fn new(name: &str, args: VmIndex, instructions: Vec<Instruction>) -> TypedBytecode<T>
+    where
+        T: VmType,
+    {
+        TypedBytecode {
+            id: Symbol::from(name),
+            args,
+            instructions,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<T: VmType> VmType for TypedBytecode<T> {
+    type Type = T::Type;
+
+    fn make_type(vm: &Thread) -> ArcType {
+        T::make_type(vm)
+    }
+
+    fn make_forall_type(vm: &Thread) -> ArcType {
+        T::make_forall_type(vm)
+    }
+
+    fn extra_args() -> VmIndex {
+        T::extra_args()
+    }
+}
+
+impl<'vm, T: VmType> Pushable<'vm> for TypedBytecode<T> {
+    fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
+        let mut compiled_module = CompiledModule::from(CompiledFunction::new(
+            self.args,
+            self.id,
+            T::make_forall_type(thread),
+            "".into(),
+        ));
+        compiled_module.function.instructions = self.instructions;
+        let closure = thread.global_env().new_global_thunk(compiled_module)?;
+        context.stack.push(Value::Closure(closure));
+        Ok(())
+    }
+}

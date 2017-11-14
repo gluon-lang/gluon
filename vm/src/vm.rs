@@ -18,7 +18,7 @@ use {Error, Result};
 use types::*;
 use interner::{InternedStr, Interner};
 use gc::{Gc, GcPtr, Generation, Move, Traverseable};
-use compiler::{CompiledFunction, CompilerEnv, Variable};
+use compiler::{CompiledFunction, CompiledModule, CompilerEnv, Variable};
 use api::IO;
 use lazy::Lazy;
 
@@ -29,7 +29,21 @@ pub use value::Value; //FIXME Value should not be exposed
 pub use thread::{Root, RootStr, RootedThread, RootedValue, Status, Thread};
 
 
-fn new_bytecode(
+fn new_bytecode(gc: &mut Gc, vm: &GlobalVmState, m: CompiledModule) -> Result<GcPtr<ClosureData>> {
+    let CompiledModule {
+        module_globals,
+        function,
+    } = m;
+    let bytecode_function = new_bytecode_function(gc, vm, function)?;
+    let globals = module_globals
+        .into_iter()
+        .map(|index| vm.env.read().unwrap().globals[index.as_ref()].value)
+        .collect::<Vec<_>>();
+
+    gc.alloc(ClosureDataDef(bytecode_function, &globals))
+}
+
+fn new_bytecode_function(
     gc: &mut Gc,
     vm: &GlobalVmState,
     f: CompiledFunction,
@@ -41,7 +55,6 @@ fn new_bytecode(
         instructions,
         inner_functions,
         strings,
-        module_globals,
         records,
         debug_info,
         ..
@@ -49,12 +62,7 @@ fn new_bytecode(
 
     let fs: StdResult<_, _> = inner_functions
         .into_iter()
-        .map(|inner| new_bytecode(gc, vm, inner))
-        .collect();
-
-    let globals = module_globals
-        .into_iter()
-        .map(|index| vm.env.read().unwrap().globals[index.as_ref()].value)
+        .map(|inner| new_bytecode_function(gc, vm, inner))
         .collect();
 
     let records: StdResult<_, _> = records
@@ -75,7 +83,6 @@ fn new_bytecode(
         instructions: instructions,
         inner_functions: fs?,
         strings: strings,
-        globals: globals,
         records: records?,
         debug_info: debug_info,
     }))
@@ -155,10 +162,10 @@ pub struct VmEnv {
 }
 
 impl CompilerEnv for VmEnv {
-    fn find_var(&self, id: &Symbol) -> Option<Variable<Symbol>> {
+    fn find_var(&self, id: &Symbol) -> Option<(Variable<Symbol>, ArcType)> {
         self.globals
             .get(id.as_ref())
-            .map(|g| Variable::Global(g.id.clone()))
+            .map(|g| (Variable::UpVar(g.id.clone()), g.typ.clone()))
             .or_else(|| self.type_infos.find_var(id))
     }
 }
@@ -411,10 +418,9 @@ impl GlobalVmState {
         &self.type_cache
     }
 
-    pub fn new_global_thunk(&self, f: CompiledFunction) -> Result<GcPtr<ClosureData>> {
+    pub fn new_global_thunk(&self, f: CompiledModule) -> Result<GcPtr<ClosureData>> {
         let mut gc = self.gc.lock().unwrap();
-        let function = new_bytecode(&mut gc, self, f)?;
-        gc.alloc(ClosureDataDef(function, &[]))
+        new_bytecode(&mut gc, self, f)
     }
 
     pub fn get_type<T: ?Sized + Any>(&self) -> ArcType {

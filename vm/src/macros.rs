@@ -103,6 +103,9 @@ impl<'a> MacroExpander<'a> {
 
     pub fn run(&mut self, expr: &mut SpannedExpr<Symbol>) {
         self.visit_expr(expr);
+        if self.errors.has_errors() {
+            info!("Macro errors: {}", self.errors);
+        }
     }
 }
 

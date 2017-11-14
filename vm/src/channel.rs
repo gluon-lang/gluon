@@ -5,7 +5,7 @@ use std::collections::VecDeque;
 
 use base::types::{ArcType, Type};
 
-use {Error, Result as VmResult};
+use {Error, ExternModule, Result as VmResult};
 use api::{primitive, AsyncPushable, Function, Generic, Pushable, RuntimeResult, VmType, WithVM};
 use api::generic::A;
 use gc::{Gc, GcPtr, Traverseable};
@@ -210,17 +210,31 @@ fn spawn_<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> VmResult<Ro
     Ok(thread)
 }
 
-pub fn load<'vm>(vm: &'vm Thread) -> VmResult<()> {
+mod std {
+    pub use channel;
+}
+
+pub fn load_channel<'vm>(vm: &'vm Thread) -> VmResult<ExternModule> {
     let _ = vm.register_type::<Sender<A>>("Sender", &["a"]);
     let _ = vm.register_type::<Receiver<A>>("Receiver", &["a"]);
-    vm.define_global("channel", primitive!(1 channel))?;
-    vm.define_global("recv", primitive!(1 recv))?;
-    vm.define_global("send", primitive!(2 send))?;
-    vm.define_global(
-        "resume",
-        primitive::<fn(&'vm Thread) -> Result<(), String>>("resume", resume),
-    )?;
-    vm.define_global("yield", primitive::<fn(())>("yield", yield_))?;
-    vm.define_global("spawn", primitive!(1 spawn))?;
-    Ok(())
+
+    ExternModule::new(
+        vm,
+        record!{
+            channel => primitive!(1 std::channel::channel),
+            recv => primitive!(1 std::channel::recv),
+            send => primitive!(2 std::channel::send),
+        },
+    )
+}
+
+pub fn load_thread<'vm>(vm: &'vm Thread) -> VmResult<ExternModule> {
+    ExternModule::new(
+        vm,
+        record!{
+            resume => primitive::<fn(&'vm Thread) -> Result<(), String>>("std.thread.resume", resume),
+            (yield_ "yield") => primitive::<fn(())>("std.thread.yield", yield_),
+            spawn => primitive!(1 spawn)
+        },
+    )
 }

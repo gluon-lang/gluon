@@ -290,3 +290,13 @@ fn preserve_comments_in_record_base() {
 "#;
     assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
 }
+
+#[test]
+fn small_record_in_let() {
+    let expr = r#"
+let semigroup =
+    { append }
+()
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+}

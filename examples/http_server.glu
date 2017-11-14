@@ -1,7 +1,7 @@
-let prelude = import! "std/prelude.glu"
-let int = import! "std/int.glu"
-let io = import! "std/io.glu"
-let string = import! "std/string.glu"
+let prelude = import! std.prelude
+let int = import! std.int
+let io = import! std.io
+let string = import! std.string
 let { (<>) } = prelude.make_Semigroup string.semigroup
 let { (*>) } = prelude.make_Applicative io.applicative
 

@@ -1,10 +1,12 @@
 //@NO-IMPLICIT-PRELUDE
 
-let prelude = import! "std/prelude.glu"
+let prelude = import! std.prelude
+let { error } = import! std.prim
 let { Semigroup, Monoid, Eq, Ord, Ordering, Show } = prelude
 let { Functor, Applicative, Alternative, Monad, Foldable, Traversable } = prelude
-let { Bool } = import! "std/bool.glu"
-let { Option } = import! "std/types.glu"
+let { Bool } = import! std.bool
+let { Option } = import! std.types
+let string = import! std.string
 
 let unwrap opt : Option a -> a =
     match opt with
@@ -107,7 +109,7 @@ let monad : Monad Option = {
 }
 
 let show : Show a -> Show (Option a) = \d ->
-    let (++) = string_prim.append
+    let (++) = string.append
 
     let show o =
         match o with

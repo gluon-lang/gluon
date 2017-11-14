@@ -21,7 +21,7 @@ fn bool() {
         .run_expr::<De<bool>>(
             &thread,
             "test",
-            r#"let { Bool } = import! "std/bool.glu" in True"#,
+            r#"let { Bool } = import! std.bool in True"#,
         )
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(b, true);
@@ -63,7 +63,7 @@ fn option() {
         .run_expr::<De<Option<f64>>>(
             &thread,
             "test",
-            r#"let { Option } = import! "std/option.glu" in Some 1.0 "#,
+            r#"let { Option } = import! std.option in Some 1.0 "#,
         )
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(opt, Some(1.0));
@@ -131,7 +131,7 @@ fn optional_field() {
         .run_expr::<OpaqueValue<&Thread, Hole>>(
             &thread,
             "test",
-            r#"let { Option } = import! "std/option.glu" in { test = Some 2 } "#,
+            r#"let { Option } = import! std.option in { test = Some 2 } "#,
         )
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(

@@ -1,4 +1,4 @@
-let prelude = import! "std/prelude.glu"
+let prelude = import! std.prelude
 let { Applicative, Functor, Monad, Monoid } = prelude
 
 type Writer w a = { value : a, writer : w }

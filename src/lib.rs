@@ -57,11 +57,11 @@ use vm::Variants;
 use vm::api::{Getable, Hole, OpaqueValue, VmType};
 use vm::Error as VmError;
 use vm::future::{BoxFutureValue, FutureValue};
-use vm::compiler::CompiledFunction;
+use vm::compiler::CompiledModule;
 use vm::thread::ThreadInternal;
 use vm::macros;
 use compiler_pipeline::*;
-use import::{DefaultImporter, Import};
+use import::{add_extern_module, DefaultImporter, Import};
 
 quick_error! {
     /// Error type wrapping all possible errors that can be generated from gluon
@@ -161,6 +161,20 @@ impl Default for Compiler {
     }
 }
 
+macro_rules! option {
+    ($(#[$attr:meta])* $name: ident $set_name: ident : $typ: ty) => {
+        $(#[$attr])*
+        pub fn $name(mut self, $name: $typ) -> Compiler {
+            self.$name = $name;
+            self
+        }
+
+        pub fn $set_name(&mut self, $name: $typ) {
+            self.$name = $name;
+        }
+    };
+}
+
 impl Compiler {
     /// Creates a new compiler with default settings
     pub fn new() -> Compiler {
@@ -172,26 +186,23 @@ impl Compiler {
         }
     }
 
-    /// Sets whether the implicit prelude should be include when compiling a file using this
-    /// compiler (default: true)
-    pub fn implicit_prelude(mut self, implicit_prelude: bool) -> Compiler {
-        self.implicit_prelude = implicit_prelude;
-        self
+    option!{
+        /// Sets whether the implicit prelude should be include when compiling a file using this
+        /// compiler (default: true)
+        implicit_prelude set_implicit_prelude: bool
     }
 
-    /// Sets whether the compiler should emit debug information such as source maps and variable
-    /// names.
-    /// (default: true)
-    pub fn emit_debug_info(mut self, emit_debug_info: bool) -> Compiler {
-        self.emit_debug_info = emit_debug_info;
-        self
+    option!{
+        /// Sets whether the compiler should emit debug information such as source maps and variable
+        /// names.
+        /// (default: true)
+        emit_debug_info set_emit_debug_info: bool
     }
 
-    /// Sets whether `IO` expressions are evaluated.
-    /// (default: false)
-    pub fn run_io(mut self, run_io: bool) -> Compiler {
-        self.run_io = run_io;
-        self
+    option!{
+        /// Sets whether `IO` expressions are evaluated.
+        /// (default: false)
+        run_io set_run_io: bool
     }
 
     pub fn mut_symbols(&mut self) -> &mut Symbols {
@@ -220,9 +231,7 @@ impl Compiler {
             &mut SymbolModule::new(file.into(), &mut self.symbols),
             type_cache,
             expr_str,
-        ).map_err(
-            |(expr, err)| (expr, InFile::new(file, expr_str, err)),
-        )?)
+        ).map_err(|(expr, err)| (expr, InFile::new(file, expr_str, err)))?)
     }
 
     /// Parse and typecheck `expr_str` returning the typechecked expression and type of the
@@ -257,12 +266,12 @@ impl Compiler {
         filename: &str,
         expr_str: &str,
         expr: &SpannedExpr<Symbol>,
-    ) -> Result<CompiledFunction> {
+    ) -> Result<CompiledModule> {
         TypecheckValue {
             expr: expr,
             typ: vm.global_env().type_cache().hole(),
         }.compile(self, vm, filename, expr_str, ())
-            .map(|result| result.function)
+            .map(|result| result.module)
     }
 
     /// Compiles the source code `expr_str` into bytecode serialized using `serializer`
@@ -341,34 +350,28 @@ impl Compiler {
         vm: &'vm Thread,
         filename: &str,
     ) -> BoxFutureValue<'vm, (), Error> {
-        use std::borrow::Cow;
-        use std::fs::File;
-        use std::io::Read;
+        use macros::MacroExpander;
 
-        let result = (|| -> Result<_> {
-            // Use the import macro's path resolution if it exists so that we mimick the import
-            // macro as close as possible
-            let opt_macro = vm.get_macros().get("import");
-            match opt_macro
-                .as_ref()
-                .and_then(|mac| mac.downcast_ref::<Import>())
-            {
-                Some(import) => Ok(import.read_file(filename)?),
-                None => {
-                    let mut buffer = StdString::new();
-                    {
-                        let mut file = File::open(filename)?;
-                        file.read_to_string(&mut buffer)?;
-                    }
-                    Ok(Cow::Owned(buffer))
-                }
+        // Use the import macro's path resolution if it exists so that we mimick the import
+        // macro as close as possible
+        let opt_macro = vm.get_macros().get("import");
+        let owned_import;
+        let import = match opt_macro
+            .as_ref()
+            .and_then(|mac| mac.downcast_ref::<Import>())
+        {
+            Some(import) => import,
+            None => {
+                owned_import = Import::new(DefaultImporter);
+                &owned_import
             }
-        })();
-        let name = filename_to_module(filename);
-        match result {
-            Ok(buffer) => self.load_script_async(vm, &name, &buffer),
-            Err(err) => FutureValue::Value(Err(err)),
-        }
+        };
+        let module_name = Symbol::from(filename_to_module(filename));
+        FutureValue::from(
+            import
+                .load_module(self, vm, &mut MacroExpander::new(vm), &module_name)
+                .map_err(Error::from),
+        ).boxed()
     }
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
@@ -502,25 +505,27 @@ impl Compiler {
 }
 
 pub const PRELUDE: &'static str = r#"
-let __implicit_prelude = import! "std/prelude.glu"
+let __implicit_prelude = import! std.prelude
 and { Num, Eq, Ord, Show, Functor, Monad } = __implicit_prelude
-and { Bool, not } = import! "std/bool.glu"
-and { Option } = import! "std/option.glu"
+and { Bool, not } = import! std.bool
+and { Option } = import! std.option
 
-let __implicit_float = import! "std/float.glu"
+let __implicit_float = import! std.float
 let { (+), (-), (*), (/) } = __implicit_float.num
 and { (==) } = __implicit_float.eq
 
 let { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_float.ord
 
-let __implicit_int = import! "std/int.glu"
+let __implicit_int = import! std.int
 let { (+), (-), (*), (/) } = __implicit_int.num
 and { (==) } = __implicit_int.eq
 let { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_int.ord
 
-let __implicit_string = import! "std/string.glu"
+let __implicit_string = import! std.string
 and { eq = { (==) } } = __implicit_string
 let { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_string.ord
+
+let { error } = import! std.prim
 
 in ()
 "#;
@@ -548,20 +553,33 @@ pub fn new_vm() -> RootedThread {
 
     Compiler::new()
         .implicit_prelude(false)
-        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "", r#" import! "std/types.glu" "#)
+        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "", r#" import! std.types "#)
         .sync_or_error()
         .unwrap();
-    ::vm::primitives::load(&vm).expect("Loaded primitives library");
-    ::vm::channel::load(&vm).expect("Loaded channel library");
-    ::vm::debug::load(&vm).expect("Loaded debug library");
-    ::io::load(&vm).expect("Loaded IO library");
+
+    add_extern_module(&vm, "std.prim", ::vm::primitives::load);
+    add_extern_module(&vm, "std.int.prim", ::vm::primitives::load_int);
+    add_extern_module(&vm, "std.float.prim", ::vm::primitives::load_float);
+    add_extern_module(&vm, "std.string.prim", ::vm::primitives::load_string);
+    add_extern_module(&vm, "std.char.prim", ::vm::primitives::load_char);
+    add_extern_module(&vm, "std.array.prim", ::vm::primitives::load_array);
+
+    add_extern_module(&vm, "std.lazy", ::vm::lazy::load);
+    add_extern_module(&vm, "std.reference", ::vm::reference::load);
+
+    add_extern_module(&vm, "std.channel", ::vm::channel::load_channel);
+    add_extern_module(&vm, "std.thread", ::vm::channel::load_thread);
+    add_extern_module(&vm, "std.debug", ::vm::debug::load);
+    add_extern_module(&vm, "std.io.prim", ::io::load);
+
     load_regex(&vm);
+
     vm
 }
 
 #[cfg(feature = "regex")]
 fn load_regex(vm: &Thread) {
-    ::regex_bind::load(&vm).expect("Loaded regex library");
+    add_extern_module(&vm, "std.regex", ::regex_bind::load);
 }
 #[cfg(not(feature = "regex"))]
 fn load_regex(_: &Thread) {}

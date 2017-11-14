@@ -23,7 +23,7 @@ This tutorial aims the explain the basics of gluon's syntax and semantics.
 In traditional form, we will begin with the classic hello world program.
 
 ```f#,rust
-let io = import! "std/io.glu"
+let io = import! std.io
 io.println "Hello world"
 ```
 
@@ -490,7 +490,7 @@ As is often the case, it is convenient to separate code into multiple files whic
 For example, say that we need the `assert` function from the `test` module which can be found at `std/test.glu`. We might write something like this:
 
 ```f#,rust
-let { assert }  = import! "std/test.glu"
+let { assert }  = import! std.test
 assert (1 == 1)
 ```
 
@@ -550,7 +550,7 @@ Notably, if we were to execute a script with side effects the code above will ac
 let vm = new_vm();
 
 let script = r#"
-let io = import! "std/io.glu"
+let io = import! std.io
 io.print "123"
 "#;
 // Returns an action which prints `123` when evaluated
@@ -570,7 +570,7 @@ Often, it is either inconvenient or inefficient to compile and run code directly
 let vm = new_vm();
 // Ensure that the prelude module is loaded before trying to access something from it
 Compiler::new()
-    .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", r#" import! "std/prelude.glu" "#)
+    .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", r#" import! std.prelude "#)
     .unwrap();
 let mut add: FunctionRef<fn (i32, i32) -> i32> = vm.get_global("std.prelude.num_Int.(+)")
     .unwrap();
@@ -584,18 +584,36 @@ gluon also allows native functions to be called from gluon. To do this we first 
 
 ```rust,ignore
 fn factorial(x: i32) -> i32 {
-    if x <= 1 { 1 } else { x * factorial(x - 1) }
+    if x <= 1 {
+        1
+    } else {
+        x * factorial(x - 1)
+    }
 }
+
+fn load_factorial(vm: &Thread) -> vm::Result<vm::ExternModule> {
+    vm::ExternModule::new(vm, primitive!(1 factorial))
+}
+
 let vm = new_vm();
-vm.define_global("factorial", factorial as fn (_) -> _)
-    .unwrap();
+
+// Introduce a module that can be loaded with `import! factorial`
+add_extern_module(&vm, "factorial", load_factorial);
+
+let expr = r#"
+    let factorial = import! factorial
+    factorial 5
+"#;
+
 let (result, _) = Compiler::new()
-    .run_expr::<i32>(&vm, "example", "factorial 5")
+    .run_expr_async::<i32>(&vm, "factorial", expr)
+    .sync_or_error()
     .unwrap();
+
 assert_eq!(result, 120);
 ```
 
-[define_global][] can do more than just exposing simple functions. For instance, the [primitives][] module export large parts of Rust's [string][] and [float][] modules directly as records in gluon under the `str` and `float` modules respectively.
+[add_extern_module][] can do more than just exposing simple functions. For instance, the [primitives][] module export large parts of Rust's [string][] and [float][] modules directly as records in gluon under the `str` and `float` modules respectively.
 
 ```rust,ignore
 let vm = new_vm();
@@ -611,7 +629,7 @@ assert_eq!(result, "Hello world");
 [Thread]:https://docs.rs/gluon/*/gluon/struct.Thread.html
 [run_expr]:https://docs.rs/gluon/*/gluon/struct.Compiler.html#method.run_expr
 [Compiler struct]:https://docs.rs/gluon/*/gluon/struct.Compiler.html
-[define_global]:https://docs.rs/gluon/*/vm/thread/struct.Thread.html#method.define_global
+[add_extern_module]:https://docs.rs/gluon/*/gluon/import/fn.add_extern_module.html
 [primitives]:https://github.com/gluon-lang/gluon/blob/master/vm/src/primitives.rs
 [string]:http://doc.rust-lang.org/std/primitive.str.html
 [float]:http://doc.rust-lang.org/std/primitive.f64.html

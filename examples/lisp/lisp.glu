@@ -1,22 +1,22 @@
-let prelude = import! "std/prelude.glu"
+let prelude = import! std.prelude
 let { Functor, Applicative, Monad } = prelude
-let { id } = import! "std/function.glu"
+let { id } = import! std.function
 
-let string = import! "std/string.glu"
+let string = import! std.string
 let { (==) } = string.eq
 let { (<>) } = prelude.make_Semigroup string.semigroup
 
-let { Bool } = import! "std/bool.glu"
-let float = import! "std/float.glu"
-let int = import! "std/int.glu"
-let result = import! "std/result.glu"
+let { Bool } = import! std.bool
+let float = import! std.float
+let int = import! std.int
+let result = import! std.result
 let { Result } = result
-let { Option } = import! "std/option.glu"
+let { Option } = import! std.option
 
-let list = import! "std/list.glu"
+let list = import! std.list
 let { List } = list
 
-let map = import! "std/map.glu"
+let map = import! std.map
 let { Map } = map
 let prim_map = map.make string.ord
 

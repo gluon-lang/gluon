@@ -45,6 +45,7 @@ fn issue_365_run_io_from_command_line() {
     let output = Command::new(&*gluon_path)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
         .arg("tests/print.glu")
         .output()
         .unwrap_or_else(|err| {

@@ -1,0 +1,8 @@
+//@NO-IMPLICIT-PRELUDE
+
+let prim = import! std.array.prim
+
+{
+    ..
+    prim
+}
