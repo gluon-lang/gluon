@@ -559,7 +559,7 @@ match A 3 with
 }
 
 #[test]
-fn suggest_in_type() {
+fn suggest_in_type_binding() {
     let _ = env_logger::init();
 
     let text = r#"
@@ -568,6 +568,22 @@ type Abc = Te
 ()
 "#;
     let result = suggest_loc(text, 2, 13);
+    let expected = Ok(vec!["Test".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_in_type_of_let_binding() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Test = Int
+type Abc = Te
+let x: T = 1
+()
+"#;
+    let result = suggest_loc(text, 3, 8);
     let expected = Ok(vec!["Test".into()]);
 
     assert_eq!(result, expected);

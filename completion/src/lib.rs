@@ -406,14 +406,17 @@ where
                         enum Variant<'a> {
                             Pattern(&'a SpannedPattern<Symbol>),
                             Ident(&'a SpannedIdent<Symbol>),
+                            Type(&'a AstType<Symbol>),
                             Expr(&'a SpannedExpr<Symbol>),
                         }
                         let iter = once(Variant::Pattern(&bind.name))
                             .chain(bind.args.iter().map(Variant::Ident))
+                            .chain(bind.typ.iter().map(Variant::Type))
                             .chain(once(Variant::Expr(&bind.expr)));
                         let (_, sel) = self.select_spanned(iter, |x| match *x {
                             Variant::Pattern(p) => p.span,
                             Variant::Ident(e) => e.span,
+                            Variant::Type(t) => t.span(),
                             Variant::Expr(e) => e.span,
                         });
 
@@ -426,6 +429,7 @@ where
                                     &ident.value.typ,
                                 )));
                             }
+                            Variant::Type(t) => self.visit_ast_type(t),
                             Variant::Expr(expr) => self.visit_expr(expr),
                         }
                     }
