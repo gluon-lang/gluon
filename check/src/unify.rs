@@ -374,11 +374,11 @@ mod test {
                 _ => None,
             }
         }
-        fn traverse<F>(&self, f: &mut F)
+        fn traverse<'a, F>(&'a self, f: &mut F)
         where
-            F: Walker<Self>,
+            F: Walker<'a, Self>,
         {
-            fn traverse_(typ: &TType, f: &mut Walker<TType>) {
+            fn traverse_<'t>(typ: &'t TType, f: &mut Walker<'t, TType>) {
                 match *typ.0 {
                     Type::Arrow(ref a, ref r) => {
                         f.walk(a);

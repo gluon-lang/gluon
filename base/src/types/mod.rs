@@ -476,6 +476,13 @@ where
     pub fn params(&self) -> &[Generic<Id>] {
         self.typ.params()
     }
+
+    pub fn aliased_type(&self) -> &T {
+        match *self.typ {
+            Type::Forall(_, ref typ, _) => typ,
+            _ => &self.typ,
+        }
+    }
 }
 
 impl<Id, T> Deref for AliasRef<Id, T> {

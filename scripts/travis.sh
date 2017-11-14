@@ -12,10 +12,10 @@
   cargo test --features test --package gluon &&
   cargo test --features test --package gluon_repl &&
   cargo test --features test --package gluon_c-api &&
-  travis-cargo --only nightly test -- --features "test nightly" -p gluon compile_test &&
   cargo check --bench check --features test &&
   cargo check --bench function_call --features test &&
   cargo check --bench parser --features test &&
   cargo check --bench precompiled --features test &&
+  travis-cargo --only nightly test -- --features "test nightly" -p gluon compile_test &&
   travis-cargo --only stable build -- --all --no-default-features
 )

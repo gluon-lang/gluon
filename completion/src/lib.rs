@@ -19,7 +19,6 @@ use base::pos::{self, BytePos, HasSpan, Span, Spanned, NO_EXPANSION};
 use base::scoped_map::ScopedMap;
 use base::symbol::Symbol;
 use base::types::{walk_type_, AliasData, ArcType, ControlVisitation, Type, TypeEnv};
-use base::kind::ArcKind;
 
 pub struct Found<'a> {
     pub match_: Option<Match<'a>>,
@@ -36,6 +35,10 @@ pub enum Match<'a> {
 
 trait OnFound {
     fn on_ident(&mut self, ident: &TypedIdent) {
+        let _ = ident;
+    }
+
+    fn on_type_ident(&mut self, ident: &Symbol) {
         let _ = ident;
     }
 
@@ -56,6 +59,10 @@ where
 {
     fn on_ident(&mut self, ident: &TypedIdent) {
         (**self).on_ident(ident)
+    }
+
+    fn on_type_ident(&mut self, ident: &Symbol) {
+        (**self).on_type_ident(ident)
     }
 
     fn on_pattern(&mut self, pattern: &SpannedPattern<Symbol>) {
@@ -123,6 +130,10 @@ where
 impl<E: TypeEnv> OnFound for Suggest<E> {
     fn on_ident(&mut self, ident: &TypedIdent) {
         self.stack.insert(ident.name.clone(), ident.typ.clone());
+    }
+
+    fn on_type_ident(&mut self, ident: &Symbol) {
+        self.type_stack.insert(ident.clone(), ());
     }
 
     fn on_pattern(&mut self, pattern: &SpannedPattern<Symbol>) {
@@ -456,7 +467,10 @@ where
                                 self.found =
                                     Some(Some(Match::Type(bind.name.span, &bind.alias.value.name)));
                             } else {
-                                self.visit_ast_type(bind.alias.value.unresolved_type())
+                                for param in bind.alias.value.params() {
+                                    self.on_found.on_type_ident(&param.id);
+                                }
+                                self.visit_ast_type(bind.alias.value.aliased_type())
                             }
                         }
                         Either::Right(expr) => self.visit_expr(expr),
@@ -514,16 +528,31 @@ where
     }
 
     fn visit_ast_type(&mut self, typ: &'a AstType<Symbol>) {
-        if typ.span().containment(&self.pos) != Ordering::Equal {
-            return;
+        match **typ {
+            // ExtendRow do not have spans set properly so recurse unconditionally
+            Type::ExtendRow { .. } => (),
+            _ if typ.span().containment(&self.pos) != Ordering::Equal => return,
+            _ => (),
         }
         match **typ {
             Type::Ident(ref id) => {
                 self.found = Some(Some(Match::Type(typ.span(), id)));
             }
 
+            Type::Generic(ref gen) => {
+                self.found = Some(Some(Match::Type(typ.span(), &gen.id)));
+            }
+
             Type::Alias(ref alias) => {
                 self.found = Some(Some(Match::Type(typ.span(), &alias.name)));
+            }
+
+            Type::Forall(ref params, ref typ, _) => {
+                for param in params {
+                    self.on_found.on_type_ident(&param.id);
+                }
+
+                self.visit_ast_type(typ);
             }
 
             _ => walk_type_(

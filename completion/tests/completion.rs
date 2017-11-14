@@ -574,6 +574,20 @@ type Abc = Te
 }
 
 #[test]
+fn suggest_type_variable_in_type_binding() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Test a b ab = { x : a, y : b, z: ab }
+()
+"#;
+    let result = suggest_loc(text, 1, 26);
+    let expected = Ok(vec!["a".into(), "ab".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
 fn suggest_in_type_of_let_binding() {
     let _ = env_logger::init();
 
@@ -585,6 +599,21 @@ let x: T = 1
 "#;
     let result = suggest_loc(text, 3, 8);
     let expected = Ok(vec!["Test".into()]);
+
+    assert_eq!(result, expected);
+}
+
+
+#[test]
+fn suggest_from_forall_params() {
+    let _ = env_logger::init();
+
+    let text = r#"
+let f x _ : forall abc b . a -> b -> abc = x
+()
+"#;
+    let result = suggest_loc(text, 1, 28);
+    let expected = Ok(vec!["abc".into()]);
 
     assert_eq!(result, expected);
 }
