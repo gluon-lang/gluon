@@ -639,7 +639,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                 )
             },
             ast::Expr::TypeBindings(_, ref expr) => self.translate(expr),
-            ast::Expr::Error => ice!("ICE: Error expression found in the compiler"),
+            ast::Expr::Error(_) => ice!("ICE: Error expression found in the compiler"),
         }
     }
 

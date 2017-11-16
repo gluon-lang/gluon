@@ -8,14 +8,13 @@
 //! difficult to forget a stage.
 
 use std::borrow::{Borrow, BorrowMut};
-#[cfg(feature = "serde")]
 use std::result::Result as StdResult;
 
 #[cfg(feature = "serde")]
 use either::Either;
 
 use base::ast::SpannedExpr;
-use base::error::InFile;
+use base::error::{Errors, InFile};
 use base::metadata::Metadata;
 use base::types::{ArcType, Type};
 use base::source::Source;
@@ -28,6 +27,8 @@ use vm::macros::MacroExpander;
 use vm::thread::{RootedValue, Thread, ThreadInternal};
 
 use {Compiler, Error, Result};
+
+pub type SalvageResult<T> = StdResult<T, (Option<T>, Error)>;
 
 /// Result type of successful macro expansion
 pub struct MacroValue<E> {
@@ -42,13 +43,15 @@ pub trait MacroExpandable {
         compiler: &mut Compiler,
         thread: &Thread,
         file: &str,
-    ) -> Result<MacroValue<Self::Expr>>
+    ) -> SalvageResult<MacroValue<Self::Expr>>
     where
         Self: Sized,
     {
         let mut macros = MacroExpander::new(thread);
         let expr = self.expand_macro_with(compiler, &mut macros, file)?;
-        macros.finish()?;
+        if let Err(err) = macros.finish() {
+            return Err((Some(expr), err.into()));
+        }
         Ok(expr)
     }
 
@@ -57,7 +60,7 @@ pub trait MacroExpandable {
         compiler: &mut Compiler,
         macros: &mut MacroExpander,
         file: &str,
-    ) -> Result<MacroValue<Self::Expr>>;
+    ) -> SalvageResult<MacroValue<Self::Expr>>;
 }
 
 impl<'s> MacroExpandable for &'s str {
@@ -68,13 +71,18 @@ impl<'s> MacroExpandable for &'s str {
         compiler: &mut Compiler,
         macros: &mut MacroExpander,
         file: &str,
-    ) -> Result<MacroValue<Self::Expr>> {
+    ) -> SalvageResult<MacroValue<Self::Expr>> {
         compiler
             .parse_expr(macros.vm.global_env().type_cache(), file, self)
-            .map_err(From::from)
+            .map_err(|err| (None, err.into()))
             .and_then(|mut expr| {
-                expr.expand_macro_with(compiler, macros, file)?;
-                Ok(MacroValue { expr: expr })
+                let result = expr.expand_macro_with(compiler, macros, file)
+                    .map(|_| ())
+                    .map_err(|(value, err)| (value.map(|_| ()), err));
+                if let Err((value, err)) = result {
+                    return Err((value.map(|_| MacroValue { expr }), err));
+                }
+                Ok(MacroValue { expr })
             })
     }
 }
@@ -87,7 +95,7 @@ impl<'s> MacroExpandable for &'s mut SpannedExpr<Symbol> {
         compiler: &mut Compiler,
         macros: &mut MacroExpander,
         file: &str,
-    ) -> Result<MacroValue<Self::Expr>> {
+    ) -> SalvageResult<MacroValue<Self::Expr>> {
         if compiler.implicit_prelude {
             compiler.include_implicit_prelude(macros.vm.global_env().type_cache(), file, self);
         }
@@ -138,9 +146,24 @@ where
         expr_str: &str,
         expected_type: Option<&ArcType>,
     ) -> Result<TypecheckValue<Self::Expr>> {
-        self.expand_macro(compiler, thread, file).and_then(|expr| {
-            expr.typecheck_expected(compiler, thread, file, expr_str, expected_type)
-        })
+        let mut macro_error = None;
+        let expr = match self.expand_macro(compiler, thread, file) {
+            Ok(expr) => expr,
+            Err((Some(expr), err)) => {
+                macro_error = Some(err);
+                expr
+            }
+            Err((None, err)) => return Err(err),
+        };
+        match expr.typecheck_expected(compiler, thread, file, expr_str, expected_type) {
+            Ok(value) => match macro_error {
+                Some(err) => return Err(err),
+                None => Ok(value),
+            },
+            Err(err) => Err(
+                Errors::from(macro_error.into_iter().chain(Some(err)).collect::<Vec<_>>()).into(),
+            ),
+        }
     }
 }
 

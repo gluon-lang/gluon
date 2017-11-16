@@ -109,7 +109,8 @@ fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonRe
             Err((Some(expr), err)) => (expr, Err(err.into())),
         };
 
-    expr.expand_macro(&mut compiler, thread, &name)?;
+    expr.expand_macro(&mut compiler, thread, &name)
+        .map_err(|(_, err)| err)?;
 
     // Only need the typechecker to fill infer the types as best it can regardless of errors
     let _ = compiler.typecheck_expr(thread, &name, fileinput, &mut expr);

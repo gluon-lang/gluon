@@ -371,7 +371,7 @@ Alternative: Alternative<Id> = {
         let span = pos::Span::new(pat.span.end, end);
         Alternative {
             pattern: pat,
-            expr: pos::spanned(span, Expr::Error),
+            expr: pos::spanned(span, Expr::Error(None)),
         }
     },
     "|" <start: @R> <end: @L> <err: !> => {
@@ -379,7 +379,7 @@ Alternative: Alternative<Id> = {
         let span = pos::Span::new(start, end);
         Alternative {
             pattern: pos::spanned(span, Pattern::Error),
-            expr: pos::spanned(span, Expr::Error),
+            expr: pos::spanned(span, Expr::Error(None)),
         }
     },
 };
@@ -551,7 +551,7 @@ Expr: Expr<Id> = {
 
     ! => {
         errors.push(<>.error);
-        Expr::Error
+        Expr::Error(None)
     }
 };
 

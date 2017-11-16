@@ -473,7 +473,7 @@ where
             } else {
                 self.visit_one(exprs)
             },
-            Expr::Error => (),
+            Expr::Error(..) => (),
         }
     }
 }
