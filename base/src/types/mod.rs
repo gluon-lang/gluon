@@ -997,6 +997,16 @@ impl<Id> Commented for ArcType<Id> {
     }
 }
 
+pub fn row_iter<T>(typ: &T) -> RowIterator<T> {
+    RowIterator { typ, current: 0 }
+}
+
+pub fn row_iter_mut<Id, T>(typ: &mut T) -> RowIteratorMut<Id, T> {
+    RowIteratorMut {
+        fields: [].iter_mut(),
+        rest: typ,
+    }
+}
 
 impl<Id> ArcType<Id> {
     pub fn new(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
@@ -1015,10 +1025,7 @@ impl<Id> ArcType<Id> {
     /// Returns an iterator over all fields in a record.
     /// `{ Test, Test2, x, y } => [x, y]`
     pub fn row_iter(&self) -> RowIterator<Self> {
-        RowIterator {
-            typ: self,
-            current: 0,
-        }
+        row_iter(self)
     }
 
     pub fn strong_count(typ: &ArcType<Id>) -> usize {
@@ -1358,6 +1365,43 @@ where
         size
     }
 }
+
+pub struct RowIteratorMut<'a, Id: 'a, T: 'a> {
+    fields: ::std::slice::IterMut<'a, Field<Id, T>>,
+    rest: *mut T,
+}
+
+impl<'a, Id: 'a, T: 'a> Iterator for RowIteratorMut<'a, Id, T>
+where
+    T: DerefMut<Target = Type<Id, T>>,
+{
+    type Item = &'a mut Field<Id, T>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if let Some(x) = self.fields.next() {
+                return Some(x);
+            }
+            // The lifetime checker can't see that self.rest will be unused after we assign the
+            // contents to it so we must just a raw pointer get around it
+            unsafe {
+                match **self.rest {
+                    Type::Record(ref mut row) | Type::Variant(ref mut row) => self.rest = row,
+                    Type::ExtendRow {
+                        ref mut fields,
+                        ref mut rest,
+                        ..
+                    } => {
+                        self.fields = fields.iter_mut();
+                        self.rest = rest;
+                    }
+                    _ => return None,
+                }
+            }
+        }
+    }
+}
+
 
 pub struct ArgIterator<'a, T: 'a> {
     /// The current type being iterated over. After `None` has been returned this is the return
@@ -1853,6 +1897,43 @@ where
     }
 }
 
+pub fn walk_type_mut<I, T, F: ?Sized>(typ: &mut T, f: &mut F)
+where
+    F: WalkerMut<T>,
+    T: DerefMut<Target = Type<I, T>>,
+{
+    match **typ {
+        Type::Forall(_, ref mut typ, _) => f.walk_mut(typ),
+        Type::App(ref mut t, ref mut args) => {
+            f.walk_mut(t);
+            for a in args {
+                f.walk_mut(a);
+            }
+        }
+        Type::Record(ref mut row) | Type::Variant(ref mut row) => f.walk_mut(row),
+        Type::ExtendRow {
+            // Can't visit types mutably as they are always shared
+            types: _,
+            ref mut fields,
+            ref mut rest,
+        } => {
+            for field in fields {
+                f.walk_mut(&mut field.typ);
+            }
+            f.walk_mut(rest);
+        }
+        Type::Hole |
+        Type::Opaque |
+        Type::Builtin(_) |
+        Type::Variable(_) |
+        Type::Generic(_) |
+        Type::Skolem(_) |
+        Type::Ident(_) |
+        Type::Alias(_) |
+        Type::EmptyRow => (),
+    }
+}
+
 pub fn fold_type<I, T, F, A>(typ: &T, mut f: F, a: A) -> A
 where
     F: FnMut(&T, A) -> A,
@@ -1931,6 +2012,22 @@ where
         walk_type_(typ, self)
     }
 }
+
+pub trait WalkerMut<T> {
+    fn walk_mut(&mut self, typ: &mut T);
+}
+
+impl<I, T, F: ?Sized> WalkerMut<T> for F
+where
+    F: FnMut(&mut T),
+    T: DerefMut<Target = Type<I, T>>,
+{
+    fn walk_mut(&mut self, typ: &mut T) {
+        self(typ);
+        walk_type_mut(typ, self)
+    }
+}
+
 
 /// Walks through a type calling `f` on each inner type. If `f` return `Some` the type is replaced.
 pub fn walk_move_type<F: ?Sized, I, T>(typ: T, f: &mut F) -> T
@@ -2113,12 +2210,7 @@ where
         Type::Variable(ref var) => Type::variable(var.clone()),
         Type::Generic(ref gen) => Type::generic(gen.clone()),
         Type::Ident(ref id) => Type::ident(id.clone()),
-        // This is not quite correct but currently only `AstType` -> `ArcType` translations are needed
-        // so this will not be used
-        Type::Alias(ref alias) => U::from(Type::Alias(AliasRef {
-            index: 0,
-            group: Arc::new(vec![translate_alias(alias, translate)]),
-        })),
+        Type::Alias(_) => ice!("translate_type called on alias"),
         Type::EmptyRow => cache.empty_row(),
     }
 }
