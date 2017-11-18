@@ -13,24 +13,25 @@ use either::Either;
 use base::ast::{walk_expr, walk_pattern, AstType, Expr, Pattern, SpannedExpr, SpannedIdent,
                 SpannedPattern, Typed, TypedIdent, Visitor};
 use base::fnv::FnvMap;
+use base::kind::{ArcKind, Kind};
 use base::metadata::Metadata;
 use base::resolve;
 use base::pos::{self, BytePos, HasSpan, Span, Spanned, NO_EXPANSION};
 use base::scoped_map::ScopedMap;
 use base::symbol::Symbol;
-use base::types::{walk_type_, AliasData, ArcType, ControlVisitation, Type, TypeEnv};
+use base::types::{walk_type_, AliasData, ArcType, ControlVisitation, Generic, Type, TypeEnv};
 
 pub struct Found<'a> {
     pub match_: Option<Match<'a>>,
     pub enclosing_match: Match<'a>,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone)]
 pub enum Match<'a> {
     Expr(&'a SpannedExpr<Symbol>),
     Pattern(&'a SpannedPattern<Symbol>),
     Ident(Span<BytePos>, &'a Symbol, &'a ArcType),
-    Type(Span<BytePos>, &'a Symbol),
+    Type(Span<BytePos>, &'a Symbol, ArcKind),
 }
 
 trait OnFound {
@@ -38,7 +39,7 @@ trait OnFound {
         let _ = ident;
     }
 
-    fn on_type_ident(&mut self, ident: &Symbol) {
+    fn on_type_ident(&mut self, ident: &Generic<Symbol>) {
         let _ = ident;
     }
 
@@ -61,7 +62,7 @@ where
         (**self).on_ident(ident)
     }
 
-    fn on_type_ident(&mut self, ident: &Symbol) {
+    fn on_type_ident(&mut self, ident: &Generic<Symbol>) {
         (**self).on_type_ident(ident)
     }
 
@@ -77,13 +78,13 @@ where
 #[derive(Debug, PartialEq)]
 pub struct Suggestion {
     pub name: String,
-    pub typ: ArcType,
+    pub typ: Either<ArcKind, ArcType>,
 }
 
 struct Suggest<E> {
     env: E,
     stack: ScopedMap<Symbol, ArcType>,
-    type_stack: ScopedMap<Symbol, ()>,
+    type_stack: ScopedMap<Symbol, ArcKind>,
     patterns: ScopedMap<Symbol, ArcType>,
 }
 
@@ -132,8 +133,8 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
         self.stack.insert(ident.name.clone(), ident.typ.clone());
     }
 
-    fn on_type_ident(&mut self, ident: &Symbol) {
-        self.type_stack.insert(ident.clone(), ());
+    fn on_type_ident(&mut self, gen: &Generic<Symbol>) {
+        self.type_stack.insert(gen.id.clone(), gen.kind.clone());
     }
 
     fn on_pattern(&mut self, pattern: &SpannedPattern<Symbol>) {
@@ -191,7 +192,10 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
                 self.patterns.insert(field.name, field.typ);
             }
         }
-        self.type_stack.insert(alias.name.clone(), ());
+        self.type_stack.insert(
+            alias.name.clone(),
+            alias.unresolved_type().kind().into_owned(),
+        );
     }
 }
 
@@ -464,11 +468,14 @@ where
                     (_, Some(either)) => match either {
                         Either::Left(bind) => {
                             if bind.name.span.containment(&self.pos) == Ordering::Equal {
-                                self.found =
-                                    Some(Some(Match::Type(bind.name.span, &bind.alias.value.name)));
+                                self.found = Some(Some(Match::Type(
+                                    bind.name.span,
+                                    &bind.alias.value.name,
+                                    bind.alias.value.unresolved_type().kind().into_owned(),
+                                )));
                             } else {
                                 for param in bind.alias.value.params() {
-                                    self.on_found.on_type_ident(&param.id);
+                                    self.on_found.on_type_ident(&param);
                                 }
                                 self.visit_ast_type(bind.alias.value.aliased_type())
                             }
@@ -536,20 +543,24 @@ where
         }
         match **typ {
             Type::Ident(ref id) => {
-                self.found = Some(Some(Match::Type(typ.span(), id)));
+                self.found = Some(Some(Match::Type(typ.span(), id, Kind::hole())));
             }
 
             Type::Generic(ref gen) => {
-                self.found = Some(Some(Match::Type(typ.span(), &gen.id)));
+                self.found = Some(Some(Match::Type(typ.span(), &gen.id, gen.kind.clone())));
             }
 
             Type::Alias(ref alias) => {
-                self.found = Some(Some(Match::Type(typ.span(), &alias.name)));
+                self.found = Some(Some(Match::Type(
+                    typ.span(),
+                    &alias.name,
+                    typ.kind().into_owned(),
+                )));
             }
 
             Type::Forall(ref params, ref typ, _) => {
                 for param in params {
-                    self.on_found.on_type_ident(&param.id);
+                    self.on_found.on_type_ident(param);
                 }
 
                 self.visit_ast_type(typ);
@@ -574,12 +585,13 @@ where
         enclosing_match: Match::Expr(expr),
     };
     visitor.visit_expr(expr);
+    let enclosing_match = visitor.enclosing_match;
     visitor
         .found
         .map(|match_| {
             Found {
                 match_,
-                enclosing_match: visitor.enclosing_match,
+                enclosing_match,
             }
         })
         .ok_or(())
@@ -608,7 +620,7 @@ impl<'a> Extract for TypeAt<'a> {
         Ok(match *found {
             Match::Expr(expr) => expr.env_type_of(self.env),
             Match::Ident(_, _, typ) => typ.clone(),
-            Match::Type(_, _) => return Err(()),
+            Match::Type(..) => return Err(()),
             Match::Pattern(pattern) => pattern.env_type_of(self.env),
         })
     }
@@ -656,7 +668,7 @@ impl Extract for SpanAt {
         Ok(match *found {
             Match::Expr(expr) => expr.span,
             Match::Ident(span, _, _) => span,
-            Match::Type(span, _) => span,
+            Match::Type(span, _, _) => span,
             Match::Pattern(pattern) => pattern.span,
         })
     }
@@ -819,7 +831,7 @@ where
                 result.extend(expr_iter(&suggest.stack, expr).map(|(k, typ)| {
                     Suggestion {
                         name: k.declared_name().into(),
-                        typ: typ.clone(),
+                        typ: Either::Right(typ.clone()),
                     }
                 }));
             }
@@ -837,7 +849,7 @@ where
                         .map(|(name, typ)| {
                             Suggestion {
                                 name: name.declared_name().into(),
-                                typ: typ.clone(),
+                                typ: Either::Right(typ.clone()),
                             }
                         }),
                 );
@@ -847,12 +859,12 @@ where
                 result.extend(iter.into_iter().map(|(name, typ)| {
                     Suggestion {
                         name: name.declared_name().into(),
-                        typ: typ,
+                        typ: Either::Right(typ),
                     }
                 }));
             },
 
-            Match::Type(_, ident) => {
+            Match::Type(_, ident, _) => {
                 result.extend(
                     suggest
                         .type_stack
@@ -860,10 +872,10 @@ where
                         .filter(|&(k, _)| {
                             k.declared_name().starts_with(ident.declared_name())
                         })
-                        .map(|(name, _)| {
+                        .map(|(name, kind)| {
                             Suggestion {
                                 name: name.declared_name().into(),
-                                typ: Type::hole(),
+                                typ: Either::Left(kind.clone()),
                             }
                         }),
                 );
@@ -875,12 +887,12 @@ where
                 result.extend(suggest.stack.iter().map(|(name, typ)| {
                     Suggestion {
                         name: name.declared_name().into(),
-                        typ: typ.clone(),
+                        typ: Either::Right(typ.clone()),
                     }
                 }));
             }
 
-            Match::Type(_, ident) => {
+            Match::Type(_, ident, _) => {
                 result.extend(
                     suggest
                         .type_stack
@@ -888,10 +900,10 @@ where
                         .filter(|&(k, _)| {
                             k.declared_name().starts_with(ident.declared_name())
                         })
-                        .map(|(name, _)| {
+                        .map(|(name, kind)| {
                             Suggestion {
                                 name: name.declared_name().into(),
-                                typ: Type::hole(),
+                                typ: Either::Left(kind.clone()),
                             }
                         }),
                 );
@@ -900,7 +912,7 @@ where
             Match::Pattern(..) => result.extend(suggest.patterns.iter().map(|(name, typ)| {
                 Suggestion {
                     name: name.declared_name().into(),
-                    typ: typ.clone(),
+                    typ: Either::Right(typ.clone()),
                 }
             })),
         },
@@ -915,7 +927,10 @@ pub fn get_metadata<'a>(
 ) -> Option<&'a Metadata> {
     complete_at((), expr, pos)
         .ok()
-        .and_then(|found| found.match_.map(|m| (m, found.enclosing_match)))
+        .and_then(|found| {
+            let e = found.enclosing_match;
+            found.match_.map(|m| (m, e))
+        })
         .and_then(|(match_, enclosing_match)| match match_ {
             Match::Expr(expr) => if let Expr::Ident(ref id) = expr.value {
                 env.get(&id.name)

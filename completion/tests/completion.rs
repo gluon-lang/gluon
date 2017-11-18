@@ -1,11 +1,14 @@
 #[macro_use]
 extern crate collect_mac;
+extern crate either;
 extern crate env_logger;
 
 extern crate gluon_base as base;
 extern crate gluon_check as check;
 extern crate gluon_completion as completion;
 extern crate gluon_parser as parser;
+
+use either::Either;
 
 use base::metadata::Metadata;
 use base::pos::{self, BytePos, Span};
@@ -450,7 +453,7 @@ a
     let expected = Ok(vec![
         Suggestion {
             name: "aa".into(),
-            typ: Type::int(),
+            typ: Either::Right(Type::int()),
         },
     ]);
 

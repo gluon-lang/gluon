@@ -447,11 +447,11 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
         V: Visitor<'de>,
     {
         let typ = resolve::canonical_alias(self.state.env, self.typ, |alias| {
-            alias.name.declared_name() == "std.types.Option"
+            alias.name.name().as_str() == "std.types.Option"
         });
         let option_inner_typ = match **typ {
             Type::App(ref func, ref args) if args.len() == 1 => match **func {
-                Type::Alias(ref alias) if alias.name.declared_name() == "std.types.Option" => {
+                Type::Alias(ref alias) if alias.name.name().as_str() == "std.types.Option" => {
                     Some(&args[0])
                 }
                 _ => None,
