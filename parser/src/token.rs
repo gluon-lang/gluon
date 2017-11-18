@@ -133,6 +133,18 @@ quick_error! {
         NonParseableInt {
             description("cannot parse integer, probable overflow")
         }
+        HexLiteralOverflow {
+            description("cannot parse hex literal, overflow")
+        }
+        HexLiteralUnderflow {
+            description("cannot parse hex literal, underflow")
+        }
+        HexLiteralInvalid {
+            description("cannot parse hex literal, invalid digit")
+        }
+        HexLiteralWrongPrefix {
+            description("wrong hex literal prefix, should start as '0x' or '-0x'")
+        }
     }
 }
 
@@ -158,6 +170,10 @@ fn is_ident_continue(ch: char) -> bool {
 
 fn is_digit(ch: char) -> bool {
     ch.is_digit(10)
+}
+
+fn is_hex(ch: char) -> bool {
+    ch.is_digit(16)
 }
 
 struct CharLocations<'input> {
@@ -412,6 +428,22 @@ impl<'input> Tokenizer<'input> {
                 let (end, float) = self.take_while(start, is_digit);
                 (start, end, Token::FloatLiteral(float.parse().unwrap()))
             }
+            Some((end, 'x')) => {
+                self.bump(); // Skip 'x'
+                let (end, hex) = self.take_while(end.shift('x'), is_hex);
+                match int {
+                    "0" | "-0" => {
+                        let is_positive = int == "0";
+                        match i64_from_hex(hex, is_positive) {
+                            Ok(val) => (start, end, Token::IntLiteral(val)),
+                            Err(err) => return self.error(start, err),
+                        }
+                    }
+                    _ => {
+                        return  self.error(start, HexLiteralWrongPrefix);
+                    }
+                }
+            }
             Some((end, 'b')) => {
                 self.bump(); // Skip 'b'
                 if let Ok(val) = int.parse() {
@@ -514,6 +546,47 @@ impl<'input> Iterator for Tokenizer<'input> {
             Token::EOF,
         )))
     }
+}
+
+/// Converts partial hex literal (i.e. part after `0x` or `-0x`) to 64 bit signed integer.
+///
+/// This is basically a copy and adaptation of `std::num::from_str_radix`.
+fn i64_from_hex(hex: &str, is_positive: bool) -> Result<i64, Error> {
+    let radix = 16;
+    let digits = hex.as_bytes();
+    let mut result = 0i64;
+    if is_positive {
+        for &c in digits {
+            let x = match (c as char).to_digit(radix) {
+                Some(x) => x,
+                None => return Err(HexLiteralInvalid),
+            };
+            result = match result.checked_mul(radix as i64) {
+                Some(result) => result,
+                None => return Err(HexLiteralOverflow),
+            };
+            result = match result.checked_add(x as i64) {
+                Some(result) => result,
+                None => return Err(HexLiteralOverflow),
+            };
+        }
+    } else {
+        for &c in digits {
+            let x = match (c as char).to_digit(radix) {
+                Some(x) => x,
+                None => return Err(HexLiteralInvalid),
+            };
+            result = match result.checked_mul(radix as i64) {
+                Some(result) => result,
+                None => return Err(HexLiteralUnderflow),
+            };
+            result = match result.checked_sub(x as i64) {
+                Some(result) => result,
+                None => return Err(HexLiteralUnderflow),
+            };
+        }
+    }
+    Ok(result)
 }
 
 
@@ -749,6 +822,56 @@ mod test {
                 (r#"       ~~     "#, IntLiteral(45)),
                 (r#"          ~~~~"#, IntLiteral(-123)),
             ],
+        );
+    }
+
+    #[test]
+    fn hex_literals() {
+        test(
+            r#"0x1f 0xf 0x123 0x001 -0xA 0x"#,
+            vec![
+                (r#"~~~~                   "#, IntLiteral(31)),
+                (r#"    ~~~                "#, IntLiteral(15)),
+                (r#"       ~~~~~           "#, IntLiteral(291)),
+                (r#"            ~~~~~      "#, IntLiteral(1)),
+                (r#"                 ~~~~  "#, IntLiteral(-10)),
+                (r#"                     ~~"#, IntLiteral(0)),
+            ]
+        )
+    }
+
+    #[test]
+    fn hex_literals_wrong_prefix() {
+        assert_eq!(
+            tokenizer(r#"10x1"#).last(),
+            Some(error(loc(0), HexLiteralWrongPrefix))
+        );
+    }
+
+    #[test]
+    fn hex_literals_overflow() {
+        assert_eq!(
+            tokenizer(r#"0x8000000000000000"#).last(),
+            Some(error(loc(0), HexLiteralOverflow))
+        );
+    }
+
+    #[test]
+    fn hex_literals_underflow() {
+        assert_eq!(
+            tokenizer(r#"-0x8000000000000001"#).last(),
+            Some(error(loc(0), HexLiteralUnderflow))
+        );
+    }
+
+    #[test]
+    fn hex_literals_bounds() {
+        test(
+            r#"-0x8000000000000000 0x7fffffffffffffff"#,
+            vec![
+                ("~~~~~~~~~~~~~~~~~~~                  ", IntLiteral(::std::i64::MIN)),
+                ("                   ~~~~~~~~~~~~~~~~~~", IntLiteral(::std::i64::MAX))
+            ]
         );
     }
 
