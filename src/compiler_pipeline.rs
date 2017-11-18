@@ -542,7 +542,7 @@ where
         module,
     };
     module
-        .serialize_state(serializer, &SeSeed::new(thread))
+        .serialize_state(serializer, &SeSeed::new())
         .map_err(Either::Right)
 }
 

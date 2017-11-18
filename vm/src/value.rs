@@ -156,6 +156,21 @@ impl DataStruct {
     }
 }
 
+impl GcPtr<DataStruct> {
+    pub fn get(&self, vm: &Thread, field: &str) -> Result<Option<&Value>> {
+        use thread::ThreadInternal;
+
+        let field = vm.global_env().intern(field)?;
+        Ok(self.get_field(field))
+    }
+
+    pub fn get_field(&self, field: InternedStr) -> Option<&Value> {
+        self.field_map()
+            .get(&field)
+            .map(|offset| &self.fields[*offset as usize])
+    }
+}
+
 /// Definition for data values in the VM
 pub struct Def<'b> {
     pub tag: VmTag,
@@ -183,8 +198,8 @@ impl<'b> Traverseable for Def<'b> {
 }
 
 pub struct RecordDef<'b> {
-    pub tag: VmTag,
     pub elems: &'b [Value],
+    pub fields: &'b [InternedStr],
 }
 
 unsafe impl<'b> DataDef for RecordDef<'b> {
@@ -195,10 +210,13 @@ unsafe impl<'b> DataDef for RecordDef<'b> {
     fn initialize<'w>(self, mut result: WriteOnly<'w, DataStruct>) -> &'w mut DataStruct {
         unsafe {
             let result = &mut *result.as_mut_ptr();
-            result.tag = self.tag | (1 << ((size_of::<VmTag>() * 8) - 1));
+            result.tag = 1 << ((size_of::<VmTag>() * 8) - 1);
             result.fields.initialize(self.elems.iter().cloned());
             result
         }
+    }
+    fn fields(&self) -> Option<&[InternedStr]> {
+        Some(self.fields)
     }
 }
 

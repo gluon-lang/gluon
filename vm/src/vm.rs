@@ -94,11 +94,9 @@ fn new_bytecode_function(
 #[cfg_attr(feature = "serde_derive_state", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct Global {
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::symbol"))]
-    pub id:
-        Symbol,
+    pub id: Symbol,
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
-    pub typ:
-        ArcType,
+    pub typ: ArcType,
     pub metadata: Metadata,
     #[cfg_attr(feature = "serde_derive_state", serde(state))] pub value: Value,
 }
@@ -117,8 +115,7 @@ pub struct GlobalVmState {
     #[cfg_attr(feature = "serde_derive", serde(state))] env: RwLock<VmEnv>,
 
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
-    generics:
-        RwLock<FnvMap<StdString, ArcType>>,
+    generics: RwLock<FnvMap<StdString, ArcType>>,
 
     #[cfg_attr(feature = "serde_derive", serde(skip))] typeids: RwLock<FnvMap<TypeId, ArcType>>,
 
@@ -135,8 +132,7 @@ pub struct GlobalVmState {
     // generation 0 sweep these threads are scanned as generation 0 values may be refered to by any
     // thread
     #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub generation_0_threads:
-        RwLock<Vec<GcPtr<Thread>>>,
+    pub generation_0_threads: RwLock<Vec<GcPtr<Thread>>>,
 }
 
 impl Traverseable for GlobalVmState {

@@ -57,7 +57,6 @@ impl AsMut<NodeMap> for DeSeed {
 
 pub struct SeSeed {
     node_to_id: ::base::serialization::SeSeed,
-    thread: RootedThread,
 }
 
 impl AsRef<NodeToId> for SeSeed {
@@ -67,10 +66,9 @@ impl AsRef<NodeToId> for SeSeed {
 }
 
 impl SeSeed {
-    pub fn new(thread: &Thread) -> SeSeed {
+    pub fn new() -> SeSeed {
         SeSeed {
             node_to_id: Default::default(),
-            thread: thread.root_thread(),
         }
     }
 }
@@ -184,7 +182,7 @@ pub mod gc {
                                  S: ::std::ops::Deref + ::std::any::Any + Clone
                                     + ::base::serialization::Shared
                                     + DeserializeState<'de, ::serialization::DeSeed>",
-                    serialize = "F: SerializeState<::serialization::SeSeed>,
+                  serialize = "F: SerializeState<::serialization::SeSeed>,
                                S: ::std::ops::Deref + ::std::any::Any + Clone
                                     + ::base::serialization::Shared,
                                S::Target: SerializeState<::serialization::SeSeed>"))]
@@ -199,7 +197,7 @@ pub mod gc {
     #[serde(bound(deserialize = "S: ::std::ops::Deref + ::std::any::Any + Clone
                                     + ::base::serialization::Shared
                                     + DeserializeState<'de, ::serialization::DeSeed>",
-                    serialize = "S: ::std::ops::Deref + ::std::any::Any + Clone
+                  serialize = "S: ::std::ops::Deref + ::std::any::Any + Clone
                                     + ::base::serialization::Shared,
                                S::Target: SerializeState<::serialization::SeSeed>"))]
     enum DataTag<S> {
@@ -213,13 +211,8 @@ pub mod gc {
         where
             S: Serializer,
         {
-            use serde::ser::Error;
             let tag = if self.is_record() {
-                let fields = seed.thread
-                    .context()
-                    .get_fields(self.tag())
-                    .ok_or_else(|| S::Error::custom("Undefined record"))?
-                    .clone();
+                let fields = unsafe { GcPtr::from_raw(self).fields().clone() };
                 DataTag::Record(fields)
             } else {
                 DataTag::Data(self.tag())
@@ -262,19 +255,25 @@ pub mod gc {
                     seed,
                     deserializer,
                 )?;
-                use value::Def;
-                let tag = match def.tag {
-                    DataTag::Record(fields) => seed.thread.context().get_map(&fields),
-                    DataTag::Data(tag) => tag,
-                };
-                seed.thread
-                    .context()
-                    .gc
-                    .alloc(Def {
-                        tag: tag,
-                        elems: &def.fields,
-                    })
-                    .map_err(D::Error::custom)
+                use value::{Def, RecordDef};
+                match def.tag {
+                    DataTag::Record(fields) => seed.thread
+                        .context()
+                        .gc
+                        .alloc(RecordDef {
+                            elems: &def.fields,
+                            fields: &fields,
+                        })
+                        .map_err(D::Error::custom),
+                    DataTag::Data(tag) => seed.thread
+                        .context()
+                        .gc
+                        .alloc(Def {
+                            tag: tag,
+                            elems: &def.fields,
+                        })
+                        .map_err(D::Error::custom),
+                }
             }
         }
 

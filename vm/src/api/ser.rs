@@ -9,7 +9,7 @@ use api::{Pushable, VmType};
 use interner::InternedStr;
 use thread::{Context, Thread, ThreadInternal};
 use types::{VmIndex, VmTag};
-use value::{Def, Value};
+use value::{Def, RecordDef, Value};
 use serde::ser::{self, Serialize};
 
 /**
@@ -175,6 +175,18 @@ impl<'t> Serializer<'t> {
         let value = self.context.gc.alloc(Def {
             tag: tag,
             elems: &self.context.stack[self.context.stack.len() - values..],
+        })?;
+        for _ in 0..values {
+            self.context.stack.pop();
+        }
+        self.context.stack.push(Value::Data(value));
+        Ok(())
+    }
+
+    fn alloc_record(&mut self, fields: &[InternedStr], values: VmIndex) -> Result<()> {
+        let value = self.context.gc.alloc(RecordDef {
+            elems: &self.context.stack[self.context.stack.len() - values..],
+            fields,
         })?;
         for _ in 0..values {
             self.context.stack.pop();
@@ -520,8 +532,7 @@ impl<'a, 'vm> ser::SerializeStruct for RecordSerializer<'a, 'vm> {
     }
 
     fn end(self) -> Result<Self::Ok> {
-        let tag = self.serializer.context.get_map(&self.fields);
-        self.serializer.alloc(tag, self.values)
+        self.serializer.alloc_record(&self.fields, self.values)
     }
 }
 

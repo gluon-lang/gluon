@@ -30,7 +30,7 @@ fn precompiled_prelude(b: &mut Bencher) {
         prelude
             .serialize_state(
                 &mut bincode::Serializer::new(&mut serialized_prelude),
-                &SeSeed::new(&thread),
+                &SeSeed::new(),
             )
             .unwrap();
     }
