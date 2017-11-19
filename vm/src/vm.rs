@@ -34,7 +34,8 @@ fn new_bytecode(gc: &mut Gc, vm: &GlobalVmState, m: CompiledModule) -> Result<Gc
         module_globals,
         function,
     } = m;
-    let bytecode_function = new_bytecode_function(gc, vm, function)?;
+    let mut interner = vm.interner.write().unwrap();
+    let bytecode_function = new_bytecode_function(gc, &mut interner, vm, function)?;
     let globals = module_globals
         .into_iter()
         .map(|index| vm.env.read().unwrap().globals[index.as_ref()].value)
@@ -45,6 +46,7 @@ fn new_bytecode(gc: &mut Gc, vm: &GlobalVmState, m: CompiledModule) -> Result<Gc
 
 fn new_bytecode_function(
     gc: &mut Gc,
+    interner: &mut Interner,
     vm: &GlobalVmState,
     f: CompiledFunction,
 ) -> Result<GcPtr<BytecodeFunction>> {
@@ -62,16 +64,14 @@ fn new_bytecode_function(
 
     let fs: StdResult<_, _> = inner_functions
         .into_iter()
-        .map(|inner| new_bytecode_function(gc, vm, inner))
+        .map(|inner| new_bytecode_function(gc, interner, vm, inner))
         .collect();
 
     let records: StdResult<_, _> = records
         .into_iter()
         .map(|vec| {
             vec.into_iter()
-                .map(|field| {
-                    Ok(vm.interner.write().unwrap().intern(gc, field.as_ref())?)
-                })
+                .map(|field| Ok(interner.intern(gc, field.as_ref())?))
                 .collect::<Result<_>>()
         })
         .collect();
@@ -503,10 +503,8 @@ impl GlobalVmState {
     }
 
     pub fn intern(&self, s: &str) -> Result<InternedStr> {
-        self.interner
-            .write()
-            .unwrap()
-            .intern(&mut *self.gc.lock().unwrap(), s)
+        let mut gc = self.gc.lock().unwrap();
+        self.interner.write().unwrap().intern(&mut *gc, s)
     }
 
     /// Returns a borrowed structure which implements `CompilerEnv`
