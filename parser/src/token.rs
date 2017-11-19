@@ -461,10 +461,17 @@ impl<'input> Tokenizer<'input> {
             }
             Some((end, 'b')) => {
                 self.bump(); // Skip 'b'
-                if let Ok(val) = int.parse() {
-                    (start, end.shift('b'), Token::ByteLiteral(val))
-                } else {
-                    return self.error(start, NonParseableInt);
+                match self.lookahead {
+                    Some((pos, ch)) if is_ident_start(ch) => {
+                        return self.error(pos, UnexpectedChar(ch))
+                    }
+                    _ => {
+                        if let Ok(val) = int.parse() {
+                            (start, end.shift('b'), Token::ByteLiteral(val))
+                        } else {
+                            return self.error(start, NonParseableInt);
+                        }
+                    }
                 }
             }
             Some((start, ch)) if is_ident_start(ch) => return self.error(start, UnexpectedChar(ch)),
@@ -918,6 +925,14 @@ mod test {
                 (r#"   ~~~~    "#, ByteLiteral(255)),
                 (r#"        ~~~"#, ByteLiteral(45)),
             ],
+        );
+    }
+
+    #[test]
+    fn byte_literals_unexpected_char() {
+        assert_eq!(
+            tokenizer(r#"3bs"#).last(),
+            Some(error(loc(2), UnexpectedChar('s')))
         );
     }
 
