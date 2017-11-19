@@ -426,7 +426,14 @@ impl<'input> Tokenizer<'input> {
             Some((_, '.')) => {
                 self.bump(); // Skip '.'
                 let (end, float) = self.take_while(start, is_digit);
-                (start, end, Token::FloatLiteral(float.parse().unwrap()))
+                match self.lookahead {
+                    Some((_, ch)) if is_ident_start(ch) => {
+                        return self.error(end, UnexpectedChar(ch))
+                    }
+                    _ => {
+                        (start, end, Token::FloatLiteral(float.parse().unwrap()))
+                    }
+                }
             }
             Some((end, 'x')) => {
                 self.bump(); // Skip 'x'
@@ -923,6 +930,14 @@ mod test {
                 (r#"        ~~~~~~     "#, FloatLiteral(1036.2)),
                 (r#"               ~~~~"#, FloatLiteral(-0.0)),
             ],
+        );
+    }
+
+    #[test]
+    fn float_literals_unexpected_char() {
+        assert_eq!(
+            tokenizer(r#"12.3a"#).last(),
+            Some(error(loc(4), UnexpectedChar('a')))
         );
     }
 
