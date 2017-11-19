@@ -139,11 +139,11 @@ quick_error! {
         HexLiteralUnderflow {
             description("cannot parse hex literal, underflow")
         }
-        HexLiteralInvalid {
-            description("cannot parse hex literal, invalid digit")
-        }
         HexLiteralWrongPrefix {
             description("wrong hex literal prefix, should start as '0x' or '-0x'")
+        }
+        HexLiteralIncomplete {
+            description("cannot parse hex literal, incomplete")
         }
     }
 }
@@ -433,15 +433,23 @@ impl<'input> Tokenizer<'input> {
                 let (end, hex) = self.take_while(end.shift('x'), is_hex);
                 match int {
                     "0" | "-0" => {
-                        let is_positive = int == "0";
-                        match i64_from_hex(hex, is_positive) {
-                            Ok(val) => (start, end, Token::IntLiteral(val)),
-                            Err(err) => return self.error(start, err),
+                        match self.lookahead {
+                            Some((_, ch)) if is_ident_start(ch) => {
+                                return self.error(end, UnexpectedChar(ch))
+                            }
+                            _ => {
+                                if hex.is_empty() {
+                                    return self.error(start, HexLiteralIncomplete);
+                                }
+                                let is_positive = int == "0";
+                                match i64_from_hex(hex, is_positive) {
+                                    Ok(val) => (start, end, Token::IntLiteral(val)),
+                                    Err(err) => return self.error(start, err),
+                                }
+                            }
                         }
                     }
-                    _ => {
-                        return  self.error(start, HexLiteralWrongPrefix);
-                    }
+                    _ => return self.error(start, HexLiteralWrongPrefix),
                 }
             }
             Some((end, 'b')) => {
@@ -453,11 +461,13 @@ impl<'input> Tokenizer<'input> {
                 }
             }
             Some((start, ch)) if is_ident_start(ch) => return self.error(start, UnexpectedChar(ch)),
-            None | Some(_) => if let Ok(val) = int.parse() {
-                (start, end, Token::IntLiteral(val))
-            } else {
-                return self.error(start, NonParseableInt);
-            },
+            None | Some(_) => {
+                if let Ok(val) = int.parse() {
+                    (start, end, Token::IntLiteral(val))
+                } else {
+                    return self.error(start, NonParseableInt);
+                }
+            }
         };
 
         Ok(pos::spanned2(start, end, token))
@@ -552,39 +562,20 @@ impl<'input> Iterator for Tokenizer<'input> {
 ///
 /// This is basically a copy and adaptation of `std::num::from_str_radix`.
 fn i64_from_hex(hex: &str, is_positive: bool) -> Result<i64, Error> {
-    let radix = 16;
+    const RADIX: u32 = 16;
     let digits = hex.as_bytes();
+    let sign: i64 = if is_positive { 1 } else { -1 };
     let mut result = 0i64;
-    if is_positive {
-        for &c in digits {
-            let x = match (c as char).to_digit(radix) {
-                Some(x) => x,
-                None => return Err(HexLiteralInvalid),
-            };
-            result = match result.checked_mul(radix as i64) {
-                Some(result) => result,
-                None => return Err(HexLiteralOverflow),
-            };
-            result = match result.checked_add(x as i64) {
-                Some(result) => result,
-                None => return Err(HexLiteralOverflow),
-            };
-        }
-    } else {
-        for &c in digits {
-            let x = match (c as char).to_digit(radix) {
-                Some(x) => x,
-                None => return Err(HexLiteralInvalid),
-            };
-            result = match result.checked_mul(radix as i64) {
-                Some(result) => result,
-                None => return Err(HexLiteralUnderflow),
-            };
-            result = match result.checked_sub(x as i64) {
-                Some(result) => result,
-                None => return Err(HexLiteralUnderflow),
-            };
-        }
+    for &c in digits {
+        let x = (c as char).to_digit(RADIX).expect("valid hex literal");
+        result = result
+            .checked_mul(RADIX as i64)
+            .and_then(|result| result.checked_add((x as i64) * sign))
+            .ok_or_else(|| if is_positive {
+                HexLiteralOverflow
+            } else {
+                HexLiteralUnderflow
+            })?;
     }
     Ok(result)
 }
@@ -612,9 +603,7 @@ mod test {
         input: &'input str,
     ) -> Box<Iterator<Item = Result<SpannedToken<'input>, SpError>> + 'input> where {
         Box::new(Tokenizer::new(input).take_while(|token| match *token {
-            Ok(Spanned {
-                value: Token::EOF, ..
-            }) => false,
+            Ok(Spanned { value: Token::EOF, .. }) => false,
             _ => true,
         }))
     }
@@ -828,14 +817,13 @@ mod test {
     #[test]
     fn hex_literals() {
         test(
-            r#"0x1f 0xf 0x123 0x001 -0xA 0x"#,
+            r#"0x1f 0xf 0x123 0x001 -0xA"#,
             vec![
-                (r#"~~~~                   "#, IntLiteral(31)),
-                (r#"    ~~~                "#, IntLiteral(15)),
-                (r#"       ~~~~~           "#, IntLiteral(291)),
-                (r#"            ~~~~~      "#, IntLiteral(1)),
-                (r#"                 ~~~~  "#, IntLiteral(-10)),
-                (r#"                     ~~"#, IntLiteral(0)),
+                (r#"~~~~                 "#, IntLiteral(31)),
+                (r#"    ~~~              "#, IntLiteral(15)),
+                (r#"       ~~~~~         "#, IntLiteral(291)),
+                (r#"            ~~~~~    "#, IntLiteral(1)),
+                (r#"                 ~~~~"#, IntLiteral(-10)),
             ]
         )
     }
@@ -861,6 +849,37 @@ mod test {
         assert_eq!(
             tokenizer(r#"-0x8000000000000001"#).last(),
             Some(error(loc(0), HexLiteralUnderflow))
+        );
+    }
+
+    #[test]
+    fn hex_literals_incomplete() {
+        assert_eq!(
+            tokenizer(r#"0x"#).last(),
+            Some(error(loc(0), HexLiteralIncomplete))
+        );
+
+        assert_eq!(
+            tokenizer(r#"0x "#).last(),
+            Some(error(loc(0), HexLiteralIncomplete))
+        );
+    }
+
+    #[test]
+    fn hex_literals_unexpected_char() {
+        assert_eq!(
+            tokenizer(r#"0x1q"#).last(),
+            Some(error(loc(3), UnexpectedChar('q')))
+        );
+
+        assert_eq!(
+            tokenizer(r#"0xff_"#).last(),
+            Some(error(loc(4), UnexpectedChar('_')))
+        );
+
+        assert_eq!(
+            tokenizer(r#"0xx"#).last(),
+            Some(error(loc(2), UnexpectedChar('x')))
         );
     }
 
