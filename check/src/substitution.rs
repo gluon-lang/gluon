@@ -109,9 +109,9 @@ pub trait Substitutable: Sized {
     fn from_variable(x: Self::Variable) -> Self;
     /// Retrieves the variable if `self` is a variable otherwise returns `None`
     fn get_var(&self) -> Option<&Self::Variable>;
-    fn traverse<F>(&self, f: &mut F)
+    fn traverse<'a, F>(&'a self, f: &mut F)
     where
-        F: Walker<Self>;
+        F: Walker<'a, Self>;
     fn instantiate(
         &self,
         subs: &Substitution<Self>,
@@ -132,11 +132,11 @@ where
         var: &'a T::Variable,
         subs: &'a Substitution<T>,
     }
-    impl<'a, T> Walker<T> for Occurs<'a, T>
+    impl<'a, 't, T> Walker<'t, T> for Occurs<'a, T>
     where
         T: Substitutable,
     {
-        fn walk(&mut self, typ: &T) {
+        fn walk(&mut self, typ: &'t T) {
             if self.occurs {
                 return;
             }
@@ -325,10 +325,12 @@ impl<T: Substitutable> Substitution<T> {
             return None;
         }
         let index = union.find(var as usize) as u32;
-        self.types.get(&index).or_else(|| if var == index {
-            None
-        } else {
-            Some(&self.variables[index as usize])
+        self.types.get(&index).or_else(|| {
+            if var == index {
+                None
+            } else {
+                Some(&self.variables[index as usize])
+            }
         })
     }
 
@@ -409,8 +411,8 @@ impl Substitution<ArcType> {
                     .map(|(param, var)| (param.id.clone(), var.clone()))
                     .collect();
                 let typ = typ.instantiate_generics(&mut named_variables);
-                self.set_type_(&typ)
-                    .map(|typ| if params.len() != named_variables.len() {
+                self.set_type_(&typ).map(|typ| {
+                    if params.len() != named_variables.len() {
                         let mut new_params = Vec::new();
                         let mut new_vars = Vec::new();
                         for (param, var) in params.iter().zip(vars) {
@@ -422,7 +424,8 @@ impl Substitution<ArcType> {
                         ArcType::from(Type::Forall(new_params, typ, Some(new_vars)))
                     } else {
                         typ
-                    })
+                    }
+                })
             }
             Type::Variable(_) => {
                 let replacement = self.replace_variable_(typ);

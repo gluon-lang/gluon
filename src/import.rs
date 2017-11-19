@@ -219,8 +219,9 @@ impl<I> Import<I> {
     where
         I: Importer,
     {
-        let modulename = module_id.declared_name();
         use compiler_pipeline::*;
+
+        let modulename = module_id.name().as_str();
         let mut filename = modulename.replace(".", "/");
         filename.push_str(".glu");
 

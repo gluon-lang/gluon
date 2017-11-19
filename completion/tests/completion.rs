@@ -1,5 +1,6 @@
 #[macro_use]
 extern crate collect_mac;
+extern crate either;
 extern crate env_logger;
 
 extern crate gluon_base as base;
@@ -7,9 +8,12 @@ extern crate gluon_check as check;
 extern crate gluon_completion as completion;
 extern crate gluon_parser as parser;
 
+use either::Either;
+
 use base::metadata::Metadata;
 use base::pos::{self, BytePos, Span};
 use base::types::{ArcType, Field, Type};
+use base::source::Source;
 use completion::Suggestion;
 
 mod support;
@@ -43,6 +47,16 @@ fn suggest_types(s: &str, pos: BytePos) -> Result<Vec<Suggestion>, ()> {
     let mut vec = completion::suggest(&env, &mut expr, pos);
     vec.sort_by(|l, r| l.name.cmp(&r.name));
     Ok(vec)
+}
+
+fn suggest_loc(s: &str, row: usize, column: usize) -> Result<Vec<String>, ()> {
+    suggest(
+        s,
+        Source::new(s)
+            .lines()
+            .offset(row.into(), column.into())
+            .expect("Position is in source"),
+    )
 }
 
 fn suggest(s: &str, pos: BytePos) -> Result<Vec<String>, ()> {
@@ -439,7 +453,7 @@ a
     let expected = Ok(vec![
         Suggestion {
             name: "aa".into(),
-            typ: Type::int(),
+            typ: Either::Right(Type::int()),
         },
     ]);
 
@@ -526,7 +540,7 @@ type Test = | A Int | B Int String
 match A 3 with
 | //
 "#;
-    let result = suggest(text, BytePos::from(53));
+    let result = suggest_loc(text, 3, 1);
     let expected = Ok(vec!["A".into(), "B".into()]);
 
     assert_eq!(result, expected);
@@ -543,6 +557,66 @@ match A 3 with
 "#;
     let result = suggest(text, BytePos::from(55));
     let expected = Ok(vec!["BC".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_in_type_binding() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Test = Int
+type Abc = Te
+()
+"#;
+    let result = suggest_loc(text, 2, 13);
+    let expected = Ok(vec!["Test".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_type_variable_in_type_binding() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Test a b ab = { x : a, y : b, z: ab }
+()
+"#;
+    let result = suggest_loc(text, 1, 26);
+    let expected = Ok(vec!["a".into(), "ab".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_in_type_of_let_binding() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Test = Int
+type Abc = Te
+let x: T = 1
+()
+"#;
+    let result = suggest_loc(text, 3, 8);
+    let expected = Ok(vec!["Test".into()]);
+
+    assert_eq!(result, expected);
+}
+
+
+#[test]
+fn suggest_from_forall_params() {
+    let _ = env_logger::init();
+
+    let text = r#"
+let f x _ : forall abc b . a -> b -> abc = x
+()
+"#;
+    let result = suggest_loc(text, 1, 28);
+    let expected = Ok(vec!["abc".into()]);
 
     assert_eq!(result, expected);
 }

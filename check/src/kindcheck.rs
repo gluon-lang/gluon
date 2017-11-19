@@ -1,19 +1,21 @@
 use std::fmt;
 use std::result::Result as StdResult;
 
-use base::ast;
+use base::ast::{self, AstType};
 use base::fnv::FnvMap;
 use base::kind::{self, ArcKind, Kind, KindCache, KindEnv};
 use base::merge;
 use base::symbol::Symbol;
-use base::types::{self, AppVec, ArcType, BuiltinType, Field, Generic, Type, Walker};
+use base::types::{self, BuiltinType, Generic, Type, Walker};
+use base::pos::{self, BytePos, HasSpan, Span, Spanned};
 
 use substitution::{Constraints, Substitutable, Substitution};
 use unify::{self, Error as UnifyError, Unifiable, Unifier, UnifierState};
 
 pub type Error<I> = UnifyError<ArcKind, KindError<I>>;
+pub type SpannedError<I> = Spanned<Error<I>, BytePos>;
 
-pub type Result<T> = StdResult<T, Error<Symbol>>;
+pub type Result<T> = StdResult<T, SpannedError<Symbol>>;
 
 
 /// Struct containing methods for kindchecking types
@@ -120,7 +122,7 @@ impl<'a> KindCheck<'a> {
         *kind = self.subs.new_var();
     }
 
-    fn find(&mut self, id: &Symbol) -> Result<ArcKind> {
+    fn find(&mut self, span: Span<BytePos>, id: &Symbol) -> Result<ArcKind> {
         let kind = self.variables
             .iter()
             .find(|var| var.id == *id)
@@ -147,20 +149,24 @@ impl<'a> KindCheck<'a> {
             debug!("Find kind: {} => {}", self.idents.string(&id), kind);
         }
 
-        kind
+        kind.map_err(|err| pos::spanned(span, err))
     }
 
     // Kindhecks `typ`, infering it to be of kind `Type`
-    pub fn kindcheck_type(&mut self, typ: &mut ArcType) -> Result<ArcKind> {
+    pub fn kindcheck_type(&mut self, typ: &mut AstType<Symbol>) -> Result<ArcKind> {
         let type_kind = self.type_kind();
         self.kindcheck_expected(typ, &type_kind)
     }
 
-    pub fn kindcheck_expected(&mut self, typ: &mut ArcType, expected: &ArcKind) -> Result<ArcKind> {
+    pub fn kindcheck_expected(
+        &mut self,
+        typ: &mut AstType<Symbol>,
+        expected: &ArcKind,
+    ) -> Result<ArcKind> {
         debug!("Kindcheck {}", typ);
-        let (kind, t) = self.kindcheck(typ)?;
-        let kind = self.unify(expected, kind)?;
-        *typ = self.finalize_type(t);
+        let kind = self.kindcheck(typ)?;
+        let kind = self.unify(typ.span(), expected, kind)?;
+        self.finalize_type(typ);
         debug!("Done {}", typ);
         Ok(kind)
     }
@@ -177,105 +183,96 @@ impl<'a> KindCheck<'a> {
         }
     }
 
-    fn kindcheck(&mut self, typ: &ArcType) -> Result<(ArcKind, ArcType)> {
+    fn kindcheck(&mut self, typ: &mut AstType<Symbol>) -> Result<ArcKind> {
+        let span = typ.span();
         match **typ {
-            Type::Hole | Type::Opaque | Type::Variable(_) => Ok((self.subs.new_var(), typ.clone())),
-            Type::Skolem(ref skolem) => {
-                let mut skolem = skolem.clone();
-                skolem.kind = self.find(&skolem.name)?;
-                Ok((skolem.kind.clone(), Type::skolem(skolem)))
+            Type::Hole | Type::Opaque | Type::Variable(_) => Ok(self.subs.new_var()),
+            Type::Skolem(ref mut skolem) => {
+                skolem.kind = self.find(span, &skolem.name)?;
+                Ok(skolem.kind.clone())
             }
-            Type::Generic(ref gen) => {
-                let mut gen = gen.clone();
-                gen.kind = self.find(&gen.id)?;
-                Ok((gen.kind.clone(), Type::generic(gen)))
+            Type::Generic(ref mut gen) => {
+                gen.kind = self.find(span, &gen.id)?;
+                Ok(gen.kind.clone())
             }
-            Type::Builtin(builtin_typ) => Ok((self.builtin_kind(builtin_typ), typ.clone())),
-            Type::Forall(ref params, ref typ, ref vars) => {
-                let mut params = params.clone();
-                for param in &mut params {
+            Type::Builtin(builtin_typ) => Ok(self.builtin_kind(builtin_typ)),
+            Type::Forall(ref mut params, ref mut typ, _) => {
+                for param in &mut *params {
                     param.kind = self.subs.new_var();
                     self.locals.push((param.id.clone(), param.kind.clone()));
                 }
-                let (ret_kind, ret_typ) = self.kindcheck(typ)?;
+                let ret_kind = self.kindcheck(typ)?;
 
                 let offset = self.locals.len() - params.len();
                 self.locals.drain(offset..);
 
-                Ok((
-                    ret_kind,
-                    Type::forall_with_vars(params, ret_typ.clone(), vars.clone()),
-                ))
+                Ok(ret_kind)
             }
-            Type::App(ref ctor, ref args) => {
-                let (mut kind, ctor) = self.kindcheck(ctor)?;
-                let mut new_args = AppVec::new();
+            Type::App(ref mut ctor, ref mut args) => {
+                let mut kind = self.kindcheck(ctor)?;
                 for arg in args {
                     let f = Kind::function(self.subs.new_var(), self.subs.new_var());
-                    kind = self.unify(&f, kind)?;
+                    kind = self.unify(arg.span(), &f, kind)?;
                     kind = match *kind {
                         Kind::Function(ref arg_kind, ref ret) => {
-                            let (actual, new_arg) = self.kindcheck(arg)?;
-                            new_args.push(new_arg);
-                            self.unify(arg_kind, actual)?;
+                            let actual = self.kindcheck(arg)?;
+                            self.unify(arg.span(), arg_kind, actual)?;
                             ret.clone()
                         }
                         _ => {
-                            return Err(UnifyError::TypeMismatch(
-                                self.function1_kind(),
-                                kind.clone(),
+                            return Err(pos::spanned(
+                                arg.span(),
+                                UnifyError::TypeMismatch(self.function1_kind(), kind.clone()),
                             ))
                         }
                     };
                 }
-                Ok((kind, Type::app(ctor, new_args)))
+                Ok(kind)
             }
-            Type::Variant(ref row) => {
-                let row: Result<_> = row.row_iter()
-                    .map(|field| {
-                        let (kind, typ) = self.kindcheck(&field.typ)?;
-                        let type_kind = self.type_kind();
-                        self.unify(&type_kind, kind)?;
-                        Ok(Field::new(field.name.clone(), typ))
-                    })
-                    .collect();
+            Type::Variant(ref mut row) => {
+                for field in types::row_iter_mut(row) {
+                    let kind = self.kindcheck(&mut field.typ)?;
+                    let type_kind = self.type_kind();
+                    self.unify(field.typ.span(), &type_kind, kind)?;
+                }
 
-                Ok((self.type_kind(), Type::variant(row?)))
+                Ok(self.type_kind())
             }
-            Type::Record(ref row) => {
-                let (kind, row) = self.kindcheck(row)?;
+            Type::Record(ref mut row) => {
+                let kind = self.kindcheck(row)?;
                 let row_kind = self.row_kind();
-                self.unify(&row_kind, kind)?;
-                Ok((self.type_kind(), ArcType::from(Type::Record(row))))
+                self.unify(span, &row_kind, kind)?;
+                Ok(self.type_kind())
             }
             Type::ExtendRow {
-                ref types,
-                ref fields,
-                ref rest,
+                types: _,
+                ref mut fields,
+                ref mut rest,
             } => {
-                let fields: Result<_> = fields
-                    .iter()
-                    .map(|field| {
-                        let (kind, typ) = self.kindcheck(&field.typ)?;
-                        let type_kind = self.type_kind();
-                        self.unify(&type_kind, kind)?;
-                        Ok(Field::new(field.name.clone(), typ))
-                    })
-                    .collect();
+                for field in fields {
+                    let kind = self.kindcheck(&mut field.typ)?;
+                    let type_kind = self.type_kind();
+                    self.unify(field.typ.span(), &type_kind, kind)?;
+                }
 
-                let (kind, rest) = self.kindcheck(rest)?;
+                let kind = self.kindcheck(rest)?;
                 let row_kind = self.row_kind();
-                self.unify(&row_kind, kind)?;
+                self.unify(rest.span(), &row_kind, kind)?;
 
-                Ok((row_kind, Type::extend_row(types.clone(), fields?, rest)))
+                Ok(row_kind)
             }
-            Type::EmptyRow => Ok((self.row_kind(), typ.clone())),
-            Type::Ident(ref id) => self.find(id).map(|kind| (kind, typ.clone())),
-            Type::Alias(ref alias) => self.find(&alias.name).map(|kind| (kind, typ.clone())),
+            Type::EmptyRow => Ok(self.row_kind()),
+            Type::Ident(ref id) => self.find(span, id),
+            Type::Alias(ref alias) => self.find(span, &alias.name),
         }
     }
 
-    fn unify(&mut self, expected: &ArcKind, mut actual: ArcKind) -> Result<ArcKind> {
+    fn unify(
+        &mut self,
+        span: Span<BytePos>,
+        expected: &ArcKind,
+        mut actual: ArcKind,
+    ) -> Result<ArcKind> {
         debug!("Unify {:?} <=> {:?}", expected, actual);
         let result = unify::unify(&self.subs, (), expected, &actual);
         match result {
@@ -284,33 +281,26 @@ impl<'a> KindCheck<'a> {
                 let mut expected = expected.clone();
                 expected = update_kind(&self.subs, expected, None);
                 actual = update_kind(&self.subs, actual, None);
-                Err(UnifyError::TypeMismatch(expected, actual))
+                Err(pos::spanned(
+                    span,
+                    UnifyError::TypeMismatch(expected, actual),
+                ))
             }
         }
     }
 
-    pub fn finalize_type(&self, typ: ArcType) -> ArcType {
+    pub fn finalize_type(&self, typ: &mut AstType<Symbol>) {
         let default = Some(&self.kind_cache.typ);
-        types::walk_move_type(typ, &mut |typ| match **typ {
-            Type::Variable(ref var) => {
-                let mut kind = var.kind.clone();
-                kind = update_kind(&self.subs, kind, default);
-                Some(Type::variable(types::TypeVariable {
-                    id: var.id,
-                    kind: kind,
-                }))
+        types::walk_type_mut(typ, &mut |typ: &mut AstType<Symbol>| match **typ {
+            Type::Variable(ref mut var) => {
+                var.kind = update_kind(&self.subs, var.kind.clone(), default);
             }
-            Type::Generic(ref var) => Some(Type::generic(self.finalize_generic(var))),
-            Type::Forall(ref params, ref typ, ref vars) => Some(Type::forall_with_vars(
-                params
-                    .iter()
-                    .map(|param| self.finalize_generic(&param))
-                    .collect(),
-                typ.clone(),
-                vars.clone(),
-            )),
-            _ => None,
-        })
+            Type::Generic(ref mut var) => *var = self.finalize_generic(var),
+            Type::Forall(ref mut params, _, _) => for param in params {
+                *param = self.finalize_generic(&param);
+            },
+            _ => (),
+        });
     }
     pub fn finalize_generic(&self, var: &Generic<Symbol>) -> Generic<Symbol> {
         let mut kind = var.kind.clone();
@@ -378,9 +368,9 @@ impl Substitutable for ArcKind {
         }
     }
 
-    fn traverse<F>(&self, f: &mut F)
+    fn traverse<'a, F>(&'a self, f: &mut F)
     where
-        F: Walker<ArcKind>,
+        F: Walker<'a, ArcKind>,
     {
         kind::walk_kind(self, f);
     }

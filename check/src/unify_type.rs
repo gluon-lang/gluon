@@ -193,9 +193,9 @@ impl Substitutable for ArcType<Symbol> {
         }
     }
 
-    fn traverse<F>(&self, f: &mut F)
+    fn traverse<'a, F>(&'a self, f: &mut F)
     where
-        F: types::Walker<Self>,
+        F: types::Walker<'a, Self>,
     {
         types::walk_type_(self, f)
     }

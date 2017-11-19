@@ -1,11 +1,11 @@
 //! Module containing the types which make up `gluon`'s AST (Abstract Syntax Tree)
 use std::fmt;
 use std::marker::PhantomData;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
 use pos::{self, BytePos, HasSpan, Span, Spanned};
 use symbol::Symbol;
-use types::{self, Alias, AliasData, ArcType, Type, TypeEnv};
+use types::{self, Alias, AliasData, ArcType, Generic, Type, TypeEnv};
 
 pub trait DisplayEnv {
     type Ident;
@@ -67,6 +67,12 @@ impl<Id> Deref for AstType<Id> {
     }
 }
 
+impl<Id> DerefMut for AstType<Id> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self._typ.1.value
+    }
+}
+
 impl<Id: AsRef<str>> fmt::Display for AstType<Id> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", types::TypeFormatter::new(self))
@@ -118,6 +124,21 @@ impl<Id> AstType<Id> {
 
     pub fn into_inner(self) -> Type<Id, Self> {
         self._typ.1.value
+    }
+
+    pub fn params_mut(&mut self) -> &mut [Generic<Id>] {
+        match self._typ.1.value {
+            Type::Forall(ref mut params, _, _) => params,
+            Type::App(ref mut id, _) => id.params_mut(),
+            _ => &mut [],
+        }
+    }
+
+    pub fn remove_single_forall(&mut self) -> &mut AstType<Id> {
+        match self._typ.1.value {
+            Type::Forall(_, ref mut typ, _) => return typ,
+            _ => self,
+        }
     }
 }
 

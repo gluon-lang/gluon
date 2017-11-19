@@ -11,6 +11,8 @@ repository = "https://github.com/gluon-lang/gluon"
 documentation = "https://docs.rs/gluon"
 
 [dependencies]
+either = "1.0.0"
+
 gluon_base = { path = "../base", version = "0.6.2" } # GLUON
 
 [dev-dependencies]
