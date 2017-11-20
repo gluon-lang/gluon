@@ -372,10 +372,13 @@ impl Traverseable for RootedThread {
 impl RootedThread {
     /// Creates a new virtual machine with an empty global environment
     pub fn new() -> RootedThread {
+        let mut global_state = GlobalVmState::new();
         let thread = Thread {
-            global_state: Arc::new(GlobalVmState::new()),
             parent: None,
-            context: Mutex::new(Context::new(Gc::new(Generation::default(), usize::MAX))),
+            context: Mutex::new(Context::new(
+                global_state.gc.get_mut().unwrap().new_child_gc(),
+            )),
+            global_state: Arc::new(global_state),
             roots: RwLock::new(Vec::new()),
             rooted_values: RwLock::new(Vec::new()),
             child_threads: RwLock::new(Vec::new()),

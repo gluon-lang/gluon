@@ -1196,12 +1196,19 @@ impl<'t> Cloner<'t> {
             )
         }
     }
-    fn deep_clone_data(&mut self, data: GcPtr<DataStruct>) -> Result<GcPtr<DataStruct>> {
-        let result = self.deep_clone_ptr(data, |gc, data| {
-            let ptr = gc.alloc(Def {
-                tag: data.tag,
-                elems: &data.fields,
-            })?;
+    fn deep_clone_data(&mut self, data_ptr: GcPtr<DataStruct>) -> Result<GcPtr<DataStruct>> {
+        let result = self.deep_clone_ptr(data_ptr, |gc, data| {
+            let ptr = if data.is_record() {
+                gc.alloc(RecordDef {
+                    fields: data_ptr.field_names(),
+                    elems: &data.fields,
+                })?
+            } else {
+                gc.alloc(Def {
+                    tag: data.tag,
+                    elems: &data.fields,
+                })?
+            };
             Ok((Value::Data(ptr), ptr))
         })?;
         match result {
@@ -1210,7 +1217,7 @@ impl<'t> Cloner<'t> {
             Err(mut new_data) => {
                 {
                     let new_fields = unsafe { &mut new_data.as_mut().fields };
-                    for (new, old) in new_fields.iter_mut().zip(&data.fields) {
+                    for (new, old) in new_fields.iter_mut().zip(&data_ptr.fields) {
                         *new = self.deep_clone(*old)?;
                     }
                 }
@@ -1267,6 +1274,8 @@ impl<'t> Cloner<'t> {
 
     fn deep_clone_closure(&mut self, data: GcPtr<ClosureData>) -> Result<GcPtr<ClosureData>> {
         let result = self.deep_clone_ptr(data, |gc, data| {
+            debug_assert!(data.function.generation().is_root());
+
             let ptr = gc.alloc(ClosureDataDef(data.function, &data.upvars))?;
             Ok((Closure(ptr), ptr))
         })?;
@@ -1288,8 +1297,15 @@ impl<'t> Cloner<'t> {
         &mut self,
         data: GcPtr<PartialApplicationData>,
     ) -> Result<GcPtr<PartialApplicationData>> {
+        let function = match data.function {
+            Callable::Closure(closure) => Callable::Closure(self.deep_clone_closure(closure)?),
+            Callable::Extern(ext) => {
+                Callable::Extern(self.gc.alloc(Move(ExternFunction::clone(&ext)))?)
+            }
+        };
+
         let result = self.deep_clone_ptr(data, |gc, data| {
-            let ptr = gc.alloc(PartialApplicationDataDef(data.function, &data.args))?;
+            let ptr = gc.alloc(PartialApplicationDataDef(function, &data.args))?;
             Ok((PartialApplication(ptr), ptr))
         })?;
         match result {

@@ -410,7 +410,7 @@ impl<T: ?Sized> GcPtr<T> {
         unsafe { &(*self.header().type_info).fields }
     }
 
-    pub fn fields(&self) -> &Arc<Vec<InternedStr>> {
+    pub fn field_names(&self) -> &Arc<Vec<InternedStr>> {
         unsafe { &(*self.header().type_info).fields_key }
     }
 
@@ -601,6 +601,10 @@ impl Gc {
             record_infos: FnvMap::default(),
             generation: generation,
         }
+    }
+
+    pub fn allocated_memory(&self) -> usize {
+        self.allocated_memory
     }
 
     pub fn set_memory_limit(&mut self, memory_limit: usize) {

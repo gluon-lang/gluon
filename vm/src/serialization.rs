@@ -212,7 +212,7 @@ pub mod gc {
             S: Serializer,
         {
             let tag = if self.is_record() {
-                let fields = unsafe { GcPtr::from_raw(self).fields().clone() };
+                let fields = unsafe { GcPtr::from_raw(self).field_names().clone() };
                 DataTag::Record(fields)
             } else {
                 DataTag::Data(self.tag())
