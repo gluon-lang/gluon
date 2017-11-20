@@ -1,6 +1,6 @@
 use std::ops::{Deref, DerefMut};
 use interner::InternedStr;
-use base::ast::{DisplayEnv, Literal, SpannedExpr, Typed, TypedIdent};
+use base::ast::{DisplayEnv, Literal, Typed, TypedIdent};
 use base::resolve;
 use base::kind::{ArcKind, KindEnv};
 use base::types::{self, Alias, ArcType, BuiltinType, RecordSelector, Type, TypeEnv};
@@ -520,16 +520,7 @@ impl<'a> Compiler<'a> {
 
     /// Compiles an expression to a zero argument function which can be directly fed to the
     /// interpreter
-    pub fn compile_expr(&mut self, expr: &SpannedExpr<Symbol>) -> Result<CompiledModule> {
-        let env = self.vm.get_env();
-        let translator = core::Translator::new(&*env);
-        let expr = {
-            let expr = translator.allocator.arena.alloc(translator.translate(expr));
-
-            debug!("Translation returned: {}", expr);
-
-            core::optimize::optimize(&translator.allocator, expr)
-        };
+    pub fn compile_expr(&mut self, expr: CExpr) -> Result<CompiledModule> {
         let mut env = FunctionEnvs::new();
         let id = self.empty_symbol.clone();
         let typ = expr.env_type_of(&self.globals);

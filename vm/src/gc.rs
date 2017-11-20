@@ -447,6 +447,12 @@ impl GcPtr<str> {
     }
 }
 
+pub trait CollectScope {
+    fn scope<F>(&self, gc: &mut Gc, f: F)
+    where
+        F: FnOnce(&mut Gc);
+}
+
 /// Trait which must be implemented on all root types which contain `GcPtr`
 /// A type implementing Traverseable must call traverse on each of its fields
 /// which in turn contains `GcPtr`
@@ -582,6 +588,7 @@ where
     }
 }
 
+
 impl Gc {
     /// Constructs a new garbage collector
     pub fn new(generation: Generation, memory_limit: usize) -> Gc {
@@ -614,11 +621,35 @@ impl Gc {
     /// Unsafe since `roots` must be able to traverse all accesible `GcPtr` values.
     pub unsafe fn alloc_and_collect<R, D>(&mut self, roots: R, def: D) -> Result<GcPtr<D::Value>>
     where
-        R: Traverseable,
+        R: Traverseable + CollectScope,
         D: DataDef + Traverseable,
         D::Value: Sized + Any,
     {
-        self.check_collect((roots, &def));
+        struct Scope1<A, B>(A, B);
+
+        impl<A, B> Traverseable for Scope1<A, B>
+        where
+            A: Traverseable,
+            B: Traverseable,
+        {
+            fn traverse(&self, gc: &mut Gc) {
+                (&self.0, &self.1).traverse(gc);
+            }
+        }
+
+        impl<A, B> CollectScope for Scope1<A, B>
+        where
+            A: CollectScope,
+        {
+            fn scope<F>(&self, gc: &mut Gc, f: F)
+            where
+                F: FnOnce(&mut Gc),
+            {
+                self.0.scope(gc, f)
+            }
+        }
+
+        self.check_collect(Scope1(roots, &def));
         self.alloc(def)
     }
 
@@ -700,7 +731,7 @@ impl Gc {
 
     pub unsafe fn check_collect<R>(&mut self, roots: R) -> bool
     where
-        R: Traverseable,
+        R: Traverseable + CollectScope,
     {
         if self.allocated_memory >= self.collect_limit {
             self.collect(roots);
@@ -714,12 +745,14 @@ impl Gc {
     /// roots need to cover all reachable object.
     pub unsafe fn collect<R>(&mut self, roots: R)
     where
-        R: Traverseable,
+        R: Traverseable + CollectScope,
     {
         info!("Start collect {:?}", self.generation);
-        roots.traverse(self);
-        self.sweep();
-        self.collect_limit = 2 * self.allocated_memory;
+        roots.scope(self, |self_| {
+            roots.traverse(self_);
+            self_.sweep();
+            self_.collect_limit = 2 * self_.allocated_memory;
+        })
     }
 
     /// Marks the GcPtr
@@ -738,7 +771,7 @@ impl Gc {
     /// Clears out any unmarked pointers and resets marked pointers.
     ///
     /// Unsafe as it is up to the caller to make sure that all reachable pointers have been marked
-    unsafe fn sweep(&mut self) {
+    pub unsafe fn sweep(&mut self) {
         fn moving<T>(t: T) -> T {
             t
         }
@@ -795,7 +828,7 @@ impl Gc {
 
 #[cfg(test)]
 mod tests {
-    use super::{DataDef, Gc, GcHeader, GcPtr, Generation, Move, Traverseable, WriteOnly};
+    use super::*;
     use std::fmt;
     use std::mem;
     use std::rc::Rc;
@@ -803,6 +836,26 @@ mod tests {
     use std::usize;
 
     use self::Value::*;
+
+    impl CollectScope for () {
+        fn scope<F>(&self, gc: &mut Gc, f: F)
+        where
+            F: FnOnce(&mut Gc),
+        {
+            f(gc)
+        }
+    }
+
+    impl<'a, T> CollectScope for &'a mut [T] {
+        fn scope<F>(&self, gc: &mut Gc, f: F)
+        where
+            F: FnOnce(&mut Gc),
+        {
+            f(gc)
+        }
+    }
+
+
 
     fn object_count(gc: &Gc) -> usize {
         let mut header: &GcHeader = match gc.values {

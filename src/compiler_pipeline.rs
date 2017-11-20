@@ -21,6 +21,7 @@ use base::source::Source;
 use base::symbol::{Name, NameBuf, Symbol, SymbolModule};
 use base::resolve;
 
+use vm::core;
 use vm::compiler::CompiledModule;
 use vm::future::{BoxFutureValue, FutureValue};
 use vm::macros::MacroExpander;
@@ -258,6 +259,19 @@ where
         debug!("Compile `{}`", filename);
         let mut module = {
             let env = thread.get_env();
+
+            let translator = core::Translator::new(&*env);
+            let expr = {
+                let expr = translator
+                    .allocator
+                    .arena
+                    .alloc(translator.translate(self.expr.borrow()));
+
+                debug!("Translation returned: {}", expr);
+
+                core::optimize::optimize(&translator.allocator, expr)
+            };
+
             let name = Name::new(filename);
             let name = NameBuf::from(name.module());
             let symbols = SymbolModule::new(
@@ -265,6 +279,7 @@ where
                 &mut compiler.symbols,
             );
             let source = Source::new(expr_str);
+
             let mut compiler = Compiler::new(
                 &*env,
                 thread.global_env(),
@@ -273,7 +288,7 @@ where
                 filename.to_string(),
                 compiler.emit_debug_info,
             );
-            compiler.compile_expr(self.expr.borrow())?
+            compiler.compile_expr(expr)?
         };
         module.function.id = Symbol::from(filename);
         Ok(CompileValue {

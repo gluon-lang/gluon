@@ -818,7 +818,7 @@ impl<'a> Typecheck<'a> {
                 Ok(TailCall::Type(array.typ.clone()))
             }
             Expr::Lambda(ref mut lambda) => {
-                let loc = format!("lambda:{}", expr.span.start);
+                let loc = format!("{}.lambda:{}", self.symbols.module(), expr.span.start);
                 lambda.id.name = self.symbols.symbol(loc);
                 let function_type = expected_type
                     .cloned()

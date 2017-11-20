@@ -72,6 +72,9 @@ serialization = ["serde", "serde_state", "serde_derive_state", "gluon_vm/seriali
 test = ["serialization", "gluon_vm/test", "gluon_check/test", "gluon_parser/test"]
 nightly = ["compiletest_rs"]
 
+[[test]]
+name = "main"
+harness = false
 
 [[bench]]
 name = "check"

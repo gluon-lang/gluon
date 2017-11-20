@@ -203,10 +203,57 @@ impl<'b> Traverseable for Roots<'b> {
         // Since this vm's stack is already borrowed in self we need to manually mark it to prevent
         // it from being traversed normally
         gc.mark(self.vm);
-        self.stack.get_values().traverse(gc);
+        self.stack.traverse(gc);
 
         // Traverse the vm's fields, avoiding the stack which is traversed above
         self.vm.traverse_fields_except_stack(gc);
+    }
+}
+
+impl<'b> ::gc::CollectScope for Roots<'b> {
+    fn scope<F>(&self, gc: &mut Gc, f: F)
+    where
+        F: FnOnce(&mut Gc),
+    {
+        // We need to pretend that the threads lives for longer than it does on the stack or we
+        // can't move the RwLockGuard into the vec. This does end up safe in the end because we
+        // never leak any lifetimes outside of this function
+        unsafe {
+            let mut stack: Vec<GcPtr<Thread>> = Vec::new();
+            let mut locks = Vec::new();
+
+            let child_threads = self.vm.child_threads.read().unwrap();
+            for child in &*child_threads {
+                Vec::push(&mut stack, *child);
+            }
+
+            while let Some(thread_ptr) = stack.pop() {
+                let thread = mem::transmute::<&Thread, &'static Thread>(&*thread_ptr);
+                let child_threads = thread.child_threads.read().unwrap();
+                for child in &*child_threads {
+                    Vec::push(&mut stack, *child);
+                }
+
+                let context = thread.context.lock().unwrap();
+
+                // Since we locked the context we need to scan the thread using `Roots` rather than
+                // letting it be scanned normally
+                Roots {
+                    vm: thread_ptr,
+                    stack: &context.stack,
+                }.traverse(gc);
+
+                Vec::push(&mut locks, (child_threads, context));
+            }
+
+            // Scan `self` sweep `gc`
+            f(gc);
+
+            // `sweep` all child gcs
+            for (_, mut context) in locks {
+                context.gc.sweep();
+            }
+        }
     }
 }
 
@@ -250,7 +297,7 @@ impl VmType for Thread {
 impl Traverseable for Thread {
     fn traverse(&self, gc: &mut Gc) {
         self.traverse_fields_except_stack(gc);
-        self.context.lock().unwrap().stack.get_values().traverse(gc);
+        self.context.lock().unwrap().stack.traverse(gc);
     }
 }
 
@@ -1146,7 +1193,7 @@ impl<'b> OwnedContext<'b> {
                         if context.stack.stack.get_frames().len() == 0 {
                             State::ReturnContext
                         } else {
-                            debug!(
+                            info!(
                                 "Continue with {}\nAt: {}/{}",
                                 closure.function.name,
                                 instruction_index,

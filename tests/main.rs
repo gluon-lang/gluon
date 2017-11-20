@@ -1,6 +1,7 @@
 extern crate env_logger;
 
 extern crate gluon;
+extern crate tensile;
 
 use gluon::vm::api::{Hole, OpaqueValue};
 use gluon::{new_vm, Compiler, Thread};
@@ -26,7 +27,6 @@ impl Error for StringError {
     }
 }
 
-#[test]
 fn main() {
     if let Err(err) = main_() {
         assert!(false, "{}", err);
@@ -62,33 +62,45 @@ fn main_() -> Result<(), Box<Error>> {
     Compiler::new()
         .load_file_async(&vm, "std/prelude.glu")
         .sync_or_error()?;
-    let mut text = String::new();
 
     let iter = test_files("tests/pass")?.into_iter().filter(|filename| {
         filter.map_or(true, |filter| filename.to_string_lossy().contains(filter))
     });
 
-    let mut compiler = Compiler::new();
+    let mut pass_tests = Vec::new();
+
     for filename in iter {
-        let mut file = File::open(&filename)?;
-        text.clear();
-        file.read_to_string(&mut text)?;
-        let name = filename.to_str().unwrap_or("<unknown>");
-        println!("test {}", name);
-        compiler
-            .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, name, &text)
-            .sync_or_error()?;
+        let name = filename.to_str().unwrap_or("<unknown>").to_owned();
+
+        let vm = vm.new_thread().unwrap();
+
+        pass_tests.push(tensile::test(name.clone(), move || -> Result<(), String> {
+            let mut compiler = Compiler::new();
+
+            let mut file = File::open(&filename).map_err(|err| err.to_string())?;
+            let mut text = String::new();
+            file.read_to_string(&mut text)
+                .map_err(|err| err.to_string())?;
+            compiler
+                .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, &name, &text)
+                .sync_or_error()
+                .map_err(|err| err.to_string())?;
+            Ok(())
+        }));
     }
 
     let iter = test_files("tests/fail")?.into_iter().filter(|filename| {
         filter.map_or(true, |filter| filename.to_string_lossy().contains(filter))
     });
+
+    let mut compiler = Compiler::new();
+    let mut text = String::new();
+
     for filename in iter {
         let mut file = File::open(&filename)?;
         text.clear();
         file.read_to_string(&mut text)?;
         let name = filename.to_str().unwrap_or("<unknown>");
-        println!("test {}", name);
         match compiler
             .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, name, &text)
             .sync_or_error()
@@ -102,8 +114,13 @@ fn main_() -> Result<(), Box<Error>> {
                     )).into(),
                 )
             }
-            Err(er) => println!("{}", er),
+            Err(_) => (),
         }
     }
+
+    tensile::console_runner(
+        tensile::group("main", vec![tensile::group("pass", pass_tests)]),
+        &tensile::Options::default().jobs(Some(2)),
+    ).unwrap();
     Ok(())
 }
