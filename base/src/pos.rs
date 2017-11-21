@@ -256,9 +256,9 @@ impl<T, Pos> Spanned<T, Pos> {
     }
 }
 
-impl<T: PartialEq, Pos> PartialEq for Spanned<T, Pos> {
+impl<T: PartialEq, Pos: PartialEq> PartialEq for Spanned<T, Pos> {
     fn eq(&self, other: &Spanned<T, Pos>) -> bool {
-        self.value == other.value
+        self.value == other.value && self.span == other.span
     }
 }
 
