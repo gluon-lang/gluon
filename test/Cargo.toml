@@ -1,0 +1,17 @@
+[package]
+name = "gluon_test"
+version = "0.1.0"
+authors = ["Markus Westerlind <marwes91@gmail.com>"]
+
+[dependencies]
+gluon = { path = ".." }
+
+env_logger = "0.3"
+tensile = { path = "../../tensile" }
+
+[features]
+test = ["gluon/test"]
+
+[[test]]
+name = "main"
+harness = false

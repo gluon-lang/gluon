@@ -10,6 +10,7 @@
   cargo test --features test --package gluon_vm &&
   cargo test --features test --package gluon_format &&
   cargo test --features test --package gluon &&
+  cargo test --features test --package gluon_test &&
   cargo test --features test --package gluon_repl &&
   cargo test --features test --package gluon_c-api &&
   cargo check --bench check --features test &&
