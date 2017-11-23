@@ -23,104 +23,16 @@ Gluon is a small, statically-typed, functional programming language designed for
 
 \* Parallel execution of gluon programs is a recent addition and may still have issues such as deadlocks.
 
-## Usage
-
-### Try online
-
-You can try gluon in your browser at the [try_gluon](http://52.28.135.57:8080/) server. ([Github](https://github.com/gluon-lang/try_gluon))
-
-### Installation
-
-#### Rust
-
-Gluon requires a recent Rust compiler to build (1.9.0 or later) and is available at [crates.io](https://crates.io/crates/gluon). It can easily be included in a Cargo project by adding the lines below.
-
-```toml
-[dependencies]
-gluon = "0.6.2"
-```
-
-#### Other languages
-Currently the easiest way to interact with the gluon virtual machine is through Rust but a rudimentary [C api][] exists which will be extended in the future to bring it closer to the Rust api.
-
-[C api]: https://github.com/gluon-lang/gluon/blob/master/c-api/src/lib.rs
-
-## Tools
-
-### REPL
-
-Gluon has a small executable which can be used to run gluon programs directly or in a small REPL. The REPL can be started by passing the `-i` flag to the built repl executable which can be run with `cargo run -- -i`.
-
-REPL features:
-* Evaluating expressions (expressions of type IO will be evaluated in the IO context).
-* Bind variables by writing `let <pattern> <identifier>* = <expr>` (omitting `in <expr>` from a normal let binding)
-    Example:
-
-         let f x = x + 1
-         let { x, y = z } = { x = 1, y = 2 }
-         f z
-
-* Printing help about available commands with `:h`
-* Loading files with `:l path_to_file` the result of evaluating the expression in the loaded file is stored in a variable named after the filename without an extension.
-* Checking the types of expressions with `:t expression`
-*   Printing information about a name with `:i name`.<br>
-    Example:
-
-        :i std.prelude.List
-        type std.prelude.List a = | Nil | Cons a (std.prelude.List a)
-        /// A linked list type
-
-* Tab-completion of identifiers and record fields
-    ![repl completion](http://i.imgur.com/IXLQFtV.gif)
-* Exit the REPL by writing `:q`
-
-### Language server
-
-Gluon has a [language server](https://github.com/gluon-lang/gluon_language-server) which provides code completion and formatting support. Installation is done with `cargo install gluon_language-server`.
-
-### Visual Studio Code Extension
-
-The [gluon extension][] for Visual Studio Code provides syntax highlighting and completion. To install it, search for `gluon` among the extensions. ([Github](https://github.com/gluon-lang/gluon_language-server)) 
-
-![example](http://i.imgur.com/44bH0ww.gif)
-
-[gluon extension]:https://marketplace.visualstudio.com/items?itemName=Marwes.gluon
-
-### Vim plugin
-
-[vim-gluon](https://github.com/salpalvv/vim-gluon) provides syntax highlighting and indentation.
-
-The gluon language server has been tested to work with https://github.com/autozimu/LanguageClient-neovim and https://github.com/prabirshrestha/vim-lsp. 
-
-#### Example configuration (autozimu/LanguageClient-neovim)
-```
-let g:LanguageClient_serverCommands = {
-    \ 'gluon': ['gluon_language-server'],
-    \ }
-
-" Automatically start language servers.
-let g:LanguageClient_autoStart = 1
-
-nnoremap <silent> K :call LanguageClient_textDocument_hover()<CR>
-nnoremap <silent> gd :call LanguageClient_textDocument_definition()<CR>
-```
-
-## Documentation
-
-[Tutorial (WIP)](https://github.com/gluon-lang/gluon/blob/master/TUTORIAL.md)
-
-[Rustdoc](https://docs.rs/gluon/*/gluon/index.html)
-
 ## Examples
 
-## Hello world
+### Hello world
 
 ```f#,rust
 let io = import! std.io
 io.print "Hello world!"
 ```
 
-## Factorial
+### Factorial
 
 ```f#,rust
 let factorial n : Int -> Int =
@@ -191,9 +103,98 @@ else
     io.print "Hello world!"
 ```
 
+## Getting started
+
+### Try online
+
+You can try gluon in your browser at the [try_gluon](http://52.28.135.57:8080/) server. ([Github](https://github.com/gluon-lang/try_gluon))
+
+### REPL
+
+Gluon has a small executable which can be used to run gluon programs directly or in a small REPL. The REPL can be started by passing the `-i` flag to the built repl executable which can be run with `cargo run -p gluon_repl -- -i`.
+
+REPL features:
+* Evaluating expressions (expressions of type IO will be evaluated in the IO context).
+* Bind variables by writing `let <pattern> <identifier>* = <expr>` (omitting `in <expr>` from a normal let binding)
+    Example:
+
+         let f x = x + 1
+         let { x, y = z } = { x = 1, y = 2 }
+         f z
+
+* Printing help about available commands with `:h`
+* Loading files with `:l path_to_file` the result of evaluating the expression in the loaded file is stored in a variable named after the filename without an extension.
+* Checking the types of expressions with `:t expression`
+*   Printing information about a name with `:i name`.<br>
+    Example:
+
+        :i std.prelude.List
+        type std.prelude.List a = | Nil | Cons a (std.prelude.List a)
+        /// A linked list type
+
+* Tab-completion of identifiers and record fields
+    ![repl completion](http://i.imgur.com/IXLQFtV.gif)
+* Exit the REPL by writing `:q`
+
+## Tools
+
+### Language server
+
+Gluon has a [language server](https://github.com/gluon-lang/gluon_language-server) which provides code completion and formatting support. Installation is done with `cargo install gluon_language-server`.
+
+### Visual Studio Code Extension
+
+The [gluon extension][] for Visual Studio Code provides syntax highlighting and completion. To install it, search for `gluon` among the extensions. ([Github](https://github.com/gluon-lang/gluon_language-server)) 
+
+![example](http://i.imgur.com/44bH0ww.gif)
+
+[gluon extension]:https://marketplace.visualstudio.com/items?itemName=Marwes.gluon
+
+### Vim plugin
+
+[vim-gluon](https://github.com/salpalvv/vim-gluon) provides syntax highlighting and indentation.
+
+The gluon language server has been tested to work with https://github.com/autozimu/LanguageClient-neovim and https://github.com/prabirshrestha/vim-lsp. 
+
+#### Example configuration (autozimu/LanguageClient-neovim)
+```
+let g:LanguageClient_serverCommands = {
+    \ 'gluon': ['gluon_language-server'],
+    \ }
+
+" Automatically start language servers.
+let g:LanguageClient_autoStart = 1
+
+nnoremap <silent> K :call LanguageClient_textDocument_hover()<CR>
+nnoremap <silent> gd :call LanguageClient_textDocument_definition()<CR>
+```
+
+## Documentation
+
+[Tutorial (WIP)](https://github.com/gluon-lang/gluon/blob/master/TUTORIAL.md)
+
+[Rustdoc](https://docs.rs/gluon/*/gluon/index.html)
+
+
+## Usage
+
+### Rust
+
+Gluon requires a recent Rust compiler to build (1.9.0 or later) and is available at [crates.io](https://crates.io/crates/gluon). It can easily be included in a Cargo project by adding the lines below.
+
+```toml
+[dependencies]
+gluon = "0.6.2"
+```
+
+### Other languages
+Currently the easiest way to interact with the gluon virtual machine is through Rust but a rudimentary [C api][] exists which will be extended in the future to bring it closer to the Rust api.
+
+[C api]: https://github.com/gluon-lang/gluon/blob/master/c-api/src/lib.rs
+
 ## Contributing
 
-There are many ways to contribute to gluon. The two simplest ways are opening issues or working on issues marked as [beginner][]. For more extensive information about contributing, you can look at [CONTRIBUTING.md][].
+There are many ways to contribute to gluon. The two simplest ways are opening issues or working on issues marked as [beginner][]. For more extensive information about contributing, you can look at [CONTRIBUTING.md][]. Contributing also has details on **running/getting-started-with tests** for gluon.
 
 [beginner]:https://github.com/gluon-lang/gluon/labels/Beginner
 [CONTRIBUTING.md]:https://github.com/gluon-lang/gluon/blob/master/CONTRIBUTING.md
