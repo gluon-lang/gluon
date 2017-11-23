@@ -136,15 +136,6 @@ REPL features:
     ![repl completion](http://i.imgur.com/IXLQFtV.gif)
 * Exit the REPL by writing `:q`
 
-### Tests
-
-Gluon has extensive tests. Look at `scripts/travis.sh` for extensive examples, but as a quick start 
-
-```bash
-cargo test --features test
-cargo test --features test --all
-```
-
 ## Tools
 
 ### Language server
@@ -203,7 +194,7 @@ Currently the easiest way to interact with the gluon virtual machine is through 
 
 ## Contributing
 
-There are many ways to contribute to gluon. The two simplest ways are opening issues or working on issues marked as [beginner][]. For more extensive information about contributing, you can look at [CONTRIBUTING.md][].
+There are many ways to contribute to gluon. The two simplest ways are opening issues or working on issues marked as [beginner][]. For more extensive information about contributing, you can look at [CONTRIBUTING.md][]. Contributing also has details on **running/getting-started-with tests** for gluon.
 
 [beginner]:https://github.com/gluon-lang/gluon/labels/Beginner
 [CONTRIBUTING.md]:https://github.com/gluon-lang/gluon/blob/master/CONTRIBUTING.md
