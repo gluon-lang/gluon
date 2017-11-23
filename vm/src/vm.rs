@@ -29,14 +29,19 @@ pub use value::Value; //FIXME Value should not be exposed
 pub use thread::{Root, RootStr, RootedThread, RootedValue, Status, Thread};
 
 
-fn new_bytecode(interner: &mut Interner, gc: &mut Gc, vm: &GlobalVmState, m: CompiledModule) -> Result<GcPtr<ClosureData>> {
+fn new_bytecode(
+    env: &VmEnv,
+    interner: &mut Interner,
+    gc: &mut Gc,
+    vm: &GlobalVmState,
+    m: CompiledModule,
+) -> Result<GcPtr<ClosureData>> {
     let CompiledModule {
         module_globals,
         function,
     } = m;
     let bytecode_function = new_bytecode_function(interner, gc, vm, function)?;
 
-    let env = vm.env.read().unwrap();
     let globals = module_globals
         .into_iter()
         .map(|index| env.globals[index.as_ref()].value)
@@ -416,9 +421,10 @@ impl GlobalVmState {
     }
 
     pub fn new_global_thunk(&self, f: CompiledModule) -> Result<GcPtr<ClosureData>> {
+        let env = self.env.read().unwrap();
         let mut interner = self.interner.write().unwrap();
         let mut gc = self.gc.lock().unwrap();
-        new_bytecode(&mut interner, &mut gc, self, f)
+        new_bytecode(&env, &mut interner, &mut gc, self, f)
     }
 
     pub fn get_type<T: ?Sized + Any>(&self) -> ArcType {
