@@ -7,12 +7,17 @@ use std::slice;
 
 use gc::{Gc, Traverseable};
 
+mod internal {
+    pub struct CantConstruct(());
+}
+
 /// Abstract array type which have their length store inline with the elements.
 /// Fills the same role as Box<[T]> but takes only 8 bytes on the stack instead of 16
 #[repr(C)]
 pub struct Array<T: Copy> {
     len: usize,
     array_start: [T; 0],
+    _marker: self::internal::CantConstruct,
 }
 
 impl<T: Copy> AsRef<[T]> for Array<T> {
