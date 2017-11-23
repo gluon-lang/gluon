@@ -29,24 +29,25 @@ pub use value::Value; //FIXME Value should not be exposed
 pub use thread::{Root, RootStr, RootedThread, RootedValue, Status, Thread};
 
 
-fn new_bytecode(gc: &mut Gc, vm: &GlobalVmState, m: CompiledModule) -> Result<GcPtr<ClosureData>> {
+fn new_bytecode(interner: &mut Interner, gc: &mut Gc, vm: &GlobalVmState, m: CompiledModule) -> Result<GcPtr<ClosureData>> {
     let CompiledModule {
         module_globals,
         function,
     } = m;
-    let mut interner = vm.interner.write().unwrap();
-    let bytecode_function = new_bytecode_function(gc, &mut interner, vm, function)?;
+    let bytecode_function = new_bytecode_function(interner, gc, vm, function)?;
+
+    let env = vm.env.read().unwrap();
     let globals = module_globals
         .into_iter()
-        .map(|index| vm.env.read().unwrap().globals[index.as_ref()].value)
+        .map(|index| env.globals[index.as_ref()].value)
         .collect::<Vec<_>>();
 
     gc.alloc(ClosureDataDef(bytecode_function, &globals))
 }
 
 fn new_bytecode_function(
-    gc: &mut Gc,
     interner: &mut Interner,
+    gc: &mut Gc,
     vm: &GlobalVmState,
     f: CompiledFunction,
 ) -> Result<GcPtr<BytecodeFunction>> {
@@ -64,7 +65,7 @@ fn new_bytecode_function(
 
     let fs: StdResult<_, _> = inner_functions
         .into_iter()
-        .map(|inner| new_bytecode_function(gc, interner, vm, inner))
+        .map(|inner| new_bytecode_function(interner, gc, vm, inner))
         .collect();
 
     let records: StdResult<_, _> = records
@@ -415,8 +416,9 @@ impl GlobalVmState {
     }
 
     pub fn new_global_thunk(&self, f: CompiledModule) -> Result<GcPtr<ClosureData>> {
+        let mut interner = self.interner.write().unwrap();
         let mut gc = self.gc.lock().unwrap();
-        new_bytecode(&mut gc, self, f)
+        new_bytecode(&mut interner, &mut gc, self, f)
     }
 
     pub fn get_type<T: ?Sized + Any>(&self) -> ArcType {
@@ -503,8 +505,9 @@ impl GlobalVmState {
     }
 
     pub fn intern(&self, s: &str) -> Result<InternedStr> {
+        let mut interner = self.interner.write().unwrap();
         let mut gc = self.gc.lock().unwrap();
-        self.interner.write().unwrap().intern(&mut *gc, s)
+        interner.intern(&mut *gc, s)
     }
 
     /// Returns a borrowed structure which implements `CompilerEnv`

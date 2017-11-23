@@ -27,6 +27,7 @@ impl Error for StringError {
     }
 }
 
+#[test]
 fn main() {
     if let Err(err) = main_() {
         assert!(false, "{}", err);
@@ -120,7 +121,7 @@ fn main_() -> Result<(), Box<Error>> {
 
     tensile::console_runner(
         tensile::group("main", vec![tensile::group("pass", pass_tests)]),
-        &tensile::Options::default().jobs(Some(2)),
+        &tensile::Options::default().jobs(Some(3)),
     ).unwrap();
     Ok(())
 }
