@@ -7,15 +7,17 @@ use std::slice;
 
 use gc::{Gc, Traverseable};
 
-enum Void {}
+mod internal {
+    pub struct CantConstruct(());
+}
 
 /// Abstract array type which have their length store inline with the elements.
 /// Fills the same role as Box<[T]> but takes only 8 bytes on the stack instead of 16
+#[repr(C)]
 pub struct Array<T: Copy> {
     len: usize,
     array_start: [T; 0],
-    /// Prevents the array from being instantiated directly
-    _void: Void,
+    _marker: self::internal::CantConstruct,
 }
 
 impl<T: Copy> AsRef<[T]> for Array<T> {
@@ -123,5 +125,25 @@ impl<'a, T: Copy + 'a> IntoIterator for &'a mut Array<T> {
     type IntoIter = <&'a mut [T] as IntoIterator>::IntoIter;
     fn into_iter(self) -> Self::IntoIter {
         (&mut **self).into_iter()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn array_values_offset() {
+        use std::mem;
+        use std::ptr;
+
+        unsafe {
+            let p: *const Array<i32> = ptr::null();
+            assert_eq!(p as *const u8, &(*p).len as *const _ as *const u8);
+            assert_eq!(
+                (p as *const u8).offset(mem::size_of::<usize>() as isize),
+                &(*p).array_start as *const _ as *const u8
+            );
+        }
     }
 }
