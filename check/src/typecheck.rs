@@ -1217,11 +1217,9 @@ impl<'a> Typecheck<'a> {
                     Err(err) => self.error(ast_type.span(), err),
                 }
             }
-            _ => types::translate_type_with(
-                type_cache,
-                ast_type,
-                |typ| self.translate_ast_type(type_cache, typ),
-            ),
+            _ => types::translate_type_with(type_cache, ast_type, |typ| {
+                self.translate_ast_type(type_cache, typ)
+            }),
         }
     }
 
