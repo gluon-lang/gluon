@@ -78,20 +78,18 @@ fn main_() -> Result<(), Box<Error>> {
     };
 
     let vm = new_vm();
-    vm.get_macros()
-        .get("import")
+    let import = vm.get_macros().get("import");
+    let import = import
         .as_ref()
         .and_then(|import| import.downcast_ref::<gluon::import::Import>())
-        .unwrap()
-        .add_path("..");
+        .unwrap();
+    import.add_path("..");
 
     Compiler::new()
         .load_file_async(&vm, "std/prelude.glu")
         .sync_or_error()?;
 
-    let iter = test_files("tests/pass")?.into_iter().filter(|filename| {
-        filter.map_or(true, |filter| filename.to_string_lossy().contains(filter))
-    });
+    let iter = test_files("tests/pass")?.into_iter();
 
     let pass_tests = iter.map(|filename| {
         let name = filename.to_str().unwrap_or("<unknown>").to_owned();
@@ -103,10 +101,7 @@ fn main_() -> Result<(), Box<Error>> {
         })
     }).collect();
 
-    let iter = test_files("tests/fail")?.into_iter().filter(|filename| {
-        filter.map_or(true, |filter| filename.to_string_lossy().contains(filter))
-    });
-
+    let iter = test_files("tests/fail")?.into_iter();
 
     let fail_tests = iter.map(|filename| {
         let name = filename.to_str().unwrap_or("<unknown>").to_owned();
@@ -133,7 +128,7 @@ fn main_() -> Result<(), Box<Error>> {
                 tensile::group("fail", fail_tests),
             ],
         ),
-        &tensile::Options::default(),
+        &tensile::Options::default().filter(filter.map_or("", |s| &s[..])),
     ).unwrap();
     Ok(())
 }
