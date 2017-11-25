@@ -1,6 +1,7 @@
 let prelude = import! std.prelude
 let { Test, run, writer, assert, assert_ieq, assert_feq, assert_seq }  = import! std.test
-let int @ { num = { (+), (-), (*) } } = import! std.int
+let int = import! std.int
+let { (+), (-), (*) } = int.num
 let state @ { State, put, get, modify, runState, evalState, execState } = import! std.state
 let { (*>) } = prelude.make_Applicative writer.applicative
 let { (*>) } = prelude.make_Applicative state.applicative

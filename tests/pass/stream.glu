@@ -1,7 +1,8 @@
 let prelude = import! std.prelude
 let { run, writer, assert_eq, assert_ieq } = import! std.test
 let { (*>) } = prelude.make_Applicative writer.applicative
-let int @ { num = { (+) } } = import! std.int
+let int = import! std.int
+let { (+) } = int.num
 let { (<) } = prelude.make_Ord int.ord
 let stream  = import! std.stream
 let list @ { List } = import! std.list

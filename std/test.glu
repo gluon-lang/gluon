@@ -1,25 +1,26 @@
-let string @ { semigroup = { append = (++) } } = import! std.string
+let string = import! std.string
+let { append = (++) } = string.semigroup
 let writer @ { Writer } = import! std.writer
 let prelude @ { Show, Num, Eq, Applicative, Monad, Monoid } = import! std.prelude
 let float = import! std.float
-let int @ { num = { (+) }, eq = { (==) } } = import! std.int
-let { (<) } = prelude.make_Ord int.ord
-let list @ { List, foldable = { foldl } } = import! std.list
+let int = import! std.int
+let list @ { List } = import! std.list
+let { foldl } = list.foldable
 let { Option } = import! std.option
 
 type Test a = Writer (List String) a
 
-let testWriter @ { applicative = { wrap } } = writer.make list.monoid
+let testWriter = writer.make list.monoid
 
 let assert x = if x then () else error "Assertion failed"
-and assert_eq show eq = \x y ->
+let assert_eq show eq = \x y ->
     if eq.(==) x y
-    then wrap ()
+    then testWriter.applicative.wrap ()
     else writer.tell (Cons ("Assertion failed: " ++ show.show x ++ " != " ++ show.show y) Nil)
 
 let assert_ieq = assert_eq int.show int.eq
-and assert_feq = assert_eq float.show float.eq
-and assert_seq = assert_eq string.show string.eq
+let assert_feq = assert_eq float.show float.eq
+let assert_seq = assert_eq string.show string.eq
 
 let run test : Test a -> () =
     match test.writer with

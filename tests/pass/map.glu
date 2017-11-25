@@ -1,7 +1,8 @@
 let prelude @ { Eq, Show } = import! std.prelude
 let int = import! std.int
 let option @ { Option } = import! std.option
-let string @ { eq = { (==) } } = import! std.string
+let string = import! std.string
+let { (==) } = string.eq
 let { (<>) } = prelude.make_Semigroup string.semigroup
 let { Test, run, writer, assert, assert_eq }  = import! std.test
 let map  = import! std.map
