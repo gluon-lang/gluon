@@ -7,7 +7,7 @@ authors = ["Markus Westerlind <marwes91@gmail.com>"]
 gluon = { path = ".." }
 
 env_logger = "0.3"
-tensile = { path = "../../tensile" }
+tensile = { git = "https://github.com/Marwes/tensile" }
 
 [features]
 test = ["gluon/test"]
