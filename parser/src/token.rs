@@ -430,32 +430,28 @@ impl<'input> Tokenizer<'input> {
                     Some((_, ch)) if is_ident_start(ch) => {
                         return self.error(end, UnexpectedChar(ch))
                     }
-                    _ => {
-                        (start, end, Token::FloatLiteral(float.parse().unwrap()))
-                    }
+                    _ => (start, end, Token::FloatLiteral(float.parse().unwrap())),
                 }
             }
             Some((end, 'x')) => {
                 self.bump(); // Skip 'x'
                 let (end, hex) = self.take_while(end.shift('x'), is_hex);
                 match int {
-                    "0" | "-0" => {
-                        match self.lookahead {
-                            Some((_, ch)) if is_ident_start(ch) => {
-                                return self.error(end, UnexpectedChar(ch))
+                    "0" | "-0" => match self.lookahead {
+                        Some((_, ch)) if is_ident_start(ch) => {
+                            return self.error(end, UnexpectedChar(ch))
+                        }
+                        _ => {
+                            if hex.is_empty() {
+                                return self.error(start, HexLiteralIncomplete);
                             }
-                            _ => {
-                                if hex.is_empty() {
-                                    return self.error(start, HexLiteralIncomplete);
-                                }
-                                let is_positive = int == "0";
-                                match i64_from_hex(hex, is_positive) {
-                                    Ok(val) => (start, end, Token::IntLiteral(val)),
-                                    Err(err) => return self.error(start, err),
-                                }
+                            let is_positive = int == "0";
+                            match i64_from_hex(hex, is_positive) {
+                                Ok(val) => (start, end, Token::IntLiteral(val)),
+                                Err(err) => return self.error(start, err),
                             }
                         }
-                    }
+                    },
                     _ => return self.error(start, HexLiteralWrongPrefix),
                 }
             }
@@ -465,23 +461,19 @@ impl<'input> Tokenizer<'input> {
                     Some((pos, ch)) if is_ident_start(ch) => {
                         return self.error(pos, UnexpectedChar(ch))
                     }
-                    _ => {
-                        if let Ok(val) = int.parse() {
-                            (start, end.shift('b'), Token::ByteLiteral(val))
-                        } else {
-                            return self.error(start, NonParseableInt);
-                        }
-                    }
+                    _ => if let Ok(val) = int.parse() {
+                        (start, end.shift('b'), Token::ByteLiteral(val))
+                    } else {
+                        return self.error(start, NonParseableInt);
+                    },
                 }
             }
             Some((start, ch)) if is_ident_start(ch) => return self.error(start, UnexpectedChar(ch)),
-            None | Some(_) => {
-                if let Ok(val) = int.parse() {
-                    (start, end, Token::IntLiteral(val))
-                } else {
-                    return self.error(start, NonParseableInt);
-                }
-            }
+            None | Some(_) => if let Ok(val) = int.parse() {
+                (start, end, Token::IntLiteral(val))
+            } else {
+                return self.error(start, NonParseableInt);
+            },
         };
 
         Ok(pos::spanned2(start, end, token))
@@ -585,10 +577,12 @@ fn i64_from_hex(hex: &str, is_positive: bool) -> Result<i64, Error> {
         result = result
             .checked_mul(RADIX as i64)
             .and_then(|result| result.checked_add((x as i64) * sign))
-            .ok_or_else(|| if is_positive {
-                HexLiteralOverflow
-            } else {
-                HexLiteralUnderflow
+            .ok_or_else(|| {
+                if is_positive {
+                    HexLiteralOverflow
+                } else {
+                    HexLiteralUnderflow
+                }
             })?;
     }
     Ok(result)
@@ -599,6 +593,7 @@ fn i64_from_hex(hex: &str, is_positive: bool) -> Result<i64, Error> {
 mod test {
     use base::ast::Comment;
     use base::pos::{self, BytePos, Column, Line, Location, Spanned};
+    use base::source;
 
     use super::*;
     use super::{error, Tokenizer};
@@ -617,7 +612,9 @@ mod test {
         input: &'input str,
     ) -> Box<Iterator<Item = Result<SpannedToken<'input>, SpError>> + 'input> where {
         Box::new(Tokenizer::new(input).take_while(|token| match *token {
-            Ok(Spanned { value: Token::EOF, .. }) => false,
+            Ok(Spanned {
+                value: Token::EOF, ..
+            }) => false,
             _ => true,
         }))
     }
@@ -626,11 +623,18 @@ mod test {
         let mut tokenizer = tokenizer(input);
         let mut count = 0;
         let length = expected.len();
+        let source = source::Lines::new(input.as_bytes().iter().cloned());
         for (token, (expected_span, expected_tok)) in tokenizer.by_ref().zip(expected.into_iter()) {
             count += 1;
             println!("{:?}", token);
-            let start = loc(expected_span.find("~").unwrap());
-            let end = loc(expected_span.rfind("~").unwrap() + 1);
+            let start_byte = expected_span.find("~").unwrap();
+            let mut start = source.location(start_byte.into()).unwrap();
+            start.column += Column::from(1);
+
+            let end_byte = expected_span.rfind("~").unwrap() + 1;
+            let mut end = source.location(end_byte.into()).unwrap();
+            end.column += Column::from(1);
+
             assert_eq!(Ok(pos::spanned2(start, end, expected_tok)), token);
         }
 
@@ -838,7 +842,7 @@ mod test {
                 (r#"         ~~~~~           "#, IntLiteral(291)),
                 (r#"               ~~~~~     "#, IntLiteral(1)),
                 (r#"                     ~~~~"#, IntLiteral(-10)),
-            ]
+            ],
         )
     }
 
@@ -902,9 +906,15 @@ mod test {
         test(
             r#"-0x8000000000000000 0x7fffffffffffffff"#,
             vec![
-                ("~~~~~~~~~~~~~~~~~~~                   ", IntLiteral(::std::i64::MIN)),
-                ("                    ~~~~~~~~~~~~~~~~~~", IntLiteral(::std::i64::MAX))
-            ]
+                (
+                    "~~~~~~~~~~~~~~~~~~~                   ",
+                    IntLiteral(::std::i64::MIN),
+                ),
+                (
+                    "                    ~~~~~~~~~~~~~~~~~~",
+                    IntLiteral(::std::i64::MAX),
+                ),
+            ],
         );
     }
 
@@ -999,18 +1009,17 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn shebang_line_token_test() {
         test(
             "#!/bin/gluon\nhi /// hellooo/// hi",
             vec![
                 (
-                    r#"~~~~~~~~~~~~                   "#,
+                    "~~~~~~~~~~~~\n                   ",
                     ShebangLine("/bin/gluon"),
                 ),
-                (r#"            ~~                 "#, Identifier("hi")),
+                ("            \n~~                 ", Identifier("hi")),
                 (
-                    r#"              ~~~~~~~~~~~~~~~~~"#,
+                    "            \n   ~~~~~~~~~~~~~~~~~",
                     DocComment(Comment {
                         typ: CommentType::Line,
                         content: "hellooo/// hi".to_string(),
