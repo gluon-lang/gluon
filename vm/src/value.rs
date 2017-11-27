@@ -439,7 +439,22 @@ impl<'a, 't> InternalPrinter<'a, 't> {
             Value::Userdata(ref data) => arena.text(format!("{:?}", data)),
             Value::Thread(thread) => arena.text(format!("{:?}", thread)),
             Value::Byte(b) => arena.text(format!("{}", b)),
-            Value::Int(i) => arena.text(format!("{}", i)),
+            Value::Int(i) => {
+                use base::types::BuiltinType;
+                match **self.typ {
+                    Type::Builtin(BuiltinType::Int) => arena.text(format!("{}", i)),
+                    Type::Builtin(BuiltinType::Char) =>
+                        match ::std::char::from_u32(i as u32) {
+                            Some('"') => arena.text(format!("'{}'", '"')),
+                            Some(c) => arena.text(format!("'{}'", c.escape_default())),
+                            None => ice!(
+                                "Invalid character (code point {}) passed to pretty printing",
+                                i
+                                ),
+                        },
+                    _ => arena.text(format!("{}", i)),
+                }
+            },
             Value::Float(f) => arena.text(format!("{}", f)),
         }
     }
