@@ -238,7 +238,7 @@ impl<Pos: Ord> Span<Pos> {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Spanned<T, Pos> {
     pub span: Span<Pos>,
     pub value: T,
@@ -253,12 +253,6 @@ impl<T, Pos> Spanned<T, Pos> {
             span: self.span,
             value: f(self.value),
         }
-    }
-}
-
-impl<T: PartialEq, Pos: PartialEq> PartialEq for Spanned<T, Pos> {
-    fn eq(&self, other: &Spanned<T, Pos>) -> bool {
-        self.value == other.value && self.span == other.span
     }
 }
 

@@ -2,7 +2,7 @@
 
 use base::ast::{Alternative, Array, AstType, DisplayEnv, Expr, ExprField, IdentEnv, Lambda,
                 Literal, Pattern, SpannedExpr, SpannedPattern, MutVisitor, walk_mut_expr,
-                walk_mut_pattern, walk_mut_spanned_ast_type, TypeBinding, TypedIdent,
+                walk_mut_pattern, walk_mut_ast_type, TypeBinding, TypedIdent,
                 SpannedIdent, SpannedAlias, SpannedAstType, ValueBinding};
 use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
@@ -52,7 +52,7 @@ impl MutVisitor for NoSpan {
         walk_mut_pattern(self, &mut p.value);
     }
 
-    fn visit_spanned_ident(&mut self, id: &mut SpannedIdent<Self::Ident>) {
+    fn visit_spanned_typed_ident(&mut self, id: &mut SpannedIdent<Self::Ident>) {
         id.span = Span::default();
         self.visit_ident(&mut id.value)
     }
@@ -61,13 +61,13 @@ impl MutVisitor for NoSpan {
         alias.span = Span::default();
     }
 
-    fn visit_span(&mut self, s: &mut Spanned<Self::Ident, BytePos>) {
+    fn visit_spanned_ident(&mut self, s: &mut Spanned<Self::Ident, BytePos>) {
         s.span = Span::default()
     }
 
-    fn visit_spanned_ast_type(&mut self, s: &mut SpannedAstType<Self::Ident>) {
+    fn visit_ast_type(&mut self, s: &mut SpannedAstType<Self::Ident>) {
         s.span = Span::default();
-        walk_mut_spanned_ast_type(self, s);
+        walk_mut_ast_type(self, s);
     }
 }
 

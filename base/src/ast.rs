@@ -345,7 +345,7 @@ pub trait MutVisitor {
         walk_mut_pattern(self, &mut e.value);
     }
 
-    fn visit_spanned_ident(&mut self, id: &mut SpannedIdent<Self::Ident>) {
+    fn visit_spanned_typed_ident(&mut self, id: &mut SpannedIdent<Self::Ident>) {
         self.visit_ident(&mut id.value)
     }
 
@@ -354,10 +354,10 @@ pub trait MutVisitor {
     }
 
     fn visit_alias(&mut self, _: &mut SpannedAlias<Self::Ident>) {}
-    fn visit_span(&mut self, _: &mut Spanned<Self::Ident, BytePos>) {}
+    fn visit_spanned_ident(&mut self, _: &mut Spanned<Self::Ident, BytePos>) {}
     fn visit_typ(&mut self, _: &mut ArcType<Self::Ident>) {}
-    fn visit_spanned_ast_type(&mut self, s: &mut SpannedAstType<Self::Ident>) {
-        walk_mut_spanned_ast_type(self, s);
+    fn visit_ast_type(&mut self, s: &mut SpannedAstType<Self::Ident>) {
+        walk_mut_ast_type(self, s);
     }
 }
 
@@ -370,19 +370,19 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
         }
         Expr::Infix(ref mut lhs, ref mut id, ref mut rhs) => {
             v.visit_expr(lhs);
-            v.visit_spanned_ident(id);
+            v.visit_spanned_typed_ident(id);
             v.visit_expr(rhs);
         }
         Expr::LetBindings(ref mut bindings, ref mut body) => {
             for bind in bindings {
                 v.visit_pattern(&mut bind.name);
                 for arg in &mut bind.args {
-                    v.visit_spanned_ident(arg);
+                    v.visit_spanned_typed_ident(arg);
                 }
                 v.visit_typ(&mut bind.resolved_type);
                 v.visit_expr(&mut bind.expr);
                 if let Some(ref mut ast_type) = bind.typ {
-                    v.visit_spanned_ast_type(&mut ast_type._typ.1)
+                    v.visit_ast_type(&mut ast_type._typ.1)
                 }
             }
             v.visit_expr(body);
@@ -419,10 +419,10 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
         } => {
             v.visit_typ(typ);
             for typ in types {
-                v.visit_span(&mut typ.name);
+                v.visit_spanned_ident(&mut typ.name);
             }
             for field in exprs {
-                v.visit_span(&mut field.name);
+                v.visit_spanned_ident(&mut field.name);
                 if let Some(ref mut expr) = field.value {
                     v.visit_expr(expr);
                 }
@@ -448,15 +448,15 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
         Expr::Lambda(ref mut lambda) => {
             v.visit_ident(&mut lambda.id);
             for arg in &mut lambda.args {
-                v.visit_spanned_ident(arg);
+                v.visit_spanned_typed_ident(arg);
             }
             v.visit_expr(&mut lambda.body);
         }
         Expr::TypeBindings(ref mut bindings, ref mut expr) => {
             for binding in bindings.iter_mut() {
-                v.visit_span(&mut binding.name);
+                v.visit_spanned_ident(&mut binding.name);
                 v.visit_alias(&mut binding.alias);
-                v.visit_spanned_ast_type(&mut binding.alias.value.unresolved_type_mut()._typ.1);
+                v.visit_ast_type(&mut binding.alias.value.unresolved_type_mut()._typ.1);
             }
             v.visit_expr(expr)
         }
@@ -482,7 +482,7 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::Id
         } => {
             v.visit_typ(typ);
             for field in fields {
-                v.visit_span(&mut field.name);
+                v.visit_spanned_ident(&mut field.name);
                 if let Some(ref mut pattern) = field.value {
                     v.visit_pattern(pattern);
                 }
@@ -502,28 +502,28 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::Id
     }
 }
 
-pub fn walk_mut_spanned_ast_type<V: ?Sized + MutVisitor>(
+pub fn walk_mut_ast_type<V: ?Sized + MutVisitor>(
     v: &mut V,
     s: &mut SpannedAstType<V::Ident>,
 ) {
     match s.value {
         Type::Hole | Type::Opaque | Type::Builtin(_) => (),
         Type::Forall(_, ref mut ast_type, ref mut ast_types) => {
-            v.visit_spanned_ast_type(&mut ast_type._typ.1);
+            v.visit_ast_type(&mut ast_type._typ.1);
             if let &mut Some(ref mut ast_types) = ast_types {
                 for ast_type in ast_types {
-                    v.visit_spanned_ast_type(&mut ast_type._typ.1);
+                    v.visit_ast_type(&mut ast_type._typ.1);
                 }
             }
         }
         Type::App(ref mut ast_type, ref mut ast_types) => {
             for ast_type in ast_types.iter_mut() {
-                v.visit_spanned_ast_type(&mut ast_type._typ.1);
+                v.visit_ast_type(&mut ast_type._typ.1);
             }
-            v.visit_spanned_ast_type(&mut ast_type._typ.1)
+            v.visit_ast_type(&mut ast_type._typ.1)
         }
-        Type::Record(ref mut ast_type) => v.visit_spanned_ast_type(&mut ast_type._typ.1),
-        Type::Variant(ref mut ast_type) => v.visit_spanned_ast_type(&mut ast_type._typ.1),
+        Type::Record(ref mut ast_type) => v.visit_ast_type(&mut ast_type._typ.1),
+        Type::Variant(ref mut ast_type) => v.visit_ast_type(&mut ast_type._typ.1),
         Type::EmptyRow => (),
         Type::ExtendRow {
             types: _,
@@ -531,9 +531,9 @@ pub fn walk_mut_spanned_ast_type<V: ?Sized + MutVisitor>(
             ref mut rest,
         } => {
             for field in fields.iter_mut() {
-                v.visit_spanned_ast_type(&mut field.typ._typ.1);
+                v.visit_ast_type(&mut field.typ._typ.1);
             }
-            v.visit_spanned_ast_type(&mut rest._typ.1);
+            v.visit_ast_type(&mut rest._typ.1);
         }
         Type::Ident(_) => (),
         Type::Variable(_) => (),
