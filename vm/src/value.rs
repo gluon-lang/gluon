@@ -444,16 +444,15 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                 match **self.typ {
                     Type::Builtin(BuiltinType::Int) => arena.text(format!("{}", i)),
                     Type::Builtin(BuiltinType::Char) =>
-                        if 0 <= i && i <= ::std::u32::MAX as isize {
-                            match ::std::char::from_u32(i as u32) {
-                                Some('"') => arena.text(format!("'{}'", '"')),
-                                Some(c) => arena.text(format!("'{}'", c.escape_default())),
-                                None => unreachable!(),
-                            }
-                        } else {
-                            unreachable!()
+                        match ::std::char::from_u32(i as u32) {
+                            Some('"') => arena.text(format!("'{}'", '"')),
+                            Some(c) => arena.text(format!("'{}'", c.escape_default())),
+                            None => ice!(
+                                "Invalid character (code point {}) passed to pretty printing",
+                                i
+                                ),
                         },
-                    _ => unreachable!(),
+                    _ => arena.text(format!("{}", i)),
                 }
             },
             Value::Float(f) => arena.text(format!("{}", f)),
