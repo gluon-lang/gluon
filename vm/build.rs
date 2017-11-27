@@ -8,7 +8,7 @@ mod build {
             .process_file("src/core/grammar.lalrpop")
             .unwrap();
 
-        println!("cargo:rerun-if-changed=core/grammar.lalrpop");
+        println!("cargo:rerun-if-changed=src/core/grammar.lalrpop");
     }
 }
 
