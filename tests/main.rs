@@ -28,7 +28,6 @@ impl Error for StringError {
     }
 }
 
-#[test]
 fn main() {
     if let Err(err) = main_() {
         assert!(false, "{}", err);

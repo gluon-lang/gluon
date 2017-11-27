@@ -69,6 +69,42 @@ mod gen_skeptic {
     }
 }
 
+/// Safety check to make sure that all .rs files in `tests/` will run
+fn check_test_declarations_in_cargo_file() {
+    use std::collections::HashSet;
+    use std::fs::{read_dir, File};
+    use std::io::{BufRead, BufReader};
+    use std::ffi::OsStr;
+
+    let cargo_file = BufReader::new(File::open("Cargo.toml").unwrap());
+
+    let tests_in_cargo_file: HashSet<_> = cargo_file
+        .lines()
+        .map(|line| line.unwrap())
+        .filter(|line| line.starts_with("name = \""))
+        .map(|line| line.split('"').nth(1).unwrap().to_string())
+        .collect();
+
+    for entry in read_dir("tests").unwrap() {
+        let entry = entry.unwrap();
+        let path = entry.path();
+        if path.extension() == Some(OsStr::new("rs")) {
+            let filename = path.file_stem()
+                .expect("file_stem")
+                .to_str()
+                .expect("utf-8 file_stem");
+            if !tests_in_cargo_file.contains(filename) {
+                panic!(
+                    "Test `{}` must be declared in Cargo.toml, otherwise it does not run",
+                    filename
+                );
+            }
+        }
+    }
+}
+
 fn main() {
     gen_skeptic::generate();
+
+    check_test_declarations_in_cargo_file();
 }
