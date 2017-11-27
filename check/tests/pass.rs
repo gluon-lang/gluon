@@ -927,5 +927,5 @@ f "" ""
 "#;
     let result = support::typecheck(text);
 
-    assert_eq!(result, Ok(Type::unit()));
+    assert_req!(result, Ok(Type::unit()));
 }

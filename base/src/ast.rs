@@ -268,7 +268,6 @@ pub struct Do<Id> {
     pub flat_map_id: Option<TypedIdent<Id>>,
 }
 
-
 /// The representation of gluon's expression syntax
 #[derive(Clone, PartialEq, Debug)]
 pub enum Expr<Id> {
@@ -337,7 +336,6 @@ impl<Id> TypeBinding<Id> {
         Span::new(self.name.span.start, self.alias.span.end)
     }
 }
-
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct ValueBinding<Id> {
@@ -773,14 +771,15 @@ impl Typed for Expr<Symbol> {
             | Expr::Tuple { ref typ, .. } => Ok(typ.clone()),
             Expr::Literal(ref lit) => lit.try_type_of(env),
             Expr::IfElse(_, ref arm, _) => arm.try_type_of(env),
-            Expr::Infix(_, ref op, _) => {
-                if let Type::App(_, ref args) = *op.value.typ.clone() {
-                    if let Type::App(_, ref args) = *args[1] {
-                        return Ok(args[1].clone());
-                    }
-                }
-                Err("Expected function type in binop".to_string())
-            }
+            Expr::Infix(_, ref op, _) => op.value
+                .typ
+                .as_function()
+                .and_then(|(_, ret)| ret.as_function())
+                .map(|(_, ret)| ret.clone())
+                .ok_or_else(|| {
+                    debug!("`{}` is not a binary function type", op.value.typ);
+                    "Expected function type in binop".to_string()
+                }),
             Expr::LetBindings(_, ref expr)
             | Expr::TypeBindings(_, ref expr)
             | Expr::Do(Do { body: ref expr, .. }) => expr.try_type_of(env),
@@ -840,8 +839,7 @@ fn get_return_type(
         let alias_ident = alias_type.alias_ident().ok_or_else(|| {
             format!(
                 "Expected function with {} more arguments, found {:?}",
-                arg_count,
-                alias_type
+                arg_count, alias_type
             )
         })?;
 

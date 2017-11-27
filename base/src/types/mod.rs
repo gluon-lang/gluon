@@ -1062,6 +1062,13 @@ impl<Id> ArcType<Id> {
         Arc::strong_count(&typ.typ)
     }
 
+    pub fn remove_implicit_args(&self) -> &ArcType<Id> {
+        match **self {
+            Type::Function(ArgType::Implicit, _, ref typ) => typ.remove_implicit_args(),
+            _ => self,
+        }
+    }
+
     pub fn remove_forall(&self) -> &ArcType<Id> {
         match **self {
             Type::Forall(_, ref typ, _) => typ.remove_forall(),

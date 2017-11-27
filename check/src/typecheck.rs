@@ -20,9 +20,9 @@ use base::kind::{ArcKind, Kind, KindCache, KindEnv};
 use base::merge;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
-use base::types::{self, Alias, AliasRef, AppVec, ArcType, ArgType, Field, Filter, Generic,
-                  PrimitiveEnv, RecordSelector, Skolem, Type, TypeCache, TypeEnv, TypeFormatter,
-                  TypeVariable};
+use base::types::{self, Alias, AliasRef, AppVec, ArcType, ArgType, BuiltinType, Field, Filter,
+                  Generic, PrimitiveEnv, RecordSelector, Skolem, Type, TypeCache, TypeEnv,
+                  TypeFormatter, TypeVariable};
 
 use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
 use substitution::{self, Constraints, Substitution};
@@ -757,7 +757,7 @@ impl<'a> Typecheck<'a> {
                 ref mut args,
             } => {
                 let func_type = self.infer_expr(func);
-                self.typecheck_application(func_type, args)
+                self.typecheck_application(func_type, implicit_args, args)
             }
             Expr::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
                 let bool_type = self.bool();
@@ -803,6 +803,7 @@ impl<'a> Typecheck<'a> {
 
                 self.typecheck_application(
                     func_type,
+                    &mut [],
                     Some(&mut **lhs).into_iter().chain(Some(&mut **rhs)),
                 )
             }
@@ -1107,12 +1108,14 @@ impl<'a> Typecheck<'a> {
     fn typecheck_application<'e, I>(
         &mut self,
         mut func_type: ArcType,
+        implicit_args: &mut [SpannedExpr<Symbol>],
         args: I,
     ) -> Result<TailCall, TypeError<Symbol>>
     where
         I: IntoIterator<Item = &'e mut SpannedExpr<Symbol>>,
     {
         func_type = self.new_skolem_scope(&func_type);
+        func_type = func_type.remove_implicit_args().clone();
         for arg in args {
             let f = self.type_cache
                 .function(once(self.subs.new_var()), self.subs.new_var());
@@ -2510,7 +2513,13 @@ pub fn unroll_typ(typ: &ArcType) -> Option<ArcType> {
         None
     } else {
         args.reverse();
-        Some(Type::app(current.clone(), args))
+        match **current {
+            Type::Builtin(BuiltinType::Function) if args.len() == 2 => {
+                let ret = args.pop().unwrap();
+                Some(Type::function(args.into_iter().collect(), ret))
+            }
+            _ => Some(Type::app(current.clone(), args)),
+        }
     }
 }
 
