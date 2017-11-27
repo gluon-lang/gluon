@@ -1,7 +1,9 @@
 #![allow(unused)]
 
 use base::ast::{Alternative, Array, AstType, DisplayEnv, Expr, ExprField, IdentEnv, Lambda,
-                Literal, Pattern, SpannedExpr, TypeBinding, TypedIdent, ValueBinding};
+                Literal, Pattern, SpannedExpr, SpannedPattern, MutVisitor, walk_mut_expr,
+                walk_mut_pattern, walk_mut_ast_type, TypeBinding, TypedIdent,
+                SpannedIdent, SpannedAlias, SpannedAstType, ValueBinding};
 use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::kind::Kind;
@@ -34,17 +36,65 @@ where
     }
 }
 
+/// MutVisitor that clears spans.
+pub struct NoSpan;
+
+impl MutVisitor for NoSpan {
+    type Ident = String;
+
+    fn visit_expr(&mut self, e: &mut SpannedExpr<Self::Ident>) {
+        e.span = Span::default();
+        walk_mut_expr(self, e);
+    }
+
+    fn visit_pattern(&mut self, p: &mut SpannedPattern<Self::Ident>) {
+        p.span = Span::default();
+        walk_mut_pattern(self, &mut p.value);
+    }
+
+    fn visit_spanned_typed_ident(&mut self, id: &mut SpannedIdent<Self::Ident>) {
+        id.span = Span::default();
+        self.visit_ident(&mut id.value)
+    }
+
+    fn visit_alias(&mut self, alias: &mut SpannedAlias<Self::Ident>) {
+        alias.span = Span::default();
+    }
+
+    fn visit_spanned_ident(&mut self, s: &mut Spanned<Self::Ident, BytePos>) {
+        s.span = Span::default()
+    }
+
+    fn visit_ast_type(&mut self, s: &mut SpannedAstType<Self::Ident>) {
+        s.span = Span::default();
+        walk_mut_ast_type(self, s);
+    }
+}
+
 pub fn parse(
     input: &str,
 ) -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, ParseErrors)> {
     parse_string(&mut MockEnv::new(), input)
 }
 
+/// Clears spans of the expression.
+pub fn clear_span(mut expr: SpannedExpr<String>) -> SpannedExpr<String> {
+    use support::NoSpan;
+    NoSpan.visit_expr(&mut expr);
+    expr
+}
+
 macro_rules! parse_new {
     ($input:expr) => {{
-        // Replace windows line endings so that byte positins match up on multiline expressions
+        // Replace windows line endings so that byte positions match up on multiline expressions
         let input = $input.replace("\r\n", "\n");
         parse(&input).unwrap_or_else(|(_, err)| panic!("{}", err))
+    }}
+}
+
+macro_rules! parse_clear_span {
+    ($input:expr) => {{
+        clear_span(parse_new!($input))
     }}
 }
 

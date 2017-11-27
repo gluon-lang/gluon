@@ -106,7 +106,7 @@ impl Location {
     pub fn shift(mut self, ch: char) -> Location {
         if ch == '\n' {
             self.line += Line::from(1);
-            self.column = Column::from(0);
+            self.column = Column::from(1);
         } else {
             self.column += Column::from(1);
         }
@@ -151,13 +151,13 @@ where
     Pos: PartialOrd,
 {
     fn partial_cmp(&self, other: &Span<Pos>) -> Option<Ordering> {
-        self.start
-            .partial_cmp(&other.start)
-            .and_then(|ord| if ord == Ordering::Equal {
+        self.start.partial_cmp(&other.start).and_then(|ord| {
+            if ord == Ordering::Equal {
                 self.end.partial_cmp(&self.end)
             } else {
                 Some(ord)
-            })
+            }
+        })
     }
 }
 
@@ -213,8 +213,8 @@ impl<Pos: Ord> Span<Pos> {
 
     pub fn merge(self, other: Span<Pos>) -> Option<Span<Pos>> {
         assert!(self.expansion_id == other.expansion_id);
-        if (self.start <= other.start && self.end > other.start) ||
-            (self.start >= other.start && self.start < other.end)
+        if (self.start <= other.start && self.end > other.start)
+            || (self.start >= other.start && self.start < other.end)
         {
             Some(Span {
                 start: cmp::min(self.start, other.start),
@@ -238,7 +238,7 @@ impl<Pos: Ord> Span<Pos> {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct Spanned<T, Pos> {
     pub span: Span<Pos>,
     pub value: T,
@@ -253,12 +253,6 @@ impl<T, Pos> Spanned<T, Pos> {
             span: self.span,
             value: f(self.value),
         }
-    }
-}
-
-impl<T: PartialEq, Pos> PartialEq for Spanned<T, Pos> {
-    fn eq(&self, other: &Spanned<T, Pos>) -> bool {
-        self.value == other.value
     }
 }
 
