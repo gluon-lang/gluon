@@ -464,39 +464,48 @@ where
         // (if the types are alias types).
         (_, _) => {
             let subs = unifier.state.subs;
-            let lhs = unifier
+            let lhs_base = unifier
                 .state
                 .remove_aliases(subs, expected)
                 .map_err(UnifyError::Other)?;
-            let rhs = unifier
+            let rhs_base = unifier
                 .state
                 .remove_aliases(subs, actual)
                 .map_err(UnifyError::Other)?;
 
-            match (&lhs, &rhs) {
+            match (&lhs_base, &rhs_base) {
                 (&None, &None) => {
                     debug!("Unify error: {} <=> {}", expected, actual);
                     Err(UnifyError::TypeMismatch(expected.clone(), actual.clone()))
                 }
                 (_, _) => {
-                    let lhs = lhs.as_ref().unwrap_or(expected);
-                    let rhs = rhs.as_ref().unwrap_or(actual);
+                    let lhs = lhs_base.as_ref().unwrap_or(expected);
+                    let rhs = rhs_base.as_ref().unwrap_or(actual);
 
                     let old_in_alias = unifier.state.in_alias;
                     unifier.state.in_alias = true;
 
                     // FIXME Maybe always return `None` here since the types before we removed the
                     // aliases are probably more specific.
-                    let result = unifier.try_match_res(lhs, rhs).map_err(|_err| {
-                        // We failed to unify `lhs` and `rhs` at the spine. Replace that error with
-                        // a mismatch between the aliases instead as that should be less verbose
-                        // Example
-                        // type A = | A Int
-                        // type B = | B Float
-                        // A <=> B
-                        // Gives `A` != `B` instead of `| A Int` != `| B Float`
-                        UnifyError::TypeMismatch(expected.clone(), actual.clone())
-                    });
+                    let result = unifier
+                        .try_match_res(lhs, rhs)
+                        .map(|_| {
+                            if lhs_base.is_some() {
+                                None
+                            } else {
+                                Some(actual.clone())
+                            }
+                        })
+                        .map_err(|_err| {
+                            // We failed to unify `lhs` and `rhs` at the spine. Replace that error with
+                            // a mismatch between the aliases instead as that should be less verbose
+                            // Example
+                            // type A = | A Int
+                            // type B = | B Float
+                            // A <=> B
+                            // Gives `A` != `B` instead of `| A Int` != `| B Float`
+                            UnifyError::TypeMismatch(expected.clone(), actual.clone())
+                        });
 
                     unifier.state.in_alias = old_in_alias;
 

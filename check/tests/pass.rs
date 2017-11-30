@@ -781,3 +781,53 @@ match { y = 1 } with
 
     assert_req!(result, expected);
 }
+
+#[test]
+fn do_expression_simple() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Test a = { x : a }
+let flat_map x f = { x = f x.x }
+let test x: a -> Test a = { x }
+
+do x = test 1
+test ""
+"#;
+    let result = support::typecheck(text);
+    let expected = Ok(Type::app(
+        alias(
+            "Test",
+            &["a"],
+            Type::record(vec![], vec![Field::new(intern("x"), typ("a"))]),
+        ),
+        collect![typ("String")],
+    ));
+
+    assert_req!(result.map(support::close_record), expected);
+}
+
+#[test]
+fn do_expression_use_binding() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Test a = { x : a }
+let flat_map x f = { x = f x.x }
+let test x: a -> Test a = { x }
+
+do x = test 1
+test (x #Int+ 2)
+"#;
+    let result = support::typecheck(text);
+    let expected = Ok(Type::app(
+        alias(
+            "Test",
+            &["a"],
+            Type::record(vec![], vec![Field::new(intern("x"), typ("a"))]),
+        ),
+        collect![typ("Int")],
+    ));
+
+    assert_req!(result.map(support::close_record), expected);
+}

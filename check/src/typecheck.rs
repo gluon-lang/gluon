@@ -616,7 +616,8 @@ impl<'a> Typecheck<'a> {
                             // Call typecheck_ again with the next expression
                             expr = match moving(expr).value {
                                 Expr::LetBindings(_, ref mut new_expr)
-                                | Expr::TypeBindings(_, ref mut new_expr) => new_expr,
+                                | Expr::TypeBindings(_, ref mut new_expr)
+                                | Expr::Do(_, _, ref mut new_expr) => new_expr,
                                 _ => ice!("Only Let and Type expressions can tailcall"),
                             };
                             scope_count += 1;
@@ -942,6 +943,41 @@ impl<'a> Typecheck<'a> {
                     self.infer_expr(expr);
                 }
                 Ok(TailCall::Type(self.typecheck_opt(last, expected_type)))
+            }
+            Expr::Do(ref mut id, ref mut bound, ref mut body) => {
+                let flat_map = self.symbols.symbol("flat_map");
+                let flat_map_type = self.find_at(id.span, &flat_map);
+                let flat_map_type = self.instantiate_generics(&flat_map_type);
+
+                let arg1 = self.subs.new_var();
+                let arg2 = self.subs.new_var();
+                let ret = expected_type
+                    .cloned()
+                    .unwrap_or_else(|| self.subs.new_var());
+                let func_type = self.type_cache
+                    .function(vec![arg1.clone(), arg2.clone()], ret.clone());
+
+                self.unify_span(expr.span, &flat_map_type, func_type);
+
+                let bound_type = self.typecheck(bound, &arg1);
+
+                self.unify_span(bound.span, &arg1, bound_type);
+
+                let id_type = match **self.subs.real(&arg1) {
+                    Type::App(ref f, ref args) => Type::app(
+                        f.clone(),
+                        args.iter().take(args.len() - 1).cloned().collect(),
+                    ),
+                    _ => self.subs.new_var(),
+                };
+
+                self.stack_var(id.value.name.clone(), id_type);
+
+                let body_type = self.typecheck(body, &ret);
+
+                let ret = self.unify_span(body.span, &ret, body_type);
+
+                Ok(TailCall::Type(ret))
             }
             Expr::Error(ref typ) => Ok(TailCall::Type(
                 typ.clone().unwrap_or_else(|| self.subs.new_var()),
