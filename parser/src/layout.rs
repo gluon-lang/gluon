@@ -188,18 +188,18 @@ where
             debug!("--------\n{:?}\n{:?}", token, offside);
 
             match (&token.value, offside.context) {
-                (&Token::Comma, Context::Brace) |
-                (&Token::Comma, Context::Paren) |
-                (&Token::Comma, Context::Bracket) => return Ok(token),
+                (&Token::Comma, Context::Brace)
+                | (&Token::Comma, Context::Paren)
+                | (&Token::Comma, Context::Bracket) => return Ok(token),
 
                 // If it is closing token we remove contexts until a context for that token is found
-                (&Token::In, _) |
-                (&Token::CloseBlock, _) |
-                (&Token::Else, _) |
-                (&Token::RBrace, _) |
-                (&Token::RBracket, _) |
-                (&Token::RParen, _) |
-                (&Token::Comma, _) => {
+                (&Token::In, _)
+                | (&Token::CloseBlock, _)
+                | (&Token::Else, _)
+                | (&Token::RBrace, _)
+                | (&Token::RBracket, _)
+                | (&Token::RParen, _)
+                | (&Token::Comma, _) => {
                     self.indent_levels.pop();
 
                     // If none of the contexts would be closed by this token then this is likely a
@@ -316,8 +316,8 @@ where
                 },
                 (Context::MatchClause, _) => {
                     // Must allow `|` to be on the same line
-                    if ordering == Ordering::Less ||
-                        (ordering == Ordering::Equal && token.value != Token::Pipe)
+                    if ordering == Ordering::Less
+                        || (ordering == Ordering::Equal && token.value != Token::Pipe)
                     {
                         self.indent_levels.pop();
                         continue;
@@ -366,6 +366,7 @@ where
             // Some tokens directly insert a new context when emitted
             let push_context = match token.value {
                 Token::Let => Some(Context::Let),
+                Token::Do => Some(Context::Let),
                 Token::If => Some(Context::If),
                 Token::Type => Some(Context::Type),
                 Token::Match => Some(Context::Expr),
@@ -389,10 +390,12 @@ where
                     }
                 }
 
-                (&Token::Equals, Context::Let) |
-                (&Token::RArrow, Context::Lambda) |
-                (&Token::RArrow, Context::MatchClause) |
-                (&Token::Then, _) => self.scan_for_next_block(Context::Block { emit_semi: false })?,
+                (&Token::Equals, Context::Let)
+                | (&Token::RArrow, Context::Lambda)
+                | (&Token::RArrow, Context::MatchClause)
+                | (&Token::Then, _) => {
+                    self.scan_for_next_block(Context::Block { emit_semi: false })?
+                }
                 (&Token::With, _) => self.scan_for_next_block(Context::MatchClause)?,
 
                 (&Token::Else, _) => {
@@ -436,14 +439,14 @@ where
 
 fn token_closes_context(token: &Token, context: Context) -> bool {
     match (token, context) {
-        (&Token::Else, Context::If) |
-        (&Token::RBrace, Context::Brace) |
-        (&Token::RBracket, Context::Bracket) |
-        (&Token::RParen, Context::Paren) |
-        (&Token::CloseBlock, Context::Block { .. }) |
-        (&Token::In, Context::Let) |
-        (&Token::In, Context::Type) |
-        (_, Context::Block { .. }) => true,
+        (&Token::Else, Context::If)
+        | (&Token::RBrace, Context::Brace)
+        | (&Token::RBracket, Context::Bracket)
+        | (&Token::RParen, Context::Paren)
+        | (&Token::CloseBlock, Context::Block { .. })
+        | (&Token::In, Context::Let)
+        | (&Token::In, Context::Type)
+        | (_, Context::Block { .. }) => true,
         (_, _) => false,
     }
 }

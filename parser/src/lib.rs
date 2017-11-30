@@ -53,10 +53,11 @@ type LalrpopError<'input> = lalrpop_util::ParseError<
 /// Shrink hidden spans to fit the visible expressions and flatten singleton blocks.
 fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
     match expr.value {
-        Expr::Infix(_, _, ref last) |
-        Expr::IfElse(_, _, ref last) |
-        Expr::LetBindings(_, ref last) |
-        Expr::TypeBindings(_, ref last) => expr.span.end = last.span.end,
+        Expr::Infix(_, _, ref last)
+        | Expr::IfElse(_, _, ref last)
+        | Expr::LetBindings(_, ref last)
+        | Expr::TypeBindings(_, ref last)
+        | Expr::Do(_, _, ref last) => expr.span.end = last.span.end,
         Expr::Lambda(ref lambda) => expr.span.end = lambda.body.span.end,
         Expr::Block(ref mut exprs) => match exprs.len() {
             0 => (),
@@ -67,14 +68,14 @@ fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
             let end = last_alt.expr.span.end;
             expr.span.end = end;
         },
-        Expr::App(_, _) |
-        Expr::Ident(_) |
-        Expr::Literal(_) |
-        Expr::Projection(_, _, _) |
-        Expr::Array(_) |
-        Expr::Record { .. } |
-        Expr::Tuple { .. } |
-        Expr::Error(..) => (),
+        Expr::App(_, _)
+        | Expr::Ident(_)
+        | Expr::Literal(_)
+        | Expr::Projection(_, _, _)
+        | Expr::Array(_)
+        | Expr::Record { .. }
+        | Expr::Tuple { .. }
+        | Expr::Error(..) => (),
     }
     expr
 }

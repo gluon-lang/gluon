@@ -37,6 +37,7 @@ extern {
         "if" => Token::If,
         "in" => Token::In,
         "let" => Token::Let,
+        "do" => Token::Do,
         "match" => Token::Match,
         "then" => Token::Then,
         "type" => Token::Type,
@@ -549,6 +550,10 @@ Expr: Expr<Id> = {
         bindings.insert(0, first);
 
         Expr::TypeBindings(bindings, Box::new(body))
+    },
+
+    "do" <ident: SpannedIdent> "=" <bound: SpExpr> "in" <expr: SpExpr> => {
+        Expr::Do(ident, Box::new(bound), Box::new(expr))
     },
 
     BlockExpr,

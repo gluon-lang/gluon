@@ -119,13 +119,13 @@ impl<'a> Index<&'a str> for OpTable {
     type Output = OpMeta;
 
     fn index(&self, name: &'a str) -> &OpMeta {
-        self.operators
-            .get(name)
-            .unwrap_or_else(|| if name.starts_with('#') {
+        self.operators.get(name).unwrap_or_else(|| {
+            if name.starts_with('#') {
                 &self[name[1..].trim_left_matches(char::is_alphanumeric)]
             } else {
                 &self.default_meta
-            })
+            }
+        })
     }
 }
 
