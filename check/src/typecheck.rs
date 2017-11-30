@@ -967,11 +967,11 @@ impl<'a> Typecheck<'a> {
 
                 self.unify_span(expr.span, &flat_map_type, func_type);
 
-                let bound_type = self.typecheck(bound, &arg1);
+                let bound_type = self.typecheck(bound, &arg2);
 
-                self.unify_span(bound.span, &arg1, bound_type);
+                self.unify_span(bound.span, &arg2, bound_type);
 
-                let id_type = match **self.subs.real(&arg1) {
+                let id_type = match **self.subs.real(&arg2) {
                     Type::App(ref f, ref args) => Type::app(
                         f.clone(),
                         args.iter().take(args.len() - 1).cloned().collect(),
