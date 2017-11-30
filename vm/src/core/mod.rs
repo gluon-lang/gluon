@@ -650,6 +650,15 @@ impl<'a, 'e> Translator<'a, 'e> {
                 )
             },
             ast::Expr::TypeBindings(_, ref expr) => self.translate(expr),
+            ast::Expr::Do(ref id, ref bound, ref body) => {
+                let lambda = self.new_lambda(
+                    expr.span.start,
+                    id.value.clone(),
+                    vec![id.value.clone()],
+                    self.translate_alloc(body),
+                    body.span,
+                );
+            }
             ast::Expr::Error(_) => ice!("ICE: Error expression found in the compiler"),
         }
     }

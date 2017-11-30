@@ -262,7 +262,7 @@ pub struct Do<Id> {
     pub id: SpannedIdent<Id>,
     pub bound: Box<SpannedExpr<Id>>,
     pub body: Box<SpannedExpr<Id>>,
-    pub flat_map_id: Option<Id>,
+    pub flat_map_id: Option<TypedIdent<Id>>,
 }
 
 
@@ -465,11 +465,14 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
             ref mut id,
             ref mut bound,
             ref mut body,
-            ..
+            ref mut flat_map_id,
         }) => {
             v.visit_spanned_typed_ident(id);
             v.visit_expr(bound);
             v.visit_expr(body);
+            if let Some(ref mut flat_map_id) = *flat_map_id {
+                v.visit_ident(flat_map_id);
+            }
         }
 
         Expr::Lambda(ref mut lambda) => {
