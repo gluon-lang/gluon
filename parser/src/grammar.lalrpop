@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use itertools::Itertools;
 
-use base::ast::{Alternative, Array, AstType, Comment, Expr, ExprField, Lambda, Literal, Pattern,
+use base::ast::{Alternative, Array, AstType, Do, Comment, Expr, ExprField, Lambda, Literal, Pattern,
     PatternField, SpannedExpr, SpannedIdent, TypeBinding, TypedIdent, ValueBinding};
 use base::kind::{ArcKind, Kind};
 use base::pos::{self, BytePos, Spanned};
@@ -552,8 +552,8 @@ Expr: Expr<Id> = {
         Expr::TypeBindings(bindings, Box::new(body))
     },
 
-    "do" <ident: SpannedIdent> "=" <bound: SpExpr> "in" <expr: SpExpr> => {
-        Expr::Do(ident, Box::new(bound), Box::new(expr))
+    "do" <id: SpannedIdent> "=" <bound: SpExpr> "in" <body: SpExpr> => {
+        Expr::Do(Do { id, bound: Box::new(bound), body: Box::new(body), flat_map_id: None })
     },
 
     BlockExpr,

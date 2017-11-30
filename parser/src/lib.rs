@@ -17,7 +17,7 @@ extern crate quick_error;
 use std::cell::RefCell;
 use std::fmt;
 
-use base::ast::{Comment, Expr, IdentEnv, SpannedExpr, SpannedPattern, TypedIdent, ValueBinding};
+use base::ast::{Comment, Do, Expr, IdentEnv, SpannedExpr, SpannedPattern, TypedIdent, ValueBinding};
 use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::symbol::Symbol;
@@ -57,7 +57,7 @@ fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
         | Expr::IfElse(_, _, ref last)
         | Expr::LetBindings(_, ref last)
         | Expr::TypeBindings(_, ref last)
-        | Expr::Do(_, _, ref last) => expr.span.end = last.span.end,
+        | Expr::Do(Do { body: ref last, .. }) => expr.span.end = last.span.end,
         Expr::Lambda(ref lambda) => expr.span.end = lambda.body.span.end,
         Expr::Block(ref mut exprs) => match exprs.len() {
             0 => (),

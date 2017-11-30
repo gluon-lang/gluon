@@ -257,6 +257,15 @@ pub struct ExprField<Id, E> {
     pub value: Option<E>,
 }
 
+#[derive(Clone, PartialEq, Debug)]
+pub struct Do<Id> {
+    pub id: SpannedIdent<Id>,
+    pub bound: Box<SpannedExpr<Id>>,
+    pub body: Box<SpannedExpr<Id>>,
+    pub flat_map_id: Option<Id>,
+}
+
+
 /// The representation of gluon's expression syntax
 #[derive(Clone, PartialEq, Debug)]
 pub enum Expr<Id> {
@@ -300,7 +309,7 @@ pub enum Expr<Id> {
     TypeBindings(Vec<TypeBinding<Id>>, Box<SpannedExpr<Id>>),
     /// A group of sequenced expressions
     Block(Vec<SpannedExpr<Id>>),
-    Do(SpannedIdent<Id>, Box<SpannedExpr<Id>>, Box<SpannedExpr<Id>>),
+    Do(Do<Id>),
     /// An invalid expression
     Error(
         /// Provides a hint of what type the expression would have, if any
@@ -452,7 +461,12 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
             v.visit_expr(expr);
         },
 
-        Expr::Do(ref mut id, ref mut bound, ref mut body) => {
+        Expr::Do(Do {
+            ref mut id,
+            ref mut bound,
+            ref mut body,
+            ..
+        }) => {
             v.visit_spanned_typed_ident(id);
             v.visit_expr(bound);
             v.visit_expr(body);
@@ -633,7 +647,11 @@ pub fn walk_expr<'a, V: ?Sized + Visitor<'a>>(v: &mut V, e: &'a SpannedExpr<V::I
         | Expr::Block(ref exprs) => for expr in exprs {
             v.visit_expr(expr);
         },
-        Expr::Do(_, ref bound, ref body) => {
+        Expr::Do(Do {
+            ref bound,
+            ref body,
+            ..
+        }) => {
             v.visit_expr(bound);
             v.visit_expr(body);
         }
@@ -733,7 +751,7 @@ impl Typed for Expr<Symbol> {
             }
             Expr::LetBindings(_, ref expr)
             | Expr::TypeBindings(_, ref expr)
-            | Expr::Do(_, _, ref expr) => expr.env_type_of(env),
+            | Expr::Do(Do { body: ref expr, .. }) => expr.env_type_of(env),
             Expr::App(ref func, ref args) => {
                 get_return_type(env, &func.env_type_of(env), args.len())
             }

@@ -10,7 +10,7 @@ use std::sync::Arc;
 use itertools::Itertools;
 
 use base::scoped_map::ScopedMap;
-use base::ast::{DisplayEnv, Expr, Literal, MutVisitor, Pattern, PatternField, SpannedExpr};
+use base::ast::{DisplayEnv, Do, Expr, Literal, MutVisitor, Pattern, PatternField, SpannedExpr};
 use base::ast::{AstType, SpannedIdent, SpannedPattern, TypeBinding, ValueBinding};
 use base::error::Errors;
 use base::fnv::{FnvMap, FnvSet};
@@ -617,7 +617,10 @@ impl<'a> Typecheck<'a> {
                             expr = match moving(expr).value {
                                 Expr::LetBindings(_, ref mut new_expr)
                                 | Expr::TypeBindings(_, ref mut new_expr)
-                                | Expr::Do(_, _, ref mut new_expr) => new_expr,
+                                | Expr::Do(Do {
+                                    body: ref mut new_expr,
+                                    ..
+                                }) => new_expr,
                                 _ => ice!("Only Let and Type expressions can tailcall"),
                             };
                             scope_count += 1;
@@ -944,7 +947,12 @@ impl<'a> Typecheck<'a> {
                 }
                 Ok(TailCall::Type(self.typecheck_opt(last, expected_type)))
             }
-            Expr::Do(ref mut id, ref mut bound, ref mut body) => {
+            Expr::Do(Do {
+                ref mut id,
+                ref mut bound,
+                ref mut body,
+                ..
+            }) => {
                 let flat_map = self.symbols.symbol("flat_map");
                 let flat_map_type = self.find_at(id.span, &flat_map);
                 let flat_map_type = self.instantiate_generics(&flat_map_type);
