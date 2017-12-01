@@ -112,6 +112,11 @@ where
     ) -> Result<Option<Type>, Error<Type, Type::Error>>;
 
     fn error_type(unifier: &mut UnifierState<S, Self>) -> Option<Type>;
+
+    /// `true` if the returned type can be replaced by the caller
+    fn allow_returned_type_replacement() -> bool {
+        true
+    }
 }
 
 /// A type which can be unified by checking for equivalence between the top level of
@@ -317,6 +322,10 @@ where
     }
     fn error_type(_unifier: &mut UnifierState<S, Self>) -> Option<T> {
         None
+    }
+
+    fn allow_returned_type_replacement() -> bool {
+        false
     }
 }
 

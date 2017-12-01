@@ -831,3 +831,27 @@ test (x #Int+ 2)
 
     assert_req!(result.map(support::close_record), expected);
 }
+
+
+#[test]
+fn eq_unresolved_constraint_bug() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Eq a = { (==) : a -> a -> Bool }
+type List a = | Nil | Cons a (List a)
+
+let (==): Int -> Int -> Bool = \x y -> True
+
+let eq a : Eq a -> Eq (List a) =
+    let (==) l r : List a -> List a -> Bool =
+        match (l, r) with
+        | (Cons x xs, Cons y ys) -> a.(==) x y
+        | _ -> False
+    { (==) }
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}

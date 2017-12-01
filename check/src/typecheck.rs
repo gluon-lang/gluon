@@ -1352,7 +1352,13 @@ impl<'a> Typecheck<'a> {
 
             debug!("let {:?} : {}", bind.name, typ);
 
-            typ = self.merge_signature(bind.name.span, level, &bind.resolved_type, typ);
+            let bind_span = Span::new(
+                bind.name.span.start,
+                bind.args
+                    .last()
+                    .map_or(bind.name.span.end, |last_arg| last_arg.span.end),
+            );
+            typ = self.merge_signature(bind_span, level, &bind.resolved_type, typ);
 
 
             if !is_recursive {

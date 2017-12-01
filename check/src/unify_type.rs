@@ -485,18 +485,20 @@ where
                     let old_in_alias = unifier.state.in_alias;
                     unifier.state.in_alias = true;
 
-                    // FIXME Maybe always return `None` here since the types before we removed the
-                    // aliases are probably more specific.
                     let result = unifier
                         .try_match_res(lhs, rhs)
-                        .map(|_| {
-                            // Always ignore the type returned from try_match_res since it will be less specialized than
-                            // `lhs` or `rhs`. If `lhs` is an alias we return `None` since `lhs` will be chosen if necessary anyway
-                            // otherwise if `lhs` is not an alias then `rhs` must have been so chose `rhs/actual` 
-                            if lhs_base.is_some() {
-                                None
+                        .map(|typ| {
+                            if U::allow_returned_type_replacement() || typ.is_none() {
+                                // Always ignore the type returned from try_match_res since it will be less specialized than
+                                // `lhs` or `rhs`. If `lhs` is an alias we return `None` since `lhs` will be chosen if necessary anyway
+                                // otherwise if `lhs` is not an alias then `rhs` must have been so chose `rhs/actual`
+                                if lhs_base.is_some() {
+                                    None
+                                } else {
+                                    Some(actual.clone())
+                                }
                             } else {
-                                Some(actual.clone())
+                                typ
                             }
                         })
                         .map_err(|_err| {
