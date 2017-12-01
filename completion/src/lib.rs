@@ -537,6 +537,24 @@ where
             } else {
                 self.visit_one(exprs)
             },
+            Expr::Do(ref do_expr) => {
+                let iter = once(Either::Left(&do_expr.id))
+                    .chain(once(Either::Right(&do_expr.bound)))
+                    .chain(once(Either::Right(&do_expr.body)));
+                match self.select_spanned(iter, |x| x.either(|i| i.span, |e| e.span)) {
+                    (_, Some(either)) => match either {
+                        Either::Left(ident) => {
+                            self.found = Some(Some(Match::Ident(
+                                ident.span,
+                                &ident.value.name,
+                                &ident.value.typ,
+                            )));
+                        }
+                        Either::Right(expr) => self.visit_expr(expr),
+                    },
+                    _ => unreachable!(),
+                }
+            }
             Expr::Error(..) => (),
         }
     }

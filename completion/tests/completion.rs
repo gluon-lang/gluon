@@ -40,6 +40,14 @@ fn find_type(s: &str, pos: BytePos) -> Result<ArcType, ()> {
     find_span_type(s, pos).map(|t| t.1)
 }
 
+fn find_type_loc(s: &str, line: usize, column: usize) -> Result<ArcType, ()> {
+    let pos = Source::new(s)
+        .lines()
+        .offset(line.into(), column.into())
+        .unwrap();
+    find_span_type(s, pos).map(|t| t.1)
+}
+
 fn suggest_types(s: &str, pos: BytePos) -> Result<Vec<Suggestion>, ()> {
     let env = MockEnv::new();
 
@@ -219,6 +227,29 @@ r.x
     let result = completion::find(&typ_env, &mut expr, BytePos::from(22));
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
+}
+
+#[test]
+fn find_do_binding_type() {
+    let _ = env_logger::init();
+
+    let result = find_type_loc(
+        r#"
+type Option a = | None | Some a
+let flat_map f x =
+    match x with
+    | Some y -> f y
+    | None -> None
+
+do x = Some 1
+None
+"#,
+        7,
+        4,
+    );
+    let expected = Ok("Int".to_string());
+
+    assert_eq!(result.map(|typ| typ.to_string()), expected);
 }
 
 #[test]
