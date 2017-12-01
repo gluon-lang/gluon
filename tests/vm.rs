@@ -452,6 +452,24 @@ r#"
 2
 }
 
+test_expr!{ prelude do_expression_option_some,
+r#"
+let { monad = { flat_map } } = import! std.option
+do x = Some 1
+Some (x + 2)
+"#,
+Some(3)
+}
+
+test_expr!{ prelude do_expression_option_none,
+r#"
+let { monad = { flat_map } } = import! std.option
+do x = None
+Some 1
+"#,
+None::<i32>
+}
+
 #[test]
 fn rename_types_after_binding() {
     let _ = ::env_logger::init();

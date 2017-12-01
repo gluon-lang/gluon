@@ -11,7 +11,7 @@ use itertools::Itertools;
 
 use base::scoped_map::ScopedMap;
 use base::ast::{DisplayEnv, Do, Expr, Literal, MutVisitor, Pattern, PatternField, SpannedExpr};
-use base::ast::{AstType, SpannedIdent, SpannedPattern, TypeBinding, ValueBinding};
+use base::ast::{AstType, SpannedIdent, SpannedPattern, TypeBinding, TypedIdent, ValueBinding};
 use base::error::Errors;
 use base::fnv::{FnvMap, FnvSet};
 use base::resolve;
@@ -951,10 +951,14 @@ impl<'a> Typecheck<'a> {
                 ref mut id,
                 ref mut bound,
                 ref mut body,
-                ..
+                ref mut flat_map_id,
             }) => {
                 let flat_map = self.symbols.symbol("flat_map");
                 let flat_map_type = self.find_at(id.span, &flat_map);
+                *flat_map_id = Some(TypedIdent {
+                    name: flat_map.clone(),
+                    typ: flat_map_type.clone(),
+                });
                 let flat_map_type = self.instantiate_generics(&flat_map_type);
 
                 id.value.typ = self.subs.new_var();

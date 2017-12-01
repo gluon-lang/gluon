@@ -359,11 +359,12 @@ pub fn rename(
                     ref mut body,
                     ref mut flat_map_id,
                 }) => {
-                    if let Some(ref mut flat_map_id) = *flat_map_id {
-                        if let Some(new_id) = self.rename(&flat_map_id.name, &flat_map_id.typ)? {
-                            debug!("Rename identifier {} = {}", flat_map_id.name, new_id);
-                            flat_map_id.name = new_id;
-                        }
+                    let flat_map_id = flat_map_id
+                        .as_mut()
+                        .unwrap_or_else(|| ice!("flat_map_id not set before renaming"));
+                    if let Some(new_id) = self.rename(&flat_map_id.name, &flat_map_id.typ)? {
+                        debug!("Rename identifier {} = {}", flat_map_id.name, new_id);
+                        flat_map_id.name = new_id;
                     }
 
                     self.visit_expr(bound);
