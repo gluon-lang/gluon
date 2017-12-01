@@ -813,8 +813,8 @@ fn do_expression_use_binding() {
 
     let text = r#"
 type Test a = { x : a }
-let flat_map f x = { x = f x.x }
-let test x: a -> Test a = { x }
+let flat_map f x : (a -> Test b) -> Test a -> Test b = f x.x
+let test x : a -> Test a = { x }
 
 do x = test 1
 test (x #Int+ 2)

@@ -957,7 +957,10 @@ impl<'a> Typecheck<'a> {
                 let flat_map_type = self.find_at(id.span, &flat_map);
                 let flat_map_type = self.instantiate_generics(&flat_map_type);
 
-                let arg1 = self.subs.new_var();
+                id.value.typ = self.subs.new_var();
+                let arg1 = self.type_cache
+                    .function(Some(id.value.typ.clone()), self.subs.new_var());
+
                 let arg2 = self.subs.new_var();
                 let ret = expected_type
                     .cloned()
@@ -971,15 +974,7 @@ impl<'a> Typecheck<'a> {
 
                 self.unify_span(bound.span, &arg2, bound_type);
 
-                let id_type = match **self.subs.real(&arg2) {
-                    Type::App(ref f, ref args) => Type::app(
-                        f.clone(),
-                        args.iter().take(args.len() - 1).cloned().collect(),
-                    ),
-                    _ => self.subs.new_var(),
-                };
-
-                self.stack_var(id.value.name.clone(), id_type);
+                self.stack_var(id.value.name.clone(), id.value.typ.clone());
 
                 let body_type = self.typecheck(body, &ret);
 

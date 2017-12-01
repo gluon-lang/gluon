@@ -490,6 +490,9 @@ where
                     let result = unifier
                         .try_match_res(lhs, rhs)
                         .map(|_| {
+                            // Always ignore the type returned from try_match_res since it will be less specialized than
+                            // `lhs` or `rhs`. If `lhs` is an alias we return `None` since `lhs` will be chosen if necessary anyway
+                            // otherwise if `lhs` is not an alias then `rhs` must have been so chose `rhs/actual` 
                             if lhs_base.is_some() {
                                 None
                             } else {
