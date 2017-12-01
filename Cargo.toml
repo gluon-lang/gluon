@@ -50,7 +50,7 @@ skeptic = { version = "0.6", optional = true }
 
 [dev-dependencies]
 bencher = "0.1.2"
-tensile = { git = "https://github.com/Marwes/tensile" }
+tensile = "0.1.0"
 collect-mac = "0.1.0"
 env_logger = "0.3.4"
 
