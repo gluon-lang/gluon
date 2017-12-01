@@ -300,3 +300,13 @@ let semigroup =
 "#;
     assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
 }
+
+#[test]
+fn do_expression() {
+    let expr = r#"
+do /* x1 */ x /* x2 */ = Some 1
+// test
+test abc 1232 ""
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+}
