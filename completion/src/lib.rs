@@ -13,9 +13,9 @@ use either::Either;
 
 use itertools::Itertools;
 
-use base::ast::{walk_expr, walk_pattern, AstType, Expr, Pattern, SpannedExpr, SpannedIdent,
-                SpannedPattern, Typed, TypedIdent, Visitor};
-use base::fnv::FnvMap;
+use base::ast::{walk_expr, walk_pattern, AstType, Expr, Pattern, PatternField, SpannedExpr,
+                SpannedIdent, SpannedPattern, Typed, TypedIdent, Visitor};
+use base::fnv::{FnvMap, FnvSet};
 use base::kind::{ArcKind, Kind};
 use base::metadata::Metadata;
 use base::resolve;
@@ -901,9 +901,29 @@ pub fn suggest<T>(env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Vec<Sugg
 where
     T: TypeEnv,
 {
-    fn suggest_fields_of_type(result: &mut Vec<Suggestion>, prefix: &str, typ: &ArcType) {
+    fn suggest_fields_of_type(
+        result: &mut Vec<Suggestion>,
+        types: &[PatternField<Symbol, Symbol>],
+        fields: &[PatternField<Symbol, SpannedPattern<Symbol>>],
+        prefix: &str,
+        typ: &ArcType,
+    ) {
+        let existing_fields: FnvSet<&str> = types
+            .iter()
+            .map(|field| field.name.value.as_ref())
+            .chain(fields.iter().map(|field| field.name.value.as_ref()))
+            .collect();
+
+        let should_suggest = |name: &str| {
+            // Filter out fields that has already been defined in the pattern
+            (!existing_fields.contains(name) && name.starts_with(prefix))
+                // But keep exact matches to keep that suggestion when the user has typed a whole
+                // field
+                || name == prefix
+        };
+
         let fields = typ.row_iter()
-            .filter(|field| field.name.declared_name().starts_with(prefix))
+            .filter(|field| should_suggest(field.name.declared_name()))
             .map(|field| {
                 Suggestion {
                     name: field.name.declared_name().into(),
@@ -911,7 +931,7 @@ where
                 }
             });
         let types = typ.type_field_iter()
-            .filter(|field| field.name.declared_name().starts_with(prefix))
+            .filter(|field| should_suggest(field.name.declared_name()))
             .map(|field| {
                 Suggestion {
                     name: field.name.declared_name().into(),
@@ -942,9 +962,13 @@ where
             Match::Pattern(pattern) => {
                 let prefix = match pattern.value {
                     Pattern::Constructor(ref id, _) | Pattern::Ident(ref id) => id.as_ref(),
-                    Pattern::Record { .. } => {
+                    Pattern::Record {
+                        ref types,
+                        ref fields,
+                        ..
+                    } => {
                         let typ = pattern.env_type_of(env);
-                        suggest_fields_of_type(&mut result, "", &typ);
+                        suggest_fields_of_type(&mut result, types, fields, "", &typ);
                         ""
                     }
                     _ => "",
@@ -972,8 +996,16 @@ where
                         }
                     }));
                 }
-                Match::Pattern { .. } => {
-                    suggest_fields_of_type(&mut result, ident.as_ref(), typ);
+                Match::Pattern(&Spanned {
+                    value:
+                        Pattern::Record {
+                            ref types,
+                            ref fields,
+                            ..
+                        },
+                    ..
+                }) => {
+                    suggest_fields_of_type(&mut result, types, fields, ident.declared_name(), typ);
                 }
                 _ => (),
             },
@@ -1024,9 +1056,13 @@ where
             }
 
             Match::Pattern(pattern) => match pattern.value {
-                Pattern::Record { .. } => {
+                Pattern::Record {
+                    ref types,
+                    ref fields,
+                    ..
+                } => {
                     let typ = pattern.env_type_of(env);
-                    suggest_fields_of_type(&mut result, "", &typ);
+                    suggest_fields_of_type(&mut result, types, fields, "", &typ);
                 }
                 _ => result.extend(suggest.patterns.iter().map(|(name, typ)| {
                     Suggestion {

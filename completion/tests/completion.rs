@@ -650,6 +650,35 @@ let { } = { abc = "" }
 }
 
 #[test]
+fn dont_suggest_field_already_in_pattern() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Test = | Test Int
+let { abc, a, Test } = { Test, x = 1, abc = "", abcd = 2 }
+()
+"#;
+    let result = suggest_loc(text, 2, 12);
+    let expected = Ok(vec!["abcd".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_exact_field_match_in_pattern() {
+    let _ = env_logger::init();
+
+    let text = r#"
+let { abc } = { abc = "" }
+()
+"#;
+    let result = suggest_loc(text, 1, 8);
+    let expected = Ok(vec!["abc".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
 fn suggest_type_field_in_record_pattern_at_ident() {
     let _ = env_logger::init();
 
