@@ -1,8 +1,7 @@
 let prelude = import! std.prelude
 let char = import! std.char
 let string = import! std.string
-let result = import! std.result
-let { Result } = result
+let result @ { Result } = import! std.result
 let { Test, run, writer, assert, assert_eq } = import! std.test
 let { Writer } = import! std.writer
 

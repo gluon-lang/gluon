@@ -202,17 +202,24 @@ pub struct PatternField<Id, P> {
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Pattern<Id> {
+    /// An as-pattern, eg. `option @ { monoid, functor }`
+    As(Id, Box<SpannedPattern<Id>>),
+    /// Constructor pattern, eg. `Cons x xs`
     Constructor(TypedIdent<Id>, Vec<SpannedPattern<Id>>),
+    /// Ident pattern, eg: `x`
+    Ident(TypedIdent<Id>),
+    /// Record pattern, eg. `{ x, y = foo }`
     Record {
         typ: ArcType<Id>,
         types: Vec<PatternField<Id, Id>>,
         fields: Vec<PatternField<Id, SpannedPattern<Id>>>,
     },
+    /// Tuple pattern, eg: `(x, y)`
     Tuple {
         typ: ArcType<Id>,
         elems: Vec<SpannedPattern<Id>>,
     },
-    Ident(TypedIdent<Id>),
+    /// An invalid pattern
     Error,
 }
 
@@ -469,6 +476,9 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
 /// Walks a pattern, calling `visit_*` on all relevant elements
 pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::Ident>) {
     match *p {
+        Pattern::As(_, ref mut pat) => {
+            v.visit_pattern(pat);
+        }
         Pattern::Constructor(ref mut id, ref mut args) => {
             v.visit_ident(id);
             for arg in args {
@@ -635,6 +645,9 @@ pub fn walk_expr<'a, V: ?Sized + Visitor<'a>>(v: &mut V, e: &'a SpannedExpr<V::I
 /// Walks a pattern, calling `visit_*` on all relevant elements
 pub fn walk_pattern<'a, V: ?Sized + Visitor<'a>>(v: &mut V, p: &'a Pattern<V::Ident>) {
     match *p {
+        Pattern::As(_, ref pat) => {
+            v.visit_pattern(&pat);
+        }
         Pattern::Constructor(ref id, ref args) => {
             v.visit_typ(&id.typ);
             for arg in args {
@@ -741,6 +754,7 @@ impl Typed for Pattern<Symbol> {
     fn env_type_of(&self, env: &TypeEnv) -> ArcType {
         // Identifier patterns might be a function so use the identifier's type instead
         match *self {
+            Pattern::As(_, ref pat) => pat.env_type_of(env),
             Pattern::Ident(ref id) => id.typ.clone(),
             Pattern::Record { ref typ, .. } => typ.clone(),
             Pattern::Tuple { ref typ, .. } => typ.clone(),
@@ -795,7 +809,7 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
 }
 
 pub fn is_operator_char(c: char) -> bool {
-    "#+-*/&|=<>:.".chars().any(|x| x == c)
+    "#+-*/&|=<>:.@".chars().any(|x| x == c)
 }
 
 pub fn is_constructor(s: &str) -> bool {

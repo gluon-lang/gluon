@@ -29,6 +29,7 @@ pub enum Token<'input> {
     Type,
     With,
 
+    At,
     Colon,
     Comma,
     Dot,
@@ -86,6 +87,7 @@ impl<'input> fmt::Display for Token<'input> {
             RBracket => "RBracket",
             RParen => "RParen",
 
+            At => "At",
             Colon => "Colon",
             Comma => "Comma",
             Dot => "Dot",
@@ -336,6 +338,7 @@ impl<'input> Tokenizer<'input> {
         let (end, op) = self.take_while(start, is_operator_char);
 
         let token = match op {
+            "@" => Token::At,
             "." => Token::Dot,
             ".." => Token::DotDot,
             ":" => Token::Colon,

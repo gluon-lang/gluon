@@ -163,21 +163,19 @@ impl<'a> KindCheck<'a> {
         typ: &mut AstType<Symbol>,
         expected: &ArcKind,
     ) -> Result<ArcKind> {
-        debug!("Kindcheck {}", typ);
         let kind = self.kindcheck(typ)?;
         let kind = self.unify(typ.span(), expected, kind)?;
         self.finalize_type(typ);
-        debug!("Done {}", typ);
         Ok(kind)
     }
 
     fn builtin_kind(&self, typ: BuiltinType) -> ArcKind {
         match typ {
-            BuiltinType::String |
-            BuiltinType::Byte |
-            BuiltinType::Char |
-            BuiltinType::Int |
-            BuiltinType::Float => self.type_kind(),
+            BuiltinType::String
+            | BuiltinType::Byte
+            | BuiltinType::Char
+            | BuiltinType::Int
+            | BuiltinType::Float => self.type_kind(),
             BuiltinType::Array => self.function1_kind(),
             BuiltinType::Function => self.function2_kind(),
         }

@@ -1,10 +1,7 @@
-let prelude = import! std.prelude
-and { Functor, Applicative } = prelude
-let int = import! std.int
-and { (+) } = int.num
-let list = import! std.list
+let { Functor, Applicative } = import! std.prelude
+let int @ { num = { (+) } } = import! std.int
+let list @ { List } = import! std.list
 let { Bool } = import! std.bool
-let { List } = list
 let { Option } = import! std.option
 let { lazy, force } = import! std.lazy
 

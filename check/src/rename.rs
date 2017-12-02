@@ -106,7 +106,7 @@ pub fn rename(
 
         fn new_pattern(&mut self, typ: &ArcType, pattern: &mut ast::SpannedPattern<Symbol>) {
             match pattern.value {
-                ast::Pattern::Record {
+                Pattern::Record {
                     ref mut fields,
                     ref types,
                     ..
@@ -151,17 +151,18 @@ pub fn rename(
                         );
                     }
                 }
-                ast::Pattern::Ident(ref mut id) => {
+                Pattern::Ident(ref mut id) => {
                     let new_name = self.stack_var(id.name.clone(), pattern.span, id.typ.clone());
                     id.name = new_name;
                 }
-                ast::Pattern::Tuple {
+                Pattern::As(_, ref mut pat) => self.new_pattern(typ, pat),
+                Pattern::Tuple {
                     ref typ,
                     ref mut elems,
                 } => for (field, elem) in typ.row_iter().zip(elems) {
                     self.new_pattern(&field.typ, elem);
                 },
-                ast::Pattern::Constructor(ref mut id, ref mut args) => {
+                Pattern::Constructor(ref mut id, ref mut args) => {
                     let typ = self.env
                         .find_type(&id.name)
                         .unwrap_or_else(|| panic!("ICE: Expected constructor: {}", id.name))
@@ -170,7 +171,7 @@ pub fn rename(
                         self.new_pattern(arg_type, arg);
                     }
                 }
-                ast::Pattern::Error => (),
+                Pattern::Error => (),
             }
         }
 

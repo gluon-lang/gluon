@@ -983,3 +983,30 @@ let show : Show a -> Show (List a) = \d ->
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+
+#[test]
+fn show_list_bug_with_as_pattern() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+type List a = | Nil | Cons a (List a)
+type Show a = { show : a -> String }
+
+let any x = any x
+let string_show : Show String = { show = \_ -> "" }
+let int_show : Show Int = { show = \_ -> "" }
+
+let show : Show a -> Show (List a) = \d ->
+    {
+        show = \_ -> ""
+    }
+let list@{ } = { show }
+
+list.show string_show
+list.show int_show
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}

@@ -1,13 +1,13 @@
 let { (|>) } = import! std.function
-let { Option, unwrap } = import! std.option
-let { Result, unwrap_ok, unwrap_err } = import! std.result
+let option @ { Option } = import! std.option
+let result @ { Result } = import! std.result
 let { assert_ieq }  = import! std.test
 
-let one = Some 1 |> unwrap
+let one = Some 1 |> option.unwrap
 assert_ieq one 1
 
-let two = Ok 2 |> unwrap_ok
+let two = Ok 2 |> result.unwrap_ok
 assert_ieq two 2
 
-let three = Err 3 |> unwrap_err
+let three = Err 3 |> result.unwrap_err
 assert_ieq three 3

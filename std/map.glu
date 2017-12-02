@@ -3,8 +3,7 @@ let { Ordering, Ord, Semigroup, Monoid } = prelude
 let { Functor, Applicative, Foldable, Traversable } = prelude
 
 let { flip, const } = import! std.function
-let list = import! std.list
-let { List } = list
+let list @ { List } = import! std.list
 let { Option } = import! std.option
 
 type Map k a = | Bin k a (Map k a) (Map k a) | Tip
