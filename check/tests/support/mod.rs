@@ -53,7 +53,7 @@ pub fn parse_new(
 }
 
 #[allow(dead_code)]
-pub fn typecheck(text: &str) -> Result<ArcType, InFile<typecheck::TypeError<Symbol>>> {
+pub fn typecheck(text: &str) -> Result<ArcType, InFile<typecheck::HelpError<Symbol>>> {
     let (_, t) = typecheck_expr(text);
     t
 }
@@ -154,7 +154,7 @@ pub fn typecheck_expr_expected(
     expected: Option<&ArcType>,
 ) -> (
     SpannedExpr<Symbol>,
-    Result<ArcType, InFile<typecheck::TypeError<Symbol>>>,
+    Result<ArcType, InFile<typecheck::HelpError<Symbol>>>,
 ) {
     let mut expr = parse_new(text).unwrap_or_else(|(_, err)| panic!("{}", err));
 
@@ -172,7 +172,7 @@ pub fn typecheck_expr(
     text: &str,
 ) -> (
     SpannedExpr<Symbol>,
-    Result<ArcType, InFile<typecheck::TypeError<Symbol>>>,
+    Result<ArcType, InFile<typecheck::HelpError<Symbol>>>,
 ) {
     typecheck_expr_expected(text, None)
 }
@@ -182,7 +182,7 @@ pub fn typecheck_partial_expr(
     text: &str,
 ) -> (
     SpannedExpr<Symbol>,
-    Result<ArcType, InFile<typecheck::TypeError<Symbol>>>,
+    Result<ArcType, InFile<typecheck::HelpError<Symbol>>>,
 ) {
     let mut expr = match parse_new(text) {
         Ok(e) => e,
@@ -331,7 +331,7 @@ macro_rules! assert_err {
                 let mut iter = (&errors).into_iter();
                 $(
                 match iter.next() {
-                    Some(&::base::pos::Spanned { value: $id, .. }) => (),
+                    Some(&::base::pos::Spanned { value: ::base::error::Help { error: $id, .. }, .. }) => (),
                     _ => assert!(false, "Found errors:\n{}\nbut expected {}",
                                         errors, stringify!($id)),
                 }
@@ -375,8 +375,8 @@ macro_rules! assert_multi_unify_err {
                 $(
                 match errors_iter.next() {
                     Some((i, error)) => {
-                        match *error {
-                            ::base::pos::Spanned { value: Unification(_, _, ref errors), .. } => {
+                        match error.value.error {
+                            Unification(_, _, ref errors) => {
                                 let mut iter = errors.iter();
                                 let expected_count = count!($($id),+);
                                 $(

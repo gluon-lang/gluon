@@ -38,7 +38,7 @@ fn dont_miss_errors_in_file_if_import_has_errors() {
                     match err {
                         Error::Typecheck(errors) => {
                             let errors: Vec<_> = errors.errors().into();
-                            match errors[0].value {
+                            match errors[0].value.error {
                                 TypeError::UndefinedVariable(..) => true,
                                 _ => false,
                             }

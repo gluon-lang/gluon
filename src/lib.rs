@@ -52,7 +52,6 @@ use base::metadata::Metadata;
 use base::symbol::{Symbol, SymbolModule, Symbols};
 use base::types::{ArcType, TypeCache};
 
-use check::typecheck::TypeError;
 use vm::Variants;
 use vm::api::{Getable, Hole, OpaqueValue, VmType};
 use vm::Error as VmError;
@@ -74,7 +73,7 @@ quick_error! {
             from()
         }
         /// Error found when typechecking gluon code
-        Typecheck(err: InFile<TypeError<Symbol>>) {
+        Typecheck(err: InFile<check::typecheck::HelpError<Symbol>>) {
             description(err.description())
             display("{}", err)
             from()
@@ -239,7 +238,9 @@ impl Compiler {
             &mut SymbolModule::new(file.into(), &mut self.symbols),
             type_cache,
             expr_str,
-        ).map_err(|(expr, err)| (expr, InFile::new(file, expr_str, err)))?)
+        ).map_err(
+            |(expr, err)| (expr, InFile::new(file, expr_str, err)),
+        )?)
     }
 
     /// Parse and typecheck `expr_str` returning the typechecked expression and type of the

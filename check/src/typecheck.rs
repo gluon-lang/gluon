@@ -12,7 +12,7 @@ use itertools::Itertools;
 use base::scoped_map::ScopedMap;
 use base::ast::{DisplayEnv, Do, Expr, Literal, MutVisitor, Pattern, PatternField, SpannedExpr};
 use base::ast::{AstType, SpannedIdent, SpannedPattern, TypeBinding, TypedIdent, ValueBinding};
-use base::error::Errors;
+use base::error::{Errors, Help};
 use base::fnv::{FnvMap, FnvSet};
 use base::resolve;
 use base::kind::{ArcKind, Kind, KindCache, KindEnv};
@@ -152,7 +152,8 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
     }
 }
 
-pub type SpannedTypeError<Id> = Spanned<TypeError<Id>, BytePos>;
+pub type HelpError<Id> = Help<TypeError<Id>, String>;
+pub type SpannedTypeError<Id> = Spanned<HelpError<Id>, BytePos>;
 
 type TcResult<T> = Result<T, TypeError<Symbol>>;
 
@@ -288,7 +289,7 @@ impl<'a> Typecheck<'a> {
     fn error(&mut self, span: Span<BytePos>, error: TypeError<Symbol>) -> ArcType {
         self.errors.push(Spanned {
             span: span,
-            value: error,
+            value: error.into(),
         });
         self.subs.new_var()
     }
@@ -477,7 +478,7 @@ impl<'a> Typecheck<'a> {
         for err in errors {
             use self::TypeError::*;
 
-            match err.value {
+            match err.value.error {
                 UndefinedVariable(_)
                 | UndefinedType(_)
                 | DuplicateTypeDefinition(_)
@@ -576,7 +577,7 @@ impl<'a> Typecheck<'a> {
                     for Spanned { span, value } in errors {
                         self.errors.push(Spanned {
                             span: span,
-                            value: value.into(),
+                            value: TypeError::from(value).into(),
                         });
                     }
                     Err(mem::replace(&mut self.errors, Errors::new()))
@@ -635,7 +636,7 @@ impl<'a> Typecheck<'a> {
                     returned_type = self.subs.new_var();
                     self.errors.push(Spanned {
                         span: expr_check_span(expr),
-                        value: err,
+                        value: err.into(),
                     });
                     break;
                 }
@@ -1438,7 +1439,8 @@ impl<'a> Typecheck<'a> {
                     .unresolved_type_mut()
                     .remove_single_forall();
                 if let Err(err) = check.kindcheck_type(typ) {
-                    self.errors.push(pos::spanned(err.span, err.value.into()));
+                    self.errors
+                        .push(pos::spanned(err.span, TypeError::from(err.value).into()));
                 }
             }
 
@@ -1494,7 +1496,8 @@ impl<'a> Typecheck<'a> {
             if self.environment.stack_types.get(&bind.name.value).is_some() {
                 self.errors.push(Spanned {
                     span: expr_check_span(expr),
-                    value: TypeError::DuplicateTypeDefinition(bind.name.value.clone()),
+                    // TODO Hint to the position of the other field
+                    value: TypeError::DuplicateTypeDefinition(bind.name.value.clone()).into(),
                 });
             } else {
                 self.stack_type(
@@ -1512,7 +1515,8 @@ impl<'a> Typecheck<'a> {
             check.kindcheck_type(typ)
         };
         if let Err(err) = result {
-            self.errors.push(pos::spanned(err.span, err.value.into()));
+            self.errors
+                .push(pos::spanned(err.span, TypeError::from(err.value).into()));
         }
     }
 
@@ -2116,7 +2120,8 @@ impl<'a> Typecheck<'a> {
                 let err = TypeError::Unification(expected, actual, apply_subs(&self.subs, errors));
                 self.errors.push(Spanned {
                     span: span,
-                    value: err,
+                    // TODO Hint what caused this unification failure
+                    value: err.into(),
                 });
                 self.subs.new_var()
             }
@@ -2129,7 +2134,8 @@ impl<'a> Typecheck<'a> {
             Err(err) => {
                 self.errors.push(Spanned {
                     span: span,
-                    value: err,
+                    // TODO Hint what caused this unification failure
+                    value: err.into(),
                 });
                 self.subs.new_var()
             }
@@ -2204,7 +2210,8 @@ impl<'a> Typecheck<'a> {
             .map_or(true, |name| {
                 self.errors.push(Spanned {
                     span: span,
-                    value: TypeError::DuplicateField(name),
+                    // TODO Hint to the other fields location
+                    value: TypeError::DuplicateField(name).into(),
                 });
                 false
             })

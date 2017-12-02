@@ -108,7 +108,7 @@ pub fn typecheck_expr_expected(
     expected: Option<&ArcType>,
 ) -> (
     SpannedExpr<Symbol>,
-    Result<ArcType, InFile<typecheck::TypeError<Symbol>>>,
+    Result<ArcType, InFile<typecheck::HelpError<Symbol>>>,
 ) {
     let mut expr = parse_new(text).unwrap_or_else(|(_, err)| panic!("{}", err));
 
@@ -126,7 +126,7 @@ pub fn typecheck_expr(
     text: &str,
 ) -> (
     SpannedExpr<Symbol>,
-    Result<ArcType, InFile<typecheck::TypeError<Symbol>>>,
+    Result<ArcType, InFile<typecheck::HelpError<Symbol>>>,
 ) {
     typecheck_expr_expected(text, None)
 }
@@ -135,7 +135,7 @@ pub fn typecheck_partial_expr(
     text: &str,
 ) -> (
     SpannedExpr<Symbol>,
-    Result<ArcType, InFile<typecheck::TypeError<Symbol>>>,
+    Result<ArcType, InFile<typecheck::HelpError<Symbol>>>,
 ) {
     let mut expr = match parse_new(text) {
         Ok(e) => e,
