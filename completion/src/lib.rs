@@ -2,6 +2,7 @@
 #![doc(html_root_url = "https://docs.rs/gluon_completion/0.6.2")] // # GLUON
 
 extern crate either;
+extern crate itertools;
 
 extern crate gluon_base as base;
 
@@ -9,6 +10,8 @@ use std::iter::once;
 use std::cmp::Ordering;
 
 use either::Either;
+
+use itertools::Itertools;
 
 use base::ast::{walk_expr, walk_pattern, AstType, Expr, Pattern, SpannedExpr, SpannedIdent,
                 SpannedPattern, Typed, TypedIdent, Visitor};
@@ -324,31 +327,63 @@ where
             }
             Pattern::Record {
                 ref typ,
+                ref types,
                 ref fields,
                 ..
             } => {
-                let (_, field) = self.select_spanned(fields, |field| {
-                    Span::new(
-                        field.name.span.start,
-                        field
-                            .value
-                            .as_ref()
-                            .map_or(field.name.span.end, |p| p.span.end),
+                let iter = types
+                    .iter()
+                    .map(Either::Left)
+                    .merge_by(fields.iter().map(Either::Right), |l, r| {
+                        l.left().unwrap().name.span.start < r.right().unwrap().name.span.start
+                    });
+                let (_, selected) = self.select_spanned(iter, |either| {
+                    either.either(
+                        |type_field| type_field.name.span,
+                        |field| {
+                            Span::new(
+                                field.name.span.start,
+                                field
+                                    .value
+                                    .as_ref()
+                                    .map_or(field.name.span.end, |p| p.span.end),
+                            )
+                        },
                     )
                 });
-                if let Some(field) = field {
-                    match (field.name.span.containment(&self.pos), &field.value) {
-                        (Ordering::Equal, _) => {
-                            let field_type = typ.row_iter()
-                                .find(|it| it.name.name_eq(&field.name.value))
-                                .map(|it| &it.typ)
-                                .unwrap_or(typ);
-                            self.found = Some(Some(
-                                Match::Ident(field.name.span, &field.name.value, field_type),
-                            ));
+                if let Some(either) = selected {
+                    match either {
+                        Either::Left(type_field) => {
+                            if type_field.name.span.containment(&self.pos) == Ordering::Equal {
+                                let field_type = typ.type_field_iter()
+                                    .find(|it| it.name.name_eq(&type_field.name.value))
+                                    .map(|it| it.typ.as_type())
+                                    .unwrap_or(typ);
+                                self.found = Some(Some(Match::Ident(
+                                    type_field.name.span,
+                                    &type_field.name.value,
+                                    &field_type,
+                                )));
+                            } else {
+                                self.found = Some(None);
+                            }
                         }
-                        (Ordering::Greater, &Some(ref pattern)) => self.visit_pattern(pattern),
-                        _ => self.found = Some(None),
+                        Either::Right(field) => match (
+                            field.name.span.containment(&self.pos),
+                            &field.value,
+                        ) {
+                            (Ordering::Equal, _) => {
+                                let field_type = typ.row_iter()
+                                    .find(|it| it.name.name_eq(&field.name.value))
+                                    .map(|it| &it.typ)
+                                    .unwrap_or(typ);
+                                self.found = Some(Some(
+                                    Match::Ident(field.name.span, &field.name.value, field_type),
+                                ));
+                            }
+                            (Ordering::Greater, &Some(ref pattern)) => self.visit_pattern(pattern),
+                            _ => self.found = Some(None),
+                        },
                     }
                 } else {
                     self.found = Some(None);
@@ -866,6 +901,26 @@ pub fn suggest<T>(env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Vec<Sugg
 where
     T: TypeEnv,
 {
+    fn suggest_fields_of_type(result: &mut Vec<Suggestion>, prefix: &str, typ: &ArcType) {
+        let fields = typ.row_iter()
+            .filter(|field| field.name.declared_name().starts_with(prefix))
+            .map(|field| {
+                Suggestion {
+                    name: field.name.declared_name().into(),
+                    typ: Either::Right(field.typ.clone()),
+                }
+            });
+        let types = typ.type_field_iter()
+            .filter(|field| field.name.declared_name().starts_with(prefix))
+            .map(|field| {
+                Suggestion {
+                    name: field.name.declared_name().into(),
+                    typ: Either::Right(field.typ.clone().into_type()),
+                }
+            });
+        result.extend(fields.chain(types));
+    }
+
     let mut suggest = Suggest::new(env);
 
     let found = match complete_at(&mut suggest, expr, pos) {
@@ -889,12 +944,7 @@ where
                     Pattern::Constructor(ref id, _) | Pattern::Ident(ref id) => id.as_ref(),
                     Pattern::Record { .. } => {
                         let typ = pattern.env_type_of(env);
-                        result.extend(typ.row_iter().map(|field| {
-                            Suggestion {
-                                name: field.name.declared_name().into(),
-                                typ: Either::Right(field.typ.clone()),
-                            }
-                        }));
+                        suggest_fields_of_type(&mut result, "", &typ);
                         ""
                     }
                     _ => "",
@@ -923,18 +973,7 @@ where
                     }));
                 }
                 Match::Pattern { .. } => {
-                    result.extend(
-                        typ.row_iter()
-                            .filter(|field| {
-                                field.name.declared_name().starts_with(ident.as_ref())
-                            })
-                            .map(|field| {
-                                Suggestion {
-                                    name: field.name.declared_name().into(),
-                                    typ: Either::Right(field.typ.clone()),
-                                }
-                            }),
-                    );
+                    suggest_fields_of_type(&mut result, ident.as_ref(), typ);
                 }
                 _ => (),
             },
@@ -987,12 +1026,7 @@ where
             Match::Pattern(pattern) => match pattern.value {
                 Pattern::Record { .. } => {
                     let typ = pattern.env_type_of(env);
-                    result.extend(typ.row_iter().map(|field| {
-                        Suggestion {
-                            name: field.name.declared_name().into(),
-                            typ: Either::Right(field.typ.clone()),
-                        }
-                    }));
+                    suggest_fields_of_type(&mut result, "", &typ);
                 }
                 _ => result.extend(suggest.patterns.iter().map(|(name, typ)| {
                     Suggestion {

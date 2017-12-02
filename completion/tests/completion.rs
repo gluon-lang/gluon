@@ -649,6 +649,35 @@ let { } = { abc = "" }
     assert_eq!(result, expected);
 }
 
+#[test]
+fn suggest_type_field_in_record_pattern_at_ident() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Test = | Test Int
+let { T } = { Test, x = 1 }
+()
+"#;
+    let result = suggest_loc(text, 2, 7);
+    let expected = Ok(vec!["Test".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_type_field_in_record_pattern_at_empty() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Test = | Test Int
+let {  } = { Test, x = 1 }
+()
+"#;
+    let result = suggest_loc(text, 2, 7);
+    let expected = Ok(vec!["Test".into(), "x".into()]);
+
+    assert_eq!(result, expected);
+}
 
 #[test]
 fn suggest_in_type_binding() {
