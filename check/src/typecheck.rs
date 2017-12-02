@@ -54,7 +54,9 @@ pub enum TypeError<I> {
     /// Type is not a type which has any fields
     InvalidProjection(ArcType<I>),
     /// Expected to find a record with the following fields
-    UndefinedRecord { fields: Vec<I> },
+    UndefinedRecord {
+        fields: Vec<I>,
+    },
     /// Found a case expression without any alternatives
     EmptyCase,
     Message(String),
@@ -476,19 +478,19 @@ impl<'a> Typecheck<'a> {
             use self::TypeError::*;
 
             match err.value {
-                UndefinedVariable(_) |
-                UndefinedType(_) |
-                DuplicateTypeDefinition(_) |
-                DuplicateField(_) |
-                UndefinedRecord { .. } |
-                EmptyCase |
-                Rename(_) |
-                KindError(_) |
-                Message(_) => (),
-                NotAFunction(ref mut typ) |
-                UndefinedField(ref mut typ, _) |
-                PatternError(ref mut typ, _) |
-                InvalidProjection(ref mut typ) => {
+                UndefinedVariable(_)
+                | UndefinedType(_)
+                | DuplicateTypeDefinition(_)
+                | DuplicateField(_)
+                | UndefinedRecord { .. }
+                | EmptyCase
+                | Rename(_)
+                | KindError(_)
+                | Message(_) => (),
+                NotAFunction(ref mut typ)
+                | UndefinedField(ref mut typ, _)
+                | PatternError(ref mut typ, _)
+                | InvalidProjection(ref mut typ) => {
                     self.generalize_type(0, typ);
                 }
                 Unification(ref mut expected, ref mut actual, ref mut errors) => {
@@ -613,8 +615,8 @@ impl<'a> Typecheck<'a> {
                         TailCall::TailCall => {
                             // Call typecheck_ again with the next expression
                             expr = match moving(expr).value {
-                                Expr::LetBindings(_, ref mut new_expr) |
-                                Expr::TypeBindings(_, ref mut new_expr) => new_expr,
+                                Expr::LetBindings(_, ref mut new_expr)
+                                | Expr::TypeBindings(_, ref mut new_expr) => new_expr,
                                 _ => ice!("Only Let and Type expressions can tailcall"),
                             };
                             scope_count += 1;
@@ -1222,11 +1224,9 @@ impl<'a> Typecheck<'a> {
                     Err(err) => self.error(ast_type.span(), err),
                 }
             }
-            _ => types::translate_type_with(
-                type_cache,
-                ast_type,
-                |typ| self.translate_ast_type(type_cache, typ),
-            ),
+            _ => types::translate_type_with(type_cache, ast_type, |typ| {
+                self.translate_ast_type(type_cache, typ)
+            }),
         }
     }
 
@@ -1500,8 +1500,16 @@ impl<'a> Typecheck<'a> {
         final_type: &ArcType,
     ) {
         match pattern.value {
-            Pattern::As(_, ref mut pat) => {
+            Pattern::As(ref mut id, ref mut pat) => {
                 self.finish_pattern(level, pat, &final_type);
+
+                self.environment
+                    .stack
+                    .get_mut(id)
+                    .expect("ICE: Variable no inserted")
+                    .typ = final_type.clone();
+                debug!("{}: {}", self.symbols.string(&id), final_type);
+                self.intersect_type(level, id, &final_type);
             }
             Pattern::Ident(ref mut id) => {
                 id.typ = final_type.clone();
