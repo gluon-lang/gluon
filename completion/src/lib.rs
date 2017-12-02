@@ -21,12 +21,13 @@ use base::scoped_map::ScopedMap;
 use base::symbol::Symbol;
 use base::types::{walk_type_, AliasData, ArcType, ControlVisitation, Generic, Type, TypeEnv};
 
+#[derive(Clone, Debug)]
 pub struct Found<'a> {
     pub match_: Option<Match<'a>>,
     pub enclosing_match: Match<'a>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Match<'a> {
     Expr(&'a SpannedExpr<Symbol>),
     Pattern(&'a SpannedPattern<Symbol>),
@@ -321,7 +322,11 @@ where
                     None => self.found = Some(None),
                 }
             }
-            Pattern::Record { ref fields, .. } => {
+            Pattern::Record {
+                ref typ,
+                ref fields,
+                ..
+            } => {
                 let (_, field) = self.select_spanned(fields, |field| {
                     Span::new(
                         field.name.span.start,
@@ -332,11 +337,21 @@ where
                     )
                 });
                 if let Some(field) = field {
-                    if field.name.span.containment(&self.pos) != Ordering::Greater {
-                        self.found = Some(None);
-                    } else if let Some(ref pattern) = field.value {
-                        self.visit_pattern(pattern)
+                    match (field.name.span.containment(&self.pos), &field.value) {
+                        (Ordering::Equal, _) => {
+                            let field_type = typ.row_iter()
+                                .find(|it| it.name.name_eq(&field.name.value))
+                                .map(|it| &it.typ)
+                                .unwrap_or(typ);
+                            self.found = Some(Some(
+                                Match::Ident(field.name.span, &field.name.value, field_type),
+                            ));
+                        }
+                        (Ordering::Greater, &Some(ref pattern)) => self.visit_pattern(pattern),
+                        _ => self.found = Some(None),
                     }
+                } else {
+                    self.found = Some(None);
                 }
             }
             Pattern::Tuple { ref elems, .. } => {
@@ -872,6 +887,16 @@ where
             Match::Pattern(pattern) => {
                 let prefix = match pattern.value {
                     Pattern::Constructor(ref id, _) | Pattern::Ident(ref id) => id.as_ref(),
+                    Pattern::Record { .. } => {
+                        let typ = pattern.env_type_of(env);
+                        result.extend(typ.row_iter().map(|field| {
+                            Suggestion {
+                                name: field.name.declared_name().into(),
+                                typ: Either::Right(field.typ.clone()),
+                            }
+                        }));
+                        ""
+                    }
                     _ => "",
                 };
                 result.extend(
@@ -887,14 +912,31 @@ where
                         }),
                 );
             }
-            Match::Ident(_, ident, _) => if let Match::Expr(context) = found.enclosing_match {
-                let iter = suggest.ident_iter(context, ident);
-                result.extend(iter.into_iter().map(|(name, typ)| {
-                    Suggestion {
-                        name: name.declared_name().into(),
-                        typ: Either::Right(typ),
-                    }
-                }));
+            Match::Ident(_, ident, typ) => match found.enclosing_match {
+                Match::Expr(context) => {
+                    let iter = suggest.ident_iter(context, ident);
+                    result.extend(iter.into_iter().map(|(name, typ)| {
+                        Suggestion {
+                            name: name.declared_name().into(),
+                            typ: Either::Right(typ),
+                        }
+                    }));
+                }
+                Match::Pattern { .. } => {
+                    result.extend(
+                        typ.row_iter()
+                            .filter(|field| {
+                                field.name.declared_name().starts_with(ident.as_ref())
+                            })
+                            .map(|field| {
+                                Suggestion {
+                                    name: field.name.declared_name().into(),
+                                    typ: Either::Right(field.typ.clone()),
+                                }
+                            }),
+                    );
+                }
+                _ => (),
             },
 
             Match::Type(_, ident, _) => {
@@ -942,12 +984,23 @@ where
                 );
             }
 
-            Match::Pattern(..) => result.extend(suggest.patterns.iter().map(|(name, typ)| {
-                Suggestion {
-                    name: name.declared_name().into(),
-                    typ: Either::Right(typ.clone()),
+            Match::Pattern(pattern) => match pattern.value {
+                Pattern::Record { .. } => {
+                    let typ = pattern.env_type_of(env);
+                    result.extend(typ.row_iter().map(|field| {
+                        Suggestion {
+                            name: field.name.declared_name().into(),
+                            typ: Either::Right(field.typ.clone()),
+                        }
+                    }));
                 }
-            })),
+                _ => result.extend(suggest.patterns.iter().map(|(name, typ)| {
+                    Suggestion {
+                        name: name.declared_name().into(),
+                        typ: Either::Right(typ.clone()),
+                    }
+                })),
+            },
         },
     }
     result

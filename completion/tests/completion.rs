@@ -279,7 +279,7 @@ let id x = x
 }
 
 #[test]
-fn parens_pattern() {
+fn suggest_pattern_at_record_brace() {
     let _ = env_logger::init();
 
     let text = r#"
@@ -605,6 +605,50 @@ match A 3 with
 
     assert_eq!(result, expected);
 }
+
+#[test]
+fn suggest_record_field_in_pattern_at_ident() {
+    let _ = env_logger::init();
+
+    let text = r#"
+let { ab } = { x = 1, abc = "", abcd = 2 }
+()
+"#;
+    let result = suggest(text, BytePos::from(9));
+    let expected = Ok(vec!["abc".into(), "abcd".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_record_field_in_pattern_at_nothing() {
+    let _ = env_logger::init();
+
+    let text = r#"
+let { ab } = { x = 1, abc = "", abcd = 2 }
+()
+"#;
+    let result = suggest(text, BytePos::from(10));
+    let expected = Ok(vec!["abc".into(), "abcd".into(), "x".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn dont_suggest_variant_at_record_field() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Test = | Test Int
+let { } = { abc = "" }
+()
+"#;
+    let result = suggest_loc(text, 2, 6);
+    let expected = Ok(vec!["abc".into()]);
+
+    assert_eq!(result, expected);
+}
+
 
 #[test]
 fn suggest_in_type_binding() {
