@@ -1006,7 +1006,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
 
             // Gather the inner patterns so we can prepend them to equations
             let temp = first_iter()
-                .map(|pattern| match pattern.value {
+                .map(|pattern| match *unwrap_as(&pattern.value) {
                     ast::Pattern::Record {
                         ref typ,
                         ref fields,
@@ -1892,6 +1892,39 @@ mod tests {
                 | Test -> x
                 end
             end
+            ";
+
+        check_translation(expr_str, expected_str);
+    }
+
+    #[test]
+    fn let_as_pattern_record() {
+        let expr_str = r#"
+            let x@{ y } = test
+            x
+        "#;
+
+        let expected_str = "
+            let x = test in
+            match x with
+            | { y } -> x
+            end
+            ";
+
+        check_translation(expr_str, expected_str);
+    }
+
+    #[test]
+    fn let_as_pattern_identifier() {
+        let expr_str = r#"
+            let x@y = 1
+            y
+        "#;
+
+        let expected_str = "
+            let match_pattern = 1 in
+            let x = match_pattern in
+            match_pattern
             ";
 
         check_translation(expr_str, expected_str);
