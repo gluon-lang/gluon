@@ -752,3 +752,32 @@ let (+) x y : () -> () -> () = y
 
     assert_req!(result.map(support::close_record), expected);
 }
+
+#[test]
+fn as_pattern() {
+    let _ = env_logger::init();
+
+    let text = r#"
+match 1 with
+| x@y -> x #Int+ y
+"#;
+    let result = support::typecheck(text);
+    let expected = Ok(Type::int());
+
+    assert_req!(result, expected);
+}
+
+#[test]
+fn as_pattern_record() {
+    let _ = env_logger::init();
+
+    let text = r#"
+match { y = 1 } with
+| x@{ y } -> x
+"#;
+    let result = support::typecheck(text);
+    let fields = vec![Field::new(intern("y"), typ("Int"))];
+    let expected = Ok(Type::record(vec![], fields));
+
+    assert_req!(result, expected);
+}
