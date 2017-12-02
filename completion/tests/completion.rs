@@ -461,6 +461,20 @@ a
 }
 
 #[test]
+fn suggest_as_pattern() {
+    let _ = env_logger::init();
+
+    let text = r#"
+let abc@ { y } = { y = 1 }
+a
+"#;
+    let result = suggest_loc(text, 2, 1);
+    let expected = Ok(vec!["abc".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
 fn suggest_on_record_in_field_access() {
     let _ = env_logger::init();
 

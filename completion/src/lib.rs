@@ -139,7 +139,8 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
 
     fn on_pattern(&mut self, pattern: &SpannedPattern<Symbol>) {
         match pattern.value {
-            Pattern::As(_, ref pat) => {
+            Pattern::As(ref id, ref pat) => {
+                self.stack.insert(id.clone(), pat.env_type_of(&self.env));
                 self.on_pattern(pat);
             }
             Pattern::Ident(ref id) => {
@@ -178,8 +179,8 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
             }
             Pattern::Tuple {
                 elems: ref args, ..
-            } |
-            Pattern::Constructor(_, ref args) => for arg in args {
+            }
+            | Pattern::Constructor(_, ref args) => for arg in args {
                 self.on_pattern(arg);
             },
             Pattern::Error => (),
@@ -415,8 +416,10 @@ where
                 for bind in bindings {
                     self.on_found.on_pattern(&bind.name);
                 }
-                match self.select_spanned(bindings, |b| Span::new(b.name.span.start, b.expr.span.end))
-                {
+                match self.select_spanned(
+                    bindings,
+                    |b| Span::new(b.name.span.start, b.expr.span.end),
+                ) {
                     (false, Some(bind)) => {
                         for arg in &bind.args {
                             self.on_found.on_ident(&arg.value);
@@ -528,8 +531,8 @@ where
             }
             Expr::Tuple {
                 elems: ref exprs, ..
-            } |
-            Expr::Block(ref exprs) => if exprs.is_empty() {
+            }
+            | Expr::Block(ref exprs) => if exprs.is_empty() {
                 self.found = Some(Some(Match::Expr(current)));
             } else {
                 self.visit_one(exprs)
