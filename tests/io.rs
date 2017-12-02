@@ -1,4 +1,3 @@
-
 extern crate env_logger;
 extern crate gluon;
 
@@ -22,14 +21,16 @@ fn read_file() {
         let { assert }  = import! std.test
         let io = import! std.io
         let { wrap } = io.applicative
-        let { (>>=) } = prelude.make_Monad io.monad
+        let { flat_map, (>>=) } = prelude.make_Monad io.monad
 
-        io.open_file "Cargo.toml" >>= \file ->
-            io.read_file file 9 >>= \bytes ->
-            assert (array.len bytes == 9)
-            assert (array.index bytes 0 #Byte== 91b) // [
-            assert (array.index bytes 1 #Byte== 112b) // p
-            wrap (array.index bytes 8)
+        do file = io.open_file "Cargo.toml"
+        do bytes = io.read_file file 9
+
+        assert (array.len bytes == 9)
+        assert (array.index bytes 0 #Byte== 91b) // [
+        assert (array.index bytes 1 #Byte== 112b) // p
+
+        wrap (array.index bytes 8)
         "#;
     let result = Compiler::new()
         .run_io(true)
