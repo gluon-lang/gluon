@@ -64,7 +64,7 @@ let monad : Monad Handler = {
     applicative,
     flat_map,
 }
-let { (>>=) } = prelude.make_Monad monad
+let { flat_map } = prelude.make_Monad monad
 
 /// Handles the request if `predicate` returns `True
 let test predicate : (Request -> Bool) -> Handler () =
@@ -108,8 +108,8 @@ let io_handler action : IO a -> Handler a =
 
 /// Write `bytes` to the http response
 let write_response bytes : Array Byte -> Handler () =
-    get_response_body
-        >>= (\response -> io_handler (http_prim.write_response response bytes))
+    do response = get_response_body
+    io_handler (http_prim.write_response response bytes)
 
 /// Throws an exception which aborts the current handler. Can be caught with `catch_error`
 let fail msg : String -> Handler a =

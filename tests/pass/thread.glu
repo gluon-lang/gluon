@@ -6,7 +6,7 @@ let result @ { Result } = import! std.result
 let string = import! std.string
 let unit = import! std.unit
 let { (*>) } = prelude.make_Applicative writer.applicative
-let { (>>=) } = prelude.make_Monad writer.monad
+let { flat_map } = prelude.make_Monad writer.monad
 let { send, recv, channel } = import! std.channel
 let { spawn, yield, resume } = import! std.thread
 
@@ -27,12 +27,12 @@ let thread = spawn (\_ ->
 resume thread
 
 let tests =
-    assert (recv receiver) (Ok 0) *>
-        assert (recv receiver) (Err ()) >>= (\_ ->
+    assert (recv receiver) (Ok 0) *> (
+            do _ = assert (recv receiver) (Err ())
             resume thread
             assert (recv receiver) (Ok 1)
-        ) *>
-        assert (recv receiver) (Err ()) >>= (\_ ->
+        ) *> (
+            do _ = assert (recv receiver) (Err ())
             assert_any_err (resume thread) (Err "Any error message here")
         )
 

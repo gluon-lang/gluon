@@ -32,7 +32,7 @@ let { (<>) } = prelude.make_Semigroup string.semigroup
 
 let { (<*), (*>), map2, wrap } = prelude.make_Applicative applicative
 let { (<|>) } = prelude.make_Alternative alternative
-let { (>>=) } = prelude.make_Monad monad
+let { flat_map } = prelude.make_Monad monad
 
 let atom : Parser Expr =
     let symbol = one_of "!#$%&|*+-/:<=>?@^_~"
@@ -43,11 +43,10 @@ let atom : Parser Expr =
         (take_string ((alpha <|> symbol) *> skip_many (alpha_num <|> symbol)))
 
 let parse_parser p f msg : Parser a -> (String -> Result () b) -> String -> Parser b =
-    take_string p
-        >>= (\s ->
-        match f s with
-        | Ok i -> wrap i
-        | Err _ -> fail ("Expected " <> msg))
+    do s = take_string p
+    match f s with
+    | Ok i -> wrap i
+    | Err _ -> fail ("Expected " <> msg)
 
 let int_parser : Parser Expr =
     functor.map
