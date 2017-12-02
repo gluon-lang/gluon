@@ -126,7 +126,7 @@ pub fn rename(
                                     name: self.stack_var(id, pattern.span, field_type.clone()),
                                     typ: field_type.clone(),
                                 });
-                                field.value = Some(pos::spanned(pattern.span, pat));
+                                field.value = Some(pos::spanned(field.name.span, pat));
                             }
                         }
                     }
@@ -264,7 +264,7 @@ pub fn rename(
                             {
                                 debug!("Rename record field {} = {}", expr_field.name, new_id);
                                 expr_field.value = Some(pos::spanned(
-                                    expr.span,
+                                    expr_field.name.span,
                                     Expr::Ident(TypedIdent {
                                         name: new_id,
                                         typ: field.typ.clone(),
