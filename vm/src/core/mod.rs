@@ -133,6 +133,10 @@ impl<'a> Binder<'a> {
             name: Symbol::from(format!("bind_arg{}", self.bindings.len())),
             typ,
         };
+        self.bind_id(name, expr)
+    }
+
+    fn bind_id(&mut self, name: TypedIdent<Symbol>, expr: CExpr<'a>) -> Expr<'a> {
         let ident_expr = Expr::Ident(name.clone(), expr.span());
         self.bindings.push(LetBinding {
             name,
@@ -147,6 +151,13 @@ impl<'a> Binder<'a> {
             .into_iter()
             .rev()
             .fold(expr, |expr, bind| Expr::Let(bind, arena.alloc(expr)))
+    }
+
+    fn into_expr_ref(self, arena: &'a Arena<Expr<'a>>, expr: &'a Expr<'a>) -> &'a Expr<'a> {
+        self.bindings
+            .into_iter()
+            .rev()
+            .fold(expr, |expr, bind| arena.alloc(Expr::Let(bind, expr)))
     }
 }
 
@@ -1076,7 +1087,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         let mut groups = HashMap::new();
 
         for equation in equations {
-            match equation.patterns.first().unwrap().value {
+            match *unwrap_as(&equation.patterns.first().unwrap().value) {
                 ast::Pattern::Constructor(ref id, _) => {
                     groups
                         .entry(&id.name)
@@ -1086,11 +1097,11 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                         })
                         .push(equation);
                 }
-                ast::Pattern::As(_, _) |
-                ast::Pattern::Tuple { .. } |
-                ast::Pattern::Record { .. } |
-                ast::Pattern::Ident(_) |
-                ast::Pattern::Error => unreachable!(),
+                ast::Pattern::As(_, _)
+                | ast::Pattern::Tuple { .. }
+                | ast::Pattern::Record { .. }
+                | ast::Pattern::Ident(_)
+                | ast::Pattern::Error => unreachable!(),
             }
         }
 
@@ -1114,7 +1125,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 let new_equations = equations
                     .iter()
                     .map(|equation| {
-                        let first = match equation.patterns.first().unwrap().value {
+                        let first = match *unwrap_as(&equation.patterns.first().unwrap().value) {
                             ast::Pattern::Constructor(_, ref patterns) => patterns,
                             _ => unreachable!(),
                         };
@@ -1290,27 +1301,50 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         variables: &[&'a Expr<'a>],
         equations: &[Equation<'a, 'p>],
     ) -> &'a Expr<'a> {
-        fn varcon(equation: &Equation) -> CType {
-            match equation.patterns.first().expect("Pattern").value {
-                ast::Pattern::As(_, _) | ast::Pattern::Ident(_) => CType::Variable,
+        fn varcon(pattern: &ast::Pattern<Symbol>) -> CType {
+            match *pattern {
+                ast::Pattern::As(_, ref pattern) => varcon(&pattern.value),
+                ast::Pattern::Ident(_) => CType::Variable,
                 ast::Pattern::Record { .. } | ast::Pattern::Tuple { .. } => CType::Record,
                 ast::Pattern::Constructor(_, _) => CType::Constructor,
                 ast::Pattern::Error => ice!("ICE: Error pattern survived typechecking"),
             }
         }
 
+        let mut binder = Binder::default();
+
         // The equations must be processed by group
         //
         // | Some (Some x) ->
         // | Some None ->
         // | x ->
-        let groups = equations.iter().group_by(|equation| varcon(&equation));
+        let groups = equations.iter().group_by(|equation| {
+            varcon(&equation.patterns.first().expect("Pattern").value)
+        });
+
         let expr = match variables.first() {
             None => equations
                 .first()
                 .map(|equation| equation.result)
                 .unwrap_or(default),
             Some(_) => {
+                // Extract the identifier from each `id@PATTERN` and bind it with `let` before this match
+                {
+                    let as_pattern_ids = equations.iter().filter_map(|equation| {
+                        match equation.patterns.first().expect("Pattern").value {
+                            ast::Pattern::As(ref id, ref pat) => Some(TypedIdent {
+                                name: id.clone(),
+                                typ: pat.env_type_of(&self.0.env),
+                            }),
+                            _ => None,
+                        }
+                    });
+
+                    for id in as_pattern_ids {
+                        binder.bind_id(id, variables.first().expect("Variable"));
+                    }
+                }
+
                 let groups = (&groups).into_iter().collect::<Vec<_>>();
                 groups
                     .into_iter()
@@ -1327,16 +1361,14 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             equations.iter().format(",\n"),
             expr
         );
-        expr
+        let arena = &self.0.allocator.arena;
+        binder.into_expr_ref(arena, expr)
     }
 
     fn extract_ident(&self, index: usize, pattern: &ast::Pattern<Symbol>) -> TypedIdent<Symbol> {
         match *pattern {
             ast::Pattern::Ident(ref id) => id.clone(),
-            ast::Pattern::As(ref id, ref pat) => TypedIdent {
-                name: id.clone(),
-                typ: pat.env_type_of(&self.0.env),
-            },
+            ast::Pattern::As(_, ref pat) => self.extract_ident(index, &pat.value),
             _ => TypedIdent {
                 name: Symbol::from(format!("pattern_{}", index)),
                 typ: pattern.env_type_of(&self.0.env),
@@ -1356,7 +1388,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         let mut ident = None;
 
         for pattern in patterns {
-            match pattern.value {
+            match *unwrap_as(&pattern.value) {
                 ast::Pattern::Constructor(ref id, ref patterns) => {
                     identifiers.extend(
                         patterns
@@ -1367,12 +1399,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     // Just extract the patterns of the first constructor found
                     return Pattern::Constructor(id.clone(), identifiers);
                 }
-                ast::Pattern::As(ref id, ref pat) => if ident.is_none() {
-                    ident = Some(TypedIdent {
-                        name: id.clone(),
-                        typ: pat.env_type_of(&self.0.env),
-                    });
-                },
+                ast::Pattern::As(..) => unreachable!(),
                 ast::Pattern::Ident(ref id) => if ident.is_none() {
                     ident = Some(id.clone())
                 },
@@ -1436,6 +1463,13 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         } else {
             Pattern::Record(record_fields)
         }
+    }
+}
+
+fn unwrap_as(pattern: &ast::Pattern<Symbol>) -> &ast::Pattern<Symbol> {
+    match *pattern {
+        ast::Pattern::As(_, ref pattern) => unwrap_as(&pattern.value),
+        _ => pattern,
     }
 }
 
@@ -1763,5 +1797,103 @@ mod tests {
             parse_core_expr(&mut symbols, &translator.allocator, expected_str).unwrap();
 
         assert_deq!(PatternEq(&core_expr), expected_expr);
+    }
+
+    fn check_translation(expr_str: &str, expected_str: &str) {
+        let _ = ::env_logger::init();
+
+        let mut symbols = Symbols::new();
+
+        let vm = RootedThread::new();
+        let env = vm.get_env();
+        let translator = Translator::new(&*env);
+
+        let expr = parse_expr(&mut symbols, expr_str);
+        let core_expr = translator.translate(&expr);
+
+        let expected_expr =
+            parse_core_expr(&mut symbols, &translator.allocator, expected_str).unwrap();
+        assert_deq!(PatternEq(&core_expr), expected_expr);
+    }
+
+    #[test]
+    fn match_as_pattern() {
+        let expr_str = r#"
+            match test with
+            | x@Test -> x
+            | y -> y
+        "#;
+
+        let expected_str = "
+            let x = test in
+            match x with
+            | Test -> x
+            | _ -> test
+            end
+            ";
+
+        check_translation(expr_str, expected_str);
+    }
+
+    #[test]
+    fn match_as_pattern_on_non_identifier() {
+        let expr_str = r#"
+            match 1 with
+            | x@Test -> x
+            | y -> y
+        "#;
+
+        let expected_str = "
+            let match_pattern = 1 in
+            let x = match_pattern in
+            match x with
+            | Test -> x
+            | _ -> match_pattern
+            end
+            ";
+
+        check_translation(expr_str, expected_str);
+    }
+
+    #[test]
+    fn match_as_pattern_multiple() {
+        let expr_str = r#"
+            match test with
+            | x@Test -> x
+            | y@Test2 -> y
+            | z -> z
+        "#;
+
+        let expected_str = "
+            let x = test in
+            let y = test in
+            match test with
+            | Test -> x
+            | Test2 -> y
+            | _ -> test
+            end
+            ";
+
+        check_translation(expr_str, expected_str);
+    }
+
+    #[test]
+    fn match_as_pattern_nested() {
+        let expr_str = r#"
+            match test with
+            | { z = x@Test } -> x
+        "#;
+
+        let expected_str = "
+            match test with
+            | { z = z } ->
+                let x = z in
+                match z with
+                | Test -> x
+                end
+            end
+            ";
+
+        check_translation(expr_str, expected_str);
     }
 }
