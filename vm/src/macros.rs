@@ -4,7 +4,8 @@ use std::sync::{Arc, RwLock};
 use std::error::Error as StdError;
 
 use base::ast::{self, Expr, MutVisitor, SpannedExpr};
-use base::error::Errors;
+use base::pos::{BytePos, Spanned};
+use base::error::Errors as BaseErrors;
 use base::fnv::FnvMap;
 use base::pos;
 use base::symbol::Symbol;
@@ -12,6 +13,8 @@ use base::symbol::Symbol;
 use thread::Thread;
 
 pub type Error = Box<StdError + Send + Sync>;
+pub type SpannedError = Spanned<Error, BytePos>;
+pub type Errors = BaseErrors<SpannedError>;
 
 /// A trait which abstracts over macros.
 ///
@@ -28,8 +31,7 @@ mopafy!(Macro);
 
 impl<F: ::mopa::Any + Clone + Send + Sync> Macro for F
 where
-    F: Fn(&mut MacroExpander, &mut [SpannedExpr<Symbol>])
-        -> Result<SpannedExpr<Symbol>, Error>,
+    F: Fn(&mut MacroExpander, &mut [SpannedExpr<Symbol>]) -> Result<SpannedExpr<Symbol>, Error>,
 {
     fn expand(
         &self,
@@ -69,7 +71,7 @@ impl MacroEnv {
     }
 
     /// Runs the macros in this `MacroEnv` on `expr` using `env` as the context of the expansion
-    pub fn run(&self, vm: &Thread, expr: &mut SpannedExpr<Symbol>) -> Result<(), Errors<Error>> {
+    pub fn run(&self, vm: &Thread, expr: &mut SpannedExpr<Symbol>) -> Result<(), Errors> {
         let mut expander = MacroExpander::new(vm);
         expander.visit_expr(expr);
         expander.finish()
@@ -79,7 +81,7 @@ impl MacroEnv {
 pub struct MacroExpander<'a> {
     pub state: FnvMap<String, Box<Any>>,
     pub vm: &'a Thread,
-    pub errors: Errors<Error>,
+    pub errors: Errors,
     macros: &'a MacroEnv,
 }
 
@@ -93,7 +95,7 @@ impl<'a> MacroExpander<'a> {
         }
     }
 
-    pub fn finish(self) -> Result<(), Errors<Error>> {
+    pub fn finish(self) -> Result<(), Errors> {
         if self.errors.has_errors() {
             Err(self.errors)
         } else {
@@ -122,7 +124,7 @@ impl<'a> MutVisitor for MacroExpander<'a> {
                         Some(m) => Some(match m.expand(self, args) {
                             Ok(e) => e,
                             Err(err) => {
-                                self.errors.push(err);
+                                self.errors.push(pos::spanned(expr.span, err));
                                 pos::spanned(expr.span, Expr::Error(None))
                             }
                         }),

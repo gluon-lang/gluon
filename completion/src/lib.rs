@@ -986,7 +986,7 @@ where
                         }),
                 );
             }
-            Match::Ident(_, ident, typ) => match found.enclosing_match {
+            Match::Ident(_, ident, _) => match found.enclosing_match {
                 Match::Expr(context) => {
                     let iter = suggest.ident_iter(context, ident);
                     result.extend(iter.into_iter().map(|(name, typ)| {
@@ -999,9 +999,9 @@ where
                 Match::Pattern(&Spanned {
                     value:
                         Pattern::Record {
+                            ref typ,
                             ref types,
                             ref fields,
-                            ..
                         },
                     ..
                 }) => {

@@ -51,6 +51,7 @@ use base::error::{Errors, InFile};
 use base::metadata::Metadata;
 use base::symbol::{Symbol, SymbolModule, Symbols};
 use base::types::{ArcType, TypeCache};
+use base::pos::{self, Span};
 
 use vm::Variants;
 use vm::api::{Getable, Hole, OpaqueValue, VmType};
@@ -91,8 +92,8 @@ quick_error! {
             from()
         }
         /// Error found when expanding macros
-        Macro(err: macros::Error) {
-            description(err.description())
+        Macro(err: macros::SpannedError) {
+            description(err.value.description())
             display("{}", err)
             from()
         }
@@ -110,21 +111,25 @@ impl From<String> for Error {
     }
 }
 
-impl From<Errors<macros::Error>> for Error {
-    fn from(mut errors: Errors<macros::Error>) -> Error {
+impl From<Errors<macros::SpannedError>> for Error {
+    fn from(mut errors: Errors<macros::SpannedError>) -> Error {
         if errors.len() == 1 {
             let err = errors.pop().unwrap();
-            match err.downcast::<Error>() {
+            let span = err.span;
+            match err.value.downcast::<Error>() {
                 Ok(err) => *err,
-                Err(err) => Error::Macro(err),
+                Err(err) => Error::Macro(pos::spanned(span, err)),
             }
         } else {
             Error::Multiple(
                 errors
                     .into_iter()
-                    .map(|err| match err.downcast::<Error>() {
-                        Ok(err) => *err,
-                        Err(err) => Error::Macro(err),
+                    .map(|err| {
+                        let span = err.span;
+                        match err.value.downcast::<Error>() {
+                            Ok(err) => *err,
+                            Err(err) => Error::Macro(pos::spanned(span, err)),
+                        }
                     })
                     .collect(),
             )
@@ -376,10 +381,12 @@ impl Compiler {
             }
         };
         let module_name = Symbol::from(filename_to_module(filename));
+        let mut macros = MacroExpander::new(vm);
         FutureValue::from(
             import
-                .load_module(self, vm, &mut MacroExpander::new(vm), &module_name)
-                .map_err(|(_, err)| err.into()),
+                .load_module(self, vm, &mut macros, &module_name, Span::default())
+                .map_err(|(_, err)| pos::spanned(Span::default(), err).into())
+                .and_then(|_| Ok(macros.finish()?)),
         ).boxed()
     }
 
