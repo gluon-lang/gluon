@@ -12,7 +12,7 @@ use itertools::Itertools;
 use base::scoped_map::ScopedMap;
 use base::ast::{DisplayEnv, Do, Expr, Literal, MutVisitor, Pattern, PatternField, SpannedExpr};
 use base::ast::{AstType, SpannedIdent, SpannedPattern, TypeBinding, TypedIdent, ValueBinding};
-use base::error::{Errors, Help};
+use base::error::Errors;
 use base::fnv::{FnvMap, FnvSet};
 use base::resolve;
 use base::kind::{ArcKind, Kind, KindCache, KindEnv};
@@ -152,7 +152,24 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
     }
 }
 
-pub type HelpError<Id> = Help<TypeError<Id>, String>;
+#[derive(Debug, PartialEq)]
+pub enum Help {
+    UndefinedFlatMapInDo,
+}
+
+impl fmt::Display for Help {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Help::UndefinedFlatMapInDo => write!(
+                f,
+                "Try bringing the `flat_map` function found in the `Monad`\
+                 instance for your type into scope"
+            ),
+        }
+    }
+}
+
+pub type HelpError<Id> = ::base::error::Help<TypeError<Id>, Help>;
 pub type SpannedTypeError<Id> = Spanned<HelpError<Id>, BytePos>;
 
 type TcResult<T> = Result<T, TypeError<Symbol>>;
@@ -286,7 +303,10 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn error(&mut self, span: Span<BytePos>, error: TypeError<Symbol>) -> ArcType {
+    fn error<E>(&mut self, span: Span<BytePos>, error: E) -> ArcType
+    where
+        E: Into<HelpError<Symbol>>,
+    {
         self.errors.push(Spanned {
             span: span,
             value: error.into(),
@@ -955,7 +975,19 @@ impl<'a> Typecheck<'a> {
                 ref mut flat_map_id,
             }) => {
                 let flat_map = self.symbols.symbol("flat_map");
-                let flat_map_type = self.find_at(id.span, &flat_map);
+                let flat_map_type = match self.find(&flat_map) {
+                    Ok(x) => x,
+                    Err(error) => {
+                        self.error(
+                            id.span,
+                            ::base::error::Help {
+                                error,
+                                help: Some(Help::UndefinedFlatMapInDo),
+                            },
+                        );
+                        self.subs.new_var()
+                    }
+                };
                 *flat_map_id = Some(TypedIdent {
                     name: flat_map.clone(),
                     typ: flat_map_type.clone(),
@@ -1496,7 +1528,7 @@ impl<'a> Typecheck<'a> {
             if self.environment.stack_types.get(&bind.name.value).is_some() {
                 self.errors.push(Spanned {
                     span: expr_check_span(expr),
-                    // TODO Hint to the position of the other field
+                    // TODO Help to the position of the other field
                     value: TypeError::DuplicateTypeDefinition(bind.name.value.clone()).into(),
                 });
             } else {
@@ -1525,10 +1557,7 @@ impl<'a> Typecheck<'a> {
         use base::pos::HasSpan;
         match **typ {
             Type::Generic(ref id) => if args.iter().all(|arg| arg.id != id.id) {
-                self.error(
-                    typ.span(),
-                    TypeError::UndefinedVariable(id.id.clone()).into(),
-                );
+                self.error(typ.span(), TypeError::UndefinedVariable(id.id.clone()));
             },
             Type::Record(_) => {
                 // Inside records variables are bound implicitly to the closest field
@@ -2120,7 +2149,7 @@ impl<'a> Typecheck<'a> {
                 let err = TypeError::Unification(expected, actual, apply_subs(&self.subs, errors));
                 self.errors.push(Spanned {
                     span: span,
-                    // TODO Hint what caused this unification failure
+                    // TODO Help what caused this unification failure
                     value: err.into(),
                 });
                 self.subs.new_var()
@@ -2134,7 +2163,7 @@ impl<'a> Typecheck<'a> {
             Err(err) => {
                 self.errors.push(Spanned {
                     span: span,
-                    // TODO Hint what caused this unification failure
+                    // TODO Help what caused this unification failure
                     value: err.into(),
                 });
                 self.subs.new_var()
@@ -2210,7 +2239,7 @@ impl<'a> Typecheck<'a> {
             .map_or(true, |name| {
                 self.errors.push(Spanned {
                     span: span,
-                    // TODO Hint to the other fields location
+                    // TODO Help to the other fields location
                     value: TypeError::DuplicateField(name).into(),
                 });
                 false
