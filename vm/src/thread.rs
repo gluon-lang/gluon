@@ -20,8 +20,6 @@ use base::types::ArcType;
 use base::types;
 
 use {Error, Result, Variants};
-use field_map::FieldMap;
-use interner::InternedStr;
 use macros::MacroEnv;
 use api::{Getable, Pushable, VmType};
 use compiler::UpvarInfo;
@@ -30,8 +28,8 @@ use source_map::LocalIter;
 use stack::{Frame, Stack, StackFrame, State};
 use types::*;
 use vm::{GlobalVmState, VmEnv};
-use value::{BytecodeFunction, Callable, ClosureData, ClosureDataDef, ClosureInitDef, DataStruct,
-            Def, ExternFunction, GcStr, PartialApplicationDataDef, RecordDef, Userdata, Value};
+use value::{BytecodeFunction, Callable, ClosureData, ClosureDataDef, ClosureInitDef, Def,
+            ExternFunction, GcStr, PartialApplicationDataDef, RecordDef, Userdata, Value};
 
 use value::Value::{Closure, Data, Float, Function, Int, PartialApplication, String};
 
@@ -205,10 +203,57 @@ impl<'b> Traverseable for Roots<'b> {
         // Since this vm's stack is already borrowed in self we need to manually mark it to prevent
         // it from being traversed normally
         gc.mark(self.vm);
-        self.stack.get_values().traverse(gc);
+        self.stack.traverse(gc);
 
         // Traverse the vm's fields, avoiding the stack which is traversed above
         self.vm.traverse_fields_except_stack(gc);
+    }
+}
+
+impl<'b> ::gc::CollectScope for Roots<'b> {
+    fn scope<F>(&self, gc: &mut Gc, f: F)
+    where
+        F: FnOnce(&mut Gc),
+    {
+        // We need to pretend that the threads lives for longer than it does on the stack or we
+        // can't move the RwLockGuard into the vec. This does end up safe in the end because we
+        // never leak any lifetimes outside of this function
+        unsafe {
+            let mut stack: Vec<GcPtr<Thread>> = Vec::new();
+            let mut locks = Vec::new();
+
+            let child_threads = self.vm.child_threads.read().unwrap();
+            for child in &*child_threads {
+                Vec::push(&mut stack, *child);
+            }
+
+            while let Some(thread_ptr) = stack.pop() {
+                let thread = mem::transmute::<&Thread, &'static Thread>(&*thread_ptr);
+                let child_threads = thread.child_threads.read().unwrap();
+                for child in &*child_threads {
+                    Vec::push(&mut stack, *child);
+                }
+
+                let context = thread.context.lock().unwrap();
+
+                // Since we locked the context we need to scan the thread using `Roots` rather than
+                // letting it be scanned normally
+                Roots {
+                    vm: thread_ptr,
+                    stack: &context.stack,
+                }.traverse(gc);
+
+                Vec::push(&mut locks, (child_threads, context));
+            }
+
+            // Scan `self` sweep `gc`
+            f(gc);
+
+            // `sweep` all child gcs
+            for (_, mut context) in locks {
+                context.gc.sweep();
+            }
+        }
     }
 }
 
@@ -252,7 +297,7 @@ impl VmType for Thread {
 impl Traverseable for Thread {
     fn traverse(&self, gc: &mut Gc) {
         self.traverse_fields_except_stack(gc);
-        self.context.lock().unwrap().stack.get_values().traverse(gc);
+        self.context.lock().unwrap().stack.traverse(gc);
     }
 }
 
@@ -327,10 +372,13 @@ impl Traverseable for RootedThread {
 impl RootedThread {
     /// Creates a new virtual machine with an empty global environment
     pub fn new() -> RootedThread {
+        let mut global_state = GlobalVmState::new();
         let thread = Thread {
-            global_state: Arc::new(GlobalVmState::new()),
             parent: None,
-            context: Mutex::new(Context::new(Gc::new(Generation::default(), usize::MAX))),
+            context: Mutex::new(Context::new(
+                global_state.gc.get_mut().unwrap().new_child_gc(),
+            )),
+            global_state: Arc::new(global_state),
             roots: RwLock::new(Vec::new()),
             rooted_values: RwLock::new(Vec::new()),
             child_threads: RwLock::new(Vec::new()),
@@ -652,8 +700,6 @@ where
     fn deep_clone_value(&self, owner: &Thread, value: Value) -> Result<Value>;
 
     fn can_share_values_with(&self, gc: &mut Gc, other: &Thread) -> bool;
-
-    fn lookup_field(&self, data: &DataStruct, field: &str) -> Result<Value>;
 }
 
 impl ThreadInternal for Thread {
@@ -813,21 +859,6 @@ impl ThreadInternal for Thread {
         }
         false
     }
-
-    fn lookup_field(&self, data: &DataStruct, field: &str) -> Result<Value> {
-        let context = self.context.lock().unwrap();
-        let str_index = self.global_env().intern(field)?;
-        context
-            .record_map
-            .get_offset(data.tag(), str_index)
-            .and_then(|index| data.fields.get(index as usize).cloned())
-            .ok_or_else(|| {
-                Error::Message(format!(
-                    "Internal error: Undefined record field {}",
-                    str_index
-                ))
-            })
-    }
 }
 
 pub type HookFn = Box<FnMut(&Thread, DebugInfo) -> Result<Async<()>> + Send + Sync>;
@@ -958,7 +989,6 @@ pub struct Context {
     // FIXME It is dangerous to write to gc and stack
     #[cfg_attr(feature = "serde_derive", serde(state))] pub stack: Stack,
     #[cfg_attr(feature = "serde_derive", serde(state))] pub gc: Gc,
-    #[cfg_attr(feature = "serde_derive", serde(state))] record_map: FieldMap,
     #[cfg_attr(feature = "serde_derive", serde(skip))] hook: Hook,
     max_stack_size: VmIndex,
 
@@ -971,7 +1001,6 @@ impl Context {
         Context {
             gc: gc,
             stack: Stack::new(),
-            record_map: FieldMap::new(),
             hook: Hook {
                 function: None,
                 flags: HookFlags::empty(),
@@ -986,16 +1015,6 @@ impl Context {
         self.alloc_with(
             thread,
             Def {
-                tag: tag,
-                elems: fields,
-            },
-        ).map(Value::Data)
-    }
-
-    pub fn new_record(&mut self, thread: &Thread, tag: VmTag, fields: &[Value]) -> Result<Value> {
-        self.alloc_with(
-            thread,
-            RecordDef {
                 tag: tag,
                 elems: fields,
             },
@@ -1028,14 +1047,6 @@ impl Context {
 
     pub fn set_max_stack_size(&mut self, limit: VmIndex) {
         self.max_stack_size = limit;
-    }
-
-    pub fn get_fields(&mut self, tag: VmTag) -> Option<&Arc<Vec<InternedStr>>> {
-        self.record_map.get_fields(tag)
-    }
-
-    pub fn get_map(&mut self, fields: &[InternedStr]) -> VmTag {
-        self.record_map.get_map(fields)
     }
 
     /// "Returns a future", letting the virtual machine know that `future` must be resolved to
@@ -1185,7 +1196,7 @@ impl<'b> OwnedContext<'b> {
                         if context.stack.stack.get_frames().len() == 0 {
                             State::ReturnContext
                         } else {
-                            debug!(
+                            info!(
                                 "Continue with {}\nAt: {}/{}",
                                 closure.function.name,
                                 instruction_index,
@@ -1298,7 +1309,6 @@ impl<'b> OwnedContext<'b> {
             thread: self.thread,
             gc: &mut context.gc,
             stack: StackFrame::current(&mut context.stack),
-            record_map: &mut context.record_map,
             hook: &mut context.hook,
         }
     }
@@ -1308,21 +1318,10 @@ struct ExecuteContext<'b> {
     thread: &'b Thread,
     stack: StackFrame<'b>,
     gc: &'b mut Gc,
-    record_map: &'b mut FieldMap,
     hook: &'b mut Hook,
 }
 
 impl<'b> ExecuteContext<'b> {
-    fn lookup_field(&self, tag: VmTag, index: InternedStr) -> Result<VmIndex> {
-        self.record_map.get_offset(tag, index).ok_or_else(|| {
-            Error::Message(format!(
-                "Internal error: Undefined record field {} {}",
-                tag,
-                index
-            ))
-        })
-    }
-
     fn enter_scope(&mut self, args: VmIndex, state: State) {
         self.stack.enter_scope(args, state);
         self.hook.previous_instruction_index = usize::max_value();
@@ -1568,12 +1567,11 @@ impl<'b> ExecuteContext<'b> {
                                     stack: &self.stack.stack,
                                 };
                                 let field_names = &function.records[record as usize];
-                                let tag = self.record_map.get_map(&field_names);
                                 Data(self.gc.alloc_and_collect(
                                     roots,
                                     RecordDef {
-                                        tag: tag,
                                         elems: fields,
+                                        fields: field_names,
                                     },
                                 )?)
                             }
@@ -1610,9 +1608,8 @@ impl<'b> ExecuteContext<'b> {
                     let field = function.strings[i as usize];
                     match self.stack.pop() {
                         Data(data) => {
-                            let offset = self.lookup_field(data.tag(), field)?;
-                            let v = data.fields[offset as usize];
-                            self.stack.push(v);
+                            let v = data.get_field(field).expect("ICE: Field does not exist");
+                            self.stack.push(*v);
                         }
                         x => return Err(Error::Message(format!("GetField on {:?}", x))),
                     }

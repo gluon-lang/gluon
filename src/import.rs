@@ -2,7 +2,7 @@
 
 use std::any::Any;
 use std::borrow::Cow;
-use std::sync::RwLock;
+use std::sync::{Arc, Mutex, RwLock};
 use std::fs::File;
 use std::io;
 use std::io::Read;
@@ -139,6 +139,9 @@ pub struct Import<I = DefaultImporter> {
     pub paths: RwLock<Vec<PathBuf>>,
     pub loaders: RwLock<FnvMap<String, ExternLoader>>,
     pub importer: I,
+
+    /// Map of modules currently being loaded
+    loading: Mutex<FnvMap<String, Arc<Mutex<()>>>>,
 }
 
 impl<I> Import<I> {
@@ -148,6 +151,7 @@ impl<I> Import<I> {
             paths: RwLock::new(vec![PathBuf::from(".")]),
             loaders: RwLock::default(),
             importer: importer,
+            loading: Mutex::default(),
         }
     }
 
@@ -219,12 +223,9 @@ impl<I> Import<I> {
     where
         I: Importer,
     {
-        use compiler_pipeline::*;
-
         let modulename = module_id.name().as_str();
         let mut filename = modulename.replace(".", "/");
         filename.push_str(".glu");
-
         {
             let state = get_state(macros);
             if state.visited.iter().any(|m| **m == *filename) {
@@ -242,6 +243,40 @@ impl<I> Import<I> {
             state.visited.push(filename.clone());
         }
 
+        // Prevent any other threads from importing this module while we compile it
+        let lock = {
+            let mut loading = self.loading.lock().unwrap();
+            loading
+                .entry(module_id.to_string())
+                .or_insert_with(|| Default::default())
+                .clone()
+        };
+        let _guard = lock.lock().unwrap();
+        if vm.global_env().global_exists(module_id.as_ref()) {
+            return Ok(());
+        }
+
+        let result = self.load_module_(compiler, vm, macros, module_id, &filename);
+
+        self.loading.lock().unwrap().remove(module_id.as_ref());
+
+        result
+    }
+
+    pub fn load_module_(
+        &self,
+        compiler: &mut Compiler,
+        vm: &Thread,
+        macros: &mut MacroExpander,
+        module_id: &Symbol,
+        filename: &str,
+    ) -> Result<(), (Option<ArcType>, MacroError)>
+    where
+        I: Importer,
+    {
+        use compiler_pipeline::*;
+
+        let modulename = module_id.name().as_str();
         // Retrieve the source, first looking in the standard library included in the
         // binary
         let unloaded_module = self.get_unloaded_module(vm, &modulename, &filename)

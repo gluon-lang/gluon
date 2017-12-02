@@ -5,7 +5,7 @@ use base::symbol::Symbol;
 use base::pos::Line;
 
 use Variants;
-use gc::GcPtr;
+use gc::{Gc, GcPtr, Traverseable};
 use value::{ClosureData, DataStruct, ExternFunction, Value};
 use types::VmIndex;
 
@@ -21,12 +21,9 @@ pub enum State {
     Excess,
     Closure(
         #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::closure"))]
-        
-            GcPtr<ClosureData>,
+        GcPtr<ClosureData>,
     ),
-    Extern(
-        #[cfg_attr(feature = "serde_derive", serde(state))] GcPtr<ExternFunction>,
-    ),
+    Extern(#[cfg_attr(feature = "serde_derive", serde(state))] GcPtr<ExternFunction>),
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -59,6 +56,12 @@ pub struct Lock(VmIndex);
 pub struct Stack {
     #[cfg_attr(feature = "serde_derive", serde(state))] values: Vec<Value>,
     #[cfg_attr(feature = "serde_derive", serde(state))] frames: Vec<Frame>,
+}
+
+impl Traverseable for Stack {
+    fn traverse(&self, gc: &mut Gc) {
+        self.values.traverse(gc);
+    }
 }
 
 impl Stack {

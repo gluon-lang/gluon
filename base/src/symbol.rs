@@ -435,6 +435,10 @@ impl<'a> SymbolModule<'a> {
         symbol
     }
 
+    pub fn module(&self) -> &Name {
+        &self.module
+    }
+
     pub fn len(&self) -> usize {
         self.symbols.len()
     }

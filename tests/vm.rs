@@ -11,9 +11,9 @@ use gluon::base::pos::BytePos;
 use gluon::base::types::Type;
 use gluon::base::source;
 use gluon::vm::api::{FunctionRef, Hole, OpaqueValue, ValueRef};
-use gluon::vm::thread::{Thread, ThreadInternal};
+use gluon::vm::thread::{RootedThread, Thread, ThreadInternal};
 use gluon::vm::internal::Value;
-use gluon::vm::internal::Value::{Float, Int};
+use gluon::vm::internal::Value::Int;
 use gluon::vm::stack::{StackFrame, State};
 use gluon::vm::channel::Sender;
 use gluon::{Compiler, Error};
@@ -63,12 +63,17 @@ fn record() {
 ";
     let vm = make_vm();
     let value = run_expr::<OpaqueValue<&Thread, Hole>>(&vm, text);
-    assert_eq!(
-        value.get_ref(),
-        vm.context()
-            .new_record(&vm, 0, &mut [Int(0), Float(1.0), Value::Tag(0)])
-            .unwrap()
-    );
+    match value.get_ref() {
+        ValueRef::Data(data) => {
+            assert_eq!(data.get(0).unwrap(), ValueRef::Int(0));
+            assert_eq!(data.get(1).unwrap(), ValueRef::Float(1.0));
+            match data.get(2).unwrap() {
+                ValueRef::Data(data) if data.tag() == 0 => (),
+                _ => panic!(),
+            }
+        }
+        _ => panic!(),
+    }
 }
 
 #[test]
@@ -81,12 +86,13 @@ add { x = 0, y = 1 } { x = 1, y = 1 }
 ";
     let vm = make_vm();
     let value = run_expr::<OpaqueValue<&Thread, Hole>>(&vm, text);
-    assert_eq!(
-        value.get_ref(),
-        vm.context()
-            .new_record(&vm, 0, &mut [Int(1), Int(2)])
-            .unwrap()
-    );
+    match value.get_ref() {
+        ValueRef::Data(data) => {
+            assert_eq!(data.get(0).unwrap(), ValueRef::Int(1));
+            assert_eq!(data.get(1).unwrap(), ValueRef::Int(2));
+        }
+        _ => panic!(),
+    }
 }
 #[test]
 fn script() {
@@ -407,12 +413,13 @@ in
 "#;
     let vm = make_vm();
     let result = run_expr::<OpaqueValue<&Thread, Hole>>(&vm, text);
-    assert_eq!(
-        result.get_ref(),
-        vm.context()
-            .new_record(&vm, 0, &mut [Int(3), Float(3.0)])
-            .unwrap()
-    );
+    match result.get_ref() {
+        ValueRef::Data(data) => {
+            assert_eq!(data.get(0).unwrap(), ValueRef::Int(3));
+            assert_eq!(data.get(1).unwrap(), ValueRef::Float(3.0));
+        }
+        _ => panic!(),
+    }
 }
 
 test_expr!{ through_overloaded_alias,
@@ -783,4 +790,48 @@ fn dont_use_the_implicit_prelude_span_in_the_top_expr() {
 #[test]
 fn value_size() {
     assert!(::std::mem::size_of::<Value>() <= 16);
+}
+
+#[test]
+fn deep_clone_partial_application() {
+    use gluon::base::symbol::Symbol;
+    use gluon::base::metadata::Metadata;
+
+    let _ = ::env_logger::init();
+    let vm = RootedThread::new();
+
+    assert_eq!(vm.context().gc.allocated_memory(), 0);
+
+    let child = vm.new_thread().unwrap();
+
+    assert_eq!(child.context().gc.allocated_memory(), 0);
+
+    let result = Compiler::new()
+        .implicit_prelude(false)
+        .run_expr::<OpaqueValue<&Thread, Hole>>(
+            &child,
+            "test",
+            r#"
+                let f x y = y
+                f 1
+            "#,
+        );
+    assert!(result.is_ok(), "{}", result.err().unwrap());
+
+    let global_memory_without_closures = vm.global_env().gc.lock().unwrap().allocated_memory();
+    let memory_for_closures = child.context().gc.allocated_memory();
+
+    vm.set_global(
+        Symbol::from("test"),
+        Type::hole(),
+        Metadata::default(),
+        unsafe { result.unwrap().0.get_value() },
+    ).unwrap();
+
+    let global_memory_with_closures = vm.global_env().gc.lock().unwrap().allocated_memory();
+
+    assert_eq!(
+        global_memory_without_closures + memory_for_closures,
+        global_memory_with_closures
+    );
 }

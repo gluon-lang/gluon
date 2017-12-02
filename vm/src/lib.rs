@@ -59,7 +59,6 @@ pub mod stack;
 pub mod types;
 
 mod array;
-mod field_map;
 mod interner;
 mod source_map;
 mod value;

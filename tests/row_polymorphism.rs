@@ -1,6 +1,11 @@
 extern crate env_logger;
 extern crate gluon;
 
+use gluon::vm::api::{FunctionRef, Hole, OpaqueValue};
+use gluon::{Compiler, Thread};
+
+use support::make_vm;
+
 #[macro_use]
 mod support;
 
@@ -20,6 +25,29 @@ let f record =
 f { y = 1, z = 0, x = 123 }
 "#,
 122
+}
+
+#[test]
+fn polymorphic_record_access_from_child_thread() {
+    let _ = ::env_logger::init();
+    let vm = make_vm();
+    let child = vm.new_thread().unwrap();
+
+    Compiler::new()
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "", "import! std.function")
+        .unwrap();
+
+    let result = Compiler::new().run_expr::<FunctionRef<fn(i32) -> i32>>(
+        &child,
+        "test",
+        r#"
+        let function = import! std.function
+        let f r = r.id in
+        f function
+        "#,
+    );
+    assert!(result.is_ok(), "{}", result.err().unwrap());
+    assert_eq!(result.unwrap().0.call(123), Ok(123));
 }
 
 // FIXME Add this test back when order no longer matters for fields

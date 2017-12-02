@@ -50,6 +50,7 @@ skeptic = { version = "0.6", optional = true }
 
 [dev-dependencies]
 bencher = "0.1.2"
+tensile = "0.1.0"
 collect-mac = "0.1.0"
 env_logger = "0.3.4"
 
@@ -71,7 +72,6 @@ serialization = ["serde", "serde_state", "serde_derive_state", "gluon_vm/seriali
 test = ["serialization", "gluon_vm/test", "gluon_check/test", "gluon_parser/test"]
 nightly = ["compiletest_rs"]
 
-
 [[bench]]
 name = "check"
 harness = false
@@ -87,3 +87,47 @@ harness = false
 [[bench]]
 name = "precompiled"
 harness = false
+
+[[test]]
+name = "api"
+[[test]]
+name = "array"
+[[test]]
+name = "compiletest"
+[[test]]
+name = "de"
+[[test]]
+name = "debug"
+[[test]]
+name = "error"
+[[test]]
+name = "http"
+[[test]]
+name = "io"
+[[test]]
+name = "limits"
+[[test]]
+name = "main"
+harness = false
+[[test]]
+name = "metadata"
+[[test]]
+name = "parallel"
+[[test]]
+name = "pattern_match"
+[[test]]
+name = "regex_bind"
+[[test]]
+name = "row_polymorphism"
+[[test]]
+name = "safety"
+[[test]]
+name = "serialization"
+[[test]]
+name = "skeptic-tests"
+[[test]]
+name = "stack_overflow"
+[[test]]
+name = "tutorial"
+[[test]]
+name = "vm"

@@ -110,7 +110,7 @@ impl Interner {
 
 impl fmt::Debug for InternedStr {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "InternedStr({:?})", self.0)
+        write!(f, "InternedStr({:p}, {:?})", &*self.0, self.0)
     }
 }
 impl fmt::Display for InternedStr {

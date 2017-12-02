@@ -29,21 +29,29 @@ pub use value::Value; //FIXME Value should not be exposed
 pub use thread::{Root, RootStr, RootedThread, RootedValue, Status, Thread};
 
 
-fn new_bytecode(gc: &mut Gc, vm: &GlobalVmState, m: CompiledModule) -> Result<GcPtr<ClosureData>> {
+fn new_bytecode(
+    env: &VmEnv,
+    interner: &mut Interner,
+    gc: &mut Gc,
+    vm: &GlobalVmState,
+    m: CompiledModule,
+) -> Result<GcPtr<ClosureData>> {
     let CompiledModule {
         module_globals,
         function,
     } = m;
-    let bytecode_function = new_bytecode_function(gc, vm, function)?;
+    let bytecode_function = new_bytecode_function(interner, gc, vm, function)?;
+
     let globals = module_globals
         .into_iter()
-        .map(|index| vm.env.read().unwrap().globals[index.as_ref()].value)
+        .map(|index| env.globals[index.as_ref()].value)
         .collect::<Vec<_>>();
 
     gc.alloc(ClosureDataDef(bytecode_function, &globals))
 }
 
 fn new_bytecode_function(
+    interner: &mut Interner,
     gc: &mut Gc,
     vm: &GlobalVmState,
     f: CompiledFunction,
@@ -62,16 +70,14 @@ fn new_bytecode_function(
 
     let fs: StdResult<_, _> = inner_functions
         .into_iter()
-        .map(|inner| new_bytecode_function(gc, vm, inner))
+        .map(|inner| new_bytecode_function(interner, gc, vm, inner))
         .collect();
 
     let records: StdResult<_, _> = records
         .into_iter()
         .map(|vec| {
             vec.into_iter()
-                .map(|field| {
-                    Ok(vm.interner.write().unwrap().intern(gc, field.as_ref())?)
-                })
+                .map(|field| Ok(interner.intern(gc, field.as_ref())?))
                 .collect::<Result<_>>()
         })
         .collect();
@@ -94,11 +100,9 @@ fn new_bytecode_function(
 #[cfg_attr(feature = "serde_derive_state", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct Global {
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::symbol"))]
-    pub id:
-        Symbol,
+    pub id: Symbol,
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
-    pub typ:
-        ArcType,
+    pub typ: ArcType,
     pub metadata: Metadata,
     #[cfg_attr(feature = "serde_derive_state", serde(state))] pub value: Value,
 }
@@ -117,8 +121,7 @@ pub struct GlobalVmState {
     #[cfg_attr(feature = "serde_derive", serde(state))] env: RwLock<VmEnv>,
 
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
-    generics:
-        RwLock<FnvMap<StdString, ArcType>>,
+    generics: RwLock<FnvMap<StdString, ArcType>>,
 
     #[cfg_attr(feature = "serde_derive", serde(skip))] typeids: RwLock<FnvMap<TypeId, ArcType>>,
 
@@ -135,8 +138,7 @@ pub struct GlobalVmState {
     // generation 0 sweep these threads are scanned as generation 0 values may be refered to by any
     // thread
     #[cfg_attr(feature = "serde_derive", serde(state))]
-    pub generation_0_threads:
-        RwLock<Vec<GcPtr<Thread>>>,
+    pub generation_0_threads: RwLock<Vec<GcPtr<Thread>>>,
 }
 
 impl Traverseable for GlobalVmState {
@@ -419,8 +421,10 @@ impl GlobalVmState {
     }
 
     pub fn new_global_thunk(&self, f: CompiledModule) -> Result<GcPtr<ClosureData>> {
+        let env = self.env.read().unwrap();
+        let mut interner = self.interner.write().unwrap();
         let mut gc = self.gc.lock().unwrap();
-        new_bytecode(&mut gc, self, f)
+        new_bytecode(&env, &mut interner, &mut gc, self, f)
     }
 
     pub fn get_type<T: ?Sized + Any>(&self) -> ArcType {
@@ -507,10 +511,9 @@ impl GlobalVmState {
     }
 
     pub fn intern(&self, s: &str) -> Result<InternedStr> {
-        self.interner
-            .write()
-            .unwrap()
-            .intern(&mut *self.gc.lock().unwrap(), s)
+        let mut interner = self.interner.write().unwrap();
+        let mut gc = self.gc.lock().unwrap();
+        interner.intern(&mut *gc, s)
     }
 
     /// Returns a borrowed structure which implements `CompilerEnv`

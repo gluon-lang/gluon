@@ -19,11 +19,11 @@ use gluon::vm::thread::{RootedThread, RootedValue, Thread, ThreadInternal};
 use gluon::vm::serialization::{DeSeed, SeSeed};
 use gluon::vm::internal::Value;
 
-fn serialize_value(thread: &Thread, value: &Value) {
+fn serialize_value(value: &Value) {
     let mut buffer = Vec::new();
     {
         let mut ser = serde_json::Serializer::pretty(&mut buffer);
-        let ser_state = SeSeed::new(thread);
+        let ser_state = SeSeed::new();
         value.serialize_state(&mut ser, &ser_state).unwrap();
     }
     String::from_utf8(buffer).unwrap();
@@ -40,7 +40,7 @@ fn roundtrip<'t>(
     let mut buffer = Vec::new();
     {
         let mut ser = serde_json::Serializer::pretty(&mut buffer);
-        let ser_state = SeSeed::new(thread);
+        let ser_state = SeSeed::new();
         value.serialize_state(&mut ser, &ser_state).unwrap();
     }
     let buffer = from_utf8(&buffer).unwrap();
@@ -57,7 +57,7 @@ fn roundtrip<'t>(
     let mut buffer2 = Vec::new();
     {
         let mut ser = serde_json::Serializer::pretty(&mut buffer2);
-        let ser_state = SeSeed::new(thread);
+        let ser_state = SeSeed::new();
         value.serialize_state(&mut ser, &ser_state).unwrap();
     }
     assert_eq!(buffer, from_utf8(&buffer2).unwrap());
@@ -155,13 +155,12 @@ fn precompile() {
     let thread2 = new_vm();
     assert_eq!(
         serialize_value(
-            &thread2,
             &text.run_expr(&mut Compiler::new(), &thread2, "test", &text, None)
                 .wait()
                 .unwrap()
                 .value
         ),
-        serialize_value(&thread, &precompiled_result.value)
+        serialize_value(&precompiled_result.value)
     );
 }
 
