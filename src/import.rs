@@ -12,7 +12,7 @@ use itertools::Itertools;
 
 use base::ast::{Expr, Literal, SpannedExpr, Typed, TypedIdent};
 use base::fnv::FnvMap;
-use base::pos;
+use base::pos::{self, BytePos, Span};
 use base::symbol::Symbol;
 use base::types::ArcType;
 
@@ -219,6 +219,7 @@ impl<I> Import<I> {
         vm: &Thread,
         macros: &mut MacroExpander,
         module_id: &Symbol,
+        span: Span<BytePos>,
     ) -> Result<(), (Option<ArcType>, MacroError)>
     where
         I: Importer,
@@ -256,20 +257,21 @@ impl<I> Import<I> {
             return Ok(());
         }
 
-        let result = self.load_module_(compiler, vm, macros, module_id, &filename);
+        let result = self.load_module_(compiler, vm, macros, module_id, &filename, span);
 
         self.loading.lock().unwrap().remove(module_id.as_ref());
 
         result
     }
 
-    pub fn load_module_(
+    fn load_module_(
         &self,
         compiler: &mut Compiler,
         vm: &Thread,
         macros: &mut MacroExpander,
         module_id: &Symbol,
         filename: &str,
+        span: Span<BytePos>,
     ) -> Result<(), (Option<ArcType>, MacroError)>
     where
         I: Importer,
@@ -303,7 +305,7 @@ impl<I> Import<I> {
                         Ok(m) => m,
                         Err((None, err)) => return Err((None, err.into())),
                         Err((Some(m), err)) => {
-                            macros.errors.push(err.into());
+                            macros.errors.push(pos::spanned(span, err.into()));
                             m
                         }
                     };
@@ -450,10 +452,12 @@ where
         let name = Symbol::from(&*modulename);
         debug!("Import '{}' {:?}", modulename, get_state(macros).visited);
         if !vm.global_env().global_exists(&modulename) {
-            if let Err((typ, err)) = self.load_module(&mut Compiler::new(), vm, macros, &name) {
+            if let Err((typ, err)) =
+                self.load_module(&mut Compiler::new(), vm, macros, &name, args[0].span)
+            {
                 match typ {
                     Some(typ) => {
-                        macros.errors.push(err);
+                        macros.errors.push(pos::spanned(args[0].span, err));
                         return Ok(pos::spanned(args[0].span, Expr::Error(Some(typ))));
                     }
                     None => return Err(err),

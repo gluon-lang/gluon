@@ -279,7 +279,7 @@ let id x = x
 }
 
 #[test]
-fn parens_pattern() {
+fn suggest_pattern_at_record_brace() {
     let _ = env_logger::init();
 
     let text = r#"
@@ -602,6 +602,108 @@ match A 3 with
 "#;
     let result = suggest(text, BytePos::from(55));
     let expected = Ok(vec!["BC".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_record_field_in_pattern_at_ident() {
+    let _ = env_logger::init();
+
+    let text = r#"
+let { ab } = { x = 1, abc = "", abcd = 2 }
+()
+"#;
+    let result = suggest(text, BytePos::from(9));
+    let expected = Ok(vec!["abc".into(), "abcd".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_record_field_in_pattern_at_nothing() {
+    let _ = env_logger::init();
+
+    let text = r#"
+let { ab } = { x = 1, abc = "", abcd = 2 }
+()
+"#;
+    let result = suggest(text, BytePos::from(10));
+    let expected = Ok(vec!["abc".into(), "abcd".into(), "x".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn dont_suggest_variant_at_record_field() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Test = | Test Int
+let { } = { abc = "" }
+()
+"#;
+    let result = suggest_loc(text, 2, 6);
+    let expected = Ok(vec!["abc".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn dont_suggest_field_already_in_pattern() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Test = | Test Int
+let { abc, a, Test } = { Test, x = 1, abc = "", abcd = 2 }
+()
+"#;
+    let result = suggest_loc(text, 2, 12);
+    let expected = Ok(vec!["abcd".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_exact_field_match_in_pattern() {
+    let _ = env_logger::init();
+
+    let text = r#"
+let { abc } = { abc = "" }
+()
+"#;
+    let result = suggest_loc(text, 1, 8);
+    let expected = Ok(vec!["abc".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_type_field_in_record_pattern_at_ident() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Test = | Test Int
+let { T } = { Test, x = 1 }
+()
+"#;
+    let result = suggest_loc(text, 2, 7);
+    let expected = Ok(vec!["Test".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_type_field_in_record_pattern_at_empty() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Test = | Test Int
+let {  } = { Test, x = 1 }
+()
+"#;
+    let result = suggest_loc(text, 2, 7);
+    let expected = Ok(vec!["Test".into(), "x".into()]);
 
     assert_eq!(result, expected);
 }
