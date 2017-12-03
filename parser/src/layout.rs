@@ -50,6 +50,7 @@ enum Context {
     Lambda,
 }
 
+#[derive(Debug)]
 struct Contexts {
     stack: Vec<Offside>,
 }
@@ -316,8 +317,8 @@ where
                 },
                 (Context::MatchClause, _) => {
                     // Must allow `|` to be on the same line
-                    if ordering == Ordering::Less ||
-                        (ordering == Ordering::Equal && token.value != Token::Pipe)
+                    if ordering == Ordering::Less
+                        || (ordering == Ordering::Equal && token.value != Token::Pipe)
                     {
                         self.indent_levels.pop();
                         continue;
@@ -328,8 +329,9 @@ where
                     if token.value != Token::And && token.value != Token::RBrace =>
                 {
                     // Insert an `in` token
-                    self.indent_levels.pop();
-                    let location = {
+
+                    let let_location = self.indent_levels.pop().unwrap().location;
+                    {
                         let offside = self.indent_levels
                             .last_mut()
                             .expect("No top level block found");
@@ -341,8 +343,7 @@ where
                         {
                             *emit_semi = false;
                         }
-                        offside.location
-                    };
+                    }
                     let span = token.span;
                     let result = Ok(self.layout_token(token, Token::In));
 
@@ -353,7 +354,7 @@ where
                     // b
                     // ```
                     // `let x = 1 in {{ a; b }}` and not `{{ (let x = 1 in a) ; b }}`
-                    let offside = Offside::new(location, Context::Block { emit_semi: false });
+                    let offside = Offside::new(let_location, Context::Block { emit_semi: false });
                     self.indent_levels.push(offside)?;
                     self.unprocessed_tokens
                         .push(pos::spanned(span, Token::OpenBlock));
@@ -365,7 +366,7 @@ where
 
             // Some tokens directly insert a new context when emitted
             let push_context = match token.value {
-                Token::Let => Some(Context::Let),
+                Token::Let | Token::Do => Some(Context::Let),
                 Token::If => Some(Context::If),
                 Token::Type => Some(Context::Type),
                 Token::Match => Some(Context::Expr),

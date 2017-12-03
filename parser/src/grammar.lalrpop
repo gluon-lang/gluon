@@ -2,7 +2,7 @@ use std::str::FromStr;
 
 use itertools::Itertools;
 
-use base::ast::{Alternative, Array, AstType, Comment, Expr, ExprField, Lambda, Literal, Pattern,
+use base::ast::{Alternative, Array, AstType, Do, Comment, Expr, ExprField, Lambda, Literal, Pattern,
     PatternField, SpannedExpr, SpannedIdent, TypeBinding, TypedIdent, ValueBinding};
 use base::kind::{ArcKind, Kind};
 use base::pos::{self, BytePos, Spanned};
@@ -37,6 +37,7 @@ extern {
         "if" => Token::If,
         "in" => Token::In,
         "let" => Token::Let,
+        "do" => Token::Do,
         "match" => Token::Match,
         "then" => Token::Then,
         "type" => Token::Type,
@@ -549,6 +550,10 @@ Expr: Expr<Id> = {
         bindings.insert(0, first);
 
         Expr::TypeBindings(bindings, Box::new(body))
+    },
+
+    "do" <id: SpannedIdent> "=" <bound: SpExpr> "in" <body: SpExpr> => {
+        Expr::Do(Do { id, bound: Box::new(bound), body: Box::new(body), flat_map_id: None })
     },
 
     BlockExpr,

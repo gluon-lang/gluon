@@ -495,7 +495,6 @@ type Test = | Test a
     assert_err!(result, UndefinedVariable(..));
 }
 
-
 #[test]
 fn make_with_explicit_types_with_wrong_variable() {
     let _ = ::env_logger::init();
@@ -512,7 +511,6 @@ make
     assert!(result.is_err(), "{}", result.unwrap_err());
 }
 
-
 #[test]
 fn double_type_variable_unification_bug() {
     let _ = ::env_logger::init();
@@ -525,4 +523,31 @@ fn double_type_variable_unification_bug() {
     let result = support::typecheck(text);
 
     assert_err!(result, UndefinedVariable(..));
+}
+
+#[test]
+fn do_expression_undefined_flat_map() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+do x = 1
+2
+"#;
+    let result = support::typecheck(text);
+
+    assert_err!(result, UndefinedVariable(..));
+}
+
+#[test]
+fn do_expression_type_mismatch() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+let flat_map f = 1
+do x = 1
+2
+"#;
+    let result = support::typecheck(text);
+
+    assert_unify_err!(result, TypeMismatch(..));
 }

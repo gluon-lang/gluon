@@ -3,7 +3,7 @@ use std::{iter, ops};
 use itertools::{Either, Itertools};
 use pretty::{Arena, DocAllocator, DocBuilder};
 
-use base::ast::{Expr, Pattern, SpannedExpr, SpannedPattern, ValueBinding};
+use base::ast::{Do, Expr, Pattern, SpannedExpr, SpannedPattern, ValueBinding};
 use base::kind::Kind;
 use base::pos::{self, BytePos, HasSpan, Span, Spanned};
 use base::source;
@@ -288,6 +288,22 @@ impl<'a: 'e, 'e> Printer<'a, 'e> {
                     self.pretty_expr_(binds.last().unwrap().alias.span.end, body)
                 ].group()
                 }
+                Expr::Do(Do {
+                    ref id,
+                    ref bound,
+                    ref body,
+                    ..
+                }) => chain![arena;
+                        chain![arena;
+                            "do",
+                            self.space_before(id.span.start),
+                            id.value.name.as_ref(),
+                            self.space_after(id.span.end),
+                            "=",
+                            self.hang(arena.nil(), bound).group()
+                        ].group(),
+                        self.pretty_expr_(bound.span.end, body)
+                    ],
                 Expr::Error(_) => arena.text("<error>"),
             };
         comments.append(doc)

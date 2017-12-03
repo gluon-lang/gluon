@@ -1,9 +1,9 @@
 #![allow(unused)]
 
-use base::ast::{Alternative, Array, AstType, DisplayEnv, Expr, ExprField, IdentEnv, Lambda,
-                Literal, Pattern, SpannedExpr, SpannedPattern, MutVisitor, walk_mut_expr,
-                walk_mut_pattern, walk_mut_ast_type, TypeBinding, TypedIdent,
-                SpannedIdent, SpannedAlias, SpannedAstType, ValueBinding};
+use base::ast::{walk_mut_ast_type, walk_mut_expr, walk_mut_pattern, Alternative, Array, AstType,
+                DisplayEnv, Expr, ExprField, IdentEnv, Lambda, Literal, MutVisitor, Pattern,
+                SpannedAlias, SpannedAstType, SpannedExpr, SpannedIdent, SpannedPattern,
+                TypeBinding, TypedIdent, ValueBinding};
 use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::kind::Kind;
@@ -88,7 +88,7 @@ macro_rules! parse_new {
     ($input:expr) => {{
         // Replace windows line endings so that byte positions match up on multiline expressions
         let input = $input.replace("\r\n", "\n");
-        parse(&input).unwrap_or_else(|(_, err)| panic!("{}", err))
+        parse(&input).unwrap_or_else(|(_, err)| panic!("{}", ::base::error::InFile::new("test", &input, err)))
     }}
 }
 

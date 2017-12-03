@@ -88,7 +88,7 @@ let monad_Lisp : Monad Lisp = {
             | Err err -> Err err)
 }
 
-let { (>>=) } = prelude.make_Monad monad_Lisp
+let { flat_map, (>>=) } = prelude.make_Monad monad_Lisp
 let fold_m = (prelude.make_Foldable list.foldable).fold_m monad_Lisp
 let traverse = list.traversable.traverse applicative_Lisp
 let { map = map_lisp } = functor_Lisp
@@ -96,9 +96,13 @@ let { map = map_lisp } = functor_Lisp
 let get_state : Lisp LispState = lisp (\state -> Ok { value = state, state = state })
 let set_state state : LispState -> Lisp () = lisp (\_ -> Ok { value = (), state })
 let modify_state f : (LispState -> LispState) -> Lisp () =
-    get_state >>= \state -> set_state (f state)
+    do state = get_state
+    set_state (f state)
 let scope_state run : Lisp a -> Lisp a =
-    get_state >>= \original -> run >>= \x -> set_state original >>= \_ -> wrap x
+    do original = get_state
+    do x = run
+    do _ = set_state original
+    wrap x
 
 let fail msg : String -> Lisp a = lisp (\_ -> Err msg)
 
@@ -131,22 +135,24 @@ let primitive_binop name int_op float_op : _ -> Binop Int -> Binop Float -> Map 
 let define xs =
     match xs with
     | Cons (Atom name) (Cons value Nil) ->
-        get_state
-            >>= \state ->
-            let new_state = prim_map.insert name value state
-            set_state new_state >>= \_ -> wrap value
+        do state = get_state
+        let new_state = prim_map.insert name value state
+        do _ = set_state new_state
+        wrap value
     | Cons (List (Cons (Atom name) params)) body ->
-        get_state
-            >>= \closure ->
-                let function = Function {
-                    params = list.functor.map show.show params,
-                    vararg = None,
-                    body,
-                    closure
-                }
-                let new_state = prim_map.insert name function closure
-                set_state new_state
-                    >>= \_ -> wrap function
+        do closure = get_state
+
+        let function = Function {
+            params = list.functor.map show.show params,
+            vararg = None,
+            body,
+            closure
+        }
+        let new_state = prim_map.insert name function closure
+
+        do _ = set_state new_state
+
+        wrap function
     | _ -> fail "Unexpected parameters to define `define`"
 
 let primitives =
@@ -161,25 +167,27 @@ let apply f xs : Expr -> List Expr -> Lisp Expr =
     let add_args names values =
         match (names, values) with
         | (Cons name names, Cons value values) ->
-            modify_state (\state -> prim_map.insert name value state)
-                >>= \_ -> add_args names values
+            do _ = modify_state (\state -> prim_map.insert name value state)
+            add_args names values
         | (Nil, _) -> wrap ()
         | _ -> fail "Not enough arguments to function"
 
     match f with
     | Primitive primitive -> primitive xs
     | Function function ->
-        scope_state (add_args function.params xs >>= \_ -> eval_exprs function.body)
+        scope_state (
+            do _ = add_args function.params xs
+            eval_exprs function.body
+        )
     | _ -> fail ("Can\'t call value: " <> show.show f)
 
 and eval_lisp expr : Expr -> Lisp Expr =
     match expr with
     | Atom name ->
-        get_state
-            >>= \state ->
-            match prim_map.find name state with
-            | Some value -> wrap value
-            | None -> fail ("Binding `" <> name <> "` is not defined")
+        do state = get_state
+        match prim_map.find name state with
+        | Some value -> wrap value
+        | None -> fail ("Binding `" <> name <> "` is not defined")
     | Int _ -> wrap expr
     | Float _ -> wrap expr
     | Function _ -> wrap expr
@@ -188,16 +196,15 @@ and eval_lisp expr : Expr -> Lisp Expr =
         | Cons x xs ->
             match x with
             | Atom name ->
-                get_state
-                    >>= \state ->
-                    if name == "define" then
-                        define xs
-                    else
-                        match prim_map.find name state with
-                        | Some prim ->
-                            traverse eval_lisp xs
-                                >>= \evaluated_args -> apply prim evaluated_args
-                        | None -> fail ("Variable `" <> name <> "` does not exist")
+                do state = get_state
+                if name == "define" then
+                    define xs
+                else
+                    match prim_map.find name state with
+                    | Some prim ->
+                        do evaluated_args = traverse eval_lisp xs
+                        apply prim evaluated_args
+                    | None -> fail ("Variable `" <> name <> "` does not exist")
             | _ -> fail ("Cant apply" <> show.show x)
         | Nil -> wrap expr
 

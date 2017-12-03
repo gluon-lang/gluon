@@ -203,3 +203,30 @@ impl<E: fmt::Display + fmt::Debug + Any> StdError for InFile<E> {
         "Error in file"
     }
 }
+
+#[derive(Debug, PartialEq)]
+pub struct Help<E, H> {
+    pub error: E,
+    pub help: Option<H>,
+}
+
+impl<E, H> fmt::Display for Help<E, H>
+where
+    E: fmt::Display,
+    H: fmt::Display,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.error)?;
+        if let Some(ref help) = self.help {
+            writeln!(f)?;
+            write!(f, "help: {}", help)?;
+        }
+        Ok(())
+    }
+}
+
+impl<E, H> From<E> for Help<E, H> {
+    fn from(error: E) -> Help<E, H> {
+        Help { error, help: None }
+    }
+}

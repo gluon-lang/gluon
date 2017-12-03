@@ -755,3 +755,16 @@ fn shebang_at_top_is_ignored() {
         record_a(vec![("Test".into(), None)], vec![("x".into(), None)])
     )
 }
+
+
+#[test]
+fn do_in_parens() {
+    let _ = ::env_logger::init();
+    let text = r"
+        scope_state (
+            do _ = add_args
+            eval_exprs
+        )
+    ";
+    parse_clear_span!(text);
+}

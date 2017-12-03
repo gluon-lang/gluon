@@ -10,8 +10,8 @@ use std::sync::Arc;
 use itertools::Itertools;
 
 use base::scoped_map::ScopedMap;
-use base::ast::{DisplayEnv, Expr, Literal, MutVisitor, Pattern, PatternField, SpannedExpr};
-use base::ast::{AstType, SpannedIdent, SpannedPattern, TypeBinding, ValueBinding};
+use base::ast::{DisplayEnv, Do, Expr, Literal, MutVisitor, Pattern, PatternField, SpannedExpr};
+use base::ast::{AstType, SpannedIdent, SpannedPattern, TypeBinding, TypedIdent, ValueBinding};
 use base::error::Errors;
 use base::fnv::{FnvMap, FnvSet};
 use base::resolve;
@@ -152,7 +152,25 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
     }
 }
 
-pub type SpannedTypeError<Id> = Spanned<TypeError<Id>, BytePos>;
+#[derive(Debug, PartialEq)]
+pub enum Help {
+    UndefinedFlatMapInDo,
+}
+
+impl fmt::Display for Help {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Help::UndefinedFlatMapInDo => write!(
+                f,
+                "Try bringing the `flat_map` function found in the `Monad`\
+                 instance for your type into scope"
+            ),
+        }
+    }
+}
+
+pub type HelpError<Id> = ::base::error::Help<TypeError<Id>, Help>;
+pub type SpannedTypeError<Id> = Spanned<HelpError<Id>, BytePos>;
 
 type TcResult<T> = Result<T, TypeError<Symbol>>;
 
@@ -285,10 +303,13 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn error(&mut self, span: Span<BytePos>, error: TypeError<Symbol>) -> ArcType {
+    fn error<E>(&mut self, span: Span<BytePos>, error: E) -> ArcType
+    where
+        E: Into<HelpError<Symbol>>,
+    {
         self.errors.push(Spanned {
             span: span,
-            value: error,
+            value: error.into(),
         });
         self.subs.new_var()
     }
@@ -477,7 +498,7 @@ impl<'a> Typecheck<'a> {
         for err in errors {
             use self::TypeError::*;
 
-            match err.value {
+            match err.value.error {
                 UndefinedVariable(_)
                 | UndefinedType(_)
                 | DuplicateTypeDefinition(_)
@@ -576,7 +597,7 @@ impl<'a> Typecheck<'a> {
                     for Spanned { span, value } in errors {
                         self.errors.push(Spanned {
                             span: span,
-                            value: value.into(),
+                            value: TypeError::from(value).into(),
                         });
                     }
                     Err(mem::replace(&mut self.errors, Errors::new()))
@@ -616,7 +637,11 @@ impl<'a> Typecheck<'a> {
                             // Call typecheck_ again with the next expression
                             expr = match moving(expr).value {
                                 Expr::LetBindings(_, ref mut new_expr)
-                                | Expr::TypeBindings(_, ref mut new_expr) => new_expr,
+                                | Expr::TypeBindings(_, ref mut new_expr)
+                                | Expr::Do(Do {
+                                    body: ref mut new_expr,
+                                    ..
+                                }) => new_expr,
                                 _ => ice!("Only Let and Type expressions can tailcall"),
                             };
                             scope_count += 1;
@@ -631,7 +656,7 @@ impl<'a> Typecheck<'a> {
                     returned_type = self.subs.new_var();
                     self.errors.push(Spanned {
                         span: expr_check_span(expr),
-                        value: err,
+                        value: err.into(),
                     });
                     break;
                 }
@@ -942,6 +967,57 @@ impl<'a> Typecheck<'a> {
                     self.infer_expr(expr);
                 }
                 Ok(TailCall::Type(self.typecheck_opt(last, expected_type)))
+            }
+            Expr::Do(Do {
+                ref mut id,
+                ref mut bound,
+                ref mut body,
+                ref mut flat_map_id,
+            }) => {
+                let flat_map = self.symbols.symbol("flat_map");
+                let flat_map_type = match self.find(&flat_map) {
+                    Ok(x) => x,
+                    Err(error) => {
+                        self.error(
+                            id.span,
+                            ::base::error::Help {
+                                error,
+                                help: Some(Help::UndefinedFlatMapInDo),
+                            },
+                        );
+                        self.subs.new_var()
+                    }
+                };
+                *flat_map_id = Some(TypedIdent {
+                    name: flat_map.clone(),
+                    typ: flat_map_type.clone(),
+                });
+                let flat_map_type = self.instantiate_generics(&flat_map_type);
+
+                id.value.typ = self.subs.new_var();
+                let arg1 = self.type_cache
+                    .function(Some(id.value.typ.clone()), self.subs.new_var());
+
+                let arg2 = self.subs.new_var();
+                let ret = expected_type
+                    .cloned()
+                    .unwrap_or_else(|| self.subs.new_var());
+                let func_type = self.type_cache
+                    .function(vec![arg1.clone(), arg2.clone()], ret.clone());
+
+                self.unify_span(expr.span, &flat_map_type, func_type);
+
+                let bound_type = self.typecheck(bound, &arg2);
+
+                self.unify_span(bound.span, &arg2, bound_type);
+
+                self.stack_var(id.value.name.clone(), id.value.typ.clone());
+
+                let body_type = self.typecheck(body, &ret);
+
+                let ret = self.unify_span(body.span, &ret, body_type);
+
+                Ok(TailCall::Type(ret))
             }
             Expr::Error(ref typ) => Ok(TailCall::Type(
                 typ.clone().unwrap_or_else(|| self.subs.new_var()),
@@ -1309,7 +1385,13 @@ impl<'a> Typecheck<'a> {
 
             debug!("let {:?} : {}", bind.name, typ);
 
-            typ = self.merge_signature(bind.name.span, level, &bind.resolved_type, typ);
+            let bind_span = Span::new(
+                bind.name.span.start,
+                bind.args
+                    .last()
+                    .map_or(bind.name.span.end, |last_arg| last_arg.span.end),
+            );
+            typ = self.merge_signature(bind_span, level, &bind.resolved_type, typ);
 
 
             if !is_recursive {
@@ -1389,7 +1471,8 @@ impl<'a> Typecheck<'a> {
                     .unresolved_type_mut()
                     .remove_single_forall();
                 if let Err(err) = check.kindcheck_type(typ) {
-                    self.errors.push(pos::spanned(err.span, err.value.into()));
+                    self.errors
+                        .push(pos::spanned(err.span, TypeError::from(err.value).into()));
                 }
             }
 
@@ -1445,7 +1528,8 @@ impl<'a> Typecheck<'a> {
             if self.environment.stack_types.get(&bind.name.value).is_some() {
                 self.errors.push(Spanned {
                     span: expr_check_span(expr),
-                    value: TypeError::DuplicateTypeDefinition(bind.name.value.clone()),
+                    // TODO Help to the position of the other field
+                    value: TypeError::DuplicateTypeDefinition(bind.name.value.clone()).into(),
                 });
             } else {
                 self.stack_type(
@@ -1463,7 +1547,8 @@ impl<'a> Typecheck<'a> {
             check.kindcheck_type(typ)
         };
         if let Err(err) = result {
-            self.errors.push(pos::spanned(err.span, err.value.into()));
+            self.errors
+                .push(pos::spanned(err.span, TypeError::from(err.value).into()));
         }
     }
 
@@ -1472,10 +1557,7 @@ impl<'a> Typecheck<'a> {
         use base::pos::HasSpan;
         match **typ {
             Type::Generic(ref id) => if args.iter().all(|arg| arg.id != id.id) {
-                self.error(
-                    typ.span(),
-                    TypeError::UndefinedVariable(id.id.clone()).into(),
-                );
+                self.error(typ.span(), TypeError::UndefinedVariable(id.id.clone()));
             },
             Type::Record(_) => {
                 // Inside records variables are bound implicitly to the closest field
@@ -2067,7 +2149,8 @@ impl<'a> Typecheck<'a> {
                 let err = TypeError::Unification(expected, actual, apply_subs(&self.subs, errors));
                 self.errors.push(Spanned {
                     span: span,
-                    value: err,
+                    // TODO Help what caused this unification failure
+                    value: err.into(),
                 });
                 self.subs.new_var()
             }
@@ -2080,7 +2163,8 @@ impl<'a> Typecheck<'a> {
             Err(err) => {
                 self.errors.push(Spanned {
                     span: span,
-                    value: err,
+                    // TODO Help what caused this unification failure
+                    value: err.into(),
                 });
                 self.subs.new_var()
             }
@@ -2155,7 +2239,8 @@ impl<'a> Typecheck<'a> {
             .map_or(true, |name| {
                 self.errors.push(Spanned {
                     span: span,
-                    value: TypeError::DuplicateField(name),
+                    // TODO Help to the other fields location
+                    value: TypeError::DuplicateField(name).into(),
                 });
                 false
             })

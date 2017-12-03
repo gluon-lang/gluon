@@ -257,6 +257,15 @@ pub struct ExprField<Id, E> {
     pub value: Option<E>,
 }
 
+#[derive(Clone, PartialEq, Debug)]
+pub struct Do<Id> {
+    pub id: SpannedIdent<Id>,
+    pub bound: Box<SpannedExpr<Id>>,
+    pub body: Box<SpannedExpr<Id>>,
+    pub flat_map_id: Option<TypedIdent<Id>>,
+}
+
+
 /// The representation of gluon's expression syntax
 #[derive(Clone, PartialEq, Debug)]
 pub enum Expr<Id> {
@@ -300,6 +309,7 @@ pub enum Expr<Id> {
     TypeBindings(Vec<TypeBinding<Id>>, Box<SpannedExpr<Id>>),
     /// A group of sequenced expressions
     Block(Vec<SpannedExpr<Id>>),
+    Do(Do<Id>),
     /// An invalid expression
     Error(
         /// Provides a hint of what type the expression would have, if any
@@ -447,11 +457,24 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
                 v.visit_expr(expr);
             }
         }
-        Expr::Block(ref mut exprs) => {
-            for expr in exprs {
-                v.visit_expr(expr);
+        Expr::Block(ref mut exprs) => for expr in exprs {
+            v.visit_expr(expr);
+        },
+
+        Expr::Do(Do {
+            ref mut id,
+            ref mut bound,
+            ref mut body,
+            ref mut flat_map_id,
+        }) => {
+            v.visit_spanned_typed_ident(id);
+            v.visit_expr(bound);
+            v.visit_expr(body);
+            if let Some(ref mut flat_map_id) = *flat_map_id {
+                v.visit_ident(flat_map_id);
             }
         }
+
         Expr::Lambda(ref mut lambda) => {
             v.visit_ident(&mut lambda.id);
             for arg in &mut lambda.args {
@@ -468,8 +491,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
             v.visit_expr(expr)
         }
         Expr::Ident(ref mut id) => v.visit_ident(id),
-        Expr::Literal(..) |
-        Expr::Error(..) => (),
+        Expr::Literal(..) | Expr::Error(..) => (),
     }
 }
 
@@ -512,10 +534,7 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::Id
     }
 }
 
-pub fn walk_mut_ast_type<V: ?Sized + MutVisitor>(
-    v: &mut V,
-    s: &mut SpannedAstType<V::Ident>,
-) {
+pub fn walk_mut_ast_type<V: ?Sized + MutVisitor>(v: &mut V, s: &mut SpannedAstType<V::Ident>) {
     match s.value {
         Type::Hole | Type::Opaque | Type::Builtin(_) => (),
         Type::Forall(_, ref mut ast_type, ref mut ast_types) => {
@@ -625,11 +644,19 @@ pub fn walk_expr<'a, V: ?Sized + Visitor<'a>>(v: &mut V, e: &'a SpannedExpr<V::I
                 v.visit_expr(base);
             }
         }
-        Expr::Tuple { elems: ref exprs, .. } |
-        Expr::Block(ref exprs) => {
-            for expr in exprs {
-                v.visit_expr(expr);
-            }
+        Expr::Tuple {
+            elems: ref exprs, ..
+        }
+        | Expr::Block(ref exprs) => for expr in exprs {
+            v.visit_expr(expr);
+        },
+        Expr::Do(Do {
+            ref bound,
+            ref body,
+            ..
+        }) => {
+            v.visit_expr(bound);
+            v.visit_expr(body);
         }
         Expr::Lambda(ref lambda) => {
             v.visit_typ(&lambda.id.typ);
@@ -637,8 +664,7 @@ pub fn walk_expr<'a, V: ?Sized + Visitor<'a>>(v: &mut V, e: &'a SpannedExpr<V::I
         }
         Expr::TypeBindings(_, ref expr) => v.visit_expr(expr),
         Expr::Ident(ref id) => v.visit_typ(&id.typ),
-        Expr::Literal(..) |
-        Expr::Error(..) => (),
+        Expr::Literal(..) | Expr::Error(..) => (),
     }
 }
 
@@ -713,9 +739,9 @@ impl Typed for Expr<Symbol> {
     fn env_type_of(&self, env: &TypeEnv) -> ArcType {
         match *self {
             Expr::Ident(ref id) => id.typ.clone(),
-            Expr::Projection(_, _, ref typ) |
-            Expr::Record { ref typ, .. } |
-            Expr::Tuple { ref typ, .. } => typ.clone(),
+            Expr::Projection(_, _, ref typ)
+            | Expr::Record { ref typ, .. }
+            | Expr::Tuple { ref typ, .. } => typ.clone(),
             Expr::Literal(ref lit) => lit.env_type_of(env),
             Expr::IfElse(_, ref arm, _) => arm.env_type_of(env),
             Expr::Infix(_, ref op, _) => {
@@ -726,8 +752,9 @@ impl Typed for Expr<Symbol> {
                 }
                 ice!("Expected function type in binop");
             }
-            Expr::LetBindings(_, ref expr) |
-            Expr::TypeBindings(_, ref expr) => expr.env_type_of(env),
+            Expr::LetBindings(_, ref expr)
+            | Expr::TypeBindings(_, ref expr)
+            | Expr::Do(Do { body: ref expr, .. }) => expr.env_type_of(env),
             Expr::App(ref func, ref args) => {
                 get_return_type(env, &func.env_type_of(env), args.len())
             }

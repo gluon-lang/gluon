@@ -781,3 +781,77 @@ match { y = 1 } with
 
     assert_req!(result, expected);
 }
+
+#[test]
+fn do_expression_simple() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Test a = { x : a }
+let flat_map f x = { x = f x.x }
+let test x: a -> Test a = { x }
+
+do x = test 1
+test ""
+"#;
+    let result = support::typecheck(text);
+    let expected = Ok(Type::app(
+        alias(
+            "Test",
+            &["a"],
+            Type::record(vec![], vec![Field::new(intern("x"), typ("a"))]),
+        ),
+        collect![typ("String")],
+    ));
+
+    assert_req!(result.map(support::close_record), expected);
+}
+
+#[test]
+fn do_expression_use_binding() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Test a = { x : a }
+let flat_map f x : (a -> Test b) -> Test a -> Test b = f x.x
+let test x : a -> Test a = { x }
+
+do x = test 1
+test (x #Int+ 2)
+"#;
+    let result = support::typecheck(text);
+    let expected = Ok(Type::app(
+        alias(
+            "Test",
+            &["a"],
+            Type::record(vec![], vec![Field::new(intern("x"), typ("a"))]),
+        ),
+        collect![typ("Int")],
+    ));
+
+    assert_req!(result.map(support::close_record), expected);
+}
+
+
+#[test]
+fn eq_unresolved_constraint_bug() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Eq a = { (==) : a -> a -> Bool }
+type List a = | Nil | Cons a (List a)
+
+let (==): Int -> Int -> Bool = \x y -> True
+
+let eq a : Eq a -> Eq (List a) =
+    let (==) l r : List a -> List a -> Bool =
+        match (l, r) with
+        | (Cons x xs, Cons y ys) -> a.(==) x y
+        | _ -> False
+    { (==) }
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}

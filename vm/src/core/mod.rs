@@ -650,6 +650,36 @@ impl<'a, 'e> Translator<'a, 'e> {
                 )
             },
             ast::Expr::TypeBindings(_, ref expr) => self.translate(expr),
+            ast::Expr::Do(ast::Do {
+                ref id,
+                ref bound,
+                ref body,
+                ref flat_map_id,
+            }) => {
+                let flat_map_id = flat_map_id
+                    .as_ref()
+                    .unwrap_or_else(|| ice!("flat_map_id must be set when translating to core"));
+
+                let mut binder = Binder::default();
+                let bound_ident =
+                    binder.bind(self.translate_alloc(bound), bound.env_type_of(&self.env));
+
+                let lambda = self.new_lambda(
+                    expr.span.start,
+                    id.value.clone(),
+                    vec![id.value.clone()],
+                    self.translate_alloc(body),
+                    body.span,
+                );
+
+                binder.into_expr(
+                    arena,
+                    Expr::Call(
+                        arena.alloc(Expr::Ident(flat_map_id.clone(), expr.span)),
+                        arena.alloc_extend(Some(lambda).into_iter().chain(Some(bound_ident))),
+                    ),
+                )
+            }
             ast::Expr::Error(_) => ice!("ICE: Error expression found in the compiler"),
         }
     }

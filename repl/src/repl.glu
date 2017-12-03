@@ -9,7 +9,7 @@ let { ref, load, (<-) } = import! std.reference
 let rustyline = import! rustyline
 let repl_prim = import! repl.prim
 let { wrap, (*>) } = prelude.make_Applicative io.applicative
-let { (>>=) } = prelude.make_Monad io.monad
+let { flat_map, (>>=) } = prelude.make_Monad io.monad
 let { append = (++) } = string.semigroup
 let ord_map @ { singleton, find } = map.make string.ord
 let traverse_with_key = ord_map.traverse_with_key io.applicative
@@ -24,12 +24,14 @@ let load_file filename : String -> IO String =
         | Some i -> i + 1
     let modulename = string.slice filename last_slash (string.len filename - 3)
     let read_result =
-        io.catch (io.read_file_to_string filename >>= \x -> wrap (Ok x)) (\err -> wrap (Err err))
-    read_result
-        >>= \result ->
-        match result with
-        | Ok expr -> io.load_script modulename expr
-        | Err msg -> wrap msg
+        let action =
+            do x = io.read_file_to_string filename
+            wrap (Ok x)
+        io.catch action (\err -> wrap (Err err))
+    do result = read_result
+    match result with
+    | Ok expr -> io.load_script modulename expr
+    | Err msg -> wrap msg
 
 type Cmd = { info : String, action : String -> IO Bool }
 
@@ -102,11 +104,12 @@ let loop editor : Editor -> IO () =
             then do_command line
             else io.catch (repl_prim.eval_line line) wrap >>= io.println *> wrap True
 
-    rustyline.readline editor "> "
-        >>= \line_opt ->
-        match line_opt with
-        | None -> wrap ()
-        | Some line -> run_line line >>= \continue -> if continue then loop editor else wrap ()
+    do line_opt = rustyline.readline editor "> "
+    match line_opt with
+    | None -> wrap ()
+    | Some line ->
+        do continue = run_line line
+        if continue then loop editor else wrap ()
 
 let run x : () -> IO () =
     io.println "gluon (:h for help, :q to quit)"

@@ -19,11 +19,10 @@ let hello_world : Handler Response =
     write_response (string.as_bytes "Hello World") *> (wrap { status = OK })
 
 let echo_body request : Request -> Handler () =
-    io_handler (read_chunk request.body) >>= (\chunk ->
-        match chunk with
-        | Some chunk -> write_response chunk *> echo_body request
-        | None -> wrap ()
-        )
+    do chunk = io_handler (read_chunk request.body)
+    match chunk with
+    | Some chunk -> write_response chunk *> echo_body request
+    | None -> wrap ()
 
 let echo: Handler Response =
     get_request >>= echo_body *> wrap { status = OK }

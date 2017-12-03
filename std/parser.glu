@@ -68,7 +68,7 @@ let monad : Monad Parser = {
             | Err err -> Err err),
 }
 
-let { (>>=), flat_map } = prelude.make_Monad monad
+let { flat_map } = prelude.make_Monad monad
 
 let uncons stream : OffsetString -> Option { char : Char, rest : OffsetString } =
     if stream.start == stream.end then
@@ -151,12 +151,14 @@ let many p : Parser a -> Parser (List a) =
     many1 p <|> wrap Nil
 
 and many1 p : Parser a -> Parser (List a) =
-    p >>= (\h -> map (\t -> Cons h t) (many p))
+    do h = p
+    map (\t -> Cons h t) (many p)
 
 let skip_many p : Parser a -> Parser () =
     skip_many1 p <|> wrap ()
 and skip_many1 p : Parser a -> Parser () =
-    p >>= (\_ -> skip_many p)
+    do _ = p
+    skip_many p
 
 let one_of s : String -> Parser Char =
     satisfy (\first ->

@@ -1,6 +1,6 @@
 use std::fmt;
 
-use base::ast::{self, DisplayEnv, Expr, MutVisitor, Pattern, SpannedExpr, Typed, TypedIdent};
+use base::ast::{self, DisplayEnv, Do, Expr, MutVisitor, Pattern, SpannedExpr, Typed, TypedIdent};
 use base::error::Errors;
 use base::fnv::FnvMap;
 use base::kind::{ArcKind, Kind, KindEnv};
@@ -214,14 +214,12 @@ pub fn rename(
         fn rename(&self, id: &Symbol, expected: &ArcType) -> Result<Option<Symbol>, RenameError> {
             let locals = self.env.stack.get_all(id);
             let candidates = || {
-                locals
-                    .iter()
-                    .flat_map(|bindings| {
-                        bindings
-                            .iter()
-                            .rev()
-                            .map(|bind| (&bind.0, Some(&bind.1), &bind.2))
-                    })
+                locals.iter().flat_map(|bindings| {
+                    bindings
+                        .iter()
+                        .rev()
+                        .map(|bind| (&bind.0, Some(&bind.1), &bind.2))
+                })
             };
             // If there is a single binding (or no binding in case of primitives such as #Int+)
             // there is no need to check for equivalency as typechecker couldnt have infered a
@@ -355,6 +353,31 @@ pub fn rename(
                     self.visit_expr(body);
                     self.env.stack_types.exit_scope();
                 }
+                Expr::Do(Do {
+                    ref mut id,
+                    ref mut bound,
+                    ref mut body,
+                    ref mut flat_map_id,
+                }) => {
+                    let flat_map_id = flat_map_id
+                        .as_mut()
+                        .unwrap_or_else(|| ice!("flat_map_id not set before renaming"));
+                    if let Some(new_id) = self.rename(&flat_map_id.name, &flat_map_id.typ)? {
+                        debug!("Rename identifier {} = {}", flat_map_id.name, new_id);
+                        flat_map_id.name = new_id;
+                    }
+
+                    self.visit_expr(bound);
+
+                    self.env.stack.enter_scope();
+
+                    id.value.name =
+                        self.stack_var(id.value.name.clone(), id.span, id.value.typ.clone());
+                    self.visit_expr(body);
+
+                    self.env.stack.exit_scope();
+                }
+
                 _ => ast::walk_mut_expr(self, expr),
             }
             Ok(())

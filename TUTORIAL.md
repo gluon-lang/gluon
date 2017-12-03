@@ -309,6 +309,21 @@ and SExpr = { location: Int, expr: SExpr_ }
 in Atom "name"
 ```
 
+### Do expressions
+
+`do` expressions are syntax sugar over the commonly used `Monad` type which is used to encapsulate side-effects. By using `do` instead of `>>=` or `flat_map` we can write our code in a sequential manner instead of the closures necessary for sugar free versions. Note `do` still requires a `flat_map` binding to be in scope with the correct type or else you will get an error during typechecking.
+
+```f#
+Some 1 >>= (\x -> Some (x + 2))
+// or
+flat_map (\x -> Some (x + 2)) (Some 1)
+
+// are equivalent to
+
+do x = Some 1
+Some (x + 2)
+```
+
 ### Indentation
 
 If you have been following along this far, you may be think that the syntax so far is pretty limiting. In particular, you wouldn't be wrong in thinking that the `let` and `type` syntax are clunky due to their need to be closed by the `in` keyword. Luckily, gluon offers a more convenient way of writing bindings by relying on indentation.
