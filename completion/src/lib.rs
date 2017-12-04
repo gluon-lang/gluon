@@ -97,9 +97,11 @@ fn expr_iter<'e>(
     expr: &'e SpannedExpr<Symbol>,
 ) -> Box<Iterator<Item = (&'e Symbol, &'e ArcType)> + 'e> {
     if let Expr::Ident(ref ident) = expr.value {
-        Box::new(stack.iter().filter(move |&(k, _)| {
-            k.declared_name().starts_with(ident.name.declared_name())
-        }))
+        Box::new(
+            stack
+                .iter()
+                .filter(move |&(k, _)| k.declared_name().starts_with(ident.name.declared_name())),
+        )
     } else {
         Box::new(None.into_iter())
     }
@@ -377,9 +379,11 @@ where
                                     .find(|it| it.name.name_eq(&field.name.value))
                                     .map(|it| &it.typ)
                                     .unwrap_or(typ);
-                                self.found = Some(Some(
-                                    Match::Ident(field.name.span, &field.name.value, field_type),
-                                ));
+                                self.found = Some(Some(Match::Ident(
+                                    field.name.span,
+                                    &field.name.value,
+                                    field_type,
+                                )));
                             }
                             (Ordering::Greater, &Some(ref pattern)) => self.visit_pattern(pattern),
                             _ => self.found = Some(None),
@@ -466,10 +470,9 @@ where
                 for bind in bindings {
                     self.on_found.on_pattern(&bind.name);
                 }
-                match self.select_spanned(
-                    bindings,
-                    |b| Span::new(b.name.span.start, b.expr.span.end),
-                ) {
+                match self.select_spanned(bindings, |b| {
+                    Span::new(b.name.span.start, b.expr.span.end)
+                }) {
                     (false, Some(bind)) => {
                         for arg in &bind.args {
                             self.on_found.on_ident(&arg.value);
@@ -572,9 +575,11 @@ where
                 let selection = self.select_spanned(&lambda.args, |arg| arg.span);
                 match selection {
                     (false, Some(arg)) => {
-                        self.found = Some(Some(
-                            Match::Ident(arg.span, &arg.value.name, &arg.value.typ),
-                        ));
+                        self.found = Some(Some(Match::Ident(
+                            arg.span,
+                            &arg.value.name,
+                            &arg.value.typ,
+                        )));
                     }
                     _ => self.visit_expr(&lambda.body),
                 }
@@ -874,8 +879,8 @@ pub fn all_symbols(expr: &SpannedExpr<Symbol>) -> Vec<Spanned<CompletionSymbol, 
                         )
                     }));
                 }
-                Expr::LetBindings(ref binds, _) => self.result.extend(
-                    binds.iter().flat_map(|bind| match bind.name.value {
+                Expr::LetBindings(ref binds, _) => self.result.extend(binds.iter().flat_map(
+                    |bind| match bind.name.value {
                         Pattern::Ident(ref id) => Some(pos::spanned(
                             bind.name.span,
                             CompletionSymbol::Value {
@@ -885,8 +890,8 @@ pub fn all_symbols(expr: &SpannedExpr<Symbol>) -> Vec<Spanned<CompletionSymbol, 
                             },
                         )),
                         _ => None,
-                    }),
-                ),
+                    },
+                )),
                 _ => (),
             }
             walk_expr(self, e)
@@ -967,7 +972,7 @@ where
                         ref fields,
                         ..
                     } => {
-                        let typ = pattern.env_type_of(env);
+                        let typ = resolve::remove_aliases(env, pattern.env_type_of(env));
                         suggest_fields_of_type(&mut result, types, fields, "", &typ);
                         ""
                     }
@@ -1005,7 +1010,8 @@ where
                         },
                     ..
                 }) => {
-                    suggest_fields_of_type(&mut result, types, fields, ident.declared_name(), typ);
+                    let typ = resolve::remove_aliases_cow(env, typ);
+                    suggest_fields_of_type(&mut result, types, fields, ident.declared_name(), &typ);
                 }
                 _ => (),
             },
@@ -1015,9 +1021,7 @@ where
                     suggest
                         .type_stack
                         .iter()
-                        .filter(|&(k, _)| {
-                            k.declared_name().starts_with(ident.declared_name())
-                        })
+                        .filter(|&(k, _)| k.declared_name().starts_with(ident.declared_name()))
                         .map(|(name, kind)| {
                             Suggestion {
                                 name: name.declared_name().into(),
@@ -1043,9 +1047,7 @@ where
                     suggest
                         .type_stack
                         .iter()
-                        .filter(|&(k, _)| {
-                            k.declared_name().starts_with(ident.declared_name())
-                        })
+                        .filter(|&(k, _)| k.declared_name().starts_with(ident.declared_name()))
                         .map(|(name, kind)| {
                             Suggestion {
                                 name: name.declared_name().into(),
@@ -1061,7 +1063,7 @@ where
                     ref fields,
                     ..
                 } => {
-                    let typ = pattern.env_type_of(env);
+                    let typ = resolve::remove_aliases(env, pattern.env_type_of(env));
                     suggest_fields_of_type(&mut result, types, fields, "", &typ);
                 }
                 _ => result.extend(suggest.patterns.iter().map(|(name, typ)| {

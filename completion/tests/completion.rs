@@ -68,9 +68,7 @@ fn suggest_loc(s: &str, row: usize, column: usize) -> Result<Vec<String>, ()> {
 }
 
 fn suggest(s: &str, pos: BytePos) -> Result<Vec<String>, ()> {
-    suggest_types(s, pos).map(|vec| {
-        vec.into_iter().map(|suggestion| suggestion.name).collect()
-    })
+    suggest_types(s, pos).map(|vec| vec.into_iter().map(|suggestion| suggestion.name).collect())
 }
 
 fn get_metadata(s: &str, pos: BytePos) -> Option<Metadata> {
@@ -630,6 +628,21 @@ let { ab } = { x = 1, abc = "", abcd = 2 }
 "#;
     let result = suggest(text, BytePos::from(10));
     let expected = Ok(vec!["abc".into(), "abcd".into(), "x".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_alias_field_in_pattern() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Test = { x : Int, abc : String, abcd : Int }
+let { ab } = { x = 1, abc = "", abcd = 2 }
+()
+"#;
+    let result = suggest_loc(text, 2, 8);
+    let expected = Ok(vec!["abc".into(), "abcd".into()]);
 
     assert_eq!(result, expected);
 }
