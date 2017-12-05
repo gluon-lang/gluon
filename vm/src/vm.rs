@@ -44,7 +44,7 @@ fn new_bytecode(
 
     let globals = module_globals
         .into_iter()
-        .map(|index| env.globals[index.as_ref()].value)
+        .map(|index| env.globals[index.definition_name()].value)
         .collect::<Vec<_>>();
 
     gc.alloc(ClosureDataDef(bytecode_function, &globals))
@@ -166,7 +166,7 @@ pub struct VmEnv {
 impl CompilerEnv for VmEnv {
     fn find_var(&self, id: &Symbol) -> Option<(Variable<Symbol>, ArcType)> {
         self.globals
-            .get(id.as_ref())
+            .get(id.definition_name())
             .map(|g| (Variable::UpVar(g.id.clone()), g.typ.clone()))
             .or_else(|| self.type_infos.find_var(id))
     }
@@ -180,7 +180,7 @@ impl KindEnv for VmEnv {
 impl TypeEnv for VmEnv {
     fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
         self.globals
-            .get(AsRef::<str>::as_ref(id))
+            .get(id.definition_name())
             .map(|g| &g.typ)
             .or_else(|| {
                 self.type_infos
@@ -223,9 +223,7 @@ impl PrimitiveEnv for VmEnv {
 
 impl MetadataEnv for VmEnv {
     fn get_metadata(&self, id: &Symbol) -> Option<&Metadata> {
-        self.globals
-            .get(AsRef::<str>::as_ref(id))
-            .map(|g| &g.metadata)
+        self.globals.get(id.definition_name()).map(|g| &g.metadata)
     }
 }
 
@@ -267,7 +265,7 @@ impl VmEnv {
         use base::resolve;
 
         let globals = &self.globals;
-        let mut module = Name::new(name);
+        let mut module = Name::new(name.trim_right_matches('@'));
         let global;
         // Try to find a global by successively reducing the module path
         // Input: "x.y.z.w"
@@ -298,7 +296,7 @@ impl VmEnv {
         for mut field_name in remaining_fields.components() {
             if field_name.starts_with('(') && field_name.ends_with(')') {
                 field_name = &field_name[1..field_name.len() - 1];
-            } else if field_name.chars().any(ast::is_operator_char) {
+            } else if field_name.contains(ast::is_operator_char) {
                 return Err(Error::Message(format!(
                     "Operators cannot be used as fields \
                      directly. To access an operator field, \
@@ -324,9 +322,8 @@ impl VmEnv {
                         _ => ice!("Unexpected value {:?}", value),
                     })
             });
-            typ = next_type.ok_or_else(move || {
-                Error::UndefinedField(typ.into_owned(), field_name.into())
-            })?;
+            typ = next_type
+                .ok_or_else(move || Error::UndefinedField(typ.into_owned(), field_name.into()))?;
         }
         Ok((value, typ))
     }
@@ -456,6 +453,10 @@ impl GlobalVmState {
         value: Value,
     ) -> Result<()> {
         assert!(value.generation().is_root());
+        assert!(
+            id.as_ref().starts_with('@'),
+            "Global symbols must be prefix with '@'"
+        );
         let mut env = self.env.write().unwrap();
         let globals = &mut env.globals;
         let global = Global {
@@ -464,7 +465,7 @@ impl GlobalVmState {
             metadata: metadata,
             value: value,
         };
-        globals.insert(StdString::from(id.as_ref()), global);
+        globals.insert(StdString::from(id.definition_name()), global);
         Ok(())
     }
 

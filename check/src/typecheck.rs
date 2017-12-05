@@ -600,6 +600,7 @@ impl<'a> Typecheck<'a> {
                             value: TypeError::from(value).into(),
                         });
                     }
+                    println!("{}", self.errors);
                     Err(mem::replace(&mut self.errors, Errors::new()))
                 }
             }

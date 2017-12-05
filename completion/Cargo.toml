@@ -13,6 +13,7 @@ documentation = "https://docs.rs/gluon"
 [dependencies]
 either = "1.0.0"
 itertools = "0.7.0"
+walkdir = "2"
 
 gluon_base = { path = "../base", version = "0.6.2" } # GLUON
 

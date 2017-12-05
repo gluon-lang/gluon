@@ -140,24 +140,9 @@ impl Instruction {
             NewClosure { .. } => 1,
             CloseClosure(_) => -1,
             PushUpVar(_) => 1,
-            AddInt |
-            SubtractInt |
-            MultiplyInt |
-            DivideInt |
-            IntLT |
-            IntEQ |
-            AddFloat |
-            AddByte |
-            SubtractByte |
-            MultiplyByte |
-            DivideByte |
-            ByteLT |
-            ByteEQ |
-            SubtractFloat |
-            MultiplyFloat |
-            DivideFloat |
-            FloatLT |
-            FloatEQ => -1,
+            AddInt | SubtractInt | MultiplyInt | DivideInt | IntLT | IntEQ | AddFloat | AddByte
+            | SubtractByte | MultiplyByte | DivideByte | ByteLT | ByteEQ | SubtractFloat
+            | MultiplyFloat | DivideFloat | FloatLT | FloatEQ => -1,
         }
     }
 }
@@ -173,19 +158,18 @@ pub struct TypeInfos {
 
 impl KindEnv for TypeInfos {
     fn find_kind(&self, type_name: &SymbolRef) -> Option<ArcKind> {
-        let type_name = AsRef::<str>::as_ref(type_name);
+        let type_name = type_name.definition_name();
         self.id_to_type.get(type_name).map(|alias| {
-            alias.params().iter().rev().fold(
-                Kind::typ(),
-                |acc, arg| Kind::function(arg.kind.clone(), acc),
-            )
+            alias.params().iter().rev().fold(Kind::typ(), |acc, arg| {
+                Kind::function(arg.kind.clone(), acc)
+            })
         })
     }
 }
 
 impl TypeEnv for TypeInfos {
     fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
-        let id = AsRef::<str>::as_ref(id);
+        let id = id.definition_name();
         self.id_to_type
             .iter()
             .filter_map(|(_, ref alias)| match **alias.unresolved_type() {
@@ -197,8 +181,7 @@ impl TypeEnv for TypeInfos {
     }
 
     fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
-        let id = AsRef::<str>::as_ref(id);
-        self.id_to_type.get(id)
+        self.id_to_type.get(id.definition_name())
     }
 
     fn find_record(

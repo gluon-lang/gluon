@@ -347,11 +347,9 @@ impl<'a, 'e> Compiler<'a, 'e> {
         debug!("Interpreting: {}", expr);
         let new_expr = self.compile(expr, &mut env)?;
         env.end_function(self);
-        Ok(
-            new_expr
-                .map(|expr| expr.into_local(self.allocator))
-                .unwrap_or(expr),
-        )
+        Ok(new_expr
+            .map(|expr| expr.into_local(self.allocator))
+            .unwrap_or(expr))
     }
 
     fn load_identifier(
@@ -740,9 +738,9 @@ impl<'a, 'e> Compiler<'a, 'e> {
                         l.map_or(args[0].clone(), |l| l.into_local(self.allocator).clone()),
                         r.map_or(args[1].clone(), |r| r.into_local(self.allocator).clone()),
                     ]);
-                    Some(Reduced::Local(
-                        &*self.allocator.arena.alloc(Expr::Call(f, new_args)),
-                    ))
+                    Some(Reduced::Local(&*self.allocator
+                        .arena
+                        .alloc(Expr::Call(f, new_args))))
                 }
                 _ => unreachable!(),
             },

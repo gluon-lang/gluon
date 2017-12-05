@@ -235,7 +235,12 @@ fn set_globals(
 ) -> GluonResult<()> {
     match pattern.value {
         Pattern::Ident(ref id) => {
-            vm.set_global(id.name.clone(), typ.clone(), Default::default(), **value)?;
+            vm.set_global(
+                Symbol::from(format!("@{}", id.name.declared_name())),
+                typ.clone(),
+                Default::default(),
+                **value,
+            )?;
             Ok(())
         }
         Pattern::Tuple { ref elems, .. } => {

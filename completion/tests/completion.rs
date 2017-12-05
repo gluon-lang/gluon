@@ -8,13 +8,17 @@ extern crate gluon_check as check;
 extern crate gluon_completion as completion;
 extern crate gluon_parser as parser;
 
+use std::path::PathBuf;
+
 use either::Either;
 
+use base::ast::{expr_to_path, walk_mut_expr, Expr, MutVisitor, SpannedExpr, TypedIdent};
 use base::metadata::Metadata;
 use base::pos::{self, BytePos, Span};
 use base::types::{ArcType, Field, Type};
 use base::source::Source;
-use completion::Suggestion;
+use base::symbol::Symbol;
+use completion::{Suggestion, SuggestionQuery};
 
 mod support;
 use support::{intern, typ, MockEnv};
@@ -49,10 +53,44 @@ fn find_type_loc(s: &str, line: usize, column: usize) -> Result<ArcType, ()> {
 }
 
 fn suggest_types(s: &str, pos: BytePos) -> Result<Vec<Suggestion>, ()> {
+    suggest_query(SuggestionQuery::new(), s, pos)
+}
+
+fn suggest_query(query: SuggestionQuery, s: &str, pos: BytePos) -> Result<Vec<Suggestion>, ()> {
     let env = MockEnv::new();
 
+    struct ReplaceImport;
+
+    impl MutVisitor for ReplaceImport {
+        type Ident = Symbol;
+
+        fn visit_expr(&mut self, expr: &mut SpannedExpr<Symbol>) {
+            let replacement = match expr.value {
+                Expr::App(ref id, ref args) => match id.value {
+                    Expr::Ident(ref id) if id.name.declared_name() == "import!" => {
+                        let mut path = "@".to_string();
+                        expr_to_path(&args[0], &mut path).unwrap();
+                        Some(Expr::Ident(TypedIdent {
+                            name: Symbol::from(path),
+                            typ: Type::hole(),
+                        }))
+                    }
+                    _ => None,
+                },
+                _ => None,
+            };
+            match replacement {
+                Some(replacement) => expr.value = replacement,
+                None => walk_mut_expr(self, expr),
+            }
+        }
+    }
+
     let (mut expr, _result) = support::typecheck_partial_expr(s);
-    let mut vec = completion::suggest(&env, &mut expr, pos);
+
+    ReplaceImport.visit_expr(&mut expr);
+
+    let mut vec = query.suggest(&env, &mut expr, pos);
     vec.sort_by(|l, r| l.name.cmp(&r.name));
     Ok(vec)
 }
@@ -63,8 +101,23 @@ fn suggest_loc(s: &str, row: usize, column: usize) -> Result<Vec<String>, ()> {
         Source::new(s)
             .lines()
             .offset(row.into(), column.into())
-            .expect("Position is in source"),
+            .expect("Position is not in source"),
     )
+}
+fn suggest_query_loc(
+    query: SuggestionQuery,
+    s: &str,
+    row: usize,
+    column: usize,
+) -> Result<Vec<String>, ()> {
+    suggest_query(
+        query,
+        s,
+        Source::new(s)
+            .lines()
+            .offset(row.into(), column.into())
+            .expect("Position is not in source"),
+    ).map(|vec| vec.into_iter().map(|suggestion| suggestion.name).collect())
 }
 
 fn suggest(s: &str, pos: BytePos) -> Result<Vec<String>, ()> {
@@ -659,6 +712,69 @@ let { ab } = { x = 1, abc = "", abcd = 2 }
     let expected = Ok(vec!["abc".into(), "abcd".into()]);
 
     assert_eq!(result, expected);
+}
+
+fn find_gluon_root() -> PathBuf {
+    use std::env;
+    use std::fs;
+    let mut dir = env::current_dir().unwrap();
+    while fs::metadata(dir.join("std")).is_err() {
+        dir = dir.parent().unwrap().into();
+    }
+    dir
+}
+
+#[test]
+fn suggest_module_import() {
+    let _ = env_logger::init();
+
+    let text = r#"
+import! st
+"#;
+    let query = SuggestionQuery {
+        paths: vec![find_gluon_root()],
+    };
+    let result = suggest_query_loc(query, text, 1, 10);
+    let expected = Ok(vec!["std".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_module_import_nested() {
+    let _ = env_logger::init();
+
+    let text = r#"
+import! std.p
+"#;
+    let query = SuggestionQuery {
+        paths: vec![find_gluon_root()],
+    };
+    let result = suggest_query_loc(query, text, 1, 12);
+    let expected = Ok(vec!["parser".into(), "prelude".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_module_import_on_dot() {
+    let _ = env_logger::init();
+
+    let text = r#"
+import! std.
+"#;
+    let query = SuggestionQuery {
+        paths: vec![find_gluon_root()],
+    };
+    let result = suggest_query_loc(query, text, 1, 12);
+    assert!(result.is_ok());
+
+    let suggestions = result.unwrap();
+    assert!(
+        suggestions.iter().any(|s| s == "prelude"),
+        "{:?}",
+        suggestions
+    );
 }
 
 #[test]

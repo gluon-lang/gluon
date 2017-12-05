@@ -182,17 +182,16 @@ where
     match *expr {
         Expr::Call(f, args) => {
             let new_f = visitor.visit_expr(f);
-            let new_args = merge_iter(
-                args,
-                |expr| visitor.visit_expr_(expr),
-                |e| {
-                    V::Producer::new(allocator.expect("Allocator"))
-                        .produce(e)
-                        .clone()
-                },
-            ).map(|exprs: Vec<_>| {
-                &*visitor.allocator().arena.alloc_extend(exprs.into_iter())
-            });
+            let new_args =
+                merge_iter(
+                    args,
+                    |expr| visitor.visit_expr_(expr),
+                    |e| {
+                        V::Producer::new(allocator.expect("Allocator"))
+                            .produce(e)
+                            .clone()
+                    },
+                ).map(|exprs: Vec<_>| &*visitor.allocator().arena.alloc_extend(exprs.into_iter()));
 
             merge_fn(
                 &f,

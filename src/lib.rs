@@ -243,9 +243,7 @@ impl Compiler {
             &mut SymbolModule::new(file.into(), &mut self.symbols),
             type_cache,
             expr_str,
-        ).map_err(
-            |(expr, err)| (expr, InFile::new(file, expr_str, err)),
-        )?)
+        ).map_err(|(expr, err)| (expr, InFile::new(file, expr_str, err)))?)
     }
 
     /// Parse and typecheck `expr_str` returning the typechecked expression and type of the
@@ -555,7 +553,7 @@ pub fn filename_to_module(filename: &str) -> StdString {
             .unwrap_or(filename)
     });
 
-    name.replace(|c: char| c == '/' || c == '\\', ".")
+    format!("@{}", name.replace(|c: char| c == '/' || c == '\\', "."))
 }
 
 /// Creates a new virtual machine with support for importing other modules and with all primitives

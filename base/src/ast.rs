@@ -845,3 +845,19 @@ pub fn is_constructor(s: &str) -> bool {
         .unwrap()
         .starts_with(char::is_uppercase)
 }
+
+pub fn expr_to_path(expr: &SpannedExpr<Symbol>, path: &mut String) -> Result<(), &'static str> {
+    match expr.value {
+        Expr::Ident(ref id) => {
+            path.push_str(id.name.declared_name());
+            Ok(())
+        }
+        Expr::Projection(ref expr, ref id, _) => {
+            expr_to_path(expr, path)?;
+            path.push('.');
+            path.push_str(id.declared_name());
+            Ok(())
+        }
+        _ => return Err("Expected a string literal or path to import"),
+    }
+}

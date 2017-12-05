@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use itertools::Itertools;
 
-use base::ast::{Expr, Literal, SpannedExpr, Typed, TypedIdent};
+use base::ast::{expr_to_path, Expr, Literal, SpannedExpr, Typed, TypedIdent};
 use base::fnv::FnvMap;
 use base::pos::{self, BytePos, Span};
 use base::symbol::Symbol;
@@ -224,7 +224,8 @@ impl<I> Import<I> {
     where
         I: Importer,
     {
-        let modulename = module_id.name().as_str();
+        assert!(module_id.is_global());
+        let modulename = module_id.name().definition_name();
         let mut filename = modulename.replace(".", "/");
         filename.push_str(".glu");
         {
@@ -253,7 +254,7 @@ impl<I> Import<I> {
                 .clone()
         };
         let _guard = lock.lock().unwrap();
-        if vm.global_env().global_exists(module_id.as_ref()) {
+        if vm.global_env().global_exists(module_id.definition_name()) {
             return Ok(());
         }
 
@@ -278,7 +279,7 @@ impl<I> Import<I> {
     {
         use compiler_pipeline::*;
 
-        let modulename = module_id.name().as_str();
+        let modulename = module_id.name().definition_name();
         // Retrieve the source, first looking in the standard library included in the
         // binary
         let unloaded_module = self.get_unloaded_module(vm, &modulename, &filename)
@@ -409,34 +410,42 @@ where
         macros: &mut MacroExpander,
         args: &mut [SpannedExpr<Symbol>],
     ) -> Result<SpannedExpr<Symbol>, MacroError> {
+        // If the modulename has been determined we always want to insert that name into the AST so
+        // that we can do completion on the name
+        let mut modulename = None;
+        self.expand_(macros, args, &mut modulename)
+            .or_else(|err| match modulename {
+                None => Err(err),
+                Some(modulename) => {
+                    macros.errors.push(pos::spanned(args[0].span, err));
+                    Ok(pos::spanned(
+                        args[0].span,
+                        Expr::Ident(TypedIdent::new(modulename)),
+                    ))
+                }
+            })
+    }
+}
+
+impl<I> Import<I>
+where
+    I: Importer,
+{
+    fn expand_(
+        &self,
+        macros: &mut MacroExpander,
+        args: &mut [SpannedExpr<Symbol>],
+        caller_modulename: &mut Option<Symbol>,
+    ) -> Result<SpannedExpr<Symbol>, MacroError> {
         if args.len() != 1 {
             return Err(Error::String("Expected import to get 1 argument".into()).into());
-        }
-
-        fn expr_to_path(expr: &SpannedExpr<Symbol>, path: &mut String) -> Result<(), MacroError> {
-            match expr.value {
-                Expr::Ident(ref id) => {
-                    path.push_str(id.name.declared_name());
-                    Ok(())
-                }
-                Expr::Projection(ref expr, ref id, _) => {
-                    expr_to_path(expr, path)?;
-                    path.push('.');
-                    path.push_str(id.declared_name());
-                    Ok(())
-                }
-                _ => {
-                    return Err(
-                        Error::String("Expected a string literal or path to import".into()).into(),
-                    )
-                }
-            }
         }
 
         let modulename = match args[0].value {
             Expr::Ident(_) | Expr::Projection(..) => {
                 let mut modulename = String::new();
-                expr_to_path(&args[0], &mut modulename)?;
+                expr_to_path(&args[0], &mut modulename)
+                    .map_err(|err| Error::String(err.to_string()))?;
                 modulename
             }
             Expr::Literal(Literal::String(ref filename)) => filename_to_module(filename),
@@ -448,8 +457,12 @@ where
         };
 
         let vm = macros.vm;
+        // Prefix globals with @ so they don't shadow any local variables
+        let name = Symbol::from(format!("@{}", modulename));
+
+        *caller_modulename = Some(name.clone());
+
         // Only load the script if it is not already loaded
-        let name = Symbol::from(&*modulename);
         debug!("Import '{}' {:?}", modulename, get_state(macros).visited);
         if !vm.global_env().global_exists(&modulename) {
             if let Err((typ, err)) =
@@ -464,7 +477,6 @@ where
                 }
             }
         }
-        // FIXME Does not handle shadowing
         Ok(pos::spanned(
             args[0].span,
             Expr::Ident(TypedIdent::new(name)),
