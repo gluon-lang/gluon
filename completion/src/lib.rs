@@ -339,7 +339,7 @@ where
                     .merge_by(fields.iter().map(Either::Right), |l, r| {
                         l.left().unwrap().name.span.start < r.right().unwrap().name.span.start
                     });
-                let (_, selected) = self.select_spanned(iter, |either| {
+                let (on_whitespace, selected) = self.select_spanned(iter, |either| {
                     either.either(
                         |type_field| type_field.name.span,
                         |field| {
@@ -353,7 +353,10 @@ where
                         },
                     )
                 });
-                if let Some(either) = selected {
+
+                if on_whitespace {
+                    self.found = Some(None);
+                } else if let Some(either) = selected {
                     match either {
                         Either::Left(type_field) => {
                             if type_field.name.span.containment(&self.pos) == Ordering::Equal {

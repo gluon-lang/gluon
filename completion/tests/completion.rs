@@ -633,6 +633,20 @@ let { ab } = { x = 1, abc = "", abcd = 2 }
 }
 
 #[test]
+fn suggest_record_field_in_pattern_before_field() {
+    let _ = env_logger::init();
+
+    let text = r#"
+let { a abc } = { x = 1, abc = "", abcd = 2 }
+()
+"#;
+    let result = suggest_loc(text, 1, 7);
+    let expected = Ok(vec!["abcd".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
 fn suggest_alias_field_in_pattern() {
     let _ = env_logger::init();
 
