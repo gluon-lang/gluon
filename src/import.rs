@@ -459,7 +459,11 @@ where
 
         let vm = macros.vm;
         // Prefix globals with @ so they don't shadow any local variables
-        let name = Symbol::from(format!("@{}", modulename));
+        let name = Symbol::from(if modulename.starts_with('@') {
+            modulename.clone()
+        } else {
+            format!("@{}", modulename)
+        });
 
         *caller_modulename = Some(name.clone());
 

@@ -155,8 +155,42 @@ where
     fn scan_for_next_block(&mut self, context: Context) -> Result<(), Spanned<Error, BytePos>> {
         let next = self.next_token();
         let span = next.span;
+
         self.unprocessed_tokens.push(next);
+
+
         if let Context::Block { .. } = context {
+            // If we find the next token at the same (or earlier) than the previous block we
+            // can't insert a block but will instead emit an empty block
+            // ```
+            //     let test =
+            //     1
+            //  // ^~ Next token begins at or before the previous block
+            // ```
+            match self.indent_levels
+                .stack
+                .iter()
+                .find(|last_offside| match last_offside.context {
+                    Context::Block { .. } => true,
+                    _ => false,
+                })
+                .map(|last_offside| last_offside.location.column)
+            {
+                Some(last_column) if span.start.column <= last_column => {
+                    debug!(
+                        "Inserting empty block due to {:?} <= {:?}",
+                        self.indent_levels.last(),
+                        span.start.column
+                    );
+                    self.unprocessed_tokens
+                        .push(pos::spanned(span, Token::CloseBlock));
+                    self.unprocessed_tokens
+                        .push(pos::spanned(span, Token::OpenBlock));
+                    return self.indent_levels.push(Offside::new(span.start, context));
+                }
+                _ => (),
+            }
+
             self.unprocessed_tokens
                 .push(pos::spanned(span, Token::OpenBlock));
         }
@@ -189,27 +223,29 @@ where
             debug!("--------\n{:?}\n{:?}", token, offside);
 
             match (&token.value, offside.context) {
-                (&Token::Comma, Context::Brace) |
-                (&Token::Comma, Context::Paren) |
-                (&Token::Comma, Context::Bracket) => return Ok(token),
+                (&Token::Comma, Context::Brace)
+                | (&Token::Comma, Context::Paren)
+                | (&Token::Comma, Context::Bracket) => return Ok(token),
 
                 // If it is closing token we remove contexts until a context for that token is found
-                (&Token::In, _) |
-                (&Token::CloseBlock, _) |
-                (&Token::Else, _) |
-                (&Token::RBrace, _) |
-                (&Token::RBracket, _) |
-                (&Token::RParen, _) |
-                (&Token::Comma, _) => {
+                (&Token::In, _)
+                | (&Token::CloseBlock, _)
+                | (&Token::Else, _)
+                | (&Token::RBrace, _)
+                | (&Token::RBracket, _)
+                | (&Token::RParen, _)
+                | (&Token::Comma, _) => {
                     self.indent_levels.pop();
 
                     // If none of the contexts would be closed by this token then this is likely a
                     // syntax error. Just return the token directly in that case to avoid an
                     // infinite loop caused by repeatedly inserting a default block and removing
                     // it.
-                    if self.indent_levels.stack.iter().all(|offside| {
-                        !token_closes_context(&token.value, offside.context)
-                    }) {
+                    if self.indent_levels
+                        .stack
+                        .iter()
+                        .all(|offside| !token_closes_context(&token.value, offside.context))
+                    {
                         return Ok(token);
                     }
 
@@ -390,10 +426,12 @@ where
                     }
                 }
 
-                (&Token::Equals, Context::Let) |
-                (&Token::RArrow, Context::Lambda) |
-                (&Token::RArrow, Context::MatchClause) |
-                (&Token::Then, _) => self.scan_for_next_block(Context::Block { emit_semi: false })?,
+                (&Token::Equals, Context::Let)
+                | (&Token::RArrow, Context::Lambda)
+                | (&Token::RArrow, Context::MatchClause)
+                | (&Token::Then, _) => {
+                    self.scan_for_next_block(Context::Block { emit_semi: false })?
+                }
                 (&Token::With, _) => self.scan_for_next_block(Context::MatchClause)?,
 
                 (&Token::Else, _) => {
@@ -437,14 +475,14 @@ where
 
 fn token_closes_context(token: &Token, context: Context) -> bool {
     match (token, context) {
-        (&Token::Else, Context::If) |
-        (&Token::RBrace, Context::Brace) |
-        (&Token::RBracket, Context::Bracket) |
-        (&Token::RParen, Context::Paren) |
-        (&Token::CloseBlock, Context::Block { .. }) |
-        (&Token::In, Context::Let) |
-        (&Token::In, Context::Type) |
-        (_, Context::Block { .. }) => true,
+        (&Token::Else, Context::If)
+        | (&Token::RBrace, Context::Brace)
+        | (&Token::RBracket, Context::Bracket)
+        | (&Token::RParen, Context::Paren)
+        | (&Token::CloseBlock, Context::Block { .. })
+        | (&Token::In, Context::Let)
+        | (&Token::In, Context::Type)
+        | (_, Context::Block { .. }) => true,
         (_, _) => false,
     }
 }

@@ -454,7 +454,7 @@ impl GlobalVmState {
     ) -> Result<()> {
         assert!(value.generation().is_root());
         assert!(
-            id.as_ref().starts_with('@'),
+            id.as_ref().matches('@').next() == Some("@"),
             "Global symbols must be prefix with '@'"
         );
         let mut env = self.env.write().unwrap();

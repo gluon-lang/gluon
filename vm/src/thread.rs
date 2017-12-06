@@ -484,7 +484,7 @@ impl Thread {
             context.stack.pop()
         };
         self.set_global(
-            Symbol::from(name),
+            Symbol::from(format!("@{}", name)),
             T::make_forall_type(self),
             Metadata::default(),
             value,
