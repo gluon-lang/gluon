@@ -1,10 +1,16 @@
+use std::borrow::Cow;
+
 use pretty::{Arena, DocAllocator, DocBuilder};
 
 use ast::{is_operator_char, Comment, CommentType};
 use pos::{BytePos, Span};
 use source::Source;
 
-pub fn ident<'b>(arena: &'b Arena<'b>, name: &'b str) -> DocBuilder<'b, Arena<'b>> {
+pub fn ident<'b, S>(arena: &'b Arena<'b>, name: S) -> DocBuilder<'b, Arena<'b>>
+where
+    S: Into<Cow<'b, str>>,
+{
+    let name = name.into();
     if name.starts_with(is_operator_char) {
         chain![arena; "(", name, ")"]
     } else {
@@ -18,9 +24,12 @@ pub fn doc_comment<'a>(
 ) -> DocBuilder<'a, Arena<'a>> {
     match text {
         Some(comment) => match comment.typ {
-            CommentType::Line => arena.concat(comment.content.lines().map(|line| {
-                arena.text("/// ").append(line).append(arena.newline())
-            })),
+            CommentType::Line => arena.concat(
+                comment
+                    .content
+                    .lines()
+                    .map(|line| arena.text("/// ").append(line).append(arena.newline())),
+            ),
             CommentType::Block => chain![arena;
                         "/**",
                         arena.newline(),
