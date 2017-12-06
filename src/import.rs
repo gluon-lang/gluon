@@ -255,11 +255,13 @@ impl<I> Import<I> {
         };
         let _guard = lock.lock().unwrap();
         if vm.global_env().global_exists(module_id.definition_name()) {
+            get_state(macros).visited.pop();
             return Ok(());
         }
 
         let result = self.load_module_(compiler, vm, macros, module_id, &filename, span);
 
+        get_state(macros).visited.pop();
         self.loading.lock().unwrap().remove(module_id.as_ref());
 
         result
@@ -311,7 +313,6 @@ impl<I> Import<I> {
                         }
                     };
 
-                get_state(macros).visited.pop();
                 let earlier_errors_exist = errors_before != macros.errors.len();
                 self.importer.import(
                     compiler,
