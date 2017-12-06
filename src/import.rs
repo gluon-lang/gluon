@@ -414,7 +414,7 @@ where
         // that we can do completion on the name
         let mut modulename = None;
         self.expand_(macros, args, &mut modulename)
-            .or_else(|err| match modulename {
+            .or_else(move |err| match modulename {
                 None => Err(err),
                 Some(modulename) => {
                     macros.errors.push(pos::spanned(args[0].span, err));

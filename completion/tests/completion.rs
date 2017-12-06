@@ -778,6 +778,36 @@ import! std.
 }
 
 #[test]
+fn suggest_module_import_typed() {
+    let _ = env_logger::init();
+
+    let text = r#"
+import! std.prelud
+"#;
+    let query = SuggestionQuery {
+        paths: vec![find_gluon_root()],
+    };
+    let result = suggest_query(
+        query,
+        text,
+        Source::new(text)
+            .lines()
+            .offset(1.into(), 12.into())
+            .expect("Position is not in source"),
+    );
+    assert!(result.is_ok());
+
+    let expected = Ok(vec![
+        Suggestion {
+            name: "prelude".into(),
+            typ: Either::Right(Type::int()),
+        },
+    ]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
 fn dont_suggest_variant_at_record_field() {
     let _ = env_logger::init();
 

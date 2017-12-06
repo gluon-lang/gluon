@@ -41,6 +41,7 @@ pub fn parse_new(
 
 pub struct MockEnv {
     bool: Alias<Symbol, ArcType>,
+    int: ArcType,
 }
 
 impl MockEnv {
@@ -53,6 +54,7 @@ impl MockEnv {
 
         MockEnv {
             bool: Alias::new(bool_sym, bool_ty),
+            int: Type::int(),
         }
     }
 }
@@ -70,6 +72,8 @@ impl TypeEnv for MockEnv {
     fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
         match id.definition_name() {
             "False" | "True" => Some(&self.bool.as_type()),
+            // Just need a dummy type that is not `Type::hole` to verify that lookups work
+            "std.prelude" => Some(&self.int),
             _ => None,
         }
     }

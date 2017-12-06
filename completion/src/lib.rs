@@ -23,7 +23,7 @@ use base::metadata::Metadata;
 use base::resolve;
 use base::pos::{self, BytePos, HasSpan, Span, Spanned, NO_EXPANSION};
 use base::scoped_map::ScopedMap;
-use base::symbol::Symbol;
+use base::symbol::{Name, Symbol, SymbolRef};
 use base::types::{walk_type_, AliasData, ArcType, ControlVisitation, Generic, Type, TypeEnv};
 
 #[derive(Clone, Debug)]
@@ -970,7 +970,7 @@ impl SuggestionQuery {
                 Match::Expr(expr) => match expr.value {
                     Expr::Ident(ref id) if id.name.is_global() => {
                         let name = &id.name.as_ref()[1..];
-                        self.suggest_module_import(name, &mut result);
+                        self.suggest_module_import(env, name, &mut result);
                     }
                     _ => {
                         result.extend(expr_iter(&suggest.stack, expr).map(|(k, typ)| {
@@ -1026,7 +1026,7 @@ impl SuggestionQuery {
                             }));
                         }
                         Expr::Ident(ref id) if id.name.is_global() => {
-                            self.suggest_module_import(&id.name.as_ref()[1..], &mut result);
+                            self.suggest_module_import(env, &id.name.as_ref()[1..], &mut result);
                         }
                         _ => (),
                     },
@@ -1113,24 +1113,19 @@ impl SuggestionQuery {
         result
     }
 
-    fn suggest_module_import(&self, path: &str, suggestions: &mut Vec<Suggestion>) {
+    fn suggest_module_import<T>(&self, env: &T, path: &str, suggestions: &mut Vec<Suggestion>)
+    where
+        T: TypeEnv,
+    {
         use std::ffi::OsStr;
+        let path = Name::new(path);
 
-        let path = path.replace(".", "/");
-        let (base, prefix) = if path.ends_with('/') {
-            (Path::new(&path[..]), "")
-        } else {
-            let base = Path::new(&path[..]).parent().unwrap_or(Path::new(""));
-            let prefix = Path::new(&path[..])
-                .file_name()
-                .and_then(|os_str| os_str.to_str())
-                .unwrap_or("");
-            (base, prefix)
-        };
+        let base = PathBuf::from(path.module().as_str().replace(".", "/"));
+        let prefix = path.declared_name();
 
         let mut module_prefixes = self.paths
             .iter()
-            .map(|root| root.join(base))
+            .map(|root| root.join(&*base))
             .flat_map(|root| {
                 walkdir::WalkDir::new(&*root)
                     .into_iter()
@@ -1164,9 +1159,14 @@ impl SuggestionQuery {
                 .into_iter()
                 .filter(|name| name.starts_with(prefix))
                 .map(|name| {
+                    let full_name = format!("{}.{}", path.module(), name);
                     Suggestion {
+                        typ: Either::Right(
+                            env.find_type(SymbolRef::new(&full_name[..]))
+                                .cloned()
+                                .unwrap_or_else(|| Type::hole()),
+                        ),
                         name,
-                        typ: Either::Right(Type::hole()),
                     }
                 }),
         );

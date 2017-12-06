@@ -187,6 +187,11 @@ impl Symbol {
 }
 
 impl SymbolRef {
+    #[inline]
+    pub fn new<N: ?Sized + AsRef<str>>(n: &N) -> &SymbolRef {
+        unsafe { ::std::mem::transmute::<&Name, &SymbolRef>(Name::new(n)) }
+    }
+
     /// Checks whether the names of two symbols are equal
     pub fn name_eq(&self, other: &SymbolRef) -> bool {
         self.name() == other.name()
