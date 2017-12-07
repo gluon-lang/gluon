@@ -1,0 +1,25 @@
+let prim = import! std.random.prim
+
+type RandomGen g = { next : g -> { value : Int, gen : g } }
+
+let xor_shift_rng =
+    let random_gen : RandomGen XorShiftRng = {
+        next = prim.xor_shift_next
+    }
+
+    {
+        new = prim.xor_shift_new,
+        random_gen,
+    }
+
+{
+    RandomGen,
+
+    xor_shift_rng,
+
+    thread_rng = {
+        next_int = prim.next_int,
+        next_float = prim.next_float,
+        gen_int_range = prim.gen_int_range,
+    },
+}

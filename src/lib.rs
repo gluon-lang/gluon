@@ -35,6 +35,8 @@ pub mod import;
 pub mod io;
 #[cfg(feature = "regex")]
 pub mod regex_bind;
+#[cfg(feature = "rand")]
+pub mod rand_bind;
 
 pub use vm::thread::{RootedThread, Thread};
 
@@ -587,6 +589,7 @@ pub fn new_vm() -> RootedThread {
     add_extern_module(&vm, "std.io.prim", ::io::load);
 
     load_regex(&vm);
+    load_random(&vm);
 
     vm
 }
@@ -597,6 +600,13 @@ fn load_regex(vm: &Thread) {
 }
 #[cfg(not(feature = "regex"))]
 fn load_regex(_: &Thread) {}
+
+#[cfg(feature = "rand")]
+fn load_random(vm: &Thread) {
+    add_extern_module(&vm, "std.random.prim", ::rand_bind::load);
+}
+#[cfg(not(feature = "rand"))]
+fn load_random(_: &Thread) {}
 
 #[cfg(test)]
 mod tests {
