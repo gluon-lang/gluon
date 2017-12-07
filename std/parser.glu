@@ -1,6 +1,6 @@
 let prelude = import! std.prelude
 let { Functor, Applicative, Alternative, Monad } = prelude
-let { id } = import! std.function
+let { id, flip } = import! std.function
 let { Bool } = import! std.bool
 let char = import! std.char
 let { (==) } = char.eq
@@ -88,6 +88,13 @@ let uncons stream : OffsetString -> Option { char : Char, rest : OffsetString } 
 let update_position c position : Char -> Position -> Position =
     position + char.len_utf8 c
 
+let (<?>) p msg : Parser a -> String -> Parser a =
+    parser (\stream ->
+        match p stream with
+        | Ok x -> Ok x
+        | Err _ -> Err msg)
+
+
 let any : Parser Char =
     parser (\stream ->
         match uncons stream with
@@ -108,6 +115,16 @@ let satisfy predicate : (Char -> Bool) -> Parser Char =
 
 let token expected : Char -> Parser Char =
     satisfy (\c -> expected == c)
+
+let letter : Parser Char = satisfy char.is_alphabetic <?> "letter"
+
+let digit : Parser Char = satisfy (flip char.is_digit 10) <?> "digit"
+
+let alpha_num : Parser Char = satisfy char.is_alphanumeric <?> "letter or digit"
+
+let space : Parser Char = token ' '
+
+let tab : Parser Char = token '\t'
 
 let take1 predicate : (Char -> Bool) -> Parser String =
     parser (\stream ->
@@ -196,7 +213,9 @@ let parse p input : Parser a -> String -> Result String a =
     parser,
 
     any, between, token, many, many1, satisfy, spaces, take1, lazy_parser, fail, take_string,
-    skip_many, skip_many1, one_of, sep_by, sep_by1,
+    skip_many, skip_many1, one_of, sep_by, sep_by1, (<?>),
+
+    letter, digit, space, tab,
 
     parse,
 }
