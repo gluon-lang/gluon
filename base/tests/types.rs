@@ -10,7 +10,7 @@ use pretty::{Arena, DocAllocator};
 use base::ast::{Expr, Literal, SpannedExpr, Typed, TypedIdent};
 use base::kind::{ArcKind, Kind, KindEnv};
 use base::pos::{self, BytePos, Span, Spanned};
-use base::symbol::{Symbol, SymbolRef};
+use base::symbol::{Symbol, SymbolRef, Symbols};
 use base::types::*;
 
 fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
@@ -330,6 +330,12 @@ fn break_record() {
 }
 "#
     );
+}
+
+#[test]
+fn tuple() {
+    let typ: ArcType<Symbol> = Type::tuple(&mut Symbols::new(), vec![Type::int(), Type::string()]);
+    assert_eq_display!(format!("{}", typ), "(Int, String)");
 }
 
 pub struct MockEnv;
