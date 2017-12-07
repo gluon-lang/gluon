@@ -1292,7 +1292,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
     ) -> Expr<'a> {
         let arena = &self.0.allocator.arena;
         let error = arena.alloc(Expr::Ident(
-            TypedIdent::new(Symbol::from("#error")),
+            TypedIdent::new(Symbol::from("@error")),
             Span::default(),
         ));
         let args = arena.alloc_extend(
@@ -1348,9 +1348,9 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         // | Some (Some x) ->
         // | Some None ->
         // | x ->
-        let groups = equations.iter().group_by(|equation| {
-            varcon(&equation.patterns.first().expect("Pattern").value)
-        });
+        let groups = equations
+            .iter()
+            .group_by(|equation| varcon(&equation.patterns.first().expect("Pattern").value));
 
         let expr = match variables.first() {
             None => equations

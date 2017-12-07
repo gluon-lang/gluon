@@ -840,7 +840,7 @@ fn deep_clone_partial_application() {
     let memory_for_closures = child.context().gc.allocated_memory();
 
     vm.set_global(
-        Symbol::from("test"),
+        Symbol::from("@test"),
         Type::hole(),
         Metadata::default(),
         unsafe { result.unwrap().0.get_value() },

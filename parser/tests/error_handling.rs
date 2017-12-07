@@ -7,7 +7,7 @@ extern crate gluon_parser as parser;
 
 mod support;
 
-use base::ast::{Pattern, PatternField, TypedIdent};
+use base::ast::{Expr, Pattern, PatternField, TypedIdent};
 use base::pos::{self, BytePos, Span, Spanned};
 use base::types::Type;
 
@@ -19,8 +19,8 @@ use support::*;
 fn remove_expected(errors: ParseErrors) -> ParseErrors {
     let f = |mut err: Spanned<Error, _>| {
         match err.value {
-            Error::UnexpectedToken(_, ref mut expected) |
-            Error::UnexpectedEof(ref mut expected) => expected.clear(),
+            Error::UnexpectedToken(_, ref mut expected)
+            | Error::UnexpectedEof(ref mut expected) => expected.clear(),
             _ => (),
         }
         err.span = Span::default();
@@ -166,7 +166,10 @@ fn missing_pattern() {
     let result = parse(expr);
     assert!(result.is_err());
     let (expr, err) = result.unwrap_err();
-    assert_eq!(clear_span(expr.unwrap()), case(int(1), vec![(Pattern::Error, id("x"))]));
+    assert_eq!(
+        clear_span(expr.unwrap()),
+        case(int(1), vec![(Pattern::Error, id("x"))])
+    );
 
     let error = Error::UnexpectedToken("RArrow".into(), vec![]);
     let span = pos::span(BytePos::from(0), BytePos::from(0));
@@ -187,7 +190,10 @@ fn incomplete_alternative() {
     let result = parse(expr);
     assert!(result.is_err());
     let (expr, err) = result.unwrap_err();
-    assert_eq!(clear_span(expr.unwrap()), case(int(1), vec![(Pattern::Error, error())]));
+    assert_eq!(
+        clear_span(expr.unwrap()),
+        case(int(1), vec![(Pattern::Error, error())])
+    );
 
     let error = Error::UnexpectedToken("CloseBlock".into(), vec![]);
     let span = pos::span(BytePos::from(0), BytePos::from(0));
@@ -265,5 +271,26 @@ fn incomplete_alternative_with_partial_pattern() {
         no_loc(Error::UnexpectedToken("RBrace".into(), vec![])),
         no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![])),
     ];
+    assert_eq!(remove_expected(err), ParseErrors::from(errors));
+}
+
+
+#[test]
+fn incomplete_let_binding() {
+    let _ = ::env_logger::init();
+
+    let expr = r#"
+    let test =
+    1
+    "#;
+    let result = parse(expr);
+    assert!(result.is_err());
+    let (expr, err) = result.unwrap_err();
+    assert_eq!(
+        clear_span(expr.unwrap()),
+        let_("test", no_loc(Expr::Error(None)), int(1),)
+    );
+
+    let errors = vec![no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![]))];
     assert_eq!(remove_expected(err), ParseErrors::from(errors));
 }

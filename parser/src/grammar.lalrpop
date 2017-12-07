@@ -69,8 +69,14 @@ extern {
 
 // Utils
 
+SingleComma: () = {
+    "," => (),
+    // Necessar
+    <!> => errors.push(<>.error)
+};
+
 Comma<Rule>: Vec<Rule> =
-    <rules: (<Rule> ",")*> <last: Rule?> => {
+    <rules: (<Rule> SingleComma)*> <last: Rule?> => {
         let mut rules = rules;
         rules.extend(last);
         rules

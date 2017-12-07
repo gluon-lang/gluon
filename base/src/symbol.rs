@@ -180,12 +180,6 @@ impl Hash for SymbolRef {
     }
 }
 
-impl AsRef<str> for SymbolRef {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
 impl Symbol {
     pub fn strong_count(sym: &Symbol) -> usize {
         Arc::strong_count(&sym.0)
@@ -193,25 +187,32 @@ impl Symbol {
 }
 
 impl SymbolRef {
+    #[inline]
+    pub fn new<N: ?Sized + AsRef<str>>(n: &N) -> &SymbolRef {
+        unsafe { ::std::mem::transmute::<&Name, &SymbolRef>(Name::new(n)) }
+    }
+
     /// Checks whether the names of two symbols are equal
     pub fn name_eq(&self, other: &SymbolRef) -> bool {
         self.name() == other.name()
     }
 
     pub fn name(&self) -> &Name {
-        Name::new(self)
+        Name::new(&self.0)
     }
 
     /// Returns the name of this symbol as it was originally declared (strips location information
     /// and module information)
     pub fn declared_name(&self) -> &str {
-        let name = self.as_ref();
-        name.split(':')
-            .next()
-            .unwrap_or(name)
-            .rsplit('.')
-            .next()
-            .unwrap_or(name)
+        self.name().declared_name()
+    }
+
+    pub fn definition_name(&self) -> &str {
+        self.name().definition_name()
+    }
+
+    pub fn is_global(&self) -> bool {
+        self.0.chars().next() == Some('@')
     }
 
     fn ptr(&self) -> *const () {
@@ -267,6 +268,16 @@ impl Name {
         self.0
             .rfind('.')
             .map_or(self, |i| Name::new(&self.0[i + 1..]))
+    }
+
+    pub fn declared_name(&self) -> &str {
+        let name = self.definition_name();
+        name.rsplit('.').next().unwrap_or(name)
+    }
+
+    pub fn definition_name(&self) -> &str {
+        let name = self.as_str().trim_left_matches('@');
+        name.split(':').next().unwrap_or(name)
     }
 }
 

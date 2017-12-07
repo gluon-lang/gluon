@@ -1,6 +1,8 @@
 #![cfg(feature = "serialization")]
 extern crate futures;
 
+extern crate env_logger;
+
 extern crate serde_json;
 extern crate serde_state as serde;
 
@@ -101,6 +103,8 @@ fn roundtrip_std_prelude() {
 
 #[test]
 fn roundtrip_std_libs() {
+    let _ = env_logger::init();
+
     let thread = new_vm();
     let mut expr = "{\n".to_string();
     for entry in std::fs::read_dir("std").unwrap() {

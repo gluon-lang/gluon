@@ -78,7 +78,7 @@ impl MockEnv {
 
 impl KindEnv for MockEnv {
     fn find_kind(&self, id: &SymbolRef) -> Option<ArcKind> {
-        match id.as_ref() {
+        match id.definition_name() {
             "Bool" => Some(Kind::typ()),
             _ => None,
         }
@@ -87,14 +87,14 @@ impl KindEnv for MockEnv {
 
 impl TypeEnv for MockEnv {
     fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
-        match id.as_ref() {
+        match id.definition_name() {
             "False" | "True" => Some(&self.bool.as_type()),
             _ => None,
         }
     }
 
     fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
-        match id.as_ref() {
+        match id.definition_name() {
             "Bool" => Some(&self.bool),
             _ => None,
         }

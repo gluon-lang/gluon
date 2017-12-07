@@ -11,6 +11,7 @@ use base::symbol::Symbol;
 use base::types::{ArcType, Type, TypeEnv};
 use types::*;
 use base::fnv::FnvMap;
+use base::types::pretty_print::ident as pretty_ident;
 
 use interner::InternedStr;
 use compiler::DebugInfo;
@@ -386,6 +387,8 @@ impl<'t> ValuePrinter<'t> {
     }
 }
 
+const INDENT: usize = 4;
+
 struct InternalPrinter<'a, 't> {
     typ: &'t ArcType,
     env: &'t TypeEnv,
@@ -440,7 +443,7 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                                 arena.space(),
                                 self.p(&info.typ, Top).pretty(*field)
                             ]
-                        }).intersperse(arena.text(","))),
+                        }).intersperse(arena.text(","))).nest(INDENT),
                     ">"
                 ],
             Value::Array(ref array) => chain![arena;
@@ -450,7 +453,8 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                             Type::App(_, ref args) => self.p(&args[0], Top).pretty(field),
                             _ => arena.text(format!("{:?}", field)),
                         }
-                    }).intersperse(arena.text(",").append(arena.space()))),
+                    }).intersperse(arena.text(",").append(arena.space())))
+                        .nest(INDENT),
                     "]"
                 ],
             Value::PartialApplication(p) => arena.text(format!("{:?}", p)),
@@ -461,18 +465,17 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                 use base::types::BuiltinType;
                 match **self.typ {
                     Type::Builtin(BuiltinType::Int) => arena.text(format!("{}", i)),
-                    Type::Builtin(BuiltinType::Char) =>
-                        match ::std::char::from_u32(i as u32) {
-                            Some('"') => arena.text(format!("'{}'", '"')),
-                            Some(c) => arena.text(format!("'{}'", c.escape_default())),
-                            None => ice!(
-                                "Invalid character (code point {}) passed to pretty printing",
-                                i
-                                ),
-                        },
+                    Type::Builtin(BuiltinType::Char) => match ::std::char::from_u32(i as u32) {
+                        Some('"') => arena.text(format!("'{}'", '"')),
+                        Some(c) => arena.text(format!("'{}'", c.escape_default())),
+                        None => ice!(
+                            "Invalid character (code point {}) passed to pretty printing",
+                            i
+                        ),
+                    },
                     _ => arena.text(format!("{}", i)),
                 }
-            },
+            }
             Value::Float(f) => arena.text(format!("{}", f)),
         }
     }
@@ -493,27 +496,47 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                 doc
             }
         }
+
         use base::resolve::remove_aliases_cow;
         use base::types::arg_iter;
 
         let typ = remove_aliases_cow(self.env, self.typ);
         let arena = self.arena;
         match **typ {
-            Type::Record(ref row) => chain![arena;
-                            "{",
-                            arena.concat(fields.into_iter().zip(row.row_iter())
-                                .map(|(field, type_field)| {
+            Type::Record(ref row) => {
+                let mut is_empty = true;
+                let fields_doc = arena.concat(
+                    fields
+                        .into_iter()
+                        .zip(row.row_iter())
+                        .map(|(field, type_field)| {
+                            is_empty = false;
+                            chain![arena;
+                                pretty_ident(arena, type_field.name.declared_name().to_string()),
+                                ":",
                                 chain![arena;
                                     arena.space(),
-                                    type_field.name.to_string(),
-                                    ":",
-                                    arena.space(),
-                                    self.p(&type_field.typ, Top).pretty(field)
-                                ]
-                                }).intersperse(arena.text(","))),
-                            arena.space(),
+                                    self.p(&type_field.typ, Top).pretty(field),
+                                    arena.text(",")
+                                ].nest(INDENT)
+                            ].group()
+                        })
+                        .intersperse(arena.space()),
+                );
+                chain![arena;
+                            "{",
+                            chain![arena;
+                                arena.space(),
+                                fields_doc
+                            ].nest(INDENT),
+                            if is_empty {
+                                arena.nil()
+                            } else {
+                                arena.space()
+                            },
                             "}"
-                        ],
+                        ]
+            }
             Type::Variant(ref row) => {
                 let type_field = row.row_iter()
                     .nth(tag as usize)
@@ -526,6 +549,7 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                                     empty = false;
                                     arena.space().append(self.p(typ, Constructor).pretty(field))
                                 }))
+                                .nest(INDENT)
                         ];
                 if empty {
                     doc
@@ -537,7 +561,8 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                         "{",
                         arena.concat(fields.into_iter().map(|field| {
                             arena.space().append(self.p(&Type::hole(), Top).pretty(field))
-                        }).intersperse(arena.text(","))),
+                        }).intersperse(arena.text(",")))
+                            .nest(INDENT),
                         arena.space(),
                         "}"
                     ],
@@ -853,11 +878,11 @@ impl Repr {
             Value::Float(_) => Repr::Float,
             Value::String(_) => Repr::String,
             Value::Array(_) => Repr::Array,
-            Value::Data(_) |
-            Value::Tag(_) |
-            Value::Function(_) |
-            Value::Closure(_) |
-            Value::PartialApplication(_) => Repr::Unknown,
+            Value::Data(_)
+            | Value::Tag(_)
+            | Value::Function(_)
+            | Value::Closure(_)
+            | Value::PartialApplication(_) => Repr::Unknown,
             Value::Userdata(_) => Repr::Userdata,
             Value::Thread(_) => Repr::Thread,
         }
@@ -1187,13 +1212,11 @@ impl<'t> Cloner<'t> {
 
     fn deep_clone_str(&mut self, data: GcStr) -> Result<Value> {
         unsafe {
-            Ok(
-                self.deep_clone_ptr(data.into_inner(), |gc, data| {
-                    let ptr = GcStr::from_utf8_unchecked(gc.alloc(data)?);
-                    Ok((String(ptr), ptr))
-                })?
-                    .unwrap_or_else(String),
-            )
+            Ok(self.deep_clone_ptr(data.into_inner(), |gc, data| {
+                let ptr = GcStr::from_utf8_unchecked(gc.alloc(data)?);
+                Ok((String(ptr), ptr))
+            })?
+                .unwrap_or_else(String))
         }
     }
     fn deep_clone_data(&mut self, data_ptr: GcPtr<DataStruct>) -> Result<GcPtr<DataStruct>> {

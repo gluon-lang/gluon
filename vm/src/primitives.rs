@@ -431,8 +431,8 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
     use self::std;
 
     vm.define_global(
-        "#error",
-        primitive::<fn(StdString) -> Generic<A>>("#error", std::prim::error),
+        "@error",
+        primitive::<fn(StdString) -> Generic<A>>("@error", std::prim::error),
     )?;
 
     ExternModule::new(

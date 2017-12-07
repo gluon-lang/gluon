@@ -161,9 +161,9 @@ where
                 Some(err) => return Err(err),
                 None => Ok(value),
             },
-            Err(err) => Err(
-                Errors::from(macro_error.into_iter().chain(Some(err)).collect::<Vec<_>>()).into(),
-            ),
+            Err(err) => Err(Errors::from(
+                macro_error.into_iter().chain(Some(err)).collect::<Vec<_>>(),
+            ).into()),
         }
     }
 }
@@ -236,9 +236,7 @@ where
         expected_type: Option<&'b ArcType>,
     ) -> Result<CompileValue<Self::Expr>> {
         self.typecheck_expected(compiler, thread, file, expr_str, expected_type)
-            .and_then(|tc_value| {
-                tc_value.compile(compiler, thread, file, expr_str, ())
-            })
+            .and_then(|tc_value| tc_value.compile(compiler, thread, file, expr_str, ()))
     }
 }
 impl<E, Extra> Compileable<Extra> for TypecheckValue<E>
@@ -382,7 +380,7 @@ where
             mut module,
         } = self;
         let run_io = compiler.run_io;
-        let module_id = Symbol::from(name);
+        let module_id = Symbol::from(format!("@{}", name));
         module.function.id = module_id.clone();
         let closure = try_future!(vm.global_env().new_global_thunk(module));
         vm.call_thunk(closure)
@@ -427,12 +425,7 @@ where
             })
             .and_then(move |mut value| {
                 let (metadata, _) = metadata::metadata(&*vm.get_env(), value.expr.borrow_mut());
-                try_future!(vm.set_global(
-                    value.id.clone(),
-                    value.typ,
-                    metadata,
-                    *value.value,
-                ));
+                try_future!(vm.set_global(value.id.clone(), value.typ, metadata, *value.value,));
                 info!("Loaded module `{}` filename", filename);
                 FutureValue::sync(Ok(()))
             })
@@ -480,9 +473,12 @@ where
         );
         let module_id = module.module.function.id.clone();
         if filename != module_id.as_ref() {
-            return FutureValue::sync(Err(
-                format!("filenames do not match `{}` != `{}`", filename, module_id).into(),
-            )).boxed();
+            return FutureValue::sync(Err(format!(
+                "filenames do not match `{}` != `{}`",
+                filename,
+                module_id
+            ).into()))
+                .boxed();
         }
         let typ = module.typ;
         let closure = try_future!(vm.global_env().new_global_thunk(module.module));
@@ -519,7 +515,7 @@ where
                 .deserialize(self.0)
                 .map_err(|err| err.to_string())
         );
-        let id = compiler.symbols.symbol(name);
+        let id = compiler.symbols.symbol(format!("@{}", name));
         try_future!(vm.set_global(id, typ, metadata, value,));
         info!("Loaded module `{}`", name);
         FutureValue::sync(Ok(())).boxed()
