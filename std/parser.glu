@@ -196,7 +196,7 @@ let sep_by1 parser sep : Parser a -> Parser b -> Parser (List a) =
     do x = parser
     do xs = many (sep *> parser)
     wrap (Cons x xs)
-    
+
 let sep_by parser sep : Parser a -> Parser b -> Parser (List a) =
     sep_by1 parser sep <|> wrap Nil
 
