@@ -126,7 +126,11 @@ impl Stack {
     ///
     /// Panics if the lock is not the top-most lock
     pub fn release_lock(&mut self, lock: Lock) {
-        assert!(self.frames.pop().map(|frame| frame.offset) == Some(lock.0));
+        let i = self.frames
+            .iter()
+            .rposition(|frame| frame.state == State::Lock)
+            .unwrap();
+        assert!(self.frames.remove(i).offset == lock.0);
     }
 
     /// Creates a stackrace starting from `frame_level`
@@ -319,6 +323,10 @@ impl<'a: 'b, 'b> StackFrame<'b> {
 
     /// Lock the stack below the current offset
     pub fn into_lock(mut self) -> Lock {
+        self.insert_lock()
+    }
+
+    pub fn insert_lock(&mut self) -> Lock {
         let offset = self.stack.len();
         self.frame = StackFrame::add_new_frame(&mut self.stack, 0, State::Lock);
         Lock(offset)

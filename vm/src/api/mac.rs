@@ -1,4 +1,3 @@
-
 #[doc(hidden)]
 #[macro_export]
 macro_rules! primitive_cast {

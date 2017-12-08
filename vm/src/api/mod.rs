@@ -1,5 +1,6 @@
 //! The marshalling api
 use {forget_lifetime, Error, Result, Variants};
+use future::FutureValue;
 use gc::{DataDef, Gc, GcPtr, Move, Traverseable};
 use base::symbol::{Symbol, Symbols};
 use base::scoped_map::ScopedMap;
@@ -88,10 +89,10 @@ impl<'a> ValueRef<'a> {
             Value::Tag(tag) => ValueRef::Data(Data(DataInner::Tag(tag))),
             Value::Array(array) => ValueRef::Array(ArrayRef(forget_lifetime(&*array))),
             Value::Userdata(data) => ValueRef::Userdata(forget_lifetime(&**data)),
-            Value::Thread(_) |
-            Value::Function(_) |
-            Value::Closure(_) |
-            Value::PartialApplication(_) => ValueRef::Internal,
+            Value::Thread(_)
+            | Value::Function(_)
+            | Value::Closure(_)
+            | Value::PartialApplication(_) => ValueRef::Internal,
         }
     }
 }
@@ -130,7 +131,9 @@ impl<'a> Data<'a> {
     pub fn get_variants(&self, index: usize) -> Option<Variants<'a>> {
         match self.0 {
             DataInner::Tag(_) => None,
-            DataInner::Data(data) => unsafe { data.fields.get(index).map(|v| Variants::new(v)) },
+            DataInner::Data(data) => unsafe {
+                data.fields.get(index).map(|v| Variants::new(v))
+            },
         }
     }
 
@@ -653,7 +656,9 @@ impl<'vm, 's> Pushable<'vm> for &'s String {
 }
 impl<'vm, 's> Pushable<'vm> for &'s str {
     fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
-        let s = unsafe { GcStr::from_utf8_unchecked(context.alloc_with(thread, self.as_bytes())?) };
+        let s = unsafe {
+            GcStr::from_utf8_unchecked(context.alloc_with(thread, self.as_bytes())?)
+        };
         context.stack.push(Value::String(s));
         Ok(())
     }
@@ -921,6 +926,42 @@ where
             context.return_future(self.0);
         }
         Ok(Async::Ready(()))
+    }
+}
+
+impl<F> VmType for FutureValue<F>
+where
+    F: Future,
+    F::Item: VmType,
+{
+    type Type = <F::Item as VmType>::Type;
+    fn make_type(vm: &Thread) -> ArcType {
+        <F::Item>::make_type(vm)
+    }
+    fn extra_args() -> VmIndex {
+        <F::Item>::extra_args()
+    }
+}
+
+impl<'vm, F> AsyncPushable<'vm> for FutureValue<F>
+where
+    F: Future<Error = Error> + Send + 'static,
+    F::Item: Pushable<'vm>,
+{
+    fn async_push(self, thread: &'vm Thread, context: &mut Context) -> Result<Async<()>> {
+        match self {
+            FutureValue::Value(result) => {
+                let value = result?;
+                value.push(thread, context).map(Async::Ready)
+            }
+            FutureValue::Future(future) => {
+                unsafe {
+                    context.return_future(future);
+                }
+                Ok(Async::Ready(()))
+            }
+            FutureValue::Polled => ice!("Tried to push a polled future to gluon"),
+        }
     }
 }
 
@@ -1542,6 +1583,7 @@ fn make_type<T: ?Sized + VmType>(vm: &Thread) -> ArcType {
 
 /// Type which represents a function reference in gluon
 pub type FunctionRef<'vm, F> = Function<&'vm Thread, F>;
+pub type OwnedFunction<F> = Function<RootedThread, F>;
 
 /// Type which represents an function in gluon
 pub struct Function<T, F>

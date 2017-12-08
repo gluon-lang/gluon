@@ -631,8 +631,17 @@ impl Thread {
     }
 }
 
-pub trait VmRoot<'a>: Deref<Target = Thread> {
+pub trait VmRoot<'a>: Deref<Target = Thread> + Clone + 'a {
     fn root(thread: &'a Thread) -> Self;
+
+    /// Roots a value
+    fn root_value_with_self(self, value: Value) -> RootedValue<Self> {
+        self.rooted_values.write().unwrap().push(value);
+        RootedValue {
+            vm: self,
+            value: value,
+        }
+    }
 }
 
 impl<'a> VmRoot<'a> for &'a Thread {
@@ -992,8 +1001,9 @@ pub struct Context {
     #[cfg_attr(feature = "serde_derive", serde(skip))] hook: Hook,
     max_stack_size: VmIndex,
 
+    /// Stack of polling functions used for extern functions returning futures
     #[cfg_attr(feature = "serde_derive", serde(skip))]
-    poll_fn: Option<Box<FnMut(&Thread, &mut Context) -> Result<Async<()>> + Send>>,
+    poll_fns: Vec<Box<for<'vm> FnMut(&'vm Thread) -> Result<Async<OwnedContext<'vm>>> + Send>>,
 }
 
 impl Context {
@@ -1007,7 +1017,7 @@ impl Context {
                 previous_instruction_index: usize::max_value(),
             },
             max_stack_size: VmIndex::max_value(),
-            poll_fn: None,
+            poll_fns: Vec::new(),
         }
     }
 
@@ -1062,10 +1072,12 @@ impl Context {
         F::Item: Pushable<'vm>,
     {
         use std::mem::transmute;
-        self.poll_fn = Some(Box::new(move |vm, context| {
-            let vm = transmute::<&Thread, &'vm Thread>(vm);
+        self.poll_fns.push(Box::new(move |vm| {
             let value = try_ready!(future.poll());
-            value.push(vm, context).map(Async::Ready)
+
+            let mut context = vm.current_context();
+            let vm = transmute::<&Thread, &'vm Thread>(vm);
+            value.push(vm, &mut context).map(|()| Async::Ready(context))
         }));
     }
 }
@@ -1125,6 +1137,10 @@ impl<'b> DerefMut for OwnedContext<'b> {
     }
 }
 
+const INITIAL_CALL: usize = 0;
+const POLL_CALL: usize = 1;
+const IN_POLL: usize = 2;
+
 impl<'b> OwnedContext<'b> {
     fn exit_scope(mut self) -> StdResult<OwnedContext<'b>, ()> {
         let exists = StackFrame::current(&mut self.stack).exit_scope().is_ok();
@@ -1164,9 +1180,12 @@ impl<'b> OwnedContext<'b> {
                 State::Excess => context.exit_scope().ok(),
                 State::Extern(ext) => {
                     let instruction_index = context.borrow_mut().stack.frame.instruction_index;
-                    context.borrow_mut().stack.frame.instruction_index = 1;
+                    if instruction_index == IN_POLL {
+                        return Ok(Async::Ready(Some(context)));
+                    }
+                    context.borrow_mut().stack.frame.instruction_index = POLL_CALL;
                     Some(try_ready!(context.execute_function(
-                        instruction_index == 0,
+                        instruction_index == INITIAL_CALL,
                         &ext,
                         polled,
                     )))
@@ -1237,6 +1256,7 @@ impl<'b> OwnedContext<'b> {
             function.id,
             &self.stack.current_frame()[..]
         );
+
         let mut status = Status::Ok;
         if initial_call {
             // Make sure that the stack is not borrowed during the external function call
@@ -1244,27 +1264,39 @@ impl<'b> OwnedContext<'b> {
             let thread = self.thread;
             drop(self);
             status = (function.function)(thread);
-            self = thread.current_context();
+
             if status == Status::Yield {
                 return Ok(Async::NotReady);
             }
+
+            self = thread.current_context();
         }
-        if let Some(mut poll_fn) = self.poll_fn.take() {
+        if let Some(mut poll_fn) = self.poll_fns.pop() {
             // We can only poll the future if the code is currently executing in a future
             if !polled {
-                self.poll_fn = Some(poll_fn);
+                self.poll_fns.push(poll_fn);
                 return Ok(Async::NotReady);
             }
+
+            self.borrow_mut().stack.frame.instruction_index = IN_POLL;
+            let thread = self.thread;
+            drop(self);
             // Poll the future that was returned from the initial call to this extern function
-            match poll_fn(self.thread, &mut self)? {
-                Async::Ready(()) => (),
+            match poll_fn(thread)? {
+                Async::Ready(context) => {
+                    self = context;
+                    self.borrow_mut().stack.frame.instruction_index = POLL_CALL;
+                }
                 Async::NotReady => {
+                    self = thread.current_context();
+                    self.borrow_mut().stack.frame.instruction_index = POLL_CALL;
                     // Restore `poll_fn` so it can be polled again
-                    self.poll_fn = Some(poll_fn);
+                    self.poll_fns.push(poll_fn);
                     return Ok(Async::NotReady);
                 }
             }
         }
+
         // The function call is done at this point so remove any extra values from the frame and
         // return the value at the top of the stack
         let result = self.stack.pop();
@@ -1282,7 +1314,7 @@ impl<'b> OwnedContext<'b> {
                 "Attempted to pop {:?} but {} was expected",
                 stack.frame,
                 function.id
-            );
+            )
         }
         self = self.exit_scope().map_err(|_| {
             Error::Message(StdString::from("Poped the last frame in execute_function"))

@@ -25,7 +25,7 @@ let load_file filename : String -> IO String =
     let modulename = string.slice filename last_slash (string.len filename - 3)
     let action =
         do expr = io.read_file_to_string filename
-        do result = io.load_script modulename expr 
+        do result = io.load_script modulename expr
         wrap result
     io.catch action (\err -> wrap err)
 

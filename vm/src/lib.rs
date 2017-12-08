@@ -124,7 +124,7 @@ quick_error! {
             display("No metadata exists for `{}`", symbol)
         }
         WrongType(expected: ArcType, actual: ArcType) {
-            display("Expected a value of type `{}` but the inferred type was `{}`",
+            display("Expected a value of type `{}` but the returned type was `{}`",
                     expected, actual)
         }
         OutOfMemory { limit: usize, needed: usize } {

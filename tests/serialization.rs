@@ -152,14 +152,14 @@ fn precompile() {
     let precompiled_result = {
         let mut deserializer = serde_json::Deserializer::from_slice(&buffer);
         Precompiled(&mut deserializer)
-            .run_expr(&mut Compiler::new(), &thread, "test", "", ())
+            .run_expr(&mut Compiler::new(), &*thread, "test", "", ())
             .wait()
             .unwrap()
     };
     let thread2 = new_vm();
     assert_eq!(
         serialize_value(
-            &text.run_expr(&mut Compiler::new(), &thread2, "test", &text, None)
+            &text.run_expr(&mut Compiler::new(), &*thread2, "test", &text, None)
                 .wait()
                 .unwrap()
                 .value

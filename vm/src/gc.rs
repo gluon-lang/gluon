@@ -696,8 +696,9 @@ impl Gc {
                 .map(|info| &**info as *const _)
             {
                 Some(info) => info,
-                None => &**self.record_infos.entry(fields.to_owned()).or_insert(
-                    Box::new(TypeInfo {
+                None => &**self.record_infos
+                    .entry(fields.to_owned())
+                    .or_insert(Box::new(TypeInfo {
                         drop: drop::<D::Value>,
                         generation: self.generation,
                         fields: fields
@@ -706,8 +707,7 @@ impl Gc {
                             .map(|(i, s)| (*s, i as VmIndex))
                             .collect(),
                         fields_key: Arc::new(fields.to_owned()),
-                    }),
-                ),
+                    })),
             },
             None => match self.type_infos.entry(TypeId::of::<D::Value>()) {
                 Entry::Occupied(entry) => &**entry.get(),

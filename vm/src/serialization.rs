@@ -518,9 +518,9 @@ pub mod closure {
                         unsafe {
                             match variant {
                                 GraphVariant::Marked(id) => {
-                                    let function = seq.next_element_seed(
-                                        ::serde::de::Seed::new(&mut self.state),
-                                    )?
+                                    let function = seq.next_element_seed(::serde::de::Seed::new(
+                                        &mut self.state,
+                                    ))?
                                         .ok_or_else(|| V::Error::invalid_length(1, &self))?;
                                     let upvars = seq.next_element()?
                                         .ok_or_else(|| V::Error::invalid_length(2, &self))?;
@@ -539,9 +539,9 @@ pub mod closure {
                                     self.state.gc_map.insert(id, closure);
 
                                     for i in 0..upvars {
-                                        let value = seq.next_element_seed(
-                                            ::serde::de::Seed::new(&mut self.state),
-                                        )?
+                                        let value = seq.next_element_seed(::serde::de::Seed::new(
+                                            &mut self.state,
+                                        ))?
                                             .ok_or_else(|| V::Error::invalid_length(i + 2, &self))?;
                                         closure.as_mut().upvars[i] = value;
                                     }

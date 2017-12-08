@@ -3,18 +3,23 @@ use std::fmt;
 use std::fs::File;
 use std::sync::Mutex;
 
+use futures::{Future, IntoFuture};
+use futures::future::Either;
+
 use vm::{self, ExternModule, Result, Variants};
+use vm::future::FutureValue;
 use vm::gc::{Gc, Traverseable};
 use vm::types::*;
-use vm::thread::ThreadInternal;
-use vm::thread::Thread;
-use vm::api::{Array, FunctionRef, Generic, Getable, Hole, OpaqueValue, TypedBytecode, Userdata,
-              VmType, WithVM, IO};
+use vm::thread::{RootedThread, Thread, ThreadInternal};
+use vm::api::{Array, FutureResult, Generic, Getable, OpaqueValue, OwnedFunction, TypedBytecode,
+              Userdata, VmType, WithVM, IO};
 use vm::api::generic::{A, B};
 use vm::stack::StackFrame;
 use vm::internal::ValuePrinter;
 
 use vm::internal::Value;
+
+use compiler_pipeline::*;
 
 use super::{Compiler, Error};
 
@@ -118,31 +123,35 @@ fn read_line() -> IO<String> {
 /// IO a -> (String -> IO a) -> IO a
 fn catch<'vm>(
     action: OpaqueValue<&'vm Thread, IO<A>>,
-    mut catch: FunctionRef<fn(String) -> IO<Generic<A>>>,
-) -> IO<Generic<A>> {
-    let vm = action.vm();
+    mut catch: OwnedFunction<fn(String) -> IO<Generic<A>>>,
+) -> FutureResult<Box<Future<Item = IO<Generic<A>>, Error = vm::Error> + Send>> {
+    let vm = action.vm().root_thread();
     let frame_level = vm.context().stack.get_frames().len();
-    let mut action: FunctionRef<fn(()) -> Generic<A>> =
-        unsafe { Getable::from_value(vm, Variants::new(&action.get_value())).unwrap() };
-    let result = action.call(());
-    match result {
-        Ok(value) => IO::Value(value),
+    let mut action: OwnedFunction<fn(()) -> Generic<A>> =
+        unsafe { Getable::from_value(&vm, Variants::new(&action.get_value())).unwrap() };
+
+    let future = action.call_async(()).then(move |result| match result {
+        Ok(value) => Either::A(Ok(IO::Value(value)).into_future()),
         Err(err) => {
             {
                 let mut context = vm.context();
                 let mut stack = StackFrame::current(&mut context.stack);
                 while stack.stack.get_frames().len() > frame_level {
                     if stack.exit_scope().is_err() {
-                        return IO::Exception("Unknown error".into());
+                        return Either::A(Ok(IO::Exception("Unknown error".into())).into_future());
                     }
                 }
             }
-            match catch.call(format!("{}", err)) {
-                Ok(value) => value,
-                Err(err) => IO::Exception(format!("{}", err)),
-            }
+            Either::B(catch.call_async(format!("{}", err)).then(|result| {
+                Ok(match result {
+                    Ok(value) => value,
+                    Err(err) => IO::Exception(format!("{}", err)),
+                })
+            }))
         }
-    }
+    });
+
+    FutureResult(Box::new(future))
 }
 
 fn clear_frames(err: Error, frame_level: usize, mut stack: StackFrame) -> IO<String> {
@@ -161,38 +170,91 @@ fn clear_frames(err: Error, frame_level: usize, mut stack: StackFrame) -> IO<Str
     IO::Exception(fmt)
 }
 
-fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> IO<String> {
+fn run_expr(
+    WithVM { vm, value: expr }: WithVM<&str>,
+) -> FutureValue<Box<Future<Item = IO<String>, Error = vm::Error> + Send>> {
+    let vm = vm.root_thread();
     let frame_level = vm.context().stack.get_frames().len();
-    let run_result = Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(vm, "<top>", expr);
-    let mut context = vm.context();
-    let stack = StackFrame::current(&mut context.stack);
-    match run_result {
-        Ok((value, typ)) => {
-            let env = vm.global_env().get_env();
-            unsafe {
-                IO::Value(format!(
-                    "{} : {}",
-                    ValuePrinter::new(&*env, &typ, value.get_value()).width(80),
-                    typ
-                ))
-            }
-        }
-        Err(err) => clear_frames(err, frame_level, stack),
+
+    let vm1 = vm.clone();
+    let future = expr.run_expr(&mut Compiler::new(), vm1, "<top>", expr, None)
+        .then(move |run_result| {
+            let mut context = vm.context();
+            let stack = StackFrame::current(&mut context.stack);
+            FutureValue::sync(Ok(match run_result {
+                Ok(execute_value) => {
+                    let env = vm.global_env().get_env();
+                    let typ = execute_value.typ;
+                    IO::Value(format!(
+                        "{} : {}",
+                        ValuePrinter::new(&*env, &typ, *execute_value.value).width(80),
+                        typ
+                    ))
+                }
+                Err(err) => clear_frames(err, frame_level, stack),
+            }))
+        });
+
+    future.boxed()
+}
+
+fn load_script(
+    WithVM { vm, value: name }: WithVM<&str>,
+    expr: &str,
+) -> FutureValue<Box<Future<Item = IO<String>, Error = vm::Error> + Send>> {
+    let frame_level = vm.context().stack.get_frames().len();
+
+    let vm1 = vm.root_thread();
+    let vm = vm.root_thread();
+    let name = name.to_string();
+    let future = expr.load_script(&mut Compiler::new(), vm1, &name, expr, None)
+        .then(move |run_result| {
+            let mut context = vm.context();
+            let stack = StackFrame::current(&mut context.stack);
+            let io = match run_result {
+                Ok(()) => IO::Value(format!("Loaded {}", name)),
+                Err(err) => clear_frames(err, frame_level, stack),
+            };
+            Ok(io).into()
+        });
+    future.boxed()
+}
+
+fn new_thread(WithVM { vm, .. }: WithVM<()>) -> IO<RootedThread> {
+    match vm.new_thread() {
+        Ok(thread) => IO::Value(thread),
+        Err(err) => IO::Exception(err.to_string()),
     }
 }
 
-fn load_script(WithVM { vm, value: name }: WithVM<&str>, expr: &str) -> IO<String> {
-    let frame_level = vm.context().stack.get_frames().len();
-    let run_result = Compiler::new()
-        .load_script_async(vm, name, expr)
-        .sync_or_error();
-    let mut context = vm.context();
-    let stack = StackFrame::current(&mut context.stack);
-    match run_result {
-        Ok(()) => IO::Value(format!("Loaded {}", name)),
-        Err(err) => clear_frames(err, frame_level, stack),
+fn new_interruptible_thread(WithVM { vm, .. }: WithVM<()>) -> IO<RootedThread> {
+    use vm::thread::HookFlags;
+    use futures::Async;
+
+    match vm.new_thread() {
+        Ok(thread) => {
+            {
+                let mut context = thread.context();
+
+                let mut i = 0;
+                context.set_hook(Some(Box::new(move |_, _| {
+                    i += 1;
+                    if i == 100 {
+                        i = 0;
+                        Ok(Async::NotReady)
+                    } else {
+                        Ok(Async::Ready(()))
+                    }
+                })));
+                context.set_hook_mask(HookFlags::CALL_FLAG);
+            }
+
+            IO::Value(thread)
+        }
+        Err(err) => IO::Exception(err.to_string()),
     }
 }
+
 
 mod std {
     pub mod io {
@@ -234,7 +296,9 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
             println => primitive!(1 std::io::prim::println),
             catch => primitive!(2 std::io::prim::catch),
             run_expr => primitive!(1 std::io::prim::run_expr),
-            load_script => primitive!(2 std::io::prim::load_script)
+            load_script => primitive!(2 std::io::prim::load_script),
+            new_thread => primitive!(1 std::io::prim::new_thread),
+            new_interruptible_thread => primitive!(1 std::io::prim::new_interruptible_thread)
         },
     )
 }

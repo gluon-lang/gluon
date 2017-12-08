@@ -8,6 +8,7 @@ extern crate env_logger;
 extern crate futures;
 #[macro_use]
 extern crate log;
+extern crate tokio_core;
 extern crate walkdir;
 
 extern crate gluon;
@@ -157,13 +158,15 @@ fn main() {
     // Need the extra stack size when compiling the program using the msvc compiler
     ::std::thread::Builder::new()
         .stack_size(2 * 1024 * 1024)
-        .spawn(|| if let Err(err) = run() {
-            let stderr = &mut io::stderr();
-            let errmsg = "Error writing to stderr";
+        .spawn(|| {
+            if let Err(err) = run() {
+                let stderr = &mut io::stderr();
+                let errmsg = "Error writing to stderr";
 
-            write!(stderr, "error: {}", err).expect(errmsg);
+                write!(stderr, "error: {}", err).expect(errmsg);
 
-            ::std::process::exit(1);
+                ::std::process::exit(1);
+            }
         })
         .unwrap()
         .join()

@@ -8,6 +8,7 @@
 //! difficult to forget a stage.
 
 use std::borrow::{Borrow, BorrowMut};
+use std::ops::Deref;
 use std::result::Result as StdResult;
 
 #[cfg(feature = "serde")]
@@ -25,9 +26,26 @@ use vm::core;
 use vm::compiler::CompiledModule;
 use vm::future::{BoxFutureValue, FutureValue};
 use vm::macros::MacroExpander;
-use vm::thread::{RootedValue, Thread, ThreadInternal};
+use vm::thread::{Execute, RootedValue, Thread, ThreadInternal, VmRoot};
 
 use {Compiler, Error, Result};
+
+
+fn execute<T, F>(vm: T, f: F) -> FutureValue<Execute<T>>
+where
+    T: Deref<Target = Thread>,
+    F: for<'vm> FnOnce(&'vm Thread) -> FutureValue<Execute<&'vm Thread>>,
+{
+    let opt = match f(&vm) {
+        FutureValue::Value(result) => Some(result.map(|v| v.1)),
+        FutureValue::Future(_) => None,
+        FutureValue::Polled => return FutureValue::Polled,
+    };
+    match opt {
+        Some(result) => FutureValue::Value(result.map(|v| (vm, v))),
+        None => FutureValue::Future(Execute::new(vm)),
+    }
+}
 
 pub type SalvageResult<T> = StdResult<T, (Option<T>, Error)>;
 
@@ -298,33 +316,40 @@ where
 }
 
 /// Result of successful execution
-pub struct ExecuteValue<'vm, E> {
+pub struct ExecuteValue<T, E>
+where
+    T: Deref<Target = Thread>,
+{
     pub id: Symbol,
     pub expr: E,
     pub typ: ArcType,
-    pub value: RootedValue<&'vm Thread>,
+    pub value: RootedValue<T>,
 }
 
 pub trait Executable<'vm, Extra> {
     type Expr;
 
-    fn run_expr(
+    fn run_expr<T>(
         self,
         compiler: &mut Compiler,
-        vm: &'vm Thread,
+        vm: T,
         name: &str,
         expr_str: &str,
         arg: Extra,
-    ) -> BoxFutureValue<'vm, ExecuteValue<'vm, Self::Expr>, Error>;
+    ) -> BoxFutureValue<'vm, ExecuteValue<T, Self::Expr>, Error>
+    where
+        T: Send + VmRoot<'vm>;
 
-    fn load_script(
+    fn load_script<T>(
         self,
         compiler: &mut Compiler,
-        vm: &'vm Thread,
+        vm: T,
         filename: &str,
         expr_str: &str,
         arg: Extra,
-    ) -> BoxFutureValue<'vm, (), Error>;
+    ) -> BoxFutureValue<'vm, (), Error>
+    where
+        T: Send + VmRoot<'vm>;
 }
 impl<'vm, C, Extra> Executable<'vm, Extra> for C
 where
@@ -333,28 +358,34 @@ where
 {
     type Expr = C::Expr;
 
-    fn run_expr(
+    fn run_expr<T>(
         self,
         compiler: &mut Compiler,
-        vm: &'vm Thread,
+        vm: T,
         name: &str,
         expr_str: &str,
         arg: Extra,
-    ) -> BoxFutureValue<'vm, ExecuteValue<'vm, Self::Expr>, Error> {
-        match self.compile(compiler, vm, name, expr_str, arg) {
+    ) -> BoxFutureValue<'vm, ExecuteValue<T, Self::Expr>, Error>
+    where
+        T: Send + VmRoot<'vm>,
+    {
+        match self.compile(compiler, &vm, name, expr_str, arg) {
             Ok(v) => v.run_expr(compiler, vm, name, expr_str, ()),
             Err(err) => FutureValue::Value(Err(err)),
         }
     }
-    fn load_script(
+    fn load_script<T>(
         self,
         compiler: &mut Compiler,
-        vm: &'vm Thread,
+        vm: T,
         filename: &str,
         expr_str: &str,
         arg: Extra,
-    ) -> BoxFutureValue<'vm, (), Error> {
-        match self.compile(compiler, vm, filename, expr_str, arg) {
+    ) -> BoxFutureValue<'vm, (), Error>
+    where
+        T: Send + VmRoot<'vm>,
+    {
+        match self.compile(compiler, &vm, filename, expr_str, arg) {
             Ok(v) => v.load_script(compiler, vm, filename, expr_str, ()),
             Err(err) => FutureValue::Value(Err(err)),
         }
@@ -366,14 +397,17 @@ where
 {
     type Expr = E;
 
-    fn run_expr(
+    fn run_expr<T>(
         self,
         compiler: &mut Compiler,
-        vm: &'vm Thread,
+        vm: T,
         name: &str,
         _expr_str: &str,
         _: (),
-    ) -> BoxFutureValue<'vm, ExecuteValue<'vm, Self::Expr>, Error> {
+    ) -> BoxFutureValue<'vm, ExecuteValue<T, Self::Expr>, Error>
+    where
+        T: Send + VmRoot<'vm>,
+    {
         let CompileValue {
             expr,
             typ,
@@ -383,13 +417,15 @@ where
         let module_id = Symbol::from(format!("@{}", name));
         module.function.id = module_id.clone();
         let closure = try_future!(vm.global_env().new_global_thunk(module));
-        vm.call_thunk(closure)
+
+        let vm1 = vm.clone();
+        execute(vm1, |vm| vm.call_thunk(closure))
             .map(|(vm, value)| {
                 ExecuteValue {
                     id: module_id,
                     expr: expr,
                     typ: typ,
-                    value: vm.root_value(value),
+                    value: vm.root_value_with_self(value),
                 }
             })
             .map_err(Error::from)
@@ -402,23 +438,28 @@ where
             })
             .boxed()
     }
-    fn load_script(
+    fn load_script<T>(
         self,
         compiler: &mut Compiler,
-        vm: &'vm Thread,
+        vm: T,
         filename: &str,
         expr_str: &str,
         _: (),
-    ) -> BoxFutureValue<'vm, (), Error> {
+    ) -> BoxFutureValue<'vm, (), Error>
+    where
+        T: Send + VmRoot<'vm>,
+    {
         use check::metadata;
 
         let run_io = compiler.run_io;
         let filename = filename.to_string();
 
-        self.run_expr(compiler, vm, &filename, expr_str, ())
+        let vm1 = vm.clone();
+        let vm2 = vm.clone();
+        self.run_expr(compiler, vm1, &filename, expr_str, ())
             .and_then(move |v| {
                 if run_io {
-                    ::compiler_pipeline::run_io(vm, v)
+                    ::compiler_pipeline::run_io(vm2, v)
                 } else {
                     FutureValue::sync(Ok(v)).boxed()
                 }
@@ -456,18 +497,21 @@ where
 {
     type Expr = ();
 
-    fn run_expr(
+    fn run_expr<T>(
         self,
         _compiler: &mut Compiler,
-        vm: &'vm Thread,
+        vm: T,
         filename: &str,
         _expr_str: &str,
         _: (),
-    ) -> BoxFutureValue<'vm, ExecuteValue<'vm, Self::Expr>, Error> {
+    ) -> BoxFutureValue<'vm, ExecuteValue<T, Self::Expr>, Error>
+    where
+        T: Send + VmRoot<'vm>,
+    {
         use vm::serialization::DeSeed;
 
         let module: Module = try_future!(
-            DeSeed::new(vm)
+            DeSeed::new(&vm)
                 .deserialize(self.0)
                 .map_err(|err| err.to_string())
         );
@@ -481,27 +525,31 @@ where
                 .boxed();
         }
         let typ = module.typ;
+        let vm1 = vm.clone();
         let closure = try_future!(vm.global_env().new_global_thunk(module.module));
-        vm.call_thunk(closure)
+        execute(vm1, |vm| vm.call_thunk(closure))
             .map(|(vm, value)| {
                 ExecuteValue {
                     id: module_id,
                     expr: (),
                     typ: typ,
-                    value: vm.root_value(value),
+                    value: vm.root_value_with_self(value),
                 }
             })
             .map_err(Error::from)
             .boxed()
     }
-    fn load_script(
+    fn load_script<T>(
         self,
         compiler: &mut Compiler,
-        vm: &'vm Thread,
+        vm: T,
         name: &str,
         _expr_str: &str,
         _: (),
-    ) -> BoxFutureValue<'vm, (), Error> {
+    ) -> BoxFutureValue<'vm, (), Error>
+    where
+        T: Send + VmRoot<'vm>,
+    {
         use vm::serialization::DeSeed;
         use vm::internal::Global;
 
@@ -511,7 +559,7 @@ where
             value,
             id: _,
         } = try_future!(
-            DeSeed::new(vm)
+            DeSeed::new(&vm)
                 .deserialize(self.0)
                 .map_err(|err| err.to_string())
         );
@@ -557,25 +605,29 @@ where
         .map_err(Either::Right)
 }
 
-pub fn run_io<'vm, E>(
-    vm: &'vm Thread,
-    v: ExecuteValue<'vm, E>,
-) -> BoxFutureValue<'vm, ExecuteValue<'vm, E>, Error>
+pub fn run_io<'vm, T, E>(
+    vm: T,
+    v: ExecuteValue<T, E>,
+) -> BoxFutureValue<'vm, ExecuteValue<T, E>, Error>
 where
     E: Send + 'vm,
+    T: Send + VmRoot<'vm>,
 {
     use check::check_signature;
     use vm::api::{VmType, IO};
     use vm::api::generic::A;
 
-    if check_signature(&*vm.get_env(), &v.typ, &IO::<A>::make_forall_type(vm)) {
+    if check_signature(&*vm.get_env(), &v.typ, &IO::<A>::make_forall_type(&vm)) {
         let ExecuteValue {
             id,
             expr,
             typ,
             value,
         } = v;
-        vm.execute_io(*value)
+
+
+        let vm1 = vm.clone();
+        execute(vm1, |vm| vm.execute_io(*value))
             .map(move |(_, value)| {
                 // The type of the new value will be `a` instead of `IO a`
                 let actual = resolve::remove_aliases_cow(&*vm.get_env(), &typ);
@@ -586,7 +638,7 @@ where
                 ExecuteValue {
                     id,
                     expr,
-                    value: vm.root_value(value),
+                    value: vm.root_value_with_self(value),
                     typ: actual,
                 }
             })

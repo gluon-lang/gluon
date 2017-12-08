@@ -107,7 +107,7 @@ where
     pub fn then<G, B>(self, g: G) -> FutureValue<Either<B, Then<F, FutureValue<B>, G>>>
     where
         G: FnOnce(Result<F::Item, F::Error>) -> FutureValue<B>,
-        B: Future<Error = F::Error>,
+        B: Future,
     {
         match self {
             FutureValue::Value(v) => match g(v) {

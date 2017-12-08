@@ -233,13 +233,15 @@ impl<'de, 't> Deserializer<'de, 't> {
             Some(c) => if expected(&typ) {
                 visit(c)
             } else {
-                Err(VmError::Message(
-                    format!("Unable to deserialize `{}`", self.typ),
-                ))
+                Err(VmError::Message(format!(
+                    "Unable to deserialize `{}`",
+                    self.typ
+                )))
             },
-            _ => Err(VmError::Message(
-                format!("Unable to deserialize `{}`", self.typ),
-            )),
+            _ => Err(VmError::Message(format!(
+                "Unable to deserialize `{}`",
+                self.typ
+            ))),
         }
     }
 }
@@ -272,9 +274,10 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
             ValueRef::Float(_) => self.deserialize_f64(visitor),
             ValueRef::Int(_) => self.deserialize_i64(visitor),
             ValueRef::String(ref s) => visitor.visit_borrowed_str(s),
-            ValueRef::Userdata(_) | ValueRef::Internal => Err(VmError::Message(
-                format!("Unable to deserialize `{}`", self.typ),
-            )),
+            ValueRef::Userdata(_) | ValueRef::Internal => Err(VmError::Message(format!(
+                "Unable to deserialize `{}`",
+                self.typ
+            ))),
         }
     }
 

@@ -19,7 +19,7 @@ use base::symbol::{Symbol, SymbolModule};
 use base::types::ArcType;
 use parser::parse_partial_let_or_expr;
 use vm::{self, Error as VMError};
-use vm::api::{Function, Userdata, VmType, WithVM, IO};
+use vm::api::{OwnedFunction, Userdata, VmType, WithVM, IO};
 use vm::gc::{Gc, Traverseable};
 use vm::internal::ValuePrinter;
 use vm::thread::{RootStr, RootedValue, Thread, ThreadInternal};
@@ -311,9 +311,11 @@ fn compile_repl(vm: &Thread) -> Result<(), Box<StdError + Send + Sync>> {
 pub fn run() -> Result<(), Box<StdError + Send + Sync>> {
     let vm = new_vm();
     compile_repl(&vm)?;
-    let mut repl: Function<&Thread, fn(()) -> IO<()>> = vm.get_global("repl")?;
+    let mut repl: OwnedFunction<fn(()) -> IO<()>> = vm.get_global("repl")?;
     debug!("Starting repl");
-    repl.call(())?;
+
+    let mut core = ::tokio_core::reactor::Core::new()?;
+    core.run(repl.call_async(()))?;
     Ok(())
 }
 
