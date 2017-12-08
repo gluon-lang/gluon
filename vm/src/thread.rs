@@ -966,11 +966,11 @@ impl<'a> StackInfo<'a> {
 
 bitflags! {
     #[derive(Default)]
-    pub flags HookFlags: u8 {
+    pub struct HookFlags: u8 {
         /// Call the hook when execution moves to a new line
-        const LINE_FLAG = 0b01,
+        const LINE_FLAG = 0b01;
         /// Call the hook when a function is called
-        const CALL_FLAG = 0b10,
+        const CALL_FLAG = 0b10;
     }
 }
 
@@ -1142,7 +1142,7 @@ impl<'b> OwnedContext<'b> {
             let state = context.borrow_mut().stack.frame.state;
 
             let instruction_index = context.borrow_mut().stack.frame.instruction_index;
-            if instruction_index == 0 && context.hook.flags.contains(CALL_FLAG) {
+            if instruction_index == 0 && context.hook.flags.contains(HookFlags::CALL_FLAG) {
                 match state {
                     State::Extern(_) | State::Closure(_) => {
                         let thread = context.thread;
@@ -1150,7 +1150,7 @@ impl<'b> OwnedContext<'b> {
                         if let Some(ref mut hook) = context.hook.function {
                             let info = DebugInfo {
                                 stack: &context.stack,
-                                state: CALL_FLAG,
+                                state: HookFlags::CALL_FLAG,
                             };
                             try_ready!(hook(thread, info))
                         }
@@ -1457,7 +1457,7 @@ impl<'b> ExecuteContext<'b> {
         while let Some(&instr) = instructions.get(index) {
             debug_instruction(&self.stack, index, instr);
 
-            if self.hook.flags.contains(LINE_FLAG) {
+            if self.hook.flags.contains(HookFlags::LINE_FLAG) {
                 if let Some(ref mut hook) = self.hook.function {
                     let current_line = function.debug_info.source_map.line(index);
                     let previous_line = function
@@ -1470,7 +1470,7 @@ impl<'b> ExecuteContext<'b> {
                         self.stack.store_frame();
                         let info = DebugInfo {
                             stack: &self.stack.stack,
-                            state: LINE_FLAG,
+                            state: HookFlags::LINE_FLAG,
                         };
                         try_ready!(hook(self.thread, info))
                     }
