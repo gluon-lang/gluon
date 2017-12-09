@@ -82,6 +82,12 @@ impl Stack {
         self.values.pop().expect("pop on empty stack")
     }
 
+    pub fn pop_many(&mut self, count: usize) {
+        for _ in 0..count {
+            self.values.pop();
+        }
+    }
+
     pub fn push(&mut self, v: Value) {
         self.values.push(v)
     }
@@ -231,6 +237,10 @@ impl<'a: 'b, 'b> StackFrame<'b> {
 
     pub fn pop(&mut self) -> Value {
         self.stack.pop()
+    }
+
+    pub fn pop_many(&mut self, count: usize) {
+        self.stack.pop_many(count);
     }
 
     pub fn get_variants(&self, index: VmIndex) -> Option<Variants> {

@@ -8,6 +8,7 @@ use std::ops::{Add, Deref, DerefMut, Div, Mul, Sub};
 use std::string::String as StdString;
 use std::result::Result as StdResult;
 use std::sync::Arc;
+use std::sync::atomic::{self, AtomicBool};
 use std::usize;
 
 use futures::{Async, Future, Poll};
@@ -21,7 +22,7 @@ use base::types;
 
 use {Error, Result, Variants};
 use macros::MacroEnv;
-use api::{Getable, Pushable, VmType};
+use api::{Getable, Pushable, ValueRef, VmType};
 use compiler::UpvarInfo;
 use gc::{DataDef, Gc, GcPtr, Generation, Move};
 use source_map::LocalIter;
@@ -220,7 +221,7 @@ impl<'b> ::gc::CollectScope for Roots<'b> {
         // never leak any lifetimes outside of this function
         unsafe {
             let mut stack: Vec<GcPtr<Thread>> = Vec::new();
-            let mut locks = Vec::new();
+            let mut locks: Vec<(_, _, GcPtr<Thread>)> = Vec::new();
 
             let child_threads = self.vm.child_threads.read().unwrap();
             for child in &*child_threads {
@@ -228,6 +229,12 @@ impl<'b> ::gc::CollectScope for Roots<'b> {
             }
 
             while let Some(thread_ptr) = stack.pop() {
+                if locks.iter().any(|&(_, _, lock_thread)| {
+                    &*thread_ptr as *const Thread == &*lock_thread as *const Thread
+                }) {
+                    continue;
+                }
+
                 let thread = mem::transmute::<&Thread, &'static Thread>(&*thread_ptr);
                 let child_threads = thread.child_threads.read().unwrap();
                 for child in &*child_threads {
@@ -243,14 +250,14 @@ impl<'b> ::gc::CollectScope for Roots<'b> {
                     stack: &context.stack,
                 }.traverse(gc);
 
-                Vec::push(&mut locks, (child_threads, context));
+                Vec::push(&mut locks, (child_threads, context, thread_ptr));
             }
 
             // Scan `self` sweep `gc`
             f(gc);
 
             // `sweep` all child gcs
-            for (_, mut context) in locks {
+            for (_, mut context, _) in locks {
                 context.gc.sweep();
             }
         }
@@ -280,6 +287,7 @@ pub struct Thread {
     #[cfg_attr(feature = "serde_derive", serde(state))]
     child_threads: RwLock<Vec<GcPtr<Thread>>>,
     #[cfg_attr(feature = "serde_derive", serde(state))] context: Mutex<Context>,
+    #[cfg_attr(feature = "serde_derive", serde(skip))] interrupt: AtomicBool,
 }
 
 impl fmt::Debug for Thread {
@@ -315,6 +323,15 @@ impl<'vm> Pushable<'vm> for RootedThread {
     fn push(self, _vm: &'vm Thread, context: &mut Context) -> Result<()> {
         context.stack.push(Value::Thread(self.0));
         Ok(())
+    }
+}
+
+impl<'vm> Getable<'vm> for RootedThread {
+    fn from_value(_: &'vm Thread, value: Variants) -> Option<Self> {
+        match value.as_ref() {
+            ValueRef::Thread(thread) => Some(thread.root_thread()),
+            _ => None,
+        }
     }
 }
 
@@ -372,7 +389,11 @@ impl Traverseable for RootedThread {
 impl RootedThread {
     /// Creates a new virtual machine with an empty global environment
     pub fn new() -> RootedThread {
-        let mut global_state = GlobalVmState::new();
+        RootedThread::with_event_loop(None)
+    }
+
+    pub fn with_event_loop(event_loop: Option<::tokio_core::reactor::Remote>) -> RootedThread {
+        let mut global_state = GlobalVmState::new(event_loop);
         let thread = Thread {
             parent: None,
             context: Mutex::new(Context::new(
@@ -382,6 +403,7 @@ impl RootedThread {
             roots: RwLock::new(Vec::new()),
             rooted_values: RwLock::new(Vec::new()),
             child_threads: RwLock::new(Vec::new()),
+            interrupt: AtomicBool::new(false),
         };
         let mut gc = Gc::new(Generation::default(), usize::MAX);
         let vm = gc.alloc(Move(thread))
@@ -423,6 +445,7 @@ impl Thread {
             roots: RwLock::new(Vec::new()),
             rooted_values: RwLock::new(Vec::new()),
             child_threads: RwLock::new(Vec::new()),
+            interrupt: AtomicBool::new(false),
         };
         // Enter the top level scope
         {
@@ -590,6 +613,14 @@ impl Thread {
 
     pub fn set_memory_limit(&self, memory_limit: usize) {
         self.current_context().gc.set_memory_limit(memory_limit)
+    }
+
+    pub fn interrupt(&self) {
+        self.interrupt.store(true, atomic::Ordering::Relaxed)
+    }
+
+    pub fn interrupted(&self) -> bool {
+        self.interrupt.load(atomic::Ordering::Relaxed)
     }
 
     fn current_context(&self) -> OwnedContext {
@@ -1154,6 +1185,9 @@ impl<'b> OwnedContext<'b> {
     fn execute(self, polled: bool) -> Result<Async<Option<OwnedContext<'b>>>> {
         let mut maybe_context = Some(self);
         while let Some(mut context) = maybe_context {
+            if context.thread.interrupted() {
+                return Err(Error::Interrupted);
+            }
             debug!("STACK\n{:?}", context.stack.get_frames());
             let state = context.borrow_mut().stack.frame.state;
 
@@ -1216,10 +1250,11 @@ impl<'b> OwnedContext<'b> {
                             State::ReturnContext
                         } else {
                             info!(
-                                "Continue with {}\nAt: {}/{}",
+                                "Continue with {}\nAt: {}/{}\n{:?}",
                                 closure.function.name,
                                 instruction_index,
-                                closure.function.instructions.len()
+                                closure.function.instructions.len(),
+                                &context.stack[..]
                             );
 
                             let new_context = try_ready!(context.execute_(
@@ -1254,7 +1289,7 @@ impl<'b> OwnedContext<'b> {
         info!(
             "CALL EXTERN {} {:?}",
             function.id,
-            &self.stack.current_frame()[..]
+            &self.stack.current_frame()[..],
         );
 
         let mut status = Status::Ok;
@@ -1270,6 +1305,12 @@ impl<'b> OwnedContext<'b> {
             }
 
             self = thread.current_context();
+
+            // The `poll_fn` at the top may be for a stack frame at a lower level, return to the
+            // state loop to ensure that we are executing the frame at the top of the stack
+            if !self.poll_fns.is_empty() {
+                return Ok(Async::Ready(self));
+            }
         }
         if let Some(mut poll_fn) = self.poll_fns.pop() {
             // We can only poll the future if the code is currently executing in a future
@@ -1321,6 +1362,12 @@ impl<'b> OwnedContext<'b> {
         })?;
         self.stack.pop(); // Pop function
         self.stack.push(result);
+
+        info!(
+            "EXIT EXTERN {} {:?}",
+            function.id,
+            &self.stack.current_frame()[..]
+        );
 
         match status {
             Status::Ok => Ok(Async::Ready(self)),
@@ -1448,7 +1495,7 @@ impl<'b> ExecuteContext<'b> {
 
     fn do_call(&mut self, args: VmIndex) -> Result<()> {
         let function_index = self.stack.len() - 1 - args;
-        debug!(
+        info!(
             "Do call {:?} {:?}",
             self.stack[function_index],
             &(*self.stack)[(function_index + 1) as usize..]
@@ -1559,7 +1606,12 @@ impl<'b> ExecuteContext<'b> {
                             self.enter_scope(args + amount + 1, State::Excess);
                         }
                     };
-                    debug!("{} {} {:?}", self.stack.len(), amount, &self.stack[..]);
+                    info!(
+                        "Clearing {} {} {:?}",
+                        self.stack.len(),
+                        amount,
+                        &self.stack[..]
+                    );
                     let end = self.stack.len() - args - 1;
                     self.stack.remove_range(end - amount, end);
                     debug!("{:?}", &self.stack[..]);

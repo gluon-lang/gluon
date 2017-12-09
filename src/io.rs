@@ -10,9 +10,9 @@ use vm::{self, ExternModule, Result, Variants};
 use vm::future::FutureValue;
 use vm::gc::{Gc, Traverseable};
 use vm::types::*;
-use vm::thread::{RootedThread, Thread, ThreadInternal};
-use vm::api::{Array, FutureResult, Generic, Getable, OpaqueValue, OwnedFunction, TypedBytecode,
-              Userdata, VmType, WithVM, IO};
+use vm::thread::{Thread, ThreadInternal};
+use vm::api::{Array, FutureResult, Generic, Getable, OpaqueValue, OwnedFunction, PrimitiveFuture,
+              TypedBytecode, Userdata, VmType, WithVM, IO};
 use vm::api::generic::{A, B};
 use vm::stack::StackFrame;
 use vm::internal::ValuePrinter;
@@ -170,9 +170,7 @@ fn clear_frames(err: Error, frame_level: usize, mut stack: StackFrame) -> IO<Str
     IO::Exception(fmt)
 }
 
-fn run_expr(
-    WithVM { vm, value: expr }: WithVM<&str>,
-) -> FutureValue<Box<Future<Item = IO<String>, Error = vm::Error> + Send>> {
+fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> PrimitiveFuture<IO<String>> {
     let vm = vm.root_thread();
     let frame_level = vm.context().stack.get_frames().len();
 
@@ -201,7 +199,7 @@ fn run_expr(
 fn load_script(
     WithVM { vm, value: name }: WithVM<&str>,
     expr: &str,
-) -> FutureValue<Box<Future<Item = IO<String>, Error = vm::Error> + Send>> {
+) -> PrimitiveFuture<IO<String>> {
     let frame_level = vm.context().stack.get_frames().len();
 
     let vm1 = vm.root_thread();
@@ -219,42 +217,6 @@ fn load_script(
         });
     future.boxed()
 }
-
-fn new_thread(WithVM { vm, .. }: WithVM<()>) -> IO<RootedThread> {
-    match vm.new_thread() {
-        Ok(thread) => IO::Value(thread),
-        Err(err) => IO::Exception(err.to_string()),
-    }
-}
-
-fn new_interruptible_thread(WithVM { vm, .. }: WithVM<()>) -> IO<RootedThread> {
-    use vm::thread::HookFlags;
-    use futures::Async;
-
-    match vm.new_thread() {
-        Ok(thread) => {
-            {
-                let mut context = thread.context();
-
-                let mut i = 0;
-                context.set_hook(Some(Box::new(move |_, _| {
-                    i += 1;
-                    if i == 100 {
-                        i = 0;
-                        Ok(Async::NotReady)
-                    } else {
-                        Ok(Async::Ready(()))
-                    }
-                })));
-                context.set_hook_mask(HookFlags::CALL_FLAG);
-            }
-
-            IO::Value(thread)
-        }
-        Err(err) => IO::Exception(err.to_string()),
-    }
-}
-
 
 mod std {
     pub mod io {
@@ -297,8 +259,6 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
             catch => primitive!(2 std::io::prim::catch),
             run_expr => primitive!(1 std::io::prim::run_expr),
             load_script => primitive!(2 std::io::prim::load_script),
-            new_thread => primitive!(1 std::io::prim::new_thread),
-            new_interruptible_thread => primitive!(1 std::io::prim::new_interruptible_thread)
         },
     )
 }

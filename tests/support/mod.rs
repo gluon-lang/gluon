@@ -2,6 +2,7 @@
 extern crate env_logger;
 #[allow(unused_extern_crates)]
 extern crate gluon;
+extern crate tokio_core;
 pub extern crate futures;
 
 use gluon::vm::api::{Getable, VmType};
@@ -40,7 +41,11 @@ where
 
 /// Creates a VM for testing which has the correct paths to import the std library properly
 pub fn make_vm() -> RootedThread {
-    let vm = ::gluon::new_vm();
+    make_async_vm(None)
+}
+
+pub fn make_async_vm(remote: Option<self::tokio_core::reactor::Remote>) -> RootedThread {
+    let vm = ::gluon::VmBuilder::new().event_loop(remote).build();
     let import = vm.get_macros().get("import");
     import
         .as_ref()

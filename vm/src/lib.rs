@@ -19,6 +19,7 @@ extern crate mopa;
 extern crate pretty;
 #[macro_use]
 extern crate quick_error;
+extern crate tokio_core;
 #[doc(hidden)]
 pub extern crate frunk_core;
 
@@ -136,6 +137,9 @@ quick_error! {
         Message(err: String) {
             display("{}", err)
             from()
+        }
+        Interrupted {
+            display("Thread was interrupted")
         }
         Panic(err: String) {
             display("{}", err)

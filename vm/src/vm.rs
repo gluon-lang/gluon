@@ -139,6 +139,9 @@ pub struct GlobalVmState {
     // thread
     #[cfg_attr(feature = "serde_derive", serde(state))]
     pub generation_0_threads: RwLock<Vec<GcPtr<Thread>>>,
+
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
+    event_loop: Option<::std::panic::AssertUnwindSafe<::tokio_core::reactor::Remote>>,
 }
 
 impl Traverseable for GlobalVmState {
@@ -356,7 +359,7 @@ impl VmEnv {
 
 impl GlobalVmState {
     /// Creates a new virtual machine
-    pub fn new() -> GlobalVmState {
+    pub fn new(event_loop: Option<::tokio_core::reactor::Remote>) -> GlobalVmState {
         let mut vm = GlobalVmState {
             env: RwLock::new(VmEnv {
                 globals: FnvMap::default(),
@@ -369,6 +372,7 @@ impl GlobalVmState {
             macros: MacroEnv::new(),
             type_cache: TypeCache::new(),
             generation_0_threads: RwLock::new(Vec::new()),
+            event_loop: event_loop.map(::std::panic::AssertUnwindSafe),
         };
         vm.add_types().unwrap();
         vm
@@ -411,6 +415,10 @@ impl GlobalVmState {
             .unwrap();
         self.register_type::<Thread>("Thread", &[]).unwrap();
         Ok(())
+    }
+
+    pub fn get_event_loop(&self) -> Option<::tokio_core::reactor::Remote> {
+        self.event_loop.as_ref().map(|x| x.0.clone())
     }
 
     pub fn type_cache(&self) -> &TypeCache<Symbol, ArcType> {

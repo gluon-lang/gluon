@@ -371,7 +371,7 @@ impl<'t> ValuePrinter<'t> {
             typ: typ,
             env: env,
             value: value,
-            max_level: i32::max_value(),
+            max_level: 50,
             width: 80,
         }
     }

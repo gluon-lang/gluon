@@ -24,7 +24,7 @@ use vm::gc::{Gc, Traverseable};
 use vm::internal::ValuePrinter;
 use vm::thread::{RootStr, RootedValue, Thread, ThreadInternal};
 
-use gluon::{new_vm, Compiler, Result as GluonResult, RootedThread};
+use gluon::{Compiler, Result as GluonResult, RootedThread};
 use gluon::import::add_extern_module;
 use gluon::compiler_pipeline::{Executable, ExecuteValue};
 
@@ -218,7 +218,10 @@ fn eval_line_(vm: &Thread, line: &str) -> GluonResult<String> {
     };
 
     let env = vm.global_env().get_env();
-    Ok(ValuePrinter::new(&*env, &typ, *value).width(80).to_string())
+    Ok(ValuePrinter::new(&*env, &typ, *value)
+        .width(80)
+        .max_level(5)
+        .to_string())
 }
 
 fn set_globals(
@@ -309,13 +312,18 @@ fn compile_repl(vm: &Thread) -> Result<(), Box<StdError + Send + Sync>> {
 
 #[allow(dead_code)]
 pub fn run() -> Result<(), Box<StdError + Send + Sync>> {
-    let vm = new_vm();
+    let mut core = ::tokio_core::reactor::Core::new()?;
+
+    let vm = ::gluon::VmBuilder::new()
+        .event_loop(Some(core.remote()))
+        .build();
+
     compile_repl(&vm)?;
+
     let mut repl: OwnedFunction<fn(()) -> IO<()>> = vm.get_global("repl")?;
     debug!("Starting repl");
-
-    let mut core = ::tokio_core::reactor::Core::new()?;
     core.run(repl.call_async(()))?;
+
     Ok(())
 }
 

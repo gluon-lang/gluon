@@ -49,6 +49,7 @@ pub enum ValueRef<'a> {
     Data(Data<'a>),
     Array(ArrayRef<'a>),
     Userdata(&'a vm::Userdata),
+    Thread(&'a Thread),
     Internal,
 }
 
@@ -89,10 +90,10 @@ impl<'a> ValueRef<'a> {
             Value::Tag(tag) => ValueRef::Data(Data(DataInner::Tag(tag))),
             Value::Array(array) => ValueRef::Array(ArrayRef(forget_lifetime(&*array))),
             Value::Userdata(data) => ValueRef::Userdata(forget_lifetime(&**data)),
-            Value::Thread(_)
-            | Value::Function(_)
-            | Value::Closure(_)
-            | Value::PartialApplication(_) => ValueRef::Internal,
+            Value::Thread(thread) => ValueRef::Thread(forget_lifetime(&*thread)),
+            Value::Function(_) | Value::Closure(_) | Value::PartialApplication(_) => {
+                ValueRef::Internal
+            }
         }
     }
 }
@@ -168,6 +169,18 @@ impl VmType for Hole {
 pub enum IO<T> {
     Value(T),
     Exception(String),
+}
+
+impl<T, E> From<StdResult<T, E>> for IO<T>
+where
+    E: fmt::Display,
+{
+    fn from(result: StdResult<T, E>) -> IO<T> {
+        match result {
+            Ok(value) => IO::Value(value),
+            Err(err) => IO::Exception(err.to_string()),
+        }
+    }
 }
 
 pub type GluonFunction = extern "C" fn(&Thread) -> Status;
@@ -395,6 +408,15 @@ pub trait Pushable<'vm>: AsyncPushable<'vm> {
     /// to the stack and `Ok(())` should be returned. If the call is unsuccessful `Status:Error`
     /// should be returned and the stack should be left intact
     fn push(self, vm: &'vm Thread, context: &mut Context) -> Result<()>;
+
+    unsafe fn marshal_unrooted(self, vm: &'vm Thread) -> Result<Value>
+    where
+        Self: Sized,
+    {
+        let mut context = vm.context();
+        self.push(vm, &mut context)?;
+        Ok(context.stack.pop())
+    }
 
     fn marshal<T>(self, vm: &'vm Thread) -> Result<RootedValue<T>>
     where
@@ -902,6 +924,18 @@ impl<'vm, T: Getable<'vm>, E: Getable<'vm>> Getable<'vm> for StdResult<T, E> {
 /// that it must resolve the `Future` to receive the value.
 pub struct FutureResult<F>(pub F);
 
+impl<F> FutureResult<F> {
+    #[inline]
+    pub fn new<'vm>(f: F) -> Self
+    where
+        F: Future<Error = Error> + Send + 'static,
+        F::Item: Pushable<'vm>,
+    {
+        FutureResult(f)
+    }
+}
+
+
 impl<F> VmType for FutureResult<F>
 where
     F: Future,
@@ -928,6 +962,8 @@ where
         Ok(Async::Ready(()))
     }
 }
+
+pub type PrimitiveFuture<T> = FutureValue<Box<Future<Item = T, Error = Error> + Send>>;
 
 impl<F> VmType for FutureValue<F>
 where
@@ -1055,6 +1091,10 @@ impl<T, V> OpaqueValue<T, V>
 where
     T: Deref<Target = Thread>,
 {
+    pub fn from_value(value: RootedValue<T>) -> Self {
+        OpaqueValue(value, PhantomData)
+    }
+
     pub fn vm(&self) -> &Thread {
         self.0.vm()
     }
@@ -1087,6 +1127,10 @@ where
     fn make_type(vm: &Thread) -> ArcType {
         V::make_type(vm)
     }
+
+    fn extra_args() -> VmIndex {
+        V::extra_args()
+    }
 }
 
 impl<'vm, T, V> Pushable<'vm> for OpaqueValue<T, V>
@@ -1108,13 +1152,13 @@ where
 
 impl<'vm, V> Getable<'vm> for OpaqueValue<&'vm Thread, V> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<OpaqueValue<&'vm Thread, V>> {
-        Some(OpaqueValue(vm.root_value(value.0), PhantomData))
+        Some(OpaqueValue::from_value(vm.root_value(value.0)))
     }
 }
 
 impl<'vm, V> Getable<'vm> for OpaqueValue<RootedThread, V> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<OpaqueValue<RootedThread, V>> {
-        Some(OpaqueValue(vm.root_value(value.0), PhantomData))
+        Some(OpaqueValue::from_value(vm.root_value(value.0)))
     }
 }
 

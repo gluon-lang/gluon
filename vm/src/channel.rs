@@ -3,16 +3,21 @@ use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
 
+use futures::Future;
+use futures::sync::oneshot;
+
 use base::types::{ArcType, Type};
 
-use {Error, ExternModule, Result as VmResult};
-use api::{primitive, AsyncPushable, Function, Generic, Pushable, RuntimeResult, VmType, WithVM};
+use {Error, ExternModule, Result as VmResult, Variants};
+use api::{primitive, AsyncPushable, Function, FunctionRef, FutureResult, Generic, Getable,
+          OpaqueValue, OwnedFunction, Pushable, RuntimeResult, VmType, WithVM, IO};
 use api::generic::A;
 use gc::{Gc, GcPtr, Traverseable};
 use vm::{RootedThread, Status, Thread};
-use thread::ThreadInternal;
-use value::{GcStr, Userdata, Value};
+use thread::{OwnedContext, ThreadInternal};
+use value::{Callable, GcStr, Userdata, Value};
 use stack::{StackFrame, State};
+use types::VmInt;
 
 pub struct Sender<T> {
     // No need to traverse this thread reference as any thread having a reference to this `Sender`
@@ -189,10 +194,7 @@ extern "C" fn yield_(_vm: &Thread) -> Status {
 fn spawn<'vm>(
     value: WithVM<'vm, Function<&'vm Thread, fn(())>>,
 ) -> RuntimeResult<RootedThread, Error> {
-    match spawn_(value) {
-        Ok(x) => RuntimeResult::Return(x),
-        Err(err) => RuntimeResult::Panic(err),
-    }
+    spawn_(value).into()
 }
 fn spawn_<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> VmResult<RootedThread> {
     let thread = value.vm.new_thread()?;
@@ -210,8 +212,120 @@ fn spawn_<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> VmResult<Ro
     Ok(thread)
 }
 
+type Action = fn(()) -> OpaqueValue<RootedThread, IO<Generic<A>>>;
+
+fn spawn_on<'vm>(
+    thread: RootedThread,
+    action: WithVM<'vm, FunctionRef<Action>>,
+) -> IO<OpaqueValue<&'vm Thread, IO<Generic<A>>>> {
+    struct SpawnFuture<F>(Mutex<Option<F>>);
+
+    impl<F> fmt::Debug for SpawnFuture<F> {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "Future")
+        }
+    }
+
+    impl<F> Userdata for SpawnFuture<F>
+    where
+        F: Send + 'static,
+    {
+    }
+
+    impl<F> Traverseable for SpawnFuture<F> {
+        fn traverse(&self, _: &mut Gc) {}
+    }
+
+    impl<F> VmType for SpawnFuture<F> {
+        type Type = Generic<A>;
+    }
+
+
+    fn push_future_wrapper<G>(vm: &Thread, context: &mut OwnedContext, _: &G)
+    where
+        G: Future<Item = OpaqueValue<RootedThread, IO<Generic<A>>>, Error = Error> + Send + 'static,
+    {
+        extern "C" fn future_wrapper<F>(vm: &Thread) -> Status
+        where
+            F: Future<Item = OpaqueValue<RootedThread, IO<Generic<A>>>, Error = Error>
+                + Send
+                + 'static,
+        {
+            let mut context = vm.context();
+            let value = StackFrame::current(&mut context.stack)[0];
+
+            match value {
+                Value::Userdata(data) => {
+                    let data = data.downcast_ref::<SpawnFuture<F>>().unwrap();
+                    let future = data.0.lock().unwrap().take().unwrap();
+                    AsyncPushable::status_push(FutureResult::new(future), vm, &mut context)
+                }
+                _ => unreachable!(),
+            }
+        }
+
+        type FutureArg = ();
+        primitive::<fn(FutureArg) -> IO<Generic<A>>>("unknown", future_wrapper::<G>)
+            .push(vm, context)
+            .unwrap();
+    }
+    use value::PartialApplicationDataDef;
+
+    let WithVM { vm, value: action } = action;
+    let mut action = unsafe {
+        OwnedFunction::<Action>::from_value(&thread, Variants::new(&action.value())).unwrap()
+    };
+
+    let future = oneshot::spawn_fn(
+        move || action.call_async(()),
+        &vm.global_env().get_event_loop().expect("event loop"),
+    );
+
+    let mut context = vm.context();
+
+    push_future_wrapper(vm, &mut context, &future);
+
+    let callable = match context.stack[context.stack.len() - 1] {
+        Value::Function(ext) => Callable::Extern(ext),
+        _ => unreachable!(),
+    };
+
+    SpawnFuture(Mutex::new(Some(future)))
+        .push(vm, &mut context)
+        .unwrap();
+    let fields = [*context.stack.get_values().last().unwrap()];
+    let def = PartialApplicationDataDef(callable, &fields);
+    let value = Value::PartialApplication(context.alloc_with(vm, def).unwrap());
+
+    context.stack.pop_many(2);
+
+    // TODO Remove rooting here
+    IO::Value(OpaqueValue::from_value(vm.root_value(value)))
+}
+
+fn new_thread(WithVM { vm, .. }: WithVM<()>) -> IO<RootedThread> {
+    match vm.new_thread() {
+        Ok(thread) => IO::Value(thread),
+        Err(err) => IO::Exception(err.to_string()),
+    }
+}
+
+fn sleep(ms: VmInt) -> IO<()> {
+    use std::time::Duration;
+    ::std::thread::sleep(Duration::from_millis(ms as u64));
+    IO::Value(())
+}
+
+fn interrupt(thread: RootedThread) -> IO<()> {
+    thread.interrupt();
+    IO::Value(())
+}
+
 mod std {
     pub use channel;
+    pub mod thread {
+        pub use channel as prim;
+    }
 }
 
 pub fn load_channel<'vm>(vm: &'vm Thread) -> VmResult<ExternModule> {
@@ -232,9 +346,13 @@ pub fn load_thread<'vm>(vm: &'vm Thread) -> VmResult<ExternModule> {
     ExternModule::new(
         vm,
         record!{
-            resume => primitive::<fn(&'vm Thread) -> Result<(), String>>("std.thread.resume", resume),
-            (yield_ "yield") => primitive::<fn(())>("std.thread.yield", yield_),
-            spawn => primitive!(1 spawn)
+            resume => primitive::<fn(&'vm Thread) -> Result<(), String>>("std.thread.prim.resume", resume),
+            (yield_ "yield") => primitive::<fn(())>("std.thread.prim.yield", yield_),
+            spawn => primitive!(1 std::thread::prim::spawn),
+            spawn_on => primitive!(2 std::thread::prim::spawn_on),
+            new_thread => primitive!(1 std::thread::prim::new_thread),
+            interrupt => primitive!(1 std::thread::prim::interrupt),
+            sleep => primitive!(1 std::thread::prim::sleep)
         },
     )
 }

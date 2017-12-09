@@ -5,6 +5,7 @@ let { Bool } = import! std.bool
 let { Option } = import! std.option
 let { Result } = import! std.result
 let string = import! std.string
+let thread = import! std.thread
 let { ref, load, (<-) } = import! std.reference
 let rustyline = import! rustyline
 let repl_prim = import! repl.prim
@@ -93,12 +94,18 @@ let store line : String -> IO Bool =
 
 let loop editor : Editor -> IO () =
     let run_line line =
-        if string.is_empty (string.trim line)
-        then wrap True
+        if string.is_empty (string.trim line) then
+            wrap True
         else
-            if string.starts_with line ":"
-            then do_command line
-            else io.catch (repl_prim.eval_line line) wrap >>= io.println *> wrap True
+            if string.starts_with line ":" then
+                do_command line
+            else
+                let action =
+                    do eval_thread = thread.new_thread ()
+                    do a = thread.spawn_on eval_thread (\_ -> repl_prim.eval_line line)
+                    a
+                io.catch action wrap >>= io.println
+                    *> wrap True
 
     do line_opt = rustyline.readline editor "> "
     match line_opt with
