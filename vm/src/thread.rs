@@ -26,7 +26,7 @@ use api::{Getable, Pushable, ValueRef, VmType};
 use compiler::UpvarInfo;
 use gc::{DataDef, Gc, GcPtr, Generation, Move};
 use source_map::LocalIter;
-use stack::{Frame, Stack, StackFrame, State};
+use stack::{Frame, Lock, Stack, StackFrame, State};
 use types::*;
 use vm::{GlobalVmState, VmEnv};
 use value::{BytecodeFunction, Callable, ClosureData, ClosureDataDef, ClosureInitDef, Def,
@@ -1034,7 +1034,12 @@ pub struct Context {
 
     /// Stack of polling functions used for extern functions returning futures
     #[cfg_attr(feature = "serde_derive", serde(skip))]
-    poll_fns: Vec<Box<for<'vm> FnMut(&'vm Thread) -> Result<Async<OwnedContext<'vm>>> + Send>>,
+    poll_fns: Vec<
+        (
+            Option<Lock>,
+            Box<for<'vm> FnMut(&'vm Thread) -> Result<Async<OwnedContext<'vm>>> + Send>,
+        ),
+    >,
 }
 
 impl Context {
@@ -1097,19 +1102,30 @@ impl Context {
     ///
     /// This function is unsafe because the `vm` lifetime must not outlive the lifetime of the
     /// `Thread`
-    pub unsafe fn return_future<'vm, F>(&mut self, mut future: F)
+    pub unsafe fn return_future<'vm, F>(&mut self, mut future: F, lock: Lock)
     where
         F: Future<Error = Error> + Send + 'static,
         F::Item: Pushable<'vm>,
     {
         use std::mem::transmute;
-        self.poll_fns.push(Box::new(move |vm| {
-            let value = try_ready!(future.poll());
 
-            let mut context = vm.current_context();
-            let vm = transmute::<&Thread, &'vm Thread>(vm);
-            value.push(vm, &mut context).map(|()| Async::Ready(context))
-        }));
+        let lock = if self.poll_fns.is_empty() {
+            self.stack.release_lock(lock);
+            None
+        } else {
+            Some(lock)
+        };
+
+        self.poll_fns.push((
+            lock,
+            Box::new(move |vm| {
+                let value = try_ready!(future.poll());
+
+                let mut context = vm.current_context();
+                let vm = transmute::<&Thread, &'vm Thread>(vm);
+                value.push(vm, &mut context).map(|()| Async::Ready(context))
+            }),
+        ));
     }
 }
 
@@ -1306,33 +1322,50 @@ impl<'b> OwnedContext<'b> {
 
             self = thread.current_context();
 
+            if status == Status::Error {
+                return match self.stack.pop() {
+                    String(s) => Err(Error::Panic(s.to_string())),
+                    _ => Err(Error::Message(format!(
+                        "Unexpected error calling function `{}`",
+                        function.id
+                    ))),
+                };
+            }
+
             // The `poll_fn` at the top may be for a stack frame at a lower level, return to the
             // state loop to ensure that we are executing the frame at the top of the stack
             if !self.poll_fns.is_empty() {
                 return Ok(Async::Ready(self));
             }
         }
-        if let Some(mut poll_fn) = self.poll_fns.pop() {
+        while let Some((lock, mut poll_fn)) = self.poll_fns.pop() {
             // We can only poll the future if the code is currently executing in a future
             if !polled {
-                self.poll_fns.push(poll_fn);
+                self.poll_fns.push((lock, poll_fn));
                 return Ok(Async::NotReady);
             }
 
-            self.borrow_mut().stack.frame.instruction_index = IN_POLL;
+            let frame_offset = self.stack.get_frames().len() - 1;
+            if self.poll_fns.is_empty() {
+                self.stack.get_frames_mut()[frame_offset].instruction_index = IN_POLL;
+            }
             let thread = self.thread;
             drop(self);
             // Poll the future that was returned from the initial call to this extern function
             match poll_fn(thread)? {
                 Async::Ready(context) => {
                     self = context;
+                    if let Some(lock) = lock {
+                        self.stack.release_lock(lock);
+                    }
                     self.borrow_mut().stack.frame.instruction_index = POLL_CALL;
+                    return Ok(Async::Ready(self));
                 }
                 Async::NotReady => {
                     self = thread.current_context();
-                    self.borrow_mut().stack.frame.instruction_index = POLL_CALL;
+                    self.stack.get_frames_mut()[frame_offset].instruction_index = POLL_CALL;
                     // Restore `poll_fn` so it can be polled again
-                    self.poll_fns.push(poll_fn);
+                    self.poll_fns.push((lock, poll_fn));
                     return Ok(Async::NotReady);
                 }
             }
@@ -1346,6 +1379,12 @@ impl<'b> OwnedContext<'b> {
             while stack.len() > 0 {
                 debug!("{} {:?}", stack.len(), &*stack);
                 stack.pop();
+            }
+            if !(match stack.frame.state {
+                State::Extern(ref e) => e.id == function.id,
+                _ => false,
+            }) {
+                "asd".to_string();
             }
             debug_assert!(
                 match stack.frame.state {

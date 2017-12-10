@@ -96,7 +96,7 @@ pub mod array {
 
 mod string {
     use super::*;
-    use api::AsyncPushable;
+    use api::Pushable;
     use thread::ThreadInternal;
 
     pub fn append(lhs: WithVM<&str>, rhs: &str) -> RuntimeResult<String, Error> {

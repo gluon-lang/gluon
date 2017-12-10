@@ -121,6 +121,10 @@ impl Stack {
         &self.frames
     }
 
+    pub fn get_frames_mut(&mut self) -> &mut [Frame] {
+        &mut self.frames
+    }
+
     pub fn current_frame(&mut self) -> StackFrame {
         StackFrame {
             frame: self.get_frames().last().expect("Frame").clone(),

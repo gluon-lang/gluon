@@ -8,6 +8,7 @@ let string = import! std.string
 let thread = import! std.thread
 let { ref, load, (<-) } = import! std.reference
 let rustyline = import! rustyline
+let { ReadlineError } = import! rustyline_types
 let repl_prim = import! repl.prim
 let { wrap, (*>) } = prelude.make_Applicative io.applicative
 let { flat_map, (>>=) } = prelude.make_Monad io.monad
@@ -102,15 +103,16 @@ let loop editor : Editor -> IO () =
             else
                 let action =
                     do eval_thread = thread.new_thread ()
-                    do a = thread.spawn_on eval_thread (\_ -> repl_prim.eval_line line)
-                    a
+                    let eval_action = repl_prim.eval_line line
+                    repl_prim.finish_or_interrupt editor eval_thread eval_action
                 io.catch action wrap >>= io.println
                     *> wrap True
 
-    do line_opt = rustyline.readline editor "> "
-    match line_opt with
-    | None -> wrap ()
-    | Some line ->
+    do line_result = rustyline.readline editor "> "
+    match line_result with
+    | Err Eof -> wrap ()
+    | Err Interrupted -> loop editor
+    | Ok line ->
         do continue = run_line line
         if continue then loop editor else wrap ()
 

@@ -4,7 +4,7 @@ use future::FutureValue;
 use gc::{DataDef, Gc, GcPtr, Move, Traverseable};
 use base::symbol::{Symbol, Symbols};
 use base::scoped_map::ScopedMap;
-use stack::StackFrame;
+use stack::{Lock, StackFrame};
 use vm::{self, Root, RootStr, RootedValue, Status, Thread};
 use value::{ArrayDef, ArrayRepr, Cloner, DataStruct, Def, ExternFunction, GcStr, Value, ValueArray};
 use thread::{self, Context, RootedThread, VmRoot};
@@ -371,13 +371,13 @@ pub trait AsyncPushable<'vm> {
     ///
     /// If the value must be computed asynchronously `Async::NotReady` must be returned so that
     /// the virtual machine knows it must do more work before the value is available.
-    fn async_push(self, vm: &'vm Thread, context: &mut Context) -> Result<Async<()>>;
+    fn async_push(self, vm: &'vm Thread, context: &mut Context, lock: Lock) -> Result<Async<()>>;
 
-    fn status_push(self, vm: &'vm Thread, context: &mut Context) -> Status
+    fn async_status_push(self, vm: &'vm Thread, context: &mut Context, lock: Lock) -> Status
     where
         Self: Sized,
     {
-        match self.async_push(vm, context) {
+        match self.async_push(vm, context, lock) {
             Ok(Async::Ready(())) => Status::Ok,
             Ok(Async::NotReady) => Status::Yield,
             Err(err) => {
@@ -397,7 +397,8 @@ impl<'vm, T> AsyncPushable<'vm> for T
 where
     T: Pushable<'vm>,
 {
-    fn async_push(self, vm: &'vm Thread, context: &mut Context) -> Result<Async<()>> {
+    fn async_push(self, vm: &'vm Thread, context: &mut Context, lock: Lock) -> Result<Async<()>> {
+        context.stack.release_lock(lock);
         self.push(vm, context).map(Async::Ready)
     }
 }
@@ -408,6 +409,24 @@ pub trait Pushable<'vm>: AsyncPushable<'vm> {
     /// to the stack and `Ok(())` should be returned. If the call is unsuccessful `Status:Error`
     /// should be returned and the stack should be left intact
     fn push(self, vm: &'vm Thread, context: &mut Context) -> Result<()>;
+
+    fn status_push(self, vm: &'vm Thread, context: &mut Context) -> Status
+    where
+        Self: Sized,
+    {
+        match self.push(vm, context) {
+            Ok(()) => Status::Ok,
+            Err(err) => {
+                let msg = unsafe {
+                    GcStr::from_utf8_unchecked(
+                        context.alloc_ignore_limit(format!("{}", err).as_bytes()),
+                    )
+                };
+                context.stack.push(Value::String(msg));
+                Status::Error
+            }
+        }
+    }
 
     unsafe fn marshal_unrooted(self, vm: &'vm Thread) -> Result<Value>
     where
@@ -955,9 +974,9 @@ where
     F: Future<Error = Error> + Send + 'static,
     F::Item: Pushable<'vm>,
 {
-    fn async_push(self, _: &'vm Thread, context: &mut Context) -> Result<Async<()>> {
+    fn async_push(self, _: &'vm Thread, context: &mut Context, lock: Lock) -> Result<Async<()>> {
         unsafe {
-            context.return_future(self.0);
+            context.return_future(self.0, lock);
         }
         Ok(Async::Ready(()))
     }
@@ -984,15 +1003,21 @@ where
     F: Future<Error = Error> + Send + 'static,
     F::Item: Pushable<'vm>,
 {
-    fn async_push(self, thread: &'vm Thread, context: &mut Context) -> Result<Async<()>> {
+    fn async_push(
+        self,
+        thread: &'vm Thread,
+        context: &mut Context,
+        lock: Lock,
+    ) -> Result<Async<()>> {
         match self {
             FutureValue::Value(result) => {
+                context.stack.release_lock(lock);
                 let value = result?;
                 value.push(thread, context).map(Async::Ready)
             }
             FutureValue::Future(future) => {
                 unsafe {
-                    context.return_future(future);
+                    context.return_future(future, lock);
                 }
                 Ok(Async::Ready(()))
             }
@@ -1772,8 +1797,9 @@ where $($args: Getable<'vm> + 'vm,)*
         let n_args = Self::arguments();
         let mut context = vm.context();
         let mut i = 0;
+        let lock;
         let r = unsafe {
-            let (lock, ($($args,)*)) = {
+            let ($($args,)*) = {
                 let stack = StackFrame::current(&mut context.stack);
                 $(let $args = {
                     let x = $args::from_value_unsafe(vm, Variants::new(&stack[i]))
@@ -1783,15 +1809,15 @@ where $($args: Getable<'vm> + 'vm,)*
                 });*;
 // Lock the frame to ensure that any reference from_value_unsafe may have returned stay
 // rooted
-                (stack.into_lock(), ($($args,)*))
+                lock = stack.into_lock();
+                ($($args,)*)
             };
             drop(context);
             let r = (*self)($($args),*);
             context = vm.context();
-            context.stack.release_lock(lock);
             r
         };
-        r.status_push(vm, &mut context)
+        r.async_status_push(vm, &mut context, lock)
     }
 }
 
@@ -1819,8 +1845,9 @@ where $($args: Getable<'vm> + 'vm,)*
         let n_args = Self::arguments();
         let mut context = vm.context();
         let mut i = 0;
+        let lock;
         let r = unsafe {
-            let (lock, ($($args,)*)) = {
+            let ($($args,)*) = {
                 let stack = StackFrame::current(&mut context.stack);
                 $(let $args = {
                     let x = $args::from_value_unsafe(vm, Variants::new(&stack[i]))
@@ -1830,15 +1857,15 @@ where $($args: Getable<'vm> + 'vm,)*
                 });*;
 // Lock the frame to ensure that any reference from_value_unsafe may have returned stay
 // rooted
-                (stack.into_lock(), ($($args,)*))
+                lock = stack.into_lock();
+                ($($args,)*)
             };
             drop(context);
             let r = (*self)($($args),*);
             context = vm.context();
-            context.stack.release_lock(lock);
             r
         };
-        r.status_push(vm, &mut context)
+        r.async_status_push(vm, &mut context, lock)
     }
 }
 

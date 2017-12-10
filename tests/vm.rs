@@ -1,4 +1,7 @@
 extern crate env_logger;
+#[macro_use]
+extern crate pretty_assertions;
+
 extern crate gluon;
 extern crate gluon_completion as completion;
 
@@ -680,6 +683,7 @@ g 10
             let g = stacktrace.frames[0].as_ref().unwrap().name.clone();
             let f = stacktrace.frames[1].as_ref().unwrap().name.clone();
             let end = stacktrace.frames[6].as_ref().unwrap().name.clone();
+            let error = stacktrace.frames[7].as_ref().unwrap().name.clone();
             assert_eq!(
                 stacktrace.frames,
                 vec![
@@ -712,6 +716,10 @@ g 10
                     Some(StacktraceFrame {
                         name: end.clone(),
                         line: 1.into(),
+                    }),
+                    Some(StacktraceFrame {
+                        name: error.clone(),
+                        line: 0.into(),
                     }),
                 ]
             );

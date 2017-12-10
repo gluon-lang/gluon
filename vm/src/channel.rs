@@ -258,7 +258,13 @@ fn spawn_on<'vm>(
                 Value::Userdata(data) => {
                     let data = data.downcast_ref::<SpawnFuture<F>>().unwrap();
                     let future = data.0.lock().unwrap().take().unwrap();
-                    AsyncPushable::status_push(FutureResult::new(future), vm, &mut context)
+                    let lock = StackFrame::current(&mut context.stack).insert_lock();
+                    AsyncPushable::async_status_push(
+                        FutureResult::new(future),
+                        vm,
+                        &mut context,
+                        lock,
+                    )
                 }
                 _ => unreachable!(),
             }
