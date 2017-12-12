@@ -14,7 +14,7 @@ use vm::thread::{Thread, ThreadInternal};
 use vm::api::{Array, FutureResult, Generic, Getable, OpaqueValue, OwnedFunction, PrimitiveFuture,
               TypedBytecode, Userdata, VmType, WithVM, IO};
 use vm::api::generic::{A, B};
-use vm::stack::StackFrame;
+use vm::stack::{StackFrame, State};
 use vm::internal::ValuePrinter;
 
 use vm::internal::Value;
@@ -152,7 +152,14 @@ fn catch<'vm>(
     FutureResult(Box::new(future))
 }
 
-fn clear_frames(err: Error, frame_level: usize, mut stack: StackFrame) -> IO<String> {
+fn clear_frames(err: Error, mut stack: StackFrame) -> IO<String> {
+    let frame_level = stack
+        .stack
+        .get_frames()
+        .iter()
+        .rposition(|frame| frame.state == State::Lock)
+        .unwrap_or(0);
+
     let fmt = match err {
         Error::VM(vm::Error::Panic(_)) => {
             let trace = stack.stack.stacktrace(frame_level);
@@ -160,17 +167,12 @@ fn clear_frames(err: Error, frame_level: usize, mut stack: StackFrame) -> IO<Str
         }
         _ => format!("{}", err),
     };
-    while stack.stack.get_frames().len() > frame_level {
-        if stack.exit_scope().is_err() {
-            return IO::Exception(fmt);
-        }
-    }
+    while let Ok(_) = stack.exit_scope() {}
     IO::Exception(fmt)
 }
 
 fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> PrimitiveFuture<IO<String>> {
     let vm = vm.root_thread();
-    let frame_level = vm.context().stack.get_frames().len();
 
     let vm1 = vm.clone();
     let future = expr.run_expr(&mut Compiler::new(), vm1, "<top>", expr, None)
@@ -187,7 +189,7 @@ fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> PrimitiveFuture<IO<Stri
                         typ
                     ))
                 }
-                Err(err) => clear_frames(err, frame_level, stack),
+                Err(err) => clear_frames(err, stack),
             }))
         });
 
@@ -198,7 +200,6 @@ fn load_script(
     WithVM { vm, value: name }: WithVM<&str>,
     expr: &str,
 ) -> PrimitiveFuture<IO<String>> {
-    let frame_level = vm.context().stack.get_frames().len();
 
     let vm1 = vm.root_thread();
     let vm = vm.root_thread();
@@ -209,7 +210,7 @@ fn load_script(
             let stack = StackFrame::current(&mut context.stack);
             let io = match run_result {
                 Ok(()) => IO::Value(format!("Loaded {}", name)),
-                Err(err) => clear_frames(err, frame_level, stack),
+                Err(err) => clear_frames(err, stack),
             };
             Ok(io).into()
         });
