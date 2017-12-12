@@ -133,11 +133,6 @@ impl rustyline::completion::Completer for Completer {
     }
 }
 
-struct Editor(
-    Mutex<rustyline::Editor<Completer>>,
-    self::futures_cpupool::CpuPool,
-);
-
 macro_rules! impl_userdata {
     ($name : ident) => {
         impl ::gluon::vm::api::Userdata for $name {}
@@ -149,7 +144,7 @@ macro_rules! impl_userdata {
         }
 
         impl ::gluon::vm::api::VmType for $name {
-            type Type = Editor;
+            type Type = Self;
         }
 
         impl ::gluon::vm::gc::Traverseable for $name {
@@ -158,8 +153,14 @@ macro_rules! impl_userdata {
     }
 }
 
+struct Editor(Mutex<rustyline::Editor<Completer>>);
 
 impl_userdata!{ Editor }
+
+struct CpuPool(self::futures_cpupool::CpuPool);
+
+impl_userdata!{ CpuPool }
+
 
 #[derive(Serialize, Deserialize)]
 pub enum ReadlineError {
@@ -191,10 +192,10 @@ impl<'vm> Pushable<'vm> for ReadlineError {
 }
 
 
-fn new_editor(vm: WithVM<()>) -> Editor {
+fn new_editor(vm: WithVM<()>) -> IO<Editor> {
     let mut editor = rustyline::Editor::new();
     editor.set_completer(Some(Completer(vm.vm.root_thread())));
-    Editor(Mutex::new(editor), self::futures_cpupool::CpuPool::new(1))
+    IO::Value(Editor(Mutex::new(editor)))
 }
 
 fn readline(editor: &Editor, prompt: &str) -> IO<Result<String, ReadlineError>> {
@@ -212,6 +213,10 @@ fn readline(editor: &Editor, prompt: &str) -> IO<Result<String, ReadlineError>> 
     }
 
     IO::Value(Ok(input))
+}
+
+fn new_cpu_pool(size: usize) -> IO<CpuPool> {
+    IO::Value(CpuPool(self::futures_cpupool::CpuPool::new(size)))
 }
 
 fn eval_line(WithVM { vm, value: line }: WithVM<&str>) -> IO<String> {
@@ -315,7 +320,7 @@ fn set_globals(
 }
 
 fn finish_or_interrupt(
-    editor: &Editor,
+    cpu_pool: &CpuPool,
     thread: RootedThread,
     action: OpaqueValue<&Thread, IO<Generic<A>>>,
 ) -> FutureResult<Box<Future<Item = IO<Generic<A>>, Error = VMError> + Send>> {
@@ -341,7 +346,7 @@ fn finish_or_interrupt(
     let mut action =
         OwnedFunction::<fn() -> IO<Generic<A>>>::from_value(&thread, action.get_variants())
             .unwrap();
-    let action_future = editor.1.spawn_fn(move || action.call_async());
+    let action_future = cpu_pool.0.spawn_fn(move || action.call_async());
 
     let ctrl_c_future = receiver
         .into_future()
@@ -362,6 +367,7 @@ fn finish_or_interrupt(
 
 fn load_rustyline(vm: &Thread) -> vm::Result<vm::ExternModule> {
     vm.register_type::<Editor>("Editor", &[])?;
+    vm.register_type::<CpuPool>("CpuPool", &[])?;
 
     vm::ExternModule::new(
         vm,
@@ -380,7 +386,8 @@ fn load_repl(vm: &Thread) -> vm::Result<vm::ExternModule> {
             find_info => primitive!(1 find_info),
             find_kind => primitive!(1 find_kind),
             eval_line => primitive!(1 eval_line),
-            finish_or_interrupt => primitive!(3 finish_or_interrupt)
+            finish_or_interrupt => primitive!(3 finish_or_interrupt),
+            new_cpu_pool => primitive!(1 new_cpu_pool)
         ),
     )
 }

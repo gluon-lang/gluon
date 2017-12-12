@@ -93,7 +93,7 @@ let store line : String -> IO Bool =
         io.load_script binding expr *> wrap True
     | None -> io.println "Expected binding in definition" *> wrap True
 
-let loop editor : Editor -> IO () =
+let loop editor cpu_pool : Editor -> CpuPool -> IO () =
     let run_line line =
         if string.is_empty (string.trim line) then
             wrap True
@@ -104,20 +104,24 @@ let loop editor : Editor -> IO () =
                 let action =
                     do eval_thread = thread.new_thread ()
                     let eval_action = repl_prim.eval_line line
-                    repl_prim.finish_or_interrupt editor eval_thread eval_action
+                    repl_prim.finish_or_interrupt cpu_pool eval_thread eval_action
                 io.catch action wrap >>= io.println
                     *> wrap True
 
     do line_result = rustyline.readline editor "> "
     match line_result with
     | Err Eof -> wrap ()
-    | Err Interrupted -> loop editor
+    | Err Interrupted -> loop editor cpu_pool
     | Ok line ->
         do continue = run_line line
-        if continue then loop editor else wrap ()
+        if continue
+        then loop editor cpu_pool
+        else wrap ()
 
 let run x : () -> IO () =
-    io.println "gluon (:h for help, :q to quit)"
-        *> loop (rustyline.new_editor ())
+    do _ = io.println "gluon (:h for help, :q to quit)"
+    do editor = rustyline.new_editor ()
+    do cpu_pool = repl_prim.new_cpu_pool 1
+    loop editor cpu_pool
 
 run
