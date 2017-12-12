@@ -423,7 +423,7 @@ impl<'a, 't> InternalPrinter<'a, 't> {
         let arena = self.arena;
         match value {
             _ if self.level == 0 => arena.text(".."),
-            Value::String(s) => arena.text(format!("{:?}", s)),
+            Value::String(s) => arena.text(format!("{:?}", &s[..])),
             Value::Data(ref data) => self.pretty_data(data.tag, data.fields.iter().cloned()),
             Value::Tag(tag) => self.pretty_data(tag, iter::empty()),
             Value::Function(ref function) => chain![arena;
