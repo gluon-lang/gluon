@@ -156,6 +156,10 @@ where
             _ => None,
         }
     }
+
+    pub fn as_ref(&self) -> RootedValue<&Thread> {
+        self.vm.root_value(self.value)
+    }
 }
 
 impl<'vm> RootedValue<&'vm Thread> {

@@ -17,13 +17,14 @@ use base::symbol::{Symbol, SymbolModule};
 use base::types::ArcType;
 use parser::parse_partial_let_or_expr;
 use vm::{self, Error as VMError, Result as VMResult};
-use vm::api::{FutureResult, Generic, Getable, OpaqueValue, OwnedFunction, Pushable, VmType,
-              WithVM, IO};
+use vm::api::{FutureResult, Generic, Getable, OpaqueValue, OwnedFunction, PrimitiveFuture,
+              Pushable, VmType, WithVM, IO};
 use vm::api::generic::A;
+use vm::future::FutureValue;
 use vm::internal::ValuePrinter;
 use vm::thread::{Context, RootStr, RootedValue, Thread, ThreadInternal};
 
-use gluon::{Compiler, Result as GluonResult, RootedThread};
+use gluon::{Compiler, Error as GluonError, Result as GluonResult, RootedThread};
 use gluon::import::add_extern_module;
 use gluon::compiler_pipeline::{Executable, ExecuteValue};
 
@@ -108,7 +109,7 @@ fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonRe
         };
 
     // Only need the typechecker to fill infer the types as best it can regardless of errors
-    let _ = expr.typecheck(&mut compiler, thread, &name, fileinput);
+    let _ = (&mut expr).typecheck(&mut compiler, thread, &name, fileinput);
     let suggestions = completion::suggest(&*thread.get_env(), &expr, BytePos::from(pos));
     Ok(suggestions
         .into_iter()
@@ -219,34 +220,40 @@ fn new_cpu_pool(size: usize) -> IO<CpuPool> {
     IO::Value(CpuPool(self::futures_cpupool::CpuPool::new(size)))
 }
 
-fn eval_line(WithVM { vm, value: line }: WithVM<&str>) -> IO<String> {
-    match eval_line_(vm, line) {
-        Ok(x) => IO::Value(x),
-        Err(x) => IO::Exception(x.to_string()),
-    }
+fn eval_line(WithVM { vm, value: line }: WithVM<&str>) -> PrimitiveFuture<IO<String>> {
+    eval_line_(vm.root_thread(), line)
+        .then(|result| {
+            FutureValue::sync(Ok(match result {
+                Ok(x) => IO::Value(x),
+                Err(x) => IO::Exception(x.to_string()),
+            }))
+        })
+        .boxed()
 }
 
-fn eval_line_(vm: &Thread, line: &str) -> GluonResult<String> {
+fn eval_line_(
+    vm: RootedThread,
+    line: &str,
+) -> FutureValue<Box<Future<Item = String, Error = GluonError> + Send>> {
     let mut compiler = Compiler::new();
     let let_or_expr = {
         let mut module = SymbolModule::new("<line>".into(), compiler.mut_symbols());
         match parse_partial_let_or_expr(&mut module, line) {
             Ok(x) => x,
-            Err((_, err)) => return Err(InFile::new("<line>", line, err).into()),
+            Err((_, err)) => {
+                return FutureValue::sync(Err(InFile::new("<line>", line, err).into())).boxed()
+            }
         }
     };
-    let mut eval_expr;
-    let ExecuteValue { value, typ, .. } = match let_or_expr {
+    let future = match let_or_expr {
         Ok(expr) => {
-            eval_expr = expr;
             compiler = compiler.run_io(true);
-            eval_expr
-                .run_expr(&mut compiler, vm, "<line>", line, None)
-                .wait()?
+            expr.run_expr(&mut compiler, vm, "<line>", line, None)
+                .boxed()
         }
         Err(let_binding) => {
             let unpack_pattern = let_binding.name.clone();
-            eval_expr = match unpack_pattern.value {
+            let eval_expr = match unpack_pattern.value {
                 Pattern::Ident(ref id) if !let_binding.args.is_empty() => {
                     // We can't compile function bindings by only looking at `let_binding.expr`
                     // so rewrite `let f x y = <expr>` into `let f x y = <expr> in f`
@@ -256,19 +263,29 @@ fn eval_line_(vm: &Thread, line: &str) -> GluonResult<String> {
                 }
                 _ => let_binding.expr,
             };
-            let value = eval_expr
-                .run_expr(&mut compiler, vm, "<line>", line, None)
-                .wait()?;
-            set_globals(vm, &unpack_pattern, &value.typ, &value.value)?;
-            value
+            eval_expr
+                .run_expr(&mut compiler, vm.clone(), "<line>", line, None)
+                .and_then(move |value| {
+                    if let Err(err) =
+                        set_globals(&vm, &unpack_pattern, &value.typ, &value.value.as_ref())
+                    {
+                        return FutureValue::sync(Err(err));
+                    }
+                    FutureValue::sync(Ok(value))
+                })
+                .boxed()
         }
     };
-
-    let env = vm.global_env().get_env();
-    Ok(ValuePrinter::new(&*env, &typ, *value)
-        .width(80)
-        .max_level(5)
-        .to_string())
+    future
+        .map(move |ExecuteValue { value, typ, .. }| {
+            let vm = value.vm();
+            let env = vm.global_env().get_env();
+            ValuePrinter::new(&*env, &typ, *value)
+                .width(80)
+                .max_level(5)
+                .to_string()
+        })
+        .boxed()
 }
 
 fn set_globals(

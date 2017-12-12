@@ -95,7 +95,8 @@ impl<'s> MacroExpandable for &'s str {
             .parse_expr(macros.vm.global_env().type_cache(), file, self)
             .map_err(|err| (None, err.into()))
             .and_then(|mut expr| {
-                let result = expr.expand_macro_with(compiler, macros, file)
+                let result = (&mut expr)
+                    .expand_macro_with(compiler, macros, file)
                     .map(|_| ())
                     .map_err(|(value, err)| (value.map(|_| ()), err));
                 if let Err((value, err)) = result {
@@ -119,6 +120,23 @@ impl<'s> MacroExpandable for &'s mut SpannedExpr<Symbol> {
             compiler.include_implicit_prelude(macros.vm.global_env().type_cache(), file, self);
         }
         macros.run(self);
+        Ok(MacroValue { expr: self })
+    }
+}
+
+impl MacroExpandable for SpannedExpr<Symbol> {
+    type Expr = SpannedExpr<Symbol>;
+
+    fn expand_macro_with(
+        mut self,
+        compiler: &mut Compiler,
+        macros: &mut MacroExpander,
+        file: &str,
+    ) -> SalvageResult<MacroValue<Self::Expr>> {
+        if compiler.implicit_prelude {
+            compiler.include_implicit_prelude(macros.vm.global_env().type_cache(), file, &mut self);
+        }
+        macros.run(&mut self);
         Ok(MacroValue { expr: self })
     }
 }
