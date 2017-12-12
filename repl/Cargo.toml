@@ -16,8 +16,8 @@ doc = false
 
 [dependencies]
 
-gluon = { version = "0.6.2", path = ".." } # GLUON
-gluon_vm = { version = "0.6.2", path = "../vm" } # GLUON
+gluon = { version = "0.6.2", path = "..", features = ["serialization"] } # GLUON
+gluon_vm = { version = "0.6.2", path = "../vm", features = ["serialization"] } # GLUON
 gluon_completion = { path = "../completion", version = "0.6.2" } # GLUON
 gluon_format = { version = "0.6.2", path = "../format" } # GLUON
 
