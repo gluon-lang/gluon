@@ -1,4 +1,3 @@
-
 #[macro_use]
 extern crate collect_mac;
 extern crate env_logger;
@@ -14,7 +13,7 @@ use gluon::base::pos::Line;
 use gluon::base::types::{ArcType, Type};
 use gluon::{new_vm, Compiler};
 use gluon::vm::compiler::UpvarInfo;
-use gluon::vm::thread::{ThreadInternal, CALL_FLAG, LINE_FLAG};
+use gluon::vm::thread::{HookFlags, ThreadInternal};
 
 
 const SIMPLE_EXPR: &'static str = r#"
@@ -44,7 +43,7 @@ fn function_hook() {
             );
             Ok(Async::Ready(()))
         })));
-        context.set_hook_mask(CALL_FLAG);
+        context.set_hook_mask(HookFlags::CALL_FLAG);
     }
     Compiler::new()
         .implicit_prelude(false)
@@ -62,7 +61,7 @@ fn run_line_hook_test(source: &str) -> Vec<Line> {
     {
         let mut context = thread.context();
         context.set_hook(Some(Box::new(move |_, _| Ok(Async::NotReady))));
-        context.set_hook_mask(LINE_FLAG);
+        context.set_hook_mask(HookFlags::LINE_FLAG);
     }
     let mut execute = Compiler::new()
         .implicit_prelude(false)
@@ -134,7 +133,7 @@ fn line_hook_after_call() {
     {
         let mut context = thread.context();
         context.set_hook(Some(Box::new(move |_, _| Ok(Async::NotReady))));
-        context.set_hook_mask(LINE_FLAG);
+        context.set_hook_mask(HookFlags::LINE_FLAG);
     }
 
     let expr = r#"
@@ -185,7 +184,7 @@ fn implicit_prelude_lines_not_counted() {
                 Ok(Async::Ready(()))
             }
         })));
-        context.set_hook_mask(LINE_FLAG);
+        context.set_hook_mask(HookFlags::LINE_FLAG);
     }
     let mut execute = Compiler::new()
         .run_expr_async::<i32>(&thread, "test", "1")
@@ -225,14 +224,12 @@ fn read_variables() {
                 stack_info.line().unwrap().to_usize(),
                 stack_info
                     .locals()
-                    .map(|local| {
-                        (local.name.declared_name().to_string(), local.typ.clone())
-                    })
+                    .map(|local| (local.name.declared_name().to_string(), local.typ.clone()))
                     .collect::<Vec<_>>(),
             );
             Ok(Async::Ready(()))
         })));
-        context.set_hook_mask(LINE_FLAG);
+        context.set_hook_mask(HookFlags::LINE_FLAG);
     }
     let expr = r#"
     let x = 1
@@ -303,14 +300,12 @@ fn argument_types() {
                 stack_info.line().unwrap().to_usize(),
                 stack_info
                     .locals()
-                    .map(|local| {
-                        (local.name.declared_name().to_string(), local.typ.clone())
-                    })
+                    .map(|local| (local.name.declared_name().to_string(), local.typ.clone()))
                     .collect::<Vec<_>>(),
             ));
             Ok(Async::Ready(()))
         })));
-        context.set_hook_mask(LINE_FLAG);
+        context.set_hook_mask(HookFlags::LINE_FLAG);
     }
     let expr = r#"
     let int_function x: Int -> Int = x
@@ -367,7 +362,7 @@ fn source_name() {
             *result.lock().unwrap() = stack_info.source_name().to_string();
             Ok(Async::Ready(()))
         })));
-        context.set_hook_mask(LINE_FLAG);
+        context.set_hook_mask(HookFlags::LINE_FLAG);
     }
     let expr = r#"
     let x = 1
@@ -405,7 +400,7 @@ fn upvars() {
             }
             Ok(Async::Ready(()))
         })));
-        context.set_hook_mask(CALL_FLAG);
+        context.set_hook_mask(HookFlags::CALL_FLAG);
     }
     let expr = r#"
     let x = 1
@@ -463,7 +458,7 @@ fn implicit_prelude_variable_names() {
             );
             Ok(Async::Ready(()))
         })));
-        context.set_hook_mask(LINE_FLAG);
+        context.set_hook_mask(HookFlags::LINE_FLAG);
     }
     Compiler::new()
         .run_expr::<i32>(&thread, "test", "\n1")

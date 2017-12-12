@@ -73,6 +73,7 @@ static STD_LIBS: &[(&str, &str)] = &std_libs!(
     "state",
     "stream",
     "string",
+    "thread",
     "test",
     "unit",
     "writer",

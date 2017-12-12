@@ -8,6 +8,10 @@ extern crate env_logger;
 extern crate futures;
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate serde_derive;
+extern crate tokio_core;
+extern crate tokio_signal;
 extern crate walkdir;
 
 extern crate gluon;
@@ -154,20 +158,14 @@ fn run() -> std::result::Result<(), Box<std::error::Error + Send + Sync>> {
 fn main() {
     init_env_logger();
 
-    // Need the extra stack size when compiling the program using the msvc compiler
-    ::std::thread::Builder::new()
-        .stack_size(2 * 1024 * 1024)
-        .spawn(|| if let Err(err) = run() {
-            let stderr = &mut io::stderr();
-            let errmsg = "Error writing to stderr";
+    if let Err(err) = run() {
+        let stderr = &mut io::stderr();
+        let errmsg = "Error writing to stderr";
 
-            write!(stderr, "error: {}", err).expect(errmsg);
+        write!(stderr, "error: {}", err).expect(errmsg);
 
-            ::std::process::exit(1);
-        })
-        .unwrap()
-        .join()
-        .unwrap();
+        ::std::process::exit(1);
+    }
 }
 
 

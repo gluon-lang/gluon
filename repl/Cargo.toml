@@ -16,18 +16,23 @@ doc = false
 
 [dependencies]
 
-gluon = { version = "0.6.2", path = ".." } # GLUON
-gluon_vm = { version = "0.6.2", path = "../vm" } # GLUON
+gluon = { version = "0.6.2", path = "..", features = ["serialization"] } # GLUON
+gluon_vm = { version = "0.6.2", path = "../vm", features = ["serialization"] } # GLUON
 gluon_completion = { path = "../completion", version = "0.6.2" } # GLUON
 gluon_format = { version = "0.6.2", path = "../format" } # GLUON
 
 futures = "0.1.11"
+futures-cpupool = "0.1"
+tokio-core = "0.1"
+tokio-signal = "0.1"
 clap = "2.22.0"
 log = "0.3.6"
 env_logger = { version = "0.3.4", optional = true }
 lazy_static = "0.2.0"
 rustyline = "1.0.0"
 walkdir = "1"
+serde = "1"
+serde_derive = "1"
 
 [dev-dependencies]
 pretty_assertions = "0.4"

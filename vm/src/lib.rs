@@ -19,6 +19,7 @@ extern crate mopa;
 extern crate pretty;
 #[macro_use]
 extern crate quick_error;
+extern crate tokio_core;
 #[doc(hidden)]
 pub extern crate frunk_core;
 
@@ -124,7 +125,7 @@ quick_error! {
             display("No metadata exists for `{}`", symbol)
         }
         WrongType(expected: ArcType, actual: ArcType) {
-            display("Expected a value of type `{}` but the inferred type was `{}`",
+            display("Expected a value of type `{}` but the returned type was `{}`",
                     expected, actual)
         }
         OutOfMemory { limit: usize, needed: usize } {
@@ -136,6 +137,9 @@ quick_error! {
         Message(err: String) {
             display("{}", err)
             from()
+        }
+        Interrupted {
+            display("Thread was interrupted")
         }
         Panic(err: String) {
             display("{}", err)

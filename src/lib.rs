@@ -15,6 +15,7 @@ extern crate itertools;
 extern crate log;
 #[macro_use]
 extern crate quick_error;
+extern crate tokio_core;
 pub extern crate either;
 
 #[cfg(feature = "serde_derive_state")]
@@ -35,6 +36,8 @@ pub mod import;
 pub mod io;
 #[cfg(feature = "regex")]
 pub mod regex_bind;
+#[cfg(feature = "rand")]
+pub mod rand_bind;
 
 pub use vm::thread::{RootedThread, Thread};
 
@@ -176,7 +179,7 @@ impl Default for Compiler {
 macro_rules! option {
     ($(#[$attr:meta])* $name: ident $set_name: ident : $typ: ty) => {
         $(#[$attr])*
-        pub fn $name(mut self, $name: $typ) -> Compiler {
+        pub fn $name(mut self, $name: $typ) -> Self {
             self.$name = $name;
             self
         }
@@ -556,39 +559,61 @@ pub fn filename_to_module(filename: &str) -> StdString {
     format!("@{}", name.replace(|c: char| c == '/' || c == '\\', "."))
 }
 
+#[derive(Default)]
+pub struct VmBuilder {
+    event_loop: Option<::tokio_core::reactor::Remote>,
+}
+
+impl VmBuilder {
+    pub fn new() -> VmBuilder {
+        VmBuilder::default()
+    }
+
+    option!{
+        /// Sets then event loop which threads are run on
+        /// (default: None)
+        event_loop set_event_loop: Option<::tokio_core::reactor::Remote>
+    }
+
+    pub fn build(self) -> RootedThread {
+        let vm = RootedThread::with_event_loop(self.event_loop);
+        let gluon_path = env::var("GLUON_PATH").unwrap_or_else(|_| String::from("."));
+        let import = Import::new(DefaultImporter);
+        import.add_path(gluon_path);
+        vm.get_macros().insert(String::from("import"), import);
+
+        Compiler::new()
+            .implicit_prelude(false)
+            .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "", r#" import! std.types "#)
+            .sync_or_error()
+            .unwrap();
+
+        add_extern_module(&vm, "std.prim", ::vm::primitives::load);
+        add_extern_module(&vm, "std.int.prim", ::vm::primitives::load_int);
+        add_extern_module(&vm, "std.float.prim", ::vm::primitives::load_float);
+        add_extern_module(&vm, "std.string.prim", ::vm::primitives::load_string);
+        add_extern_module(&vm, "std.char.prim", ::vm::primitives::load_char);
+        add_extern_module(&vm, "std.array.prim", ::vm::primitives::load_array);
+
+        add_extern_module(&vm, "std.lazy", ::vm::lazy::load);
+        add_extern_module(&vm, "std.reference", ::vm::reference::load);
+
+        add_extern_module(&vm, "std.channel", ::vm::channel::load_channel);
+        add_extern_module(&vm, "std.thread.prim", ::vm::channel::load_thread);
+        add_extern_module(&vm, "std.debug", ::vm::debug::load);
+        add_extern_module(&vm, "std.io.prim", ::io::load);
+
+        load_regex(&vm);
+        load_random(&vm);
+
+        vm
+    }
+}
+
 /// Creates a new virtual machine with support for importing other modules and with all primitives
 /// loaded.
 pub fn new_vm() -> RootedThread {
-    let vm = RootedThread::new();
-    let gluon_path = env::var("GLUON_PATH").unwrap_or_else(|_| String::from("."));
-    let import = Import::new(DefaultImporter);
-    import.add_path(gluon_path);
-    vm.get_macros().insert(String::from("import"), import);
-
-    Compiler::new()
-        .implicit_prelude(false)
-        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "", r#" import! std.types "#)
-        .sync_or_error()
-        .unwrap();
-
-    add_extern_module(&vm, "std.prim", ::vm::primitives::load);
-    add_extern_module(&vm, "std.int.prim", ::vm::primitives::load_int);
-    add_extern_module(&vm, "std.float.prim", ::vm::primitives::load_float);
-    add_extern_module(&vm, "std.string.prim", ::vm::primitives::load_string);
-    add_extern_module(&vm, "std.char.prim", ::vm::primitives::load_char);
-    add_extern_module(&vm, "std.array.prim", ::vm::primitives::load_array);
-
-    add_extern_module(&vm, "std.lazy", ::vm::lazy::load);
-    add_extern_module(&vm, "std.reference", ::vm::reference::load);
-
-    add_extern_module(&vm, "std.channel", ::vm::channel::load_channel);
-    add_extern_module(&vm, "std.thread", ::vm::channel::load_thread);
-    add_extern_module(&vm, "std.debug", ::vm::debug::load);
-    add_extern_module(&vm, "std.io.prim", ::io::load);
-
-    load_regex(&vm);
-
-    vm
+    VmBuilder::default().build()
 }
 
 #[cfg(feature = "regex")]
@@ -597,6 +622,13 @@ fn load_regex(vm: &Thread) {
 }
 #[cfg(not(feature = "regex"))]
 fn load_regex(_: &Thread) {}
+
+#[cfg(feature = "rand")]
+fn load_random(vm: &Thread) {
+    add_extern_module(&vm, "std.random.prim", ::rand_bind::load);
+}
+#[cfg(not(feature = "rand"))]
+fn load_random(_: &Thread) {}
 
 #[cfg(test)]
 mod tests {

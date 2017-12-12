@@ -118,6 +118,11 @@ fn parser() {
 }
 
 #[test]
+fn random() {
+    test_format("std/random.glu");
+}
+
+#[test]
 fn repl() {
     test_format("repl/src/repl.glu");
 }

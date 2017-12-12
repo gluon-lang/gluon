@@ -1,9 +1,10 @@
 //! The marshalling api
 use {forget_lifetime, Error, Result, Variants};
+use future::FutureValue;
 use gc::{DataDef, Gc, GcPtr, Move, Traverseable};
 use base::symbol::{Symbol, Symbols};
 use base::scoped_map::ScopedMap;
-use stack::StackFrame;
+use stack::{Lock, StackFrame};
 use vm::{self, Root, RootStr, RootedValue, Status, Thread};
 use value::{ArrayDef, ArrayRepr, Cloner, DataStruct, Def, ExternFunction, GcStr, Value, ValueArray};
 use thread::{self, Context, RootedThread, VmRoot};
@@ -48,6 +49,7 @@ pub enum ValueRef<'a> {
     Data(Data<'a>),
     Array(ArrayRef<'a>),
     Userdata(&'a vm::Userdata),
+    Thread(&'a Thread),
     Internal,
 }
 
@@ -88,10 +90,10 @@ impl<'a> ValueRef<'a> {
             Value::Tag(tag) => ValueRef::Data(Data(DataInner::Tag(tag))),
             Value::Array(array) => ValueRef::Array(ArrayRef(forget_lifetime(&*array))),
             Value::Userdata(data) => ValueRef::Userdata(forget_lifetime(&**data)),
-            Value::Thread(_) |
-            Value::Function(_) |
-            Value::Closure(_) |
-            Value::PartialApplication(_) => ValueRef::Internal,
+            Value::Thread(thread) => ValueRef::Thread(forget_lifetime(&*thread)),
+            Value::Function(_) | Value::Closure(_) | Value::PartialApplication(_) => {
+                ValueRef::Internal
+            }
         }
     }
 }
@@ -130,7 +132,9 @@ impl<'a> Data<'a> {
     pub fn get_variants(&self, index: usize) -> Option<Variants<'a>> {
         match self.0 {
             DataInner::Tag(_) => None,
-            DataInner::Data(data) => unsafe { data.fields.get(index).map(|v| Variants::new(v)) },
+            DataInner::Data(data) => unsafe {
+                data.fields.get(index).map(|v| Variants::new(v))
+            },
         }
     }
 
@@ -165,6 +169,18 @@ impl VmType for Hole {
 pub enum IO<T> {
     Value(T),
     Exception(String),
+}
+
+impl<T, E> From<StdResult<T, E>> for IO<T>
+where
+    E: fmt::Display,
+{
+    fn from(result: StdResult<T, E>) -> IO<T> {
+        match result {
+            Ok(value) => IO::Value(value),
+            Err(err) => IO::Exception(err.to_string()),
+        }
+    }
 }
 
 pub type GluonFunction = extern "C" fn(&Thread) -> Status;
@@ -355,13 +371,13 @@ pub trait AsyncPushable<'vm> {
     ///
     /// If the value must be computed asynchronously `Async::NotReady` must be returned so that
     /// the virtual machine knows it must do more work before the value is available.
-    fn async_push(self, vm: &'vm Thread, context: &mut Context) -> Result<Async<()>>;
+    fn async_push(self, vm: &'vm Thread, context: &mut Context, lock: Lock) -> Result<Async<()>>;
 
-    fn status_push(self, vm: &'vm Thread, context: &mut Context) -> Status
+    fn async_status_push(self, vm: &'vm Thread, context: &mut Context, lock: Lock) -> Status
     where
         Self: Sized,
     {
-        match self.async_push(vm, context) {
+        match self.async_push(vm, context, lock) {
             Ok(Async::Ready(())) => Status::Ok,
             Ok(Async::NotReady) => Status::Yield,
             Err(err) => {
@@ -381,7 +397,8 @@ impl<'vm, T> AsyncPushable<'vm> for T
 where
     T: Pushable<'vm>,
 {
-    fn async_push(self, vm: &'vm Thread, context: &mut Context) -> Result<Async<()>> {
+    fn async_push(self, vm: &'vm Thread, context: &mut Context, lock: Lock) -> Result<Async<()>> {
+        context.stack.release_lock(lock);
         self.push(vm, context).map(Async::Ready)
     }
 }
@@ -392,6 +409,33 @@ pub trait Pushable<'vm>: AsyncPushable<'vm> {
     /// to the stack and `Ok(())` should be returned. If the call is unsuccessful `Status:Error`
     /// should be returned and the stack should be left intact
     fn push(self, vm: &'vm Thread, context: &mut Context) -> Result<()>;
+
+    fn status_push(self, vm: &'vm Thread, context: &mut Context) -> Status
+    where
+        Self: Sized,
+    {
+        match self.push(vm, context) {
+            Ok(()) => Status::Ok,
+            Err(err) => {
+                let msg = unsafe {
+                    GcStr::from_utf8_unchecked(
+                        context.alloc_ignore_limit(format!("{}", err).as_bytes()),
+                    )
+                };
+                context.stack.push(Value::String(msg));
+                Status::Error
+            }
+        }
+    }
+
+    unsafe fn marshal_unrooted(self, vm: &'vm Thread) -> Result<Value>
+    where
+        Self: Sized,
+    {
+        let mut context = vm.context();
+        self.push(vm, &mut context)?;
+        Ok(context.stack.pop())
+    }
 
     fn marshal<T>(self, vm: &'vm Thread) -> Result<RootedValue<T>>
     where
@@ -653,7 +697,9 @@ impl<'vm, 's> Pushable<'vm> for &'s String {
 }
 impl<'vm, 's> Pushable<'vm> for &'s str {
     fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
-        let s = unsafe { GcStr::from_utf8_unchecked(context.alloc_with(thread, self.as_bytes())?) };
+        let s = unsafe {
+            GcStr::from_utf8_unchecked(context.alloc_with(thread, self.as_bytes())?)
+        };
         context.stack.push(Value::String(s));
         Ok(())
     }
@@ -897,6 +943,18 @@ impl<'vm, T: Getable<'vm>, E: Getable<'vm>> Getable<'vm> for StdResult<T, E> {
 /// that it must resolve the `Future` to receive the value.
 pub struct FutureResult<F>(pub F);
 
+impl<F> FutureResult<F> {
+    #[inline]
+    pub fn new<'vm>(f: F) -> Self
+    where
+        F: Future<Error = Error> + Send + 'static,
+        F::Item: Pushable<'vm>,
+    {
+        FutureResult(f)
+    }
+}
+
+
 impl<F> VmType for FutureResult<F>
 where
     F: Future,
@@ -916,11 +974,55 @@ where
     F: Future<Error = Error> + Send + 'static,
     F::Item: Pushable<'vm>,
 {
-    fn async_push(self, _: &'vm Thread, context: &mut Context) -> Result<Async<()>> {
+    fn async_push(self, _: &'vm Thread, context: &mut Context, lock: Lock) -> Result<Async<()>> {
         unsafe {
-            context.return_future(self.0);
+            context.return_future(self.0, lock);
         }
         Ok(Async::Ready(()))
+    }
+}
+
+pub type PrimitiveFuture<T> = FutureValue<Box<Future<Item = T, Error = Error> + Send>>;
+
+impl<F> VmType for FutureValue<F>
+where
+    F: Future,
+    F::Item: VmType,
+{
+    type Type = <F::Item as VmType>::Type;
+    fn make_type(vm: &Thread) -> ArcType {
+        <F::Item>::make_type(vm)
+    }
+    fn extra_args() -> VmIndex {
+        <F::Item>::extra_args()
+    }
+}
+
+impl<'vm, F> AsyncPushable<'vm> for FutureValue<F>
+where
+    F: Future<Error = Error> + Send + 'static,
+    F::Item: Pushable<'vm>,
+{
+    fn async_push(
+        self,
+        thread: &'vm Thread,
+        context: &mut Context,
+        lock: Lock,
+    ) -> Result<Async<()>> {
+        match self {
+            FutureValue::Value(result) => {
+                context.stack.release_lock(lock);
+                let value = result?;
+                value.push(thread, context).map(Async::Ready)
+            }
+            FutureValue::Future(future) => {
+                unsafe {
+                    context.return_future(future, lock);
+                }
+                Ok(Async::Ready(()))
+            }
+            FutureValue::Polled => ice!("Tried to push a polled future to gluon"),
+        }
     }
 }
 
@@ -1014,6 +1116,10 @@ impl<T, V> OpaqueValue<T, V>
 where
     T: Deref<Target = Thread>,
 {
+    pub fn from_value(value: RootedValue<T>) -> Self {
+        OpaqueValue(value, PhantomData)
+    }
+
     pub fn vm(&self) -> &Thread {
         self.0.vm()
     }
@@ -1046,6 +1152,10 @@ where
     fn make_type(vm: &Thread) -> ArcType {
         V::make_type(vm)
     }
+
+    fn extra_args() -> VmIndex {
+        V::extra_args()
+    }
 }
 
 impl<'vm, T, V> Pushable<'vm> for OpaqueValue<T, V>
@@ -1067,13 +1177,13 @@ where
 
 impl<'vm, V> Getable<'vm> for OpaqueValue<&'vm Thread, V> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<OpaqueValue<&'vm Thread, V>> {
-        Some(OpaqueValue(vm.root_value(value.0), PhantomData))
+        Some(OpaqueValue::from_value(vm.root_value(value.0)))
     }
 }
 
 impl<'vm, V> Getable<'vm> for OpaqueValue<RootedThread, V> {
     fn from_value(vm: &'vm Thread, value: Variants) -> Option<OpaqueValue<RootedThread, V>> {
-        Some(OpaqueValue(vm.root_value(value.0), PhantomData))
+        Some(OpaqueValue::from_value(vm.root_value(value.0)))
     }
 }
 
@@ -1542,6 +1652,7 @@ fn make_type<T: ?Sized + VmType>(vm: &Thread) -> ArcType {
 
 /// Type which represents a function reference in gluon
 pub type FunctionRef<'vm, F> = Function<&'vm Thread, F>;
+pub type OwnedFunction<F> = Function<RootedThread, F>;
 
 /// Type which represents an function in gluon
 pub struct Function<T, F>
@@ -1686,8 +1797,9 @@ where $($args: Getable<'vm> + 'vm,)*
         let n_args = Self::arguments();
         let mut context = vm.context();
         let mut i = 0;
+        let lock;
         let r = unsafe {
-            let (lock, ($($args,)*)) = {
+            let ($($args,)*) = {
                 let stack = StackFrame::current(&mut context.stack);
                 $(let $args = {
                     let x = $args::from_value_unsafe(vm, Variants::new(&stack[i]))
@@ -1697,15 +1809,15 @@ where $($args: Getable<'vm> + 'vm,)*
                 });*;
 // Lock the frame to ensure that any reference from_value_unsafe may have returned stay
 // rooted
-                (stack.into_lock(), ($($args,)*))
+                lock = stack.into_lock();
+                ($($args,)*)
             };
             drop(context);
             let r = (*self)($($args),*);
             context = vm.context();
-            context.stack.release_lock(lock);
             r
         };
-        r.status_push(vm, &mut context)
+        r.async_status_push(vm, &mut context, lock)
     }
 }
 
@@ -1733,8 +1845,9 @@ where $($args: Getable<'vm> + 'vm,)*
         let n_args = Self::arguments();
         let mut context = vm.context();
         let mut i = 0;
+        let lock;
         let r = unsafe {
-            let (lock, ($($args,)*)) = {
+            let ($($args,)*) = {
                 let stack = StackFrame::current(&mut context.stack);
                 $(let $args = {
                     let x = $args::from_value_unsafe(vm, Variants::new(&stack[i]))
@@ -1744,15 +1857,15 @@ where $($args: Getable<'vm> + 'vm,)*
                 });*;
 // Lock the frame to ensure that any reference from_value_unsafe may have returned stay
 // rooted
-                (stack.into_lock(), ($($args,)*))
+                lock = stack.into_lock();
+                ($($args,)*)
             };
             drop(context);
             let r = (*self)($($args),*);
             context = vm.context();
-            context.stack.release_lock(lock);
             r
         };
-        r.status_push(vm, &mut context)
+        r.async_status_push(vm, &mut context, lock)
     }
 }
 

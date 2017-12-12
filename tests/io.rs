@@ -1,5 +1,6 @@
 extern crate env_logger;
 extern crate gluon;
+extern crate tokio_core;
 
 use gluon::{new_vm, Compiler, Thread};
 use gluon::vm::internal::Value;
@@ -115,4 +116,120 @@ wrap 123
         "Unexpected {:?}",
         value.0
     );
+}
+
+#[test]
+fn spawn_on_twice() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+        let { applicative = { wrap }, monad = { flat_map } } = import! std.io
+        let thread = import! std.thread
+
+        do child = thread.new_thread ()
+        do action = thread.spawn_on child (\_ -> wrap "abc")
+        action
+    "#;
+
+    let mut core = self::tokio_core::reactor::Core::new().unwrap();
+    let vm = make_async_vm(Some(core.remote()));
+    let (result, _) = core.run(Compiler::new().run_io(true).run_expr_async::<IO<String>>(
+        &vm,
+        "<top>",
+        text,
+    )).unwrap_or_else(|err| panic!("{}", err));
+    match result {
+        IO::Value(result) => {
+            assert_eq!(result, "abc");
+        }
+        IO::Exception(err) => panic!("{}", err),
+    }
+
+    let (result, _) = core.run(Compiler::new().run_io(true).run_expr_async::<IO<String>>(
+        &vm,
+        "<top>",
+        text,
+    )).unwrap_or_else(|err| panic!("{}", err));
+    match result {
+        IO::Value(result) => {
+            assert_eq!(result, "abc");
+        }
+        IO::Exception(err) => panic!("{}", err),
+    }
+}
+
+#[test]
+fn spawn_on_runexpr() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+        let io@{ applicative = applicative@{ wrap }, monad = { flat_map } } = import! std.io
+        let thread = import! std.thread
+
+        do child = thread.new_thread ()
+        do action = thread.spawn_on child (\_ -> io.run_expr "123")
+        do x = action
+        do _ = io.println x
+        wrap x
+    "#;
+
+    let mut core = self::tokio_core::reactor::Core::new().unwrap();
+    let vm = make_async_vm(Some(core.remote()));
+    let (result, _) = core.run(Compiler::new().run_io(true).run_expr_async::<IO<String>>(
+        &vm,
+        "<top>",
+        text,
+    )).unwrap_or_else(|err| panic!("{}", err));
+    match result {
+        IO::Value(result) => {
+            assert_eq!(result, "123 : Int");
+        }
+        IO::Exception(err) => panic!("{}", err),
+    }
+}
+
+#[test]
+fn spawn_on_runexpr_in_catch() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+        let prelude = import! std.prelude
+        let io@{ applicative, monad } = import! std.io
+        let { (*>), wrap } = prelude.make_Applicative applicative
+        let { (>>=), flat_map } = prelude.make_Monad monad
+        let thread = import! std.thread
+
+        let action =
+            do eval_thread = thread.new_thread ()
+            let f _ = io.run_expr "123"
+            do a = thread.spawn_on eval_thread f
+            a
+        io.catch action wrap >>= io.println *> wrap "123"
+    "#;
+
+    let mut core = self::tokio_core::reactor::Core::new().unwrap();
+    let vm = make_async_vm(Some(core.remote()));
+    let (result, _) = core.run(Compiler::new().run_io(true).run_expr_async::<IO<String>>(
+        &vm,
+        "<top>",
+        text,
+    )).unwrap_or_else(|err| panic!("{}", err));
+    match result {
+        IO::Value(result) => {
+            assert_eq!(result, "123");
+        }
+        IO::Exception(err) => panic!("{}", err),
+    }
+
+    let (result, _) = core.run(Compiler::new().run_io(true).run_expr_async::<IO<String>>(
+        &vm,
+        "<top>",
+        text,
+    )).unwrap_or_else(|err| panic!("{}", err));
+    match result {
+        IO::Value(result) => {
+            assert_eq!(result, "123");
+        }
+        IO::Exception(err) => panic!("{}", err),
+    }
 }

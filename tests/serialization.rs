@@ -152,14 +152,14 @@ fn precompile() {
     let precompiled_result = {
         let mut deserializer = serde_json::Deserializer::from_slice(&buffer);
         Precompiled(&mut deserializer)
-            .run_expr(&mut Compiler::new(), &thread, "test", "", ())
+            .run_expr(&mut Compiler::new(), &*thread, "test", "", ())
             .wait()
             .unwrap()
     };
     let thread2 = new_vm();
     assert_eq!(
         serialize_value(
-            &text.run_expr(&mut Compiler::new(), &thread2, "test", &text, None)
+            &text.run_expr(&mut Compiler::new(), &*thread2, "test", &text, None)
                 .wait()
                 .unwrap()
                 .value
@@ -182,6 +182,16 @@ fn roundtrip_reference() {
 fn roundtrip_lazy() {
     let thread = new_vm();
     let expr = r#" import! std.lazy "#;
+    let (value, _) = Compiler::new()
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "test", &expr)
+        .unwrap_or_else(|err| panic!("{}", err));
+    roundtrip(&thread, &value);
+}
+
+#[test]
+fn roundtrip_thread() {
+    let thread = new_vm();
+    let expr = r#" import! std.thread "#;
     let (value, _) = Compiler::new()
         .run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "test", &expr)
         .unwrap_or_else(|err| panic!("{}", err));

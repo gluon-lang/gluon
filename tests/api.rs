@@ -10,7 +10,7 @@ use futures::future::lazy;
 
 use gluon::base::types::Type;
 use gluon::vm::{Error, ExternModule};
-use gluon::vm::api::{FunctionRef, FutureResult, Userdata, VmType};
+use gluon::vm::api::{FunctionRef, FutureResult, Userdata, VmType, IO};
 use gluon::vm::thread::{Root, RootStr, RootedThread, Thread, Traverseable};
 use gluon::vm::types::VmInt;
 use gluon::Compiler;
@@ -169,31 +169,38 @@ fn return_finished_future() {
     assert_eq!(result, expected);
 }
 
+
+fn poll_n(
+    s: String,
+) -> FutureResult<Box<Future<Item = IO<String>, Error = Error> + Send + 'static>> {
+    use std::thread::spawn;
+    use futures::sync::oneshot::channel;
+
+    let (ping_c, ping_p) = channel();
+    let (pong_c, pong_p) = channel();
+    spawn(move || {
+        ping_p.wait().expect("wait");
+        pong_c.send(s).expect("send");
+    });
+    FutureResult(Box::new(
+        lazy(move || {
+            ping_c.send(()).unwrap();
+            Ok(())
+        }).and_then(|_| {
+            pong_p
+                .map(IO::Value)
+                .map_err(|err| Error::Message(format!("{}", err)))
+        }),
+    ))
+}
+
 #[test]
-fn return_delayed_future() {
+fn return_delayed_future_simple() {
     let _ = ::env_logger::init();
-
-    fn poll_n(i: i32) -> FutureResult<Box<Future<Item = i32, Error = Error> + Send + 'static>> {
-        use std::thread::spawn;
-        use futures::sync::oneshot::channel;
-
-        let (ping_c, ping_p) = channel();
-        let (pong_c, pong_p) = channel();
-        spawn(move || {
-            ping_p.wait().expect("wait");
-            pong_c.send(i).expect("send");
-        });
-        FutureResult(Box::new(
-            lazy(move || {
-                ping_c.send(()).unwrap();
-                Ok(())
-            }).and_then(|_| pong_p.map_err(|err| Error::Message(format!("{}", err)))),
-        ))
-    }
 
     let expr = r#"
         let poll_n = import! poll_n
-        poll_n 3
+        poll_n "test"
     "#;
 
     let vm = make_vm();
@@ -201,10 +208,35 @@ fn return_delayed_future() {
         ExternModule::new(thread, primitive!(1 poll_n))
     });
 
-    let result = Compiler::new()
-        .run_expr::<i32>(&vm, "<top>", expr)
+    let (result, _) = Compiler::new()
+        .run_io(true)
+        .run_expr::<IO<String>>(&vm, "<top>", expr)
         .unwrap_or_else(|err| panic!("{}", err));
-    let expected = (3, Type::int());
+    let expected = IO::Value("test".to_string());
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn return_delayed_future_in_catch() {
+    let _ = ::env_logger::init();
+
+    let expr = r#"
+        let io = import! std.io
+        let poll_n = import! poll_n
+        io.catch (poll_n "test") (\_ -> io.applicative.wrap "error")
+    "#;
+
+    let vm = make_vm();
+    add_extern_module(&vm, "poll_n", |thread| {
+        ExternModule::new(thread, primitive!(1 poll_n))
+    });
+
+    let (result, _) = Compiler::new()
+        .run_io(true)
+        .run_expr::<IO<String>>(&vm, "<top>", expr)
+        .unwrap_or_else(|err| panic!("{}", err));
+    let expected = IO::Value("test".to_string());
 
     assert_eq!(result, expected);
 }

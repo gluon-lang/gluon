@@ -42,7 +42,7 @@ fn precompiled_prelude(b: &mut Bencher) {
             bincode::Infinite,
         );
         let result = Precompiled(&mut deserializer)
-            .run_expr(&mut Compiler::new(), &thread, "std.prelude", "", ())
+            .run_expr(&mut Compiler::new(), &*thread, "std.prelude", "", ())
             .wait()
             .unwrap();
         black_box(result)
@@ -62,7 +62,7 @@ fn source_prelude(b: &mut Bencher) {
         let result = prelude_source
             .run_expr(
                 &mut Compiler::new(),
-                &thread,
+                &*thread,
                 "std.prelude",
                 &prelude_source,
                 None,

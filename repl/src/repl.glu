@@ -5,8 +5,10 @@ let { Bool } = import! std.bool
 let { Option } = import! std.option
 let { Result } = import! std.result
 let string = import! std.string
+let thread = import! std.thread
 let { ref, load, (<-) } = import! std.reference
 let rustyline = import! rustyline
+let { ReadlineError } = import! rustyline_types
 let repl_prim = import! repl.prim
 let { wrap, (*>) } = prelude.make_Applicative io.applicative
 let { flat_map, (>>=) } = prelude.make_Monad io.monad
@@ -17,25 +19,25 @@ let { (<>) } = prelude.make_Semigroup ord_map.semigroup
 let { empty } = ord_map.monoid
 
 
-let load_file filename : String -> IO String =
+let load_file cpu_pool filename : CpuPool -> String -> IO String =
     let last_slash =
         match string.rfind filename "/" with
         | None -> 0
         | Some i -> i + 1
     let modulename = string.slice filename last_slash (string.len filename - 3)
-    let read_result =
-        let action =
-            do x = io.read_file_to_string filename
-            wrap (Ok x)
-        io.catch action (\err -> wrap (Err err))
-    do result = read_result
-    match result with
-    | Ok expr -> io.load_script modulename expr
-    | Err msg -> wrap msg
+    let action =
+        do expr = io.read_file_to_string filename
+        do result = io.load_script modulename expr
+        wrap result
+
+    do eval_thread = thread.new_thread ()
+    let load_action = repl_prim.finish_or_interrupt cpu_pool eval_thread action
+    io.catch load_action (\err -> wrap err)
 
 type Cmd = { info : String, action : String -> IO Bool }
+type Commands = Map String Cmd
 
-let commands : Map String Cmd =
+let make_commands cpu_pool : CpuPool -> Commands =
     let print_result result =
         match result with
         | Ok x -> io.println x
@@ -57,7 +59,7 @@ let commands : Map String Cmd =
                 }
             <> singleton "l" {
                     info = "Loads the file at \'folder/module.ext\' and stores it at \'module\'",
-                    action = \arg -> load_file arg >>= io.println *> wrap True,
+                    action = \arg -> load_file cpu_pool arg >>= io.println *> wrap True,
                 }
             <> singleton "h" {
                     info = "Print this help",
@@ -72,7 +74,7 @@ let commands : Map String Cmd =
     commands <- cmds
     load commands
 
-let do_command line : String -> IO Bool =
+let do_command commands line : Commands -> String -> IO Bool =
     if string.len line >= 2 then
         let cmd = string.slice line 1 2
         let arg =
@@ -95,24 +97,37 @@ let store line : String -> IO Bool =
         io.load_script binding expr *> wrap True
     | None -> io.println "Expected binding in definition" *> wrap True
 
-let loop editor : Editor -> IO () =
-    let run_line line =
-        if string.is_empty (string.trim line)
-        then wrap True
-        else
-            if string.starts_with line ":"
-            then do_command line
-            else io.catch (repl_prim.eval_line line) wrap >>= io.println *> wrap True
+type Repl = { commands : Commands, editor : Editor, cpu_pool : CpuPool }
 
-    do line_opt = rustyline.readline editor "> "
-    match line_opt with
-    | None -> wrap ()
-    | Some line ->
+let loop repl : Repl -> IO () =
+    let run_line line =
+        if string.is_empty (string.trim line) then
+            wrap True
+        else
+            if string.starts_with line ":" then
+                do_command repl.commands line
+            else
+                let action =
+                    do eval_thread = thread.new_thread ()
+                    let eval_action = repl_prim.eval_line line
+                    repl_prim.finish_or_interrupt repl.cpu_pool eval_thread eval_action
+                io.catch action wrap >>= io.println
+                    *> wrap True
+
+    do line_result = rustyline.readline repl.editor "> "
+    match line_result with
+    | Err Eof -> wrap ()
+    | Err Interrupted -> loop repl
+    | Ok line ->
         do continue = run_line line
-        if continue then loop editor else wrap ()
+        if continue then loop repl else wrap ()
 
 let run x : () -> IO () =
-    io.println "gluon (:h for help, :q to quit)"
-        *> loop (rustyline.new_editor ())
+    do _ = io.println "gluon (:h for help, :q to quit)"
+    do editor = rustyline.new_editor ()
+    do cpu_pool = repl_prim.new_cpu_pool 1
+    let commands = make_commands cpu_pool
+    let repl = { commands, editor, cpu_pool }
+    loop repl
 
 run
