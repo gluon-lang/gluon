@@ -330,7 +330,16 @@ fn set_globals(
             }
             Ok(())
         }
-        _ => {
+        Pattern::As(ref id, ref pattern) => {
+            vm.set_global(
+                Symbol::from(format!("@{}", id.declared_name())),
+                typ.clone(),
+                Default::default(),
+                **value,
+            )?;
+            set_globals(vm, pattern, typ, value)
+        }
+        Pattern::Constructor(..) | Pattern::Error => {
             Err(VMError::Message("The repl cannot bind variables from this pattern".into()).into())
         }
     }
