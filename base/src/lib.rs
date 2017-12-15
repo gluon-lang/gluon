@@ -5,6 +5,8 @@
 #[macro_use]
 extern crate collect_mac;
 extern crate itertools;
+#[macro_use]
+extern crate log;
 extern crate pretty;
 #[macro_use]
 extern crate quick_error;

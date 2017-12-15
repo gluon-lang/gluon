@@ -37,9 +37,7 @@ where
         Ok(Some(alias)) if !canonical(alias) => alias
             .typ()
             .apply_args(&typ.unapplied_args())
-            .map(|typ| {
-                Cow::Owned(canonical_alias(env, &typ, canonical).into_owned())
-            })
+            .map(|typ| Cow::Owned(canonical_alias(env, &typ, canonical).into_owned()))
             .unwrap_or(Cow::Borrowed(typ)),
         _ => Cow::Borrowed(typ),
     }

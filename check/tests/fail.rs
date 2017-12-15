@@ -551,3 +551,16 @@ do x = 1
 
     assert_unify_err!(result, TypeMismatch(..));
 }
+
+#[test]
+fn undefined_type_in_variant() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+type Test = | Test In
+2
+"#;
+    let result = support::typecheck(text);
+
+    assert_err!(result, UndefinedType(..));
+}
