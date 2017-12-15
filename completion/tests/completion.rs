@@ -490,6 +490,22 @@ record.ab
 }
 
 #[test]
+fn suggest_generic_constructor() {
+    let _ = env_logger::init();
+
+    let result = suggest(
+        r#"
+type Test a = | Test a
+Te
+"#,
+        BytePos::from(26),
+    );
+    let expected = Ok(vec!["Test".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
 fn suggest_after_dot() {
     let _ = env_logger::init();
 

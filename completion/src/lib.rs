@@ -184,7 +184,7 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
 
     fn on_alias(&mut self, alias: &AliasData<Symbol, ArcType>) {
         // Insert variant constructors into the local scope
-        let aliased_type = alias.unresolved_type();
+        let aliased_type = alias.unresolved_type().remove_forall();
         if let Type::Variant(ref row) = **aliased_type {
             for field in row.row_iter().cloned() {
                 self.stack.insert(field.name.clone(), field.typ.clone());
