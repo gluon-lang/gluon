@@ -151,7 +151,7 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
                 for ast_field in types {
                     if let Some(field) = unaliased
                         .type_field_iter()
-                        .find(|field| field.name == ast_field.name.value)
+                        .find(|field| field.name.name_eq(&ast_field.name.value))
                     {
                         self.on_alias(&field.typ);
                     }
