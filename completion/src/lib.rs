@@ -10,12 +10,13 @@ extern crate gluon_base as base;
 use std::borrow::Cow;
 use std::iter::once;
 use std::cmp::Ordering;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use either::Either;
 
 use itertools::Itertools;
 
+use base::filename_to_module;
 use base::ast::{walk_expr, walk_pattern, AstType, Expr, Pattern, PatternField, SpannedExpr,
                 SpannedIdent, SpannedPattern, Typed, TypedIdent, Visitor};
 use base::fnv::{FnvMap, FnvSet};
@@ -1123,13 +1124,12 @@ impl SuggestionQuery {
         let path = Name::new(path);
 
         let base = PathBuf::from(path.module().as_str().replace(".", "/"));
-        let prefix = path.declared_name();
 
-        let mut module_prefixes = self.paths
+        let modules = self.paths
             .iter()
-            .map(|root| root.join(&*base))
             .flat_map(|root| {
-                walkdir::WalkDir::new(&*root)
+                let walk_root = root.join(&*base);
+                walkdir::WalkDir::new(walk_root)
                     .into_iter()
                     .filter_map(|entry| entry.ok())
                     .filter_map(move |entry| {
@@ -1138,14 +1138,9 @@ impl SuggestionQuery {
                         {
                             let unprefixed_file = entry
                                 .path()
-                                .strip_prefix(&root)
+                                .strip_prefix(&*root)
                                 .expect("Root is not a prefix of path from walk_dir");
-                            unprefixed_file
-                                .iter()
-                                .next()
-                                .and_then(|s| Path::new(s).file_stem())
-                                .and_then(|s| s.to_str())
-                                .map(|s| s.to_string())
+                            unprefixed_file.to_str().map(filename_to_module)
                         } else {
                             None
                         }
@@ -1153,12 +1148,11 @@ impl SuggestionQuery {
             })
             .collect::<Vec<String>>();
 
-        module_prefixes.sort();
-        module_prefixes.dedup();
-
         suggestions.extend(
-            self.modules
+            modules
                 .iter()
+                .map(|s| &s[..])
+                .chain(self.modules.iter().map(|s| &s[..]))
                 .filter(|module| module.starts_with(path.as_str()))
                 .map(|module| {
                     let name = module[path.module().as_str().len()..]
@@ -1169,27 +1163,17 @@ impl SuggestionQuery {
                         .to_string();
                     Suggestion {
                         name,
-                        typ: Either::Right(Type::hole()),
+                        typ: Either::Right(
+                            env.find_type(SymbolRef::new(module))
+                                .cloned()
+                                .unwrap_or_else(|| Type::hole()),
+                        ),
                     }
                 }),
         );
 
-        suggestions.extend(
-            module_prefixes
-                .into_iter()
-                .filter(|name| name.starts_with(prefix))
-                .map(|name| {
-                    let full_name = format!("{}.{}", path.module(), name);
-                    Suggestion {
-                        typ: Either::Right(
-                            env.find_type(SymbolRef::new(&full_name[..]))
-                                .cloned()
-                                .unwrap_or_else(|| Type::hole()),
-                        ),
-                        name,
-                    }
-                }),
-        );
+        suggestions.sort_by(|l, r| l.name.cmp(&r.name));
+        suggestions.dedup_by(|l, r| l.name == r.name);
     }
 }
 

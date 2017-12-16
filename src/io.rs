@@ -200,7 +200,6 @@ fn load_script(
     WithVM { vm, value: name }: WithVM<&str>,
     expr: &str,
 ) -> PrimitiveFuture<IO<String>> {
-
     let vm1 = vm.root_thread();
     let vm = vm.root_thread();
     let name = name.to_string();

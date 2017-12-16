@@ -86,3 +86,16 @@ pub mod serialization;
 pub mod source;
 pub mod symbol;
 pub mod types;
+
+
+pub fn filename_to_module(filename: &str) -> String {
+    use std::path::Path;
+    let path = Path::new(filename);
+    let name = path.extension().map_or(filename, |ext| {
+        ext.to_str()
+            .map(|ext| &filename[..filename.len() - ext.len() - 1])
+            .unwrap_or(filename)
+    });
+
+    name.replace(|c: char| c == '/' || c == '\\', ".")
+}
