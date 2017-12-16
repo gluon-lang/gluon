@@ -1,8 +1,63 @@
 //@NO-IMPLICIT-PRELUDE
 
 let prim = import! std.array.prim
+let prelude @ { Foldable, Traversable, Functor } = import! std.prelude
+let { eq = { (==) }, num = { (-), (+) }, ord } = import! std.int
+let { (<) } = prelude.make_Ord ord
+
+// FIXME Implement the functions using this in Rust so we don't have quadratic complexity for `map` etc
+let cons l r = prim.append [l] r
+
+let functor : Functor Array =
+    let map f xs =
+        let map_ i =
+            if i < prim.len xs then
+                let y = prim.index xs i
+                cons (f y) (map_ (i + 1))
+            else
+                []
+        map_ 0
+    { map }
+
+let foldable : Foldable Array =
+    let foldr f y xs =
+        let len = prim.len xs
+        let foldr_ i y =
+            if i == 0 then
+                y
+            else
+                let x = prim.index xs (i - 1)
+                foldr_ (i - 1) (f x y)
+        foldr_ len y
+
+    let foldl f y xs =
+        let len = prim.len xs
+        let foldl_ i y =
+            if i < len then
+                let x = prim.index xs i
+                foldl_ (i + 1) (f y x)
+            else
+                y
+
+        foldl_ 0 y
+
+    { foldr, foldl }
+
+let traversable : Traversable Array =
+    {
+        functor,
+        foldable,
+        traverse = \app f ->
+            foldable.foldr
+                (\a b -> app.apply (app.functor.map cons (f a)) b)
+                (app.wrap []),
+    }
+
 
 {
+    functor,
+    foldable,
+    traversable,
     ..
     prim
 }
