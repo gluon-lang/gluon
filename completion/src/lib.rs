@@ -7,6 +7,7 @@ extern crate walkdir;
 
 extern crate gluon_base as base;
 
+use std::borrow::Cow;
 use std::iter::once;
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
@@ -905,6 +906,7 @@ where
 #[derive(Default)]
 pub struct SuggestionQuery {
     pub paths: Vec<PathBuf>,
+    pub modules: Vec<Cow<'static, str>>,
 }
 
 impl SuggestionQuery {
@@ -1153,6 +1155,24 @@ impl SuggestionQuery {
 
         module_prefixes.sort();
         module_prefixes.dedup();
+
+        suggestions.extend(
+            self.modules
+                .iter()
+                .filter(|module| module.starts_with(path.as_str()))
+                .map(|module| {
+                    let name = module[path.module().as_str().len()..]
+                        .trim_left_matches('.')
+                        .split('.')
+                        .next()
+                        .unwrap()
+                        .to_string();
+                    Suggestion {
+                        name,
+                        typ: Either::Right(Type::hole()),
+                    }
+                }),
+        );
 
         suggestions.extend(
             module_prefixes

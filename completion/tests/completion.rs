@@ -749,6 +749,7 @@ import! st
 "#;
     let query = SuggestionQuery {
         paths: vec![find_gluon_root()],
+        ..SuggestionQuery::default()
     };
     let result = suggest_query_loc(query, text, 1, 10);
     let expected = Ok(vec!["std".into()]);
@@ -765,6 +766,7 @@ import! std.p
 "#;
     let query = SuggestionQuery {
         paths: vec![find_gluon_root()],
+        ..SuggestionQuery::default()
     };
     let result = suggest_query_loc(query, text, 1, 12);
     let expected = Ok(vec!["parser".into(), "prelude".into()]);
@@ -781,6 +783,7 @@ import! std.
 "#;
     let query = SuggestionQuery {
         paths: vec![find_gluon_root()],
+        ..SuggestionQuery::default()
     };
     let result = suggest_query_loc(query, text, 1, 12);
     assert!(result.is_ok());
@@ -802,6 +805,7 @@ import! std.prelud
 "#;
     let query = SuggestionQuery {
         paths: vec![find_gluon_root()],
+        ..SuggestionQuery::default()
     };
     let result = suggest_query(
         query,
@@ -819,6 +823,58 @@ import! std.prelud
             typ: Either::Right(Type::int()),
         },
     ]);
+
+    assert_eq!(result, expected);
+}
+
+
+#[test]
+fn suggest_module_import_with_module() {
+    let _ = env_logger::init();
+
+    let text = r#"
+import! example.
+"#;
+    let query = SuggestionQuery {
+        paths: vec![find_gluon_root()],
+        modules: vec!["example.test".into()],
+    };
+    let result = suggest_query_loc(query, text, 1, 16);
+    let expected = Ok(vec!["test".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_module_import_with_inner_module() {
+    let _ = env_logger::init();
+
+    let text = r#"
+import! example.
+"#;
+    let query = SuggestionQuery {
+        paths: vec![find_gluon_root()],
+        modules: vec!["example.test.inner".into()],
+    };
+    let result = suggest_query_loc(query, text, 1, 16);
+    let expected = Ok(vec!["test".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_module_import_with_inner_module_last() {
+    let _ = env_logger::init();
+
+    let text = r#"
+import! example.test.inn
+"#;
+    let query = SuggestionQuery {
+        paths: vec![find_gluon_root()],
+        modules: vec!["example.test.inner".into()],
+    };
+    let result = suggest_query_loc(query, text, 1, 24);
+    let expected = Ok(vec!["inner".into()]);
 
     assert_eq!(result, expected);
 }

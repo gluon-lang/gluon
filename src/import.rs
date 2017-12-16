@@ -168,6 +168,14 @@ impl<I> Import<I> {
             .insert(String::from(module), loader);
     }
 
+    pub fn modules(&self) -> Vec<Cow<'static, str>> {
+        STD_LIBS
+            .iter()
+            .map(|t| Cow::Borrowed(t.0))
+            .chain(self.loaders.read().unwrap().keys().cloned().map(Cow::Owned))
+            .collect()
+    }
+
     fn get_unloaded_module(
         &self,
         vm: &Thread,
