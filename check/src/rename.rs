@@ -33,8 +33,7 @@ impl fmt::Display for RenameError {
                 writeln!(
                     f,
                     "Could not resolve a binding for `{}` with type `{}`",
-                    symbol,
-                    expected
+                    symbol, expected
                 )?;
                 writeln!(f, "Possibilities:")?;
                 for &(ref span, ref typ) in possible_types {
@@ -104,23 +103,23 @@ pub fn rename(
             record.row_iter().cloned().collect()
         }
 
-        fn new_pattern(&mut self, typ: &ArcType, pattern: &mut ast::SpannedPattern<Symbol>) {
+        fn new_pattern(&mut self, pattern: &mut ast::SpannedPattern<Symbol>) {
             match pattern.value {
                 Pattern::Record {
                     ref mut fields,
                     ref types,
-                    ..
+                    ref typ,
                 } => {
                     let field_types = self.find_fields(typ);
                     for field in fields {
-                        let field_type = &field_types
-                            .iter()
-                            .find(|field_type| field_type.name.name_eq(&field.name.value))
-                            .expect("ICE: Existing field")
-                            .typ;
                         match field.value {
-                            Some(ref mut pat) => self.new_pattern(field_type, pat),
+                            Some(ref mut pat) => self.new_pattern(pat),
                             None => {
+                                let field_type = &field_types
+                                    .iter()
+                                    .find(|field_type| field_type.name.name_eq(&field.name.value))
+                                    .expect("ICE: Existing field")
+                                    .typ;
                                 let id = field.name.value.clone();
                                 let pat = Pattern::Ident(TypedIdent {
                                     name: self.stack_var(id, pattern.span, field_type.clone()),
@@ -140,8 +139,7 @@ pub fn rename(
                             .unwrap_or_else(|| {
                                 panic!(
                                     "ICE: Type `{}` does not have type field `{}`",
-                                    record_type,
-                                    ast_field.name.value
+                                    record_type, ast_field.name.value
                                 )
                             });
                         self.stack_type(
@@ -155,22 +153,18 @@ pub fn rename(
                     let new_name = self.stack_var(id.name.clone(), pattern.span, id.typ.clone());
                     id.name = new_name;
                 }
-                Pattern::As(_, ref mut pat) => self.new_pattern(typ, pat),
-                Pattern::Tuple {
-                    ref typ,
-                    ref mut elems,
-                } => for (field, elem) in typ.row_iter().zip(elems) {
-                    self.new_pattern(&field.typ, elem);
-                },
-                Pattern::Constructor(ref mut id, ref mut args) => {
-                    let typ = self.env
-                        .find_type(&id.name)
-                        .unwrap_or_else(|| panic!("ICE: Expected constructor: {}", id.name))
-                        .clone();
-                    for (arg_type, arg) in types::arg_iter(&typ).zip(args) {
-                        self.new_pattern(arg_type, arg);
-                    }
+                Pattern::As(ref mut id, ref mut pat) => {
+                    let typ = pat.env_type_of(&self.env);
+                    let new_name = self.stack_var(id.clone(), pattern.span, typ);
+                    *id = new_name;
+                    self.new_pattern(pat)
                 }
+                Pattern::Tuple { ref mut elems, .. } => for elem in elems {
+                    self.new_pattern(elem);
+                },
+                Pattern::Constructor(_, ref mut args) => for arg in args {
+                    self.new_pattern(arg);
+                },
                 Pattern::Error => (),
             }
         }
@@ -228,18 +222,14 @@ pub fn rename(
                 return Ok(candidates().next().map(|tup| tup.0.clone()));
             }
             candidates()
-                .find(|tup| {
-                    equivalent(&self.env, tup.2.remove_forall(), expected.remove_forall())
-                })
+                .find(|tup| equivalent(&self.env, tup.2.remove_forall(), expected.remove_forall()))
                 .map(|tup| Some(tup.0.clone()))
-                .ok_or_else(|| {
-                    RenameError::NoMatchingType {
-                        symbol: String::from(self.symbols.string(id)),
-                        expected: expected.clone(),
-                        possible_types: candidates()
-                            .map(|tup| (tup.1.cloned(), tup.2.clone()))
-                            .collect(),
-                    }
+                .ok_or_else(|| RenameError::NoMatchingType {
+                    symbol: String::from(self.symbols.string(id)),
+                    expected: expected.clone(),
+                    possible_types: candidates()
+                        .map(|tup| (tup.1.cloned(), tup.2.clone()))
+                        .collect(),
                 })
         }
 
@@ -295,8 +285,7 @@ pub fn rename(
                     for alt in alts {
                         self.env.stack_types.enter_scope();
                         self.env.stack.enter_scope();
-                        let typ = expr.env_type_of(&self.env);
-                        self.new_pattern(&typ, &mut alt.pattern);
+                        self.new_pattern(&mut alt.pattern);
                         self.visit_expr(&mut alt.expr);
                         self.env.stack.exit_scope();
                         self.env.stack_types.exit_scope();
@@ -310,7 +299,7 @@ pub fn rename(
                         if !is_recursive {
                             self.visit_expr(&mut bind.expr);
                         }
-                        self.new_pattern(&bind.resolved_type, &mut bind.name);
+                        self.new_pattern(&mut bind.name);
                     }
                     if is_recursive {
                         for bind in bindings {
