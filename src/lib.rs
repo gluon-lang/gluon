@@ -46,7 +46,6 @@ pub use futures::Future;
 use either::Either;
 
 use std::result::Result as StdResult;
-use std::string::String as StdString;
 use std::env;
 
 use base::filename_to_module;
@@ -139,7 +138,6 @@ impl From<Errors<macros::SpannedError>> for Error {
         }
     }
 }
-
 
 impl From<Errors<Error>> for Error {
     fn from(mut errors: Errors<Error>) -> Error {

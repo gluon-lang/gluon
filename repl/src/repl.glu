@@ -34,7 +34,8 @@ let load_file cpu_pool filename : CpuPool -> String -> IO String =
     let load_action = repl_prim.finish_or_interrupt cpu_pool eval_thread action
     io.catch load_action (\err -> wrap err)
 
-type Cmd = { info : String, action : String -> IO Bool }
+type ReplAction = | Continue | Quit
+type Cmd = { info : String, action : String -> IO ReplAction }
 type Commands = Map String Cmd
 
 let make_commands cpu_pool : CpuPool -> Commands =
@@ -45,21 +46,21 @@ let make_commands cpu_pool : CpuPool -> Commands =
 
     let commands = ref empty
     let cmds =
-        singleton "q" { info = "Quit the REPL", action = \_ -> wrap False } <> singleton "t" {
+        singleton "q" { info = "Quit the REPL", action = \_ -> wrap Quit } <> singleton "t" {
                     info = "Prints the type with an expression",
-                    action = \arg -> repl_prim.type_of_expr arg >>= print_result *> wrap True,
+                    action = \arg -> repl_prim.type_of_expr arg >>= print_result *> wrap Continue,
                 }
             <> singleton "i" {
                     info = "Prints information about the given name",
-                    action = \arg -> repl_prim.find_info arg >>= print_result *> wrap True,
+                    action = \arg -> repl_prim.find_info arg >>= print_result *> wrap Continue,
                 }
             <> singleton "k" {
                     info = "Prints the kind with the given type",
-                    action = \arg -> repl_prim.find_kind arg >>= print_result *> wrap True,
+                    action = \arg -> repl_prim.find_kind arg >>= print_result *> wrap Continue,
                 }
             <> singleton "l" {
                     info = "Loads the file at \'folder/module.ext\' and stores it at \'module\'",
-                    action = \arg -> load_file cpu_pool arg >>= io.println *> wrap True,
+                    action = \arg -> load_file cpu_pool arg >>= io.println *> wrap Continue,
                 }
             <> singleton "h" {
                     info = "Print this help",
@@ -69,12 +70,12 @@ let make_commands cpu_pool : CpuPool -> Commands =
                             io.println ("    :" ++ key ++ " " ++ cmd.info)
 
                         print_header *> traverse_with_key print_cmd (load commands)
-                            *> wrap True,
+                            *> wrap Continue,
                 }
     commands <- cmds
     load commands
 
-let do_command commands line : Commands -> String -> IO Bool =
+let do_command commands line : Commands -> String -> IO ReplAction =
     if string.len line >= 2 then
         let cmd = string.slice line 1 2
         let arg =
@@ -83,26 +84,26 @@ let do_command commands line : Commands -> String -> IO Bool =
             else ""
         match find cmd commands with
         | Some command -> command.action arg
-        | None -> io.println ("Unknown command \'" ++ cmd ++ "\'") *> wrap True
+        | None -> io.println ("Unknown command \'" ++ cmd ++ "\'") *> wrap Continue
     else
         io.println "Expected a command such as `:h`"
-            *> wrap True
+            *> wrap Continue
 
-let store line : String -> IO Bool =
+let store line : String -> IO ReplAction =
     let line = string.trim line
     match string.find line " " with
     | Some bind_end ->
         let binding = string.slice line 0 bind_end
         let expr = string.slice line bind_end (string.len line)
-        io.load_script binding expr *> wrap True
-    | None -> io.println "Expected binding in definition" *> wrap True
+        io.load_script binding expr *> wrap Continue
+    | None -> io.println "Expected binding in definition" *> wrap Continue
 
 type Repl = { commands : Commands, editor : Editor, cpu_pool : CpuPool }
 
 let loop repl : Repl -> IO () =
     let run_line line =
         if string.is_empty (string.trim line) then
-            wrap True
+            wrap Continue
         else
             if string.starts_with line ":" then
                 do_command repl.commands line
@@ -112,7 +113,7 @@ let loop repl : Repl -> IO () =
                     let eval_action = repl_prim.eval_line line
                     repl_prim.finish_or_interrupt repl.cpu_pool eval_thread eval_action
                 io.catch action wrap >>= io.println
-                    *> wrap True
+                    *> wrap Continue
 
     do line_result = rustyline.readline repl.editor "> "
     match line_result with
@@ -120,7 +121,9 @@ let loop repl : Repl -> IO () =
     | Err Interrupted -> loop repl
     | Ok line ->
         do continue = run_line line
-        if continue then loop repl else wrap ()
+        match continue with
+        | Continue -> loop repl
+        | Quit -> wrap ()
 
 let run x : () -> IO () =
     do _ = io.println "gluon (:h for help, :q to quit)"
