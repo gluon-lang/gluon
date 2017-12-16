@@ -609,7 +609,6 @@ impl<'a> Typecheck<'a> {
                             value: TypeError::from(value).into(),
                         });
                     }
-                    println!("{}", self.errors);
                     Err(mem::replace(&mut self.errors, Errors::new()))
                 }
             }
@@ -619,7 +618,6 @@ impl<'a> Typecheck<'a> {
     fn infer_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> ArcType {
         self.typecheck_opt(expr, None)
     }
-
 
     fn typecheck(&mut self, expr: &mut SpannedExpr<Symbol>, expected_type: &ArcType) -> ArcType {
         self.typecheck_opt(expr, Some(expected_type))
@@ -1398,7 +1396,6 @@ impl<'a> Typecheck<'a> {
             );
             typ = self.merge_signature(bind_span, level, &bind.resolved_type, typ);
 
-
             if !is_recursive {
                 // Merge the type declaration and the actual type
                 debug!("Generalize at {} = {}", level, bind.resolved_type);
@@ -1556,7 +1553,6 @@ impl<'a> Typecheck<'a> {
                 .push(pos::spanned(err.span, TypeError::from(err.value).into()));
         }
     }
-
 
     fn check_undefined_variables(&mut self, args: &[Generic<Symbol>], typ: &AstType<Symbol>) {
         use base::pos::HasSpan;
@@ -2140,9 +2136,7 @@ impl<'a> Typecheck<'a> {
                 actual = self.subs.set_type(actual);
                 debug!(
                     "Error '{:?}' between:\n>> {}\n>> {}",
-                    errors,
-                    expected,
-                    actual
+                    errors, expected, actual
                 );
                 let err = TypeError::Unification(expected, actual, apply_subs(&self.subs, errors));
                 self.errors.push(Spanned {
@@ -2180,9 +2174,7 @@ impl<'a> Typecheck<'a> {
                 actual = self.subs.set_type(actual);
                 debug!(
                     "Error '{:?}' between:\n>> {}\n>> {}",
-                    errors,
-                    expected,
-                    actual
+                    errors, expected, actual
                 );
                 Err(TypeError::Unification(
                     expected,
