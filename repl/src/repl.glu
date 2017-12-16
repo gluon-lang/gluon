@@ -75,17 +75,36 @@ let make_commands cpu_pool : CpuPool -> Commands =
     commands <- cmds
     load commands
 
+let { Parser, parse } = import! std.parser
+
+
+let cmd_parser : Parser { cmd : String, arg : String } =
+    let {
+        recognize,
+        skip_many1,
+        token,
+        spaces,
+        letter,
+        monad = { flat_map },
+        alternative,
+        applicative } = import! std.parser
+    let { wrap, (*>) } = prelude.make_Applicative applicative
+    let { (<|>) } = prelude.make_Alternative alternative
+
+    let word = recognize (skip_many1 letter)
+
+    do _ = token ':'
+    do cmd = word
+    do arg = (spaces *> word) <|> wrap ""
+    wrap { cmd, arg }
+
 let do_command commands line : Commands -> String -> IO ReplAction =
-    if string.len line >= 2 then
-        let cmd = string.slice line 1 2
-        let arg =
-            if string.len line >= 3
-            then string.trim (string.slice line 3 (string.len line))
-            else ""
+    match parse cmd_parser line with
+    | Ok { cmd, arg } ->
         match find cmd commands with
         | Some command -> command.action arg
         | None -> io.println ("Unknown command \'" ++ cmd ++ "\'") *> wrap Continue
-    else
+    | Err err ->
         io.println "Expected a command such as `:h`"
             *> wrap Continue
 

@@ -146,7 +146,7 @@ let take1 predicate : (Char -> Bool) -> Parser String =
 let take predicate : (Char -> Bool) -> Parser String =
     take1 predicate <|> wrap ""
 
-let take_string p : Parser a -> Parser String =
+let recognize p : Parser a -> Parser String =
     parser (\stream ->
         match parser p stream with
         | Ok a ->
@@ -212,7 +212,7 @@ let parse p input : Parser a -> String -> Result String a =
 
     parser,
 
-    any, between, token, many, many1, satisfy, spaces, take1, lazy_parser, fail, take_string,
+    any, between, token, many, many1, satisfy, spaces, take1, lazy_parser, fail, recognize,
     skip_many, skip_many1, one_of, sep_by, sep_by1, (<?>),
 
     letter, digit, space, tab,
