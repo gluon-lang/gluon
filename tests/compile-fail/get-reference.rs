@@ -10,7 +10,7 @@ fn main() {
         let vm = new_vm();
         let v = Value::Int(0);
         let v = Variants::new(&v);
-        let _: Option<&'static str> = <&'static str>::from_value(&vm, v);
+        let _: &'static str = <&'static str>::from_value(&vm, v);
         //~^ Error `vm` does not live long enough
     }
 }
