@@ -331,10 +331,10 @@ impl<'vm> Pushable<'vm> for RootedThread {
 }
 
 impl<'vm> Getable<'vm> for RootedThread {
-    fn from_value(_: &'vm Thread, value: Variants) -> Option<Self> {
+    fn from_value(_: &'vm Thread, value: Variants) -> Self {
         match value.as_ref() {
-            ValueRef::Thread(thread) => Some(thread.root_thread()),
-            _ => None,
+            ValueRef::Thread(thread) => thread.root_thread(),
+            _ => ice!("ValueRef is not a Thread"),
         }
     }
 }
@@ -558,8 +558,7 @@ impl Thread {
         let expected = T::make_type(self);
         if check_signature(&*env, &expected, &actual) {
             unsafe {
-                T::from_value(self, Variants::new(&value))
-                    .ok_or_else(|| Error::UndefinedBinding(name.into()))
+                Ok(T::from_value(self, Variants::new(&value)))
             }
         } else {
             Err(Error::WrongType(expected, actual.into_owned()))
@@ -1960,10 +1959,7 @@ where
     let (l, r) = {
         let r = stack.get_variants(stack.len() - 1).unwrap();
         let l = stack.get_variants(stack.len() - 2).unwrap();
-        match (T::from_value(vm, l), T::from_value(vm, r)) {
-            (Some(l), Some(r)) => (l, r),
-            _ => ice!("{:?} `op` {:?}", l, r),
-        }
+        (T::from_value(vm, l), T::from_value(vm, r))
     };
     let result = f(l, r);
     stack.pop();

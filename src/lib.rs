@@ -58,7 +58,6 @@ use base::pos::{self, Span};
 
 use vm::Variants;
 use vm::api::{Getable, Hole, OpaqueValue, VmType};
-use vm::Error as VmError;
 use vm::future::{BoxFutureValue, FutureValue};
 use vm::compiler::CompiledModule;
 use vm::thread::ThreadInternal;
@@ -246,7 +245,9 @@ impl Compiler {
             &mut SymbolModule::new(file.into(), &mut self.symbols),
             type_cache,
             expr_str,
-        ).map_err(|(expr, err)| (expr, InFile::new(file, expr_str, err)))?)
+        ).map_err(
+            |(expr, err)| (expr, InFile::new(file, expr_str, err)),
+        )?)
     }
 
     /// Parse and typecheck `expr_str` returning the typechecked expression and type of the
@@ -269,8 +270,13 @@ impl Compiler {
         expr_str: &str,
         expected_type: Option<&ArcType>,
     ) -> Result<(SpannedExpr<Symbol>, ArcType)> {
-        let TypecheckValue { expr, typ } =
-            expr_str.typecheck_expected(self, vm, file, expr_str, expected_type)?;
+        let TypecheckValue { expr, typ } = expr_str.typecheck_expected(
+            self,
+            vm,
+            file,
+            expr_str,
+            expected_type,
+        )?;
         Ok((expr, typ))
     }
 
@@ -371,10 +377,9 @@ impl Compiler {
         // macro as close as possible
         let opt_macro = vm.get_macros().get("import");
         let owned_import;
-        let import = match opt_macro
-            .as_ref()
-            .and_then(|mac| mac.downcast_ref::<Import>())
-        {
+        let import = match opt_macro.as_ref().and_then(
+            |mac| mac.downcast_ref::<Import>(),
+        ) {
             Some(import) => import,
             None => {
                 owned_import = Import::new(DefaultImporter);
@@ -463,12 +468,10 @@ impl Compiler {
         expr_str
             .run_expr(self, vm, name, expr_str, Some(&expected))
             .and_then(move |execute_value| unsafe {
-                FutureValue::sync(
-                    match T::from_value(vm, Variants::new(&execute_value.value)) {
-                        Some(value) => Ok((value, execute_value.typ)),
-                        None => Err(Error::from(VmError::WrongType(expected, execute_value.typ))),
-                    },
-                )
+                FutureValue::sync(Ok((
+                    T::from_value(vm, Variants::new(&execute_value.value)),
+                    execute_value.typ,
+                )))
             })
             .boxed()
     }

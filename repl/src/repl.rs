@@ -361,8 +361,7 @@ fn finish_or_interrupt(
     });
 
     let mut action =
-        OwnedFunction::<fn() -> IO<Generic<A>>>::from_value(&thread, action.get_variants())
-            .unwrap();
+        OwnedFunction::<fn() -> IO<Generic<A>>>::from_value(&thread, action.get_variants());
     let action_future = cpu_pool.0.spawn_fn(move || action.call_async());
 
     let ctrl_c_future = receiver

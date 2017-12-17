@@ -73,9 +73,7 @@ fn read_file<'vm>(file: WithVM<'vm, &GluonFile>, count: usize) -> IO<Array<'vm, 
                         Err(err) => return IO::Exception(format!("{}", err)),
                     }
                 };
-                IO::Value(
-                    Getable::from_value(vm, Variants::new(&Value::Array(value))).expect("Array"),
-                )
+                IO::Value(Getable::from_value(vm, Variants::new(&Value::Array(value))))
             }
             Err(err) => IO::Exception(format!("{}", err)),
         }
@@ -128,7 +126,7 @@ fn catch<'vm>(
     let vm = action.vm().root_thread();
     let frame_level = vm.context().stack.get_frames().len();
     let mut action: OwnedFunction<fn(()) -> Generic<A>> =
-        unsafe { Getable::from_value(&vm, Variants::new(&action.get_value())).unwrap() };
+        unsafe { Getable::from_value(&vm, Variants::new(&action.get_value())) };
 
     let future = action.call_async(()).then(move |result| match result {
         Ok(value) => Either::A(Ok(IO::Value(value)).into_future()),

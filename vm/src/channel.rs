@@ -279,7 +279,7 @@ fn spawn_on<'vm>(
 
     let WithVM { vm, value: action } = action;
     let mut action = unsafe {
-        OwnedFunction::<Action>::from_value(&thread, Variants::new(&action.value())).unwrap()
+        OwnedFunction::<Action>::from_value(&thread, Variants::new(&action.value()))
     };
 
     let future = oneshot::spawn_fn(
