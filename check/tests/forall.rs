@@ -335,7 +335,6 @@ fn field_access_tuple() {
     assert_eq!(result, Ok(Type::int()));
 }
 
-
 #[test]
 fn unit_tuple_match() {
     let _ = ::env_logger::init();
@@ -414,7 +413,6 @@ x
 
     assert_eq!(result, Ok(Type::int()));
 }
-
 
 #[test]
 fn record_expr_base() {
@@ -674,7 +672,6 @@ let { List, f } = make 1
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
-
 
 // Unsure if this should be able to compile as is (without  type annotations)
 #[test]
@@ -984,7 +981,6 @@ let show : Show a -> Show (List a) = \d ->
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
 
-
 #[test]
 fn show_list_bug_with_as_pattern() {
     let _ = ::env_logger::init();
@@ -1005,6 +1001,65 @@ let list@{ } = { show }
 
 list.show string_show
 list.show int_show
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn generalize_record_unpacks() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+type Semigroup a = {
+    append : a -> a -> a
+}
+
+/// A linked list type
+type List a = | Nil | Cons a (List a)
+
+let semigroup : Semigroup (List a) =
+    let append xs ys =
+        match xs with
+        | Cons x zs -> Cons x (append zs ys)
+        | Nil -> ys
+
+    { append }
+
+let { append } = semigroup
+
+append (Cons 1 Nil) Nil
+append (Cons "" Nil) Nil
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+#[ignore]
+fn generalize_tuple_unpacks() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+type Semigroup a = (a -> a -> a, Int)
+
+/// A linked list type
+type List a = | Nil | Cons a (List a)
+
+let semigroup : Semigroup (List a) =
+    let append xs ys =
+        match xs with
+        | Cons x zs -> Cons x (append zs ys)
+        | Nil -> ys
+
+    (append, 0)
+
+let (append, _) = semigroup
+
+append (Cons 1 Nil) Nil
+append (Cons "" Nil) Nil
 "#;
     let result = support::typecheck(text);
 

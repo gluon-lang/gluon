@@ -341,6 +341,11 @@ impl<T: Substitutable> Substitution<T> {
         union.get_mut(other as usize).level = level;
     }
 
+    pub fn set_level(&self, var: u32, level: u32) {
+        let mut union = self.union.borrow_mut();
+        union.get_mut(var as usize).level = level;
+    }
+
     pub fn get_level(&self, mut var: u32) -> u32 {
         if let Some(v) = self.find_type_for_var(var) {
             var = v.get_var().map_or(var, |v| v.get_id());
@@ -552,10 +557,7 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
                         typ.get_var().map(|x| x.get_id()),
                         resolved.get_var().map(|x| x.get_id()),
                     ) {
-                        (Some(x), Some(y)) if x > y => {
-                            typ = Cow::Owned(resolved);
-                        }
-                        (_, None) => {
+                        (Some(_), Some(_)) | (_, None) => {
                             typ = Cow::Owned(resolved);
                         }
                         _ => (),
