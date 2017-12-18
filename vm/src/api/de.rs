@@ -162,15 +162,12 @@ where
     T: VmType,
     T: DeserializeOwned,
 {
-    fn from_value(thread: &'vm Thread, value: Variants) -> Option<Self> {
+    fn from_value(thread: &'vm Thread, value: Variants) -> Self {
         let typ = T::make_type(thread);
-        from_value(thread, value, &typ)
-            .map(De)
-            .map_err(|err| {
-                debug!("{}", err);
-                err
-            })
-            .ok()
+        match from_value(thread, value, &typ).map(De) {
+            Ok(v) => v,
+            Err(err) => ice!("Getable::from_value for De: {}", err),
+        }
     }
 }
 
@@ -229,19 +226,13 @@ impl<'de, 't> Deserializer<'de, 't> {
         T: Getable<'de>,
     {
         let typ = resolve::remove_aliases_cow(self.state.env, self.typ);
-        match T::from_value(self.state.thread, self.input) {
-            Some(c) => if expected(&typ) {
-                visit(c)
-            } else {
-                Err(VmError::Message(format!(
-                    "Unable to deserialize `{}`",
-                    self.typ
-                )))
-            },
-            _ => Err(VmError::Message(format!(
+        if expected(&typ) {
+            visit(T::from_value(self.state.thread, self.input))
+        } else {
+            Err(VmError::Message(format!(
                 "Unable to deserialize `{}`",
                 self.typ
-            ))),
+            )))
         }
     }
 }

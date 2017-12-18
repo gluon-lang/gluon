@@ -88,7 +88,7 @@ pub mod array {
         };
         unsafe {
             RuntimeResult::Return(
-                Getable::from_value(lhs.vm(), Variants::new(&Value::Array(value))).expect("Array"),
+                Getable::from_value(lhs.vm(), Variants::new(&Value::Array(value)))
             )
         }
     }
@@ -141,9 +141,7 @@ mod string {
             }
         };
         unsafe {
-            RuntimeResult::Return(
-                Getable::from_value(vm, Variants::new(&Value::String(value))).expect("Array"),
-            )
+            RuntimeResult::Return(Getable::from_value(vm, Variants::new(&Value::String(value))))
         }
     }
 

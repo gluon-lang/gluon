@@ -123,8 +123,8 @@ fn optional_field() {
         .run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "test", r#" { } "#)
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(
-        De::<OptionalFieldRecord>::from_value(&thread, value.get_variants()).map(|x| x.0),
-        Some(OptionalFieldRecord { test: None })
+        De::<OptionalFieldRecord>::from_value(&thread, value.get_variants()).0,
+        OptionalFieldRecord { test: None }
     );
 
     let (value, _) = Compiler::new()
@@ -135,8 +135,8 @@ fn optional_field() {
         )
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(
-        De::<OptionalFieldRecord>::from_value(&thread, value.get_variants()).map(|x| x.0),
-        Some(OptionalFieldRecord { test: Some(2) })
+        De::<OptionalFieldRecord>::from_value(&thread, value.get_variants()).0,
+        OptionalFieldRecord { test: Some(2) }
     );
 
     let (value, _) = Compiler::new()

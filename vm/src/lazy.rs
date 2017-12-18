@@ -86,7 +86,7 @@ fn force(
         Lazy_::Thunk(value) => {
             *lazy_lock = Lazy_::Blackhole;
             let mut function = unsafe {
-                FunctionRef::<fn(()) -> Generic<A>>::from_value(vm, Variants::new(&value)).unwrap()
+                FunctionRef::<fn(()) -> Generic<A>>::from_value(vm, Variants::new(&value))
             };
             drop(lazy_lock);
             match function.call(()) {

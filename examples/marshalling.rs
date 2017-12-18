@@ -37,8 +37,8 @@ impl<'vm> api::Pushable<'vm> for Enum {
 }
 
 impl<'vm> api::Getable<'vm> for Enum {
-    fn from_value(thread: &'vm Thread, value: vm::Variants) -> Option<Self> {
-        api::de::De::from_value(thread, value).map(|de| de.0)
+    fn from_value(thread: &'vm Thread, value: vm::Variants) -> Self {
+        api::de::De::from_value(thread, value).0
     }
 }
 
