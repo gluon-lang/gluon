@@ -10,7 +10,7 @@ extern crate pretty_assertions;
 mod support;
 
 use base::ast::*;
-use base::pos::{BytePos, Span, Spanned};
+use base::pos::{self, BytePos, Span, Spanned};
 use base::types::{Field, Type};
 use support::*;
 
@@ -369,7 +369,6 @@ fn nested_pattern_parens() {
     let pattern = Pattern::Constructor(TypedIdent::new(intern("Some")), vec![inner_pattern]);
     assert_eq!(e, case(id("x"), vec![(pattern, id("z"))]));
 }
-
 
 #[test]
 fn span_identifier() {
@@ -756,7 +755,6 @@ fn shebang_at_top_is_ignored() {
     )
 }
 
-
 #[test]
 fn do_in_parens() {
     let _ = ::env_logger::init();
@@ -767,4 +765,35 @@ fn do_in_parens() {
         )
     ";
     parse_clear_span!(text);
+}
+
+#[test]
+fn parse_let_or_expr() {
+    let _ = ::env_logger::init();
+
+    let mut module = MockEnv::new();
+
+    let line = "let x = test";
+    match parser::parse_partial_let_or_expr(&mut module, line) {
+        Ok(x) => assert_eq!(
+            x,
+            Err(ValueBinding {
+                comment: None,
+                name: pos::spanned2(
+                    4.into(),
+                    5.into(),
+                    Pattern::Ident(TypedIdent::new(intern("x")))
+                ),
+                typ: None,
+                resolved_type: Type::hole(),
+                args: Vec::new(),
+                expr: pos::spanned2(
+                    8.into(),
+                    12.into(),
+                    Expr::Ident(TypedIdent::new(intern("test")))
+                ),
+            })
+        ),
+        Err((_, err)) => panic!("{}", err),
+    }
 }

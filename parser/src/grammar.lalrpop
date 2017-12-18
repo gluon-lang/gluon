@@ -583,10 +583,12 @@ SpExpr: SpannedExpr<Id> = {
 };
 
 pub TopExpr: SpannedExpr<Id> = {
-    "shebang line"? <expr: SpExpr> => expr,
+    "shebang line"? <expr: SpExpr> SkipExtraTokens => expr,
 };
 
 pub LetOrExpr: Result<SpannedExpr<Id>, ValueBinding<Id>> = {
     <TopExpr> => Ok(<>),
-    "block open" "let" <ValueBinding> SkipExtraTokens => Err(<>)
+    "block open" "let" <ValueBinding> SkipExtraTokens
+        // Ugh but I just need the parser to be happy for now
+        "in" "block close" "block close" "block open" "block open" => Err(<>)
 };

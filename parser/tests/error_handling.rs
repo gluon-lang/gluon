@@ -274,7 +274,6 @@ fn incomplete_alternative_with_partial_pattern() {
     assert_eq!(remove_expected(err), ParseErrors::from(errors));
 }
 
-
 #[test]
 fn incomplete_let_binding() {
     let _ = ::env_logger::init();
@@ -289,6 +288,25 @@ fn incomplete_let_binding() {
     assert_eq!(
         clear_span(expr.unwrap()),
         let_("test", no_loc(Expr::Error(None)), int(1),)
+    );
+
+    let errors = vec![no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![]))];
+    assert_eq!(remove_expected(err), ParseErrors::from(errors));
+}
+
+#[test]
+fn incomplete_let_binding_2() {
+    let _ = ::env_logger::init();
+
+    let expr = r#"
+    let test = io
+    "#;
+    let result = parse(expr);
+    assert!(result.is_err());
+    let (expr, err) = result.unwrap_err();
+    assert_eq!(
+        clear_span(expr.unwrap()),
+        let_("test", id("io"), no_loc(Expr::Error(None)))
     );
 
     let errors = vec![no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![]))];

@@ -158,7 +158,6 @@ where
 
         self.unprocessed_tokens.push(next);
 
-
         if let Context::Block { .. } = context {
             // If we find the next token at the same (or earlier) than the previous block we
             // can't insert a block but will instead emit an empty block
@@ -210,7 +209,6 @@ where
             let offside = match (&token.value, self.indent_levels.last().cloned()) {
                 (&Token::ShebangLine(_), _) => return Ok(token),
                 (_, Some(offside)) => offside,
-                (&Token::EOF, None) => return Ok(token),
                 (_, None) => {
                     let offside =
                         Offside::new(token.span.start, Context::Block { emit_semi: false });
@@ -361,7 +359,10 @@ where
                     }
                 }
                 // `and` and `}` are allowed to be on the same line as the `let` or `type`
-                (Context::Let, Ordering::Equal) | (Context::Type, Ordering::Equal)
+                (Context::Let, Ordering::Equal)
+                | (Context::Type, Ordering::Equal)
+                | (Context::Let, Ordering::Less)
+                | (Context::Type, Ordering::Less)
                     if token.value != Token::And && token.value != Token::RBrace =>
                 {
                     // Insert an `in` token

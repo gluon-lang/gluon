@@ -179,11 +179,9 @@ pub fn case(e: SpExpr, alts: Vec<(Pattern<String>, SpExpr)>) -> SpExpr {
     no_loc(Expr::Match(
         Box::new(e),
         alts.into_iter()
-            .map(|(p, e)| {
-                Alternative {
-                    pattern: no_loc(p),
-                    expr: e,
-                }
+            .map(|(p, e)| Alternative {
+                pattern: no_loc(p),
+                expr: e,
             })
             .collect(),
     ))
@@ -234,22 +232,18 @@ pub fn record_a(
         typ: Type::hole(),
         types: types
             .into_iter()
-            .map(|(name, value)| {
-                ExprField {
-                    comment: None,
-                    name: no_loc(name),
-                    value: value,
-                }
+            .map(|(name, value)| ExprField {
+                comment: None,
+                name: no_loc(name),
+                value: value,
             })
             .collect(),
         exprs: fields
             .into_iter()
-            .map(|(name, value)| {
-                ExprField {
-                    comment: None,
-                    name: no_loc(name),
-                    value: value,
-                }
+            .map(|(name, value)| ExprField {
+                comment: None,
+                name: no_loc(name),
+                value: value,
             })
             .collect(),
         base: None,
