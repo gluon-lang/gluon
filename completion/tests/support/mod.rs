@@ -106,7 +106,6 @@ impl MetadataEnv for MockEnv {
     }
 }
 
-
 pub fn typecheck_expr_expected(
     text: &str,
     expected: Option<&ArcType>,
@@ -180,7 +179,6 @@ where
         },
     }
 }
-
 
 /// Replace the variable at the `rest` part of a record for easier equality checks
 pub fn close_record(typ: ArcType) -> ArcType {
