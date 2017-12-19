@@ -175,7 +175,7 @@ fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> PrimitiveFuture<IO<Stri
     let vm = vm.root_thread();
 
     let vm1 = vm.clone();
-    let future = expr.run_expr(&mut Compiler::new(), vm1, "<top>", expr, None)
+    let future = expr.run_expr(&mut Compiler::new().run_io(true), vm1, "<top>", expr, None)
         .then(move |run_result| {
             let mut context = vm.context();
             let stack = StackFrame::current(&mut context.stack);
