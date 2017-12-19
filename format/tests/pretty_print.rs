@@ -150,7 +150,6 @@ fn dont_lose_information_in_literals() {
     assert_eq!(&format_expr(expr).unwrap(), expr);
 }
 
-
 #[test]
 fn preserve_comment_between_let_in() {
     let expr = r#"
@@ -177,7 +176,6 @@ fn preserve_whitespace_in_record() {
 "#;
     assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
 }
-
 
 #[test]
 fn preserve_block_comments() {
@@ -312,6 +310,22 @@ fn do_expression() {
 do /* x1 */ x /* x2 */ = Some 1
 // test
 test abc 1232 ""
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+}
+
+#[test]
+fn comments_in_block_exprs() {
+    let expr = r#"
+// test
+test 123
+
+// test1
+
+// test1
+
+abc ""
+// test2
 "#;
     assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
 }
