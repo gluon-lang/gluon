@@ -67,7 +67,9 @@ fn run_expr_int() {
 
     let text = r#"
         let io = import! std.io
-        io.run_expr "123"
+        let { flat_map } = io.monad
+        do result = io.run_expr "123"
+        io.applicative.wrap result.value
     "#;
     let mut vm = make_vm();
     let (result, _) = Compiler::new()
@@ -77,7 +79,7 @@ fn run_expr_int() {
         .unwrap();
     match result {
         IO::Value(result) => {
-            let expected = "123 : Int";
+            let expected = "123";
             assert_eq!(result, expected);
         }
         IO::Exception(err) => panic!("{}", err),
@@ -95,7 +97,6 @@ io.flat_map (\x -> io.wrap 100)
 "#,
 100i32
 }
-
 
 #[test]
 fn dont_execute_io_in_run_expr_async() {
@@ -169,8 +170,8 @@ fn spawn_on_runexpr() {
         do child = thread.new_thread ()
         do action = thread.spawn_on child (\_ -> io.run_expr "123")
         do x = action
-        do _ = io.println x
-        wrap x
+        do _ = io.println x.value
+        wrap x.value
     "#;
 
     let mut core = self::tokio_core::reactor::Core::new().unwrap();
@@ -182,7 +183,7 @@ fn spawn_on_runexpr() {
     )).unwrap_or_else(|err| panic!("{}", err));
     match result {
         IO::Value(result) => {
-            assert_eq!(result, "123 : Int");
+            assert_eq!(result, "123");
         }
         IO::Exception(err) => panic!("{}", err),
     }
@@ -203,7 +204,8 @@ fn spawn_on_runexpr_in_catch() {
             do eval_thread = thread.new_thread ()
             let f _ = io.run_expr "123"
             do a = thread.spawn_on eval_thread f
-            a
+            do result = a
+            wrap result.value
         io.catch action wrap >>= io.println *> wrap "123"
     "#;
 

@@ -11,12 +11,21 @@ let { ref, load, (<-) } = import! std.reference
 let rustyline = import! rustyline
 let { ReadlineError } = import! rustyline_types
 let repl_prim = import! repl.prim
+let { (<<) } = import! std.function
+
 let { wrap, (*>) } = prelude.make_Applicative io.applicative
 let { flat_map, (>>=) } = prelude.make_Monad io.monad
+
 let { append = (++) } = string.semigroup
 let ord_map @ { singleton, find, insert } = map.make string.ord
 let { (<>) } = prelude.make_Semigroup ord_map.semigroup
 let { empty } = ord_map.monoid
+
+
+let run_interruptible_io cpu_pool action : CpuPool -> IO String -> IO (Result String String) =
+    do eval_thread = thread.new_thread ()
+    let interruptible_action = repl_prim.finish_or_interrupt cpu_pool eval_thread action
+    io.catch (io.functor.map Ok interruptible_action) (wrap << Err)
 
 
 let load_file cpu_pool filename : CpuPool -> String -> IO String =
@@ -30,9 +39,21 @@ let load_file cpu_pool filename : CpuPool -> String -> IO String =
         do result = io.load_script modulename expr
         wrap result
 
-    do eval_thread = thread.new_thread ()
-    let load_action = repl_prim.finish_or_interrupt cpu_pool eval_thread action
-    io.catch load_action (\err -> wrap err)
+    do result = run_interruptible_io cpu_pool action
+    match result with
+    | Ok x -> wrap x
+    | Err x -> wrap x
+
+let run_file cpu_pool filename : CpuPool -> String -> IO () =
+    let action =
+        do expr = io.read_file_to_string filename
+        do result = io.run_expr expr
+        wrap (result.value ++ " : " ++ result.typ)
+
+    do result = run_interruptible_io cpu_pool action
+    match result with
+    | Ok _ -> io.println ""
+    | Err x -> io.println x
 
 type ReplAction = | Continue | Quit
 type Cmd = { name : String, alias : String, info : String, action : String -> IO ReplAction }
@@ -45,9 +66,7 @@ let make_commands cpu_pool : CpuPool -> Commands =
         | Err x -> io.println x
 
     let commands = ref []
-    let cmds = [
-        { name = "quit", alias = "q", info = "Quit the REPL", action = \_ -> wrap Quit },
-        {
+    let cmds = [{ name = "quit", alias = "q", info = "Quit the REPL", action = \_ -> wrap Quit }, {
             name = "type",
             alias = "t",
             info = "Prints the type with an expression",
@@ -75,6 +94,12 @@ let make_commands cpu_pool : CpuPool -> Commands =
             action = \arg -> load_file cpu_pool arg >>= io.println *> wrap Continue,
         },
         {
+            name = "script",
+            alias = "s",
+            info = "Runs the script at `FILENAME`",
+            action = \arg -> run_file cpu_pool arg *> wrap Continue,
+        },
+        {
             name = "help",
             alias = "h",
             info = "Print this help",
@@ -85,8 +110,7 @@ let make_commands cpu_pool : CpuPool -> Commands =
 
                 print_header *> array.traversable.traverse io.applicative print_cmd (load commands)
                     *> wrap Continue,
-        }
-    ]
+        }]
     commands <- cmds
     array.foldable.foldl
         (\map cmd -> singleton cmd.name cmd <> singleton cmd.alias cmd <> map)
@@ -98,6 +122,7 @@ let { Parser, parse } = import! std.parser
 
 let cmd_parser : Parser { cmd : String, arg : String } =
     let {
+        any,
         recognize,
         skip_many1,
         token,
@@ -110,10 +135,11 @@ let cmd_parser : Parser { cmd : String, arg : String } =
     let { (<|>) } = prelude.make_Alternative alternative
 
     let word = recognize (skip_many1 letter)
+    let arg_parser = recognize (skip_many1 any)
 
     do _ = token ':'
     do cmd = word
-    do arg = (spaces *> word) <|> wrap ""
+    do arg = (spaces *> arg_parser) <|> wrap ""
     wrap { cmd, arg }
 
 let do_command commands line : Commands -> String -> IO ReplAction =

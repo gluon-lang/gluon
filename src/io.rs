@@ -152,26 +152,33 @@ fn catch<'vm>(
     FutureResult(Box::new(future))
 }
 
-fn clear_frames(err: Error, mut stack: StackFrame) -> IO<String> {
-    let frame_level = stack
-        .stack
-        .get_frames()
-        .iter()
-        .rposition(|frame| frame.state == State::Lock)
-        .unwrap_or(0);
+fn clear_frames<T>(err: Error, stack: StackFrame) -> IO<T> {
+    fn clear_frames_(err: Error, mut stack: StackFrame) -> String {
+        let frame_level = stack
+            .stack
+            .get_frames()
+            .iter()
+            .rposition(|frame| frame.state == State::Lock)
+            .unwrap_or(0);
 
-    let fmt = match err {
-        Error::VM(vm::Error::Panic(_)) => {
-            let trace = stack.stack.stacktrace(frame_level);
-            format!("{}\n{}", err, trace)
-        }
-        _ => format!("{}", err),
-    };
-    while let Ok(_) = stack.exit_scope() {}
-    IO::Exception(fmt)
+        let fmt = match err {
+            Error::VM(vm::Error::Panic(_)) => {
+                let trace = stack.stack.stacktrace(frame_level);
+                format!("{}\n{}", err, trace)
+            }
+            _ => format!("{}", err),
+        };
+        while let Ok(_) = stack.exit_scope() {}
+        fmt
+    }
+    IO::Exception(clear_frames_(err, stack))
 }
 
-fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> PrimitiveFuture<IO<String>> {
+field_decl! { value, typ }
+
+type RunExpr = record_type!{ value => String, typ => String };
+
+fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> PrimitiveFuture<IO<RunExpr>> {
     let vm = vm.root_thread();
 
     let vm1 = vm.clone();
@@ -183,11 +190,10 @@ fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> PrimitiveFuture<IO<Stri
                 Ok(execute_value) => {
                     let env = vm.global_env().get_env();
                     let typ = execute_value.typ;
-                    IO::Value(format!(
-                        "{} : {}",
-                        ValuePrinter::new(&*env, &typ, *execute_value.value).width(80),
-                        typ
-                    ))
+                    IO::Value(record_no_decl!{
+                        value => ValuePrinter::new(&*env, &typ, *execute_value.value).width(80).to_string(),
+                        typ => typ.to_string()
+                    })
                 }
                 Err(err) => clear_frames(err, stack),
             }))
