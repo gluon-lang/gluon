@@ -115,17 +115,21 @@ pub fn rename(
                         match field.value {
                             Some(ref mut pat) => self.new_pattern(pat),
                             None => {
-                                let field_type = &field_types
+                                if let Some(field_type) = field_types
                                     .iter()
                                     .find(|field_type| field_type.name.name_eq(&field.name.value))
-                                    .expect("ICE: Existing field")
-                                    .typ;
-                                let id = field.name.value.clone();
-                                let pat = Pattern::Ident(TypedIdent {
-                                    name: self.stack_var(id, pattern.span, field_type.clone()),
-                                    typ: field_type.clone(),
-                                });
-                                field.value = Some(pos::spanned(field.name.span, pat));
+                                {
+                                    let id = field.name.value.clone();
+                                    let pat = Pattern::Ident(TypedIdent {
+                                        name: self.stack_var(
+                                            id,
+                                            pattern.span,
+                                            field_type.typ.clone(),
+                                        ),
+                                        typ: field_type.typ.clone(),
+                                    });
+                                    field.value = Some(pos::spanned(field.name.span, pat));
+                                }
                             }
                         }
                     }
