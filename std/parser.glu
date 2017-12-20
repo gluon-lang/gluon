@@ -106,12 +106,15 @@ let any : Parser Char =
 let fail message : String -> Parser a =
     parser (\stream -> Err message)
 
-let satisfy predicate : (Char -> Bool) -> Parser Char =
+let satisfy_map predicate : (Char -> Option a) -> Parser a =
     let f c =
-        if predicate c
-        then wrap c
-        else fail ("Unexpected character " <> char.show.show c)
+        match predicate c with
+        | Some x -> wrap x
+        | None -> fail ("Unexpected character " <> char.show.show c)
     flat_map f any
+
+let satisfy predicate : (Char -> Bool) -> Parser Char =
+    satisfy_map (\c -> if predicate c then Some c else None)
 
 let token expected : Char -> Parser Char =
     satisfy (\c -> expected == c)
@@ -133,10 +136,12 @@ let take1 predicate : (Char -> Bool) -> Parser String =
             | Some record ->
                 if predicate record.char
                 then take_ record.rest
-                else if stream.start == stream2.start then Err "Unexpected token" else Ok {
-                                value = string.slice stream.buffer stream.start stream2.start,
-                                buffer = stream2,
-                            }
+                else if stream.start == stream2.start
+                then Err "Unexpected token"
+                else Ok {
+                            value = string.slice stream.buffer stream.start stream2.start,
+                            buffer = stream2,
+                        }
             | None -> Ok {
                         value = string.slice stream.buffer stream.start stream.end,
                         buffer = stream2,
@@ -212,10 +217,29 @@ let parse p input : Parser a -> String -> Result String a =
 
     parser,
 
-    any, between, token, many, many1, satisfy, spaces, take1, lazy_parser, fail, recognize,
-    skip_many, skip_many1, one_of, sep_by, sep_by1, (<?>),
+    any,
+    between,
+    token,
+    many,
+    many1,
+    satisfy,
+    satisfy_map,
+    spaces,
+    take1,
+    lazy_parser,
+    fail,
+    recognize,
+    skip_many,
+    skip_many1,
+    one_of,
+    sep_by,
+    sep_by1,
+    (<?>),
 
-    letter, digit, space, tab,
+    letter,
+    digit,
+    space,
+    tab,
 
     parse,
 }
