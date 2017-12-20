@@ -21,7 +21,6 @@ use gluon::vm::stack::{StackFrame, State};
 use gluon::vm::channel::Sender;
 use gluon::{Compiler, Error};
 
-
 test_expr!{ pass_function_value,
 r"
 let lazy: () -> Int = \x -> 42 in
@@ -137,7 +136,6 @@ in Some 1
     );
 }
 
-
 test_expr!{ recursive_function,
 r"
 let fib x = if x #Int< 3
@@ -188,7 +186,6 @@ fn insert_stack_slice() {
         [Int(1), Int(10), Int(4), Int(5), Int(6), Int(0)]
     );
 }
-
 
 test_expr!{ primitive_char_eq,
 r"
@@ -322,6 +319,15 @@ let { string_compare } = import! std.prim
 string_compare "a" "b"
 "#,
 Value::Tag(0)
+}
+
+test_expr!{ discriminant_value,
+r#"
+type Variant a = | A | B Int | C String
+let prim = import! std.prim
+prim.discriminant_value (C "")
+"#,
+2
 }
 
 test_expr!{ unit_expr,
