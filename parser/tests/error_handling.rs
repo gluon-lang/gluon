@@ -312,3 +312,19 @@ fn incomplete_let_binding_2() {
     let errors = vec![no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![]))];
     assert_eq!(remove_expected(err), ParseErrors::from(errors));
 }
+
+#[test]
+fn unterminated_char_literal() {
+    let _ = ::env_logger::init();
+
+    let expr = r#"
+    'a
+    "#;
+    let result = parse(expr);
+    assert!(result.is_err());
+    let (_expr, err) = result.unwrap_err();
+
+    let error = Error::Token(TokenizeError::UnterminatedCharLiteral);
+    let span = pos::span(BytePos::from(5), BytePos::from(5));
+    assert_eq!(err, ParseErrors::from(vec![pos::spanned(span, error)]));
+}
