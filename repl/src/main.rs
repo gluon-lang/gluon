@@ -1,6 +1,7 @@
 //! REPL for the gluon programming language
 #![doc(html_root_url = "https://docs.rs/gluon_repl/0.4.1")] // # GLUON
 
+extern crate app_dirs;
 #[macro_use]
 extern crate clap;
 #[cfg(feature = "env_logger")]
@@ -36,6 +37,11 @@ use gluon::vm::thread::ThreadInternal;
 use gluon::vm::Error as VMError;
 
 mod repl;
+
+const APP_INFO: app_dirs::AppInfo = app_dirs::AppInfo {
+    name: "gluon-repl",
+    author: "gluon-lang",
+};
 
 fn run_files<'s, I>(vm: &Thread, files: I) -> Result<()>
 where
@@ -167,7 +173,6 @@ fn main() {
         ::std::process::exit(1);
     }
 }
-
 
 #[cfg(test)]
 mod tests {

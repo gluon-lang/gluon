@@ -4,6 +4,7 @@ extern crate rustyline;
 extern crate gluon_completion as completion;
 
 use std::error::Error as StdError;
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 use futures::{Future, Sink, Stream};
@@ -162,7 +163,6 @@ struct CpuPool(self::futures_cpupool::CpuPool);
 
 impl_userdata!{ CpuPool }
 
-
 #[derive(Serialize, Deserialize)]
 pub enum ReadlineError {
     Eof,
@@ -192,9 +192,22 @@ impl<'vm> Pushable<'vm> for ReadlineError {
     }
 }
 
+fn app_dir_root() -> Result<PathBuf, Box<StdError>> {
+    Ok(::app_dirs::app_root(
+        ::app_dirs::AppDataType::UserData,
+        &::APP_INFO,
+    )?)
+}
 
 fn new_editor(vm: WithVM<()>) -> IO<Editor> {
     let mut editor = rustyline::Editor::new();
+
+    let history_result =
+        app_dir_root().and_then(|path| Ok(editor.load_history(&*path.join("history"))?));
+
+    if let Err(err) = history_result {
+        warn!("Unable to load history: {}", err);
+    }
     editor.set_completer(Some(Completer(vm.vm.root_thread())));
     IO::Value(Editor(Mutex::new(editor)))
 }
@@ -354,7 +367,6 @@ fn finish_or_interrupt(
 
     let (sender, receiver) = mpsc::channel(1);
 
-
     remote.spawn(|handle| {
         ::tokio_signal::ctrl_c(handle)
             .map(|x| {
@@ -390,6 +402,25 @@ fn finish_or_interrupt(
     ))
 }
 
+fn save_history(editor: &Editor) -> IO<()> {
+    let history_result = app_dir_root().and_then(|path| {
+        editor
+            .0
+            .lock()
+            .unwrap()
+            .save_history(&*path.join("history"))
+            .map_err(|err| {
+                let err: Box<StdError> = Box::new(err);
+                err
+            })
+    });
+
+    if let Err(err) = history_result {
+        warn!("Unable to load history: {}", err);
+    }
+    IO::Value(())
+}
+
 fn load_rustyline(vm: &Thread) -> vm::Result<vm::ExternModule> {
     vm.register_type::<Editor>("Editor", &[])?;
     vm.register_type::<CpuPool>("CpuPool", &[])?;
@@ -398,7 +429,8 @@ fn load_rustyline(vm: &Thread) -> vm::Result<vm::ExternModule> {
         vm,
         record!(
             new_editor => primitive!(1 new_editor),
-            readline => primitive!(2 readline)
+            readline => primitive!(2 readline),
+            save_history => primitive!(1 save_history)
         ),
     )
 }

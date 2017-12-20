@@ -21,6 +21,7 @@ gluon_vm = { version = "0.6.2", path = "../vm", features = ["serialization"] } #
 gluon_completion = { path = "../completion", version = "0.6.2" } # GLUON
 gluon_format = { version = "0.6.2", path = "../format" } # GLUON
 
+app_dirs = "1.0.0"
 futures = "0.1.11"
 futures-cpupool = "0.1"
 tokio-core = "0.1"

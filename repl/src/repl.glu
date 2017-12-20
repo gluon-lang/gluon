@@ -167,16 +167,15 @@ let loop repl : Repl -> IO () =
     let run_line line =
         if string.is_empty (string.trim line) then
             wrap Continue
+        else if string.starts_with line ":" then
+            do_command repl.commands line
         else
-            if string.starts_with line ":" then
-                do_command repl.commands line
-            else
-                let action =
-                    do eval_thread = thread.new_thread ()
-                    let eval_action = repl_prim.eval_line line
-                    repl_prim.finish_or_interrupt repl.cpu_pool eval_thread eval_action
-                io.catch action wrap >>= io.println
-                    *> wrap Continue
+            let action =
+                do eval_thread = thread.new_thread ()
+                let eval_action = repl_prim.eval_line line
+                repl_prim.finish_or_interrupt repl.cpu_pool eval_thread eval_action
+            io.catch action wrap >>= io.println
+                *> wrap Continue
 
     do line_result = rustyline.readline repl.editor "> "
     match line_result with
@@ -186,7 +185,9 @@ let loop repl : Repl -> IO () =
         do continue = run_line line
         match continue with
         | Continue -> loop repl
-        | Quit -> wrap ()
+        | Quit ->
+            do _ = rustyline.save_history repl.editor
+            wrap ()
 
 let run x : () -> IO () =
     do _ = io.println "gluon (:h for help, :q to quit)"
