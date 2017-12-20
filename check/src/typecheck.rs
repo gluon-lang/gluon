@@ -1268,7 +1268,7 @@ impl<'a> Typecheck<'a> {
             }
             Pattern::Literal(ref l) => {
                 let typ = l.env_type_of(&self.environment);
-                self.unify_span(span, &typ, match_type.clone());
+                self.unify_span(span, &match_type, typ);
                 match_type
             }
             Pattern::Error => self.subs.new_var(),
