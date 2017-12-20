@@ -1,4 +1,4 @@
-let prelude = import! std.prelude
+let prelude @ { Ordering } = import! std.prelude
 let { Semigroup, Monoid, Eq, Show } = prelude
 let { Functor, Applicative, Alternative, Monad, Foldable, Traversable } = prelude
 let { Bool } = import! std.bool
@@ -31,6 +31,8 @@ let semigroup : Semigroup (List a) =
 
     { append }
 
+let { (<>) } = prelude.make_Semigroup semigroup
+
 let monoid : Monoid (List a) = {
     semigroup = semigroup,
     empty = Nil,
@@ -52,7 +54,6 @@ let functor : Functor List =
     { map }
 
 let applicative : Applicative List =
-    let { (<>) } = prelude.make_Semigroup semigroup
 
     let apply f xs =
         match f with
@@ -133,6 +134,35 @@ let traversable : Traversable List = {
             (app.wrap Nil),
 }
 
+let filter predicate xs : (a -> Bool) -> List a -> List a =
+    match xs with
+    | Nil -> Nil
+    | Cons y ys ->
+        let rest = filter predicate ys
+        if predicate y then Cons y rest else rest
+
+let scan compare xs less equal greater : (a -> Ordering)
+    -> List a
+    -> List a
+    -> List a
+    -> List a
+    -> { _0 : List a, _1 : List a, _2 : List a } =
+    match xs with
+    | Nil -> (less, equal, greater)
+    | Cons y ys ->
+        match compare y with
+        | LT -> scan compare ys (Cons y less) equal greater
+        | EQ -> scan compare ys less (Cons y equal) greater
+        | GT -> scan compare ys less equal (Cons y greater)
+
+let sort ord xs : Ord a -> List a -> List a =
+    match xs with
+    | Nil -> Nil
+    | Cons pivot ys ->
+        let (less, equal, greater) = scan (\a -> ord.compare a pivot) ys Nil (Cons pivot Nil) Nil
+        sort ord less <> equal <> sort ord greater
+
+
 {
     List,
     of,
@@ -148,4 +178,6 @@ let traversable : Traversable List = {
     show,
     foldable,
     traversable,
+    filter,
+    sort,
 }
