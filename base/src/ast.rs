@@ -219,6 +219,8 @@ pub enum Pattern<Id> {
         typ: ArcType<Id>,
         elems: Vec<SpannedPattern<Id>>,
     },
+    /// A literal pattern
+    Literal(Literal),
     /// An invalid pattern
     Error,
 }
@@ -530,7 +532,7 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::Id
             }
         }
         Pattern::Ident(ref mut id) => v.visit_ident(id),
-        Pattern::Error => (),
+        Pattern::Literal(_) | Pattern::Error => (),
     }
 }
 
@@ -699,7 +701,7 @@ pub fn walk_pattern<'a, V: ?Sized + Visitor<'a>>(v: &mut V, p: &'a Pattern<V::Id
             }
         }
         Pattern::Ident(ref id) => v.visit_typ(&id.typ),
-        Pattern::Error => (),
+        Pattern::Literal(_) | Pattern::Error => (),
     }
 }
 
@@ -790,6 +792,7 @@ impl Typed for Pattern<Symbol> {
             Pattern::Tuple { ref typ, .. } => Ok(typ.clone()),
             Pattern::Constructor(ref id, ref args) => get_return_type(env, &id.typ, args.len()),
             Pattern::Error => Ok(Type::hole()),
+            Pattern::Literal(ref l) => l.try_type_of(env),
         }
     }
 }

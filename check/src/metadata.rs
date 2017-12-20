@@ -41,6 +41,7 @@ pub fn metadata(
                 Pattern::Constructor(..)
                 | Pattern::Tuple { .. }
                 | Pattern::Record { .. }
+                | Pattern::Literal(_)
                 | Pattern::Error => self.new_pattern(metadata, &bind.name),
             }
         }
@@ -80,7 +81,10 @@ pub fn metadata(
                     self.stack_var(id.clone(), metadata.clone());
                     self.new_pattern(metadata, pat);
                 }
-                Pattern::Tuple { .. } | Pattern::Constructor(..) | Pattern::Error => (),
+                Pattern::Tuple { .. } |
+                Pattern::Constructor(..) |
+                Pattern::Literal(_) |
+                Pattern::Error => (),
             }
         }
 

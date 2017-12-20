@@ -310,6 +310,9 @@ AtomicPattern: Pattern<Id> = {
             Pattern::Ident(new_ident(type_cache, id))
         },
 
+    <l: Literal> =>
+        Pattern::Literal(l),
+
     "(" <elems: Comma<Sp<Pattern>>> ")" =>
         match elems.len() {
             // Parenthesized pattern
