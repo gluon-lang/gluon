@@ -156,7 +156,7 @@ impl<'a: 'e, 'e> Printer<'a, 'e> {
                     space.clone().append(pretty(if_true)).nest(INDENT).group(),
                     space.clone(),
                     "else",
-                    space.append(pretty(if_false)).nest(INDENT).group()
+                    self.pretty_else_expr(space, if_false)
                 ]
             }
             Expr::Infix(ref l, ref op, ref r) => chain![arena;
@@ -332,6 +332,30 @@ impl<'a: 'e, 'e> Printer<'a, 'e> {
             arena.space().append(doc)
         } else {
             arena.space().append(doc).append(arena.space())
+        }
+    }
+
+    fn pretty_else_expr<Id>(
+        &self,
+        space: DocBuilder<'a, Arena<'a>>,
+        if_false: &'a SpannedExpr<Id>,
+    ) -> DocBuilder<'a, Arena<'a>>
+    where
+        Id: AsRef<str>,
+    {
+        let pretty = |next: &'a SpannedExpr<_>| self.pretty_expr_(next.span.start, next);
+        let arena = self.arena;
+        match if_false.value {
+            Expr::IfElse(ref body, ref if_true, ref if_false) => chain![arena;
+                    arena.text(" if ").append(pretty(body)).group(),
+                    arena.space(),
+                    "then",
+                    space.clone().append(pretty(if_true)).nest(INDENT).group(),
+                    space.clone(),
+                    "else",
+                    self.pretty_else_expr(space, if_false)
+                ],
+            _ => space.append(pretty(if_false)).nest(INDENT).group(),
         }
     }
 

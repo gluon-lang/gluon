@@ -315,6 +315,18 @@ test abc 1232 ""
 }
 
 #[test]
+fn if_else_multiple() {
+    let expr = r#"
+if x
+then y
+else if z
+then w
+else 0
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+}
+
+#[test]
 fn comments_in_block_exprs() {
     let expr = r#"
 // test
