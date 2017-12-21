@@ -3,6 +3,7 @@ let { Functor, Applicative, Alternative, Monad } = prelude
 let { id, flip } = import! std.function
 let { Bool } = import! std.bool
 let char = import! std.char
+let int = import! std.int
 let { (==) } = char.eq
 let { Result } = import! std.result
 let string = import! std.string
@@ -12,7 +13,7 @@ let { Option } = import! std.option
 
 type OffsetString = { start : Int, end : Int, buffer : String }
 type Position = Int
-type Error = String
+type Error = { position : Position, message : String }
 type ParseResult a = Result Error { value : a, buffer : OffsetString }
 type Parser a =
         OffsetString -> ParseResult a
@@ -54,7 +55,7 @@ let alternative : Alternative Parser = {
             match parser l stream with
             | Ok a -> Ok a
             | Err _ -> parser r stream),
-    empty = parser (\stream -> Err "empty"),
+    empty = parser (\stream -> Err { position = stream.start, message = "empty" }),
 }
 
 let { (<|>) } = prelude.make_Alternative alternative
@@ -88,11 +89,11 @@ let uncons stream : OffsetString -> Option { char : Char, rest : OffsetString } 
 let update_position c position : Char -> Position -> Position =
     position + char.len_utf8 c
 
-let (<?>) p msg : Parser a -> String -> Parser a =
+let (<?>) p message : Parser a -> String -> Parser a =
     parser (\stream ->
         match p stream with
         | Ok x -> Ok x
-        | Err _ -> Err msg)
+        | Err _ -> Err { position = stream.start, message })
 
 
 let any : Parser Char =
@@ -101,10 +102,10 @@ let any : Parser Char =
         | Some record ->
             let { char, rest } = record
             Ok { value = char, buffer = rest }
-        | None -> Err "End of stream")
+        | None -> Err { position = stream.start, message = "End of stream" })
 
 let fail message : String -> Parser a =
-    parser (\stream -> Err message)
+    parser (\stream -> Err { position = stream.start, message })
 
 let satisfy_map predicate : (Char -> Option a) -> Parser a =
     let f c =
@@ -137,7 +138,7 @@ let take1 predicate : (Char -> Bool) -> Parser String =
                 if predicate record.char
                 then take_ record.rest
                 else if stream.start == stream2.start
-                then Err "Unexpected token"
+                then Err { position = stream.start, message = "Unexpected token" }
                 else Ok {
                             value = string.slice stream.buffer stream.start stream2.start,
                             buffer = stream2,
@@ -208,7 +209,7 @@ let sep_by parser sep : Parser a -> Parser b -> Parser (List a) =
 let parse p input : Parser a -> String -> Result String a =
     match p { start = 0, end = string.len input, buffer = input } with
     | Ok ok -> Ok ok.value
-    | Err err -> Err err
+    | Err err -> Err (int.show.show err.position <> ":" <> err.message)
 
 {
     Position, Error, ParseResult, Parser,
