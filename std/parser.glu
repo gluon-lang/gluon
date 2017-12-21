@@ -206,6 +206,17 @@ let sep_by1 parser sep : Parser a -> Parser b -> Parser (List a) =
 let sep_by parser sep : Parser a -> Parser b -> Parser (List a) =
     sep_by1 parser sep <|> wrap Nil
 
+let chainl1 p op : Parser a -> Parser (a -> a -> a) -> Parser a =
+    do l = p
+    let rest =
+        do f = op
+        do r = p
+        wrap (f l r)
+    rest <|> wrap l
+
+let chainl p op v : Parser a -> Parser (a -> a -> a) -> a -> Parser a =
+    chainl1 p op <|> wrap v
+
 let parse p input : Parser a -> String -> Result String a =
     match p { start = 0, end = string.len input, buffer = input } with
     | Ok ok -> Ok ok.value
@@ -235,6 +246,8 @@ let parse p input : Parser a -> String -> Result String a =
     one_of,
     sep_by,
     sep_by1,
+    chainl1,
+    chainl,
     (<?>),
 
     letter,
