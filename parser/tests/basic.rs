@@ -483,6 +483,45 @@ id
 }
 
 #[test]
+fn comment_on_and() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let id x = x
+/// The identity function
+and id2 y = y
+id
+"#;
+    let e = parse_clear_span!(text);
+    assert_eq!(
+        e,
+        no_loc(Expr::LetBindings(
+            vec![
+                ValueBinding {
+                    comment: None,
+                    name: no_loc(Pattern::Ident(TypedIdent::new(intern("id")))),
+                    typ: None,
+                    resolved_type: Type::hole(),
+                    args: vec![no_loc(TypedIdent::new(intern("x")))],
+                    expr: id("x"),
+                },
+                ValueBinding {
+                    comment: Some(Comment {
+                        typ: CommentType::Line,
+                        content: "The identity function".into(),
+                    }),
+                    name: no_loc(Pattern::Ident(TypedIdent::new(intern("id2")))),
+                    typ: None,
+                    resolved_type: Type::hole(),
+                    args: vec![no_loc(TypedIdent::new(intern("y")))],
+                    expr: id("y"),
+                },
+            ],
+            Box::new(id("id")),
+        ),)
+    );
+}
+
+#[test]
 fn comment_on_type() {
     let _ = ::env_logger::init();
     let text = r#"
