@@ -47,6 +47,7 @@ factorial 10
 
 Larger example which display most if not all of the syntactical elements in the language.
 
+[24 game]:https://github.com/gluon-lang/gluon/blob/master/examples/24.glu
 ```f#,rust
 let io = import! std.io
 
