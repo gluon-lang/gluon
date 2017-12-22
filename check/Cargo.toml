@@ -1,6 +1,6 @@
 [package]
 name = "gluon_check"
-version = "0.6.2" # GLUON
+version = "0.7.0" # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 
 license = "MIT"
@@ -18,8 +18,8 @@ union-find = "0.3.1"
 pretty = "0.3.0"
 smallvec = "0.2.1"
 
-gluon_base = { path = "../base", version = "0.6.2" } # GLUON
-gluon_parser = { path = "../parser", version = "0.6.2", optional = true } # GLUON
+gluon_base = { path = "../base", version = "0.7.0" } # GLUON
+gluon_parser = { path = "../parser", version = "0.7.0", optional = true } # GLUON
 
 [dev-dependencies]
 collect-mac = "0.1.0"
