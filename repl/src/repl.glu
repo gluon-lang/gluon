@@ -6,17 +6,26 @@ let { Option } = import! std.option
 let { Result } = import! std.result
 let string = import! std.string
 let thread = import! std.thread
+let array = import! std.array
 let { ref, load, (<-) } = import! std.reference
 let rustyline = import! rustyline
 let { ReadlineError } = import! rustyline_types
 let repl_prim = import! repl.prim
+let { (<<) } = import! std.function
+
 let { wrap, (*>) } = prelude.make_Applicative io.applicative
 let { flat_map, (>>=) } = prelude.make_Monad io.monad
+
 let { append = (++) } = string.semigroup
-let ord_map @ { singleton, find } = map.make string.ord
-let traverse_with_key = ord_map.traverse_with_key io.applicative
+let ord_map @ { singleton, find, insert } = map.make string.ord
 let { (<>) } = prelude.make_Semigroup ord_map.semigroup
 let { empty } = ord_map.monoid
+
+
+let run_interruptible_io cpu_pool action : CpuPool -> IO String -> IO (Result String String) =
+    do eval_thread = thread.new_thread ()
+    let interruptible_action = repl_prim.finish_or_interrupt cpu_pool eval_thread action
+    io.catch (io.functor.map Ok interruptible_action) (wrap << Err)
 
 
 let load_file cpu_pool filename : CpuPool -> String -> IO String =
@@ -30,11 +39,24 @@ let load_file cpu_pool filename : CpuPool -> String -> IO String =
         do result = io.load_script modulename expr
         wrap result
 
-    do eval_thread = thread.new_thread ()
-    let load_action = repl_prim.finish_or_interrupt cpu_pool eval_thread action
-    io.catch load_action (\err -> wrap err)
+    do result = run_interruptible_io cpu_pool action
+    match result with
+    | Ok x -> wrap x
+    | Err x -> wrap x
 
-type Cmd = { info : String, action : String -> IO Bool }
+let run_file cpu_pool filename : CpuPool -> String -> IO () =
+    let action =
+        do expr = io.read_file_to_string filename
+        do result = io.run_expr expr
+        wrap (result.value ++ " : " ++ result.typ)
+
+    do result = run_interruptible_io cpu_pool action
+    match result with
+    | Ok _ -> io.println ""
+    | Err x -> io.println x
+
+type ReplAction = | Continue | Quit
+type Cmd = { name : String, alias : String, info : String, action : String -> IO ReplAction }
 type Commands = Map String Cmd
 
 let make_commands cpu_pool : CpuPool -> Commands =
@@ -43,76 +65,117 @@ let make_commands cpu_pool : CpuPool -> Commands =
         | Ok x -> io.println x
         | Err x -> io.println x
 
-    let commands = ref empty
-    let cmds =
-        singleton "q" { info = "Quit the REPL", action = \_ -> wrap False } <> singleton "t" {
-                    info = "Prints the type with an expression",
-                    action = \arg -> repl_prim.type_of_expr arg >>= print_result *> wrap True,
-                }
-            <> singleton "i" {
-                    info = "Prints information about the given name",
-                    action = \arg -> repl_prim.find_info arg >>= print_result *> wrap True,
-                }
-            <> singleton "k" {
-                    info = "Prints the kind with the given type",
-                    action = \arg -> repl_prim.find_kind arg >>= print_result *> wrap True,
-                }
-            <> singleton "l" {
-                    info = "Loads the file at \'folder/module.ext\' and stores it at \'module\'",
-                    action = \arg -> load_file cpu_pool arg >>= io.println *> wrap True,
-                }
-            <> singleton "h" {
-                    info = "Print this help",
-                    action = \_ ->
-                        let print_header = io.println "Available commands\n"
-                        let print_cmd key cmd : String -> Cmd -> IO () =
-                            io.println ("    :" ++ key ++ " " ++ cmd.info)
+    let commands = ref []
+    let cmds = [{ name = "quit", alias = "q", info = "Quit the REPL", action = \_ -> wrap Quit }, {
+            name = "type",
+            alias = "t",
+            info = "Prints the type with an expression",
+            action =
+                \arg ->
+                repl_prim.type_of_expr arg >>= print_result
+                    *> wrap Continue,
+        },
+        {
+            name = "info",
+            alias = "i",
+            info = "Prints information about the given name",
+            action = \arg -> repl_prim.find_info arg >>= print_result *> wrap Continue,
+        },
+        {
+            name = "kind",
+            alias = "k",
+            info = "Prints the kind with the given type",
+            action = \arg -> repl_prim.find_kind arg >>= print_result *> wrap Continue,
+        },
+        {
+            name = "load",
+            alias = "l",
+            info = "Loads the file at \'folder/module.ext\' and stores it at \'module\'",
+            action = \arg -> load_file cpu_pool arg >>= io.println *> wrap Continue,
+        },
+        {
+            name = "script",
+            alias = "s",
+            info = "Runs the script at `FILENAME`",
+            action = \arg -> run_file cpu_pool arg *> wrap Continue,
+        },
+        {
+            name = "help",
+            alias = "h",
+            info = "Print this help",
+            action = \_ ->
+                let print_header = io.println "Available commands\n"
+                let print_cmd cmd : Cmd -> IO () =
+                    io.println ("    :" ++ cmd.name ++ " (" ++ cmd.alias ++ ") " ++ cmd.info)
 
-                        print_header *> traverse_with_key print_cmd (load commands)
-                            *> wrap True,
-                }
+                print_header *> array.traversable.traverse io.applicative print_cmd (load commands)
+                    *> wrap Continue,
+        }]
     commands <- cmds
-    load commands
+    array.foldable.foldl
+        (\map cmd -> singleton cmd.name cmd <> singleton cmd.alias cmd <> map)
+        empty
+        cmds
 
-let do_command commands line : Commands -> String -> IO Bool =
-    if string.len line >= 2 then
-        let cmd = string.slice line 1 2
-        let arg =
-            if string.len line >= 3
-            then string.trim (string.slice line 3 (string.len line))
-            else ""
+let { Parser, parse } = import! std.parser
+
+
+let cmd_parser : Parser { cmd : String, arg : String } =
+    let {
+        any,
+        recognize,
+        skip_many1,
+        token,
+        spaces,
+        letter,
+        monad = { flat_map },
+        alternative,
+        applicative } = import! std.parser
+    let { wrap, (*>) } = prelude.make_Applicative applicative
+    let { (<|>) } = prelude.make_Alternative alternative
+
+    let word = recognize (skip_many1 letter)
+    let arg_parser = recognize (skip_many1 any)
+
+    do _ = token ':'
+    do cmd = word
+    do arg = (spaces *> arg_parser) <|> wrap ""
+    wrap { cmd, arg }
+
+let do_command commands line : Commands -> String -> IO ReplAction =
+    match parse cmd_parser line with
+    | Ok { cmd, arg } ->
         match find cmd commands with
         | Some command -> command.action arg
-        | None -> io.println ("Unknown command \'" ++ cmd ++ "\'") *> wrap True
-    else
+        | None -> io.println ("Unknown command \'" ++ cmd ++ "\'") *> wrap Continue
+    | Err err ->
         io.println "Expected a command such as `:h`"
-            *> wrap True
+            *> wrap Continue
 
-let store line : String -> IO Bool =
+let store line : String -> IO ReplAction =
     let line = string.trim line
     match string.find line " " with
     | Some bind_end ->
         let binding = string.slice line 0 bind_end
         let expr = string.slice line bind_end (string.len line)
-        io.load_script binding expr *> wrap True
-    | None -> io.println "Expected binding in definition" *> wrap True
+        io.load_script binding expr *> wrap Continue
+    | None -> io.println "Expected binding in definition" *> wrap Continue
 
 type Repl = { commands : Commands, editor : Editor, cpu_pool : CpuPool }
 
 let loop repl : Repl -> IO () =
     let run_line line =
         if string.is_empty (string.trim line) then
-            wrap True
+            wrap Continue
+        else if string.starts_with line ":" then
+            do_command repl.commands line
         else
-            if string.starts_with line ":" then
-                do_command repl.commands line
-            else
-                let action =
-                    do eval_thread = thread.new_thread ()
-                    let eval_action = repl_prim.eval_line line
-                    repl_prim.finish_or_interrupt repl.cpu_pool eval_thread eval_action
-                io.catch action wrap >>= io.println
-                    *> wrap True
+            let action =
+                do eval_thread = thread.new_thread ()
+                let eval_action = repl_prim.eval_line line
+                repl_prim.finish_or_interrupt repl.cpu_pool eval_thread eval_action
+            io.catch action wrap >>= io.println
+                *> wrap Continue
 
     do line_result = rustyline.readline repl.editor "> "
     match line_result with
@@ -120,7 +183,11 @@ let loop repl : Repl -> IO () =
     | Err Interrupted -> loop repl
     | Ok line ->
         do continue = run_line line
-        if continue then loop repl else wrap ()
+        match continue with
+        | Continue -> loop repl
+        | Quit ->
+            do _ = rustyline.save_history repl.editor
+            wrap ()
 
 let run x : () -> IO () =
     do _ = io.println "gluon (:h for help, :q to quit)"

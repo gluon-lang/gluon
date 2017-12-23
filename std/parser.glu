@@ -1,8 +1,9 @@
 let prelude = import! std.prelude
 let { Functor, Applicative, Alternative, Monad } = prelude
-let { id } = import! std.function
+let { id, flip } = import! std.function
 let { Bool } = import! std.bool
 let char = import! std.char
+let int = import! std.int
 let { (==) } = char.eq
 let { Result } = import! std.result
 let string = import! std.string
@@ -12,8 +13,10 @@ let { Option } = import! std.option
 
 type OffsetString = { start : Int, end : Int, buffer : String }
 type Position = Int
-type Error = String
+type Error = { position : Position, message : String }
 type ParseResult a = Result Error { value : a, buffer : OffsetString }
+
+/// `Parser` is a monad which parses a `String` into structured values
 type Parser a =
         OffsetString -> ParseResult a
 
@@ -54,7 +57,7 @@ let alternative : Alternative Parser = {
             match parser l stream with
             | Ok a -> Ok a
             | Err _ -> parser r stream),
-    empty = parser (\stream -> Err "empty"),
+    empty = parser (\stream -> Err { position = stream.start, message = "empty" }),
 }
 
 let { (<|>) } = prelude.make_Alternative alternative
@@ -88,27 +91,59 @@ let uncons stream : OffsetString -> Option { char : Char, rest : OffsetString } 
 let update_position c position : Char -> Position -> Position =
     position + char.len_utf8 c
 
+/// Returns `message` as what was expected by `p`
+let (<?>) p message : Parser a -> String -> Parser a =
+    parser (\stream ->
+        match p stream with
+        | Ok x -> Ok x
+        | Err _ -> Err { position = stream.start, message })
+
+/// Parses any character. Only errors if the stream is out of input
 let any : Parser Char =
     parser (\stream ->
         match uncons stream with
         | Some record ->
             let { char, rest } = record
             Ok { value = char, buffer = rest }
-        | None -> Err "End of stream")
+        | None -> Err { position = stream.start, message = "End of stream" })
 
+/// Fails the parser with `message` as the cause
 let fail message : String -> Parser a =
-    parser (\stream -> Err message)
+    parser (\stream -> Err { position = stream.start, message })
 
-let satisfy predicate : (Char -> Bool) -> Parser Char =
+/// Succeeds if `predicate` returns `Some`, fails if `None` is returned
+let satisfy_map predicate : (Char -> Option a) -> Parser a =
     let f c =
-        if predicate c
-        then wrap c
-        else fail ("Unexpected character " <> char.show.show c)
+        match predicate c with
+        | Some x -> wrap x
+        | None -> fail ("Unexpected character " <> char.show.show c)
     flat_map f any
 
+/// Succeeds if `predicate` returns True, fails if `False` is returned
+let satisfy predicate : (Char -> Bool) -> Parser Char =
+    satisfy_map (\c -> if predicate c then Some c else None)
+
+/// Succeeds if the next token is `expected`
 let token expected : Char -> Parser Char =
     satisfy (\c -> expected == c)
 
+/// Succeds if the next token is a letter
+let letter : Parser Char = satisfy char.is_alphabetic <?> "letter"
+
+/// Succeds if the next token is a digit
+let digit : Parser Char = satisfy (flip char.is_digit 10) <?> "digit"
+
+/// Succeds if the next token is alphanumeric
+let alpha_num : Parser Char = satisfy char.is_alphanumeric <?> "letter or digit"
+
+/// Succeds if the next token is a space
+let space : Parser Char = token ' '
+
+/// Succeds if the next token is a tab
+let tab : Parser Char = token '\t'
+
+/// Parses one or more tokens passing `predicate` and returns the `String` between the start and
+/// end of those tokens
 let take1 predicate : (Char -> Bool) -> Parser String =
     parser (\stream ->
         let take_ stream2 =
@@ -116,20 +151,25 @@ let take1 predicate : (Char -> Bool) -> Parser String =
             | Some record ->
                 if predicate record.char
                 then take_ record.rest
-                else if stream.start == stream2.start then Err "Unexpected token" else Ok {
-                                value = string.slice stream.buffer stream.start stream2.start,
-                                buffer = stream2,
-                            }
+                else if stream.start == stream2.start
+                then Err { position = stream.start, message = "Unexpected token" }
+                else Ok {
+                            value = string.slice stream.buffer stream.start stream2.start,
+                            buffer = stream2,
+                        }
             | None -> Ok {
                         value = string.slice stream.buffer stream.start stream.end,
                         buffer = stream2,
                     }
         take_ stream)
 
+/// Parses zero or more tokens passing `predicate` and returns the `String` between the start and
+/// end of those tokens
 let take predicate : (Char -> Bool) -> Parser String =
     take1 predicate <|> wrap ""
 
-let take_string p : Parser a -> Parser String =
+/// Parses using `p` and returns the `String` between the start and of what `p` parsed
+let recognize p : Parser a -> Parser String =
     parser (\stream ->
         match parser p stream with
         | Ok a ->
@@ -139,27 +179,35 @@ let take_string p : Parser a -> Parser String =
                 }
         | Err err -> Err err)
 
+/// Skips over whitespace characters
 let spaces = take char.is_whitespace
 
+/// Creates a parser from a factory function. Useful to prevent mutually recursive parser from looping forever
 let lazy_parser f : (() -> Parser a) -> Parser a =
     parser (\stream -> f () stream)
 
+/// Parses `x` between `l` and `r`, returning the result of `x`
 let between l r x : Parser a -> Parser b -> Parser c -> Parser c =
     l *> x <* r
 
+/// Parses with `p` zero or more times
 let many p : Parser a -> Parser (List a) =
     many1 p <|> wrap Nil
 
+/// Parses with `p` one or more times
 and many1 p : Parser a -> Parser (List a) =
     do h = p
     map (\t -> Cons h t) (many p)
 
+/// Parses with `p` zero or more times, ignoring the result of the parser
 let skip_many p : Parser a -> Parser () =
     skip_many1 p <|> wrap ()
+/// Parses with `p` one or more times, ignoring the result of the parser
 and skip_many1 p : Parser a -> Parser () =
     do _ = p
     skip_many p
 
+/// Parses one of the characters of `s`
 let one_of s : String -> Parser Char =
     satisfy (\first ->
         let len = string.len s
@@ -174,10 +222,36 @@ let one_of s : String -> Parser Char =
         one_of_ 0)
         <|> fail ("Expected one of `" <> s <> "`")
 
+
+/// Parses at least one element of `parser` separated by `sep`
+let sep_by1 parser sep : Parser a -> Parser b -> Parser (List a) =
+    do x = parser
+    do xs = many (sep *> parser)
+    wrap (Cons x xs)
+
+/// Parses `parser` separated by `sep`
+let sep_by parser sep : Parser a -> Parser b -> Parser (List a) =
+    sep_by1 parser sep <|> wrap Nil
+
+/// Like `sep_by1` but applies the function returned by `op` on the left fold of successive parses
+let chainl1 p op : Parser a -> Parser (a -> a -> a) -> Parser a =
+    do l = p
+    let rest x = (
+        do f = op
+        do r = p
+        rest (f x r)) <|> wrap x
+    rest l
+
+/// Like `sep_by` but applies the function returned by `op` on the left fold of successive parses
+let chainl p op v : Parser a -> Parser (a -> a -> a) -> a -> Parser a =
+    chainl1 p op <|> wrap v
+
+
+/// Parsed `input` using `p`
 let parse p input : Parser a -> String -> Result String a =
     match p { start = 0, end = string.len input, buffer = input } with
     | Ok ok -> Ok ok.value
-    | Err err -> Err err
+    | Err err -> Err (int.show.show err.position <> ":" <> err.message)
 
 {
     Position, Error, ParseResult, Parser,
@@ -186,8 +260,31 @@ let parse p input : Parser a -> String -> Result String a =
 
     parser,
 
-    any, between, token, many, many1, satisfy, spaces, take1, lazy_parser, fail, take_string,
-    skip_many, skip_many1, one_of,
+    any,
+    between,
+    token,
+    many,
+    many1,
+    satisfy,
+    satisfy_map,
+    spaces,
+    take1,
+    lazy_parser,
+    fail,
+    recognize,
+    skip_many,
+    skip_many1,
+    one_of,
+    sep_by,
+    sep_by1,
+    chainl1,
+    chainl,
+    (<?>),
+
+    letter,
+    digit,
+    space,
+    tab,
 
     parse,
 }

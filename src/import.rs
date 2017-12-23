@@ -10,6 +10,7 @@ use std::path::PathBuf;
 
 use itertools::Itertools;
 
+use base::filename_to_module;
 use base::ast::{expr_to_path, Expr, Literal, SpannedExpr, Typed, TypedIdent};
 use base::fnv::FnvMap;
 use base::pos::{self, BytePos, Span};
@@ -21,7 +22,7 @@ use vm::{ExternLoader, ExternModule};
 use vm::macros::{Error as MacroError, Macro, MacroExpander};
 use vm::thread::{Thread, ThreadInternal};
 
-use super::{filename_to_module, Compiler};
+use super::Compiler;
 
 quick_error! {
     /// Error type for the import macro
@@ -166,6 +167,14 @@ impl<I> Import<I> {
             .write()
             .unwrap()
             .insert(String::from(module), loader);
+    }
+
+    pub fn modules(&self) -> Vec<Cow<'static, str>> {
+        STD_LIBS
+            .iter()
+            .map(|t| Cow::Borrowed(t.0))
+            .chain(self.loaders.read().unwrap().keys().cloned().map(Cow::Owned))
+            .collect()
     }
 
     fn get_unloaded_module(
@@ -450,7 +459,9 @@ where
                     .map_err(|err| Error::String(err.to_string()))?;
                 modulename
             }
-            Expr::Literal(Literal::String(ref filename)) => filename_to_module(filename),
+            Expr::Literal(Literal::String(ref filename)) => {
+                format!("@{}", filename_to_module(filename))
+            }
             _ => {
                 return Err(
                     Error::String("Expected a string literal or path to import".into()).into(),

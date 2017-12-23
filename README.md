@@ -43,65 +43,181 @@ let factorial n : Int -> Int =
 factorial 10
 ```
 
-### Syntax
+### 24
 
-Larger example which display most if not all of the syntactical elements in the language.
-
+[24 game]:https://github.com/gluon-lang/gluon/blob/master/examples/24.glu
 ```f#,rust
+// # 24
+//
+// From http://rosettacode.org/wiki/24_game
+//
+// Write a program that randomly chooses and displays four digits, each from 1 ──► 9 (inclusive) with repetitions allowed.
+//
+// The program should prompt for the player to enter an arithmetic expression using just those, and all of those four digits, used exactly once each. The program should check then evaluate the expression.
+//
+// The goal is for the player to enter an expression that (numerically) evaluates to 24.
+//
+// * Only the following operators/functions are allowed: multiplication, division, addition, subtraction
+// * Division should use floating point or rational arithmetic, etc, to preserve remainders.
+// * Brackets are allowed, if using an infix expression evaluator.
+// * Forming multiple digit numbers from the supplied digits is disallowed. (So an answer of 12+12 when given 1, 2, 2, and 1 is wrong).
+// * The order of the digits when given does not have to be preserved.
+//
+//
+// ## Notes
+//
+//     The type of expression evaluator used is not mandated. An RPN evaluator is equally acceptable for example.
+//     The task is not for the program to generate the expression, or test whether an expression is even possible.
+
+
+// The `import!` macro are used to load and refer to other modules.
+// It gets replaced by the value returned by evaluating that module (cached of course, so that
+// multiple `import!`s to the same module only evaluates the module once)
 let io = import! std.io
+let prelude = import! std.prelude
+let { Result } = import! std.result
+let array = import! std.array
+let int = import! std.int
+let string = import! std.string
+let list @ { List } = import! std.list
+let random = import! std.random
+let string = import! std.string
 
-// `let` declares new variables.
-let id x = x
+// Since imports in gluon returns regular values we can load specific parts of a module using pattern matches.
+// This match in particular brings in the equality operator for the `Char` type (this is required in
+// the current version of gluon but will be fixed in the future).
+let { eq = { (==) } } = import! std.char
 
-let factorial n =
-        if n < 2
-        then 1
-        else n * factorial (n - 1)
+let { (<>) } = prelude.make_Semigroup string.semigroup
 
-// `type` is used to declare a new type.
-// In this case we declare `Countable` to be a record with a single field (count) which is a function
-// taking a single argument and returning an integer
-type Countable a = { count : a -> Int }
+let { (*>), wrap } = prelude.make_Applicative io.applicative
+let { flat_map } = io.monad
 
-// "Counting" an integer just means returning the integer itself
-let countable_Int : Countable Int = { count = \x -> x }
+let { for } = prelude.make_Traversable array.traversable
 
-let list_module =
-    // Declare a new type which only exists in the current scope
-    type List a = | Cons a (List a) | Nil
-    let map f xs =
-            match xs with
-                | Cons y ys -> Cons (f y) (map f ys)
-                | Nil -> Nil
-    // Define a count instance over lists which counts each of the elements and sums
-    // the results
-    let countable_List c : Countable a -> Countable (List a) =
-        let count xs =
-            match xs with
-            | Cons y ys -> c.count y + count ys
-            | Nil -> 0
-        { count }
-    {
-        // Since `List` is local we export it so its constructors can be used
-        // outside the current scope
-        List,
-        countable_List,
-        map
-    }
+type Op = | Add | Sub | Div | Mul
+type Expr = | Int Int | Binop Expr Op Expr
 
-// Bring the `List` type and its constructors into scope
-let { List, countable_List } = list_module
+let parse : String -> Result String Expr =
+    // Gluon has a small parser combinator library which makes it easy to define an expression parser
+    let parser @ {
+        between,
+        satisfy,
+        satisfy_map,
+        spaces,
+        token,
+        digit,
+        skip_many1,
+        recognize,
+        lazy_parser,
+        chainl1,
+        (<?>),
+        monad = { flat_map } } = import! std.parser
+    let { (*>), (<*), wrap } = prelude.make_Applicative parser.applicative
+    let { (<|>) } = prelude.make_Alternative parser.alternative
 
-// Create a `Countable` record for `List Int`
-let { count } : Countable (List Int) = countable_List countable_Int
+    let lex x = x <* spaces
 
-if count (Cons 20 (Cons 22 Nil)) == 41 then
-    error "This branch is not executed"
-else
-    // `import! <filename>` loads a module stored at `filename`
-    let io = import! std.io
-    io.print "Hello world!"
+    let integer =
+        // `do` expression provide a way to write monads in a way similiar to procedural code
+        do i = lex (recognize (skip_many1 digit))
+        match int.parse i with
+        | Ok x -> wrap x
+        | Err _ -> parser.fail "Unable to parse integer"
+
+    let operator =
+        satisfy_map (\c ->
+            if c == '*'
+            then Some Mul
+            else if c == '+'
+            then Some Add
+            else if c == '-'
+            then Some Sub
+            else if c == '/'
+            then Some Div
+            else None)
+            <?> "operator"
+
+    let atom _ =
+        parser.functor.map Int integer
+            <|> between (lex (token '(')) (lex (token ')')) (lazy_parser expr)
+
+    and binop _ =
+        let op_parser =
+            do op = lex operator
+            wrap (\l r -> Binop l op r)
+        chainl1 (atom ()) op_parser
+
+    and expr _ = binop ()
+
+    // Gluon makes it possible to partially apply functions which we use here to scope all parser functions
+    // inside the `let parse` binding above.
+    let parse : String -> Result String Expr = parser.parse (expr () <* spaces)
+    parse
+
+/// Validates that `expr` contains exactly the same integers as `digits`
+let validate digits expr : Array Int -> Expr -> Bool =
+    let integers xs expr : List Int -> Expr -> List Int =
+        match expr with
+        | Int i -> Cons i xs
+        | Binop l _ r -> integers (integers xs l) r
+    let ints = integers Nil expr
+
+    let sort_ints = list.sort int.ord
+    let { (==) } = list.eq int.eq
+
+    sort_ints (list.of digits) == sort_ints ints
+
+let eval expr : Expr -> Int =
+    match expr with
+    | Int i -> i
+    | Binop l op r ->
+        let f =
+            // Operators are just functions and can be referred to like any other identifier
+            // by wrapping them in parentheses
+            match op with
+            | Add -> (+)
+            | Sub -> (-)
+            | Div -> (/)
+            | Mul -> (*)
+        f (eval l) (eval r)
+
+do digits =
+    let gen_digit = random.thread_rng.gen_int_range 1 10
+    do a = gen_digit
+    do b = gen_digit
+    do c = gen_digit
+    do d = gen_digit
+    wrap [a, b, c, d]
+
+let print_digits = for io.applicative digits (\d ->
+        do _ = io.print " "
+        io.print (int.show.show d))
+do _ = io.print "Four digits:" *> print_digits *> io.println ""
+
+let guess_loop _ =
+    do line = io.read_line
+    // Exit the program if the line is just whitespace
+    if string.is_empty (string.trim line) then
+        wrap ()
+    else
+        match parse line with
+        | Err err -> io.println err *> guess_loop ()
+        | Ok expr ->
+            if validate digits expr then
+                let result = eval expr
+                if result == 24
+                then io.println "Correct!"
+                else io.println ("Incorrect, " <> int.show.show result <> " != 24") *> guess_loop ()
+            else
+                io.println
+                    "Expression is not valid, you must use each of the four numbers exactly once!"
+                    *> guess_loop ()
+
+guess_loop ()
 ```
+
+[Source](24 game)
 
 ## Getting started
 
@@ -184,7 +300,7 @@ Gluon requires a recent Rust compiler to build (1.9.0 or later) and is available
 
 ```toml
 [dependencies]
-gluon = "0.6.2"
+gluon = "0.7.0"
 ```
 
 ### Other languages

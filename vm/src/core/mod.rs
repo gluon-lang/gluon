@@ -896,20 +896,24 @@ impl<'a, 'e> Translator<'a, 'e> {
 impl<'a> Typed for Expr<'a> {
     type Ident = Symbol;
 
-    fn env_type_of(&self, env: &TypeEnv) -> ArcType<Self::Ident> {
+    fn try_type_of(&self, env: &TypeEnv) -> Result<ArcType<Self::Ident>, String> {
         match *self {
-            Expr::Call(expr, args) => get_return_type(env, &expr.env_type_of(env), args.len()),
-            Expr::Const(ref literal, _) => literal.env_type_of(env),
-            Expr::Data(ref id, _, _, _) => id.typ.clone(),
-            Expr::Ident(ref id, _) => id.typ.clone(),
-            Expr::Let(_, ref body) => body.env_type_of(env),
-            Expr::Match(_, alts) => alts[0].expr.env_type_of(env),
+            Expr::Call(expr, args) => get_return_type(env, &expr.try_type_of(env)?, args.len()),
+            Expr::Const(ref literal, _) => literal.try_type_of(env),
+            Expr::Data(ref id, _, _, _) => Ok(id.typ.clone()),
+            Expr::Ident(ref id, _) => Ok(id.typ.clone()),
+            Expr::Let(_, ref body) => body.try_type_of(env),
+            Expr::Match(_, alts) => alts[0].expr.try_type_of(env),
         }
     }
 }
-fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> ArcType {
+fn get_return_type(
+    env: &TypeEnv,
+    alias_type: &ArcType,
+    arg_count: usize,
+) -> Result<ArcType, String> {
     if arg_count == 0 {
-        return alias_type.clone();
+        return Ok(alias_type.clone());
     }
     let function_type = remove_aliases_cow(env, alias_type);
 

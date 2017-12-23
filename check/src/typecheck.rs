@@ -347,7 +347,16 @@ impl<'a> Typecheck<'a> {
                 );
                 Ok(typ)
             }
-            None => Err(TypeError::UndefinedVariable(id.clone())),
+            None => {
+                // Don't report global variables inserted by the `import!` macro as non-existing
+                // existing
+                // (if they don't exist the error will already have been reported by the macro)
+                if id.is_global() {
+                    Ok(self.subs.new_var())
+                } else {
+                    Err(TypeError::UndefinedVariable(id.clone()))
+                }
+            }
         }
     }
 
@@ -600,7 +609,6 @@ impl<'a> Typecheck<'a> {
                             value: TypeError::from(value).into(),
                         });
                     }
-                    println!("{}", self.errors);
                     Err(mem::replace(&mut self.errors, Errors::new()))
                 }
             }
@@ -610,7 +618,6 @@ impl<'a> Typecheck<'a> {
     fn infer_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> ArcType {
         self.typecheck_opt(expr, None)
     }
-
 
     fn typecheck(&mut self, expr: &mut SpannedExpr<Symbol>, expected_type: &ArcType) -> ArcType {
         self.typecheck_opt(expr, Some(expected_type))
@@ -922,17 +929,13 @@ impl<'a> Typecheck<'a> {
                     new_types.extend(
                         base_type
                             .type_field_iter()
-                            .filter(|field| {
-                                !duplicated_fields.contains(field.name.declared_name())
-                            })
+                            .filter(|field| !duplicated_fields.contains(field.name.declared_name()))
                             .cloned(),
                     );
                     new_fields.extend(
                         base_type
                             .row_iter()
-                            .filter(|field| {
-                                !duplicated_fields.contains(field.name.declared_name())
-                            })
+                            .filter(|field| !duplicated_fields.contains(field.name.declared_name()))
                             .cloned(),
                     );
                 }
@@ -1164,9 +1167,7 @@ impl<'a> Typecheck<'a> {
 
                         let fields = fields
                             .iter()
-                            .map(|field| {
-                                Field::new(field.name.value.clone(), self.subs.new_var())
-                            })
+                            .map(|field| Field::new(field.name.value.clone(), self.subs.new_var()))
                             .collect();
                         let t = Type::poly_record(types, fields, self.subs.new_var());
                         (t.clone(), t)
@@ -1324,9 +1325,10 @@ impl<'a> Typecheck<'a> {
                     {
                         self.error(
                             bind.name.span,
-                            TypeError::Message(
-                                format!("Unexpected type constructor `{}`", id.name),
-                            ),
+                            TypeError::Message(format!(
+                                "Unexpected type constructor `{}`",
+                                id.name
+                            )),
                         );
                     }
                     _ => (),
@@ -1393,7 +1395,6 @@ impl<'a> Typecheck<'a> {
                     .map_or(bind.name.span.end, |last_arg| last_arg.span.end),
             );
             typ = self.merge_signature(bind_span, level, &bind.resolved_type, typ);
-
 
             if !is_recursive {
                 // Merge the type declaration and the actual type
@@ -1553,7 +1554,6 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-
     fn check_undefined_variables(&mut self, args: &[Generic<Symbol>], typ: &AstType<Symbol>) {
         use base::pos::HasSpan;
         match **typ {
@@ -1615,10 +1615,8 @@ impl<'a> Typecheck<'a> {
                 let typ = self.top_skolem_scope(typ);
                 let typ = self.instantiate_generics(&typ);
                 let record_type = self.remove_alias(typ.clone());
-                with_pattern_types(
-                    fields,
-                    &record_type,
-                    |field_name, binding, field_type| match *binding {
+                with_pattern_types(fields, &record_type, |field_name, binding, field_type| {
+                    match *binding {
                         Some(ref mut pat) => {
                             self.finish_pattern(level, pat, field_type);
                         }
@@ -1632,8 +1630,8 @@ impl<'a> Typecheck<'a> {
 
                             self.intersect_type(level, field_name, field_type);
                         }
-                    },
-                );
+                    }
+                });
             }
             Pattern::Tuple {
                 ref mut typ,
@@ -1700,12 +1698,7 @@ impl<'a> Typecheck<'a> {
                 };
 
                 // Avoid cloning existing_binding
-                Some((
-                    result.0,
-                    result.1,
-                    existing_type,
-                    existing_binding.clone(),
-                ))
+                Some((result.0, result.1, existing_type, existing_binding.clone()))
             } else {
                 None
             }
@@ -2034,9 +2027,9 @@ impl<'a> Typecheck<'a> {
             Type::Variant(ref row) => {
                 let replacement = types::visit_type_opt(
                     row,
-                    &mut types::ControlVisitation(
-                        |typ: &ArcType| self.create_unifiable_signature_(typ),
-                    ),
+                    &mut types::ControlVisitation(|typ: &ArcType| {
+                        self.create_unifiable_signature_(typ)
+                    }),
                 );
                 let row = replacement.as_ref().unwrap_or(row);
                 let iter = || {
@@ -2111,9 +2104,9 @@ impl<'a> Typecheck<'a> {
             }
             _ => types::walk_move_type_opt(
                 typ,
-                &mut types::ControlVisitation(
-                    |typ: &ArcType| self.create_unifiable_signature_(typ),
-                ),
+                &mut types::ControlVisitation(|typ: &ArcType| {
+                    self.create_unifiable_signature_(typ)
+                }),
             ),
         }
     }
@@ -2143,9 +2136,7 @@ impl<'a> Typecheck<'a> {
                 actual = self.subs.set_type(actual);
                 debug!(
                     "Error '{:?}' between:\n>> {}\n>> {}",
-                    errors,
-                    expected,
-                    actual
+                    errors, expected, actual
                 );
                 let err = TypeError::Unification(expected, actual, apply_subs(&self.subs, errors));
                 self.errors.push(Spanned {
@@ -2183,9 +2174,7 @@ impl<'a> Typecheck<'a> {
                 actual = self.subs.set_type(actual);
                 debug!(
                     "Error '{:?}' between:\n>> {}\n>> {}",
-                    errors,
-                    expected,
-                    actual
+                    errors, expected, actual
                 );
                 Err(TypeError::Unification(
                     expected,

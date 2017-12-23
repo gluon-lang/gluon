@@ -1,6 +1,6 @@
 [package]
 name = "gluon_repl"
-version = "0.6.2" # GLUON
+version = "0.7.0" # GLUON
 authors = ["Markus Westerlind <marwes91@gmail.com>"]
 
 license = "MIT"
@@ -16,11 +16,12 @@ doc = false
 
 [dependencies]
 
-gluon = { version = "0.6.2", path = "..", features = ["serialization"] } # GLUON
-gluon_vm = { version = "0.6.2", path = "../vm", features = ["serialization"] } # GLUON
-gluon_completion = { path = "../completion", version = "0.6.2" } # GLUON
-gluon_format = { version = "0.6.2", path = "../format" } # GLUON
+gluon = { version = "0.7.0", path = "..", features = ["serialization"] } # GLUON
+gluon_vm = { version = "0.7.0", path = "../vm", features = ["serialization"] } # GLUON
+gluon_completion = { path = "../completion", version = "0.7.0" } # GLUON
+gluon_format = { version = "0.7.0", path = "../format" } # GLUON
 
+app_dirs = "1.0.0"
 futures = "0.1.11"
 futures-cpupool = "0.1"
 tokio-core = "0.1"

@@ -175,13 +175,14 @@ where
     }
 }
 
-
 impl<Pos: Ord> Span<Pos> {
     pub fn new(start: Pos, end: Pos) -> Span<Pos> {
         Span::with_id(start, end, NO_EXPANSION)
     }
 
     pub fn with_id(start: Pos, end: Pos, no_expansion: ExpansionId) -> Span<Pos> {
+        // FIXME #416
+        // debug_assert!(start <= end, "Invalid span");
         Span {
             start: start,
             end: end,

@@ -708,61 +708,65 @@ pub fn walk_pattern<'a, V: ?Sized + Visitor<'a>>(v: &mut V, p: &'a Pattern<V::Id
 pub trait Typed {
     type Ident;
 
-    fn env_type_of(&self, env: &TypeEnv) -> ArcType<Self::Ident>;
+    fn env_type_of(&self, env: &TypeEnv) -> ArcType<Self::Ident> {
+        self.try_type_of(env).unwrap()
+    }
+
+    fn try_type_of(&self, env: &TypeEnv) -> Result<ArcType<Self::Ident>, String>;
 }
 
 impl<Id: Clone> Typed for TypedIdent<Id> {
     type Ident = Id;
 
-    fn env_type_of(&self, _: &TypeEnv) -> ArcType<Id> {
-        self.typ.clone()
+    fn try_type_of(&self, _: &TypeEnv) -> Result<ArcType<Id>, String> {
+        Ok(self.typ.clone())
     }
 }
 
 impl Typed for Literal {
     type Ident = Symbol;
 
-    fn env_type_of(&self, _: &TypeEnv) -> ArcType {
-        match *self {
+    fn try_type_of(&self, _: &TypeEnv) -> Result<ArcType, String> {
+        Ok(match *self {
             Literal::Int(_) => Type::int(),
             Literal::Float(_) => Type::float(),
             Literal::Byte(_) => Type::byte(),
             Literal::String(_) => Type::string(),
             Literal::Char(_) => Type::char(),
-        }
+        })
     }
 }
 
 impl Typed for Expr<Symbol> {
     type Ident = Symbol;
 
-    fn env_type_of(&self, env: &TypeEnv) -> ArcType {
+    fn try_type_of(&self, env: &TypeEnv) -> Result<ArcType, String> {
         match *self {
-            Expr::Ident(ref id) => id.typ.clone(),
+            Expr::Ident(ref id) => Ok(id.typ.clone()),
             Expr::Projection(_, _, ref typ)
             | Expr::Record { ref typ, .. }
-            | Expr::Tuple { ref typ, .. } => typ.clone(),
-            Expr::Literal(ref lit) => lit.env_type_of(env),
-            Expr::IfElse(_, ref arm, _) => arm.env_type_of(env),
+            | Expr::Tuple { ref typ, .. } => Ok(typ.clone()),
+            Expr::Literal(ref lit) => lit.try_type_of(env),
+            Expr::IfElse(_, ref arm, _) => arm.try_type_of(env),
             Expr::Infix(_, ref op, _) => {
                 if let Type::App(_, ref args) = *op.value.typ.clone() {
                     if let Type::App(_, ref args) = *args[1] {
-                        return args[1].clone();
+                        return Ok(args[1].clone());
                     }
                 }
-                ice!("Expected function type in binop");
+                Err("Expected function type in binop".to_string())
             }
             Expr::LetBindings(_, ref expr)
             | Expr::TypeBindings(_, ref expr)
-            | Expr::Do(Do { body: ref expr, .. }) => expr.env_type_of(env),
+            | Expr::Do(Do { body: ref expr, .. }) => expr.try_type_of(env),
             Expr::App(ref func, ref args) => {
-                get_return_type(env, &func.env_type_of(env), args.len())
+                get_return_type(env, &func.try_type_of(env)?, args.len())
             }
-            Expr::Match(_, ref alts) => alts[0].expr.env_type_of(env),
-            Expr::Array(ref array) => array.typ.clone(),
-            Expr::Lambda(ref lambda) => lambda.id.typ.clone(),
-            Expr::Block(ref exprs) => exprs.last().expect("Expr in block").env_type_of(env),
-            Expr::Error(ref typ) => typ.clone().unwrap_or_else(|| Type::hole()),
+            Expr::Match(_, ref alts) => alts[0].expr.try_type_of(env),
+            Expr::Array(ref array) => Ok(array.typ.clone()),
+            Expr::Lambda(ref lambda) => Ok(lambda.id.typ.clone()),
+            Expr::Block(ref exprs) => exprs.last().expect("Expr in block").try_type_of(env),
+            Expr::Error(ref typ) => typ.clone().ok_or_else(|| "Error has not type".to_string()),
         }
     }
 }
@@ -770,32 +774,35 @@ impl Typed for Expr<Symbol> {
 impl<T: Typed> Typed for Spanned<T, BytePos> {
     type Ident = T::Ident;
 
-    fn env_type_of(&self, env: &TypeEnv) -> ArcType<T::Ident> {
-        self.value.env_type_of(env)
+    fn try_type_of(&self, env: &TypeEnv) -> Result<ArcType<T::Ident>, String> {
+        self.value.try_type_of(env)
     }
 }
 
 impl Typed for Pattern<Symbol> {
     type Ident = Symbol;
-
-    fn env_type_of(&self, env: &TypeEnv) -> ArcType {
+    fn try_type_of(&self, env: &TypeEnv) -> Result<ArcType, String> {
         // Identifier patterns might be a function so use the identifier's type instead
         match *self {
-            Pattern::As(_, ref pat) => pat.env_type_of(env),
-            Pattern::Ident(ref id) => id.typ.clone(),
-            Pattern::Record { ref typ, .. } => typ.clone(),
-            Pattern::Tuple { ref typ, .. } => typ.clone(),
+            Pattern::As(_, ref pat) => pat.try_type_of(env),
+            Pattern::Ident(ref id) => Ok(id.typ.clone()),
+            Pattern::Record { ref typ, .. } => Ok(typ.clone()),
+            Pattern::Tuple { ref typ, .. } => Ok(typ.clone()),
             Pattern::Constructor(ref id, ref args) => get_return_type(env, &id.typ, args.len()),
-            Pattern::Error => Type::hole(),
+            Pattern::Error => Ok(Type::hole()),
         }
     }
 }
 
-fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> ArcType {
+fn get_return_type(
+    env: &TypeEnv,
+    alias_type: &ArcType,
+    arg_count: usize,
+) -> Result<ArcType, String> {
     // We don't want to panic if we attempt to get the return type of a hole so return a type hole
     // as the return type
     if arg_count == 0 || **alias_type == Type::Hole {
-        return alias_type.clone();
+        return Ok(alias_type.clone());
     }
 
     let alias_type = alias_type.remove_forall();
@@ -804,16 +811,16 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
     }
 
     let alias = {
-        let alias_ident = alias_type.alias_ident().unwrap_or_else(|| {
-            ice!(
-                "ICE: Expected function with {} more arguments, found {:?}",
+        let alias_ident = alias_type.alias_ident().ok_or_else(|| {
+            format!(
+                "Expected function with {} more arguments, found {:?}",
                 arg_count,
                 alias_type
             )
-        });
+        })?;
 
         env.find_type_info(alias_ident)
-            .unwrap_or_else(|| ice!("Unexpected type {} is not a function", alias_type))
+            .ok_or_else(|| format!("Unexpected type {} is not a function", alias_type))?
     };
 
     let typ = types::walk_move_type(alias.typ().into_owned(), &mut |typ| {
@@ -836,7 +843,7 @@ fn get_return_type(env: &TypeEnv, alias_type: &ArcType, arg_count: usize) -> Arc
 }
 
 pub fn is_operator_char(c: char) -> bool {
-    "#+-*/&|=<>:.@".chars().any(|x| x == c)
+    "!#$%&*+-./<=>?@\\^|-~:".chars().any(|x| x == c)
 }
 
 pub fn is_constructor(s: &str) -> bool {

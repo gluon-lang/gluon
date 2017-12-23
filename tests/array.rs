@@ -99,3 +99,11 @@ let array = import! std.array
 "#,
 0i32
 }
+
+test_expr!{ array_fold,
+r#"
+let array = import! std.array
+array.foldable.foldl (\x y -> y.x) 0 [{ x = 4 }]
+"#,
+4
+}

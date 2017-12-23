@@ -36,7 +36,6 @@ fn make_ident_type(typ: ArcType) -> ArcType {
     })
 }
 
-
 #[test]
 fn function_type_new() {
     let text = r"
@@ -72,7 +71,6 @@ fn byte_literal() {
 
     assert_eq!(result, expected);
 }
-
 
 #[test]
 fn function_2_args() {
@@ -832,7 +830,6 @@ test (x #Int+ 2)
     assert_req!(result.map(support::close_record), expected);
 }
 
-
 #[test]
 fn eq_unresolved_constraint_bug() {
     let _ = env_logger::init();
@@ -850,6 +847,20 @@ let eq a : Eq a -> Eq (List a) =
         | _ -> False
     { (==) }
 ()
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn pattern_match_nested_parameterized_type() {
+    let _ = env_logger::init();
+
+    let text = r#"
+type Test a = | Test a
+match Test { x = 1 } with
+| Test { x } -> x
 "#;
     let result = support::typecheck(text);
 

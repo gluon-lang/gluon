@@ -1,3 +1,120 @@
+<a name="0.7.0"></a>
+## v0.7.0 (2017-12-22)
+
+
+#### Breaking Changes
+
+*   Let the run_script functions execute IO actions ([8373f8f5](https://github.com/gluon-lang/gluon/commit/8373f8f5ac749ced0daf78340516535477c055d5), breaks [#](https://github.com/gluon-lang/gluon/issues/))
+
+#### Bug Fixes
+
+*   Don't crash in renaming on partial patterns ([fdea1724](https://github.com/gluon-lang/gluon/commit/fdea17242e5ed227757f3bd1c41f38e6f326407d))
+*   Don't format Value::String as GcStr(<contents>) ([c8c8ba99](https://github.com/gluon-lang/gluon/commit/c8c8ba997adc0589e145b30c603b2a17627640c0))
+*   Set the correct spans for renamed identifiers ([545f8911](https://github.com/gluon-lang/gluon/commit/545f89115c9f73e6e78abadd29cb4e4bd8db1082))
+*   Lock the garbage collector before the interner to prevent dead locks ([794cdce1](https://github.com/gluon-lang/gluon/commit/794cdce1a0c8ec86449f440333fab10a1751f3d8))
+*   Rename variables in record base expressions ([d4270a84](https://github.com/gluon-lang/gluon/commit/d4270a84da1662616f53e4c3d54d4e37498baba9))
+*   Handle fields being omitted when removing intermediate records ([bfac0823](https://github.com/gluon-lang/gluon/commit/bfac08230fcbcb6e256c2ce45ecbeb2bac301cb0))
+*   Correctly use traverse_with_key to get access to the keys ([abff3b90](https://github.com/gluon-lang/gluon/commit/abff3b902d6c3afcd0a73d845fdd3ebaa2bdf197))
+* **base:**
+  *  parameterless ice! macro. ([e5346dfa](https://github.com/gluon-lang/gluon/commit/e5346dfa1ab428cd05c8a3b70b17ca1f854008f6))
+  *  Don't forget the ForAll type when calling walk_move_type ([7b78bd78](https://github.com/gluon-lang/gluon/commit/7b78bd78b4d700f53f0fcabff438d3dbe61094dc))
+* **check:**
+  *  Don't panic on nested patterns on parameterized types ([7e6ef364](https://github.com/gluon-lang/gluon/commit/7e6ef3649f314b018eca640e0a3cc2dde63c47e0))
+  *  Remove spurious println! ([95177345](https://github.com/gluon-lang/gluon/commit/95177345c73b9d3fe04569ce6373c57e1b50cd51))
+  *  Don't panic if a type is undefined in a variant ([e476b1e0](https://github.com/gluon-lang/gluon/commit/e476b1e0b8d2660d163360adbb0e6d21b04af95c))
+  *  Typecheck a module even if macro expansion fails ([5f78fec0](https://github.com/gluon-lang/gluon/commit/5f78fec00c408128dc38dafffee743f57981b97b))
+  *  Don't consider global variables for overload resolution ([aeade634](https://github.com/gluon-lang/gluon/commit/aeade63440239f1c5f23b44d1202ef1b865ef12a))
+  *  generalize_type must not return unified variables ... ([437c5224](https://github.com/gluon-lang/gluon/commit/437c5224f9256603b2907a6e9c926392458f6602))
+* **completion:**
+  *  Don't print duplicate primitive modules ([0c4100db](https://github.com/gluon-lang/gluon/commit/0c4100db345f2728e4aabb4379445d854b7f57d9))
+  *  Provide completion for types imported from other modules ([923f5cc7](https://github.com/gluon-lang/gluon/commit/923f5cc7f6002e249137a4d1abfd122604df0923))
+  *  Complete parameterized variant type contructors ([d232cc19](https://github.com/gluon-lang/gluon/commit/d232cc1995d84310b327abfca9437e0038a5f05a))
+  *  Provide pattern completion on record aliases ([43abb033](https://github.com/gluon-lang/gluon/commit/43abb0334133c52583e07c3599ef2e229576f837))
+* **doc:**  Rearranged sections to make it easier for a first time user to get started and added a section on testing ([f4ed3134](https://github.com/gluon-lang/gluon/commit/f4ed3134fb0c6771abce28528dbc6b2f24239886))
+* **format:**
+  *  Layout successive if-else expressions on the same line ([18055c8d](https://github.com/gluon-lang/gluon/commit/18055c8dc96efdd357144bf9e7ff402cd2b61c23))
+  *  Don't remove comments between expressions in blocks ([473b583e](https://github.com/gluon-lang/gluon/commit/473b583ec221b61cc57230f5c8c160a7069c0115))
+  *  Don't put records already on a newline on the beginning line ([a66cafcf](https://github.com/gluon-lang/gluon/commit/a66cafcff7c45ec390b5a385e0df1e3d3eb1701a))
+* **import:**  Prevent multiple threads from compiling the same module ([cb522854](https://github.com/gluon-lang/gluon/commit/cb52285403de392d7f9bf8826528594a52dc15b8))
+* **parser:**
+  *  Accept doc comments before `and` tokens ([90393b9d](https://github.com/gluon-lang/gluon/commit/90393b9d219e24cf6cb62b5e41f9da5281f149a1))
+  *  Select the correct offside location inside parentheses ([4060aad5](https://github.com/gluon-lang/gluon/commit/4060aad5353753b3e2c31aa95f95ebd1010eb8ae))
+  *  Byte literals with unexpected char ([18b34794](https://github.com/gluon-lang/gluon/commit/18b34794d60bf6ffa0c2057e352da630bc971887))
+  *  Float literals with unexpected char ([ea537e13](https://github.com/gluon-lang/gluon/commit/ea537e1317508ab45fd4e49f9c761cc409ed6d16))
+* **repl:**
+  *  Avoid overflowing the stack when printing values ([cd1505ad](https://github.com/gluon-lang/gluon/commit/cd1505ada8aa3a214a5a81eb7559f159f18be040))
+  *  Don't exit the repl if compilation errors occur in load ([3cf289f5](https://github.com/gluon-lang/gluon/commit/3cf289f5cef13ff80e5eb31f95458b651521ef29))
+  *  Print out Char as the "character" instead of code point integer in the repl ([6612ceb2](https://github.com/gluon-lang/gluon/commit/6612ceb23200be85726b8d2d399d3355709f37bb), closes [#395](https://github.com/gluon-lang/gluon/issues/395))
+  *  Run io expression when running files from the command line ([64ed556e](https://github.com/gluon-lang/gluon/commit/64ed556e980267a5b6476b7a3cf6c20870384163), closes [#365](https://github.com/gluon-lang/gluon/issues/365))
+* **vm:**
+  *  Run IO expressions with io.run_expr ([e308f1f2](https://github.com/gluon-lang/gluon/commit/e308f1f26173c645ea9f39f91f884e1db7dcdec0))
+  *  Don't rely on frame_levels to clear frames after errors ([3a3205df](https://github.com/gluon-lang/gluon/commit/3a3205df97dc762ca7d9a728ff3ab496261b7472))
+  *  Allow async functions to run within the io primitives ([e6f611a0](https://github.com/gluon-lang/gluon/commit/e6f611a00695a1d9069a7e85fd06bb064d9e70a2))
+  *  Indent the pretty printing of Value ([5d646515](https://github.com/gluon-lang/gluon/commit/5d646515b1ee8ee1c94337e7483232d8b0b20da6))
+  *  Fix deadlock caused by inconsistent lock ordering ([8024d57d](https://github.com/gluon-lang/gluon/commit/8024d57d7c6d4753f8a2b435cb5d5634e1179fc7))
+  *  Deep clone partial applications properly ([d7877cac](https://github.com/gluon-lang/gluon/commit/d7877cacbb5048d1d8a4e6d8d7d4895f689d1eed))
+  *  Lock all child gc's and child-threads when collecting ([5642b97a](https://github.com/gluon-lang/gluon/commit/5642b97a045119d15f8d21b8a488b536d27c0184))
+  *  Handle polymorphic records created in parent threads ([8570ace5](https://github.com/gluon-lang/gluon/commit/8570ace57861866063b2dd451a44f5391ede6ebb))
+  *  Don't let rustc think the Array type can't exist ([a8db3d5d](https://github.com/gluon-lang/gluon/commit/a8db3d5d1a97e76a28cd08bfff9a3af95e1a4d9d))
+  *  child_threads must be traversed for all threads ([eac571b9](https://github.com/gluon-lang/gluon/commit/eac571b9d7dd8006d605124ff179fa786ce6fb65))
+  *  Tuple indices start at 0, not 6 ([655e4526](https://github.com/gluon-lang/gluon/commit/655e45265fb8f37d1d687122b285c816dbbaa6f4))
+  *  Don't deadlock when returning the result of `resume` ([99c8d148](https://github.com/gluon-lang/gluon/commit/99c8d14854e5f0563d9680eac4076d9d0f282b5e))
+
+#### Features
+
+*   Accept @ patterns in the repl ([1b6838ec](https://github.com/gluon-lang/gluon/commit/1b6838ec673c7525486225cbdd514f13e55084f1))
+*   Add more character parsers to parser.glu ([a74726b9](https://github.com/gluon-lang/gluon/commit/a74726b93b84098266d7caafb60c3d76dc37328b))
+*   Wrap all macro errors with a span ([20c8339a](https://github.com/gluon-lang/gluon/commit/20c8339a8a6b8dd79d2be23ea6e0bae18bd37c52))
+*   Display kinds when completing types ([1dd43c14](https://github.com/gluon-lang/gluon/commit/1dd43c14cbdbdbc17a101b8712e70eb03f8e5d5e))
+*   Teach import to accept a path as argument ([ed3d0b19](https://github.com/gluon-lang/gluon/commit/ed3d0b19ab9047ffa4bb4a4b3cc69b7974f98c36))
+*   Let the run_script functions execute IO actions ([8373f8f5](https://github.com/gluon-lang/gluon/commit/8373f8f5ac749ced0daf78340516535477c055d5), breaks [#](https://github.com/gluon-lang/gluon/issues/))
+*   Improve the error message of cyclic dependencies ([db540fd7](https://github.com/gluon-lang/gluon/commit/db540fd7be2488fadf4c71165f05a41dcbd8b395))
+* **base:**
+  *  Add a non-panicking version of env_type_of ([0a7aea90](https://github.com/gluon-lang/gluon/commit/0a7aea90ba4064c2eb00e828cbdd8483b9c991fc))
+  *  Improve method names in MutVisitor ([1a24c084](https://github.com/gluon-lang/gluon/commit/1a24c08461567e9623236d79eb0ea7a50a5cbe0d))
+  *  Add PartialEq for spans ([ded0d03b](https://github.com/gluon-lang/gluon/commit/ded0d03bee317bf53e38523314bcef3cc0ea3247))
+* **check:**
+  *  Typecheck do expressions ([c5afd839](https://github.com/gluon-lang/gluon/commit/c5afd839338d0e9c191237c1e2f229bc20f6838a))
+  *  Run kindchecking on AstType ([5c31efe3](https://github.com/gluon-lang/gluon/commit/5c31efe3223f2c5b0d6a6127d5028cd30851129a))
+  *  Let type aliases be referred via projection ([49a2a04a](https://github.com/gluon-lang/gluon/commit/49a2a04a6d6121b0debb9c8521d253a55f06a760), closes [#192](https://github.com/gluon-lang/gluon/issues/192), [#370](https://github.com/gluon-lang/gluon/issues/370))
+* **completion:**
+  *  Provide completion for primitive modules ([ce7100bf](https://github.com/gluon-lang/gluon/commit/ce7100bf489abf74bdffc2d596abd5fab330c841))
+  *  Provide completion for the import! macro ([6e791ecb](https://github.com/gluon-lang/gluon/commit/6e791ecbbdee501f0b2e63949250b28b4f95d202))
+  *  Provide completion when writing fields before another field ([e89f8df7](https://github.com/gluon-lang/gluon/commit/e89f8df783b630d8140fb29a91dfe408a462ff74))
+  *  Don't suggest fields already written in a pattern ([bb371410](https://github.com/gluon-lang/gluon/commit/bb37141067ad228cb456dea48279e956628411a8))
+  *  Suggest type fields inside record patterns ([a37222a4](https://github.com/gluon-lang/gluon/commit/a37222a48e4d76e7490a758d55cc81b29c852f77))
+  *  Suggest what fields are available in record patterns ([6e1dca2a](https://github.com/gluon-lang/gluon/commit/6e1dca2a7519979b309e275aa02b4a598fd84d8a))
+  *  Provide completion on do expressions ([e45de697](https://github.com/gluon-lang/gluon/commit/e45de697fc8f2f331c29714fcb43308180bd325c))
+  *  Provide completion for type variables ([3b164a45](https://github.com/gluon-lang/gluon/commit/3b164a45a436df6bf2cb0807da7355b2d8dd78b1))
+  *  Provide auto completion for types in let bindings ([e7a0c5c8](https://github.com/gluon-lang/gluon/commit/e7a0c5c885c9900e4aea277a19109373882dd343))
+  *  Provide auto completion in type definitions ([79688de8](https://github.com/gluon-lang/gluon/commit/79688de853063c1bddbeb42889e04b2ede70da31))
+* **format:**  Format do expressions ([71157dbd](https://github.com/gluon-lang/gluon/commit/71157dbd4e34191441c67dc0c472be4c6f0bb499))
+* **parser:**
+  *  Produce expressions if the `in` token is missing ([a523bec7](https://github.com/gluon-lang/gluon/commit/a523bec7470b2f5a8673c0863b4d4d004c55d6b1))
+  *  Add more operator characters ([6a54edbb](https://github.com/gluon-lang/gluon/commit/6a54edbb2f7182d6d5629492cbf4c0a2d08935c3))
+  *  Recover from parse errors when nothing follows =, -> ... ([d753672e](https://github.com/gluon-lang/gluon/commit/d753672ee695c1ed6a06d2012b1a04f1476c902d))
+  *  Parse `do` expressions ([9a97a457](https://github.com/gluon-lang/gluon/commit/9a97a457c0cd10e12150aafc8155198fd21b118a))
+* **repl:**
+  *  Save and load command history ([8fd443b2](https://github.com/gluon-lang/gluon/commit/8fd443b214da4f7919fca77457f91cf8965ad67a))
+  *  Have a long a short form for each repl command ([db099216](https://github.com/gluon-lang/gluon/commit/db099216d6abf5a7763196fb239d36949c015ba3))
+  *  Allow module loading to be interrupted ([196e099e](https://github.com/gluon-lang/gluon/commit/196e099ec285f2de199e771af1ca187b1c1526c0))
+  *  Don't shutdown the repl on Ctrl-C ([088b1a05](https://github.com/gluon-lang/gluon/commit/088b1a05cf9033c2a7e395d1b62fb13e67618abc))
+* **std.list:**  Add filter and sort ([d67fc29e](https://github.com/gluon-lang/gluon/commit/d67fc29e9dccf42eea8aefd4a169fd158c79a0cc))
+* **std.parser:**
+  *  Add chainl/chainl1 ([449d61f8](https://github.com/gluon-lang/gluon/commit/449d61f81db5ad25f67e4bf5943477b76ce50cfa))
+  *  Include the byte offset in the error message ([fc7c6762](https://github.com/gluon-lang/gluon/commit/fc7c6762bf1f2fdd57894f51102e137b06419381))
+  *  Add satisfy_map ([75df8f5b](https://github.com/gluon-lang/gluon/commit/75df8f5b5e89dacfd34002462de844c5f1421b1e))
+  *  Add sep_by and sep_by1 ([77f8ec0c](https://github.com/gluon-lang/gluon/commit/77f8ec0c36c204d97af39722e30b8fd7116665eb))
+* **vm:**
+  *  Add discriminant_value primitive ([3d65a559](https://github.com/gluon-lang/gluon/commit/3d65a5598fedc56a160de589314acc2ed8b732ac))
+  *  Return type and value separately from run_expr ([6aa5c471](https://github.com/gluon-lang/gluon/commit/6aa5c471f4179bf0589fc252425bfb59e3be6438))
+  *  Add a basic wrapper around the rand crate ([7210d8dd](https://github.com/gluon-lang/gluon/commit/7210d8dd12996d01965283516b9ca9196e5c6c3f))
+  *  Let the record macros have non-rust identifiers for field names ([55ccbe1c](https://github.com/gluon-lang/gluon/commit/55ccbe1cea7eeaa3b5db8af9da9ab1dd7d4269e4))
+  *  Let primitive modules be loaded via import! ([91bb7d3f](https://github.com/gluon-lang/gluon/commit/91bb7d3f34993f6d02d6988ddb25752e19068f78))
+  *  Re-export map.empty ([577cb08b](https://github.com/gluon-lang/gluon/commit/577cb08b2fde65b27f27da9210fcc7b27de1aec8))
+
+
+
 <a name="0.6.2"></a>
 ## v0.6.2 (2017-10-18)
 

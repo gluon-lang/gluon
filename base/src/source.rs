@@ -93,10 +93,11 @@ pub struct Source<'a> {
 
 impl<'a> Source<'a> {
     pub fn new(src: &str) -> Source {
-        Source {
-            src: src,
-            lines: Lines::new(src.as_bytes().iter().cloned()),
-        }
+        Source::with_lines(src, Lines::new(src.as_bytes().iter().cloned()))
+    }
+
+    pub fn with_lines(src: &str, lines: Lines) -> Source {
+        Source { src, lines }
     }
 
     /// Returns the string which defines the source

@@ -128,6 +128,12 @@ where
         }
     }
 
+    fn peek_token(&mut self) -> &SpannedToken<'input> {
+        let token = self.next_token();
+        self.unprocessed_tokens.push(token);
+        self.unprocessed_tokens.last().unwrap()
+    }
+
     fn next_token(&mut self) -> SpannedToken<'input> {
         self.unprocessed_tokens.pop().unwrap_or_else(|| {
             self.tokens.next().unwrap_or_else(|| {
@@ -157,7 +163,6 @@ where
         let span = next.span;
 
         self.unprocessed_tokens.push(next);
-
 
         if let Context::Block { .. } = context {
             // If we find the next token at the same (or earlier) than the previous block we
@@ -210,7 +215,6 @@ where
             let offside = match (&token.value, self.indent_levels.last().cloned()) {
                 (&Token::ShebangLine(_), _) => return Ok(token),
                 (_, Some(offside)) => offside,
-                (&Token::EOF, None) => return Ok(token),
                 (_, None) => {
                     let offside =
                         Offside::new(token.span.start, Context::Block { emit_semi: false });
@@ -309,6 +313,9 @@ where
                 (_, _) => (),
             }
 
+            let doc_comment_followed_by_and =
+                token.value.is_doc_comment() && self.peek_token().value == Token::And;
+
             // Next we check offside rules for each of the contexts
             let ordering = token.span.start.column.cmp(&offside.location.column);
             match (offside.context, ordering) {
@@ -361,8 +368,12 @@ where
                     }
                 }
                 // `and` and `}` are allowed to be on the same line as the `let` or `type`
-                (Context::Let, Ordering::Equal) | (Context::Type, Ordering::Equal)
-                    if token.value != Token::And && token.value != Token::RBrace =>
+                (Context::Let, Ordering::Equal)
+                | (Context::Type, Ordering::Equal)
+                | (Context::Let, Ordering::Less)
+                | (Context::Type, Ordering::Less)
+                    if token.value != Token::And && token.value != Token::RBrace
+                        && !doc_comment_followed_by_and =>
                 {
                     // Insert an `in` token
 
@@ -380,6 +391,7 @@ where
                             *emit_semi = false;
                         }
                     }
+
                     let span = token.span;
                     let result = Ok(self.layout_token(token, Token::In));
 

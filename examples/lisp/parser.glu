@@ -21,7 +21,7 @@ let {
     satisfy,
     spaces,
     token,
-    take_string,
+    recognize,
     take1,
     skip_many,
     skip_many1
@@ -40,10 +40,10 @@ let atom : Parser Expr =
     let alpha_num = satisfy char.is_alphanumeric
     functor.map
         (\x -> Atom x)
-        (take_string ((alpha <|> symbol) *> skip_many (alpha_num <|> symbol)))
+        (recognize ((alpha <|> symbol) *> skip_many (alpha_num <|> symbol)))
 
 let parse_parser p f msg : Parser a -> (String -> Result () b) -> String -> Parser b =
-    do s = take_string p
+    do s = recognize p
     match f s with
     | Ok i -> wrap i
     | Err _ -> fail ("Expected " <> msg)

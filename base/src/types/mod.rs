@@ -411,14 +411,18 @@ where
                 Type::Ident(ref id) => {
                     // Replace `Ident` with the alias it resolves to so that a `TypeEnv` is not
                     // needed to resolve the type later on
-                    let index = self.group
-                        .iter()
-                        .position(|alias| alias.name == *id)
-                        .expect("ICE: Alias group were not able to resolve an identifier");
-                    Some(T::from(Type::Alias(AliasRef {
-                        index: index,
-                        group: self.group.clone(),
-                    })))
+                    let replacement = self.group.iter().position(|alias| alias.name == *id).map(
+                        |index| {
+                            T::from(Type::Alias(AliasRef {
+                                index: index,
+                                group: self.group.clone(),
+                            }))
+                        },
+                    );
+                    if replacement.is_none() {
+                        info!("Alias group were not able to resolve an identifier");
+                    }
+                    replacement
                 }
                 _ => None,
             }
@@ -1885,15 +1889,15 @@ where
             }
             f.walk(rest);
         }
-        Type::Hole |
-        Type::Opaque |
-        Type::Builtin(_) |
-        Type::Variable(_) |
-        Type::Generic(_) |
-        Type::Skolem(_) |
-        Type::Ident(_) |
-        Type::Alias(_) |
-        Type::EmptyRow => (),
+        Type::Hole
+        | Type::Opaque
+        | Type::Builtin(_)
+        | Type::Variable(_)
+        | Type::Generic(_)
+        | Type::Skolem(_)
+        | Type::Ident(_)
+        | Type::Alias(_)
+        | Type::EmptyRow => (),
     }
 }
 
@@ -1922,15 +1926,15 @@ where
             }
             f.walk_mut(rest);
         }
-        Type::Hole |
-        Type::Opaque |
-        Type::Builtin(_) |
-        Type::Variable(_) |
-        Type::Generic(_) |
-        Type::Skolem(_) |
-        Type::Ident(_) |
-        Type::Alias(_) |
-        Type::EmptyRow => (),
+        Type::Hole
+        | Type::Opaque
+        | Type::Builtin(_)
+        | Type::Variable(_)
+        | Type::Generic(_)
+        | Type::Skolem(_)
+        | Type::Ident(_)
+        | Type::Alias(_)
+        | Type::EmptyRow => (),
     }
 }
 
@@ -2077,15 +2081,15 @@ where
                 Type::extend_row(types.clone(), fields, rest)
             })
         }
-        Type::Hole |
-        Type::Opaque |
-        Type::Builtin(_) |
-        Type::Variable(_) |
-        Type::Skolem(_) |
-        Type::Generic(_) |
-        Type::Ident(_) |
-        Type::Alias(_) |
-        Type::EmptyRow => None,
+        Type::Hole
+        | Type::Opaque
+        | Type::Builtin(_)
+        | Type::Variable(_)
+        | Type::Skolem(_)
+        | Type::Generic(_)
+        | Type::Ident(_)
+        | Type::Alias(_)
+        | Type::EmptyRow => None,
     }
 }
 

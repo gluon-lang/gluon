@@ -11,12 +11,12 @@ use Result;
 use vm::{Status, Thread};
 use value::{Def, GcStr, Repr, Value, ValueArray};
 use stack::StackFrame;
+use thread::ThreadInternal;
 use types::VmInt;
 
 #[doc(hidden)]
 pub mod array {
     use super::*;
-    use thread::ThreadInternal;
 
     pub fn len(array: Array<generic::A>) -> VmInt {
         array.len() as VmInt
@@ -87,9 +87,10 @@ pub mod array {
             }
         };
         unsafe {
-            RuntimeResult::Return(
-                Getable::from_value(lhs.vm(), Variants::new(&Value::Array(value)))
-            )
+            RuntimeResult::Return(Getable::from_value(
+                lhs.vm(),
+                Variants::new(&Value::Array(value)),
+            ))
         }
     }
 }
@@ -97,7 +98,6 @@ pub mod array {
 mod string {
     use super::*;
     use api::Pushable;
-    use thread::ThreadInternal;
 
     pub fn append(lhs: WithVM<&str>, rhs: &str) -> RuntimeResult<String, Error> {
         struct StrAppend<'b> {
@@ -141,7 +141,10 @@ mod string {
             }
         };
         unsafe {
-            RuntimeResult::Return(Getable::from_value(vm, Variants::new(&Value::String(value))))
+            RuntimeResult::Return(Getable::from_value(
+                vm,
+                Variants::new(&Value::String(value)),
+            ))
         }
     }
 
@@ -235,6 +238,19 @@ extern "C" fn error(_: &Thread) -> Status {
     // We expect a string as an argument to this function but we only return Status::Error
     // and let the caller take care of printing the message
     Status::Error
+}
+
+extern "C" fn discriminant_value(thread: &Thread) -> Status {
+    let mut context = thread.context();
+    let mut stack = StackFrame::current(&mut context.stack);
+    let value = stack[0];
+    let tag = match value {
+        Value::Tag(t) => t,
+        Value::Data(data) => data.tag(),
+        _ => 0,
+    };
+    stack.push(Value::Int(tag as VmInt));
+    Status::Ok
 }
 
 #[allow(non_camel_case_types)]
@@ -441,7 +457,11 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
             show_char => primitive!(1 std::prim::show_char),
             string_compare => named_primitive!(2, "std.prim.string_compare", str::cmp),
             string_eq => named_primitive!(2, "std.prim.string_eq", <str as PartialEq>::eq),
-            error => primitive::<fn(StdString) -> Generic<A>>("std.prim.error", std::prim::error)
+            error => primitive::<fn(StdString) -> Generic<A>>("std.prim.error", std::prim::error),
+            discriminant_value => primitive::<fn(Generic<A>) -> VmInt>(
+                "std.prim.discriminant_value",
+                std::prim::discriminant_value
+            ),
         },
     )
 }

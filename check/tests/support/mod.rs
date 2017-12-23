@@ -15,7 +15,6 @@ use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
-
 /// Returns a reference to the interner stored in TLD
 pub fn get_local_interner() -> Rc<RefCell<Symbols>> {
     thread_local!(static INTERNER: Rc<RefCell<Symbols>>
@@ -120,7 +119,6 @@ impl MetadataEnv for MockEnv {
         None
     }
 }
-
 
 #[allow(dead_code)]
 pub struct MockIdentEnv<T>(PhantomData<T>);
@@ -238,7 +236,6 @@ pub fn alias(s: &str, args: &[&str], typ: ArcType) -> ArcType {
         ),
     )
 }
-
 
 /// Replace the variable at the `rest` part of a record for easier equality checks
 #[allow(dead_code)]

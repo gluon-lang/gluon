@@ -4,7 +4,7 @@
 //! behaviour. For information about how to use this library the best resource currently is the
 //! [tutorial](https://github.com/gluon-lang/gluon/blob/master/TUTORIAL.md) which contains examples
 //! on how to write gluon programs as well as how to run them using this library.
-#![doc(html_root_url = "https://docs.rs/gluon/0.6.2")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon/0.7.0")] // # GLUON
 
 #[cfg(test)]
 extern crate env_logger;
@@ -46,9 +46,9 @@ pub use futures::Future;
 use either::Either;
 
 use std::result::Result as StdResult;
-use std::string::String as StdString;
 use std::env;
 
+use base::filename_to_module;
 use base::ast::{self, SpannedExpr};
 use base::error::{Errors, InFile};
 use base::metadata::Metadata;
@@ -138,7 +138,6 @@ impl From<Errors<macros::SpannedError>> for Error {
         }
     }
 }
-
 
 impl From<Errors<Error>> for Error {
     fn from(mut errors: Errors<Error>) -> Error {
@@ -386,7 +385,7 @@ impl Compiler {
                 &owned_import
             }
         };
-        let module_name = Symbol::from(filename_to_module(filename));
+        let module_name = Symbol::from(format!("@{}", filename_to_module(filename)));
         let mut macros = MacroExpander::new(vm);
         FutureValue::from(
             import
@@ -549,18 +548,6 @@ let { error } = import! std.prim
 
 in ()
 "#;
-
-pub fn filename_to_module(filename: &str) -> StdString {
-    use std::path::Path;
-    let path = Path::new(filename);
-    let name = path.extension().map_or(filename, |ext| {
-        ext.to_str()
-            .map(|ext| &filename[..filename.len() - ext.len() - 1])
-            .unwrap_or(filename)
-    });
-
-    format!("@{}", name.replace(|c: char| c == '/' || c == '\\', "."))
-}
 
 #[derive(Default)]
 pub struct VmBuilder {

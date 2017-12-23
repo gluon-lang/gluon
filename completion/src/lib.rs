@@ -1,5 +1,5 @@
 //! Primitive auto completion and type quering on ASTs
-#![doc(html_root_url = "https://docs.rs/gluon_completion/0.6.2")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon_completion/0.7.0")] // # GLUON
 
 extern crate either;
 extern crate itertools;
@@ -7,14 +7,16 @@ extern crate walkdir;
 
 extern crate gluon_base as base;
 
+use std::borrow::Cow;
 use std::iter::once;
 use std::cmp::Ordering;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use either::Either;
 
 use itertools::Itertools;
 
+use base::filename_to_module;
 use base::ast::{walk_expr, walk_pattern, AstType, Expr, Pattern, PatternField, SpannedExpr,
                 SpannedIdent, SpannedPattern, Typed, TypedIdent, Visitor};
 use base::fnv::{FnvMap, FnvSet};
@@ -151,7 +153,7 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
                 for ast_field in types {
                     if let Some(field) = unaliased
                         .type_field_iter()
-                        .find(|field| field.name == ast_field.name.value)
+                        .find(|field| field.name.name_eq(&ast_field.name.value))
                     {
                         self.on_alias(&field.typ);
                     }
@@ -184,7 +186,7 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
 
     fn on_alias(&mut self, alias: &AliasData<Symbol, ArcType>) {
         // Insert variant constructors into the local scope
-        let aliased_type = alias.unresolved_type();
+        let aliased_type = alias.unresolved_type().remove_forall();
         if let Type::Variant(ref row) = **aliased_type {
             for field in row.row_iter().cloned() {
                 self.stack.insert(field.name.clone(), field.typ.clone());
@@ -905,6 +907,7 @@ where
 #[derive(Default)]
 pub struct SuggestionQuery {
     pub paths: Vec<PathBuf>,
+    pub modules: Vec<Cow<'static, str>>,
 }
 
 impl SuggestionQuery {
@@ -1121,13 +1124,12 @@ impl SuggestionQuery {
         let path = Name::new(path);
 
         let base = PathBuf::from(path.module().as_str().replace(".", "/"));
-        let prefix = path.declared_name();
 
-        let mut module_prefixes = self.paths
+        let modules = self.paths
             .iter()
-            .map(|root| root.join(&*base))
             .flat_map(|root| {
-                walkdir::WalkDir::new(&*root)
+                let walk_root = root.join(&*base);
+                walkdir::WalkDir::new(walk_root)
                     .into_iter()
                     .filter_map(|entry| entry.ok())
                     .filter_map(move |entry| {
@@ -1136,14 +1138,9 @@ impl SuggestionQuery {
                         {
                             let unprefixed_file = entry
                                 .path()
-                                .strip_prefix(&root)
+                                .strip_prefix(&*root)
                                 .expect("Root is not a prefix of path from walk_dir");
-                            unprefixed_file
-                                .iter()
-                                .next()
-                                .and_then(|s| Path::new(s).file_stem())
-                                .and_then(|s| s.to_str())
-                                .map(|s| s.to_string())
+                            unprefixed_file.to_str().map(filename_to_module)
                         } else {
                             None
                         }
@@ -1151,25 +1148,32 @@ impl SuggestionQuery {
             })
             .collect::<Vec<String>>();
 
-        module_prefixes.sort();
-        module_prefixes.dedup();
-
         suggestions.extend(
-            module_prefixes
-                .into_iter()
-                .filter(|name| name.starts_with(prefix))
-                .map(|name| {
-                    let full_name = format!("{}.{}", path.module(), name);
+            modules
+                .iter()
+                .map(|s| &s[..])
+                .chain(self.modules.iter().map(|s| &s[..]))
+                .filter(|module| module.starts_with(path.as_str()))
+                .map(|module| {
+                    let name = module[path.module().as_str().len()..]
+                        .trim_left_matches('.')
+                        .split('.')
+                        .next()
+                        .unwrap()
+                        .to_string();
                     Suggestion {
+                        name,
                         typ: Either::Right(
-                            env.find_type(SymbolRef::new(&full_name[..]))
+                            env.find_type(SymbolRef::new(module))
                                 .cloned()
                                 .unwrap_or_else(|| Type::hole()),
                         ),
-                        name,
                     }
                 }),
         );
+
+        suggestions.sort_by(|l, r| l.name.cmp(&r.name));
+        suggestions.dedup_by(|l, r| l.name == r.name);
     }
 }
 

@@ -10,7 +10,7 @@ extern crate pretty_assertions;
 mod support;
 
 use base::ast::*;
-use base::pos::{BytePos, Span, Spanned};
+use base::pos::{self, BytePos, Span, Spanned};
 use base::types::{Field, Type};
 use support::*;
 
@@ -370,7 +370,6 @@ fn nested_pattern_parens() {
     assert_eq!(e, case(id("x"), vec![(pattern, id("z"))]));
 }
 
-
 #[test]
 fn span_identifier() {
     let _ = ::env_logger::init();
@@ -476,6 +475,45 @@ id
                     resolved_type: Type::hole(),
                     args: vec![no_loc(TypedIdent::new(intern("x")))],
                     expr: id("x"),
+                },
+            ],
+            Box::new(id("id")),
+        ),)
+    );
+}
+
+#[test]
+fn comment_on_and() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let id x = x
+/// The identity function
+and id2 y = y
+id
+"#;
+    let e = parse_clear_span!(text);
+    assert_eq!(
+        e,
+        no_loc(Expr::LetBindings(
+            vec![
+                ValueBinding {
+                    comment: None,
+                    name: no_loc(Pattern::Ident(TypedIdent::new(intern("id")))),
+                    typ: None,
+                    resolved_type: Type::hole(),
+                    args: vec![no_loc(TypedIdent::new(intern("x")))],
+                    expr: id("x"),
+                },
+                ValueBinding {
+                    comment: Some(Comment {
+                        typ: CommentType::Line,
+                        content: "The identity function".into(),
+                    }),
+                    name: no_loc(Pattern::Ident(TypedIdent::new(intern("id2")))),
+                    typ: None,
+                    resolved_type: Type::hole(),
+                    args: vec![no_loc(TypedIdent::new(intern("y")))],
+                    expr: id("y"),
                 },
             ],
             Box::new(id("id")),
@@ -756,7 +794,6 @@ fn shebang_at_top_is_ignored() {
     )
 }
 
-
 #[test]
 fn do_in_parens() {
     let _ = ::env_logger::init();
@@ -767,4 +804,35 @@ fn do_in_parens() {
         )
     ";
     parse_clear_span!(text);
+}
+
+#[test]
+fn parse_let_or_expr() {
+    let _ = ::env_logger::init();
+
+    let mut module = MockEnv::new();
+
+    let line = "let x = test";
+    match parser::parse_partial_let_or_expr(&mut module, line) {
+        Ok(x) => assert_eq!(
+            x,
+            Err(ValueBinding {
+                comment: None,
+                name: pos::spanned2(
+                    4.into(),
+                    5.into(),
+                    Pattern::Ident(TypedIdent::new(intern("x")))
+                ),
+                typ: None,
+                resolved_type: Type::hole(),
+                args: Vec::new(),
+                expr: pos::spanned2(
+                    8.into(),
+                    12.into(),
+                    Expr::Ident(TypedIdent::new(intern("test")))
+                ),
+            })
+        ),
+        Err((_, err)) => panic!("{}", err),
+    }
 }

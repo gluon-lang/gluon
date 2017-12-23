@@ -109,6 +109,15 @@ impl<'input> fmt::Display for Token<'input> {
     }
 }
 
+impl<'input> Token<'input> {
+    pub fn is_doc_comment(&self) -> bool {
+        match *self {
+            Token::DocComment(_) => true,
+            _ => false,
+        }
+    }
+}
+
 pub type SpannedToken<'input> = Spanned<Token<'input>, Location>;
 
 pub type SpError = Spanned<Error, Location>;
@@ -542,8 +551,9 @@ impl<'input> Iterator for Tokenizer<'input> {
                     Ok(None) => continue,
                     Err(err) => Some(Err(err)),
                 },
-                '#' if start.absolute == BytePos::from(0)
-                    && self.test_lookahead(|ch| ch == '!') =>
+                '#' if start.absolute == BytePos::from(0) && self.test_lookahead(|ch| {
+                    ch == '!'
+                }) =>
                 {
                     match self.shebang_line(start) {
                         Some(token) => Some(Ok(token)),
@@ -593,7 +603,6 @@ fn i64_from_hex(hex: &str, is_positive: bool) -> Result<i64, Error> {
     }
     Ok(result)
 }
-
 
 #[cfg(test)]
 mod test {
