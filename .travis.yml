@@ -2,7 +2,7 @@ language: rust
 sudo: required
 cache: cargo
 rust:
-- nightly
+- nightly-2017-12-18
 - beta
 - stable
 os:
