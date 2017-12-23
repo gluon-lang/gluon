@@ -31,7 +31,13 @@ use base::types::{walk_type_, AliasData, ArcType, ControlVisitation, Generic, Ty
 #[derive(Clone, Debug)]
 pub struct Found<'a> {
     pub match_: Option<Match<'a>>,
-    pub enclosing_match: Match<'a>,
+    pub enclosing_matches: Vec<Match<'a>>,
+}
+
+impl<'a> Found<'a> {
+    fn enclosing_match(&self) -> &Match<'a> {
+        self.enclosing_matches.last().unwrap()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -204,7 +210,7 @@ struct FindVisitor<'a, F> {
     pos: BytePos,
     on_found: F,
     found: Option<Option<Match<'a>>>,
-    enclosing_match: Match<'a>,
+    enclosing_matches: Vec<Match<'a>>,
 }
 
 impl<'a, F> FindVisitor<'a, F> {
@@ -299,7 +305,7 @@ where
 
     fn visit_pattern(&mut self, current: &'a SpannedPattern<Symbol>) {
         if current.span.containment(&self.pos) == Ordering::Equal {
-            self.enclosing_match = Match::Pattern(current);
+            self.enclosing_matches.push(Match::Pattern(current));
         }
         match current.value {
             Pattern::As(_, ref pat) => self.visit_pattern(pat),
@@ -408,9 +414,9 @@ where
             VisitUnExpanded(self).visit_expr(current);
             return;
         }
-        if current.span.containment(&self.pos) == Ordering::Equal {
-            self.enclosing_match = Match::Expr(current);
-        }
+
+        self.enclosing_matches.push(Match::Expr(current));
+
         match current.value {
             Expr::Ident(_) | Expr::Literal(_) => {
                 self.found = Some(if current.span.containment(&self.pos) == Ordering::Equal {
@@ -433,7 +439,7 @@ where
                 });
                 match sel.unwrap() {
                     Ok(expr) => {
-                        self.enclosing_match = Match::Expr(expr);
+                        self.enclosing_matches.push(Match::Expr(expr));
                         self.visit_expr(expr)
                     }
                     Err(alt) => {
@@ -543,7 +549,7 @@ where
                 if expr.span.containment(&self.pos) <= Ordering::Equal {
                     self.visit_expr(expr);
                 } else {
-                    self.enclosing_match = Match::Expr(current);
+                    self.enclosing_matches.push(Match::Expr(current));
                     self.found = Some(Some(Match::Ident(current.span, id, typ)));
                 }
             }
@@ -656,17 +662,15 @@ where
         pos: pos,
         on_found: on_found,
         found: None,
-        enclosing_match: Match::Expr(expr),
+        enclosing_matches: vec![],
     };
     visitor.visit_expr(expr);
-    let enclosing_match = visitor.enclosing_match;
+    let enclosing_matches = visitor.enclosing_matches;
     visitor
         .found
-        .map(|match_| {
-            Found {
-                match_,
-                enclosing_match,
-            }
+        .map(|match_| Found {
+            match_,
+            enclosing_matches,
         })
         .ok_or(())
 }
@@ -686,7 +690,7 @@ impl<'a> Extract for TypeAt<'a> {
     fn extract(self, found: &Found) -> Result<Self::Output, ()> {
         match found.match_ {
             Some(ref match_) => self.match_extract(match_),
-            None => self.match_extract(&found.enclosing_match),
+            None => self.match_extract(&found.enclosing_match()),
         }
     }
 
@@ -707,7 +711,7 @@ impl Extract for IdentAt {
     fn extract(self, found: &Found) -> Result<Self::Output, ()> {
         match found.match_ {
             Some(ref match_) => self.match_extract(match_),
-            None => self.match_extract(&found.enclosing_match),
+            None => self.match_extract(&found.enclosing_match()),
         }
     }
 
@@ -738,7 +742,7 @@ impl Extract for SpanAt {
     fn extract(self, found: &Found) -> Result<Self::Output, ()> {
         match found.match_ {
             Some(ref match_) => self.match_extract(match_),
-            None => self.match_extract(&found.enclosing_match),
+            None => self.match_extract(&found.enclosing_match()),
         }
     }
 
@@ -896,7 +900,6 @@ pub fn all_symbols(expr: &SpannedExpr<Symbol>) -> Vec<Spanned<CompletionSymbol, 
     visitor.result
 }
 
-
 pub fn suggest<T>(env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Vec<Suggestion>
 where
     T: TypeEnv,
@@ -942,19 +945,15 @@ impl SuggestionQuery {
 
             let fields = typ.row_iter()
                 .filter(|field| should_suggest(field.name.declared_name()))
-                .map(|field| {
-                    Suggestion {
-                        name: field.name.declared_name().into(),
-                        typ: Either::Right(field.typ.clone()),
-                    }
+                .map(|field| Suggestion {
+                    name: field.name.declared_name().into(),
+                    typ: Either::Right(field.typ.clone()),
                 });
             let types = typ.type_field_iter()
                 .filter(|field| should_suggest(field.name.declared_name()))
-                .map(|field| {
-                    Suggestion {
-                        name: field.name.declared_name().into(),
-                        typ: Either::Right(field.typ.clone().into_type()),
-                    }
+                .map(|field| Suggestion {
+                    name: field.name.declared_name().into(),
+                    typ: Either::Right(field.typ.clone().into_type()),
                 });
             result.extend(fields.chain(types));
         }
@@ -967,7 +966,7 @@ impl SuggestionQuery {
         };
         let mut result = vec![];
 
-        let enclosing_match = found.enclosing_match;
+        let enclosing_match = found.enclosing_matches.last().unwrap();
         match found.match_ {
             Some(match_) => match match_ {
                 Match::Expr(expr) => match expr.value {
@@ -976,11 +975,9 @@ impl SuggestionQuery {
                         self.suggest_module_import(env, name, &mut result);
                     }
                     _ => {
-                        result.extend(expr_iter(&suggest.stack, expr).map(|(k, typ)| {
-                            Suggestion {
-                                name: k.declared_name().into(),
-                                typ: Either::Right(typ.clone()),
-                            }
+                        result.extend(expr_iter(&suggest.stack, expr).map(|(k, typ)| Suggestion {
+                            name: k.declared_name().into(),
+                            typ: Either::Right(typ.clone()),
                         }));
                     }
                 },
@@ -1004,15 +1001,13 @@ impl SuggestionQuery {
                             .patterns
                             .iter()
                             .filter(|&(ref name, _)| name.declared_name().starts_with(prefix))
-                            .map(|(name, typ)| {
-                                Suggestion {
-                                    name: name.declared_name().into(),
-                                    typ: Either::Right(typ.clone()),
-                                }
+                            .map(|(name, typ)| Suggestion {
+                                name: name.declared_name().into(),
+                                typ: Either::Right(typ.clone()),
                             }),
                     );
                 }
-                Match::Ident(_, ident, _) => match enclosing_match {
+                Match::Ident(_, ident, _) => match *enclosing_match {
                     Match::Expr(context) => match context.value {
                         Expr::Projection(ref expr, _, _) => {
                             let typ = resolve::remove_aliases(&env, expr.env_type_of(&env));
@@ -1021,11 +1016,9 @@ impl SuggestionQuery {
                             let iter = typ.row_iter()
                                 .filter(move |field| field.name.as_ref().starts_with(id))
                                 .map(|field| (field.name.clone(), field.typ.clone()));
-                            result.extend(iter.map(|(name, typ)| {
-                                Suggestion {
-                                    name: name.declared_name().into(),
-                                    typ: Either::Right(typ),
-                                }
+                            result.extend(iter.map(|(name, typ)| Suggestion {
+                                name: name.declared_name().into(),
+                                typ: Either::Right(typ),
                             }));
                         }
                         Expr::Ident(ref id) if id.name.is_global() => {
@@ -1060,23 +1053,19 @@ impl SuggestionQuery {
                             .type_stack
                             .iter()
                             .filter(|&(k, _)| k.declared_name().starts_with(ident.declared_name()))
-                            .map(|(name, kind)| {
-                                Suggestion {
-                                    name: name.declared_name().into(),
-                                    typ: Either::Left(kind.clone()),
-                                }
+                            .map(|(name, kind)| Suggestion {
+                                name: name.declared_name().into(),
+                                typ: Either::Left(kind.clone()),
                             }),
                     );
                 }
             },
 
-            None => match enclosing_match {
+            None => match *enclosing_match {
                 Match::Expr(..) | Match::Ident(..) => {
-                    result.extend(suggest.stack.iter().map(|(name, typ)| {
-                        Suggestion {
-                            name: name.declared_name().into(),
-                            typ: Either::Right(typ.clone()),
-                        }
+                    result.extend(suggest.stack.iter().map(|(name, typ)| Suggestion {
+                        name: name.declared_name().into(),
+                        typ: Either::Right(typ.clone()),
                     }));
                 }
 
@@ -1086,11 +1075,9 @@ impl SuggestionQuery {
                             .type_stack
                             .iter()
                             .filter(|&(k, _)| k.declared_name().starts_with(ident.declared_name()))
-                            .map(|(name, kind)| {
-                                Suggestion {
-                                    name: name.declared_name().into(),
-                                    typ: Either::Left(kind.clone()),
-                                }
+                            .map(|(name, kind)| Suggestion {
+                                name: name.declared_name().into(),
+                                typ: Either::Left(kind.clone()),
                             }),
                     );
                 }
@@ -1104,11 +1091,9 @@ impl SuggestionQuery {
                         let typ = resolve::remove_aliases(env, pattern.env_type_of(env));
                         suggest_fields_of_type(&mut result, types, fields, "", &typ);
                     }
-                    _ => result.extend(suggest.patterns.iter().map(|(name, typ)| {
-                        Suggestion {
-                            name: name.declared_name().into(),
-                            typ: Either::Right(typ.clone()),
-                        }
+                    _ => result.extend(suggest.patterns.iter().map(|(name, typ)| Suggestion {
+                        name: name.declared_name().into(),
+                        typ: Either::Right(typ.clone()),
                     })),
                 },
             },
@@ -1177,6 +1162,57 @@ impl SuggestionQuery {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub struct SignatureHelp {
+    pub typ: ArcType,
+    pub index: u32,
+}
+
+pub fn signature_help(
+    env: &TypeEnv,
+    expr: &SpannedExpr<Symbol>,
+    pos: BytePos,
+) -> Option<SignatureHelp> {
+    complete_at((), expr, pos).ok().and_then(|found| {
+        let applications = found
+            .enclosing_matches
+            .iter()
+            .rev()
+            .take_while(|enclosing_match| match **enclosing_match {
+                Match::Expr(ref expr) => match expr.value {
+                    Expr::Ident(..) | Expr::Literal(..) | Expr::App(..) => true,
+                    _ => false,
+                },
+                _ => false,
+            })
+            .filter_map(|enclosing_match| match *enclosing_match {
+                Match::Expr(ref expr) => match expr.value {
+                    Expr::App(ref f, ref args) => f.try_type_of(env).ok().map(|typ| {
+                        let index = args.iter()
+                            .position(|arg| pos <= arg.span.end)
+                            .unwrap_or(args.len()) as u32;
+                        SignatureHelp { typ, index }
+                    }),
+                    _ => None,
+                },
+                _ => None,
+            });
+        let any_expr = found
+            .enclosing_matches
+            .iter()
+            .rev()
+            .filter_map(|enclosing_match| match *enclosing_match {
+                Match::Expr(ref expr) => match expr.value {
+                    Expr::App(ref f, _) => f.try_type_of(env).ok(),
+                    _ => expr.value.try_type_of(env).ok(),
+                },
+                _ => None,
+            })
+            .map(|typ| SignatureHelp { typ, index: 0 });
+        applications.chain(any_expr).next()
+    })
+}
+
 pub fn get_metadata<'a>(
     env: &'a FnvMap<Symbol, Metadata>,
     expr: &SpannedExpr<Symbol>,
@@ -1185,7 +1221,7 @@ pub fn get_metadata<'a>(
     complete_at((), expr, pos)
         .ok()
         .and_then(|found| {
-            let e = found.enclosing_match;
+            let e = found.enclosing_match().clone();
             found.match_.map(|m| (m, e))
         })
         .and_then(|(match_, enclosing_match)| match match_ {
@@ -1225,9 +1261,9 @@ where
     T: TypeEnv,
 {
     let mut suggest = Suggest::new(type_env);
-    complete_at(&mut suggest, expr, pos)
-        .ok()
-        .and_then(|found| match found.match_ {
+    complete_at(&mut suggest, expr, pos).ok().and_then(|found| {
+        let enclosing_match = found.enclosing_matches.last().unwrap();
+        match found.match_ {
             Some(match_) => match match_ {
                 Match::Expr(expr) => {
                     let suggestion = expr_iter(&suggest.stack, expr)
@@ -1239,7 +1275,7 @@ where
                     }
                 }
 
-                Match::Ident(_, _, _) => match found.enclosing_match {
+                Match::Ident(_, _, _) => match *enclosing_match {
                     Match::Expr(&Spanned {
                         value: Expr::Projection(ref expr, _, _),
                         ..
@@ -1254,7 +1290,7 @@ where
                 _ => None,
             },
 
-            None => match found.enclosing_match {
+            None => match *enclosing_match {
                 Match::Expr(..) | Match::Ident(..) => suggest
                     .stack
                     .iter()
@@ -1263,5 +1299,6 @@ where
 
                 _ => None,
             },
-        })
+        }
+    })
 }
