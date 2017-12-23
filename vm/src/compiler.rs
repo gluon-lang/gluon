@@ -1,6 +1,6 @@
 use std::ops::{Deref, DerefMut};
 use interner::InternedStr;
-use base::ast::{DisplayEnv, Literal, Typed, TypedIdent};
+use base::ast::{self, DisplayEnv, Literal, Typed, TypedIdent};
 use base::resolve;
 use base::kind::{ArcKind, KindEnv};
 use base::types::{self, Alias, ArcType, BuiltinType, RecordSelector, Type, TypeEnv};
@@ -719,9 +719,20 @@ impl<'a> Compiler<'a> {
                         Pattern::Record { .. } => {
                             start_jumps.push(function.function.instructions.len());
                         }
-                        _ => {
+                        Pattern::Ident(_) => {
                             start_jumps.push(function.function.instructions.len());
                             function.emit(Jump(0));
+                        }
+                        Pattern::Literal(ref l) => {
+                            let instruction = match *l {
+                                ast::Literal::Byte(_) => ByteEQ,
+                                ast::Literal::Int(_) | ast::Literal::Char(_) => IntEQ,
+                                ast::Literal::Float(_) => FloatEQ,
+                                ast::Literal::String(_) => unimplemented!(),
+                            };
+                            function.emit(instruction);
+                            start_jumps.push(function.function.instructions.len());
+                            function.emit(CJump(0));
                         }
                     }
                 }
@@ -748,6 +759,10 @@ impl<'a> Compiler<'a> {
                             function.function.instructions[start_index] =
                                 Jump(function.function.instructions.len() as VmIndex);
                             function.new_stack_var(self, id.name.clone(), id.typ.clone());
+                        }
+                        Pattern::Literal(_) => {
+                            function.function.instructions[start_index] =
+                                CJump(function.function.instructions.len() as VmIndex);
                         }
                     }
                     self.compile(&alt.expr, function, tail_position)?;
@@ -931,6 +946,7 @@ impl<'a> Compiler<'a> {
                 }
             }
             Pattern::Constructor(..) => ice!("constructor pattern in let"),
+            Pattern::Literal(_) => ice!("literal pattern in let"),
         }
         Ok(())
     }

@@ -80,6 +80,7 @@ pub enum Pattern {
     Constructor(TypedIdent<Symbol>, Vec<TypedIdent<Symbol>>),
     Record(Vec<(TypedIdent<Symbol>, Option<Symbol>)>),
     Ident(TypedIdent<Symbol>),
+    Literal(ast::Literal),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -161,6 +162,16 @@ impl<'a> Binder<'a> {
     }
 }
 
+fn pretty_literal<'a>(l: &Literal, arena: &'a pretty::Arena<'a>) -> pretty::DocBuilder<'a, pretty::Arena<'a>> {
+    match *l {
+        Literal::Byte(b) => arena.text(format!("b{}", b)),
+        Literal::Char(c) => arena.text(format!("{:?}", c)),
+        Literal::Float(f) => arena.text(format!("{}", f)),
+        Literal::Int(i) => arena.text(format!("{}", i)),
+        Literal::String(ref s) => arena.text(format!("{:?}", s)),
+    }
+}
+
 impl<'a> Expr<'a> {
     pub fn pretty(
         &'a self,
@@ -173,13 +184,7 @@ impl<'a> Expr<'a> {
                         arena.space().append(arg.pretty(arena))
                     }))
                 ].group(),
-            Expr::Const(ref literal, _) => match *literal {
-                Literal::Byte(b) => arena.text(format!("b{}", b)),
-                Literal::Char(c) => arena.text(format!("{:?}", c)),
-                Literal::Float(f) => arena.text(format!("{}", f)),
-                Literal::Int(i) => arena.text(format!("{}", i)),
-                Literal::String(ref s) => arena.text(format!("{:?}", s)),
-            },
+            Expr::Const(ref l, _) => pretty_literal(l, arena),
             Expr::Data(ref ctor, args, _, _) => match *ctor.typ {
                 Type::Record(ref record) => chain![arena;
                             "{",
@@ -345,6 +350,7 @@ impl Pattern {
                     arena.space(),
                     "}"
                 ].group(),
+            Pattern::Literal(ref l) => pretty_literal(l, arena),
         }
     }
 }
@@ -955,6 +961,7 @@ enum CType {
     Constructor,
     Record,
     Variable,
+    Literal,
 }
 
 use self::optimize::*;
@@ -1016,6 +1023,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             CType::Constructor => self.compile_constructor(default, variables, equations),
             CType::Record => self.compile_record(default, variables, equations),
             CType::Variable => self.compile_variable(default, variables, equations),
+            CType::Literal => self.compile_literal(default, variables, equations),
         }
     }
 
@@ -1272,6 +1280,34 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         self.0.allocator.arena.alloc(expr)
     }
 
+    fn compile_literal<'p>(
+        &mut self,
+        default: &'a Expr<'a>,
+        variables: &[&'a Expr<'a>],
+        equations: &[Equation<'a, 'p>],
+    ) -> &'a Expr<'a> {
+        let patterns: Vec<_> = equations
+            .iter()
+            .map(|equation| match equation.patterns.first().unwrap().value {
+                ast::Pattern::Literal(ref l) => Pattern::Literal(l.clone()),
+                ast::Pattern::Ident(ref id) => Pattern::Ident(id.clone()),
+                _ => unreachable!()
+            }).collect();
+
+        let alternatives = patterns.into_iter()
+            .zip(equations.iter().map(|e| e.result))
+            .map(|(pattern, expr)| Alternative { pattern, expr });
+
+        let expr = Expr::Match(
+            variables[0],
+            self.0
+                .allocator
+                .alternative_arena
+                .alloc_extend(alternatives),
+        );
+        self.0.allocator.arena.alloc(expr)
+    }
+
     // Generates a variable for each of the new equations we inserted
     // This variable is what we `match` the expression(s) on
     fn insert_new_variables(
@@ -1342,7 +1378,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 ast::Pattern::Ident(_) => CType::Variable,
                 ast::Pattern::Record { .. } | ast::Pattern::Tuple { .. } => CType::Record,
                 ast::Pattern::Constructor(_, _) => CType::Constructor,
-                ast::Pattern::Literal(_) => CType::Variable,
+                ast::Pattern::Literal(_) => CType::Literal,
                 ast::Pattern::Error => ice!("ICE: Error pattern survived typechecking"),
             }
         }
@@ -1524,6 +1560,7 @@ impl<'a> PatternIdentifiers<'a> {
                 Pattern::Constructor(_, ref patterns) => patterns.len(),
                 Pattern::Record(ref fields) => fields.len(),
                 Pattern::Ident(_) => 0,
+                Pattern::Literal(_) => 0,
             },
         }
     }
@@ -1559,7 +1596,7 @@ impl<'a> Iterator for PatternIdentifiers<'a> {
             } else {
                 None
             },
-            Pattern::Ident(_) => None,
+            Pattern::Ident(_) | Pattern::Literal(_) => None,
         }
     }
 }
@@ -1591,7 +1628,7 @@ impl<'a> DoubleEndedIterator for PatternIdentifiers<'a> {
             } else {
                 None
             },
-            Pattern::Ident(_) => None,
+            Pattern::Ident(_) | Pattern::Literal(_) => None,
         }
     }
 }
