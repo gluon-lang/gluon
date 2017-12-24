@@ -724,13 +724,36 @@ impl<'a> Compiler<'a> {
                             function.emit(Jump(0));
                         }
                         Pattern::Literal(ref l) => {
-                            let instruction = match *l {
-                                ast::Literal::Byte(_) => ByteEQ,
-                                ast::Literal::Int(_) | ast::Literal::Char(_) => IntEQ,
-                                ast::Literal::Float(_) => FloatEQ,
-                                ast::Literal::String(_) => unimplemented!(),
+                            let lhs_i = function.stack_size() - 1;
+                            match *l {
+                                ast::Literal::Byte(b) => {
+                                    function.emit(Push(lhs_i));
+                                    function.emit(PushByte(b));
+                                    function.emit(ByteEQ);
+                                }
+                                ast::Literal::Int(i) => {
+                                    function.emit(Push(lhs_i));
+                                    function.emit(PushInt(i as isize));
+                                    function.emit(IntEQ);
+                                },
+                                ast::Literal::Char(ch) => {
+                                    function.emit(Push(lhs_i));
+                                    function.emit(PushInt(ch as isize));
+                                    function.emit(IntEQ);
+                                }
+                                ast::Literal::Float(f) => {
+                                    function.emit(Push(lhs_i));
+                                    function.emit(PushFloat(f));
+                                    function.emit(FloatEQ);
+                                }
+                                ast::Literal::String(ref s) => {
+                                    self.load_identifier(&Symbol::from("@string_eq"), function)?;
+                                    let lhs_i = function.stack_size() - 2;
+                                    function.emit(Push(lhs_i));
+                                    function.emit_string(self.intern(&s)?);
+                                    function.emit(Call(2));
+                                }
                             };
-                            function.emit(instruction);
                             start_jumps.push(function.function.instructions.len());
                             function.emit(CJump(0));
                         }

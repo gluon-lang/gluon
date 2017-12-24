@@ -1710,6 +1710,9 @@ mod tests {
                                 }
                             })
                         }
+                        (&Pattern::Literal(ref l_literal), &Pattern::Literal(ref r_literal)) => {
+                            l_literal == r_literal
+                        }
                         _ => false,
                     };
                     if !eq || !expr_eq(map, &l.expr, &r.expr) {
@@ -1999,6 +2002,45 @@ mod tests {
             let x = match_pattern in
             match_pattern
             ";
+
+        check_translation(expr_str, expected_str);
+    }
+
+    #[test]
+    fn match_int_literal() {
+        let expr_str = r#"
+            match 2 with
+            | 1 -> "one"
+            | _ -> "any"
+        "#;
+
+        let expected_str = r#"
+            let match_pattern = 2 in
+            match match_pattern with
+            | 1 -> "one"
+            | _ -> "any"
+            end
+        "#;
+
+        check_translation(expr_str, expected_str);
+    }
+
+    #[test]
+    fn match_string_literal() {
+        let expr_str = r#"
+            let x = "zero" in
+            match x with
+            | "one" -> 1
+            | _ -> 0
+        "#;
+
+        let expected_str = r#"
+            let x = "zero" in
+            match x with
+            | "one" -> 1
+            | _ -> 0
+            end
+        "#;
 
         check_translation(expr_str, expected_str);
     }
