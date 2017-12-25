@@ -38,6 +38,7 @@ test //
         5,
     );
     let expected = Some(SignatureHelp {
+        name: "test".to_string(),
         typ: Type::function(collect![typ("Int"), typ("String")], typ("Int")),
         index: Some(0),
     });
@@ -58,6 +59,7 @@ test 123//
         3,
     );
     let expected = Some(SignatureHelp {
+        name: "test".to_string(),
         typ: Type::function(collect![typ("Int"), typ("String")], typ("Int")),
         index: None,
     });
@@ -78,6 +80,7 @@ test 123 //
         9,
     );
     let expected = Some(SignatureHelp {
+        name: "test".to_string(),
         typ: Type::function(collect![typ("Int"), typ("String")], typ("Int")),
         index: Some(1),
     });
@@ -98,6 +101,7 @@ test { x = "" }
         13,
     );
     let expected = Some(SignatureHelp {
+        name: "".to_string(),
         typ: typ("String"),
         index: None,
     });

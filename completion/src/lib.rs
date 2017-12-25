@@ -1164,6 +1164,7 @@ impl SuggestionQuery {
 
 #[derive(Debug, PartialEq)]
 pub struct SignatureHelp {
+    pub name: String,
     pub typ: ArcType,
     pub index: Option<u32>,
 }
@@ -1188,6 +1189,10 @@ pub fn signature_help(
             .filter_map(|enclosing_match| match *enclosing_match {
                 Match::Expr(ref expr) => match expr.value {
                     Expr::App(ref f, ref args) => f.try_type_of(env).ok().map(|typ| {
+                        let name = match f.value {
+                            Expr::Ident(ref id) => id.name.declared_name().to_string(),
+                            _ => "".to_string(),
+                        };
                         let index = if args.first().map_or(false, |arg| pos >= arg.span.start) {
                             Some(args.iter()
                                 .position(|arg| pos <= arg.span.end)
@@ -1195,7 +1200,7 @@ pub fn signature_help(
                         } else {
                             None
                         };
-                        SignatureHelp { typ, index }
+                        SignatureHelp { name, typ, index }
                     }),
                     _ => None,
                 },
@@ -1205,7 +1210,13 @@ pub fn signature_help(
             found.enclosing_matches.iter().rev().filter_map(
                 |enclosing_match| match *enclosing_match {
                     Match::Expr(ref expr) => {
+                        let name = match expr.value {
+                            Expr::Ident(ref id) => id.name.declared_name().to_string(),
+                            _ => "".to_string(),
+                        };
+
                         expr.value.try_type_of(env).ok().map(|typ| SignatureHelp {
+                            name,
                             typ,
                             index: if pos > expr.span.end { Some(0) } else { None },
                         })
