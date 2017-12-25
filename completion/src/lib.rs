@@ -1165,7 +1165,7 @@ impl SuggestionQuery {
 #[derive(Debug, PartialEq)]
 pub struct SignatureHelp {
     pub typ: ArcType,
-    pub index: u32,
+    pub index: Option<u32>,
 }
 
 pub fn signature_help(
@@ -1188,27 +1188,31 @@ pub fn signature_help(
             .filter_map(|enclosing_match| match *enclosing_match {
                 Match::Expr(ref expr) => match expr.value {
                     Expr::App(ref f, ref args) => f.try_type_of(env).ok().map(|typ| {
-                        let index = args.iter()
-                            .position(|arg| pos <= arg.span.end)
-                            .unwrap_or(args.len()) as u32;
+                        let index = if args.first().map_or(false, |arg| pos >= arg.span.start) {
+                            Some(args.iter()
+                                .position(|arg| pos <= arg.span.end)
+                                .unwrap_or(args.len()) as u32)
+                        } else {
+                            None
+                        };
                         SignatureHelp { typ, index }
                     }),
                     _ => None,
                 },
                 _ => None,
             });
-        let any_expr = found
-            .enclosing_matches
-            .iter()
-            .rev()
-            .filter_map(|enclosing_match| match *enclosing_match {
-                Match::Expr(ref expr) => match expr.value {
-                    Expr::App(ref f, _) => f.try_type_of(env).ok(),
-                    _ => expr.value.try_type_of(env).ok(),
+        let any_expr =
+            found.enclosing_matches.iter().rev().filter_map(
+                |enclosing_match| match *enclosing_match {
+                    Match::Expr(ref expr) => {
+                        expr.value.try_type_of(env).ok().map(|typ| SignatureHelp {
+                            typ,
+                            index: if pos > expr.span.end { Some(0) } else { None },
+                        })
+                    }
+                    _ => None,
                 },
-                _ => None,
-            })
-            .map(|typ| SignatureHelp { typ, index: 0 });
+            );
         applications.chain(any_expr).next()
     })
 }

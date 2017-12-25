@@ -39,7 +39,27 @@ test //
     );
     let expected = Some(SignatureHelp {
         typ: Type::function(collect![typ("Int"), typ("String")], typ("Int")),
-        index: 0,
+        index: Some(0),
+    });
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn on_function() {
+    let _ = env_logger::init();
+
+    let result = signature_help(
+        r#"
+let test x y : Int -> String -> Int = x
+test 123//
+"#,
+        2,
+        3,
+    );
+    let expected = Some(SignatureHelp {
+        typ: Type::function(collect![typ("Int"), typ("String")], typ("Int")),
+        index: None,
     });
 
     assert_eq!(result, expected);
@@ -59,7 +79,7 @@ test 123 //
     );
     let expected = Some(SignatureHelp {
         typ: Type::function(collect![typ("Int"), typ("String")], typ("Int")),
-        index: 1,
+        index: Some(1),
     });
 
     assert_eq!(result, expected);
@@ -75,11 +95,11 @@ let test x y : Int -> String -> Int = x
 test { x = "" }
 "#,
         2,
-        14,
+        13,
     );
     let expected = Some(SignatureHelp {
         typ: typ("String"),
-        index: 0,
+        index: None,
     });
 
     assert_eq!(result, expected);
