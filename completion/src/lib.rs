@@ -1179,9 +1179,16 @@ pub fn signature_help(
             .enclosing_matches
             .iter()
             .rev()
+            // Stop searching for an application if it would mean we exit a nested expression
+            // Ie. `test { abc = func }`
+            //                     ^
+            // Should not return the signature for `test` but for `func`
             .take_while(|enclosing_match| match **enclosing_match {
                 Match::Expr(ref expr) => match expr.value {
-                    Expr::Ident(..) | Expr::Literal(..) | Expr::App(..) => true,
+                    Expr::Ident(..) | Expr::Literal(..) | Expr::Projection(..) | Expr::App(..) | Expr::Tuple { .. } => {
+                        true
+                    }
+                    Expr::Record { ref exprs, ref base, ..} => exprs.is_empty() && base.is_none(),
                     _ => false,
                 },
                 _ => false,
@@ -1191,6 +1198,7 @@ pub fn signature_help(
                     Expr::App(ref f, ref args) => f.try_type_of(env).ok().map(|typ| {
                         let name = match f.value {
                             Expr::Ident(ref id) => id.name.declared_name().to_string(),
+                            Expr::Projection(_, ref name, _) => name.declared_name().to_string(),
                             _ => "".to_string(),
                         };
                         let index = if args.first().map_or(false, |arg| pos >= arg.span.start) {
@@ -1212,6 +1220,7 @@ pub fn signature_help(
                     Match::Expr(ref expr) => {
                         let name = match expr.value {
                             Expr::Ident(ref id) => id.name.declared_name().to_string(),
+                            Expr::Projection(_, ref name, _) => name.declared_name().to_string(),
                             _ => "".to_string(),
                         };
 
