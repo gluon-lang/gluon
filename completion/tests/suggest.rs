@@ -513,6 +513,7 @@ import! example.
     let query = SuggestionQuery {
         paths: vec![find_gluon_root()],
         modules: vec!["example.test".into()],
+        ..SuggestionQuery::default()
     };
     let result = suggest_query_loc(query, text, 1, 16);
     let expected = Ok(vec!["test".into()]);
@@ -530,6 +531,7 @@ import! example.
     let query = SuggestionQuery {
         paths: vec![find_gluon_root()],
         modules: vec!["example.test.inner".into()],
+        ..SuggestionQuery::default()
     };
     let result = suggest_query_loc(query, text, 1, 16);
     let expected = Ok(vec!["test".into()]);
@@ -547,6 +549,7 @@ import! example.test.inn
     let query = SuggestionQuery {
         paths: vec![find_gluon_root()],
         modules: vec!["example.test.inner".into()],
+        ..SuggestionQuery::default()
     };
     let result = suggest_query_loc(query, text, 1, 24);
     let expected = Ok(vec!["inner".into()]);
