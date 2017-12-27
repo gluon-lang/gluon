@@ -573,9 +573,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
                         Pattern::Ident(ref id) => {
                             function.push_stack_var(self, id.name.clone(), expr);
                         }
-                        Pattern::Literal(_) => {
-                            ice!("pattern matching on literals is not supported by interpreter")
-                        }
+                        Pattern::Literal(_) => (),
                     }
                     let new_expr = self.compile(&alt.expr, function)?
                         .unwrap_or(Reduced::Local(&alt.expr));

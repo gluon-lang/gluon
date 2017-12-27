@@ -1559,8 +1559,7 @@ impl<'a> PatternIdentifiers<'a> {
             end: match *pattern {
                 Pattern::Constructor(_, ref patterns) => patterns.len(),
                 Pattern::Record(ref fields) => fields.len(),
-                Pattern::Ident(_) => 0,
-                Pattern::Literal(_) => 0,
+                Pattern::Ident(_) | Pattern::Literal(_) => 0,
             },
         }
     }
