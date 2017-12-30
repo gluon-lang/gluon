@@ -583,7 +583,7 @@ impl<'a> Typecheck<'a> {
         if let Some(expected) = expected_type {
             let expected = self.create_unifiable_signature(expected)
                 .unwrap_or_else(|| expected.clone());
-            typ = self.merge_signature(expr_check_span(expr), 0, &expected, typ);
+            typ = self.subsumes(expr_check_span(expr), 0, &expected, typ);
         }
         self.generalize_type(0, &mut typ);
         typ = types::walk_move_type(typ, &mut unroll_typ);
@@ -658,7 +658,7 @@ impl<'a> Typecheck<'a> {
                             returned_type = match expected_type {
                                 Some(expected_type) => {
                                     let level = self.subs.var_id();
-                                    self.merge_signature(expr.span, level, &expected_type, typ)
+                                    self.subsumes(expr.span, level, &expected_type, typ)
                                 }
                                 None => typ,
                             };
@@ -928,12 +928,9 @@ impl<'a> Typecheck<'a> {
                         None => {
                             let typ = self.find(&field.name.value)?;
                             match expected_field_type {
-                                Some(expected_field_type) => self.merge_signature(
-                                    field.name.span,
-                                    level,
-                                    &expected_field_type,
-                                    typ,
-                                ),
+                                Some(expected_field_type) => {
+                                    self.subsumes(field.name.span, level, &expected_field_type, typ)
+                                }
                                 None => typ,
                             }
                         }
@@ -984,7 +981,7 @@ impl<'a> Typecheck<'a> {
 
                 let level = self.subs.var_id();
                 let actual_record = self.type_cache.record(new_types, new_fields);
-                self.merge_signature(expr.span, level, &record_type, actual_record);
+                self.subsumes(expr.span, level, &record_type, actual_record);
 
                 *typ = id_type.clone();
                 Ok(TailCall::Type(id_type.clone()))
@@ -1077,7 +1074,7 @@ impl<'a> Typecheck<'a> {
                     let actual = self.instantiate_generics(&actual);
 
                     let level = self.subs.var_id();
-                    self.merge_signature(expr_check_span(arg), level, arg_ty, actual);
+                    self.subsumes(expr_check_span(arg), level, arg_ty, actual);
 
                     ret_ty.clone()
                 }
@@ -2141,7 +2138,7 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn merge_signature(
+    fn subsumes(
         &mut self,
         span: Span<BytePos>,
         level: u32,
@@ -2151,7 +2148,7 @@ impl<'a> Typecheck<'a> {
         debug!("Merge {} : {}", expected, actual);
         let expected = self.skolemize(&expected);
         let state = unify_type::State::new(&self.environment, &self.subs);
-        match unify_type::merge_signature(
+        match unify_type::subsumes(
             &self.subs,
             &mut self.type_variables,
             level,

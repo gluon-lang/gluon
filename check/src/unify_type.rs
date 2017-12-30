@@ -902,7 +902,8 @@ pub fn top_skolem_scope(
     }
 }
 
-pub fn merge_signature(
+/// Performs subsumption between `l` and `r` (`r` is-a `l`)
+pub fn subsumes(
     subs: &Substitution<ArcType>,
     variables: &mut ScopedMap<Symbol, ArcType>,
     level: u32,
@@ -913,7 +914,7 @@ pub fn merge_signature(
     debug!("Subsume {} <=> {}", l, r);
     let mut unifier = UnifierState {
         state: state,
-        unifier: Merge {
+        unifier: Subsume {
             subs: subs,
             variables: variables,
             errors: Errors::new(),
@@ -929,14 +930,14 @@ pub fn merge_signature(
     }
 }
 
-struct Merge<'e> {
+struct Subsume<'e> {
     subs: &'e Substitution<ArcType>,
     variables: &'e mut ScopedMap<Symbol, ArcType>,
     errors: Errors<Error<Symbol>>,
     level: u32,
 }
 
-impl<'a, 'e> Unifier<State<'a>, ArcType> for Merge<'e> {
+impl<'a, 'e> Unifier<State<'a>, ArcType> for Subsume<'e> {
     fn report_error(
         unifier: &mut UnifierState<Self>,
         error: UnifyError<ArcType, TypeError<Symbol>>,

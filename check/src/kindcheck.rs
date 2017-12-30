@@ -17,7 +17,6 @@ pub type SpannedError<I> = Spanned<Error<I>, BytePos>;
 
 pub type Result<T> = StdResult<T, SpannedError<Symbol>>;
 
-
 /// Struct containing methods for kindchecking types
 pub struct KindCheck<'a> {
     variables: Vec<Generic<Symbol>>,
@@ -127,9 +126,7 @@ impl<'a> KindCheck<'a> {
             .iter()
             .find(|var| var.id == *id)
             .map(|t| t.kind.clone())
-            .or_else(|| {
-                self.locals.iter().find(|t| t.0 == *id).map(|t| t.1.clone())
-            })
+            .or_else(|| self.locals.iter().find(|t| t.0 == *id).map(|t| t.1.clone()))
             .or_else(|| self.info.find_kind(id))
             .map_or_else(
                 || {
@@ -343,8 +340,7 @@ where
         TypeMismatch(ref expected, ref actual) => write!(
             f,
             "Kind mismatch\nExpected: {}\nFound: {}",
-            expected,
-            actual
+            expected, actual
         ),
         Substitution(ref err) => write!(f, "{}", err),
         Other(ref err) => write!(f, "{}", err),

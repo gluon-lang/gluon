@@ -423,13 +423,9 @@ mod test {
                 (&Type::Arrow(ref l1, ref l2), &Type::Arrow(ref r1, ref r2)) => {
                     let arg = f.try_match(l1, r1);
                     let ret = f.try_match(l2, r2);
-                    Ok(merge(
-                        l1,
-                        arg,
-                        l2,
-                        ret,
-                        |a, r| TType(Box::new(Type::Arrow(a, r))),
-                    ))
+                    Ok(merge(l1, arg, l2, ret, |a, r| {
+                        TType(Box::new(Type::Arrow(a, r)))
+                    }))
                 }
                 _ => Err(Error::TypeMismatch(self.clone(), other.clone())),
             }
@@ -496,9 +492,9 @@ mod test {
         let result = unify(&subs, &var1, &int);
         assert_eq!(
             result,
-            Err(Errors::from(
-                vec![Error::TypeMismatch(string.clone(), int.clone())],
-            ),)
+            Err(Errors::from(vec![
+                Error::TypeMismatch(string.clone(), int.clone()),
+            ],),)
         );
     }
 

@@ -38,8 +38,7 @@ pub fn check_signature(env: &TypeEnv, signature: &ArcType, actual: &ArcType) -> 
     let state = unify_type::State::new(env, &subs);
     let actual = unify_type::new_skolem_scope(&subs, &FnvMap::default(), actual);
     let actual = actual.instantiate_generics(&mut FnvMap::default());
-    let result =
-        unify_type::merge_signature(&subs, &mut ScopedMap::new(), 0, state, signature, &actual);
+    let result = unify_type::subsumes(&subs, &mut ScopedMap::new(), 0, state, signature, &actual);
     if let Err(ref err) = result {
         debug!("Check signature error: {}", err);
     }
