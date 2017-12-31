@@ -31,6 +31,7 @@ use base::types::{walk_type_, AliasData, ArcType, ControlVisitation, Generic, Ty
 #[derive(Clone, Debug)]
 pub struct Found<'a> {
     pub match_: Option<Match<'a>>,
+    pub near_matches: Vec<Match<'a>>,
     pub enclosing_matches: Vec<Match<'a>>,
 }
 
@@ -46,6 +47,17 @@ pub enum Match<'a> {
     Pattern(&'a SpannedPattern<Symbol>),
     Ident(Span<BytePos>, &'a Symbol, &'a ArcType),
     Type(Span<BytePos>, &'a Symbol, ArcKind),
+}
+
+impl<'a> Match<'a> {
+    pub fn span(&self) -> Span<BytePos> {
+        match *self {
+            Match::Expr(ref expr) => expr.span,
+            Match::Pattern(ref pattern) => pattern.span,
+            Match::Ident(span, ..) => span,
+            Match::Type(span, ..) => span,
+        }
+    }
 }
 
 trait OnFound {
@@ -211,6 +223,7 @@ struct FindVisitor<'a, F> {
     on_found: F,
     found: Option<Option<Match<'a>>>,
     enclosing_matches: Vec<Match<'a>>,
+    near_matches: Vec<Match<'a>>,
 }
 
 impl<'a, F> FindVisitor<'a, F> {
@@ -306,7 +319,10 @@ where
     fn visit_pattern(&mut self, current: &'a SpannedPattern<Symbol>) {
         if current.span.containment(&self.pos) == Ordering::Equal {
             self.enclosing_matches.push(Match::Pattern(current));
+        } else {
+            self.near_matches.push(Match::Pattern(current));
         }
+
         match current.value {
             Pattern::As(_, ref pat) => self.visit_pattern(pat),
             Pattern::Constructor(ref id, ref args) => {
@@ -415,7 +431,11 @@ where
             return;
         }
 
-        self.enclosing_matches.push(Match::Expr(current));
+        if current.span.containment(&self.pos) == Ordering::Equal {
+            self.enclosing_matches.push(Match::Expr(current));
+        } else {
+            self.near_matches.push(Match::Expr(current));
+        }
 
         match current.value {
             Expr::Ident(_) | Expr::Literal(_) => {
@@ -662,15 +682,18 @@ where
         pos: pos,
         on_found: on_found,
         found: None,
-        enclosing_matches: vec![],
+        enclosing_matches: vec![Match::Expr(expr)],
+        near_matches: vec![],
     };
     visitor.visit_expr(expr);
     let enclosing_matches = visitor.enclosing_matches;
+    let near_matches = visitor.near_matches;
     visitor
         .found
         .map(|match_| Found {
             match_,
             enclosing_matches,
+            near_matches,
         })
         .ok_or(())
 }
@@ -971,7 +994,7 @@ impl SuggestionQuery {
             Some(match_) => match match_ {
                 Match::Expr(expr) => match expr.value {
                     Expr::Ident(ref id) if id.name.is_global() => {
-                        let name = &id.name.as_ref()[1..];
+                        let name = id.name.definition_name();
                         self.suggest_module_import(env, name, &mut result);
                     }
                     _ => {
@@ -1178,6 +1201,7 @@ pub fn signature_help(
         let applications = found
             .enclosing_matches
             .iter()
+            .chain(&found.near_matches)
             .rev()
             // Stop searching for an application if it would mean we exit a nested expression
             // Ie. `test { abc = func }`
@@ -1214,25 +1238,27 @@ pub fn signature_help(
                 },
                 _ => None,
             });
-        let any_expr =
-            found.enclosing_matches.iter().rev().filter_map(
-                |enclosing_match| match *enclosing_match {
-                    Match::Expr(ref expr) => {
-                        let name = match expr.value {
-                            Expr::Ident(ref id) => id.name.declared_name().to_string(),
-                            Expr::Projection(_, ref name, _) => name.declared_name().to_string(),
-                            _ => "".to_string(),
-                        };
+        let any_expr = found
+            .enclosing_matches
+            .iter()
+            .chain(&found.near_matches)
+            .rev()
+            .filter_map(|enclosing_match| match *enclosing_match {
+                Match::Expr(ref expr) => {
+                    let name = match expr.value {
+                        Expr::Ident(ref id) => id.name.declared_name().to_string(),
+                        Expr::Projection(_, ref name, _) => name.declared_name().to_string(),
+                        _ => "".to_string(),
+                    };
 
-                        expr.value.try_type_of(env).ok().map(|typ| SignatureHelp {
-                            name,
-                            typ,
-                            index: if pos > expr.span.end { Some(0) } else { None },
-                        })
-                    }
-                    _ => None,
-                },
-            );
+                    expr.value.try_type_of(env).ok().map(|typ| SignatureHelp {
+                        name,
+                        typ,
+                        index: if pos > expr.span.end { Some(0) } else { None },
+                    })
+                }
+                _ => None,
+            });
         applications.chain(any_expr).next()
     })
 }
