@@ -29,7 +29,7 @@ match { x = 1 } with
 }
 
 #[test]
-fn undefined_type() {
+fn undefined_type_not_in_scope() {
     let _ = env_logger::init();
     let text = r#"
 let x =
@@ -402,7 +402,7 @@ eq (A 0) (B 0.0)
 
     assert_eq!(
         &*format!("{}", result.unwrap_err()).replace("\t", "        "),
-        r#"test:Line: 5, Column: 10: Expected the following types to be equal
+        r#"test:Line: 5, Column: 11: Expected the following types to be equal
 Expected: test.A
 Found: test.B
 1 errors were found during unification:
@@ -410,11 +410,10 @@ Types do not match:
     Expected: test.A
     Found: test.B
 eq (A 0) (B 0.0)
-         ^~~~~~~
+          ^~~~~
 "#
     );
 }
-
 
 #[test]
 fn long_type_error_format() {
@@ -563,4 +562,37 @@ type Test = | Test In
     let result = support::typecheck(text);
 
     assert_err!(result, UndefinedType(..));
+}
+
+#[test]
+fn foldable_bug() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+type Array a = { x : a }
+
+type Foldable (f : Type -> Type) = {
+    foldl : forall a b . (b -> a -> b) -> b -> f a -> b
+}
+
+let any x = any x
+
+let foldable : Foldable Array =
+
+    let foldl : forall a b . (a -> b -> b) -> b -> Array a -> b = any ()
+
+    { foldl }
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert_multi_unify_err!(
+        result,
+        [
+            TypeMismatch(..),
+            TypeMismatch(..),
+            TypeMismatch(..),
+            TypeMismatch(..)
+        ]
+    );
 }

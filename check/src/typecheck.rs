@@ -348,8 +348,7 @@ impl<'a> Typecheck<'a> {
                 Ok(typ)
             }
             None => {
-                // Don't report global variables inserted by the `import!` macro as non-existing
-                // existing
+                // Don't report global variables inserted by the `import!` macro as undefined
                 // (if they don't exist the error will already have been reported by the macro)
                 if id.is_global() {
                     Ok(self.subs.new_var())
@@ -584,7 +583,7 @@ impl<'a> Typecheck<'a> {
         if let Some(expected) = expected_type {
             let expected = self.create_unifiable_signature(expected)
                 .unwrap_or_else(|| expected.clone());
-            typ = self.merge_signature(expr_check_span(expr), 0, &expected, typ);
+            typ = self.subsumes(expr_check_span(expr), 0, &expected, typ);
         }
         self.generalize_type(0, &mut typ);
         typ = types::walk_move_type(typ, &mut unroll_typ);
@@ -638,7 +637,8 @@ impl<'a> Typecheck<'a> {
         let returned_type;
         loop {
             let expected_type = expected_type.map(|t| self.skolemize(t));
-            match self.typecheck_(expr, expected_type.as_ref()) {
+            let mut expected_type = expected_type.as_ref();
+            match self.typecheck_(expr, &mut expected_type) {
                 Ok(tailcall) => {
                     match tailcall {
                         TailCall::TailCall => {
@@ -655,7 +655,13 @@ impl<'a> Typecheck<'a> {
                             scope_count += 1;
                         }
                         TailCall::Type(typ) => {
-                            returned_type = typ;
+                            returned_type = match expected_type {
+                                Some(expected_type) => {
+                                    let level = self.subs.var_id();
+                                    self.subsumes(expr.span, level, &expected_type, typ)
+                                }
+                                None => typ,
+                            };
                             break;
                         }
                     }
@@ -676,10 +682,12 @@ impl<'a> Typecheck<'a> {
         returned_type
     }
 
+    /// `expected_type` should be set to `None` if subsumption is done with it (to prevent us from
+    /// doing it twice)
     fn typecheck_(
         &mut self,
         expr: &mut SpannedExpr<Symbol>,
-        expected_type: Option<&ArcType<Symbol>>,
+        expected_type: &mut Option<&ArcType<Symbol>>,
     ) -> Result<TailCall, TypeError<Symbol>> {
         match expr.value {
             Expr::Ident(ref mut id) => {
@@ -706,8 +714,8 @@ impl<'a> Typecheck<'a> {
                 self.unify_span(expr_check_span(pred), &bool_type, pred_type);
 
                 // Both branches must unify to the same type
-                let true_type = self.typecheck_opt(&mut **if_true, expected_type);
-                let false_type = self.typecheck_opt(&mut **if_false, expected_type);
+                let true_type = self.typecheck_opt(&mut **if_true, expected_type.clone());
+                let false_type = self.typecheck_opt(&mut **if_false, expected_type.take());
 
                 let true_type = self.instantiate_generics(&true_type);
                 let false_type = self.instantiate_generics(&false_type);
@@ -753,7 +761,7 @@ impl<'a> Typecheck<'a> {
             } => {
                 *typ = match exprs.len() {
                     0 => Type::unit(),
-                    1 => self.typecheck_opt(&mut exprs[0], expected_type),
+                    1 => self.typecheck_opt(&mut exprs[0], expected_type.take()),
                     _ => {
                         let fields = exprs
                             .iter_mut()
@@ -774,6 +782,8 @@ impl<'a> Typecheck<'a> {
             Expr::Match(ref mut expr, ref mut alts) => {
                 let typ = self.infer_expr(&mut **expr);
                 let mut expected_alt_type = expected_type.cloned();
+
+                let expected_type = expected_type.take();
 
                 for alt in alts.iter_mut() {
                     self.enter_scope();
@@ -855,10 +865,13 @@ impl<'a> Typecheck<'a> {
             Expr::Lambda(ref mut lambda) => {
                 let loc = format!("{}.lambda:{}", self.symbols.module(), expr.span.start);
                 lambda.id.name = self.symbols.symbol(loc);
+                let level = self.subs.var_id();
                 let function_type = expected_type
                     .cloned()
                     .unwrap_or_else(|| self.subs.new_var());
-                let typ = self.typecheck_lambda(function_type, &mut lambda.args, &mut lambda.body);
+                let mut typ =
+                    self.typecheck_lambda(function_type, &mut lambda.args, &mut lambda.body);
+                self.generalize_type(level, &mut typ);
                 lambda.id.typ = typ.clone();
                 Ok(TailCall::Type(typ))
             }
@@ -896,23 +909,31 @@ impl<'a> Typecheck<'a> {
                 for field in fields {
                     let level = self.subs.var_id();
 
+                    let name = &field.name.value;
+                    let expected_field_type = expected_type
+                        .and_then(|expected_type| {
+                            expected_type
+                                .row_iter()
+                                .find(|expected_field| expected_field.name.name_eq(&name))
+                        })
+                        .map(|field| &field.typ);
+
                     let typ = match field.value {
                         Some(ref mut expr) => {
-                            let name = &field.name.value;
-                            let expected_type = expected_type
-                                .and_then(|expected_type| {
-                                    expected_type
-                                        .row_iter()
-                                        .find(|expected_field| expected_field.name.name_eq(&name))
-                                })
-                                .map(|field| &field.typ);
-
-                            let mut typ = self.typecheck_opt(expr, expected_type);
+                            let mut typ = self.typecheck_opt(expr, expected_field_type);
 
                             self.generalize_type(level, &mut typ);
                             new_skolem_scope(&self.subs, &FnvMap::default(), &typ)
                         }
-                        None => self.find(&field.name.value)?,
+                        None => {
+                            let typ = self.find(&field.name.value)?;
+                            match expected_field_type {
+                                Some(expected_field_type) => {
+                                    self.subsumes(field.name.span, level, &expected_field_type, typ)
+                                }
+                                None => typ,
+                            }
+                        }
                     };
                     if self.error_on_duplicated_field(&mut duplicated_fields, field.name.clone()) {
                         new_fields.push(Field::new(field.name.value.clone(), typ));
@@ -960,7 +981,7 @@ impl<'a> Typecheck<'a> {
 
                 let level = self.subs.var_id();
                 let actual_record = self.type_cache.record(new_types, new_fields);
-                self.merge_signature(expr.span, level, &record_type, actual_record);
+                self.subsumes(expr.span, level, &record_type, actual_record);
 
                 *typ = id_type.clone();
                 Ok(TailCall::Type(id_type.clone()))
@@ -970,7 +991,10 @@ impl<'a> Typecheck<'a> {
                 for expr in exprs {
                     self.infer_expr(expr);
                 }
-                Ok(TailCall::Type(self.typecheck_opt(last, expected_type)))
+                Ok(TailCall::Type(self.typecheck_opt(
+                    last,
+                    expected_type.take(),
+                )))
             }
             Expr::Do(Do {
                 ref mut id,
@@ -1037,6 +1061,7 @@ impl<'a> Typecheck<'a> {
     where
         I: IntoIterator<Item = &'e mut SpannedExpr<Symbol>>,
     {
+        func_type = self.new_skolem_scope(&func_type);
         for arg in args {
             let f = self.type_cache
                 .function(once(self.subs.new_var()), self.subs.new_var());
@@ -1049,7 +1074,7 @@ impl<'a> Typecheck<'a> {
                     let actual = self.instantiate_generics(&actual);
 
                     let level = self.subs.var_id();
-                    self.merge_signature(expr_check_span(arg), level, arg_ty, actual);
+                    self.subsumes(expr_check_span(arg), level, arg_ty, actual);
 
                     ret_ty.clone()
                 }
@@ -1378,23 +1403,15 @@ impl<'a> Typecheck<'a> {
                     bind.resolved_type = typ;
                 }
 
-                bind.resolved_type = self.new_skolem_scope_signature(&bind.resolved_type);
-                self.typecheck(&mut bind.expr, &bind.resolved_type)
+                let typ = self.new_skolem_scope_signature(&bind.resolved_type);
+                self.typecheck(&mut bind.expr, &typ)
             } else {
-                bind.resolved_type = self.new_skolem_scope_signature(&bind.resolved_type);
-                let function_type = self.instantiate_generics(&bind.resolved_type);
+                let typ = self.new_skolem_scope_signature(&bind.resolved_type);
+                let function_type = self.skolemize(&typ);
                 self.typecheck_lambda(function_type, &mut bind.args, &mut bind.expr)
             };
 
             debug!("let {:?} : {}", bind.name, typ);
-
-            let bind_span = Span::new(
-                bind.name.span.start,
-                bind.args
-                    .last()
-                    .map_or(bind.name.span.end, |last_arg| last_arg.span.end),
-            );
-            typ = self.merge_signature(bind_span, level, &bind.resolved_type, typ);
 
             if !is_recursive {
                 // Merge the type declaration and the actual type
@@ -1616,9 +1633,11 @@ impl<'a> Typecheck<'a> {
                 let typ = self.instantiate_generics(&typ);
                 let record_type = self.remove_alias(typ.clone());
                 with_pattern_types(fields, &record_type, |field_name, binding, field_type| {
+                    let mut field_type = field_type.clone();
+                    self.generalize_type(level, &mut field_type);
                     match *binding {
                         Some(ref mut pat) => {
-                            self.finish_pattern(level, pat, field_type);
+                            self.finish_pattern(level, pat, &field_type);
                         }
                         None => {
                             self.environment
@@ -1628,7 +1647,7 @@ impl<'a> Typecheck<'a> {
                                 .typ = field_type.clone();
                             debug!("{}: {}", field_name, field_type);
 
-                            self.intersect_type(level, field_name, field_type);
+                            self.intersect_type(level, field_name, &field_type);
                         }
                     }
                 });
@@ -1642,7 +1661,9 @@ impl<'a> Typecheck<'a> {
                 let typ = self.top_skolem_scope(typ);
                 let typ = self.instantiate_generics(&typ);
                 for (elem, field) in elems.iter_mut().zip(typ.row_iter()) {
-                    self.finish_pattern(level, elem, &field.typ);
+                    let mut field_type = field.typ.clone();
+                    self.generalize_type(level, &mut field_type);
+                    self.finish_pattern(level, elem, &field_type);
                 }
             }
             Pattern::Constructor(ref id, ref mut args) => {
@@ -1670,8 +1691,8 @@ impl<'a> Typecheck<'a> {
             // Only allow overloading for bindings whose types which do not contain type variables
             // It might be possible to lift this restriction but currently it causes problems
             // which I am not sure how to solve
-            debug!("Looking for intersection `{}`", symbol_type);
             if existing_types.len() >= 2 {
+                debug!("Looking for intersection `{}`", symbol_type);
                 let existing_binding = &existing_types[existing_types.len() - 2];
                 debug!(
                     "Intersect `{}`\n{} ∩ {}",
@@ -1709,7 +1730,7 @@ impl<'a> Typecheck<'a> {
         {
             let constraints: FnvMap<_, _> = intersection_constraints
                 .into_iter()
-                .map(|((l, mut r), name)| {
+                .map(|((mut l, mut r), name)| {
                     let constraints = match *l {
                         Type::Generic(ref gen) => existing_binding.constraints.get(&gen.id),
                         Type::Skolem(ref skolem) => existing_binding.constraints.get(&skolem.name),
@@ -1728,6 +1749,7 @@ impl<'a> Typecheck<'a> {
                         _ => None,
                     };
 
+                    self.generalize_type(level, &mut l);
                     self.generalize_type(level, &mut r);
 
                     (
@@ -1925,6 +1947,11 @@ impl<'a> Typecheck<'a> {
                     id: skolem.name.clone(),
                     kind: skolem.kind.clone(),
                 };
+
+                if self.type_variables.get(&generic.id).is_none() {
+                    unbound_variables.insert(generic.id.clone(), generic.clone());
+                }
+
                 Some(Type::generic(generic))
             }
 
@@ -2111,7 +2138,7 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn merge_signature(
+    fn subsumes(
         &mut self,
         span: Span<BytePos>,
         level: u32,
@@ -2121,7 +2148,7 @@ impl<'a> Typecheck<'a> {
         debug!("Merge {} : {}", expected, actual);
         let expected = self.skolemize(&expected);
         let state = unify_type::State::new(&self.environment, &self.subs);
-        match unify_type::merge_signature(
+        match unify_type::subsumes(
             &self.subs,
             &mut self.type_variables,
             level,
@@ -2328,7 +2355,13 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
                         Some(typ) => (None, typ.clone()),
                         None => return None,
                     },
-                    None => (Some(self.tc.subs.new_var()), self.tc.subs.new_var()),
+                    None => {
+                        let arg = self.tc.subs.new_var();
+                        let ret = self.tc.subs.new_var();
+                        let f = self.tc.type_cache.function(Some(arg.clone()), ret.clone());
+                        self.tc.unify(&self.typ, f).unwrap();
+                        (Some(arg), ret)
+                    }
                 },
             };
             self.typ = new;

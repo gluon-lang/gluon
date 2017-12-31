@@ -24,28 +24,24 @@ pub fn metadata(
         fn new_binding(&mut self, metadata: Metadata, bind: &ValueBinding<Symbol>) {
             match bind.name.value {
                 Pattern::As(ref id, _) => {
-                    let metadata = bind.comment.as_ref().map_or(metadata, |comment| {
-                        Metadata {
-                            comment: Some(comment.content.clone()),
-                            module: BTreeMap::new(),
-                        }
+                    let metadata = bind.comment.as_ref().map_or(metadata, |comment| Metadata {
+                        comment: Some(comment.content.clone()),
+                        module: BTreeMap::new(),
                     });
                     self.stack_var(id.clone(), metadata.clone());
                     self.new_pattern(metadata, &bind.name);
                 }
                 Pattern::Ident(ref id) => {
-                    let metadata = bind.comment.as_ref().map_or(metadata, |comment| {
-                        Metadata {
-                            comment: Some(comment.content.clone()),
-                            module: BTreeMap::new(),
-                        }
+                    let metadata = bind.comment.as_ref().map_or(metadata, |comment| Metadata {
+                        comment: Some(comment.content.clone()),
+                        module: BTreeMap::new(),
                     });
                     self.stack_var(id.name.clone(), metadata);
                 }
-                Pattern::Constructor(..) |
-                Pattern::Tuple { .. } |
-                Pattern::Record { .. } |
-                Pattern::Error => self.new_pattern(metadata, &bind.name),
+                Pattern::Constructor(..)
+                | Pattern::Tuple { .. }
+                | Pattern::Record { .. }
+                | Pattern::Error => self.new_pattern(metadata, &bind.name),
             }
         }
 
@@ -126,11 +122,9 @@ pub fn metadata(
                             }
                             None => self.metadata(&field.name.value).cloned(),
                         };
-                        let field_metadata = field.comment.clone().map(|comment| {
-                            Metadata {
-                                comment: Some(comment.content),
-                                module: BTreeMap::new(),
-                            }
+                        let field_metadata = field.comment.clone().map(|comment| Metadata {
+                            comment: Some(comment.content),
+                            module: BTreeMap::new(),
                         });
                         let maybe_metadata = match (field_metadata, maybe_metadata) {
                             (Some(l), Some(r)) => Some(l.merge(r)),
@@ -173,11 +167,9 @@ pub fn metadata(
                 }
                 Expr::TypeBindings(ref bindings, ref expr) => {
                     for bind in bindings {
-                        let maybe_metadata = bind.comment.as_ref().map(|comment| {
-                            Metadata {
-                                comment: Some(comment.content.clone()),
-                                module: BTreeMap::new(),
-                            }
+                        let maybe_metadata = bind.comment.as_ref().map(|comment| Metadata {
+                            comment: Some(comment.content.clone()),
+                            module: BTreeMap::new(),
                         });
                         if let Some(metadata) = maybe_metadata {
                             self.stack_var(bind.name.value.clone(), metadata);
