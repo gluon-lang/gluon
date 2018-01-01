@@ -247,7 +247,7 @@ let chainl p op v : Parser a -> Parser (a -> a -> a) -> a -> Parser a =
     chainl1 p op <|> wrap v
 
 
-/// Parsed `input` using `p`
+/// Parses `input` using `p`
 let parse p input : Parser a -> String -> Result String a =
     match p { start = 0, end = string.len input, buffer = input } with
     | Ok ok -> Ok ok.value

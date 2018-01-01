@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use base::ast::SpannedExpr;
 use base::error::InFile;
 use base::kind::{ArcKind, Kind, KindEnv};

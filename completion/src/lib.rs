@@ -31,7 +31,14 @@ use base::types::{walk_type_, AliasData, ArcType, ControlVisitation, Generic, Ty
 #[derive(Clone, Debug)]
 pub struct Found<'a> {
     pub match_: Option<Match<'a>>,
-    pub enclosing_match: Match<'a>,
+    pub near_matches: Vec<Match<'a>>,
+    pub enclosing_matches: Vec<Match<'a>>,
+}
+
+impl<'a> Found<'a> {
+    fn enclosing_match(&self) -> &Match<'a> {
+        self.enclosing_matches.last().unwrap()
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -40,6 +47,17 @@ pub enum Match<'a> {
     Pattern(&'a SpannedPattern<Symbol>),
     Ident(Span<BytePos>, &'a Symbol, &'a ArcType),
     Type(Span<BytePos>, &'a Symbol, ArcKind),
+}
+
+impl<'a> Match<'a> {
+    pub fn span(&self) -> Span<BytePos> {
+        match *self {
+            Match::Expr(ref expr) => expr.span,
+            Match::Pattern(ref pattern) => pattern.span,
+            Match::Ident(span, ..) => span,
+            Match::Type(span, ..) => span,
+        }
+    }
 }
 
 trait OnFound {
@@ -94,21 +112,6 @@ struct Suggest<E> {
     stack: ScopedMap<Symbol, ArcType>,
     type_stack: ScopedMap<Symbol, ArcKind>,
     patterns: ScopedMap<Symbol, ArcType>,
-}
-
-fn expr_iter<'e>(
-    stack: &'e ScopedMap<Symbol, ArcType>,
-    expr: &'e SpannedExpr<Symbol>,
-) -> Box<Iterator<Item = (&'e Symbol, &'e ArcType)> + 'e> {
-    if let Expr::Ident(ref ident) = expr.value {
-        Box::new(
-            stack
-                .iter()
-                .filter(move |&(k, _)| k.declared_name().starts_with(ident.name.declared_name())),
-        )
-    } else {
-        Box::new(None.into_iter())
-    }
 }
 
 impl<E> Suggest<E>
@@ -204,7 +207,8 @@ struct FindVisitor<'a, F> {
     pos: BytePos,
     on_found: F,
     found: Option<Option<Match<'a>>>,
-    enclosing_match: Match<'a>,
+    enclosing_matches: Vec<Match<'a>>,
+    near_matches: Vec<Match<'a>>,
 }
 
 impl<'a, F> FindVisitor<'a, F> {
@@ -299,8 +303,11 @@ where
 
     fn visit_pattern(&mut self, current: &'a SpannedPattern<Symbol>) {
         if current.span.containment(&self.pos) == Ordering::Equal {
-            self.enclosing_match = Match::Pattern(current);
+            self.enclosing_matches.push(Match::Pattern(current));
+        } else {
+            self.near_matches.push(Match::Pattern(current));
         }
+
         match current.value {
             Pattern::As(_, ref pat) => self.visit_pattern(pat),
             Pattern::Constructor(ref id, ref args) => {
@@ -408,9 +415,13 @@ where
             VisitUnExpanded(self).visit_expr(current);
             return;
         }
+
         if current.span.containment(&self.pos) == Ordering::Equal {
-            self.enclosing_match = Match::Expr(current);
+            self.enclosing_matches.push(Match::Expr(current));
+        } else {
+            self.near_matches.push(Match::Expr(current));
         }
+
         match current.value {
             Expr::Ident(_) | Expr::Literal(_) => {
                 self.found = Some(if current.span.containment(&self.pos) == Ordering::Equal {
@@ -433,7 +444,7 @@ where
                 });
                 match sel.unwrap() {
                     Ok(expr) => {
-                        self.enclosing_match = Match::Expr(expr);
+                        self.enclosing_matches.push(Match::Expr(expr));
                         self.visit_expr(expr)
                     }
                     Err(alt) => {
@@ -543,7 +554,7 @@ where
                 if expr.span.containment(&self.pos) <= Ordering::Equal {
                     self.visit_expr(expr);
                 } else {
-                    self.enclosing_match = Match::Expr(current);
+                    self.enclosing_matches.push(Match::Expr(current));
                     self.found = Some(Some(Match::Ident(current.span, id, typ)));
                 }
             }
@@ -656,17 +667,18 @@ where
         pos: pos,
         on_found: on_found,
         found: None,
-        enclosing_match: Match::Expr(expr),
+        enclosing_matches: vec![Match::Expr(expr)],
+        near_matches: vec![],
     };
     visitor.visit_expr(expr);
-    let enclosing_match = visitor.enclosing_match;
+    let enclosing_matches = visitor.enclosing_matches;
+    let near_matches = visitor.near_matches;
     visitor
         .found
-        .map(|match_| {
-            Found {
-                match_,
-                enclosing_match,
-            }
+        .map(|match_| Found {
+            match_,
+            enclosing_matches,
+            near_matches,
         })
         .ok_or(())
 }
@@ -686,7 +698,7 @@ impl<'a> Extract for TypeAt<'a> {
     fn extract(self, found: &Found) -> Result<Self::Output, ()> {
         match found.match_ {
             Some(ref match_) => self.match_extract(match_),
-            None => self.match_extract(&found.enclosing_match),
+            None => self.match_extract(&found.enclosing_match()),
         }
     }
 
@@ -707,7 +719,7 @@ impl Extract for IdentAt {
     fn extract(self, found: &Found) -> Result<Self::Output, ()> {
         match found.match_ {
             Some(ref match_) => self.match_extract(match_),
-            None => self.match_extract(&found.enclosing_match),
+            None => self.match_extract(&found.enclosing_match()),
         }
     }
 
@@ -738,7 +750,7 @@ impl Extract for SpanAt {
     fn extract(self, found: &Found) -> Result<Self::Output, ()> {
         match found.match_ {
             Some(ref match_) => self.match_extract(match_),
-            None => self.match_extract(&found.enclosing_match),
+            None => self.match_extract(&found.enclosing_match()),
         }
     }
 
@@ -896,7 +908,6 @@ pub fn all_symbols(expr: &SpannedExpr<Symbol>) -> Vec<Spanned<CompletionSymbol, 
     visitor.result
 }
 
-
 pub fn suggest<T>(env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Vec<Suggestion>
 where
     T: TypeEnv,
@@ -904,10 +915,20 @@ where
     SuggestionQuery::default().suggest(env, expr, pos)
 }
 
-#[derive(Default)]
 pub struct SuggestionQuery {
     pub paths: Vec<PathBuf>,
     pub modules: Vec<Cow<'static, str>>,
+    pub prefix_filter: bool,
+}
+
+impl Default for SuggestionQuery {
+    fn default() -> Self {
+        SuggestionQuery {
+            paths: Vec::new(),
+            modules: Vec::new(),
+            prefix_filter: true,
+        }
+    }
 }
 
 impl SuggestionQuery {
@@ -915,50 +936,67 @@ impl SuggestionQuery {
         Self::default()
     }
 
+    fn filter(&self, name: &str, prefix: &str) -> bool {
+        !self.prefix_filter || name.starts_with(prefix)
+    }
+
+    fn suggest_fields_of_type(
+        &self,
+        result: &mut Vec<Suggestion>,
+        types: &[PatternField<Symbol, Symbol>],
+        fields: &[PatternField<Symbol, SpannedPattern<Symbol>>],
+        prefix: &str,
+        typ: &ArcType,
+    ) {
+        let existing_fields: FnvSet<&str> = types
+            .iter()
+            .map(|field| field.name.value.as_ref())
+            .chain(fields.iter().map(|field| field.name.value.as_ref()))
+            .collect();
+
+        let should_suggest = |name: &str| {
+            // Filter out fields that has already been defined in the pattern
+            (!existing_fields.contains(name) && self.filter(name, prefix))
+                // But keep exact matches to keep that suggestion when the user has typed a whole
+                // field
+                || name == prefix
+        };
+
+        let fields = typ.row_iter()
+            .filter(|field| should_suggest(field.name.declared_name()))
+            .map(|field| Suggestion {
+                name: field.name.declared_name().into(),
+                typ: Either::Right(field.typ.clone()),
+            });
+        let types = typ.type_field_iter()
+            .filter(|field| should_suggest(field.name.declared_name()))
+            .map(|field| Suggestion {
+                name: field.name.declared_name().into(),
+                typ: Either::Right(field.typ.clone().into_type()),
+            });
+        result.extend(fields.chain(types));
+    }
+
+    fn expr_iter<'e>(
+        &'e self,
+        stack: &'e ScopedMap<Symbol, ArcType>,
+        expr: &'e SpannedExpr<Symbol>,
+    ) -> Box<Iterator<Item = (&'e Symbol, &'e ArcType)> + 'e> {
+        if let Expr::Ident(ref ident) = expr.value {
+            Box::new(
+                stack.iter().filter(move |&(k, _)| {
+                    self.filter(k.declared_name(), ident.name.declared_name())
+                }),
+            )
+        } else {
+            Box::new(None.into_iter())
+        }
+    }
+
     pub fn suggest<T>(&self, env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Vec<Suggestion>
     where
         T: TypeEnv,
     {
-        fn suggest_fields_of_type(
-            result: &mut Vec<Suggestion>,
-            types: &[PatternField<Symbol, Symbol>],
-            fields: &[PatternField<Symbol, SpannedPattern<Symbol>>],
-            prefix: &str,
-            typ: &ArcType,
-        ) {
-            let existing_fields: FnvSet<&str> = types
-                .iter()
-                .map(|field| field.name.value.as_ref())
-                .chain(fields.iter().map(|field| field.name.value.as_ref()))
-                .collect();
-
-            let should_suggest = |name: &str| {
-                // Filter out fields that has already been defined in the pattern
-                (!existing_fields.contains(name) && name.starts_with(prefix))
-                // But keep exact matches to keep that suggestion when the user has typed a whole
-                // field
-                || name == prefix
-            };
-
-            let fields = typ.row_iter()
-                .filter(|field| should_suggest(field.name.declared_name()))
-                .map(|field| {
-                    Suggestion {
-                        name: field.name.declared_name().into(),
-                        typ: Either::Right(field.typ.clone()),
-                    }
-                });
-            let types = typ.type_field_iter()
-                .filter(|field| should_suggest(field.name.declared_name()))
-                .map(|field| {
-                    Suggestion {
-                        name: field.name.declared_name().into(),
-                        typ: Either::Right(field.typ.clone().into_type()),
-                    }
-                });
-            result.extend(fields.chain(types));
-        }
-
         let mut suggest = Suggest::new(env);
 
         let found = match complete_at(&mut suggest, expr, pos) {
@@ -967,16 +1005,16 @@ impl SuggestionQuery {
         };
         let mut result = vec![];
 
-        let enclosing_match = found.enclosing_match;
+        let enclosing_match = found.enclosing_matches.last().unwrap();
         match found.match_ {
             Some(match_) => match match_ {
                 Match::Expr(expr) => match expr.value {
                     Expr::Ident(ref id) if id.name.is_global() => {
-                        let name = &id.name.as_ref()[1..];
+                        let name = id.name.definition_name();
                         self.suggest_module_import(env, name, &mut result);
                     }
                     _ => {
-                        result.extend(expr_iter(&suggest.stack, expr).map(|(k, typ)| {
+                        result.extend(self.expr_iter(&suggest.stack, expr).map(|(k, typ)| {
                             Suggestion {
                                 name: k.declared_name().into(),
                                 typ: Either::Right(typ.clone()),
@@ -994,7 +1032,7 @@ impl SuggestionQuery {
                             ..
                         } => {
                             let typ = resolve::remove_aliases(env, pattern.env_type_of(env));
-                            suggest_fields_of_type(&mut result, types, fields, "", &typ);
+                            self.suggest_fields_of_type(&mut result, types, fields, "", &typ);
                             ""
                         }
                         _ => "",
@@ -1003,29 +1041,25 @@ impl SuggestionQuery {
                         suggest
                             .patterns
                             .iter()
-                            .filter(|&(ref name, _)| name.declared_name().starts_with(prefix))
-                            .map(|(name, typ)| {
-                                Suggestion {
-                                    name: name.declared_name().into(),
-                                    typ: Either::Right(typ.clone()),
-                                }
+                            .filter(|&(ref name, _)| self.filter(name.declared_name(), prefix))
+                            .map(|(name, typ)| Suggestion {
+                                name: name.declared_name().into(),
+                                typ: Either::Right(typ.clone()),
                             }),
                     );
                 }
-                Match::Ident(_, ident, _) => match enclosing_match {
+                Match::Ident(_, ident, _) => match *enclosing_match {
                     Match::Expr(context) => match context.value {
                         Expr::Projection(ref expr, _, _) => {
                             let typ = resolve::remove_aliases(&env, expr.env_type_of(&env));
                             let id = ident.as_ref();
 
                             let iter = typ.row_iter()
-                                .filter(move |field| field.name.as_ref().starts_with(id))
+                                .filter(move |field| self.filter(field.name.as_ref(), id))
                                 .map(|field| (field.name.clone(), field.typ.clone()));
-                            result.extend(iter.map(|(name, typ)| {
-                                Suggestion {
-                                    name: name.declared_name().into(),
-                                    typ: Either::Right(typ),
-                                }
+                            result.extend(iter.map(|(name, typ)| Suggestion {
+                                name: name.declared_name().into(),
+                                typ: Either::Right(typ),
                             }));
                         }
                         Expr::Ident(ref id) if id.name.is_global() => {
@@ -1043,7 +1077,7 @@ impl SuggestionQuery {
                         ..
                     }) => {
                         let typ = resolve::remove_aliases_cow(env, typ);
-                        suggest_fields_of_type(
+                        self.suggest_fields_of_type(
                             &mut result,
                             types,
                             fields,
@@ -1059,24 +1093,20 @@ impl SuggestionQuery {
                         suggest
                             .type_stack
                             .iter()
-                            .filter(|&(k, _)| k.declared_name().starts_with(ident.declared_name()))
-                            .map(|(name, kind)| {
-                                Suggestion {
-                                    name: name.declared_name().into(),
-                                    typ: Either::Left(kind.clone()),
-                                }
+                            .filter(|&(k, _)| self.filter(k.declared_name(), ident.declared_name()))
+                            .map(|(name, kind)| Suggestion {
+                                name: name.declared_name().into(),
+                                typ: Either::Left(kind.clone()),
                             }),
                     );
                 }
             },
 
-            None => match enclosing_match {
+            None => match *enclosing_match {
                 Match::Expr(..) | Match::Ident(..) => {
-                    result.extend(suggest.stack.iter().map(|(name, typ)| {
-                        Suggestion {
-                            name: name.declared_name().into(),
-                            typ: Either::Right(typ.clone()),
-                        }
+                    result.extend(suggest.stack.iter().map(|(name, typ)| Suggestion {
+                        name: name.declared_name().into(),
+                        typ: Either::Right(typ.clone()),
                     }));
                 }
 
@@ -1085,12 +1115,10 @@ impl SuggestionQuery {
                         suggest
                             .type_stack
                             .iter()
-                            .filter(|&(k, _)| k.declared_name().starts_with(ident.declared_name()))
-                            .map(|(name, kind)| {
-                                Suggestion {
-                                    name: name.declared_name().into(),
-                                    typ: Either::Left(kind.clone()),
-                                }
+                            .filter(|&(k, _)| self.filter(k.declared_name(), ident.declared_name()))
+                            .map(|(name, kind)| Suggestion {
+                                name: name.declared_name().into(),
+                                typ: Either::Left(kind.clone()),
                             }),
                     );
                 }
@@ -1102,13 +1130,11 @@ impl SuggestionQuery {
                         ..
                     } => {
                         let typ = resolve::remove_aliases(env, pattern.env_type_of(env));
-                        suggest_fields_of_type(&mut result, types, fields, "", &typ);
+                        self.suggest_fields_of_type(&mut result, types, fields, "", &typ);
                     }
-                    _ => result.extend(suggest.patterns.iter().map(|(name, typ)| {
-                        Suggestion {
-                            name: name.declared_name().into(),
-                            typ: Either::Right(typ.clone()),
-                        }
+                    _ => result.extend(suggest.patterns.iter().map(|(name, typ)| Suggestion {
+                        name: name.declared_name().into(),
+                        typ: Either::Right(typ.clone()),
                     })),
                 },
             },
@@ -1153,7 +1179,7 @@ impl SuggestionQuery {
                 .iter()
                 .map(|s| &s[..])
                 .chain(self.modules.iter().map(|s| &s[..]))
-                .filter(|module| module.starts_with(path.as_str()))
+                .filter(|module| self.filter(module, path.as_str()))
                 .map(|module| {
                     let name = module[path.module().as_str().len()..]
                         .trim_left_matches('.')
@@ -1175,6 +1201,138 @@ impl SuggestionQuery {
         suggestions.sort_by(|l, r| l.name.cmp(&r.name));
         suggestions.dedup_by(|l, r| l.name == r.name);
     }
+
+    pub fn suggest_metadata<'a, T>(
+        &self,
+        env: &'a FnvMap<Symbol, Metadata>,
+        type_env: &T,
+        expr: &SpannedExpr<Symbol>,
+        pos: BytePos,
+        name: &'a str,
+    ) -> Option<&'a Metadata>
+    where
+        T: TypeEnv,
+    {
+        let mut suggest = Suggest::new(type_env);
+        complete_at(&mut suggest, expr, pos).ok().and_then(|found| {
+            let enclosing_match = found.enclosing_matches.last().unwrap();
+            match found.match_ {
+                Some(match_) => match match_ {
+                    Match::Expr(expr) => {
+                        let suggestion = self.expr_iter(&suggest.stack, expr)
+                            .find(|&(stack_name, _)| stack_name.declared_name() == name);
+                        if let Some((name, _)) = suggestion {
+                            env.get(name)
+                        } else {
+                            None
+                        }
+                    }
+
+                    Match::Ident(_, _, _) => match *enclosing_match {
+                        Match::Expr(&Spanned {
+                            value: Expr::Projection(ref expr, _, _),
+                            ..
+                        }) => if let Expr::Ident(ref expr_ident) = expr.value {
+                            env.get(&expr_ident.name)
+                                .and_then(|metadata| metadata.module.get(name))
+                        } else {
+                            None
+                        },
+                        _ => None,
+                    },
+                    _ => None,
+                },
+
+                None => match *enclosing_match {
+                    Match::Expr(..) | Match::Ident(..) => suggest
+                        .stack
+                        .iter()
+                        .find(|&(ref stack_name, _)| stack_name.declared_name() == name)
+                        .and_then(|t| env.get(t.0)),
+
+                    _ => None,
+                },
+            }
+        })
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct SignatureHelp {
+    pub name: String,
+    pub typ: ArcType,
+    pub index: Option<u32>,
+}
+
+pub fn signature_help(
+    env: &TypeEnv,
+    expr: &SpannedExpr<Symbol>,
+    pos: BytePos,
+) -> Option<SignatureHelp> {
+    complete_at((), expr, pos).ok().and_then(|found| {
+        let applications = found
+            .enclosing_matches
+            .iter()
+            .chain(&found.near_matches)
+            .rev()
+            // Stop searching for an application if it would mean we exit a nested expression
+            // Ie. `test { abc = func }`
+            //                     ^
+            // Should not return the signature for `test` but for `func`
+            .take_while(|enclosing_match| match **enclosing_match {
+                Match::Expr(ref expr) => match expr.value {
+                    Expr::Ident(..) | Expr::Literal(..) | Expr::Projection(..) | Expr::App(..) | Expr::Tuple { .. } => {
+                        true
+                    }
+                    Expr::Record { ref exprs, ref base, ..} => exprs.is_empty() && base.is_none(),
+                    _ => false,
+                },
+                _ => false,
+            })
+            .filter_map(|enclosing_match| match *enclosing_match {
+                Match::Expr(ref expr) => match expr.value {
+                    Expr::App(ref f, ref args) => f.try_type_of(env).ok().map(|typ| {
+                        let name = match f.value {
+                            Expr::Ident(ref id) => id.name.declared_name().to_string(),
+                            Expr::Projection(_, ref name, _) => name.declared_name().to_string(),
+                            _ => "".to_string(),
+                        };
+                        let index = if args.first().map_or(false, |arg| pos >= arg.span.start) {
+                            Some(args.iter()
+                                .position(|arg| pos <= arg.span.end)
+                                .unwrap_or(args.len()) as u32)
+                        } else {
+                            None
+                        };
+                        SignatureHelp { name, typ, index }
+                    }),
+                    _ => None,
+                },
+                _ => None,
+            });
+        let any_expr = found
+            .enclosing_matches
+            .iter()
+            .chain(&found.near_matches)
+            .rev()
+            .filter_map(|enclosing_match| match *enclosing_match {
+                Match::Expr(ref expr) => {
+                    let name = match expr.value {
+                        Expr::Ident(ref id) => id.name.declared_name().to_string(),
+                        Expr::Projection(_, ref name, _) => name.declared_name().to_string(),
+                        _ => "".to_string(),
+                    };
+
+                    expr.value.try_type_of(env).ok().map(|typ| SignatureHelp {
+                        name,
+                        typ,
+                        index: if pos > expr.span.end { Some(0) } else { None },
+                    })
+                }
+                _ => None,
+            });
+        applications.chain(any_expr).next()
+    })
 }
 
 pub fn get_metadata<'a>(
@@ -1185,7 +1343,7 @@ pub fn get_metadata<'a>(
     complete_at((), expr, pos)
         .ok()
         .and_then(|found| {
-            let e = found.enclosing_match;
+            let e = found.enclosing_match().clone();
             found.match_.map(|m| (m, e))
         })
         .and_then(|(match_, enclosing_match)| match match_ {
@@ -1224,44 +1382,5 @@ pub fn suggest_metadata<'a, T>(
 where
     T: TypeEnv,
 {
-    let mut suggest = Suggest::new(type_env);
-    complete_at(&mut suggest, expr, pos)
-        .ok()
-        .and_then(|found| match found.match_ {
-            Some(match_) => match match_ {
-                Match::Expr(expr) => {
-                    let suggestion = expr_iter(&suggest.stack, expr)
-                        .find(|&(stack_name, _)| stack_name.declared_name() == name);
-                    if let Some((name, _)) = suggestion {
-                        env.get(name)
-                    } else {
-                        None
-                    }
-                }
-
-                Match::Ident(_, _, _) => match found.enclosing_match {
-                    Match::Expr(&Spanned {
-                        value: Expr::Projection(ref expr, _, _),
-                        ..
-                    }) => if let Expr::Ident(ref expr_ident) = expr.value {
-                        env.get(&expr_ident.name)
-                            .and_then(|metadata| metadata.module.get(name))
-                    } else {
-                        None
-                    },
-                    _ => None,
-                },
-                _ => None,
-            },
-
-            None => match found.enclosing_match {
-                Match::Expr(..) | Match::Ident(..) => suggest
-                    .stack
-                    .iter()
-                    .find(|&(ref stack_name, _)| stack_name.declared_name() == name)
-                    .and_then(|t| env.get(t.0)),
-
-                _ => None,
-            },
-        })
+    SuggestionQuery::new().suggest_metadata(env, type_env, expr, pos, name)
 }
