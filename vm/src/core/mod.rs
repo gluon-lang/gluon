@@ -459,9 +459,16 @@ impl<'a, 'e> Translator<'a, 'e> {
     fn translate_(&'a self, expr: &SpannedExpr<Symbol>) -> Expr<'a> {
         let arena = &self.allocator.arena;
         match expr.value {
-            ast::Expr::App(ref function, ref args) => {
-                let new_args: SmallVec<[_; 16]> =
-                    args.iter().map(|arg| self.translate(arg)).collect();
+            ast::Expr::App {
+                ref implicit_args,
+                func: ref function,
+                ref args,
+            } => {
+                let new_args: SmallVec<[_; 16]> = implicit_args
+                    .iter()
+                    .chain(args)
+                    .map(|arg| self.translate(arg))
+                    .collect();
                 match function.value {
                     ast::Expr::Ident(ref id) if is_constructor(&id.name) => {
                         let typ = expr.env_type_of(&self.env);

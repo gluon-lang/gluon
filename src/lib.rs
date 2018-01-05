@@ -543,6 +543,8 @@ let { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_string.ord
 
 let { error } = import! std.prim
 
+let (/=) eq l r : [Eq a] -> a -> a -> Bool = not (eq.(==) l r)
+
 in ()
 "#;
 

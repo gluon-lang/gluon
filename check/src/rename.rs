@@ -1,7 +1,8 @@
 use std::fmt;
 use std::mem;
 
-use base::ast::{self, DisplayEnv, Do, Expr, Literal, MutVisitor, Pattern, SpannedExpr, Typed, TypedIdent};
+use base::ast::{self, DisplayEnv, Do, Expr, Literal, MutVisitor, Pattern, SpannedExpr, Typed,
+                TypedIdent};
 use base::error::Errors;
 use base::fnv::FnvMap;
 use base::kind::{ArcKind, Kind, KindEnv};
@@ -97,6 +98,11 @@ pub fn rename(
     expr: &mut SpannedExpr<Symbol>,
 ) -> Result<(), Error> {
     use base::resolve;
+
+    enum TailCall {
+        TailCall,
+        Return,
+    }
 
     struct RenameVisitor<'a: 'b, 'b> {
         symbols: &'b mut SymbolModule<'a>,
@@ -245,7 +251,7 @@ pub fn rename(
                 })
         }
 
-        fn rename_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> Result<(), RenameError> {
+        fn rename_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> Result<TailCall, RenameError> {
             match expr.value {
                 Expr::Ident(ref mut id) => if let Some(new_id) = self.rename(&id.name, &id.typ)? {
                     debug!("Rename identifier {} = {}", id.name, new_id);
@@ -326,9 +332,7 @@ pub fn rename(
                             self.env.stack.exit_scope();
                         }
                     }
-                    self.visit_expr(expr);
-                    self.env.stack.exit_scope();
-                    self.env.stack_types.exit_scope();
+                    return Ok(TailCall::TailCall);
                 }
                 Expr::Lambda(ref mut lambda) => {
                     self.env.stack.enter_scope();
@@ -339,7 +343,8 @@ pub fn rename(
                     self.visit_expr(&mut lambda.body);
                     self.env.stack.exit_scope();
                 }
-                Expr::TypeBindings(ref bindings, ref mut body) => {
+                Expr::TypeBindings(ref bindings, _) => {
+                    self.env.stack.enter_scope();
                     self.env.stack_types.enter_scope();
                     for bind in bindings {
                         self.stack_type(
@@ -351,14 +356,14 @@ pub fn rename(
                             ),
                         );
                     }
-                    self.visit_expr(body);
-                    self.env.stack_types.exit_scope();
+
+                    return Ok(TailCall::TailCall);
                 }
                 Expr::Do(Do {
                     ref mut id,
                     ref mut bound,
-                    ref mut body,
                     ref mut flat_map_id,
+                    ..
                 }) => {
                     let flat_map_id = flat_map_id
                         .as_mut()
@@ -371,17 +376,17 @@ pub fn rename(
                     self.visit_expr(bound);
 
                     self.env.stack.enter_scope();
+                    self.env.stack_types.enter_scope();
 
                     id.value.name =
                         self.stack_var(id.value.name.clone(), id.span, id.value.typ.clone());
-                    self.visit_expr(body);
 
-                    self.env.stack.exit_scope();
+                    return Ok(TailCall::TailCall);
                 }
 
                 _ => ast::walk_mut_expr(self, expr),
             }
-            Ok(())
+            Ok(TailCall::Return)
         }
 
         fn find_implicit(
@@ -391,9 +396,7 @@ pub fn rename(
             let found = self.env
                 .stack
                 .iter()
-                .find(|&(_, &(_, _, ref typ))| {
-                    equivalent(&self.env, typ, implicit_type)
-                })
+                .find(|&(_, &(_, _, ref typ))| equivalent(&self.env, typ, implicit_type))
                 .map(|(x, _)| x.clone());
             match found {
                 Some(id) => Ok(TypedIdent {
@@ -408,42 +411,68 @@ pub fn rename(
     impl<'a, 'b> MutVisitor for RenameVisitor<'a, 'b> {
         type Ident = Symbol;
 
-        fn visit_expr(&mut self, expr: &mut SpannedExpr<Self::Ident>) {
-            if let Err(err) = self.rename_expr(expr) {
-                self.errors.push(Spanned {
-                    span: expr.span,
-                    value: err,
-                });
+        fn visit_expr(&mut self, mut expr: &mut SpannedExpr<Self::Ident>) {
+            let mut i = 0;
+            loop {
+                match self.rename_expr(expr) {
+                    Ok(TailCall::Return) => break,
+                    Ok(TailCall::TailCall) => {
+                        expr = match { expr }.value {
+                            Expr::LetBindings(_, ref mut new_expr)
+                            | Expr::TypeBindings(_, ref mut new_expr)
+                            | Expr::Do(Do {
+                                body: ref mut new_expr,
+                                ..
+                            }) => new_expr,
+                            _ => ice!("Only Let and Type expressions can tailcall"),
+                        };
+                        i += 1;
+                    }
+                    Err(err) => {
+                        self.errors.push(Spanned {
+                            span: expr.span,
+                            value: err,
+                        });
+                    }
+                }
             }
 
             // Resolve implicit arguments
-            let mut args = Vec::new();
-            let mut typ = expr.env_type_of(&self.env);
-            loop {
-                typ = match *typ {
-                    Type::Function(arg_type, ref arg, ref ret) if arg_type == ArgType::Implicit => {
-                        match self.find_implicit(arg) {
-                            Ok(implicit_id) => {
-                                args.push(pos::spanned(expr.span, Expr::Ident(implicit_id)));
-                                ret.clone()
-                            }
-                            Err(err) => {
-                                self.errors.push(pos::spanned(expr.span, err));
-                                break;
+            if let Ok(mut typ) = expr.try_type_of(&self.env) {
+                let mut args = Vec::new();
+                loop {
+                    typ = match *typ {
+                        Type::Function(arg_type, ref arg, ref ret)
+                            if arg_type == ArgType::Implicit =>
+                        {
+                            match self.find_implicit(arg) {
+                                Ok(implicit_id) => {
+                                    args.push(pos::spanned(expr.span, Expr::Ident(implicit_id)));
+                                    ret.clone()
+                                }
+                                Err(err) => {
+                                    self.errors.push(pos::spanned(expr.span, err));
+                                    break;
+                                }
                             }
                         }
-                    }
-                    _ => break,
-                };
-            }
-            if !args.is_empty() {
-                let dummy = Expr::Literal(Literal::Int(0));
-                let func = mem::replace(&mut expr.value, dummy);
-                expr.value = Expr::App {
-                    func: Box::new(pos::spanned(expr.span, func)),
-                    implicit_args: Vec::new(),
-                    args,
+                        _ => break,
+                    };
                 }
+                if !args.is_empty() {
+                    let dummy = Expr::Literal(Literal::Int(0));
+                    let func = mem::replace(&mut expr.value, dummy);
+                    expr.value = Expr::App {
+                        func: Box::new(pos::spanned(expr.span, func)),
+                        implicit_args: Vec::new(),
+                        args,
+                    }
+                }
+            }
+
+            for _ in 0..i {
+                self.env.stack.exit_scope();
+                self.env.stack_types.exit_scope();
             }
         }
     }

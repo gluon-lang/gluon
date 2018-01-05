@@ -37,7 +37,9 @@ fn suggest_query(query: &SuggestionQuery, s: &str, pos: BytePos) -> Result<Vec<S
 
         fn visit_expr(&mut self, expr: &mut SpannedExpr<Symbol>) {
             let replacement = match expr.value {
-                Expr::App(ref id, ref args) => match id.value {
+                Expr::App {
+                    ref func, ref args, ..
+                } => match func.value {
                     Expr::Ident(ref id) if id.name.declared_name() == "import!" => {
                         let mut path = "@".to_string();
                         expr_to_path(&args[0], &mut path).unwrap();

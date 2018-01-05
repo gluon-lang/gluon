@@ -1115,11 +1115,11 @@ impl<'a> Typecheck<'a> {
         I: IntoIterator<Item = &'e mut SpannedExpr<Symbol>>,
     {
         func_type = self.new_skolem_scope(&func_type);
-        func_type = func_type.remove_implicit_args().clone();
         for arg in args {
             let f = self.type_cache
                 .function(once(self.subs.new_var()), self.subs.new_var());
             func_type = self.instantiate_generics(&func_type);
+            func_type = func_type.remove_implicit_args().clone();
             func_type = self.unify(&f, func_type)?;
 
             func_type = match func_type.as_function() {

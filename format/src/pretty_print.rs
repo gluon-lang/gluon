@@ -93,7 +93,11 @@ where
 
         let comments = self.comments(Span::new(previous_end, expr.span.start));
         let doc = match expr.value {
-            Expr::App(ref func, ref args) => {
+            Expr::App {
+                ref implicit_args,
+                ref func,
+                ref args,
+            } => {
                 let arg_iter = iter::once(&**func).chain(args).tuple_windows().map(
                     |(prev, arg)| {
                         self.space(Span::new(prev.span.end, arg.span.start))
