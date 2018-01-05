@@ -536,7 +536,6 @@ impl<Id, T> Field<Id, T> {
     }
 }
 
-
 #[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum ArgType {
@@ -1844,7 +1843,7 @@ where
             Type::Alias(ref alias) => arena.text(alias.name.as_ref()),
         };
         match **typ {
-            Type::App(..) | Type::ExtendRow { .. } | Type::Variant(..) => doc,
+            Type::App(..) | Type::ExtendRow { .. } | Type::Variant(..) | Type::Function(..) => doc,
             _ => {
                 let comment = printer.comments_before(typ.span().start);
                 comment.append(doc)
