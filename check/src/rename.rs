@@ -390,20 +390,62 @@ pub fn rename(
         }
 
         fn find_implicit(
-            &mut self,
+            &self,
+            span: Span<BytePos>,
             implicit_type: &ArcType,
-        ) -> Result<TypedIdent<Symbol>, RenameError> {
+        ) -> Result<SpannedExpr<Symbol>, RenameError> {
             let found = self.env
                 .stack
                 .iter()
-                .find(|&(_, &(_, _, ref typ))| equivalent(&self.env, typ, implicit_type))
-                .map(|(x, _)| x.clone());
+                .filter_map(|(_, &(ref id, _, ref typ))| {
+                    self.find_implicit_of(span, id, typ, implicit_type)
+                })
+                .next();
+
             match found {
-                Some(id) => Ok(TypedIdent {
-                    name: id,
-                    typ: implicit_type.clone(),
-                }),
+                Some(mut path) => {
+                    let base_ident = path.pop().unwrap();
+                    Ok(path.into_iter().rev().fold(
+                        pos::spanned(span, Expr::Ident(base_ident)),
+                        |expr, ident| {
+                            pos::spanned(
+                                span,
+                                Expr::Projection(Box::new(expr), ident.name, ident.typ),
+                            )
+                        },
+                    ))
+                }
                 None => Err(RenameError::UnableToResolveImplicit(implicit_type.clone())),
+            }
+        }
+
+        fn find_implicit_of(
+            &self,
+            span: Span<BytePos>,
+            id: &Symbol,
+            typ: &ArcType,
+            implicit_type: &ArcType,
+        ) -> Option<Vec<TypedIdent<Symbol>>> {
+            if equivalent(&self.env, typ, implicit_type) {
+                Some(vec![
+                    TypedIdent {
+                        name: id.clone(),
+                        typ: implicit_type.clone(),
+                    },
+                ])
+            } else {
+                typ.row_iter()
+                    .filter_map(|field| {
+                        self.find_implicit_of(span, &field.name, &field.typ, implicit_type)
+                            .map(|mut path| {
+                                path.push(TypedIdent {
+                                    name: id.clone(),
+                                    typ: typ.clone(),
+                                });
+                                path
+                            })
+                    })
+                    .next()
             }
         }
 
@@ -416,9 +458,9 @@ pub fn rename(
             loop {
                 typ = match *typ {
                     Type::Function(arg_type, ref arg, ref ret) if arg_type == ArgType::Implicit => {
-                        match self.find_implicit(arg) {
+                        match self.find_implicit(span, arg) {
                             Ok(implicit_id) => {
-                                args.push(pos::spanned(span, Expr::Ident(implicit_id)));
+                                args.push(implicit_id);
                                 ret.clone()
                             }
                             Err(err) => {

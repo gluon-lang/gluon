@@ -101,3 +101,22 @@ let eq_string l r : String -> String -> Bool = True
         }
     }
 }
+
+#[test]
+fn implicit_from_record_field() {
+    let _ = ::env_logger::init();
+    let text = r#"
+
+let f eq l r: [a -> a -> Bool] -> a -> a -> Bool = eq l r
+let eq_int l r : Int -> Int -> Bool = True
+let eq_string =
+    let eq l r : String -> String -> Bool = True
+    { eq }
+f 1 2
+f "" ""
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert_req!(result, Ok(Type::unit()));
+}

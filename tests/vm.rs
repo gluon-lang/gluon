@@ -456,6 +456,16 @@ Some 1
 None::<i32>
 }
 
+test_expr!{ function_with_implicit_argument_from_record,
+r#"
+let f t: [Int] -> Int = t
+let x =
+    { test = 1 }
+f
+"#,
+1
+}
+
 #[test]
 fn rename_types_after_binding() {
     let _ = ::env_logger::init();
