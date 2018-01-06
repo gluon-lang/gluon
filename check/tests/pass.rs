@@ -929,3 +929,30 @@ f "" ""
 
     assert_req!(result, Ok(Type::unit()));
 }
+
+#[test]
+fn infix_implicit_arg() {
+    let _ = ::env_logger::init();
+    let text = r#"
+
+let (==) eq l r: [a -> a -> Bool] -> a -> a -> Bool = eq l r
+let eq_int l r : Int -> Int -> Bool = True
+let eq_string l r : String -> String -> Bool = True
+"" == ""
+"#;
+    let (mut expr, _result) = support::typecheck_expr(text);
+
+    loop {
+        match expr.value {
+            ast::Expr::LetBindings(_, body) => {
+                expr = *body;
+            }
+            _ => match expr.value {
+                ast::Expr::App { ref args, .. } if args.len() == 3 => {
+                    break;
+                }
+                _ => assert!(false),
+            },
+        }
+    }
+}

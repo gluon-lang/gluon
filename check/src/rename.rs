@@ -406,6 +406,32 @@ pub fn rename(
                 None => Err(RenameError::UnableToResolveImplicit(implicit_type.clone())),
             }
         }
+
+        fn make_implicit_args(
+            &mut self,
+            span: Span<BytePos>,
+            mut typ: ArcType,
+        ) -> Vec<SpannedExpr<Symbol>> {
+            let mut args = Vec::new();
+            loop {
+                typ = match *typ {
+                    Type::Function(arg_type, ref arg, ref ret) if arg_type == ArgType::Implicit => {
+                        match self.find_implicit(arg) {
+                            Ok(implicit_id) => {
+                                args.push(pos::spanned(span, Expr::Ident(implicit_id)));
+                                ret.clone()
+                            }
+                            Err(err) => {
+                                self.errors.push(pos::spanned(span, err));
+                                break;
+                            }
+                        }
+                    }
+                    _ => break,
+                };
+            }
+            args
+        }
     }
 
     impl<'a, 'b> MutVisitor for RenameVisitor<'a, 'b> {
@@ -437,28 +463,33 @@ pub fn rename(
                 }
             }
 
-            // Resolve implicit arguments
-            if let Ok(mut typ) = expr.try_type_of(&self.env) {
-                let mut args = Vec::new();
-                loop {
-                    typ = match *typ {
-                        Type::Function(arg_type, ref arg, ref ret)
-                            if arg_type == ArgType::Implicit =>
-                        {
-                            match self.find_implicit(arg) {
-                                Ok(implicit_id) => {
-                                    args.push(pos::spanned(expr.span, Expr::Ident(implicit_id)));
-                                    ret.clone()
-                                }
-                                Err(err) => {
-                                    self.errors.push(pos::spanned(expr.span, err));
-                                    break;
-                                }
-                            }
-                        }
-                        _ => break,
-                    };
+            if let Expr::Infix(..) = expr.value {
+                let typ = if let Expr::Infix(_, ref id, _) = expr.value {
+                    id.value.typ.clone()
+                } else {
+                    unreachable!()
+                };
+                let dummy = Expr::Literal(Literal::Int(0));
+                let func = mem::replace(&mut expr.value, dummy);
+                match func {
+                    Expr::Infix(l, id, r) => {
+                        let mut args = self.make_implicit_args(id.span, typ);
+                        args.push(*l);
+                        args.push(*r);
+
+                        expr.value = Expr::App {
+                            func: Box::new(pos::spanned(id.span, Expr::Ident(id.value))),
+                            implicit_args: Vec::new(),
+                            args,
+                        };
+                    }
+                    _ => unreachable!(),
                 }
+            }
+
+            // Resolve implicit arguments
+            if let Ok(typ) = expr.try_type_of(&self.env) {
+                let args = self.make_implicit_args(expr.span, typ);
                 if !args.is_empty() {
                     let dummy = Expr::Literal(Literal::Int(0));
                     let func = mem::replace(&mut expr.value, dummy);
