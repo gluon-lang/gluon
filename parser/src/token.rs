@@ -39,7 +39,7 @@ pub enum Token<'input> {
     Lambda,
     Pipe,
     RArrow,
-    QuestionMark,
+    Question,
 
     LBrace,
     LBracket,
@@ -99,7 +99,7 @@ impl<'input> fmt::Display for Token<'input> {
             Lambda => "Lambda",
             Pipe => "Pipe",
             RArrow => "RArrow",
-            QuestionMark => "QuestionMark",
+            Question => "Question",
 
             OpenBlock => "OpenBlock",
             CloseBlock => "CloseBlock",
@@ -540,9 +540,7 @@ impl<'input> Iterator for Tokenizer<'input> {
                 '}' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::RBrace))),
                 ']' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::RBracket))),
                 ')' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::RParen))),
-                '?' => Some(Ok(
-                    pos::spanned2(start, start.shift(ch), Token::QuestionMark),
-                )),
+                '?' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::Question))),
 
                 '"' => Some(self.string_literal(start)),
                 '\'' => Some(self.char_literal(start)),

@@ -52,7 +52,7 @@ extern {
         "\\" => Token::Lambda,
         "|" => Token::Pipe,
         "->" => Token::RArrow,
-        "?" => Token::QuestionMark,
+        "?" => Token::Question,
 
         "{" => Token::LBrace,
         "[" => Token::LBracket,
