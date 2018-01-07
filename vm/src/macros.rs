@@ -82,6 +82,7 @@ pub struct MacroExpander<'a> {
     pub state: FnvMap<String, Box<Any>>,
     pub vm: &'a Thread,
     pub errors: Errors,
+    pub error_in_expr: bool,
     macros: &'a MacroEnv,
 }
 
@@ -91,12 +92,13 @@ impl<'a> MacroExpander<'a> {
             vm: vm,
             state: FnvMap::default(),
             macros: vm.get_macros(),
+            error_in_expr: false,
             errors: Errors::new(),
         }
     }
 
     pub fn finish(self) -> Result<(), Errors> {
-        if self.errors.has_errors() {
+        if self.error_in_expr || self.errors.has_errors() {
             Err(self.errors)
         } else {
             Ok(())

@@ -417,6 +417,7 @@ fn get_state<'m>(macros: &'m mut MacroExpander) -> &'m mut State {
         .or_insert_with(|| {
             Box::new(State {
                 visited: Vec::new(),
+                modules_with_errors: FnvMap::default(),
             })
         })
         .downcast_mut::<State>()
@@ -425,6 +426,7 @@ fn get_state<'m>(macros: &'m mut MacroExpander) -> &'m mut State {
 
 struct State {
     visited: Vec<String>,
+    modules_with_errors: FnvMap<String, Expr<Symbol>>,
 }
 
 impl<I> Macro for Import<I>
@@ -497,16 +499,26 @@ where
         // Only load the script if it is not already loaded
         debug!("Import '{}' {:?}", modulename, get_state(macros).visited);
         if !vm.global_env().global_exists(&modulename) {
+            if let Some(expr) = get_state(macros)
+                .modules_with_errors
+                .get(&modulename)
+                .cloned()
+            {
+                macros.error_in_expr = true;
+                return Ok(pos::spanned(args[0].span, expr));
+            }
+
             if let Err((typ, err)) =
                 self.load_module(&mut Compiler::new(), vm, macros, &name, args[0].span)
             {
-                match typ {
-                    Some(typ) => {
-                        macros.errors.push(pos::spanned(args[0].span, err));
-                        return Ok(pos::spanned(args[0].span, Expr::Error(Some(typ))));
-                    }
-                    None => return Err(err),
-                }
+                macros.errors.push(pos::spanned(args[0].span, err));
+
+                let expr = Expr::Error(typ);
+                get_state(macros)
+                    .modules_with_errors
+                    .insert(modulename, expr.clone());
+
+                return Ok(pos::spanned(args[0].span, expr));
             }
         }
         Ok(pos::spanned(
