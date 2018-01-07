@@ -966,9 +966,24 @@ impl<'a> Typecheck<'a> {
                         *typ = self.create_unifiable_signature(typ)
                             .unwrap_or_else(|| typ.clone());
                     }
-                    let alias = self.find_type_info(&field.name.value)?.clone();
-                    if self.error_on_duplicated_field(&mut duplicated_fields, field.name.clone()) {
-                        new_types.push(Field::new(field.name.value.clone(), alias));
+
+                    match self.find_type_info(&field.name.value)
+                        .map(|alias| alias.clone())
+                    {
+                        Ok(alias) => {
+                            if self.error_on_duplicated_field(
+                                &mut duplicated_fields,
+                                field.name.clone(),
+                            ) {
+                                new_types.push(Field::new(field.name.value.clone(), alias));
+                            }
+                        }
+                        Err(err) => {
+                            self.errors.push(Spanned {
+                                span: field.name.span,
+                                value: err.into(),
+                            });
+                        }
                     }
                 }
 
@@ -993,7 +1008,7 @@ impl<'a> Typecheck<'a> {
                             new_skolem_scope(&self.subs, &FnvMap::default(), &typ)
                         }
                         None => {
-                            let typ = self.find(&field.name.value)?;
+                            let typ = self.find_at(field.name.span, &field.name.value);
                             match expected_field_type {
                                 Some(expected_field_type) => {
                                     self.subsumes(field.name.span, level, &expected_field_type, typ)
