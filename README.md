@@ -338,7 +338,3 @@ This language takes its primary inspiration from [Lua][Lua], [Haskell][Haskell] 
 [Haskell]: http://www.haskell.org
 [OCaml]: http://www.ocaml.org
 [Rust]: http://www.rust-lang.org
-st-lang.org
- http://www.ocaml.org
-[Rust]: http://www.rust-lang.org
-st-lang.org
