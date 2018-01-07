@@ -1,6 +1,5 @@
 let { assert } = import! std.test
 let int = import! std.int
-let { (==) } = int.eq
 let { Bool } = import! std.bool
 let { ref, (<-), load } = import! std.reference
 

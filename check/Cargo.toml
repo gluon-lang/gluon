@@ -25,6 +25,8 @@ gluon_base = { path = "../base", version = "0.7.1" } # GLUON
 gluon_parser = { path = "../parser", version = "0.7.1", optional = true } # GLUON
 
 [dev-dependencies]
+gluon_format = { path = "../format", version = "0.7.0" } # GLUON
+
 collect-mac = "0.1.0"
 pretty_assertions = "0.4"
 

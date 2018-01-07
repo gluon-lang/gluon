@@ -334,36 +334,47 @@ where
             &Type::Function(r_arg_type, ref r_arg, ref r_ret),
         ) => {
             // If arg types are not the same, fallback to explicit
-            let arg_type = if l_arg_type == r_arg_type {
-                l_arg_type
+            if l_arg_type == r_arg_type {
+                let arg = unifier.try_match(l_arg, r_arg);
+                let ret = unifier.try_match(l_ret, r_ret);
+                Ok(merge::merge(l_arg, arg, l_ret, ret, |arg, ret| {
+                    ArcType::from(Type::Function(l_arg_type, arg, ret))
+                }))
             } else {
-                ArgType::Explicit
-            };
-            let arg = unifier.try_match(l_arg, r_arg);
-            let ret = unifier.try_match(l_ret, r_ret);
-            Ok(merge::merge(l_arg, arg, l_ret, ret, |arg, ret| {
-                ArcType::from(Type::Function(arg_type, arg, ret))
-            }))
+                if l_arg_type == ArgType::Implicit {
+                    Ok(unifier.try_match(l_ret, actual))
+                } else {
+                    Ok(unifier.try_match(expected, r_ret))
+                }
+            }
         }
-        (&Type::Function(_, ref l_arg, ref l_ret), &Type::App(ref r, ref r_args)) => {
-            let l_args = collect![l_arg.clone(), l_ret.clone()];
-            Ok(unify_app(
-                unifier,
-                &Type::builtin(BuiltinType::Function),
-                &l_args,
-                r,
-                r_args,
-            ))
+        (&Type::Function(l_arg_type, ref l_arg, ref l_ret), &Type::App(ref r, ref r_args)) => {
+            if l_arg_type == ArgType::Implicit {
+                Ok(unifier.try_match(l_ret, actual))
+            } else {
+                let l_args = collect![l_arg.clone(), l_ret.clone()];
+                Ok(unify_app(
+                    unifier,
+                    &Type::builtin(BuiltinType::Function),
+                    &l_args,
+                    r,
+                    r_args,
+                ))
+            }
         }
-        (&Type::App(ref l, ref l_args), &Type::Function(_, ref r_arg, ref r_ret)) => {
-            let r_args = collect![r_arg.clone(), r_ret.clone()];
-            Ok(unify_app(
-                unifier,
-                l,
-                l_args,
-                &Type::builtin(BuiltinType::Function),
-                &r_args,
-            ))
+        (&Type::App(ref l, ref l_args), &Type::Function(r_arg_type, ref r_arg, ref r_ret)) => {
+            if r_arg_type == ArgType::Implicit {
+                Ok(unifier.try_match(expected, r_ret))
+            } else {
+                let r_args = collect![r_arg.clone(), r_ret.clone()];
+                Ok(unify_app(
+                    unifier,
+                    l,
+                    l_args,
+                    &Type::builtin(BuiltinType::Function),
+                    &r_args,
+                ))
+            }
         }
         (&Type::App(ref l, ref l_args), &Type::App(ref r, ref r_args)) => {
             Ok(unify_app(unifier, l, l_args, r, r_args))

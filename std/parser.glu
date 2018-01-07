@@ -4,7 +4,6 @@ let { id, flip } = import! std.function
 let { Bool } = import! std.bool
 let char = import! std.char
 let int = import! std.int
-let { (==) } = char.eq
 let { Result } = import! std.result
 let string = import! std.string
 let { (<>) } = prelude.make_Semigroup string.semigroup

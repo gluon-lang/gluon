@@ -152,3 +152,44 @@ f Test
     );
     assert_eq!(result, Ok(test));
 }
+
+#[test]
+fn implicit_as_function_argument() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let (==) eq l r: [a -> a -> Bool] -> a -> a -> Bool = eq l r
+/// @implicit
+let eq_int l r : Int -> Int -> Bool = True
+/// @implicit
+let eq_string l r : String -> String -> Bool = True
+
+let f eq l r : (a -> a -> Bool) -> a -> a -> Bool = eq l r
+f (==) 1 2
+"#;
+    let (mut expr, result) = support::typecheck_expr(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+
+    loop {
+        match expr.value {
+            ast::Expr::LetBindings(_, body) => {
+                expr = *body;
+            }
+            _ => match expr.value {
+                ast::Expr::App { ref args, .. } if args.len() == 3 => {
+                    assert_eq!(args.len(), 3);
+                    match args[0].value {
+                        ast::Expr::App {
+                            args: ref args_eq, ..
+                        } => {
+                            assert_eq!(args_eq.len(), 1);
+                        }
+                        _ => panic!(),
+                    }
+                    break;
+                }
+                _ => assert!(false),
+            },
+        }
+    }
+}

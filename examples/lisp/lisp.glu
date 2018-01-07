@@ -3,7 +3,6 @@ let { Functor, Applicative, Monad } = prelude
 let { id } = import! std.function
 
 let string = import! std.string
-let { (==) } = string.eq
 let { (<>) } = prelude.make_Semigroup string.semigroup
 
 let { Bool } = import! std.bool

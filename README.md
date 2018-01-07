@@ -86,7 +86,7 @@ let string = import! std.string
 // Since imports in gluon returns regular values we can load specific parts of a module using pattern matches.
 // This match in particular brings in the equality operator for the `Char` type (this is required in
 // the current version of gluon but will be fixed in the future).
-let { eq = { (==) } } = import! std.char
+let char = import! std.char
 
 let { (<>) } = prelude.make_Semigroup string.semigroup
 
@@ -339,3 +339,4 @@ This language takes its primary inspiration from [Lua][Lua], [Haskell][Haskell] 
 [Haskell]: http://www.haskell.org
 [OCaml]: http://www.ocaml.org
 [Rust]: http://www.rust-lang.org
+st-lang.org

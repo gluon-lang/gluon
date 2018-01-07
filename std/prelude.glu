@@ -62,6 +62,9 @@ type Group a = {
 /// @implicit
 type Eq a = { (==) : a -> a -> Bool }
 
+let (==) eq : [Eq a] -> a -> a -> Bool = eq.(==)
+let (/=) eq l r : [Eq a] -> a -> a -> Bool = if (eq.(==) l r) then False else True
+
 /// `Ord a` defines an ordering on `a`
 /// @implicit
 type Ord a = { eq : Eq a, compare : a -> a -> Ordering }
@@ -107,6 +110,11 @@ type Num a = {
     (/) : a -> a -> a,
     negate : a -> a
 }
+
+let (+) num : [Num a] -> a -> a -> a = num.(+)
+let (-) num : [Num a] -> a -> a -> a = num.(-)
+let (*) num : [Num a] -> a -> a -> a = num.(*)
+let (/) num : [Num a] -> a -> a -> a = num.(/)
 
 /// @implicit
 type Category (cat : Type -> Type -> Type) = {
@@ -337,6 +345,7 @@ let make_Traversable traversable : Traversable t -> _ =
     Group,
 
     Eq,
+    (==), (/=),
 
     Ord,
     make_Ord,
@@ -362,6 +371,7 @@ let make_Traversable traversable : Traversable t -> _ =
     make_Traversable,
 
     Num,
+    (+), (-), (*), (/),
 
     Show,
 }
