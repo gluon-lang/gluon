@@ -435,7 +435,9 @@ where
                     MatchState::Empty
                 };
             }
-            Expr::App {ref func, ref args, .. } => {
+            Expr::App {
+                ref func, ref args, ..
+            } => {
                 self.visit_one(once(&**func).chain(args));
             }
             Expr::IfElse(ref pred, ref if_true, ref if_false) => {
@@ -1286,7 +1288,7 @@ pub fn signature_help(
             // Should not return the signature for `test` but for `func`
             .take_while(|enclosing_match| match **enclosing_match {
                 Match::Expr(expr) => match expr.value {
-                    Expr::Ident(..) | Expr::Literal(..) | Expr::Projection(..) | Expr::App(..) | Expr::Tuple { .. } => {
+                    Expr::Ident(..) | Expr::Literal(..) | Expr::Projection(..) | Expr::App { .. } | Expr::Tuple { .. } => {
                         true
                     }
                     Expr::Record { ref exprs, ref base, ..} => exprs.is_empty() && base.is_none(),
@@ -1296,8 +1298,8 @@ pub fn signature_help(
             })
             .filter_map(|enclosing_match| match *enclosing_match {
                 Match::Expr(expr) => match expr.value {
-                    Expr::App(ref f, ref args) => f.try_type_of(env).ok().map(|typ| {
-                        let name = match f.value {
+                    Expr::App { ref func, ref args, .. } => func.try_type_of(env).ok().map(|typ| {
+                        let name = match func.value {
                             Expr::Ident(ref id) => id.name.declared_name().to_string(),
                             Expr::Projection(_, ref name, _) => name.declared_name().to_string(),
                             _ => "".to_string(),
