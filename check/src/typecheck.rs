@@ -15,6 +15,7 @@ use base::ast::{AstType, SpannedIdent, SpannedPattern, TypeBinding, Typed, Typed
                 ValueBinding};
 use base::error::Errors;
 use base::fnv::{FnvMap, FnvSet};
+use base::metadata::{Metadata, MetadataEnv};
 use base::resolve;
 use base::kind::{ArcKind, Kind, KindCache, KindEnv};
 use base::merge;
@@ -210,6 +211,14 @@ pub type SpannedTypeError<Id> = Spanned<HelpError<Id>, BytePos>;
 
 type TcResult<T> = Result<T, TypeError<Symbol>>;
 
+pub trait TypecheckEnv: PrimitiveEnv + MetadataEnv {}
+
+impl<T> TypecheckEnv for T
+where
+    T: PrimitiveEnv + MetadataEnv,
+{
+}
+
 #[derive(Clone, Debug)]
 struct StackBinding {
     constraints: FnvMap<Symbol, Constraints<ArcType>>,
@@ -218,7 +227,7 @@ struct StackBinding {
 
 struct Environment<'a> {
     /// The global environment which the typechecker extracts types from
-    environment: &'a (PrimitiveEnv + 'a),
+    environment: &'a (TypecheckEnv + 'a),
     /// Stack allocated variables
     stack: ScopedMap<Symbol, StackBinding>,
     /// Types which exist in some scope (`type Test = ... in ...`)
@@ -284,6 +293,12 @@ impl<'a> PrimitiveEnv for Environment<'a> {
     }
 }
 
+impl<'a> MetadataEnv for Environment<'a> {
+    fn get_metadata(&self, id: &Symbol) -> Option<&Metadata> {
+        self.environment.get_metadata(id)
+    }
+}
+
 /// Type returned from the main typecheck function to make sure that nested `type` and `let`
 /// expressions dont overflow the stack
 enum TailCall {
@@ -317,7 +332,7 @@ impl<'a> Typecheck<'a> {
     pub fn new(
         module: String,
         symbols: &'a mut Symbols,
-        environment: &'a (PrimitiveEnv + 'a),
+        environment: &'a (TypecheckEnv + 'a),
         type_cache: TypeCache<Symbol, ArcType>,
     ) -> Typecheck<'a> {
         let symbols = SymbolModule::new(module, symbols);

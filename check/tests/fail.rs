@@ -162,10 +162,11 @@ let f x = x #Float+ 1.0
 }
 
 #[test]
-fn unable_to_resolve_implicit() {
+fn unable_to_resolve_implicit_without_attribute() {
     let _ = env_logger::init();
     let text = r#"
 let f x y : [a] -> a -> a = x
+let i = 123
 f 1
 "#;
     let result = support::typecheck(text);

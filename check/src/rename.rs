@@ -6,6 +6,7 @@ use base::ast::{self, DisplayEnv, Do, Expr, Literal, MutVisitor, Pattern, Spanne
 use base::error::Errors;
 use base::fnv::FnvMap;
 use base::kind::{ArcKind, Kind, KindEnv};
+use base::metadata::{Metadata, MetadataEnv};
 use base::pos::{self, BytePos, Span, Spanned};
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolModule, SymbolRef};
@@ -92,11 +93,14 @@ impl<'a> TypeEnv for Environment<'a> {
     }
 }
 
-pub fn rename(
+pub fn rename<E>(
     symbols: &mut SymbolModule,
-    env: &TypeEnv,
+    env: &E,
     expr: &mut SpannedExpr<Symbol>,
-) -> Result<(), Error> {
+) -> Result<(), Error>
+where
+    E: MetadataEnv + TypeEnv,
+{
     use base::resolve;
 
     enum TailCall {
@@ -106,6 +110,7 @@ pub fn rename(
 
     struct RenameVisitor<'a: 'b, 'b> {
         symbols: &'b mut SymbolModule<'a>,
+        metadata: FnvMap<Symbol, Metadata>,
         env: Environment<'b>,
         errors: Error,
     }
@@ -397,8 +402,10 @@ pub fn rename(
             let found = self.env
                 .stack
                 .iter()
-                .filter_map(|(_, &(ref id, _, ref typ))| {
-                    self.find_implicit_of(span, id, typ, implicit_type)
+                .filter_map(|(prev_id, &(ref id, _, ref typ))| {
+                    self.metadata.get(prev_id).and_then(|metadata| {
+                        self.find_implicit_of(span, id, metadata, typ, implicit_type)
+                    })
                 })
                 .next();
 
@@ -423,10 +430,14 @@ pub fn rename(
             &self,
             span: Span<BytePos>,
             id: &Symbol,
+            metadata: &Metadata,
             typ: &ArcType,
             implicit_type: &ArcType,
         ) -> Option<Vec<TypedIdent<Symbol>>> {
-            if equivalent(&self.env, typ, implicit_type) {
+            let is_implicit = metadata.comment.as_ref().map_or(false, |comment| {
+                ::metadata::attributes(&comment).any(|(key, _)| key == "implicit")
+            });
+            if is_implicit && equivalent(&self.env, typ, implicit_type) {
                 Some(vec![
                     TypedIdent {
                         name: id.clone(),
@@ -436,13 +447,23 @@ pub fn rename(
             } else {
                 typ.row_iter()
                     .filter_map(|field| {
-                        self.find_implicit_of(span, &field.name, &field.typ, implicit_type)
-                            .map(|mut path| {
-                                path.push(TypedIdent {
-                                    name: id.clone(),
-                                    typ: typ.clone(),
-                                });
-                                path
+                        metadata
+                            .module
+                            .get(field.name.declared_name())
+                            .and_then(|field_metadata| {
+                                self.find_implicit_of(
+                                    span,
+                                    &field.name,
+                                    field_metadata,
+                                    &field.typ,
+                                    implicit_type,
+                                ).map(|mut path| {
+                                    path.push(TypedIdent {
+                                        name: id.clone(),
+                                        typ: typ.clone(),
+                                    });
+                                    path
+                                })
                             })
                     })
                     .next()
@@ -550,9 +571,12 @@ pub fn rename(
         }
     }
 
+    let (_, metadata) = ::metadata::metadata(env, expr);
+
     let mut visitor = RenameVisitor {
         symbols: symbols,
         errors: Errors::new(),
+        metadata,
         env: Environment {
             env: env,
             stack: ScopedMap::new(),

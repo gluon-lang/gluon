@@ -16,11 +16,12 @@ use base::types::Type;
 mod support;
 
 #[test]
-fn implicit_arg() {
+fn single_implicit_arg() {
     let _ = ::env_logger::init();
     let text = r#"
 
 let f x y: [Int] -> Int -> Int = x
+/// @implicit
 let i = 123
 f 42
 "#;
@@ -35,7 +36,9 @@ fn multiple_implicit_args() {
     let text = r#"
 
 let f x y z w: [Int] -> [String] -> String -> Int -> Int = x
+/// @implicit
 let i = 123
+/// @implicit
 let x = "abc"
 f x 42
 "#;
@@ -45,11 +48,12 @@ f x 42
 }
 
 #[test]
-fn single_arg_implicit() {
+fn just_a_implicit_arg() {
     let _ = ::env_logger::init();
     let text = r#"
 
 let f x: [Int] -> Int = x
+/// @implicit
 let i = 123
 f
 "#;
@@ -64,7 +68,9 @@ fn function_implicit_arg() {
     let text = r#"
 
 let f eq l r: [a -> a -> Bool] -> a -> a -> Bool = eq l r
+/// @implicit
 let eq_int l r : Int -> Int -> Bool = True
+/// @implicit
 let eq_string l r : String -> String -> Bool = True
 f 1 2
 f "" ""
@@ -81,7 +87,9 @@ fn infix_implicit_arg() {
     let text = r#"
 
 let (==) eq l r: [a -> a -> Bool] -> a -> a -> Bool = eq l r
+/// @implicit
 let eq_int l r : Int -> Int -> Bool = True
+/// @implicit
 let eq_string l r : String -> String -> Bool = True
 "" == ""
 "#;
@@ -108,8 +116,10 @@ fn implicit_from_record_field() {
     let text = r#"
 
 let f eq l r: [a -> a -> Bool] -> a -> a -> Bool = eq l r
+/// @implicit
 let eq_int l r : Int -> Int -> Bool = True
 let eq_string =
+    /// @implicit
     let eq l r : String -> String -> Bool = True
     { eq }
 f 1 2
