@@ -44,7 +44,7 @@ let applicative : Applicative Handler = {
         flat_map (\f -> functor.map f m) a,
     wrap = \a -> make (\success _ state -> success a state),
 }
-let { (*>) } = prelude.make_Applicative applicative
+let { (*>) } = prelude
 
 let alternative : Alternative Handler = {
     applicative,

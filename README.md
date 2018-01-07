@@ -90,7 +90,7 @@ let char = import! std.char
 
 let { (<>) } = prelude.make_Semigroup string.semigroup
 
-let { (*>), wrap } = prelude.make_Applicative io.applicative
+let { (*>), (<*), wrap } = import! std.applicative
 let { flat_map } = io.monad
 
 let { for } = prelude.make_Traversable array.traversable
@@ -113,7 +113,6 @@ let parse : String -> Result String Expr =
         chainl1,
         (<?>),
         monad = { flat_map } } = import! std.parser
-    let { (*>), (<*), wrap } = prelude.make_Applicative parser.applicative
     let { (<|>) } = prelude.make_Alternative parser.alternative
 
     let lex x = x <* spaces
@@ -338,5 +337,8 @@ This language takes its primary inspiration from [Lua][Lua], [Haskell][Haskell] 
 [Lua]: http://www.lua.org
 [Haskell]: http://www.haskell.org
 [OCaml]: http://www.ocaml.org
+[Rust]: http://www.rust-lang.org
+st-lang.org
+ http://www.ocaml.org
 [Rust]: http://www.rust-lang.org
 st-lang.org

@@ -1,6 +1,6 @@
 let prelude  = import! std.prelude
 let { Test, run, writer, assert, assert_eq }  = import! std.test
-let { (*>) } = prelude.make_Applicative writer.applicative
+let { (*>) } = import! std.applicative
 let int = import! std.int
 let list @ { List } = import! std.list
 

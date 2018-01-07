@@ -405,9 +405,12 @@ where
             span: Span<BytePos>,
             implicit_type: &ArcType,
         ) -> Result<SpannedExpr<Symbol>, RenameError> {
+            info!("Trying to resolve implicit {}", implicit_type);
+            info!("{:?}", self.metadata);
             let is_implicit_type = implicit_type
                 .name()
                 .and_then(|typename| {
+                    info!("{:?}", typename);
                     self.metadata.get(typename).and_then(|metadata| {
                         metadata.comment.as_ref().map(|comment| {
                             ::metadata::attributes(&comment).any(|(key, _)| key == "implicit")
@@ -509,6 +512,7 @@ where
         ) -> Vec<SpannedExpr<Symbol>> {
             let mut args = Vec::new();
             loop {
+                info!("{:?}", typ);
                 typ = match *typ {
                     Type::Function(arg_type, ref arg, ref ret) if arg_type == ArgType::Implicit => {
                         match self.find_implicit(span, arg) {
@@ -584,7 +588,7 @@ where
 
             // Resolve implicit arguments
             if let Ok(typ) = expr.try_type_of(&self.env) {
-                let args = self.make_implicit_args(expr.span, typ);
+                let args = self.make_implicit_args(Span::new(expr.span.end, expr.span.end), typ);
                 if !args.is_empty() {
                     let dummy = Expr::Literal(Literal::Int(0));
                     let func = mem::replace(&mut expr.value, dummy);
@@ -624,6 +628,7 @@ where
 }
 
 pub fn equivalent(env: &TypeEnv, actual: &ArcType, inferred: &ArcType) -> bool {
+    trace!("Equivalent {} <=> {}", actual, inferred);
     use substitution::Substitution;
     // FIXME This Substitution is unnecessary for equivalence unification
     let subs = Substitution::new(Kind::typ());

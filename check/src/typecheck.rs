@@ -1995,6 +1995,7 @@ impl<'a> Typecheck<'a> {
 
             Type::Forall(ref params, ref typ, Some(ref vars)) => {
                 use substitution::is_variable_unified;
+                trace!("Generalize `{}` {:?}", typ, vars);
                 let typ = {
                     let subs = &self.subs;
                     self.named_variables.clear();
@@ -2002,7 +2003,7 @@ impl<'a> Typecheck<'a> {
                         params
                             .iter()
                             .zip(vars)
-                            .filter(|&(param, var)| is_variable_unified(subs, param, var))
+                            .filter(|&(_, var)| is_variable_unified(subs, var))
                             .map(|(param, var)| (param.id.clone(), var.clone())),
                     );;
                     typ.instantiate_generics_(&mut self.named_variables)
@@ -2017,6 +2018,8 @@ impl<'a> Typecheck<'a> {
                         .map(|(param, var)| (param.id.clone(), var.clone())),
                 );
 
+                trace!("Generalize forall `{}`", typ);
+
                 let new_type =
                     self.generalize_type_(level, unbound_variables, variable_generator, &typ);
                 self.type_variables.exit_scope();
@@ -2025,7 +2028,7 @@ impl<'a> Typecheck<'a> {
                     params
                         .iter()
                         .zip(vars)
-                        .filter(|&(param, var)| !is_variable_unified(&self.subs, param, var))
+                        .filter(|&(_, var)| !is_variable_unified(&self.subs, var))
                         .map(|(param, _)| param.clone())
                         .collect(),
                     new_type.unwrap_or_else(|| typ.clone()),

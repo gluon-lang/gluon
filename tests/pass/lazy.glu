@@ -1,6 +1,6 @@
 let { run, writer, assert_ieq } = import! std.test
 let prelude = import! std.prelude
-let { (*>), wrap } = prelude.make_Applicative writer.applicative
+let { (*>), wrap } = import! std.applicative
 let int = import! std.int
 let { (+), (-), (*) } = int.num
 let { lazy, force } = import! std.lazy

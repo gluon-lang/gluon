@@ -3,7 +3,8 @@
 let prelude = import! std.prelude
 let { error } = import! std.prim
 let { Semigroup, Monoid, Eq, Ord, Ordering, Show } = prelude
-let { Functor, Applicative, Alternative, Monad, Foldable, Traversable } = prelude
+let { Functor, Alternative, Monad, Foldable, Traversable } = prelude
+let { Applicative } = import! std.applicative
 let { Bool } = import! std.bool
 let { Option } = import! std.types
 let string = import! std.string

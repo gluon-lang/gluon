@@ -1177,7 +1177,7 @@ fn reconstruct_forall(
     for (param, var) in params
         .iter()
         .zip(vars)
-        .filter(|&(param, var)| !is_variable_unified(subs, param, var))
+        .filter(|&(_, var)| !is_variable_unified(subs, var))
     {
         new_params.push(param.clone());
         new_vars.push(var.clone());

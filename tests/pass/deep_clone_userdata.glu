@@ -1,6 +1,6 @@
 let { run, writer, assert, assert_ieq, assert_feq } = import! std.test
 let prelude = import! std.prelude
-let { (*>) } = prelude.make_Applicative writer.applicative
+let { (*>) } = import! std.applicative
 let { Result } = import! std.result
 let { ref, load } = import! std.reference
 let { lazy, force } = import! std.lazy

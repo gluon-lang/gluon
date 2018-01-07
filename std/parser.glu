@@ -47,7 +47,7 @@ let applicative : Applicative Parser = {
     wrap = \value -> parser (\buffer -> Ok { value, buffer }),
 }
 
-let { (*>), (<*), wrap } = prelude.make_Applicative applicative
+let { (*>), (<*), wrap } = import! std.applicative
 
 let alternative : Alternative Parser = {
     applicative,

@@ -6,10 +6,12 @@ extern crate pretty_assertions;
 
 extern crate gluon_base as base;
 extern crate gluon_check as check;
+extern crate gluon_format as format;
 extern crate gluon_parser as parser;
 
-use base::ast;
+use base::ast::{self, SpannedExpr, Visitor};
 use base::types::{Field, Type};
+use base::symbol::Symbol;
 
 #[macro_use]
 #[allow(unused_macros)]
@@ -151,6 +153,52 @@ f Test
         ]),
     );
     assert_eq!(result, Ok(test));
+}
+
+#[test]
+fn forward_implicit_parameter() {
+    let _ = ::env_logger::init();
+    let text = r#"
+/// @implicit
+type Test a = | Test a
+let f x : [Test a] -> Test a = x
+let g x y : [Test a] -> a -> Test a = f
+let i = Test 1
+g 2
+()
+"#;
+    let (expr, result) = support::typecheck_expr(text);
+
+    assert_eq!(result, Ok(Type::unit()));
+
+    struct Visitor {
+        text: &'static str,
+        done: bool,
+    }
+    impl<'a> base::ast::Visitor<'a> for Visitor {
+        type Ident = Symbol;
+
+        fn visit_expr(&mut self, expr: &'a SpannedExpr<Symbol>) {
+            match expr.value {
+                ast::Expr::LetBindings(ref bindings, _) => {
+                    if let ast::Pattern::Ident(ref id) = bindings[0].name.value {
+                        if id.name.definition_name() == "g" {
+                            assert_eq!(
+                                "f x",
+                                format::pretty_expr(self.text, &bindings[0].expr).trim()
+                            );
+                            self.done = true;
+                        }
+                    }
+                }
+                _ => (),
+            }
+            base::ast::walk_expr(self, expr)
+        }
+    }
+    let mut visitor = Visitor { text, done: false };
+    visitor.visit_expr(&expr);
+    assert!(visitor.done);
 }
 
 #[test]

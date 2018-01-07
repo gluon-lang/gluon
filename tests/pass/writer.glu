@@ -2,7 +2,7 @@ let prelude  = import! std.prelude
 let list  = import! std.list
 let { Writer }  = import! std.writer
 let { Test, run, writer, assert, assert_ieq, assert_feq }  = import! std.test
-let { (*>) } = prelude.make_Applicative writer.applicative
+let { (*>) } = import! std.applicative
 let { count } = prelude.make_Foldable list.foldable
 
 let tests =

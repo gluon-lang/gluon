@@ -13,7 +13,7 @@ let { ReadlineError } = import! rustyline_types
 let repl_prim = import! repl.prim
 let { (<<) } = import! std.function
 
-let { wrap, (*>) } = prelude.make_Applicative io.applicative
+let { wrap, (*>) } = import! std.applicative
 let { flat_map, (>>=) } = prelude.make_Monad io.monad
 
 let { append = (++) } = string.semigroup
@@ -131,7 +131,6 @@ let cmd_parser : Parser { cmd : String, arg : String } =
         monad = { flat_map },
         alternative,
         applicative } = import! std.parser
-    let { wrap, (*>) } = prelude.make_Applicative applicative
     let { (<|>) } = prelude.make_Alternative alternative
 
     let word = recognize (skip_many1 letter)

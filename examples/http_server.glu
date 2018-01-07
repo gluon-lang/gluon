@@ -3,20 +3,35 @@ let int = import! std.int
 let io = import! std.io
 let string = import! std.string
 let { (<>) } = prelude.make_Semigroup string.semigroup
-let { (*>) } = prelude.make_Applicative io.applicative
+let { (*>), wrap } = import! std.applicative
 
 let {
     Request, Response, Handler, StatusCode,
-    handle, io_handler, empty_response, get, post, get_request, path, listen, read_chunk, write_response, fail,
-    catch_error, functor, applicative, alternative, monad } = import! "examples/http.glu"
+    handle,
+    io_handler,
+    empty_response,
+    get,
+    post,
+    get_request,
+    path,
+    listen,
+    read_chunk,
+    write_response,
+    fail,
+    catch_error,
+    functor,
+    applicative,
+    alternative,
+    monad
+} = import! "examples/http.glu"
 
 let { map } = functor
-let { (*>), wrap } = prelude.make_Applicative applicative
 let { (<|>) } = prelude.make_Alternative alternative
 let { (>>=) } = prelude.make_Monad monad
 
 let hello_world : Handler Response =
-    write_response (string.as_bytes "Hello World") *> (wrap { status = OK })
+    write_response (string.as_bytes "Hello World")
+        *> (wrap { status = OK })
 
 let echo_body request : Request -> Handler () =
     do chunk = io_handler (read_chunk request.body)
@@ -24,16 +39,16 @@ let echo_body request : Request -> Handler () =
     | Some chunk -> write_response chunk *> echo_body request
     | None -> wrap ()
 
-let echo: Handler Response =
-    get_request >>= echo_body *> wrap { status = OK }
+let echo : Handler Response =
+    get_request >>= echo_body
+        *> wrap { status = OK }
 
 let handler =
-    (get *> path "/" *> hello_world) <|>
-        (post *> path "/echo" *> echo) <|>
-        (get *> path "/error" *> (wrap { status = InternalServerError }))
+    (get *> path "/" *> hello_world) <|> (post *> path "/echo" *> echo)
+        <|> (get *> path "/error" *> (wrap { status = InternalServerError }))
 
 let print_error h = catch_error h (\msg -> io_handler (io.println msg))
 
 \port ->
-    io.println ("Opened server on port " <> int.show.show port) *>
-        listen port handler
+io.println ("Opened server on port " <> int.show.show port)
+    *> listen port handler

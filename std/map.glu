@@ -62,7 +62,7 @@ let make ord : Ord k -> _ =
         | Bin k x l r -> foldl_with_key f (f (foldl_with_key f z l) k x) r
 
     let traverse_with_key app f m : Applicative t -> (k -> a -> t b) -> Map k a -> t (Map k b) =
-        let { map3 } = prelude.make_Applicative app
+        let { map3 } = import! std.applicative
 
         let go m =
             match m with

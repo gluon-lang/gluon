@@ -92,7 +92,6 @@ impl AsRef<str> for Symbol {
     }
 }
 
-
 impl fmt::Debug for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", &**self)
@@ -137,7 +136,6 @@ where
         Symbol(Arc::new(NameBuf(name.into())))
     }
 }
-
 
 #[derive(Eq)]
 #[cfg_attr(feature = "serde_derive", derive(SerializeState))]
@@ -252,7 +250,8 @@ impl Name {
     }
 
     pub fn as_str(&self) -> &str {
-        &self.0
+        let name = &self.0;
+        name.split(':').next().unwrap_or(name)
     }
 
     pub fn components(&self) -> Components {

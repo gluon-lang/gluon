@@ -1,6 +1,6 @@
 let { run, writer, assert, assert_ieq, assert_feq }  = import! std.test
 let prelude  = import! std.prelude
-let { (*>) } = prelude.make_Applicative writer.applicative
+let { (*>) } = import! std.applicative
 let int = import! std.int
 let float = import! std.float
 

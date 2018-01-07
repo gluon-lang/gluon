@@ -1,6 +1,7 @@
 //@NO-IMPLICIT-PRELUDE
 
 let { Bool, Option, Ordering } = import! std.types
+let { Functor, Applicative, (*>), wrap } = import! std.applicative
 
 /// `Semigroup a` represents an associative operation on `a`.
 /// This means the following laws must hold:
@@ -133,66 +134,6 @@ let make_Category category : Category cat -> _ =
 
     { id, compose, (<<), (>>) }
 
-/// A `Functor` represents an action on a parameterized type which does not
-/// change the structure with the mapped type.
-///
-/// The following laws should hold:
-///
-/// * `map id == id`
-/// * `map (f << g) == map f << map g`
-/// @implicit
-type Functor f = {
-    /// Apply the supplied function to the contents of `f a`, converting it to
-    /// an `f b`
-    ///
-    /// # Examples
-    ///
-    /// * `option.functor.map show_Int.show (Some 1) == Some "1"`
-    /// * `result.functor.map show_Int.show (Some 1) == Ok "1"`
-    /// * `list.functor.map show_Int.show (list.of [1, 2]) == list.of ["1", "2"]`
-    ///
-    /// # Note
-    ///
-    /// * Known as `fmap` in Haskell
-    map : forall a b . (a -> b) -> f a -> f b
-}
-
-/// @implicit
-type Applicative (f : Type -> Type) = {
-    functor : Functor f,
-    /// Like `functor.map`, but this time the supplied function is embedded in `f`
-    ///
-    /// # Note
-    ///
-    /// * Known as `(<*>)` in Haskell
-    apply : forall a b . f (a -> b) -> f a -> f b,
-    /// Wrap the supplied value in `f`
-    ///
-    /// # Examples
-    ///
-    /// * `option.applicative.wrap 1 == Some 1`
-    /// * `result.applicative.wrap 1 == Ok 1`
-    /// * `list.applicative.wrap 1 == list.of [1]`
-    ///
-    /// # Note
-    ///
-    /// * Known as `pure` in Haskell
-    wrap : forall a . a -> f a
-}
-
-let make_Applicative applicative : Applicative f -> _ =
-    let { functor, apply, wrap } = applicative
-
-    let (<*>) : f (a -> b) -> f a -> f b = apply
-    let (<*) l r : f a -> f b -> f a = functor.map (\x _ -> x) l <*> r
-    let (*>) l r : f a -> f b -> f b = functor.map (\_ x -> x) l <*> r
-
-    let map2 f a b : (a -> b -> c) -> f a -> f b -> f c = (functor.map f a) <*> b
-    let map3 f a b c : (a -> b -> c -> d) -> f a -> f b -> f c -> f d =
-        (functor.map f a) <*> b <*> c
-
-    { functor, apply, wrap, (<*>), (<*), (*>), map2, map3 }
-
 /// @implicit
 type Alternative f = {
     applicative : Applicative f,
@@ -242,7 +183,6 @@ type Monad (m : Type -> Type) = {
 
 let make_Monad monad : Monad m -> _ =
     let { applicative, flat_map } = monad
-    let { (*>), wrap } = make_Applicative applicative
 
     let (=<<) : (a -> m b) -> m a -> m b = flat_map
     let (>>=) x f : m a -> (a -> m b) -> m b = flat_map f x
@@ -356,7 +296,6 @@ let make_Traversable traversable : Traversable t -> _ =
     Functor,
 
     Applicative,
-    make_Applicative,
 
     Alternative,
     make_Alternative,

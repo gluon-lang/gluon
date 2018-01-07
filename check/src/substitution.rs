@@ -10,7 +10,7 @@ use union_find::{QuickFindUf, Union, UnionByRank, UnionFind, UnionResult};
 use base::fnv::FnvMap;
 use base::fixed::{FixedMap, FixedVec};
 use base::types;
-use base::types::{ArcType, Generic, Type, Walker};
+use base::types::{ArcType, Type, Walker};
 use base::symbol::Symbol;
 
 #[derive(Debug, PartialEq)]
@@ -377,17 +377,10 @@ impl<T: Substitutable> Substitution<T> {
     }
 }
 
-pub fn is_variable_unified(
-    subs: &Substitution<ArcType>,
-    param: &Generic<Symbol>,
-    var: &ArcType,
-) -> bool {
+pub fn is_variable_unified(subs: &Substitution<ArcType>, var: &ArcType) -> bool {
     match **var {
         Type::Variable(ref var) => match subs.find_type_for_var(var.id) {
-            Some(t) => match **t {
-                Type::Skolem(ref s) => s.name != param.id,
-                _ => true,
-            },
+            Some(_) => true,
             None => subs.get_constraints(var.id).is_some(),
         },
         _ => unreachable!(),
@@ -412,7 +405,7 @@ impl Substitution<ArcType> {
                 let mut named_variables: FnvMap<_, _> = params
                     .iter()
                     .zip(vars)
-                    .filter(|&(param, var)| is_variable_unified(subs, param, var))
+                    .filter(|&(_, var)| is_variable_unified(subs, var))
                     .map(|(param, var)| (param.id.clone(), var.clone()))
                     .collect();
                 let typ = typ.instantiate_generics(&mut named_variables);
@@ -421,7 +414,7 @@ impl Substitution<ArcType> {
                         let mut new_params = Vec::new();
                         let mut new_vars = Vec::new();
                         for (param, var) in params.iter().zip(vars) {
-                            if !is_variable_unified(subs, param, var) {
+                            if !is_variable_unified(subs, var) {
                                 new_params.push(param.clone());
                                 new_vars.push(var.clone());
                             }

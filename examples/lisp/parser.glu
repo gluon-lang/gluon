@@ -30,7 +30,7 @@ let {
 
 let { (<>) } = prelude.make_Semigroup string.semigroup
 
-let { (<*), (*>), map2, wrap } = prelude.make_Applicative applicative
+let { (<*), (*>), map2, wrap } = import! std.applicative
 let { (<|>) } = prelude.make_Alternative alternative
 let { flat_map } = prelude.make_Monad monad
 

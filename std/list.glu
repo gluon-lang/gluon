@@ -63,21 +63,20 @@ let applicative : Applicative List =
 
     { functor = functor, apply, wrap }
 
+let { map, (<*>), wrap } = import! std.applicative
 
 let many alternative x : Alternative f -> f a -> f (List a) =
     let { applicative, (<|>) } = prelude.make_Alternative alternative
-    let { functor, (<*>), wrap } = prelude.make_Applicative applicative
 
     let many_v _ = some_v () <|> wrap Nil
-    and some_v _ = functor.map (\h l -> Cons h l) x <*> many_v ()
+    and some_v _ = map (\h l -> Cons h l) x <*> many_v ()
     many_v ()
 
 let some alternative x : Alternative f -> f a -> f (List a) =
     let { applicative, (<|>) } = prelude.make_Alternative alternative
-    let { functor, (<*>), wrap } = prelude.make_Applicative applicative
 
     let many_v _ = some_v () <|> wrap Nil
-    and some_v _ = functor.map (\h l -> Cons h l) x <*> many_v ()
+    and some_v _ = map (\h l -> Cons h l) x <*> many_v ()
     some_v ()
 
 let alternative : Alternative List = {
