@@ -6,6 +6,7 @@ let { Bool, Option, Ordering } = import! std.types
 /// This means the following laws must hold:
 ///
 /// * `forall x . append x (append y z) == append (append x y) z`
+/// @implicit
 type Semigroup a = {
     /// # Note
     ///
@@ -32,6 +33,7 @@ let semigroup_Ordering : Semigroup Ordering = {
 ///
 /// * `forall x . append x empty == x`
 /// * `forall x . append empty x == x`
+/// @implicit
 type Monoid a = {
     semigroup : Semigroup a,
     /// # Note
@@ -49,6 +51,7 @@ let monoid_Ordering : Monoid Ordering = {
 /// the following additional laws must hold:
 ///
 /// * `forall x . append (inverse x) x = empty = append x (inverse x)`
+/// @implicit
 type Group a = {
     monoid : Monoid a,
     /// The inverse operation
@@ -56,9 +59,11 @@ type Group a = {
 }
 
 /// `Eq a` defines equality (==) on `a`
+/// @implicit
 type Eq a = { (==) : a -> a -> Bool }
 
 /// `Ord a` defines an ordering on `a`
+/// @implicit
 type Ord a = { eq : Eq a, compare : a -> a -> Ordering }
 
 /// Creates the `<=`, `<`, `>` and `>=` operators from an instance with `Ord`
@@ -93,6 +98,7 @@ let make_Ord ord : Ord a -> _ =
 
 /// The basic operation on numbers.
 /// Defined for both the primitive type `Int` and `Float`
+/// @implicit
 type Num a = {
     ord : Ord a,
     (+) : a -> a -> a,
@@ -102,6 +108,7 @@ type Num a = {
     negate : a -> a
 }
 
+/// @implicit
 type Category (cat : Type -> Type -> Type) = {
     id : forall a . cat a a,
     compose : forall a b c . cat b c -> cat a b -> cat a c
@@ -125,6 +132,7 @@ let make_Category category : Category cat -> _ =
 ///
 /// * `map id == id`
 /// * `map (f << g) == map f << map g`
+/// @implicit
 type Functor f = {
     /// Apply the supplied function to the contents of `f a`, converting it to
     /// an `f b`
@@ -141,6 +149,7 @@ type Functor f = {
     map : forall a b . (a -> b) -> f a -> f b
 }
 
+/// @implicit
 type Applicative (f : Type -> Type) = {
     functor : Functor f,
     /// Like `functor.map`, but this time the supplied function is embedded in `f`
@@ -176,6 +185,7 @@ let make_Applicative applicative : Applicative f -> _ =
 
     { functor, apply, wrap, (<*>), (<*), (*>), map2, map3 }
 
+/// @implicit
 type Alternative f = {
     applicative : Applicative f,
     or : forall a . f a -> f a -> f a,
@@ -190,6 +200,7 @@ let make_Alternative alternative : Alternative f -> _ =
     { applicative, or, empty, (<|>) }
 
 /// A generalised interface for imperatively sequencing actions
+/// @implicit
 type Monad (m : Type -> Type) = {
     applicative : Applicative m,
     /// This can be seen as akin to sequential variable binding in an
@@ -233,8 +244,10 @@ let make_Monad monad : Monad m -> _ =
     { applicative, flat_map, (=<<), (>>=), join }
 
 /// `Show a` represents a conversion function from `a` to a readable string.
+/// @implicit
 type Show a = { show : forall a . a -> String }
 
+/// @implicit
 type Foldable (f : Type -> Type) = {
     foldr : forall a b . (a -> b -> b) -> b -> f a -> b,
     foldl : forall a b . (b -> a -> b) -> b -> f a -> b
@@ -294,6 +307,7 @@ let make_Foldable foldable : Foldable t -> _ =
         count,
     }
 
+/// @implicit
 type Traversable t = {
     functor : Functor t,
     foldable : Foldable t,

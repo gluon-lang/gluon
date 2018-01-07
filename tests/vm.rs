@@ -460,10 +460,19 @@ test_expr!{ function_with_implicit_argument_from_record,
 r#"
 let f t: [Int] -> Int = t
 let x =
-    { test = 1 }
+    /// @implicit
+    let test = 1
+    { test }
 f
 "#,
 1
+}
+
+test_expr!{ prelude not_equal_operator,
+r#"
+1 /= 2
+"#,
+true
 }
 
 #[test]

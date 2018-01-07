@@ -9,7 +9,7 @@ extern crate gluon_check as check;
 extern crate gluon_parser as parser;
 
 use base::ast;
-use base::types::Type;
+use base::types::{Field, Type};
 
 #[macro_use]
 #[allow(unused_macros)]
@@ -129,4 +129,26 @@ f "" ""
     let result = support::typecheck(text);
 
     assert_req!(result, Ok(Type::unit()));
+}
+
+#[test]
+fn implicit_on_type() {
+    let _ = ::env_logger::init();
+    let text = r#"
+/// @implicit
+type Test = | Test
+let f x y: [a] -> a -> a = x
+let i = Test
+f Test
+"#;
+    let result = support::typecheck(text);
+
+    let test = support::alias(
+        "Test",
+        &[],
+        Type::variant(vec![
+            Field::new(support::intern("Test"), support::typ("Test")),
+        ]),
+    );
+    assert_eq!(result, Ok(test));
 }

@@ -108,6 +108,12 @@ where
         Return,
     }
 
+    #[derive(Clone, Copy, Debug)]
+    enum ImplicitKind<'a> {
+        Always,
+        Binding(&'a Metadata),
+    }
+
     struct RenameVisitor<'a: 'b, 'b> {
         symbols: &'b mut SymbolModule<'a>,
         metadata: FnvMap<Symbol, Metadata>,
@@ -399,12 +405,28 @@ where
             span: Span<BytePos>,
             implicit_type: &ArcType,
         ) -> Result<SpannedExpr<Symbol>, RenameError> {
+            let is_implicit_type = implicit_type
+                .name()
+                .and_then(|typename| {
+                    self.metadata.get(typename).and_then(|metadata| {
+                        metadata.comment.as_ref().map(|comment| {
+                            ::metadata::attributes(&comment).any(|(key, _)| key == "implicit")
+                        })
+                    })
+                })
+                .unwrap_or(false);
+
             let found = self.env
                 .stack
                 .iter()
                 .filter_map(|(prev_id, &(ref id, _, ref typ))| {
-                    self.metadata.get(prev_id).and_then(|metadata| {
-                        self.find_implicit_of(span, id, metadata, typ, implicit_type)
+                    let implicit_kind_opt = if is_implicit_type {
+                        Some(ImplicitKind::Always)
+                    } else {
+                        self.metadata.get(prev_id).map(ImplicitKind::Binding)
+                    };
+                    implicit_kind_opt.and_then(|implicit_kind| {
+                        self.find_implicit_of(span, id, implicit_kind, typ, implicit_type)
                     })
                 })
                 .next();
@@ -430,13 +452,19 @@ where
             &self,
             span: Span<BytePos>,
             id: &Symbol,
-            metadata: &Metadata,
+            implicit_kind: ImplicitKind,
             typ: &ArcType,
             implicit_type: &ArcType,
         ) -> Option<Vec<TypedIdent<Symbol>>> {
-            let is_implicit = metadata.comment.as_ref().map_or(false, |comment| {
-                ::metadata::attributes(&comment).any(|(key, _)| key == "implicit")
-            });
+            let is_implicit = match implicit_kind {
+                ImplicitKind::Always => true,
+                ImplicitKind::Binding(metadata) => {
+                    metadata.comment.as_ref().map_or(false, |comment| {
+                        ::metadata::attributes(&comment).any(|(key, _)| key == "implicit")
+                    })
+                }
+            };
+
             if is_implicit && equivalent(&self.env, typ, implicit_type) {
                 Some(vec![
                     TypedIdent {
@@ -447,24 +475,28 @@ where
             } else {
                 typ.row_iter()
                     .filter_map(|field| {
-                        metadata
-                            .module
-                            .get(field.name.declared_name())
-                            .and_then(|field_metadata| {
-                                self.find_implicit_of(
-                                    span,
-                                    &field.name,
-                                    field_metadata,
-                                    &field.typ,
-                                    implicit_type,
-                                ).map(|mut path| {
-                                    path.push(TypedIdent {
-                                        name: id.clone(),
-                                        typ: typ.clone(),
-                                    });
-                                    path
-                                })
+                        let field_implicit_kind_opt = match implicit_kind {
+                            ImplicitKind::Always => Some(ImplicitKind::Always),
+                            ImplicitKind::Binding(metadata) => metadata
+                                .module
+                                .get(field.name.declared_name())
+                                .map(ImplicitKind::Binding),
+                        };
+                        field_implicit_kind_opt.and_then(|field_implicit_kind| {
+                            self.find_implicit_of(
+                                span,
+                                &field.name,
+                                field_implicit_kind,
+                                &field.typ,
+                                implicit_type,
+                            ).map(|mut path| {
+                                path.push(TypedIdent {
+                                    name: id.clone(),
+                                    typ: typ.clone(),
+                                });
+                                path
                             })
+                        })
                     })
                     .next()
             }

@@ -77,7 +77,7 @@ pub fn metadata(
                 Pattern::Record {
                     ref fields,
                     ref types,
-                    ..
+                    ref typ,
                 } => {
                     for field in fields {
                         if let Some(m) = metadata.module.remove(field.name.value.as_ref()) {
@@ -93,6 +93,13 @@ pub fn metadata(
                     }
                     for field in types {
                         if let Some(m) = metadata.module.remove(field.name.value.as_ref()) {
+                            // FIXME Shouldn't need to insert this metadata twice
+                            if let Some(type_field) = typ.type_field_iter()
+                                .find(|type_field| type_field.name.name_eq(&field.name.value))
+                            {
+                                self.stack_var(type_field.typ.name.clone(), m.clone());
+                            }
+
                             let id = field
                                 .value
                                 .as_ref()
@@ -202,6 +209,8 @@ pub fn metadata(
                             module: BTreeMap::new(),
                         });
                         if let Some(metadata) = maybe_metadata {
+                            // FIXME Shouldn't need to insert this metadata twice
+                            self.stack_var(bind.alias.value.name.clone(), metadata.clone());
                             self.stack_var(bind.name.value.clone(), metadata);
                         }
                     }
