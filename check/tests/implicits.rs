@@ -241,3 +241,27 @@ f (==) 1 2
         }
     }
 }
+
+#[test]
+fn applicative_resolve_implicit() {
+    let _ = ::env_logger::init();
+    let text = r#"
+/// @implicit
+type Functor f = {
+    map : forall a b . (a -> b) -> f a -> f b
+}
+
+/// @implicit
+type Applicative (f : Type -> Type) = {
+    functor : Functor f,
+    apply : forall a b . f (a -> b) -> f a -> f b,
+    wrap : forall a . a -> f a
+}
+
+let (<*>) app : [Applicative f] -> f (a -> b) -> f a -> f b = app.apply
+let (<*) app l r : [Applicative f] -> f a -> f b -> f a = app.functor.map (\x _ -> x) l <*> r
+()
+"#;
+    let result = support::typecheck(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}

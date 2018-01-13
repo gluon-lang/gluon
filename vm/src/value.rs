@@ -791,12 +791,12 @@ impl fmt::Debug for ValueRepr {
                     }
                     ValueRepr::PartialApplication(ref app) => {
                         let name = match app.function {
-                            Callable::Closure(_) => "<CLOSURE>",
-                            Callable::Extern(_) => "<EXTERN>",
+                            Callable::Closure(ref c) => &c.function.name,
+                            Callable::Extern(ref e) => &e.id,
                         };
                         write!(
                             f,
-                            "<App {:?}{:?}>",
+                            "<App {:?}, {:?}>",
                             name,
                             LevelSlice(level - 1, variant_iter(&app.args))
                         )

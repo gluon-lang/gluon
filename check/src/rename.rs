@@ -1,6 +1,8 @@
 use std::fmt;
 use std::mem;
 
+use itertools::Itertools;
+
 use base::ast::{self, DisplayEnv, Do, Expr, Literal, MutVisitor, Pattern, SpannedExpr, Typed,
                 TypedIdent};
 use base::error::Errors;
@@ -406,11 +408,9 @@ where
             implicit_type: &ArcType,
         ) -> Result<SpannedExpr<Symbol>, RenameError> {
             info!("Trying to resolve implicit {}", implicit_type);
-            info!("{:?}", self.metadata);
             let is_implicit_type = implicit_type
                 .name()
                 .and_then(|typename| {
-                    info!("{:?}", typename);
                     self.metadata.get(typename).and_then(|metadata| {
                         metadata.comment.as_ref().map(|comment| {
                             ::metadata::attributes(&comment).any(|(key, _)| key == "implicit")
@@ -436,6 +436,11 @@ where
 
             match found {
                 Some(mut path) => {
+                    debug!(
+                        "Found implicit `{}`",
+                        path.iter().map(|id| &id.name).format(".")
+                    );
+
                     let base_ident = path.pop().unwrap();
                     Ok(path.into_iter().rev().fold(
                         pos::spanned(span, Expr::Ident(base_ident)),
@@ -468,7 +473,20 @@ where
                 }
             };
 
-            if is_implicit && equivalent(&self.env, typ, implicit_type) {
+            trace!("Testing {}", id);
+
+            let subs = ::substitution::Substitution::new(Kind::typ());
+            let state = ::unify_type::State::new(&self.env, &subs);
+            if is_implicit
+                && ::unify_type::subsumes(
+                    &subs,
+                    &mut ScopedMap::new(),
+                    0,
+                    state,
+                    implicit_type,
+                    typ,
+                ).is_ok()
+            {
                 Some(vec![
                     TypedIdent {
                         name: id.clone(),
@@ -628,7 +646,7 @@ where
 }
 
 pub fn equivalent(env: &TypeEnv, actual: &ArcType, inferred: &ArcType) -> bool {
-    trace!("Equivalent {} <=> {}", actual, inferred);
+    debug!("Equivalent {} <=> {}", actual, inferred);
     use substitution::Substitution;
     // FIXME This Substitution is unnecessary for equivalence unification
     let subs = Substitution::new(Kind::typ());

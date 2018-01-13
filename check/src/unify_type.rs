@@ -582,7 +582,7 @@ where
 
             match (&lhs_base, &rhs_base) {
                 (&None, &None) => {
-                    debug!("Unify error: {} <=> {}", expected, actual);
+                    debug!("Unify error: {:?} <=> {:?}", expected, actual);
                     Err(UnifyError::TypeMismatch(expected.clone(), actual.clone()))
                 }
                 (_, _) => {
@@ -979,8 +979,14 @@ pub fn new_skolem_scope(
             let mut skolem = Vec::new();
             for param in params {
                 let constraint = constraints.get(&param.id).cloned();
-                let var = subs.new_constrained_var(
+                let var = subs.new_constrained_var_fn(
                     constraint.map(|constraint| (param.id.clone(), constraint.clone())),
+                    |id| {
+                        Type::variable(TypeVariable {
+                            id,
+                            kind: param.kind.clone(),
+                        })
+                    },
                 );
                 skolem.push(var.clone());
             }

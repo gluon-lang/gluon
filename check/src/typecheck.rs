@@ -388,7 +388,7 @@ impl<'a> Typecheck<'a> {
 
                 self.named_variables.clear();
                 let typ = new_skolem_scope(&self.subs, &constraints, &typ);
-                debug!("Find {} : {}", self.symbols.string(id), typ);
+                debug!("Find {} : {:?}", self.symbols.string(id), typ);
                 debug!(
                     "Constraints [{}]",
                     constraints
