@@ -154,11 +154,9 @@ impl Stack {
                         .debug_info
                         .source_map
                         .line(frame.instruction_index);
-                    Some(line.map(|line| {
-                        StacktraceFrame {
-                            name: closure.function.name.clone(),
-                            line: line,
-                        }
+                    Some(line.map(|line| StacktraceFrame {
+                        name: closure.function.name.clone(),
+                        line: line,
                     }))
                 }
                 State::Extern(ref ext) => Some(Some(StacktraceFrame {
@@ -475,7 +473,6 @@ impl fmt::Display for Stacktrace {
         Ok(())
     }
 }
-
 
 #[cfg(test)]
 mod tests {

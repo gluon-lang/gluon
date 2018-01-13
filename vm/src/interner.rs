@@ -99,12 +99,10 @@ impl Interner {
             Some(interned_str) => return Ok(*interned_str),
             None => (),
         }
-        let gc_str =
-            unsafe { InternedStr(GcStr::from_utf8_unchecked(gc.alloc(s.as_bytes())?)) };
+        let gc_str = unsafe { InternedStr(GcStr::from_utf8_unchecked(gc.alloc(s.as_bytes())?)) };
         // The key will live as long as the value it refers to and the static str never escapes
         // outside interner so this is safe
-        let key: &'static str =
-            unsafe { ::std::mem::transmute::<&str, &'static str>(&gc_str) };
+        let key: &'static str = unsafe { ::std::mem::transmute::<&str, &'static str>(&gc_str) };
         self.indexes.insert(key, gc_str);
         Ok(gc_str)
     }

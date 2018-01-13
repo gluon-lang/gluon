@@ -2,6 +2,7 @@
 #![doc(html_root_url = "https://docs.rs/gluon_c-api/0.7.0")] // # GLUON
 
 extern crate gluon;
+#[cfg(feature = "c_void")]
 extern crate libc;
 
 use std::str;
@@ -153,6 +154,7 @@ pub unsafe extern "C" fn glu_push_string_unchecked(vm: &Thread, s: &u8, len: usi
     }
 }
 
+#[cfg(feature = "c_void")]
 pub extern "C" fn glu_push_light_userdata(vm: &Thread, data: *mut libc::c_void) {
     Thread::push(vm, data as usize).unwrap()
 }
@@ -188,9 +190,10 @@ pub unsafe extern "C" fn glu_get_string(
 ) -> Error {
     let mut context = vm.context();
     let stack = context.stack.current_frame();
-    match stack.get_variants(index).map(|value| {
-        <&str>::from_value(vm, value)
-    }) {
+    match stack
+        .get_variants(index)
+        .map(|value| <&str>::from_value(vm, value))
+    {
         Some(value) => {
             *out = &*value.as_ptr();
             *out_len = value.len();
@@ -200,6 +203,7 @@ pub unsafe extern "C" fn glu_get_string(
     }
 }
 
+#[cfg(feature = "c_void")]
 pub extern "C" fn glu_get_light_userdata(
     vm: &Thread,
     index: VmIndex,
@@ -219,9 +223,10 @@ where
 {
     let mut context = vm.context();
     let stack = context.stack.current_frame();
-    match stack.get_variants(index).map(
-        |value| T::from_value(vm, value),
-    ) {
+    match stack
+        .get_variants(index)
+        .map(|value| T::from_value(vm, value))
+    {
         Some(value) => {
             *out = value;
             Error::Ok
@@ -287,6 +292,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "c_void")]
     #[test]
     fn push_userdata() {
         unsafe {

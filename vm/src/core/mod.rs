@@ -120,7 +120,6 @@ impl<'a> fmt::Display for Expr<'a> {
 
 const INDENT: usize = 4;
 
-
 #[derive(Default)]
 #[must_use]
 struct Binder<'a> {
@@ -539,11 +538,9 @@ impl<'a, 'e> Translator<'a, 'e> {
             ast::Expr::Match(ref expr, ref alts) => {
                 let expr = self.translate_alloc(expr);
                 let alts: Vec<_> = alts.iter()
-                    .map(|alt| {
-                        Equation {
-                            patterns: vec![&alt.pattern],
-                            result: self.translate_alloc(&alt.expr),
-                        }
+                    .map(|alt| Equation {
+                        patterns: vec![&alt.pattern],
+                        result: self.translate_alloc(&alt.expr),
                     })
                     .collect();
                 PatternTranslator(self).translate_top(expr, &alts).clone()
@@ -727,16 +724,14 @@ impl<'a, 'e> Translator<'a, 'e> {
         if is_recursive {
             let closures = binds
                 .iter()
-                .map(|bind| {
-                    Closure {
-                        pos: bind.name.span.start,
-                        name: match bind.name.value {
-                            ast::Pattern::Ident(ref id) => id.clone(),
-                            _ => unreachable!(),
-                        },
-                        args: bind.args.iter().map(|arg| arg.value.clone()).collect(),
-                        expr: self.translate_alloc(&bind.expr),
-                    }
+                .map(|bind| Closure {
+                    pos: bind.name.span.start,
+                    name: match bind.name.value {
+                        ast::Pattern::Ident(ref id) => id.clone(),
+                        _ => unreachable!(),
+                    },
+                    args: bind.args.iter().map(|arg| arg.value.clone()).collect(),
+                    expr: self.translate_alloc(&bind.expr),
                 })
                 .collect();
             Expr::Let(
@@ -827,11 +822,9 @@ impl<'a, 'e> Translator<'a, 'e> {
             let mut args = arg_iter(typ.remove_forall());
             unapplied_args = args.by_ref()
                 .enumerate()
-                .map(|(i, arg)| {
-                    TypedIdent {
-                        name: Symbol::from(format!("#{}", i)),
-                        typ: arg.clone(),
-                    }
+                .map(|(i, arg)| TypedIdent {
+                    name: Symbol::from(format!("#{}", i)),
+                    typ: arg.clone(),
                 })
                 .collect();
             data_type = args.typ.clone();
@@ -985,7 +978,6 @@ impl<'a> Visitor<'a, 'a> for ReplaceVariables<'a> {
     }
 }
 
-
 /// `PatternTranslator` translated nested (AST) patterns into non-nested (core) patterns.
 ///
 /// It does this this by looking at each nested pattern as part of an `Equation` to be solved.
@@ -1081,15 +1073,13 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 .iter()
                 .map(|equation| (&equation.patterns[1..], equation.result))
                 .zip(&temp)
-                .map(|((remaining_equations, result), first)| {
-                    Equation {
-                        patterns: first
-                            .iter()
-                            .map(|pattern| &**pattern)
-                            .chain(remaining_equations.iter().cloned())
-                            .collect(),
-                        result,
-                    }
+                .map(|((remaining_equations, result), first)| Equation {
+                    patterns: first
+                        .iter()
+                        .map(|pattern| &**pattern)
+                        .chain(remaining_equations.iter().cloned())
+                        .collect(),
+                    result,
                 })
                 .collect::<Vec<_>>();
 
@@ -1228,11 +1218,9 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             &variables[1..],
             &equations
                 .iter()
-                .map(|equation| {
-                    Equation {
-                        patterns: equation.patterns[1..].to_owned(),
-                        result: equation.result,
-                    }
+                .map(|equation| Equation {
+                    patterns: equation.patterns[1..].to_owned(),
+                    result: equation.result,
                 })
                 .collect::<Vec<_>>(),
         );
@@ -1546,11 +1534,9 @@ impl<'a> Iterator for PatternIdentifiers<'a> {
                     field
                         .1
                         .as_ref()
-                        .map(|name| {
-                            TypedIdent {
-                                name: name.clone(),
-                                typ: field.0.typ.clone(),
-                            }
+                        .map(|name| TypedIdent {
+                            name: name.clone(),
+                            typ: field.0.typ.clone(),
                         })
                         .unwrap_or_else(|| field.0.clone()),
                 )
@@ -1578,11 +1564,9 @@ impl<'a> DoubleEndedIterator for PatternIdentifiers<'a> {
                     field
                         .1
                         .as_ref()
-                        .map(|name| {
-                            TypedIdent {
-                                name: name.clone(),
-                                typ: field.0.typ.clone(),
-                            }
+                        .map(|name| TypedIdent {
+                            name: name.clone(),
+                            typ: field.0.typ.clone(),
                         })
                         .unwrap_or_else(|| field.0.clone()),
                 )

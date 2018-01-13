@@ -28,7 +28,7 @@ use gc::{DataDef, Gc, GcPtr, Generation, Move};
 use source_map::LocalIter;
 use stack::{Frame, Lock, Stack, StackFrame, State};
 use types::*;
-use vm::{GlobalVmState, VmEnv};
+use vm::{GlobalVmState, GlobalVmStateBuilder, VmEnv};
 use value::{BytecodeFunction, Callable, ClosureData, ClosureDataDef, ClosureInitDef, Def,
             ExternFunction, GcStr, PartialApplicationDataDef, RecordDef, Userdata, Value};
 
@@ -392,11 +392,10 @@ impl Traverseable for RootedThread {
 impl RootedThread {
     /// Creates a new virtual machine with an empty global environment
     pub fn new() -> RootedThread {
-        RootedThread::with_event_loop(None)
+        RootedThread::with_global_state(GlobalVmStateBuilder::default().build())
     }
 
-    pub fn with_event_loop(event_loop: Option<::tokio_core::reactor::Remote>) -> RootedThread {
-        let mut global_state = GlobalVmState::new(event_loop);
+    pub fn with_global_state(mut global_state: GlobalVmState) -> RootedThread {
         let thread = Thread {
             parent: None,
             context: Mutex::new(Context::new(

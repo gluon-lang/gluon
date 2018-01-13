@@ -132,9 +132,7 @@ impl<'a> Data<'a> {
     pub fn get_variants(&self, index: usize) -> Option<Variants<'a>> {
         match self.0 {
             DataInner::Tag(_) => None,
-            DataInner::Data(data) => unsafe {
-                data.fields.get(index).map(|v| Variants::new(v))
-            },
+            DataInner::Data(data) => unsafe { data.fields.get(index).map(|v| Variants::new(v)) },
         }
     }
 
@@ -700,9 +698,7 @@ impl<'vm, 's> Pushable<'vm> for &'s String {
 }
 impl<'vm, 's> Pushable<'vm> for &'s str {
     fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
-        let s = unsafe {
-            GcStr::from_utf8_unchecked(context.alloc_with(thread, self.as_bytes())?)
-        };
+        let s = unsafe { GcStr::from_utf8_unchecked(context.alloc_with(thread, self.as_bytes())?) };
         context.stack.push(Value::String(s));
         Ok(())
     }
@@ -733,11 +729,9 @@ impl<'vm> Pushable<'vm> for char {
 impl<'vm> Getable<'vm> for char {
     fn from_value(_: &'vm Thread, value: Variants) -> char {
         match value.as_ref() {
-            ValueRef::Int(x) => {
-                match ::std::char::from_u32(x as u32) {
-                    Some(ch) => ch,
-                    None => ice!("Failed conversion from Int to char for: {}", x),
-                }
+            ValueRef::Int(x) => match ::std::char::from_u32(x as u32) {
+                Some(ch) => ch,
+                None => ice!("Failed conversion from Int to char for: {}", x),
             },
             _ => ice!("ValueRef is not an Int"),
         }
@@ -789,7 +783,7 @@ impl<'s, 'vm, T: Copy + ArrayRepr> Getable<'vm> for &'s [T] {
             ValueRef::Array(ptr) => {
                 let s = ptr.0.as_slice().unwrap();
                 &*(s as *const _)
-            },
+            }
             _ => ice!("ValueRef is not an Array"),
         }
     }
@@ -852,7 +846,7 @@ impl<'vm, T: vm::Userdata> Getable<'vm> for *const T {
             ValueRef::Userdata(data) => {
                 let x = data.downcast_ref::<T>().unwrap();
                 x as *const T
-            },
+            }
             _ => ice!("ValueRef is not an Userdata"),
         }
     }
@@ -967,7 +961,6 @@ impl<F> FutureResult<F> {
         FutureResult(f)
     }
 }
-
 
 impl<F> VmType for FutureResult<F>
 where
@@ -1270,7 +1263,6 @@ where
     }
 }
 
-
 impl<'vm, T: VmType> Pushable<'vm> for Array<'vm, T>
 where
     T::Type: Sized,
@@ -1414,7 +1406,6 @@ macro_rules! define_tuples {
     }
 }
 define_tuples! { A B C D E F G H I J K L }
-
 
 pub use self::record::Record;
 
@@ -1592,7 +1583,6 @@ impl<'vm, F: VmType> VmType for RefPrimitive<'vm, F> {
     }
 }
 
-
 impl<'vm, F> Pushable<'vm> for RefPrimitive<'vm, F>
 where
     F: VmFunction<'vm> + FunctionType + VmType + 'vm,
@@ -1653,7 +1643,6 @@ impl<'vm> Pushable<'vm> for CPrimitive {
         Ok(())
     }
 }
-
 
 fn make_type<T: ?Sized + VmType>(vm: &Thread) -> ArcType {
     <T as VmType>::make_type(vm)
@@ -1962,14 +1951,12 @@ make_vm_function!(A, B, C, D, E);
 make_vm_function!(A, B, C, D, E, F);
 make_vm_function!(A, B, C, D, E, F, G);
 
-
 pub struct TypedBytecode<T> {
     id: Symbol,
     args: VmIndex,
     instructions: Vec<Instruction>,
     _marker: PhantomData<T>,
 }
-
 
 impl<T> TypedBytecode<T> {
     pub fn new(name: &str, args: VmIndex, instructions: Vec<Instruction>) -> TypedBytecode<T>

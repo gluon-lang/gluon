@@ -142,7 +142,6 @@ impl PartialEq for DataStruct {
     }
 }
 
-
 impl DataStruct {
     pub fn record_bit() -> VmTag {
         1 << ((size_of::<VmTag>() * 8) - 1)
@@ -795,7 +794,6 @@ impl Traverseable for ExternFunction {
     fn traverse(&self, _: &mut Gc) {}
 }
 
-
 /// Representation of values which can be stored directly in an array
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub enum Repr {
@@ -1093,9 +1091,9 @@ unsafe impl<'a> DataDef for &'a ValueArray {
         unsafe {
             let result = &mut *result.as_mut_ptr();
             result.repr = self.repr;
-            on_array!(self, |array: &Array<_>| {
-                result.unsafe_array_mut().initialize(array.iter().cloned())
-            });
+            on_array!(self, |array: &Array<_>| result
+                .unsafe_array_mut()
+                .initialize(array.iter().cloned()));
             result
         }
     }
@@ -1406,22 +1404,18 @@ mod tests {
 
         let nil = Value::Tag(1);
         assert_eq!(format!("{}", ValuePrinter::new(&env, &typ, nil)), "Nil");
-        let list1 = Value::Data(
-            gc.alloc(Def {
-                tag: 0,
-                elems: &[Value::Int(123), nil],
-            }).unwrap(),
-        );
+        let list1 = Value::Data(gc.alloc(Def {
+            tag: 0,
+            elems: &[Value::Int(123), nil],
+        }).unwrap());
         assert_eq!(
             format!("{}", ValuePrinter::new(&env, &typ, list1)),
             "Cons 123 Nil"
         );
-        let list2 = Value::Data(
-            gc.alloc(Def {
-                tag: 0,
-                elems: &[Value::Int(0), list1],
-            }).unwrap(),
-        );
+        let list2 = Value::Data(gc.alloc(Def {
+            tag: 0,
+            elems: &[Value::Int(0), list1],
+        }).unwrap());
         assert_eq!(
             format!("{}", ValuePrinter::new(&env, &typ, list2)),
             "Cons 0 (Cons 123 Nil)"

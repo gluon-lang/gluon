@@ -15,6 +15,7 @@ extern crate itertools;
 extern crate log;
 #[macro_use]
 extern crate quick_error;
+#[cfg(feature = "tokio_core")]
 extern crate tokio_core;
 pub extern crate either;
 
@@ -244,9 +245,7 @@ impl Compiler {
             &mut SymbolModule::new(file.into(), &mut self.symbols),
             type_cache,
             expr_str,
-        ).map_err(
-            |(expr, err)| (expr, InFile::new(file, expr_str, err)),
-        )?)
+        ).map_err(|(expr, err)| (expr, InFile::new(file, expr_str, err)))?)
     }
 
     /// Parse and typecheck `expr_str` returning the typechecked expression and type of the
@@ -269,13 +268,8 @@ impl Compiler {
         expr_str: &str,
         expected_type: Option<&ArcType>,
     ) -> Result<(SpannedExpr<Symbol>, ArcType)> {
-        let TypecheckValue { expr, typ } = expr_str.typecheck_expected(
-            self,
-            vm,
-            file,
-            expr_str,
-            expected_type,
-        )?;
+        let TypecheckValue { expr, typ } =
+            expr_str.typecheck_expected(self, vm, file, expr_str, expected_type)?;
         Ok((expr, typ))
     }
 
@@ -376,9 +370,10 @@ impl Compiler {
         // macro as close as possible
         let opt_macro = vm.get_macros().get("import");
         let owned_import;
-        let import = match opt_macro.as_ref().and_then(
-            |mac| mac.downcast_ref::<Import>(),
-        ) {
+        let import = match opt_macro
+            .as_ref()
+            .and_then(|mac| mac.downcast_ref::<Import>())
+        {
             Some(import) => import,
             None => {
                 owned_import = Import::new(DefaultImporter);
@@ -551,7 +546,7 @@ in ()
 
 #[derive(Default)]
 pub struct VmBuilder {
-    event_loop: Option<::tokio_core::reactor::Remote>,
+    #[cfg(feature = "tokio_core")] event_loop: Option<::tokio_core::reactor::Remote>,
 }
 
 impl VmBuilder {
@@ -559,6 +554,7 @@ impl VmBuilder {
         VmBuilder::default()
     }
 
+    #[cfg(feature = "tokio_core")]
     option!{
         /// Sets then event loop which threads are run on
         /// (default: None)
@@ -566,7 +562,16 @@ impl VmBuilder {
     }
 
     pub fn build(self) -> RootedThread {
-        let vm = RootedThread::with_event_loop(self.event_loop);
+        #[cfg(not(feature = "tokio_core"))]
+        let vm = RootedThread::new();
+
+        #[cfg(feature = "tokio_core")]
+        let vm = RootedThread::with_global_state(
+            GlobalVmStateBuilder::new()
+                .event_loop(self.event_loop)
+                .build(),
+        );
+
         let gluon_path = env::var("GLUON_PATH").unwrap_or_else(|_| String::from("."));
         let import = Import::new(DefaultImporter);
         import.add_path(gluon_path);

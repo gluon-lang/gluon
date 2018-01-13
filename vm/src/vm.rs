@@ -28,7 +28,6 @@ pub use value::{ClosureDataDef, Userdata};
 pub use value::Value; //FIXME Value should not be exposed
 pub use thread::{Root, RootStr, RootedThread, RootedValue, Status, Thread};
 
-
 fn new_bytecode(
     env: &VmEnv,
     interner: &mut Interner,
@@ -107,7 +106,6 @@ pub struct Global {
     #[cfg_attr(feature = "serde_derive_state", serde(state))] pub value: Value,
 }
 
-
 impl Traverseable for Global {
     fn traverse(&self, gc: &mut Gc) {
         self.value.traverse(gc);
@@ -141,6 +139,7 @@ pub struct GlobalVmState {
     pub generation_0_threads: RwLock<Vec<GcPtr<Thread>>>,
 
     #[cfg_attr(feature = "serde_derive", serde(skip))]
+    #[cfg(feature = "tokio_core")]
     event_loop: Option<::std::panic::AssertUnwindSafe<::tokio_core::reactor::Remote>>,
 }
 
@@ -357,9 +356,33 @@ impl VmEnv {
     }
 }
 
-impl GlobalVmState {
-    /// Creates a new virtual machine
-    pub fn new(event_loop: Option<::tokio_core::reactor::Remote>) -> GlobalVmState {
+macro_rules! option {
+    ($(#[$attr:meta])* $name: ident $set_name: ident : $typ: ty) => {
+        $(#[$attr])*
+        pub fn $name(mut self, $name: $typ) -> Self {
+            self.$name = $name;
+            self
+        }
+
+        pub fn $set_name(&mut self, $name: $typ) {
+            self.$name = $name;
+        }
+    };
+}
+
+#[derive(Default)]
+pub struct GlobalVmStateBuilder {
+    #[cfg(feature = "tokio_core")] event_loop: Option<::tokio_core::reactor::Remote>,
+}
+
+impl GlobalVmStateBuilder {
+    #[cfg(feature = "tokio_core")]
+    option!{
+        event_loop set_event_loop: Option<::tokio_core::reactor::Remote>
+    }
+
+    #[cfg(not(feature = "tokio_core"))]
+    pub fn build(self) -> GlobalVmState {
         let mut vm = GlobalVmState {
             env: RwLock::new(VmEnv {
                 globals: FnvMap::default(),
@@ -372,12 +395,33 @@ impl GlobalVmState {
             macros: MacroEnv::new(),
             type_cache: TypeCache::new(),
             generation_0_threads: RwLock::new(Vec::new()),
-            event_loop: event_loop.map(::std::panic::AssertUnwindSafe),
         };
         vm.add_types().unwrap();
         vm
     }
 
+    #[cfg(feature = "tokio_core")]
+    pub fn build(self) -> GlobalVmState {
+        let mut vm = GlobalVmState {
+            env: RwLock::new(VmEnv {
+                globals: FnvMap::default(),
+                type_infos: TypeInfos::new(),
+            }),
+            generics: RwLock::new(FnvMap::default()),
+            typeids: RwLock::new(FnvMap::default()),
+            interner: RwLock::new(Interner::new()),
+            gc: Mutex::new(Gc::new(Generation::default(), usize::MAX)),
+            macros: MacroEnv::new(),
+            type_cache: TypeCache::new(),
+            generation_0_threads: RwLock::new(Vec::new()),
+            event_loop: self.event_loop.map(::std::panic::AssertUnwindSafe),
+        };
+        vm.add_types().unwrap();
+        vm
+    }
+}
+
+impl GlobalVmState {
     fn add_types(&mut self) -> StdResult<(), (TypeId, ArcType)> {
         use base::types::BuiltinType;
         use api::generic::A;
@@ -417,6 +461,7 @@ impl GlobalVmState {
         Ok(())
     }
 
+    #[cfg(feature = "tokio_core")]
     pub fn get_event_loop(&self) -> Option<::tokio_core::reactor::Remote> {
         self.event_loop.as_ref().map(|x| x.0.clone())
     }

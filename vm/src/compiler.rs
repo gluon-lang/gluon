@@ -187,12 +187,15 @@ impl FunctionEnvs {
                     .function
                     .debug_info
                     .upvars
-                    .extend(function.free_vars.iter().map(|&(ref name, ref typ)| {
-                        UpvarInfo {
-                            name: name.declared_name().to_string(),
-                            typ: typ.clone(),
-                        }
-                    }));
+                    .extend(
+                        function
+                            .free_vars
+                            .iter()
+                            .map(|&(ref name, ref typ)| UpvarInfo {
+                                name: name.declared_name().to_string(),
+                                typ: typ.clone(),
+                            }),
+                    );
             }
         }
 
@@ -271,7 +274,6 @@ impl FunctionEnv {
         }
         Ok(())
     }
-
 
     fn add_record_map(&mut self, fields: Vec<Symbol>) -> VmIndex {
         match self.function.records.iter().position(|t| *t == fields) {
