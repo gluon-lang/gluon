@@ -25,15 +25,18 @@ pub enum Error {
     Unknown,
 }
 
+#[no_mangle]
 pub extern "C" fn glu_new_vm() -> *const Thread {
     let vm = RootedThread::new();
     vm.into_raw()
 }
 
+#[no_mangle]
 pub unsafe extern "C" fn glu_free_vm(vm: &Thread) {
     RootedThread::from_raw(vm);
 }
 
+#[no_mangle]
 pub unsafe extern "C" fn glu_run_expr(
     vm: &Thread,
     module: &u8,
@@ -56,6 +59,7 @@ pub unsafe extern "C" fn glu_run_expr(
     }
 }
 
+#[no_mangle]
 pub unsafe extern "C" fn glu_load_script(
     vm: &Thread,
     module: &u8,
@@ -78,6 +82,7 @@ pub unsafe extern "C" fn glu_load_script(
     }
 }
 
+#[no_mangle]
 pub extern "C" fn glu_call_function(thread: &Thread, args: VmIndex) -> Error {
     let context = thread.context();
     match thread.call_function(context, args) {
@@ -86,12 +91,14 @@ pub extern "C" fn glu_call_function(thread: &Thread, args: VmIndex) -> Error {
     }
 }
 
+#[no_mangle]
 pub extern "C" fn glu_len(vm: &Thread) -> usize {
     let mut context = vm.context();
     let stack = context.stack.current_frame();
     stack.len() as usize
 }
 
+#[no_mangle]
 pub extern "C" fn glu_pop(vm: &Thread, n: usize) {
     let mut context = vm.context();
     for _ in 0..n {
@@ -99,22 +106,27 @@ pub extern "C" fn glu_pop(vm: &Thread, n: usize) {
     }
 }
 
+#[no_mangle]
 pub extern "C" fn glu_push_int(vm: &Thread, int: VmInt) {
     Thread::push(vm, int).unwrap();
 }
 
+#[no_mangle]
 pub extern "C" fn glu_push_byte(vm: &Thread, b: u8) {
     Thread::push(vm, b).unwrap();
 }
 
+#[no_mangle]
 pub extern "C" fn glu_push_float(vm: &Thread, float: f64) {
     Thread::push(vm, float).unwrap();
 }
 
+#[no_mangle]
 pub extern "C" fn glu_push_bool(vm: &Thread, b: i8) {
     Thread::push(vm, b != 0).unwrap();
 }
 
+#[no_mangle]
 pub unsafe extern "C" fn glu_push_function(
     vm: &Thread,
     name: &u8,
@@ -133,6 +145,7 @@ pub unsafe extern "C" fn glu_push_function(
 }
 
 /// Push a string to the stack. The string must be valid utf-8 or an error will be returned
+#[no_mangle]
 pub unsafe extern "C" fn glu_push_string(vm: &Thread, s: &u8, len: usize) -> Error {
     let s = match str::from_utf8(slice::from_raw_parts(s, len)) {
         Ok(s) => s,
@@ -146,6 +159,7 @@ pub unsafe extern "C" fn glu_push_string(vm: &Thread, s: &u8, len: usize) -> Err
 
 /// Push a string to the stack. If the string is not utf-8 this function will trigger undefined
 /// behaviour.
+#[no_mangle]
 pub unsafe extern "C" fn glu_push_string_unchecked(vm: &Thread, s: &u8, len: usize) -> Error {
     let s = str::from_utf8_unchecked(slice::from_raw_parts(s, len));
     match s.push(vm, &mut vm.context()) {
@@ -155,22 +169,27 @@ pub unsafe extern "C" fn glu_push_string_unchecked(vm: &Thread, s: &u8, len: usi
 }
 
 #[cfg(feature = "c_void")]
+#[no_mangle]
 pub extern "C" fn glu_push_light_userdata(vm: &Thread, data: *mut libc::c_void) {
     Thread::push(vm, data as usize).unwrap()
 }
 
+#[no_mangle]
 pub extern "C" fn glu_get_byte(vm: &Thread, index: VmIndex, out: &mut u8) -> Error {
     get_value(vm, index, out)
 }
 
+#[no_mangle]
 pub extern "C" fn glu_get_int(vm: &Thread, index: VmIndex, out: &mut VmInt) -> Error {
     get_value(vm, index, out)
 }
 
+#[no_mangle]
 pub extern "C" fn glu_get_float(vm: &Thread, index: VmIndex, out: &mut f64) -> Error {
     get_value(vm, index, out)
 }
 
+#[no_mangle]
 pub extern "C" fn glu_get_bool(vm: &Thread, index: VmIndex, out: &mut i8) -> Error {
     let mut b = false;
     let err = get_value(vm, index, &mut b);
@@ -182,6 +201,7 @@ pub extern "C" fn glu_get_bool(vm: &Thread, index: VmIndex, out: &mut i8) -> Err
 
 /// The returned string is garbage collected and may not be valid after the string is removed from
 /// its slot in the stack
+#[no_mangle]
 pub unsafe extern "C" fn glu_get_string(
     vm: &Thread,
     index: VmIndex,
@@ -204,6 +224,7 @@ pub unsafe extern "C" fn glu_get_string(
 }
 
 #[cfg(feature = "c_void")]
+#[no_mangle]
 pub extern "C" fn glu_get_light_userdata(
     vm: &Thread,
     index: VmIndex,
