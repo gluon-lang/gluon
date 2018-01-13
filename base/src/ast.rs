@@ -6,6 +6,7 @@ use std::ops::{Deref, DerefMut};
 use pos::{self, BytePos, HasSpan, Span, Spanned};
 use symbol::Symbol;
 use types::{self, Alias, AliasData, ArcType, Generic, Type, TypeEnv};
+use ordered_float::NotNaN;
 
 pub trait DisplayEnv {
     type Ident;
@@ -182,11 +183,11 @@ where
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub enum Literal {
     Byte(u8),
     Int(i64),
-    Float(f64),
+    Float(NotNaN<f64>),
     String(String),
     Char(char),
 }

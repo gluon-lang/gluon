@@ -183,16 +183,14 @@ impl FunctionEnvs {
             let upvars_are_globals = self.envs.len() == 1;
             if !upvars_are_globals {
                 let function = &mut **self;
-                function
-                    .function
-                    .debug_info
-                    .upvars
-                    .extend(function.free_vars.iter().map(|&(ref name, ref typ)| {
+                function.function.debug_info.upvars.extend(
+                    function.free_vars.iter().map(|&(ref name, ref typ)| {
                         UpvarInfo {
                             name: name.declared_name().to_string(),
                             typ: typ.clone(),
                         }
-                    }));
+                    }),
+                );
             }
         }
 
@@ -555,10 +553,9 @@ impl<'a> Compiler<'a> {
             // Zero argument constructors can be compiled as integers
             Constructor(tag, 0) => function.emit(Construct { tag: tag, args: 0 }),
             Constructor(..) => {
-                return Err(Error::Message(format!(
-                    "Constructor `{}` is not fully applied",
-                    id
-                )))
+                return Err(Error::Message(
+                    format!("Constructor `{}` is not fully applied", id),
+                ))
             }
         }
         Ok(())
@@ -605,7 +602,7 @@ impl<'a> Compiler<'a> {
             Expr::Const(ref lit, _) => match *lit {
                 Literal::Int(i) => function.emit(PushInt(i as isize)),
                 Literal::Byte(b) => function.emit(PushByte(b)),
-                Literal::Float(f) => function.emit(PushFloat(f)),
+                Literal::Float(f) => function.emit(PushFloat(f.into_inner())),
                 Literal::String(ref s) => function.emit_string(self.intern(&s)?),
                 Literal::Char(c) => function.emit(PushInt(c as isize)),
             },
@@ -735,7 +732,7 @@ impl<'a> Compiler<'a> {
                                     function.emit(Push(lhs_i));
                                     function.emit(PushInt(i as isize));
                                     function.emit(IntEQ);
-                                },
+                                }
                                 ast::Literal::Char(ch) => {
                                     function.emit(Push(lhs_i));
                                     function.emit(PushInt(ch as isize));
@@ -743,7 +740,7 @@ impl<'a> Compiler<'a> {
                                 }
                                 ast::Literal::Float(f) => {
                                     function.emit(Push(lhs_i));
-                                    function.emit(PushFloat(f));
+                                    function.emit(PushFloat(f.into_inner()));
                                     function.emit(FloatEQ);
                                 }
                                 ast::Literal::String(ref s) => {
