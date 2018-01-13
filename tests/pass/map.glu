@@ -5,7 +5,7 @@ let string = import! std.string
 let { (<>) } = prelude.make_Semigroup string.semigroup
 let { Test, run, writer, assert, assert_eq }  = import! std.test
 let map  = import! std.map
-let { (*>) } = import! std.applicative
+let { Applicative, (*>) } = import! std.applicative
 let list @ { List } = import! std.list
 
 let show_Entry : Show { key : String, value : Int } = {

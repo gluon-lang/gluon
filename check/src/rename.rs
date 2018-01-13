@@ -15,6 +15,7 @@ use base::symbol::{Symbol, SymbolModule, SymbolRef};
 use base::types::{self, Alias, ArcType, ArgType, RecordSelector, Type, TypeEnv};
 use unify_type::{State, TypeError};
 use unify::{Error as UnifyError, Unifiable, Unifier, UnifierState};
+use substitution::Substitution;
 
 pub type Error = Errors<Spanned<RenameError, BytePos>>;
 
@@ -121,6 +122,7 @@ where
         metadata: FnvMap<Symbol, Metadata>,
         env: Environment<'b>,
         errors: Error,
+        subs: Substitution<ArcType>,
     }
 
     impl<'a, 'b> RenameVisitor<'a, 'b> {
@@ -475,11 +477,10 @@ where
 
             trace!("Testing {}", id);
 
-            let subs = ::substitution::Substitution::new(Kind::typ());
-            let state = ::unify_type::State::new(&self.env, &subs);
+            let state = ::unify_type::State::new(&self.env, &self.subs);
             if is_implicit
                 && ::unify_type::subsumes(
-                    &subs,
+                    &self.subs,
                     &mut ScopedMap::new(),
                     0,
                     state,
@@ -494,8 +495,10 @@ where
                     },
                 ])
             } else {
-                let raw_type = resolve::remove_aliases_cow(&self.env, typ);
-                match **raw_type {
+                let typ = ::unify_type::new_skolem_scope(&self.subs, &FnvMap::default(), typ);
+                let ref typ = typ.instantiate_generics(&mut FnvMap::default());
+                let raw_type = resolve::remove_aliases(&self.env, typ.clone());
+                match *raw_type {
                     Type::Record(_) => raw_type
                         .row_iter()
                         .filter_map(|field| {
@@ -640,6 +643,7 @@ where
             stack: ScopedMap::new(),
             stack_types: ScopedMap::new(),
         },
+        subs: Substitution::new(Kind::typ()),
     };
     visitor.visit_expr(expr);
     if visitor.errors.has_errors() {

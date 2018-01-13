@@ -1,6 +1,6 @@
 let { run, writer, assert_eq }  = import! std.test
 let prelude  = import! std.prelude
-let { (*>) } = import! std.applicative
+let { Applicative, (*>) } = import! std.applicative
 let int = import! std.int
 let result @ { Result } = import! std.result
 let unit = import! std.unit

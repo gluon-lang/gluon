@@ -1,6 +1,6 @@
 let prelude = import! std.prelude
 let { run, writer, assert_eq, assert_ieq } = import! std.test
-let { (*>) } = import! std.applicative
+let { Applicative, (*>) } = import! std.applicative
 let int = import! std.int
 let { (+) } = int.num
 let { (<) } = prelude.make_Ord int.ord

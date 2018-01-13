@@ -6,7 +6,7 @@ let { Test, run, writer, assert, assert_eq } = import! std.test
 let { Writer } = import! std.writer
 
 let { Parser, applicative, functor, alternative, monad, any, parse } = import! std.parser
-let { (*>), wrap } = import! std.applicative
+let { Applicative, (*>), wrap } = import! std.applicative
 let { (<|>) } = prelude.make_Alternative alternative
 
 let assert_parse show eq =

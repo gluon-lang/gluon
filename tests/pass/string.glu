@@ -3,7 +3,7 @@ let { run, writer, assert_eq, assert_seq, assert_ieq } = import! std.test
 let int = import! std.int
 let { (<) } = prelude.make_Ord int.ord
 let { (+) } = int.num
-let { (*>) } = import! std.applicative
+let { Applicative, (*>) } = import! std.applicative
 
 let bool @ { Bool } = import! std.bool
 let option @ { Option } = import! std.option

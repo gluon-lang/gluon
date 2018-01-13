@@ -3,7 +3,7 @@ let { Test, run, writer, assert, assert_ieq, assert_feq, assert_seq }  = import!
 let int = import! std.int
 let { (+), (-), (*) } = int.num
 let state @ { State, put, get, modify, runState, evalState, execState } = import! std.state
-let { (*>) } = import! std.applicative
+let { Applicative, (*>) } = import! std.applicative
 
 let tests =
     assert_ieq (execState (modify (\x -> x + 2) *> modify (\x -> x * 4)) 0) 8

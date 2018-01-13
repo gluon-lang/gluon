@@ -13,7 +13,7 @@ let { ReadlineError } = import! rustyline_types
 let repl_prim = import! repl.prim
 let { (<<) } = import! std.function
 
-let { wrap, (*>) } = import! std.applicative
+let { Applicative, wrap, (*>) } = import! std.applicative
 let { flat_map, (>>=) } = prelude.make_Monad io.monad
 
 let { append = (++) } = string.semigroup
