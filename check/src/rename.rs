@@ -494,32 +494,37 @@ where
                     },
                 ])
             } else {
-                typ.row_iter()
-                    .filter_map(|field| {
-                        let field_implicit_kind_opt = match implicit_kind {
-                            ImplicitKind::Always => Some(ImplicitKind::Always),
-                            ImplicitKind::Binding(metadata) => metadata
-                                .module
-                                .get(field.name.declared_name())
-                                .map(ImplicitKind::Binding),
-                        };
-                        field_implicit_kind_opt.and_then(|field_implicit_kind| {
-                            self.find_implicit_of(
-                                span,
-                                &field.name,
-                                field_implicit_kind,
-                                &field.typ,
-                                implicit_type,
-                            ).map(|mut path| {
-                                path.push(TypedIdent {
-                                    name: id.clone(),
-                                    typ: typ.clone(),
-                                });
-                                path
+                let raw_type = resolve::remove_aliases_cow(&self.env, typ);
+                match **raw_type {
+                    Type::Record(_) => raw_type
+                        .row_iter()
+                        .filter_map(|field| {
+                            let field_implicit_kind_opt = match implicit_kind {
+                                ImplicitKind::Always => Some(ImplicitKind::Always),
+                                ImplicitKind::Binding(metadata) => metadata
+                                    .module
+                                    .get(field.name.declared_name())
+                                    .map(ImplicitKind::Binding),
+                            };
+                            field_implicit_kind_opt.and_then(|field_implicit_kind| {
+                                self.find_implicit_of(
+                                    span,
+                                    &field.name,
+                                    field_implicit_kind,
+                                    &field.typ,
+                                    implicit_type,
+                                ).map(|mut path| {
+                                    path.push(TypedIdent {
+                                        name: id.clone(),
+                                        typ: typ.clone(),
+                                    });
+                                    path
+                                })
                             })
                         })
-                    })
-                    .next()
+                        .next(),
+                    _ => None,
+                }
             }
         }
 
@@ -530,7 +535,6 @@ where
         ) -> Vec<SpannedExpr<Symbol>> {
             let mut args = Vec::new();
             loop {
-                info!("{:?}", typ);
                 typ = match *typ {
                     Type::Function(arg_type, ref arg, ref ret) if arg_type == ArgType::Implicit => {
                         match self.find_implicit(span, arg) {
