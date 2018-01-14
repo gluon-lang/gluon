@@ -352,7 +352,7 @@ fn set_globals(
             )?;
             set_globals(vm, pattern, typ, value)
         }
-        Pattern::Constructor(..) | Pattern::Error => {
+        Pattern::Constructor(..) | Pattern::Literal(_) | Pattern::Error => {
             Err(VMError::Message("The repl cannot bind variables from this pattern".into()).into())
         }
     }
