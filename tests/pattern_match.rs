@@ -42,19 +42,6 @@ match { x = 1, y = "abc" } with
 4i32
 }
 
-test_expr!{ match_string_literal,
-r#"
-let x input: String -> Int =
-    match input with
-    | "A" -> 10
-    | "B" -> 11
-    | _ -> 12
-
-x "A"
-"#,
-10i32
-}
-
 test_expr!{ match_stack,
 r#"
 let string_prim = import! std.string.prim

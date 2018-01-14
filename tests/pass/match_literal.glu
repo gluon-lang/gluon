@@ -1,0 +1,49 @@
+let prelude = import! std.prelude
+let { run, writer, assert_eq } = import! std.test
+let int = import! std.int
+let { (*>) } = prelude.make_Applicative writer.applicative
+
+let assert_ieq = assert_eq int.show int.eq
+
+let ints input =
+    match input with
+    | 0 -> 1
+    | 1 -> 2
+    | _ -> 3
+
+let strings input =
+    match input with
+    | "A" -> 4
+    | "B" -> 5
+    | _ -> 6
+
+type N = | A Int | B
+
+let ns input =
+    match input with
+    | A 1 -> 7
+    | A 2 -> 8
+    | B -> 9
+    | _ -> 10
+
+let match_ns =
+    assert_ieq (ns (A 1)) 7
+        *> assert_ieq (ns (A 2)) 8
+        *> assert_ieq (ns B) 9
+        *> assert_ieq (ns (A 3)) 10
+
+let match_ints =
+    assert_ieq (ints 0) 1
+        *> assert_ieq (ints 1) 2
+        *> assert_ieq (ints 2) 3
+        *> assert_ieq (ints 3) 3
+
+let match_strings =
+    assert_ieq (strings "A") 4
+        *> assert_ieq (strings "B") 5
+        *> assert_ieq (strings "") 6
+
+let tests =
+    match_ints *> match_strings *> match_ns
+
+run tests

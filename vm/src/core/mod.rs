@@ -162,7 +162,10 @@ impl<'a> Binder<'a> {
     }
 }
 
-fn pretty_literal<'a>(l: &Literal, arena: &'a pretty::Arena<'a>) -> pretty::DocBuilder<'a, pretty::Arena<'a>> {
+fn pretty_literal<'a>(
+    l: &Literal,
+    arena: &'a pretty::Arena<'a>,
+) -> pretty::DocBuilder<'a, pretty::Arena<'a>> {
     match *l {
         Literal::Byte(b) => arena.text(format!("b{}", b)),
         Literal::Char(c) => arena.text(format!("{:?}", c)),
@@ -1286,24 +1289,64 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         variables: &[&'a Expr<'a>],
         equations: &[Equation<'a, 'p>],
     ) -> &'a Expr<'a> {
-        let patterns: Vec<_> = equations
-            .iter()
-            .map(|equation| match equation.patterns.first().unwrap().value {
-                ast::Pattern::Literal(ref l) => Pattern::Literal(l.clone()),
-                ast::Pattern::Ident(ref id) => Pattern::Ident(id.clone()),
-                _ => unreachable!()
-            }).collect();
+        let mut group_order = Vec::new();
+        let mut groups = HashMap::new();
 
-        let alternatives = patterns.into_iter()
-            .zip(equations.iter().map(|e| e.result))
-            .map(|(pattern, expr)| Alternative { pattern, expr });
+        for equation in equations {
+            match *unwrap_as(&equation.patterns.first().unwrap().value) {
+                ast::Pattern::Literal(ref literal) => {
+                    groups
+                        .entry(literal)
+                        .or_insert_with(|| {
+                            group_order.push(literal);
+                            Vec::new()
+                        })
+                        .push(equation.clone());
+                }
+                ast::Pattern::Constructor(_, _)
+                | ast::Pattern::As(_, _)
+                | ast::Pattern::Tuple { .. }
+                | ast::Pattern::Record { .. }
+                | ast::Pattern::Ident(_)
+                | ast::Pattern::Error => unreachable!(),
+            }
+        }
+
+        let new_alts = group_order
+            .into_iter()
+            .map(|key| {
+                let equations = &groups[key];
+                let pattern = Pattern::Literal(key.clone());
+
+                let new_equations = equations
+                    .iter()
+                    .map(|equation| {
+                        Equation {
+                            patterns: equation.patterns.iter().cloned().skip(1).collect(),
+                            result: equation.result,
+                        }
+                    })
+                    .collect::<Vec<_>>();
+
+                let new_variables = self.insert_new_variables(&pattern, variables);
+                let expr = self.translate(default, &new_variables, &new_equations);
+                Alternative {
+                    pattern: pattern,
+                    expr: expr,
+                }
+            })
+            .chain(Some(Alternative {
+                pattern: Pattern::Ident(TypedIdent::new(Symbol::from("_"))),
+                expr: default,
+            }))
+            .collect::<Vec<_>>();
 
         let expr = Expr::Match(
             variables[0],
             self.0
                 .allocator
                 .alternative_arena
-                .alloc_extend(alternatives),
+                .alloc_extend(new_alts.into_iter()),
         );
         self.0.allocator.arena.alloc(expr)
     }
@@ -1390,9 +1433,9 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         // | Some (Some x) ->
         // | Some None ->
         // | x ->
-        let groups = equations
-            .iter()
-            .group_by(|equation| varcon(&equation.patterns.first().expect("Pattern").value));
+        let groups = equations.iter().group_by(|equation| {
+            varcon(&equation.patterns.first().expect("Pattern").value)
+        });
 
         let expr = match variables.first() {
             None => equations
@@ -2038,6 +2081,52 @@ mod tests {
             match x with
             | "one" -> 1
             | _ -> 0
+            end
+        "#;
+
+        check_translation(expr_str, expected_str);
+    }
+
+    #[test]
+    fn match_as_literal_pattern() {
+        let expr_str = r#"
+            match 2 with
+            | x@2 -> x
+            | _ -> 0
+        "#;
+
+        let expected_str = r#"
+            let p = 2 in
+            let x = p in
+            match p with
+            | 2 -> x
+            | _ -> 0
+            end
+        "#;
+
+        check_translation(expr_str, expected_str);
+    }
+
+    #[test]
+    fn multiple_alternatives_nested_match_expr_with_literal() {
+        let expr_str = r#"
+            match test with
+            | Ctor (Ctor 4) -> 1
+            | Ctor y -> 2
+            | z -> 3
+        "#;
+
+        let expected_str = r#"
+            match test with
+            | Ctor p1 ->
+                match p1 with
+                | Ctor p2 ->
+                    match p2 with
+                    | 4 -> 1
+                    end
+                | y -> 2
+                end
+            | z -> 3
             end
         "#;
 
