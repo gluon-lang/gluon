@@ -111,41 +111,6 @@ in 1
     assert_err!(result, DuplicateTypeDefinition(..));
 }
 
-#[test]
-fn no_matching_overloaded_binding() {
-    let _ = env_logger::init();
-    let text = r#"
-let f x = x #Int+ 1
-let f x = x #Float+ 1.0
-let f x : () -> () = ()
-f ""
-"#;
-    let result = support::typecheck(text);
-
-    assert_multi_unify_err!(
-        result,
-        [Substitution(Constraint(..))],
-        [Substitution(Constraint(..))]
-    );
-}
-
-#[test]
-fn no_matching_binop_binding() {
-    let _ = env_logger::init();
-    let text = r#"
-let (++) x y = x #Int+ y
-let (++) x y = x #Float+ y
-"" ++ ""
-"#;
-    let result = support::typecheck(text);
-
-    assert_multi_unify_err!(
-        result,
-        [Substitution(Constraint(..))],
-        [Substitution(Constraint(..))]
-    );
-}
-
 // TODO Determine what the correct semantics is for this case
 #[ignore]
 #[test]

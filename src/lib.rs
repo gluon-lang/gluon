@@ -526,17 +526,14 @@ and { Num, Eq, Ord, Show, Functor, Monad } = __implicit_prelude
 and { Bool, not } = import! std.bool
 and { Option } = import! std.option
 
-let { (+), (-), (*), (/), (==), (/=) } = __implicit_prelude
+let { (+), (-), (*), (/), (==), (/=), (<), (<=), (>=), (>) } = __implicit_prelude
 
 let __implicit_float = import! std.float
 
-let { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_float.ord
 
 let __implicit_int = import! std.int
-let { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_int.ord
 
 let __implicit_string = import! std.string
-let { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_string.ord
 
 let { error } = import! std.prim
 

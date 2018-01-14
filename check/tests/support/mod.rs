@@ -115,7 +115,7 @@ impl PrimitiveEnv for MockEnv {
 }
 
 impl MetadataEnv for MockEnv {
-    fn get_metadata(&self, _id: &Symbol) -> Option<&Metadata> {
+    fn get_metadata(&self, _id: &SymbolRef) -> Option<&Metadata> {
         None
     }
 }

@@ -70,35 +70,29 @@ let (/=) eq l r : [Eq a] -> a -> a -> Bool = if (eq.(==) l r) then False else Tr
 /// @implicit
 type Ord a = { eq : Eq a, compare : a -> a -> Ordering }
 
-/// Creates the `<=`, `<`, `>` and `>=` operators from an instance with `Ord`
-let make_Ord ord : Ord a -> _ =
-    let { eq, compare } = ord
+let (<=) ord l r : [Ord a] -> a -> a -> Bool =
+    match ord.compare l r with
+    | LT -> True
+    | EQ -> True
+    | GT -> False
 
-    let (<=) : a -> a -> Bool = \l r ->
-        match compare l r with
-        | LT -> True
-        | EQ -> True
-        | GT -> False
+let (<) ord l r : [Ord a] -> a -> a -> Bool =
+    match ord.compare l r with
+    | LT -> True
+    | EQ -> False
+    | GT -> False
 
-    let (<) : a -> a -> Bool = \l r ->
-        match compare l r with
-        | LT -> True
-        | EQ -> False
-        | GT -> False
+let (>) ord l r : [Ord a] -> a -> a -> Bool =
+    match ord.compare l r with
+    | LT -> False
+    | EQ -> False
+    | GT -> True
 
-    let (>) : a -> a -> Bool = \l r ->
-        match compare l r with
-        | LT -> False
-        | EQ -> False
-        | GT -> True
-
-    let (>=) : a -> a -> Bool = \l r ->
-        match compare l r with
-        | LT -> False
-        | EQ -> True
-        | GT -> True
-
-    { eq, compare, (<=), (<), (>), (>=) }
+let (>=) ord l r : [Ord a] -> a -> a -> Bool =
+    match ord.compare l r with
+    | LT -> False
+    | EQ -> True
+    | GT -> True
 
 /// The basic operation on numbers.
 /// Defined for both the primitive type `Int` and `Float`
@@ -288,7 +282,7 @@ let make_Traversable traversable : Traversable t -> _ =
     (==), (/=),
 
     Ord,
-    make_Ord,
+    (<), (<=), (>=), (>),
 
     Category,
     make_Category,

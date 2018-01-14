@@ -118,6 +118,14 @@ impl<T> FixedVec<T> {
             .map(|(i, boxed)| (i, unsafe { forget_lifetime(&**boxed) }))
     }
 
+    pub fn get(&self, index: usize) -> Option<&T> {
+        if index < self.len() {
+            Some(&self[index])
+        } else {
+            None
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.vec.borrow().len()
     }

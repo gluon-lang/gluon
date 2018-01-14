@@ -61,8 +61,16 @@ impl fmt::Display for RenameError {
     }
 }
 
+trait RenameEnv: MetadataEnv + TypeEnv {}
+
+impl<T> RenameEnv for T
+where
+    T: ?Sized + MetadataEnv + TypeEnv,
+{
+}
+
 struct Environment<'b> {
-    env: &'b TypeEnv,
+    env: &'b RenameEnv,
     stack: ScopedMap<Symbol, (Symbol, Span<BytePos>, ArcType)>,
     stack_types: ScopedMap<Symbol, Alias<Symbol, ArcType>>,
 }
@@ -351,11 +359,26 @@ where
                 }
                 Expr::Lambda(ref mut lambda) => {
                     self.env.stack.enter_scope();
-                    for (typ, arg) in types::arg_iter(&lambda.id.typ).zip(&mut lambda.args) {
+
+                    let mut iter = types::implicit_arg_iter(lambda.id.typ.remove_forall());
+                    for (i, typ) in iter.by_ref().enumerate() {
+                        let name = Symbol::from("implicit");
+                        let arg = pos::spanned(
+                            expr.span,
+                            TypedIdent {
+                                name: self.stack_var(name, expr.span, typ.clone()),
+                                typ: typ.clone(),
+                            },
+                        );
+                        lambda.args.insert(i, arg);
+                    }
+                    for (typ, arg) in types::arg_iter(iter.typ).zip(&mut lambda.args) {
                         arg.value.name =
                             self.stack_var(arg.value.name.clone(), expr.span, typ.clone());
                     }
+
                     self.visit_expr(&mut lambda.body);
+
                     self.env.stack.exit_scope();
                 }
                 Expr::TypeBindings(ref bindings, _) => {
@@ -410,14 +433,33 @@ where
             implicit_type: &ArcType,
         ) -> Result<SpannedExpr<Symbol>, RenameError> {
             info!("Trying to resolve implicit {}", implicit_type);
+
+            // FIXME HACK
+            {
+                let mut has_variable = false;
+                ::base::types::walk_type(implicit_type, |typ: &ArcType| {
+                    if let Type::Variable(_) = **typ {
+                        has_variable = true;
+                    }
+                });
+                if has_variable {
+                    return Err(::rename::RenameError::UnableToResolveImplicit(
+                        implicit_type.clone(),
+                    ));
+                }
+            }
+
             let is_implicit_type = implicit_type
                 .name()
                 .and_then(|typename| {
-                    self.metadata.get(typename).and_then(|metadata| {
-                        metadata.comment.as_ref().map(|comment| {
-                            ::metadata::attributes(&comment).any(|(key, _)| key == "implicit")
+                    self.metadata
+                        .get(typename)
+                        .or_else(|| self.env.env.get_metadata(typename))
+                        .and_then(|metadata| {
+                            metadata.comment.as_ref().map(|comment| {
+                                ::metadata::attributes(&comment).any(|(key, _)| key == "implicit")
+                            })
                         })
-                    })
                 })
                 .unwrap_or(false);
 
@@ -454,7 +496,10 @@ where
                         },
                     ))
                 }
-                None => Err(RenameError::UnableToResolveImplicit(implicit_type.clone())),
+                None => {
+                    debug!("Unable to resolve implicit for `{}`", implicit_type);
+                    Err(RenameError::UnableToResolveImplicit(implicit_type.clone()))
+                }
             }
         }
 
@@ -475,7 +520,9 @@ where
                 }
             };
 
-            trace!("Testing {}", id);
+            if is_implicit {
+                trace!("Testing {}: {}", id, typ);
+            }
 
             let state = ::unify_type::State::new(&self.env, &self.subs);
             if is_implicit

@@ -110,11 +110,11 @@ let primitive name f : String -> _ -> Map String Expr = prim_map.singleton name 
 type Binop a = a -> a -> a
 
 let primitive_binop name int_op float_op : _ -> Binop Int -> Binop Float -> Map String Expr =
-    let unpack x : Expr -> Lisp Int =
+    let unpack_int x : Expr -> Lisp Int =
         match x with
         | Int i -> wrap i
         | _ -> fail "Expected integer"
-    let unpack x : Expr -> Lisp Float =
+    let unpack_float x : Expr -> Lisp Float =
         match x with
         | Float f -> wrap f
         | _ -> fail "Expected float"
@@ -125,8 +125,8 @@ let primitive_binop name int_op float_op : _ -> Binop Int -> Binop Float -> Map 
         match xs with
         | Cons l ys ->
             match l with
-            | Int li -> map_lisp Int (fold unpack int_op li ys)
-            | Float lf -> map_lisp Float (fold unpack float_op lf ys)
+            | Int li -> map_lisp Int (fold unpack_int int_op li ys)
+            | Float lf -> map_lisp Float (fold unpack_float float_op lf ys)
             | _ -> fail ("Cant add " <> show.show l)
         | _ -> fail ("Expected two arguments to binop, got " <> show.show (List xs))
     primitive name f

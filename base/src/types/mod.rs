@@ -120,6 +120,16 @@ where
         })
     }
 
+    pub fn function_implicit<I>(&self, args: I, ret: T) -> T
+    where
+        I: IntoIterator<Item = T>,
+        I::IntoIter: DoubleEndedIterator<Item = T>,
+    {
+        args.into_iter().rev().fold(ret, |body, arg| {
+            T::from(Type::Function(ArgType::Implicit, arg, body))
+        })
+    }
+
     pub fn tuple<S, I>(&self, symbols: &mut S, elems: I) -> T
     where
         S: ?Sized + IdentEnv<Ident = Id>,
@@ -1463,6 +1473,40 @@ where
             self.typ = ret;
             arg
         })
+    }
+}
+
+pub struct ImplicitArgIterator<'a, T: 'a> {
+    /// The current type being iterated over. After `None` has been returned this is the return
+    /// type.
+    pub typ: &'a T,
+}
+
+/// Constructs an iterator over a functions arguments
+pub fn implicit_arg_iter<Id, T>(typ: &T) -> ImplicitArgIterator<T>
+where
+    T: Deref<Target = Type<Id, T>>,
+{
+    ImplicitArgIterator { typ: typ }
+}
+
+impl<'a, Id, T> Iterator for ImplicitArgIterator<'a, T>
+where
+    Id: 'a,
+    T: Deref<Target = Type<Id, T>>,
+{
+    type Item = &'a T;
+    fn next(&mut self) -> Option<&'a T> {
+        self.typ
+            .as_function_with_type()
+            .and_then(|(arg_type, arg, ret)| {
+                if arg_type == ArgType::Implicit {
+                    self.typ = ret;
+                    Some(arg)
+                } else {
+                    None
+                }
+            })
     }
 }
 

@@ -1,13 +1,13 @@
 use std::collections::BTreeMap;
 
-use symbol::Symbol;
+use symbol::SymbolRef;
 
 pub trait MetadataEnv {
-    fn get_metadata(&self, id: &Symbol) -> Option<&Metadata>;
+    fn get_metadata(&self, id: &SymbolRef) -> Option<&Metadata>;
 }
 
 impl<'a, T: ?Sized + MetadataEnv> MetadataEnv for &'a T {
-    fn get_metadata(&self, id: &Symbol) -> Option<&Metadata> {
+    fn get_metadata(&self, id: &SymbolRef) -> Option<&Metadata> {
         (**self).get_metadata(id)
     }
 }

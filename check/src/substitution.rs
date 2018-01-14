@@ -3,8 +3,6 @@ use std::default::Default;
 use std::fmt;
 use std::sync::Arc;
 
-use itertools::Itertools;
-
 use union_find::{QuickFindUf, Union, UnionByRank, UnionFind, UnionResult};
 
 use base::fnv::FnvMap;
@@ -171,7 +169,7 @@ where
 struct UnionByLevel<T> {
     rank: UnionByRank,
     level: u32,
-    constraints: FnvMap<Symbol, Arc<Vec<T>>>,
+    constraints: Vec<T>,
 }
 
 impl<T> Default for UnionByLevel<T> {
@@ -179,7 +177,7 @@ impl<T> Default for UnionByLevel<T> {
         UnionByLevel {
             rank: UnionByRank::default(),
             level: ::std::u32::MAX,
-            constraints: FnvMap::default(),
+            constraints: Vec::default(),
         }
     }
 }
@@ -281,14 +279,14 @@ impl<T: Substitutable> Substitution<T> {
         self.new_constrained_var(None)
     }
 
-    pub fn new_constrained_var(&self, constraint: Option<(Symbol, Constraints<T>)>) -> T
+    pub fn new_constrained_var(&self, constraint: Option<T>) -> T
     where
         T: Clone,
     {
         self.new_constrained_var_fn(constraint, |var| T::from_variable(self.factory.new(var)))
     }
 
-    pub fn new_constrained_var_fn<F>(&self, constraint: Option<(Symbol, Constraints<T>)>, f: F) -> T
+    pub fn new_constrained_var_fn<F>(&self, constraint: Option<T>, f: F) -> T
     where
         T: Clone,
         F: FnOnce(u32) -> T,
@@ -317,6 +315,10 @@ impl<T: Substitutable> Substitution<T> {
             },
             _ => typ,
         }
+    }
+
+    pub fn get_var(&self, var: u32) -> Option<&T> {
+        self.variables.get(var as usize)
     }
 
     pub fn find_type_for_var(&self, var: u32) -> Option<&T> {
@@ -356,14 +358,9 @@ impl<T: Substitutable> Substitution<T> {
         *level
     }
 
-    pub fn get_constraints(&self, var: u32) -> Option<RefMut<FnvMap<Symbol, Constraints<T>>>> {
+    pub fn get_constraints(&self, var: u32) -> RefMut<Vec<T>> {
         let union = self.union.borrow_mut();
-        let set = RefMut::map(union, |x| &mut x.get_mut(var as usize).constraints);
-        if set.is_empty() {
-            None
-        } else {
-            Some(set)
-        }
+        RefMut::map(union, |x| &mut x.get_mut(var as usize).constraints)
     }
 
     pub fn replace_variable(&self, typ: &T) -> Option<T>
@@ -379,10 +376,7 @@ impl<T: Substitutable> Substitution<T> {
 
 pub fn is_variable_unified(subs: &Substitution<ArcType>, var: &ArcType) -> bool {
     match **var {
-        Type::Variable(ref var) => match subs.find_type_for_var(var.id) {
-            Some(_) => true,
-            None => subs.get_constraints(var.id).is_some(),
-        },
+        Type::Variable(ref var) => subs.find_type_for_var(var.id).is_some(),
         _ => unreachable!(),
     }
 }
@@ -478,13 +472,8 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
                 return Ok(None);
             }
         }
-        let resolved_type = if typ.get_var().is_none() {
-            self.resolve_constraints(state, id, typ)?
-        } else {
-            resolved_type.cloned()
-        };
         {
-            let typ = resolved_type.as_ref().unwrap_or(typ);
+            let typ = resolved_type.unwrap_or(typ);
             match typ.get_var().map(|id| id.get_id()) {
                 Some(other_id) => {
                     self.union
@@ -498,73 +487,7 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
                 }
             }
         }
-        Ok(resolved_type)
-    }
-
-    pub fn resolve_constraints<P, S>(
-        &self,
-        mut state: P,
-        id: &T::Variable,
-        typ: &T,
-    ) -> Result<Option<T>, Error<T>>
-    where
-        T::Variable: Clone,
-        T: Unifiable<S> + fmt::Display,
-        P: FnMut() -> S,
-    {
-        use std::borrow::Cow;
-
-        let constraints = self.union
-            .borrow_mut()
-            .get(id.get_id() as usize)
-            .constraints
-            .clone();
-
-        let mut typ = Cow::Borrowed(typ);
-        for (constraint_name, constraint) in &constraints {
-            debug!(
-                "Attempting to resolve `{}` to the constraints {}:\n{}",
-                typ,
-                constraint_name,
-                constraint.iter().format("\n")
-            );
-            let resolved = constraint
-                .iter()
-                .filter_map(|constraint_type| {
-                    let constraint_type = constraint_type.instantiate(self, &FnvMap::default());
-                    match equivalent(state(), self, &constraint_type, &typ) {
-                        Ok(()) => Some(constraint_type),
-                        Err(()) => None,
-                    }
-                })
-                .next();
-            match resolved {
-                None => {
-                    debug!("Unable to resolve {}", typ);
-                    return Err(Error::Constraint(typ.into_owned(), constraint.clone()));
-                }
-                Some(resolved) => {
-                    // Only replace the type if it is replaced by a lower level variable or a
-                    // concrete type
-                    match (
-                        typ.get_var().map(|x| x.get_id()),
-                        resolved.get_var().map(|x| x.get_id()),
-                    ) {
-                        (Some(_), Some(_)) | (_, None) => {
-                            typ = Cow::Owned(resolved);
-                        }
-                        _ => (),
-                    }
-                }
-            }
-        }
-        if !constraints.is_empty() {
-            debug!("Resolved {}", typ);
-        }
-        Ok(match typ {
-            Cow::Borrowed(_) => None,
-            Cow::Owned(typ) => Some(typ),
-        })
+        Ok(resolved_type.cloned())
     }
 }
 

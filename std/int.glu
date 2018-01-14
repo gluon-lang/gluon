@@ -31,16 +31,16 @@ let multiplicative =
 
     { semigroup, monoid }
 
-let eq = {
+let eq : Eq Int = {
     (==) = \l r -> l #Int== r
 }
 
-let ord = {
+let ord : Ord Int = {
     eq = eq,
     compare = \l r -> if l #Int< r then LT else if l #Int== r then EQ else GT,
 }
 
-let num = {
+let num: Num Int = {
     ord = ord,
     (+) = additive.semigroup.append,
     (-) = \l r -> l #Int- r,

@@ -974,14 +974,18 @@ pub fn new_skolem_scope(
     constraints: &FnvMap<Symbol, Constraints<ArcType>>,
     typ: &ArcType,
 ) -> ArcType {
-    types::walk_move_type(typ.clone(), &mut |typ| {
+    let mut id_to_var = FnvMap::default();
+    let mut id_to_constraint = FnvMap::default();
+
+    let new_type = types::walk_move_type(typ.clone(), &mut |typ| {
         if let Type::Forall(ref params, ref inner_type, None) = **typ {
             let mut skolem = Vec::new();
             for param in params {
                 let constraint = constraints.get(&param.id).cloned();
                 let var = subs.new_constrained_var_fn(
-                    constraint.map(|constraint| (param.id.clone(), constraint.clone())),
+                    None, // TODO constraint.map(|constraint| (param.id.clone(), constraint.clone())),
                     |id| {
+                        id_to_var.insert(param.id.clone(), id);
                         Type::variable(TypeVariable {
                             id,
                             kind: param.kind.clone(),
@@ -996,9 +1000,41 @@ pub fn new_skolem_scope(
                 Some(skolem),
             )))
         } else {
+            if let Type::Function(ArgType::Implicit, ref arg, _) = **typ {
+                types::walk_move_type(arg.clone(), &mut |typ| {
+                    if let Type::Generic(ref gen) = **typ {
+                        if !constraints.contains_key(&gen.id) {
+                            id_to_constraint
+                                .entry(gen.id.clone())
+                                .or_insert(Vec::new())
+                                .push(arg.clone());
+                        }
+                    }
+                    None
+                });
+            }
             None
         }
-    })
+    });
+
+    for (id, constraints) in id_to_constraint {
+        if let Some(&var) = id_to_var.get(&id) {
+            let cs: AppVec<_> = constraints
+                .into_iter()
+                .map(|typ| {
+                    types::walk_move_type(typ, &mut |typ: &ArcType| match **typ {
+                        Type::Generic(ref gen) => match id_to_var.get(&gen.id) {
+                            Some(var) => subs.get_var(*var).cloned(),
+                            None => None,
+                        },
+                        _ => None,
+                    })
+                })
+                .collect();
+            subs.get_constraints(var).extend(cs);
+        }
+    }
+    new_type
 }
 
 pub fn top_skolem_scope(
@@ -1009,10 +1045,8 @@ pub fn top_skolem_scope(
     if let Type::Forall(ref params, ref inner_type, None) = **typ {
         let mut skolem = Vec::new();
         for param in params {
-            let constraint = constraints.get(&param.id).cloned();
-            let var = subs.new_constrained_var(
-                constraint.map(|constraint| (param.id.clone(), constraint.clone())),
-            );
+            // TODO let constraint = constraints.get(&param.id).cloned();
+            let var = subs.new_constrained_var(None);
             skolem.push(var.clone());
         }
         ArcType::from(Type::Forall(

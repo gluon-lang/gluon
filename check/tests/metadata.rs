@@ -8,7 +8,7 @@ extern crate gluon_parser as parser;
 
 use base::ast::SpannedExpr;
 use base::metadata::{Metadata, MetadataEnv};
-use base::symbol::Symbol;
+use base::symbol::{Symbol, SymbolRef};
 
 fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
     check::metadata::metadata(env, expr).0
@@ -19,7 +19,7 @@ mod support;
 struct MockEnv;
 
 impl MetadataEnv for MockEnv {
-    fn get_metadata(&self, _id: &Symbol) -> Option<&Metadata> {
+    fn get_metadata(&self, _id: &SymbolRef) -> Option<&Metadata> {
         None
     }
 }

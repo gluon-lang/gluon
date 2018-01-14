@@ -1,7 +1,7 @@
 let prelude = import! std.prelude
 let { run, writer, assert_eq } = import! std.test
 let int = import! std.int
-let { (*>) } = prelude.make_Applicative writer.applicative
+let { (*>) } = import! std.applicative
 
 let assert_ieq = assert_eq int.show int.eq
 

@@ -289,3 +289,105 @@ let test app f xs: [Applicative f] -> (a -> b) -> f a -> f b =
     let result = support::typecheck(text);
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn wrap_call_selection() {
+    let _ = ::env_logger::init();
+    let text = r#"
+
+/// @implicit
+type Applicative (f : Type -> Type) = {
+    wrap : forall a . a -> f a,
+}
+
+let wrap app : [Applicative f] -> a -> f a = app.wrap
+
+type Test a = | Test a
+
+let applicative : Applicative Test = {
+    wrap = Test
+}
+
+let x: a -> Test Int = \_ -> wrap 123
+()
+"#;
+    let result = support::typecheck(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn unknown_implicit_arg_type() {
+    let _ = ::env_logger::init();
+    let text = r#"
+
+/// @implicit
+type Applicative (f : Type -> Type) = {
+    wrap : forall a . a -> f a,
+}
+
+let wrap app : [Applicative f] -> a -> f a = app.wrap
+
+type Test a = | Test a
+
+let applicative : Applicative Test = {
+    wrap = Test
+}
+
+\_ -> wrap 123
+()
+"#;
+    let (expr, result) = support::typecheck_expr(text);
+
+    struct Visitor {
+        done: bool,
+    }
+    impl<'a> base::ast::Visitor<'a> for Visitor {
+        type Ident = Symbol;
+
+        fn visit_expr(&mut self, expr: &'a SpannedExpr<Symbol>) {
+            match expr.value {
+                ast::Expr::Lambda(ref lambda) => {
+                    assert_eq!(lambda.args.len(), 2);
+                    assert_eq!(
+                        lambda.id.typ.to_string(),
+                        "forall a a0 . [test.Applicative a0] -> a -> a0 Int"
+                    );
+                    self.done = true;
+                }
+                _ => (),
+            }
+            base::ast::walk_expr(self, expr)
+        }
+    }
+    let mut visitor = Visitor { done: false };
+    visitor.visit_expr(&expr);
+    assert!(visitor.done);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn dont_insert_extra_implicit_arg_type() {
+    let _ = ::env_logger::init();
+    let text = r#"
+
+/// @implicit
+type Applicative (f : Type -> Type) = {
+    wrap : forall a . a -> f a,
+}
+
+let wrap app : [Applicative f] -> a -> f a = app.wrap
+
+type Test a = | Test a
+
+let applicative : Applicative Test = {
+    wrap = Test
+}
+
+wrap
+"#;
+    let result = support::typecheck(text);
+    assert_req!(
+        result.map(|typ| typ.to_string()),
+        Ok("forall a f . [test.Applicative f] -> a -> f a")
+    );
+}

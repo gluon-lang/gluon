@@ -214,6 +214,15 @@ r"
 true
 }
 
+test_expr!{ implicit_call_without_type_in_scope,
+r"
+let int = import! std.int
+let prelude @ { (==) } = import! std.prelude
+99 == 100
+",
+false
+}
+
 test_expr!{ partial_application,
 r"
 let f x y = x #Int+ y in
@@ -391,11 +400,14 @@ f 0 (\r -> { x = r #Int+ 1 })
 fn overloaded_bindings() {
     let _ = ::env_logger::init();
     let text = r#"
-let (+) x y = x #Int+ y
-in
-let (+) x y = x #Float+ y
-in
-{ x = 1 + 2, y = 1.0 + 2.0 }
+/// @implicit
+let add_int x y = x #Int+ y
+/// @implicit
+let add_float x y = x #Float+ y
+
+let add f: [a -> a -> a] -> a -> a -> a = f
+
+{ x = add 1 2, y = add 1.0 2.0 }
 "#;
     let vm = make_vm();
     let result = run_expr::<OpaqueValue<&Thread, Hole>>(&vm, text);
@@ -406,22 +418,6 @@ in
         }
         _ => panic!(),
     }
-}
-
-test_expr!{ through_overloaded_alias,
-r#"
-type Test a = { id : a -> a }
-in
-let test_Int: Test Int = { id = \x -> 0 }
-in
-let test_String: Test String = { id = \x -> "" }
-in
-let { id } = test_Int
-in
-let { id } = test_String
-in id 1
-"#,
-0i32
 }
 
 test_expr!{ record_base_duplicate_fields,
@@ -483,7 +479,7 @@ fn rename_types_after_binding() {
 let list  = import! std.list
 in
 let { List } = list
-and { (==) }: Eq (List Int) = list.eq { (==) }
+and eq_list: Eq (List Int) = list.eq { (==) }
 in Cons 1 Nil == Nil
 "#;
     let mut vm = make_vm();

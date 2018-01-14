@@ -1,14 +1,12 @@
 use std::fmt;
-use std::hash::Hash;
 
 use pretty::{Arena, DocAllocator};
 
 use base::error::Errors;
-use base::fnv::FnvMap;
-use base::symbol::{Symbol, Symbols};
+use base::symbol::Symbol;
 use base::types::ToDoc;
 
-use substitution::{self, Substitutable, Substitution, Variable};
+use substitution::{self, Substitutable, Substitution};
 
 #[derive(Debug, PartialEq)]
 pub enum Error<T, E> {
@@ -210,86 +208,6 @@ pub trait GenericVariant {
     fn new_generic(symbol: Symbol, kind: &Self) -> Self;
 }
 
-/// Calculates the intersection between two types. The intersection between two types is the most
-/// specialized type which both types can sucessfully unify to.
-///
-/// # Example
-/// intersect (Int -> Int -> Bool) <=> (Float -> Float -> Bool) ==> (a -> a -> Bool)
-pub fn intersection<S, T>(
-    subs: &Substitution<T>,
-    symbols: &mut Symbols,
-    state: S,
-    l: &T,
-    r: &T,
-) -> (FnvMap<(T, T), Symbol>, T)
-where
-    T: GenericVariant + Unifiable<S> + Eq + Clone + Hash,
-    T::Variable: Clone,
-{
-    let mut unifier = UnifierState {
-        state: state,
-        unifier: Intersect {
-            constraints: FnvMap::default(),
-            symbols: symbols,
-            subs: subs,
-        },
-    };
-    let typ = unifier.try_match(l, r).unwrap_or_else(|| l.clone());
-    (unifier.unifier.constraints, typ)
-}
-
-struct Intersect<'m, T: 'm>
-where
-    T: Substitutable,
-{
-    constraints: FnvMap<(T, T), Symbol>,
-    symbols: &'m mut Symbols,
-    subs: &'m Substitution<T>,
-}
-
-impl<'m, S, T> Unifier<S, T> for UnifierState<S, Intersect<'m, T>>
-where
-    T: GenericVariant + Unifiable<S> + Eq + Clone + Hash,
-    T::Variable: Clone,
-{
-    fn report_error(&mut self, _error: Error<T, T::Error>) {}
-
-    fn try_match_res(&mut self, l: &T, r: &T) -> Result<Option<T>, Error<T, T::Error>> {
-        let subs = self.unifier.subs;
-        let l = subs.real(l);
-        let r = subs.real(r);
-        match (l.get_var(), r.get_var()) {
-            (Some(l), Some(r)) if l.get_id() == r.get_id() => Ok(None),
-            _ => {
-                match l.zip_match(r, self) {
-                    Ok(typ) => Ok(typ),
-                    Err(_) => {
-                        // If the immediate level of `l` and `r` does not match, record
-                        // the mismatched types return a type variable in their place
-                        // (Reusing a variable if the same mismatch was already seen)
-                        let symbols = &mut self.unifier.symbols;
-                        let generic_symbol = self.unifier
-                            .constraints
-                            .entry((l.clone(), r.clone()))
-                            .or_insert_with(|| {
-                                let len = symbols.len();
-                                symbols.symbol(format!("abc{}", len))
-                            });
-                        Ok(Some(T::new_generic(generic_symbol.clone(), l)))
-                    }
-                }
-            }
-        }
-    }
-    fn error_type(&mut self) -> Option<T> {
-        None
-    }
-
-    fn allow_returned_type_replacement(&self) -> bool {
-        false
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
@@ -297,8 +215,9 @@ mod test {
     use std::fmt;
 
     use base::error::Errors;
+    use base::fnv::FnvMap;
     use base::merge::merge;
-    use base::symbol::{Symbol, Symbols};
+    use base::symbol::Symbol;
     use base::types::Walker;
 
     use substitution::{Constraints, Substitutable, Substitution};
@@ -473,27 +392,5 @@ mod test {
                 Error::Substitution(::substitution::Error::Occurs(var1, fun.clone())),
             ]))
         );
-    }
-
-    #[test]
-    fn intersection_test() {
-        fn intersection(subs: &Substitution<TType>, l: &TType, r: &TType) -> TType {
-            let mut symbols = Symbols::new();
-            super::intersection(subs, &mut symbols, (), l, r).1
-        }
-
-        let subs = Substitution::<TType>::new(());
-        let var1 = subs.new_var();
-        let string = TType(Box::new(Type::Ident("String".into())));
-        let int = TType(Box::new(Type::Ident("Int".into())));
-
-        let string_fun = mk_fn(&string, &string);
-        let int_fun = mk_fn(&int, &int);
-        let result = intersection(&subs, &int_fun, &string_fun);
-        assert_eq!(result, mk_fn(&TType::ident("abc0"), &TType::ident("abc0")));
-
-        let var_fun = mk_fn(&var1, &var1);
-        let result = intersection(&subs, &int_fun, &var_fun);
-        assert_eq!(result, mk_fn(&TType::ident("abc0"), &TType::ident("abc0")));
     }
 }

@@ -27,7 +27,7 @@ let { List, of }  = import! std.list
     Compiler::new()
         .load_script_async(&vm, "test", text)
         .sync_or_error()
-        .unwrap();
+        .unwrap_or_else(|err| panic!("{}", err));
 
     let env = vm.get_env();
     assert!(env.get_metadata("test.of").is_ok());
