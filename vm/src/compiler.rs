@@ -783,6 +783,8 @@ impl<'a> Compiler<'a> {
                         Pattern::Literal(_) => {
                             function.function.instructions[start_index] =
                                 CJump(function.function.instructions.len() as VmIndex);
+                            // Add a dummy variable to mark where the literal itself is stored
+                            function.new_stack_var(self, self.empty_symbol.clone(), Type::hole());
                         }
                     }
                     self.compile(&alt.expr, function, tail_position)?;

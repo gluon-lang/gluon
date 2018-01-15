@@ -2132,4 +2132,49 @@ mod tests {
 
         check_translation(expr_str, expected_str);
     }
+
+    #[test]
+    fn match_record_with_literal() {
+        let expr_str = r#"
+            match { x = 2, y = 3 } with
+            | { x = 2, y = 3 } -> "4"
+            | _ -> "6"
+        "#;
+
+        let expected_str = r#"
+            let p = { x = 2, y = 3 } in
+            match p with
+            | { x = x, y = y } ->
+                match x with
+                | 2 ->
+                    match y with
+                    | 3 -> "4"
+                    | _ -> "6"
+                    end
+                | _ -> "6"
+                end
+            end
+        "#;
+
+        check_translation(expr_str, expected_str);
+    }
+
+    #[test]
+    fn match_constructor_with_literal() {
+        let expr_str = r#"
+            match Test 2 with
+            | Other -> 0
+            | _ -> 2
+        "#;
+
+        let expected_str = r#"
+            let p = Test 2 in
+            match p with
+            | Other -> 0
+            | _ -> 2
+            end
+        "#;
+
+        check_translation(expr_str, expected_str);
+    }
 }
