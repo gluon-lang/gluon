@@ -26,6 +26,14 @@ let ns input =
     | B -> 9
     | _ -> 10
 
+type R1 = { x: Int }
+
+let r1 input =
+    match input with
+    | { x = 2 } -> 11
+    | { x = 3 } -> 12
+    | _ -> 13
+
 let match_ns =
     assert_ieq (ns (A 1)) 7
         *> assert_ieq (ns (A 2)) 8
@@ -43,7 +51,12 @@ let match_strings =
         *> assert_ieq (strings "B") 5
         *> assert_ieq (strings "") 6
 
+let match_r1 =
+    assert_ieq (r1 { x = 2 }) 11
+        *> assert_ieq (r1 { x = 3 }) 12
+        *> assert_ieq (r1 { x = 4 }) 13
+
 let tests =
-    match_ints *> match_strings *> match_ns
+    match_ints *> match_strings *> match_ns *> match_r1
 
 run tests
