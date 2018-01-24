@@ -377,7 +377,7 @@ Alternative: Alternative<Id> = {
             expr: super::shrink_hidden_spans(expr),
         }
     },
-    "|" <pat: Sp<NoErrorPattern>> <end: @L> <err: !> => {
+    "|" <pat: Sp<NoErrorPattern>> <err: !> <end: @R>  => {
         errors.push(err.error);
         let span = pos::Span::new(pat.span.end, end);
         Alternative {
@@ -385,7 +385,7 @@ Alternative: Alternative<Id> = {
             expr: pos::spanned(span, Expr::Error(None)),
         }
     },
-    "|" <start: @R> <end: @L> <err: !> => {
+    "|" <start: @R> <err: !> <end: @R>  => {
         errors.push(err.error);
         let span = pos::Span::new(start, end);
         Alternative {
