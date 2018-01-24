@@ -309,7 +309,10 @@ fn incomplete_let_binding_2() {
         let_("test", id("io"), no_loc(Expr::Error(None)))
     );
 
-    let errors = vec![no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![]))];
+    let errors = vec![
+        no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![])),
+        no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![])),
+    ];
     assert_eq!(remove_expected(err), ParseErrors::from(errors));
 }
 
