@@ -135,7 +135,6 @@ where
     }
 }
 
-
 impl<'vm, T> Pushable<'vm> for Ser<T>
 where
     T: Serialize,
@@ -555,7 +554,6 @@ impl<'a, 'vm> ser::SerializeStructVariant for RecordSerializer<'a, 'vm> {
         self.serializer.alloc(self.variant_index, self.values)
     }
 }
-
 
 #[cfg(test)]
 mod tests {

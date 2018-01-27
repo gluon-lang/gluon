@@ -183,14 +183,19 @@ impl FunctionEnvs {
             let upvars_are_globals = self.envs.len() == 1;
             if !upvars_are_globals {
                 let function = &mut **self;
-                function.function.debug_info.upvars.extend(
-                    function.free_vars.iter().map(|&(ref name, ref typ)| {
-                        UpvarInfo {
-                            name: name.declared_name().to_string(),
-                            typ: typ.clone(),
-                        }
-                    }),
-                );
+                function
+                    .function
+                    .debug_info
+                    .upvars
+                    .extend(
+                        function
+                            .free_vars
+                            .iter()
+                            .map(|&(ref name, ref typ)| UpvarInfo {
+                                name: name.declared_name().to_string(),
+                                typ: typ.clone(),
+                            }),
+                    );
             }
         }
 
@@ -269,7 +274,6 @@ impl FunctionEnv {
         }
         Ok(())
     }
-
 
     fn add_record_map(&mut self, fields: Vec<Symbol>) -> VmIndex {
         match self.function.records.iter().position(|t| *t == fields) {
@@ -553,9 +557,10 @@ impl<'a> Compiler<'a> {
             // Zero argument constructors can be compiled as integers
             Constructor(tag, 0) => function.emit(Construct { tag: tag, args: 0 }),
             Constructor(..) => {
-                return Err(Error::Message(
-                    format!("Constructor `{}` is not fully applied", id),
-                ))
+                return Err(Error::Message(format!(
+                    "Constructor `{}` is not fully applied",
+                    id
+                )))
             }
         }
         Ok(())
