@@ -1,11 +1,22 @@
 extern crate env_logger;
 
+#[macro_use]
+extern crate serde_derive;
+
+#[macro_use]
+extern crate collect_mac;
+
+extern crate futures;
 extern crate gluon;
 extern crate tensile;
 
-use gluon::base::types::ArcType;
-use gluon::vm::api::{Hole, OpaqueValue};
-use gluon::{new_vm, Compiler, Thread};
+use gluon::base::types::{ArcType, Type};
+use gluon::vm::api::{Getable, Hole, OpaqueValue, OwnedFunction, VmType, IO};
+use gluon::vm::api::de::De;
+use gluon::vm::thread::ThreadInternal;
+use gluon::{new_vm, Compiler, RootedThread, Thread};
+
+use futures::{future, Future};
 
 use std::io::Read;
 use std::fmt;
@@ -50,6 +61,76 @@ fn test_files(path: &str) -> Result<Vec<PathBuf>, Box<Error>> {
     Ok(paths)
 }
 
+macro_rules! define_test_type {
+    ($name: ident) => {
+        impl VmType for $name {
+            type Type = $name;
+            fn make_type(vm: &Thread) -> ArcType {
+                let typ = concat!("std.test.", stringify!($name));
+                Type::app(
+                    (*vm.global_env().get_env().find_type_info(typ).unwrap())
+                        .clone()
+                        .into_type(),
+                    collect![Type::unit()],
+                )
+            }
+        }
+    }
+}
+
+#[derive(Deserialize)]
+enum TestCase {
+    Test {
+        name: String,
+        test: OpaqueValue<RootedThread, Test>,
+    },
+    Group {
+        name: String,
+        tests: Vec<TestCase>,
+    },
+}
+
+define_test_type! { TestCase }
+
+struct Test;
+
+define_test_type! { Test }
+
+impl TestCase {
+    fn into_tensile_test(self) -> tensile::Test<String> {
+        match self {
+            TestCase::Test { name, test } => {
+                let test = ::std::panic::AssertUnwindSafe(test);
+                tensile::test(name, move || {
+                    let mut action: OwnedFunction<
+                        fn(OpaqueValue<RootedThread, Test>) -> (),
+                    > = test.vm()
+                        .get_global("std.test.run")
+                        .map_err(|err| err.to_string())?;
+                    action.call(test.0).map_err(|err| err.to_string())
+                })
+            }
+            TestCase::Group { name, tests } => tensile::Test::Group {
+                name,
+                tests: tests.into_iter().map(TestCase::into_tensile_test).collect(),
+            },
+        }
+    }
+}
+
+fn make_test<'t>(vm: &'t Thread, name: &str, filename: &Path) -> Result<TestCase, String> {
+    let mut compiler = Compiler::new();
+
+    let mut file = File::open(&filename).map_err(|err| err.to_string())?;
+    let mut text = String::new();
+    file.read_to_string(&mut text)
+        .map_err(|err| err.to_string())?;
+    match compiler.run_expr_async(&vm, &name, &text).sync_or_error() {
+        Ok((De(test), _)) => Ok(test),
+        Err(err) => Err(err.to_string()),
+    }
+}
+
 fn run_file<'t>(
     vm: &'t Thread,
     name: &str,
@@ -78,7 +159,7 @@ fn main_() -> Result<(), Box<Error>> {
 
     let vm = new_vm();
     Compiler::new()
-        .load_file_async(&vm, "std/prelude.glu")
+        .load_file_async(&vm, "std/test.glu")
         .sync_or_error()?;
 
     let iter = test_files("tests/pass")?.into_iter();
@@ -88,9 +169,10 @@ fn main_() -> Result<(), Box<Error>> {
 
         let vm = vm.new_thread().unwrap();
 
-        tensile::test(name.clone(), move || -> Result<(), String> {
-            run_file(&vm, &name, &filename).map(|_| ())
-        })
+        match make_test(&vm, &name, &filename) {
+            Ok(test) => test.into_tensile_test(),
+            Err(err) => tensile::test(name, || Err(err)),
+        }
     }).collect();
 
     let iter = test_files("tests/fail")?.into_iter();
@@ -103,9 +185,8 @@ fn main_() -> Result<(), Box<Error>> {
         tensile::test(name.clone(), move || -> Result<(), String> {
             match run_file(&vm, &name, &filename) {
                 Ok(x) => Err(format!(
-                    "Expected test '{}' to fail got {:?}",
+                    "Expected test '{}' to fail",
                     filename.to_str().unwrap(),
-                    x
                 )),
                 Err(_) => Ok(()),
             }

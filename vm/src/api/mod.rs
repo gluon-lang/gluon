@@ -26,6 +26,9 @@ use futures::{Async, Future};
 
 pub use value::Userdata;
 
+#[cfg(feature = "serde")]
+use serde::de::{Deserialize, Deserializer};
+
 #[macro_use]
 pub mod mac;
 #[cfg(feature = "serde")]
@@ -1131,6 +1134,17 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for IO<T> {
 pub struct OpaqueValue<T, V>(RootedValue<T>, PhantomData<V>)
 where
     T: Deref<Target = Thread>;
+
+#[cfg(feature = "serde")]
+impl<'de, V> Deserialize<'de> for OpaqueValue<RootedThread, V> {
+    fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = self::de::deserialize_raw_value(deserializer)?;
+        Ok(Self::from_value(value))
+    }
+}
 
 impl<T, V> fmt::Debug for OpaqueValue<T, V>
 where

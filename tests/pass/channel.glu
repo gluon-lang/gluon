@@ -1,4 +1,4 @@
-let { Test, run, writer, assert_eq, ? }  = import! std.test
+let { Test, run, writer, assert_eq, test, group, ? }  = import! std.test
 let prelude  = import! std.prelude
 let { Applicative, (*>), ? } = import! std.applicative
 let int = import! std.int
@@ -12,9 +12,9 @@ send sender 0
 send sender 1
 send sender 2
 
-let tests : Test () =
+let tests : Test () = 
     assert_eq (recv receiver) (Ok 0)
         *> assert_eq (recv receiver) (Ok 1)
         *> assert_eq (recv receiver) (Ok 2)
 
-run tests
+test "channel" tests

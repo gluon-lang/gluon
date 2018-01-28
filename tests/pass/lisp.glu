@@ -1,5 +1,5 @@
 let prelude = import! std.prelude
-let { Test, run, writer, assert_eq, ? } = import! std.test
+let { Test, run, writer, assert_eq, test, group, ? } = import! std.test
 let { Applicative, (*>), ? } = import! std.applicative
 let list @ { List, ? } = import! std.list
 
@@ -10,49 +10,56 @@ let parser = import! std.parser
 let lisp @ { Expr, ? } = import! "examples/lisp/lisp.glu"
 
 let parser_tests =
-    assert_eq (parser.parse lisp.expr "test") (Ok (Atom "test"))
-        *> assert_eq (parser.parse lisp.expr "()") (Ok (List Nil))
-        *> assert_eq
+    group "parser" [
+        test "atom" (assert_eq (parser.parse lisp.expr "test") (Ok (Atom "test"))),
+        test "nil" (assert_eq (parser.parse lisp.expr "()") (Ok (List Nil))),
+        test "list" (assert_eq
             (parser.parse lisp.expr "(test abc)")
-            (Ok (List (Cons (Atom "test") (Cons (Atom "abc") Nil))))
-        *> assert_eq
+            (Ok (List (Cons (Atom "test") (Cons (Atom "abc") Nil))))),
+        test "list_with_whitespace" (assert_eq
             (parser.parse lisp.expr " ( test abc ) ")
-            (Ok (List (Cons (Atom "test") (Cons (Atom "abc") Nil))))
-        *> assert_eq
+            (Ok (List (Cons (Atom "test") (Cons (Atom "abc") Nil))))),
+        test "nested_list" (assert_eq
             (parser.parse lisp.expr "(test (abc) d)")
             (Ok
                 (List
                     (Cons
                         (Atom "test")
-                        (Cons (List (Cons (Atom "abc") Nil)) (Cons (Atom "d") Nil)))))
-        *> assert_eq
+                        (Cons (List (Cons (Atom "abc") Nil)) (Cons (Atom "d") Nil)))))),
+        test "list_with_int" (assert_eq
             (parser.parse lisp.expr "(test 123)")
-            (Ok (List (Cons (Atom "test") (Cons (Int 123) Nil))))
-        *> assert_eq (parser.parse lisp.expr "123.45") (Ok (Float 123.45))
+            (Ok (List (Cons (Atom "test") (Cons (Int 123) Nil))))),
+        test "float" (assert_eq (parser.parse lisp.expr "123.45") (Ok (Float 123.45))),
+    ]
 
 let { (>>=) } = import! std.prelude
 let eval_string s = parser.parse lisp.expr s >>= lisp.eval
 let eval_string_seq s = parser.parse (parser.many lisp.expr) s >>= lisp.eval_seq
 
 let eval_tests =
-    assert_eq (lisp.eval (Int 123)) (Ok (Int 123))
-        *> assert_eq
+    group "eval" [
+        test "int" (assert_eq (lisp.eval (Int 123)) (Ok (Int 123))),
+        test "add" (assert_eq
             (lisp.eval (List (Cons (Atom "+") (Cons (Int 1) (Cons (Int 2) Nil)))))
-            (Ok (Int 3))
-        *> assert_eq (eval_string "()") (Ok (List Nil))
-        *> assert_eq (eval_string "(+ 1 2 3 4)") (Ok (Int (1 + 2 + 3 + 4)))
-        *> assert_eq (eval_string "(+ 1.0 2.5 3.14)") (Ok (Float (1.0 + 2.5 + 3.14)))
-        *> assert_eq (eval_string "(+ 1.0 (+ 2.5 3.14))") (Ok (Float (1.0 + 2.5 + 3.14)))
-        *> assert_eq (eval_string "(+ (+ 1 2) (+ 3 4))") (Ok (Int (1 + 2 + 3 + 4)))
-        *> assert_eq (eval_string "(- (* 2 3) (/ 2 2))") (Ok (Int ((2 * 3) - (2 / 2))))
+            (Ok (Int 3))),
+        test "nil" (assert_eq (eval_string "()") (Ok (List Nil))),
+        test "add_multiple" (assert_eq (eval_string "(+ 1 2 3 4)") (Ok (Int (1 + 2 + 3 + 4)))),
+        test "add_multiple_float" (assert_eq (eval_string "(+ 1.0 2.5 3.14)") (Ok (Float (1.0 + 2.5 + 3.14)))),
+        test "add_multiple_float_order" (assert_eq (eval_string "(+ 1.0 (+ 2.5 3.14))") (Ok (Float (1.0 + 2.5 + 3.14)))),
+        test "add_multiple_int" (assert_eq (eval_string "(+ (+ 1 2) (+ 3 4))") (Ok (Int (1 + 2 + 3 + 4)))),
+        test "mixed_operations_int" (assert_eq (eval_string "(- (* 2 3) (/ 2 2))") (Ok (Int ((2 * 3) - (2 / 2))))),
+    ]
 
 let define_tests =
-    assert_eq (eval_string "(define x 3)") (Ok (Int 3))
-        *> assert_eq (eval_string_seq "(define y 3) y") (Ok (Int 3))
-        *> assert_eq (eval_string_seq "(define (id x) x) (id 4)") (Ok (Int 4))
-        *> assert_eq (eval_string_seq "(define (succ x) (+ x 1)) (succ 4)") (Ok (Int 5))
+    group "define" [
+        test "define" (assert_eq (eval_string "(define x 3)") (Ok (Int 3))),
+        test "define_and_use" (assert_eq (eval_string_seq "(define y 3) y") (Ok (Int 3))),
+        test "id" (assert_eq (eval_string_seq "(define (id x) x) (id 4)") (Ok (Int 4))),
+        test "succ" (assert_eq (eval_string_seq "(define (succ x) (+ x 1)) (succ 4)") (Ok (Int 5))),
+    ]
 
-let tests : Test () =
-    parser_tests *> eval_tests *> define_tests
-
-run tests
+group "lisp" [
+    parser_tests,
+    eval_tests,
+    define_tests,
+]

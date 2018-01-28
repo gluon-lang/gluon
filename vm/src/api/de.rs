@@ -1,7 +1,9 @@
 //! Gluon -> Rust value conversion via the `serde::Deserialize` trait
 
+use std::cell::RefCell;
 use std::fmt;
 use std::marker::PhantomData;
+use std::result::Result as StdResult;
 
 use base::resolve;
 use base::types::{arg_iter, ArcType, BuiltinType, Type, TypeEnv};
@@ -9,7 +11,7 @@ use base::symbol::Symbol;
 
 use {Error as VmError, Result, Variants};
 use api::{Getable, ValueRef, VmType};
-use thread::{Thread, ThreadInternal};
+use thread::{RootedThread, RootedValue, Thread, ThreadInternal};
 
 use serde::de::{self, DeserializeOwned, DeserializeSeed, EnumAccess, Error, IntoDeserializer,
                 MapAccess, SeqAccess, VariantAccess, Visitor};
@@ -246,6 +248,32 @@ impl<'de, 't> Deserializer<'de, 't> {
         }
     }
 }
+
+thread_local! {
+    static VALUE_TRANSFER: RefCell<Option<RootedValue<RootedThread>>> = RefCell::new(None);
+}
+
+/// Allows deserializing a `Value` as-is. Only works with the `Deserializer` defined in this module
+pub fn deserialize_raw_value<'de, D>(
+    deserializer: D,
+) -> StdResult<RootedValue<RootedThread>, D::Error>
+where
+    D: de::Deserializer<'de>,
+{
+    use serde::Deserialize;
+
+    VALUE_TRANSFER.with(|t| {
+        assert!(t.borrow().is_none());
+    });
+
+    RawValueDeserialize::deserialize(deserializer)?;
+
+    let opt_value = VALUE_TRANSFER.with(|t| t.borrow_mut().take());
+    opt_value.ok_or_else(|| D::Error::custom("Unable to deserialize raw value"))
+}
+
+#[derive(Deserialize)]
+struct RawValueDeserialize;
 
 impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
     type Error = VmError;
@@ -486,10 +514,17 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
         }
     }
 
-    fn deserialize_unit_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
+    fn deserialize_unit_struct<V>(self, name: &'static str, visitor: V) -> Result<V::Value>
     where
         V: Visitor<'de>,
     {
+        if name == "RawValueDeserialize" {
+            VALUE_TRANSFER.with(|t| {
+                let mut store = t.borrow_mut();
+                assert!(store.is_none());
+                *store = Some(self.state.thread.root_value(self.input.get_value()));
+            });
+        }
         self.deserialize_unit(visitor)
     }
 

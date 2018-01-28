@@ -24,7 +24,7 @@ use value::{BytecodeFunction, Callable, ClosureData, ExternFunction, PartialAppl
 
 #[derive(Clone)]
 pub struct DeSeed {
-    thread: RootedThread,
+    pub thread: RootedThread,
     symbols: Rc<RefCell<Symbols>>,
     gc_map: NodeMap,
     base_seed: ::base::serialization::Seed<Symbol, ArcType<Symbol>>,

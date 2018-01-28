@@ -9,8 +9,12 @@ let { foldl } = list.foldable
 let { Option } = import! std.option
 
 type Test a = Writer (List String) a
+type TestCase a = | Test String (Test a) | Group String (Array (TestCase a))
 
 let testWriter = writer.make list.monoid
+
+let test = Test
+let group = Group
 
 let assert x = if x then () else error "Assertion failed"
 
@@ -26,11 +30,18 @@ let run test : Test a -> () =
 
 {
     Test,
+    TestCase,
+
     writer = testWriter,
     functor = testWriter.functor,
     applicative = testWriter.applicative,
     monad = testWriter.monad,
+
+    test,
+    group,
+
     assert,
     assert_eq,
+
     run,
 }

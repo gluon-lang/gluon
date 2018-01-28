@@ -1,4 +1,4 @@
-let { assert } = import! std.test
+let { assert, group } = import! std.test
 let int = import! std.int
 let { Bool } = import! std.bool
 let { ref, (<-), load } = import! std.reference
@@ -10,4 +10,6 @@ assert (2 == load ri)
 assert (2 == load ri)
 ri <- 10
 assert (10 == load ri)
-True
+
+// Dummy test
+group "reference" []

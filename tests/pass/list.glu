@@ -1,4 +1,4 @@
-let { Test, run, assert_eq, ? }  = import! std.test
+let { Test, assert_eq, test, ? }  = import! std.test
 let { Applicative, (*>), ? } = import! std.applicative
 let list @ { List, ? } = import! std.list
 
@@ -9,4 +9,4 @@ let test_list : Test () =
     assert_eq (list.of []) empty_list *>
         assert_eq (list.of [1, 2, 3]) (Cons 1 (Cons 2 (Cons 3 Nil)))
 
-run test_list
+test "list" test_list

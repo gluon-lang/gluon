@@ -468,7 +468,7 @@ impl Thread {
             let mut context = vm.current_context();
             StackFrame::frame(&mut context.stack, 0, State::Unknown);
         }
-        let ptr = self.context().alloc(Move(vm))?;
+        let ptr = self.context().gc.alloc(Move(vm))?;
 
         Ok(ptr.root_thread())
     }
