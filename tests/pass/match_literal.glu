@@ -73,7 +73,7 @@ let match_r1 =
         *> assert_ieq (r1 { x = 3 }) 12
         *> assert_ieq (r1 { x = 4 }) 13
 
-let march_r2 =
+let match_r2 =
     assert_ieq (r2 { x = 2, y = 3 }) 14
         *> assert_ieq (r2 { x = 3, y = 4 }) 15
         *> assert_ieq (r2 { x = 4, y = 4 }) 16
@@ -85,6 +85,6 @@ let match_test_m =
         *> assert_ieq (test_m (TestM 3 "")) 23
 
 let tests =
-    match_ints *> match_strings *> match_ns *> match_r1 *> march_r2 *> match_test_m
+    match_ints *> match_strings *> match_ns *> match_r1 *> match_r2 *> match_test_m
 
 run tests
