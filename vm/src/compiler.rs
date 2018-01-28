@@ -311,7 +311,7 @@ impl FunctionEnv {
     }
 
     fn stack_size(&mut self) -> VmIndex {
-        (self.stack_size - 1) as VmIndex
+        self.stack_size as VmIndex
     }
 
     fn push_stack_var(&mut self, compiler: &Compiler, s: Symbol, typ: ArcType) {
@@ -938,7 +938,7 @@ impl<'a> Compiler<'a> {
                             // of slots are removed when exiting
                             function.new_stack_var(self, self.empty_symbol.clone(), Type::hole());
 
-                            let record_index = function.stack_size();
+                            let record_index = function.stack_size() - 1;
                             for pattern_field in fields {
                                 function.emit(Push(record_index));
                                 function.emit_field(self, &typ, &pattern_field.0.name)?;
