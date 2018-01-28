@@ -27,7 +27,7 @@ difference = "1.0"
 pretty_assertions = "0.4"
 
 [build-dependencies]
-lalrpop = "0.13.1"
+lalrpop = "0.14.0"
 
 [features]
 test = ["env_logger"]

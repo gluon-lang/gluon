@@ -72,6 +72,10 @@ impl Contexts {
         self.stack.pop()
     }
 
+    fn is_empty(&self) -> bool {
+        self.stack.is_empty()
+    }
+
     fn push(&mut self, offside: Offside) -> Result<(), Spanned<Error, BytePos>> {
         self.check_unindentation_limit(offside)?;
         self.stack.push(offside);
@@ -208,6 +212,9 @@ where
         let mut token = self.next_token();
         if token.value == Token::EOF {
             token.span.start.column = Column::from(0);
+            if self.indent_levels.is_empty() {
+                return Ok(token);
+            }
         }
 
         loop {
@@ -219,7 +226,6 @@ where
                     let offside =
                         Offside::new(token.span.start, Context::Block { emit_semi: false });
                     self.indent_levels.push(offside)?;
-                    debug!("Default block {:?}", token);
                     return Ok(self.layout_token(token, Token::OpenBlock));
                 }
             };
