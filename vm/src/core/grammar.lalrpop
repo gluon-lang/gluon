@@ -24,6 +24,11 @@ Field: (Symbol, Option<Symbol>) = {
     <field: Identifier> <binding: ("=" <Identifier>)?> => (field, binding)
 };
 
+Literal: Literal = {
+    <r"[0-9]+"> => Literal::Int(<>.parse().unwrap()),
+    <r#""[^"]*""#> => Literal::String(<>[1..<>.len() - 1].to_string()),
+};
+
 Pattern: Pattern = {
     <id: Identifier> => {
         if id.as_ref().starts_with(char::is_uppercase) {
@@ -37,6 +42,7 @@ Pattern: Pattern = {
     "{" <Comma<Field>> "}" => Pattern::Record(<>.into_iter()
         .map(|(field, binding)| (TypedIdent::new(field), binding))
         .collect()),
+    <Literal> => Pattern::Literal(<>),
 };
 
 Alternative: Alternative<'a> = {
@@ -46,17 +52,21 @@ Alternative: Alternative<'a> = {
     },
 };
 
+FieldExpr : (Symbol, Option<Expr<'a>>) = {
+    <Identifier> <("=" <Expr>)?>,
+};
+
 AtomicExpr: Expr<'a> = {
     "(" <Expr> ")",
-    "{" <args: Comma<Identifier>> "}" => {
+    "{" <args: Comma<FieldExpr>> "}" => {
         let id = TypedIdent {
             name: symbols.symbol("<record>"),
             typ: Type::record(vec![], args.iter()
-                .map(|arg| Field { name: arg.clone(), typ: Type::hole(), })
+                .map(|&(ref arg, _)| Field { name: arg.clone(), typ: Type::hole(), })
                 .collect()),
         };
         let args = args.into_iter()
-            .map(|id| Expr::Ident(TypedIdent::new(id), Span::default()));
+            .map(|(id, expr)| expr.unwrap_or_else(|| Expr::Ident(TypedIdent::new(id), Span::default())));
         let args = allocator.arena.alloc_extend(args);
         Expr::Data(id, args, BytePos::default(), ExpansionId::default())
     },
@@ -67,7 +77,7 @@ AtomicExpr: Expr<'a> = {
             Expr::Ident(TypedIdent::new(id), Span::default())
         }
     },
-    <r"[0-9]+"> => Expr::Const(Literal::Int(<>.parse().unwrap()), Span::default()),
+    <Literal> => Expr::Const(<>, Span::default()),
 };
 
 AllocExpr: &'a Expr<'a> = {
@@ -97,8 +107,8 @@ pub Expr: Expr<'a> = {
     <f: AtomicExpr> <args: AtomicExpr+> => {
         let args = allocator.arena.alloc_extend(args.into_iter());
         match f {
-            Expr::Ident(ref id, _) if id.name.as_ref().starts_with(char::is_uppercase) => 
-                Expr::Data(id.clone(), args, BytePos::default(), ExpansionId::default()),
+            Expr::Data(id, ..) =>
+                Expr::Data(id, args, BytePos::default(), ExpansionId::default()),
             f => Expr::Call(allocator.arena.alloc(f), args)
         }
     },

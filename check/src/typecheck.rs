@@ -11,7 +11,7 @@ use itertools::Itertools;
 
 use base::scoped_map::ScopedMap;
 use base::ast::{DisplayEnv, Do, Expr, Literal, MutVisitor, Pattern, PatternField, SpannedExpr};
-use base::ast::{AstType, SpannedIdent, SpannedPattern, TypeBinding, TypedIdent, ValueBinding};
+use base::ast::{AstType, SpannedIdent, SpannedPattern, TypeBinding, TypedIdent, ValueBinding, Typed};
 use base::error::Errors;
 use base::fnv::{FnvMap, FnvSet};
 use base::resolve;
@@ -1266,7 +1266,13 @@ impl<'a> Typecheck<'a> {
                 id.typ = match_type.clone();
                 match_type
             }
+            Pattern::Literal(ref l) => {
+                let typ = l.env_type_of(&self.environment);
+                self.unify_span(span, &match_type, typ);
+                match_type
+            }
             Pattern::Error => self.subs.new_var(),
+
         }
     }
 
@@ -1678,7 +1684,7 @@ impl<'a> Typecheck<'a> {
                     self.finish_pattern(level, arg, &arg_type);
                 }
             }
-            Pattern::Error => (),
+            Pattern::Literal(_) | Pattern::Error => (),
         }
     }
 

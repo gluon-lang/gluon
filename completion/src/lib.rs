@@ -177,12 +177,13 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
                     }
                 }
             }
-            Pattern::Tuple {
-                elems: ref args, ..
+            Pattern::Tuple { elems: ref args, .. } |
+            Pattern::Constructor(_, ref args) => {
+                for arg in args {
+                    self.on_pattern(arg);
+                }
             }
-            | Pattern::Constructor(_, ref args) => for arg in args {
-                self.on_pattern(arg);
-            },
+            Pattern::Literal(_) |
             Pattern::Error => (),
         }
     }
@@ -398,7 +399,9 @@ where
                 let (_, field) = self.select_spanned(elems, |elem| elem.span);
                 self.visit_pattern(field.unwrap());
             }
-            Pattern::Ident(_) | Pattern::Error => {
+            Pattern::Ident(_) |
+            Pattern::Literal(_) |
+            Pattern::Error => {
                 self.found = Some(if current.span.containment(&self.pos) == Ordering::Equal {
                     Some(Match::Pattern(current))
                 } else {

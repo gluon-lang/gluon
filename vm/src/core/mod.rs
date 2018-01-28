@@ -80,6 +80,7 @@ pub enum Pattern {
     Constructor(TypedIdent<Symbol>, Vec<TypedIdent<Symbol>>),
     Record(Vec<(TypedIdent<Symbol>, Option<Symbol>)>),
     Ident(TypedIdent<Symbol>),
+    Literal(ast::Literal),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -119,7 +120,6 @@ impl<'a> fmt::Display for Expr<'a> {
 }
 
 const INDENT: usize = 4;
-
 
 #[derive(Default)]
 #[must_use]
@@ -161,6 +161,19 @@ impl<'a> Binder<'a> {
     }
 }
 
+fn pretty_literal<'a>(
+    l: &Literal,
+    arena: &'a pretty::Arena<'a>,
+) -> pretty::DocBuilder<'a, pretty::Arena<'a>> {
+    match *l {
+        Literal::Byte(b) => arena.text(format!("b{}", b)),
+        Literal::Char(c) => arena.text(format!("{:?}", c)),
+        Literal::Float(f) => arena.text(format!("{}", f)),
+        Literal::Int(i) => arena.text(format!("{}", i)),
+        Literal::String(ref s) => arena.text(format!("{:?}", s)),
+    }
+}
+
 impl<'a> Expr<'a> {
     pub fn pretty(
         &'a self,
@@ -173,13 +186,7 @@ impl<'a> Expr<'a> {
                         arena.space().append(arg.pretty(arena))
                     }))
                 ].group(),
-            Expr::Const(ref literal, _) => match *literal {
-                Literal::Byte(b) => arena.text(format!("b{}", b)),
-                Literal::Char(c) => arena.text(format!("{:?}", c)),
-                Literal::Float(f) => arena.text(format!("{}", f)),
-                Literal::Int(i) => arena.text(format!("{}", i)),
-                Literal::String(ref s) => arena.text(format!("{:?}", s)),
-            },
+            Expr::Const(ref l, _) => pretty_literal(l, arena),
             Expr::Data(ref ctor, args, _, _) => match *ctor.typ {
                 Type::Record(ref record) => chain![arena;
                             "{",
@@ -345,6 +352,7 @@ impl Pattern {
                     arena.space(),
                     "}"
                 ].group(),
+            Pattern::Literal(ref l) => pretty_literal(l, arena),
         }
     }
 }
@@ -539,11 +547,9 @@ impl<'a, 'e> Translator<'a, 'e> {
             ast::Expr::Match(ref expr, ref alts) => {
                 let expr = self.translate_alloc(expr);
                 let alts: Vec<_> = alts.iter()
-                    .map(|alt| {
-                        Equation {
-                            patterns: vec![&alt.pattern],
-                            result: self.translate_alloc(&alt.expr),
-                        }
+                    .map(|alt| Equation {
+                        patterns: vec![&alt.pattern],
+                        result: self.translate_alloc(&alt.expr),
                     })
                     .collect();
                 PatternTranslator(self).translate_top(expr, &alts).clone()
@@ -727,16 +733,14 @@ impl<'a, 'e> Translator<'a, 'e> {
         if is_recursive {
             let closures = binds
                 .iter()
-                .map(|bind| {
-                    Closure {
-                        pos: bind.name.span.start,
-                        name: match bind.name.value {
-                            ast::Pattern::Ident(ref id) => id.clone(),
-                            _ => unreachable!(),
-                        },
-                        args: bind.args.iter().map(|arg| arg.value.clone()).collect(),
-                        expr: self.translate_alloc(&bind.expr),
-                    }
+                .map(|bind| Closure {
+                    pos: bind.name.span.start,
+                    name: match bind.name.value {
+                        ast::Pattern::Ident(ref id) => id.clone(),
+                        _ => unreachable!(),
+                    },
+                    args: bind.args.iter().map(|arg| arg.value.clone()).collect(),
+                    expr: self.translate_alloc(&bind.expr),
                 })
                 .collect();
             Expr::Let(
@@ -827,11 +831,9 @@ impl<'a, 'e> Translator<'a, 'e> {
             let mut args = arg_iter(typ.remove_forall());
             unapplied_args = args.by_ref()
                 .enumerate()
-                .map(|(i, arg)| {
-                    TypedIdent {
-                        name: Symbol::from(format!("#{}", i)),
-                        typ: arg.clone(),
-                    }
+                .map(|(i, arg)| TypedIdent {
+                    name: Symbol::from(format!("#{}", i)),
+                    typ: arg.clone(),
                 })
                 .collect();
             data_type = args.typ.clone();
@@ -955,6 +957,7 @@ enum CType {
     Constructor,
     Record,
     Variable,
+    Literal,
 }
 
 use self::optimize::*;
@@ -984,7 +987,6 @@ impl<'a> Visitor<'a, 'a> for ReplaceVariables<'a> {
         Some(self.allocator)
     }
 }
-
 
 /// `PatternTranslator` translated nested (AST) patterns into non-nested (core) patterns.
 ///
@@ -1016,6 +1018,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             CType::Constructor => self.compile_constructor(default, variables, equations),
             CType::Record => self.compile_record(default, variables, equations),
             CType::Variable => self.compile_variable(default, variables, equations),
+            CType::Literal => self.compile_literal(default, variables, equations),
         }
     }
 
@@ -1081,15 +1084,13 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 .iter()
                 .map(|equation| (&equation.patterns[1..], equation.result))
                 .zip(&temp)
-                .map(|((remaining_equations, result), first)| {
-                    Equation {
-                        patterns: first
-                            .iter()
-                            .map(|pattern| &**pattern)
-                            .chain(remaining_equations.iter().cloned())
-                            .collect(),
-                        result,
-                    }
+                .map(|((remaining_equations, result), first)| Equation {
+                    patterns: first
+                        .iter()
+                        .map(|pattern| &**pattern)
+                        .chain(remaining_equations.iter().cloned())
+                        .collect(),
+                    result,
                 })
                 .collect::<Vec<_>>();
 
@@ -1135,6 +1136,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 | ast::Pattern::Tuple { .. }
                 | ast::Pattern::Record { .. }
                 | ast::Pattern::Ident(_)
+                | ast::Pattern::Literal(_)
                 | ast::Pattern::Error => unreachable!(),
             }
         }
@@ -1228,11 +1230,9 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
             &variables[1..],
             &equations
                 .iter()
-                .map(|equation| {
-                    Equation {
-                        patterns: equation.patterns[1..].to_owned(),
-                        result: equation.result,
-                    }
+                .map(|equation| Equation {
+                    patterns: equation.patterns[1..].to_owned(),
+                    result: equation.result,
                 })
                 .collect::<Vec<_>>(),
         );
@@ -1267,6 +1267,72 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 .allocator
                 .alternative_arena
                 .alloc_extend(Some(alt).into_iter()),
+        );
+        self.0.allocator.arena.alloc(expr)
+    }
+
+    fn compile_literal<'p>(
+        &mut self,
+        default: &'a Expr<'a>,
+        variables: &[&'a Expr<'a>],
+        equations: &[Equation<'a, 'p>],
+    ) -> &'a Expr<'a> {
+        let mut group_order = Vec::new();
+        let mut groups = HashMap::new();
+
+        for equation in equations {
+            match *unwrap_as(&equation.patterns.first().unwrap().value) {
+                ast::Pattern::Literal(ref literal) => {
+                    groups
+                        .entry(literal)
+                        .or_insert_with(|| {
+                            group_order.push(literal);
+                            Vec::new()
+                        })
+                        .push(equation.clone());
+                }
+                ast::Pattern::Constructor(_, _)
+                | ast::Pattern::As(_, _)
+                | ast::Pattern::Tuple { .. }
+                | ast::Pattern::Record { .. }
+                | ast::Pattern::Ident(_)
+                | ast::Pattern::Error => unreachable!(),
+            }
+        }
+
+        let new_alts = group_order
+            .into_iter()
+            .map(|key| {
+                let equations = &groups[key];
+                let pattern = Pattern::Literal(key.clone());
+
+                let new_equations = equations
+                    .iter()
+                    .map(|equation| Equation {
+                        patterns: equation.patterns.iter().cloned().skip(1).collect(),
+                        result: equation.result,
+                    })
+                    .collect::<Vec<_>>();
+
+                let new_variables = self.insert_new_variables(&pattern, variables);
+                let expr = self.translate(default, &new_variables, &new_equations);
+                Alternative {
+                    pattern: pattern,
+                    expr: expr,
+                }
+            })
+            .chain(Some(Alternative {
+                pattern: Pattern::Ident(TypedIdent::new(Symbol::from("_"))),
+                expr: default,
+            }))
+            .collect::<Vec<_>>();
+
+        let expr = Expr::Match(
+            variables[0],
+            self.0
+                .allocator
+                .alternative_arena
+                .alloc_extend(new_alts.into_iter()),
         );
         self.0.allocator.arena.alloc(expr)
     }
@@ -1341,6 +1407,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 ast::Pattern::Ident(_) => CType::Variable,
                 ast::Pattern::Record { .. } | ast::Pattern::Tuple { .. } => CType::Record,
                 ast::Pattern::Constructor(_, _) => CType::Constructor,
+                ast::Pattern::Literal(_) => CType::Literal,
                 ast::Pattern::Error => ice!("ICE: Error pattern survived typechecking"),
             }
         }
@@ -1486,7 +1553,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                         }
                     }
                 }
-                ast::Pattern::Error => (),
+                ast::Pattern::Literal(_) | ast::Pattern::Error => (),
             }
         }
         if record_fields.is_empty() {
@@ -1521,7 +1588,7 @@ impl<'a> PatternIdentifiers<'a> {
             end: match *pattern {
                 Pattern::Constructor(_, ref patterns) => patterns.len(),
                 Pattern::Record(ref fields) => fields.len(),
-                Pattern::Ident(_) => 0,
+                Pattern::Ident(_) | Pattern::Literal(_) => 0,
             },
         }
     }
@@ -1546,18 +1613,16 @@ impl<'a> Iterator for PatternIdentifiers<'a> {
                     field
                         .1
                         .as_ref()
-                        .map(|name| {
-                            TypedIdent {
-                                name: name.clone(),
-                                typ: field.0.typ.clone(),
-                            }
+                        .map(|name| TypedIdent {
+                            name: name.clone(),
+                            typ: field.0.typ.clone(),
                         })
                         .unwrap_or_else(|| field.0.clone()),
                 )
             } else {
                 None
             },
-            Pattern::Ident(_) => None,
+            Pattern::Ident(_) | Pattern::Literal(_) => None,
         }
     }
 }
@@ -1578,18 +1643,16 @@ impl<'a> DoubleEndedIterator for PatternIdentifiers<'a> {
                     field
                         .1
                         .as_ref()
-                        .map(|name| {
-                            TypedIdent {
-                                name: name.clone(),
-                                typ: field.0.typ.clone(),
-                            }
+                        .map(|name| TypedIdent {
+                            name: name.clone(),
+                            typ: field.0.typ.clone(),
                         })
                         .unwrap_or_else(|| field.0.clone()),
                 )
             } else {
                 None
             },
-            Pattern::Ident(_) => None,
+            Pattern::Ident(_) | Pattern::Literal(_) => None,
         }
     }
 }
@@ -1670,6 +1733,9 @@ mod tests {
                                     _ => false,
                                 }
                             })
+                        }
+                        (&Pattern::Literal(ref l_literal), &Pattern::Literal(ref r_literal)) => {
+                            l_literal == r_literal
                         }
                         _ => false,
                     };
@@ -1960,6 +2026,164 @@ mod tests {
             let x = match_pattern in
             match_pattern
             ";
+
+        check_translation(expr_str, expected_str);
+    }
+
+    #[test]
+    fn match_int_literal() {
+        let expr_str = r#"
+            match 2 with
+            | 1 -> "one"
+            | _ -> "any"
+        "#;
+
+        let expected_str = r#"
+            let match_pattern = 2 in
+            match match_pattern with
+            | 1 -> "one"
+            | _ -> "any"
+            end
+        "#;
+
+        check_translation(expr_str, expected_str);
+    }
+
+    #[test]
+    fn match_string_literal() {
+        let expr_str = r#"
+            let x = "zero" in
+            match x with
+            | "one" -> 1
+            | _ -> 0
+        "#;
+
+        let expected_str = r#"
+            let x = "zero" in
+            match x with
+            | "one" -> 1
+            | _ -> 0
+            end
+        "#;
+
+        check_translation(expr_str, expected_str);
+    }
+
+    #[test]
+    fn match_as_literal_pattern() {
+        let expr_str = r#"
+            match 2 with
+            | x@2 -> x
+            | _ -> 0
+        "#;
+
+        let expected_str = r#"
+            let p = 2 in
+            let x = p in
+            match p with
+            | 2 -> x
+            | _ -> 0
+            end
+        "#;
+
+        check_translation(expr_str, expected_str);
+    }
+
+    #[test]
+    fn multiple_alternatives_nested_match_expr_with_literal() {
+        let expr_str = r#"
+            match test with
+            | Ctor (Ctor 4) -> 1
+            | Ctor y -> 2
+            | z -> 3
+        "#;
+
+        let expected_str = r#"
+            match test with
+            | Ctor p1 ->
+                match p1 with
+                | Ctor p2 ->
+                    match p2 with
+                    | 4 -> 1
+                    end
+                | y -> 2
+                end
+            | z -> 3
+            end
+        "#;
+
+        check_translation(expr_str, expected_str);
+    }
+
+    #[test]
+    fn match_record_with_literal() {
+        let expr_str = r#"
+            match { x = 2, y = 3 } with
+            | { x = 2, y = 3 } -> "4"
+            | _ -> "6"
+        "#;
+
+        let expected_str = r#"
+            let p = { x = 2, y = 3 } in
+            match p with
+            | { x = x, y = y } ->
+                match x with
+                | 2 ->
+                    match y with
+                    | 3 -> "4"
+                    | _ -> "6"
+                    end
+                | _ -> "6"
+                end
+            end
+        "#;
+
+        check_translation(expr_str, expected_str);
+    }
+
+    #[test]
+    fn match_constructor_with_literal() {
+        let expr_str = r#"
+            match Test 2 with
+            | Other -> 0
+            | _ -> 2
+        "#;
+
+        let expected_str = r#"
+            let p = Test 2 in
+            match p with
+            | Other -> 0
+            | _ -> 2
+            end
+        "#;
+
+        check_translation(expr_str, expected_str);
+    }
+
+    #[test]
+    fn match_constructor_with_mutliple_literals() {
+        let expr_str = r#"
+            type Test = | Test Int String
+            match Test 2 "hello" with
+            | Test 2 "hello" -> 0
+            | _ -> 2
+        "#;
+
+        let expected_str = r#"
+            let p = Test 2 "hello" in
+            match p with
+            | Test p0 p1 ->
+                match p0 with
+                | 2 ->
+                    match p1 with
+                    | "hello" -> 0
+                    | _ -> 2
+                    end
+                | _ -> 2
+                end
+            | _ -> 2
+            end
+        "#;
 
         check_translation(expr_str, expected_str);
     }

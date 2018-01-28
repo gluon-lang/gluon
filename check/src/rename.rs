@@ -169,7 +169,7 @@ pub fn rename(
                 Pattern::Constructor(_, ref mut args) => for arg in args {
                     self.new_pattern(arg);
                 },
-                Pattern::Error => (),
+                Pattern::Literal(_) | Pattern::Error => (),
             }
         }
 

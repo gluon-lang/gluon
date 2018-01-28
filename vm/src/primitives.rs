@@ -449,6 +449,11 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
         primitive::<fn(StdString) -> Generic<A>>("@error", std::prim::error),
     )?;
 
+    vm.define_global(
+        "@string_eq",
+        named_primitive!(2, "@string_eq", <str as PartialEq>::eq),
+    )?;
+
     ExternModule::new(
         vm,
         record! {

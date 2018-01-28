@@ -607,6 +607,8 @@ impl<'a: 'e, 'e> Printer<'a, 'e> {
                 ")"
             ].group(),
             Pattern::Error => arena.text("<error>"),
+            Pattern::Literal(_) => arena
+                .text(&self.source.src()[pattern.span.start.to_usize()..pattern.span.end.to_usize()]),
         }
     }
 

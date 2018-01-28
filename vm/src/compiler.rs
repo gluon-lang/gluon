@@ -1,6 +1,6 @@
 use std::ops::{Deref, DerefMut};
 use interner::InternedStr;
-use base::ast::{DisplayEnv, Literal, Typed, TypedIdent};
+use base::ast::{self, DisplayEnv, Literal, Typed, TypedIdent};
 use base::resolve;
 use base::kind::{ArcKind, KindEnv};
 use base::types::{self, Alias, ArcType, BuiltinType, RecordSelector, Type, TypeEnv};
@@ -187,12 +187,15 @@ impl FunctionEnvs {
                     .function
                     .debug_info
                     .upvars
-                    .extend(function.free_vars.iter().map(|&(ref name, ref typ)| {
-                        UpvarInfo {
-                            name: name.declared_name().to_string(),
-                            typ: typ.clone(),
-                        }
-                    }));
+                    .extend(
+                        function
+                            .free_vars
+                            .iter()
+                            .map(|&(ref name, ref typ)| UpvarInfo {
+                                name: name.declared_name().to_string(),
+                                typ: typ.clone(),
+                            }),
+                    );
             }
         }
 
@@ -272,7 +275,6 @@ impl FunctionEnv {
         Ok(())
     }
 
-
     fn add_record_map(&mut self, fields: Vec<Symbol>) -> VmIndex {
         match self.function.records.iter().position(|t| *t == fields) {
             Some(i) => i as VmIndex,
@@ -309,7 +311,7 @@ impl FunctionEnv {
     }
 
     fn stack_size(&mut self) -> VmIndex {
-        (self.stack_size - 1) as VmIndex
+        self.stack_size as VmIndex
     }
 
     fn push_stack_var(&mut self, compiler: &Compiler, s: Symbol, typ: ArcType) {
@@ -605,7 +607,7 @@ impl<'a> Compiler<'a> {
             Expr::Const(ref lit, _) => match *lit {
                 Literal::Int(i) => function.emit(PushInt(i as isize)),
                 Literal::Byte(b) => function.emit(PushByte(b)),
-                Literal::Float(f) => function.emit(PushFloat(f)),
+                Literal::Float(f) => function.emit(PushFloat(f.into_inner())),
                 Literal::String(ref s) => function.emit_string(self.intern(&s)?),
                 Literal::Char(c) => function.emit(PushInt(c as isize)),
             },
@@ -719,9 +721,43 @@ impl<'a> Compiler<'a> {
                         Pattern::Record { .. } => {
                             start_jumps.push(function.function.instructions.len());
                         }
-                        _ => {
+                        Pattern::Ident(_) => {
                             start_jumps.push(function.function.instructions.len());
                             function.emit(Jump(0));
+                        }
+                        Pattern::Literal(ref l) => {
+                            let lhs_i = function.stack_size() - 1;
+                            match *l {
+                                ast::Literal::Byte(b) => {
+                                    function.emit(Push(lhs_i));
+                                    function.emit(PushByte(b));
+                                    function.emit(ByteEQ);
+                                }
+                                ast::Literal::Int(i) => {
+                                    function.emit(Push(lhs_i));
+                                    function.emit(PushInt(i as isize));
+                                    function.emit(IntEQ);
+                                }
+                                ast::Literal::Char(ch) => {
+                                    function.emit(Push(lhs_i));
+                                    function.emit(PushInt(ch as isize));
+                                    function.emit(IntEQ);
+                                }
+                                ast::Literal::Float(f) => {
+                                    function.emit(Push(lhs_i));
+                                    function.emit(PushFloat(f.into_inner()));
+                                    function.emit(FloatEQ);
+                                }
+                                ast::Literal::String(ref s) => {
+                                    self.load_identifier(&Symbol::from("@string_eq"), function)?;
+                                    let lhs_i = function.stack_size() - 2;
+                                    function.emit(Push(lhs_i));
+                                    function.emit_string(self.intern(&s)?);
+                                    function.emit(Call(2));
+                                }
+                            };
+                            start_jumps.push(function.function.instructions.len());
+                            function.emit(CJump(0));
                         }
                     }
                 }
@@ -748,6 +784,12 @@ impl<'a> Compiler<'a> {
                             function.function.instructions[start_index] =
                                 Jump(function.function.instructions.len() as VmIndex);
                             function.new_stack_var(self, id.name.clone(), id.typ.clone());
+                        }
+                        Pattern::Literal(_) => {
+                            function.function.instructions[start_index] =
+                                CJump(function.function.instructions.len() as VmIndex);
+                            // Add a dummy variable to mark where the literal itself is stored
+                            function.new_stack_var(self, self.empty_symbol.clone(), Type::hole());
                         }
                     }
                     self.compile(&alt.expr, function, tail_position)?;
@@ -896,7 +938,7 @@ impl<'a> Compiler<'a> {
                             // of slots are removed when exiting
                             function.new_stack_var(self, self.empty_symbol.clone(), Type::hole());
 
-                            let record_index = function.stack_size();
+                            let record_index = function.stack_size() - 1;
                             for pattern_field in fields {
                                 function.emit(Push(record_index));
                                 function.emit_field(self, &typ, &pattern_field.0.name)?;
@@ -931,6 +973,7 @@ impl<'a> Compiler<'a> {
                 }
             }
             Pattern::Constructor(..) => ice!("constructor pattern in let"),
+            Pattern::Literal(_) => ice!("literal pattern in let"),
         }
         Ok(())
     }

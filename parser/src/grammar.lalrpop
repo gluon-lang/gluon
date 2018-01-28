@@ -10,6 +10,7 @@ use base::types::{AliasData, ArcType, BuiltinType, Field, Generic, Type, TypeCac
 
 use ::new_ident;
 use token::Token;
+use ordered_float::NotNaN;
 
 use {Error, ErrorEnv, FieldExpr, FieldPattern, MutIdentEnv};
 
@@ -310,6 +311,9 @@ AtomicPattern: Pattern<Id> = {
             Pattern::Ident(new_ident(type_cache, id))
         },
 
+    <l: Literal> =>
+        Pattern::Literal(l),
+
     "(" <elems: Comma<Sp<Pattern>>> ")" =>
         match elems.len() {
             // Parenthesized pattern
@@ -367,7 +371,7 @@ Literal: Literal = {
     "char literal" => Literal::Char(<>),
     "int literal" => Literal::Int(<>),
     "byte literal" => Literal::Byte(<>),
-    "float literal" => Literal::Float(<>),
+    "float literal" => Literal::Float(NotNaN::new(<>).unwrap()),
 };
 
 Alternative: Alternative<Id> = {

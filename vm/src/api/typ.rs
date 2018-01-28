@@ -20,8 +20,7 @@ where
 type {0} = {1}
 {{ {0} }}
 "#,
-        name,
-        typ
+        name, typ
     ))
 }
 
@@ -537,7 +536,6 @@ impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
         self.tuple_variant(fields.len(), visitor)
     }
 }
-
 
 #[cfg(test)]
 mod tests {
