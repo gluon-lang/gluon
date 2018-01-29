@@ -112,9 +112,12 @@ pub struct BytecodeFunction {
     pub instructions: Vec<Instruction>,
     #[cfg_attr(feature = "serde_derive", serde(state))]
     pub inner_functions: Vec<GcPtr<BytecodeFunction>>,
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub strings: Vec<InternedStr>,
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub records: Vec<Vec<InternedStr>>,
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub debug_info: DebugInfo,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub strings: Vec<InternedStr>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub records: Vec<Vec<InternedStr>>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub debug_info: DebugInfo,
 }
 
 impl Traverseable for BytecodeFunction {
@@ -627,8 +630,10 @@ impl Traverseable for Callable {
 #[cfg_attr(feature = "serde_derive", derive(SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct PartialApplicationData {
-    #[cfg_attr(feature = "serde_derive", serde(serialize_state))] pub function: Callable,
-    #[cfg_attr(feature = "serde_derive", serde(serialize_state))] pub args: Array<Value>,
+    #[cfg_attr(feature = "serde_derive", serde(serialize_state))]
+    pub function: Callable,
+    #[cfg_attr(feature = "serde_derive", serde(serialize_state))]
+    pub args: Array<Value>,
 }
 
 impl PartialEq for PartialApplicationData {

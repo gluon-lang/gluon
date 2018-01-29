@@ -33,7 +33,8 @@ pub enum State {
 pub struct Frame {
     pub offset: VmIndex,
     pub instruction_index: usize,
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub state: State,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub state: State,
     pub excess: bool,
 }
 
@@ -54,8 +55,10 @@ pub struct Lock(VmIndex);
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct Stack {
-    #[cfg_attr(feature = "serde_derive", serde(state))] values: Vec<Value>,
-    #[cfg_attr(feature = "serde_derive", serde(state))] frames: Vec<Frame>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    values: Vec<Value>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    frames: Vec<Frame>,
 }
 
 impl Traverseable for Stack {

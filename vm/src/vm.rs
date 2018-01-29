@@ -103,7 +103,8 @@ pub struct Global {
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
     pub typ: ArcType,
     pub metadata: Metadata,
-    #[cfg_attr(feature = "serde_derive_state", serde(state))] pub value: Value,
+    #[cfg_attr(feature = "serde_derive_state", serde(state))]
+    pub value: Value,
 }
 
 impl Traverseable for Global {
@@ -116,21 +117,27 @@ impl Traverseable for Global {
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct GlobalVmState {
-    #[cfg_attr(feature = "serde_derive", serde(state))] env: RwLock<VmEnv>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    env: RwLock<VmEnv>,
 
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
     generics: RwLock<FnvMap<StdString, ArcType>>,
 
-    #[cfg_attr(feature = "serde_derive", serde(skip))] typeids: RwLock<FnvMap<TypeId, ArcType>>,
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
+    typeids: RwLock<FnvMap<TypeId, ArcType>>,
 
-    #[cfg_attr(feature = "serde_derive", serde(state))] interner: RwLock<Interner>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    interner: RwLock<Interner>,
 
-    #[cfg_attr(feature = "serde_derive", serde(skip))] macros: MacroEnv,
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
+    macros: MacroEnv,
 
-    #[cfg_attr(feature = "serde_derive", serde(skip))] type_cache: TypeCache<Symbol, ArcType>,
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
+    type_cache: TypeCache<Symbol, ArcType>,
 
     // FIXME These fields should not be public
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub gc: Mutex<Gc>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub gc: Mutex<Gc>,
 
     // List of all generation 0 threads (ie, threads allocated by the global gc). when doing a
     // generation 0 sweep these threads are scanned as generation 0 values may be refered to by any
@@ -139,7 +146,7 @@ pub struct GlobalVmState {
     pub generation_0_threads: RwLock<Vec<GcPtr<Thread>>>,
 
     #[cfg_attr(feature = "serde_derive", serde(skip))]
-    #[cfg(feature = "tokio_core")]
+    #[cfg(not(target_arch = "wasm32"))]
     event_loop: Option<::std::panic::AssertUnwindSafe<::tokio_core::reactor::Remote>>,
 }
 
@@ -161,8 +168,10 @@ impl Traverseable for GlobalVmState {
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct VmEnv {
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub type_infos: TypeInfos,
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub globals: FnvMap<StdString, Global>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub type_infos: TypeInfos,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub globals: FnvMap<StdString, Global>,
 }
 
 impl CompilerEnv for VmEnv {
@@ -364,6 +373,7 @@ macro_rules! option {
             self
         }
 
+        $(#[$attr])*
         pub fn $set_name(&mut self, $name: $typ) {
             self.$name = $name;
         }
@@ -372,16 +382,20 @@ macro_rules! option {
 
 #[derive(Default)]
 pub struct GlobalVmStateBuilder {
-    #[cfg(feature = "tokio_core")] event_loop: Option<::tokio_core::reactor::Remote>,
+    #[cfg(not(target_arch = "wasm32"))]
+    event_loop: Option<::tokio_core::reactor::Remote>,
 }
 
 impl GlobalVmStateBuilder {
-    #[cfg(feature = "tokio_core")]
-    option!{
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    option!(
+        #[cfg(not(target_arch = "wasm32"))]
         event_loop set_event_loop: Option<::tokio_core::reactor::Remote>
-    }
+    );
 
-    #[cfg(not(feature = "tokio_core"))]
     pub fn build(self) -> GlobalVmState {
         let mut vm = GlobalVmState {
             env: RwLock::new(VmEnv {
@@ -395,25 +409,8 @@ impl GlobalVmStateBuilder {
             macros: MacroEnv::new(),
             type_cache: TypeCache::new(),
             generation_0_threads: RwLock::new(Vec::new()),
-        };
-        vm.add_types().unwrap();
-        vm
-    }
 
-    #[cfg(feature = "tokio_core")]
-    pub fn build(self) -> GlobalVmState {
-        let mut vm = GlobalVmState {
-            env: RwLock::new(VmEnv {
-                globals: FnvMap::default(),
-                type_infos: TypeInfos::new(),
-            }),
-            generics: RwLock::new(FnvMap::default()),
-            typeids: RwLock::new(FnvMap::default()),
-            interner: RwLock::new(Interner::new()),
-            gc: Mutex::new(Gc::new(Generation::default(), usize::MAX)),
-            macros: MacroEnv::new(),
-            type_cache: TypeCache::new(),
-            generation_0_threads: RwLock::new(Vec::new()),
+            #[cfg(not(target_arch = "wasm32"))]
             event_loop: self.event_loop.map(::std::panic::AssertUnwindSafe),
         };
         vm.add_types().unwrap();
@@ -461,7 +458,7 @@ impl GlobalVmState {
         Ok(())
     }
 
-    #[cfg(feature = "tokio_core")]
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn get_event_loop(&self) -> Option<::tokio_core::reactor::Remote> {
         self.event_loop.as_ref().map(|x| x.0.clone())
     }

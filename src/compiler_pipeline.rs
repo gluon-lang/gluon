@@ -502,7 +502,8 @@ pub struct Module {
 
     pub metadata: Metadata,
 
-    #[cfg_attr(feature = "serde_derive_state", serde(state))] pub module: CompiledModule,
+    #[cfg_attr(feature = "serde_derive_state", serde(state))]
+    pub module: CompiledModule,
 }
 
 #[cfg(feature = "serde")]

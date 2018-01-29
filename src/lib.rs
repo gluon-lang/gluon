@@ -9,15 +9,15 @@
 #[cfg(test)]
 extern crate env_logger;
 
+pub extern crate either;
 extern crate futures;
 extern crate itertools;
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate quick_error;
-#[cfg(feature = "tokio_core")]
+#[cfg(feature = "tokio-core")]
 extern crate tokio_core;
-pub extern crate either;
 
 #[cfg(feature = "serde_derive_state")]
 #[macro_use]
@@ -37,7 +37,7 @@ pub mod import;
 pub mod io;
 #[cfg(feature = "regex")]
 pub mod regex_bind;
-#[cfg(feature = "rand")]
+#[cfg(all(feature = "rand", not(target_arch = "wasm32")))]
 pub mod rand_bind;
 
 pub use vm::thread::{RootedThread, Thread};
@@ -546,7 +546,8 @@ in ()
 
 #[derive(Default)]
 pub struct VmBuilder {
-    #[cfg(feature = "tokio_core")] event_loop: Option<::tokio_core::reactor::Remote>,
+    #[cfg(feature = "tokio-core")]
+    event_loop: Option<::tokio_core::reactor::Remote>,
 }
 
 impl VmBuilder {
@@ -554,7 +555,7 @@ impl VmBuilder {
         VmBuilder::default()
     }
 
-    #[cfg(feature = "tokio_core")]
+    #[cfg(feature = "tokio-core")]
     option!{
         /// Sets then event loop which threads are run on
         /// (default: None)
@@ -562,10 +563,10 @@ impl VmBuilder {
     }
 
     pub fn build(self) -> RootedThread {
-        #[cfg(not(feature = "tokio_core"))]
+        #[cfg(not(feature = "tokio-core"))]
         let vm = RootedThread::new();
 
-        #[cfg(feature = "tokio_core")]
+        #[cfg(feature = "tokio-core")]
         let vm = RootedThread::with_global_state(
             GlobalVmStateBuilder::new()
                 .event_loop(self.event_loop)
@@ -618,11 +619,11 @@ fn load_regex(vm: &Thread) {
 #[cfg(not(feature = "regex"))]
 fn load_regex(_: &Thread) {}
 
-#[cfg(feature = "rand")]
+#[cfg(all(feature = "rand", not(target_arch = "wasm32")))]
 fn load_random(vm: &Thread) {
     add_extern_module(&vm, "std.random.prim", ::rand_bind::load);
 }
-#[cfg(not(feature = "rand"))]
+#[cfg(any(not(feature = "rand"), target_arch = "wasm32"))]
 fn load_random(_: &Thread) {}
 
 #[cfg(test)]

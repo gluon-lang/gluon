@@ -144,7 +144,8 @@ pub struct Gc {
     collect_limit: usize,
     /// The maximum number of bytes this garbage collector may contain
     memory_limit: usize,
-    #[cfg_attr(feature = "serde_derive", serde(skip))] type_infos: FnvMap<TypeId, Box<TypeInfo>>,
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
+    type_infos: FnvMap<TypeId, Box<TypeInfo>>,
     #[cfg_attr(feature = "serde_derive", serde(skip))]
     record_infos: FnvMap<Vec<InternedStr>, Box<TypeInfo>>,
     /// The generation of a gc determines what values it needs to copy and what values it can

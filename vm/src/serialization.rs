@@ -186,8 +186,10 @@ pub mod gc {
                                     + ::base::serialization::Shared,
                                S::Target: SerializeState<::serialization::SeSeed>"))]
     struct Data<F, S> {
-        #[serde(state)] tag: DataTag<S>,
-        #[serde(state)] fields: F,
+        #[serde(state)]
+        tag: DataTag<S>,
+        #[serde(state)]
+        fields: F,
     }
 
     #[derive(DeserializeState, SerializeState)]
@@ -580,8 +582,10 @@ pub mod closure {
 #[derive(DeserializeState)]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "DeSeed"))]
 struct PartialApplicationModel {
-    #[cfg_attr(feature = "serde_derive", serde(deserialize_state))] function: Callable,
-    #[cfg_attr(feature = "serde_derive", serde(deserialize_state))] args: Vec<Value>,
+    #[cfg_attr(feature = "serde_derive", serde(deserialize_state))]
+    function: Callable,
+    #[cfg_attr(feature = "serde_derive", serde(deserialize_state))]
+    args: Vec<Value>,
 }
 
 unsafe impl DataDef for PartialApplicationModel {

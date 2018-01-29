@@ -9,6 +9,8 @@ extern crate bitflags;
 extern crate collect_mac;
 #[cfg(test)]
 extern crate env_logger;
+#[doc(hidden)]
+pub extern crate frunk_core;
 #[macro_use]
 extern crate futures;
 extern crate itertools;
@@ -19,10 +21,8 @@ extern crate mopa;
 extern crate pretty;
 #[macro_use]
 extern crate quick_error;
-#[cfg(feature = "tokio_core")]
+#[cfg(not(target_arch = "wasm32"))]
 extern crate tokio_core;
-#[doc(hidden)]
-pub extern crate frunk_core;
 
 #[cfg(feature = "serde_derive")]
 #[macro_use]
@@ -59,12 +59,12 @@ pub mod primitives;
 pub mod reference;
 pub mod stack;
 pub mod types;
+pub mod vm;
 
 mod array;
 mod interner;
 mod source_map;
 mod value;
-mod vm;
 
 use std::marker::PhantomData;
 

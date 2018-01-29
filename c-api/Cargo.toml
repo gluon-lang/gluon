@@ -14,13 +14,12 @@ documentation = "https://docs.rs/gluon"
 crate-type = ["cdylib"]
 
 [dependencies]
+gluon = { version = "0.7.0", path = ".." } # GLUON
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 libc = "0.2.14"
-gluon = { version = "0.7.0", path = "..", default-features = false } # GLUON
 
 [features]
-default = ["c_void", "gluon/default"]
-
 test = ["gluon/test"]
 nightly = ["gluon/nightly"]
 skeptic = ["gluon/skeptic"]
-c_void = []

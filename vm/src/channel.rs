@@ -212,15 +212,15 @@ fn spawn_<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> VmResult<Ro
 
 type Action = fn(()) -> OpaqueValue<RootedThread, IO<Generic<A>>>;
 
-#[cfg(not(feature = "tokio_core"))]
+#[cfg(not(feature = "tokio-core"))]
 fn spawn_on<'vm>(
-    thread: RootedThread,
-    action: WithVM<'vm, FunctionRef<Action>>,
+    _thread: RootedThread,
+    _action: WithVM<'vm, FunctionRef<Action>>,
 ) -> IO<OpaqueValue<&'vm Thread, IO<Generic<A>>>> {
     IO::Exception("spawn_on requires the `tokio_core` crate".to_string())
 }
 
-#[cfg(feature = "tokio_core")]
+#[cfg(feature = "tokio-core")]
 fn spawn_on<'vm>(
     thread: RootedThread,
     action: WithVM<'vm, FunctionRef<Action>>,
