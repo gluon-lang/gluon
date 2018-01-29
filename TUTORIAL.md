@@ -29,15 +29,15 @@ io.println "Hello world"
 
 ## Syntax and semantics
 
-gluon is a functional language at heart, basing its syntax on languages such as F#, OCaml and Haskell.
+Gluon is a functional language at heart, basing its syntax on languages such as F#, OCaml and Haskell.
 The syntax may thus look strange if you are coming from C-like languages but don't be discouraged!
 There is actually very little syntax to learn.
 
-If, on the other hand, you are familiar with functional languages you will be right at home. Roughly speaking, gluon takes the expression syntax from F# and OCaml but uses the type syntax of Haskell.
+If, on the other hand, you are familiar with functional languages you will be right at home. Roughly speaking, Gluon takes the expression syntax from F# and OCaml and uses the type syntax of Haskell.
 
 ### Identifiers and Literals
 
-The simplest syntactical elements in gluon are identifiers and literals and none of them should be especially surprising if you are experienced in programming. 
+The simplest syntactical elements in Gluon are identifiers and literals and none of them should be especially surprising if you are experienced in programming. 
 
 Identifiers are a sequence of alphanumeric characters including underscore ("\_") which are required to start with either a letter or an underscore. Literals come in four different forms - integer, float, string and character literals.
 
@@ -121,7 +121,7 @@ if True then 1 else 0
 
 ### Record expressions
 
-To create more complex data types, gluon has first class records. Records can be used to couple data that is logically grouped into a single type.
+To create more complex data types, Gluon has first class records. Records can be used to couple data that is logically grouped into a single type.
 
 ```f#,rust
 { pi = 3.14, add1 = (+) 1.0 }
@@ -164,7 +164,7 @@ Arrays can be constructed with array literals.
 [1, 2, 3, 4]
 ```
 
-Since gluon is statically typed all values must be of the same type. This allows the gluon interpreter to avoid tagging each value individually which makes types such as `Array Byte` be convertible into Rust's `&[u8]` type without any allocations.
+Since Gluon is statically typed all values must be of the same type. This allows the Gluon interpreter to avoid tagging each value individually which makes types such as `Array Byte` be convertible into Rust's `&[u8]` type without any allocations.
 
 ```f#
 // ERROR:
@@ -191,7 +191,7 @@ Some 1
 
 ### Match expressions
 
-To allow variants to be unpacked so their contents can be retrieved, gluon has the `match` expression.
+To allow variants to be unpacked so their contents can be retrieved, Gluon has the `match` expression.
 
 ```f#,rust
 match None with
@@ -276,7 +276,7 @@ let f x y = x + y - 10 in f
 
 ### Type expressions
 
-gluon allows new types to be defined through the `type` expression which, just like `let`, requires `in <expression>` to be written at the end to ensure it returns a value.
+Gluon allows new types to be defined through the `type` expression which, just like `let`, requires `in <expression>` to be written at the end to ensure it returns a value.
 
 ```f#,rust
 // type <identifier> <identifier>* = <type> in <expression>
@@ -326,7 +326,7 @@ Some (x + 2)
 
 ### Indentation
 
-If you have been following along this far, you may be think that the syntax so far is pretty limiting. In particular, you wouldn't be wrong in thinking that the `let` and `type` syntax are clunky due to their need to be closed by the `in` keyword. Luckily, gluon offers a more convenient way of writing bindings by relying on indentation.
+If you have been following along this far, you may be think that the syntax so far is pretty limiting. In particular, you wouldn't be wrong in thinking that the `let` and `type` syntax are clunky due to their need to be closed by the `in` keyword. Luckily, Gluon offers a more convenient way of writing bindings by relying on indentation.
 
 When a token starts on the same column as an unclosed `let` or `type` expression, the lexer implicitly inserts an `in` token which closes the declaration part and makes the following expression into the body.
 
@@ -335,7 +335,7 @@ let add1 x = x + 1
 add1 11 // `in` will be inserted automatically since `add1 11` starts on the same line as the opening `let`
 ```
 
-If a token starts on the same column as an earlier expression, but there is not an unclosed `type` or `let` expression, gluon treats the code as a block expression, meaning each expression is run sequentially, returning the value of the last expression.
+If a token starts on the same column as an earlier expression, but there is not an unclosed `type` or `let` expression, Gluon treats the code as a block expression, meaning each expression is run sequentially, returning the value of the last expression.
 
 ```f#
 do_something1 ()
@@ -385,9 +385,9 @@ Function types are written using the `(->)` operator, which is right associative
 { pi : Float, sin : Float -> Float }
 ```
 
-Records are gluon's main way of creating associating related data and they should look quite familiar if you are familiar with dynamic languages such as javascript. Looks can be deceiving however as gluon's records are more similar to a struct in Rust or C as the order of the fields are significant, `{ x : Int, y : String } != { y : String, x : Int }`. Furthermore, records are immutable, meaning fields cannot be added nor removed and the values within cannot be modified.
+Records are Gluon's main way of creating associating related data and they should look quite familiar if you are familiar with dynamic languages such as javascript. Looks can be deceiving however as gluon's records are more similar to a struct in Rust or C as the order of the fields are significant, `{ x : Int, y : String } != { y : String, x : Int }`. Furthermore, records are immutable, meaning fields cannot be added nor removed and the values within cannot be modified.
 
-In addition to storing values, records also have a secondary function of storing types which is gluon's way of exporting types. If you have used modules in an ML language, this may look rather familiar. Looks can be deceiving however as 'type fields' must match exactly in gluon which means there is no subtyping relationship between records (`{ Test = { x : Int } }` is not a subtype of `{ Test = Float }`). This may change in the future.
+In addition to storing values, records also have a secondary function of storing types which is Gluon's way of exporting types. If you have used modules in an ML language, this may look rather familiar. Looks can be deceiving however as 'type fields' must match exactly in gluon which means there is no subtyping relationship between records (`{ Test = { x : Int } }` is not a subtype of `{ Test = Float }`). This may change in the future.
 
 ```f#
 { Test = { x : Int } }
@@ -401,7 +401,7 @@ In addition to storing values, records also have a secondary function of storing
 | Err e | Ok t
 ```
 
-Gluon also has a second way of grouping data which is the enumeration type which allows you to represent a value being one of several variants. In the example above is the representation of gluon's standard `Result` type. It represents either the value having been successfully computed (`Ok t`) or that an error occurred (`Err e`).
+Gluon also has a second way of grouping data which is the enumeration type which allows you to represent a value being one of several variants. In the example above is the representation of Gluon's standard `Result` type. It represents either the value having been successfully computed (`Ok t`) or that an error occurred (`Err e`).
 
 ### Alias type
 
@@ -413,11 +413,11 @@ Option Int
 Ref String
 ```
 
-The last kind of type which gluon has is the alias type. An alias type explicitly names some underlying type which can either be one of the three types mentioned above or an abstract type which is the case for the `Int`, `String` and `Ref` types. If the underlying type is abstract, then the type is only considered equivalent to itself (ie if you define an abstract type of `MyInt` which happens to have the same representation as `Int` the typechecker will consider these two types as being distinct).
+The last kind of type which Gluon has is the alias type. An alias type explicitly names some underlying type which can either be one of the three types mentioned above or an abstract type which is the case for the `Int`, `String` and `Ref` types. If the underlying type is abstract, then the type is only considered equivalent to itself (ie if you define an abstract type of `MyInt` which happens to have the same representation as `Int` the typechecker will consider these two types as being distinct).
 
 ### Higher-kinded types
 
-Higher-kinded types are a fairly abstract concept in gluon and you may create entire programs without any knowledge about them. Sometimes they are a very valuable tool to have, as they can be used to create very powerful abstractions.
+Higher-kinded types are a fairly abstract concept in Gluon and you may create entire programs without any knowledge about them. Sometimes they are a very valuable tool to have, as they can be used to create very powerful abstractions.
 
 Just as all values such as `0 : Int`, `"Hello World!" : String` and `Some 4.0 : Option Float` each have a type, these types themselves have their own 'type' or the 'kind' as it is called. For the types of concrete values the `Kind` is always `Type` so for the earlier examples `Int : Type`, `String : Type` and `Option Float : Type`. That is not very useful on its own but it becomes more interesting when we consider the kind of `Option : Type -> Type`. `Type -> Type` looks rather like the type of a function such as `show_int : Int -> String` but, instead of taking a value, it takes a type and produces a new type. In effect, this lets us abstract over types instead of just over values. This abstraction facility can be seen in the `Functor : (Type -> Type) -> Type` type which takes a type with kind `Type -> Type` as argument which is exactly the kind of `Option` (or `List`, `Result a`).
 
@@ -425,7 +425,7 @@ Just as all values such as `0 : Int`, `"Hello World!" : String` and `Some 4.0 : 
 
 *First draft*
 
-Universal quantification is what gluon's "generic types" are called. Consider the identity function in Rust.
+Universal quantification is what Gluon's "generic types" are called. Consider the identity function in Rust.
 
 ```rust,ignore
 fn id<T>(x: T) -> T {
@@ -433,7 +433,7 @@ fn id<T>(x: T) -> T {
 }
 ```
 
-In gluon the same function would be written in the following way if it were fully annotated.
+In Gluon the same function would be written in the following way if it were fully annotated.
 
 ```f#
 let id x : forall a . a -> a = x
@@ -447,7 +447,7 @@ let id x = x
 let id x : a -> a = x
 ```
 
-So in simple case, `forall` is no different from declaring type parameters to a function in Rust. But `forall` also serves more advanced use cases and is at the center when it comes to making gluon's records work as modules.
+So in simple case, `forall` is no different from declaring type parameters to a function in Rust. But `forall` also serves more advanced use cases and is at the center when it comes to making Gluon's records work as modules.
 
 ```f#
 let module =
@@ -539,11 +539,11 @@ let pi  = import! "pi.glu"
 
 ## Embedding API
 
-The API with which the host language interacts with gluon is very important part of the library. While the complete API can be found in the [Rustdoc][], this section will explain the most important parts. Please note that the API can change at any point and there are still some public functions which should actually be internal.
+The API with which the host language interacts with Gluon is very important part of the library. While the complete API can be found in the [Rustdoc][], this section will explain the most important parts. Please note that the API can change at any point and there are still some public functions which should actually be internal.
 
 ### Creating a virtual machine
 
-Before you are able to do anything with the library, you will need to create a virtual machine. The virtual machine is responsible for running gluon programs and can be created with the [new_vm][] function.
+Before you are able to do anything with the library, you will need to create a virtual machine. The virtual machine is responsible for running Gluon programs and can be created with the [new_vm][] function.
 
 ### Compiling and running gluon code
 
@@ -595,7 +595,7 @@ assert_eq!(result, Ok(3));
 
 ### Calling Rust functions from gluon
 
-gluon also allows native functions to be called from gluon. To do this we first need to define the function so it is available when running gluon code.
+Gluon also allows native functions to be called from gluon. To do this we first need to define the function so it is available when running Gluon code.
 
 ```rust,ignore
 fn factorial(x: i32) -> i32 {
@@ -628,7 +628,7 @@ let (result, _) = Compiler::new()
 assert_eq!(result, 120);
 ```
 
-[add_extern_module][] can do more than just exposing simple functions. For instance, the [primitives][] module export large parts of Rust's [string][] and [float][] modules directly as records in gluon under the `str` and `float` modules respectively.
+[add_extern_module][] can do more than just exposing simple functions. For instance, the [primitives][] module export large parts of Rust's [string][] and [float][] modules directly as records in Gluon under the `str` and `float` modules respectively.
 
 ```rust,ignore
 let vm = new_vm();
@@ -661,6 +661,6 @@ When compiling an expression, the compiler automatically inserts a small prelude
 
 ### Threads and channels
 
-gluon has support for cooperative threading and communication between them through the `Thread` and `Sender`/`Receiver` types.
+Gluon has support for cooperative threading and communication between them through the `Thread` and `Sender`/`Receiver` types.
 
 TODO
