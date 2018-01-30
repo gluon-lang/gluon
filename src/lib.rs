@@ -16,7 +16,7 @@ extern crate itertools;
 extern crate log;
 #[macro_use]
 extern crate quick_error;
-#[cfg(feature = "tokio-core")]
+#[cfg(not(target_arch = "wasm32"))]
 extern crate tokio_core;
 
 #[cfg(feature = "serde_derive_state")]
@@ -546,7 +546,7 @@ in ()
 
 #[derive(Default)]
 pub struct VmBuilder {
-    #[cfg(feature = "tokio-core")]
+    #[cfg(not(target_arch = "wasm32"))]
     event_loop: Option<::tokio_core::reactor::Remote>,
 }
 
@@ -555,7 +555,7 @@ impl VmBuilder {
         VmBuilder::default()
     }
 
-    #[cfg(feature = "tokio-core")]
+    #[cfg(not(target_arch = "wasm32"))]
     option!{
         /// Sets then event loop which threads are run on
         /// (default: None)
@@ -563,12 +563,12 @@ impl VmBuilder {
     }
 
     pub fn build(self) -> RootedThread {
-        #[cfg(not(feature = "tokio-core"))]
+        #[cfg(target_arch = "wasm32")]
         let vm = RootedThread::new();
 
-        #[cfg(feature = "tokio-core")]
+        #[cfg(not(target_arch = "wasm32"))]
         let vm = RootedThread::with_global_state(
-            GlobalVmStateBuilder::new()
+            ::vm::vm::GlobalVmStateBuilder::new()
                 .event_loop(self.event_loop)
                 .build(),
         );

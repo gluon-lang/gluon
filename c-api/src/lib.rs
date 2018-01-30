@@ -223,7 +223,7 @@ pub unsafe extern "C" fn glu_get_string(
     }
 }
 
-#[cfg(feature = "libc")]
+#[cfg(not(target_arch = "wasm32"))]
 #[no_mangle]
 pub extern "C" fn glu_get_light_userdata(
     vm: &Thread,

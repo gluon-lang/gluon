@@ -212,7 +212,7 @@ fn spawn_<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> VmResult<Ro
 
 type Action = fn(()) -> OpaqueValue<RootedThread, IO<Generic<A>>>;
 
-#[cfg(not(feature = "tokio-core"))]
+#[cfg(target_arch = "wasm32")]
 fn spawn_on<'vm>(
     _thread: RootedThread,
     _action: WithVM<'vm, FunctionRef<Action>>,
@@ -220,7 +220,7 @@ fn spawn_on<'vm>(
     IO::Exception("spawn_on requires the `tokio_core` crate".to_string())
 }
 
-#[cfg(feature = "tokio-core")]
+#[cfg(not(target_arch = "wasm32"))]
 fn spawn_on<'vm>(
     thread: RootedThread,
     action: WithVM<'vm, FunctionRef<Action>>,
