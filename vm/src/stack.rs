@@ -33,7 +33,8 @@ pub enum State {
 pub struct Frame {
     pub offset: VmIndex,
     pub instruction_index: usize,
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub state: State,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub state: State,
     pub excess: bool,
 }
 
@@ -54,8 +55,10 @@ pub struct Lock(VmIndex);
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct Stack {
-    #[cfg_attr(feature = "serde_derive", serde(state))] values: Vec<Value>,
-    #[cfg_attr(feature = "serde_derive", serde(state))] frames: Vec<Frame>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    values: Vec<Value>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    frames: Vec<Frame>,
 }
 
 impl Traverseable for Stack {
@@ -154,11 +157,9 @@ impl Stack {
                         .debug_info
                         .source_map
                         .line(frame.instruction_index);
-                    Some(line.map(|line| {
-                        StacktraceFrame {
-                            name: closure.function.name.clone(),
-                            line: line,
-                        }
+                    Some(line.map(|line| StacktraceFrame {
+                        name: closure.function.name.clone(),
+                        line: line,
                     }))
                 }
                 State::Extern(ref ext) => Some(Some(StacktraceFrame {
@@ -475,7 +476,6 @@ impl fmt::Display for Stacktrace {
         Ok(())
     }
 }
-
 
 #[cfg(test)]
 mod tests {

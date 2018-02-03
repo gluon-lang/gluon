@@ -54,7 +54,6 @@ impl AsMut<NodeMap> for DeSeed {
     }
 }
 
-
 pub struct SeSeed {
     node_to_id: ::base::serialization::SeSeed,
 }
@@ -187,8 +186,10 @@ pub mod gc {
                                     + ::base::serialization::Shared,
                                S::Target: SerializeState<::serialization::SeSeed>"))]
     struct Data<F, S> {
-        #[serde(state)] tag: DataTag<S>,
-        #[serde(state)] fields: F,
+        #[serde(state)]
+        tag: DataTag<S>,
+        #[serde(state)]
+        fields: F,
     }
 
     #[derive(DeserializeState, SerializeState)]
@@ -204,7 +205,6 @@ pub mod gc {
         Record(#[serde(state_with = "::base::serialization::shared")] S),
         Data(VmTag),
     }
-
 
     impl SerializeState<SeSeed> for DataStruct {
         fn serialize_state<S>(&self, serializer: S, seed: &SeSeed) -> Result<S::Ok, S::Error>
@@ -582,8 +582,10 @@ pub mod closure {
 #[derive(DeserializeState)]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "DeSeed"))]
 struct PartialApplicationModel {
-    #[cfg_attr(feature = "serde_derive", serde(deserialize_state))] function: Callable,
-    #[cfg_attr(feature = "serde_derive", serde(deserialize_state))] args: Vec<Value>,
+    #[cfg_attr(feature = "serde_derive", serde(deserialize_state))]
+    function: Callable,
+    #[cfg_attr(feature = "serde_derive", serde(deserialize_state))]
+    args: Vec<Value>,
 }
 
 unsafe impl DataDef for PartialApplicationModel {
@@ -610,7 +612,6 @@ where
         deserializer,
     )
 }
-
 
 struct DataDefSeed<T>(PhantomData<T>);
 

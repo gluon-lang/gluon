@@ -47,8 +47,10 @@ pub struct UpvarInfo {
 pub struct DebugInfo {
     /// Maps instruction indexes to the line that spawned them
     pub source_map: SourceMap,
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub local_map: LocalMap,
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub upvars: Vec<UpvarInfo>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub local_map: LocalMap,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub upvars: Vec<UpvarInfo>,
     pub source_name: String,
 }
 
@@ -83,12 +85,14 @@ pub struct CompiledFunction {
     #[cfg_attr(feature = "serde_derive_state", serde(state))]
     pub inner_functions: Vec<CompiledFunction>,
 
-    #[cfg_attr(feature = "serde_derive_state", serde(state))] pub strings: Vec<InternedStr>,
+    #[cfg_attr(feature = "serde_derive_state", serde(state))]
+    pub strings: Vec<InternedStr>,
 
     #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
     pub records: Vec<Vec<Symbol>>,
 
-    #[cfg_attr(feature = "serde_derive_state", serde(state))] pub debug_info: DebugInfo,
+    #[cfg_attr(feature = "serde_derive_state", serde(state))]
+    pub debug_info: DebugInfo,
 }
 
 impl From<CompiledFunction> for CompiledModule {

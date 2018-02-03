@@ -72,7 +72,8 @@ pub struct Local {
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct LocalMap {
     // Instruction indexes marking [start, end) where the local variable `Symbol` exists
-    #[cfg_attr(feature = "serde_derive", serde(state))] map: Vec<Local>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    map: Vec<Local>,
 }
 
 impl LocalMap {

@@ -28,7 +28,7 @@ use gc::{DataDef, Gc, GcPtr, Generation, Move};
 use source_map::LocalIter;
 use stack::{Frame, Lock, Stack, StackFrame, State};
 use types::*;
-use vm::{GlobalVmState, VmEnv};
+use vm::{GlobalVmState, GlobalVmStateBuilder, VmEnv};
 use value::{BytecodeFunction, Callable, ClosureData, ClosureDataDef, ClosureInitDef, Def,
             ExternFunction, GcStr, PartialApplicationDataDef, RecordDef, Userdata, Value};
 
@@ -280,17 +280,21 @@ pub struct Thread {
     global_state: Arc<GlobalVmState>,
     // The parent of this thread, if it exists must live at least as long as this thread as this
     // thread can refer to any value in the parent thread
-    #[cfg_attr(feature = "serde_derive", serde(state))] parent: Option<RootedThread>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    parent: Option<RootedThread>,
     #[cfg_attr(feature = "serde_derive", serde(skip))]
     roots: RwLock<Vec<GcPtr<Traverseable + Send + Sync>>>,
-    #[cfg_attr(feature = "serde_derive", serde(state))] rooted_values: RwLock<Vec<Value>>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    rooted_values: RwLock<Vec<Value>>,
     /// All threads which this thread have spawned in turn. Necessary as this thread needs to scan
     /// the roots of all its children as well since those may contain references to this threads
     /// garbage collected values
     #[cfg_attr(feature = "serde_derive", serde(state))]
     child_threads: RwLock<Vec<GcPtr<Thread>>>,
-    #[cfg_attr(feature = "serde_derive", serde(state))] context: Mutex<Context>,
-    #[cfg_attr(feature = "serde_derive", serde(skip))] interrupt: AtomicBool,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    context: Mutex<Context>,
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
+    interrupt: AtomicBool,
 }
 
 impl fmt::Debug for Thread {
@@ -392,11 +396,10 @@ impl Traverseable for RootedThread {
 impl RootedThread {
     /// Creates a new virtual machine with an empty global environment
     pub fn new() -> RootedThread {
-        RootedThread::with_event_loop(None)
+        RootedThread::with_global_state(GlobalVmStateBuilder::default().build())
     }
 
-    pub fn with_event_loop(event_loop: Option<::tokio_core::reactor::Remote>) -> RootedThread {
-        let mut global_state = GlobalVmState::new(event_loop);
+    pub fn with_global_state(mut global_state: GlobalVmState) -> RootedThread {
         let thread = Thread {
             parent: None,
             context: Mutex::new(Context::new(
@@ -1029,9 +1032,12 @@ struct Hook {
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct Context {
     // FIXME It is dangerous to write to gc and stack
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub stack: Stack,
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub gc: Gc,
-    #[cfg_attr(feature = "serde_derive", serde(skip))] hook: Hook,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub stack: Stack,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub gc: Gc,
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
+    hook: Hook,
     max_stack_size: VmIndex,
 
     /// Stack of polling functions used for extern functions returning futures

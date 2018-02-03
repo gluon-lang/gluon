@@ -9,14 +9,15 @@
 #[cfg(test)]
 extern crate env_logger;
 
+pub extern crate either;
 extern crate futures;
 extern crate itertools;
 #[macro_use]
 extern crate log;
 #[macro_use]
 extern crate quick_error;
+#[cfg(not(target_arch = "wasm32"))]
 extern crate tokio_core;
-pub extern crate either;
 
 #[cfg(feature = "serde_derive_state")]
 #[macro_use]
@@ -36,7 +37,7 @@ pub mod import;
 pub mod io;
 #[cfg(feature = "regex")]
 pub mod regex_bind;
-#[cfg(feature = "rand")]
+#[cfg(all(feature = "rand", not(target_arch = "wasm32")))]
 pub mod rand_bind;
 
 pub use vm::thread::{RootedThread, Thread};
@@ -244,9 +245,7 @@ impl Compiler {
             &mut SymbolModule::new(file.into(), &mut self.symbols),
             type_cache,
             expr_str,
-        ).map_err(
-            |(expr, err)| (expr, InFile::new(file, expr_str, err)),
-        )?)
+        ).map_err(|(expr, err)| (expr, InFile::new(file, expr_str, err)))?)
     }
 
     /// Parse and typecheck `expr_str` returning the typechecked expression and type of the
@@ -269,13 +268,8 @@ impl Compiler {
         expr_str: &str,
         expected_type: Option<&ArcType>,
     ) -> Result<(SpannedExpr<Symbol>, ArcType)> {
-        let TypecheckValue { expr, typ } = expr_str.typecheck_expected(
-            self,
-            vm,
-            file,
-            expr_str,
-            expected_type,
-        )?;
+        let TypecheckValue { expr, typ } =
+            expr_str.typecheck_expected(self, vm, file, expr_str, expected_type)?;
         Ok((expr, typ))
     }
 
@@ -376,9 +370,10 @@ impl Compiler {
         // macro as close as possible
         let opt_macro = vm.get_macros().get("import");
         let owned_import;
-        let import = match opt_macro.as_ref().and_then(
-            |mac| mac.downcast_ref::<Import>(),
-        ) {
+        let import = match opt_macro
+            .as_ref()
+            .and_then(|mac| mac.downcast_ref::<Import>())
+        {
             Some(import) => import,
             None => {
                 owned_import = Import::new(DefaultImporter);
@@ -551,6 +546,7 @@ in ()
 
 #[derive(Default)]
 pub struct VmBuilder {
+    #[cfg(not(target_arch = "wasm32"))]
     event_loop: Option<::tokio_core::reactor::Remote>,
 }
 
@@ -559,6 +555,7 @@ impl VmBuilder {
         VmBuilder::default()
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     option!{
         /// Sets then event loop which threads are run on
         /// (default: None)
@@ -566,7 +563,16 @@ impl VmBuilder {
     }
 
     pub fn build(self) -> RootedThread {
-        let vm = RootedThread::with_event_loop(self.event_loop);
+        #[cfg(target_arch = "wasm32")]
+        let vm = RootedThread::new();
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let vm = RootedThread::with_global_state(
+            ::vm::vm::GlobalVmStateBuilder::new()
+                .event_loop(self.event_loop)
+                .build(),
+        );
+
         let gluon_path = env::var("GLUON_PATH").unwrap_or_else(|_| String::from("."));
         let import = Import::new(DefaultImporter);
         import.add_path(gluon_path);
@@ -613,11 +619,11 @@ fn load_regex(vm: &Thread) {
 #[cfg(not(feature = "regex"))]
 fn load_regex(_: &Thread) {}
 
-#[cfg(feature = "rand")]
+#[cfg(all(feature = "rand", not(target_arch = "wasm32")))]
 fn load_random(vm: &Thread) {
     add_extern_module(&vm, "std.random.prim", ::rand_bind::load);
 }
-#[cfg(not(feature = "rand"))]
+#[cfg(any(not(feature = "rand"), target_arch = "wasm32"))]
 fn load_random(_: &Thread) {}
 
 #[cfg(test)]

@@ -1,16 +1,25 @@
 language: rust
 sudo: required
 cache: cargo
-rust:
-- nightly-2017-12-18
-- beta
-- stable
+matrix:
+  include:
+  - rust: nightly-2017-12-18
+  - rust: beta
+  - rust: stable
+  - rust: nightly-2017-12-18
+    env: WASM=1
 os:
 - linux
 env:
 - RUST_BACKTRACE=1
 script:
-- ./scripts/travis.sh
+- >
+    if [[ -z ${WASM+set} ]]; then
+        ./scripts/travis.sh
+    else
+        rustup target add wasm32-unknown-unknown
+        cargo check --target wasm32-unknown-unknown -p gluon_c-api
+    fi
 notifications:
   webhooks:
     urls:

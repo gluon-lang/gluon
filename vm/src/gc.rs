@@ -144,7 +144,8 @@ pub struct Gc {
     collect_limit: usize,
     /// The maximum number of bytes this garbage collector may contain
     memory_limit: usize,
-    #[cfg_attr(feature = "serde_derive", serde(skip))] type_infos: FnvMap<TypeId, Box<TypeInfo>>,
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
+    type_infos: FnvMap<TypeId, Box<TypeInfo>>,
     #[cfg_attr(feature = "serde_derive", serde(skip))]
     record_infos: FnvMap<Vec<InternedStr>, Box<TypeInfo>>,
     /// The generation of a gc determines what values it needs to copy and what values it can
@@ -168,7 +169,6 @@ pub struct Gc {
     /// if they do interact with eachother this means the values are cloned into generation 0).
     generation: Generation,
 }
-
 
 /// Trait which creates a typed pointer from a *mut () pointer.
 /// For `Sized` types this is just a cast but for unsized types some more metadata must be taken
@@ -233,7 +233,6 @@ struct GcHeader {
     value_size: usize,
     type_info: *const TypeInfo,
 }
-
 
 struct AllocPtr {
     ptr: *mut GcHeader,
@@ -588,7 +587,6 @@ where
     }
 }
 
-
 impl Gc {
     /// Constructs a new garbage collector
     pub fn new(generation: Generation, memory_limit: usize) -> Gc {
@@ -829,7 +827,6 @@ impl Gc {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -859,8 +856,6 @@ mod tests {
         }
     }
 
-
-
     fn object_count(gc: &Gc) -> usize {
         let mut header: &GcHeader = match gc.values {
             Some(ref x) => &**x,
@@ -878,7 +873,6 @@ mod tests {
         }
         count
     }
-
 
     #[derive(Copy, Clone)]
     struct Data_ {
