@@ -22,7 +22,6 @@ matrix:
     os: osx
 os:
 - linux
-- osx
 
 install:
   - sh scripts/install_cross.sh
