@@ -1766,139 +1766,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn match_expr() {
-        let _ = ::env_logger::init();
-
-        let mut symbols = Symbols::new();
-
-        let vm = RootedThread::new();
-        let env = vm.get_env();
-        let translator = Translator::new(&*env);
-
-        let expr_str = r#"
-            let test = 1
-            in
-            match test with
-            | x -> x
-        "#;
-        let expr = parse_expr(&mut symbols, expr_str);
-        let core_expr = translator.translate(&expr);
-
-        let expected_str = " let y = 1 in y ";
-        let expected_expr =
-            parse_core_expr(&mut symbols, &translator.allocator, expected_str).unwrap();
-        assert_deq!(PatternEq(&core_expr), expected_expr);
-    }
-
-    #[test]
-    fn nested_match_expr() {
-        let _ = ::env_logger::init();
-
-        let mut symbols = Symbols::new();
-
-        let vm = RootedThread::new();
-        let env = vm.get_env();
-        let translator = Translator::new(&*env);
-
-        let expr_str = r#"
-            match test with
-            | Ctor (Ctor x) -> x
-        "#;
-        let expr = parse_expr(&mut symbols, expr_str);
-        let core_expr = translator.translate(&expr);
-
-        let expected_str = r#"
-            match test with
-            | Ctor p1 ->
-                match p1 with
-                | Ctor x -> x
-                end
-            end
-            "#;
-        let expected_expr =
-            parse_core_expr(&mut symbols, &translator.allocator, expected_str).unwrap();
-        assert_deq!(PatternEq(&core_expr), expected_expr);
-    }
-
-    #[test]
-    fn multiple_alternatives_nested_match_expr() {
-        let _ = ::env_logger::init();
-
-        let mut symbols = Symbols::new();
-
-        let vm = RootedThread::new();
-        let env = vm.get_env();
-        let translator = Translator::new(&*env);
-
-        let expr_str = r#"
-            match test with
-            | Ctor (Ctor x) -> 1
-            | Ctor y -> 2
-            | z -> 3
-        "#;
-        let expr = parse_expr(&mut symbols, expr_str);
-        let core_expr = translator.translate(&expr);
-
-        let expected_str = r#"
-            match test with
-            | Ctor p1 ->
-                match p1 with
-                | Ctor x -> 1
-                | y -> 2
-                end
-            | z -> 3
-            end
-            "#;
-        let expected_expr =
-            parse_core_expr(&mut symbols, &translator.allocator, expected_str).unwrap();
-
-        assert_deq!(PatternEq(&core_expr), expected_expr);
-    }
-
-    #[test]
-    fn translate_equality_match() {
-        let _ = ::env_logger::init();
-
-        let mut symbols = Symbols::new();
-
-        let vm = RootedThread::new();
-        let env = vm.get_env();
-        let translator = Translator::new(&*env);
-
-        let expr_str = r#"
-            match m with
-            | { l = Some l_val, r = Some r_val } -> eq l_val r_val
-            | { l = None, r = None } -> True
-            | _ -> False
-        "#;
-        let expr = parse_expr(&mut symbols, expr_str);
-        let core_expr = translator.translate(&expr);
-
-        let expected_str = r#"
-            match m with
-            | { l = l1, r = r1 } ->
-                match l1 with
-                | Some l_val ->
-                    match r1 with
-                    | Some r_val -> eq l_val r_val
-                    | _1 -> False
-                    end
-                | None ->
-                    match r1 with
-                    | None -> True
-                    | _2 -> False
-                    end
-                | _3 -> False
-                end
-            end
-            "#;
-        let expected_expr =
-            parse_core_expr(&mut symbols, &translator.allocator, expected_str).unwrap();
-
-        assert_deq!(PatternEq(&core_expr), expected_expr);
-    }
-
     fn check_translation(expr_str: &str, expected_str: &str) {
         let _ = ::env_logger::init();
 
@@ -1917,6 +1784,89 @@ mod tests {
     }
 
     #[test]
+    fn match_expr() {
+        let expr_str = r#"
+            let test = 1
+            in
+            match test with
+            | x -> x
+        "#;
+
+        let expected_str = " let y = 1 in y ";
+        check_translation(expr_str, expected_str);
+    }
+
+    #[test]
+    fn nested_match_expr() {
+        let expr_str = r#"
+            match test with
+            | Ctor (Ctor x) -> x
+        "#;
+
+        let expected_str = r#"
+            match test with
+            | Ctor p1 ->
+                match p1 with
+                | Ctor x -> x
+                end
+            end
+        "#;
+        check_translation(expr_str, expected_str);
+    }
+
+    #[test]
+    fn multiple_alternatives_nested_match_expr() {
+        let expr_str = r#"
+            match test with
+            | Ctor (Ctor x) -> 1
+            | Ctor y -> 2
+            | z -> 3
+        "#;
+
+        let expected_str = r#"
+            match test with
+            | Ctor p1 ->
+                match p1 with
+                | Ctor x -> 1
+                | y -> 2
+                end
+            | z -> 3
+            end
+        "#;
+        check_translation(expr_str, expected_str);
+    }
+
+    #[test]
+    fn translate_equality_match() {
+        let expr_str = r#"
+            match m with
+            | { l = Some l_val, r = Some r_val } -> eq l_val r_val
+            | { l = None, r = None } -> True
+            | _ -> False
+        "#;
+
+        let expected_str = r#"
+            match m with
+            | { l = l1, r = r1 } ->
+                match l1 with
+                | Some l_val ->
+                    match r1 with
+                    | Some r_val -> eq l_val r_val
+                    | _1 -> False
+                    end
+                | None ->
+                    match r1 with
+                    | None -> True
+                    | _2 -> False
+                    end
+                | _3 -> False
+                end
+            end
+        "#;
+        check_translation(expr_str, expected_str);
+    }
+
+    #[test]
     fn match_as_pattern() {
         let expr_str = r#"
             match test with
@@ -1930,8 +1880,7 @@ mod tests {
             | Test -> x
             | _ -> test
             end
-            ";
-
+        ";
         check_translation(expr_str, expected_str);
     }
 
@@ -1950,8 +1899,7 @@ mod tests {
             | Test -> x
             | _ -> match_pattern
             end
-            ";
-
+        ";
         check_translation(expr_str, expected_str);
     }
 
@@ -1972,8 +1920,7 @@ mod tests {
             | Test2 -> y
             | _ -> test
             end
-            ";
-
+        ";
         check_translation(expr_str, expected_str);
     }
 
@@ -1992,8 +1939,7 @@ mod tests {
                 | Test -> x
                 end
             end
-            ";
-
+        ";
         check_translation(expr_str, expected_str);
     }
 
@@ -2009,8 +1955,7 @@ mod tests {
             match x with
             | { y } -> x
             end
-            ";
-
+        ";
         check_translation(expr_str, expected_str);
     }
 
@@ -2025,8 +1970,7 @@ mod tests {
             let match_pattern = 1 in
             let x = match_pattern in
             match_pattern
-            ";
-
+        ";
         check_translation(expr_str, expected_str);
     }
 
@@ -2045,7 +1989,6 @@ mod tests {
             | _ -> "any"
             end
         "#;
-
         check_translation(expr_str, expected_str);
     }
 
@@ -2065,7 +2008,6 @@ mod tests {
             | _ -> 0
             end
         "#;
-
         check_translation(expr_str, expected_str);
     }
 
@@ -2085,7 +2027,6 @@ mod tests {
             | _ -> 0
             end
         "#;
-
         check_translation(expr_str, expected_str);
     }
 
@@ -2111,7 +2052,6 @@ mod tests {
             | z -> 3
             end
         "#;
-
         check_translation(expr_str, expected_str);
     }
 
@@ -2137,7 +2077,6 @@ mod tests {
                 end
             end
         "#;
-
         check_translation(expr_str, expected_str);
     }
 
@@ -2156,7 +2095,6 @@ mod tests {
             | _ -> 2
             end
         "#;
-
         check_translation(expr_str, expected_str);
     }
 
@@ -2184,7 +2122,6 @@ mod tests {
             | _ -> 2
             end
         "#;
-
         check_translation(expr_str, expected_str);
     }
 }
