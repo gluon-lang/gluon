@@ -55,6 +55,7 @@ notifications:
     on_start: never
 
 before_deploy:
+- export GIT_HASH=$(git rev-parse HEAD)
 - sh scripts/before_deploy.sh
 deploy:
   provider: releases
