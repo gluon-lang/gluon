@@ -59,4 +59,6 @@ deploy:
   file: gluon-$TRAVIS_TAG-$TARGET.*
   skip_cleanup: true
   on:
+    tags: true
     condition: $DEPLOY = 1
+    all_branches: true
