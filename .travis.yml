@@ -34,12 +34,7 @@ env:
 - RUST_BACKTRACE=1
 script:
 - >
-    if [[ -z ${WASM+set} ]]; then
-        ./scripts/travis.sh
-    else
-        rustup target add wasm32-unknown-unknown
-        cargo check --target wasm32-unknown-unknown -p gluon_c-api
-    fi
+    echo ""
 
 notifications:
   webhooks:
