@@ -57,6 +57,5 @@ deploy:
   file: gluon-$TRAVIS_TAG-$TARGET.*
   skip_cleanup: true
   on:
-    tags: true
     repo: gluon-lang/gluon
     condition: $DEPLOY = 1
