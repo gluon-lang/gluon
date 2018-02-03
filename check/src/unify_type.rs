@@ -378,6 +378,11 @@ where
                 unify_rows(unifier, expected, actual)
             }
         }
+
+        (&Type::ExtendRow { .. }, &Type::EmptyRow) | (&Type::EmptyRow, &Type::ExtendRow { .. }) => {
+            unify_rows(unifier, expected, actual)
+        }
+
         (&Type::Ident(ref id), &Type::Alias(ref alias)) if *id == alias.name => {
             Ok(Some(actual.clone()))
         }
