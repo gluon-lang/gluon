@@ -1,5 +1,5 @@
-use std::fs::{File, OpenOptions};
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::fs::File;
+use std::io::{Read, Write};
 
 #[cfg(feature = "skeptic")]
 mod gen_skeptic {
