@@ -32,6 +32,7 @@ install:
 
 env:
 - RUST_BACKTRACE=1
+- GIT_HASH=$(git rev-parse HEAD)
 script:
 - >
     if [[ -z ${WASM+set} ]]; then

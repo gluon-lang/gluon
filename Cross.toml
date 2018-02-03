@@ -1,0 +1,6 @@
+[build.env]
+passthrough = [
+    "RUST_BACKTRACE",
+    "RUST_LOG",
+    "GIT_HASH",
+]
