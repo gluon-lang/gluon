@@ -107,29 +107,36 @@ fn check_test_declarations_in_cargo_file() {
 }
 
 fn example_24_up_to_date() {
-    let mut readme_file = OpenOptions::new().read(true).write(true).open("README.md").unwrap();
     let mut readme = String::new();
-    readme_file.read_to_string(&mut readme).unwrap();
-
-    let offset = readme.find("[24 game]").expect("24 game tag");
-    let block_start = readme[offset..].find("```").expect("block start") + offset;
-    let inside_block_start = readme[block_start..].find('\n').expect("inner block start") + block_start + 1;
-    let block_end = readme[(block_start + 3)..].find("```").expect("block end") + block_start + 3;
-
-    readme.drain(inside_block_start..block_end);
-
     {
-        let mut file = File::open("examples/24.glu").unwrap();
-        let mut example = String::new();
-        file.read_to_string(&mut example).unwrap();
-        readme.insert_str(inside_block_start, &example);
+        let mut readme_file = File::open("README.md").unwrap();
+        readme_file.read_to_string(&mut readme).unwrap();
+
+        let offset = readme.find("[24 game]").expect("24 game tag");
+        let block_start = readme[offset..].find("```").expect("block start") + offset;
+        let inside_block_start =
+            readme[block_start..].find('\n').expect("inner block start") + block_start + 1;
+        let block_end =
+            readme[(block_start + 3)..].find("```").expect("block end") + block_start + 3;
+
+        let example_24_in_readme = readme
+            .drain(inside_block_start..block_end)
+            .collect::<String>();
+
+        {
+            let mut file = File::open("examples/24.glu").unwrap();
+            let mut example = String::new();
+            file.read_to_string(&mut example).unwrap();
+            // No need to write anything if it is up to date
+            if example == example_24_in_readme {
+                return;
+            }
+            readme.insert_str(inside_block_start, &example);
+        }
     }
-    readme_file.seek(SeekFrom::Start(0)).unwrap();
+    let mut readme_file = File::create("README.md").unwrap();
     readme_file.write_all(readme.as_bytes()).unwrap();
-
-    println!("cargo:rerun-if-changed=examples/24.glu");
 }
-
 
 fn main() {
     gen_skeptic::generate();
@@ -137,4 +144,5 @@ fn main() {
     check_test_declarations_in_cargo_file();
 
     example_24_up_to_date();
+    println!("cargo:rerun-if-changed=examples/24.glu");
 }
