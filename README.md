@@ -217,7 +217,7 @@ let guess_loop _ =
 guess_loop ()
 ```
 
-[Source](24 game)
+[Source][24 game]
 
 ## Getting started
 
