@@ -1,3 +1,30 @@
+<a name="0.7.1"></a>
+## v0.7.1 (2018-02-04)
+
+
+#### Features
+
+*   Deploy builds using trust and cross ([372a278f](https://github.com/gluon-lang/gluon/commit/372a278f6c2cb95a7caf349a17033a6b14c4b506))
+*   Export expr pretty printing function to format ([646b7c66](https://github.com/gluon-lang/gluon/commit/646b7c66d384209cb57bdddb2aa14688e287ba67))
+*   Make dependencies unavailable in wasm optional ([6e666f73](https://github.com/gluon-lang/gluon/commit/6e666f73b6a4c56299abcab9d8ee99401e18d28c))
+* **completion:**
+  *  Make prefix filtering optional ([896e985f](https://github.com/gluon-lang/gluon/commit/896e985f813e06524be4e83220fc974633613c42))
+  *  Provide signature help through completion ([df92dad7](https://github.com/gluon-lang/gluon/commit/df92dad74855877d6bd839f79b8349ffa6649674))
+* **parser:**  Introduce literal pattern for match expressions ([6f4dd7f6](https://github.com/gluon-lang/gluon/commit/6f4dd7f676dad55ebde8a92aea53b4947b069a7f))
+
+#### Bug Fixes
+
+*   Actually return the stack size from the stack_size function ([87e4c95e](https://github.com/gluon-lang/gluon/commit/87e4c95e3c66c6f4ca905b62111ccc0aa7fcd9f0))
+* **c-api:**  Mark C functions as no_mangle ([8eee8619](https://github.com/gluon-lang/gluon/commit/8eee8619cbf2cb9c717974a20cb82e4ecca88bf2))
+* **check:**
+  *  Don't print type mismatches betwen EmptyRow ([f2dc9ef6](https://github.com/gluon-lang/gluon/commit/f2dc9ef6d02ed1edbf6884e94320a8706cb67b48))
+  *  Don't instantiate variables during unification inside aliases ([1326ca5d](https://github.com/gluon-lang/gluon/commit/1326ca5de7411783293b83bc15b15b1b74ad3b78))
+* **vm:**
+  *  Use check_translation in all tests ([43ca5f62](https://github.com/gluon-lang/gluon/commit/43ca5f621a59480c7efe5d536b31d463a302b9f2))
+  *  Fix warning about upcoming breaking change ([3918f66c](https://github.com/gluon-lang/gluon/commit/3918f66c91e6146bcb78d1100ccaee21ebfe4299))
+
+
+
 <a name="0.7.0"></a>
 ## v0.7.0 (2017-12-22)
 
