@@ -219,7 +219,7 @@ impl<'a> Unifiable<State<'a>> for ArcType {
         unifier: &mut UnifierState<'a, U>,
     ) -> Result<Option<Self>, Error<Symbol>>
     where
-        U: Unifier<State<'a>, Self>,
+        UnifierState<'a, U>: Unifier<State<'a>, Self>,
     {
         let reduced_aliases = unifier.state.reduced_aliases.len();
         debug!("{} <=> {}", self, other);
@@ -260,7 +260,7 @@ fn do_zip_match<'a, U>(
     actual: &ArcType,
 ) -> Result<Option<ArcType>, Error<Symbol>>
 where
-    U: Unifier<State<'a>, ArcType>,
+    UnifierState<'a, U>: Unifier<State<'a>, ArcType>,
 {
     debug!("Unifying:\n{} <=> {}", expected, actual);
     match (&**expected, &**actual) {
@@ -483,7 +483,7 @@ where
                     let result = unifier
                         .try_match_res(lhs, rhs)
                         .map(|typ| {
-                            if U::allow_returned_type_replacement() || typ.is_none() {
+                            if unifier.allow_returned_type_replacement() || typ.is_none() {
                                 // Always ignore the type returned from try_match_res since it will be less specialized than
                                 // `lhs` or `rhs`. If `lhs` is an alias we return `None` since `lhs` will be chosen if necessary anyway
                                 // otherwise if `lhs` is not an alias then `rhs` must have been so chose `rhs/actual`
@@ -524,7 +524,7 @@ fn unify_app<'a, U>(
     r_args: &AppVec<ArcType>,
 ) -> Option<ArcType>
 where
-    U: Unifier<State<'a>, ArcType>,
+    UnifierState<'a, U>: Unifier<State<'a>, ArcType>,
 {
     use std::cmp::Ordering::*;
     // Applications are curried `a b c d` == `((a b) c) d` we need to unify the last
@@ -610,7 +610,7 @@ fn unify_rows<'a, U>(
     r: &ArcType,
 ) -> Result<Option<ArcType>, Error<Symbol>>
 where
-    U: Unifier<State<'a>, ArcType>,
+    UnifierState<'a, U>: Unifier<State<'a>, ArcType>,
 {
     let subs = unifier.state.subs;
     let (types_missing_from_left, types_both, types_missing_from_right) =
@@ -726,7 +726,7 @@ fn find_alias<'a, U>(
     r_id: &SymbolRef,
 ) -> Result<Option<ArcType>, ()>
 where
-    U: Unifier<State<'a>, ArcType>,
+    UnifierState<'a, U>: Unifier<State<'a>, ArcType>,
 {
     let reduced_aliases = unifier.state.reduced_aliases.len();
     let result = find_alias_(unifier, l, r_id);
@@ -746,7 +746,7 @@ fn find_alias_<'a, U>(
     r_id: &SymbolRef,
 ) -> Result<Option<ArcType>, ()>
 where
-    U: Unifier<State<'a>, ArcType>,
+    UnifierState<'a, U>: Unifier<State<'a>, ArcType>,
 {
     let mut did_alias = false;
     loop {
@@ -804,7 +804,7 @@ fn find_common_alias<'a, U>(
     through_alias: &mut bool,
 ) -> Result<(ArcType, ArcType), ()>
 where
-    U: Unifier<State<'a>, ArcType>,
+    UnifierState<'a, U>: Unifier<State<'a>, ArcType>,
 {
     let mut l = expected.clone();
     if let Some(r_id) = actual.name() {
@@ -942,21 +942,18 @@ struct Subsume<'e> {
     level: u32,
 }
 
-impl<'a, 'e> Unifier<State<'a>, ArcType> for Subsume<'e> {
-    fn report_error(
-        unifier: &mut UnifierState<Self>,
-        error: UnifyError<ArcType, TypeError<Symbol>>,
-    ) {
+impl<'a, 'e> Unifier<State<'a>, ArcType> for UnifierState<'a, Subsume<'e>> {
+    fn report_error(&mut self, error: UnifyError<ArcType, TypeError<Symbol>>) {
         debug!("Error {}", error);
-        unifier.unifier.errors.push(error);
+        self.unifier.errors.push(error);
     }
 
     fn try_match_res(
-        unifier: &mut UnifierState<Self>,
+        &mut self,
         l: &ArcType,
         r: &ArcType,
     ) -> Result<Option<ArcType>, UnifyError<ArcType, TypeError<Symbol>>> {
-        let subs = unifier.unifier.subs;
+        let subs = self.unifier.subs;
         // Retrieve the 'real' types by resolving
         let l = subs.real(l);
         let r = subs.real(r);
@@ -973,12 +970,12 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Subsume<'e> {
                 )));
             }
             (&Type::Generic(ref l_gen), &Type::Variable(ref r_var)) => {
-                let left = match unifier.unifier.variables.get(&l_gen.id) {
+                let left = match self.unifier.variables.get(&l_gen.id) {
                     Some(generic_bound_var) => {
                         match **generic_bound_var {
                             // The generic variable is defined outside the current scope. Use the
                             // type variable instantiated from the generic and unify with that
-                            Type::Variable(ref var) if var.id < unifier.unifier.level => {
+                            Type::Variable(ref var) if var.id < self.unifier.level => {
                                 generic_bound_var
                             }
                             // `r_var` is outside the scope of the generic variable.
@@ -998,13 +995,13 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Subsume<'e> {
                     None => l,
                 };
                 debug!("Union merge {} <> {}", left, r_var);
-                subs.union(|| unifier.state.fresh(), r_var, left)?;
+                subs.union(|| self.state.fresh(), r_var, left)?;
                 Ok(None)
             }
 
             (_, &Type::Forall(_, _, Some(_))) => {
                 let r = r.instantiate_generics(&mut FnvMap::default());
-                Ok(unifier.try_match_res(l, &r)?)
+                Ok(self.try_match_res(l, &r)?)
             }
 
             // If we merge a forall with just a variable there is a chance that the variable
@@ -1029,29 +1026,29 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for Subsume<'e> {
                     .map(|param| (param.id.clone(), subs.new_var()))
                     .collect();
                 let l = l.instantiate_generics(&mut variables);
-                unifier.try_match_res(&l, r)
+                self.try_match_res(&l, r)
             }
             (_, &Type::Variable(ref r)) => {
                 debug!("Union merge {} <> {}", l, r);
-                subs.union(|| unifier.state.fresh(), r, l)?;
+                subs.union(|| self.state.fresh(), r, l)?;
                 Ok(None)
             }
             (&Type::Variable(ref l), _) => {
                 debug!("Union merge {} <> {}", l, r);
-                subs.union(|| unifier.state.fresh(), l, r)?;
+                subs.union(|| self.state.fresh(), l, r)?;
                 Ok(Some(r.clone()))
             }
             _ => {
                 // Both sides are concrete types, the only way they can be equal is if
                 // the matcher finds their top level to be equal (and their sub-terms
                 // unify)
-                l.zip_match(r, unifier)
+                l.zip_match(r, self)
             }
         }
     }
 
-    fn error_type(unifier: &mut UnifierState<Self>) -> Option<ArcType> {
-        Some(unifier.unifier.subs.new_var())
+    fn error_type(&mut self) -> Option<ArcType> {
+        Some(self.unifier.subs.new_var())
     }
 }
 

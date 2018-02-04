@@ -34,15 +34,15 @@ before_deploy:
   - cargo build --release -p gluon_repl
   - mkdir staging
   # TODO update this part to copy the artifacts that make sense for your project
-  - copy target/release/gluon.exe staging
+  - copy target\release\gluon.exe staging
   - cd staging
     # release zipfile will look like 'rust-everywhere-v1.2.3-x86_64-pc-windows-msvc'
-  - 7z a ../%PROJECT_NAME%-%APPVEYOR_REPO_TAG_NAME%-%TARGET%.zip *
-  - appveyor PushArtifact ../%PROJECT_NAME%-%APPVEYOR_REPO_TAG_NAME%-%TARGET%.zip
+  - 7z a ..\%PROJECT_NAME%-%APPVEYOR_REPO_TAG_NAME%-%TARGET%.zip *
+  - appveyor PushArtifact ..\%PROJECT_NAME%-%APPVEYOR_REPO_TAG_NAME%-%TARGET%.zip
 
 deploy:
   description: 'Windows release'
-  artifact: target/release/gluon
+  artifact: target\release\gluon.exe
   # TODO Regenerate this auth_token for your project, this one won't work for you. Here's how:
   # - Go to 'https://github.com/settings/tokens/new' and generate a Token with only the
   # `public_repo` scope enabled

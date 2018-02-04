@@ -609,25 +609,21 @@ struct Equivalent<'e, T: Substitutable + 'e> {
     temp_subs: FnvMap<u32, T>,
 }
 
-impl<'e, S, T> Unifier<S, T> for Equivalent<'e, T>
+impl<'e, S, T> Unifier<S, T> for UnifierState<S, Equivalent<'e, T>>
 where
     T: Unifiable<S> + PartialEq + Clone + 'e,
     T::Variable: Clone,
 {
-    fn report_error(unifier: &mut UnifierState<S, Self>, _error: UnifyError<T, T::Error>) {
-        unifier.unifier.equiv = false;
+    fn report_error(&mut self, _error: UnifyError<T, T::Error>) {
+        self.unifier.equiv = false;
     }
 
-    fn try_match_res(
-        unifier: &mut UnifierState<S, Self>,
-        l: &T,
-        r: &T,
-    ) -> Result<Option<T>, UnifyError<T, T::Error>> {
+    fn try_match_res(&mut self, l: &T, r: &T) -> Result<Option<T>, UnifyError<T, T::Error>> {
         let (l, r) = {
             use std::borrow::Cow;
 
-            let subs = unifier.unifier.subs;
-            let temp_subs = &mut unifier.unifier.temp_subs;
+            let subs = self.unifier.subs;
+            let temp_subs = &mut self.unifier.temp_subs;
 
             let l = subs.real(l);
             let l = l.get_var()
@@ -656,10 +652,10 @@ where
         // Both sides are concrete types, the only way they can be equal is if
         // the matcher finds their top level to be equal (and their sub-terms
         // unify)
-        l.zip_match(&r, unifier)
+        l.zip_match(&r, self)
     }
 
-    fn error_type(_unifier: &mut UnifierState<S, Self>) -> Option<T> {
+    fn error_type(&mut self) -> Option<T> {
         None
     }
 }
