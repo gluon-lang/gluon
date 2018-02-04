@@ -53,68 +53,38 @@ impl<T, E> From<substitution::Error<T>> for Error<T, E> {
     }
 }
 
-pub struct UnifierState<S, U> {
+pub struct UnifierState<S, U: ?Sized> {
     pub state: S,
     pub unifier: U,
 }
 
-impl<S, U> UnifierState<S, U> {
-    pub fn report_error<Type>(&mut self, error: Error<Type, Type::Error>)
-    where
-        U: Unifier<S, Type>,
-        Type: Unifiable<S>,
-    {
-        Unifier::report_error(self, error)
-    }
-
-    pub fn try_match_res<Type>(
-        &mut self,
-        l: &Type,
-        r: &Type,
-    ) -> Result<Option<Type>, Error<Type, Type::Error>>
-    where
-        U: Unifier<S, Type>,
-        Type: Unifiable<S>,
-    {
-        Unifier::try_match_res(self, l, r)
-    }
-
-    pub fn try_match<Type>(&mut self, l: &Type, r: &Type) -> Option<Type>
-    where
-        U: Unifier<S, Type>,
-        Type: Unifiable<S>,
-    {
-        Unifier::try_match(self, l, r)
-    }
-}
-
 /// A `Unifier` is a type which implements a unifying strategy between two values.
-pub trait Unifier<S, Type>: Sized
+pub trait Unifier<S, Type>
 where
     Type: Unifiable<S>,
 {
     /// Reports an error to the `unifier` for cases when returning the error is not possible.
-    fn report_error(unifier: &mut UnifierState<S, Self>, error: Error<Type, Type::Error>);
+    fn report_error(&mut self, error: Error<Type, Type::Error>);
     /// Attempt to unify `l` and `r` using the strategy of `Self`.
-    fn try_match(unifier: &mut UnifierState<S, Self>, l: &Type, r: &Type) -> Option<Type> {
-        match unifier.try_match_res(l, r) {
+    fn try_match(&mut self, l: &Type, r: &Type) -> Option<Type> {
+        match self.try_match_res(l, r) {
             Ok(typ) => typ,
             Err(err) => {
-                Self::report_error(unifier, err);
-                Self::error_type(unifier)
+                Self::report_error(self, err);
+                Self::error_type(self)
             }
         }
     }
     fn try_match_res(
-        unifier: &mut UnifierState<S, Self>,
+        &mut self,
         l: &Type,
         r: &Type,
     ) -> Result<Option<Type>, Error<Type, Type::Error>>;
 
-    fn error_type(unifier: &mut UnifierState<S, Self>) -> Option<Type>;
+    fn error_type(&mut self) -> Option<Type>;
 
     /// `true` if the returned type can be replaced by the caller
-    fn allow_returned_type_replacement() -> bool {
+    fn allow_returned_type_replacement(&self) -> bool {
         true
     }
 }
@@ -137,7 +107,7 @@ pub trait Unifiable<S>: Substitutable + Sized {
         unifier: &mut UnifierState<S, U>,
     ) -> Result<Option<Self>, Error<Self, Self::Error>>
     where
-        U: Unifier<S, Self>;
+        UnifierState<S, U>: Unifier<S, Self>;
 }
 
 pub trait Fresh {
@@ -191,23 +161,19 @@ where
     subs: &'e Substitution<T>,
 }
 
-impl<'e, S, T> Unifier<S, T> for Unify<'e, T, T::Error>
+impl<'e, S, T> Unifier<S, T> for UnifierState<S, Unify<'e, T, T::Error>>
 where
     T: Unifiable<S> + PartialEq + Clone + fmt::Display + 'e,
     T::Variable: Clone,
     T::Factory: Clone,
     S: Fresh,
 {
-    fn report_error(unifier: &mut UnifierState<S, Self>, error: Error<T, T::Error>) {
-        unifier.unifier.errors.push(error);
+    fn report_error(&mut self, error: Error<T, T::Error>) {
+        self.unifier.errors.push(error);
     }
 
-    fn try_match_res(
-        unifier: &mut UnifierState<S, Self>,
-        l_orig: &T,
-        r_orig: &T,
-    ) -> Result<Option<T>, Error<T, T::Error>> {
-        let subs = unifier.unifier.subs;
+    fn try_match_res(&mut self, l_orig: &T, r_orig: &T) -> Result<Option<T>, Error<T, T::Error>> {
+        let subs = self.unifier.subs;
 
         // Retrieve the 'real' types by resolving
         let l = subs.real(l_orig);
@@ -217,12 +183,12 @@ where
         // unified with whatever the other type is
         match (l.get_var(), r.get_var()) {
             (_, Some(r_var)) => {
-                let replacement = subs.union(|| unifier.state.fresh(), r_var, l)?;
+                let replacement = subs.union(|| self.state.fresh(), r_var, l)?;
                 debug!("Union {} <> {}", l, replacement.as_ref().unwrap_or(r));
                 Ok(replacement)
             }
             (Some(l_var), _) => {
-                let replacement = subs.union(|| unifier.state.fresh(), l_var, r)?;
+                let replacement = subs.union(|| self.state.fresh(), l_var, r)?;
                 debug!("Union {} <> {}", replacement.as_ref().unwrap_or(l), r);
                 Ok(replacement.or_else(|| Some(r.clone())))
             }
@@ -230,13 +196,13 @@ where
                 // Both sides are concrete types, the only way they can be equal is if
                 // the matcher finds their top level to be equal (and their sub-terms
                 // unify)
-                l.zip_match(r, unifier)
+                l.zip_match(r, self)
             }
         }
     }
 
-    fn error_type(unifier: &mut UnifierState<S, Self>) -> Option<T> {
-        Some(unifier.unifier.subs.new_var())
+    fn error_type(&mut self) -> Option<T> {
+        Some(self.unifier.subs.new_var())
     }
 }
 
@@ -281,33 +247,28 @@ where
     subs: &'m Substitution<T>,
 }
 
-impl<'m, S, T> Unifier<S, T> for Intersect<'m, T>
+impl<'m, S, T> Unifier<S, T> for UnifierState<S, Intersect<'m, T>>
 where
     T: GenericVariant + Unifiable<S> + Eq + Clone + Hash,
     T::Variable: Clone,
 {
-    fn report_error(_unifier: &mut UnifierState<S, Self>, _error: Error<T, T::Error>) {}
+    fn report_error(&mut self, _error: Error<T, T::Error>) {}
 
-    fn try_match_res(
-        unifier: &mut UnifierState<S, Self>,
-        l: &T,
-        r: &T,
-    ) -> Result<Option<T>, Error<T, T::Error>> {
-        let subs = unifier.unifier.subs;
+    fn try_match_res(&mut self, l: &T, r: &T) -> Result<Option<T>, Error<T, T::Error>> {
+        let subs = self.unifier.subs;
         let l = subs.real(l);
         let r = subs.real(r);
         match (l.get_var(), r.get_var()) {
             (Some(l), Some(r)) if l.get_id() == r.get_id() => Ok(None),
             _ => {
-                match l.zip_match(r, unifier) {
+                match l.zip_match(r, self) {
                     Ok(typ) => Ok(typ),
                     Err(_) => {
                         // If the immediate level of `l` and `r` does not match, record
                         // the mismatched types return a type variable in their place
                         // (Reusing a variable if the same mismatch was already seen)
-                        let symbols = &mut unifier.unifier.symbols;
-                        let generic_symbol = unifier
-                            .unifier
+                        let symbols = &mut self.unifier.symbols;
+                        let generic_symbol = self.unifier
                             .constraints
                             .entry((l.clone(), r.clone()))
                             .or_insert_with(|| {
@@ -320,11 +281,11 @@ where
             }
         }
     }
-    fn error_type(_unifier: &mut UnifierState<S, Self>) -> Option<T> {
+    fn error_type(&mut self) -> Option<T> {
         None
     }
 
-    fn allow_returned_type_replacement() -> bool {
+    fn allow_returned_type_replacement(&self) -> bool {
         false
     }
 }
@@ -416,7 +377,7 @@ mod test {
             f: &mut UnifierState<(), F>,
         ) -> Result<Option<Self>, Error<Self, Self::Error>>
         where
-            F: Unifier<(), Self>,
+            UnifierState<(), F>: Unifier<(), Self>,
         {
             match (&*self.0, &*other.0) {
                 (&Type::Ident(ref l), &Type::Ident(ref r)) if l == r => Ok(None),

@@ -386,7 +386,7 @@ impl<S> Unifiable<S> for ArcKind {
         unifier: &mut UnifierState<S, U>,
     ) -> StdResult<Option<Self>, Error<Symbol>>
     where
-        U: Unifier<S, Self>,
+        UnifierState<S, U>: Unifier<S, Self>,
     {
         match (&**self, &**other) {
             (&Kind::Function(ref l1, ref l2), &Kind::Function(ref r1, ref r2)) => {

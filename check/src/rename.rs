@@ -427,16 +427,13 @@ struct Equivalent {
     equiv: bool,
 }
 
-impl<'a> Unifier<State<'a>, ArcType> for Equivalent {
-    fn report_error(
-        unifier: &mut UnifierState<State<'a>, Self>,
-        _error: UnifyError<ArcType, TypeError<Symbol>>,
-    ) {
-        unifier.unifier.equiv = false;
+impl<'a> Unifier<State<'a>, ArcType> for UnifierState<State<'a>, Equivalent> {
+    fn report_error(&mut self, _error: UnifyError<ArcType, TypeError<Symbol>>) {
+        self.unifier.equiv = false;
     }
 
     fn try_match_res(
-        unifier: &mut UnifierState<State<'a>, Self>,
+        &mut self,
         l: &ArcType,
         r: &ArcType,
     ) -> Result<Option<ArcType>, UnifyError<ArcType, TypeError<Symbol>>> {
@@ -444,25 +441,25 @@ impl<'a> Unifier<State<'a>, ArcType> for Equivalent {
         match (&**l, &**r) {
             (&Type::Generic(ref gl), &Type::Generic(ref gr)) if gl == gr => Ok(None),
             (&Type::Skolem(ref gl), &Type::Skolem(ref gr)) if gl == gr => Ok(None),
-            (&Type::Generic(ref gl), _) => match unifier.unifier.map.get(&gl.id).cloned() {
-                Some(ref typ) => unifier.try_match_res(typ, r),
+            (&Type::Generic(ref gl), _) => match self.unifier.map.get(&gl.id).cloned() {
+                Some(ref typ) => self.try_match_res(typ, r),
                 None => {
-                    unifier.unifier.map.insert(gl.id.clone(), r.clone());
+                    self.unifier.map.insert(gl.id.clone(), r.clone());
                     Ok(None)
                 }
             },
-            (&Type::Skolem(ref gl), _) => match unifier.unifier.map.get(&gl.name).cloned() {
-                Some(ref typ) => unifier.try_match_res(typ, r),
+            (&Type::Skolem(ref gl), _) => match self.unifier.map.get(&gl.name).cloned() {
+                Some(ref typ) => self.try_match_res(typ, r),
                 None => {
-                    unifier.unifier.map.insert(gl.name.clone(), r.clone());
+                    self.unifier.map.insert(gl.name.clone(), r.clone());
                     Ok(None)
                 }
             },
-            _ => l.zip_match(r, unifier),
+            _ => l.zip_match(r, self),
         }
     }
 
-    fn error_type(_unifier: &mut UnifierState<State<'a>, Self>) -> Option<ArcType> {
+    fn error_type(&mut self) -> Option<ArcType> {
         None
     }
 }
