@@ -16,6 +16,11 @@ matrix:
     # Only for deployment
   - if: tag IS present
     env:
+      - TARGET=x86_64-unknown-freebsd
+      - DEPLOY=1
+      - DISABLE_TESTS=1
+  - if: tag IS present
+    env:
       - TARGET=x86_64-pc-windows-gnu
       - DEPLOY=1
   - if: tag IS present
@@ -39,7 +44,9 @@ env:
     - RUST_BACKTRACE=1
 script:
 - >
-    if [[ -z ${WASM+set} ]]; then
+    if [ ! -z $DISABLE_TESTS ]; then
+        return
+    elif [[ -z ${WASM+set} ]]; then
         ./scripts/travis.sh
     else
         rustup target add wasm32-unknown-unknown
