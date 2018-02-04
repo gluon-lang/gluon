@@ -416,6 +416,30 @@ eq (A 0) (B 0.0)
 }
 
 #[test]
+fn unification_error_with_empty_record_displays_good_error_message() {
+    let _ = ::env_logger::init();
+    let text = r#"
+let f x y : a -> a -> a = x
+
+f { } { x = 1 }
+"#;
+
+    let result = support::typecheck(text);
+
+    assert_eq!(
+        &*format!("{}", result.unwrap_err()).replace("\t", "        "),
+        r#"test:Line: 4, Column: 7: Expected the following types to be equal
+Expected: ()
+Found: { x : Int }
+1 errors were found during unification:
+The type `()` lacks the following fields: x
+f { } { x = 1 }
+      ^~~~~~~~~
+"#
+    );
+}
+
+#[test]
 fn long_type_error_format() {
     let long_type: ArcType = Type::function(
         vec![Type::int()],
