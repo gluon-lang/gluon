@@ -217,13 +217,13 @@ let guess_loop _ =
 guess_loop ()
 ```
 
-[Source](24 game)
+[Source][24 game]
 
 ## Getting started
 
 ### Try online
 
-You can try gluon in your browser at the [try_gluon](http://52.28.135.57:8080/) server. ([Github](https://github.com/gluon-lang/try_gluon))
+You can try gluon in your browser at  http://gluon-lang.org/try. ([Github](https://github.com/gluon-lang/try_gluon))
 
 ### REPL
 
