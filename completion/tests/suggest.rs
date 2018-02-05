@@ -61,7 +61,7 @@ fn suggest_query(query: SuggestionQuery, s: &str, pos: BytePos) -> Result<Vec<Su
 
     ReplaceImport.visit_expr(&mut expr);
 
-    let mut vec = query.suggest(&env, &mut expr, pos);
+    let mut vec = query.suggest(&env, &expr, pos);
     vec.sort_by(|l, r| l.name.cmp(&r.name));
     Ok(vec)
 }
@@ -703,7 +703,7 @@ match Abc 1 with
 
     let (mut expr, _result) = support::typecheck_partial_expr(text);
     expr.span.expansion_id = pos::UNKNOWN_EXPANSION;
-    let result: Vec<_> = completion::suggest(&env, &mut expr, 42.into())
+    let result: Vec<_> = completion::suggest(&env, &expr, 42.into())
         .into_iter()
         .map(|s| s.name)
         .collect();
@@ -727,7 +727,7 @@ match Abc 1 with
 
     let (mut expr, _result) = support::typecheck_partial_expr(text);
     expr.span.expansion_id = pos::UNKNOWN_EXPANSION;
-    let result: Vec<_> = completion::suggest(&env, &mut expr, 74.into())
+    let result: Vec<_> = completion::suggest(&env, &expr, 74.into())
         .into_iter()
         .map(|s| s.name)
         .collect();

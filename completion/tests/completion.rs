@@ -20,11 +20,11 @@ use support::{intern, typ, MockEnv};
 fn find_span_type(s: &str, pos: BytePos) -> Result<(Span<BytePos>, ArcType), ()> {
     let env = MockEnv::new();
 
-    let (mut expr, result) = support::typecheck_expr(s);
+    let (expr, result) = support::typecheck_expr(s);
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     let extract = (completion::SpanAt, completion::TypeAt { env: &env });
-    completion::completion(extract, &mut expr, pos)
+    completion::completion(extract, &expr, pos)
 }
 
 fn find_all_symbols(s: &str, pos: BytePos) -> Result<(String, Vec<Span<BytePos>>), ()> {
@@ -49,42 +49,42 @@ fn find_type_loc(s: &str, line: usize, column: usize) -> Result<ArcType, ()> {
 fn get_metadata(s: &str, pos: BytePos) -> Option<Metadata> {
     let env = MockEnv::new();
 
-    let (mut expr, result) = support::typecheck_expr(s);
+    let (expr, result) = support::typecheck_expr(s);
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    let (_, metadata_map) = check::metadata::metadata(&env, &mut expr);
-    completion::get_metadata(&metadata_map, &mut expr, pos).cloned()
+    let (_, metadata_map) = check::metadata::metadata(&env, &expr);
+    completion::get_metadata(&metadata_map, &expr, pos).cloned()
 }
 
 fn suggest_metadata(s: &str, pos: BytePos, name: &str) -> Option<Metadata> {
     let env = MockEnv::new();
 
-    let (mut expr, _result) = support::typecheck_expr(s);
+    let (expr, _result) = support::typecheck_expr(s);
 
-    let (_, metadata_map) = check::metadata::metadata(&env, &mut expr);
-    completion::suggest_metadata(&metadata_map, &env, &mut expr, pos, name).cloned()
+    let (_, metadata_map) = check::metadata::metadata(&env, &expr);
+    completion::suggest_metadata(&metadata_map, &env, &expr, pos, name).cloned()
 }
 
 #[test]
 fn identifier() {
     let env = MockEnv::new();
 
-    let (mut expr, result) = support::typecheck_expr("let abc = 1 in abc");
+    let (expr, result) = support::typecheck_expr("let abc = 1 in abc");
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    let result = completion::find(&env, &mut expr, BytePos::from(15));
+    let result = completion::find(&env, &expr, BytePos::from(15));
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
 
-    let result = completion::find(&env, &mut expr, BytePos::from(16));
+    let result = completion::find(&env, &expr, BytePos::from(16));
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
 
-    let result = completion::find(&env, &mut expr, BytePos::from(17));
+    let result = completion::find(&env, &expr, BytePos::from(17));
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
 
-    let result = completion::find(&env, &mut expr, BytePos::from(18));
+    let result = completion::find(&env, &expr, BytePos::from(18));
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
 }
@@ -151,7 +151,7 @@ fn binop() {
 
     let env = MockEnv::new();
 
-    let (mut expr, result) = support::typecheck_expr(
+    let (expr, result) = support::typecheck_expr(
         r#"
 let (++) l r =
     l #Int+ 1
@@ -162,15 +162,15 @@ let (++) l r =
     );
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    let result = completion::find(&env, &mut expr, BytePos::from(57));
+    let result = completion::find(&env, &expr, BytePos::from(57));
     let expected = Ok(Type::function(vec![typ("Int"), typ("Float")], typ("Int")));
     assert_eq!(result, expected);
 
-    let result = completion::find(&env, &mut expr, BytePos::from(54));
+    let result = completion::find(&env, &expr, BytePos::from(54));
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
 
-    let result = completion::find(&env, &mut expr, BytePos::from(59));
+    let result = completion::find(&env, &expr, BytePos::from(59));
     let expected = Ok(typ("Float"));
     assert_eq!(result, expected);
 }
@@ -181,7 +181,7 @@ fn field_access() {
 
     let typ_env = MockEnv::new();
 
-    let (mut expr, result) = support::typecheck_expr(
+    let (expr, result) = support::typecheck_expr(
         r#"
 let r = { x = 1 }
 r.x
@@ -189,14 +189,14 @@ r.x
     );
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    let result = completion::find(&typ_env, &mut expr, BytePos::from(19));
+    let result = completion::find(&typ_env, &expr, BytePos::from(19));
     let expected = Ok(Type::record(
         vec![],
         vec![Field::new(intern("x"), typ("Int"))],
     ));
     assert_eq!(result.map(support::close_record), expected);
 
-    let result = completion::find(&typ_env, &mut expr, BytePos::from(22));
+    let result = completion::find(&typ_env, &expr, BytePos::from(22));
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
 }
@@ -232,17 +232,17 @@ fn parens_expr() {
 let id x = x
 (id 1)
 "#;
-    let (mut expr, result) = support::typecheck_expr(text);
+    let (expr, result) = support::typecheck_expr(text);
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     let env = MockEnv::new();
     let extract = (completion::SpanAt, completion::TypeAt { env: &env });
 
-    let result = completion::completion(extract, &mut expr, BytePos::from(14));
+    let result = completion::completion(extract, &expr, BytePos::from(14));
     let expected = Ok((Span::new(14.into(), 20.into()), Type::int()));
     assert_eq!(result, expected);
 
-    let result = completion::completion(extract, &mut expr, BytePos::from(15));
+    let result = completion::completion(extract, &expr, BytePos::from(15));
     let expected = Ok((
         Span::new(15.into(), 17.into()),
         Type::function(vec![Type::int()], Type::int()),
@@ -258,13 +258,13 @@ fn suggest_pattern_at_record_brace() {
 let { x } = { x = 1 }
 x
 "#;
-    let (mut expr, result) = support::typecheck_expr(text);
+    let (expr, result) = support::typecheck_expr(text);
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     let env = MockEnv::new();
     let extract = (completion::SpanAt, completion::TypeAt { env: &env });
 
-    let result = completion::completion(extract, &mut expr, BytePos::from(5));
+    let result = completion::completion(extract, &expr, BytePos::from(5));
     let expected = Ok((
         Span::new(5.into(), 10.into()),
         Type::record(
