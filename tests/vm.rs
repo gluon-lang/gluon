@@ -16,8 +16,6 @@ use gluon::base::source;
 use gluon::vm::api::{FunctionRef, Hole, OpaqueValue, ValueRef};
 use gluon::vm::thread::{RootedThread, Thread, ThreadInternal};
 use gluon::vm::internal::Value;
-use gluon::vm::internal::Value::Int;
-use gluon::vm::stack::{StackFrame, State};
 use gluon::vm::channel::Sender;
 use gluon::{Compiler, Error};
 
@@ -130,10 +128,10 @@ in Some 1
 ";
     let vm = make_vm();
     let value = run_expr::<OpaqueValue<&Thread, Hole>>(&vm, text);
-    assert_eq!(
-        value.get_ref(),
-        vm.context().new_data(&vm, 1, &mut [Int(1)]).unwrap()
-    );
+    match value.get_ref() {
+        ValueRef::Data(ref data) if data.tag() == 1 && data.get(0) == Some(ValueRef::Int(1)) => (),
+        _ => panic!("{:?}", value),
+    }
 }
 
 test_expr!{ recursive_function,
@@ -164,27 +162,6 @@ let f y = x
 in f 4
 ",
 2i32
-}
-
-#[test]
-fn insert_stack_slice() {
-    let _ = ::env_logger::init();
-    let vm = make_vm();
-    let mut context = vm.context();
-    let mut stack = StackFrame::current(&mut context.stack);
-    stack.push(Int(0));
-    stack.insert_slice(0, &[Int(2), Int(1)]);
-    assert_eq!(&stack[..], [Int(2), Int(1), Int(0)]);
-    stack.enter_scope(2, State::Unknown);
-    stack.insert_slice(1, &[Int(10)]);
-    assert_eq!(&stack[..], [Int(1), Int(10), Int(0)]);
-    stack.insert_slice(1, &[]);
-    assert_eq!(&stack[..], [Int(1), Int(10), Int(0)]);
-    stack.insert_slice(2, &[Int(4), Int(5), Int(6)]);
-    assert_eq!(
-        &stack[..],
-        [Int(1), Int(10), Int(4), Int(5), Int(6), Int(0)]
-    );
 }
 
 test_expr!{ primitive_char_eq,
@@ -302,7 +279,7 @@ r#"
 type Test = | A Int | B
 B
 "#,
-Value::Tag(1)
+Value::tag(1)
 }
 
 test_expr!{ any marshalled_option_none_is_int,
@@ -310,7 +287,7 @@ r#"
 let string_prim = import! std.string.prim
 string_prim.find "a" "b"
 "#,
-Value::Tag(0)
+Value::tag(0)
 }
 
 test_expr!{ any marshalled_ordering_is_int,
@@ -318,7 +295,7 @@ r#"
 let { string_compare } = import! std.prim
 string_compare "a" "b"
 "#,
-Value::Tag(0)
+Value::tag(0)
 }
 
 test_expr!{ discriminant_value,

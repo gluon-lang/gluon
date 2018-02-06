@@ -24,7 +24,7 @@ where
 {
     fn deep_clone(&self, deep_cloner: &mut Cloner) -> Result<GcPtr<Box<Userdata>>> {
         let value = self.value.lock().unwrap();
-        let cloned_value = deep_cloner.deep_clone(*value)?;
+        let cloned_value = deep_cloner.deep_clone(&value)?;
         let data: Box<Userdata> = Box::new(Reference {
             value: Mutex::new(cloned_value),
             thread: unsafe { GcPtr::from_raw(deep_cloner.thread()) },
@@ -62,24 +62,28 @@ where
 }
 
 fn set(r: &Reference<A>, a: Generic<A>) -> RuntimeResult<(), String> {
-    match r.thread.deep_clone_value(&r.thread, a.0) {
-        Ok(a) => {
-            *r.value.lock().unwrap() = a;
-            RuntimeResult::Return(())
+    unsafe {
+        match r.thread.deep_clone_value(&r.thread, a.get_value()) {
+            Ok(a) => {
+                *r.value.lock().unwrap() = a;
+                RuntimeResult::Return(())
+            }
+            Err(err) => RuntimeResult::Panic(format!("{}", err)),
         }
-        Err(err) => RuntimeResult::Panic(format!("{}", err)),
     }
 }
 
 fn get(r: &Reference<A>) -> Generic<A> {
-    Generic::from(*r.value.lock().unwrap())
+    Generic::from(r.value.lock().unwrap().clone())
 }
 
 fn make_ref(a: WithVM<Generic<A>>) -> Reference<A> {
-    Reference {
-        value: Mutex::new(a.value.0),
-        thread: unsafe { GcPtr::from_raw(a.vm) },
-        _marker: PhantomData,
+    unsafe {
+        Reference {
+            value: Mutex::new(a.value.get_value()),
+            thread: GcPtr::from_raw(a.vm),
+            _marker: PhantomData,
+        }
     }
 }
 

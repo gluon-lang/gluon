@@ -90,7 +90,6 @@ fn partial_record() {
     );
 }
 
-
 #[derive(Debug, PartialEq, Deserialize)]
 struct OptionalFieldRecord {
     test: Option<i32>,
@@ -123,7 +122,7 @@ fn optional_field() {
         .run_expr::<OpaqueValue<&Thread, Hole>>(&thread, "test", r#" { } "#)
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(
-        De::<OptionalFieldRecord>::from_value(&thread, value.get_variants()).0,
+        De::<OptionalFieldRecord>::from_value(&thread, value.get_variant()).0,
         OptionalFieldRecord { test: None }
     );
 
@@ -135,7 +134,7 @@ fn optional_field() {
         )
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(
-        De::<OptionalFieldRecord>::from_value(&thread, value.get_variants()).0,
+        De::<OptionalFieldRecord>::from_value(&thread, value.get_variant()).0,
         OptionalFieldRecord { test: Some(2) }
     );
 
@@ -154,7 +153,7 @@ fn optional_field() {
         Type::hole(),
     );
     assert_eq!(
-        de::from_value(&thread, value.get_variants(), &typ).ok(),
+        de::from_value(&thread, value.get_variant(), &typ).ok(),
         Some(OptionalFieldRecord { test: Some(1) })
     );
 }

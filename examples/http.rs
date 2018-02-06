@@ -93,15 +93,15 @@ define_vmtype! { Method }
 impl<'vm> Pushable<'vm> for Wrap<Method> {
     fn push(self, _: &'vm Thread, context: &mut Context) -> VmResult<()> {
         use hyper::Method::*;
-        context.stack.push(Value::Tag(match self.0 {
+        context.stack.push(Value::tag(match self.0 {
             Get => 0,
             Post => 1,
             Delete => 2,
             _ => {
-                return Err(
-                    VmError::Message(format!("Method `{:?}` does not exist in gluon", self.0))
-                        .into(),
-                )
+                return Err(VmError::Message(format!(
+                    "Method `{:?}` does not exist in gluon",
+                    self.0
+                )).into())
             }
         }));
         Ok(())
@@ -260,8 +260,7 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
 
     // Retrieve the `handle` function from the http module which we use to evaluate values of type
     // `Handler Response`
-    type ListenFn = fn(OpaqueValue<RootedThread, Handler<Response>>, HttpState)
-        -> IO<Response>;
+    type ListenFn = fn(OpaqueValue<RootedThread, Handler<Response>>, HttpState) -> IO<Response>;
     let handle: Function<RootedThread, ListenFn> = thread
         .get_global("examples.http.handle")
         .unwrap_or_else(|err| panic!("{}", err));

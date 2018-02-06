@@ -1,9 +1,9 @@
 #[allow(unused_extern_crates)]
 extern crate env_logger;
+pub extern crate futures;
 #[allow(unused_extern_crates)]
 extern crate gluon;
 extern crate tokio_core;
-pub extern crate futures;
 
 use gluon::vm::api::{Getable, VmType};
 use gluon::vm::thread::{RootedThread, Thread};

@@ -4,7 +4,7 @@ use thread::Thread;
 use {ExternModule, Result};
 
 fn trace(a: Generic<A>) {
-    println!("{:?}", a.0);
+    println!("{:?}", a);
 }
 
 mod std {

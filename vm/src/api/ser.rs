@@ -9,7 +9,7 @@ use api::{Pushable, VmType};
 use interner::InternedStr;
 use thread::{Context, Thread, ThreadInternal};
 use types::{VmIndex, VmTag};
-use value::{Def, RecordDef, Value};
+use value::{Def, RecordDef, ValueRepr};
 use serde::ser::{self, Serialize};
 
 /**
@@ -178,7 +178,7 @@ impl<'t> Serializer<'t> {
         for _ in 0..values {
             self.context.stack.pop();
         }
-        self.context.stack.push(Value::Data(value));
+        self.context.stack.push(ValueRepr::Data(value));
         Ok(())
     }
 
@@ -190,7 +190,7 @@ impl<'t> Serializer<'t> {
         for _ in 0..values {
             self.context.stack.pop();
         }
-        self.context.stack.push(Value::Data(value));
+        self.context.stack.push(ValueRepr::Data(value));
         Ok(())
     }
 }
@@ -327,7 +327,7 @@ impl<'a, 'vm> ser::Serializer for &'a mut Serializer<'vm> {
     }
 
     fn serialize_unit(self) -> Result<Self::Ok> {
-        self.context.stack.push(Value::Tag(0));
+        self.context.stack.push(ValueRepr::Tag(0));
         Ok(())
     }
 
@@ -341,7 +341,7 @@ impl<'a, 'vm> ser::Serializer for &'a mut Serializer<'vm> {
         variant_index: u32,
         _variant: &'static str,
     ) -> Result<Self::Ok> {
-        self.context.stack.push(Value::Tag(variant_index));
+        self.context.stack.push(ValueRepr::Tag(variant_index));
         Ok(())
     }
 
@@ -559,6 +559,7 @@ impl<'a, 'vm> ser::SerializeStructVariant for RecordSerializer<'a, 'vm> {
 mod tests {
     use super::*;
     use thread::{RootedThread, ThreadInternal};
+    use value::Value;
 
     fn to_value<T>(thread: &Thread, value: &T) -> Result<Value>
     where
@@ -572,6 +573,6 @@ mod tests {
     #[test]
     fn bool() {
         let thread = RootedThread::new();
-        assert_eq!(to_value(&thread, &true).unwrap(), Value::Tag(1));
+        assert_eq!(to_value(&thread, &true).unwrap(), Value::tag(1));
     }
 }

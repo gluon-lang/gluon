@@ -481,7 +481,12 @@ where
             })
             .and_then(move |mut value| {
                 let (metadata, _) = metadata::metadata(&*vm.get_env(), value.expr.borrow_mut());
-                try_future!(vm.set_global(value.id.clone(), value.typ, metadata, *value.value,));
+                try_future!(vm.set_global(
+                    value.id.clone(),
+                    value.typ,
+                    metadata,
+                    value.value.get_value(),
+                ));
                 info!("Loaded module `{}` filename", filename);
                 FutureValue::sync(Ok(()))
             })
@@ -639,7 +644,7 @@ where
         } = v;
 
         let vm1 = vm.clone();
-        execute(vm1, |vm| vm.execute_io(*value))
+        execute(vm1, |vm| vm.execute_io(value.get_value()))
             .map(move |(_, value)| {
                 // The type of the new value will be `a` instead of `IO a`
                 let actual = resolve::remove_aliases_cow(&*vm.get_env(), &typ);

@@ -20,7 +20,7 @@ use array::Array;
 use thread::{Status, Thread};
 use {Error, Result, Variants};
 
-use self::Value::{Closure, Float, Function, Int, PartialApplication, String};
+use self::ValueRepr::{Closure, Float, Function, Int, PartialApplication, String};
 
 mopafy!(Userdata);
 pub trait Userdata: ::mopa::Any + Traverseable + fmt::Debug + Send + Sync {
@@ -36,11 +36,18 @@ impl PartialEq for Userdata {
     }
 }
 
+pub(crate) type VariantIter<'a> =
+    ::std::iter::Map<::std::slice::Iter<'a, Value>, fn(&'a Value) -> Variants<'a>>;
+
+pub(crate) fn variant_iter<'a>(xs: &'a [Value]) -> VariantIter<'a> {
+    xs.iter().map(|v| unsafe { Variants::new(v) })
+}
+
 #[derive(Debug, PartialEq)]
 #[repr(C)]
 pub struct ClosureData {
-    pub function: GcPtr<BytecodeFunction>,
-    pub upvars: Array<Value>,
+    pub(crate) function: GcPtr<BytecodeFunction>,
+    pub(crate) upvars: Array<Value>,
 }
 
 impl Traverseable for ClosureData {
@@ -50,7 +57,7 @@ impl Traverseable for ClosureData {
     }
 }
 
-pub struct ClosureDataDef<'b>(pub GcPtr<BytecodeFunction>, pub &'b [Value]);
+pub(crate) struct ClosureDataDef<'b>(pub GcPtr<BytecodeFunction>, pub &'b [Value]);
 impl<'b> Traverseable for ClosureDataDef<'b> {
     fn traverse(&self, gc: &mut Gc) {
         self.0.traverse(gc);
@@ -93,7 +100,7 @@ unsafe impl DataDef for ClosureInitDef {
             result.function = self.0;
             result.upvars.set_len(self.1);
             for var in &mut result.upvars {
-                ptr::write(var, Int(0));
+                ptr::write(var, Value::from(Int(0)));
             }
             result
         }
@@ -130,7 +137,7 @@ impl Traverseable for BytecodeFunction {
 #[repr(C)]
 pub struct DataStruct {
     tag: VmTag,
-    pub fields: Array<Value>,
+    pub(crate) fields: Array<Value>,
 }
 
 impl Traverseable for DataStruct {
@@ -160,22 +167,22 @@ impl DataStruct {
 }
 
 impl GcPtr<DataStruct> {
-    pub fn get(&self, vm: &Thread, field: &str) -> Result<Option<&Value>> {
+    pub(crate) fn get(&self, vm: &Thread, field: &str) -> Result<Option<Variants>> {
         use thread::ThreadInternal;
 
         let field = vm.global_env().intern(field)?;
         Ok(self.get_field(field))
     }
 
-    pub fn get_field(&self, field: InternedStr) -> Option<&Value> {
+    pub(crate) fn get_field(&self, field: InternedStr) -> Option<Variants> {
         self.field_map()
             .get(&field)
-            .map(|offset| &self.fields[*offset as usize])
+            .map(|offset| unsafe { Variants::new(&self.fields[*offset as usize]) })
     }
 }
 
 /// Definition for data values in the VM
-pub struct Def<'b> {
+pub(crate) struct Def<'b> {
     pub tag: VmTag,
     pub elems: &'b [Value],
 }
@@ -200,7 +207,7 @@ impl<'b> Traverseable for Def<'b> {
     }
 }
 
-pub struct RecordDef<'b> {
+pub(crate) struct RecordDef<'b> {
     pub elems: &'b [Value],
     pub fields: &'b [InternedStr],
 }
@@ -295,7 +302,7 @@ pub use self::gc_str::GcStr;
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
-pub enum Value {
+pub(crate) enum ValueRepr {
     Byte(u8),
     Int(VmInt),
     Float(f64),
@@ -336,18 +343,47 @@ pub enum Value {
     Thread(#[cfg_attr(feature = "serde_derive", serde(deserialize_state))] GcPtr<Thread>),
 }
 
+// FIXME Remove Clone to make it harder to create unrooted values
+#[derive(PartialEq, Clone)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
+#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
+pub struct Value(#[serde(state)] ValueRepr);
+
+impl From<ValueRepr> for Value {
+    #[inline]
+    fn from(x: ValueRepr) -> Value {
+        Value(x)
+    }
+}
+
 impl Value {
-    pub fn generation(self) -> Generation {
-        match self {
+    pub fn int(i: VmInt) -> Value {
+        Value(ValueRepr::Int(i))
+    }
+    pub fn array(array: GcPtr<ValueArray>) -> Value {
+        Value(ValueRepr::Array(array))
+    }
+
+    pub fn tag(tag: VmTag) -> Value {
+        Value(ValueRepr::Tag(tag))
+    }
+
+    pub(crate) fn get_repr(&self) -> ValueRepr {
+        self.0
+    }
+
+    pub fn generation(&self) -> Generation {
+        match self.get_repr() {
             String(p) => p.generation(),
-            Value::Data(p) => p.generation(),
+            ValueRepr::Data(p) => p.generation(),
             Function(p) => p.generation(),
             Closure(p) => p.generation(),
-            Value::Array(p) => p.generation(),
+            ValueRepr::Array(p) => p.generation(),
             PartialApplication(p) => p.generation(),
-            Value::Userdata(p) => p.generation(),
-            Value::Thread(p) => p.generation(),
-            Value::Tag(_) | Value::Byte(_) | Int(_) | Float(_) => Generation::default(),
+            ValueRepr::Userdata(p) => p.generation(),
+            ValueRepr::Thread(p) => p.generation(),
+            ValueRepr::Tag(_) | ValueRepr::Byte(_) | Int(_) | Float(_) => Generation::default(),
         }
     }
 }
@@ -362,17 +398,17 @@ use self::Prec::*;
 pub struct ValuePrinter<'a> {
     pub typ: &'a ArcType,
     pub env: &'a TypeEnv,
-    pub value: Value,
+    pub value: Variants<'a>,
     pub max_level: i32,
     pub width: usize,
 }
 
 impl<'t> ValuePrinter<'t> {
-    pub fn new(env: &'t TypeEnv, typ: &'t ArcType, value: Value) -> ValuePrinter<'t> {
+    pub fn new(env: &'t TypeEnv, typ: &'t ArcType, value: Variants<'t>) -> ValuePrinter<'t> {
         ValuePrinter {
-            typ: typ,
-            env: env,
-            value: value,
+            typ,
+            env,
+            value,
             max_level: 50,
             width: 80,
         }
@@ -419,36 +455,36 @@ impl<'a> fmt::Display for ValuePrinter<'a> {
 }
 
 impl<'a, 't> InternalPrinter<'a, 't> {
-    fn pretty(&self, value: Value) -> DocBuilder<'a, Arena<'a>> {
+    fn pretty(&self, value: Variants) -> DocBuilder<'a, Arena<'a>> {
         use std::iter;
 
         let arena = self.arena;
-        match value {
+        match value.0 {
             _ if self.level == 0 => arena.text(".."),
-            Value::String(s) => arena.text(format!("{:?}", &s[..])),
-            Value::Data(ref data) => self.pretty_data(data.tag, data.fields.iter().cloned()),
-            Value::Tag(tag) => self.pretty_data(tag, iter::empty()),
-            Value::Function(ref function) => chain![arena;
+            ValueRepr::String(s) => arena.text(format!("{:?}", &s[..])),
+            ValueRepr::Data(ref data) => self.pretty_data(data.tag(), variant_iter(&data.fields)),
+            ValueRepr::Tag(tag) => self.pretty_data(tag, iter::empty()),
+            ValueRepr::Function(ref function) => chain![arena;
                     "<extern ",
                     function.id.declared_name().to_string(),
                     ">"
                 ],
-            Value::Closure(ref closure) => chain![arena;
+            ValueRepr::Closure(ref closure) => chain![arena;
                     "<",
                     arena.text(closure.function.name.declared_name().to_string()),
-                    arena.concat(closure.upvars.iter().zip(&closure.function.debug_info.upvars)
+                    arena.concat(variant_iter(&closure.upvars).zip(&closure.function.debug_info.upvars)
                         .map(|(field, info)| {
                             chain![arena;
                                 arena.space(),
                                 info.name.clone(),
                                 ":",
                                 arena.space(),
-                                self.p(&info.typ, Top).pretty(*field)
+                                self.p(&info.typ, Top).pretty(field)
                             ]
                         }).intersperse(arena.text(","))).nest(INDENT),
                     ">"
                 ],
-            Value::Array(ref array) => chain![arena;
+            ValueRepr::Array(ref array) => chain![arena;
                     "[",
                     arena.concat(array.iter().map(|field| {
                         match **self.typ {
@@ -459,11 +495,11 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                         .nest(INDENT),
                     "]"
                 ],
-            Value::PartialApplication(p) => arena.text(format!("{:?}", p)),
-            Value::Userdata(ref data) => arena.text(format!("{:?}", data)),
-            Value::Thread(thread) => arena.text(format!("{:?}", thread)),
-            Value::Byte(b) => arena.text(format!("{}", b)),
-            Value::Int(i) => {
+            ValueRepr::PartialApplication(p) => arena.text(format!("{:?}", p)),
+            ValueRepr::Userdata(ref data) => arena.text(format!("{:?}", data)),
+            ValueRepr::Thread(thread) => arena.text(format!("{:?}", thread)),
+            ValueRepr::Byte(b) => arena.text(format!("{}", b)),
+            ValueRepr::Int(i) => {
                 use base::types::BuiltinType;
                 match **self.typ {
                     Type::Builtin(BuiltinType::Int) => arena.text(format!("{}", i)),
@@ -478,13 +514,13 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                     _ => arena.text(format!("{}", i)),
                 }
             }
-            Value::Float(f) => arena.text(format!("{}", f)),
+            ValueRepr::Float(f) => arena.text(format!("{}", f)),
         }
     }
 
-    fn pretty_data<I>(&self, tag: VmTag, fields: I) -> DocBuilder<'a, Arena<'a>>
+    fn pretty_data<'b, I>(&self, tag: VmTag, fields: I) -> DocBuilder<'a, Arena<'a>>
     where
-        I: IntoIterator<Item = Value>,
+        I: IntoIterator<Item = Variants<'b>>,
     {
         fn enclose<'a>(
             p: Prec,
@@ -595,13 +631,6 @@ pub enum Callable {
 }
 
 impl Callable {
-    pub fn name(&self) -> &Symbol {
-        match *self {
-            Callable::Closure(ref closure) => &closure.function.name,
-            Callable::Extern(ref ext) => &ext.id,
-        }
-    }
-
     pub fn args(&self) -> VmIndex {
         match *self {
             Callable::Closure(ref closure) => closure.function.args,
@@ -631,9 +660,9 @@ impl Traverseable for Callable {
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct PartialApplicationData {
     #[cfg_attr(feature = "serde_derive", serde(serialize_state))]
-    pub function: Callable,
+    pub(crate) function: Callable,
     #[cfg_attr(feature = "serde_derive", serde(serialize_state))]
-    pub args: Array<Value>,
+    pub(crate) args: Array<Value>,
 }
 
 impl PartialEq for PartialApplicationData {
@@ -649,7 +678,7 @@ impl Traverseable for PartialApplicationData {
     }
 }
 
-pub struct PartialApplicationDataDef<'b>(pub Callable, pub &'b [Value]);
+pub(crate) struct PartialApplicationDataDef<'b>(pub Callable, pub &'b [Value]);
 impl<'b> Traverseable for PartialApplicationDataDef<'b> {
     fn traverse(&self, gc: &mut Gc) {
         self.0.traverse(gc);
@@ -677,56 +706,73 @@ unsafe impl<'b> DataDef for PartialApplicationDataDef<'b> {
 
 impl Traverseable for Value {
     fn traverse(&self, gc: &mut Gc) {
+        self.get_repr().traverse(gc)
+    }
+}
+impl Traverseable for ValueRepr {
+    fn traverse(&self, gc: &mut Gc) {
         match *self {
             String(ref data) => data.traverse(gc),
-            Value::Data(ref data) => data.traverse(gc),
-            Value::Array(ref data) => data.traverse(gc),
+            ValueRepr::Data(ref data) => data.traverse(gc),
+            ValueRepr::Array(ref data) => data.traverse(gc),
             Function(ref data) => data.traverse(gc),
             Closure(ref data) => data.traverse(gc),
-            Value::Userdata(ref data) => data.traverse(gc),
+            ValueRepr::Userdata(ref data) => data.traverse(gc),
             PartialApplication(ref data) => data.traverse(gc),
-            Value::Thread(ref thread) => thread.traverse(gc),
-            Value::Tag(_) | Value::Byte(_) | Int(_) | Float(_) => (),
+            ValueRepr::Thread(ref thread) => thread.traverse(gc),
+            ValueRepr::Tag(_) | ValueRepr::Byte(_) | Int(_) | Float(_) => (),
         }
     }
 }
 
 impl fmt::Debug for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        struct Level<'b>(i32, &'b Value);
-        struct LevelSlice<'b>(i32, &'b [Value]);
-        impl<'b> fmt::Debug for LevelSlice<'b> {
+        self.0.fmt(f)
+    }
+}
+impl fmt::Debug for ValueRepr {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        struct Level<'b>(i32, Variants<'b>);
+        struct LevelSlice<I>(i32, I);
+
+        impl<'b, I> fmt::Debug for LevelSlice<I>
+        where
+            I: Iterator<Item = Variants<'b>> + Clone,
+        {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 let level = self.0;
-                if level <= 0 || self.1.is_empty() {
+                let mut iter = self.1.clone();
+                let first = iter.next();
+                if level <= 0 || first.is_none() {
                     return Ok(());
                 }
-                write!(f, "{:?}", Level(level - 1, &self.1[0]))?;
-                for v in &self.1[1..] {
+                write!(f, "{:?}", Level(level - 1, first.unwrap()))?;
+                for v in iter {
                     write!(f, ", {:?}", Level(level - 1, v))?;
                 }
                 Ok(())
             }
         }
+
         impl<'b> fmt::Debug for Level<'b> {
             fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 let level = self.0;
                 if level <= 0 {
                     return Ok(());
                 }
-                match *self.1 {
-                    Value::Byte(i) => write!(f, "{:?}b", i),
-                    Int(i) => write!(f, "{:?}", i),
-                    Float(x) => write!(f, "{:?}f", x),
-                    String(x) => write!(f, "{:?}", &*x),
-                    Value::Tag(tag) => write!(f, "{{{:?}: }}", tag),
-                    Value::Data(ref data) => write!(
+                match (self.1).0 {
+                    ValueRepr::Byte(i) => write!(f, "{:?}b", i),
+                    ValueRepr::Int(i) => write!(f, "{:?}", i),
+                    ValueRepr::Float(x) => write!(f, "{:?}f", x),
+                    ValueRepr::String(x) => write!(f, "{:?}", &*x),
+                    ValueRepr::Tag(tag) => write!(f, "{{{:?}: }}", tag),
+                    ValueRepr::Data(ref data) => write!(
                         f,
                         "{{{:?}: {:?}}}",
                         data.tag,
-                        LevelSlice(level - 1, &data.fields)
+                        LevelSlice(level - 1, variant_iter(&data.fields))
                     ),
-                    Value::Array(ref array) => {
+                    ValueRepr::Array(ref array) => {
                         let mut first = true;
                         write!(f, "[")?;
                         for value in array.iter() {
@@ -734,28 +780,33 @@ impl fmt::Debug for Value {
                                 write!(f, ", ")?;
                             }
                             first = false;
-                            write!(f, "{:?}", Level(level - 1, &value))?;
+                            write!(f, "{:?}", Level(level - 1, value))?;
                         }
                         write!(f, "]")
                     }
-                    Function(ref func) => write!(f, "<EXTERN {:?}>", &**func),
-                    Closure(ref closure) => {
+                    ValueRepr::Function(ref func) => write!(f, "<EXTERN {:?}>", &**func),
+                    ValueRepr::Closure(ref closure) => {
                         let p: *const _ = &*closure.function;
                         write!(f, "<{:?} {:?}>", closure.function.name, p)
                     }
-                    PartialApplication(ref app) => {
+                    ValueRepr::PartialApplication(ref app) => {
                         let name = match app.function {
                             Callable::Closure(_) => "<CLOSURE>",
                             Callable::Extern(_) => "<EXTERN>",
                         };
-                        write!(f, "<App {:?}{:?}>", name, LevelSlice(level - 1, &app.args))
+                        write!(
+                            f,
+                            "<App {:?}{:?}>",
+                            name,
+                            LevelSlice(level - 1, variant_iter(&app.args))
+                        )
                     }
-                    Value::Userdata(ref data) => write!(f, "<Userdata {:?}>", &**data),
-                    Value::Thread(_) => write!(f, "<thread>"),
+                    ValueRepr::Userdata(ref data) => write!(f, "<Userdata {:?}>", &**data),
+                    ValueRepr::Thread(_) => write!(f, "<thread>"),
                 }
             }
         }
-        write!(f, "{:?}", Level(7, self))
+        unsafe { write!(f, "{:?}", Level(7, Variants::new(&Value(*self)))) }
     }
 }
 
@@ -874,20 +925,20 @@ impl_repr! {
 }
 
 impl Repr {
-    fn from_value(value: Value) -> Repr {
-        match value {
-            Value::Byte(_) => Repr::Byte,
-            Value::Int(_) => Repr::Int,
-            Value::Float(_) => Repr::Float,
-            Value::String(_) => Repr::String,
-            Value::Array(_) => Repr::Array,
-            Value::Data(_)
-            | Value::Tag(_)
-            | Value::Function(_)
-            | Value::Closure(_)
-            | Value::PartialApplication(_) => Repr::Unknown,
-            Value::Userdata(_) => Repr::Userdata,
-            Value::Thread(_) => Repr::Thread,
+    fn from_value(value: &Value) -> Repr {
+        match value.get_repr() {
+            ValueRepr::Byte(_) => Repr::Byte,
+            ValueRepr::Int(_) => Repr::Int,
+            ValueRepr::Float(_) => Repr::Float,
+            ValueRepr::String(_) => Repr::String,
+            ValueRepr::Array(_) => Repr::Array,
+            ValueRepr::Data(_)
+            | ValueRepr::Tag(_)
+            | ValueRepr::Function(_)
+            | ValueRepr::Closure(_)
+            | ValueRepr::PartialApplication(_) => Repr::Unknown,
+            ValueRepr::Userdata(_) => Repr::Userdata,
+            ValueRepr::Thread(_) => Repr::Thread,
         }
     }
 }
@@ -937,36 +988,14 @@ pub struct Iter<'a> {
     array: &'a ValueArray,
     index: usize,
 }
+
 impl<'a> Iterator for Iter<'a> {
-    type Item = Value;
-    fn next(&mut self) -> Option<Value> {
-        if self.index < self.array.len() {
-            let value = self.array.get(self.index);
-            self.index += 1;
-            Some(value)
-        } else {
-            None
-        }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let i = self.array.len() - self.index;
-        (i, Some(i))
-    }
-}
-
-pub struct VariantIter<'a> {
-    array: &'a ValueArray,
-    index: usize,
-}
-
-impl<'a> Iterator for VariantIter<'a> {
     type Item = Variants<'a>;
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < self.array.len() {
             let value = self.array.get(self.index);
             self.index += 1;
-            Some(unsafe { Variants::with_root(value, self.array) })
+            Some(value)
         } else {
             None
         }
@@ -985,18 +1014,19 @@ impl Traverseable for ValueArray {
 }
 
 impl ValueArray {
-    pub fn get(&self, index: usize) -> Value {
+    pub fn get(&self, index: usize) -> Variants {
         unsafe {
-            match self.repr {
-                Repr::Byte => Value::Byte(self.unsafe_get(index)),
-                Repr::Int => Value::Int(self.unsafe_get(index)),
-                Repr::Float => Value::Float(self.unsafe_get(index)),
-                Repr::String => Value::String(self.unsafe_get(index)),
-                Repr::Array => Value::Array(self.unsafe_get(index)),
+            let value = match self.repr {
+                Repr::Byte => ValueRepr::Byte(self.unsafe_get(index)),
+                Repr::Int => ValueRepr::Int(self.unsafe_get(index)),
+                Repr::Float => ValueRepr::Float(self.unsafe_get(index)),
+                Repr::String => ValueRepr::String(self.unsafe_get(index)),
+                Repr::Array => ValueRepr::Array(self.unsafe_get(index)),
                 Repr::Unknown => self.unsafe_get(index),
-                Repr::Userdata => Value::Userdata(self.unsafe_get(index)),
-                Repr::Thread => Value::Thread(self.unsafe_get(index)),
-            }
+                Repr::Userdata => ValueRepr::Userdata(self.unsafe_get(index)),
+                Repr::Thread => ValueRepr::Thread(self.unsafe_get(index)),
+            };
+            Variants::with_root(value, self)
         }
     }
 
@@ -1015,13 +1045,6 @@ impl ValueArray {
         }
     }
 
-    pub fn variant_iter(&self) -> VariantIter {
-        VariantIter {
-            array: self,
-            index: 0,
-        }
-    }
-
     pub fn size_of(repr: Repr, len: usize) -> usize {
         ::std::mem::size_of::<ValueArray>() + repr.size_of() * len
     }
@@ -1034,18 +1057,18 @@ impl ValueArray {
         self.repr = repr;
     }
 
-    pub unsafe fn initialize<I>(&mut self, iter: I)
+    pub(crate) unsafe fn initialize<'a, I>(&mut self, iter: I)
     where
-        I: IntoIterator<Item = Value>,
+        I: IntoIterator<Item = Variants<'a>>,
     {
-        let iter = iter.into_iter();
+        let iter = iter.into_iter().map(|v| v.0);
 
         macro_rules! initialize_variants {
             ($($id: ident)+) => {
         match self.repr {
                     $(Repr::$id => {
                 let iter = iter.map(|v| match v {
-                            Value::$id(x) => x,
+                            ValueRepr::$id(x) => x,
                     _ => unreachable!(),
                 });
                 self.unsafe_array_mut().initialize(iter);
@@ -1060,7 +1083,7 @@ impl ValueArray {
         initialize_variants! { Byte Int Float String Array Userdata Thread }
     }
 
-    pub fn as_slice<T: ArrayRepr + Copy>(&self) -> Option<&[T]> {
+    pub fn as_slice<T: ArrayRepr>(&self) -> Option<&[T]> {
         unsafe {
             // If the array is empty then it may not have the correct type representation set since
             // there was no value to take the correct representation from
@@ -1076,11 +1099,11 @@ impl ValueArray {
         ::std::mem::transmute::<&Array<()>, &Array<T>>(&self.array)[index]
     }
 
-    unsafe fn unsafe_array<T: Copy>(&self) -> &Array<T> {
+    unsafe fn unsafe_array<T>(&self) -> &Array<T> {
         ::std::mem::transmute::<&Array<()>, &Array<T>>(&self.array)
     }
 
-    pub unsafe fn unsafe_array_mut<T: Copy>(&mut self) -> &mut Array<T> {
+    pub unsafe fn unsafe_array_mut<T>(&mut self) -> &mut Array<T> {
         ::std::mem::transmute::<&mut Array<()>, &mut Array<T>>(&mut self.array)
     }
 }
@@ -1104,7 +1127,7 @@ unsafe impl<'a> DataDef for &'a ValueArray {
     }
 }
 
-pub struct ArrayDef<'b>(pub &'b [Value]);
+pub(crate) struct ArrayDef<'b>(pub &'b [Value]);
 impl<'b> Traverseable for ArrayDef<'b> {
     fn traverse(&self, gc: &mut Gc) {
         self.0.traverse(gc);
@@ -1116,7 +1139,7 @@ unsafe impl<'b> DataDef for ArrayDef<'b> {
     fn size(&self) -> usize {
         use std::mem::size_of;
         let size = match self.0.first() {
-            Some(value) => Repr::from_value(*value).size_of() * self.0.len(),
+            Some(value) => Repr::from_value(value).size_of() * self.0.len(),
             None => 0,
         };
         size_of::<ValueArray>() + size
@@ -1126,8 +1149,8 @@ unsafe impl<'b> DataDef for ArrayDef<'b> {
             let result = &mut *result.as_mut_ptr();
             match self.0.first() {
                 Some(value) => {
-                    result.repr = Repr::from_value(*value);
-                    result.initialize(self.0.iter().cloned());
+                    result.repr = Repr::from_value(value);
+                    result.initialize(variant_iter(self.0))
                 }
                 None => {
                     result.repr = Repr::Unknown;
@@ -1140,7 +1163,7 @@ unsafe impl<'b> DataDef for ArrayDef<'b> {
 }
 
 pub struct Cloner<'t> {
-    visited: FnvMap<*const (), Value>,
+    visited: FnvMap<*const (), ValueRepr>,
     thread: &'t Thread,
     gc: &'t mut Gc,
     receiver_generation: Generation,
@@ -1170,35 +1193,42 @@ impl<'t> Cloner<'t> {
         self
     }
 
-    pub fn deep_clone(&mut self, value: Value) -> Result<Value> {
+    pub(crate) fn deep_clone(&mut self, value: &Value) -> Result<Value> {
         // Only need to clone values which belong to a younger generation than the gc that the new
         // value will live in
         if self.receiver_generation
             .can_contain_values_from(value.generation())
         {
-            return Ok(value);
+            return Ok(value.clone());
         }
-        match value {
+        let result = match value.0 {
             String(data) => self.deep_clone_str(data),
-            Value::Data(data) => self.deep_clone_data(data).map(Value::Data),
-            Value::Array(data) => self.deep_clone_array(data).map(Value::Array),
-            Closure(data) => self.deep_clone_closure(data).map(Value::Closure),
-            PartialApplication(data) => self.deep_clone_app(data).map(Value::PartialApplication),
+            ValueRepr::Data(data) => self.deep_clone_data(data).map(ValueRepr::Data),
+            ValueRepr::Array(data) => self.deep_clone_array(data).map(ValueRepr::Array),
+            Closure(data) => self.deep_clone_closure(data).map(ValueRepr::Closure),
+            PartialApplication(data) => {
+                self.deep_clone_app(data).map(ValueRepr::PartialApplication)
+            }
             Function(f) => self.gc
                 .alloc(Move(ExternFunction::clone(&f)))
-                .map(Value::Function),
-            Value::Tag(i) => Ok(Value::Tag(i)),
-            Value::Byte(i) => Ok(Value::Byte(i)),
+                .map(ValueRepr::Function),
+            ValueRepr::Tag(i) => Ok(ValueRepr::Tag(i)),
+            ValueRepr::Byte(i) => Ok(ValueRepr::Byte(i)),
             Int(i) => Ok(Int(i)),
             Float(f) => Ok(Float(f)),
-            Value::Userdata(userdata) => userdata.deep_clone(self).map(Value::Userdata),
-            Value::Thread(_) => Err(Error::Message("Threads cannot be deep cloned yet".into())),
-        }
+            ValueRepr::Userdata(userdata) => userdata.deep_clone(self).map(ValueRepr::Userdata),
+            ValueRepr::Thread(_) => Err(Error::Message("Threads cannot be deep cloned yet".into())),
+        };
+        result.map(Value::from)
     }
 
-    fn deep_clone_ptr<T, A, R>(&mut self, value: GcPtr<T>, alloc: A) -> Result<StdResult<Value, R>>
+    fn deep_clone_ptr<T, A, R>(
+        &mut self,
+        value: GcPtr<T>,
+        alloc: A,
+    ) -> Result<StdResult<ValueRepr, R>>
     where
-        A: FnOnce(&mut Gc, &T) -> Result<(Value, R)>,
+        A: FnOnce(&mut Gc, &T) -> Result<(ValueRepr, R)>,
     {
         let key = &*value as *const T as *const ();
         let new_ptr = match self.visited.entry(key) {
@@ -1213,7 +1243,7 @@ impl<'t> Cloner<'t> {
         Ok(Err(new_ptr))
     }
 
-    fn deep_clone_str(&mut self, data: GcStr) -> Result<Value> {
+    fn deep_clone_str(&mut self, data: GcStr) -> Result<ValueRepr> {
         unsafe {
             Ok(self.deep_clone_ptr(data.into_inner(), |gc, data| {
                 let ptr = GcStr::from_utf8_unchecked(gc.alloc(data)?);
@@ -1235,16 +1265,16 @@ impl<'t> Cloner<'t> {
                     elems: &data.fields,
                 })?
             };
-            Ok((Value::Data(ptr), ptr))
+            Ok((ValueRepr::Data(ptr), ptr))
         })?;
         match result {
-            Ok(Value::Data(ptr)) => Ok(ptr),
+            Ok(ValueRepr::Data(ptr)) => Ok(ptr),
             Ok(_) => unreachable!(),
             Err(mut new_data) => {
                 {
                     let new_fields = unsafe { &mut new_data.as_mut().fields };
                     for (new, old) in new_fields.iter_mut().zip(&data_ptr.fields) {
-                        *new = self.deep_clone(*old)?;
+                        *new = self.deep_clone(old)?;
                     }
                 }
                 Ok(new_data)
@@ -1262,31 +1292,30 @@ impl<'t> Cloner<'t> {
             mut deep_clone: F,
         ) -> Result<()>
         where
-            T: Copy,
-            F: FnMut(T) -> Result<T>,
+            F: FnMut(&T) -> Result<T>,
         {
             let new_array = new_array.as_mut().unsafe_array_mut::<T>();
             for field in new_array.iter_mut() {
-                *field = deep_clone(*field)?;
+                *field = deep_clone(field)?;
             }
             Ok(())
         }
 
         let result = self.deep_clone_ptr(array, |gc, array| {
             let ptr = gc.alloc(array)?;
-            Ok((Value::Array(ptr), ptr))
+            Ok((ValueRepr::Array(ptr), ptr))
         })?;
         match result {
-            Ok(Value::Array(ptr)) => Ok(ptr),
+            Ok(ValueRepr::Array(ptr)) => Ok(ptr),
             Ok(_) => unreachable!(),
             Err(new_array) => {
                 unsafe {
                     match new_array.repr() {
                         Repr::Byte | Repr::Int | Repr::Float | Repr::String => Ok(()),
-                        Repr::Array => deep_clone_elems(new_array, |e| self.deep_clone_array(e)),
+                        Repr::Array => deep_clone_elems(new_array, |e| self.deep_clone_array(*e)),
                         Repr::Unknown => deep_clone_elems(new_array, |e| self.deep_clone(e)),
                         Repr::Userdata => {
-                            deep_clone_elems(new_array, |e| self.deep_clone_userdata(e))
+                            deep_clone_elems(new_array, |e| self.deep_clone_userdata(*e))
                         }
                         Repr::Thread => {
                             return Err(Error::Message("Threads cannot be deep cloned yet".into()))
@@ -1306,13 +1335,13 @@ impl<'t> Cloner<'t> {
             Ok((Closure(ptr), ptr))
         })?;
         match result {
-            Ok(Value::Closure(ptr)) => Ok(ptr),
+            Ok(ValueRepr::Closure(ptr)) => Ok(ptr),
             Ok(_) => unreachable!(),
             Err(mut new_data) => {
                 {
                     let new_upvars = unsafe { &mut new_data.as_mut().upvars };
                     for (new, old) in new_upvars.iter_mut().zip(&data.upvars) {
-                        *new = self.deep_clone(*old)?;
+                        *new = self.deep_clone(old)?;
                     }
                 }
                 Ok(new_data)
@@ -1332,16 +1361,16 @@ impl<'t> Cloner<'t> {
 
         let result = self.deep_clone_ptr(data, |gc, data| {
             let ptr = gc.alloc(PartialApplicationDataDef(function, &data.args))?;
-            Ok((PartialApplication(ptr), ptr))
+            Ok((ValueRepr::PartialApplication(ptr), ptr))
         })?;
         match result {
-            Ok(Value::PartialApplication(ptr)) => Ok(ptr),
+            Ok(ValueRepr::PartialApplication(ptr)) => Ok(ptr),
             Ok(_) => unreachable!(),
             Err(mut new_data) => {
                 {
                     let new_args = unsafe { &mut new_data.as_mut().args };
                     for (new, old) in new_args.iter_mut().zip(&data.args) {
-                        *new = self.deep_clone(*old)?;
+                        *new = self.deep_clone(old)?;
                     }
                 }
                 Ok(new_data)
@@ -1407,22 +1436,34 @@ mod tests {
 
         let env = MockEnv(Some(Alias::new(list.clone(), typ.clone())));
 
-        let nil = Value::Tag(1);
-        assert_eq!(format!("{}", ValuePrinter::new(&env, &typ, nil)), "Nil");
-        let list1 = Value::Data(gc.alloc(Def {
-            tag: 0,
-            elems: &[Value::Int(123), nil],
-        }).unwrap());
+        let nil = Value::tag(1);
         assert_eq!(
-            format!("{}", ValuePrinter::new(&env, &typ, list1)),
+            format!(
+                "{}",
+                ValuePrinter::new(&env, &typ, unsafe { Variants::new(&nil) })
+            ),
+            "Nil"
+        );
+        let list1 = Value::from(ValueRepr::Data(gc.alloc(Def {
+            tag: 0,
+            elems: &[Value::from(ValueRepr::Int(123)), nil],
+        }).unwrap()));
+        assert_eq!(
+            format!(
+                "{}",
+                ValuePrinter::new(&env, &typ, unsafe { Variants::new(&list1) })
+            ),
             "Cons 123 Nil"
         );
-        let list2 = Value::Data(gc.alloc(Def {
+        let list2 = Value::from(ValueRepr::Data(gc.alloc(Def {
             tag: 0,
-            elems: &[Value::Int(0), list1],
-        }).unwrap());
+            elems: &[ValueRepr::Int(0).into(), list1],
+        }).unwrap()));
         assert_eq!(
-            format!("{}", ValuePrinter::new(&env, &typ, list2)),
+            format!(
+                "{}",
+                ValuePrinter::new(&env, &typ, unsafe { Variants::new(&list2) })
+            ),
             "Cons 0 (Cons 123 Nil)"
         );
     }
@@ -1435,9 +1476,12 @@ mod tests {
 
         let env = MockEnv(None);
 
-        let nil = Value::Array(gc.alloc(&[1 as VmInt, 2, 3][..]).unwrap());
+        let nil = Value::array(gc.alloc(&[1 as VmInt, 2, 3][..]).unwrap());
         assert_eq!(
-            format!("{}", ValuePrinter::new(&env, &typ, nil)),
+            format!(
+                "{}",
+                ValuePrinter::new(&env, &typ, unsafe { Variants::new(&nil) })
+            ),
             "[1, 2, 3]"
         );
     }

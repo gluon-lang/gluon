@@ -14,18 +14,17 @@ use base::types::{Alias, AliasData, AppVec, ArcType, Generic, PrimitiveEnv, Reco
                   TypeCache, TypeEnv};
 
 use macros::MacroEnv;
-use {Error, Result};
+use {Error, Result, Variants};
 use types::*;
 use interner::{InternedStr, Interner};
 use gc::{Gc, GcPtr, Generation, Move, Traverseable};
 use compiler::{CompiledFunction, CompiledModule, CompilerEnv, Variable};
-use api::IO;
+use api::{ValueRef, IO};
 use lazy::Lazy;
 
-use value::{BytecodeFunction, ClosureData};
+use value::{BytecodeFunction, ClosureData, ClosureDataDef, Value};
 
-pub use value::{ClosureDataDef, Userdata};
-pub use value::Value; //FIXME Value should not be exposed
+pub use value::Userdata;
 pub use thread::{Root, RootStr, RootedThread, RootedValue, Status, Thread};
 
 fn new_bytecode(
@@ -43,7 +42,7 @@ fn new_bytecode(
 
     let globals = module_globals
         .into_iter()
-        .map(|index| env.globals[index.definition_name()].value)
+        .map(|index| env.globals[index.definition_name()].value.clone())
         .collect::<Vec<_>>();
 
     gc.alloc(ClosureDataDef(bytecode_function, &globals))
@@ -297,12 +296,12 @@ impl VmEnv {
         let remaining_offset = module.as_str().len() + 1; //Add 1 byte for the '.'
         if remaining_offset >= name.len() {
             // No fields left
-            return Ok((global.value, Cow::Borrowed(&global.typ)));
+            return Ok((global.value.clone(), Cow::Borrowed(&global.typ)));
         }
         let remaining_fields = Name::new(&name[remaining_offset..]);
 
         let mut typ = Cow::Borrowed(&global.typ);
-        let mut value = global.value;
+        let mut value = unsafe { Variants::new(&global.value) };
 
         for mut field_name in remaining_fields.components() {
             if field_name.starts_with('(') && field_name.ends_with(')') {
@@ -325,9 +324,9 @@ impl VmEnv {
                 typ.row_iter()
                     .enumerate()
                     .find(|&(_, field)| field.name.as_ref() == field_name)
-                    .map(|(index, field)| match value {
-                        Value::Data(data) => {
-                            value = data.fields[index];
+                    .map(|(index, field)| match value.as_ref() {
+                        ValueRef::Data(data) => {
+                            value = data.get_variant(index).unwrap();
                             &field.typ
                         }
                         _ => ice!("Unexpected value {:?}", value),
@@ -336,7 +335,7 @@ impl VmEnv {
             typ = next_type
                 .ok_or_else(move || Error::UndefinedField(typ.into_owned(), field_name.into()))?;
         }
-        Ok((value, typ))
+        Ok((value.get_value(), typ))
     }
 
     pub fn get_metadata(&self, name_str: &str) -> Result<&Metadata> {
@@ -494,8 +493,7 @@ impl GlobalVmState {
         self.env.read().unwrap().globals.get(name).is_some()
     }
 
-    /// TODO dont expose this directly
-    pub fn set_global(
+    pub(crate) fn set_global(
         &self,
         id: Symbol,
         typ: ArcType,

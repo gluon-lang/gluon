@@ -19,7 +19,7 @@ use gc::{DataDef, GcPtr, WriteOnly};
 use thread::{RootedThread, Thread, ThreadInternal};
 use types::VmIndex;
 use value::{BytecodeFunction, Callable, ClosureData, ExternFunction, PartialApplicationData,
-            PartialApplicationDataDef, Value};
+            PartialApplicationDataDef, Value, ValueRepr};
 
 #[derive(Clone)]
 pub struct DeSeed {
@@ -107,7 +107,7 @@ pub mod gc {
     use serde::ser::{Serialize, SerializeState, Serializer};
 
     use interner::InternedStr;
-    use value::{DataStruct, GcStr, Value, ValueArray};
+    use value::{DataStruct, GcStr, ValueArray};
     use thread::ThreadInternal;
     use types::VmTag;
 
@@ -262,7 +262,7 @@ pub mod gc {
                         .gc
                         .alloc(RecordDef {
                             elems: &def.fields,
-                            fields: &fields,
+                            fields: &fields[..],
                         })
                         .map_err(D::Error::custom),
                     DataTag::Data(tag) => seed.thread
@@ -440,9 +440,11 @@ unsafe impl DataDef for ClosureDataModel {
         unsafe {
             let result = &mut *result.as_mut_ptr();
             result.function = self.function;
-            result
-                .upvars
-                .initialize(::std::iter::repeat(Value::Int(0)).take(self.upvars));
+            result.upvars.initialize(
+                ::std::iter::repeat(())
+                    .map(|_| ValueRepr::Int(0).into())
+                    .take(self.upvars),
+            );
             result
         }
     }
@@ -704,12 +706,14 @@ impl<'de> DeserializeState<'de, DeSeed> for ExternFunction {
             .get_global::<OpaqueValue<&Thread, Hole>>(&escaped_id)
             .map_err(|err| D::Error::custom(err))?;
         unsafe {
-            match function.get_value() {
-                Value::Function(function) if partial.args == function.args => Ok(ExternFunction {
-                    id: function.id.clone(),
-                    args: function.args,
-                    function: function.function,
-                }),
+            match function.get_value().get_repr() {
+                ValueRepr::Function(function) if partial.args == function.args => {
+                    Ok(ExternFunction {
+                        id: function.id.clone(),
+                        args: function.args,
+                        function: function.function,
+                    })
+                }
                 _ => Err(D::Error::custom("Invalid type for extern function")),
             }
         }
@@ -718,7 +722,7 @@ impl<'de> DeserializeState<'de, DeSeed> for ExternFunction {
 
 impl<T> SerializeState<SeSeed> for Array<T>
 where
-    T: Copy + SerializeState<SeSeed>,
+    T: SerializeState<SeSeed>,
 {
     fn serialize_state<S>(&self, serializer: S, seed: &SeSeed) -> Result<S::Ok, S::Error>
     where
@@ -749,8 +753,8 @@ mod tests {
         let thread = RootedThread::new();
         let mut de = serde_json::Deserializer::from_str(r#" { "String": "test" } "#);
         let value: Value = DeSeed::new(&thread).deserialize(&mut de).unwrap();
-        match value {
-            Value::String(s) => assert_eq!(&*s, "test"),
+        match value.get_repr() {
+            ValueRepr::String(s) => assert_eq!(&*s, "test"),
             _ => ice!(),
         }
     }
@@ -773,10 +777,10 @@ mod tests {
         } "#,
         );
         let value: Value = DeSeed::new(&thread).deserialize(&mut de).unwrap();
-        match value {
-            Value::Array(s) => assert_eq!(
-                s.iter().collect::<Vec<_>>(),
-                [Value::Int(1), Value::Int(2), Value::Int(3)]
+        match value.get_repr() {
+            ValueRepr::Array(s) => assert_eq!(
+                s.iter().map(|v| v.get_value()).collect::<Vec<_>>(),
+                [Value::int(1), Value::int(2), Value::int(3)]
             ),
             _ => ice!(),
         }

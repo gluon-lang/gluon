@@ -8,14 +8,14 @@ use futures::sync::oneshot;
 
 use base::types::{ArcType, Type};
 
-use {Error, ExternModule, Result as VmResult, Variants};
+use {Error, ExternModule, Result as VmResult};
 use api::{primitive, AsyncPushable, Function, FunctionRef, FutureResult, Generic, Getable,
           OpaqueValue, OwnedFunction, Pushable, RuntimeResult, VmType, WithVM, IO};
 use api::generic::A;
 use gc::{Gc, GcPtr, Traverseable};
 use vm::{RootedThread, Status, Thread};
 use thread::{OwnedContext, ThreadInternal};
-use value::{Callable, GcStr, Userdata, Value};
+use value::{Callable, GcStr, Userdata, ValueRepr};
 use stack::{StackFrame, State};
 use types::VmInt;
 
@@ -140,18 +140,20 @@ fn recv(receiver: &Receiver<Generic<A>>) -> Result<Generic<A>, ()> {
 }
 
 fn send(sender: &Sender<Generic<A>>, value: Generic<A>) -> Result<(), ()> {
-    let value = sender
-        .thread
-        .deep_clone_value(&sender.thread, value.0)
-        .map_err(|_| ())?;
-    Ok(sender.send(Generic::from(value)))
+    unsafe {
+        let value = sender
+            .thread
+            .deep_clone_value(&sender.thread, value.get_value())
+            .map_err(|_| ())?;
+        Ok(sender.send(Generic::from(value)))
+    }
 }
 
 extern "C" fn resume(vm: &Thread) -> Status {
     let mut context = vm.context();
-    let value = StackFrame::current(&mut context.stack)[0];
+    let value = StackFrame::current(&mut context.stack)[0].get_repr();
     match value {
-        Value::Thread(child) => {
+        ValueRepr::Thread(child) => {
             let lock = StackFrame::current(&mut context.stack).into_lock();
             drop(context);
             let result = child.resume();
@@ -172,7 +174,7 @@ extern "C" fn resume(vm: &Thread) -> Status {
                 Err(err) => {
                     let fmt = format!("{}", err);
                     let result = unsafe {
-                        Value::String(GcStr::from_utf8_unchecked(
+                        ValueRepr::String(GcStr::from_utf8_unchecked(
                             context.alloc_ignore_limit(fmt.as_bytes()),
                         ))
                     };
@@ -198,13 +200,13 @@ fn spawn_<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> VmResult<Ro
     let thread = value.vm.new_thread()?;
     {
         let mut context = thread.context();
-        let callable = match value.value.value() {
-            Value::Closure(c) => State::Closure(c),
-            Value::Function(c) => State::Extern(c),
+        let callable = match value.value.get_variant().0 {
+            ValueRepr::Closure(c) => State::Closure(c),
+            ValueRepr::Function(c) => State::Extern(c),
             _ => State::Unknown,
         };
         value.value.push(value.vm, &mut context)?;
-        context.stack.push(Value::Int(0));
+        context.stack.push(ValueRepr::Int(0));
         StackFrame::current(&mut context.stack).enter_scope(1, callable);
     }
     Ok(thread)
@@ -258,10 +260,10 @@ fn spawn_on<'vm>(
                 + 'static,
         {
             let mut context = vm.context();
-            let value = StackFrame::current(&mut context.stack)[0];
+            let value = StackFrame::current(&mut context.stack)[0].get_repr();
 
             match value {
-                Value::Userdata(data) => {
+                ValueRepr::Userdata(data) => {
                     let data = data.downcast_ref::<SpawnFuture<F>>().unwrap();
                     let future = data.0.lock().unwrap().take().unwrap();
                     let lock = StackFrame::current(&mut context.stack).insert_lock();
@@ -284,8 +286,7 @@ fn spawn_on<'vm>(
     use value::PartialApplicationDataDef;
 
     let WithVM { vm, value: action } = action;
-    let mut action =
-        unsafe { OwnedFunction::<Action>::from_value(&thread, Variants::new(&action.value())) };
+    let mut action = OwnedFunction::<Action>::from_value(&thread, action.get_variant());
 
     let future = oneshot::spawn_fn(
         move || action.call_async(()),
@@ -296,17 +297,17 @@ fn spawn_on<'vm>(
 
     push_future_wrapper(vm, &mut context, &future);
 
-    let callable = match context.stack[context.stack.len() - 1] {
-        Value::Function(ext) => Callable::Extern(ext),
+    let callable = match context.stack[context.stack.len() - 1].get_repr() {
+        ValueRepr::Function(ext) => Callable::Extern(ext),
         _ => unreachable!(),
     };
 
     SpawnFuture(Mutex::new(Some(future)))
         .push(vm, &mut context)
         .unwrap();
-    let fields = [*context.stack.get_values().last().unwrap()];
+    let fields = [context.stack.get_values().last().unwrap().clone()];
     let def = PartialApplicationDataDef(callable, &fields);
-    let value = Value::PartialApplication(context.alloc_with(vm, def).unwrap());
+    let value = ValueRepr::PartialApplication(context.alloc_with(vm, def).unwrap()).into();
 
     context.stack.pop_many(2);
 

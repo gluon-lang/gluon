@@ -3,8 +3,7 @@ extern crate gluon;
 extern crate tokio_core;
 
 use gluon::{new_vm, Compiler, Thread};
-use gluon::vm::internal::Value;
-use gluon::vm::api::{Hole, OpaqueValue, IO};
+use gluon::vm::api::{Hole, OpaqueValue, ValueRef, IO};
 
 #[macro_use]
 mod support;
@@ -113,7 +112,7 @@ wrap 123
         .sync_or_error()
         .unwrap_or_else(|err| panic!("{}", err));
     assert!(
-        value.0.get_ref() != Value::Int(123),
+        value.0.get_ref() != ValueRef::Int(123),
         "Unexpected {:?}",
         value.0
     );

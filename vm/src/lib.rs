@@ -69,7 +69,7 @@ mod value;
 use std::marker::PhantomData;
 
 use api::{ValueRef, VmType};
-use value::Value;
+use value::{Value, ValueRepr};
 use types::VmIndex;
 use base::types::ArcType;
 use base::symbol::Symbol;
@@ -80,24 +80,42 @@ unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
     ::std::mem::transmute(x)
 }
 
-#[derive(Copy, Clone, Debug)]
-pub struct Variants<'a>(Value, PhantomData<&'a Value>);
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Variants<'a>(ValueRepr, PhantomData<&'a Value>);
 
 impl<'a> Variants<'a> {
     /// Creates a new `Variants` value which assumes that `value` is rooted for the lifetime of the
     /// value
     pub unsafe fn new(value: &Value) -> Variants {
-        Variants::with_root(*value, value)
+        Variants::with_root(value.get_repr(), value)
     }
 
-    pub unsafe fn with_root<T: ?Sized>(value: Value, _root: &T) -> Variants {
+    pub(crate) unsafe fn with_root<T: ?Sized>(value: ValueRepr, _root: &T) -> Variants {
         Variants(value, PhantomData)
+    }
+
+    pub(crate) fn get_value(&self) -> Value {
+        self.0.into()
     }
 
     /// Returns an instance of `ValueRef` which allows users to safely retrieve the interals of a
     /// value
     pub fn as_ref(&self) -> ValueRef<'a> {
         unsafe { ValueRef::rooted_new(self.0) }
+    }
+}
+
+impl<'a> ::serde::ser::SerializeState<::serialization::SeSeed> for Variants<'a> {
+    #[inline]
+    fn serialize_state<S>(
+        &self,
+        serializer: S,
+        seed: &::serialization::SeSeed,
+    ) -> ::std::result::Result<S::Ok, S::Error>
+    where
+        S: ::serde::ser::Serializer,
+    {
+        self.0.serialize_state(serializer, seed)
     }
 }
 
@@ -171,6 +189,6 @@ impl ExternModule {
 
 /// Internal types and functions exposed to the main `gluon` crate
 pub mod internal {
-    pub use value::{ClosureDataDef, Value, ValuePrinter};
+    pub use value::{Value, ValuePrinter};
     pub use vm::Global;
 }
