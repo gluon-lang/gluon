@@ -76,6 +76,8 @@ gluon_completion = { path = "completion", version = "0.7.1" } # GLUON
 default = ["regex", "rand"]
 serialization = ["serde", "serde_state", "serde_derive_state", "gluon_vm/serialization"]
 
+docs_rs = ["serialization"]
+
 test = ["serialization", "gluon_vm/test", "gluon_check/test", "gluon_parser/test"]
 nightly = ["compiletest_rs"]
 
@@ -138,3 +140,6 @@ name = "stack_overflow"
 name = "tutorial"
 [[test]]
 name = "vm"
+
+[package.metadata.docs.rs]
+features = ["docs_rs"]
