@@ -24,10 +24,10 @@ mod support;
 use support::MockEnv;
 
 fn suggest_types(s: &str, pos: BytePos) -> Result<Vec<Suggestion>, ()> {
-    suggest_query(SuggestionQuery::new(), s, pos)
+    suggest_query(&SuggestionQuery::new(), s, pos)
 }
 
-fn suggest_query(query: SuggestionQuery, s: &str, pos: BytePos) -> Result<Vec<Suggestion>, ()> {
+fn suggest_query(query: &SuggestionQuery, s: &str, pos: BytePos) -> Result<Vec<Suggestion>, ()> {
     let env = MockEnv::new();
 
     struct ReplaceImport;
@@ -76,7 +76,7 @@ fn suggest_loc(s: &str, row: usize, column: usize) -> Result<Vec<String>, ()> {
     )
 }
 fn suggest_query_loc(
-    query: SuggestionQuery,
+    query: &SuggestionQuery,
     s: &str,
     row: usize,
     column: usize,
@@ -427,7 +427,7 @@ import! st
         paths: vec![find_gluon_root()],
         ..SuggestionQuery::default()
     };
-    let result = suggest_query_loc(query, text, 1, 10);
+    let result = suggest_query_loc(&query, text, 1, 10);
     let expected = Ok(vec!["std".into()]);
 
     assert_eq!(result, expected);
@@ -444,7 +444,7 @@ import! std.p
         paths: vec![find_gluon_root()],
         ..SuggestionQuery::default()
     };
-    let result = suggest_query_loc(query, text, 1, 12);
+    let result = suggest_query_loc(&query, text, 1, 12);
     let expected = Ok(vec!["parser".into(), "prelude".into()]);
 
     assert_eq!(result, expected);
@@ -461,7 +461,7 @@ import! std.
         paths: vec![find_gluon_root()],
         ..SuggestionQuery::default()
     };
-    let result = suggest_query_loc(query, text, 1, 12);
+    let result = suggest_query_loc(&query, text, 1, 12);
     assert!(result.is_ok());
 
     let suggestions = result.unwrap();
@@ -484,7 +484,7 @@ import! std.prelud
         ..SuggestionQuery::default()
     };
     let result = suggest_query(
-        query,
+        &query,
         text,
         Source::new(text)
             .lines()
@@ -515,7 +515,7 @@ import! example.
         modules: vec!["example.test".into()],
         ..SuggestionQuery::default()
     };
-    let result = suggest_query_loc(query, text, 1, 16);
+    let result = suggest_query_loc(&query, text, 1, 16);
     let expected = Ok(vec!["test".into()]);
 
     assert_eq!(result, expected);
@@ -533,7 +533,7 @@ import! example.
         modules: vec!["example.test.inner".into()],
         ..SuggestionQuery::default()
     };
-    let result = suggest_query_loc(query, text, 1, 16);
+    let result = suggest_query_loc(&query, text, 1, 16);
     let expected = Ok(vec!["test".into()]);
 
     assert_eq!(result, expected);
@@ -551,7 +551,7 @@ import! example.test.inn
         modules: vec!["example.test.inner".into()],
         ..SuggestionQuery::default()
     };
-    let result = suggest_query_loc(query, text, 1, 24);
+    let result = suggest_query_loc(&query, text, 1, 24);
     let expected = Ok(vec!["inner".into()]);
 
     assert_eq!(result, expected);
