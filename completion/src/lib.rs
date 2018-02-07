@@ -727,12 +727,12 @@ impl Extract for IdentAt {
             Match::Expr(&Spanned {
                 value: Expr::Ident(ref id),
                 ..
-            }) => id.name.clone(),
-            Match::Ident(_, id, _) => id.clone(),
-            Match::Pattern(&Spanned {
+            })
+            | Match::Pattern(&Spanned {
                 value: Pattern::Ident(ref id),
                 ..
             }) => id.name.clone(),
+            Match::Ident(_, id, _) => id.clone(),
             Match::Pattern(&Spanned {
                 value: Pattern::As(ref id, _),
                 ..
