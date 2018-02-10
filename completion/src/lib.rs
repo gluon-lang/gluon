@@ -52,10 +52,9 @@ pub enum Match<'a> {
 impl<'a> Match<'a> {
     pub fn span(&self) -> Span<BytePos> {
         match *self {
-            Match::Expr(ref expr) => expr.span,
-            Match::Pattern(ref pattern) => pattern.span,
-            Match::Ident(span, ..) => span,
-            Match::Type(span, ..) => span,
+            Match::Expr(expr) => expr.span,
+            Match::Pattern(pattern) => pattern.span,
+            Match::Ident(span, ..) | Match::Type(span, ..) => span,
         }
     }
 }
@@ -171,20 +170,19 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
                                 .map(|f| f.typ.clone())
                                 // If we did not find a matching field in the type, default to a
                                 // type hole so that the user at least gets completion on the name
-                                .unwrap_or_else(|| Type::hole());
+                                .unwrap_or_else(Type::hole);
                             self.stack.insert(name, typ);
                         }
                     }
                 }
             }
-            Pattern::Tuple { elems: ref args, .. } |
-            Pattern::Constructor(_, ref args) => {
-                for arg in args {
-                    self.on_pattern(arg);
-                }
+            Pattern::Tuple {
+                elems: ref args, ..
             }
-            Pattern::Literal(_) |
-            Pattern::Error => (),
+            | Pattern::Constructor(_, ref args) => for arg in args {
+                self.on_pattern(arg);
+            },
+            Pattern::Literal(_) | Pattern::Error => (),
         }
     }
 
@@ -204,10 +202,16 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
     }
 }
 
+enum MatchState<'a> {
+    NotFound,
+    Empty,
+    Found(Match<'a>),
+}
+
 struct FindVisitor<'a, F> {
     pos: BytePos,
     on_found: F,
-    found: Option<Option<Match<'a>>>,
+    found: MatchState<'a>,
     enclosing_matches: Vec<Match<'a>>,
     near_matches: Vec<Match<'a>>,
 }
@@ -251,7 +255,7 @@ where
     type Ident = Symbol;
 
     fn visit_expr(&mut self, e: &'a SpannedExpr<Self::Ident>) {
-        if self.0.found.is_none() {
+        if let MatchState::NotFound = self.0.found {
             if e.span.expansion_id == NO_EXPANSION {
                 self.0.visit_expr(e);
             } else {
@@ -317,13 +321,13 @@ where
                     current.span.start + BytePos::from(id.as_ref().len()),
                 );
                 if id_span.containment(&self.pos) == Ordering::Equal {
-                    self.found = Some(Some(Match::Pattern(current)));
+                    self.found = MatchState::Found(Match::Pattern(current));
                     return;
                 }
                 let (_, pattern) = self.select_spanned(args, |e| e.span);
                 match pattern {
                     Some(pattern) => self.visit_pattern(pattern),
-                    None => self.found = Some(None),
+                    None => self.found = MatchState::Empty,
                 }
             }
             Pattern::Record {
@@ -354,7 +358,7 @@ where
                 });
 
                 if on_whitespace {
-                    self.found = Some(None);
+                    self.found = MatchState::Empty;
                 } else if let Some(either) = selected {
                     match either {
                         Either::Left(type_field) => {
@@ -363,13 +367,13 @@ where
                                     .find(|it| it.name.name_eq(&type_field.name.value))
                                     .map(|it| it.typ.as_type())
                                     .unwrap_or(typ);
-                                self.found = Some(Some(Match::Ident(
+                                self.found = MatchState::Found(Match::Ident(
                                     type_field.name.span,
                                     &type_field.name.value,
-                                    &field_type,
-                                )));
+                                    field_type,
+                                ));
                             } else {
-                                self.found = Some(None);
+                                self.found = MatchState::Empty;
                             }
                         }
                         Either::Right(field) => match (
@@ -381,32 +385,30 @@ where
                                     .find(|it| it.name.name_eq(&field.name.value))
                                     .map(|it| &it.typ)
                                     .unwrap_or(typ);
-                                self.found = Some(Some(Match::Ident(
+                                self.found = MatchState::Found(Match::Ident(
                                     field.name.span,
                                     &field.name.value,
                                     field_type,
-                                )));
+                                ));
                             }
                             (Ordering::Greater, &Some(ref pattern)) => self.visit_pattern(pattern),
-                            _ => self.found = Some(None),
+                            _ => self.found = MatchState::Empty,
                         },
                     }
                 } else {
-                    self.found = Some(None);
+                    self.found = MatchState::Empty;
                 }
             }
             Pattern::Tuple { ref elems, .. } => {
                 let (_, field) = self.select_spanned(elems, |elem| elem.span);
                 self.visit_pattern(field.unwrap());
             }
-            Pattern::Ident(_) |
-            Pattern::Literal(_) |
-            Pattern::Error => {
-                self.found = Some(if current.span.containment(&self.pos) == Ordering::Equal {
-                    Some(Match::Pattern(current))
+            Pattern::Ident(_) | Pattern::Literal(_) | Pattern::Error => {
+                self.found = if current.span.containment(&self.pos) == Ordering::Equal {
+                    MatchState::Found(Match::Pattern(current))
                 } else {
-                    None
-                });
+                    MatchState::Empty
+                };
             }
         }
     }
@@ -427,11 +429,11 @@ where
 
         match current.value {
             Expr::Ident(_) | Expr::Literal(_) => {
-                self.found = Some(if current.span.containment(&self.pos) == Ordering::Equal {
-                    Some(Match::Expr(current))
+                self.found = if current.span.containment(&self.pos) == Ordering::Equal {
+                    MatchState::Found(Match::Expr(current))
                 } else {
-                    None
-                });
+                    MatchState::Empty
+                };
             }
             Expr::App(ref func, ref args) => {
                 self.visit_one(once(&**func).chain(args));
@@ -468,7 +470,7 @@ where
                 match (l.span.containment(&self.pos), r.span.containment(&self.pos)) {
                     (Ordering::Greater, Ordering::Less) => {
                         self.found =
-                            Some(Some(Match::Ident(op.span, &op.value.name, &op.value.typ)));
+                            MatchState::Found(Match::Ident(op.span, &op.value.name, &op.value.typ));
                     }
                     (_, Ordering::Greater) | (_, Ordering::Equal) => self.visit_expr(r),
                     _ => self.visit_expr(l),
@@ -506,11 +508,11 @@ where
                         match sel.unwrap() {
                             Variant::Pattern(pattern) => self.visit_pattern(pattern),
                             Variant::Ident(ident) => {
-                                self.found = Some(Some(Match::Ident(
+                                self.found = MatchState::Found(Match::Ident(
                                     ident.span,
                                     &ident.value.name,
                                     &ident.value.typ,
-                                )));
+                                ));
                             }
                             Variant::Type(t) => self.visit_ast_type(t),
                             Variant::Expr(expr) => self.visit_expr(expr),
@@ -536,14 +538,14 @@ where
                     (_, Some(either)) => match either {
                         Either::Left(bind) => {
                             if bind.name.span.containment(&self.pos) == Ordering::Equal {
-                                self.found = Some(Some(Match::Type(
+                                self.found = MatchState::Found(Match::Type(
                                     bind.name.span,
                                     &bind.alias.value.name,
                                     bind.alias.value.unresolved_type().kind().into_owned(),
-                                )));
+                                ));
                             } else {
                                 for param in bind.alias.value.params() {
-                                    self.on_found.on_type_ident(&param);
+                                    self.on_found.on_type_ident(param);
                                 }
                                 self.visit_ast_type(bind.alias.value.aliased_type())
                             }
@@ -558,7 +560,7 @@ where
                     self.visit_expr(expr);
                 } else {
                     self.enclosing_matches.push(Match::Expr(current));
-                    self.found = Some(Some(Match::Ident(current.span, id, typ)));
+                    self.found = MatchState::Found(Match::Ident(current.span, id, typ));
                 }
             }
             Expr::Array(ref array) => self.visit_one(&array.exprs),
@@ -583,11 +585,11 @@ where
                 let selection = self.select_spanned(&lambda.args, |arg| arg.span);
                 match selection {
                     (false, Some(arg)) => {
-                        self.found = Some(Some(Match::Ident(
+                        self.found = MatchState::Found(Match::Ident(
                             arg.span,
                             &arg.value.name,
                             &arg.value.typ,
-                        )));
+                        ));
                     }
                     _ => self.visit_expr(&lambda.body),
                 }
@@ -596,7 +598,7 @@ where
                 elems: ref exprs, ..
             }
             | Expr::Block(ref exprs) => if exprs.is_empty() {
-                self.found = Some(Some(Match::Expr(current)));
+                self.found = MatchState::Found(Match::Expr(current));
             } else {
                 self.visit_one(exprs)
             },
@@ -607,11 +609,11 @@ where
                 match self.select_spanned(iter, |x| x.either(|i| i.span, |e| e.span)) {
                     (_, Some(either)) => match either {
                         Either::Left(ident) => {
-                            self.found = Some(Some(Match::Ident(
+                            self.found = MatchState::Found(Match::Ident(
                                 ident.span,
                                 &ident.value.name,
                                 &ident.value.typ,
-                            )));
+                            ));
                         }
                         Either::Right(expr) => self.visit_expr(expr),
                     },
@@ -631,19 +633,19 @@ where
         }
         match **typ {
             Type::Ident(ref id) => {
-                self.found = Some(Some(Match::Type(typ.span(), id, Kind::hole())));
+                self.found = MatchState::Found(Match::Type(typ.span(), id, Kind::hole()));
             }
 
             Type::Generic(ref gen) => {
-                self.found = Some(Some(Match::Type(typ.span(), &gen.id, gen.kind.clone())));
+                self.found = MatchState::Found(Match::Type(typ.span(), &gen.id, gen.kind.clone()));
             }
 
             Type::Alias(ref alias) => {
-                self.found = Some(Some(Match::Type(
+                self.found = MatchState::Found(Match::Type(
                     typ.span(),
                     &alias.name,
                     typ.kind().into_owned(),
-                )));
+                ));
             }
 
             Type::Forall(ref params, ref typ, _) => {
@@ -669,21 +671,26 @@ where
     let mut visitor = FindVisitor {
         pos: pos,
         on_found: on_found,
-        found: None,
+        found: MatchState::NotFound,
         enclosing_matches: vec![Match::Expr(expr)],
         near_matches: vec![],
     };
     visitor.visit_expr(expr);
     let enclosing_matches = visitor.enclosing_matches;
     let near_matches = visitor.near_matches;
-    visitor
-        .found
-        .map(|match_| Found {
-            match_,
+    match visitor.found {
+        MatchState::Found(match_) => Ok(Found {
+            match_: Some(match_),
             enclosing_matches,
             near_matches,
-        })
-        .ok_or(())
+        }),
+        MatchState::Empty => Ok(Found {
+            match_: None,
+            enclosing_matches,
+            near_matches,
+        }),
+        MatchState::NotFound => Err(()),
+    }
 }
 
 pub trait Extract: Sized {
@@ -701,7 +708,7 @@ impl<'a> Extract for TypeAt<'a> {
     fn extract(self, found: &Found) -> Result<Self::Output, ()> {
         match found.match_ {
             Some(ref match_) => self.match_extract(match_),
-            None => self.match_extract(&found.enclosing_match()),
+            None => self.match_extract(found.enclosing_match()),
         }
     }
 
@@ -722,7 +729,7 @@ impl Extract for IdentAt {
     fn extract(self, found: &Found) -> Result<Self::Output, ()> {
         match found.match_ {
             Some(ref match_) => self.match_extract(match_),
-            None => self.match_extract(&found.enclosing_match()),
+            None => self.match_extract(found.enclosing_match()),
         }
     }
 
@@ -731,12 +738,12 @@ impl Extract for IdentAt {
             Match::Expr(&Spanned {
                 value: Expr::Ident(ref id),
                 ..
-            }) => id.name.clone(),
-            Match::Ident(_, id, _) => id.clone(),
-            Match::Pattern(&Spanned {
+            })
+            | Match::Pattern(&Spanned {
                 value: Pattern::Ident(ref id),
                 ..
             }) => id.name.clone(),
+            Match::Ident(_, id, _) => id.clone(),
             Match::Pattern(&Spanned {
                 value: Pattern::As(ref id, _),
                 ..
@@ -753,17 +760,12 @@ impl Extract for SpanAt {
     fn extract(self, found: &Found) -> Result<Self::Output, ()> {
         match found.match_ {
             Some(ref match_) => self.match_extract(match_),
-            None => self.match_extract(&found.enclosing_match()),
+            None => self.match_extract(found.enclosing_match()),
         }
     }
 
     fn match_extract(self, found: &Match) -> Result<Self::Output, ()> {
-        Ok(match *found {
-            Match::Expr(expr) => expr.span,
-            Match::Ident(span, _, _) => span,
-            Match::Type(span, _, _) => span,
-            Match::Pattern(pattern) => pattern.span,
-        })
+        Ok(found.span())
     }
 }
 
@@ -1044,7 +1046,7 @@ impl SuggestionQuery {
                         suggest
                             .patterns
                             .iter()
-                            .filter(|&(ref name, _)| self.filter(name.declared_name(), prefix))
+                            .filter(|&(name, _)| self.filter(name.declared_name(), prefix))
                             .map(|(name, typ)| Suggestion {
                                 name: name.declared_name().into(),
                                 typ: Either::Right(typ.clone()),
@@ -1195,7 +1197,7 @@ impl SuggestionQuery {
                         typ: Either::Right(
                             env.find_type(SymbolRef::new(module))
                                 .cloned()
-                                .unwrap_or_else(|| Type::hole()),
+                                .unwrap_or_else(Type::hole),
                         ),
                     }
                 }),
@@ -1250,7 +1252,7 @@ impl SuggestionQuery {
                     Match::Expr(..) | Match::Ident(..) => suggest
                         .stack
                         .iter()
-                        .find(|&(ref stack_name, _)| stack_name.declared_name() == name)
+                        .find(|&(stack_name, _)| stack_name.declared_name() == name)
                         .and_then(|t| env.get(t.0)),
 
                     _ => None,
@@ -1283,7 +1285,7 @@ pub fn signature_help(
             //                     ^
             // Should not return the signature for `test` but for `func`
             .take_while(|enclosing_match| match **enclosing_match {
-                Match::Expr(ref expr) => match expr.value {
+                Match::Expr(expr) => match expr.value {
                     Expr::Ident(..) | Expr::Literal(..) | Expr::Projection(..) | Expr::App(..) | Expr::Tuple { .. } => {
                         true
                     }
@@ -1293,7 +1295,7 @@ pub fn signature_help(
                 _ => false,
             })
             .filter_map(|enclosing_match| match *enclosing_match {
-                Match::Expr(ref expr) => match expr.value {
+                Match::Expr(expr) => match expr.value {
                     Expr::App(ref f, ref args) => f.try_type_of(env).ok().map(|typ| {
                         let name = match f.value {
                             Expr::Ident(ref id) => id.name.declared_name().to_string(),
@@ -1303,7 +1305,7 @@ pub fn signature_help(
                         let index = if args.first().map_or(false, |arg| pos >= arg.span.start) {
                             Some(args.iter()
                                 .position(|arg| pos <= arg.span.end)
-                                .unwrap_or(args.len()) as u32)
+                                .unwrap_or_else(|| args.len()) as u32)
                         } else {
                             None
                         };
@@ -1319,7 +1321,7 @@ pub fn signature_help(
             .chain(&found.near_matches)
             .rev()
             .filter_map(|enclosing_match| match *enclosing_match {
-                Match::Expr(ref expr) => {
+                Match::Expr(expr) => {
                     let name = match expr.value {
                         Expr::Ident(ref id) => id.name.declared_name().to_string(),
                         Expr::Projection(_, ref name, _) => name.declared_name().to_string(),
