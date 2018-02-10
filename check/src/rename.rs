@@ -361,8 +361,9 @@ where
                     self.env.stack.enter_scope();
 
                     let mut iter = types::implicit_arg_iter(lambda.id.typ.remove_forall());
-                    for (i, typ) in iter.by_ref().enumerate() {
-                        let name = Symbol::from("implicit");
+                    let mut implicit_arg_count = 0;
+                    for typ in iter.by_ref() {
+                        let name = Symbol::from("implicit_arg");
                         let arg = pos::spanned(
                             expr.span,
                             TypedIdent {
@@ -370,9 +371,12 @@ where
                                 typ: typ.clone(),
                             },
                         );
-                        lambda.args.insert(i, arg);
+                        lambda.args.insert(implicit_arg_count, arg);
+                        implicit_arg_count += 1;
                     }
-                    for (typ, arg) in types::arg_iter(iter.typ).zip(&mut lambda.args) {
+                    for (typ, arg) in
+                        types::arg_iter(iter.typ).zip(&mut lambda.args[implicit_arg_count..])
+                    {
                         arg.value.name =
                             self.stack_var(arg.value.name.clone(), expr.span, typ.clone());
                     }

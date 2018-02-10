@@ -240,7 +240,10 @@ where
         );
 
         let typ = tc.typecheck_expr_expected(self.expr.borrow_mut(), expected_type)
-            .map_err(|err| InFile::new(file, expr_str, err))?;
+            .map_err(|err| {
+                info!("Error when typechecking `{}`: {}", file, err);
+                InFile::new(file, expr_str, err)
+            })?;
 
         Ok(TypecheckValue {
             expr: self.expr,

@@ -15,12 +15,8 @@ type Semigroup a = {
     append : a -> a -> a
 }
 
-let make_Semigroup semigroup : Semigroup a -> _ =
-    let { append } = semigroup
-
-    let (<>) : a -> a -> a = append
-
-    { append, (<>) }
+let append s : [Semigroup a] -> a -> a -> a = s.append
+let (<>) s : [Semigroup a] -> a -> a -> a = s.append
 
 let semigroup_Ordering : Semigroup Ordering = {
     append = \x y ->
@@ -117,16 +113,11 @@ type Category (cat : Type -> Type -> Type) = {
     compose : forall a b c . cat b c -> cat a b -> cat a c
 }
 
-let make_Category category : Category cat -> _ =
-    let { id, compose } = category
-
-
-    /// Right-to-left composition. Alias for `compose`.
-    let (<<) : forall a b c . cat b c -> cat a b -> cat a c = compose
-    /// Left-to-right composition. Alias for `compose`, but with the arguments flipped.
-    let (>>) f g : forall a b c . cat a b -> cat b c -> cat a c = compose g f
-
-    { id, compose, (<<), (>>) }
+let id cat : forall cat a . [Category cat] -> cat a a = cat.id
+/// Right-to-left composition. Alias for `compose`.
+let (<<) cat : forall a b c . [Category cat] -> cat b c -> cat a b -> cat a c = cat.compose
+/// Left-to-right composition. Alias for `compose`, but with the arguments flipped.
+let (>>) cat f g : forall a b c . [Category cat] -> cat a b -> cat b c -> cat a c = cat.compose g f
 
 /// @implicit
 type Alternative f = {
@@ -135,12 +126,9 @@ type Alternative f = {
     empty : forall a . f a
 }
 
-let make_Alternative alternative : Alternative f -> _ =
-    let { applicative, or, empty } = alternative
-
-    let (<|>) : f a -> f a -> f a = or
-
-    { applicative, or, empty, (<|>) }
+let empty : [Alternative f] -> f a = alt.empty
+let or alt : [Alternative f] -> f a -> f a -> f a = alt.or
+let (<|>) alt : [Alternative f] -> f a -> f a -> f a = alt.or
 
 /// A generalised interface for imperatively sequencing actions
 /// @implicit
@@ -175,15 +163,11 @@ type Monad (m : Type -> Type) = {
     flat_map : forall a b . (a -> m b) -> m a -> m b
 }
 
-let make_Monad monad : Monad m -> _ =
-    let { applicative, flat_map } = monad
+let flat_map m : [Monad m] -> (a -> m b) -> m a -> m b = m.flat_map
+let (=<<) m : [Monad m] -> (a -> m b) -> m a -> m b = m.flat_map
+let (>>=) m x f : [Monad m] -> m a -> (a -> m b) -> m b = m.flat_map f x
 
-    let (=<<) : (a -> m b) -> m a -> m b = flat_map
-    let (>>=) x f : m a -> (a -> m b) -> m b = flat_map f x
-
-    let join mm : m (m a) -> m a = mm >>= (\x -> x)
-
-    { applicative, flat_map, (=<<), (>>=), join }
+let join m mm : [Monad m] -> m (m a) -> m a = mm >>= (\x -> x)
 
 /// `Show a` represents a conversion function from `a` to a readable string.
 /// @implicit
@@ -198,56 +182,42 @@ type Foldable (f : Type -> Type) = {
 let make_Foldable foldable : Foldable t -> _ =
     let { foldr, foldl } = foldable
 
-    let concat monoid : Monoid m -> t m -> m =
-        foldr monoid.semigroup.append monoid.empty
+let concat monoid : [Foldable t] -> Monoid m -> t m -> m =
+    foldr monoid.semigroup.append monoid.empty
 
-    let concat_map monoid f : Monoid m -> (a -> m) -> t a -> m =
-        foldr (\x -> monoid.semigroup.append (f x)) monoid.empty
+let concat_map monoid f : [Foldable t] -> Monoid m -> (a -> m) -> t a -> m =
+    foldr (\x -> monoid.semigroup.append (f x)) monoid.empty
 
-    let fold_m monad f z : Monad m -> (a -> b -> m a) -> a -> t b -> m a =
-        foldl (\acc y -> monad.flat_map (\x -> f x y) acc) (monad.applicative.wrap z)
+let fold_m monad f z : [Foldable t] -> Monad m -> (a -> b -> m a) -> a -> t b -> m a =
+    foldl (\acc y -> monad.flat_map (\x -> f x y) acc) (monad.applicative.wrap z)
 
-    let find pred : (a -> Bool) -> t a -> Option a =
-        let go acc next =
-            match acc with
-            | None -> if pred next then Some next else None
-            | Some _ -> acc
+let find pred : [Foldable t] -> (a -> Bool) -> t a -> Option a =
+    let go acc next =
+        match acc with
+        | None -> if pred next then Some next else None
+        | Some _ -> acc
 
-        foldl go None
+    foldl go None
 
-    let find_map pred : (a -> Option b) -> t a -> Option b =
-        let go acc next =
-            match acc with
-            | None -> pred next
-            | Some _ -> acc
+let find_map pred : [Foldable t] -> (a -> Option b) -> t a -> Option b =
+    let go acc next =
+        match acc with
+        | None -> pred next
+        | Some _ -> acc
 
-        foldl go None
+    foldl go None
 
-    let all pred : (a -> Bool) -> t a -> Bool =
-        foldl (\acc x -> acc && pred x) True
+let all pred : [Foldable t] -> (a -> Bool) -> t a -> Bool =
+    foldl (\acc x -> acc && pred x) True
 
-    let any pred : (a -> Bool) -> t a -> Bool =
-        foldl (\acc x -> acc || pred x) False
+let any pred : [Foldable t] -> (a -> Bool) -> t a -> Bool =
+    foldl (\acc x -> acc || pred x) False
 
-    let elem eq x : Eq a -> a -> t a -> Bool =
-        any (eq.(==) x)
+let elem eq x : [Foldable t] -> Eq a -> a -> t a -> Bool =
+    any (eq.(==) x)
 
-    let count : t a -> Int =
-        foldl (\acc _ -> acc #Int+ 1) 0
-
-    {
-        foldr,
-        foldl,
-        fold_m,
-        concat,
-        concat_map,
-        find,
-        find_map,
-        all,
-        any,
-        elem,
-        count,
-    }
+let count : [Foldable t] -> t a -> Int =
+    foldl (\acc _ -> acc #Int+ 1) 0
 
 /// @implicit
 type Traversable t = {
@@ -270,8 +240,8 @@ let make_Traversable traversable : Traversable t -> _ =
     Ordering,
 
     Semigroup,
-    make_Semigroup,
     semigroup_Ordering,
+    append,
 
     Monoid,
     monoid_Ordering,
@@ -285,7 +255,7 @@ let make_Traversable traversable : Traversable t -> _ =
     (<), (<=), (>=), (>),
 
     Category,
-    make_Category,
+    id, append, (<>),
 
     Functor,
 
@@ -298,7 +268,17 @@ let make_Traversable traversable : Traversable t -> _ =
     make_Monad,
 
     Foldable,
-    make_Foldable,
+    foldr,
+    foldl,
+    fold_m,
+    concat,
+    concat_map,
+    find,
+    find_map,
+    all,
+    any,
+    elem,
+    count,
 
     Traversable,
     make_Traversable,

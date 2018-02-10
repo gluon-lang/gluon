@@ -79,7 +79,8 @@ static STD_LIBS: &[(&str, &str)] = &std_libs!(
     "test",
     "unit",
     "writer",
-    "array"
+    "array",
+    "applicative"
 );
 
 pub trait Importer: Any + Clone + Sync + Send {
