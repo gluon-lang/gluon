@@ -6,7 +6,7 @@ let { Bool } = import! std.bool
 let http_prim = import! http.prim
 let { (==) } = string.eq
 let { Functor, Applicative, Alternative, Monad } = prelude
-let { (<<), id } = prelude.make_Category function.category
+let { (<<), id } = import! std.prelude
 let { wrap } = io.applicative
 
 let {

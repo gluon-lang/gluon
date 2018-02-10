@@ -14,11 +14,11 @@ let repl_prim = import! repl.prim
 let { (<<) } = import! std.function
 
 let { Applicative, wrap, (*>) } = import! std.applicative
-let { flat_map, (>>=) } = prelude.make_Monad io.monad
+let { flat_map, (>>=) } = import! std.prelude
 
 let { append = (++) } = string.semigroup
 let ord_map @ { singleton, find, insert } = map.make string.ord
-let { (<>) } = prelude.make_Semigroup ord_map.semigroup
+let { (<>) } = import! std.prelude
 let { empty } = ord_map.monoid
 
 

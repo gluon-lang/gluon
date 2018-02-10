@@ -114,6 +114,7 @@ type Category (cat : Type -> Type -> Type) = {
 }
 
 let id cat : forall cat a . [Category cat] -> cat a a = cat.id
+let compose cat : forall a b c . [Category cat] -> cat b c -> cat a b -> cat a c = cat.compose
 /// Right-to-left composition. Alias for `compose`.
 let (<<) cat : forall a b c . [Category cat] -> cat b c -> cat a b -> cat a c = cat.compose
 /// Left-to-right composition. Alias for `compose`, but with the arguments flipped.
@@ -126,7 +127,7 @@ type Alternative f = {
     empty : forall a . f a
 }
 
-let empty : [Alternative f] -> f a = alt.empty
+let empty alt : [Alternative f] -> f a = alt.empty
 let or alt : [Alternative f] -> f a -> f a -> f a = alt.or
 let (<|>) alt : [Alternative f] -> f a -> f a -> f a = alt.or
 
@@ -179,45 +180,45 @@ type Foldable (f : Type -> Type) = {
     foldl : forall a b . (b -> a -> b) -> b -> f a -> b
 }
 
-let make_Foldable foldable : Foldable t -> _ =
-    let { foldr, foldl } = foldable
+let foldr fold : forall a b . [Foldable f] -> (a -> b -> b) -> b -> f a -> b = fold.foldr
+let foldl fold : forall a b . [Foldable f] -> (b -> a -> b) -> b -> f a -> b = fold.foldl
 
-let concat monoid : [Foldable t] -> Monoid m -> t m -> m =
-    foldr monoid.semigroup.append monoid.empty
+let concat fold monoid : [Foldable t] -> Monoid m -> t m -> m =
+    fold.foldr monoid.semigroup.append monoid.empty
 
-let concat_map monoid f : [Foldable t] -> Monoid m -> (a -> m) -> t a -> m =
-    foldr (\x -> monoid.semigroup.append (f x)) monoid.empty
+let concat_map fold monoid f : [Foldable t] -> Monoid m -> (a -> m) -> t a -> m =
+    fold.foldr (\x -> monoid.semigroup.append (f x)) monoid.empty
 
-let fold_m monad f z : [Foldable t] -> Monad m -> (a -> b -> m a) -> a -> t b -> m a =
-    foldl (\acc y -> monad.flat_map (\x -> f x y) acc) (monad.applicative.wrap z)
+let fold_m fold monad f z : [Foldable t] -> Monad m -> (a -> b -> m a) -> a -> t b -> m a =
+    fold.foldl (\acc y -> monad.flat_map (\x -> f x y) acc) (monad.applicative.wrap z)
 
-let find pred : [Foldable t] -> (a -> Bool) -> t a -> Option a =
+let find fold pred : [Foldable t] -> (a -> Bool) -> t a -> Option a =
     let go acc next =
         match acc with
         | None -> if pred next then Some next else None
         | Some _ -> acc
 
-    foldl go None
+    fold.foldl go None
 
-let find_map pred : [Foldable t] -> (a -> Option b) -> t a -> Option b =
+let find_map fold pred : [Foldable t] -> (a -> Option b) -> t a -> Option b =
     let go acc next =
         match acc with
         | None -> pred next
         | Some _ -> acc
 
-    foldl go None
+    fold.foldl go None
 
-let all pred : [Foldable t] -> (a -> Bool) -> t a -> Bool =
-    foldl (\acc x -> acc && pred x) True
+let all fold pred : [Foldable t] -> (a -> Bool) -> t a -> Bool =
+    fold.foldl (\acc x -> acc && pred x) True
 
-let any pred : [Foldable t] -> (a -> Bool) -> t a -> Bool =
-    foldl (\acc x -> acc || pred x) False
+let any fold pred : [Foldable t] -> (a -> Bool) -> t a -> Bool =
+    fold.foldl (\acc x -> acc || pred x) False
 
-let elem eq x : [Foldable t] -> Eq a -> a -> t a -> Bool =
+let elem fold eq x : [Foldable t] -> Eq a -> a -> t a -> Bool =
     any (eq.(==) x)
 
-let count : [Foldable t] -> t a -> Int =
-    foldl (\acc _ -> acc #Int+ 1) 0
+let count fold : [Foldable t] -> t a -> Int =
+    fold.foldl (\acc _ -> acc #Int+ 1) 0
 
 /// @implicit
 type Traversable t = {
@@ -226,15 +227,13 @@ type Traversable t = {
     traverse : forall a b m . Applicative m -> (a -> m b) -> t a -> m (t b)
 }
 
-let make_Traversable traversable : Traversable t -> _ =
-    let { functor, foldable, traverse } = traversable
+let traverse t : forall a b m . [Traversable t] -> Applicative m -> (a -> m b) -> t a -> m (t b) = t.traverse
 
-    let sequence applicative : Applicative m -> t (m a) -> m (t a) =
-        traverse applicative (\x -> x)
-    let for applicative x f : Applicative m -> t a -> (a -> m b) -> m (t b) =
-        traverse applicative f x
+let sequence t applicative : [Traversable t] -> Applicative m -> t (m a) -> m (t a) =
+    traverse applicative (\x -> x)
 
-    { functor, foldable, traverse, sequence, for }
+let for t applicative x f : [Traversable t] -> Applicative m -> t a -> (a -> m b) -> m (t b) =
+    traverse applicative f x
 
 {
     Ordering,
@@ -242,6 +241,7 @@ let make_Traversable traversable : Traversable t -> _ =
     Semigroup,
     semigroup_Ordering,
     append,
+    (<>),
 
     Monoid,
     monoid_Ordering,
@@ -255,17 +255,17 @@ let make_Traversable traversable : Traversable t -> _ =
     (<), (<=), (>=), (>),
 
     Category,
-    id, append, (<>),
+    id, compose,
 
     Functor,
 
     Applicative,
 
     Alternative,
-    make_Alternative,
+    empty, or, (<|>),
 
     Monad,
-    make_Monad,
+    flat_map, (>>=), (=<<), join,
 
     Foldable,
     foldr,
@@ -281,7 +281,7 @@ let make_Traversable traversable : Traversable t -> _ =
     count,
 
     Traversable,
-    make_Traversable,
+    traverse, sequence, for,
 
     Num,
     (+), (-), (*), (/),
