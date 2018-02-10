@@ -2,7 +2,7 @@ let prelude = import! std.prelude
 let int = import! std.int
 let io = import! std.io
 let string = import! std.string
-let { (<>) } = prelude.make_Semigroup string.semigroup
+let { (<>) } = import! std.prelude
 let { (*>), wrap } = import! std.applicative
 
 let {
@@ -26,8 +26,8 @@ let {
 } = import! "examples/http.glu"
 
 let { map } = functor
-let { (<|>) } = prelude.make_Alternative alternative
-let { (>>=) } = prelude.make_Monad monad
+let { (<|>) } = import! std.prelude
+let { (>>=) } = import! std.prelude
 
 let hello_world : Handler Response =
     write_response (string.as_bytes "Hello World")

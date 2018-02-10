@@ -7,7 +7,7 @@ let { Writer } = import! std.writer
 
 let { Parser, applicative, functor, alternative, monad, any, parse } = import! std.parser
 let { Applicative, (*>), wrap } = import! std.applicative
-let { (<|>) } = prelude.make_Alternative alternative
+let { (<|>) } = import! std.prelude
 
 let assert_parse show eq =
     assert_eq

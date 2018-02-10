@@ -265,7 +265,7 @@ pub struct Do<Id> {
     pub id: SpannedIdent<Id>,
     pub bound: Box<SpannedExpr<Id>>,
     pub body: Box<SpannedExpr<Id>>,
-    pub flat_map_id: Option<TypedIdent<Id>>,
+    pub flat_map_id: Option<Box<SpannedExpr<Id>>>,
 }
 
 /// The representation of gluon's expression syntax
@@ -483,7 +483,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
             v.visit_expr(bound);
             v.visit_expr(body);
             if let Some(ref mut flat_map_id) = *flat_map_id {
-                v.visit_ident(flat_map_id);
+                v.visit_expr(flat_map_id);
             }
         }
 

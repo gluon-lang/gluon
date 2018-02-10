@@ -21,7 +21,7 @@ fn read_file() {
         let { assert }  = import! std.test
         let io = import! std.io
         let { wrap } = io.applicative
-        let { flat_map, (>>=) } = prelude.make_Monad io.monad
+        let { flat_map, (>>=) } = import! std.prelude
 
         do file = io.open_file "Cargo.toml"
         do bytes = io.read_file file 9
@@ -196,7 +196,7 @@ fn spawn_on_runexpr_in_catch() {
         let prelude = import! std.prelude
         let io@{ applicative, monad } = import! std.io
         let { Applicative, (*>), wrap } = import! std.applicative
-        let { (>>=), flat_map } = prelude.make_Monad monad
+        let { flat_map, (>>=) } = import! std.prelude
         let thread = import! std.thread
 
         let action =

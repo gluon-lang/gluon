@@ -356,11 +356,11 @@ fn no_inference_variable_in_error() {
     assert_eq!(
         &*format!("{}", result.unwrap_err()).replace("\t", "        "),
         r#"test:Line: 2, Column: 1: Expected the following types to be equal
-Expected: a -> a0
+Expected: Int -> a
 Found: ()
 1 errors were found during unification:
 Types do not match:
-    Expected: a -> a0
+    Expected: Int -> a
     Found: ()
 () 1
 ^~~~

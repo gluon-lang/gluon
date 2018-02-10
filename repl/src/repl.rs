@@ -550,7 +550,7 @@ mod tests {
             Ok(IO::Value(Ok(_))) => (),
             x => assert!(false, "{:?}", x),
         }
-        match find_info.call("std.prelude.make_Semigroup") {
+        match find_info.call("std.prelude.empty") {
             Ok(IO::Value(Ok(_))) => (),
             x => assert!(false, "{:?}", x),
         }

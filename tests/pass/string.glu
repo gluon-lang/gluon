@@ -18,7 +18,7 @@ let slice_tests =
         *> assert_seq (string.slice "abcd" 2 4) "cd"
 
 let append_tests =
-    let { (<>) } = prelude.make_Semigroup string.semigroup
+    let { (<>) } = import! std.prelude
     assert_seq ("ab" <> "cd") "abcd" *> assert_seq ("ab" <> "") "ab" *> assert_seq ("" <> "cd") "cd"
         *> assert_seq ("" <> "") ""
 

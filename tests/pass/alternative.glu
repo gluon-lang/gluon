@@ -6,7 +6,7 @@ let list = import! std.list
 let option = import! std.option
 
 let test_alt show eq alt =
-    let { (<|>), or, empty } = prelude.make_Alternative alt
+    let { (<|>), or, empty } = import! std.prelude
     let { wrap } = alt.applicative
 
     let assert = assert_eq (show int.show) (eq int.eq)

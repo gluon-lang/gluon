@@ -39,12 +39,12 @@ let string = import! std.string
 // the current version of gluon but will be fixed in the future).
 let char = import! std.char
 
-let { (<>) } = prelude.make_Semigroup string.semigroup
+let { (<>) } = import! std.prelude
 
 let { (*>), (<*), wrap } = import! std.applicative
 let { flat_map } = io.monad
 
-let { for } = prelude.make_Traversable array.traversable
+let { for } = import! std.prelude
 
 type Op = | Add | Sub | Div | Mul
 type Expr = | Int Int | Binop Expr Op Expr
@@ -64,7 +64,7 @@ let parse : String -> Result String Expr =
         chainl1,
         (<?>),
         monad = { flat_map } } = import! std.parser
-    let { (<|>) } = prelude.make_Alternative parser.alternative
+    let { (<|>) } = import! std.prelude
 
     let lex x = x <* spaces
 

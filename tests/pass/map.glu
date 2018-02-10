@@ -2,7 +2,7 @@ let prelude @ { Eq, Show } = import! std.prelude
 let int = import! std.int
 let option @ { Option } = import! std.option
 let string = import! std.string
-let { (<>) } = prelude.make_Semigroup string.semigroup
+let { (<>) } = import! std.prelude
 let { Test, run, writer, assert, assert_eq }  = import! std.test
 let map  = import! std.map
 let { Applicative, (*>) } = import! std.applicative
@@ -23,7 +23,6 @@ let assert_opt = assert_eq (option.show int.show) (option.eq int.eq)
 
 let ord_map = map.make string.ord
 let { singleton, find, insert, to_list, keys, values } = ord_map
-let { (<>) } = prelude.make_Semigroup ord_map.semigroup
 let { empty } = ord_map.monoid
 
 let basic_tests =

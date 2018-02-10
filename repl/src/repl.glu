@@ -139,7 +139,7 @@ let cmd_parser : Parser { cmd : String, arg : String } =
         monad = { flat_map },
         alternative,
         applicative } = import! std.parser
-    let { (<|>) } = prelude.make_Alternative alternative
+    let { (<|>) } = import! std.prelude
 
     let word = recognize (skip_many1 letter)
     let arg_parser = recognize (skip_many1 any)

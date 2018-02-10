@@ -10,7 +10,8 @@ use std::sync::Arc;
 use itertools::Itertools;
 
 use base::scoped_map::ScopedMap;
-use base::ast::{DisplayEnv, Do, Expr, Literal, MutVisitor, Pattern, PatternField, SpannedExpr};
+use base::ast::{self, DisplayEnv, Do, Expr, Literal, MutVisitor, Pattern, PatternField,
+                SpannedExpr};
 use base::ast::{AstType, SpannedIdent, SpannedPattern, TypeBinding, Typed, TypedIdent,
                 ValueBinding};
 use base::error::Errors;
@@ -63,7 +64,7 @@ pub enum TypeError<I> {
     /// Found a case expression without any alternatives
     EmptyCase,
     Message(String),
-    /// An implicit paramter were not possible to resolve
+    /// An implicit parameter were not possible to resolve
     UnableToResolveImplicit(ArcType<I>),
 }
 
@@ -299,6 +300,12 @@ impl<'a> MetadataEnv for Environment<'a> {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+enum ImplicitKind<'a> {
+    Always,
+    Binding(&'a Metadata),
+}
+
 /// Type returned from the main typecheck function to make sure that nested `type` and `let`
 /// expressions dont overflow the stack
 enum TailCall {
@@ -307,6 +314,8 @@ enum TailCall {
     /// should be typechecked now.
     TailCall,
 }
+
+type ImplictBindings = ::rpds::Vector<(Vec<TypedIdent<Symbol>>, ArcType)>;
 
 /// Struct which provides methods to typecheck expressions.
 pub struct Typecheck<'a> {
@@ -323,6 +332,9 @@ pub struct Typecheck<'a> {
     type_cache: TypeCache<Symbol, ArcType>,
     kind_cache: KindCache,
     metadata: FnvMap<Symbol, Metadata>,
+
+    implicit_bindings: Vec<ImplictBindings>,
+    implicit_vars: ScopedMap<Symbol, ImplictBindings>,
 }
 
 /// Error returned when unsuccessfully typechecking an expression
@@ -353,6 +365,8 @@ impl<'a> Typecheck<'a> {
             type_cache: type_cache,
             kind_cache: kind_cache,
             metadata: FnvMap::default(),
+            implicit_bindings: Vec::new(),
+            implicit_vars: ScopedMap::new(),
         }
     }
 
@@ -390,7 +404,7 @@ impl<'a> Typecheck<'a> {
 
                 self.named_variables.clear();
                 let typ = new_skolem_scope(&self.subs, &constraints, &typ);
-                debug!("Find {} : {:?}", self.symbols.string(id), typ);
+                debug!("Find {} : {}", self.symbols.string(id), typ);
                 debug!(
                     "Constraints [{}]",
                     constraints
@@ -441,6 +455,16 @@ impl<'a> Typecheck<'a> {
 
     fn stack_var(&mut self, id: Symbol, typ: ArcType) {
         debug!("Insert {} : {}", id, typ);
+
+        if self.implicit_bindings.is_empty() {
+            self.implicit_bindings.push(::rpds::Vector::new());
+        }
+        let mut bindings = self.implicit_bindings.last_mut().unwrap().clone();
+        self.find_implicit(&id, &typ, &mut |path, implicit_type| {
+            bindings = bindings.push_back((path, implicit_type.clone()));
+        });
+        *self.implicit_bindings.last_mut().unwrap() = bindings;
+
         self.environment.stack.insert(
             id,
             StackBinding {
@@ -481,17 +505,21 @@ impl<'a> Typecheck<'a> {
         self.environment.stack.enter_scope();
         self.environment.stack_types.enter_scope();
         self.original_symbols.enter_scope();
+
+        let bindings = self.implicit_bindings.last().cloned().unwrap_or_default();
+        self.implicit_bindings.push(bindings);
     }
 
     fn exit_scope(&mut self) {
         self.environment.stack.exit_scope();
         self.environment.stack_types.exit_scope();
         self.original_symbols.exit_scope();
+        self.implicit_bindings.pop();
     }
 
     fn generalize_binding(&mut self, level: u32, binding: &mut ValueBinding<Symbol>) {
-        self.generalize_type(level, &mut binding.resolved_type);
         self.generalize_variables(level, &mut binding.args, &mut binding.expr);
+        self.generalize_type(level, &mut binding.resolved_type);
     }
 
     /// Generalizing updates all variables which are above `level` into "generic variables". A
@@ -532,13 +560,91 @@ impl<'a> Typecheck<'a> {
                 }
             }
         }
+
+        struct ResolveImplicitsVisitor<'a, 'b: 'a> {
+            tc: &'a mut Typecheck<'b>,
+        }
+
+        impl<'a, 'b> MutVisitor for ResolveImplicitsVisitor<'a, 'b> {
+            type Ident = Symbol;
+
+            fn visit_expr(&mut self, expr: &mut SpannedExpr<Symbol>) {
+                let mut replacement = None;
+                if let Expr::Ident(ref mut id) = expr.value {
+                    if let Some(implicit_bindings) = self.tc.implicit_vars.get(&id.name) {
+                        debug!(
+                            "Resolving {} against:\n{}",
+                            id.typ,
+                            implicit_bindings.iter().map(|t| &t.1).format("\n")
+                        );
+                        let span = expr.span;
+                        replacement = implicit_bindings
+                            .iter()
+                            .find(|&&(_, ref typ)| {
+                                let state =
+                                    ::unify_type::State::new(&self.tc.environment, &self.tc.subs);
+                                ::unify_type::subsumes(
+                                    &self.tc.subs,
+                                    &mut ScopedMap::new(),
+                                    0,
+                                    state,
+                                    &id.typ,
+                                    typ,
+                                ).is_ok()
+                            })
+                            .map(|&(ref path, _)| {
+                                debug!(
+                                    "Found implicit `{}`",
+                                    path.iter().rev().map(|id| &id.name).format(".")
+                                );
+
+                                let base_ident = path[0].clone();
+                                path[1..].iter().fold(
+                                    pos::spanned(span, Expr::Ident(base_ident)),
+                                    |expr, ident| {
+                                        pos::spanned(
+                                            expr.span,
+                                            Expr::Projection(
+                                                Box::new(expr),
+                                                ident.name.clone(),
+                                                ident.typ.clone(),
+                                            ),
+                                        )
+                                    },
+                                )
+                            });
+                        if replacement.is_none() {
+                            debug!("UnableToResolveImplicit {:?} {}", id.name, id.typ);
+                            self.tc.errors.push(Spanned {
+                                span: expr.span,
+                                value: TypeError::Rename(RenameError::UnableToResolveImplicit(
+                                    id.typ.clone(),
+                                )).into(),
+                            });
+                        }
+                    }
+                }
+                if let Some(replacement) = replacement {
+                    *expr = replacement;
+                }
+                match expr.value {
+                    ast::Expr::LetBindings(..) => (),
+                    _ => ast::walk_mut_expr(self, expr),
+                }
+            }
+        }
+
+        {
+            let mut visitor = ResolveImplicitsVisitor { tc: self };
+            visitor.visit_expr(expr);
+        }
         {
             let mut visitor = ReplaceVisitor {
                 level: level,
                 tc: self,
             };
             visitor.visit_expr(expr);
-            for arg in args {
+            for arg in &mut *args {
                 visitor.visit_typ(&mut arg.value.typ)
             }
         }
@@ -559,7 +665,6 @@ impl<'a> Typecheck<'a> {
                 | DuplicateField(_)
                 | UndefinedRecord { .. }
                 | EmptyCase
-                | Rename(_)
                 | KindError(_)
                 | Message(_) => (),
                 NotAFunction(ref mut typ)
@@ -569,6 +674,12 @@ impl<'a> Typecheck<'a> {
                 | UnableToResolveImplicit(ref mut typ) => {
                     self.generalize_type(0, typ);
                 }
+                Rename(ref mut err) => match *err {
+                    RenameError::UnableToResolveImplicit(ref mut typ) => {
+                        self.generalize_type(0, typ);
+                    }
+                    _ => (),
+                },
                 Unification(ref mut expected, ref mut actual, ref mut errors) => {
                     self.generalize_type_without_forall(0, expected);
                     self.generalize_type_without_forall(0, actual);
@@ -633,7 +744,7 @@ impl<'a> Typecheck<'a> {
         if let Some(expected) = expected_type {
             let expected = self.create_unifiable_signature(expected)
                 .unwrap_or_else(|| expected.clone());
-            typ = self.subsumes(expr_check_span(expr), 0, &expected, typ);
+            typ = self.subsumes_expr(expr_check_span(expr), 0, &expected, typ, expr);
         }
         self.generalize_type(0, &mut typ);
         typ = types::walk_move_type(typ, &mut unroll_typ);
@@ -646,21 +757,8 @@ impl<'a> Typecheck<'a> {
             self.generalize_type_errors(&mut errors);
             Err(errors)
         } else {
-            match ::rename::rename(&mut self.symbols, &self.environment, expr) {
-                Ok(()) => {
-                    debug!("Typecheck result: {}", typ);
-                    Ok(typ)
-                }
-                Err(errors) => {
-                    for Spanned { span, value } in errors {
-                        self.errors.push(Spanned {
-                            span: span,
-                            value: TypeError::from(value).into(),
-                        });
-                    }
-                    Err(mem::replace(&mut self.errors, Errors::new()))
-                }
-            }
+            debug!("Typecheck result: {}", typ);
+            Ok(typ)
         }
     }
 
@@ -718,7 +816,7 @@ impl<'a> Typecheck<'a> {
                             returned_type = match expected_type {
                                 Some(expected_type) => {
                                     let level = self.subs.var_id();
-                                    self.subsumes(expr.span, level, &expected_type, typ)
+                                    self.subsumes_expr(expr.span, level, &expected_type, typ, expr)
                                 }
                                 None => typ,
                             };
@@ -770,7 +868,7 @@ impl<'a> Typecheck<'a> {
                 ref mut args,
             } => {
                 let func_type = self.infer_expr(func);
-                self.typecheck_application(func_type, implicit_args, args)
+                self.typecheck_application(expr.span, func_type, implicit_args, args)
             }
             Expr::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
                 let bool_type = self.bool();
@@ -815,8 +913,9 @@ impl<'a> Typecheck<'a> {
                 op.value.typ = func_type.clone();
 
                 self.typecheck_application(
+                    expr.span,
                     func_type,
-                    &mut [],
+                    &mut Vec::new(), // FIXME
                     Some(&mut **lhs).into_iter().chain(Some(&mut **rhs)),
                 )
             }
@@ -1096,11 +1195,18 @@ impl<'a> Typecheck<'a> {
                         self.subs.new_var()
                     }
                 };
-                *flat_map_id = Some(TypedIdent {
-                    name: flat_map.clone(),
-                    typ: flat_map_type.clone(),
-                });
+                *flat_map_id = Some(Box::new(pos::spanned(
+                    id.span,
+                    Expr::Ident(TypedIdent {
+                        name: flat_map.clone(),
+                        typ: flat_map_type.clone(),
+                    }),
+                )));
                 let flat_map_type = self.instantiate_generics(&flat_map_type);
+                let flat_map_type = match *flat_map_type {
+                    Type::Function(ArgType::Implicit, _, ref r) => r.clone(),
+                    _ => flat_map_type.clone(),
+                };
 
                 id.value.typ = self.subs.new_var();
                 let arg1 = self.type_cache
@@ -1135,8 +1241,9 @@ impl<'a> Typecheck<'a> {
 
     fn typecheck_application<'e, I>(
         &mut self,
+        span: Span<BytePos>,
         mut func_type: ArcType,
-        implicit_args: &mut [SpannedExpr<Symbol>],
+        implicit_args: &mut Vec<SpannedExpr<Symbol>>,
         args: I,
     ) -> Result<TailCall, TypeError<Symbol>>
     where
@@ -1147,16 +1254,18 @@ impl<'a> Typecheck<'a> {
             let f = self.type_cache
                 .function(once(self.subs.new_var()), self.subs.new_var());
             func_type = self.instantiate_generics(&func_type);
-            func_type = func_type.remove_implicit_args().clone();
-            func_type = self.unify(&f, func_type)?;
+            let level = self.subs.var_id();
+            self.subsumes_implicit(span, level, &f, func_type.clone(), &mut |implicit_arg| {
+                implicit_args.push(implicit_arg);
+            });
 
-            func_type = match func_type.as_function() {
+            func_type = match f.as_function() {
                 Some((arg_ty, ret_ty)) => {
                     let actual = self.typecheck(arg, arg_ty);
                     let actual = self.instantiate_generics(&actual);
 
                     let level = self.subs.var_id();
-                    self.subsumes(expr_check_span(arg), level, arg_ty, actual);
+                    self.subsumes_expr(expr_check_span(arg), level, arg_ty, actual, arg);
 
                     ret_ty.clone()
                 }
@@ -1318,6 +1427,9 @@ impl<'a> Typecheck<'a> {
                             // in this module to its actual name
                             self.original_symbols
                                 .insert(name.clone(), field_type.typ.name.clone());
+                            if let Some(meta) = self.metadata.remove(&name) {
+                                self.metadata.insert(field_type.typ.name.clone(), meta);
+                            }
                             self.stack_type(name, &field_type.typ);
                         }
                         None => {
@@ -1514,14 +1626,18 @@ impl<'a> Typecheck<'a> {
 
             self.type_variables.exit_scope();
         }
-        // Once all variables inside the let has been unified we can quantify them
-        debug!("Generalize at {}", level);
-        for bind in bindings.iter_mut() {
-            debug!("Generalize {}", bind.resolved_type);
-            self.generalize_binding(level, bind);
-            self.finish_pattern(level, &mut bind.name, &bind.resolved_type);
-            debug!("Generalized to {}", bind.resolved_type);
+
+        if is_recursive {
+            // Once all variables inside the let has been unified we can quantify them
+            debug!("Generalize at {}", level);
+            for bind in bindings.iter_mut() {
+                debug!("Generalize {}", bind.resolved_type);
+                self.generalize_binding(level, bind);
+                self.finish_pattern(level, &mut bind.name, &bind.resolved_type);
+                debug!("Generalized to {}", bind.resolved_type);
+            }
         }
+
         debug!("Typecheck `in`");
         self.type_variables.exit_scope();
         Ok(())
@@ -1597,6 +1713,9 @@ impl<'a> Typecheck<'a> {
             let new = self.symbols.scoped_symbol(&s);
             self.original_symbols
                 .insert(bind.alias.value.name.clone(), new.clone());
+            if let Some(meta) = self.metadata.remove(&bind.alias.value.name) {
+                self.metadata.insert(new.clone(), meta);
+            }
             // Rename the aliase's name to its global name
             bind.alias.value.name = new;
         }
@@ -1971,6 +2090,87 @@ impl<'a> Typecheck<'a> {
         }
     }
 
+    fn subsumes_expr(
+        &mut self,
+        span: Span<BytePos>,
+        level: u32,
+        expected: &ArcType,
+        actual: ArcType,
+        expr: &mut SpannedExpr<Symbol>,
+    ) -> ArcType {
+        self.subsumes_implicit(span, level, expected, actual, &mut |arg| {
+            match expr.value {
+                Expr::App { .. } => (),
+                _ => {
+                    let dummy = Expr::Literal(Literal::Int(0));
+                    let func = mem::replace(&mut expr.value, dummy);
+                    expr.value = Expr::App {
+                        func: Box::new(pos::spanned(expr.span, func)),
+                        implicit_args: Vec::new(),
+                        args: vec![],
+                    }
+                }
+            }
+
+            match expr.value {
+                Expr::App { ref mut args, .. } => args.push(arg),
+                _ => (),
+            }
+        })
+    }
+
+    fn subsumes_implicit(
+        &mut self,
+        span: Span<BytePos>,
+        level: u32,
+        expected: &ArcType,
+        mut actual: ArcType,
+        receiver: &mut FnMut(SpannedExpr<Symbol>),
+    ) -> ArcType {
+        debug!("Subsume expr {} <=> {}", expected, actual);
+        // Act as the implicit arguments of `actual` has been supplied (unless `expected` is
+        // specified to have implicit arguments)
+        let orig = actual.clone();
+        loop {
+            let temp = self.instantiate_generics(&actual);
+            actual = match *temp {
+                Type::Function(ArgType::Implicit, ref arg_type, ref r_ret) => {
+                    match **self.subs.real(expected) {
+                        Type::Variable(_) | Type::Function(ArgType::Implicit, _, _) => break,
+                        _ => {
+                            let name = Symbol::from("implicit_arg");
+                            let typ = arg_type.clone();
+
+                            let implicits = self.implicit_bindings.last().unwrap().clone();
+                            debug!(
+                                "Implicits {}",
+                                implicits
+                                    .iter()
+                                    .map(|t| format!(
+                                        "{}: {}",
+                                        t.0.iter().map(|id| &id.name).format("."),
+                                        t.1
+                                    ))
+                                    .format(",")
+                            );
+                            self.implicit_vars.insert(name.clone(), implicits);
+
+                            receiver(pos::spanned2(
+                                span.end,
+                                span.end,
+                                Expr::Ident(TypedIdent { name, typ }),
+                            ));
+
+                            r_ret.clone()
+                        }
+                    }
+                }
+                _ => break,
+            };
+        }
+        self.subsumes(span, level, expected, actual)
+    }
+
     fn subsumes(
         &mut self,
         span: Span<BytePos>,
@@ -2094,6 +2294,96 @@ impl<'a> Typecheck<'a> {
                 });
                 false
             })
+    }
+
+    fn find_implicit(
+        &self,
+        id: &Symbol,
+        implicit_type: &ArcType,
+        consumer: &mut FnMut(Vec<TypedIdent<Symbol>>, &ArcType),
+    ) {
+        let implicit_type = self.subs.real(implicit_type);
+        info!("Trying to resolve implicit {}", implicit_type);
+
+        let is_implicit_type = implicit_type
+            .name()
+            .and_then(|typename| {
+                self.metadata
+                    .get(typename)
+                    .or_else(|| self.environment.environment.get_metadata(typename))
+                    .and_then(|metadata| {
+                        metadata.comment.as_ref().map(|comment| {
+                            ::metadata::attributes(&comment).any(|(key, _)| key == "implicit")
+                        })
+                    })
+            })
+            .unwrap_or(false);
+
+        let mut path = Vec::new();
+        let implicit_kind_opt = if is_implicit_type {
+            Some(ImplicitKind::Always)
+        } else {
+            self.metadata.get(id).map(ImplicitKind::Binding)
+        };
+        if let Some(implicit_kind) = implicit_kind_opt {
+            self.find_implicit_of(&id, implicit_kind, implicit_type, &mut path, consumer)
+        }
+    }
+
+    fn find_implicit_of(
+        &self,
+        id: &Symbol,
+        implicit_kind: ImplicitKind,
+        typ: &ArcType,
+        path: &mut Vec<TypedIdent<Symbol>>,
+        consumer: &mut FnMut(Vec<TypedIdent<Symbol>>, &ArcType),
+    ) {
+        let is_implicit = match implicit_kind {
+            ImplicitKind::Always => true,
+            ImplicitKind::Binding(metadata) => metadata.comment.as_ref().map_or(false, |comment| {
+                ::metadata::attributes(&comment).any(|(key, _)| key == "implicit")
+            }),
+        };
+
+        if is_implicit {
+            let mut path = path.clone();
+            path.push(TypedIdent {
+                name: id.clone(),
+                typ: typ.clone(),
+            });
+            consumer(path, typ);
+        }
+        let typ = ::unify_type::new_skolem_scope(&self.subs, &FnvMap::default(), typ);
+        let ref typ = typ.instantiate_generics(&mut FnvMap::default());
+        let raw_type = resolve::remove_aliases(&self.environment, typ.clone());
+        debug!("{}", raw_type);
+        match *raw_type {
+            Type::Record(_) => for field in raw_type.row_iter() {
+                let field_implicit_kind_opt = match implicit_kind {
+                    ImplicitKind::Always => Some(ImplicitKind::Always),
+                    ImplicitKind::Binding(metadata) => metadata
+                        .module
+                        .get(field.name.declared_name())
+                        .map(ImplicitKind::Binding),
+                };
+
+                if let Some(field_implicit_kind) = field_implicit_kind_opt {
+                    path.push(TypedIdent {
+                        name: id.clone(),
+                        typ: typ.clone(),
+                    });
+                    self.find_implicit_of(
+                        &field.name,
+                        field_implicit_kind,
+                        &field.typ,
+                        path,
+                        consumer,
+                    );
+                    path.pop();
+                }
+            },
+            _ => (),
+        }
     }
 }
 

@@ -6,7 +6,7 @@ let result @ { Result } = import! std.result
 let string = import! std.string
 let unit = import! std.unit
 let { Applicative, (*>) } = import! std.applicative
-let { flat_map } = prelude.make_Monad writer.monad
+let { flat_map } = import! std.prelude
 let { send, recv, channel } = import! std.channel
 let { spawn, yield, resume } = import! std.thread
 

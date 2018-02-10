@@ -31,7 +31,7 @@ let semigroup : Semigroup (List a) =
 
     { append }
 
-let { (<>) } = prelude.make_Semigroup semigroup
+let { (<>) } = import! std.prelude
 
 let monoid : Monoid (List a) = {
     semigroup = semigroup,
@@ -64,16 +64,15 @@ let applicative : Applicative List =
     { functor = functor, apply, wrap }
 
 let { map, (<*>), wrap } = import! std.applicative
+let { (<|>) } = import! std.prelude
 
 let many alternative x : Alternative f -> f a -> f (List a) =
-    let { applicative, (<|>) } = prelude.make_Alternative alternative
 
     let many_v _ = some_v () <|> wrap Nil
     and some_v _ = map (\h l -> Cons h l) x <*> many_v ()
     many_v ()
 
 let some alternative x : Alternative f -> f a -> f (List a) =
-    let { applicative, (<|>) } = prelude.make_Alternative alternative
 
     let many_v _ = some_v () <|> wrap Nil
     and some_v _ = map (\h l -> Cons h l) x <*> many_v ()
@@ -86,8 +85,6 @@ let alternative : Alternative List = {
 }
 
 let monad : Monad List =
-    let { (<>) } = prelude.make_Semigroup semigroup
-
     let flat_map f xs =
         match xs with
         | Cons x ys -> (f x) <> (flat_map f ys)

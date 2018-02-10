@@ -18,6 +18,7 @@ itertools = "0.7.0"
 union-find = "0.3.1"
 pretty = "0.3.0"
 smallvec = "0.2.1"
+rpds = "0.3"
 
 strsim = "0.7.0"
 

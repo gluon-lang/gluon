@@ -28,11 +28,11 @@ let {
 } =
     import! std.parser
 
-let { (<>) } = prelude.make_Semigroup string.semigroup
+let { (<>) } =import! std.prelude
 
 let { Applicative, (<*), (*>), map2, wrap } = import! std.applicative
-let { (<|>) } = prelude.make_Alternative alternative
-let { flat_map } = prelude.make_Monad monad
+let { (<|>) } = import! std.prelude
+let { flat_map } = import! std.prelude
 
 let atom : Parser Expr =
     let symbol = one_of "!#$%&|*+-/:<=>?@^_~"

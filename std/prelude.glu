@@ -152,7 +152,7 @@ type Monad (m : Type -> Type) = {
     /// Note that it is sometimes more ergonomic to use the `(>>=)` operator:
     ///
     /// ```gluon
-    /// let { (>>=) } = make_Monad result.monad
+    /// let { (>>=) } = import! std.prelude
     ///
     /// call_fallible "hello" >>= (\x -> do_something x)
     /// ```
@@ -189,7 +189,7 @@ let concat fold monoid : [Foldable t] -> Monoid m -> t m -> m =
 let concat_map fold monoid f : [Foldable t] -> Monoid m -> (a -> m) -> t a -> m =
     fold.foldr (\x -> monoid.semigroup.append (f x)) monoid.empty
 
-let fold_m fold monad f z : [Foldable t] -> Monad m -> (a -> b -> m a) -> a -> t b -> m a =
+let fold_m fold monad f z : [Foldable t] -> [Monad m] -> (a -> b -> m a) -> a -> t b -> m a =
     fold.foldl (\acc y -> monad.flat_map (\x -> f x y) acc) (monad.applicative.wrap z)
 
 let find fold pred : [Foldable t] -> (a -> Bool) -> t a -> Option a =

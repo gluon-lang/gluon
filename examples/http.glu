@@ -58,13 +58,13 @@ let alternative : Alternative Handler = {
             make l success failure2 state),
     empty = make (\_ failure state -> failure DontProcess state),
 }
-let { or, empty, (<|>) } = prelude.make_Alternative alternative
+let { or, empty, (<|>) } = import! std.prelude
 
 let monad : Monad Handler = {
     applicative,
     flat_map,
 }
-let { flat_map } = prelude.make_Monad monad
+let { flat_map } = import! std.prelude
 
 /// Handles the request if `predicate` returns `True
 let test predicate : (Request -> Bool) -> Handler () =

@@ -1,9 +1,9 @@
 let prelude = import! std.prelude
-let { Functor, Applicative, Monad } = prelude
+let { Foldable, Functor, Applicative, Monad } = prelude
 let { id } = import! std.function
 
 let string = import! std.string
-let { (<>) } = prelude.make_Semigroup string.semigroup
+let { (<>) } = import! std.prelude
 
 let { Bool } = import! std.bool
 let float = import! std.float
@@ -87,8 +87,8 @@ let monad_Lisp : Monad Lisp = {
             | Err err -> Err err)
 }
 
-let { flat_map, (>>=) } = prelude.make_Monad monad_Lisp
-let fold_m = (prelude.make_Foldable list.foldable).fold_m monad_Lisp
+let { flat_map, (>>=) } = import! std.prelude
+let { fold_m } = import! std.prelude
 let traverse = list.traversable.traverse applicative_Lisp
 let { map = map_lisp } = functor_Lisp
 
@@ -155,7 +155,7 @@ let define xs =
     | _ -> fail "Unexpected parameters to define `define`"
 
 let primitives =
-    let { (<>) = (++) } = prelude.make_Semigroup prim_map.semigroup
+    let { (<>) = (++) } = import! std.prelude
     primitive_binop "+" (+) (+)
         ++ primitive_binop "-" (-) (-)
         ++ primitive_binop "*" (*) (*)

@@ -13,6 +13,8 @@ use base::ast::{self, SpannedExpr, Visitor};
 use base::types::{Field, Type};
 use base::symbol::Symbol;
 
+use check::rename::RenameError;
+
 #[macro_use]
 #[allow(unused_macros)]
 mod support;
@@ -152,7 +154,7 @@ f Test
             Field::new(support::intern("Test"), support::typ("Test")),
         ]),
     );
-    assert_eq!(result, Ok(test));
+    assert_req!(result, Ok(test));
 }
 
 #[test]
@@ -169,7 +171,7 @@ g 2
 "#;
     let (expr, result) = support::typecheck_expr(text);
 
-    assert_eq!(result, Ok(Type::unit()));
+    assert_req!(result, Ok(Type::unit()));
 
     struct Visitor {
         text: &'static str,
@@ -336,33 +338,8 @@ let applicative : Applicative Test = {
 \_ -> wrap 123
 ()
 "#;
-    let (expr, result) = support::typecheck_expr(text);
-
-    struct Visitor {
-        done: bool,
-    }
-    impl<'a> base::ast::Visitor<'a> for Visitor {
-        type Ident = Symbol;
-
-        fn visit_expr(&mut self, expr: &'a SpannedExpr<Symbol>) {
-            match expr.value {
-                ast::Expr::Lambda(ref lambda) => {
-                    assert_eq!(lambda.args.len(), 2);
-                    assert_eq!(
-                        lambda.id.typ.to_string(),
-                        "forall a a0 . [test.Applicative a0] -> a -> a0 Int"
-                    );
-                    self.done = true;
-                }
-                _ => (),
-            }
-            base::ast::walk_expr(self, expr)
-        }
-    }
-    let mut visitor = Visitor { done: false };
-    visitor.visit_expr(&expr);
-    assert!(visitor.done);
-    assert!(result.is_ok(), "{}", result.unwrap_err());
+    let (_expr, result) = support::typecheck_expr(text);
+    assert_err!(result, Rename(RenameError::UnableToResolveImplicit(..)));
 }
 
 #[test]
@@ -390,4 +367,55 @@ wrap
         result.map(|typ| typ.to_string()),
         Ok("forall a f . [test.Applicative f] -> a -> f a")
     );
+}
+
+#[test]
+fn dont_insert_implicit_with_unresolved_arguments() {
+    let _ = ::env_logger::init();
+    let text = r#"
+
+/// @implicit
+type Alternative f = {
+    empty : forall a . f a
+}
+
+type Test a = | Test a | Empty
+
+let empty alt : [Alternative f] -> f a = alt.empty
+
+let x: Test Int = empty
+x
+"#;
+    let result = support::typecheck(text);
+    assert_err!(result, Rename(RenameError::UnableToResolveImplicit(..)));
+}
+
+#[test]
+fn resolve_implicit_for_fold_m() {
+    let _ = ::env_logger::init();
+    let text = r#"
+type List a = | Nil | Cons a (List a)
+
+/// @implicit
+type Foldable (f : Type -> Type) = {
+}
+
+type Monad (m : Type -> Type) = {
+}
+
+let foldable : Foldable List =
+    { }
+
+let monad : Monad List =
+    { }
+
+let fold_m fold monad f z w : forall a b m t . [Foldable t] -> Monad m -> (a -> b -> m a) -> a -> t b -> () = ()
+
+let fold_m2 x : [Foldable t] -> _ = fold_m monad
+
+let f x : List Int -> _ = fold_m2 (\a b -> Cons a Nil) x
+f
+"#;
+    let result = support::typecheck(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
 }

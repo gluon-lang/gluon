@@ -15,7 +15,6 @@ use gluon::{new_vm, Compiler};
 use gluon::vm::compiler::UpvarInfo;
 use gluon::vm::thread::{HookFlags, ThreadInternal};
 
-
 const SIMPLE_EXPR: &'static str = r#"
     let f x = x
 
@@ -383,7 +382,6 @@ fn source_name() {
     assert_eq!(*name, "test");
 }
 
-
 #[test]
 fn upvars() {
     let _ = env_logger::init();
@@ -468,7 +466,7 @@ fn implicit_prelude_variable_names() {
         Type::Record(ref row) => {
             assert!(
                 row.row_iter()
-                    .any(|field| { field.name.declared_name() == "make_Semigroup" })
+                    .any(|field| field.name.declared_name() == "+")
             );
         }
         _ => panic!(),

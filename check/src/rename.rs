@@ -410,9 +410,14 @@ where
                     let flat_map_id = flat_map_id
                         .as_mut()
                         .unwrap_or_else(|| ice!("flat_map_id not set before renaming"));
-                    if let Some(new_id) = self.rename(&flat_map_id.name, &flat_map_id.typ)? {
-                        debug!("Rename identifier {} = {}", flat_map_id.name, new_id);
-                        flat_map_id.name = new_id;
+                    match flat_map_id.value {
+                        Expr::Ident(ref mut flat_map_id) => if let Some(new_id) =
+                            self.rename(&flat_map_id.name, &flat_map_id.typ)?
+                        {
+                            debug!("Rename identifier {} = {}", flat_map_id.name, new_id);
+                            flat_map_id.name = new_id;
+                        },
+                        _ => unreachable!(),
                     }
 
                     self.visit_expr(bound);
@@ -420,8 +425,21 @@ where
                     self.env.stack.enter_scope();
                     self.env.stack_types.enter_scope();
 
-                    id.value.name =
-                        self.stack_var(id.value.name.clone(), id.span, id.value.typ.clone());
+                    let typ = flat_map_id.env_type_of(&self.env);
+                    let args = self.make_implicit_args(id.span.end, typ);
+                    if args.is_empty() {
+                        id.value.name =
+                            self.stack_var(id.value.name.clone(), id.span, id.value.typ.clone());
+                    } else {
+                        flat_map_id.value = Expr::App {
+                            func: Box::new(mem::replace(
+                                flat_map_id,
+                                pos::spanned2(0.into(), 0.into(), Expr::Literal(Literal::Int(0))),
+                            )),
+                            implicit_args: Vec::new(),
+                            args,
+                        };
+                    }
 
                     return Ok(TailCall::TailCall);
                 }
@@ -486,7 +504,7 @@ where
                 Some(mut path) => {
                     debug!(
                         "Found implicit `{}`",
-                        path.iter().map(|id| &id.name).format(".")
+                        path.iter().rev().map(|id| &id.name).format(".")
                     );
 
                     let base_ident = path.pop().unwrap();
@@ -584,9 +602,11 @@ where
 
         fn make_implicit_args(
             &mut self,
-            span: Span<BytePos>,
+            pos: BytePos,
             mut typ: ArcType,
         ) -> Vec<SpannedExpr<Symbol>> {
+            let span = Span::new(pos, pos);
+
             let mut args = Vec::new();
             loop {
                 typ = match *typ {
@@ -648,7 +668,7 @@ where
                 let func = mem::replace(&mut expr.value, dummy);
                 match func {
                     Expr::Infix(l, id, r) => {
-                        let mut args = self.make_implicit_args(id.span, typ);
+                        let mut args = self.make_implicit_args(id.span.end, typ);
                         args.push(*l);
                         args.push(*r);
 
@@ -664,7 +684,7 @@ where
 
             // Resolve implicit arguments
             if let Ok(typ) = expr.try_type_of(&self.env) {
-                let args = self.make_implicit_args(Span::new(expr.span.end, expr.span.end), typ);
+                let args = self.make_implicit_args(expr.span.end, typ);
                 if !args.is_empty() {
                     let dummy = Expr::Literal(Literal::Int(0));
                     let func = mem::replace(&mut expr.value, dummy);

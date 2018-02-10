@@ -685,10 +685,11 @@ impl<'a, 'e> Translator<'a, 'e> {
                     body.span,
                 );
 
+                let f = self.translate_alloc(flat_map_id);
                 binder.into_expr(
                     arena,
                     Expr::Call(
-                        arena.alloc(Expr::Ident(flat_map_id.clone(), expr.span)),
+                        f,
                         arena.alloc_extend(Some(lambda).into_iter().chain(Some(bound_ident))),
                     ),
                 )
