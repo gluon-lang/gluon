@@ -50,7 +50,12 @@ impl VmType for Vec2 {
     }
 }
 
+# if ::std::env::var("GLUON_PATH").is_err() {
+#     ::std::env::set_var("GLUON_PATH", "..");
+# }
+
 let thread = new_vm();
+
 let (mut f, _): (FunctionRef<fn (Ser<Vec2>) -> i32>, _) = Compiler::new()
     .run_expr(&thread, "", r#"let f v: _ -> Int = v.x + v.y in f"#)
     .unwrap_or_else(|err| panic!("{}", err));
@@ -94,6 +99,10 @@ impl VmType for Enum {
         thread.find_type_info("test.Enum").unwrap().into_type()
     }
 }
+
+# if ::std::env::var("GLUON_PATH").is_err() {
+#     ::std::env::set_var("GLUON_PATH", "..");
+# }
 
 let thread = new_vm();
 

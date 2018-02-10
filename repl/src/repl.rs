@@ -495,6 +495,9 @@ mod tests {
     use gluon::import::Import;
 
     fn new_vm() -> RootedThread {
+        if ::std::env::var("GLUON_PATH").is_err() {
+            ::std::env::set_var("GLUON_PATH", "..");
+        }
         let vm = gluon::new_vm();
         let import = vm.get_macros().get("import");
         import

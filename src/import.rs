@@ -58,6 +58,7 @@ macro_rules! std_libs {
     }
 }
 // Include the standard library distribution in the binary
+#[cfg(not(feature = "test"))]
 static STD_LIBS: &[(&str, &str)] = &std_libs!(
     "prelude",
     "types",
@@ -82,6 +83,11 @@ static STD_LIBS: &[(&str, &str)] = &std_libs!(
     "array",
     "applicative"
 );
+
+// When testing we use the files as-is in the repository to avoid recompiling after they are
+// changed
+#[cfg(feature = "test")]
+static STD_LIBS: &[(&str, &str)] = &std_libs!();
 
 pub trait Importer: Any + Clone + Sync + Send {
     fn import(
@@ -204,9 +210,8 @@ impl<I> Import<I> {
                         return Ok(UnloadedModule::Extern(value));
                     }
                 }
-                let file = self.paths
-                    .read()
-                    .unwrap()
+                let paths = self.paths.read().unwrap();
+                let file = paths
                     .iter()
                     .filter_map(|p| {
                         let base = p.join(filename);
@@ -217,7 +222,14 @@ impl<I> Import<I> {
                     })
                     .next();
                 let mut file = file.ok_or_else(|| {
-                    Error::String(format!("Could not find module '{}'", module))
+                    Error::String(format!(
+                        "Could not find module '{}'. Searched {}.",
+                        module,
+                        paths
+                            .iter()
+                            .map(|p| format!("`{}`", p.display()))
+                            .format(", ")
+                    ))
                 })?;
                 file.read_to_string(&mut buffer)?;
                 UnloadedModule::Source(Cow::Owned(buffer))
