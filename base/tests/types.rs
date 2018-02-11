@@ -144,6 +144,56 @@ fn show_record_multiline() {
 }
 
 #[test]
+fn show_record_filtered() {
+    let data = |s, a| ArcType::from(type_con(s, a));
+    let test = data("Test", vec![data("a", vec![])]);
+    let record = Type::record(
+        vec![Field::new("Test", Alias::new("Test", Type::int()))],
+        vec![
+            Field::new("x", Type::int()),
+            Field::new("y", Type::int()),
+            Field::new("test", test.clone()),
+            Field::new(
+                "+",
+                Type::function(vec![Type::int(), Type::int()], Type::int()),
+            ),
+        ],
+    );
+
+    assert_eq_display!(
+        format!(
+            "{}",
+            TypeFormatter::new(&record).filter(&|field| *field == "Test")
+        ),
+        r#"{ ..., Test = Int, ... }"#
+    );
+
+    assert_eq_display!(
+        format!(
+            "{}",
+            TypeFormatter::new(&record).filter(&|field| *field != "x")
+        ),
+        r#"{ ..., Test = Int, y : Int, test : Test a, (+) : Int -> Int -> Int, ... }"#
+    );
+    assert_eq_display!(
+        format!(
+            "{}",
+            TypeFormatter::new(&record)
+                .filter(&|field| *field != "x")
+                .width(50)
+        ),
+        r#"{
+    ...,
+    Test = Int,
+    y : Int,
+    test : Test a,
+    (+) : Int -> Int -> Int,
+    ...
+}"#
+    );
+}
+
+#[test]
 fn show_record_multi_line_nested() {
     let data = |s, a| ArcType::from(type_con(s, a));
     let fun = Type::function(vec![data("a", vec![])], Type::string());
