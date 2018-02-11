@@ -1777,13 +1777,20 @@ where
                         .append(top(typ).pretty(printer)),
                 };
                 if filtered {
-                    chain![arena;
-                        newline.clone(),
-                        "...,",
-                        row_doc,
-                        newline.clone(),
-                        "..."
-                    ]
+                    if row_doc.1 == arena.nil().1 {
+                        chain![arena;
+                            newline.clone(),
+                            "..."
+                        ]
+                    } else {
+                        chain![arena;
+                            newline.clone(),
+                            "...,",
+                            row_doc,
+                            newline.clone(),
+                            "..."
+                        ]
+                    }
                 } else {
                     row_doc
                 }

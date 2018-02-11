@@ -18,6 +18,8 @@ union-find = "0.3.1"
 pretty = "0.3.0"
 smallvec = "0.2.1"
 
+strsim = "0.7.0"
+
 gluon_base = { path = "../base", version = "0.7.1" } # GLUON
 gluon_parser = { path = "../parser", version = "0.7.1", optional = true } # GLUON
 

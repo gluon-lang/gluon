@@ -91,6 +91,19 @@ impl<'a, I, T> TypeFormatter<'a, I, T> {
         self
     }
 
+    pub fn pretty(&self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>>
+    where
+        T: Deref<Target = Type<I, T>> + HasSpan + Commented + 'a,
+        I: AsRef<str>,
+    {
+        use super::top;
+        top(self.typ).pretty(&Printer {
+            arena,
+            source: &Source::new(""),
+            filter: self.filter,
+        })
+    }
+
     pub fn build<'e>(&self, arena: &'a Arena<'a>, source: &'e Source<'a>) -> Printer<'a, 'e, I> {
         Printer {
             arena,

@@ -11,7 +11,8 @@ use itertools::Itertools;
 
 use base::scoped_map::ScopedMap;
 use base::ast::{DisplayEnv, Do, Expr, Literal, MutVisitor, Pattern, PatternField, SpannedExpr};
-use base::ast::{AstType, SpannedIdent, SpannedPattern, TypeBinding, TypedIdent, ValueBinding, Typed};
+use base::ast::{AstType, SpannedIdent, SpannedPattern, TypeBinding, Typed, TypedIdent,
+                ValueBinding};
 use base::error::Errors;
 use base::fnv::{FnvMap, FnvSet};
 use base::resolve;
@@ -20,7 +21,7 @@ use base::merge;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
 use base::types::{self, Alias, AliasRef, AppVec, ArcType, Field, Generic, PrimitiveEnv,
-                  RecordSelector, Skolem, Type, TypeCache, TypeEnv, TypeVariable};
+                  RecordSelector, Skolem, Type, TypeCache, TypeEnv, TypeFormatter, TypeVariable};
 
 use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
 use substitution::{self, Constraints, Substitution};
@@ -89,18 +90,28 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
                 write!(f, "Type `{}` does not have the field `{}`", typ, field)
             }
             Unification(ref expected, ref actual, ref errors) => {
+                let filters = errors
+                    .iter()
+                    .filter_map(|err| match *err {
+                        UnifyError::Other(ref err) => Some(err.make_filter()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                let filter =
+                    move |field: &I| filters.is_empty() || filters.iter().any(move |f| f(field));
+
                 let arena = Arena::new();
                 let types = chain![&arena;
                     "Expected:",
                     chain![&arena;
                         arena.space(),
-                        expected.pretty(&arena)
+                        TypeFormatter::new(expected).filter(&filter).pretty(&arena)
                     ].nest(4).group(),
                     arena.newline(),
                     "Found:",
                     chain![&arena;
                         arena.space(),
-                        actual.pretty(&arena)
+                        TypeFormatter::new(actual).filter(&filter).pretty(&arena)
                     ].nest(4).group()
                 ].group();
                 let doc = chain![&arena;
@@ -116,7 +127,10 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
                     return Ok(());
                 }
                 for error in &errors[..errors.len() - 1] {
-                    writeln!(f, "{}", error)?;
+                    match *error {
+                        UnifyError::Other(ref err) => err.filter_fmt(&filter, f)?,
+                        _ => writeln!(f, "{}", error)?,
+                    }
                 }
                 write!(f, "{}", errors.last().unwrap())
             }
@@ -1272,7 +1286,6 @@ impl<'a> Typecheck<'a> {
                 match_type
             }
             Pattern::Error => self.subs.new_var(),
-
         }
     }
 
