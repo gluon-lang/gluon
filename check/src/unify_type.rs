@@ -174,8 +174,12 @@ where
                     })
                     .collect::<Vec<_>>();
                 field_similarity.sort_by_key(|t| ::std::cmp::Reverse(t.1));
+
                 Box::new(move |field: &I| {
-                    if field_similarity
+                    // Keep the fields that were missing as-is (with full types)
+                    if fields.iter().any(|f| f.as_ref() == field.as_ref()) {
+                        Filter::Retain
+                    } else if field_similarity
                         .iter()
                         .take(3)
                         .any(|t| t.0.as_ref() == field.as_ref())

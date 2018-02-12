@@ -163,7 +163,7 @@ fn show_record_filtered() {
     assert_eq_display!(
         format!(
             "{}",
-            TypeFormatter::new(&record).filter(&|field| *field == "Test")
+            TypeFormatter::new(&record).filter(&|field| (*field == "Test").into())
         ),
         r#"{ ..., Test = Int, ... }"#
     );
@@ -171,7 +171,7 @@ fn show_record_filtered() {
     assert_eq_display!(
         format!(
             "{}",
-            TypeFormatter::new(&record).filter(&|field| *field != "x")
+            TypeFormatter::new(&record).filter(&|field| (*field != "x").into())
         ),
         r#"{ ..., Test = Int, y : Int, test : Test a, (+) : Int -> Int -> Int, ... }"#
     );
@@ -179,7 +179,7 @@ fn show_record_filtered() {
         format!(
             "{}",
             TypeFormatter::new(&record)
-                .filter(&|field| *field != "x")
+                .filter(&|field| (*field != "x").into())
                 .width(50)
         ),
         r#"{

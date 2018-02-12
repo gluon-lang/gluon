@@ -65,6 +65,16 @@ pub enum Filter {
     Retain,
 }
 
+impl From<bool> for Filter {
+    fn from(b: bool) -> Filter {
+        if b {
+            Filter::Retain
+        } else {
+            Filter::Drop
+        }
+    }
+}
+
 pub struct TypeFormatter<'a, I, T>
 where
     I: 'a,

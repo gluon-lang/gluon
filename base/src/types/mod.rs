@@ -1695,6 +1695,11 @@ where
                 } else {
                     arena.space()
                 };
+
+                let print_any_field = fields
+                    .iter()
+                    .any(|field| printer.filter(&field.name) != Filter::Drop);
+
                 let mut filtered = false;
 
                 while let Type::ExtendRow {
@@ -1719,7 +1724,7 @@ where
                             } else {
                                  top(&field.typ.typ).pretty(printer)
                             },
-                            if i + 1 != types.len() || !fields.is_empty() {
+                            if i + 1 != types.len() || print_any_field {
                                 arena.text(",")
                             } else {
                                 arena.nil()
@@ -1783,6 +1788,11 @@ where
                             newline.clone(),
                             "...,",
                             doc,
+                            if newline.1 == arena.space().1 {
+                                arena.text(",")
+                            } else {
+                                arena.nil()
+                            },
                             newline.clone(),
                             "..."
                         ]
