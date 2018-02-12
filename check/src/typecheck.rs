@@ -11,7 +11,8 @@ use itertools::Itertools;
 
 use base::scoped_map::ScopedMap;
 use base::ast::{DisplayEnv, Do, Expr, Literal, MutVisitor, Pattern, PatternField, SpannedExpr};
-use base::ast::{AstType, SpannedIdent, SpannedPattern, TypeBinding, TypedIdent, ValueBinding, Typed};
+use base::ast::{AstType, SpannedIdent, SpannedPattern, TypeBinding, Typed, TypedIdent,
+                ValueBinding};
 use base::error::Errors;
 use base::fnv::{FnvMap, FnvSet};
 use base::resolve;
@@ -1094,7 +1095,7 @@ impl<'a> Typecheck<'a> {
         function_type = self.skolemize(&function_type);
         let mut arg_types = Vec::new();
         let body_type = {
-            let mut iter1 = function_arg_iter(self, function_type);
+            let mut iter1 = function_arg_iter(self, args.last().unwrap().span, function_type);
             for arg in args {
                 let arg_type = match iter1.next() {
                     Some(arg_type) => arg_type,
@@ -1272,7 +1273,6 @@ impl<'a> Typecheck<'a> {
                 match_type
             }
             Pattern::Error => self.subs.new_var(),
-
         }
     }
 
@@ -1675,8 +1675,9 @@ impl<'a> Typecheck<'a> {
             Pattern::Constructor(ref id, ref mut args) => {
                 debug!("{}: {}", self.symbols.string(&id.name), final_type);
                 let len = args.len();
+                let span = args.last().map(|arg| arg.span).unwrap_or(pattern.span);
                 let iter = args.iter_mut().zip(
-                    function_arg_iter(self, final_type.clone())
+                    function_arg_iter(self, span, final_type.clone())
                         .take(len)
                         .collect::<Vec<_>>(),
                 );
@@ -2343,6 +2344,7 @@ fn get_alias_app<'a>(
 
 struct FunctionArgIter<'a, 'b: 'a> {
     tc: &'a mut Typecheck<'b>,
+    span: Span<BytePos>,
     typ: ArcType,
 }
 
@@ -2365,7 +2367,12 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
                         let arg = self.tc.subs.new_var();
                         let ret = self.tc.subs.new_var();
                         let f = self.tc.type_cache.function(Some(arg.clone()), ret.clone());
-                        self.tc.unify(&self.typ, f).unwrap();
+                        if let Err(err) = self.tc.unify(&self.typ, f) {
+                            self.tc.errors.push(Spanned {
+                                span: self.span,
+                                value: err.into(),
+                            });
+                        }
                         (Some(arg), ret)
                     }
                 },
@@ -2378,8 +2385,12 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
     }
 }
 
-fn function_arg_iter<'a, 'b>(tc: &'a mut Typecheck<'b>, typ: ArcType) -> FunctionArgIter<'a, 'b> {
-    FunctionArgIter { tc: tc, typ: typ }
+fn function_arg_iter<'a, 'b>(
+    tc: &'a mut Typecheck<'b>,
+    span: Span<BytePos>,
+    typ: ArcType,
+) -> FunctionArgIter<'a, 'b> {
+    FunctionArgIter { tc, span, typ }
 }
 
 /// Returns a span of the innermost expression of a group of nested `let` and `type` bindings.
