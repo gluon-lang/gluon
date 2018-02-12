@@ -334,7 +334,7 @@ fn set_globals(
                         set_globals(vm, field_pattern, &field_type, &field_value)?
                     }
                     None => vm.set_global(
-                        field.name.value.clone(),
+                        Symbol::from(format!("@{}", field.name.value.declared_name())),
                         field_type,
                         Default::default(),
                         *field_value,

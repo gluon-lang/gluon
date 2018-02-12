@@ -1,10 +1,15 @@
 use std::borrow::Cow;
+use std::fmt;
+use std::marker::PhantomData;
+use std::ops::Deref;
 
 use pretty::{Arena, DocAllocator, DocBuilder};
 
-use ast::{is_operator_char, Comment, CommentType};
-use pos::{BytePos, Span};
+use ast::{is_operator_char, Comment, CommentType, Commented};
+use pos::{BytePos, HasSpan, Span};
 use source::Source;
+
+use types::{pretty_print, Type};
 
 pub fn ident<'b, S>(arena: &'b Arena<'b>, name: S) -> DocBuilder<'b, Arena<'b>>
 where
@@ -53,14 +58,115 @@ pub fn doc_comment<'a>(
     }
 }
 
-pub struct Printer<'a: 'e, 'e> {
-    pub arena: &'a Arena<'a>,
-    pub source: &'e Source<'a>,
+#[derive(Debug, PartialEq)]
+pub enum Filter {
+    Drop,
+    RetainKey,
+    Retain,
 }
 
-impl<'a: 'e, 'e> Printer<'a, 'e> {
-    pub fn new(arena: &'a Arena<'a>, source: &'e Source<'a>) -> Printer<'a, 'e> {
-        Printer { arena, source }
+impl From<bool> for Filter {
+    fn from(b: bool) -> Filter {
+        if b {
+            Filter::Retain
+        } else {
+            Filter::Drop
+        }
+    }
+}
+
+pub struct TypeFormatter<'a, I, T>
+where
+    I: 'a,
+    T: 'a,
+{
+    width: usize,
+    typ: &'a T,
+    filter: &'a Fn(&I) -> Filter,
+    _marker: PhantomData<I>,
+}
+
+impl<'a, I, T> TypeFormatter<'a, I, T> {
+    pub fn new(typ: &'a T) -> Self {
+        TypeFormatter {
+            width: 80,
+            typ: typ,
+            filter: &|_| Filter::Retain,
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<'a, I, T> TypeFormatter<'a, I, T> {
+    pub fn width(mut self, width: usize) -> Self {
+        self.width = width;
+        self
+    }
+
+    pub fn filter(mut self, filter: &'a Fn(&I) -> Filter) -> Self {
+        self.filter = filter;
+        self
+    }
+
+    pub fn pretty(&self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>>
+    where
+        T: Deref<Target = Type<I, T>> + HasSpan + Commented + 'a,
+        I: AsRef<str>,
+    {
+        use super::top;
+        top(self.typ).pretty(&Printer {
+            arena,
+            source: &Source::new(""),
+            filter: self.filter,
+        })
+    }
+
+    pub fn build<'e>(&self, arena: &'a Arena<'a>, source: &'e Source<'a>) -> Printer<'a, 'e, I> {
+        Printer {
+            arena,
+            source,
+            filter: self.filter,
+        }
+    }
+}
+
+impl<'a, I, T> fmt::Display for TypeFormatter<'a, I, T>
+where
+    T: Deref<Target = Type<I, T>> + HasSpan + Commented + 'a,
+    I: AsRef<str>,
+{
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let arena = Arena::new();
+        let source = Source::new("");
+        let printer = self.build(&arena, &source);
+        let mut s = Vec::new();
+
+        pretty_print(&printer, self.typ)
+            .group()
+            .1
+            .render(self.width, &mut s)
+            .map_err(|_| fmt::Error)?;
+        write!(f, "{}", ::std::str::from_utf8(&s).expect("utf-8"))
+    }
+}
+
+pub struct Printer<'a: 'e, 'e, I: 'a> {
+    pub arena: &'a Arena<'a>,
+    pub source: &'e Source<'a>,
+    filter: &'a Fn(&I) -> Filter,
+}
+
+impl<'a: 'e, 'e, I> Printer<'a, 'e, I> {
+    pub fn new(arena: &'a Arena<'a>, source: &'e Source<'a>) -> Printer<'a, 'e, I> {
+        Printer {
+            arena,
+            source,
+            filter: &|_| Filter::Retain,
+        }
+    }
+
+    pub fn filter(&self, field: &I) -> Filter {
+        (self.filter)(field)
     }
 
     pub fn space_before(&self, pos: BytePos) -> DocBuilder<'a, Arena<'a>> {

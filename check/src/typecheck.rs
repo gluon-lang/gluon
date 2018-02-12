@@ -20,8 +20,8 @@ use base::kind::{ArcKind, Kind, KindCache, KindEnv};
 use base::merge;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
-use base::types::{self, Alias, AliasRef, AppVec, ArcType, Field, Generic, PrimitiveEnv,
-                  RecordSelector, Skolem, Type, TypeCache, TypeEnv, TypeVariable};
+use base::types::{self, Alias, AliasRef, AppVec, ArcType, Field, Filter, Generic, PrimitiveEnv,
+                  RecordSelector, Skolem, Type, TypeCache, TypeEnv, TypeFormatter, TypeVariable};
 
 use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
 use substitution::{self, Constraints, Substitution};
@@ -90,18 +90,42 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
                 write!(f, "Type `{}` does not have the field `{}`", typ, field)
             }
             Unification(ref expected, ref actual, ref errors) => {
+                let filters = errors
+                    .iter()
+                    .filter_map(|err| match *err {
+                        UnifyError::Other(ref err) => Some(err.make_filter()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>();
+                let filter = move |field: &I| {
+                    if filters.is_empty() {
+                        Filter::Retain
+                    } else {
+                        filters
+                            .iter()
+                            .fold(Filter::Drop, move |filter, f| match filter {
+                                Filter::Retain => filter,
+                                _ => match f(field) {
+                                    Filter::Drop => filter,
+                                    Filter::RetainKey => Filter::RetainKey,
+                                    Filter::Retain => Filter::Retain,
+                                },
+                            })
+                    }
+                };
+
                 let arena = Arena::new();
                 let types = chain![&arena;
                     "Expected:",
                     chain![&arena;
                         arena.space(),
-                        expected.pretty(&arena)
+                        TypeFormatter::new(expected).filter(&filter).pretty(&arena)
                     ].nest(4).group(),
                     arena.newline(),
                     "Found:",
                     chain![&arena;
                         arena.space(),
-                        actual.pretty(&arena)
+                        TypeFormatter::new(actual).filter(&filter).pretty(&arena)
                     ].nest(4).group()
                 ].group();
                 let doc = chain![&arena;
@@ -117,7 +141,10 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
                     return Ok(());
                 }
                 for error in &errors[..errors.len() - 1] {
-                    writeln!(f, "{}", error)?;
+                    match *error {
+                        UnifyError::Other(ref err) => err.filter_fmt(&filter, f)?,
+                        _ => writeln!(f, "{}", error)?,
+                    }
                 }
                 write!(f, "{}", errors.last().unwrap())
             }

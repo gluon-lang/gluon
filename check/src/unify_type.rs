@@ -5,7 +5,8 @@ use base::error::Errors;
 use base::fnv::FnvMap;
 use base::merge;
 use base::kind::ArcKind;
-use base::types::{self, AppVec, ArcType, Field, Generic, Skolem, Type, TypeEnv, TypeVariable};
+use base::types::{self, AppVec, ArcType, Field, Filter, Generic, Skolem, Type, TypeEnv,
+                  TypeFormatter, TypeVariable};
 use base::symbol::{Symbol, SymbolRef};
 use base::resolve::{self, Error as ResolveError};
 use base::scoped_map::ScopedMap;
@@ -133,6 +134,66 @@ where
     I: fmt::Display + AsRef<str>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let filter = self.make_filter();
+        self.filter_fmt(&*filter, f)
+    }
+}
+
+impl<I> TypeError<I>
+where
+    I: fmt::Display + AsRef<str>,
+{
+    pub fn make_filter<'a>(&'a self) -> Box<Fn(&I) -> Filter + 'a> {
+        match *self {
+            TypeError::FieldMismatch(ref l, ref r) => Box::new(move |field| {
+                if [l, r].iter().any(|f| f.as_ref() == field.as_ref()) {
+                    Filter::Retain
+                } else {
+                    Filter::Drop
+                }
+            }),
+            TypeError::UndefinedType(_) => Box::new(|_| Filter::Retain),
+            TypeError::SelfRecursive(_) => Box::new(|_| Filter::Retain),
+            TypeError::UnableToGeneralize(_) => Box::new(|_| Filter::Retain),
+            TypeError::MissingFields(ref typ, ref fields) => {
+                let mut field_similarity = typ.type_field_iter()
+                    .map(|field| &field.name)
+                    .chain(typ.row_iter().map(|field| &field.name))
+                    .map(|field_in_type| {
+                        let similarity = fields
+                            .iter()
+                            .map(|missing_field| {
+                                ::strsim::jaro_winkler(
+                                    missing_field.as_ref(),
+                                    field_in_type.as_ref(),
+                                )
+                            })
+                            .max_by(|l, r| l.partial_cmp(&r).unwrap())
+                            .expect("At least one missing field");
+                        (field_in_type, (similarity * 1000000.) as i32)
+                    })
+                    .collect::<Vec<_>>();
+                field_similarity.sort_by_key(|t| ::std::cmp::Reverse(t.1));
+
+                Box::new(move |field: &I| {
+                    // Keep the fields that were missing as-is (with full types)
+                    if fields.iter().any(|f| f.as_ref() == field.as_ref()) {
+                        Filter::Retain
+                    } else if field_similarity
+                        .iter()
+                        .take(3)
+                        .any(|t| t.0.as_ref() == field.as_ref())
+                    {
+                        Filter::RetainKey
+                    } else {
+                        Filter::Drop
+                    }
+                })
+            }
+        }
+    }
+
+    pub fn filter_fmt(&self, filter: &Fn(&I) -> Filter, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             TypeError::FieldMismatch(ref l, ref r) => write!(
                 f,
@@ -152,7 +213,11 @@ where
                 id
             ),
             TypeError::MissingFields(ref typ, ref fields) => {
-                write!(f, "The type `{}` lacks the following fields: ", typ)?;
+                write!(
+                    f,
+                    "The type `{}` lacks the following fields: ",
+                    TypeFormatter::new(typ).filter(filter)
+                )?;
                 for (i, field) in fields.iter().enumerate() {
                     let sep = match i {
                         0 => "",

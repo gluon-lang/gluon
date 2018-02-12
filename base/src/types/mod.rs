@@ -25,6 +25,7 @@ use serde::de::DeserializeState;
 use serde::ser::SerializeState;
 
 use self::pretty_print::Printer;
+pub use self::pretty_print::{Filter, TypeFormatter};
 
 pub mod pretty_print;
 
@@ -127,11 +128,9 @@ where
         let fields: Vec<_> = elems
             .into_iter()
             .enumerate()
-            .map(|(i, typ)| {
-                Field {
-                    name: symbols.from_str(&format!("_{}", i)),
-                    typ: typ,
-                }
+            .map(|(i, typ)| Field {
+                name: symbols.from_str(&format!("_{}", i)),
+                typ: typ,
             })
             .collect();
         if fields.is_empty() {
@@ -229,7 +228,8 @@ impl BuiltinType {
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "Seed<Id, T>"))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "Id, T"))]
 pub struct TypeVariable {
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub kind: ArcKind,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub kind: ArcKind,
     pub id: u32,
 }
 
@@ -243,9 +243,11 @@ pub struct TypeVariable {
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(bound(serialize = "Id: SerializeState<SeSeed>")))]
 pub struct Skolem<Id> {
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub name: Id,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub name: Id,
     pub id: u32,
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub kind: ArcKind,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub kind: ArcKind,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -258,8 +260,10 @@ pub struct Skolem<Id> {
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(bound(serialize = "Id: SerializeState<SeSeed>")))]
 pub struct Generic<Id> {
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub id: Id,
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub kind: ArcKind,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub id: Id,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub kind: ArcKind,
 }
 
 impl<Id> Generic<Id> {
@@ -280,8 +284,10 @@ impl<Id> Generic<Id> {
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "SeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(bound(serialize = "T: SerializeState<SeSeed>")))]
 pub struct Alias<Id, T> {
-    #[cfg_attr(feature = "serde_derive", serde(state))] _typ: T,
-    #[cfg_attr(feature = "serde_derive", serde(skip))] _marker: PhantomData<Id>,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    _typ: T,
+    #[cfg_attr(feature = "serde_derive", serde(skip))]
+    _marker: PhantomData<Id>,
 }
 
 impl<Id, T> Deref for Alias<Id, T>
@@ -330,14 +336,12 @@ where
     pub fn group(group: Vec<AliasData<Id, T>>) -> Vec<Alias<Id, T>> {
         let group = Arc::new(group);
         (0..group.len())
-            .map(|index| {
-                Alias {
-                    _typ: T::from(Type::Alias(AliasRef {
-                        index: index,
-                        group: group.clone(),
-                    })),
-                    _marker: PhantomData,
-                }
+            .map(|index| Alias {
+                _typ: T::from(Type::Alias(AliasRef {
+                    index: index,
+                    group: group.clone(),
+                })),
+                _marker: PhantomData,
             })
             .collect()
     }
@@ -445,7 +449,8 @@ where
 #[cfg_attr(feature = "serde_derive",
            serde(bound(serialize = "T: SerializeState<SeSeed>, Id: SerializeState<SeSeed>")))]
 pub struct AliasData<Id, T> {
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub name: Id,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub name: Id,
     /// The type that is being aliased
     #[cfg_attr(feature = "serde_derive", serde(state))]
     typ: T,
@@ -510,8 +515,10 @@ impl<Id, T> Deref for AliasRef<Id, T> {
 #[cfg_attr(feature = "serde_derive",
            serde(bound(serialize = "T: SerializeState<SeSeed>, Id: SerializeState<SeSeed>")))]
 pub struct Field<Id, T = ArcType<Id>> {
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub name: Id,
-    #[cfg_attr(feature = "serde_derive", serde(state))] pub typ: T,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub name: Id,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    pub typ: T,
 }
 
 /// `SmallVec` used in the `Type::App` constructor to avoid allocating a `Vec` for every applied
@@ -685,11 +692,9 @@ where
             elems
                 .into_iter()
                 .enumerate()
-                .map(|(i, typ)| {
-                    Field {
-                        name: symbols.from_str(&format!("_{}", i)),
-                        typ: typ,
-                    }
+                .map(|(i, typ)| Field {
+                    name: symbols.from_str(&format!("_{}", i)),
+                    typ: typ,
                 })
                 .collect(),
             Type::empty_row(),
@@ -1406,7 +1411,6 @@ where
     }
 }
 
-
 pub struct ArgIterator<'a, T: 'a> {
     /// The current type being iterated over. After `None` has been returned this is the return
     /// type.
@@ -1510,7 +1514,6 @@ impl Prec {
     }
 }
 
-
 fn dt<'a, T>(prec: Prec, typ: &'a T) -> DisplayType<'a, T> {
     DisplayType {
         prec: prec,
@@ -1522,59 +1525,9 @@ fn top<'a, T>(typ: &'a T) -> DisplayType<'a, T> {
     dt(Prec::Top, typ)
 }
 
-pub fn display_type<'a, T>(typ: &'a T) -> TypeFormatter<'a, T> {
-    TypeFormatter {
-        width: 80,
-        typ: typ,
-    }
-}
-
 pub struct DisplayType<'a, T: 'a> {
     prec: Prec,
     typ: &'a T,
-}
-
-pub struct TypeFormatter<'a, T>
-where
-    T: 'a,
-{
-    width: usize,
-    typ: &'a T,
-}
-
-impl<'a, T> TypeFormatter<'a, T> {
-    pub fn new(typ: &'a T) -> Self {
-        TypeFormatter {
-            width: 80,
-            typ: typ,
-        }
-    }
-}
-
-impl<'a, T> TypeFormatter<'a, T> {
-    pub fn width(mut self, width: usize) -> Self {
-        self.width = width;
-        self
-    }
-}
-
-impl<'a, I, T> fmt::Display for TypeFormatter<'a, T>
-where
-    T: Deref<Target = Type<I, T>> + HasSpan + Commented + 'a,
-    I: AsRef<str>,
-{
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let arena = Arena::new();
-        let source = Source::new("");
-        let printer = Printer::new(&arena, &source);
-        let mut s = Vec::new();
-        pretty_print(&printer, self.typ)
-            .group()
-            .1
-            .render(self.width, &mut s)
-            .map_err(|_| fmt::Error)?;
-        write!(f, "{}", ::std::str::from_utf8(&s).expect("utf-8"))
-    }
 }
 
 pub trait ToDoc<'a, A, E> {
@@ -1597,7 +1550,7 @@ where
     I: AsRef<str>,
 {
     fn to_doc(&'a self, arena: &'a Arena<'a>, source: &'e Source<'a>) -> DocBuilder<'a, Arena<'a>> {
-        let printer = Printer { arena, source };
+        let printer = Printer::new(arena, source);
         dt(Prec::Top, self).pretty(&printer)
     }
 }
@@ -1616,9 +1569,8 @@ macro_rules! chain {
 impl<'a, I, T> DisplayType<'a, T>
 where
     T: Deref<Target = Type<I, T>> + HasSpan + Commented + 'a,
-    I: 'a,
 {
-    pub fn pretty<'e>(&self, printer: &Printer<'a, 'e>) -> DocBuilder<'a, Arena<'a>>
+    pub fn pretty<'e>(&self, printer: &Printer<'a, 'e, I>) -> DocBuilder<'a, Arena<'a>>
     where
         I: AsRef<str>,
     {
@@ -1744,6 +1696,12 @@ where
                     arena.space()
                 };
 
+                let print_any_field = fields
+                    .iter()
+                    .any(|field| printer.filter(&field.name) != Filter::Drop);
+
+                let mut filtered = false;
+
                 while let Type::ExtendRow {
                     ref types,
                     ref rest,
@@ -1751,16 +1709,27 @@ where
                 } = **typ
                 {
                     for (i, field) in types.iter().enumerate() {
+                        let filter = printer.filter(&field.name);
+                        if filter == Filter::Drop {
+                            filtered = true;
+                            continue;
+                        }
+
                         let f = chain![arena;
                             field.name.as_ref(),
                             arena.space(),
-                            arena.text("= ")
-                                 .append(top(&field.typ.typ).pretty(printer)),
-                            if i + 1 != types.len() || !fields.is_empty() {
+                            arena.text("= "),
+                            if filter == Filter::RetainKey {
+                                arena.text("...")
+                            } else {
+                                 top(&field.typ.typ).pretty(printer)
+                            },
+                            if i + 1 != types.len() || print_any_field {
                                 arena.text(",")
                             } else {
                                 arena.nil()
-                            }].group();
+                            }
+                        ].group();
                         doc = doc.append(newline.clone()).append(f);
                     }
                     typ = rest;
@@ -1777,7 +1746,17 @@ where
                 } = **typ
                 {
                     for (i, field) in fields.iter().enumerate() {
-                        let mut rhs = top(&field.typ).pretty(printer);
+                        let filter = printer.filter(&field.name);
+                        if filter == Filter::Drop {
+                            filtered = true;
+                            continue;
+                        }
+
+                        let mut rhs = if filter == Filter::RetainKey {
+                            arena.text("...")
+                        } else {
+                            top(&field.typ).pretty(printer)
+                        };
                         match *field.typ {
                             // Records handle nesting on their own
                             Type::Record(_) => (),
@@ -1794,9 +1773,33 @@ where
                                 arena.nil()
                             }].group();
                         doc = doc.append(newline.clone()).append(f);
-                        typ = rest;
                     }
+                    typ = rest;
                 }
+
+                let doc = if filtered {
+                    if doc.1 == arena.nil().1 {
+                        chain![arena;
+                            newline.clone(),
+                            "..."
+                        ]
+                    } else {
+                        chain![arena;
+                            newline.clone(),
+                            "...,",
+                            doc,
+                            if newline.1 == arena.space().1 {
+                                arena.text(",")
+                            } else {
+                                arena.nil()
+                            },
+                            newline.clone(),
+                            "..."
+                        ]
+                    }
+                } else {
+                    doc
+                };
                 match **typ {
                     Type::EmptyRow => doc,
                     _ => doc.append(arena.space())
@@ -1819,7 +1822,7 @@ where
         }
     }
 
-    fn pretty_function<'e>(&self, printer: &Printer<'a, 'e>) -> DocBuilder<'a, Arena<'a>>
+    fn pretty_function<'e>(&self, printer: &Printer<'a, 'e, I>) -> DocBuilder<'a, Arena<'a>>
     where
         I: AsRef<str>,
     {
@@ -1842,7 +1845,7 @@ where
 }
 
 pub fn pretty_print<'a, 'e, I, T>(
-    printer: &Printer<'a, 'e>,
+    printer: &Printer<'a, 'e, I>,
     typ: &'a T,
 ) -> DocBuilder<'a, Arena<'a>>
 where
@@ -2032,7 +2035,6 @@ where
     }
 }
 
-
 /// Walks through a type calling `f` on each inner type. If `f` return `Some` the type is replaced.
 pub fn walk_move_type<F: ?Sized, I, T>(typ: T, f: &mut F) -> T
 where
@@ -2190,20 +2192,16 @@ where
         } => Type::extend_row(
             types
                 .iter()
-                .map(|field| {
-                    Field {
-                        name: field.name.clone(),
-                        typ: Alias::from(translate_alias(&field.typ, &mut translate)),
-                    }
+                .map(|field| Field {
+                    name: field.name.clone(),
+                    typ: Alias::from(translate_alias(&field.typ, &mut translate)),
                 })
                 .collect(),
             fields
                 .iter()
-                .map(|field| {
-                    Field {
-                        name: field.name.clone(),
-                        typ: translate(&field.typ),
-                    }
+                .map(|field| Field {
+                    name: field.name.clone(),
+                    typ: translate(&field.typ),
                 })
                 .collect(),
             translate_type(cache, rest),
