@@ -20,7 +20,7 @@ use base::kind::{ArcKind, Kind, KindCache, KindEnv};
 use base::merge;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
-use base::types::{self, Alias, AliasRef, AppVec, ArcType, Field, Generic, PrimitiveEnv,
+use base::types::{self, Alias, AliasRef, AppVec, ArcType, Field, Filter, Generic, PrimitiveEnv,
                   RecordSelector, Skolem, Type, TypeCache, TypeEnv, TypeFormatter, TypeVariable};
 
 use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
@@ -97,8 +97,22 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
                         _ => None,
                     })
                     .collect::<Vec<_>>();
-                let filter =
-                    move |field: &I| filters.is_empty() || filters.iter().any(move |f| f(field));
+                let filter = move |field: &I| {
+                    if filters.is_empty() {
+                        Filter::Retain
+                    } else {
+                        filters
+                            .iter()
+                            .fold(Filter::Drop, move |filter, f| match filter {
+                                Filter::Retain => filter,
+                                _ => match f(field) {
+                                    Filter::Drop => filter,
+                                    Filter::RetainKey => Filter::RetainKey,
+                                    Filter::Retain => Filter::Retain,
+                                },
+                            })
+                    }
+                };
 
                 let arena = Arena::new();
                 let types = chain![&arena;

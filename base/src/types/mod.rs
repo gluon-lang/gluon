@@ -25,7 +25,7 @@ use serde::de::DeserializeState;
 use serde::ser::SerializeState;
 
 use self::pretty_print::Printer;
-pub use self::pretty_print::TypeFormatter;
+pub use self::pretty_print::{Filter, TypeFormatter};
 
 pub mod pretty_print;
 
@@ -1703,27 +1703,28 @@ where
                     ..
                 } = **typ
                 {
-                    for (i, field) in types
-                        .iter()
-                        .filter(|field| {
-                            let x = printer.filter(&field.name);
-                            if !x {
-                                filtered = true;
-                            }
-                            x
-                        })
-                        .enumerate()
-                    {
+                    for (i, field) in types.iter().enumerate() {
+                        let filter = printer.filter(&field.name);
+                        if filter == Filter::Drop {
+                            filtered = true;
+                            continue;
+                        }
+
                         let f = chain![arena;
                             field.name.as_ref(),
                             arena.space(),
-                            arena.text("= ")
-                                 .append(top(&field.typ.typ).pretty(printer)),
+                            arena.text("= "),
+                            if filter == Filter::RetainKey {
+                                arena.text("...")
+                            } else {
+                                 top(&field.typ.typ).pretty(printer)
+                            },
                             if i + 1 != types.len() || !fields.is_empty() {
                                 arena.text(",")
                             } else {
                                 arena.nil()
-                            }].group();
+                            }
+                        ].group();
                         doc = doc.append(newline.clone()).append(f);
                     }
                     typ = rest;
@@ -1739,18 +1740,18 @@ where
                     ..
                 } = **typ
                 {
-                    for (i, field) in fields
-                        .iter()
-                        .filter(|field| {
-                            let x = printer.filter(&field.name);
-                            if !x {
-                                filtered = true;
-                            }
-                            x
-                        })
-                        .enumerate()
-                    {
-                        let mut rhs = top(&field.typ).pretty(printer);
+                    for (i, field) in fields.iter().enumerate() {
+                        let filter = printer.filter(&field.name);
+                        if filter == Filter::Drop {
+                            filtered = true;
+                            continue;
+                        }
+
+                        let mut rhs = if filter == Filter::RetainKey {
+                            arena.text("...")
+                        } else {
+                            top(&field.typ).pretty(printer)
+                        };
                         match *field.typ {
                             // Records handle nesting on their own
                             Type::Record(_) => (),
@@ -1770,14 +1771,9 @@ where
                     }
                     typ = rest;
                 }
-                let row_doc = match **typ {
-                    Type::EmptyRow => doc,
-                    _ => doc.append(arena.space())
-                        .append("| ")
-                        .append(top(typ).pretty(printer)),
-                };
-                if filtered {
-                    if row_doc.1 == arena.nil().1 {
+
+                let doc = if filtered {
+                    if doc.1 == arena.nil().1 {
                         chain![arena;
                             newline.clone(),
                             "..."
@@ -1786,13 +1782,19 @@ where
                         chain![arena;
                             newline.clone(),
                             "...,",
-                            row_doc,
+                            doc,
                             newline.clone(),
                             "..."
                         ]
                     }
                 } else {
-                    row_doc
+                    doc
+                };
+                match **typ {
+                    Type::EmptyRow => doc,
+                    _ => doc.append(arena.space())
+                        .append("| ")
+                        .append(top(typ).pretty(printer)),
                 }
             }
             // This should not be displayed normally as it should only exist in `ExtendRow`

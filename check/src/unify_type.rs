@@ -5,8 +5,8 @@ use base::error::Errors;
 use base::fnv::FnvMap;
 use base::merge;
 use base::kind::ArcKind;
-use base::types::{self, AppVec, ArcType, Field, Generic, Skolem, Type, TypeEnv, TypeFormatter,
-                  TypeVariable};
+use base::types::{self, AppVec, ArcType, Field, Filter, Generic, Skolem, Type, TypeEnv,
+                  TypeFormatter, TypeVariable};
 use base::symbol::{Symbol, SymbolRef};
 use base::resolve::{self, Error as ResolveError};
 use base::scoped_map::ScopedMap;
@@ -143,14 +143,18 @@ impl<I> TypeError<I>
 where
     I: fmt::Display + AsRef<str>,
 {
-    pub fn make_filter<'a>(&'a self) -> Box<Fn(&I) -> bool + 'a> {
+    pub fn make_filter<'a>(&'a self) -> Box<Fn(&I) -> Filter + 'a> {
         match *self {
-            TypeError::FieldMismatch(ref l, ref r) => {
-                Box::new(move |field| [l, r].iter().any(|f| f.as_ref() == field.as_ref()))
-            }
-            TypeError::UndefinedType(_) => Box::new(|_| true),
-            TypeError::SelfRecursive(_) => Box::new(|_| true),
-            TypeError::UnableToGeneralize(_) => Box::new(|_| true),
+            TypeError::FieldMismatch(ref l, ref r) => Box::new(move |field| {
+                if [l, r].iter().any(|f| f.as_ref() == field.as_ref()) {
+                    Filter::Retain
+                } else {
+                    Filter::Drop
+                }
+            }),
+            TypeError::UndefinedType(_) => Box::new(|_| Filter::Retain),
+            TypeError::SelfRecursive(_) => Box::new(|_| Filter::Retain),
+            TypeError::UnableToGeneralize(_) => Box::new(|_| Filter::Retain),
             TypeError::MissingFields(ref typ, ref fields) => {
                 let mut field_similarity = typ.type_field_iter()
                     .map(|field| &field.name)
@@ -171,16 +175,21 @@ where
                     .collect::<Vec<_>>();
                 field_similarity.sort_by_key(|t| ::std::cmp::Reverse(t.1));
                 Box::new(move |field: &I| {
-                    field_similarity
+                    if field_similarity
                         .iter()
                         .take(3)
                         .any(|t| t.0.as_ref() == field.as_ref())
+                    {
+                        Filter::RetainKey
+                    } else {
+                        Filter::Drop
+                    }
                 })
             }
         }
     }
 
-    pub fn filter_fmt(&self, filter: &Fn(&I) -> bool, f: &mut fmt::Formatter) -> fmt::Result {
+    pub fn filter_fmt(&self, filter: &Fn(&I) -> Filter, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             TypeError::FieldMismatch(ref l, ref r) => write!(
                 f,

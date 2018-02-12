@@ -58,6 +58,13 @@ pub fn doc_comment<'a>(
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub enum Filter {
+    Drop,
+    RetainKey,
+    Retain,
+}
+
 pub struct TypeFormatter<'a, I, T>
 where
     I: 'a,
@@ -65,7 +72,7 @@ where
 {
     width: usize,
     typ: &'a T,
-    filter: &'a Fn(&I) -> bool,
+    filter: &'a Fn(&I) -> Filter,
     _marker: PhantomData<I>,
 }
 
@@ -74,7 +81,7 @@ impl<'a, I, T> TypeFormatter<'a, I, T> {
         TypeFormatter {
             width: 80,
             typ: typ,
-            filter: &|_| true,
+            filter: &|_| Filter::Retain,
             _marker: PhantomData,
         }
     }
@@ -86,7 +93,7 @@ impl<'a, I, T> TypeFormatter<'a, I, T> {
         self
     }
 
-    pub fn filter(mut self, filter: &'a Fn(&I) -> bool) -> Self {
+    pub fn filter(mut self, filter: &'a Fn(&I) -> Filter) -> Self {
         self.filter = filter;
         self
     }
@@ -136,7 +143,7 @@ where
 pub struct Printer<'a: 'e, 'e, I: 'a> {
     pub arena: &'a Arena<'a>,
     pub source: &'e Source<'a>,
-    filter: &'a Fn(&I) -> bool,
+    filter: &'a Fn(&I) -> Filter,
 }
 
 impl<'a: 'e, 'e, I> Printer<'a, 'e, I> {
@@ -144,11 +151,11 @@ impl<'a: 'e, 'e, I> Printer<'a, 'e, I> {
         Printer {
             arena,
             source,
-            filter: &|_| true,
+            filter: &|_| Filter::Retain,
         }
     }
 
-    pub fn filter(&self, field: &I) -> bool {
+    pub fn filter(&self, field: &I) -> Filter {
         (self.filter)(field)
     }
 
