@@ -620,3 +620,15 @@ let foldable : Foldable Array =
         ]
     );
 }
+
+#[test]
+fn issue_444() {
+    let _ = ::env_logger::init();
+
+    let text = r#"
+let test x : () = () in 1
+"#;
+    let result = support::typecheck(text);
+
+    assert_unify_err!(result, TypeMismatch(..));
+}
