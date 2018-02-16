@@ -69,7 +69,7 @@ mod value;
 use std::marker::PhantomData;
 
 use api::{ValueRef, VmType};
-use value::Value;
+use value::{Value, ValueRepr};
 use types::VmIndex;
 use base::types::ArcType;
 use base::symbol::Symbol;
@@ -80,18 +80,22 @@ unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
     ::std::mem::transmute(x)
 }
 
-#[derive(Copy, Clone, Debug)]
-pub struct Variants<'a>(Value, PhantomData<&'a Value>);
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct Variants<'a>(ValueRepr, PhantomData<&'a Value>);
 
 impl<'a> Variants<'a> {
     /// Creates a new `Variants` value which assumes that `value` is rooted for the lifetime of the
     /// value
     pub unsafe fn new(value: &Value) -> Variants {
-        Variants::with_root(*value, value)
+        Variants::with_root(value.get_repr(), value)
     }
 
-    pub unsafe fn with_root<T: ?Sized>(value: Value, _root: &T) -> Variants {
+    pub(crate) unsafe fn with_root<T: ?Sized>(value: ValueRepr, _root: &T) -> Variants {
         Variants(value, PhantomData)
+    }
+
+    pub(crate) fn get_value(&self) -> Value {
+        self.0.into()
     }
 
     /// Returns an instance of `ValueRef` which allows users to safely retrieve the interals of a
@@ -171,6 +175,6 @@ impl ExternModule {
 
 /// Internal types and functions exposed to the main `gluon` crate
 pub mod internal {
-    pub use value::{ClosureDataDef, Value, ValuePrinter};
+    pub use value::{Value, ValuePrinter};
     pub use vm::Global;
 }

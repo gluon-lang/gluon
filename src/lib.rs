@@ -463,7 +463,7 @@ impl Compiler {
             .run_expr(self, vm, name, expr_str, Some(&expected))
             .and_then(move |execute_value| unsafe {
                 FutureValue::sync(Ok((
-                    T::from_value(vm, Variants::new(&execute_value.value)),
+                    T::from_value(vm, Variants::new(&execute_value.value.get_value())),
                     execute_value.typ,
                 )))
             })

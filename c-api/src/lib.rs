@@ -211,7 +211,7 @@ pub unsafe extern "C" fn glu_get_string(
     let mut context = vm.context();
     let stack = context.stack.current_frame();
     match stack
-        .get_variants(index)
+        .get_variant(index)
         .map(|value| <&str>::from_value(vm, value))
     {
         Some(value) => {
@@ -245,7 +245,7 @@ where
     let mut context = vm.context();
     let stack = context.stack.current_frame();
     match stack
-        .get_variants(index)
+        .get_variant(index)
         .map(|value| T::from_value(vm, value))
     {
         Some(value) => {

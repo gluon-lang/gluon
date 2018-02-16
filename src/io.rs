@@ -6,18 +6,16 @@ use std::sync::Mutex;
 use futures::{Future, IntoFuture};
 use futures::future::Either;
 
-use vm::{self, ExternModule, Result, Variants};
+use vm::{self, ExternModule, Result};
 use vm::future::FutureValue;
 use vm::gc::{Gc, Traverseable};
 use vm::types::*;
 use vm::thread::{Thread, ThreadInternal};
-use vm::api::{Array, FutureResult, Generic, Getable, OpaqueValue, OwnedFunction, PrimitiveFuture,
-              TypedBytecode, Userdata, VmType, WithVM, IO};
+use vm::api::{self, Array, FutureResult, Generic, Getable, OpaqueValue, OwnedFunction,
+              PrimitiveFuture, TypedBytecode, Userdata, VmType, WithVM, IO};
 use vm::api::generic::{A, B};
 use vm::stack::{StackFrame, State};
 use vm::internal::ValuePrinter;
-
-use vm::internal::Value;
 
 use compiler_pipeline::*;
 
@@ -65,16 +63,10 @@ fn read_file<'vm>(file: WithVM<'vm, &GluonFile>, count: usize) -> IO<Array<'vm, 
     unsafe {
         buffer.set_len(count);
         match file.read(&mut *buffer) {
-            Ok(bytes_read) => {
-                let value = {
-                    let mut context = vm.context();
-                    match context.alloc(&buffer[..bytes_read]) {
-                        Ok(value) => value,
-                        Err(err) => return IO::Exception(format!("{}", err)),
-                    }
-                };
-                IO::Value(Getable::from_value(vm, Variants::new(&Value::Array(value))))
-            }
+            Ok(bytes_read) => match api::convert::<_, Array<u8>>(vm, &buffer[..bytes_read]) {
+                Ok(v) => IO::Value(v),
+                Err(err) => IO::Exception(format!("{}", err)),
+            },
             Err(err) => IO::Exception(format!("{}", err)),
         }
     }
@@ -126,7 +118,7 @@ fn catch<'vm>(
     let vm = action.vm().root_thread();
     let frame_level = vm.context().stack.get_frames().len();
     let mut action: OwnedFunction<fn(()) -> Generic<A>> =
-        unsafe { Getable::from_value(&vm, Variants::new(&action.get_value())) };
+        Getable::from_value(&vm, action.get_variant());
 
     let future = action.call_async(()).then(move |result| match result {
         Ok(value) => Either::A(Ok(IO::Value(value)).into_future()),
@@ -191,7 +183,7 @@ fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> PrimitiveFuture<IO<RunE
                     let env = vm.global_env().get_env();
                     let typ = execute_value.typ;
                     IO::Value(record_no_decl!{
-                        value => ValuePrinter::new(&*env, &typ, *execute_value.value).width(80).to_string(),
+                        value => ValuePrinter::new(&*env, &typ, execute_value.value.get_variant()).width(80).to_string(),
                         typ => typ.to_string()
                     })
                 }

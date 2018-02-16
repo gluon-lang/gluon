@@ -30,9 +30,10 @@ use stack::{Frame, Lock, Stack, StackFrame, State};
 use types::*;
 use vm::{GlobalVmState, GlobalVmStateBuilder, VmEnv};
 use value::{BytecodeFunction, Callable, ClosureData, ClosureDataDef, ClosureInitDef, Def,
-            ExternFunction, GcStr, PartialApplicationDataDef, RecordDef, Userdata, Value};
+            ExternFunction, GcStr, PartialApplicationDataDef, RecordDef, Userdata, Value,
+            ValueRepr};
 
-use value::Value::{Closure, Data, Float, Function, Int, PartialApplication, String};
+use value::ValueRepr::{Closure, Data, Float, Function, Int, PartialApplication, String};
 
 pub use gc::Traverseable;
 
@@ -93,6 +94,16 @@ where
     value: Value,
 }
 
+impl<T> Deref for RootedValue<T>
+where
+    T: Deref<Target = Thread>,
+{
+    type Target = Value;
+    fn deref(&self) -> &Value {
+        &self.value
+    }
+}
+
 impl<T, U> PartialEq<RootedValue<U>> for RootedValue<T>
 where
     T: Deref<Target = Thread>,
@@ -122,20 +133,18 @@ where
     }
 }
 
-impl<T> Deref for RootedValue<T>
-where
-    T: Deref<Target = Thread>,
-{
-    type Target = Value;
-    fn deref(&self) -> &Value {
-        &self.value
-    }
-}
-
 impl<T> RootedValue<T>
 where
     T: Deref<Target = Thread>,
 {
+    pub fn get_variant(&self) -> Variants {
+        unsafe { Variants::new(&self.value) }
+    }
+
+    pub fn get_value(&self) -> Value {
+        self.value.clone()
+    }
+
     pub fn vm(&self) -> &Thread {
         &self.vm
     }
@@ -151,14 +160,15 @@ where
     where
         T: VmRoot<'vm>,
     {
-        match self.value {
-            Value::Data(ref v) => v.fields.get(index).map(|value| self.vm.root_value(*value)),
+        match self.get_variant().as_ref() {
+            ValueRef::Data(ref v) => v.get_variant(index)
+                .map(|value| self.vm.root_value(value.get_value())),
             _ => None,
         }
     }
 
     pub fn as_ref(&self) -> RootedValue<&Thread> {
-        self.vm.root_value(self.value)
+        self.vm.root_value(self.value.clone())
     }
 }
 
@@ -328,7 +338,7 @@ impl VmType for RootedThread {
 
 impl<'vm> Pushable<'vm> for RootedThread {
     fn push(self, _vm: &'vm Thread, context: &mut Context) -> Result<()> {
-        context.stack.push(Value::Thread(self.0));
+        context.stack.push(ValueRepr::Thread(self.0));
         Ok(())
     }
 }
@@ -674,7 +684,7 @@ pub trait VmRoot<'a>: Deref<Target = Thread> + Clone + 'a {
 
     /// Roots a value
     fn root_value_with_self(self, value: Value) -> RootedValue<Self> {
-        self.rooted_values.write().unwrap().push(value);
+        self.rooted_values.write().unwrap().push(value.clone());
         RootedValue {
             vm: self,
             value: value,
@@ -782,7 +792,7 @@ impl ThreadInternal for Thread {
     where
         T: VmRoot<'vm>,
     {
-        self.rooted_values.write().unwrap().push(value);
+        self.rooted_values.write().unwrap().push(value.clone());
         RootedValue {
             vm: T::root(self),
             value: value,
@@ -860,7 +870,7 @@ impl ThreadInternal for Thread {
         value: Value,
     ) -> Result<()> {
         let value = ::value::Cloner::new(self, &mut self.global_env().gc.lock().unwrap())
-            .deep_clone(value)?;
+            .deep_clone(&value)?;
         self.global_env().set_global(name, typ, metadata, value)
     }
 
@@ -871,7 +881,7 @@ impl ThreadInternal for Thread {
         if full_clone {
             cloner.force_full_clone();
         }
-        cloner.deep_clone(value)
+        cloner.deep_clone(&value)
     }
 
     fn can_share_values_with(&self, gc: &mut Gc, other: &Thread) -> bool {
@@ -1072,7 +1082,8 @@ impl Context {
                 tag: tag,
                 elems: fields,
             },
-        ).map(Value::Data)
+        ).map(ValueRepr::Data)
+            .map(Value::from)
     }
 
     pub fn alloc_with<D>(&mut self, thread: &Thread, data: D) -> Result<GcPtr<D::Value>>
@@ -1331,7 +1342,7 @@ impl<'b> OwnedContext<'b> {
             self = thread.current_context();
 
             if status == Status::Error {
-                return match self.stack.pop() {
+                return match self.stack.pop().get_repr() {
                     String(s) => Err(Error::Panic(s.to_string())),
                     _ => Err(Error::Message(format!(
                         "Unexpected error calling function `{}`",
@@ -1419,7 +1430,7 @@ impl<'b> OwnedContext<'b> {
         match status {
             Status::Ok => Ok(Async::Ready(self)),
             Status::Yield => Ok(Async::NotReady),
-            Status::Error => match self.stack.pop() {
+            Status::Error => match self.stack.pop().get_repr() {
                 String(s) => Err(Error::Panic(s.to_string())),
                 _ => Err(Error::Message(format!(
                     "Unexpected error calling function `{}`",
@@ -1529,7 +1540,7 @@ impl<'b> ExecuteContext<'b> {
                 // Insert the excess args before the actual closure so it does not get
                 // collected
                 let offset = self.stack.len() - required_args - 1;
-                self.stack.insert_slice(offset, &[Data(d)]);
+                self.stack.insert_slice(offset, &[Value::from(Data(d))]);
                 debug!(
                     "xxxxxx {:?}\n{:?}",
                     &(*self.stack)[..],
@@ -1547,7 +1558,7 @@ impl<'b> ExecuteContext<'b> {
             self.stack[function_index],
             &(*self.stack)[(function_index + 1) as usize..]
         );
-        match self.stack[function_index].clone() {
+        match self.stack[function_index].clone().get_repr() {
             Function(ref f) => {
                 let callable = Callable::Extern(f.clone());
                 self.call_function_with_upvars(args, f.args, callable)
@@ -1612,7 +1623,7 @@ impl<'b> ExecuteContext<'b> {
                     self.stack.push(Int(i));
                 }
                 PushByte(b) => {
-                    self.stack.push(Value::Byte(b));
+                    self.stack.push(ValueRepr::Byte(b));
                 }
                 PushString(string_index) => {
                     self.stack
@@ -1631,7 +1642,7 @@ impl<'b> ExecuteContext<'b> {
                             Some(excess) => {
                                 debug!("TailCall: Push excess args {:?}", excess.fields);
                                 for value in &excess.fields {
-                                    self.stack.push(*value);
+                                    self.stack.push(value);
                                 }
                                 args += excess.fields.len() as VmIndex;
                             }
@@ -1667,7 +1678,7 @@ impl<'b> ExecuteContext<'b> {
                 Construct { tag, args } => {
                     let d = {
                         if args == 0 {
-                            Value::Tag(tag)
+                            ValueRepr::Tag(tag)
                         } else {
                             let fields = &self.stack[self.stack.len() - args..];
                             Data(alloc(
@@ -1689,7 +1700,7 @@ impl<'b> ExecuteContext<'b> {
                 ConstructRecord { record, args } => {
                     let d = {
                         if args == 0 {
-                            Value::Tag(0)
+                            ValueRepr::Tag(0)
                         } else {
                             let fields = &self.stack[self.stack.len() - args..];
                             unsafe {
@@ -1726,29 +1737,29 @@ impl<'b> ExecuteContext<'b> {
                     for _ in 0..args {
                         self.stack.pop();
                     }
-                    self.stack.push(Value::Array(d));
+                    self.stack.push(ValueRepr::Array(d));
                 }
-                GetOffset(i) => match self.stack.pop() {
+                GetOffset(i) => match self.stack.pop().get_repr() {
                     Data(data) => {
-                        let v = data.fields[i as usize];
+                        let v = &data.fields[i as usize];
                         self.stack.push(v);
                     }
                     x => return Err(Error::Message(format!("GetOffset on {:?}", x))),
                 },
                 GetField(i) => {
                     let field = function.strings[i as usize];
-                    match self.stack.pop() {
+                    match self.stack.pop().get_repr() {
                         Data(data) => {
                             let v = data.get_field(field).expect("ICE: Field does not exist");
-                            self.stack.push(*v);
+                            self.stack.push(v);
                         }
                         x => return Err(Error::Message(format!("GetField on {:?}", x))),
                     }
                 }
                 TestTag(tag) => {
-                    let data_tag = match self.stack.top() {
+                    let data_tag = match self.stack.top().get_repr() {
                         Data(ref data) => data.tag(),
-                        Value::Tag(tag) => tag,
+                        ValueRepr::Tag(tag) => tag,
                         _ => {
                             return Err(Error::Message(
                                 "Op TestTag called on non data type".to_string(),
@@ -1756,15 +1767,15 @@ impl<'b> ExecuteContext<'b> {
                         }
                     };
                     self.stack
-                        .push(Value::Tag(if data_tag == tag { 1 } else { 0 }));
+                        .push(ValueRepr::Tag(if data_tag == tag { 1 } else { 0 }));
                 }
                 Split => {
-                    match self.stack.pop() {
+                    match self.stack.pop().get_repr() {
                         Data(data) => for field in &data.fields {
-                            self.stack.push(*field);
+                            self.stack.push(field);
                         },
                         // Zero argument variant
-                        Value::Tag(_) => (),
+                        ValueRepr::Tag(_) => (),
                         _ => {
                             return Err(Error::Message(
                                 "Op Split called on non data type".to_string(),
@@ -1776,8 +1787,8 @@ impl<'b> ExecuteContext<'b> {
                     index = i as usize;
                     continue;
                 }
-                CJump(i) => match self.stack.pop() {
-                    Value::Tag(0) => (),
+                CJump(i) => match self.stack.pop().get_repr() {
+                    ValueRepr::Tag(0) => (),
                     _ => {
                         index = i as usize;
                         continue;
@@ -1831,7 +1842,7 @@ impl<'b> ExecuteContext<'b> {
                 }
                 CloseClosure(n) => {
                     let i = self.stack.len() - n - 1;
-                    match self.stack[i] {
+                    match self.stack[i].get_repr() {
                         Closure(mut closure) => {
                             // Unique access should be safe as this closure should not be shared as
                             // it has just been allocated and havent even had its upvars set yet
@@ -1873,7 +1884,7 @@ impl<'b> ExecuteContext<'b> {
             }
             index += 1;
         }
-        let result = self.stack.top();
+        let result = self.stack.top().clone();
         debug!("Return {:?}", result);
         let len = self.stack.len();
         let frame_has_excess = self.stack.frame.excess;
@@ -1894,18 +1905,16 @@ impl<'b> ExecuteContext<'b> {
         for _ in 0..len {
             self.stack.pop();
         }
-        self.stack.push(result);
         if frame_has_excess {
-            self.stack.pop();
             // If the function that just finished had extra arguments we need to call the result of
             // the call with the extra arguments
-            match self.stack.pop() {
+            match self.stack.pop().get_repr() {
                 Data(excess) => {
                     self.enter_scope(0, State::Excess);
                     debug!("Push excess args {:?}", &excess.fields);
                     self.stack.push(result);
                     for value in &excess.fields {
-                        self.stack.push(*value);
+                        self.stack.push(value);
                     }
                     self.do_call(excess.fields.len() as VmIndex)
                         .map(|x| Async::Ready(Some(x)))
@@ -1913,6 +1922,7 @@ impl<'b> ExecuteContext<'b> {
                 x => ice!("Expected excess arguments found {:?}", x),
             }
         } else {
+            self.stack.push(result);
             Ok(Async::Ready(if stack_exists { Some(()) } else { None }))
         }
     }
@@ -1924,7 +1934,7 @@ where
     F: FnOnce(T, T) -> VmInt,
     T: Getable<'b> + fmt::Debug,
 {
-    binop(vm, stack, |l, r| Value::Int(f(l, r)))
+    binop(vm, stack, |l, r| ValueRepr::Int(f(l, r)))
 }
 
 #[inline]
@@ -1933,7 +1943,7 @@ where
     F: FnOnce(T, T) -> f64,
     T: Getable<'b> + fmt::Debug,
 {
-    binop(vm, stack, |l, r| Value::Float(f(l, r)))
+    binop(vm, stack, |l, r| ValueRepr::Float(f(l, r)))
 }
 
 #[inline]
@@ -1942,7 +1952,7 @@ where
     F: FnOnce(T, T) -> u8,
     T: Getable<'b> + fmt::Debug,
 {
-    binop(vm, stack, |l, r| Value::Byte(f(l, r)))
+    binop(vm, stack, |l, r| ValueRepr::Byte(f(l, r)))
 }
 
 #[inline]
@@ -1951,18 +1961,20 @@ where
     F: FnOnce(T, T) -> bool,
     T: Getable<'b> + fmt::Debug,
 {
-    binop(vm, stack, |l, r| Value::Tag(if f(l, r) { 1 } else { 0 }))
+    binop(vm, stack, |l, r| {
+        ValueRepr::Tag(if f(l, r) { 1 } else { 0 })
+    })
 }
 
 #[inline]
 fn binop<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
 where
-    F: FnOnce(T, T) -> Value,
+    F: FnOnce(T, T) -> ValueRepr,
     T: Getable<'b> + fmt::Debug,
 {
     let (l, r) = {
-        let r = stack.get_variants(stack.len() - 1).unwrap();
-        let l = stack.get_variants(stack.len() - 2).unwrap();
+        let r = stack.get_variant(stack.len() - 1).unwrap();
+        let l = stack.get_variant(stack.len() - 2).unwrap();
         (T::from_value(vm, l), T::from_value(vm, r))
     };
     let result = f(l, r);
@@ -1985,7 +1997,7 @@ fn debug_instruction(stack: &StackFrame, index: usize, instr: Instruction) {
                 }
                 x
             }
-            NewClosure { .. } | MakeClosure { .. } => Some(Int(stack.len() as isize)),
+            NewClosure { .. } | MakeClosure { .. } => Some(Value::from(Int(stack.len() as isize))),
             _ => None,
         }
     );

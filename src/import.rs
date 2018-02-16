@@ -302,7 +302,7 @@ impl<I> Import<I> {
                 typ,
                 metadata,
             }) => {
-                vm.set_global(module_id.clone(), typ, metadata, *value)
+                vm.set_global(module_id.clone(), typ, metadata, value.get_value())
                     .map_err(|err| (None, err.into()))?;
             }
             UnloadedModule::Source(file_contents) => {

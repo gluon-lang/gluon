@@ -28,8 +28,8 @@ where
         let value = self.value.lock().unwrap();
         let cloned_value = match *value {
             Lazy_::Blackhole => return Err(Error::Message("<<loop>>".into())),
-            Lazy_::Thunk(value) => Lazy_::Thunk(deep_cloner.deep_clone(value)?),
-            Lazy_::Value(value) => Lazy_::Value(deep_cloner.deep_clone(value)?),
+            Lazy_::Thunk(ref value) => Lazy_::Thunk(deep_cloner.deep_clone(value)?),
+            Lazy_::Value(ref value) => Lazy_::Value(deep_cloner.deep_clone(value)?),
         };
         let data: Box<Userdata> = Box::new(Lazy {
             value: Mutex::new(cloned_value),
@@ -45,7 +45,7 @@ impl<T> fmt::Debug for Lazy<T> {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 enum Lazy_ {
     Blackhole,
     Thunk(Value),
@@ -56,8 +56,8 @@ impl<T> Traverseable for Lazy<T> {
     fn traverse(&self, gc: &mut Gc) {
         match *self.value.lock().unwrap() {
             Lazy_::Blackhole => (),
-            Lazy_::Thunk(value) => value.traverse(gc),
-            Lazy_::Value(value) => value.traverse(gc),
+            Lazy_::Thunk(ref value) => value.traverse(gc),
+            Lazy_::Value(ref value) => value.traverse(gc),
         }
     }
 }
@@ -81,7 +81,7 @@ fn force(
     WithVM { vm, value: lazy }: WithVM<&Lazy<A>>,
 ) -> RuntimeResult<Generic<A>, Cow<'static, str>> {
     let mut lazy_lock = lazy.value.lock().unwrap();
-    match *lazy_lock {
+    match lazy_lock.clone() {
         Lazy_::Blackhole => RuntimeResult::Panic("<<loop>>".into()),
         Lazy_::Thunk(value) => {
             *lazy_lock = Lazy_::Blackhole;
@@ -91,7 +91,9 @@ fn force(
             drop(lazy_lock);
             match function.call(()) {
                 Ok(value) => {
-                    *lazy.value.lock().unwrap() = Lazy_::Value(value.0);
+                    unsafe {
+                        *lazy.value.lock().unwrap() = Lazy_::Value(value.get_value());
+                    }
                     RuntimeResult::Return(value)
                 }
                 Err(err) => RuntimeResult::Panic(format!("{}", err).into()),

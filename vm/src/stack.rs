@@ -6,8 +6,40 @@ use base::pos::Line;
 
 use Variants;
 use gc::{Gc, GcPtr, Traverseable};
-use value::{ClosureData, DataStruct, ExternFunction, Value};
+use value::{ClosureData, DataStruct, ExternFunction, Value, ValueRepr};
 use types::VmIndex;
+
+pub trait StackPrimitive {
+    fn push_to(&self, stack: &mut Stack);
+}
+
+impl<'a, T: StackPrimitive + 'a> StackPrimitive for &'a T {
+    #[inline(always)]
+    fn push_to(&self, stack: &mut Stack) {
+        (**self).push_to(stack)
+    }
+}
+
+impl<'a> StackPrimitive for Variants<'a> {
+    #[inline(always)]
+    fn push_to(&self, stack: &mut Stack) {
+        self.0.push_to(stack)
+    }
+}
+
+impl StackPrimitive for ValueRepr {
+    #[inline(always)]
+    fn push_to(&self, stack: &mut Stack) {
+        stack.values.push(Value::from(*self))
+    }
+}
+
+impl StackPrimitive for Value {
+    #[inline(always)]
+    fn push_to(&self, stack: &mut Stack) {
+        stack.values.push(Value::from(self.get_repr()))
+    }
+}
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
@@ -91,8 +123,11 @@ impl Stack {
         }
     }
 
-    pub fn push(&mut self, v: Value) {
-        self.values.push(v)
+    pub fn push<T>(&mut self, v: T)
+    where
+        T: StackPrimitive,
+    {
+        v.push_to(self)
     }
 
     pub fn remove_range(&mut self, from: VmIndex, to: VmIndex) {
@@ -101,10 +136,10 @@ impl Stack {
         let len = to - from;
         let mid = from + ::std::cmp::min(self.values.len() - to, len);
         for i in from..mid {
-            self.values[i] = self.values[i + len];
+            self.values[i] = self.values[i + len].clone();
         }
         for i in mid..(self.values.len() - len) {
-            self.values[i] = self.values[i + len];
+            self.values[i] = self.values[i + len].clone();
         }
         unsafe {
             let current_len = self.values.len();
@@ -232,12 +267,15 @@ impl<'a: 'b, 'b> StackFrame<'b> {
         self.stack.len() - self.frame.offset
     }
 
-    pub fn push(&mut self, v: Value) {
-        self.stack.values.push(v);
+    pub fn push<T>(&mut self, v: T)
+    where
+        T: StackPrimitive,
+    {
+        v.push_to(&mut self.stack)
     }
 
-    pub fn top(&mut self) -> Value {
-        *self.stack.values.last().expect("StackFrame: top")
+    pub fn top(&self) -> &Value {
+        self.stack.values.last().expect("StackFrame: top")
     }
 
     pub fn pop(&mut self) -> Value {
@@ -248,7 +286,7 @@ impl<'a: 'b, 'b> StackFrame<'b> {
         self.stack.pop_many(count);
     }
 
-    pub fn get_variants(&self, index: VmIndex) -> Option<Variants> {
+    pub fn get_variant(&self, index: VmIndex) -> Option<Variants> {
         unsafe {
             if index < self.len() {
                 Some(Variants::new(&self[index]))
@@ -263,10 +301,10 @@ impl<'a: 'b, 'b> StackFrame<'b> {
         unsafe {
             let old_len = self.len();
             for i in (index..old_len).rev() {
-                *self.get_unchecked_mut(i as usize + values.len()) = self[i];
+                *self.get_unchecked_mut(i as usize + values.len()) = self[i].clone();
             }
             for (i, val) in (index..).zip(values) {
-                *self.get_unchecked_mut(i as usize) = *val;
+                *self.get_unchecked_mut(i as usize) = val.clone();
             }
             let new_len = self.stack.values.len() + values.len();
             self.stack.values.set_len(new_len);
@@ -278,18 +316,14 @@ impl<'a: 'b, 'b> StackFrame<'b> {
             .remove_range(self.frame.offset + from, self.frame.offset + to);
     }
 
-    pub fn get_rooted_value(&self, index: VmIndex) -> Value {
-        self[index]
-    }
-
-    pub fn get_upvar(&self, index: VmIndex) -> Value {
-        self.frame.upvars()[index as usize]
+    pub fn get_upvar(&self, index: VmIndex) -> &Value {
+        &self.frame.upvars()[index as usize]
     }
 
     pub fn excess_args(&self) -> Option<GcPtr<DataStruct>> {
         let i = self.stack.values.len() - self.len() as usize - 2;
-        match self.stack.values[i] {
-            Value::Data(data) => Some(data),
+        match self.stack.values[i].get_repr() {
+            ValueRepr::Data(data) => Some(data),
             _ => None,
         }
     }
@@ -480,7 +514,7 @@ impl fmt::Display for Stacktrace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use value::Value::*;
+    use value::ValueRepr::*;
 
     #[test]
     fn remove_range() {
@@ -502,11 +536,14 @@ mod tests {
 
         frame.exit_scope().unwrap();
         frame.remove_range(2, 5);
-        assert_eq!(frame.stack.values, vec![Int(0), Int(1), Int(5), Int(6)]);
+        assert_eq!(
+            frame.stack.values,
+            vec![Int(0).into(), Int(1).into(), Int(5).into(), Int(6).into()]
+        );
 
         frame.exit_scope().unwrap();
         frame.remove_range(1, 3);
-        assert_eq!(frame.stack.values, vec![Int(0), Int(6)]);
+        assert_eq!(frame.stack.values, vec![Int(0).into(), Int(6).into()]);
     }
 
     #[test]
@@ -562,6 +599,35 @@ mod tests {
         }
         stack.release_lock(lock);
         let mut frame = StackFrame::current(&mut stack);
-        assert_eq!(frame.pop(), Int(2));
+        assert_eq!(frame.pop(), Value::from(Int(2)));
+    }
+
+    #[test]
+    fn insert_stack_slice() {
+        let _ = ::env_logger::init();
+
+        let mut stack = Stack::new();
+        StackFrame::frame(&mut stack, 0, State::Unknown);
+        let mut stack = StackFrame::current(&mut stack);
+        stack.push(Int(0));
+        stack.insert_slice(0, &[Int(2).into(), Int(1).into()]);
+        assert_eq!(&stack[..], [Int(2).into(), Int(1).into(), Int(0).into()]);
+        stack.enter_scope(2, State::Unknown);
+        stack.insert_slice(1, &[Int(10).into()]);
+        assert_eq!(&stack[..], [Int(1).into(), Int(10).into(), Int(0).into()]);
+        stack.insert_slice(1, &[]);
+        assert_eq!(&stack[..], [Int(1).into(), Int(10).into(), Int(0).into()]);
+        stack.insert_slice(2, &[Int(4).into(), Int(5).into(), Int(6).into()]);
+        assert_eq!(
+            &stack[..],
+            [
+                Int(1).into(),
+                Int(10).into(),
+                Int(4).into(),
+                Int(5).into(),
+                Int(6).into(),
+                Int(0).into()
+            ]
+        );
     }
 }

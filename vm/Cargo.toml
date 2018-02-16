@@ -38,14 +38,14 @@ gluon_check = { path = "../check", version = "0.7.1" } # GLUON
 tokio-core = "0.1"
 
 [build-dependencies]
-lalrpop = { version = "0.13.1", optional = true }
+lalrpop = { version = "0.14.0", optional = true }
 
 [dev-dependencies]
 # HACK Trick crates.io into letting letting this be published with a dependency on gluon
 # (which requires gluon_vm to be published)
 gluon = { path = "..", version = "<0.9.0, >=0.7.0" } # GLUON
 
-lalrpop-util = "0.13.1"
+lalrpop-util = "0.14.0"
 regex = "0.2.0"
 serde_json = "1.0.0"
 

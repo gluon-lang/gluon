@@ -458,7 +458,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
                 ValueRef::Data(data) if data.tag() == 1 => visitor.visit_some(&mut Deserializer {
                     state: self.state.clone(),
                     typ: typ,
-                    input: data.get_variants(0).unwrap(),
+                    input: data.get_variant(0).unwrap(),
                 }),
                 _ => self.deserialize_any(visitor),
             },
@@ -505,7 +505,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
                 match row.row_iter().nth(data.tag() as usize) {
                     Some(field) => {
                         let iter = (0..data.len())
-                            .map(|i| data.get_variants(i).unwrap())
+                            .map(|i| data.get_variant(i).unwrap())
                             .zip(arg_iter(&field.typ));
                         visitor.visit_seq(SeqDeserializer::new(self.state.clone(), iter))
                     }
@@ -765,7 +765,7 @@ impl<'de, 'a, 't> VariantAccess<'de> for Enum<'a, 'de, 't> {
             (ValueRef::Data(data), &Type::Variant(ref row)) => {
                 match row.row_iter().nth(data.tag() as usize) {
                     Some(field) => seed.deserialize(&mut Deserializer {
-                        input: data.get_variants(0).ok_or_else(|| {
+                        input: data.get_variant(0).ok_or_else(|| {
                             VmError::Message("Expected variant to have a value argument".into())
                         })?,
                         typ: arg_iter(&field.typ).next().ok_or_else(|| {

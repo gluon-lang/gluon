@@ -293,7 +293,7 @@ fn eval_line_(
         .map(move |ExecuteValue { value, typ, .. }| {
             let vm = value.vm();
             let env = vm.global_env().get_env();
-            ValuePrinter::new(&*env, &typ, *value)
+            ValuePrinter::new(&*env, &typ, value.get_variant())
                 .width(80)
                 .max_level(5)
                 .to_string()
@@ -313,7 +313,7 @@ fn set_globals(
                 Symbol::from(format!("@{}", id.name.declared_name())),
                 typ.clone(),
                 Default::default(),
-                **value,
+                value.get_value(),
             )?;
             Ok(())
         }
@@ -337,7 +337,7 @@ fn set_globals(
                         Symbol::from(format!("@{}", field.name.value.declared_name())),
                         field_type,
                         Default::default(),
-                        *field_value,
+                        field_value.get_value(),
                     )?,
                 }
             }
@@ -348,7 +348,7 @@ fn set_globals(
                 Symbol::from(format!("@{}", id.declared_name())),
                 typ.clone(),
                 Default::default(),
-                **value,
+                value.get_value(),
             )?;
             set_globals(vm, pattern, typ, value)
         }
@@ -382,7 +382,7 @@ fn finish_or_interrupt(
     });
 
     let mut action =
-        OwnedFunction::<fn() -> IO<Generic<A>>>::from_value(&thread, action.get_variants());
+        OwnedFunction::<fn() -> IO<Generic<A>>>::from_value(&thread, action.get_variant());
     let action_future = cpu_pool.0.spawn_fn(move || action.call_async());
 
     let ctrl_c_future = receiver

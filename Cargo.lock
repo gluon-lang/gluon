@@ -427,7 +427,7 @@ dependencies = [
  "gluon_base 0.7.1",
  "itertools 0.6.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "lalrpop 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "lalrpop-util 0.13.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "lalrpop-util 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "ordered-float 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "pretty 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -473,8 +473,8 @@ dependencies = [
  "gluon_check 0.7.1",
  "gluon_parser 0.7.1",
  "itertools 0.7.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "lalrpop 0.13.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "lalrpop-util 0.13.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "lalrpop 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "lalrpop-util 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.3.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "mopa 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "pretty 0.3.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -568,29 +568,6 @@ dependencies = [
 
 [[package]]
 name = "lalrpop"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-dependencies = [
- "ascii-canvas 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "atty 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "bit-set 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "diff 0.1.11 (registry+https://github.com/rust-lang/crates.io-index)",
- "docopt 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "ena 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "itertools 0.5.10 (registry+https://github.com/rust-lang/crates.io-index)",
- "lalrpop-intern 0.13.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "lalrpop-snap 0.13.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "lalrpop-util 0.13.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "petgraph 0.4.11 (registry+https://github.com/rust-lang/crates.io-index)",
- "regex 0.2.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "regex-syntax 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "rustc-serialize 0.3.24 (registry+https://github.com/rust-lang/crates.io-index)",
- "term 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "unicode-xid 0.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
-]
-
-[[package]]
-name = "lalrpop"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
@@ -614,35 +591,8 @@ dependencies = [
 
 [[package]]
 name = "lalrpop-intern"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "lalrpop-intern"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-
-[[package]]
-name = "lalrpop-snap"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-dependencies = [
- "ascii-canvas 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "atty 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "bit-set 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "diff 0.1.11 (registry+https://github.com/rust-lang/crates.io-index)",
- "docopt 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "ena 0.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "itertools 0.5.10 (registry+https://github.com/rust-lang/crates.io-index)",
- "lalrpop-intern 0.13.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "lalrpop-util 0.13.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "petgraph 0.4.11 (registry+https://github.com/rust-lang/crates.io-index)",
- "regex 0.2.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "regex-syntax 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "rustc-serialize 0.3.24 (registry+https://github.com/rust-lang/crates.io-index)",
- "term 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "unicode-xid 0.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
-]
 
 [[package]]
 name = "lalrpop-snap"
@@ -665,11 +615,6 @@ dependencies = [
  "term 0.4.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "unicode-xid 0.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
-
-[[package]]
-name = "lalrpop-util"
-version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "lalrpop-util"
@@ -1550,13 +1495,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum itertools 0.7.6 (registry+https://github.com/rust-lang/crates.io-index)" = "b07332223953b5051bceb67e8c4700aa65291535568e1f12408c43c4a42c0394"
 "checksum itoa 0.3.4 (registry+https://github.com/rust-lang/crates.io-index)" = "8324a32baf01e2ae060e9de58ed0bc2320c9a2833491ee36cd3b4c414de4db8c"
 "checksum kernel32-sys 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "7507624b29483431c0ba2d82aece8ca6cdba9382bff4ddd0f7490560c056098d"
-"checksum lalrpop 0.13.1 (registry+https://github.com/rust-lang/crates.io-index)" = "8ebe5a5c90d5edeecb7f62f6ebec0a3d0f6faf4759a052708348cda99fd311a0"
 "checksum lalrpop 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)" = "d6fe7e84d1b798674f26dd7f2e7c0c92b5736f77866dadcf59c64b949ff40d00"
-"checksum lalrpop-intern 0.13.1 (registry+https://github.com/rust-lang/crates.io-index)" = "05410c1e4aff497bdea1ccb274ac35536fda0ee858600df36966502d4f7acbe3"
 "checksum lalrpop-intern 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)" = "8af84a2fa97bb57e285c56b8303645cefa17c92ad115c4d711b3b4ba5bc5c197"
-"checksum lalrpop-snap 0.13.1 (registry+https://github.com/rust-lang/crates.io-index)" = "3f866ece35287f5223a1a022c5d86417c260cda2ca9c8a156af9959404ce5313"
 "checksum lalrpop-snap 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)" = "395696fe1022abe294978648249b5edd854395a199b0e9e5579c7fab47b807d0"
-"checksum lalrpop-util 0.13.1 (registry+https://github.com/rust-lang/crates.io-index)" = "7c7743f235fc17f5f50f3b1e64a8690ee154f17f86bd68cbb78787c5b37907f7"
 "checksum lalrpop-util 0.14.0 (registry+https://github.com/rust-lang/crates.io-index)" = "7c9d51721b6a49a70a02c02862e27c57069878fa6bf6689c20b755a45efc8c67"
 "checksum language-tags 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)" = "a91d884b6667cd606bb5a69aa0c99ba811a115fc68915e7056ec08a46e93199a"
 "checksum lazy_static 0.2.11 (registry+https://github.com/rust-lang/crates.io-index)" = "76f033c7ad61445c5b347c7382dd1237847eb1bce590fe50365dcb33d546be73"
