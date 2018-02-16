@@ -14,6 +14,7 @@ use base::serialization::{NodeMap, NodeToId};
 use base::symbol::{Symbol, Symbols};
 use base::types::ArcType;
 
+use Variants;
 use array::Array;
 use gc::{DataDef, GcPtr, WriteOnly};
 use thread::{RootedThread, Thread, ThreadInternal};
@@ -738,6 +739,20 @@ where
 {
     use serde::ser::Error;
     Err(S::Error::custom("Userdata cannot be serialized"))
+}
+
+impl<'a> ::serde::ser::SerializeState<::serialization::SeSeed> for Variants<'a> {
+    #[inline]
+    fn serialize_state<S>(
+        &self,
+        serializer: S,
+        seed: &::serialization::SeSeed,
+    ) -> ::std::result::Result<S::Ok, S::Error>
+    where
+        S: ::serde::ser::Serializer,
+    {
+        self.0.serialize_state(serializer, seed)
+    }
 }
 
 #[cfg(test)]

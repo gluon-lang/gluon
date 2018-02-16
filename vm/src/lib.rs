@@ -105,20 +105,6 @@ impl<'a> Variants<'a> {
     }
 }
 
-impl<'a> ::serde::ser::SerializeState<::serialization::SeSeed> for Variants<'a> {
-    #[inline]
-    fn serialize_state<S>(
-        &self,
-        serializer: S,
-        seed: &::serialization::SeSeed,
-    ) -> ::std::result::Result<S::Ok, S::Error>
-    where
-        S: ::serde::ser::Serializer,
-    {
-        self.0.serialize_state(serializer, seed)
-    }
-}
-
 /// Type returned from vm functions which may fail
 pub type Result<T> = ::std::result::Result<T, Error>;
 

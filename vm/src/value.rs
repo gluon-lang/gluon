@@ -348,7 +348,7 @@ pub(crate) enum ValueRepr {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
-pub struct Value(#[serde(state)] ValueRepr);
+pub struct Value(#[cfg_attr(feature = "serde_derive", serde(state))] ValueRepr);
 
 impl From<ValueRepr> for Value {
     #[inline]
