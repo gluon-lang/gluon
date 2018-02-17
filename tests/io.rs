@@ -12,7 +12,7 @@ use support::*;
 
 #[test]
 fn read_file() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let thread = new_vm();
     let text = r#"
@@ -62,7 +62,7 @@ io.print "123"
 
 #[test]
 fn run_expr_int() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
         let io = import! std.io
@@ -99,7 +99,7 @@ io.flat_map (\x -> io.wrap 100)
 
 #[test]
 fn dont_execute_io_in_run_expr_async() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let vm = make_vm();
     let expr = r#"
 let prelude  = import! std.prelude
@@ -120,7 +120,7 @@ wrap 123
 
 #[test]
 fn spawn_on_twice() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
         let { applicative = { wrap }, monad = { flat_map } } = import! std.io
@@ -160,7 +160,7 @@ fn spawn_on_twice() {
 
 #[test]
 fn spawn_on_runexpr() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
         let io@{ applicative = applicative@{ wrap }, monad = { flat_map } } = import! std.io
@@ -190,7 +190,7 @@ fn spawn_on_runexpr() {
 
 #[test]
 fn spawn_on_runexpr_in_catch() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
         let prelude = import! std.prelude

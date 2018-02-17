@@ -56,7 +56,7 @@ where
 
 #[cfg(feature = "env_logger")]
 fn init_env_logger() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 }
 
 #[cfg(not(feature = "env_logger"))]

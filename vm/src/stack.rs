@@ -518,7 +518,7 @@ mod tests {
 
     #[test]
     fn remove_range() {
-        let _ = ::env_logger::init();
+        let _ = ::env_logger::try_init();
 
         let mut stack = Stack::new();
         let mut frame = StackFrame::frame(&mut stack, 0, State::Unknown);
@@ -549,7 +549,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn attempt_take_locked_range() {
-        let _ = ::env_logger::init();
+        let _ = ::env_logger::try_init();
 
         let mut stack = Stack::new();
         {
@@ -566,7 +566,7 @@ mod tests {
     #[test]
     #[should_panic]
     fn attempt_pop_locked() {
-        let _ = ::env_logger::init();
+        let _ = ::env_logger::try_init();
 
         let mut stack = Stack::new();
         {
@@ -581,7 +581,7 @@ mod tests {
 
     #[test]
     fn lock_unlock() {
-        let _ = ::env_logger::init();
+        let _ = ::env_logger::try_init();
 
         let mut stack = Stack::new();
         let lock = {
@@ -604,7 +604,7 @@ mod tests {
 
     #[test]
     fn insert_stack_slice() {
-        let _ = ::env_logger::init();
+        let _ = ::env_logger::try_init();
 
         let mut stack = Stack::new();
         StackFrame::frame(&mut stack, 0, State::Unknown);

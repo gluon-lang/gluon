@@ -23,7 +23,7 @@ fn new_vm() -> RootedThread {
 
 #[test]
 fn access_field_through_alias() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let vm = new_vm();
     Compiler::new()
         .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example", r#" import! std.int "#)
@@ -36,7 +36,7 @@ fn access_field_through_alias() {
 
 #[test]
 fn call_rust_from_gluon() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     fn factorial(x: i32) -> i32 {
         if x <= 1 {
@@ -70,7 +70,7 @@ fn call_rust_from_gluon() {
 
 #[test]
 fn use_string_module() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let vm = new_vm();
     let result = Compiler::new()

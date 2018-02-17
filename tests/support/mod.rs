@@ -60,7 +60,7 @@ macro_rules! test_expr {
     (prelude $name: ident, $expr: expr, $value: expr) => {
         #[test]
         fn $name() {
-            let _ = ::env_logger::init();
+            let _ = ::env_logger::try_init();
             let mut vm = $crate::support::make_vm();
             let value = $crate::support::run_expr_(&mut vm, $expr, true);
             assert_eq!(value, $value);
@@ -75,7 +75,7 @@ macro_rules! test_expr {
         fn $name() {
             use gluon::vm::api::IO;
 
-            let _ = ::env_logger::init();
+            let _ = ::env_logger::try_init();
             let mut vm = $crate::support::make_vm();
             let (value, _) = ::gluon::Compiler::new()
                 .implicit_prelude(false)
@@ -97,7 +97,7 @@ macro_rules! test_expr {
     (any $name: ident, $expr: expr, $value: expr) => {
         #[test]
         fn $name() {
-            let _ = ::env_logger::init();
+            let _ = ::env_logger::try_init();
             let mut vm = $crate::support::make_vm();
             let value = $crate::support::run_expr::<OpaqueValue<&Thread, Hole>>(&mut vm, $expr);
             assert_eq!(value.get_ref(), $value);
@@ -106,7 +106,7 @@ macro_rules! test_expr {
     ($name: ident, $expr: expr, $value: expr) => {
         #[test]
         fn $name() {
-            let _ = ::env_logger::init();
+            let _ = ::env_logger::try_init();
             let mut vm = $crate::support::make_vm();
             let value = $crate::support::run_expr(&mut vm, $expr);
             assert_eq!(value, $value);
@@ -119,7 +119,7 @@ macro_rules! test_expr {
     ($name: ident, $expr: expr) => {
         #[test]
         fn $name() {
-            let _ = ::env_logger::init();
+            let _ = ::env_logger::try_init();
             let mut vm = $crate::support::make_vm();
             $crate::support::run_expr::<OpaqueValue<&Thread, Hole>>(&mut vm, $expr);
         }

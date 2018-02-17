@@ -510,7 +510,7 @@ mod tests {
 
     #[test]
     fn compile_repl_test() {
-        let _ = ::env_logger::init();
+        let _ = ::env_logger::try_init();
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
         let repl: Result<FunctionRef<fn(()) -> IO<()>>, _> = vm.get_global("repl");
@@ -521,7 +521,7 @@ mod tests {
 
     #[test]
     fn type_of_expr() {
-        let _ = ::env_logger::init();
+        let _ = ::env_logger::try_init();
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
         let mut type_of: FunctionRef<QueryFn> = vm.get_global("repl.prim.type_of_expr").unwrap();
@@ -530,7 +530,7 @@ mod tests {
 
     #[test]
     fn find_kind() {
-        let _ = ::env_logger::init();
+        let _ = ::env_logger::try_init();
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
         let mut find_kind: FunctionRef<QueryFn> = vm.get_global("repl.prim.find_kind").unwrap();
@@ -542,7 +542,7 @@ mod tests {
 
     #[test]
     fn find_info() {
-        let _ = ::env_logger::init();
+        let _ = ::env_logger::try_init();
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
         let mut find_info: FunctionRef<QueryFn> = vm.get_global("repl.prim.find_info").unwrap();
@@ -562,7 +562,7 @@ mod tests {
 
     #[test]
     fn complete_repl_empty() {
-        let _ = ::env_logger::init();
+        let _ = ::env_logger::try_init();
         let vm = new_vm();
         compile_repl(&vm).unwrap_or_else(|err| panic!("{}", err));
         complete(&vm, "<repl>", "", 0).unwrap_or_else(|err| panic!("{}", err));

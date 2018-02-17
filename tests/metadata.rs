@@ -18,7 +18,7 @@ fn make_vm() -> RootedThread {
 
 #[test]
 fn metadata_from_other_module() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let vm = make_vm();
     let text = r#"
 let { List, of }  = import! std.list

@@ -35,7 +35,7 @@ fn make_vm() -> RootedThread {
 
 #[test]
 fn call_function() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let add10 = r"
         let add10 : Int -> Int = \x -> x #Int+ 10 in add10
     ";
@@ -57,7 +57,7 @@ fn call_function() {
 
 #[test]
 fn root_data() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     #[derive(Debug)]
     struct Test(VmInt);
@@ -90,7 +90,7 @@ fn root_data() {
 
 #[test]
 fn root_string() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let expr = r#"
         let test = import! test
@@ -117,7 +117,7 @@ fn root_string() {
 
 #[test]
 fn array() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let expr = r#"
         let sum_bytes = import! sum_bytes
@@ -142,7 +142,7 @@ fn array() {
 
 #[test]
 fn return_finished_future() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     fn add(
         x: i32,
@@ -168,7 +168,6 @@ fn return_finished_future() {
 
     assert_eq!(result, expected);
 }
-
 
 fn poll_n(
     s: String,
@@ -196,7 +195,7 @@ fn poll_n(
 
 #[test]
 fn return_delayed_future_simple() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let expr = r#"
         let poll_n = import! poll_n
@@ -219,7 +218,7 @@ fn return_delayed_future_simple() {
 
 #[test]
 fn return_delayed_future_in_catch() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let expr = r#"
         let io = import! std.io
@@ -245,7 +244,7 @@ fn return_delayed_future_in_catch() {
 fn io_future() {
     use gluon_vm::api::IO;
 
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     fn test(_: ()) -> FutureResult<Box<Future<Item = IO<i32>, Error = Error> + Send + 'static>> {
         FutureResult(Box::new(Ok(IO::Value(123)).into_future()))

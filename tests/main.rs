@@ -68,7 +68,7 @@ fn run_file<'t>(
 }
 
 fn main_() -> Result<(), Box<Error>> {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let args: Vec<_> = ::std::env::args().collect();
     let filter = if args.len() > 1 && args.last().unwrap() != "main" {
         args.last()

@@ -21,7 +21,7 @@ mod support;
 
 #[test]
 fn single_implicit_arg() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 
 let f x y: [Int] -> Int -> Int = x
@@ -36,7 +36,7 @@ f 42
 
 #[test]
 fn multiple_implicit_args() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 
 let f x y z w: [Int] -> [String] -> String -> Int -> Int = x
@@ -53,7 +53,7 @@ f x 42
 
 #[test]
 fn just_a_implicit_arg() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 
 let f x: [Int] -> Int = x
@@ -68,7 +68,7 @@ f
 
 #[test]
 fn function_implicit_arg() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 
 let f eq l r: [a -> a -> Bool] -> a -> a -> Bool = eq l r
@@ -87,7 +87,7 @@ f "" ""
 
 #[test]
 fn infix_implicit_arg() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 
 let (==) eq l r: [a -> a -> Bool] -> a -> a -> Bool = eq l r
@@ -116,7 +116,7 @@ let eq_string l r : String -> String -> Bool = True
 
 #[test]
 fn implicit_from_record_field() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 
 let f eq l r: [a -> a -> Bool] -> a -> a -> Bool = eq l r
@@ -137,7 +137,7 @@ f "" ""
 
 #[test]
 fn implicit_on_type() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 /// @implicit
 type Test = | Test
@@ -159,7 +159,7 @@ f Test
 
 #[test]
 fn forward_implicit_parameter() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 /// @implicit
 type Test a = | Test a
@@ -205,7 +205,7 @@ g 2
 
 #[test]
 fn implicit_as_function_argument() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 let (==) eq l r: [a -> a -> Bool] -> a -> a -> Bool = eq l r
 /// @implicit
@@ -246,7 +246,7 @@ f (==) 1 2
 
 #[test]
 fn applicative_resolve_implicit() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 /// @implicit
 type Functor f = {
@@ -269,7 +269,7 @@ let (<*) app l r : [Applicative f] -> f a -> f b -> f a = app.functor.map (\x _ 
 
 #[test]
 fn select_functor_from_applicative() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 /// @implicit
 type Functor f = {
@@ -294,7 +294,7 @@ let test app f xs: [Applicative f] -> (a -> b) -> f a -> f b =
 
 #[test]
 fn wrap_call_selection() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 
 /// @implicit
@@ -319,7 +319,7 @@ let x: a -> Test Int = \_ -> wrap 123
 
 #[test]
 fn unknown_implicit_arg_type() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 
 /// @implicit
@@ -344,7 +344,7 @@ let applicative : Applicative Test = {
 
 #[test]
 fn dont_insert_extra_implicit_arg_type() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 
 /// @implicit
@@ -371,7 +371,7 @@ wrap
 
 #[test]
 fn dont_insert_implicit_with_unresolved_arguments() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 
 /// @implicit
@@ -392,7 +392,7 @@ x
 
 #[test]
 fn resolve_implicit_for_fold_m() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 type List a = | Nil | Cons a (List a)
 

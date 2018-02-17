@@ -1775,7 +1775,7 @@ mod tests {
     }
 
     fn check_translation(expr_str: &str, expected_str: &str) {
-        let _ = ::env_logger::init();
+        let _ = ::env_logger::try_init();
 
         let mut symbols = Symbols::new();
 

@@ -48,7 +48,7 @@ fn function_type_new() {
 
 #[test]
 fn char_literal() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r"
 'a'
@@ -61,7 +61,7 @@ fn char_literal() {
 
 #[test]
 fn byte_literal() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r"
 1b
@@ -74,7 +74,7 @@ fn byte_literal() {
 
 #[test]
 fn function_2_args() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r"
 \x y -> 1 #Int+ x #Int+ y
@@ -87,7 +87,7 @@ fn function_2_args() {
 
 #[test]
 fn type_decl() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r"
 type Test = { x: Int } in { x = 0 }
@@ -104,7 +104,7 @@ type Test = { x: Int } in { x = 0 }
 
 #[test]
 fn type_decl_multiple() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r"
 type Test = Int -> Int
@@ -134,7 +134,7 @@ in Test2 (\x -> x #Int+ 2)
 
 #[test]
 fn record_type_simple() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r"
 type T = { y: Int } in
@@ -152,7 +152,7 @@ let f: T -> Int = \x -> x.y in { y = f { y = 123 } }
 
 #[test]
 fn let_binding_type() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let env = MockEnv::new();
     let text = r"
@@ -174,7 +174,7 @@ let f: a -> b -> a = \x y -> x in f 1.0 ()
 }
 #[test]
 fn let_binding_recursive() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r"
 let fac x = if x #Int== 0 then 1 else x #Int* fac (x #Int- 1) in fac
@@ -186,7 +186,7 @@ let fac x = if x #Int== 0 then 1 else x #Int* fac (x #Int- 1) in fac
 }
 #[test]
 fn let_binding_mutually_recursive() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r"
 let f x = if x #Int< 0
@@ -212,7 +212,7 @@ macro_rules! assert_match {
 
 #[test]
 fn let_binding_general_mutually_recursive() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r"
 let test x = (1 #Int+ 2) #Int+ test2 x
@@ -235,7 +235,7 @@ in test2 1";
 
 #[test]
 fn primitive_error() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r"
 1 #Int== 2.2
@@ -247,7 +247,7 @@ fn primitive_error() {
 
 #[test]
 fn binop_as_function() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r"
 let (+) = \x y -> x #Int+ y
@@ -261,7 +261,7 @@ in 1 + 2
 
 #[test]
 fn adt() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r"
 type Option a = | None | Some a
@@ -275,7 +275,7 @@ in Some 1
 
 #[test]
 fn case_constructor() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r"
 type Option a = | None | Some a
@@ -291,7 +291,7 @@ in match Some 1 with
 
 #[test]
 fn real_type() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r"
 type Eq a = {
@@ -328,7 +328,7 @@ in eq_Int
 
 #[test]
 fn functor_option() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r"
 type Functor f = {
@@ -362,7 +362,7 @@ in option_Functor.map (\x -> x #Int- 1) (Some 2)
 
 #[test]
 fn app_app_unify() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r"
 type Monad m = {
@@ -404,7 +404,7 @@ test
 
 #[test]
 fn function_operator_type() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r"
 let f x: ((->) Int Int) = x #Int+ 1
@@ -421,7 +421,7 @@ f
 
 #[test]
 fn function_operator_partially_applied() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r"
 type Test f = {
@@ -440,7 +440,7 @@ function_test.test
 
 #[test]
 fn type_alias_function() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r"
 type Fn a b = a -> b
@@ -458,7 +458,7 @@ in f
 
 #[test]
 fn infer_mutually_recursive() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r"
 let id x = x
@@ -474,7 +474,7 @@ c
 
 #[test]
 fn error_mutually_recursive() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r"
 let id x = x
@@ -487,7 +487,7 @@ in const #Int+ 1
 
 #[test]
 fn partial_function_unify() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r"
 type Monad m = {
@@ -515,7 +515,7 @@ in { monad_State }
 /// Test that not all fields are required when unifying record patterns
 #[test]
 fn partial_pattern() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 let { y } = { x = 1, y = "" }
@@ -529,7 +529,7 @@ in y
 
 #[test]
 fn type_pattern() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 type Test = | Test String Int in { Test, x = 1 }
@@ -561,7 +561,7 @@ type Test = | Test String Int in { Test, x = 1 }
 
 #[test]
 fn unify_variant() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 type Test a = | Test a
@@ -575,7 +575,7 @@ Test 1
 
 #[test]
 fn unify_transformer() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 type Test a = | Test a
@@ -614,7 +614,7 @@ return 1
 
 #[test]
 fn normalize_function_type() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 type Cat cat = {
@@ -635,7 +635,7 @@ test id
 
 #[test]
 fn mutually_recursive_types() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 type Tree a = | Empty | Node (Data a) (Data a)
@@ -655,7 +655,7 @@ in Node { value = 1, tree = Empty } rhs
 
 #[test]
 fn field_access_through_multiple_aliases() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 type Test1 = { x: Int }
@@ -673,7 +673,7 @@ t.x
 
 #[test]
 fn unify_equal_hkt_aliases() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 type M a = | M a
@@ -692,7 +692,7 @@ in eq t u
 
 #[test]
 fn as_pattern() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 match 1 with
@@ -706,7 +706,7 @@ match 1 with
 
 #[test]
 fn as_pattern_record() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 match { y = 1 } with
@@ -721,7 +721,7 @@ match { y = 1 } with
 
 #[test]
 fn do_expression_simple() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 type Test a = { x : a }
@@ -746,7 +746,7 @@ test ""
 
 #[test]
 fn do_expression_use_binding() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 type Test a = { x : a }
@@ -771,7 +771,7 @@ test (x #Int+ 2)
 
 #[test]
 fn eq_unresolved_constraint_bug() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 type Eq a = { (==) : a -> a -> Bool }
@@ -794,7 +794,7 @@ let eq a : Eq a -> Eq (List a) =
 
 #[test]
 fn pattern_match_nested_parameterized_type() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 type Test a = | Test a

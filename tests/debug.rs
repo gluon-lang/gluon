@@ -24,7 +24,7 @@ const SIMPLE_EXPR: &'static str = r#"
 
 #[test]
 fn function_hook() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let thread = new_vm();
     let functions = Arc::new(Mutex::new(Vec::new()));
@@ -92,7 +92,7 @@ fn run_line_hook_test(source: &str) -> Vec<Line> {
 
 #[test]
 fn line_hook() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let lines = run_line_hook_test(SIMPLE_EXPR);
     assert_eq!(
@@ -106,7 +106,7 @@ fn line_hook() {
 
 #[test]
 fn line_hook_recursive_functions() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let expr = r#"
 let f x = x
@@ -126,7 +126,7 @@ and g y = f
 
 #[test]
 fn line_hook_after_call() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let thread = new_vm();
     {
@@ -171,7 +171,7 @@ fn line_hook_after_call() {
 
 #[test]
 fn implicit_prelude_lines_not_counted() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let thread = new_vm();
     {
@@ -210,7 +210,7 @@ fn implicit_prelude_lines_not_counted() {
 
 #[test]
 fn read_variables() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let thread = new_vm();
     let result = Arc::new(Mutex::new(BTreeMap::new()));
@@ -286,7 +286,7 @@ fn read_variables() {
 
 #[test]
 fn argument_types() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let thread = new_vm();
     let result = Arc::new(Mutex::new(Vec::new()));
@@ -349,7 +349,7 @@ fn argument_types() {
 
 #[test]
 fn source_name() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let thread = new_vm();
     let result = Arc::new(Mutex::new(String::new()));
@@ -384,7 +384,7 @@ fn source_name() {
 
 #[test]
 fn upvars() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let thread = new_vm();
     let result = Arc::new(Mutex::new(Vec::new()));
@@ -439,7 +439,7 @@ fn upvars() {
 
 #[test]
 fn implicit_prelude_variable_names() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let thread = new_vm();
     let functions = Arc::new(Mutex::new(Vec::<ArcType>::new()));

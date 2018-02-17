@@ -20,7 +20,7 @@ match True with
 
 #[test]
 fn non_exhaustive_pattern() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r"
 type AB = | A | B in
 match A with

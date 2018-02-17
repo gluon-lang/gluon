@@ -27,7 +27,7 @@ gluon_check = { path = "check", version = "0.7.1" } # GLUON
 gluon_parser = { path = "parser", version = "0.7.1" } # GLUON
 gluon_vm = { path = "vm", version = "0.7.1", default-features = false } # GLUON
 
-log = "0.3.6"
+log = "0.4"
 quick-error = "1.0.0"
 collect-mac = "0.1.0"
 either = "1.0.0"

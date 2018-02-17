@@ -628,7 +628,7 @@ mod tests {
 
     #[test]
     fn implicit_prelude() {
-        let _ = ::env_logger::init();
+        let _ = ::env_logger::try_init();
 
         let thread = new_vm();
         Compiler::new()
