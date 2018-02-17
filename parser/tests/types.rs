@@ -5,13 +5,13 @@ extern crate gluon_parser as parser;
 
 use base::ast::Expr;
 use base::types::Type;
-use support::{parse, typ, clear_span};
+use support::{clear_span, parse, typ};
 
 mod support;
 
 #[test]
 fn function_type() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let input = "let _ : Int -> Float -> String = 1 in 1";
     let expr = parse(input).unwrap_or_else(|err| panic!("{}", err.1));

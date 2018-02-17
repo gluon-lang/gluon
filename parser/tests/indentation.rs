@@ -15,7 +15,7 @@ fn parse(text: &str) -> Result<SpannedExpr<String>, ParseErrors> {
 
 #[test]
 fn unclosed_let() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let result = parse(
         r#"
@@ -30,7 +30,7 @@ y
 
 #[test]
 fn sequence_expressions() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let result = parse(
         r#"
@@ -51,7 +51,7 @@ g ""
 
 #[test]
 fn let_in_let_args() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let result = parse(
         r#"
@@ -67,7 +67,7 @@ in x
 }
 #[test]
 fn and_on_same_line_as_type() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let result = parse(
         r#"
@@ -83,7 +83,7 @@ in 1
 
 #[test]
 fn close_brace_on_same_line_as_type() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let result = parse(
         r#"
@@ -99,7 +99,7 @@ type M = {
 }
 #[test]
 fn record_unindented_fields() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let result = parse(
         r#"
@@ -119,7 +119,7 @@ in 1
 // match clauses cannot be unindented past the enclosing block
 #[test]
 fn to_much_unindented_case_of() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let result = parse(
         r#"
@@ -136,7 +136,7 @@ in test
 
 #[test]
 fn match_with_alignment() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let result = parse(
         r#"
@@ -159,7 +159,7 @@ match x with
 
 #[test]
 fn allow_unindented_lambda() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let result = parse(
         r#"
@@ -176,7 +176,7 @@ f
 
 #[test]
 fn close_lambda_on_implicit_statement() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let result = parse(
         r#"
@@ -195,7 +195,7 @@ fn close_lambda_on_implicit_statement() {
 
 #[test]
 fn if_expr_else_is_block() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let result = parse(
         r#"
@@ -223,7 +223,7 @@ else
 
 #[test]
 fn if_else_if_else() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let result = parse(
         r#"
@@ -241,7 +241,7 @@ else
 
 #[test]
 fn block_match() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let result = parse(
         r#"

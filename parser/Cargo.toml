@@ -14,16 +14,16 @@ build = "build.rs"
 
 [dependencies]
 collect-mac = "0.1.0"
-env_logger = { version = "0.3.4", optional = true }
 itertools = "0.6.0"
 quick-error = "1.0.0"
 lalrpop-util = "0.14.0"
-log = "0.3.6"
+log = "0.4"
 pretty = "0.3.2"
 gluon_base = { path = "../base", version = "0.7.1" } # GLUON
 ordered-float = "0.5.0" # gluon_base
 
 [dev-dependencies]
+env_logger = "0.5"
 difference = "1.0"
 pretty_assertions = "0.4"
 
@@ -31,4 +31,4 @@ pretty_assertions = "0.4"
 lalrpop = "0.14.0"
 
 [features]
-test = ["env_logger"]
+test = []

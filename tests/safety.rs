@@ -47,7 +47,7 @@ fn verify_value_cloned(from: &Thread, to: &Thread) {
 
 #[test]
 fn cant_transfer_opaque_value_between_sibling_threads() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     //     vm
     //  /     \
     // vm1    vm2
@@ -60,7 +60,7 @@ fn cant_transfer_opaque_value_between_sibling_threads() {
 
 #[test]
 fn cant_transfer_opaque_value_between_disjoint_threads() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     // vm1    vm2
     // Passing a value directly from vm1 to vm2 requires the value to be cloned in its entirety
     // since the vms do not share the same global vm

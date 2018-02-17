@@ -785,28 +785,28 @@ mod tests {
 
     #[test]
     fn fold_constant_variable() {
-        let _ = ::env_logger::init();
+        let _ = ::env_logger::try_init();
 
         assert_eq_expr!("let x = 1 in x ", " 1 ");
     }
 
     #[test]
     fn fold_multiple_constant_variables() {
-        let _ = ::env_logger::init();
+        let _ = ::env_logger::try_init();
 
         assert_eq_expr!("let x = 1 in let y = x in y ", " 1 ");
     }
 
     #[test]
     fn fold_record_pattern_match() {
-        let _ = ::env_logger::init();
+        let _ = ::env_logger::try_init();
 
         assert_eq_expr!("let x = 1 in match { x } with | { x } -> x end", "1");
     }
 
     #[test]
     fn dont_remove_let_that_cant_be_folded() {
-        let _ = ::env_logger::init();
+        let _ = ::env_logger::try_init();
 
         let expr = r#"
         let x = f 1 in
@@ -816,7 +816,7 @@ mod tests {
 
     #[test]
     fn fold_global() {
-        let _ = ::env_logger::init();
+        let _ = ::env_logger::try_init();
 
         let global_alloc = Allocator::new();
         let global: CExpr = global_alloc
@@ -830,7 +830,7 @@ mod tests {
 
     #[test]
     fn fold_primitive_op() {
-        let _ = ::env_logger::init();
+        let _ = ::env_logger::try_init();
 
         let expr = r#"
             (#Int+) 1 2
@@ -840,7 +840,7 @@ mod tests {
 
     #[test]
     fn fold_function_call() {
-        let _ = ::env_logger::init();
+        let _ = ::env_logger::try_init();
 
         let expr = r#"
             let f x y = (#Int+) x y
@@ -851,7 +851,7 @@ mod tests {
 
     #[test]
     fn fold_function_call_with_unknown_parameters() {
-        let _ = ::env_logger::init();
+        let _ = ::env_logger::try_init();
 
         let expr = r#"
             let f x y = (#Int+) x y in
@@ -871,7 +871,7 @@ mod tests {
     #[test]
     #[ignore]
     fn fold_global_function_call_with_unknown_parameters() {
-        let _ = ::env_logger::init();
+        let _ = ::env_logger::try_init();
         let mut symbols = Symbols::new();
         let global_allocator = Allocator::new();
         let global = parse_core_expr(

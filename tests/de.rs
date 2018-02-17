@@ -14,7 +14,7 @@ use gluon::{new_vm, Compiler};
 
 #[test]
 fn bool() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let thread = new_vm();
     let (De(b), _) = Compiler::new()
@@ -56,7 +56,7 @@ impl VmType for Record {
 
 #[test]
 fn option() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let thread = new_vm();
     let (De(opt), _) = Compiler::new()
@@ -71,7 +71,7 @@ fn option() {
 
 #[test]
 fn partial_record() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let thread = new_vm();
     let (De(record), _) = Compiler::new()
@@ -114,7 +114,7 @@ impl VmType for OptionalFieldRecord {
 
 #[test]
 fn optional_field() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let thread = new_vm();
 
@@ -175,7 +175,7 @@ impl VmType for Enum {
 
 #[test]
 fn enum_() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let thread = new_vm();
     Compiler::new()

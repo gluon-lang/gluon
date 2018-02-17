@@ -131,7 +131,7 @@ f
 
 #[test]
 fn function_app() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let result = find_type(
         r#"
@@ -147,7 +147,7 @@ let f x = f x
 
 #[test]
 fn binop() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let env = MockEnv::new();
 
@@ -177,7 +177,7 @@ let (++) l r =
 
 #[test]
 fn field_access() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let typ_env = MockEnv::new();
 
@@ -203,7 +203,7 @@ r.x
 
 #[test]
 fn find_do_binding_type() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let result = find_type_loc(
         r#"
@@ -226,7 +226,7 @@ None
 
 #[test]
 fn parens_expr() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 let id x = x
@@ -252,7 +252,7 @@ let id x = x
 
 #[test]
 fn suggest_pattern_at_record_brace() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 let { x } = { x = 1 }
@@ -282,7 +282,7 @@ x
 
 #[test]
 fn in_record() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let result = find_type(
         r#"
@@ -300,7 +300,7 @@ fn in_record() {
 
 #[test]
 fn function_arg() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let result = find_type(
         r#"
@@ -316,7 +316,7 @@ let f x = x #Int+ 1
 
 #[test]
 fn lambda_arg() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let result = find_type(
         r#"
@@ -332,7 +332,7 @@ let f : Int -> String -> String = \x y -> y
 
 #[test]
 fn unit() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let result = find_type("()", BytePos::from(1));
     let expected = Ok(Type::unit());
@@ -342,7 +342,7 @@ fn unit() {
 
 #[test]
 fn metadata_at_variable() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 /// test
@@ -367,7 +367,7 @@ abc
 
 #[test]
 fn metadata_at_binop() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 /// test
@@ -385,7 +385,7 @@ let (+++) x y = 1
 
 #[test]
 fn metadata_at_field_access() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 let module = {
@@ -406,7 +406,7 @@ module.abc
 
 #[test]
 fn suggest_metadata_at_variable() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 /// test
@@ -425,7 +425,7 @@ ab
 
 #[test]
 fn suggest_metadata_at_field_access() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 let module = {
@@ -446,7 +446,7 @@ module.ab
 
 #[test]
 fn find_all_symbols_test() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 let test = 1
@@ -472,7 +472,7 @@ test #Int+ test #Int+ dummy
 
 #[test]
 fn all_symbols_test() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 let test = 1

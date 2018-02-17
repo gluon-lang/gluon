@@ -18,7 +18,7 @@ mod support;
 
 #[test]
 fn record_missing_field() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
     let text = r"
 match { x = 1 } with
 | { x, y } -> 1
@@ -30,7 +30,7 @@ match { x = 1 } with
 
 #[test]
 fn undefined_type_not_in_scope() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
     let text = r#"
 let x =
     type Test = | Test String Int
@@ -46,7 +46,7 @@ in x
 
 #[test]
 fn undefined_variant() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
     let text = r#"
 let x =
     type Test = | Test String Int
@@ -60,7 +60,7 @@ Test "" 2
 
 #[test]
 fn mutually_recursive_types_error() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
     let text = r#"
 type List a = | Empty | Node (a (Data a))
 and Data a = { value: a, list: List a }
@@ -73,7 +73,7 @@ in 1
 
 #[test]
 fn unpack_field_which_does_not_exist() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
     let text = r#"
 let { y } = { x = 1 }
 2
@@ -85,7 +85,7 @@ let { y } = { x = 1 }
 
 #[test]
 fn unpack_type_field_which_does_not_exist() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
     let text = r#"
 type Test = Int
 let { Test2 } = { Test }
@@ -98,7 +98,7 @@ let { Test2 } = { Test }
 
 #[test]
 fn duplicate_type_definition() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
     let text = r#"
 type Test = Int
 in
@@ -112,7 +112,7 @@ in 1
 
 #[test]
 fn no_matching_overloaded_binding() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
     let text = r#"
 let f x = x #Int+ 1
 let f x = x #Float+ 1.0
@@ -130,7 +130,7 @@ f ""
 
 #[test]
 fn no_matching_binop_binding() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
     let text = r#"
 let (++) x y = x #Int+ y
 let (++) x y = x #Float+ y
@@ -162,7 +162,7 @@ let f x = x #Float+ 1.0
 
 #[test]
 fn type_field_mismatch() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
     let text = r#"
 if True then
     type Test = Int
@@ -178,7 +178,7 @@ else
 
 #[test]
 fn arguments_need_to_be_instantiated_before_any_access() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
     // test_fn: forall a. (a -> ()) -> ()
     // To allow any type to be passed to `f` it should be
     // test_fn: (forall a. a -> ()) -> ()
@@ -194,7 +194,7 @@ let test_fn f: (a -> ()) -> () =
 
 #[test]
 fn infer_ord_int() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
     let text = r#"
 type Ordering = | LT | EQ | GT
 type Ord a = {
@@ -228,7 +228,7 @@ let (<=) = (make_Ord ord_Int).(<=)
 
 #[test]
 fn recursive_types_with_differing_aliases() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
     let text = r"
 type Option a = | None | Some a
 type R1 = Option R1
@@ -245,7 +245,7 @@ y
 
 #[test]
 fn detect_self_recursive_aliases() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
     let text = r"
 type A a = A a
 
@@ -259,7 +259,7 @@ let g x: A a -> () = x
 
 #[test]
 fn declared_generic_variables_may_not_make_outer_bindings_more_general() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 let make m =
     let m2: m = m
@@ -274,7 +274,7 @@ make 2
 
 #[test]
 fn duplicate_fields() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 type Test = Int
 let x = ""
@@ -286,7 +286,7 @@ let x = ""
 
 #[test]
 fn duplicate_fields_pattern() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 type Test = Int
 let { Test, Test, x = y, x } = { Test, x = 1 }
@@ -298,7 +298,7 @@ let { Test, Test, x = y, x } = { Test, x = 1 }
 
 #[test]
 fn type_alias_with_explicit_type_kind() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 type Test (a : Type) = a
 type Foo a = a
@@ -311,7 +311,7 @@ type Bar = Test Foo
 
 #[test]
 fn type_alias_with_explicit_row_kind() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 type Test (a : Row) = a
 type Bar = Test Int
@@ -327,7 +327,7 @@ type Bar = Test Int
 
 #[test]
 fn type_alias_with_explicit_function_kind() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 type Test (a : Type -> Type) = a Int
 type Foo = Test Int
@@ -341,7 +341,7 @@ type Foo = Test Int
 fn type_error_span() {
     use base::pos::Span;
 
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 let y = 1.0
 y
@@ -357,7 +357,7 @@ y
 
 #[test]
 fn issue_286() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 let Test = 1
 1
@@ -368,7 +368,7 @@ let Test = 1
 
 #[test]
 fn no_inference_variable_in_error() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 () 1
 "#;
@@ -391,7 +391,7 @@ Types do not match:
 
 #[test]
 fn alias_mismatch() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 type A = | A Int
 type B = | B Float
@@ -417,7 +417,7 @@ eq (A 0) (B 0.0)
 
 #[test]
 fn unification_error_with_empty_record_displays_good_error_message() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 let f x y : a -> a -> a = x
 
@@ -462,7 +462,7 @@ Found:
 
 #[test]
 fn undefined_field_after_overload() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 let f =
     \x g ->
@@ -477,7 +477,7 @@ r.y
 
 #[test]
 fn type_constructor_in_function_name() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 let Test x = x
 1
@@ -488,7 +488,7 @@ let Test x = x
 
 #[test]
 fn record_base_not_record() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 { .. 1 }
 "#;
@@ -498,7 +498,7 @@ fn record_base_not_record() {
 
 #[test]
 fn undefined_type_variable() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 type Test = a
 ()
@@ -509,7 +509,7 @@ type Test = a
 
 #[test]
 fn undefined_type_variable_in_enum() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 type Test = | Test a
 ()
@@ -520,7 +520,7 @@ type Test = | Test a
 
 #[test]
 fn make_with_explicit_types_with_wrong_variable() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 let make x : b -> _ =
@@ -536,7 +536,7 @@ make
 
 #[test]
 fn double_type_variable_unification_bug() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 \k ->
@@ -550,7 +550,7 @@ fn double_type_variable_unification_bug() {
 
 #[test]
 fn do_expression_undefined_flat_map() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 do x = 1
@@ -563,7 +563,7 @@ do x = 1
 
 #[test]
 fn do_expression_type_mismatch() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 let flat_map f = 1
@@ -577,7 +577,7 @@ do x = 1
 
 #[test]
 fn undefined_type_in_variant() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 type Test = | Test In
@@ -590,7 +590,7 @@ type Test = | Test In
 
 #[test]
 fn foldable_bug() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 type Array a = { x : a }
@@ -623,7 +623,7 @@ let foldable : Foldable Array =
 
 #[test]
 fn issue_444() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 let test x : () = () in 1

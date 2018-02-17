@@ -1152,7 +1152,7 @@ mod tests {
 
     #[test]
     fn detect_multiple_type_errors_in_single_type() {
-        let _ = ::env_logger::init();
+        let _ = ::env_logger::try_init();
         let (x, y) = (intern("x"), intern("y"));
         let l: ArcType = Type::record(
             vec![],
@@ -1183,7 +1183,7 @@ mod tests {
 
     #[test]
     fn unify_row_polymorphism() {
-        let _ = ::env_logger::init();
+        let _ = ::env_logger::try_init();
 
         let env = MockEnv;
         let subs = Substitution::new(Kind::typ());

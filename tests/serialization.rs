@@ -103,7 +103,7 @@ fn roundtrip_std_prelude() {
 
 #[test]
 fn roundtrip_std_libs() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let thread = new_vm();
     let mut expr = "{\n".to_string();
