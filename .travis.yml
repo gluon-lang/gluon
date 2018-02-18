@@ -7,6 +7,8 @@ matrix:
   - rust: nightly-2017-12-18
   - rust: beta
   - rust: stable
+    env: ARCH=i686
+  - rust: stable
     env:
       - DEPLOY=1
       - TARGET=x86_64-unknown-linux-gnu
