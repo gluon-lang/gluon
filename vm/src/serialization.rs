@@ -433,8 +433,7 @@ unsafe impl DataDef for ClosureDataModel {
 
     fn size(&self) -> usize {
         use std::mem::size_of;
-        use array::Array;
-        size_of::<GcPtr<BytecodeFunction>>() + Array::<Value>::size_of(self.upvars)
+        size_of::<ClosureData>() + size_of::<Value>() * self.upvars
     }
 
     fn initialize<'w>(self, mut result: WriteOnly<'w, Self::Value>) -> &'w mut Self::Value {
