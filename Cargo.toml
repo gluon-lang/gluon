@@ -140,6 +140,8 @@ name = "stack_overflow"
 name = "tutorial"
 [[test]]
 name = "vm"
+[[test]]
+name = "ui"
 
 [package.metadata.docs.rs]
 features = ["docs_rs"]

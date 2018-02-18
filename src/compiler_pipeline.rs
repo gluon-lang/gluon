@@ -8,6 +8,7 @@
 //! difficult to forget a stage.
 
 use std::borrow::{Borrow, BorrowMut};
+use std::mem;
 use std::ops::Deref;
 use std::result::Result as StdResult;
 
@@ -61,14 +62,15 @@ pub trait MacroExpandable {
         compiler: &mut Compiler,
         thread: &Thread,
         file: &str,
+        expr_str: &str,
     ) -> SalvageResult<MacroValue<Self::Expr>>
     where
         Self: Sized,
     {
         let mut macros = MacroExpander::new(thread);
-        let expr = self.expand_macro_with(compiler, &mut macros, file)?;
+        let expr = self.expand_macro_with(compiler, &mut macros, file, expr_str)?;
         if let Err(err) = macros.finish() {
-            return Err((Some(expr), err.into()));
+            return Err((Some(expr), InFile::new(file, expr_str, err).into()));
         }
         Ok(expr)
     }
@@ -78,6 +80,7 @@ pub trait MacroExpandable {
         compiler: &mut Compiler,
         macros: &mut MacroExpander,
         file: &str,
+        expr_str: &str,
     ) -> SalvageResult<MacroValue<Self::Expr>>;
 }
 
@@ -89,13 +92,14 @@ impl<'s> MacroExpandable for &'s str {
         compiler: &mut Compiler,
         macros: &mut MacroExpander,
         file: &str,
+        expr_str: &str,
     ) -> SalvageResult<MacroValue<Self::Expr>> {
         compiler
             .parse_expr(macros.vm.global_env().type_cache(), file, self)
             .map_err(|err| (None, err.into()))
             .and_then(|mut expr| {
                 let result = (&mut expr)
-                    .expand_macro_with(compiler, macros, file)
+                    .expand_macro_with(compiler, macros, file, expr_str)
                     .map(|_| ())
                     .map_err(|(value, err)| (value.map(|_| ()), err));
                 if let Err((value, err)) = result {
@@ -114,6 +118,7 @@ impl<'s> MacroExpandable for &'s mut SpannedExpr<Symbol> {
         compiler: &mut Compiler,
         macros: &mut MacroExpander,
         file: &str,
+        _expr_str: &str,
     ) -> SalvageResult<MacroValue<Self::Expr>> {
         if compiler.implicit_prelude {
             compiler.include_implicit_prelude(macros.vm.global_env().type_cache(), file, self);
@@ -131,12 +136,19 @@ impl MacroExpandable for SpannedExpr<Symbol> {
         compiler: &mut Compiler,
         macros: &mut MacroExpander,
         file: &str,
+        expr_str: &str,
     ) -> SalvageResult<MacroValue<Self::Expr>> {
         if compiler.implicit_prelude {
             compiler.include_implicit_prelude(macros.vm.global_env().type_cache(), file, &mut self);
         }
+        let prev_errors = mem::replace(&mut macros.errors, Errors::new());
         macros.run(&mut self);
-        Ok(MacroValue { expr: self })
+        let errors = mem::replace(&mut macros.errors, prev_errors);
+        if errors.has_errors() {
+            Err((None, InFile::new(file, expr_str, errors).into()))
+        } else {
+            Ok(MacroValue { expr: self })
+        }
     }
 }
 
@@ -183,7 +195,7 @@ where
         expected_type: Option<&ArcType>,
     ) -> Result<TypecheckValue<Self::Expr>> {
         let mut macro_error = None;
-        let expr = match self.expand_macro(compiler, thread, file) {
+        let expr = match self.expand_macro(compiler, thread, file, expr_str) {
             Ok(expr) => expr,
             Err((Some(expr), err)) => {
                 macro_error = Some(err);

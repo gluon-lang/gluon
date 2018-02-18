@@ -4,6 +4,7 @@ use std::any::Any;
 use std::borrow::Cow;
 use std::sync::{Arc, Mutex, RwLock};
 use std::fs::File;
+use std::mem;
 use std::io;
 use std::io::Read;
 use std::path::PathBuf;
@@ -11,6 +12,7 @@ use std::path::PathBuf;
 use itertools::Itertools;
 
 use base::filename_to_module;
+use base::error::{Errors, InFile};
 use base::ast::{expr_to_path, Expr, Literal, SpannedExpr, Typed, TypedIdent};
 use base::fnv::FnvMap;
 use base::pos::{self, BytePos, Span};
@@ -311,22 +313,37 @@ impl<I> Import<I> {
                 let implicit_prelude = !file_contents.starts_with("//@NO-IMPLICIT-PRELUDE");
                 compiler.set_implicit_prelude(implicit_prelude);
 
-                let errors_before = macros.errors.len();
-                let macro_result =
-                    match file_contents.expand_macro_with(compiler, macros, &modulename) {
-                        Ok(m) => m,
-                        Err((None, err)) => return Err((None, err.into())),
-                        Err((Some(m), err)) => {
-                            macros.errors.push(pos::spanned(span, err.into()));
-                            m
-                        }
-                    };
+                let mut prev_errors = mem::replace(&mut macros.errors, Errors::new());
 
-                let earlier_errors_exist = errors_before != macros.errors.len();
+                let result =
+                    file_contents.expand_macro_with(compiler, macros, &modulename, &file_contents);
+
+                let has_errors = macros.errors.has_errors();
+                let errors = mem::replace(&mut macros.errors, prev_errors);
+                if has_errors {
+                    macros.errors.push(pos::spanned(
+                        span,
+                        Box::new(::Error::Macro(InFile::new(
+                            &modulename,
+                            &file_contents,
+                            errors,
+                        ))),
+                    ));
+                }
+
+                let macro_result = match result {
+                    Ok(m) => m,
+                    Err((None, err)) => return Err((None, err.into())),
+                    Err((Some(m), err)) => {
+                        macros.errors.push(pos::spanned(span, err.into()));
+                        m
+                    }
+                };
+
                 self.importer.import(
                     compiler,
                     vm,
-                    earlier_errors_exist,
+                    has_errors,
                     &modulename,
                     &file_contents,
                     macro_result.expr,

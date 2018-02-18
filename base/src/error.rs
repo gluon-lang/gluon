@@ -17,6 +17,12 @@ pub struct Errors<T> {
     errors: Vec<T>,
 }
 
+impl<T> Default for Errors<T> {
+    fn default() -> Self {
+        Errors::new()
+    }
+}
+
 impl<T> Errors<T> {
     /// Creates a new, empty `Errors` instance.
     pub fn new() -> Errors<T> {

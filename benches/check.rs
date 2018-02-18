@@ -1,7 +1,6 @@
 #[macro_use]
 extern crate bencher;
 
-
 extern crate gluon;
 extern crate gluon_base as base;
 extern crate gluon_check as check;
@@ -24,7 +23,7 @@ fn typecheck_prelude(b: &mut Bencher) {
             .unwrap()
             .read_to_string(&mut text)
             .unwrap();
-        text.expand_macro(&mut compiler, &vm, "std.prelude")
+        text.expand_macro(&mut compiler, &vm, "std.prelude", &text)
             .unwrap_or_else(|(_, err)| panic!("{}", err))
     };
     b.iter(|| {

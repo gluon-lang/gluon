@@ -46,6 +46,7 @@ pub use futures::Future;
 
 use either::Either;
 
+use std::error::Error as StdError;
 use std::result::Result as StdResult;
 use std::env;
 
@@ -55,7 +56,7 @@ use base::error::{Errors, InFile};
 use base::metadata::Metadata;
 use base::symbol::{Symbol, SymbolModule, Symbols};
 use base::types::{ArcType, TypeCache};
-use base::pos::{self, Span};
+use base::pos::{BytePos, Span, Spanned};
 
 use vm::Variants;
 use vm::api::{Getable, Hole, OpaqueValue, VmType};
@@ -95,8 +96,13 @@ quick_error! {
             from()
         }
         /// Error found when expanding macros
-        Macro(err: macros::SpannedError) {
-            description(err.value.description())
+        Macro(err: InFile<macros::Error>) {
+            description(err.description())
+            display("{}", err)
+            from()
+        }
+        Other(err: Box<StdError + Send + Sync>) {
+            description(err.description())
             display("{}", err)
             from()
         }
@@ -114,25 +120,21 @@ impl From<String> for Error {
     }
 }
 
-impl From<Errors<macros::SpannedError>> for Error {
-    fn from(mut errors: Errors<macros::SpannedError>) -> Error {
+impl From<Errors<Spanned<macros::Error, BytePos>>> for Error {
+    fn from(mut errors: Errors<Spanned<macros::Error, BytePos>>) -> Error {
         if errors.len() == 1 {
             let err = errors.pop().unwrap();
-            let span = err.span;
             match err.value.downcast::<Error>() {
                 Ok(err) => *err,
-                Err(err) => Error::Macro(pos::spanned(span, err)),
+                Err(err) => Error::Other(err),
             }
         } else {
             Error::Multiple(
                 errors
                     .into_iter()
-                    .map(|err| {
-                        let span = err.span;
-                        match err.value.downcast::<Error>() {
-                            Ok(err) => *err,
-                            Err(err) => Error::Macro(pos::spanned(span, err)),
-                        }
+                    .map(|err| match err.value.downcast::<Error>() {
+                        Ok(err) => *err,
+                        Err(err) => Error::Other(err),
                     })
                     .collect(),
             )
@@ -385,7 +387,7 @@ impl Compiler {
         FutureValue::from(
             import
                 .load_module(self, vm, &mut macros, &module_name, Span::default())
-                .map_err(|(_, err)| pos::spanned(Span::default(), err).into())
+                .map_err(|(_, err)| Error::Other(err))
                 .and_then(|_| Ok(macros.finish()?)),
         ).boxed()
     }
