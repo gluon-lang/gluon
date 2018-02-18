@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::mem;
 use std::ops::{Deref, DerefMut};
 use std::slice;
 
@@ -74,10 +73,6 @@ impl<T: Traverseable> Traverseable for Array<T> {
 }
 
 impl<T> Array<T> {
-    pub fn size_of(len: usize) -> usize {
-        mem::size_of::<usize>() + mem::size_of::<T>() * len
-    }
-
     pub unsafe fn set_len(&mut self, len: usize) {
         self.len = len;
     }
