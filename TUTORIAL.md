@@ -451,7 +451,7 @@ So in simple case, `forall` is no different from declaring type parameters to a 
 
 ```f#
 let module =
-    let id = x
+    let id x = x
 
     { id }
 
