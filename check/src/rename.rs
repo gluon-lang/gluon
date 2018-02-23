@@ -309,7 +309,12 @@ where
                         self.visit_expr(base);
                     }
                 }
-                Expr::Infix(ref mut lhs, ref mut op, ref mut rhs) => {
+                Expr::Infix {
+                    ref mut lhs,
+                    ref mut op,
+                    ref mut rhs,
+                    ..
+                } => {
                     if let Some(new_id) = self.rename(&op.value.name, &op.value.typ)? {
                         debug!(
                             "Rename {} = {}",
@@ -658,22 +663,22 @@ where
                 }
             }
 
-            if let Expr::Infix(..) = expr.value {
-                let typ = if let Expr::Infix(_, ref id, _) = expr.value {
-                    id.value.typ.clone()
+            if let Expr::Infix { .. } = expr.value {
+                let typ = if let Expr::Infix { ref op, .. } = expr.value {
+                    op.value.typ.clone()
                 } else {
                     unreachable!()
                 };
                 let dummy = Expr::Literal(Literal::Int(0));
                 let func = mem::replace(&mut expr.value, dummy);
                 match func {
-                    Expr::Infix(l, id, r) => {
-                        let mut args = self.make_implicit_args(id.span.end, typ);
-                        args.push(*l);
-                        args.push(*r);
+                    Expr::Infix { lhs, op, rhs, .. } => {
+                        let mut args = self.make_implicit_args(op.span.end, typ);
+                        args.push(*lhs);
+                        args.push(*rhs);
 
                         expr.value = Expr::App {
-                            func: Box::new(pos::spanned(id.span, Expr::Ident(id.value))),
+                            func: Box::new(pos::spanned(op.span, Expr::Ident(op.value))),
                             implicit_args: Vec::new(),
                             args,
                         };

@@ -468,16 +468,21 @@ where
                     }
                 }
             }
-            Expr::Infix(ref l, ref op, ref r) => {
-                match (l.span.containment(&self.pos), r.span.containment(&self.pos)) {
-                    (Ordering::Greater, Ordering::Less) => {
-                        self.found =
-                            MatchState::Found(Match::Ident(op.span, &op.value.name, &op.value.typ));
-                    }
-                    (_, Ordering::Greater) | (_, Ordering::Equal) => self.visit_expr(r),
-                    _ => self.visit_expr(l),
+            Expr::Infix {
+                ref lhs,
+                ref op,
+                ref rhs,
+                ..
+            } => match (
+                lhs.span.containment(&self.pos),
+                rhs.span.containment(&self.pos),
+            ) {
+                (Ordering::Greater, Ordering::Less) => {
+                    self.found = MatchState::Found(Match::Ident(op.span, &op.value.name, &op.value.typ));
                 }
-            }
+                (_, Ordering::Greater) | (_, Ordering::Equal) => self.visit_expr(rhs),
+                _ => self.visit_expr(lhs),
+            },
             Expr::LetBindings(ref bindings, ref expr) => {
                 for bind in bindings {
                     self.on_found.on_pattern(&bind.name);
@@ -1370,7 +1375,7 @@ pub fn get_metadata<'a>(
                     None
                 },
                 Match::Expr(&Spanned {
-                    value: Expr::Infix(..),
+                    value: Expr::Infix { .. },
                     ..
                 }) => env.get(id),
                 _ => None,

@@ -528,7 +528,7 @@ InfixExpr = {
         }),
 
     <lhs: Sp<AppExpr>> <op: Sp<Operator>> <rhs: Sp<InfixExpr>> =>
-        Expr::Infix(Box::new(lhs), op, Box::new(super::shrink_hidden_spans(rhs))),
+        Expr::Infix { lhs: Box::new(lhs), op, rhs: Box::new(super::shrink_hidden_spans(rhs)), implicit_args: Vec::new(), },
 };
 
 AndValueBinding: ValueBinding<Id> =

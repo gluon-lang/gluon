@@ -533,8 +533,19 @@ impl<'a, 'e> Translator<'a, 'e> {
                         .alloc_extend(alts.into_iter()),
                 )
             }
-            ast::Expr::Infix(ref l, ref op, ref r) => {
-                let args: SmallVec<[_; 2]> = collect![self.translate(l), self.translate(r)];
+            ast::Expr::Infix {
+                ref lhs,
+                ref op,
+                ref rhs,
+                ref implicit_args,
+            } => {
+                let args: SmallVec<[_; 2]> = implicit_args
+                    .iter()
+                    .chain(Some(&**lhs))
+                    .chain(Some(&**rhs))
+                    .map(|e| self.translate(e))
+                    .collect();
+
                 Expr::Call(
                     arena.alloc(Expr::Ident(op.value.clone(), op.span)),
                     arena.alloc_extend(args.into_iter()),

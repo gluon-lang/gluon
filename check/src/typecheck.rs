@@ -884,7 +884,12 @@ impl<'a> Typecheck<'a> {
 
                 self.unify(&true_type, false_type).map(TailCall::Type)
             }
-            Expr::Infix(ref mut lhs, ref mut op, ref mut rhs) => {
+            Expr::Infix {
+                ref mut lhs,
+                ref mut op,
+                ref mut rhs,
+                ref mut implicit_args,
+            } => {
                 let op_name = String::from(self.symbols.string(&op.value.name));
                 let func_type = if op_name.starts_with('#') {
                     // Handle primitives
@@ -915,7 +920,7 @@ impl<'a> Typecheck<'a> {
                 self.typecheck_application(
                     expr.span,
                     func_type,
-                    &mut Vec::new(), // FIXME
+                    implicit_args,
                     Some(&mut **lhs).into_iter().chain(Some(&mut **rhs)),
                 )
             }

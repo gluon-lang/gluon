@@ -151,13 +151,18 @@ where
                     self.pretty_else_expr(space, if_false)
                 ]
             }
-            Expr::Infix(ref l, ref op, ref r) => chain![arena;
-                    pretty(l).group(),
+            Expr::Infix {
+                ref lhs,
+                ref op,
+                ref rhs,
+                ..
+            } => chain![arena;
+                    pretty(lhs).group(),
                     chain![arena;
-                        newline(arena, r),
+                        newline(arena, rhs),
                         op.value.name.as_ref(),
                         " ",
-                        pretty(r).group()
+                        pretty(rhs).group()
                     ].nest(INDENT)
                 ],
             Expr::Lambda(_) => {
@@ -784,7 +789,9 @@ fn forced_new_line<Id>(expr: &SpannedExpr<Id>) -> bool {
                 || base.as_ref().map_or(false, |base| forced_new_line(base))
         }),
         Expr::IfElse(_, ref t, ref f) => forced_new_line(t) || forced_new_line(f),
-        Expr::Infix(ref l, _, ref r) => forced_new_line(l) || forced_new_line(r),
+        Expr::Infix {
+            ref lhs, ref rhs, ..
+        } => forced_new_line(lhs) || forced_new_line(rhs),
         _ => false,
     }
 }

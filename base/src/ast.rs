@@ -292,7 +292,12 @@ pub enum Expr<Id> {
     /// Pattern match expression
     Match(Box<SpannedExpr<Id>>, Vec<Alternative<Id>>),
     /// Infix operator expression eg. `f >> g`
-    Infix(Box<SpannedExpr<Id>>, SpannedIdent<Id>, Box<SpannedExpr<Id>>),
+    Infix {
+        lhs: Box<SpannedExpr<Id>>,
+        op: SpannedIdent<Id>,
+        rhs: Box<SpannedExpr<Id>>,
+        implicit_args: Vec<SpannedExpr<Id>>,
+    },
     /// Record field projection, eg. `value.field`
     Projection(Box<SpannedExpr<Id>>, Id, ArcType<Id>),
     /// Array construction
@@ -390,10 +395,18 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
             v.visit_expr(if_true);
             v.visit_expr(if_false);
         }
-        Expr::Infix(ref mut lhs, ref mut id, ref mut rhs) => {
+        Expr::Infix {
+            ref mut lhs,
+            ref mut op,
+            ref mut rhs,
+            ref mut implicit_args,
+        } => {
             v.visit_expr(lhs);
-            v.visit_spanned_typed_ident(id);
+            v.visit_spanned_typed_ident(op);
             v.visit_expr(rhs);
+            for arg in implicit_args {
+                v.visit_expr(arg);
+            }
         }
         Expr::LetBindings(ref mut bindings, ref mut body) => {
             for bind in bindings {
@@ -609,10 +622,18 @@ pub fn walk_expr<'a, V: ?Sized + Visitor<'a>>(v: &mut V, e: &'a SpannedExpr<V::I
             v.visit_expr(if_true);
             v.visit_expr(if_false);
         }
-        Expr::Infix(ref lhs, ref id, ref rhs) => {
+        Expr::Infix {
+            ref lhs,
+            ref op,
+            ref rhs,
+            ref implicit_args,
+        } => {
             v.visit_expr(lhs);
-            v.visit_typ(&id.value.typ);
+            v.visit_typ(&op.value.typ);
             v.visit_expr(rhs);
+            for arg in implicit_args {
+                v.visit_expr(arg);
+            }
         }
         Expr::LetBindings(ref bindings, ref body) => {
             for bind in bindings {
@@ -771,7 +792,7 @@ impl Typed for Expr<Symbol> {
             | Expr::Tuple { ref typ, .. } => Ok(typ.clone()),
             Expr::Literal(ref lit) => lit.try_type_of(env),
             Expr::IfElse(_, ref arm, _) => arm.try_type_of(env),
-            Expr::Infix(_, ref op, _) => op.value
+            Expr::Infix { ref op, .. } => op.value
                 .typ
                 .as_function()
                 .and_then(|(_, ret)| ret.as_function())

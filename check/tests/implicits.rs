@@ -9,11 +9,13 @@ extern crate gluon_check as check;
 extern crate gluon_format as format;
 extern crate gluon_parser as parser;
 
-use base::ast::{self, SpannedExpr, Visitor};
+use base::ast::{self, SpannedExpr, Typed, Visitor};
 use base::types::{Field, Type};
 use base::symbol::Symbol;
 
 use check::rename::RenameError;
+
+use support::MockEnv;
 
 #[macro_use]
 #[allow(unused_macros)]
@@ -105,7 +107,15 @@ let eq_string l r : String -> String -> Bool = True
                 expr = *body;
             }
             _ => match expr.value {
-                ast::Expr::App { ref args, .. } if args.len() == 3 => {
+                ast::Expr::Infix {
+                    ref implicit_args, ..
+                } if implicit_args.len() == 1 =>
+                {
+                    let env = MockEnv::new();
+                    assert_eq!(
+                        implicit_args[0].env_type_of(&env).to_string(),
+                        "String -> String -> Bool"
+                    );
                     break;
                 }
                 _ => assert!(false),

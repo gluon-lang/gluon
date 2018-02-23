@@ -58,7 +58,7 @@ skeptic = { version = "0.6", optional = true }
 bencher = "0.1.2"
 tensile = "0.1.0"
 collect-mac = "0.1.0"
-env_logger = "0.3.4"
+env_logger = "0.5.0"
 pretty_assertions = "0.4"
 
 hyper = "0.11.0"

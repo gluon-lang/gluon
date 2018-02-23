@@ -44,16 +44,13 @@ fn new_ident<Id>(type_cache: &TypeCache<Id, ArcType<Id>>, name: Id) -> TypedIden
     }
 }
 
-type LalrpopError<'input> = lalrpop_util::ParseError<
-    BytePos,
-    Token<'input>,
-    Spanned<Error, BytePos>,
->;
+type LalrpopError<'input> =
+    lalrpop_util::ParseError<BytePos, Token<'input>, Spanned<Error, BytePos>>;
 
 /// Shrink hidden spans to fit the visible expressions and flatten singleton blocks.
 fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
     match expr.value {
-        Expr::Infix(_, _, ref last)
+        Expr::Infix { rhs: ref last, .. }
         | Expr::IfElse(_, _, ref last)
         | Expr::LetBindings(_, ref last)
         | Expr::TypeBindings(_, ref last)
