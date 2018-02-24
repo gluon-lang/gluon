@@ -752,6 +752,7 @@ impl<'a> Typecheck<'a> {
             self.generalize_type_errors(&mut errors);
             Err(errors)
         } else {
+            let _ = ::rename::rename(&mut self.symbols, &self.environment.environment, expr);
             debug!("Typecheck result: {}", typ);
             Ok(typ)
         }

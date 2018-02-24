@@ -15,7 +15,6 @@ use base::symbol::{Symbol, SymbolModule, SymbolRef};
 use base::types::{self, Alias, ArcType, ArgType, RecordSelector, Type, TypeEnv};
 use unify_type::{State, TypeError};
 use unify::{Error as UnifyError, Unifiable, Unifier, UnifierState};
-use substitution::Substitution;
 
 pub type Error = Errors<Spanned<RenameError, BytePos>>;
 
@@ -119,18 +118,11 @@ where
         Return,
     }
 
-    #[derive(Clone, Copy, Debug)]
-    enum ImplicitKind<'a> {
-        Always,
-        Binding(&'a Metadata),
-    }
-
     struct RenameVisitor<'a: 'b, 'b> {
         symbols: &'b mut SymbolModule<'a>,
         metadata: FnvMap<Symbol, Metadata>,
         env: Environment<'b>,
         errors: Error,
-        subs: Substitution<ArcType>,
     }
 
     impl<'a, 'b> RenameVisitor<'a, 'b> {
@@ -247,31 +239,7 @@ where
         /// Returns `Some(new_id)` if renaming was necessary or `None` if no renaming was necessary
         /// as `id` was currently unique (#Int+, #Float*, etc)
         fn rename(&self, id: &Symbol, expected: &ArcType) -> Result<Option<Symbol>, RenameError> {
-            let locals = self.env.stack.get_all(id);
-            let candidates = || {
-                locals.iter().flat_map(|bindings| {
-                    bindings
-                        .iter()
-                        .rev()
-                        .map(|bind| (&bind.0, Some(&bind.1), &bind.2))
-                })
-            };
-            // If there is a single binding (or no binding in case of primitives such as #Int+)
-            // there is no need to check for equivalency as typechecker couldnt have infered a
-            // different binding
-            if candidates().count() <= 1 {
-                return Ok(candidates().next().map(|tup| tup.0.clone()));
-            }
-            candidates()
-                .find(|tup| equivalent(&self.env, tup.2.remove_forall(), expected.remove_forall()))
-                .map(|tup| Some(tup.0.clone()))
-                .ok_or_else(|| RenameError::NoMatchingType {
-                    symbol: String::from(self.symbols.string(id)),
-                    expected: expected.clone(),
-                    possible_types: candidates()
-                        .map(|tup| (tup.1.cloned(), tup.2.clone()))
-                        .collect(),
-                })
+            Ok(self.env.stack.get(id).map(|t| t.0.clone()))
         }
 
         fn rename_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> Result<TailCall, RenameError> {
@@ -313,7 +281,7 @@ where
                     ref mut lhs,
                     ref mut op,
                     ref mut rhs,
-                    ..
+                    ref mut implicit_args,
                 } => {
                     if let Some(new_id) = self.rename(&op.value.name, &op.value.typ)? {
                         debug!(
@@ -325,6 +293,9 @@ where
                     }
                     self.visit_expr(lhs);
                     self.visit_expr(rhs);
+                    for arg in implicit_args {
+                        self.visit_expr(arg);
+                    }
                 }
                 Expr::Match(ref mut expr, ref mut alts) => {
                     self.visit_expr(expr);
@@ -415,36 +386,15 @@ where
                     let flat_map_id = flat_map_id
                         .as_mut()
                         .unwrap_or_else(|| ice!("flat_map_id not set before renaming"));
-                    match flat_map_id.value {
-                        Expr::Ident(ref mut flat_map_id) => if let Some(new_id) =
-                            self.rename(&flat_map_id.name, &flat_map_id.typ)?
-                        {
-                            debug!("Rename identifier {} = {}", flat_map_id.name, new_id);
-                            flat_map_id.name = new_id;
-                        },
-                        _ => unreachable!(),
-                    }
 
+                    self.visit_expr(flat_map_id);
                     self.visit_expr(bound);
 
                     self.env.stack.enter_scope();
                     self.env.stack_types.enter_scope();
 
-                    let typ = flat_map_id.env_type_of(&self.env);
-                    let args = self.make_implicit_args(id.span.end, typ);
-                    if args.is_empty() {
-                        id.value.name =
-                            self.stack_var(id.value.name.clone(), id.span, id.value.typ.clone());
-                    } else {
-                        flat_map_id.value = Expr::App {
-                            func: Box::new(mem::replace(
-                                flat_map_id,
-                                pos::spanned2(0.into(), 0.into(), Expr::Literal(Literal::Int(0))),
-                            )),
-                            implicit_args: Vec::new(),
-                            args,
-                        };
-                    }
+                    id.value.name =
+                        self.stack_var(id.value.name.clone(), id.span, id.value.typ.clone());
 
                     return Ok(TailCall::TailCall);
                 }
@@ -452,185 +402,6 @@ where
                 _ => ast::walk_mut_expr(self, expr),
             }
             Ok(TailCall::Return)
-        }
-
-        fn find_implicit(
-            &self,
-            span: Span<BytePos>,
-            implicit_type: &ArcType,
-        ) -> Result<SpannedExpr<Symbol>, RenameError> {
-            info!("Trying to resolve implicit {}", implicit_type);
-
-            // FIXME HACK
-            {
-                let mut has_variable = false;
-                ::base::types::walk_type(implicit_type, |typ: &ArcType| {
-                    if let Type::Variable(_) = **typ {
-                        has_variable = true;
-                    }
-                });
-                if has_variable {
-                    return Err(::rename::RenameError::UnableToResolveImplicit(
-                        implicit_type.clone(),
-                    ));
-                }
-            }
-
-            let is_implicit_type = implicit_type
-                .name()
-                .and_then(|typename| {
-                    self.metadata
-                        .get(typename)
-                        .or_else(|| self.env.env.get_metadata(typename))
-                        .and_then(|metadata| {
-                            metadata.comment.as_ref().map(|comment| {
-                                ::metadata::attributes(&comment).any(|(key, _)| key == "implicit")
-                            })
-                        })
-                })
-                .unwrap_or(false);
-
-            let found = self.env
-                .stack
-                .iter()
-                .filter_map(|(prev_id, &(ref id, _, ref typ))| {
-                    let implicit_kind_opt = if is_implicit_type {
-                        Some(ImplicitKind::Always)
-                    } else {
-                        self.metadata.get(prev_id).map(ImplicitKind::Binding)
-                    };
-                    implicit_kind_opt.and_then(|implicit_kind| {
-                        self.find_implicit_of(span, id, implicit_kind, typ, implicit_type)
-                    })
-                })
-                .next();
-
-            match found {
-                Some(mut path) => {
-                    debug!(
-                        "Found implicit `{}`",
-                        path.iter().rev().map(|id| &id.name).format(".")
-                    );
-
-                    let base_ident = path.pop().unwrap();
-                    Ok(path.into_iter().rev().fold(
-                        pos::spanned(span, Expr::Ident(base_ident)),
-                        |expr, ident| {
-                            pos::spanned(
-                                span,
-                                Expr::Projection(Box::new(expr), ident.name, ident.typ),
-                            )
-                        },
-                    ))
-                }
-                None => {
-                    debug!("Unable to resolve implicit for `{}`", implicit_type);
-                    Err(RenameError::UnableToResolveImplicit(implicit_type.clone()))
-                }
-            }
-        }
-
-        fn find_implicit_of(
-            &self,
-            span: Span<BytePos>,
-            id: &Symbol,
-            implicit_kind: ImplicitKind,
-            typ: &ArcType,
-            implicit_type: &ArcType,
-        ) -> Option<Vec<TypedIdent<Symbol>>> {
-            let is_implicit = match implicit_kind {
-                ImplicitKind::Always => true,
-                ImplicitKind::Binding(metadata) => {
-                    metadata.comment.as_ref().map_or(false, |comment| {
-                        ::metadata::attributes(&comment).any(|(key, _)| key == "implicit")
-                    })
-                }
-            };
-
-            if is_implicit {
-                trace!("Testing {}: {}", id, typ);
-            }
-
-            let state = ::unify_type::State::new(&self.env, &self.subs);
-            if is_implicit
-                && ::unify_type::subsumes(
-                    &self.subs,
-                    &mut ScopedMap::new(),
-                    0,
-                    state,
-                    implicit_type,
-                    typ,
-                ).is_ok()
-            {
-                Some(vec![
-                    TypedIdent {
-                        name: id.clone(),
-                        typ: implicit_type.clone(),
-                    },
-                ])
-            } else {
-                let typ = ::unify_type::new_skolem_scope(&self.subs, &FnvMap::default(), typ);
-                let ref typ = typ.instantiate_generics(&mut FnvMap::default());
-                let raw_type = resolve::remove_aliases(&self.env, typ.clone());
-                match *raw_type {
-                    Type::Record(_) => raw_type
-                        .row_iter()
-                        .filter_map(|field| {
-                            let field_implicit_kind_opt = match implicit_kind {
-                                ImplicitKind::Always => Some(ImplicitKind::Always),
-                                ImplicitKind::Binding(metadata) => metadata
-                                    .module
-                                    .get(field.name.declared_name())
-                                    .map(ImplicitKind::Binding),
-                            };
-                            field_implicit_kind_opt.and_then(|field_implicit_kind| {
-                                self.find_implicit_of(
-                                    span,
-                                    &field.name,
-                                    field_implicit_kind,
-                                    &field.typ,
-                                    implicit_type,
-                                ).map(|mut path| {
-                                    path.push(TypedIdent {
-                                        name: id.clone(),
-                                        typ: typ.clone(),
-                                    });
-                                    path
-                                })
-                            })
-                        })
-                        .next(),
-                    _ => None,
-                }
-            }
-        }
-
-        fn make_implicit_args(
-            &mut self,
-            pos: BytePos,
-            mut typ: ArcType,
-        ) -> Vec<SpannedExpr<Symbol>> {
-            let span = Span::new(pos, pos);
-
-            let mut args = Vec::new();
-            loop {
-                typ = match *typ {
-                    Type::Function(arg_type, ref arg, ref ret) if arg_type == ArgType::Implicit => {
-                        match self.find_implicit(span, arg) {
-                            Ok(implicit_id) => {
-                                args.push(implicit_id);
-                                ret.clone()
-                            }
-                            Err(err) => {
-                                self.errors.push(pos::spanned(span, err));
-                                break;
-                            }
-                        }
-                    }
-                    _ => break,
-                };
-            }
-            args
         }
     }
 
@@ -663,44 +434,6 @@ where
                 }
             }
 
-            if let Expr::Infix { .. } = expr.value {
-                let typ = if let Expr::Infix { ref op, .. } = expr.value {
-                    op.value.typ.clone()
-                } else {
-                    unreachable!()
-                };
-                let dummy = Expr::Literal(Literal::Int(0));
-                let func = mem::replace(&mut expr.value, dummy);
-                match func {
-                    Expr::Infix { lhs, op, rhs, .. } => {
-                        let mut args = self.make_implicit_args(op.span.end, typ);
-                        args.push(*lhs);
-                        args.push(*rhs);
-
-                        expr.value = Expr::App {
-                            func: Box::new(pos::spanned(op.span, Expr::Ident(op.value))),
-                            implicit_args: Vec::new(),
-                            args,
-                        };
-                    }
-                    _ => unreachable!(),
-                }
-            }
-
-            // Resolve implicit arguments
-            if let Ok(typ) = expr.try_type_of(&self.env) {
-                let args = self.make_implicit_args(expr.span.end, typ);
-                if !args.is_empty() {
-                    let dummy = Expr::Literal(Literal::Int(0));
-                    let func = mem::replace(&mut expr.value, dummy);
-                    expr.value = Expr::App {
-                        func: Box::new(pos::spanned(expr.span, func)),
-                        implicit_args: Vec::new(),
-                        args,
-                    }
-                }
-            }
-
             for _ in 0..i {
                 self.env.stack.exit_scope();
                 self.env.stack_types.exit_scope();
@@ -719,70 +452,11 @@ where
             stack: ScopedMap::new(),
             stack_types: ScopedMap::new(),
         },
-        subs: Substitution::new(Kind::typ()),
     };
     visitor.visit_expr(expr);
     if visitor.errors.has_errors() {
         Err(visitor.errors)
     } else {
         Ok(())
-    }
-}
-
-pub fn equivalent(env: &TypeEnv, actual: &ArcType, inferred: &ArcType) -> bool {
-    debug!("Equivalent {} <=> {}", actual, inferred);
-    use substitution::Substitution;
-    // FIXME This Substitution is unnecessary for equivalence unification
-    let subs = Substitution::new(Kind::typ());
-    let mut unifier = UnifierState {
-        state: State::new(env, &subs),
-        unifier: Equivalent {
-            map: FnvMap::default(),
-            equiv: true,
-        },
-    };
-    unifier.try_match(actual, inferred);
-    unifier.unifier.equiv
-}
-
-struct Equivalent {
-    map: FnvMap<Symbol, ArcType>,
-    equiv: bool,
-}
-
-impl<'a> Unifier<State<'a>, ArcType> for UnifierState<State<'a>, Equivalent> {
-    fn report_error(&mut self, _error: UnifyError<ArcType, TypeError<Symbol>>) {
-        self.unifier.equiv = false;
-    }
-
-    fn try_match_res(
-        &mut self,
-        l: &ArcType,
-        r: &ArcType,
-    ) -> Result<Option<ArcType>, UnifyError<ArcType, TypeError<Symbol>>> {
-        debug!("{} ====> {}", l, r);
-        match (&**l, &**r) {
-            (&Type::Generic(ref gl), &Type::Generic(ref gr)) if gl == gr => Ok(None),
-            (&Type::Skolem(ref gl), &Type::Skolem(ref gr)) if gl == gr => Ok(None),
-            (&Type::Generic(ref gl), _) => match self.unifier.map.get(&gl.id).cloned() {
-                Some(ref typ) => self.try_match_res(typ, r),
-                None => {
-                    self.unifier.map.insert(gl.id.clone(), r.clone());
-                    Ok(None)
-                }
-            },
-            (&Type::Skolem(ref gl), _) => match self.unifier.map.get(&gl.name).cloned() {
-                Some(ref typ) => self.try_match_res(typ, r),
-                None => {
-                    self.unifier.map.insert(gl.name.clone(), r.clone());
-                    Ok(None)
-                }
-            },
-            _ => l.zip_match(r, self),
-        }
-    }
-
-    fn error_type(&mut self) -> Option<ArcType> {
-        None
     }
 }
