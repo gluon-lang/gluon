@@ -65,7 +65,7 @@ f
 "#;
     let result = support::typecheck(text);
 
-    assert_eq!(result, Ok(Type::int()));
+    assert_req!(result.map(|t| t.to_string()), Ok("[Int] -> Int"));
 }
 
 #[test]
@@ -425,6 +425,74 @@ let fold_m2 x : [Foldable t] -> _ = fold_m monad
 
 let f x : List Int -> _ = fold_m2 (\a b -> Cons a Nil) x
 f
+"#;
+    let result = support::typecheck(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn resolve_implicit_which_is_generic() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+/// @implicit
+type Semigroup a = {
+    append : a -> a -> a
+}
+
+type List a = | Nil | Cons a (List a)
+
+let semigroup : Semigroup (List a) =
+    let append xs ys =
+        match xs with
+        | Cons x zs -> Cons x (append zs ys)
+        | Nil -> ys
+
+    { append }
+
+let (<>) s : [Semigroup a] -> a -> a -> a = s.append
+
+Nil <> Nil
+"#;
+    let result = support::typecheck(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn resolve_implicit_semigroup() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+/// @implicit
+type Semigroup a = {
+    append : a -> a -> a
+}
+
+type Applicative (f : Type -> Type) = {
+    apply : forall a b . f (a -> b) -> f a -> f b,
+}
+
+let any x = any x
+
+type List a = | Nil | Cons a (List a)
+
+let semigroup : Semigroup (List a) = any ()
+
+let (<>) s : [Semigroup a] -> a -> a -> a = s.append
+
+let map f xs =
+    match xs with
+    | Cons y ys -> Cons (f y) (map f ys)
+    | Nil -> Nil
+
+let applicative : Applicative List =
+
+    let apply f xs =
+        match f with
+        | Cons g gs -> (map g xs) <> (apply gs xs)
+        | Nil -> Nil
+
+    { apply }
+
+()
 "#;
     let result = support::typecheck(text);
     assert!(result.is_ok(), "{}", result.unwrap_err());

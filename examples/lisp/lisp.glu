@@ -119,7 +119,7 @@ let primitive_binop name int_op float_op : _ -> Binop Int -> Binop Float -> Map 
         | Float f -> wrap f
         | _ -> fail "Expected float"
 
-    let fold unpack op = fold_m (\acc x -> map_lisp (\y -> op acc y) (unpack x))
+    let fold unpack op : (Expr -> Lisp a) -> Binop a -> a -> List Expr -> _ = fold_m (\acc x -> map_lisp (\y -> op acc y) (unpack x))
 
     let f xs : List Expr -> Lisp Expr =
         match xs with

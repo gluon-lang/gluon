@@ -71,7 +71,7 @@ impl<'a> State<'a> {
     ) -> Result<Option<ArcType>, TypeError<Symbol>> {
         if let Some(alias_id) = typ.alias_ident() {
             if self.reduced_aliases.iter().any(|name| name == alias_id) {
-                return Err(TypeError::SelfRecursive(alias_id.clone()));
+                return Err(TypeError::SelfRecursiveAlias(alias_id.clone()));
             }
             self.reduced_aliases.push(alias_id.clone());
         }
@@ -95,7 +95,7 @@ impl<'a> State<'a> {
                     });
                     if let Some(alias_id) = typ.alias_ident() {
                         if self.reduced_aliases.iter().any(|name| name == alias_id) {
-                            return Err(TypeError::SelfRecursive(alias_id.clone()));
+                            return Err(TypeError::SelfRecursiveAlias(alias_id.clone()));
                         }
                         self.reduced_aliases.push(alias_id.clone());
                     }
@@ -116,7 +116,7 @@ impl<'a> State<'a> {
 pub enum TypeError<I> {
     UndefinedType(I),
     FieldMismatch(I, I),
-    SelfRecursive(I),
+    SelfRecursiveAlias(I),
     UnableToGeneralize(I),
     MissingFields(ArcType<I>, Vec<I>),
 }
@@ -125,6 +125,7 @@ impl From<ResolveError> for TypeError<Symbol> {
     fn from(error: ResolveError) -> TypeError<Symbol> {
         match error {
             ResolveError::UndefinedType(id) => TypeError::UndefinedType(id),
+            ResolveError::SelfRecursiveAlias(id) => TypeError::SelfRecursiveAlias(id),
         }
     }
 }
@@ -201,7 +202,7 @@ where
                 l, r
             ),
             TypeError::UndefinedType(ref id) => write!(f, "Type `{}` does not exist.", id),
-            TypeError::SelfRecursive(ref id) => write!(
+            TypeError::SelfRecursiveAlias(ref id) => write!(
                 f,
                 "The use of self recursion in type `{}` could not be unified.",
                 id

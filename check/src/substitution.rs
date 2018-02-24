@@ -298,6 +298,9 @@ impl<T: Substitutable> Substitution<T> {
         });
         assert!(id == self.variables.len());
         debug!("New var {}", self.variables.len());
+        if id == 13 {
+            id.to_string();
+        }
 
         let var = f(var_id);
         self.variables.push(var.clone());

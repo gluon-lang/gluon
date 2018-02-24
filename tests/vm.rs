@@ -454,12 +454,12 @@ None::<i32>
 
 test_expr!{ function_with_implicit_argument_from_record,
 r#"
-let f t: [Int] -> Int = t
+let f t x: [Int] -> () -> Int = t
 let x =
     /// @implicit
     let test = 1
     { test }
-f
+f ()
 "#,
 1
 }
@@ -476,7 +476,7 @@ fn rename_types_after_binding() {
     let _ = ::env_logger::try_init();
 
     let text = r#"
-let list  = import! std.list
+let list = import! std.list
 in
 let { List } = list
 and eq_list: Eq (List Int) = list.eq { (==) }

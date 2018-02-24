@@ -300,12 +300,6 @@ impl<'a> MetadataEnv for Environment<'a> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-enum ImplicitKind<'a> {
-    Always,
-    Binding(&'a Metadata),
-}
-
 /// Type returned from the main typecheck function to make sure that nested `type` and `let`
 /// expressions dont overflow the stack
 enum TailCall {
@@ -571,7 +565,7 @@ impl<'a> Typecheck<'a> {
             fn visit_expr(&mut self, expr: &mut SpannedExpr<Symbol>) {
                 let mut replacement = None;
                 if let Expr::Ident(ref mut id) = expr.value {
-                    if let Some(implicit_bindings) = self.tc.implicit_vars.get(&id.name) {
+                    if let Some(implicit_bindings) = self.tc.implicit_vars.get(&id.name).cloned() {
                         debug!(
                             "Resolving {} against:\n{}",
                             id.typ,
@@ -581,6 +575,7 @@ impl<'a> Typecheck<'a> {
                         replacement = implicit_bindings
                             .iter()
                             .find(|&&(_, ref typ)| {
+                                let typ = self.tc.new_skolem_scope(typ);
                                 let state =
                                     ::unify_type::State::new(&self.tc.environment, &self.tc.subs);
                                 ::unify_type::subsumes(
@@ -589,7 +584,7 @@ impl<'a> Typecheck<'a> {
                                     0,
                                     state,
                                     &id.typ,
-                                    typ,
+                                    &typ,
                                 ).is_ok()
                             })
                             .map(|&(ref path, _)| {
@@ -628,7 +623,7 @@ impl<'a> Typecheck<'a> {
                     *expr = replacement;
                 }
                 match expr.value {
-                    ast::Expr::LetBindings(..) => (),
+                    ast::Expr::LetBindings(_, ref mut expr) => ast::walk_mut_expr(self, expr),
                     _ => ast::walk_mut_expr(self, expr),
                 }
             }
@@ -803,16 +798,6 @@ impl<'a> Typecheck<'a> {
                             scope_count += 1;
                         }
                         TailCall::Type(mut typ) => {
-                            loop {
-                                typ = match *typ {
-                                    Type::Function(arg_type, _, ref ret)
-                                        if arg_type == ArgType::Implicit =>
-                                    {
-                                        ret.clone()
-                                    }
-                                    _ => break,
-                                };
-                            }
                             returned_type = match expected_type {
                                 Some(expected_type) => {
                                     let level = self.subs.var_id();
@@ -918,7 +903,7 @@ impl<'a> Typecheck<'a> {
                 op.value.typ = func_type.clone();
 
                 self.typecheck_application(
-                    expr.span,
+                    op.span,
                     func_type,
                     implicit_args,
                     Some(&mut **lhs).into_iter().chain(Some(&mut **rhs)),
@@ -1113,7 +1098,35 @@ impl<'a> Typecheck<'a> {
                             let typ = self.find_at(field.name.span, &field.name.value);
                             match expected_field_type {
                                 Some(expected_field_type) => {
-                                    self.subsumes(field.name.span, level, &expected_field_type, typ)
+                                    let mut implicit_args = Vec::new();
+                                    let typ = self.subsumes_implicit(
+                                        field.name.span,
+                                        level,
+                                        &expected_field_type,
+                                        typ,
+                                        &mut |implicit_arg| {
+                                            implicit_args.push(implicit_arg);
+                                        },
+                                    );
+
+                                    if !implicit_args.is_empty() {
+                                        field.value = Some(pos::spanned(
+                                            field.name.span,
+                                            Expr::App {
+                                                func: Box::new(pos::spanned(
+                                                    field.name.span,
+                                                    Expr::Ident(TypedIdent {
+                                                        name: field.name.value.clone(),
+                                                        typ: typ.clone(),
+                                                    }),
+                                                )),
+                                                implicit_args,
+                                                args: Vec::new(),
+                                            },
+                                        ));
+                                    }
+
+                                    typ
                                 }
                                 None => typ,
                             }
@@ -1200,17 +1213,42 @@ impl<'a> Typecheck<'a> {
                         self.subs.new_var()
                     }
                 };
-                *flat_map_id = Some(Box::new(pos::spanned(
+                let flat_map_type = self.instantiate_generics(&flat_map_type);
+
+                let flat_map_expr = pos::spanned(
                     id.span,
                     Expr::Ident(TypedIdent {
                         name: flat_map.clone(),
                         typ: flat_map_type.clone(),
                     }),
-                )));
-                let flat_map_type = self.instantiate_generics(&flat_map_type);
+                );
                 let flat_map_type = match *flat_map_type {
-                    Type::Function(ArgType::Implicit, _, ref r) => r.clone(),
-                    _ => flat_map_type.clone(),
+                    Type::Function(ArgType::Implicit, ref arg_type, ref r) => {
+                        let name = Symbol::from("implicit_arg");
+                        let implicits = self.implicit_bindings.last().unwrap().clone();
+                        self.implicit_vars.insert(name.clone(), implicits);
+                        *flat_map_id = Some(Box::new(pos::spanned(
+                            id.span,
+                            Expr::App {
+                                func: Box::new(flat_map_expr),
+                                args: vec![
+                                    pos::spanned(
+                                        id.span,
+                                        Expr::Ident(TypedIdent {
+                                            name,
+                                            typ: arg_type.clone(),
+                                        }),
+                                    ),
+                                ],
+                                implicit_args: Vec::new(),
+                            },
+                        )));
+                        r.clone()
+                    }
+                    _ => {
+                        *flat_map_id = Some(Box::new(flat_map_expr));
+                        flat_map_type.clone()
+                    }
                 };
 
                 id.value.typ = self.subs.new_var();
@@ -1266,11 +1304,12 @@ impl<'a> Typecheck<'a> {
 
             func_type = match f.as_function() {
                 Some((arg_ty, ret_ty)) => {
-                    let actual = self.typecheck(arg, arg_ty);
+                    let arg_ty = self.subs.real(arg_ty).clone();
+                    let actual = self.typecheck(arg, &arg_ty);
                     let actual = self.instantiate_generics(&actual);
 
                     let level = self.subs.var_id();
-                    self.subsumes_expr(expr_check_span(arg), level, arg_ty, actual, arg);
+                    self.subsumes_expr(expr_check_span(arg), level, &arg_ty, actual, arg);
 
                     ret_ty.clone()
                 }
@@ -1322,6 +1361,7 @@ impl<'a> Typecheck<'a> {
                 match_type
             }
             Pattern::Constructor(ref mut id, ref mut args) => {
+                match_type = self.new_skolem_scope(&match_type);
                 match_type = self.subs.real(&match_type).clone();
                 match_type = self.instantiate_generics(&match_type);
                 if let Some(new) = self.original_symbols.get(&id.name) {
@@ -1342,6 +1382,7 @@ impl<'a> Typecheck<'a> {
                 types: ref mut associated_types,
                 ref mut fields,
             } => {
+                match_type = self.new_skolem_scope(&match_type);
                 match_type = self.instantiate_generics(&match_type);
                 *curr_typ = match_type.clone();
 
@@ -1449,6 +1490,7 @@ impl<'a> Typecheck<'a> {
                 ref mut typ,
                 ref mut elems,
             } => {
+                match_type = self.new_skolem_scope(&match_type);
                 let tuple_type = {
                     let subs = &mut self.subs;
                     self.type_cache
@@ -1621,8 +1663,7 @@ impl<'a> Typecheck<'a> {
                 // Merge the type declaration and the actual type
                 debug!("Generalize at {} = {}", level, bind.resolved_type);
                 self.generalize_binding(level, bind);
-                typ = self.new_skolem_scope(&bind.resolved_type);
-                self.typecheck_pattern(&mut bind.name, typ);
+                self.typecheck_pattern(&mut bind.name, bind.resolved_type.clone());
                 debug!("Generalized to {}", bind.resolved_type);
                 self.finish_pattern(level, &mut bind.name, &bind.resolved_type);
             } else {
@@ -2148,7 +2189,8 @@ impl<'a> Typecheck<'a> {
 
                             let implicits = self.implicit_bindings.last().unwrap().clone();
                             debug!(
-                                "Implicits {}",
+                                "Implicits for {}: {}",
+                                arg_type,
                                 implicits
                                     .iter()
                                     .map(|t| format!(
@@ -2310,45 +2352,47 @@ impl<'a> Typecheck<'a> {
         let implicit_type = self.subs.real(implicit_type);
         info!("Trying to resolve implicit {}", implicit_type);
 
-        let is_implicit_type = implicit_type
-            .name()
-            .and_then(|typename| {
-                self.metadata
-                    .get(typename)
-                    .or_else(|| self.environment.environment.get_metadata(typename))
-                    .and_then(|metadata| {
-                        metadata.comment.as_ref().map(|comment| {
-                            ::metadata::attributes(&comment).any(|(key, _)| key == "implicit")
-                        })
-                    })
-            })
-            .unwrap_or(false);
-
         let mut path = Vec::new();
-        let implicit_kind_opt = if is_implicit_type {
-            Some(ImplicitKind::Always)
-        } else {
-            self.metadata.get(id).map(ImplicitKind::Binding)
-        };
-        if let Some(implicit_kind) = implicit_kind_opt {
-            self.find_implicit_of(&id, implicit_kind, implicit_type, &mut path, consumer)
-        }
+        let metadata = self.metadata.get(id);
+        let mut alias_resolver = resolve::AliasRemover::new();
+        self.find_implicit_of(
+            &id,
+            metadata,
+            implicit_type,
+            &mut path,
+            &mut alias_resolver,
+            consumer,
+        )
     }
 
     fn find_implicit_of(
         &self,
         id: &Symbol,
-        implicit_kind: ImplicitKind,
+        metadata: Option<&Metadata>,
         typ: &ArcType,
         path: &mut Vec<TypedIdent<Symbol>>,
+        alias_resolver: &mut resolve::AliasRemover,
         consumer: &mut FnMut(Vec<TypedIdent<Symbol>>, &ArcType),
     ) {
-        let is_implicit = match implicit_kind {
-            ImplicitKind::Always => true,
-            ImplicitKind::Binding(metadata) => metadata.comment.as_ref().map_or(false, |comment| {
-                ::metadata::attributes(&comment).any(|(key, _)| key == "implicit")
-            }),
+        let has_implicit_attribute = |metadata: &Metadata| {
+            metadata
+                .comment
+                .as_ref()
+                .map(|comment| ::metadata::attributes(&comment).any(|(key, _)| key == "implicit"))
         };
+        let mut is_implicit = metadata.and_then(&has_implicit_attribute).unwrap_or(false);
+
+        if !is_implicit {
+            is_implicit = typ.remove_forall()
+                .name()
+                .and_then(|typename| {
+                    self.metadata
+                        .get(typename)
+                        .or_else(|| self.environment.environment.get_metadata(typename))
+                        .and_then(has_implicit_attribute)
+                })
+                .unwrap_or(false);
+        }
 
         if is_implicit {
             let mut path = path.clone();
@@ -2360,35 +2404,35 @@ impl<'a> Typecheck<'a> {
         }
         let typ = ::unify_type::new_skolem_scope(&self.subs, &FnvMap::default(), typ);
         let ref typ = typ.instantiate_generics(&mut FnvMap::default());
-        let raw_type = resolve::remove_aliases(&self.environment, typ.clone());
-        debug!("{}", raw_type);
+        let resolver_len = alias_resolver.len();
+        let raw_type = match alias_resolver.remove_aliases(&self.environment, typ.clone()) {
+            Ok(t) => t,
+            // Don't recurse into self recursive aliases
+            Err(_) => return,
+        };
         match *raw_type {
             Type::Record(_) => for field in raw_type.row_iter() {
-                let field_implicit_kind_opt = match implicit_kind {
-                    ImplicitKind::Always => Some(ImplicitKind::Always),
-                    ImplicitKind::Binding(metadata) => metadata
-                        .module
-                        .get(field.name.declared_name())
-                        .map(ImplicitKind::Binding),
-                };
+                let field_metadata = metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.module.get(field.name.declared_name()));
 
-                if let Some(field_implicit_kind) = field_implicit_kind_opt {
-                    path.push(TypedIdent {
-                        name: id.clone(),
-                        typ: typ.clone(),
-                    });
-                    self.find_implicit_of(
-                        &field.name,
-                        field_implicit_kind,
-                        &field.typ,
-                        path,
-                        consumer,
-                    );
-                    path.pop();
-                }
+                path.push(TypedIdent {
+                    name: id.clone(),
+                    typ: typ.clone(),
+                });
+                self.find_implicit_of(
+                    &field.name,
+                    field_metadata,
+                    &field.typ,
+                    path,
+                    alias_resolver,
+                    consumer,
+                );
+                path.pop();
             },
             _ => (),
         }
+        alias_resolver.reset(resolver_len);
     }
 }
 

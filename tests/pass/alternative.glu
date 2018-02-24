@@ -1,11 +1,11 @@
 let { run, writer, assert_eq } = import! std.test
-let prelude = import! std.prelude
+let prelude @ { Alternative } = import! std.prelude
 let { Applicative, (*>) } = import! std.applicative
 let int = import! std.int
 let list = import! std.list
 let option = import! std.option
 
-let test_alt show eq alt =
+let test_alt alt show eq : [Alternative f] -> (Show Int -> Show (f Int)) -> (Eq Int -> Eq (f Int)) -> _ =
     let { (<|>), or, empty } = import! std.prelude
     let { wrap } = alt.applicative
 
@@ -14,5 +14,5 @@ let test_alt show eq alt =
     assert empty empty *> assert (empty <|> wrap 1) (wrap 1) *> assert (empty <|> empty) empty
         *> assert (empty <|> empty <|> wrap 10) (wrap 10)
 
-test_alt option.show option.eq option.alternative
-    *> test_alt list.show list.eq list.alternative
+test_alt option.show option.eq
+    *> test_alt list.show list.eq

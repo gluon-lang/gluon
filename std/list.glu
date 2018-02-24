@@ -151,12 +151,12 @@ let scan compare xs less equal greater : (a -> Ordering)
         | EQ -> scan compare ys less (Cons y equal) greater
         | GT -> scan compare ys less equal (Cons y greater)
 
-let sort ord xs : Ord a -> List a -> List a =
+let sort ord xs : [Ord a] -> List a -> List a =
     match xs with
     | Nil -> Nil
     | Cons pivot ys ->
         let (less, equal, greater) = scan (\a -> ord.compare a pivot) ys Nil (Cons pivot Nil) Nil
-        sort ord less <> equal <> sort ord greater
+        sort less <> equal <> sort greater
 
 
 {
