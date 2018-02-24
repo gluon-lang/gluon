@@ -227,7 +227,11 @@ type Traversable t = {
     traverse : forall a b m . Applicative m -> (a -> m b) -> t a -> m (t b)
 }
 
-let traverse t : forall a b m . [Traversable t] -> Applicative m -> (a -> m b) -> t a -> m (t b) = t.traverse
+let traverse t : forall a b m . [Traversable t] -> Applicative m
+        -> (a -> m b)
+        -> t a
+        -> m (t b)
+    = t.traverse
 
 let sequence t applicative : [Traversable t] -> Applicative m -> t (m a) -> m (t a) =
     traverse applicative (\x -> x)

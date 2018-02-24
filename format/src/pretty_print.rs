@@ -184,7 +184,8 @@ where
                             None => arena.nil(),
                             Some(ref typ) => arena.text(": ")
                                 .append(types::pretty_print(self, typ))
-                                .append(self.space_after(typ.span().end)),
+                                .append(self.space_after(typ.span().end))
+                                .nest(INDENT),
                         },
                         "="
                     ];

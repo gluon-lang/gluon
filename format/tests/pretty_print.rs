@@ -236,8 +236,8 @@ let {
 fn preserve_comments_in_function_types() {
     let expr = r#"#!/bin/gluon
 let x : /* first */ Int /* Int */ ->
-    // Float
-    Float /* last */ = ()
+        // Float
+        Float /* last */ = ()
 x
 "#;
     assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
@@ -247,8 +247,8 @@ x
 fn preserve_comments_app_types() {
     let expr = r#"#!/bin/gluon
 let x : Test /* first */ Int
-    // middle
-    Float /* last */ = ()
+        // middle
+        Float /* last */ = ()
 x
 "#;
     assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);

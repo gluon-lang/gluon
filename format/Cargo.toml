@@ -19,7 +19,7 @@ gluon_base = { path = "../base", version = "0.7.1" } # GLUON
 gluon_parser = { path = "../parser", version = "0.7.1" } # GLUON
 
 [dev-dependencies]
-env_logger = "0.3.4"
+env_logger = "0.5.0"
 difference = "1.0"
 pretty_assertions = "0.4"
 
