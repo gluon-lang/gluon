@@ -2177,7 +2177,6 @@ impl<'a> Typecheck<'a> {
         debug!("Subsume expr {} <=> {}", expected, actual);
         // Act as the implicit arguments of `actual` has been supplied (unless `expected` is
         // specified to have implicit arguments)
-        let orig = actual.clone();
         loop {
             let temp = self.instantiate_generics(&actual);
             actual = match *temp {

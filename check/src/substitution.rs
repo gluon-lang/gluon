@@ -448,11 +448,10 @@ impl<T: Substitutable + Clone> Substitution<T> {
 }
 impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
     /// Takes `id` and updates the substitution to say that it should have the same type as `typ`
-    pub fn union<P, S>(&self, state: P, id: &T::Variable, typ: &T) -> Result<Option<T>, Error<T>>
+    pub fn union(&self, id: &T::Variable, typ: &T) -> Result<Option<T>, Error<T>>
     where
         T::Variable: Clone,
-        T: Unifiable<S> + fmt::Display,
-        P: FnMut() -> S,
+        T: fmt::Display,
     {
         let resolved_type = typ.on_union();
         let typ = resolved_type.unwrap_or(typ);
@@ -491,90 +490,5 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
             }
         }
         Ok(resolved_type.cloned())
-    }
-}
-
-use unify::{Error as UnifyError, Unifiable, Unifier, UnifierState};
-
-pub fn equivalent<S, T>(
-    state: S,
-    subs: &Substitution<T>,
-    actual: &T,
-    inferred: &T,
-) -> Result<(), ()>
-where
-    T: Unifiable<S> + PartialEq + Clone,
-    T::Variable: Clone,
-{
-    let mut unifier = UnifierState {
-        state,
-        unifier: Equivalent {
-            equiv: true,
-            subs,
-            temp_subs: FnvMap::default(),
-        },
-    };
-    unifier.try_match(actual, inferred);
-    if !unifier.unifier.equiv {
-        Err(())
-    } else {
-        Ok(())
-    }
-}
-
-struct Equivalent<'e, T: Substitutable + 'e> {
-    equiv: bool,
-    subs: &'e Substitution<T>,
-    temp_subs: FnvMap<u32, T>,
-}
-
-impl<'e, S, T> Unifier<S, T> for UnifierState<S, Equivalent<'e, T>>
-where
-    T: Unifiable<S> + PartialEq + Clone + 'e,
-    T::Variable: Clone,
-{
-    fn report_error(&mut self, _error: UnifyError<T, T::Error>) {
-        self.unifier.equiv = false;
-    }
-
-    fn try_match_res(&mut self, l: &T, r: &T) -> Result<Option<T>, UnifyError<T, T::Error>> {
-        let (l, r) = {
-            use std::borrow::Cow;
-
-            let subs = self.unifier.subs;
-            let temp_subs = &mut self.unifier.temp_subs;
-
-            let l = subs.real(l);
-            let l = l.get_var()
-                .and_then(|l| temp_subs.get(&l.get_id()).cloned().map(Cow::Owned))
-                .unwrap_or(Cow::Borrowed(l));
-
-            let r = subs.real(r);
-            let r = r.get_var()
-                .and_then(|r| temp_subs.get(&r.get_id()).cloned().map(Cow::Owned))
-                .unwrap_or(Cow::Borrowed(r));
-
-            match (l.get_var(), r.get_var()) {
-                (Some(l), Some(r)) if l.get_id() == r.get_id() => return Ok(None),
-                (_, Some(r)) => {
-                    temp_subs.insert(r.get_id(), l.clone().into_owned());
-                    return Ok(None);
-                }
-                (Some(l), _) => {
-                    temp_subs.insert(l.get_id(), r.clone().into_owned());
-                    return Ok(None);
-                }
-                (_, _) => {}
-            }
-            (l, r)
-        };
-        // Both sides are concrete types, the only way they can be equal is if
-        // the matcher finds their top level to be equal (and their sub-terms
-        // unify)
-        l.zip_match(&r, self)
-    }
-
-    fn error_type(&mut self) -> Option<T> {
-        None
     }
 }

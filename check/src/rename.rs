@@ -1,20 +1,12 @@
 use std::fmt;
-use std::mem;
 
-use itertools::Itertools;
-
-use base::ast::{self, DisplayEnv, Do, Expr, Literal, MutVisitor, Pattern, SpannedExpr, Typed,
-                TypedIdent};
+use base::ast::{self, DisplayEnv, Do, Expr, MutVisitor, Pattern, SpannedExpr, Typed, TypedIdent};
 use base::error::Errors;
-use base::fnv::FnvMap;
-use base::kind::{ArcKind, Kind, KindEnv};
-use base::metadata::{Metadata, MetadataEnv};
+use base::kind::{ArcKind, KindEnv};
 use base::pos::{self, BytePos, Span, Spanned};
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolModule, SymbolRef};
-use base::types::{self, Alias, ArcType, ArgType, RecordSelector, Type, TypeEnv};
-use unify_type::{State, TypeError};
-use unify::{Error as UnifyError, Unifiable, Unifier, UnifierState};
+use base::types::{self, Alias, ArcType, RecordSelector, Type, TypeEnv};
 
 pub type Error = Errors<Spanned<RenameError, BytePos>>;
 
@@ -60,16 +52,8 @@ impl fmt::Display for RenameError {
     }
 }
 
-trait RenameEnv: MetadataEnv + TypeEnv {}
-
-impl<T> RenameEnv for T
-where
-    T: ?Sized + MetadataEnv + TypeEnv,
-{
-}
-
 struct Environment<'b> {
-    env: &'b RenameEnv,
+    env: &'b TypeEnv,
     stack: ScopedMap<Symbol, (Symbol, Span<BytePos>, ArcType)>,
     stack_types: ScopedMap<Symbol, Alias<Symbol, ArcType>>,
 }
@@ -109,7 +93,7 @@ pub fn rename<E>(
     expr: &mut SpannedExpr<Symbol>,
 ) -> Result<(), Error>
 where
-    E: MetadataEnv + TypeEnv,
+    E: TypeEnv,
 {
     use base::resolve;
 
@@ -120,7 +104,6 @@ where
 
     struct RenameVisitor<'a: 'b, 'b> {
         symbols: &'b mut SymbolModule<'a>,
-        metadata: FnvMap<Symbol, Metadata>,
         env: Environment<'b>,
         errors: Error,
     }
@@ -238,13 +221,13 @@ where
         /// Renames `id` to the unique identifier which have the type `expected`
         /// Returns `Some(new_id)` if renaming was necessary or `None` if no renaming was necessary
         /// as `id` was currently unique (#Int+, #Float*, etc)
-        fn rename(&self, id: &Symbol, expected: &ArcType) -> Result<Option<Symbol>, RenameError> {
-            Ok(self.env.stack.get(id).map(|t| t.0.clone()))
+        fn rename(&self, id: &Symbol) -> Option<Symbol> {
+            self.env.stack.get(id).map(|t| t.0.clone())
         }
 
         fn rename_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> Result<TailCall, RenameError> {
             match expr.value {
-                Expr::Ident(ref mut id) => if let Some(new_id) = self.rename(&id.name, &id.typ)? {
+                Expr::Ident(ref mut id) => if let Some(new_id) = self.rename(&id.name) {
                     debug!("Rename identifier {} = {}", id.name, new_id);
                     id.name = new_id;
                 },
@@ -258,9 +241,7 @@ where
                     for (field, expr_field) in field_types.iter().zip(exprs) {
                         match expr_field.value {
                             Some(ref mut expr) => self.visit_expr(expr),
-                            None => if let Some(new_id) =
-                                self.rename(&expr_field.name.value, &field.typ)?
-                            {
+                            None => if let Some(new_id) = self.rename(&expr_field.name.value) {
                                 debug!("Rename record field {} = {}", expr_field.name, new_id);
                                 expr_field.value = Some(pos::spanned(
                                     expr_field.name.span,
@@ -283,7 +264,7 @@ where
                     ref mut rhs,
                     ref mut implicit_args,
                 } => {
-                    if let Some(new_id) = self.rename(&op.value.name, &op.value.typ)? {
+                    if let Some(new_id) = self.rename(&op.value.name) {
                         debug!(
                             "Rename {} = {}",
                             self.symbols.string(&op.value.name),
@@ -441,12 +422,9 @@ where
         }
     }
 
-    let (_, metadata) = ::metadata::metadata(env, expr);
-
     let mut visitor = RenameVisitor {
         symbols: symbols,
         errors: Errors::new(),
-        metadata,
         env: Environment {
             env: env,
             stack: ScopedMap::new(),

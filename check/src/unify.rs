@@ -108,16 +108,6 @@ pub trait Unifiable<S>: Substitutable + Sized {
         UnifierState<S, U>: Unifier<S, Self>;
 }
 
-pub trait Fresh {
-    fn fresh(&self) -> Self;
-}
-
-impl Fresh for () {
-    fn fresh(&self) -> Self {
-        *self
-    }
-}
-
 /// Unify `l` and `r` taking into account and updating the substitution `subs` using the
 /// [Union-Find](https://en.wikipedia.org/wiki/Disjoint-set_data_structure) algorithm to
 /// resolve which types must be equal.
@@ -133,7 +123,6 @@ where
     T: Unifiable<S> + PartialEq + fmt::Display + fmt::Debug + Clone,
     T::Variable: Clone,
     T::Factory: Clone,
-    S: Fresh,
 {
     let mut state = UnifierState {
         state: state,
@@ -164,7 +153,6 @@ where
     T: Unifiable<S> + PartialEq + Clone + fmt::Display + 'e,
     T::Variable: Clone,
     T::Factory: Clone,
-    S: Fresh,
 {
     fn report_error(&mut self, error: Error<T, T::Error>) {
         self.unifier.errors.push(error);
@@ -181,12 +169,12 @@ where
         // unified with whatever the other type is
         match (l.get_var(), r.get_var()) {
             (_, Some(r_var)) => {
-                let replacement = subs.union(|| self.state.fresh(), r_var, l)?;
+                let replacement = subs.union(r_var, l)?;
                 debug!("Union {} <> {}", l, replacement.as_ref().unwrap_or(r));
                 Ok(replacement)
             }
             (Some(l_var), _) => {
-                let replacement = subs.union(|| self.state.fresh(), l_var, r)?;
+                let replacement = subs.union(l_var, r)?;
                 debug!("Union {} <> {}", replacement.as_ref().unwrap_or(l), r);
                 Ok(replacement.or_else(|| Some(r.clone())))
             }
@@ -235,12 +223,6 @@ mod test {
     impl fmt::Display for TType {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             write!(f, "{:?}", self)
-        }
-    }
-
-    impl TType {
-        fn ident(s: &str) -> TType {
-            TType(Box::new(Type::Ident(s.into())))
         }
     }
 
@@ -310,10 +292,6 @@ mod test {
                 _ => Err(Error::TypeMismatch(self.clone(), other.clone())),
             }
         }
-    }
-
-    fn mk_fn(a: &TType, r: &TType) -> TType {
-        TType(Box::new(Type::Arrow(a.clone(), r.clone())))
     }
 
     fn unify(

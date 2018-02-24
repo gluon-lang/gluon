@@ -12,7 +12,7 @@ use base::resolve::{self, Error as ResolveError};
 use base::scoped_map::ScopedMap;
 
 use unify;
-use unify::{Error as UnifyError, Fresh, GenericVariant, Unifiable, Unifier};
+use unify::{Error as UnifyError, GenericVariant, Unifiable, Unifier};
 use substitution::{Constraints, Substitutable, Substitution, Variable, VariableFactory};
 
 impl VariableFactory for ArcKind {
@@ -45,12 +45,6 @@ pub struct State<'a> {
     subs: &'a Substitution<ArcType>,
     record_context: Option<(ArcType, ArcType)>,
     pub in_alias: bool,
-}
-
-impl<'a> Fresh for State<'a> {
-    fn fresh(&self) -> Self {
-        State::new(self.env, self.subs)
-    }
 }
 
 impl<'a> State<'a> {
@@ -1138,7 +1132,7 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for UnifierState<'a, Subsume<'e>> {
                     None => l,
                 };
                 debug!("Union merge {} <> {}", left, r_var);
-                subs.union(|| self.state.fresh(), r_var, left)?;
+                subs.union(r_var, left)?;
                 Ok(None)
             }
 
@@ -1173,12 +1167,12 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for UnifierState<'a, Subsume<'e>> {
             }
             (_, &Type::Variable(ref r)) => {
                 debug!("Union merge {} <> {}", l, r);
-                subs.union(|| self.state.fresh(), r, l)?;
+                subs.union(r, l)?;
                 Ok(None)
             }
             (&Type::Variable(ref l), _) => {
                 debug!("Union merge {} <> {}", l, r);
-                subs.union(|| self.state.fresh(), l, r)?;
+                subs.union(l, r)?;
                 Ok(Some(r.clone()))
             }
             _ => {
