@@ -569,9 +569,10 @@ impl VmBuilder {
                 .build(),
         );
 
-        let gluon_path = env::var("GLUON_PATH").unwrap_or_else(|_| String::from("."));
         let import = Import::new(DefaultImporter);
-        import.add_path(gluon_path);
+        if let Ok(gluon_path) = env::var("GLUON_PATH") {
+            import.add_path(gluon_path);
+        }
         vm.get_macros().insert(String::from("import"), import);
 
         Compiler::new()
