@@ -1,8 +1,7 @@
 let prelude = import! std.prelude
-let { Test, run, writer, assert, assert_ieq, assert_feq, assert_seq }  = import! std.test
+let { Test, run, writer, assert, assert_ieq, assert_feq, assert_seq, ? } = import! std.test
 let int = import! std.int
-let { (+), (-), (*) } = int.num
-let state @ { State, put, get, modify, runState, evalState, execState } = import! std.state
+let state @ { State, put, get, modify, runState, evalState, execState, ? } = import! std.state
 let { Applicative, (*>) } = import! std.applicative
 
 let tests =

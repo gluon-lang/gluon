@@ -8,16 +8,14 @@ let { (<>) } = import! std.prelude
 let { Bool } = import! std.bool
 let float = import! std.float
 let int = import! std.int
-let result = import! std.result
-let { Result } = result
+let result @ { Result, ? } = import! std.result
 let { Option } = import! std.option
 
-let list = import! std.list
-let { List } = list
+let list @ { List, ? } = import! std.list
 
 let map = import! std.map
 let { Map } = map
-let prim_map = map.make string.ord
+let prim_map @ { ? } = map.make string.ord
 
 let { Expr, Function, Lisp, LispState } = import! "examples/lisp/types.glu"
 let parser = import! "examples/lisp/parser.glu"

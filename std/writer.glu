@@ -11,6 +11,8 @@ type Impl w = {
 
 let make monoid : Monoid w -> Impl w =
     let { (<>) } = import! std.prelude
+    // TODO Simpler way to bring semigroup into the implicit resolution
+    let { ? } = { semigroup = monoid.semigroup }
 
     let functor : Functor (Writer w) = { map = \f m -> { value = f m.value, writer = m.writer } }
 

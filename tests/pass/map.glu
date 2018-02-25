@@ -3,8 +3,8 @@ let int = import! std.int
 let option @ { Option } = import! std.option
 let string = import! std.string
 let { (<>) } = import! std.prelude
-let { Test, run, writer, assert, assert_eq }  = import! std.test
-let map  = import! std.map
+let { Test, run, writer, assert, assert_eq, ? }  = import! std.test
+let map @ { ? } = import! std.map
 let { Applicative, (*>) } = import! std.applicative
 let list @ { List } = import! std.list
 
@@ -22,7 +22,7 @@ let assert_values = assert_eq (list.show int.show) (list.eq int.eq)
 let assert_opt = assert_eq (option.show int.show) (option.eq int.eq)
 
 let ord_map = map.make string.ord
-let { singleton, find, insert, to_list, keys, values } = ord_map
+let { singleton, find, insert, to_list, keys, values, ? } = ord_map
 let { empty } = ord_map.monoid
 
 let basic_tests =

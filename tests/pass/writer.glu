@@ -1,7 +1,7 @@
-let prelude  = import! std.prelude
-let list  = import! std.list
-let { Writer }  = import! std.writer
-let { Test, run, writer, assert, assert_ieq, assert_feq }  = import! std.test
+let prelude = import! std.prelude
+let list @ { ? } = import! std.list
+let { Writer, ? }  = import! std.writer
+let test @ { Test, run, writer, assert, assert_ieq, assert_feq, ? }  = import! std.test
 let { Applicative, (*>) } = import! std.applicative
 let { count } = import! std.prelude
 

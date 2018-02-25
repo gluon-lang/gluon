@@ -24,7 +24,7 @@ type Functor f = {
     map : forall a b . (a -> b) -> f a -> f b
 }
 
-let map functor : [Functor f] -> (a -> b) -> f a -> f b = functor.map
+let map ?functor : [Functor f] -> (a -> b) -> f a -> f b = functor.map
 
 /// @implicit
 type Applicative (f : Type -> Type) = {
@@ -49,14 +49,18 @@ type Applicative (f : Type -> Type) = {
     wrap : forall a . a -> f a
 }
 
-let wrap app : [Applicative f] -> a -> f a = app.wrap
-let apply app : [Applicative f] -> f (a -> b) -> f a -> f b = app.apply
-let (<*>) app : [Applicative f] -> f (a -> b) -> f a -> f b = app.apply
-let (<*) app l r : [Applicative f] -> f a -> f b -> f a = app.functor.map (\x _ -> x) l <*> r
-let (*>) app l r : [Applicative f] -> f a -> f b -> f b = app.functor.map (\_ x -> x) l <*> r
+let wrap ?app : [Applicative f] -> a -> f a = app.wrap
+let apply ?app : [Applicative f] -> f (a -> b) -> f a -> f b = app.apply
+let (<*>) ?app : [Applicative f] -> f (a -> b) -> f a -> f b = app.apply
+let (<*) ?app l r : [Applicative f] -> f a -> f b -> f a = app.functor.map (\x _ -> x) l <*> r
+let (*>) ?app l r : [Applicative f] -> f a -> f b -> f b = app.functor.map (\_ x -> x) l <*> r
 
-let map2 app f a b : [Applicative f] -> (a -> b -> c) -> f a -> f b -> f c = (app.functor.map f a) <*> b
-let map3 app f a b c : [Applicative f] -> (a -> b -> c -> d) -> f a -> f b -> f c -> f d =
+let map2 ?app f a b : [Applicative f] -> (a -> b -> c)
+        -> f a
+        -> f b
+        -> f c
+    = (app.functor.map f a) <*> b
+let map3 ?app f a b c : [Applicative f] -> (a -> b -> c -> d) -> f a -> f b -> f c -> f d =
     (app.functor.map f a) <*> b <*> c
 
 {

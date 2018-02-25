@@ -478,7 +478,8 @@ where
                 rhs.span.containment(&self.pos),
             ) {
                 (Ordering::Greater, Ordering::Less) => {
-                    self.found = MatchState::Found(Match::Ident(op.span, &op.value.name, &op.value.typ));
+                    self.found =
+                        MatchState::Found(Match::Ident(op.span, &op.value.name, &op.value.typ));
                 }
                 (_, Ordering::Greater) | (_, Ordering::Equal) => self.visit_expr(rhs),
                 _ => self.visit_expr(lhs),
@@ -492,7 +493,7 @@ where
                 }) {
                     (false, Some(bind)) => {
                         for arg in &bind.args {
-                            self.on_found.on_ident(&arg.value);
+                            self.on_found.on_ident(&arg.name.value);
                         }
 
                         enum Variant<'a> {
@@ -502,7 +503,7 @@ where
                             Expr(&'a SpannedExpr<Symbol>),
                         }
                         let iter = once(Variant::Pattern(&bind.name))
-                            .chain(bind.args.iter().map(Variant::Ident))
+                            .chain(bind.args.iter().map(|arg| Variant::Ident(&arg.name)))
                             .chain(bind.typ.iter().map(Variant::Type))
                             .chain(once(Variant::Expr(&bind.expr)));
                         let (_, sel) = self.select_spanned(iter, |x| match *x {
@@ -1085,6 +1086,7 @@ impl SuggestionQuery {
                                 ref typ,
                                 ref types,
                                 ref fields,
+                                ..
                             },
                         ..
                     }) => {

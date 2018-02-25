@@ -19,7 +19,7 @@ fn read_file() {
         let prelude = import! std.prelude
         let array = import! std.array
         let { assert }  = import! std.test
-        let io = import! std.io
+        let io @ { ? } = import! std.io
         let { wrap } = io.applicative
         let { flat_map, (>>=) } = import! std.prelude
 
@@ -163,7 +163,7 @@ fn spawn_on_runexpr() {
     let _ = ::env_logger::try_init();
 
     let text = r#"
-        let io@{ applicative = applicative@{ wrap }, monad = { flat_map } } = import! std.io
+        let io@{ applicative = applicative@{ wrap }, monad = { flat_map }, ? } = import! std.io
         let thread = import! std.thread
 
         do child = thread.new_thread ()
@@ -194,7 +194,7 @@ fn spawn_on_runexpr_in_catch() {
 
     let text = r#"
         let prelude = import! std.prelude
-        let io@{ applicative, monad } = import! std.io
+        let io@{ applicative, monad, ? } = import! std.io
         let { Applicative, (*>), wrap } = import! std.applicative
         let { flat_map, (>>=) } = import! std.prelude
         let thread = import! std.thread

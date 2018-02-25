@@ -78,7 +78,12 @@ pub fn metadata(
                     ref fields,
                     ref types,
                     ref typ,
+                    ref implicit_import,
                 } => {
+                    if let Some(ref implicit_import) = *implicit_import {
+                        self.stack_var(implicit_import.value.clone(), metadata.clone());
+                    }
+
                     for field in fields {
                         if let Some(m) = metadata.module.remove(field.name.value.as_ref()) {
                             let id = match field.value {

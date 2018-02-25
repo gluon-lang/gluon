@@ -260,6 +260,7 @@ fn incomplete_alternative_with_partial_pattern() {
                                 value: Some(no_loc(Pattern::Error)),
                             },
                         ],
+                        implicit_import: None,
                     },
                     error(),
                 ),

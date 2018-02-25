@@ -297,6 +297,7 @@ fn record_pattern() {
                 value: Some(no_loc(Pattern::Ident(TypedIdent::new(intern("z"))))),
             },
         ],
+        implicit_import: None,
     };
     assert_eq!(e, case(id("x"), vec![(pattern, id("z"))]));
 }
@@ -324,6 +325,7 @@ fn let_pattern() {
                                 value: None,
                             },
                         ],
+                        implicit_import: None,
                     }),
                     typ: None,
                     resolved_type: Type::hole(),
@@ -353,6 +355,7 @@ fn nested_pattern() {
                 value: Some(nested),
             },
         ],
+        implicit_import: None,
     };
     assert_eq!(e, case(id("x"), vec![(pattern, id("z"))]));
 }
@@ -473,7 +476,7 @@ id
                     name: no_loc(Pattern::Ident(TypedIdent::new(intern("id")))),
                     typ: None,
                     resolved_type: Type::hole(),
-                    args: vec![no_loc(TypedIdent::new(intern("x")))],
+                    args: vec![Argument::explicit(no_loc(TypedIdent::new(intern("x"))))],
                     expr: id("x"),
                 },
             ],
@@ -501,7 +504,7 @@ id
                     name: no_loc(Pattern::Ident(TypedIdent::new(intern("id")))),
                     typ: None,
                     resolved_type: Type::hole(),
-                    args: vec![no_loc(TypedIdent::new(intern("x")))],
+                    args: vec![Argument::explicit(no_loc(TypedIdent::new(intern("x"))))],
                     expr: id("x"),
                 },
                 ValueBinding {
@@ -512,7 +515,7 @@ id
                     name: no_loc(Pattern::Ident(TypedIdent::new(intern("id2")))),
                     typ: None,
                     resolved_type: Type::hole(),
-                    args: vec![no_loc(TypedIdent::new(intern("y")))],
+                    args: vec![Argument::explicit(no_loc(TypedIdent::new(intern("y"))))],
                     expr: id("y"),
                 },
             ],

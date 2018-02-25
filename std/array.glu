@@ -1,7 +1,7 @@
 //@NO-IMPLICIT-PRELUDE
 
 let prim = import! std.array.prim
-let int = import! std.int
+let int @ { ? } = import! std.int
 let prelude @ { Num, Eq, Ord, Foldable, Traversable, Functor, (<), (==), (-), (+) } = import! std.prelude
 
 // FIXME Implement the functions using this in Rust so we don't have quadratic complexity for `map` etc

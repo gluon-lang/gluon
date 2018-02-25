@@ -7,7 +7,7 @@ use base::ast::{Do, Expr, Pattern, SpannedExpr, SpannedPattern, ValueBinding};
 use base::kind::Kind;
 use base::pos::{self, BytePos, HasSpan, Span, Spanned};
 use base::source;
-use base::types::{self, Prec, Type};
+use base::types::{self, ArgType, Prec, Type};
 use self::types::pretty_print as pretty_types;
 
 const INDENT: usize = 4;
@@ -177,7 +177,15 @@ where
                             self.pretty_pattern(&bind.name),
                             " ",
                             arena.concat(bind.args.iter().map(|arg| {
-                                arena.text(arg.value.name.as_ref()).append(" ")
+                                chain![
+                                    arena;
+                                    if arg.arg_type == ArgType::Implicit {
+                                        arena.text("?")
+                                    } else {
+                                        arena.nil()
+                                    },
+                                    arena.text(arg.name.value.name.as_ref()).append(" ")
+                                ]
                             }))
                         ].group(),
                         match bind.typ {
@@ -549,6 +557,7 @@ where
             Pattern::Record {
                 ref fields,
                 ref types,
+                ref implicit_import,
                 ..
             } => {
                 let iter = self.comma_sep(
@@ -571,14 +580,19 @@ where
                                 }
                             ];
                             pos::spanned(field.name.span, doc)
-                        })),
+                        }))
+                        .chain(
+                            implicit_import
+                                .as_ref()
+                                .map(|spanned| pos::spanned(spanned.span, arena.text("?"))),
+                        ),
                     |spanned| spanned.value,
                 );
                 let doc = arena.concat(iter).nest(INDENT);
                 chain![arena;
                     "{",
                     doc,
-                    if types.is_empty() && fields.is_empty() {
+                    if types.is_empty() && fields.is_empty() && implicit_import.is_none() {
                         arena.nil()
                     } else {
                         arena.space()

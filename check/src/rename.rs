@@ -17,8 +17,6 @@ pub enum RenameError {
         expected: ArcType,
         possible_types: Vec<(Option<Span<BytePos>>, ArcType)>,
     },
-    /// An implicit paramter were not possible to resolve
-    UnableToResolveImplicit(ArcType<Symbol>),
 }
 
 impl fmt::Display for RenameError {
@@ -43,11 +41,6 @@ impl fmt::Display for RenameError {
                 }
                 Ok(())
             }
-            RenameError::UnableToResolveImplicit(ref typ) => write!(
-                f,
-                "Implicit parameter with type `{}` could not be resolved",
-                typ
-            ),
         }
     }
 }
@@ -121,6 +114,7 @@ where
                     ref mut fields,
                     ref types,
                     ref typ,
+                    ..
                 } => {
                     let field_types = self.find_fields(typ);
                     for field in fields {
@@ -305,8 +299,11 @@ where
                             for (typ, arg) in types::arg_iter(bind.resolved_type.remove_forall())
                                 .zip(&mut bind.args)
                             {
-                                arg.value.name =
-                                    self.stack_var(arg.value.name.clone(), expr.span, typ.clone());
+                                arg.name.value.name = self.stack_var(
+                                    arg.name.value.name.clone(),
+                                    expr.span,
+                                    typ.clone(),
+                                );
                             }
                             self.visit_expr(&mut bind.expr);
                             self.env.stack.exit_scope();

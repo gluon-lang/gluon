@@ -13,7 +13,7 @@ use base::ast::{self, SpannedExpr, Typed, Visitor};
 use base::types::{Field, Type};
 use base::symbol::Symbol;
 
-use check::rename::RenameError;
+use check::typecheck::TypeError;
 
 use support::MockEnv;
 
@@ -26,7 +26,7 @@ fn single_implicit_arg() {
     let _ = ::env_logger::try_init();
     let text = r#"
 
-let f x y: [Int] -> Int -> Int = x
+let f ?x y: [Int] -> Int -> Int = x
 /// @implicit
 let i = 123
 f 42
@@ -41,7 +41,7 @@ fn multiple_implicit_args() {
     let _ = ::env_logger::try_init();
     let text = r#"
 
-let f x y z w: [Int] -> [String] -> String -> Int -> Int = x
+let f ?x ?y z w: [Int] -> [String] -> String -> Int -> Int = x
 /// @implicit
 let i = 123
 /// @implicit
@@ -50,7 +50,7 @@ f x 42
 "#;
     let result = support::typecheck(text);
 
-    assert_eq!(result, Ok(Type::int()));
+    assert_req!(result, Ok(Type::int()));
 }
 
 #[test]
@@ -58,7 +58,7 @@ fn just_a_implicit_arg() {
     let _ = ::env_logger::try_init();
     let text = r#"
 
-let f x: [Int] -> Int = x
+let f ?x: [Int] -> Int = x
 /// @implicit
 let i = 123
 f
@@ -73,7 +73,7 @@ fn function_implicit_arg() {
     let _ = ::env_logger::try_init();
     let text = r#"
 
-let f eq l r: [a -> a -> Bool] -> a -> a -> Bool = eq l r
+let f ?eq l r: [a -> a -> Bool] -> a -> a -> Bool = eq l r
 /// @implicit
 let eq_int l r : Int -> Int -> Bool = True
 /// @implicit
@@ -92,7 +92,7 @@ fn infix_implicit_arg() {
     let _ = ::env_logger::try_init();
     let text = r#"
 
-let (==) eq l r: [a -> a -> Bool] -> a -> a -> Bool = eq l r
+let (==) ?eq l r: [a -> a -> Bool] -> a -> a -> Bool = eq l r
 /// @implicit
 let eq_int l r : Int -> Int -> Bool = True
 /// @implicit
@@ -129,10 +129,10 @@ fn implicit_from_record_field() {
     let _ = ::env_logger::try_init();
     let text = r#"
 
-let f eq l r: [a -> a -> Bool] -> a -> a -> Bool = eq l r
+let f ?eq l r: [a -> a -> Bool] -> a -> a -> Bool = eq l r
 /// @implicit
 let eq_int l r : Int -> Int -> Bool = True
-let eq_string =
+let eq_string @ { ? } =
     /// @implicit
     let eq l r : String -> String -> Bool = True
     { eq }
@@ -151,7 +151,7 @@ fn implicit_on_type() {
     let text = r#"
 /// @implicit
 type Test = | Test
-let f x y: [a] -> a -> a = x
+let f ?x y: [a] -> a -> a = x
 let i = Test
 f Test
 "#;
@@ -173,8 +173,8 @@ fn forward_implicit_parameter() {
     let text = r#"
 /// @implicit
 type Test a = | Test a
-let f x : [Test a] -> Test a = x
-let g x y : [Test a] -> a -> Test a = f
+let f ?x : [Test a] -> Test a = x
+let g ?x y : [Test a] -> a -> Test a = f
 let i = Test 1
 g 2
 ()
@@ -217,7 +217,7 @@ g 2
 fn implicit_as_function_argument() {
     let _ = ::env_logger::try_init();
     let text = r#"
-let (==) eq l r: [a -> a -> Bool] -> a -> a -> Bool = eq l r
+let (==) ?eq l r: [a -> a -> Bool] -> a -> a -> Bool = eq l r
 /// @implicit
 let eq_int l r : Int -> Int -> Bool = True
 /// @implicit
@@ -269,8 +269,8 @@ type Applicative (f : Type -> Type) = {
     apply : forall a b . f (a -> b) -> f a -> f b,
 }
 
-let (<*>) app : [Applicative f] -> f (a -> b) -> f a -> f b = app.apply
-let (<*) app l r : [Applicative f] -> f a -> f b -> f a = app.functor.map (\x _ -> x) l <*> r
+let (<*>) ?app : [Applicative f] -> f (a -> b) -> f a -> f b = app.apply
+let (<*) ?app l r : [Applicative f] -> f a -> f b -> f a = app.functor.map (\x _ -> x) l <*> r
 ()
 "#;
     let result = support::typecheck(text);
@@ -292,10 +292,10 @@ type Applicative (f : Type -> Type) = {
     apply : forall a b . f (a -> b) -> f a -> f b,
 }
 
-let map functor : [Functor f] -> (a -> b) -> f a -> f b = functor.map
+let map ?functor : [Functor f] -> (a -> b) -> f a -> f b = functor.map
 
-let test app f xs: [Applicative f] -> (a -> b) -> f a -> f b =
-    map f xs
+let test xs: [Applicative f] -> (a -> b) -> f a -> f b =
+    map xs
 ()
 "#;
     let result = support::typecheck(text);
@@ -312,7 +312,7 @@ type Applicative (f : Type -> Type) = {
     wrap : forall a . a -> f a,
 }
 
-let wrap app : [Applicative f] -> a -> f a = app.wrap
+let wrap ?app : [Applicative f] -> a -> f a = app.wrap
 
 type Test a = | Test a
 
@@ -337,7 +337,7 @@ type Applicative (f : Type -> Type) = {
     wrap : forall a . a -> f a,
 }
 
-let wrap app : [Applicative f] -> a -> f a = app.wrap
+let wrap ?app : [Applicative f] -> a -> f a = app.wrap
 
 type Test a = | Test a
 
@@ -349,7 +349,7 @@ let applicative : Applicative Test = {
 ()
 "#;
     let (_expr, result) = support::typecheck_expr(text);
-    assert_err!(result, Rename(RenameError::UnableToResolveImplicit(..)));
+    assert_err!(result, TypeError::UnableToResolveImplicit(..));
 }
 
 #[test]
@@ -362,7 +362,7 @@ type Applicative (f : Type -> Type) = {
     wrap : forall a . a -> f a,
 }
 
-let wrap app : [Applicative f] -> a -> f a = app.wrap
+let wrap ?app : [Applicative f] -> a -> f a = app.wrap
 
 type Test a = | Test a
 
@@ -391,13 +391,13 @@ type Alternative f = {
 
 type Test a = | Test a | Empty
 
-let empty alt : [Alternative f] -> f a = alt.empty
+let empty ?alt : [Alternative f] -> f a = alt.empty
 
 let x: Test Int = empty
 x
 "#;
     let result = support::typecheck(text);
-    assert_err!(result, Rename(RenameError::UnableToResolveImplicit(..)));
+    assert_err!(result, TypeError::UnableToResolveImplicit(..));
 }
 
 #[test]
@@ -419,9 +419,9 @@ let foldable : Foldable List =
 let monad : Monad List =
     { }
 
-let fold_m fold monad f z w : forall a b m t . [Foldable t] -> Monad m -> (a -> b -> m a) -> a -> t b -> () = ()
+let fold_m monad f z w : forall a b m t . [Foldable t] -> Monad m -> (a -> b -> m a) -> a -> t b -> () = ()
 
-let fold_m2 x : [Foldable t] -> _ = fold_m monad
+let fold_m2 ?x : [Foldable t] -> _ = fold_m monad
 
 let f x : List Int -> _ = fold_m2 (\a b -> Cons a Nil) x
 f
@@ -449,7 +449,7 @@ let semigroup : Semigroup (List a) =
 
     { append }
 
-let (<>) s : [Semigroup a] -> a -> a -> a = s.append
+let (<>) ?s : [Semigroup a] -> a -> a -> a = s.append
 
 Nil <> Nil
 "#;
@@ -476,7 +476,7 @@ type List a = | Nil | Cons a (List a)
 
 let semigroup : Semigroup (List a) = any ()
 
-let (<>) s : [Semigroup a] -> a -> a -> a = s.append
+let (<>) ?s : [Semigroup a] -> a -> a -> a = s.append
 
 let map f xs =
     match xs with
@@ -493,6 +493,38 @@ let applicative : Applicative List =
     { apply }
 
 ()
+"#;
+    let result = support::typecheck(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn resolve_generic_type_multiple_times() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+/// @implicit
+type Applicative (f : Type -> Type) = {
+}
+
+type State s a = s -> (s, a)
+
+let any x = any x
+
+let impls = 
+    let applicative : Applicative (State s) = { }
+
+    { applicative }
+
+let { ? } = impls
+
+let (*>) ?app l r : [Applicative f] -> f a -> f b -> f b = any ()
+
+let put value : s -> State s () = any ()
+
+let get : State s s = any ()
+
+(put 1 *> get)
+(put "hello" *> get)
 "#;
     let result = support::typecheck(text);
     assert!(result.is_ok(), "{}", result.unwrap_err());

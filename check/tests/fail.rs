@@ -12,7 +12,6 @@ use base::symbol::Symbol;
 use base::types::{ArcType, Type};
 
 use check::typecheck::TypeError;
-use check::rename::RenameError;
 
 #[macro_use]
 mod support;
@@ -130,13 +129,13 @@ let f x = x #Float+ 1.0
 fn unable_to_resolve_implicit_without_attribute() {
     let _ = env_logger::try_init();
     let text = r#"
-let f x y : [a] -> a -> a = x
+let f ?x y : [a] -> a -> a = x
 let i = 123
 f 1
 "#;
     let result = support::typecheck(text);
 
-    assert_err!(result, Rename(RenameError::UnableToResolveImplicit(..)));
+    assert_err!(result, TypeError::UnableToResolveImplicit(..));
 }
 
 #[test]

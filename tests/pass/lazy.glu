@@ -1,4 +1,4 @@
-let { run, writer, assert_ieq } = import! std.test
+let { run, writer, assert_ieq, ? } = import! std.test
 let prelude = import! std.prelude
 let { Applicative, (*>), wrap } = import! std.applicative
 let int = import! std.int

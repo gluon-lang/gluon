@@ -758,7 +758,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                         ast::Pattern::Ident(ref id) => id.clone(),
                         _ => unreachable!(),
                     },
-                    args: bind.args.iter().map(|arg| arg.value.clone()).collect(),
+                    args: bind.args.iter().map(|arg| arg.name.value.clone()).collect(),
                     expr: self.translate_alloc(&bind.expr),
                 })
                 .collect();
@@ -796,7 +796,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                         Closure {
                             pos: bind.name.span.start,
                             name: name.clone(),
-                            args: bind.args.iter().map(|arg| arg.value.clone()).collect(),
+                            args: bind.args.iter().map(|arg| arg.name.value.clone()).collect(),
                             expr: self.translate_alloc(&bind.expr),
                         },
                     ])
@@ -1448,20 +1448,48 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 .map(|equation| equation.result)
                 .unwrap_or(default),
             Some(_) => {
+                fn bind_variables<'b>(
+                    env: &PrimitiveEnv,
+                    pat: &ast::SpannedPattern<Symbol>,
+                    variable: CExpr<'b>,
+                    binder: &mut Binder<'b>,
+                ) {
+                    match pat.value {
+                        ast::Pattern::As(ref id, ref pat) => {
+                            binder.bind_id(
+                                TypedIdent {
+                                    name: id.clone(),
+                                    typ: pat.env_type_of(&env),
+                                },
+                                variable,
+                            );
+                            bind_variables(env, pat, variable, binder);
+                        }
+                        ast::Pattern::Record {
+                            implicit_import: Some(ref implicit_import),
+                            ..
+                        } => {
+                            binder.bind_id(
+                                TypedIdent {
+                                    name: implicit_import.value.clone(),
+                                    typ: pat.env_type_of(&env),
+                                },
+                                variable,
+                            );
+                        }
+                        _ => (),
+                    }
+                }
                 // Extract the identifier from each `id@PATTERN` and bind it with `let` before this match
                 {
-                    let as_pattern_ids = equations.iter().filter_map(|equation| {
-                        match equation.patterns.first().expect("Pattern").value {
-                            ast::Pattern::As(ref id, ref pat) => Some(TypedIdent {
-                                name: id.clone(),
-                                typ: pat.env_type_of(&self.0.env),
-                            }),
-                            _ => None,
-                        }
-                    });
-
-                    for id in as_pattern_ids {
-                        binder.bind_id(id, variables.first().expect("Variable"));
+                    for equation in equations {
+                        let pat = equation.patterns.first().expect("Pattern");
+                        bind_variables(
+                            self.0.env,
+                            pat,
+                            variables.first().expect("Variable"),
+                            &mut binder,
+                        );
                     }
                 }
 

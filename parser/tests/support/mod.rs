@@ -1,8 +1,8 @@
 #![allow(unused)]
 
-use base::ast::{walk_mut_ast_type, walk_mut_expr, walk_mut_pattern, Alternative, Array, AstType,
-                DisplayEnv, Expr, ExprField, IdentEnv, Lambda, Literal, MutVisitor, Pattern,
-                SpannedAlias, SpannedAstType, SpannedExpr, SpannedIdent, SpannedPattern,
+use base::ast::{walk_mut_ast_type, walk_mut_expr, walk_mut_pattern, Alternative, Argument, Array,
+                AstType, DisplayEnv, Expr, ExprField, IdentEnv, Lambda, Literal, MutVisitor,
+                Pattern, SpannedAlias, SpannedAstType, SpannedExpr, SpannedIdent, SpannedPattern,
                 TypeBinding, TypedIdent, ValueBinding};
 use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
@@ -134,7 +134,7 @@ pub fn let_a(s: &str, args: &[&str], e: SpExpr, b: SpExpr) -> SpExpr {
                 typ: None,
                 resolved_type: Type::hole(),
                 args: args.iter()
-                    .map(|i| no_loc(TypedIdent::new(intern(i))))
+                    .map(|i| Argument::explicit(no_loc(TypedIdent::new(intern(i)))))
                     .collect(),
                 expr: e,
             },

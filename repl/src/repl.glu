@@ -1,5 +1,5 @@
 let prelude = import! std.prelude
-let io = import! std.io
+let io @ { ? } = import! std.io
 let map @ { Map } = import! std.map
 let { Bool } = import! std.bool
 let { Option } = import! std.option
@@ -17,7 +17,7 @@ let { Applicative, wrap, (*>) } = import! std.applicative
 let { flat_map, (>>=) } = import! std.prelude
 
 let { append = (++) } = string.semigroup
-let ord_map @ { singleton, find, insert } = map.make string.ord
+let ord_map @ { singleton, find, insert, ? } = map.make string.ord
 let { (<>) } = import! std.prelude
 let { empty } = ord_map.monoid
 
@@ -125,7 +125,7 @@ let make_commands cpu_pool : CpuPool -> Commands =
         empty
         cmds
 
-let { Parser, parse } = import! std.parser
+let { Parser, parse, ? } = import! std.parser
 
 
 let cmd_parser : Parser { cmd : String, arg : String } =

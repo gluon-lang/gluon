@@ -1,6 +1,6 @@
 let string = import! std.string
 let { append = (++) } = string.semigroup
-let writer @ { Writer } = import! std.writer
+let writer @ { Writer, ? } = import! std.writer
 let prelude @ { Show, Num, Eq, Applicative, Monad, Monoid } = import! std.prelude
 let float = import! std.float
 let int = import! std.int
@@ -27,4 +27,16 @@ let run test : Test a -> () =
     | Cons _ _ -> error (foldl (\acc err -> acc ++ "\n" ++ err) "" test.writer)
     | Nil -> ()
 
-{ Test, writer = testWriter, assert, assert_eq, assert_ieq, assert_feq, assert_seq, run }
+{
+    Test,
+    writer = testWriter,
+    functor = testWriter.functor,
+    applicative = testWriter.applicative,
+    monad = testWriter.monad,
+    assert,
+    assert_eq,
+    assert_ieq,
+    assert_feq,
+    assert_seq,
+    run,
+}

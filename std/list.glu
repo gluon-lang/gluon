@@ -1,9 +1,9 @@
-let prelude @ { Ordering } = import! std.prelude
+let prelude @ { Ordering, ? } = import! std.prelude
 let { Semigroup, Monoid, Eq, Show } = prelude
 let { Functor, Applicative, Alternative, Monad, Foldable, Traversable } = prelude
 let { Bool } = import! std.bool
-let string = import! std.string
-let array = import! std.array
+let string @ { ? } = import! std.string
+let array @ { ? } = import! std.array
 
 /// A linked list type
 type List a = | Nil | Cons a (List a)
@@ -63,19 +63,30 @@ let applicative : Applicative List =
 
     { functor = functor, apply, wrap }
 
-let { map, (<*>), wrap } = import! std.applicative
+let { map, (<*>), wrap, ? } = import! std.applicative
 let { (<|>) } = import! std.prelude
 
-let many alternative x : Alternative f -> f a -> f (List a) =
+// FIXME Implicit resolution
+let many ?alt x : [Alternative f] -> f a -> f (List a) =
 
-    let many_v _ = some_v () <|> wrap Nil
-    and some_v _ = map (\h l -> Cons h l) x <*> many_v ()
+    let many_v _ =
+        let { ? } = alt
+        some_v () <|> wrap Nil
+    and some_v _ =
+        let { ? } = alt
+        let { ? } = alt.applicative
+        map (\h l -> Cons h l) x <*> many_v ()
     many_v ()
 
-let some alternative x : Alternative f -> f a -> f (List a) =
+let some ?alt x : [Alternative f] -> f a -> f (List a) =
 
-    let many_v _ = some_v () <|> wrap Nil
-    and some_v _ = map (\h l -> Cons h l) x <*> many_v ()
+    let many_v _ =
+        let { ? } = alt
+        some_v () <|> wrap Nil
+    and some_v _ =
+        let { ? } = alt
+        let { ? } = alt.applicative
+        map (\h l -> Cons h l) x <*> many_v ()
     some_v ()
 
 let alternative : Alternative List = {
@@ -138,11 +149,11 @@ let filter predicate xs : (a -> Bool) -> List a -> List a =
         if predicate y then Cons y rest else rest
 
 let scan compare xs less equal greater : (a -> Ordering)
-    -> List a
-    -> List a
-    -> List a
-    -> List a
-    -> { _0 : List a, _1 : List a, _2 : List a } =
+        -> List a
+        -> List a
+        -> List a
+        -> List a
+        -> { _0 : List a, _1 : List a, _2 : List a } =
     match xs with
     | Nil -> (less, equal, greater)
     | Cons y ys ->
@@ -151,7 +162,7 @@ let scan compare xs less equal greater : (a -> Ordering)
         | EQ -> scan compare ys less (Cons y equal) greater
         | GT -> scan compare ys less equal (Cons y greater)
 
-let sort ord xs : [Ord a] -> List a -> List a =
+let sort ?ord xs : [Ord a] -> List a -> List a =
     match xs with
     | Nil -> Nil
     | Cons pivot ys ->

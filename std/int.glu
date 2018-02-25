@@ -40,7 +40,7 @@ let ord : Ord Int = {
     compare = \l r -> if l #Int< r then LT else if l #Int== r then EQ else GT,
 }
 
-let num: Num Int = {
+let num : Num Int = {
     ord = ord,
     (+) = additive.semigroup.append,
     (-) = \l r -> l #Int- r,

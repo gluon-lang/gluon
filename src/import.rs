@@ -331,9 +331,10 @@ impl<I> Import<I> {
                 let result =
                     file_contents.expand_macro_with(compiler, macros, &modulename, &file_contents);
 
-                let has_errors = macros.errors.has_errors();
+                let has_errors =
+                    macros.errors.has_errors() || result.is_err() || macros.error_in_expr;
                 let errors = mem::replace(&mut macros.errors, prev_errors);
-                if has_errors {
+                if errors.has_errors() {
                     macros.errors.push(pos::spanned(
                         span,
                         Box::new(::Error::Macro(InFile::new(

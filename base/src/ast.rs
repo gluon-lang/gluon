@@ -5,7 +5,7 @@ use std::ops::{Deref, DerefMut};
 
 use pos::{self, BytePos, HasSpan, Span, Spanned};
 use symbol::Symbol;
-use types::{self, Alias, AliasData, ArcType, Generic, Type, TypeEnv};
+use types::{self, Alias, AliasData, ArcType, ArgType, Generic, Type, TypeEnv};
 use ordered_float::NotNaN;
 
 pub trait DisplayEnv {
@@ -214,6 +214,7 @@ pub enum Pattern<Id> {
         typ: ArcType<Id>,
         types: Vec<PatternField<Id, Id>>,
         fields: Vec<PatternField<Id, SpannedPattern<Id>>>,
+        implicit_import: Option<Spanned<Id, BytePos>>,
     },
     /// Tuple pattern, eg: `(x, y)`
     Tuple {
@@ -343,12 +344,27 @@ impl<Id> TypeBinding<Id> {
 }
 
 #[derive(Clone, PartialEq, Debug)]
+pub struct Argument<Id> {
+    pub arg_type: ArgType,
+    pub name: SpannedIdent<Id>,
+}
+
+impl<Id> Argument<Id> {
+    pub fn explicit(name: SpannedIdent<Id>) -> Self {
+        Argument {
+            arg_type: ArgType::Explicit,
+            name,
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Debug)]
 pub struct ValueBinding<Id> {
     pub comment: Option<Comment>,
     pub name: SpannedPattern<Id>,
     pub typ: Option<AstType<Id>>,
     pub resolved_type: ArcType<Id>,
-    pub args: Vec<SpannedIdent<Id>>,
+    pub args: Vec<Argument<Id>>,
     pub expr: SpannedExpr<Id>,
 }
 
@@ -412,7 +428,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
             for bind in bindings {
                 v.visit_pattern(&mut bind.name);
                 for arg in &mut bind.args {
-                    v.visit_spanned_typed_ident(arg);
+                    v.visit_spanned_typed_ident(&mut arg.name);
                 }
                 v.visit_typ(&mut bind.resolved_type);
                 v.visit_expr(&mut bind.expr);

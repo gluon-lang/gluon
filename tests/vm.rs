@@ -216,7 +216,7 @@ true
 
 test_expr!{ implicit_call_without_type_in_scope,
 r"
-let int = import! std.int
+let int @ { ? } = import! std.int
 let prelude @ { (==) } = import! std.prelude
 99 == 100
 ",
@@ -405,7 +405,7 @@ let add_int x y = x #Int+ y
 /// @implicit
 let add_float x y = x #Float+ y
 
-let add f: [a -> a -> a] -> a -> a -> a = f
+let add ?f: [a -> a -> a] -> a -> a -> a = f
 
 { x = add 1 2, y = add 1.0 2.0 }
 "#;
@@ -454,8 +454,8 @@ None::<i32>
 
 test_expr!{ function_with_implicit_argument_from_record,
 r#"
-let f t x: [Int] -> () -> Int = t
-let x =
+let f ?t x: [Int] -> () -> Int = t
+let x @ { ? } =
     /// @implicit
     let test = 1
     { test }
