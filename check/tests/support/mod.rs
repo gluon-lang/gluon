@@ -300,7 +300,7 @@ macro_rules! test_check {
     ($name : ident, $source: expr, $typ: expr) => {
         #[test]
         fn $name() {
-            let _ = env_logger::init();
+            let _ = env_logger::try_init();
 
             let text = $source;
             let result = support::typecheck(text);

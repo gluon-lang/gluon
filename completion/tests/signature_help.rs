@@ -27,7 +27,7 @@ fn signature_help(expr_str: &str, row: usize, column: usize) -> Option<Signature
 
 #[test]
 fn just_identifier() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let result = signature_help(
         r#"
@@ -48,7 +48,7 @@ test //
 
 #[test]
 fn on_function() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let result = signature_help(
         r#"
@@ -69,7 +69,7 @@ test 123//
 
 #[test]
 fn after_first_argument() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let result = signature_help(
         r#"
@@ -90,7 +90,7 @@ test 123 //
 
 #[test]
 fn inside_argument() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let result = signature_help(
         r#"

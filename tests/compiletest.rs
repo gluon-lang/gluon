@@ -6,7 +6,6 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-
 fn lib_dir(out_dir: &Path, lib_name: &str) -> PathBuf {
     // Just loading gluon through -L dir does not work as we compile gluon with different sets of
     // flags which gives ambiguity errors.
@@ -70,6 +69,6 @@ fn run_mode(mode: &'static str) {
 
 #[test]
 fn compile_test() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
     run_mode("compile-fail");
 }

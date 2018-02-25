@@ -31,7 +31,7 @@ fn remove_expected(errors: ParseErrors) -> ParseErrors {
 
 #[test]
 fn empty_input() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let result = parse("");
     assert!(result.is_err());
@@ -48,7 +48,7 @@ fn empty_input() {
 
 #[test]
 fn missing_match_expr() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let expr = r#"
     match with
@@ -75,7 +75,7 @@ fn missing_match_expr() {
 
 #[test]
 fn wrong_indent_expression() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let result = parse(
         r#"
@@ -95,7 +95,7 @@ y
 
 #[test]
 fn unclosed_string() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let result = parse(
         r#"
@@ -107,7 +107,7 @@ fn unclosed_string() {
 
 #[test]
 fn tokenizer_error_is_returned() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let result = parse(
         r#"
@@ -124,7 +124,7 @@ fn tokenizer_error_is_returned() {
 
 #[test]
 fn tokenizer_error_at_eof_is_returned() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let result = parse(
         r#"
@@ -141,7 +141,7 @@ fn tokenizer_error_at_eof_is_returned() {
 
 #[test]
 fn no_infinite_loop_from_default_block() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let result = parse(
         r#"
@@ -157,7 +157,7 @@ let x = 1
 
 #[test]
 fn missing_pattern() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let expr = r#"
     match 1 with
@@ -181,7 +181,7 @@ fn missing_pattern() {
 
 #[test]
 fn incomplete_alternative() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let expr = r#"
     match 1 with
@@ -205,7 +205,7 @@ fn incomplete_alternative() {
 
 #[test]
 fn incomplete_alternative_before_complete_alternative() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let expr = r#"
     match 1 with
@@ -236,7 +236,7 @@ fn incomplete_alternative_before_complete_alternative() {
 
 #[test]
 fn incomplete_alternative_with_partial_pattern() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let expr = r#"
     match 1 with
@@ -276,7 +276,7 @@ fn incomplete_alternative_with_partial_pattern() {
 
 #[test]
 fn incomplete_let_binding() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let expr = r#"
     let test =
@@ -296,7 +296,7 @@ fn incomplete_let_binding() {
 
 #[test]
 fn incomplete_let_binding_2() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let expr = r#"
     let test = io
@@ -318,7 +318,7 @@ fn incomplete_let_binding_2() {
 
 #[test]
 fn unterminated_char_literal() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let expr = r#"
     'a

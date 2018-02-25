@@ -23,7 +23,7 @@ use gluon::vm::api::{{Hole, OpaqueValue}};
 use gluon::{{new_vm, Compiler, Thread}};
 
 fn main() {{
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#\"{}\"#;
     let vm = new_vm();
     match Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, \"example\", text) .sync_or_error() {{

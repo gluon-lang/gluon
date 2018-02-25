@@ -15,7 +15,7 @@ use std::path::Path;
 use format::format_expr;
 
 fn test_format(name: &str) {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let name = Path::new(name);
     let mut contents = String::new();

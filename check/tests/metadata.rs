@@ -26,7 +26,7 @@ impl MetadataEnv for MockEnv {
 
 #[test]
 fn propagate_metadata_let_in() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 /// The identity function
@@ -49,7 +49,7 @@ id
 
 #[test]
 fn propagate_metadata_let_record() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 /// The identity function
@@ -72,7 +72,7 @@ let id x = x
 
 #[test]
 fn propagate_metadata_type_record() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 /// A test type
@@ -95,7 +95,7 @@ type Test = Int
 
 #[test]
 fn propagate_metadata_record_field_comment() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 {
@@ -119,7 +119,7 @@ fn propagate_metadata_record_field_comment() {
 
 #[test]
 fn projection_has_metadata() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 let x = {

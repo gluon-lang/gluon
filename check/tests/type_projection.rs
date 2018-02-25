@@ -47,7 +47,7 @@ test_check! {
 
 #[test]
 fn undefined_field_in_type_projection() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 let module = { }
 let x : module.Test = 1
@@ -59,7 +59,7 @@ x
 
 #[test]
 fn undefined_variable_in_type_projection() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 let x : module.Test = 1
 x
@@ -68,10 +68,9 @@ x
     assert_err!(result, UndefinedVariable(..));
 }
 
-
 #[test]
 fn type_mismatch_in_type_projection() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 type Test = String
 let module = { Test }
@@ -84,7 +83,7 @@ x
 
 #[test]
 fn type_mismatch_in_type_projection_with_params() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 type Test a = | Test a
 let module = { Test }

@@ -373,7 +373,7 @@ fn main() {
 }
 
 fn main_() -> Result<(), Box<StdError>> {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
     let port = env::args()
         .nth(1)
         .map(|port| port.parse::<i32>().expect("port"))

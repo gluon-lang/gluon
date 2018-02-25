@@ -57,7 +57,7 @@ r" 120.0 #Float/ 4.0
 
 #[test]
 fn record() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r"
 { x = 0, y = 1.0, z = {} }
 ";
@@ -78,7 +78,7 @@ fn record() {
 
 #[test]
 fn add_record() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r"
 type T = { x: Int, y: Int } in
 let add = \l r -> { x = l.x #Int+ r.x, y = l.y #Int+ r.y } in
@@ -96,7 +96,7 @@ add { x = 0, y = 1 } { x = 1, y = 1 }
 }
 #[test]
 fn script() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r"
 type T = { x: Int, y: Int } in
 let add l r = { x = l.x #Int+ r.x, y = l.y #Int+ r.y } in
@@ -121,7 +121,7 @@ in add { x = 10, y = 5 } { x = 1, y = 2 }
 }
 #[test]
 fn adt() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r"
 type Option a = | None | Some a
 in Some 1
@@ -389,7 +389,7 @@ f 0 (\r -> { x = r #Int+ 1 })
 
 #[test]
 fn overloaded_bindings() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 let (+) x y = x #Int+ y
 in
@@ -458,7 +458,7 @@ None::<i32>
 
 #[test]
 fn rename_types_after_binding() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 let list  = import! std.list
@@ -479,7 +479,7 @@ in Cons 1 Nil == Nil
 
 #[test]
 fn record_splat_ice() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 let large_record = { x = 1 }
@@ -499,7 +499,7 @@ let large_record = { x = 1 }
 
 #[test]
 fn test_implicit_prelude() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"1.0 + 3.0 - 2.0"#;
     let mut vm = make_vm();
     Compiler::new()
@@ -510,7 +510,7 @@ fn test_implicit_prelude() {
 
 #[test]
 fn access_field_through_vm() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#" { x = 0, inner = { y = 1.0 } } "#;
     let mut vm = make_vm();
     load_script(&mut vm, "test", text).unwrap_or_else(|err| panic!("{}", err));
@@ -522,7 +522,7 @@ fn access_field_through_vm() {
 
 #[test]
 fn access_operator_without_parentheses() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let vm = make_vm();
     Compiler::new()
         .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example", r#" import! std.prelude "#)
@@ -535,7 +535,7 @@ fn access_operator_without_parentheses() {
 
 #[test]
 fn get_binding_with_alias_type() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
         type Test = Int
         let x: Test = 0
@@ -549,7 +549,7 @@ fn get_binding_with_alias_type() {
 
 #[test]
 fn get_binding_with_generic_params() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let vm = make_vm();
     run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import! std.function "#);
@@ -560,14 +560,14 @@ fn get_binding_with_generic_params() {
 
 #[test]
 fn test_prelude() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let vm = make_vm();
     run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import! std.prelude "#);
 }
 
 #[test]
 fn access_types_by_path() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let vm = make_vm();
     run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import! std.option "#);
@@ -584,7 +584,7 @@ fn access_types_by_path() {
 
 #[test]
 fn opaque_value_type_mismatch() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let vm = make_vm();
 
     Compiler::new()
@@ -611,7 +611,7 @@ sender
 
 #[test]
 fn invalid_string_slice_dont_panic() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 let string = import! std.string
 let s = "åäö"
@@ -630,7 +630,7 @@ string.slice s 1 (string.len s)
 
 #[test]
 fn partially_applied_constructor_is_lambda() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let vm = make_vm();
 
     let result = Compiler::new().run_expr::<FunctionRef<fn(i32) -> Option<i32>>>(
@@ -645,7 +645,7 @@ fn partially_applied_constructor_is_lambda() {
 #[test]
 fn stacktrace() {
     use gluon::vm::stack::StacktraceFrame;
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 let end _ = 1 + error "test"
 let f x =
@@ -713,7 +713,7 @@ g 10
 }
 #[test]
 fn completion_with_prelude() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let vm = make_vm();
 
     let source = r#"
@@ -754,7 +754,7 @@ let from f : (Int -> Option a) -> Stream a =
 
 #[test]
 fn completion_with_prelude_at_0() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let vm = make_vm();
 
     let expr = "1";
@@ -769,7 +769,7 @@ fn completion_with_prelude_at_0() {
 
 #[test]
 fn suggestion_from_implicit_prelude() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let vm = make_vm();
 
     let expr = "1 ";
@@ -786,7 +786,7 @@ fn suggestion_from_implicit_prelude() {
 /// `Source` from the normal expression
 #[test]
 fn dont_use_the_implicit_prelude_span_in_the_top_expr() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let vm = make_vm();
 
     let expr = "1";
@@ -806,7 +806,7 @@ fn deep_clone_partial_application() {
     use gluon::base::symbol::Symbol;
     use gluon::base::metadata::Metadata;
 
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let vm = RootedThread::new();
 
     assert_eq!(vm.context().gc.allocated_memory(), 0);

@@ -29,7 +29,7 @@ f { y = 1, z = 0, x = 123 }
 
 #[test]
 fn polymorphic_record_access_from_child_thread() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let vm = make_vm();
     let child = vm.new_thread().unwrap();
 
