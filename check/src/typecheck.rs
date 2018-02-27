@@ -573,6 +573,86 @@ impl<'a> Typecheck<'a> {
             tc: &'a mut Typecheck<'b>,
         }
 
+        impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
+            fn resolve_implicit_application(
+                &mut self,
+                implicit_bindings: &ImplictBindings,
+                span: Span<BytePos>,
+                path: &[TypedIdent<Symbol>],
+                to_resolve: &[ArcType],
+            ) -> Option<SpannedExpr<Symbol>> {
+                let base_ident = path[0].clone();
+                let func = path[1..].iter().fold(
+                    pos::spanned(span, Expr::Ident(base_ident)),
+                    |expr, ident| {
+                        pos::spanned(
+                            expr.span,
+                            Expr::Projection(Box::new(expr), ident.name.clone(), ident.typ.clone()),
+                        )
+                    },
+                );
+
+                if to_resolve.is_empty() {
+                    Some(func)
+                } else {
+                    let resolved_arguments: Vec<_> = to_resolve
+                        .iter()
+                        .filter_map(|expected_type| {
+                            let mut to_resolve = Vec::new();
+                            let found_candidate =
+                                implicit_bindings.iter().find(|&&(ref path, ref typ)| {
+                                    self.try_implicit(&mut to_resolve, expected_type, typ)
+                                });
+                            found_candidate.and_then(|&(ref path, _)| {
+                                self.resolve_implicit_application(
+                                    implicit_bindings,
+                                    span,
+                                    path,
+                                    &to_resolve,
+                                )
+                            })
+                        })
+                        .collect();
+                    if resolved_arguments.len() == to_resolve.len() {
+                        Some(pos::spanned(
+                            span,
+                            Expr::App {
+                                func: Box::new(func),
+                                args: resolved_arguments,
+                                implicit_args: Vec::new(),
+                            },
+                        ))
+                    } else {
+                        None
+                    }
+                }
+            }
+
+            fn try_implicit(
+                &mut self,
+                to_resolve: &mut Vec<ArcType>,
+                expected_type: &ArcType,
+                typ: &ArcType,
+            ) -> bool {
+                debug!("Trying implicit {}", typ);
+                let typ = self.tc.new_skolem_scope(typ);
+                let typ = self.tc.instantiate_generics(&typ);
+                to_resolve.clear();
+                let mut iter = types::implicit_arg_iter(&typ);
+                to_resolve.extend(iter.by_ref().cloned());
+
+                let state = ::unify_type::State::new(&self.tc.environment, &self.tc.subs);
+                ::unify_type::subsumes(
+                    &self.tc.subs,
+                    &mut ScopedMap::new(),
+                    0,
+                    state,
+                    &expected_type,
+                    &iter.typ,
+                ).is_ok()
+            }
+        }
+
         impl<'a, 'b> MutVisitor for ResolveImplicitsVisitor<'a, 'b> {
             type Ident = Symbol;
 
@@ -586,42 +666,22 @@ impl<'a> Typecheck<'a> {
                             implicit_bindings.iter().map(|t| &t.1).format("\n")
                         );
                         let span = expr.span;
-                        replacement = implicit_bindings
-                            .iter()
-                            .find(|&&(_, ref typ)| {
-                                let typ = self.tc.new_skolem_scope(typ);
-                                let state =
-                                    ::unify_type::State::new(&self.tc.environment, &self.tc.subs);
-                                ::unify_type::subsumes(
-                                    &self.tc.subs,
-                                    &mut ScopedMap::new(),
-                                    0,
-                                    state,
-                                    &id.typ,
-                                    &typ,
-                                ).is_ok()
-                            })
-                            .map(|&(ref path, _)| {
-                                debug!(
-                                    "Found implicit `{}`",
+                        let mut to_resolve = Vec::new();
+                        let found_candidate = implicit_bindings.iter().find(|&&(_, ref typ)| {
+                            self.try_implicit(&mut to_resolve, &id.typ, typ)
+                        });
+                        replacement = found_candidate.and_then(|&(ref path, _)| {
+                            debug!(
+                                    "Found implicit candidate `{}`. Trying its implicit arguments (if any)",
                                     path.iter().rev().map(|id| &id.name).format(".")
                                 );
-
-                                let base_ident = path[0].clone();
-                                path[1..].iter().fold(
-                                    pos::spanned(span, Expr::Ident(base_ident)),
-                                    |expr, ident| {
-                                        pos::spanned(
-                                            expr.span,
-                                            Expr::Projection(
-                                                Box::new(expr),
-                                                ident.name.clone(),
-                                                ident.typ.clone(),
-                                            ),
-                                        )
-                                    },
-                                )
-                            });
+                            self.resolve_implicit_application(
+                                &implicit_bindings,
+                                span,
+                                &path,
+                                &to_resolve,
+                            )
+                        });
                         if replacement.is_none() {
                             debug!("UnableToResolveImplicit {:?} {}", id.name, id.typ);
                             self.tc.errors.push(Spanned {
@@ -2467,7 +2527,11 @@ impl<'a> Typecheck<'a> {
         let mut is_implicit = metadata.and_then(&has_implicit_attribute).unwrap_or(false);
 
         if !is_implicit {
-            is_implicit = typ.remove_forall()
+            // Look at the type without any implicit arguments
+            let mut iter = types::implicit_arg_iter(typ.remove_forall());
+            for _ in iter.by_ref() {}
+            is_implicit = iter.typ
+                .remove_forall()
                 .name()
                 .and_then(|typename| {
                     self.metadata

@@ -168,6 +168,57 @@ f Test
 }
 
 #[test]
+fn implicit_with_implicit_arguments() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+/// @implicit
+type Test a = | Test a
+
+type List a = | Nil | Cons a (List a)
+
+let int : Test Int = Test 0
+let list ?t : [Test a] -> Test (List a) = Test Nil
+
+let f x : [Test a] -> a -> a = x
+f (Cons 1 Nil)
+"#;
+    let (expr, result) = support::typecheck_expr(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+
+    struct Visitor {
+        text: &'static str,
+        done: bool,
+    }
+    impl<'a> base::ast::Visitor<'a> for Visitor {
+        type Ident = Symbol;
+
+        fn visit_expr(&mut self, expr: &'a SpannedExpr<Symbol>) {
+            match expr.value {
+                ast::Expr::App {
+                    ref func,
+                    ref implicit_args,
+                    ..
+                } => match func.value {
+                    ast::Expr::Ident(ref id) if id.name.definition_name() == "f" => {
+                        assert!(implicit_args.len() == 1);
+                        let implicit = &implicit_args[0];
+
+                        assert_eq!("list int", format::pretty_expr(self.text, implicit).trim());
+                        self.done = true;
+                    }
+                    _ => base::ast::walk_expr(self, expr),
+                },
+                _ => base::ast::walk_expr(self, expr),
+            }
+        }
+    }
+    let mut visitor = Visitor { text, done: false };
+    visitor.visit_expr(&expr);
+    assert!(visitor.done);
+}
+
+#[test]
 fn forward_implicit_parameter() {
     let _ = ::env_logger::try_init();
     let text = r#"
