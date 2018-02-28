@@ -599,10 +599,11 @@ impl<'a> Typecheck<'a> {
                         .iter()
                         .filter_map(|expected_type| {
                             let mut to_resolve = Vec::new();
-                            let found_candidate =
-                                implicit_bindings.iter().find(|&&(ref path, ref typ)| {
+                            let found_candidate = implicit_bindings.iter().rev().find(
+                                |&&(ref path, ref typ)| {
                                     self.try_implicit(&mut to_resolve, expected_type, typ)
-                                });
+                                },
+                            );
                             found_candidate.and_then(|&(ref path, _)| {
                                 self.resolve_implicit_application(
                                     implicit_bindings,
@@ -667,9 +668,9 @@ impl<'a> Typecheck<'a> {
                         );
                         let span = expr.span;
                         let mut to_resolve = Vec::new();
-                        let found_candidate = implicit_bindings.iter().find(|&&(_, ref typ)| {
-                            self.try_implicit(&mut to_resolve, &id.typ, typ)
-                        });
+                        let found_candidate = implicit_bindings.iter().rev().find(
+                            |&&(_, ref typ)| self.try_implicit(&mut to_resolve, &id.typ, typ),
+                        );
                         replacement = found_candidate.and_then(|&(ref path, _)| {
                             debug!(
                                     "Found implicit candidate `{}`. Trying its implicit arguments (if any)",
@@ -1411,44 +1412,69 @@ impl<'a> Typecheck<'a> {
         let mut arg_types = Vec::new();
 
         let body_type = {
+            let mut return_type = function_type.clone();
             let mut iter1 = function_arg_iter(self, last_span, function_type);
-            loop {
-                let (arg_implicit, arg) = match args.next() {
-                    Some(x) => x,
-                    None => break,
+
+            let mut args = args.peekable();
+            let mut next_type_arg = iter1.next();
+
+            let make_new_arg = |tc: &mut Self, typ: &mut ArcType| {
+                let arg = tc.subs.new_var();
+                let ret = tc.subs.new_var();
+                let f = tc.type_cache.function(Some(arg.clone()), ret.clone());
+                if let Err(err) = tc.unify(typ, f) {
+                    tc.errors.push(Spanned {
+                        span: last_span,
+                        value: err.into(),
+                    });
+                }
+                *typ = ret;
+                arg
+            };
+
+            while args.peek().is_some() || next_type_arg.is_some() {
+                let (type_implicit, arg_type) = match next_type_arg.take() {
+                    Some((type_implicit, arg_type)) => (type_implicit, Some(arg_type)),
+                    None => (ArgType::Explicit, None),
                 };
 
-                let (mut type_implicit, mut arg_type);
-                loop {
-                    let (x, y) = match iter1.next() {
-                        Some(x) => x,
-                        None => (ArgType::Explicit, iter1.tc.subs.new_var()),
-                    };
-                    type_implicit = x;
-                    arg_type = y;
-
-                    match (type_implicit, arg_implicit) {
-                        (ArgType::Implicit, ArgType::Implicit)
-                        | (ArgType::Explicit, ArgType::Explicit) => break,
-                        (ArgType::Implicit, ArgType::Explicit) => {
-                            arg_types.push(arg_type.clone());
-                            let id = Symbol::from(format!("implicit_arg"));
-                            iter1.tc.add_implicits_of_record(&id, &arg_type);
-                            iter1.tc.stack_var(id, arg_type.clone());
-                        }
-                        (ArgType::Explicit, ArgType::Implicit) => {
-                            iter1.tc.error(arg.span, TypeError::Message(format!("Expected implicit argument but an explicit argument was specified")));
-                        }
+                match type_implicit {
+                    ArgType::Implicit => {
+                        let arg_type = arg_type.unwrap();
+                        let id = match args.peek().map(|t| t.0) {
+                            Some(ArgType::Implicit) => args.next().unwrap().1.value.name.clone(),
+                            _ => Symbol::from(format!("implicit_arg")),
+                        };
+                        arg_types.push(arg_type.clone());
+                        iter1.tc.add_implicits_of_record(&id, &arg_type);
+                        iter1.tc.stack_var(id, arg_type.clone());
                     }
+                    ArgType::Explicit => match args.next() {
+                        Some((ArgType::Implicit, arg)) => {
+                            iter1.tc.error(
+                                    arg.span,
+                                    TypeError::Message(format!(
+                                        "Expected implicit argument but an explicit argument was specified"
+                                    )),
+                                );
+                        }
+                        Some((ArgType::Explicit, arg)) => {
+                            let arg_type =
+                                arg_type.unwrap_or_else(|| make_new_arg(iter1.tc, &mut iter1.typ));
+                            let arg = &mut arg.value;
+
+                            arg.typ = arg_type;
+                            arg_types.push(arg.typ.clone());
+                            iter1.tc.stack_var(arg.name.clone(), arg.typ.clone());
+                        }
+                        None => break,
+                    },
                 }
-
-                let arg = &mut arg.value;
-
-                arg.typ = arg_type;
-                arg_types.push(arg.typ.clone());
-                iter1.tc.stack_var(arg.name.clone(), arg.typ.clone());
+                return_type = iter1.typ.clone();
+                next_type_arg = iter1.next();
             }
-            iter1.typ
+
+            return_type
         };
 
         let body_type = self.typecheck(body, &body_type);
@@ -1766,7 +1792,7 @@ impl<'a> Typecheck<'a> {
                 }
 
                 let typ = self.new_skolem_scope_signature(&bind.resolved_type);
-                self.typecheck(&mut bind.expr, &typ)
+                self.typecheck_lambda(typ, bind.name.span, &mut None.into_iter(), &mut bind.expr)
             } else {
                 let typ = self.new_skolem_scope_signature(&bind.resolved_type);
                 let function_type = self.skolemize(&typ);
@@ -2632,6 +2658,7 @@ struct FunctionArgIter<'a, 'b: 'a> {
 impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
     type Item = (ArgType, ArcType);
     fn next(&mut self) -> Option<Self::Item> {
+        let mut last_alias = None;
         loop {
             if let Type::Forall(_, _, None) = *self.typ {
                 panic!("Found forall without scope in function argument iterator")
@@ -2640,22 +2667,17 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
             let (arg, new) = match self.typ.as_function_with_type() {
                 Some((arg_type, arg, ret)) => (Some((arg_type, arg.clone())), ret.clone()),
                 None => match get_alias_app(&self.tc.environment, &self.typ) {
-                    Some((alias, args)) => match alias.typ().apply_args(&args) {
-                        Some(typ) => (None, typ.clone()),
-                        None => return None,
-                    },
-                    None => {
-                        let arg = self.tc.subs.new_var();
-                        let ret = self.tc.subs.new_var();
-                        let f = self.tc.type_cache.function(Some(arg.clone()), ret.clone());
-                        if let Err(err) = self.tc.unify(&self.typ, f) {
-                            self.tc.errors.push(Spanned {
-                                span: self.span,
-                                value: err.into(),
-                            });
+                    Some((alias, args)) => {
+                        if Some(&alias.name) == last_alias.as_ref() {
+                            return None;
                         }
-                        (Some((ArgType::Explicit, arg)), ret)
+                        last_alias = Some(alias.name.clone());
+                        match alias.typ().apply_args(&args) {
+                            Some(typ) => (None, typ.clone()),
+                            None => return None,
+                        }
                     }
+                    None => return None,
                 },
             };
             self.typ = new;

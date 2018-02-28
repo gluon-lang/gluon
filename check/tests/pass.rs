@@ -256,7 +256,7 @@ in 1 + 2
     let result = support::typecheck(text);
     let expected = Ok(typ("Int"));
 
-    assert_eq!(result, expected);
+    assert_req!(result, expected);
 }
 
 #[test]

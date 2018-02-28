@@ -219,6 +219,35 @@ f (Cons 1 Nil)
 }
 
 #[test]
+fn implicit_ord() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+/// @implicit
+type Eq a = { (==) : a -> a -> Bool }
+
+/// @implicit
+type Ord a = { eq : Eq a, compare : a -> a -> () }
+
+type Option a = | None | Some a
+
+let any x = any x
+
+let eq ?a : [Eq a] -> Eq (Option a) = {
+    (==) = \l r -> True
+}
+
+let ord : [Ord a] -> Ord (Option a) =
+    {
+        eq = eq,
+        compare = any ()
+    }
+()
+"#;
+    let result = support::typecheck(text);
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
 fn forward_implicit_parameter() {
     let _ = ::env_logger::try_init();
     let text = r#"
