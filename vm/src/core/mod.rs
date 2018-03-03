@@ -114,7 +114,7 @@ impl<'a> fmt::Display for Expr<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let arena = pretty::Arena::new();
         let mut s = Vec::new();
-        self.pretty(&arena).1.render(80, &mut s).unwrap();
+        self.pretty(&arena, Prec::Top).1.render(80, &mut s).unwrap();
         write!(f, "{}", ::std::str::from_utf8(&s).expect("utf-8"))
     }
 }
@@ -161,6 +161,26 @@ impl<'a> Binder<'a> {
     }
 }
 
+#[derive(Clone, Copy)]
+pub enum Prec {
+    Top,
+    Arg,
+}
+
+impl Prec {
+    pub fn enclose<'a>(
+        &self,
+        arena: &'a pretty::Arena<'a>,
+        doc: pretty::DocBuilder<'a, pretty::Arena<'a>>,
+    ) -> pretty::DocBuilder<'a, pretty::Arena<'a>> {
+        if let Prec::Arg = *self {
+            chain![arena; "(", doc, ")"]
+        } else {
+            doc
+        }
+    }
+}
+
 fn pretty_literal<'a>(
     l: &Literal,
     arena: &'a pretty::Arena<'a>,
@@ -178,14 +198,18 @@ impl<'a> Expr<'a> {
     pub fn pretty(
         &'a self,
         arena: &'a pretty::Arena<'a>,
+        prec: Prec,
     ) -> pretty::DocBuilder<'a, pretty::Arena<'a>> {
         match *self {
-            Expr::Call(f, args) => chain![arena;
-                    f.pretty(arena),
+            Expr::Call(f, args) => {
+                let doc = chain![arena;
+                    f.pretty(arena, Prec::Arg),
                     arena.concat(args.iter().map(|arg| {
-                        arena.space().append(arg.pretty(arena))
+                        arena.space().append(arg.pretty(arena, Prec::Arg))
                     }))
-                ].group(),
+                ].group();
+                prec.enclose(arena, doc)
+            }
             Expr::Const(ref l, _) => pretty_literal(l, arena),
             Expr::Data(ref ctor, args, _, _) => match *ctor.typ {
                 Type::Record(ref record) => chain![arena;
@@ -196,22 +220,26 @@ impl<'a> Expr<'a> {
                                     field.name.as_ref(),
                                     " =",
                                     arena.space(),
-                                    arg.pretty(arena),
+                                    arg.pretty(arena, Prec::Top),
                                     ","
                                 ]
                             })),
                             arena.space(),
                             "}"
                         ].group(),
-                _ => chain![arena;
+                _ => {
+                    let doc = chain![arena;
                             ctor.as_ref(),
                             arena.concat(args.iter().map(|arg| {
-                                arena.space().append(arg.pretty(arena))
+                                arena.space().append(arg.pretty(arena, Prec::Arg))
                             }))
-                        ].group(),
+                        ].group();
+                    prec.enclose(arena, doc)
+                }
             },
             Expr::Ident(ref id, _) => arena.text(id.as_ref()),
-            Expr::Let(ref bind, ref expr) => chain![arena;
+            Expr::Let(ref bind, ref expr) => {
+                let doc = chain![arena;
                     "let ",
                     match bind.expr {
                         Named::Expr(ref expr) => {
@@ -221,7 +249,7 @@ impl<'a> Expr<'a> {
                                 "=",
                                 arena.space(),
                                 chain![arena;
-                                    expr.pretty(arena),
+                                    expr.pretty(arena, Prec::Top),
                                     arena.space()
                                 ].group()
                             ].group().nest(INDENT)
@@ -236,7 +264,7 @@ impl<'a> Expr<'a> {
                                     "=",
                                     arena.space(),
                                     chain![arena;
-                                        closure.expr.pretty(arena),
+                                        closure.expr.pretty(arena, Prec::Top),
                                         arena.space()
                                     ].nest(INDENT).group()
                                 ].group()
@@ -244,8 +272,10 @@ impl<'a> Expr<'a> {
                         }
                     },
                     arena.newline(),
-                    expr.pretty(arena)
-                ],
+                    expr.pretty(arena, Prec::Top)
+                ];
+                prec.enclose(arena, doc)
+            }
             Expr::Match(expr, alts) => match alts.first() {
                 Some(
                     alt @ &Alternative {
@@ -254,34 +284,38 @@ impl<'a> Expr<'a> {
                     },
                 ) if alts.len() == 1 =>
                 {
-                    chain![arena;
-                            "match ",
-                            expr.pretty(arena),
-                            " with",
-                            arena.newline(),
+                    let doc = chain![arena;
+                        "match ",
+                        expr.pretty(arena, Prec::Top),
+                        " with",
+                        arena.newline(),
+                        chain![arena;
+                            alt.pattern.pretty(arena),
+                            arena.space(),
+                            "->"
+                        ].group(),
+                        arena.newline(),
+                        alt.expr.pretty(arena, Prec::Top).group()
+                    ].group();
+                    prec.enclose(arena, doc)
+                }
+                _ => {
+                    let doc = chain![arena;
+                        "match ",
+                        expr.pretty(arena, Prec::Top),
+                        " with",
+                        arena.newline(),
+                        arena.concat(alts.iter().map(|alt| {
                             chain![arena;
                                 alt.pattern.pretty(arena),
+                                " ->",
                                 arena.space(),
-                                "->"
-                            ].group(),
-                            arena.newline(),
-                            alt.expr.pretty(arena).group()
-                        ].group()
+                                alt.expr.pretty(arena, Prec::Top).nest(INDENT).group()
+                            ].nest(INDENT)
+                        }).intersperse(arena.newline()))
+                    ].group();
+                    prec.enclose(arena, doc)
                 }
-                _ => chain![arena;
-                            "match ",
-                            expr.pretty(arena),
-                            " with",
-                            arena.newline(),
-                            arena.concat(alts.iter().map(|alt| {
-                                chain![arena;
-                                    alt.pattern.pretty(arena),
-                                    " ->",
-                                    arena.space(),
-                                    alt.expr.pretty(arena).nest(INDENT).group()
-                                ].nest(INDENT)
-                            }).intersperse(arena.newline()))
-                        ].group(),
             },
         }
     }

@@ -526,7 +526,7 @@ and { Num, Eq, Ord, Show, Functor, Monad, ? } = __implicit_prelude
 and { Bool, not, ? } = import! std.bool
 and { Option, ? } = import! std.option
 
-let { (+), (-), (*), (/), (==), (/=), (<), (<=), (>=), (>), ? } = __implicit_prelude
+let { (+), (-), (*), (/), (==), (/=), (<), (<=), (>=), (>), show, ? } = __implicit_prelude
 
 let __implicit_float @ { ? } = import! std.float
 
