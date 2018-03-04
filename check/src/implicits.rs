@@ -1,12 +1,16 @@
 use itertools::Itertools;
 
 use base::ast::{self, Expr, MutVisitor, SpannedExpr, TypedIdent};
-use base::types::{self, ArcType};
+use base::fnv::FnvMap;
+use base::metadata::Metadata;
+use base::types::{self, ArcType, Type};
 use base::pos::{self, BytePos, Span, Spanned};
+use base::resolve;
 use base::scoped_map::ScopedMap;
 use base::symbol::Symbol;
 
-use typecheck::{ImplictBindings, TcResult, TypeError, Typecheck};
+use typecheck::{ImplictBindings, TcResult, TypeError, Typecheck, TypecheckEnv};
+use substitution::Substitution;
 
 const MAX_IMPLICIT_LEVEL: u32 = 20;
 
@@ -129,7 +133,12 @@ impl<'a, 'b> MutVisitor for ResolveImplicitsVisitor<'a, 'b> {
     fn visit_expr(&mut self, expr: &mut SpannedExpr<Symbol>) {
         let mut replacement = None;
         if let Expr::Ident(ref mut id) = expr.value {
-            if let Some(implicit_bindings) = self.tc.implicit_vars.get(&id.name).cloned() {
+            let implicit_bindings = self.tc
+                .implicit_resolver
+                .implicit_vars
+                .get(&id.name)
+                .cloned();
+            if let Some(implicit_bindings) = implicit_bindings {
                 debug!(
                     "Resolving {} against:\n{}",
                     id.typ,
@@ -189,6 +198,160 @@ impl<'a, 'b> MutVisitor for ResolveImplicitsVisitor<'a, 'b> {
             ast::Expr::LetBindings(_, ref mut expr) => ast::walk_mut_expr(self, expr),
             _ => ast::walk_mut_expr(self, expr),
         }
+    }
+}
+
+pub struct ImplicitResolver<'a> {
+    pub(crate) metadata: FnvMap<Symbol, Metadata>,
+    environment: &'a TypecheckEnv,
+    pub(crate) implicit_bindings: Vec<ImplictBindings>,
+    implicit_vars: ScopedMap<Symbol, ImplictBindings>,
+}
+
+impl<'a> ImplicitResolver<'a> {
+    pub fn new(environment: &'a TypecheckEnv) -> ImplicitResolver<'a> {
+        ImplicitResolver {
+            metadata: FnvMap::default(),
+            environment,
+            implicit_bindings: Vec::new(),
+            implicit_vars: ScopedMap::new(),
+        }
+    }
+
+    pub fn on_stack_var(&mut self, id: &Symbol, typ: &ArcType) {
+        if self.implicit_bindings.is_empty() {
+            self.implicit_bindings.push(::rpds::Vector::new());
+        }
+        let mut bindings = self.implicit_bindings.last_mut().unwrap().clone();
+        let metadata = self.metadata.get(id);
+        self.try_add_implicit(
+            &id,
+            metadata,
+            &typ,
+            &mut Vec::new(),
+            &mut |path, implicit_type| {
+                bindings = bindings.push_back((path, implicit_type.clone()));
+            },
+        );
+        *self.implicit_bindings.last_mut().unwrap() = bindings;
+    }
+
+    pub fn add_implicits_of_record(
+        &mut self,
+        subs: &Substitution<ArcType>,
+        id: &Symbol,
+        typ: &ArcType,
+    ) {
+        info!("Trying to resolve implicit {}", typ);
+
+        if self.implicit_bindings.is_empty() {
+            self.implicit_bindings.push(::rpds::Vector::new());
+        }
+        let mut bindings = self.implicit_bindings.last_mut().unwrap().clone();
+
+        let mut path = Vec::new();
+        let metadata = self.metadata.get(id);
+        let mut alias_resolver = resolve::AliasRemover::new();
+
+        let typ = ::unify_type::top_skolem_scope(subs, subs.real(typ));
+        let ref typ = typ.instantiate_generics(&mut FnvMap::default());
+        let raw_type = match alias_resolver.remove_aliases(&self.environment, typ.clone()) {
+            Ok(t) => t,
+            // Don't recurse into self recursive aliases
+            Err(_) => return,
+        };
+        match *raw_type {
+            Type::Record(_) => for field in raw_type.row_iter() {
+                let field_metadata = metadata
+                    .as_ref()
+                    .and_then(|metadata| metadata.module.get(field.name.declared_name()));
+
+                path.push(TypedIdent {
+                    name: id.clone(),
+                    typ: typ.clone(),
+                });
+                self.try_add_implicit(
+                    &field.name,
+                    field_metadata,
+                    &field.typ,
+                    &mut path,
+                    &mut |path, implicit_type| {
+                        bindings = bindings.push_back((path, implicit_type.clone()));
+                    },
+                );
+                path.pop();
+            },
+            _ => (),
+        }
+        *self.implicit_bindings.last_mut().unwrap() = bindings;
+    }
+
+    pub fn try_add_implicit(
+        &self,
+        id: &Symbol,
+        metadata: Option<&Metadata>,
+        typ: &ArcType,
+        path: &mut Vec<TypedIdent<Symbol>>,
+        consumer: &mut FnMut(Vec<TypedIdent<Symbol>>, &ArcType),
+    ) {
+        let has_implicit_attribute = |metadata: &Metadata| {
+            metadata
+                .comment
+                .as_ref()
+                .map(|comment| ::metadata::attributes(&comment).any(|(key, _)| key == "implicit"))
+        };
+        let mut is_implicit = metadata.and_then(&has_implicit_attribute).unwrap_or(false);
+
+        if !is_implicit {
+            // Look at the type without any implicit arguments
+            let mut iter = types::implicit_arg_iter(typ.remove_forall());
+            for _ in iter.by_ref() {}
+            is_implicit = iter.typ
+                .remove_forall()
+                .name()
+                .and_then(|typename| {
+                    self.metadata
+                        .get(typename)
+                        .or_else(|| self.environment.get_metadata(typename))
+                        .and_then(has_implicit_attribute)
+                })
+                .unwrap_or(false);
+        }
+
+        if is_implicit {
+            let mut path = path.clone();
+            path.push(TypedIdent {
+                name: id.clone(),
+                typ: typ.clone(),
+            });
+            consumer(path, typ);
+        }
+    }
+
+    pub fn make_implicit_ident(&mut self, typ: &ArcType) -> Symbol {
+        let name = Symbol::from("implicit_arg");
+        let typ = typ.clone();
+
+        let implicits = self.implicit_bindings.last().unwrap().clone();
+        debug!(
+            "Implicits for {}: {}",
+            typ,
+            implicits
+                .iter()
+                .map(|t| format!("{}: {}", t.0.iter().map(|id| &id.name).format("."), t.1))
+                .format(",")
+        );
+        self.implicit_vars.insert(name.clone(), implicits);
+        name
+    }
+
+    pub fn enter_scope(&mut self) {
+        let bindings = self.implicit_bindings.last().cloned().unwrap_or_default();
+        self.implicit_bindings.push(bindings);
+    }
+
+    pub fn exit_scope(&mut self) {
+        self.implicit_bindings.pop();
     }
 }
 

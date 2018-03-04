@@ -329,10 +329,8 @@ pub struct Typecheck<'a> {
     type_variables: ScopedMap<Symbol, ArcType>,
     type_cache: TypeCache<Symbol, ArcType>,
     kind_cache: KindCache,
-    metadata: FnvMap<Symbol, Metadata>,
 
-    implicit_bindings: Vec<ImplictBindings>,
-    pub(crate) implicit_vars: ScopedMap<Symbol, ImplictBindings>,
+    pub(crate) implicit_resolver: ::implicits::ImplicitResolver<'a>,
 }
 
 /// Error returned when unsuccessfully typechecking an expression
@@ -362,9 +360,7 @@ impl<'a> Typecheck<'a> {
             type_variables: ScopedMap::new(),
             type_cache: type_cache,
             kind_cache: kind_cache,
-            metadata: FnvMap::default(),
-            implicit_bindings: Vec::new(),
-            implicit_vars: ScopedMap::new(),
+            implicit_resolver: ::implicits::ImplicitResolver::new(environment),
         }
     }
 
@@ -442,23 +438,7 @@ impl<'a> Typecheck<'a> {
     fn stack_var(&mut self, id: Symbol, typ: ArcType) {
         debug!("Insert {} : {}", id, typ);
 
-        {
-            if self.implicit_bindings.is_empty() {
-                self.implicit_bindings.push(::rpds::Vector::new());
-            }
-            let mut bindings = self.implicit_bindings.last_mut().unwrap().clone();
-            let metadata = self.metadata.get(&id);
-            self.try_add_implicit(
-                &id,
-                metadata,
-                &typ,
-                &mut Vec::new(),
-                &mut |path, implicit_type| {
-                    bindings = bindings.push_back((path, implicit_type.clone()));
-                },
-            );
-            *self.implicit_bindings.last_mut().unwrap() = bindings;
-        }
+        self.implicit_resolver.on_stack_var(&id, &typ);
 
         self.environment.stack.insert(id, StackBinding { typ: typ });
     }
@@ -494,16 +474,14 @@ impl<'a> Typecheck<'a> {
         self.environment.stack.enter_scope();
         self.environment.stack_types.enter_scope();
         self.original_symbols.enter_scope();
-
-        let bindings = self.implicit_bindings.last().cloned().unwrap_or_default();
-        self.implicit_bindings.push(bindings);
+        self.implicit_resolver.enter_scope();
     }
 
     fn exit_scope(&mut self) {
         self.environment.stack.exit_scope();
         self.environment.stack_types.exit_scope();
         self.original_symbols.exit_scope();
-        self.implicit_bindings.pop();
+        self.implicit_resolver.exit_scope();
     }
 
     fn generalize_binding(&mut self, level: u32, binding: &mut ValueBinding<Symbol>) {
@@ -643,7 +621,7 @@ impl<'a> Typecheck<'a> {
         self.subs.clear();
         self.environment.stack.clear();
 
-        self.metadata = ::metadata::metadata(&self.environment, expr).1;
+        self.implicit_resolver.metadata = ::metadata::metadata(&self.environment, expr).1;
 
         let mut typ = self.typecheck_opt(expr, expected_type);
         if let Some(expected) = expected_type {
@@ -1139,9 +1117,7 @@ impl<'a> Typecheck<'a> {
                 );
                 let flat_map_type = match *flat_map_type {
                     Type::Function(ArgType::Implicit, ref arg_type, ref r) => {
-                        let name = Symbol::from("implicit_arg");
-                        let implicits = self.implicit_bindings.last().unwrap().clone();
-                        self.implicit_vars.insert(name.clone(), implicits);
+                        let name = self.implicit_resolver.make_implicit_ident(arg_type);
                         *flat_map_id = Some(Box::new(pos::spanned(
                             id.span,
                             Expr::App {
@@ -1303,7 +1279,11 @@ impl<'a> Typecheck<'a> {
                             _ => Symbol::from(format!("implicit_arg")),
                         };
                         arg_types.push(arg_type.clone());
-                        iter1.tc.add_implicits_of_record(&id, &arg_type);
+                        iter1.tc.implicit_resolver.add_implicits_of_record(
+                            &iter1.tc.subs,
+                            &id,
+                            &arg_type,
+                        );
                         iter1.tc.stack_var(id, arg_type.clone());
                     }
                     ArgType::Explicit => match args.next() {
@@ -1465,9 +1445,13 @@ impl<'a> Typecheck<'a> {
                             // in this module to its actual name
                             self.original_symbols
                                 .insert(name.clone(), field_type.typ.name.clone());
-                            if let Some(meta) = self.metadata.remove(&name) {
-                                self.metadata.insert(field_type.typ.name.clone(), meta);
+
+                            if let Some(meta) = self.implicit_resolver.metadata.remove(&name) {
+                                self.implicit_resolver
+                                    .metadata
+                                    .insert(field_type.typ.name.clone(), meta);
                             }
+
                             self.stack_type(name, &field_type.typ);
                         }
                         None => {
@@ -1477,7 +1461,8 @@ impl<'a> Typecheck<'a> {
                 }
 
                 if let Some(ref implicit_import) = *implicit_import {
-                    self.add_implicits_of_record(
+                    self.implicit_resolver.add_implicits_of_record(
+                        &self.subs,
                         &implicit_import.value,
                         &uninstantiated_match_type,
                     );
@@ -1687,7 +1672,12 @@ impl<'a> Typecheck<'a> {
                 debug!("Generalized to {}", bind.resolved_type);
             }
 
-            let mut bindings = self.implicit_bindings.last().unwrap().clone();
+            // Update the implicit bindings with the generalized types we just created
+            let mut bindings = self.implicit_resolver
+                .implicit_bindings
+                .last()
+                .unwrap()
+                .clone();
             for i in 0..bindings.len() {
                 let opt = {
                     let bind = bindings.get(i).unwrap();
@@ -1707,7 +1697,7 @@ impl<'a> Typecheck<'a> {
                     bindings = bindings.set(i, new).unwrap();
                 }
             }
-            *self.implicit_bindings.last_mut().unwrap() = bindings;
+            *self.implicit_resolver.implicit_bindings.last_mut().unwrap() = bindings;
         }
 
         debug!("Typecheck `in`");
@@ -1785,9 +1775,14 @@ impl<'a> Typecheck<'a> {
             let new = self.symbols.scoped_symbol(&s);
             self.original_symbols
                 .insert(bind.alias.value.name.clone(), new.clone());
-            if let Some(meta) = self.metadata.remove(&bind.alias.value.name) {
-                self.metadata.insert(new.clone(), meta);
+
+            if let Some(meta) = self.implicit_resolver
+                .metadata
+                .remove(&bind.alias.value.name)
+            {
+                self.implicit_resolver.metadata.insert(new.clone(), meta);
             }
+
             // Rename the aliase's name to its global name
             bind.alias.value.name = new;
         }
@@ -2203,28 +2198,15 @@ impl<'a> Typecheck<'a> {
                     match **self.subs.real(expected) {
                         Type::Variable(_) | Type::Function(ArgType::Implicit, _, _) => break,
                         _ => {
-                            let name = Symbol::from("implicit_arg");
-                            let typ = arg_type.clone();
-
-                            let implicits = self.implicit_bindings.last().unwrap().clone();
-                            debug!(
-                                "Implicits for {}: {}",
-                                arg_type,
-                                implicits
-                                    .iter()
-                                    .map(|t| format!(
-                                        "{}: {}",
-                                        t.0.iter().map(|id| &id.name).format("."),
-                                        t.1
-                                    ))
-                                    .format(",")
-                            );
-                            self.implicit_vars.insert(name.clone(), implicits);
+                            let name = self.implicit_resolver.make_implicit_ident(arg_type);
 
                             receiver(pos::spanned2(
                                 span.end,
                                 span.end,
-                                Expr::Ident(TypedIdent { name, typ }),
+                                Expr::Ident(TypedIdent {
+                                    name,
+                                    typ: arg_type.clone(),
+                                }),
                             ));
 
                             r_ret.clone()
@@ -2360,93 +2342,6 @@ impl<'a> Typecheck<'a> {
                 });
                 false
             })
-    }
-
-    fn add_implicits_of_record(&mut self, id: &Symbol, typ: &ArcType) {
-        info!("Trying to resolve implicit {}", typ);
-
-        if self.implicit_bindings.is_empty() {
-            self.implicit_bindings.push(::rpds::Vector::new());
-        }
-        let mut bindings = self.implicit_bindings.last_mut().unwrap().clone();
-
-        let mut path = Vec::new();
-        let metadata = self.metadata.get(id);
-        let mut alias_resolver = resolve::AliasRemover::new();
-
-        let typ = ::unify_type::top_skolem_scope(&self.subs, self.subs.real(typ));
-        let ref typ = typ.instantiate_generics(&mut FnvMap::default());
-        let raw_type = match alias_resolver.remove_aliases(&self.environment, typ.clone()) {
-            Ok(t) => t,
-            // Don't recurse into self recursive aliases
-            Err(_) => return,
-        };
-        match *raw_type {
-            Type::Record(_) => for field in raw_type.row_iter() {
-                let field_metadata = metadata
-                    .as_ref()
-                    .and_then(|metadata| metadata.module.get(field.name.declared_name()));
-
-                path.push(TypedIdent {
-                    name: id.clone(),
-                    typ: typ.clone(),
-                });
-                self.try_add_implicit(
-                    &field.name,
-                    field_metadata,
-                    &field.typ,
-                    &mut path,
-                    &mut |path, implicit_type| {
-                        bindings = bindings.push_back((path, implicit_type.clone()));
-                    },
-                );
-                path.pop();
-            },
-            _ => (),
-        }
-        *self.implicit_bindings.last_mut().unwrap() = bindings;
-    }
-
-    fn try_add_implicit(
-        &self,
-        id: &Symbol,
-        metadata: Option<&Metadata>,
-        typ: &ArcType,
-        path: &mut Vec<TypedIdent<Symbol>>,
-        consumer: &mut FnMut(Vec<TypedIdent<Symbol>>, &ArcType),
-    ) {
-        let has_implicit_attribute = |metadata: &Metadata| {
-            metadata
-                .comment
-                .as_ref()
-                .map(|comment| ::metadata::attributes(&comment).any(|(key, _)| key == "implicit"))
-        };
-        let mut is_implicit = metadata.and_then(&has_implicit_attribute).unwrap_or(false);
-
-        if !is_implicit {
-            // Look at the type without any implicit arguments
-            let mut iter = types::implicit_arg_iter(typ.remove_forall());
-            for _ in iter.by_ref() {}
-            is_implicit = iter.typ
-                .remove_forall()
-                .name()
-                .and_then(|typename| {
-                    self.metadata
-                        .get(typename)
-                        .or_else(|| self.environment.environment.get_metadata(typename))
-                        .and_then(has_implicit_attribute)
-                })
-                .unwrap_or(false);
-        }
-
-        if is_implicit {
-            let mut path = path.clone();
-            path.push(TypedIdent {
-                name: id.clone(),
-                typ: typ.clone(),
-            });
-            consumer(path, typ);
-        }
     }
 }
 
