@@ -5,7 +5,6 @@ use std::borrow::Cow;
 use std::fmt;
 use std::iter::once;
 use std::mem;
-use std::sync::Arc;
 
 use itertools::Itertools;
 
@@ -26,7 +25,7 @@ use base::types::{self, Alias, AliasRef, AppVec, ArcType, ArgType, BuiltinType, 
                   TypeFormatter, TypeVariable};
 
 use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
-use substitution::{self, Constraints, Substitution};
+use substitution::{self, Substitution};
 use rename::RenameError;
 use unify::{self, Error as UnifyError};
 use unify_type::{self, new_skolem_scope, Error as UnifyTypeError};
@@ -228,7 +227,6 @@ where
 
 #[derive(Clone, Debug)]
 struct StackBinding {
-    constraints: FnvMap<Symbol, Constraints<ArcType>>,
     typ: ArcType,
 }
 
@@ -395,23 +393,11 @@ impl<'a> Typecheck<'a> {
     fn find(&mut self, id: &Symbol) -> TcResult<ArcType> {
         match self.environment.find_type(id).map(ArcType::clone) {
             Some(typ) => {
-                let constraints = self.environment
-                    .stack
-                    .get(id)
-                    .map(|bind| Cow::Borrowed(&bind.constraints))
-                    .unwrap_or_else(|| Cow::Owned(FnvMap::default()));
                 let typ = self.subs.set_type(typ);
 
                 self.named_variables.clear();
-                let typ = new_skolem_scope(&self.subs, &constraints, &typ);
+                let typ = new_skolem_scope(&self.subs, &typ);
                 debug!("Find {} : {}", self.symbols.string(id), typ);
-                debug!(
-                    "Constraints [{}]",
-                    constraints
-                        .iter()
-                        .map(|t| format!("({}, [{}])", t.0, t.1.iter().format(", ")))
-                        .format(", ")
-                );
                 Ok(typ)
             }
             None => {
@@ -474,13 +460,7 @@ impl<'a> Typecheck<'a> {
             *self.implicit_bindings.last_mut().unwrap() = bindings;
         }
 
-        self.environment.stack.insert(
-            id,
-            StackBinding {
-                constraints: FnvMap::default(),
-                typ: typ,
-            },
-        );
+        self.environment.stack.insert(id, StackBinding { typ: typ });
     }
 
     fn stack_type(&mut self, id: Symbol, alias: &Alias<Symbol, ArcType>) {
@@ -626,15 +606,6 @@ impl<'a> Typecheck<'a> {
                             unify::Error::Substitution(ref mut err) => match *err {
                                 substitution::Error::Occurs(_, ref mut typ) => {
                                     self.generalize_type_without_forall(0, typ);
-                                }
-                                substitution::Error::Constraint(
-                                    ref mut var,
-                                    ref mut constraints,
-                                ) => {
-                                    for typ in Arc::make_mut(constraints) {
-                                        self.generalize_type_without_forall(0, typ);
-                                    }
-                                    self.generalize_type_without_forall(0, var);
                                 }
                             },
                             unify::Error::Other(ref mut err) => {
@@ -1036,7 +1007,7 @@ impl<'a> Typecheck<'a> {
                             let mut typ = self.typecheck_opt(expr, expected_field_type);
 
                             self.generalize_type(level, &mut typ);
-                            new_skolem_scope(&self.subs, &FnvMap::default(), &typ)
+                            new_skolem_scope(&self.subs, &typ)
                         }
                         None => {
                             let typ = self.find_at(field.name.span, &field.name.value);
@@ -1118,7 +1089,7 @@ impl<'a> Typecheck<'a> {
                 };
 
                 let id_type = self.new_skolem_scope(&id_type);
-                let record_type = new_skolem_scope(&self.subs, &FnvMap::default(), &record_type);
+                let record_type = new_skolem_scope(&self.subs, &record_type);
 
                 let level = self.subs.var_id();
                 let actual_record = self.type_cache.record(new_types, new_fields);
@@ -1973,7 +1944,6 @@ impl<'a> Typecheck<'a> {
             Pattern::Constructor(ref id, ref mut args) => {
                 debug!("{}: {}", self.symbols.string(&id.name), final_type);
                 let len = args.len();
-                let span = args.last().map(|arg| arg.span).unwrap_or(pattern.span);
                 let iter = args.iter_mut().zip(
                     function_arg_iter(self, final_type.clone())
                         .map(|t| t.1)
@@ -2009,10 +1979,6 @@ impl<'a> Typecheck<'a> {
                 .collect::<Vec<_>>();
             params.sort_unstable_by(|l, r| l.id.declared_name().cmp(r.id.declared_name()));
 
-            let typ = generalizer
-                .tc
-                .type_cache
-                .function_implicit(generalizer.constraints, typ);
             Type::forall(params, typ)
         });
         if let Some(finished) = result_type {
@@ -2030,10 +1996,7 @@ impl<'a> Typecheck<'a> {
         generalizer.type_variables.exit_scope();
 
         if let Some(finished) = result_type {
-            *typ = generalizer
-                .tc
-                .type_cache
-                .function_implicit(generalizer.constraints, finished);
+            *typ = finished;
         }
     }
 
@@ -2173,7 +2136,7 @@ impl<'a> Typecheck<'a> {
                     },
                     None => {
                         let kind = typ.kind().into_owned();
-                        let var = self.subs.new_constrained_var_fn(None, |id| {
+                        let var = self.subs.new_var_fn(|id| {
                             Type::variable(TypeVariable {
                                 kind: kind.clone(),
                                 id: id,
@@ -2374,11 +2337,11 @@ impl<'a> Typecheck<'a> {
     }
 
     pub(crate) fn new_skolem_scope(&mut self, typ: &ArcType) -> ArcType {
-        new_skolem_scope(&self.subs, &FnvMap::default(), typ)
+        new_skolem_scope(&self.subs, typ)
     }
 
     fn top_skolem_scope(&mut self, typ: &ArcType) -> ArcType {
-        ::unify_type::top_skolem_scope(&self.subs, &FnvMap::default(), typ)
+        ::unify_type::top_skolem_scope(&self.subs, typ)
     }
 
     fn error_on_duplicated_field(
@@ -2411,8 +2374,7 @@ impl<'a> Typecheck<'a> {
         let metadata = self.metadata.get(id);
         let mut alias_resolver = resolve::AliasRemover::new();
 
-        let typ =
-            ::unify_type::top_skolem_scope(&self.subs, &FnvMap::default(), self.subs.real(typ));
+        let typ = ::unify_type::top_skolem_scope(&self.subs, self.subs.real(typ));
         let ref typ = typ.instantiate_generics(&mut FnvMap::default());
         let raw_type = match alias_resolver.remove_aliases(&self.environment, typ.clone()) {
             Ok(t) => t,
@@ -2520,12 +2482,6 @@ fn apply_subs(
             Substitution(err) => Substitution(match err {
                 substitution::Error::Occurs(var, typ) => {
                     substitution::Error::Occurs(var, subs.set_type(typ))
-                }
-                substitution::Error::Constraint(typ, mut constraints) => {
-                    for typ in Arc::make_mut(&mut constraints) {
-                        *typ = subs.set_type(typ.clone());
-                    }
-                    substitution::Error::Constraint(subs.set_type(typ), constraints)
                 }
             }),
             Other(err) => Other(err),
@@ -2717,7 +2673,6 @@ struct TypeGeneralizer<'a, 'b: 'a> {
     level: u32,
     unbound_variables: FnvMap<Symbol, Generic<Symbol>>,
     variable_generator: TypeVariableGenerator,
-    constraints: Vec<ArcType>,
     tc: &'a mut Typecheck<'b>,
 }
 
@@ -2740,7 +2695,6 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             level,
             unbound_variables: FnvMap::default(),
             variable_generator: TypeVariableGenerator::new(level, &tc.subs, typ),
-            constraints: Vec::new(),
             tc,
         }
     }
@@ -2764,17 +2718,6 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
 
                 self.unbound_variables
                     .insert(id.clone(), Generic::new(id, var.kind.clone()));
-
-                {
-                    let constraints = self.tc.subs.get_constraints(var.id).clone();
-                    if !constraints.is_empty() {
-                        let cs: AppVec<_> = constraints
-                            .iter()
-                            .flat_map(|typ| self.generalize_type(typ))
-                            .collect();
-                        self.constraints.extend(cs);
-                    }
-                }
 
                 Some(gen)
             }

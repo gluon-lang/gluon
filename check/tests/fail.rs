@@ -110,21 +110,6 @@ in 1
     assert_err!(result, DuplicateTypeDefinition(..));
 }
 
-// TODO Determine what the correct semantics is for this case
-#[ignore]
-#[test]
-fn not_enough_information_to_decide_overload() {
-    let _ = env_logger::try_init();
-    let text = r#"
-let f x = x #Int+ 1
-let f x = x #Float+ 1.0
-\x -> f x
-"#;
-    let result = support::typecheck(text);
-
-    assert_unify_err!(result, Substitution(Constraint(..)));
-}
-
 #[test]
 fn unable_to_resolve_implicit_without_attribute() {
     let _ = env_logger::try_init();

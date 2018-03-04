@@ -2,14 +2,13 @@ use std::fmt;
 use std::result::Result as StdResult;
 
 use base::ast::{self, AstType};
-use base::fnv::FnvMap;
 use base::kind::{self, ArcKind, Kind, KindCache, KindEnv};
 use base::merge;
 use base::symbol::Symbol;
 use base::types::{self, BuiltinType, Generic, Type, Walker};
 use base::pos::{self, BytePos, HasSpan, Span, Spanned};
 
-use substitution::{Constraints, Substitutable, Substitution};
+use substitution::{Substitutable, Substitution};
 use unify::{self, Error as UnifyError, Unifiable, Unifier, UnifierState};
 
 pub type Error<I> = UnifyError<ArcKind, KindError<I>>;
@@ -378,11 +377,7 @@ impl Substitutable for ArcKind {
     {
         kind::walk_kind(self, f);
     }
-    fn instantiate(
-        &self,
-        _subs: &Substitution<Self>,
-        _constraints: &FnvMap<Symbol, Constraints<Self>>,
-    ) -> Self {
+    fn instantiate(&self, _subs: &Substitution<Self>) -> Self {
         self.clone()
     }
 }

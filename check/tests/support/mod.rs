@@ -317,7 +317,7 @@ macro_rules! assert_err {
         #[allow(unused_imports)]
         use check::unify::Error::{TypeMismatch, Substitution, Other};
         #[allow(unused_imports)]
-        use check::substitution::Error::{Occurs, Constraint};
+        use check::substitution::Error::Occurs;
         #[allow(unused_imports)]
         use check::unify_type::TypeError::FieldMismatch;
 
@@ -360,7 +360,7 @@ macro_rules! assert_multi_unify_err {
         #[allow(unused_imports)]
         use check::unify::Error::{TypeMismatch, Substitution, Other};
         #[allow(unused_imports)]
-        use check::substitution::Error::{Occurs, Constraint};
+        use check::substitution::Error::Occurs;
         #[allow(unused_imports)]
         use check::unify_type::TypeError::{FieldMismatch, SelfRecursiveAlias, MissingFields};
 

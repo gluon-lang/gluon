@@ -13,7 +13,7 @@ use base::scoped_map::ScopedMap;
 
 use unify;
 use unify::{Error as UnifyError, GenericVariant, Unifiable, Unifier};
-use substitution::{Constraints, Substitutable, Substitution, Variable, VariableFactory};
+use substitution::{Substitutable, Substitution, Variable, VariableFactory};
 
 impl VariableFactory for ArcKind {
     type Variable = TypeVariable;
@@ -75,7 +75,7 @@ impl<'a> State<'a> {
                 loop {
                     typ = types::walk_move_type(typ.clone(), &mut |typ| match **typ {
                         Type::Forall(_, _, None) => {
-                            let typ = new_skolem_scope(subs, &FnvMap::default(), typ);
+                            let typ = new_skolem_scope(subs, typ);
                             if let Type::Forall(_, _, Some(ref vars)) = *typ {
                                 for var in vars {
                                     if let Type::Variable(ref var) = **var {
@@ -257,12 +257,8 @@ impl Substitutable for ArcType<Symbol> {
         types::walk_type_(self, f)
     }
 
-    fn instantiate(
-        &self,
-        subs: &Substitution<Self>,
-        constraints: &FnvMap<Symbol, Constraints<Self>>,
-    ) -> Self {
-        new_skolem_scope(subs, constraints, self).instantiate_generics(&mut FnvMap::default())
+    fn instantiate(&self, subs: &Substitution<Self>) -> Self {
+        new_skolem_scope(subs, self).instantiate_generics(&mut FnvMap::default())
     }
 
     fn on_union(&self) -> Option<&Self> {
@@ -954,11 +950,7 @@ fn unpack_single_forall(l: &ArcType) -> Option<&ArcType> {
 }
 
 /// Replaces all instances `Type::Generic` in `typ` with fresh type variables (`Type::Variable`)
-pub fn new_skolem_scope(
-    subs: &Substitution<ArcType>,
-    constraints: &FnvMap<Symbol, Constraints<ArcType>>,
-    typ: &ArcType,
-) -> ArcType {
+pub fn new_skolem_scope(subs: &Substitution<ArcType>, typ: &ArcType) -> ArcType {
     let mut id_to_var = FnvMap::default();
     let mut id_to_constraint = FnvMap::default();
 
@@ -966,7 +958,7 @@ pub fn new_skolem_scope(
         if let Type::Forall(ref params, ref inner_type, None) = **typ {
             let mut skolem = Vec::new();
             for param in params {
-                let var = subs.new_constrained_var_fn(None, |id| {
+                let var = subs.new_var_fn(|id| {
                     id_to_var.insert(param.id.clone(), id);
                     Type::variable(TypeVariable {
                         id,
@@ -984,12 +976,10 @@ pub fn new_skolem_scope(
             if let Type::Function(ArgType::Implicit, ref arg, _) = **typ {
                 types::walk_move_type(arg.clone(), &mut |typ| {
                     if let Type::Generic(ref gen) = **typ {
-                        if !constraints.contains_key(&gen.id) {
-                            id_to_constraint
-                                .entry(gen.id.clone())
-                                .or_insert(Vec::new())
-                                .push(arg.clone());
-                        }
+                        id_to_constraint
+                            .entry(gen.id.clone())
+                            .or_insert(Vec::new())
+                            .push(arg.clone());
                     }
                     None
                 });
@@ -997,37 +987,12 @@ pub fn new_skolem_scope(
             None
         }
     });
-
-    for (id, constraints) in id_to_constraint {
-        if let Some(&var) = id_to_var.get(&id) {
-            let cs: AppVec<_> = constraints
-                .into_iter()
-                .map(|typ| {
-                    types::walk_move_type(typ, &mut |typ: &ArcType| match **typ {
-                        Type::Generic(ref gen) => match id_to_var.get(&gen.id) {
-                            Some(var) => subs.get_var(*var).cloned(),
-                            None => None,
-                        },
-                        _ => None,
-                    })
-                })
-                .collect();
-            subs.get_constraints(var).extend(cs);
-        }
-    }
     new_type
 }
 
-pub fn top_skolem_scope(
-    subs: &Substitution<ArcType>,
-    constraints: &FnvMap<Symbol, Constraints<ArcType>>,
-    typ: &ArcType,
-) -> ArcType {
+pub fn top_skolem_scope(subs: &Substitution<ArcType>, typ: &ArcType) -> ArcType {
     if let Type::Forall(ref params, ref inner_type, None) = **typ {
-        let skolem = params
-            .iter()
-            .map(|_| subs.new_constrained_var(None))
-            .collect();
+        let skolem = params.iter().map(|_| subs.new_var()).collect();
         ArcType::from(Type::Forall(
             params.clone(),
             inner_type.clone(),

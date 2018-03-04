@@ -1,7 +1,6 @@
-use std::cell::{RefCell, RefMut};
+use std::cell::RefCell;
 use std::default::Default;
 use std::fmt;
-use std::sync::Arc;
 
 use union_find::{QuickFindUf, Union, UnionByRank, UnionFind, UnionResult};
 
@@ -14,7 +13,6 @@ use base::symbol::Symbol;
 #[derive(Debug, PartialEq)]
 pub enum Error<T> {
     Occurs(T, T),
-    Constraint(T, Arc<Vec<T>>),
 }
 
 impl<T> fmt::Display for Error<T>
@@ -27,24 +25,11 @@ where
 
         match *self {
             Occurs(ref var, ref typ) => write!(f, "Variable `{}` occurs in `{}`.", var, typ),
-            Constraint(ref typ, ref constraints) => {
-                writeln!(
-                    f,
-                    "Type `{}` could not fullfill a constraint.\nPossible resolves:",
-                    typ,
-                )?;
-                for constraint in &constraints[..] {
-                    writeln!(f, "{}", constraint)?;
-                }
-                Ok(())
-            }
         }
     }
 }
 
 use typecheck::unroll_typ;
-
-pub type Constraints<T> = Arc<Vec<T>>;
 
 pub struct Substitution<T>
 where
@@ -52,7 +37,7 @@ where
 {
     /// Union-find data structure used to store the relationships of all variables in the
     /// substitution
-    union: RefCell<QuickFindUf<UnionByLevel<T>>>,
+    union: RefCell<QuickFindUf<UnionByLevel>>,
     /// Vector containing all created variables for this substitution. Needed for the `real` method
     /// which needs to always be able to return a `&T` reference
     variables: FixedVec<T>,
@@ -110,11 +95,7 @@ pub trait Substitutable: Sized {
     fn traverse<'a, F>(&'a self, f: &mut F)
     where
         F: Walker<'a, Self>;
-    fn instantiate(
-        &self,
-        subs: &Substitution<Self>,
-        constraints: &FnvMap<Symbol, Constraints<Self>>,
-    ) -> Self;
+    fn instantiate(&self, subs: &Substitution<Self>) -> Self;
 
     fn on_union(&self) -> Option<&Self> {
         None
@@ -166,33 +147,29 @@ where
 /// map.find(2) -> 1
 /// map.find(1) -> 1
 #[derive(Debug)]
-struct UnionByLevel<T> {
+struct UnionByLevel {
     rank: UnionByRank,
     level: u32,
-    constraints: Vec<T>,
 }
 
-impl<T> Default for UnionByLevel<T> {
-    fn default() -> UnionByLevel<T> {
+impl Default for UnionByLevel {
+    fn default() -> UnionByLevel {
         UnionByLevel {
             rank: UnionByRank::default(),
             level: ::std::u32::MAX,
-            constraints: Vec::default(),
         }
     }
 }
 
-impl<T> Union for UnionByLevel<T> {
+impl Union for UnionByLevel {
     #[inline]
-    fn union(mut left: UnionByLevel<T>, right: UnionByLevel<T>) -> UnionResult<UnionByLevel<T>> {
+    fn union(left: UnionByLevel, right: UnionByLevel) -> UnionResult<UnionByLevel> {
         use std::cmp::Ordering;
-        left.constraints.extend(right.constraints);
         let (rank_result, rank) = match Union::union(left.rank, right.rank) {
             UnionResult::Left(l) => (
                 UnionResult::Left(UnionByLevel {
                     rank: l,
                     level: left.level,
-                    constraints: left.constraints,
                 }),
                 l,
             ),
@@ -200,7 +177,6 @@ impl<T> Union for UnionByLevel<T> {
                 UnionResult::Right(UnionByLevel {
                     rank: r,
                     level: left.level,
-                    constraints: left.constraints,
                 }),
                 r,
             ),
@@ -209,16 +185,10 @@ impl<T> Union for UnionByLevel<T> {
             Ordering::Less => UnionResult::Left(UnionByLevel {
                 rank: rank,
                 level: left.level,
-                constraints: match rank_result {
-                    UnionResult::Left(x) | UnionResult::Right(x) => x.constraints,
-                },
             }),
             Ordering::Greater => UnionResult::Right(UnionByLevel {
                 rank: rank,
                 level: right.level,
-                constraints: match rank_result {
-                    UnionResult::Left(x) | UnionResult::Right(x) => x.constraints,
-                },
             }),
             Ordering::Equal => rank_result,
         }
@@ -276,24 +246,16 @@ impl<T: Substitutable> Substitution<T> {
     where
         T: Clone,
     {
-        self.new_constrained_var(None)
+        self.new_var_fn(|var| T::from_variable(self.factory.new(var)))
     }
 
-    pub fn new_constrained_var(&self, constraint: Option<T>) -> T
-    where
-        T: Clone,
-    {
-        self.new_constrained_var_fn(constraint, |var| T::from_variable(self.factory.new(var)))
-    }
-
-    pub fn new_constrained_var_fn<F>(&self, constraint: Option<T>, f: F) -> T
+    pub fn new_var_fn<F>(&self, f: F) -> T
     where
         T: Clone,
         F: FnOnce(u32) -> T,
     {
         let var_id = self.variables.len() as u32;
         let id = self.union.borrow_mut().insert(UnionByLevel {
-            constraints: constraint.into_iter().collect(),
             ..UnionByLevel::default()
         });
         assert!(id == self.variables.len());
@@ -356,11 +318,6 @@ impl<T: Substitutable> Substitution<T> {
         let level = &mut union.get_mut(var as usize).level;
         *level = ::std::cmp::min(*level, var);
         *level
-    }
-
-    pub fn get_constraints(&self, var: u32) -> RefMut<Vec<T>> {
-        let union = self.union.borrow_mut();
-        RefMut::map(union, |x| &mut x.get_mut(var as usize).constraints)
     }
 
     pub fn replace_variable(&self, typ: &T) -> Option<T>

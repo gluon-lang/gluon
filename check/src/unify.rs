@@ -203,12 +203,11 @@ mod test {
     use std::fmt;
 
     use base::error::Errors;
-    use base::fnv::FnvMap;
     use base::merge::merge;
     use base::symbol::Symbol;
     use base::types::Walker;
 
-    use substitution::{Constraints, Substitutable, Substitution};
+    use substitution::{Substitutable, Substitution};
 
     #[derive(Debug, Clone, Eq, PartialEq, Hash)]
     pub struct TType(Box<Type<TType>>);
@@ -261,11 +260,7 @@ mod test {
             traverse_(self, f)
         }
 
-        fn instantiate(
-            &self,
-            _subs: &Substitution<Self>,
-            _constraints: &FnvMap<Symbol, Constraints<Self>>,
-        ) -> Self {
+        fn instantiate(&self, _subs: &Substitution<Self>) -> Self {
             self.clone()
         }
     }
