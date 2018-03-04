@@ -966,17 +966,13 @@ pub fn new_skolem_scope(
         if let Type::Forall(ref params, ref inner_type, None) = **typ {
             let mut skolem = Vec::new();
             for param in params {
-                let constraint = constraints.get(&param.id).cloned();
-                let var = subs.new_constrained_var_fn(
-                    None, // TODO constraint.map(|constraint| (param.id.clone(), constraint.clone())),
-                    |id| {
-                        id_to_var.insert(param.id.clone(), id);
-                        Type::variable(TypeVariable {
-                            id,
-                            kind: param.kind.clone(),
-                        })
-                    },
-                );
+                let var = subs.new_constrained_var_fn(None, |id| {
+                    id_to_var.insert(param.id.clone(), id);
+                    Type::variable(TypeVariable {
+                        id,
+                        kind: param.kind.clone(),
+                    })
+                });
                 skolem.push(var.clone());
             }
             Some(ArcType::from(Type::Forall(
@@ -1028,12 +1024,10 @@ pub fn top_skolem_scope(
     typ: &ArcType,
 ) -> ArcType {
     if let Type::Forall(ref params, ref inner_type, None) = **typ {
-        let mut skolem = Vec::new();
-        for param in params {
-            // TODO let constraint = constraints.get(&param.id).cloned();
-            let var = subs.new_constrained_var(None);
-            skolem.push(var.clone());
-        }
+        let skolem = params
+            .iter()
+            .map(|_| subs.new_constrained_var(None))
+            .collect();
         ArcType::from(Type::Forall(
             params.clone(),
             inner_type.clone(),

@@ -13,10 +13,10 @@ extern crate itertools;
 #[macro_use]
 extern crate log;
 extern crate pretty;
-extern crate strsim;
-extern crate smallvec;
-extern crate union_find;
 extern crate rpds;
+extern crate smallvec;
+extern crate strsim;
+extern crate union_find;
 
 #[macro_use]
 extern crate gluon_base as base;
@@ -28,6 +28,8 @@ pub mod kindcheck;
 pub mod substitution;
 pub mod rename;
 pub mod metadata;
+
+mod implicits;
 
 use base::types::{ArcType, TypeEnv};
 
