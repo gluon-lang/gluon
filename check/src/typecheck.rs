@@ -913,10 +913,8 @@ impl<'a> Typecheck<'a> {
                     .cloned()
                     .unwrap_or_else(|| self.subs.new_var());
 
-                let last_span = lambda.args.last().unwrap().span;
                 let mut args = lambda.args.iter_mut().map(|arg| (ArgType::Explicit, arg));
-                let mut typ =
-                    self.typecheck_lambda(function_type, last_span, &mut args, &mut lambda.body);
+                let mut typ = self.typecheck_lambda(function_type, &mut args, &mut lambda.body);
 
                 self.generalize_type(level, &mut typ);
                 lambda.id.typ = typ.clone();
@@ -1236,7 +1234,6 @@ impl<'a> Typecheck<'a> {
     fn typecheck_lambda<'i>(
         &mut self,
         mut function_type: ArcType,
-        last_span: Span<BytePos>,
         args: &mut Iterator<Item = (ArgType, &'i mut SpannedIdent<Symbol>)>,
         body: &mut SpannedExpr<Symbol>,
     ) -> ArcType {
@@ -1251,13 +1248,13 @@ impl<'a> Typecheck<'a> {
             let mut args = args.peekable();
             let mut next_type_arg = iter1.next();
 
-            let make_new_arg = |tc: &mut Self, typ: &mut ArcType| {
+            let make_new_arg = |tc: &mut Self, span: Span<BytePos>, typ: &mut ArcType| {
                 let arg = tc.subs.new_var();
                 let ret = tc.subs.new_var();
                 let f = tc.type_cache.function(Some(arg.clone()), ret.clone());
                 if let Err(err) = tc.unify(typ, f) {
                     tc.errors.push(Spanned {
-                        span: last_span,
+                        span,
                         value: err.into(),
                     });
                 }
@@ -1296,8 +1293,9 @@ impl<'a> Typecheck<'a> {
                                 );
                         }
                         Some((ArgType::Explicit, arg)) => {
-                            let arg_type =
-                                arg_type.unwrap_or_else(|| make_new_arg(iter1.tc, &mut iter1.typ));
+                            let arg_type = arg_type.unwrap_or_else(|| {
+                                make_new_arg(iter1.tc, arg.span, &mut iter1.typ)
+                            });
                             let arg = &mut arg.value;
 
                             arg.typ = arg_type;
@@ -1634,16 +1632,15 @@ impl<'a> Typecheck<'a> {
                 }
 
                 let typ = self.new_skolem_scope_signature(&bind.resolved_type);
-                self.typecheck_lambda(typ, bind.name.span, &mut None.into_iter(), &mut bind.expr)
+                self.typecheck_lambda(typ, &mut None.into_iter(), &mut bind.expr)
             } else {
                 let typ = self.new_skolem_scope_signature(&bind.resolved_type);
                 let function_type = self.skolemize(&typ);
 
-                let last_span = bind.args.last().unwrap().name.span;
                 let mut args = bind.args
                     .iter_mut()
                     .map(|arg| (arg.arg_type, &mut arg.name));
-                self.typecheck_lambda(function_type, last_span, &mut args, &mut bind.expr)
+                self.typecheck_lambda(function_type, &mut args, &mut bind.expr)
             };
 
             debug!("let {:?} : {}", bind.name, typ);
