@@ -1,7 +1,8 @@
 //@NO-IMPLICIT-PRELUDE
 
 let { Bool, Option, Ordering } = import! std.types
-let { Functor, Applicative, (*>), wrap } = import! std.applicative
+let { Functor } = import! std.functor
+let { Applicative, (*>), wrap } = import! std.applicative
 
 /// `Semigroup a` represents an associative operation on `a`.
 /// This means the following laws must hold:

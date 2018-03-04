@@ -5,6 +5,10 @@ let { Bool } = import! std.bool
 let string @ { ? } = import! std.string
 let array @ { ? } = import! std.array
 
+let { map } = import! std.functor
+let { (<*>), wrap } = import! std.applicative
+let { (<|>) } = import! std.prelude
+
 /// A linked list type
 type List a = | Nil | Cons a (List a)
 
@@ -62,9 +66,6 @@ let applicative : Applicative List =
     let wrap x = Cons x Nil
 
     { functor = functor, apply, wrap }
-
-let { map, (<*>), wrap, ? } = import! std.applicative
-let { (<|>) } = import! std.prelude
 
 // FIXME Implicit resolution
 let many ?alt x : [Alternative f] -> f a -> f (List a) =

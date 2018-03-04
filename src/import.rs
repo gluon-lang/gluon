@@ -81,6 +81,7 @@ static STD_LIBS: &[(&str, &str)] = &std_libs!(
     "unit",
     "writer",
     "array",
+    "functor",
     "applicative"
 );
 
