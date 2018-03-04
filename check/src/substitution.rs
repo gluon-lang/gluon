@@ -121,7 +121,7 @@ pub trait Substitutable: Sized {
     }
 }
 
-fn occurs<T>(typ: &T, subs: &Substitution<T>, var: &T::Variable) -> bool
+pub fn occurs<T>(typ: &T, subs: &Substitution<T>, var: &T::Variable) -> bool
 where
     T: Substitutable,
 {

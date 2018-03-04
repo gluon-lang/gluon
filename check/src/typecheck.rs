@@ -66,6 +66,7 @@ pub enum TypeError<I> {
     Message(String),
     /// An implicit parameter were not possible to resolve
     UnableToResolveImplicit(ArcType<I>, Vec<String>),
+    LoopInImplicitResolution(Vec<String>),
 }
 
 impl<I> From<KindCheckError<I>> for TypeError<I> {
@@ -185,6 +186,11 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
                 f,
                 "Implicit parameter with type `{}` could not be resolved.\nPossibilities: {}",
                 typ,
+                paths.iter().format(", ")
+            ),
+            LoopInImplicitResolution(ref paths) => write!(
+                f,
+                "Unable to resolve implicit, possible infinite loop. When resolving, {}",
                 paths.iter().format(", ")
             ),
         }
@@ -569,6 +575,8 @@ impl<'a> Typecheck<'a> {
             }
         }
 
+        const MAX_IMPLICIT_LEVEL: u32 = 20;
+
         struct ResolveImplicitsVisitor<'a, 'b: 'a> {
             tc: &'a mut Typecheck<'b>,
         }
@@ -576,11 +584,33 @@ impl<'a> Typecheck<'a> {
         impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
             fn resolve_implicit_application(
                 &mut self,
+                level: u32,
                 implicit_bindings: &ImplictBindings,
                 span: Span<BytePos>,
                 path: &[TypedIdent<Symbol>],
                 to_resolve: &[ArcType],
-            ) -> Option<SpannedExpr<Symbol>> {
+            ) -> TcResult<Option<SpannedExpr<Symbol>>> {
+                self.resolve_implicit_application_(level, implicit_bindings, span, path, to_resolve)
+                    .map_err(|mut err| {
+                        if let TypeError::LoopInImplicitResolution(ref mut paths) = err {
+                            paths.push(path.iter().map(|id| &id.name).format(".").to_string());
+                        }
+                        err
+                    })
+            }
+
+            fn resolve_implicit_application_(
+                &mut self,
+                level: u32,
+                implicit_bindings: &ImplictBindings,
+                span: Span<BytePos>,
+                path: &[TypedIdent<Symbol>],
+                to_resolve: &[ArcType],
+            ) -> TcResult<Option<SpannedExpr<Symbol>>> {
+                if level > MAX_IMPLICIT_LEVEL {
+                    return Err(TypeError::LoopInImplicitResolution(Vec::new()));
+                }
+
                 let base_ident = path[0].clone();
                 let func = path[1..].iter().fold(
                     pos::spanned(span, Expr::Ident(base_ident)),
@@ -592,28 +622,35 @@ impl<'a> Typecheck<'a> {
                     },
                 );
 
-                if to_resolve.is_empty() {
+                Ok(if to_resolve.is_empty() {
                     Some(func)
                 } else {
-                    let resolved_arguments: Vec<_> = to_resolve
+                    let resolved_arguments = to_resolve
                         .iter()
                         .filter_map(|expected_type| {
                             let mut to_resolve = Vec::new();
-                            let found_candidate = implicit_bindings.iter().rev().find(
-                                |&&(ref path, ref typ)| {
+                            let found_candidate =
+                                implicit_bindings.iter().rev().find(|&&(_, ref typ)| {
                                     self.try_implicit(&mut to_resolve, expected_type, typ)
-                                },
-                            );
-                            found_candidate.and_then(|&(ref path, _)| {
-                                self.resolve_implicit_application(
-                                    implicit_bindings,
-                                    span,
-                                    path,
-                                    &to_resolve,
-                                )
-                            })
+                                });
+                            match found_candidate {
+                                Some(&(ref path, _)) => {
+                                    debug!("Success! Resolving arguments");
+                                    match self.resolve_implicit_application(
+                                        level + 1,
+                                        implicit_bindings,
+                                        span,
+                                        path,
+                                        &to_resolve,
+                                    ) {
+                                        Ok(opt) => opt.map(Ok),
+                                        Err(err) => Some(Err(err)),
+                                    }
+                                }
+                                None => None,
+                            }
                         })
-                        .collect();
+                        .collect::<TcResult<Vec<_>>>()?;
                     if resolved_arguments.len() == to_resolve.len() {
                         Some(pos::spanned(
                             span,
@@ -626,7 +663,7 @@ impl<'a> Typecheck<'a> {
                     } else {
                         None
                     }
-                }
+                })
             }
 
             fn try_implicit(
@@ -671,33 +708,48 @@ impl<'a> Typecheck<'a> {
                         let found_candidate = implicit_bindings.iter().rev().find(
                             |&&(_, ref typ)| self.try_implicit(&mut to_resolve, &id.typ, typ),
                         );
-                        replacement = found_candidate.and_then(|&(ref path, _)| {
+                        let resolution_result = found_candidate.and_then(|&(ref path, _)| {
                             debug!(
                                     "Found implicit candidate `{}`. Trying its implicit arguments (if any)",
                                     path.iter().rev().map(|id| &id.name).format(".")
                                 );
-                            self.resolve_implicit_application(
+                            match self.resolve_implicit_application(
+                                0,
                                 &implicit_bindings,
                                 span,
                                 &path,
                                 &to_resolve,
-                            )
+                            ) {
+                                Ok(opt) => opt.map(Ok),
+                                Err(err) => Some(Err(err)),
+                            }
                         });
-                        if replacement.is_none() {
-                            debug!("UnableToResolveImplicit {:?} {}", id.name, id.typ);
-                            self.tc.errors.push(Spanned {
-                                span: expr.span,
-                                value: TypeError::UnableToResolveImplicit(
-                                    id.typ.clone(),
-                                    implicit_bindings
-                                        .iter()
-                                        .map(|&(ref path, _)| {
-                                            path.iter().map(|id| &id.name).format(".").to_string()
-                                        })
-                                        .collect(),
-                                ).into(),
-                            });
-                        }
+                        replacement = match resolution_result {
+                            Some(Ok(replacement)) => Some(replacement),
+                            Some(Err(err)) => {
+                                self.tc.error(span, err);
+                                None
+                            }
+                            None => {
+                                debug!("UnableToResolveImplicit {:?} {}", id.name, id.typ);
+                                self.tc.errors.push(Spanned {
+                                    span: expr.span,
+                                    value: TypeError::UnableToResolveImplicit(
+                                        id.typ.clone(),
+                                        implicit_bindings
+                                            .iter()
+                                            .map(|&(ref path, _)| {
+                                                path.iter()
+                                                    .map(|id| &id.name)
+                                                    .format(".")
+                                                    .to_string()
+                                            })
+                                            .collect(),
+                                    ).into(),
+                                });
+                                None
+                            }
+                        };
                     }
                 }
                 if let Some(replacement) = replacement {
@@ -743,7 +795,8 @@ impl<'a> Typecheck<'a> {
                 | EmptyCase
                 | KindError(_)
                 | Rename(_)
-                | Message(_) => (),
+                | Message(_)
+                | LoopInImplicitResolution(..) => (),
                 NotAFunction(ref mut typ)
                 | UndefinedField(ref mut typ, _)
                 | PatternError(ref mut typ, _)
@@ -1413,7 +1466,7 @@ impl<'a> Typecheck<'a> {
 
         let body_type = {
             let mut return_type = function_type.clone();
-            let mut iter1 = function_arg_iter(self, last_span, function_type);
+            let mut iter1 = function_arg_iter(self, function_type);
 
             let mut args = args.peekable();
             let mut next_type_arg = iter1.next();
@@ -1829,6 +1882,28 @@ impl<'a> Typecheck<'a> {
                 self.finish_pattern(level, &mut bind.name, &bind.resolved_type);
                 debug!("Generalized to {}", bind.resolved_type);
             }
+
+            let mut bindings = self.implicit_bindings.last().unwrap().clone();
+            for i in 0..bindings.len() {
+                let opt = {
+                    let bind = bindings.get(i).unwrap();
+                    if bind.0.len() == 1 {
+                        let typ = self.environment
+                            .stack
+                            .get(&bind.0[0].name)
+                            .unwrap()
+                            .typ
+                            .clone();
+                        Some((bind.0.clone(), typ))
+                    } else {
+                        None
+                    }
+                };
+                if let Some(new) = opt {
+                    bindings = bindings.set(i, new).unwrap();
+                }
+            }
+            *self.implicit_bindings.last_mut().unwrap() = bindings;
         }
 
         debug!("Typecheck `in`");
@@ -2017,6 +2092,7 @@ impl<'a> Typecheck<'a> {
                     .expect("ICE: Variable no inserted")
                     .typ = id.typ.clone();
                 debug!("{}: {}", self.symbols.string(&id.name), id.typ);
+                debug!("{}: {:?}", self.symbols.string(&id.name), id.typ);
             }
             Pattern::Record {
                 ref mut typ,
@@ -2066,7 +2142,7 @@ impl<'a> Typecheck<'a> {
                 let len = args.len();
                 let span = args.last().map(|arg| arg.span).unwrap_or(pattern.span);
                 let iter = args.iter_mut().zip(
-                    function_arg_iter(self, span, final_type.clone())
+                    function_arg_iter(self, final_type.clone())
                         .map(|t| t.1)
                         .take(len)
                         .collect::<Vec<_>>(),
@@ -2651,7 +2727,6 @@ fn get_alias_app<'a>(
 }
 struct FunctionArgIter<'a, 'b: 'a> {
     tc: &'a mut Typecheck<'b>,
-    span: Span<BytePos>,
     typ: ArcType,
 }
 
@@ -2688,12 +2763,8 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
     }
 }
 
-fn function_arg_iter<'a, 'b>(
-    tc: &'a mut Typecheck<'b>,
-    span: Span<BytePos>,
-    typ: ArcType,
-) -> FunctionArgIter<'a, 'b> {
-    FunctionArgIter { tc, span, typ }
+fn function_arg_iter<'a, 'b>(tc: &'a mut Typecheck<'b>, typ: ArcType) -> FunctionArgIter<'a, 'b> {
+    FunctionArgIter { tc, typ }
 }
 
 /// Returns a span of the innermost expression of a group of nested `let` and `type` bindings.

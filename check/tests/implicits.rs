@@ -219,6 +219,25 @@ f (Cons 1 Nil)
 }
 
 #[test]
+fn catch_infinite_loop() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+/// @implicit
+type Test a = | Test a
+
+type List a = | Nil | Cons a (List a)
+
+let f ?x : [Test a] -> Test a = x
+let g ?x y : [Test a] -> Int -> Test a = x
+
+g 1
+"#;
+    let result = support::typecheck(text);
+
+    assert_err!(result, TypeError::LoopInImplicitResolution(..));
+}
+
+#[test]
 fn implicit_ord() {
     let _ = ::env_logger::try_init();
     let text = r#"
@@ -546,15 +565,24 @@ type Semigroup a = {
     append : a -> a -> a
 }
 
+/// @implicit
 type Applicative (f : Type -> Type) = {
     apply : forall a b . f (a -> b) -> f a -> f b,
 }
 
-let any x = any x
+/// @implicit
+type Eq a = { (==) : a -> a -> Bool }
 
 type List a = | Nil | Cons a (List a)
 
+let any x = any x
+
 let semigroup : Semigroup (List a) = any ()
+
+let eq ?eq : [Eq a] -> Eq (List a) =
+    let (==) l r = True
+    { (==) }
+
 
 let (<>) ?s : [Semigroup a] -> a -> a -> a = s.append
 
