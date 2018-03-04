@@ -1427,6 +1427,29 @@ impl<'a> Typecheck<'a> {
         I: IntoIterator<Item = &'e mut SpannedExpr<Symbol>>,
     {
         func_type = self.new_skolem_scope(&func_type);
+        for arg in &mut **implicit_args {
+            let f = self.type_cache
+                .function_implicit(once(self.subs.new_var()), self.subs.new_var());
+            func_type = self.instantiate_generics(&func_type);
+            let level = self.subs.var_id();
+
+            self.subsumes(span, level, &f, func_type.clone());
+
+            func_type = match f.as_function() {
+                Some((arg_ty, ret_ty)) => {
+                    let arg_ty = self.subs.real(arg_ty).clone();
+                    let actual = self.typecheck(arg, &arg_ty);
+                    let actual = self.instantiate_generics(&actual);
+
+                    let level = self.subs.var_id();
+                    self.subsumes_expr(expr_check_span(arg), level, &arg_ty, actual, arg);
+
+                    ret_ty.clone()
+                }
+                None => return Err(TypeError::NotAFunction(func_type.clone())),
+            };
+        }
+
         for arg in args {
             let f = self.type_cache
                 .function(once(self.subs.new_var()), self.subs.new_var());

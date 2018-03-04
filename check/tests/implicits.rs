@@ -37,6 +37,19 @@ f 42
 }
 
 #[test]
+fn single_implicit_explicit_arg() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+
+let f ?x y: [Int] -> Int -> Int = x
+f ?32 42
+"#;
+    let result = support::typecheck(text);
+
+    assert_req!(result, Ok(Type::int()));
+}
+
+#[test]
 fn multiple_implicit_args() {
     let _ = ::env_logger::try_init();
     let text = r#"

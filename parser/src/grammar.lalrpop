@@ -525,7 +525,7 @@ SpAtomicExpr: SpannedExpr<Id> = {
 };
 
 ImplicitArg: SpannedExpr<Id> = {
-    <arg: Sp<AtomicExpr>> "?" => arg
+    "?" <arg: Sp<AtomicExpr>> => arg
 };
 
 AppExpr = {
