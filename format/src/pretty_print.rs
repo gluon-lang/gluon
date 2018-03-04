@@ -98,12 +98,19 @@ where
                 ref func,
                 ref args,
             } => {
-                let arg_iter = iter::once(&**func).chain(args).tuple_windows().map(
-                    |(prev, arg)| {
+                let arg_iter = iter::once((&**func, false))
+                    .chain(implicit_args.iter().map(|arg| (arg, true)))
+                    .chain(args.iter().map(|arg| (arg, false)))
+                    .tuple_windows()
+                    .map(|((prev, _), (arg, implicit))| {
                         self.space(Span::new(prev.span.end, arg.span.start))
+                            .append(if implicit {
+                                arena.text("?")
+                            } else {
+                                arena.nil()
+                            })
                             .append(pretty(arg))
-                    },
-                );
+                    });
                 pretty(func)
                     .append(arena.concat(arg_iter).nest(INDENT))
                     .group()
