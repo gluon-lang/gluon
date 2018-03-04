@@ -38,11 +38,11 @@ let monoid : Monoid (List a) = {
     empty = Nil,
 }
 
-let eq a : Eq a -> Eq (List a) =
+let eq ?eq : [Eq a] -> Eq (List a) =
     let (==) l r =
         match (l, r) with
         | (Nil, Nil) -> True
-        | (Cons x xs, Cons y ys) -> a.(==) x y && xs == ys
+        | (Cons x xs, Cons y ys) -> eq.(==) x y && xs == ys
         | _ -> False
     { (==) }
 
@@ -103,7 +103,7 @@ let monad : Monad List =
 
     { applicative = applicative, flat_map }
 
-let show : Show a -> Show (List a) = \d ->
+let show ?d: [Show a] -> Show (List a) =
     let (++) = string.semigroup.append
 
     {

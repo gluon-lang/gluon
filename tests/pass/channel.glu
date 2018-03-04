@@ -1,14 +1,13 @@
-let { run, writer, assert_eq, ? }  = import! std.test
+let { Test, run, writer, assert_eq, ? }  = import! std.test
 let prelude  = import! std.prelude
 let { Applicative, (*>) } = import! std.applicative
 let int = import! std.int
 let result @ { Result } = import! std.result
-let unit = import! std.unit
+let unit @ { ? } = import! std.unit
 let { send, recv, channel } = import! std.channel
 
-let assert =
-    assert_eq (result.show unit.show int.show )
-              (result.eq unit.eq int.eq)
+let assert : Result () Int -> Result () Int -> Test _ =
+    assert_eq result.show result.eq
 
 let { sender, receiver } = channel 0
 

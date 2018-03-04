@@ -5,11 +5,11 @@ let int = import! std.int
 let list @ { ? }= import! std.list
 let option @ { ? } = import! std.option
 
-let test_alt ?alt show eq : [Alternative f] -> (Show Int -> Show (f Int)) -> (Eq Int -> Eq (f Int)) -> _ =
+let test_alt ?alt show eq : [Alternative f] -> Show (f Int) -> Eq (f Int) -> _ =
     let { (<|>), or, empty } = import! std.prelude
     let { wrap, ? } = alt.applicative
 
-    let assert = assert_eq (show int.show) (eq int.eq)
+    let assert = assert_eq show eq
 
     assert empty empty *> assert (empty <|> wrap 1) (wrap 1) *> assert (empty <|> empty) empty
         *> assert (empty <|> empty <|> wrap 10) (wrap 10)

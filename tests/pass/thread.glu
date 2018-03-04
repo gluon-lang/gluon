@@ -11,10 +11,10 @@ let { send, recv, channel } = import! std.channel
 let { spawn, yield, resume } = import! std.thread
 
 let assert =
-    assert_eq (result.show unit.show int.show) (result.eq unit.eq int.eq)
+    assert_eq (result.show ?unit.show ?int.show) (result.eq ?unit.eq ?int.eq)
 let assert_any_err =
-    assert_eq (result.show string.show unit.show)
-              (result.eq { (==) = \x y -> True } unit.eq)
+    assert_eq (result.show ?string.show ?unit.show)
+              (result.eq ?{ (==) = \x y -> True } ?unit.eq)
 
 let { sender, receiver } = channel 0
 

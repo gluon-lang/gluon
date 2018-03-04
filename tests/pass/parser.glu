@@ -9,10 +9,10 @@ let { Parser, applicative, functor, alternative, monad, any, parse } = import! s
 let { Applicative, (*>), wrap } = import! std.applicative
 let { (<|>) } = import! std.prelude
 
-let assert_parse show eq =
+let assert_parse show eq : Show a -> Eq a -> Result String a -> Result String a -> _ =
     assert_eq
-        (result.show string.show show)
-        (result.eq string.eq eq)
+        result.show
+        result.eq
 
 let tests =
     assert_parse char.show char.eq (parse any "abc") (Ok 'a')

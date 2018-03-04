@@ -479,7 +479,7 @@ fn rename_types_after_binding() {
 let list = import! std.list
 in
 let { List } = list
-and eq_list: Eq (List Int) = list.eq { (==) }
+and eq_list: Eq (List Int) = list.eq
 in Cons 1 Nil == Nil
 "#;
     let mut vm = make_vm();

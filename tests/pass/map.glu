@@ -16,10 +16,10 @@ let eq_Entry : Eq { key : String, value : Int } = {
     (==) = \l r -> l.key == r.key && l.value == r.value
 }
 
-let assert_entries = assert_eq (list.show show_Entry) (list.eq eq_Entry)
-let assert_keys = assert_eq (list.show string.show) (list.eq string.eq)
-let assert_values = assert_eq (list.show int.show) (list.eq int.eq)
-let assert_opt = assert_eq (option.show int.show) (option.eq int.eq)
+let assert_entries = assert_eq (list.show ?show_Entry) (list.eq ?eq_Entry)
+let assert_keys = assert_eq (list.show ?string.show) (list.eq ?string.eq)
+let assert_values = assert_eq (list.show ?int.show) (list.eq ?int.eq)
+let assert_opt = assert_eq (option.show ?int.show) (option.eq ?int.eq)
 
 let ord_map = map.make string.ord
 let { singleton, find, insert, to_list, keys, values, ? } = ord_map

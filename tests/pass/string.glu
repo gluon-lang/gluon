@@ -1,17 +1,17 @@
 let prelude = import! std.prelude
 let { run, writer, assert_eq, assert_seq, assert_ieq, ? } = import! std.test
-let int = import! std.int
+let int @ { ? } = import! std.int
 let { Applicative, (*>) } = import! std.applicative
 
-let bool @ { Bool } = import! std.bool
-let option @ { Option } = import! std.option
-let string = import! std.string
-let result @ { Result } = import! std.result
-let unit = import! std.unit
+let bool @ { Bool, ? } = import! std.bool
+let option @ { Option, ? } = import! std.option
+let string @ { ? } = import! std.string
+let result @ { Result, ? } = import! std.result
+let unit @ { ? } = import! std.unit
 
-let assert_oieq = assert_eq (option.show int.show) (option.eq int.eq)
-let assert_beq = assert_eq bool.show bool.eq
-let assert_req = assert_eq (result.show unit.show string.show) (result.eq unit.eq string.eq)
+let assert_oieq : Option Int -> Option Int -> _ = assert_eq option.show option.eq
+let assert_beq : Bool -> Bool -> _ = assert_eq bool.show bool.eq
+let assert_req : Result () String -> Result () String -> _ = assert_eq result.show result.eq
 
 let slice_tests =
     assert_seq (string.slice "ab" 0 1) "a" *> assert_seq (string.slice "ab" 1 2) "b"

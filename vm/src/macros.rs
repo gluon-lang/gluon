@@ -122,30 +122,29 @@ impl<'a> MutVisitor for MacroExpander<'a> {
                 ref mut implicit_args,
                 func: ref mut id,
                 ref mut args,
-            } => {
-                if !implicit_args.is_empty() {
-                    self.errors.push(pos::spanned(
-                        expr.span,
-                        "Implicit arguments are not allowed on macros".into(),
-                    ));
-                }
-                match id.value {
-                    Expr::Ident(ref id) if id.name.as_ref().ends_with('!') => {
-                        let name = id.name.as_ref();
-                        match self.macros.get(&name[..name.len() - 1]) {
-                            Some(m) => Some(match m.expand(self, args) {
-                                Ok(e) => e,
-                                Err(err) => {
-                                    self.errors.push(pos::spanned(expr.span, err));
-                                    pos::spanned(expr.span, Expr::Error(None))
-                                }
-                            }),
-                            None => None,
-                        }
+            } => match id.value {
+                Expr::Ident(ref id) if id.name.as_ref().ends_with('!') => {
+                    if !implicit_args.is_empty() {
+                        self.errors.push(pos::spanned(
+                            expr.span,
+                            "Implicit arguments are not allowed on macros".into(),
+                        ));
                     }
-                    _ => None,
+
+                    let name = id.name.as_ref();
+                    match self.macros.get(&name[..name.len() - 1]) {
+                        Some(m) => Some(match m.expand(self, args) {
+                            Ok(e) => e,
+                            Err(err) => {
+                                self.errors.push(pos::spanned(expr.span, err));
+                                pos::spanned(expr.span, Expr::Error(None))
+                            }
+                        }),
+                        None => None,
+                    }
                 }
-            }
+                _ => None,
+            },
             _ => None,
         };
         if let Some(mut e) = replacement {

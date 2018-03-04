@@ -58,7 +58,7 @@ let monoid a : Semigroup a -> Monoid (Option a) = {
     empty = None,
 }
 
-let eq a : Eq a -> Eq (Option a) = {
+let eq ?a : [Eq a] -> Eq (Option a) = {
     (==) = \l r ->
         match (l, r) with
         | (Some l_val, Some r_val) -> a.(==) l_val r_val
@@ -66,15 +66,17 @@ let eq a : Eq a -> Eq (Option a) = {
         | _ -> False,
 }
 
-let ord a : Ord a -> Ord (Option a) = {
-    eq = eq a.eq,
-    compare = \l r ->
-        match (l, r) with
-        | (Some l_val, Some r_val) -> a.compare l_val r_val
-        | (None, Some _) -> LT
-        | (Some _, None) -> GT
-        | (None, None) -> EQ,
-}
+let ord ?a : [Ord a] -> Ord (Option a) =
+    let { ? } = a
+    {
+        eq = eq,
+        compare = \l r ->
+            match (l, r) with
+            | (Some l_val, Some r_val) -> a.compare l_val r_val
+            | (None, Some _) -> LT
+            | (Some _, None) -> GT
+            | (None, None) -> EQ,
+    }
 
 let functor : Functor Option = {
     map = \f x ->
@@ -109,7 +111,7 @@ let monad : Monad Option = {
         | None -> None,
 }
 
-let show : Show a -> Show (Option a) = \d ->
+let show ?d : [Show a] -> Show (Option a) =
     let (++) = string.append
 
     let show o =

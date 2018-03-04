@@ -1,17 +1,17 @@
 let prelude = import! std.prelude
 let { run, writer, assert_eq, assert_ieq, ? } = import! std.test
 let { Applicative, (*>) } = import! std.applicative
-let int = import! std.int
-let stream  = import! std.stream
-let list @ { List } = import! std.list
+let int @ { ? } = import! std.int
+let stream @ { Stream } = import! std.stream
+let list @ { List, ? } = import! std.list
 let { Option } = import! std.option
 
 let s = stream.from (\i -> if i < 5 then Some i else None)
 
-let assert_leq s a =
+let assert_leq s a : Stream Int -> Array Int -> _ =
     assert_eq
-        (list.show int.show)
-        (list.eq int.eq)
+        list.show
+        list.eq
         (stream.to_list s)
         (list.of a)
 

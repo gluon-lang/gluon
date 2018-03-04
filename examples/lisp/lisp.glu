@@ -27,7 +27,7 @@ let eq : Eq Expr =
         | (Int ls, Int rs) -> ls == rs
         | (Float ls, Float rs) -> ls == rs
         | (List ls, List rs) ->
-            let list_eq : Eq (List Expr) = list.eq { (==) = eq_expr }
+            let list_eq : Eq (List Expr) = list.eq ?{ (==) = eq_expr }
             list_eq.(==) ls rs
         | _ -> False
     { (==) = eq_expr }

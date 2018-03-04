@@ -531,6 +531,9 @@ ImplicitArg: SpannedExpr<Id> = {
 AppExpr = {
     AtomicExpr,
 
+    <expr: SpAtomicExpr> <implicit_args: ImplicitArg+> =>
+        Expr::App { func: Box::new(expr), implicit_args, args: Vec::new() },
+
     <expr: SpAtomicExpr> <implicit_args: ImplicitArg*> <args: SpAtomicExpr+> =>
         Expr::App { func: Box::new(expr), implicit_args, args },
 };
