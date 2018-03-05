@@ -99,7 +99,7 @@ let monad : Monad List =
 
     { applicative = applicative, flat_map }
 
-let show ?d: [Show a] -> Show (List a) =
+let show ?d : [Show a] -> Show (List a) =
     let (++) = string.semigroup.append
 
     {

@@ -118,7 +118,8 @@ fn run() -> std::result::Result<(), Box<std::error::Error + Send + Sync>> {
         )
         (@subcommand doc =>
             (about: "Documents gluon source code")
-            (@arg INPUT: ... "Documents the file or directory")
+            (@arg INPUT: +required "Documents the file or directory")
+            (@arg OUTPUT: +required "Outputs the documentation to this directory")
         )
         (@arg INPUT: ... "Executes each file as a gluon program")
     ).get_matches();
@@ -149,11 +150,10 @@ fn run() -> std::result::Result<(), Box<std::error::Error + Send + Sync>> {
             fmt_stdio()?;
         }
     } else if let Some(fmt_matches) = matches.subcommand_matches("doc") {
-        if let Some(args) = fmt_matches.values_of("INPUT") {
-            for arg in args {
-                gluon::doc::generate_for_path(&new_vm(), arg, "doc")?;
-            }
-        }
+        let input = fmt_matches.value_of("INPUT").expect("INPUT");
+        let output = fmt_matches.value_of("OUTPUT").expect("OUTPUT");
+        gluon::doc::generate_for_path(&new_vm(), input, output)
+            .map_err(|err| format!("{}\n{}", err, err.backtrace()))?;
     } else if matches.is_present("REPL") {
         repl::run()?;
     } else if let Some(args) = matches.values_of("INPUT") {
