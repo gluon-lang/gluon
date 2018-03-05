@@ -141,3 +141,31 @@ x.id
         }
     );
 }
+
+#[test]
+fn propagate_metadata_from_field_in_type() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+type Test = {
+    /// A field
+    x : Int
+}
+{ Test }
+"#;
+    let (mut expr, result) = support::typecheck_expr(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+
+    let metadata = metadata(&MockEnv, &mut expr);
+    assert_eq!(
+        metadata
+            .module
+            .get("Test")
+            .and_then(|metadata| metadata.module.get("x")),
+        Some(&Metadata {
+            comment: Some("A field".into()),
+            module: Default::default(),
+        })
+    );
+}
