@@ -163,10 +163,10 @@ fn implicit_on_type() {
     let _ = ::env_logger::try_init();
     let text = r#"
 /// @implicit
-type Test = | Test
+type Test = | Test ()
 let f ?x y: [a] -> a -> a = x
-let i = Test
-f Test
+let i = Test ()
+f (Test ())
 "#;
     let result = support::typecheck(text);
 
@@ -174,7 +174,10 @@ f Test
         "Test",
         &[],
         Type::variant(vec![
-            Field::new(support::intern("Test"), support::typ("Test")),
+            Field::new(
+                support::intern("Test"),
+                Type::function(vec![Type::unit()], support::typ("Test")),
+            ),
         ]),
     );
     assert_req!(result, Ok(test));
@@ -285,8 +288,8 @@ fn forward_implicit_parameter() {
     let text = r#"
 /// @implicit
 type Test a = | Test a
-let f ?x : [Test a] -> Test a = x
-let g ?x y : [Test a] -> a -> Test a = f
+let f ?x y : [Test a] -> () -> Test a = x
+let g ?x y : [Test a] -> a -> Test a = f ()
 let i = Test 1
 g 2
 ()
@@ -308,7 +311,7 @@ g 2
                     if let ast::Pattern::Ident(ref id) = bindings[0].name.value {
                         if id.name.definition_name() == "g" {
                             assert_eq!(
-                                "f x",
+                                "f ?x ()",
                                 format::pretty_expr(self.text, &bindings[0].expr).trim()
                             );
                             self.done = true;

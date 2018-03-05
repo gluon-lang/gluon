@@ -67,14 +67,11 @@ let applicative : Applicative List =
 
     { functor = functor, apply, wrap }
 
-// FIXME Implicit resolution
 let many ?alt x : [Alternative f] -> f a -> f (List a) =
 
     let many_v _ =
-        let { ? } = alt
         some_v () <|> wrap Nil
     and some_v _ =
-        let { ? } = alt
         let { ? } = alt.applicative
         map (\h l -> Cons h l) x <*> many_v ()
     many_v ()
@@ -82,10 +79,8 @@ let many ?alt x : [Alternative f] -> f a -> f (List a) =
 let some ?alt x : [Alternative f] -> f a -> f (List a) =
 
     let many_v _ =
-        let { ? } = alt
         some_v () <|> wrap Nil
     and some_v _ =
-        let { ? } = alt
         let { ? } = alt.applicative
         map (\h l -> Cons h l) x <*> many_v ()
     some_v ()

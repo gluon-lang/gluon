@@ -9,10 +9,12 @@ use base::resolve;
 use base::scoped_map::ScopedMap;
 use base::symbol::Symbol;
 
-use typecheck::{ImplictBindings, TcResult, TypeError, Typecheck, TypecheckEnv};
+use typecheck::{TcResult, TypeError, Typecheck, TypecheckEnv};
 use substitution::Substitution;
 
 const MAX_IMPLICIT_LEVEL: u32 = 20;
+
+type ImplicitBindings = ::rpds::Vector<(Vec<TypedIdent<Symbol>>, ArcType)>;
 
 struct ResolveImplicitsVisitor<'a, 'b: 'a> {
     tc: &'a mut Typecheck<'b>,
@@ -22,7 +24,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
     fn resolve_implicit_application(
         &mut self,
         level: u32,
-        implicit_bindings: &ImplictBindings,
+        implicit_bindings: &ImplicitBindings,
         span: Span<BytePos>,
         path: &[TypedIdent<Symbol>],
         to_resolve: &[ArcType],
@@ -39,7 +41,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
     fn resolve_implicit_application_(
         &mut self,
         level: u32,
-        implicit_bindings: &ImplictBindings,
+        implicit_bindings: &ImplicitBindings,
         span: Span<BytePos>,
         path: &[TypedIdent<Symbol>],
         to_resolve: &[ArcType],
@@ -66,24 +68,22 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
                 .iter()
                 .filter_map(|expected_type| {
                     let mut to_resolve = Vec::new();
-                    let found_candidate = implicit_bindings.iter().rev().find(|&&(_, ref typ)| {
-                        self.try_implicit(&mut to_resolve, expected_type, typ)
-                    });
-                    match found_candidate {
-                        Some(&(ref path, _)) => {
-                            debug!("Success! Resolving arguments");
-                            match self.resolve_implicit_application(
-                                level + 1,
-                                implicit_bindings,
-                                span,
-                                path,
-                                &to_resolve,
-                            ) {
-                                Ok(opt) => opt.map(Ok),
-                                Err(err) => Some(Err(err)),
-                            }
-                        }
-                        None => None,
+                    let result =
+                        self.find_implicit(implicit_bindings, &mut to_resolve, expected_type)
+                            .and_then(|path| {
+                                debug!("Success! Resolving arguments");
+                                self.resolve_implicit_application(
+                                    level + 1,
+                                    implicit_bindings,
+                                    span,
+                                    path,
+                                    &to_resolve,
+                                )
+                            });
+
+                    match result {
+                        Ok(opt) => opt.map(Ok),
+                        Err(err) => Some(Err(err)),
                     }
                 })
                 .collect::<TcResult<Vec<_>>>()?;
@@ -104,11 +104,17 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
 
     fn try_implicit(
         &mut self,
+        path: &[TypedIdent<Symbol>],
         to_resolve: &mut Vec<ArcType>,
         expected_type: &ArcType,
         typ: &ArcType,
     ) -> bool {
-        debug!("Trying implicit {}", typ);
+        debug!(
+            "Trying implicit `{}` : {}",
+            path.iter().map(|id| &id.name).format("."),
+            typ
+        );
+
         let typ = self.tc.new_skolem_scope(typ);
         let typ = self.tc.instantiate_generics(&typ);
         to_resolve.clear();
@@ -124,6 +130,51 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
             &expected_type,
             &iter.typ,
         ).is_ok()
+    }
+
+    fn find_implicit<'c>(
+        &mut self,
+        implicit_bindings: &'c ImplicitBindings,
+        to_resolve: &mut Vec<ArcType>,
+        expected_type: &ArcType,
+    ) -> TcResult<&'c [TypedIdent<Symbol>]> {
+        let mut iter = implicit_bindings.iter().rev();
+        let found_candidate = iter.by_ref()
+            .find(|&&(ref path, ref typ)| self.try_implicit(path, to_resolve, expected_type, typ));
+        match found_candidate {
+            Some(candidate) => {
+                let mut additional_candidates: Vec<_> = iter.filter(|&&(ref path, ref typ)| {
+                    self.try_implicit(path, &mut Vec::new(), expected_type, typ)
+                }).map(|bind| {
+                        (
+                            bind.0.iter().map(|id| &id.name).format(".").to_string(),
+                            bind.1.clone(),
+                        )
+                    })
+                    .collect();
+                if additional_candidates.is_empty() {
+                    Ok(&candidate.0)
+                } else {
+                    additional_candidates.push((
+                        candidate
+                            .0
+                            .iter()
+                            .map(|id| &id.name)
+                            .format(".")
+                            .to_string(),
+                        candidate.1.clone(),
+                    ));
+                    Err(TypeError::AmbiguousImplicit(additional_candidates))
+                }
+            }
+            None => Err(TypeError::UnableToResolveImplicit(
+                expected_type.clone(),
+                implicit_bindings
+                    .iter()
+                    .map(|&(ref path, _)| path.iter().map(|id| &id.name).format(".").to_string())
+                    .collect(),
+            )),
+        }
     }
 }
 
@@ -146,49 +197,59 @@ impl<'a, 'b> MutVisitor for ResolveImplicitsVisitor<'a, 'b> {
                 );
                 let span = expr.span;
                 let mut to_resolve = Vec::new();
-                let found_candidate = implicit_bindings
-                    .iter()
-                    .rev()
-                    .find(|&&(_, ref typ)| self.try_implicit(&mut to_resolve, &id.typ, typ));
-                let resolution_result = found_candidate.and_then(|&(ref path, _)| {
-                    debug!(
-                        "Found implicit candidate `{}`. Trying its implicit arguments (if any)",
-                        path.iter().rev().map(|id| &id.name).format(".")
-                    );
-                    match self.resolve_implicit_application(
-                        0,
-                        &implicit_bindings,
-                        span,
-                        &path,
-                        &to_resolve,
-                    ) {
-                        Ok(opt) => opt.map(Ok),
-                        Err(err) => Some(Err(err)),
+                match self.find_implicit(&implicit_bindings, &mut to_resolve, &id.typ) {
+                    Ok(path_of_candidate) => {
+                        debug!(
+                            "Found implicit candidate `{}`. Trying its implicit arguments (if any)",
+                            path_of_candidate
+                                .iter()
+                                .rev()
+                                .map(|id| &id.name)
+                                .format(".")
+                        );
+
+                        let resolution_result = match self.resolve_implicit_application(
+                            0,
+                            &implicit_bindings,
+                            span,
+                            &path_of_candidate,
+                            &to_resolve,
+                        ) {
+                            Ok(opt) => opt.map(Ok),
+                            Err(err) => Some(Err(err)),
+                        };
+
+                        replacement = match resolution_result {
+                            Some(Ok(replacement)) => Some(replacement),
+                            Some(Err(err)) => {
+                                self.tc.error(span, err);
+                                None
+                            }
+                            None => {
+                                debug!("UnableToResolveImplicit {:?} {}", id.name, id.typ);
+                                self.tc.errors.push(Spanned {
+                                    span: expr.span,
+                                    value: TypeError::UnableToResolveImplicit(
+                                        id.typ.clone(),
+                                        implicit_bindings
+                                            .iter()
+                                            .map(|&(ref path, _)| {
+                                                path.iter()
+                                                    .map(|id| &id.name)
+                                                    .format(".")
+                                                    .to_string()
+                                            })
+                                            .collect(),
+                                    ).into(),
+                                });
+                                None
+                            }
+                        };
                     }
-                });
-                replacement = match resolution_result {
-                    Some(Ok(replacement)) => Some(replacement),
-                    Some(Err(err)) => {
+                    Err(err) => {
                         self.tc.error(span, err);
-                        None
                     }
-                    None => {
-                        debug!("UnableToResolveImplicit {:?} {}", id.name, id.typ);
-                        self.tc.errors.push(Spanned {
-                            span: expr.span,
-                            value: TypeError::UnableToResolveImplicit(
-                                id.typ.clone(),
-                                implicit_bindings
-                                    .iter()
-                                    .map(|&(ref path, _)| {
-                                        path.iter().map(|id| &id.name).format(".").to_string()
-                                    })
-                                    .collect(),
-                            ).into(),
-                        });
-                        None
-                    }
-                };
+                }
             }
         }
         if let Some(replacement) = replacement {
@@ -204,8 +265,8 @@ impl<'a, 'b> MutVisitor for ResolveImplicitsVisitor<'a, 'b> {
 pub struct ImplicitResolver<'a> {
     pub(crate) metadata: FnvMap<Symbol, Metadata>,
     environment: &'a TypecheckEnv,
-    pub(crate) implicit_bindings: Vec<ImplictBindings>,
-    implicit_vars: ScopedMap<Symbol, ImplictBindings>,
+    pub(crate) implicit_bindings: Vec<ImplicitBindings>,
+    implicit_vars: ScopedMap<Symbol, ImplicitBindings>,
 }
 
 impl<'a> ImplicitResolver<'a> {

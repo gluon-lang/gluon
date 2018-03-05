@@ -65,6 +65,7 @@ pub enum TypeError<I> {
     /// An implicit parameter were not possible to resolve
     UnableToResolveImplicit(ArcType<I>, Vec<String>),
     LoopInImplicitResolution(Vec<String>),
+    AmbiguousImplicit(Vec<(String, ArcType<I>)>),
 }
 
 impl<I> From<KindCheckError<I>> for TypeError<I> {
@@ -182,7 +183,7 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
             Message(ref msg) => write!(f, "{}", msg),
             UnableToResolveImplicit(ref typ, ref paths) => write!(
                 f,
-                "Implicit parameter with type `{}` could not be resolved.\nPossibilities: {}",
+                "Implicit parameter with type `{}` could not be resolved.\nPossible bindings: {}",
                 typ,
                 paths.iter().format(", ")
             ),
@@ -190,6 +191,16 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
                 f,
                 "Unable to resolve implicit, possible infinite loop. When resolving, {}",
                 paths.iter().format(", ")
+            ),
+            AmbiguousImplicit(ref candidates) => write!(
+                f,
+                "Unable to resolve implicit. Multiple candidates were found: {}",
+                candidates
+                    .iter()
+                    .format_with(", ", |&(ref path, ref typ), fmt| fmt(&format_args!(
+                        "{}: {}",
+                        path, typ
+                    )))
             ),
         }
     }
@@ -312,8 +323,6 @@ enum TailCall {
     /// should be typechecked now.
     TailCall,
 }
-
-pub(crate) type ImplictBindings = ::rpds::Vector<(Vec<TypedIdent<Symbol>>, ArcType)>;
 
 /// Struct which provides methods to typecheck expressions.
 pub struct Typecheck<'a> {
@@ -572,6 +581,9 @@ impl<'a> Typecheck<'a> {
                 | UnableToResolveImplicit(ref mut typ, _) => {
                     self.generalize_type(0, typ);
                 }
+                AmbiguousImplicit(ref mut xs) => for &mut (_, ref mut typ) in xs {
+                    self.generalize_type(0, typ);
+                },
                 Unification(ref mut expected, ref mut actual, ref mut errors) => {
                     self.generalize_type_without_forall(0, expected);
                     self.generalize_type_without_forall(0, actual);
@@ -996,7 +1008,8 @@ impl<'a> Typecheck<'a> {
                                         &expected_field_type,
                                         typ,
                                         &mut |implicit_arg| {
-                                            implicit_args.push(implicit_arg);
+                                            implicit_args
+                                                .push(pos::spanned(field.name.span, implicit_arg));
                                         },
                                     );
 
@@ -1181,6 +1194,8 @@ impl<'a> Typecheck<'a> {
     where
         I: IntoIterator<Item = &'e mut SpannedExpr<Symbol>>,
     {
+        let mut prev_arg_end = span.end;
+
         func_type = self.new_skolem_scope(&func_type);
         for arg in &mut **implicit_args {
             let f = self.type_cache
@@ -1188,7 +1203,7 @@ impl<'a> Typecheck<'a> {
             func_type = self.instantiate_generics(&func_type);
             let level = self.subs.var_id();
 
-            self.subsumes(span, level, &f, func_type.clone());
+            self.subsumes(arg.span, level, &f, func_type.clone());
 
             func_type = match f.as_function() {
                 Some((arg_ty, ret_ty)) => {
@@ -1203,6 +1218,7 @@ impl<'a> Typecheck<'a> {
                 }
                 None => return Err(TypeError::NotAFunction(func_type.clone())),
             };
+            prev_arg_end = arg.span.end;
         }
 
         for arg in args {
@@ -1211,7 +1227,7 @@ impl<'a> Typecheck<'a> {
             func_type = self.instantiate_generics(&func_type);
             let level = self.subs.var_id();
             self.subsumes_implicit(span, level, &f, func_type.clone(), &mut |implicit_arg| {
-                implicit_args.push(implicit_arg);
+                implicit_args.push(pos::spanned2(prev_arg_end, arg.span.start, implicit_arg));
             });
 
             func_type = match f.as_function() {
@@ -1227,6 +1243,8 @@ impl<'a> Typecheck<'a> {
                 }
                 None => return Err(TypeError::NotAFunction(func_type.clone())),
             };
+
+            prev_arg_end = arg.span.end;
         }
         Ok(TailCall::Type(func_type))
     }
@@ -2171,7 +2189,7 @@ impl<'a> Typecheck<'a> {
             }
 
             match expr.value {
-                Expr::App { ref mut args, .. } => args.push(arg),
+                Expr::App { ref mut args, .. } => args.push(pos::spanned(expr.span, arg)),
                 _ => (),
             }
         })
@@ -2183,7 +2201,7 @@ impl<'a> Typecheck<'a> {
         level: u32,
         expected: &ArcType,
         mut actual: ArcType,
-        receiver: &mut FnMut(SpannedExpr<Symbol>),
+        receiver: &mut FnMut(Expr<Symbol>),
     ) -> ArcType {
         debug!("Subsume expr {} <=> {}", expected, actual);
         // Act as the implicit arguments of `actual` has been supplied (unless `expected` is
@@ -2197,14 +2215,10 @@ impl<'a> Typecheck<'a> {
                         _ => {
                             let name = self.implicit_resolver.make_implicit_ident(arg_type);
 
-                            receiver(pos::spanned2(
-                                span.end,
-                                span.end,
-                                Expr::Ident(TypedIdent {
-                                    name,
-                                    typ: arg_type.clone(),
-                                }),
-                            ));
+                            receiver(Expr::Ident(TypedIdent {
+                                name,
+                                typ: arg_type.clone(),
+                            }));
 
                             r_ret.clone()
                         }

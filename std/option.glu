@@ -67,7 +67,6 @@ let eq ?a : [Eq a] -> Eq (Option a) = {
 }
 
 let ord ?a : [Ord a] -> Ord (Option a) =
-    let { ? } = a
     {
         eq = eq,
         compare = \l r ->

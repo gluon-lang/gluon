@@ -1047,6 +1047,10 @@ pub fn row_iter_mut<Id, T>(typ: &mut T) -> RowIteratorMut<Id, T> {
     }
 }
 
+pub fn type_field_iter<T>(typ: &T) -> TypeFieldIterator<T> {
+    TypeFieldIterator { typ, current: 0 }
+}
+
 impl<Id> ArcType<Id> {
     pub fn new(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
         ArcType { typ: Arc::new(typ) }
@@ -1055,10 +1059,7 @@ impl<Id> ArcType<Id> {
     /// Returns an iterator over all type fields in a record.
     /// `{ Test, Test2, x, y } => [Test, Test2]`
     pub fn type_field_iter(&self) -> TypeFieldIterator<Self> {
-        TypeFieldIterator {
-            typ: self,
-            current: 0,
-        }
+        type_field_iter(self)
     }
 
     /// Returns an iterator over all fields in a record.

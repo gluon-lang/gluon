@@ -4,7 +4,7 @@ let { Applicative, (*>) } = import! std.applicative
 let list @ { List, ? } = import! std.list
 
 let result @ { Result, ? } = import! std.result
-let string @ { ? } = import! std.string
+let string = import! std.string
 let parser = import! std.parser
 
 let lisp @ { Expr, ? } = import! "examples/lisp/lisp.glu"

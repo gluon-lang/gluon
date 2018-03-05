@@ -1,7 +1,7 @@
 let prelude = import! std.prelude
 let { run, writer, assert_eq, assert_ieq, ? } = import! std.test
 let { Applicative, (*>) } = import! std.applicative
-let int @ { ? } = import! std.int
+let int = import! std.int
 let stream @ { Stream } = import! std.stream
 let list @ { List, ? } = import! std.list
 let { Option } = import! std.option
