@@ -116,6 +116,10 @@ fn run() -> std::result::Result<(), Box<std::error::Error + Send + Sync>> {
             (about: "Formats gluon source code")
             (@arg INPUT: ... "Formats each file")
         )
+        (@subcommand doc =>
+            (about: "Documents gluon source code")
+            (@arg INPUT: ... "Documents the file or directory")
+        )
         (@arg INPUT: ... "Executes each file as a gluon program")
     ).get_matches();
     if let Some(fmt_matches) = matches.subcommand_matches("fmt") {
@@ -143,6 +147,12 @@ fn run() -> std::result::Result<(), Box<std::error::Error + Send + Sync>> {
             }
         } else {
             fmt_stdio()?;
+        }
+    } else if let Some(fmt_matches) = matches.subcommand_matches("doc") {
+        if let Some(args) = fmt_matches.values_of("INPUT") {
+            for arg in args {
+                gluon::doc::generate_for_path(&new_vm(), arg, "doc")?;
+            }
         }
     } else if matches.is_present("REPL") {
         repl::run()?;

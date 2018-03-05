@@ -40,6 +40,8 @@ pub mod regex_bind;
 #[cfg(all(feature = "rand", not(target_arch = "wasm32")))]
 pub mod rand_bind;
 
+pub mod doc;
+
 pub use vm::thread::{RootedThread, Thread};
 
 pub use futures::Future;
