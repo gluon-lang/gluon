@@ -20,16 +20,19 @@ extern crate env_logger;
 extern crate gluon;
 
 use gluon::vm::api::{{Hole, OpaqueValue}};
-use gluon::{{new_vm, Compiler, Thread}};
+use gluon::{{VmBuilder, Compiler, Thread}};
 
 fn main() {{
     let _ = ::env_logger::try_init();
-    let text = r#\"{}\"#;
-    let vm = new_vm();
-    match Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, \"example\", text) .sync_or_error() {{
+    let text = r#"{}"#;
+    let manifest_path = ::std::env::var("CARGO_MANIFEST_DIR").unwrap();
+    let vm = VmBuilder::new()
+        .import_paths(Some(vec![".".into(), manifest_path.into()]))
+        .build();
+    match Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", text) {{
         Ok(_value) => (),
         Err(err) => {{
-            panic!(\"{{}}\", err);
+            panic!("{{}}", err);
         }}
     }}
     return;
@@ -39,6 +42,8 @@ fn main() {{
 "##;
 
     fn generate_skeptic_tests(file: &str) -> String {
+        println!("cargo:rerun-if-changed={}", file);
+
         // Preprocess the readme to inject the skeptic template needed to to run the examples
         let out_file_name = Path::new(&env::var("OUT_DIR").unwrap()).join(file);
         let mut contents = TEMPLATE.as_bytes().into();

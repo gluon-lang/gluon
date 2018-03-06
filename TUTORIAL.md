@@ -237,7 +237,7 @@ Gluon also have tuple expressions for when you don't have sensible names for you
 
 Similarily to records they can be unpacked with `match` and `let`.
 
-```f#,rust
+```f#
 match (1, None) with
 | (x, Some y) -> x + y
 | (x, None) -> x
@@ -248,7 +248,7 @@ a + b
 
 Infact, tuples are only syntax sugar over records with fields named after numbers (`_0`, `_1`, ...) which makes the above equivalent to the following code.
 
-```f#,rust
+```f#
 match { _0 = 1, _1 = None } with
 | { _0 = x, _1 = Some y } -> x + y
 | { _0 = x, _1 = None } -> x
@@ -492,7 +492,7 @@ This different looking argument is an implicit argument which means that you do 
 
 Since searching all possible bindings currently in scope would introduce to many ambiguity errors the compiler does not search all bindings when trying to determine an implicit argument. Instead, whether a binding is considered for implicit resolution is controlled by the `@implicit` attribute. When marking a `let` binding as `@implicit` and this binding is in scope it will be considered as a candidate for all implicit arguments. The `@implicit` attribute can also be set on a `type` binding in which case it applied to all `let` bindings which has the type declared by the `type` binding.
 
-```f#,rust
+```f#
 /// @implicit
 type Test = | Test ()
 let f y: [a] -> a -> a = y
@@ -505,7 +505,7 @@ f (Test ())
 
 If you only use implicit functions as explained above then it might just seem like a different name for traits (Rust) or type classes (Haskell). While it is true that the main reason for implicit arguments is to emulate traits/type classes implicit arguments is more powerful than those approaches as it is also possible to override the implicit resolution and instead give the argument explicitly by prefixing the argument with `?`.
 
-```f#,rust
+```f#
 let list @ { List } = import! std.list
 // Make a custom equality function which returns true regardless of the elements of the list
 let { (==) = (===) } = list.eq ?{ (==) = \x y -> True }
@@ -514,8 +514,7 @@ Cons 1 (Cons 2 Nil) === Cons 3 (Cons 4 Nil)
 
 The inverse also works when defining a function with implicit arguments. By prefixing an argument by `?` an implicit arguments will be given a name inside the function (if `?` is not given in a function definition the argument will only be available for implicit resolution).
 
-```
-type Option a = | None | Some a
+```f#,rust
 let eq ?a : [Eq a] -> Eq (Option a) = {
     (==) = \l r ->
         match (l, r) with
@@ -523,7 +522,7 @@ let eq ?a : [Eq a] -> Eq (Option a) = {
         | (None, None) -> True
         | _ -> False,
 }
-
+()
 ```
 
 

@@ -45,14 +45,14 @@ regex = { version = "0.2.1", optional = true }
 
 # Crates used in testing
 compiletest_rs = { version = "0.3", optional = true }
-skeptic = { version = "0.6", optional = true }
+skeptic = { version = "0.13", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio-core = "0.1"
 rand = { version = "0.3", optional = true }
 
 [build-dependencies]
-skeptic = { version = "0.6", optional = true }
+skeptic = { version = "0.13", optional = true }
 
 [dev-dependencies]
 bencher = "0.1.2"

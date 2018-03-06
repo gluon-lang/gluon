@@ -46,7 +46,7 @@ factorial 10
 ### 24
 
 [24 game]:https://github.com/gluon-lang/gluon/blob/master/examples/24.glu
-```f#,rust
+```f#,rust,ignore
 // # 24
 //
 // From http://rosettacode.org/wiki/24_game

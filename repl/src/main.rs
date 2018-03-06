@@ -165,10 +165,7 @@ fn main() {
     init_env_logger();
 
     if let Err(err) = run() {
-        let stderr = &mut io::stderr();
-        let errmsg = "Error writing to stderr";
-
-        write!(stderr, "error: {}", err).expect(errmsg);
+        eprintln!("error: {}", err);
 
         ::std::process::exit(1);
     }
