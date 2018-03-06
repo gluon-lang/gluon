@@ -171,6 +171,10 @@ impl<I> Import<I> {
         self.paths.write().unwrap().push(path.into());
     }
 
+    pub fn set_paths(&self, paths: Vec<PathBuf>) {
+        *self.paths.write().unwrap() = paths;
+    }
+
     pub fn add_loader(&self, module: &str, loader: ExternLoader) {
         self.loaders
             .write()

@@ -49,6 +49,7 @@ use either::Either;
 use std::error::Error as StdError;
 use std::result::Result as StdResult;
 use std::env;
+use std::path::PathBuf;
 
 use base::filename_to_module;
 use base::ast::{self, SpannedExpr};
@@ -544,6 +545,7 @@ in ()
 pub struct VmBuilder {
     #[cfg(not(target_arch = "wasm32"))]
     event_loop: Option<::tokio_core::reactor::Remote>,
+    import_paths: Option<Vec<PathBuf>>,
 }
 
 impl VmBuilder {
@@ -558,6 +560,12 @@ impl VmBuilder {
         event_loop set_event_loop: Option<::tokio_core::reactor::Remote>
     }
 
+    option!{
+        /// Sets then event loop which threads are run on
+        /// (default: ["."])
+        import_paths set_import_paths: Option<Vec<PathBuf>>
+    }
+
     pub fn build(self) -> RootedThread {
         #[cfg(target_arch = "wasm32")]
         let vm = RootedThread::new();
@@ -570,6 +578,10 @@ impl VmBuilder {
         );
 
         let import = Import::new(DefaultImporter);
+        if let Some(import_paths) = self.import_paths {
+            import.set_paths(import_paths);
+        }
+
         if let Ok(gluon_path) = env::var("GLUON_PATH") {
             import.add_path(gluon_path);
         }
@@ -579,7 +591,7 @@ impl VmBuilder {
             .implicit_prelude(false)
             .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "", r#" import! std.types "#)
             .sync_or_error()
-            .unwrap();
+            .unwrap_or_else(|err| panic!("{}", err));
 
         add_extern_module(&vm, "std.prim", ::vm::primitives::load);
         add_extern_module(&vm, "std.int.prim", ::vm::primitives::load_int);
