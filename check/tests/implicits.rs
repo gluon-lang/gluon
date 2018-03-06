@@ -37,6 +37,27 @@ f 42
 }
 
 #[test]
+fn single_implicit_implicit_arg() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+let f y : [Int] -> Int -> Int = y
+/// @implicit
+let i = 123
+f 42
+"#;
+    let (expr, result) = support::typecheck_expr(text);
+
+    assert_eq!(result, Ok(Type::int()));
+    assert_eq!(
+        r#"let f ?implicit_arg y : [Int] -> Int -> Int = y
+/// @implicit
+let i = 123
+f ?i 42"#,
+        format::pretty_expr(text, &expr).trim()
+    );
+}
+
+#[test]
 fn single_implicit_explicit_arg() {
     let _ = ::env_logger::try_init();
     let text = r#"
