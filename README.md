@@ -73,25 +73,22 @@ factorial 10
 // The `import!` macro are used to load and refer to other modules.
 // It gets replaced by the value returned by evaluating that module (cached of course, so that
 // multiple `import!`s to the same module only evaluates the module once)
-let io = import! std.io
+let io @ { ? } = import! std.io
 let prelude = import! std.prelude
 let { Result } = import! std.result
-let array = import! std.array
+let array @ { ? } = import! std.array
 let int = import! std.int
 let string = import! std.string
-let list @ { List } = import! std.list
+let list @ { List, ? } = import! std.list
 let random = import! std.random
 let string = import! std.string
 
 // Since imports in gluon returns regular values we can load specific parts of a module using pattern matches.
-// This match in particular brings in the equality operator for the `Char` type (this is required in
-// the current version of gluon but will be fixed in the future).
-let char = import! std.char
+let char @ { ? } = import! std.char
 
-let { (<>) } = import! std.prelude
+let { (<>), flat_map } = import! std.prelude
 
 let { (*>), (<*), wrap } = import! std.applicative
-let { flat_map } = io.monad
 
 let { for } = import! std.prelude
 
@@ -112,7 +109,7 @@ let parse : String -> Result String Expr =
         lazy_parser,
         chainl1,
         (<?>),
-        monad = { flat_map } } = import! std.parser
+        ? } = import! std.parser
     let { (<|>) } = import! std.prelude
 
     let lex x = x <* spaces
@@ -162,10 +159,7 @@ let validate digits expr : Array Int -> Expr -> Bool =
         | Binop l _ r -> integers (integers xs l) r
     let ints = integers Nil expr
 
-    let sort_ints = list.sort int.ord
-    let { (==) } = list.eq int.eq
-
-    sort_ints (list.of digits) == sort_ints ints
+    list.sort (list.of digits) == list.sort ints
 
 let eval expr : Expr -> Int =
     match expr with
@@ -191,7 +185,7 @@ do digits =
 
 let print_digits = for io.applicative digits (\d ->
         do _ = io.print " "
-        io.print (int.show.show d))
+        io.print (show d))
 do _ = io.print "Four digits:" *> print_digits *> io.println ""
 
 let guess_loop _ =
