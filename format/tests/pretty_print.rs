@@ -15,7 +15,7 @@ use std::path::Path;
 use format::format_expr;
 
 fn test_format(name: &str) {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let name = Path::new(name);
     let mut contents = String::new();
@@ -151,6 +151,14 @@ fn dont_lose_information_in_literals() {
 }
 
 #[test]
+fn implicit_arg() {
+    let expr = r#"
+f ?32 ""
+"#;
+    assert_eq!(&format_expr(expr).unwrap(), expr);
+}
+
+#[test]
 fn preserve_comment_between_let_in() {
     let expr = r#"
 // test1
@@ -236,8 +244,8 @@ let {
 fn preserve_comments_in_function_types() {
     let expr = r#"#!/bin/gluon
 let x : /* first */ Int /* Int */ ->
-    // Float
-    Float /* last */ = ()
+        // Float
+        Float /* last */ = ()
 x
 "#;
     assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
@@ -247,8 +255,8 @@ x
 fn preserve_comments_app_types() {
     let expr = r#"#!/bin/gluon
 let x : Test /* first */ Int
-    // middle
-    Float /* last */ = ()
+        // middle
+        Float /* last */ = ()
 x
 "#;
     assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);

@@ -49,6 +49,7 @@ use either::Either;
 use std::error::Error as StdError;
 use std::result::Result as StdResult;
 use std::env;
+use std::path::PathBuf;
 
 use base::filename_to_module;
 use base::ast::{self, SpannedExpr};
@@ -522,24 +523,18 @@ impl Compiler {
 
 pub const PRELUDE: &'static str = r#"
 let __implicit_prelude = import! std.prelude
-and { Num, Eq, Ord, Show, Functor, Monad } = __implicit_prelude
-and { Bool, not } = import! std.bool
-and { Option } = import! std.option
+and { Num, Eq, Ord, Show, Functor, Monad, ? } = __implicit_prelude
+and { Bool, not, ? } = import! std.bool
+and { Option, ? } = import! std.option
 
-let __implicit_float = import! std.float
-let { (+), (-), (*), (/) } = __implicit_float.num
-and { (==) } = __implicit_float.eq
+let { (+), (-), (*), (/), (==), (/=), (<), (<=), (>=), (>), show, ? } = __implicit_prelude
 
-let { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_float.ord
+let __implicit_float @ { ? } = import! std.float
 
-let __implicit_int = import! std.int
-let { (+), (-), (*), (/) } = __implicit_int.num
-and { (==) } = __implicit_int.eq
-let { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_int.ord
 
-let __implicit_string = import! std.string
-and { eq = { (==) } } = __implicit_string
-let { (<), (<=), (>=), (>) } = __implicit_prelude.make_Ord __implicit_string.ord
+let __implicit_int @ { ? } = import! std.int
+
+let __implicit_string @ { ? } = import! std.string
 
 let { error } = import! std.prim
 
@@ -550,6 +545,7 @@ in ()
 pub struct VmBuilder {
     #[cfg(not(target_arch = "wasm32"))]
     event_loop: Option<::tokio_core::reactor::Remote>,
+    import_paths: Option<Vec<PathBuf>>,
 }
 
 impl VmBuilder {
@@ -564,6 +560,12 @@ impl VmBuilder {
         event_loop set_event_loop: Option<::tokio_core::reactor::Remote>
     }
 
+    option!{
+        /// Sets then event loop which threads are run on
+        /// (default: ["."])
+        import_paths set_import_paths: Option<Vec<PathBuf>>
+    }
+
     pub fn build(self) -> RootedThread {
         #[cfg(target_arch = "wasm32")]
         let vm = RootedThread::new();
@@ -575,16 +577,21 @@ impl VmBuilder {
                 .build(),
         );
 
-        let gluon_path = env::var("GLUON_PATH").unwrap_or_else(|_| String::from("."));
         let import = Import::new(DefaultImporter);
-        import.add_path(gluon_path);
+        if let Some(import_paths) = self.import_paths {
+            import.set_paths(import_paths);
+        }
+
+        if let Ok(gluon_path) = env::var("GLUON_PATH") {
+            import.add_path(gluon_path);
+        }
         vm.get_macros().insert(String::from("import"), import);
 
         Compiler::new()
             .implicit_prelude(false)
             .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "", r#" import! std.types "#)
             .sync_or_error()
-            .unwrap();
+            .unwrap_or_else(|err| panic!("{}", err));
 
         add_extern_module(&vm, "std.prim", ::vm::primitives::load);
         add_extern_module(&vm, "std.int.prim", ::vm::primitives::load_int);
@@ -634,7 +641,7 @@ mod tests {
 
     #[test]
     fn implicit_prelude() {
-        let _ = ::env_logger::init();
+        let _ = ::env_logger::try_init();
 
         let thread = new_vm();
         Compiler::new()

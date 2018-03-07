@@ -82,6 +82,7 @@ pub struct MacroExpander<'a> {
     pub state: FnvMap<String, Box<Any>>,
     pub vm: &'a Thread,
     pub errors: Errors,
+    pub error_in_expr: bool,
     macros: &'a MacroEnv,
 }
 
@@ -91,12 +92,13 @@ impl<'a> MacroExpander<'a> {
             vm: vm,
             state: FnvMap::default(),
             macros: vm.get_macros(),
+            error_in_expr: false,
             errors: Errors::new(),
         }
     }
 
     pub fn finish(self) -> Result<(), Errors> {
-        if self.errors.has_errors() {
+        if self.error_in_expr || self.errors.has_errors() {
             Err(self.errors)
         } else {
             Ok(())
@@ -116,8 +118,19 @@ impl<'a> MutVisitor for MacroExpander<'a> {
 
     fn visit_expr(&mut self, expr: &mut SpannedExpr<Symbol>) {
         let replacement = match expr.value {
-            Expr::App(ref mut id, ref mut args) => match id.value {
+            Expr::App {
+                ref mut implicit_args,
+                func: ref mut id,
+                ref mut args,
+            } => match id.value {
                 Expr::Ident(ref id) if id.name.as_ref().ends_with('!') => {
+                    if !implicit_args.is_empty() {
+                        self.errors.push(pos::spanned(
+                            expr.span,
+                            "Implicit arguments are not allowed on macros".into(),
+                        ));
+                    }
+
                     let name = id.name.as_ref();
                     match self.macros.get(&name[..name.len() - 1]) {
                         Some(m) => Some(match m.expand(self, args) {

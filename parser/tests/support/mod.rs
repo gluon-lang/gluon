@@ -1,8 +1,8 @@
 #![allow(unused)]
 
-use base::ast::{walk_mut_ast_type, walk_mut_expr, walk_mut_pattern, Alternative, Array, AstType,
-                DisplayEnv, Expr, ExprField, IdentEnv, Lambda, Literal, MutVisitor, Pattern,
-                SpannedAlias, SpannedAstType, SpannedExpr, SpannedIdent, SpannedPattern,
+use base::ast::{walk_mut_ast_type, walk_mut_expr, walk_mut_pattern, Alternative, Argument, Array,
+                AstType, DisplayEnv, Expr, ExprField, IdentEnv, Lambda, Literal, MutVisitor,
+                Pattern, SpannedAlias, SpannedAstType, SpannedExpr, SpannedIdent, SpannedPattern,
                 TypeBinding, TypedIdent, ValueBinding};
 use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
@@ -109,11 +109,12 @@ pub fn no_loc<T>(value: T) -> Spanned<T, BytePos> {
 }
 
 pub fn binop(l: SpExpr, s: &str, r: SpExpr) -> SpExpr {
-    no_loc(Expr::Infix(
-        Box::new(l),
-        no_loc(TypedIdent::new(intern(s))),
-        Box::new(r),
-    ))
+    no_loc(Expr::Infix {
+        lhs: Box::new(l),
+        op: no_loc(TypedIdent::new(intern(s))),
+        rhs: Box::new(r),
+        implicit_args: Vec::new(),
+    })
 }
 
 pub fn int(i: i64) -> SpExpr {
@@ -133,7 +134,7 @@ pub fn let_a(s: &str, args: &[&str], e: SpExpr, b: SpExpr) -> SpExpr {
                 typ: None,
                 resolved_type: Type::hole(),
                 args: args.iter()
-                    .map(|i| no_loc(TypedIdent::new(intern(i))))
+                    .map(|i| Argument::explicit(no_loc(TypedIdent::new(intern(i)))))
                     .collect(),
                 expr: e,
             },
@@ -164,7 +165,11 @@ pub fn generic(s: &str) -> Generic<String> {
 }
 
 pub fn app(e: SpExpr, args: Vec<SpExpr>) -> SpExpr {
-    no_loc(Expr::App(Box::new(e), args))
+    no_loc(Expr::App {
+        func: Box::new(e),
+        implicit_args: Vec::new(),
+        args,
+    })
 }
 
 pub fn if_else(p: SpExpr, if_true: SpExpr, if_false: SpExpr) -> SpExpr {

@@ -237,7 +237,7 @@ Gluon also have tuple expressions for when you don't have sensible names for you
 
 Similarily to records they can be unpacked with `match` and `let`.
 
-```f#,rust
+```f#
 match (1, None) with
 | (x, Some y) -> x + y
 | (x, None) -> x
@@ -248,7 +248,7 @@ a + b
 
 Infact, tuples are only syntax sugar over records with fields named after numbers (`_0`, `_1`, ...) which makes the above equivalent to the following code.
 
-```f#,rust
+```f#
 match { _0 = 1, _1 = None } with
 | { _0 = x, _1 = Some y } -> x + y
 | { _0 = x, _1 = None } -> x
@@ -479,24 +479,52 @@ Intuitively, we can say that since gluon lets `forall` be specified inside types
 
 While all of this looks quite complex, it should for the most part not matter when writing code and common idioms will just work as expected!
 
-### Overloading
+### Implicit arguments
 
-Sometimes, there is a need to overload a name with multiple differing implementations and let the compiler chose the correct implementation. If you have written any amount of Gluon code so far, you are likely to have already encountered this with numeric operators such as `(+)` or comparison operators such as `(==)`. While these operators are core parts of gluon they are not special-cased by the compiler which lets you define and use overloaded bindings yourself.
+Sometimes, there is a need to overload a name with multiple differing implementations and let the compiler chose the correct implementation. If you have written any amount of Gluon code so far, you are likely to have already encountered this with numeric operators such as `(+)` or comparison operators such as `(==)`. If you inspect the types of these functions you will find that the first argument of these functions look a little bit different from normal functions.
 
-To explain how overloading works, first look at the example below where `show_type` has two implementations; one which takes an `Int` and one which takes a `Float`.
-
-```f#,rust
-let show_type _ : Int -> String = "Int"
-let show_type _ : Float -> String = "Float"
-
-show_type 0 // Returns "Int"
-show_type 0.0 // Returns "Float"
-// show_type "" // Would be a type error
+```gluon
+(==): : forall a . [std.prelude.Eq a] -> a -> a -> std.types.Bool
+(+): forall a . [std.prelude.Num a] -> a -> a -> a
 ```
 
-When the typechecker encounters the second `show_type` binding in this example, it does not simply shadow the first binding as is common in many programming languages. Instead, the typechecker checks the type of the binding already in scope and calculates the 'intersection' of the two bindings. In the example above, the first binding has the type `Int -> String` while the second is `Float -> String`. By calculating the 'intersection', the typechecker calculates the most specialized type which both bindings can still successfully unify to which in this case is `a -> String`. Any subsequent use of `show_type` will then be observed as `a -> String` which succeeds with both a `Int` and `Float` argument.
+This different looking argument is an implicit argument which means that you do not need to pass a value for this argument, instead, the compiler will try to find a value with a type that matches the type signature. So if you were to call `1 == 2` the compiler will see that the type variable `a` has been unified to `Int`. Then when the implicit argument is resolved it will look for a value with the type `Eq Int`.
 
-Unfortunately, it would also succeed if a `String` (or any other) type were used as the argument which is not acceptable as we have only implemented `show_type` for `Int` and `Float`. To catch this case (and to figure out which overload should be use where), the typechecker does an extra pass after successfully typechecking the entire expression. In this pass, all uses of overloaded bindings are checked against the overload candidates until a match is found. Thus, the third call, were it not commented out, would produce an error as there is no overloaded binding matching the type `String -> String`.
+Since searching all possible bindings currently in scope would introduce to many ambiguity errors the compiler does not search all bindings when trying to determine an implicit argument. Instead, whether a binding is considered for implicit resolution is controlled by the `@implicit` attribute. When marking a `let` binding as `@implicit` and this binding is in scope it will be considered as a candidate for all implicit arguments. The `@implicit` attribute can also be set on a `type` binding in which case it applied to all `let` bindings which has the type declared by the `type` binding.
+
+```f#
+/// @implicit
+type Test = | Test ()
+let f y: [a] -> a -> a = y
+let i = Test ()
+// `i` gets selected as the implicit argument since `@implicit` is marked on the type and `i : Test`
+f (Test ())
+```
+
+#### Passing implicit arguments explicitly
+
+If you only use implicit functions as explained above then it might just seem like a different name for traits (Rust) or type classes (Haskell). While it is true that the main reason for implicit arguments is to emulate traits/type classes implicit arguments is more powerful than those approaches as it is also possible to override the implicit resolution and instead give the argument explicitly by prefixing the argument with `?`.
+
+```f#
+let list @ { List } = import! std.list
+// Make a custom equality function which returns true regardless of the elements of the list
+let { (==) = (===) } = list.eq ?{ (==) = \x y -> True }
+Cons 1 (Cons 2 Nil) === Cons 3 (Cons 4 Nil)
+```
+
+The inverse also works when defining a function with implicit arguments. By prefixing an argument by `?` an implicit arguments will be given a name inside the function (if `?` is not given in a function definition the argument will only be available for implicit resolution).
+
+```f#,rust
+let eq ?a : [Eq a] -> Eq (Option a) = {
+    (==) = \l r ->
+        match (l, r) with
+        | (Some l_val, Some r_val) -> a.(==) l_val r_val
+        | (None, None) -> True
+        | _ -> False,
+}
+()
+```
+
 
 ## Importing modules
 
@@ -505,7 +533,7 @@ As is often the case, it is convenient to separate code into multiple files whic
 For example, say that we need the `assert` function from the `test` module which can be found at `std/test.glu`. We might write something like this:
 
 ```f#,rust
-let { assert }  = import! std.test
+let { assert } = import! std.test
 assert (1 == 1)
 ```
 

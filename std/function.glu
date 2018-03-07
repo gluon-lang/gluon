@@ -1,8 +1,9 @@
 //@NO-IMPLICIT-PRELUDE
 
 let prelude = import! std.prelude
-let { Semigroup, Monoid, Category, make_Category } = prelude
-let { Functor, Applicative, Monad } = prelude
+let { Semigroup, Monoid, Category } = prelude
+let { Functor, Monad } = prelude
+let { Applicative } = import! std.applicative
 
 let semigroup s : Semigroup b -> Semigroup (a -> b) = {
     append = \f g x -> s.append (f x) (g x) }

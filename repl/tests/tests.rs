@@ -36,6 +36,10 @@ fn fmt_repl() {
 
 #[test]
 fn issue_365_run_io_from_command_line() {
+    if ::std::env::var("GLUON_PATH").is_err() {
+        ::std::env::set_var("GLUON_PATH", "..");
+    }
+
     let path = env::args().next().unwrap();
     let gluon_path = Path::new(&path[..])
         .parent()
@@ -50,6 +54,9 @@ fn issue_365_run_io_from_command_line() {
         .output()
         .unwrap_or_else(|err| panic!("{}\nWhen opening `{}`", err, gluon_path.display()));
 
-    assert_eq!(String::from_utf8(output.stderr).unwrap(), "");
-    assert_eq!(String::from_utf8(output.stdout).unwrap(), "123\n");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stderr != "" {
+        panic!("{}", stderr);
+    }
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "123\n");
 }

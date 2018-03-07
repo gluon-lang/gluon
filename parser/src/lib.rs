@@ -3,7 +3,6 @@
 //! string interner and therefore also garbage collector needs to compiled before the parser.
 #![doc(html_root_url = "https://docs.rs/gluon_parser/0.7.1")] // # GLUON
 
-#[macro_use]
 extern crate collect_mac;
 extern crate gluon_base as base;
 extern crate itertools;
@@ -45,16 +44,13 @@ fn new_ident<Id>(type_cache: &TypeCache<Id, ArcType<Id>>, name: Id) -> TypedIden
     }
 }
 
-type LalrpopError<'input> = lalrpop_util::ParseError<
-    BytePos,
-    Token<'input>,
-    Spanned<Error, BytePos>,
->;
+type LalrpopError<'input> =
+    lalrpop_util::ParseError<BytePos, Token<'input>, Spanned<Error, BytePos>>;
 
 /// Shrink hidden spans to fit the visible expressions and flatten singleton blocks.
 fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
     match expr.value {
-        Expr::Infix(_, _, ref last)
+        Expr::Infix { rhs: ref last, .. }
         | Expr::IfElse(_, _, ref last)
         | Expr::LetBindings(_, ref last)
         | Expr::TypeBindings(_, ref last)
@@ -69,7 +65,7 @@ fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
             let end = last_alt.expr.span.end;
             expr.span.end = end;
         },
-        Expr::App(_, _)
+        Expr::App { .. }
         | Expr::Ident(_)
         | Expr::Literal(_)
         | Expr::Projection(_, _, _)

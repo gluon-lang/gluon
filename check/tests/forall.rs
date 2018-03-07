@@ -22,7 +22,7 @@ mod support;
 
 #[test]
 fn module() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r"
 type SortedList a = | Cons a (SortedList a)
@@ -45,7 +45,7 @@ in \(<) ->
 
 #[test]
 fn call_error_span() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 let f x = x #Int+ 1
@@ -67,7 +67,7 @@ in f "123"
 /// selection depending on the order that types are infered.
 #[test]
 fn overloaded_with_equal_aliases() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r"
 type Test = Int
@@ -89,7 +89,7 @@ test 1
         _ => panic!(),
     };
     let call_id = match call.value {
-        Expr::App(ref f, _) => match f.value {
+        Expr::App { ref func, .. } => match func.value {
             Expr::Ident(ref id) => id,
             _ => panic!(),
         },
@@ -104,7 +104,7 @@ test 1
 
 #[test]
 fn types_should_be_fully_instantiated_even_on_errors() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 let a = { id = \x -> x, z = 1 #Int== 2.0 }
@@ -128,7 +128,7 @@ a.id
 
 #[test]
 fn non_self_recursive_alias() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 type Type1 = { x: Int }
@@ -150,7 +150,7 @@ in r1"#;
 
 #[test]
 fn scoped_generic_variable() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 let any x = any x
 let make m: m -> { test: m, test2: m } =
@@ -165,7 +165,7 @@ make
 
 #[test]
 fn simplified_applicative() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 type Applicative f = {
     map : forall a b . (a -> b) -> f a -> f b,
@@ -197,7 +197,7 @@ make_applicative applicative_Function
 
 #[test]
 fn type_alias_with_explicit_hole_kind() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 type Test (a : _) = a
 type Bar = Test Int
@@ -209,7 +209,7 @@ type Bar = Test Int
 
 #[test]
 fn type_alias_with_explicit_type_kind() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 type Test (a : Type) = a
 type Bar = Test Int
@@ -221,7 +221,7 @@ type Bar = Test Int
 
 #[test]
 fn type_alias_with_explicit_row_kind() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 type Test (a : Row -> Type) (b : Row) = a b
 ()
@@ -232,7 +232,7 @@ type Test (a : Row -> Type) (b : Row) = a b
 
 #[test]
 fn type_alias_with_explicit_function_kind() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 type Test (a : Type -> Type) = a Int
 type Foo a = a
@@ -248,7 +248,7 @@ type Bar = Test Foo
 /// any extra information
 #[test]
 fn applied_constructor_returns_alias_type() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 type Test = | Test Int
 Test 0
@@ -262,7 +262,7 @@ Test 0
 }
 #[test]
 fn dont_guess_a_record_when_the_construction_has_no_fields() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 type Test = { x : Int }
 type Test2 = Int
@@ -275,7 +275,7 @@ type Test2 = Int
 
 #[test]
 fn simple_tuple_type() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 ("test", 123)
 "#;
@@ -294,7 +294,7 @@ fn simple_tuple_type() {
 
 #[test]
 fn match_tuple_type() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 match (1, "test") with
 | (x, y) -> (y, x)
@@ -314,7 +314,7 @@ match (1, "test") with
 
 #[test]
 fn match_tuple_record() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 match (1, "test") with
 | { _1, _0 } -> _1
@@ -326,7 +326,7 @@ match (1, "test") with
 
 #[test]
 fn field_access_tuple() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 (1, "test")._0
 "#;
@@ -337,7 +337,7 @@ fn field_access_tuple() {
 
 #[test]
 fn unit_tuple_match() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 match () with
 | () -> ()
@@ -349,7 +349,7 @@ match () with
 
 #[test]
 fn precise_alias_selection_on_record_construction() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 type Test = {
     x : Int,
@@ -381,7 +381,7 @@ type Test2 = {
 
 #[test]
 fn alias_selection_on_pattern_match() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 type Test = {
     x : Float,
@@ -400,7 +400,7 @@ x
 
 #[test]
 fn dont_lookup_record_alias_on_pattern_match() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 type Test = {
     x : Float,
@@ -416,7 +416,7 @@ x
 
 #[test]
 fn record_expr_base() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 let vec2 = { x = 1, y = 2 }
 { z = 3, .. vec2 }
@@ -438,7 +438,7 @@ let vec2 = { x = 1, y = 2 }
 
 #[test]
 fn record_expr_base_overwrite_field() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 let record = { x = 1 }
 { x = "", .. record }
@@ -456,7 +456,7 @@ let record = { x = 1 }
 
 #[test]
 fn undefined_type_variable_in_record() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 type Test = {
     x: a
@@ -473,7 +473,7 @@ let any x = any x
 
 #[test]
 fn make_category() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 type Category (cat : Type -> Type -> Type) = {
     id : forall a a . cat a a,
@@ -501,7 +501,7 @@ make_Category category_Function
 
 #[test]
 fn functor_function() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 type Category (cat : Type -> Type -> Type) = {
@@ -530,7 +530,7 @@ let functor_Function : Functor ((->) a) = { map = category_Function.compose }
 
 #[test]
 fn type_field_and_make_function_do_not_introduce_forall() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 type Test a = { x : a }
@@ -549,7 +549,7 @@ let { Test } = x
 
 #[test]
 fn type_constructor_is_specialized() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 type Option a = | None | Some a
@@ -601,7 +601,7 @@ let traversable : Traversable Option = {
 
 #[test]
 fn writer_bug() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 type Writer w a = { value : a, writer : w }
@@ -623,7 +623,7 @@ let functor : Functor (Writer w) = {
 
 #[test]
 fn test_bug() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 type List a = | Cons a (List a) | Nil
@@ -656,7 +656,7 @@ let assert_eq show eq = \x y ->
 
 #[test]
 fn unpack_make_record_with_alias() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 type List a = | Cons a (List a) | Nil
@@ -677,7 +677,7 @@ let { List, f } = make 1
 #[test]
 #[ignore]
 fn preserve_forall_when_lifting_into_record() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 type Map k a = | Bin k a (Map k a) (Map k a) | Tip
@@ -722,7 +722,7 @@ fn resolve_app_app() {
 
 #[test]
 fn make_with_explicit_types() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 let make x : b -> _ =
@@ -741,7 +741,7 @@ make
 
 #[test]
 fn universally_quantified_argument() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 let test x : (forall a . a -> a) -> () = ()
@@ -754,7 +754,7 @@ let test x : (forall a . a -> a) -> () = ()
 
 #[test]
 fn alternative_dont_unify_skolem() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 type Option a = | None | Some a
@@ -788,7 +788,7 @@ None <|> Some 1
 
 #[test]
 fn unify_record_field_with_forall() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 type Option a = | None | Some a
@@ -810,7 +810,7 @@ Function {
 
 #[test]
 fn make_singleton() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 
@@ -834,7 +834,7 @@ singleton "" ()
 
 #[test]
 fn foldable_bug() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 type Option a = | None | Some a
@@ -871,7 +871,7 @@ let make_Foldable foldable : Foldable t -> _ =
 
 #[test]
 fn parser_bug() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 type Result e t = | Err e | Ok t
@@ -900,7 +900,7 @@ let functor : Functor Parser = {
 
 #[test]
 fn make_writer_bug() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 
@@ -934,7 +934,7 @@ let make monoid : Monoid w -> () =
 
 #[test]
 fn mutually_recursive_with_type_signature() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 let test x : a -> () = test2 x
@@ -948,7 +948,7 @@ and test2 x : a -> () = test x
 
 #[test]
 fn show_list_bug() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 type List a = | Nil | Cons a (List a)
@@ -983,7 +983,7 @@ let show : Show a -> Show (List a) = \d ->
 
 #[test]
 fn show_list_bug_with_as_pattern() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 type List a = | Nil | Cons a (List a)
@@ -1009,7 +1009,7 @@ list.show int_show
 
 #[test]
 fn generalize_record_unpacks() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 type Semigroup a = {
@@ -1040,7 +1040,7 @@ append (Cons "" Nil) Nil
 #[test]
 #[ignore]
 fn generalize_tuple_unpacks() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let text = r#"
 type Semigroup a = (a -> a -> a, Int)

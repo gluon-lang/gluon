@@ -1,5 +1,5 @@
 let prelude = import! std.prelude
-let io = import! std.io
+let io @ { ? } = import! std.io
 let map @ { Map } = import! std.map
 let { Bool } = import! std.bool
 let { Option } = import! std.option
@@ -13,12 +13,12 @@ let { ReadlineError } = import! rustyline_types
 let repl_prim = import! repl.prim
 let { (<<) } = import! std.function
 
-let { wrap, (*>) } = prelude.make_Applicative io.applicative
-let { flat_map, (>>=) } = prelude.make_Monad io.monad
+let { Applicative, wrap, (*>) } = import! std.applicative
+let { flat_map, (>>=) } = import! std.prelude
 
 let { append = (++) } = string.semigroup
-let ord_map @ { singleton, find, insert } = map.make string.ord
-let { (<>) } = prelude.make_Semigroup ord_map.semigroup
+let ord_map @ { singleton, find, insert, ? } = map.make string.ord
+let { (<>) } = import! std.prelude
 let { empty } = ord_map.monoid
 
 
@@ -66,7 +66,15 @@ let make_commands cpu_pool : CpuPool -> Commands =
         | Err x -> io.println x
 
     let commands = ref []
-    let cmds = [{ name = "quit", alias = "q", info = "Quit the REPL", action = \_ -> wrap Quit }, {
+    let cmds = [{
+            name = "quit",
+            alias = "q",
+            info = "Quit the REPL",
+            // FIXME a -> IO ReplAction signature should not be necessary
+            action =
+                let x : a -> IO ReplAction = \_ -> wrap Quit
+                x,
+        }, {
             name = "type",
             alias = "t",
             info = "Prints the type with an expression",
@@ -117,7 +125,7 @@ let make_commands cpu_pool : CpuPool -> Commands =
         empty
         cmds
 
-let { Parser, parse } = import! std.parser
+let { Parser, parse, ? } = import! std.parser
 
 
 let cmd_parser : Parser { cmd : String, arg : String } =
@@ -131,8 +139,7 @@ let cmd_parser : Parser { cmd : String, arg : String } =
         monad = { flat_map },
         alternative,
         applicative } = import! std.parser
-    let { wrap, (*>) } = prelude.make_Applicative applicative
-    let { (<|>) } = prelude.make_Alternative alternative
+    let { (<|>) } = import! std.prelude
 
     let word = recognize (skip_many1 letter)
     let arg_parser = recognize (skip_many1 any)

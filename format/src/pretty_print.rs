@@ -7,7 +7,7 @@ use base::ast::{Do, Expr, Pattern, SpannedExpr, SpannedPattern, ValueBinding};
 use base::kind::Kind;
 use base::pos::{self, BytePos, HasSpan, Span, Spanned};
 use base::source;
-use base::types::{self, Prec, Type};
+use base::types::{self, ArgType, Prec, Type};
 use self::types::pretty_print as pretty_types;
 
 const INDENT: usize = 4;
@@ -93,13 +93,24 @@ where
 
         let comments = self.comments(Span::new(previous_end, expr.span.start));
         let doc = match expr.value {
-            Expr::App(ref func, ref args) => {
-                let arg_iter = iter::once(&**func).chain(args).tuple_windows().map(
-                    |(prev, arg)| {
+            Expr::App {
+                ref implicit_args,
+                ref func,
+                ref args,
+            } => {
+                let arg_iter = iter::once((&**func, false))
+                    .chain(implicit_args.iter().map(|arg| (arg, true)))
+                    .chain(args.iter().map(|arg| (arg, false)))
+                    .tuple_windows()
+                    .map(|((prev, _), (arg, implicit))| {
                         self.space(Span::new(prev.span.end, arg.span.start))
+                            .append(if implicit {
+                                arena.text("?")
+                            } else {
+                                arena.nil()
+                            })
                             .append(pretty(arg))
-                    },
-                );
+                    });
                 pretty(func)
                     .append(arena.concat(arg_iter).nest(INDENT))
                     .group()
@@ -147,13 +158,18 @@ where
                     self.pretty_else_expr(space, if_false)
                 ]
             }
-            Expr::Infix(ref l, ref op, ref r) => chain![arena;
-                    pretty(l).group(),
+            Expr::Infix {
+                ref lhs,
+                ref op,
+                ref rhs,
+                ..
+            } => chain![arena;
+                    pretty(lhs).group(),
                     chain![arena;
-                        newline(arena, r),
+                        newline(arena, rhs),
                         op.value.name.as_ref(),
                         " ",
-                        pretty(r).group()
+                        pretty(rhs).group()
                     ].nest(INDENT)
                 ],
             Expr::Lambda(_) => {
@@ -168,14 +184,23 @@ where
                             self.pretty_pattern(&bind.name),
                             " ",
                             arena.concat(bind.args.iter().map(|arg| {
-                                arena.text(arg.value.name.as_ref()).append(" ")
+                                chain![
+                                    arena;
+                                    if arg.arg_type == ArgType::Implicit {
+                                        arena.text("?")
+                                    } else {
+                                        arena.nil()
+                                    },
+                                    arena.text(arg.name.value.name.as_ref()).append(" ")
+                                ]
                             }))
                         ].group(),
                         match bind.typ {
                             None => arena.nil(),
                             Some(ref typ) => arena.text(": ")
                                 .append(types::pretty_print(self, typ))
-                                .append(self.space_after(typ.span().end)),
+                                .append(self.space_after(typ.span().end))
+                                .nest(INDENT),
                         },
                         "="
                     ];
@@ -539,6 +564,7 @@ where
             Pattern::Record {
                 ref fields,
                 ref types,
+                ref implicit_import,
                 ..
             } => {
                 let iter = self.comma_sep(
@@ -561,14 +587,19 @@ where
                                 }
                             ];
                             pos::spanned(field.name.span, doc)
-                        })),
+                        }))
+                        .chain(
+                            implicit_import
+                                .as_ref()
+                                .map(|spanned| pos::spanned(spanned.span, arena.text("?"))),
+                        ),
                     |spanned| spanned.value,
                 );
                 let doc = arena.concat(iter).nest(INDENT);
                 chain![arena;
                     "{",
                     doc,
-                    if types.is_empty() && fields.is_empty() {
+                    if types.is_empty() && fields.is_empty() && implicit_import.is_none() {
                         arena.nil()
                     } else {
                         arena.space()
@@ -780,7 +811,9 @@ fn forced_new_line<Id>(expr: &SpannedExpr<Id>) -> bool {
                 || base.as_ref().map_or(false, |base| forced_new_line(base))
         }),
         Expr::IfElse(_, ref t, ref f) => forced_new_line(t) || forced_new_line(f),
-        Expr::Infix(ref l, _, ref r) => forced_new_line(l) || forced_new_line(r),
+        Expr::Infix {
+            ref lhs, ref rhs, ..
+        } => forced_new_line(lhs) || forced_new_line(rhs),
         _ => false,
     }
 }

@@ -2,14 +2,11 @@ use std::fmt;
 
 use base::ast::{self, DisplayEnv, Do, Expr, MutVisitor, Pattern, SpannedExpr, Typed, TypedIdent};
 use base::error::Errors;
-use base::fnv::FnvMap;
-use base::kind::{ArcKind, Kind, KindEnv};
+use base::kind::{ArcKind, KindEnv};
 use base::pos::{self, BytePos, Span, Spanned};
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolModule, SymbolRef};
 use base::types::{self, Alias, ArcType, RecordSelector, Type, TypeEnv};
-use unify_type::{State, TypeError};
-use unify::{Error as UnifyError, Unifiable, Unifier, UnifierState};
 
 pub type Error = Errors<Spanned<RenameError, BytePos>>;
 
@@ -83,12 +80,20 @@ impl<'a> TypeEnv for Environment<'a> {
     }
 }
 
-pub fn rename(
+pub fn rename<E>(
     symbols: &mut SymbolModule,
-    env: &TypeEnv,
+    env: &E,
     expr: &mut SpannedExpr<Symbol>,
-) -> Result<(), Error> {
+) -> Result<(), Error>
+where
+    E: TypeEnv,
+{
     use base::resolve;
+
+    enum TailCall {
+        TailCall,
+        Return,
+    }
 
     struct RenameVisitor<'a: 'b, 'b> {
         symbols: &'b mut SymbolModule<'a>,
@@ -109,6 +114,7 @@ pub fn rename(
                     ref mut fields,
                     ref types,
                     ref typ,
+                    ..
                 } => {
                     let field_types = self.find_fields(typ);
                     for field in fields {
@@ -209,37 +215,13 @@ pub fn rename(
         /// Renames `id` to the unique identifier which have the type `expected`
         /// Returns `Some(new_id)` if renaming was necessary or `None` if no renaming was necessary
         /// as `id` was currently unique (#Int+, #Float*, etc)
-        fn rename(&self, id: &Symbol, expected: &ArcType) -> Result<Option<Symbol>, RenameError> {
-            let locals = self.env.stack.get_all(id);
-            let candidates = || {
-                locals.iter().flat_map(|bindings| {
-                    bindings
-                        .iter()
-                        .rev()
-                        .map(|bind| (&bind.0, Some(&bind.1), &bind.2))
-                })
-            };
-            // If there is a single binding (or no binding in case of primitives such as #Int+)
-            // there is no need to check for equivalency as typechecker couldnt have infered a
-            // different binding
-            if candidates().count() <= 1 {
-                return Ok(candidates().next().map(|tup| tup.0.clone()));
-            }
-            candidates()
-                .find(|tup| equivalent(&self.env, tup.2.remove_forall(), expected.remove_forall()))
-                .map(|tup| Some(tup.0.clone()))
-                .ok_or_else(|| RenameError::NoMatchingType {
-                    symbol: String::from(self.symbols.string(id)),
-                    expected: expected.clone(),
-                    possible_types: candidates()
-                        .map(|tup| (tup.1.cloned(), tup.2.clone()))
-                        .collect(),
-                })
+        fn rename(&self, id: &Symbol) -> Option<Symbol> {
+            self.env.stack.get(id).map(|t| t.0.clone())
         }
 
-        fn rename_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> Result<(), RenameError> {
+        fn rename_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> Result<TailCall, RenameError> {
             match expr.value {
-                Expr::Ident(ref mut id) => if let Some(new_id) = self.rename(&id.name, &id.typ)? {
+                Expr::Ident(ref mut id) => if let Some(new_id) = self.rename(&id.name) {
                     debug!("Rename identifier {} = {}", id.name, new_id);
                     id.name = new_id;
                 },
@@ -253,9 +235,7 @@ pub fn rename(
                     for (field, expr_field) in field_types.iter().zip(exprs) {
                         match expr_field.value {
                             Some(ref mut expr) => self.visit_expr(expr),
-                            None => if let Some(new_id) =
-                                self.rename(&expr_field.name.value, &field.typ)?
-                            {
+                            None => if let Some(new_id) = self.rename(&expr_field.name.value) {
                                 debug!("Rename record field {} = {}", expr_field.name, new_id);
                                 expr_field.value = Some(pos::spanned(
                                     expr_field.name.span,
@@ -272,8 +252,13 @@ pub fn rename(
                         self.visit_expr(base);
                     }
                 }
-                Expr::Infix(ref mut lhs, ref mut op, ref mut rhs) => {
-                    if let Some(new_id) = self.rename(&op.value.name, &op.value.typ)? {
+                Expr::Infix {
+                    ref mut lhs,
+                    ref mut op,
+                    ref mut rhs,
+                    ref mut implicit_args,
+                } => {
+                    if let Some(new_id) = self.rename(&op.value.name) {
                         debug!(
                             "Rename {} = {}",
                             self.symbols.string(&op.value.name),
@@ -283,6 +268,9 @@ pub fn rename(
                     }
                     self.visit_expr(lhs);
                     self.visit_expr(rhs);
+                    for arg in implicit_args {
+                        self.visit_expr(arg);
+                    }
                 }
                 Expr::Match(ref mut expr, ref mut alts) => {
                     self.visit_expr(expr);
@@ -311,27 +299,48 @@ pub fn rename(
                             for (typ, arg) in types::arg_iter(bind.resolved_type.remove_forall())
                                 .zip(&mut bind.args)
                             {
-                                arg.value.name =
-                                    self.stack_var(arg.value.name.clone(), expr.span, typ.clone());
+                                arg.name.value.name = self.stack_var(
+                                    arg.name.value.name.clone(),
+                                    expr.span,
+                                    typ.clone(),
+                                );
                             }
                             self.visit_expr(&mut bind.expr);
                             self.env.stack.exit_scope();
                         }
                     }
-                    self.visit_expr(expr);
-                    self.env.stack.exit_scope();
-                    self.env.stack_types.exit_scope();
+                    return Ok(TailCall::TailCall);
                 }
                 Expr::Lambda(ref mut lambda) => {
                     self.env.stack.enter_scope();
-                    for (typ, arg) in types::arg_iter(&lambda.id.typ).zip(&mut lambda.args) {
+
+                    let mut iter = types::implicit_arg_iter(lambda.id.typ.remove_forall());
+                    let mut implicit_arg_count = 0;
+                    for typ in iter.by_ref() {
+                        let name = Symbol::from("implicit_arg");
+                        let arg = pos::spanned(
+                            expr.span,
+                            TypedIdent {
+                                name: self.stack_var(name, expr.span, typ.clone()),
+                                typ: typ.clone(),
+                            },
+                        );
+                        lambda.args.insert(implicit_arg_count, arg);
+                        implicit_arg_count += 1;
+                    }
+                    for (typ, arg) in
+                        types::arg_iter(iter.typ).zip(&mut lambda.args[implicit_arg_count..])
+                    {
                         arg.value.name =
                             self.stack_var(arg.value.name.clone(), expr.span, typ.clone());
                     }
+
                     self.visit_expr(&mut lambda.body);
+
                     self.env.stack.exit_scope();
                 }
-                Expr::TypeBindings(ref bindings, ref mut body) => {
+                Expr::TypeBindings(ref bindings, _) => {
+                    self.env.stack.enter_scope();
                     self.env.stack_types.enter_scope();
                     for bind in bindings {
                         self.stack_type(
@@ -343,49 +352,69 @@ pub fn rename(
                             ),
                         );
                     }
-                    self.visit_expr(body);
-                    self.env.stack_types.exit_scope();
+
+                    return Ok(TailCall::TailCall);
                 }
                 Expr::Do(Do {
                     ref mut id,
                     ref mut bound,
-                    ref mut body,
                     ref mut flat_map_id,
+                    ..
                 }) => {
                     let flat_map_id = flat_map_id
                         .as_mut()
                         .unwrap_or_else(|| ice!("flat_map_id not set before renaming"));
-                    if let Some(new_id) = self.rename(&flat_map_id.name, &flat_map_id.typ)? {
-                        debug!("Rename identifier {} = {}", flat_map_id.name, new_id);
-                        flat_map_id.name = new_id;
-                    }
 
+                    self.visit_expr(flat_map_id);
                     self.visit_expr(bound);
 
                     self.env.stack.enter_scope();
+                    self.env.stack_types.enter_scope();
 
                     id.value.name =
                         self.stack_var(id.value.name.clone(), id.span, id.value.typ.clone());
-                    self.visit_expr(body);
 
-                    self.env.stack.exit_scope();
+                    return Ok(TailCall::TailCall);
                 }
 
                 _ => ast::walk_mut_expr(self, expr),
             }
-            Ok(())
+            Ok(TailCall::Return)
         }
     }
 
     impl<'a, 'b> MutVisitor for RenameVisitor<'a, 'b> {
         type Ident = Symbol;
 
-        fn visit_expr(&mut self, expr: &mut SpannedExpr<Self::Ident>) {
-            if let Err(err) = self.rename_expr(expr) {
-                self.errors.push(Spanned {
-                    span: expr.span,
-                    value: err,
-                });
+        fn visit_expr(&mut self, mut expr: &mut SpannedExpr<Self::Ident>) {
+            let mut i = 0;
+            loop {
+                match self.rename_expr(expr) {
+                    Ok(TailCall::Return) => break,
+                    Ok(TailCall::TailCall) => {
+                        expr = match { expr }.value {
+                            Expr::LetBindings(_, ref mut new_expr)
+                            | Expr::TypeBindings(_, ref mut new_expr)
+                            | Expr::Do(Do {
+                                body: ref mut new_expr,
+                                ..
+                            }) => new_expr,
+                            _ => ice!("Only Let and Type expressions can tailcall"),
+                        };
+                        i += 1;
+                    }
+                    Err(err) => {
+                        self.errors.push(Spanned {
+                            span: expr.span,
+                            value: err,
+                        });
+                    }
+                }
+            }
+
+            for _ in 0..i {
+                self.env.stack.exit_scope();
+                self.env.stack_types.exit_scope();
             }
         }
     }
@@ -404,62 +433,5 @@ pub fn rename(
         Err(visitor.errors)
     } else {
         Ok(())
-    }
-}
-
-pub fn equivalent(env: &TypeEnv, actual: &ArcType, inferred: &ArcType) -> bool {
-    use substitution::Substitution;
-    // FIXME This Substitution is unnecessary for equivalence unification
-    let subs = Substitution::new(Kind::typ());
-    let mut unifier = UnifierState {
-        state: State::new(env, &subs),
-        unifier: Equivalent {
-            map: FnvMap::default(),
-            equiv: true,
-        },
-    };
-    unifier.try_match(actual, inferred);
-    unifier.unifier.equiv
-}
-
-struct Equivalent {
-    map: FnvMap<Symbol, ArcType>,
-    equiv: bool,
-}
-
-impl<'a> Unifier<State<'a>, ArcType> for UnifierState<State<'a>, Equivalent> {
-    fn report_error(&mut self, _error: UnifyError<ArcType, TypeError<Symbol>>) {
-        self.unifier.equiv = false;
-    }
-
-    fn try_match_res(
-        &mut self,
-        l: &ArcType,
-        r: &ArcType,
-    ) -> Result<Option<ArcType>, UnifyError<ArcType, TypeError<Symbol>>> {
-        debug!("{} ====> {}", l, r);
-        match (&**l, &**r) {
-            (&Type::Generic(ref gl), &Type::Generic(ref gr)) if gl == gr => Ok(None),
-            (&Type::Skolem(ref gl), &Type::Skolem(ref gr)) if gl == gr => Ok(None),
-            (&Type::Generic(ref gl), _) => match self.unifier.map.get(&gl.id).cloned() {
-                Some(ref typ) => self.try_match_res(typ, r),
-                None => {
-                    self.unifier.map.insert(gl.id.clone(), r.clone());
-                    Ok(None)
-                }
-            },
-            (&Type::Skolem(ref gl), _) => match self.unifier.map.get(&gl.name).cloned() {
-                Some(ref typ) => self.try_match_res(typ, r),
-                None => {
-                    self.unifier.map.insert(gl.name.clone(), r.clone());
-                    Ok(None)
-                }
-            },
-            _ => l.zip_match(r, self),
-        }
-    }
-
-    fn error_type(&mut self) -> Option<ArcType> {
-        None
     }
 }

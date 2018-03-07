@@ -137,8 +137,18 @@ struct SourceContext<E> {
     error: Spanned<E, Location>,
 }
 
-impl<E> SourceContext<E> {
+impl<E> SourceContext<E>
+where
+    E: fmt::Display,
+{
     fn new(source: &Source, error: Spanned<E, BytePos>) -> SourceContext<E> {
+        debug_assert!(
+            error.span.start.to_usize() <= source.src().len()
+                && error.span.end.to_usize() <= source.src().len(),
+            "{}",
+            error,
+        );
+
         let start = source.location(error.span.start).unwrap();
         let end = source.location(error.span.end).unwrap();
         let (_, line) = source.line_at_byte(error.span.start).unwrap();

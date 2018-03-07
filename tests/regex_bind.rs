@@ -6,7 +6,7 @@ use gluon::{new_vm, Compiler};
 
 #[test]
 fn regex_match() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let thread = new_vm();
     let text = r#"
@@ -31,7 +31,7 @@ fn regex_match() {
 
 #[test]
 fn regex_error() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let thread = new_vm();
     let text = r#"

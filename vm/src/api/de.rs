@@ -61,7 +61,12 @@ impl VmType for Vec2 {
     }
 }
 
+# if ::std::env::var("GLUON_PATH").is_err() {
+#     ::std::env::set_var("GLUON_PATH", "..");
+# }
+
 let thread = new_vm();
+
 let (De(vec), _) = Compiler::new()
 #   .implicit_prelude(false)
     .run_expr::<De<Vec2>>(&thread, "test", "{ x = 1.0, y = 2.0 }")
@@ -103,7 +108,12 @@ impl VmType for Enum {
     }
 }
 
+# if ::std::env::var("GLUON_PATH").is_err() {
+#     ::std::env::set_var("GLUON_PATH", "..");
+# }
+
 let thread = new_vm();
+
 Compiler::new()
 #   .implicit_prelude(false)
     .load_script(

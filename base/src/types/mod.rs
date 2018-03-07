@@ -116,7 +116,17 @@ where
         I::IntoIter: DoubleEndedIterator<Item = T>,
     {
         args.into_iter().rev().fold(ret, |body, arg| {
-            Type::app(self.function_builtin(), collect![arg, body])
+            T::from(Type::Function(ArgType::Explicit, arg, body))
+        })
+    }
+
+    pub fn function_implicit<I>(&self, args: I, ret: T) -> T
+    where
+        I: IntoIterator<Item = T>,
+        I::IntoIter: DoubleEndedIterator<Item = T>,
+    {
+        args.into_iter().rev().fold(ret, |body, arg| {
+            T::from(Type::Function(ArgType::Implicit, arg, body))
         })
     }
 
@@ -536,6 +546,13 @@ impl<Id, T> Field<Id, T> {
     }
 }
 
+#[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum ArgType {
+    Explicit,
+    Implicit,
+}
+
 /// The representation of gluon's types.
 ///
 /// For efficiency this enum is not stored directly but instead a pointer wrapper which derefs to
@@ -574,6 +591,12 @@ pub enum Type<Id, T = ArcType<Id>> {
     App(
         #[cfg_attr(feature = "serde_derive", serde(state))] T,
         #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::seq"))] AppVec<T>,
+    ),
+    /// Function type which can have a explicit or implicit argument
+    Function(
+        ArgType,
+        #[cfg_attr(feature = "serde_derive", serde(state))] T,
+        #[cfg_attr(feature = "serde_derive", serde(state))] T,
     ),
     /// Record constructor, of kind `Row -> Type`
     Record(#[cfg_attr(feature = "serde_derive", serde(state))] T),
@@ -737,9 +760,8 @@ where
     where
         T: Clone,
     {
-        let function: T = Type::builtin(BuiltinType::Function);
         args.into_iter().rev().fold(ret, |body, arg| {
-            Type::app(function.clone(), collect![arg, body])
+            T::from(Type::Function(ArgType::Explicit, arg, body))
         })
     }
 
@@ -805,18 +827,24 @@ where
     T: Deref<Target = Type<Id, T>>,
 {
     pub fn as_function(&self) -> Option<(&T, &T)> {
-        if let Type::App(ref app, ref args) = *self {
-            if args.len() == 2 {
+        self.as_function_with_type().map(|t| (t.1, t.2))
+    }
+
+    pub fn as_function_with_type(&self) -> Option<(ArgType, &T, &T)> {
+        match *self {
+            Type::Function(arg_type, ref arg, ref ret) => return Some((arg_type, arg, ret)),
+            Type::App(ref app, ref args) => if args.len() == 2 {
                 if let Type::Builtin(BuiltinType::Function) = **app {
-                    return Some((&args[0], &args[1]));
+                    return Some((ArgType::Explicit, &args[0], &args[1]));
                 }
             } else if args.len() == 1 {
                 if let Type::App(ref app, ref args2) = **app {
                     if let Type::Builtin(BuiltinType::Function) = **app {
-                        return Some((&args2[0], &args[0]));
+                        return Some((ArgType::Explicit, &args2[0], &args[0]));
                     }
                 }
-            }
+            },
+            _ => (),
         }
         None
     }
@@ -878,6 +906,7 @@ where
 
     fn kind_(&self, applied_args: usize) -> Cow<ArcKind> {
         let mut immediate_kind = match *self {
+            Type::Function(_, _, _) => Cow::Owned(Kind::typ()),
             Type::App(ref t, ref args) => t.kind_(args.len()),
             Type::Hole | Type::Opaque | Type::Builtin(_) | Type::Record(_) | Type::Variant(_) => {
                 Cow::Owned(Kind::typ())
@@ -931,6 +960,7 @@ where
         }
 
         match *self {
+            Type::Function(..) => Some(BuiltinType::Function.symbol()),
             Type::App(ref id, _) => match **id {
                 Type::Builtin(b) => Some(b.symbol()),
                 _ => None,
@@ -1017,6 +1047,10 @@ pub fn row_iter_mut<Id, T>(typ: &mut T) -> RowIteratorMut<Id, T> {
     }
 }
 
+pub fn type_field_iter<T>(typ: &T) -> TypeFieldIterator<T> {
+    TypeFieldIterator { typ, current: 0 }
+}
+
 impl<Id> ArcType<Id> {
     pub fn new(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
         ArcType { typ: Arc::new(typ) }
@@ -1025,10 +1059,7 @@ impl<Id> ArcType<Id> {
     /// Returns an iterator over all type fields in a record.
     /// `{ Test, Test2, x, y } => [Test, Test2]`
     pub fn type_field_iter(&self) -> TypeFieldIterator<Self> {
-        TypeFieldIterator {
-            typ: self,
-            current: 0,
-        }
+        type_field_iter(self)
     }
 
     /// Returns an iterator over all fields in a record.
@@ -1039,6 +1070,13 @@ impl<Id> ArcType<Id> {
 
     pub fn strong_count(typ: &ArcType<Id>) -> usize {
         Arc::strong_count(&typ.typ)
+    }
+
+    pub fn remove_implicit_args(&self) -> &ArcType<Id> {
+        match **self {
+            Type::Function(ArgType::Implicit, _, ref typ) => typ.remove_implicit_args(),
+            _ => self,
+        }
     }
 
     pub fn remove_forall(&self) -> &ArcType<Id> {
@@ -1439,6 +1477,40 @@ where
     }
 }
 
+pub struct ImplicitArgIterator<'a, T: 'a> {
+    /// The current type being iterated over. After `None` has been returned this is the return
+    /// type.
+    pub typ: &'a T,
+}
+
+/// Constructs an iterator over a functions arguments
+pub fn implicit_arg_iter<Id, T>(typ: &T) -> ImplicitArgIterator<T>
+where
+    T: Deref<Target = Type<Id, T>>,
+{
+    ImplicitArgIterator { typ: typ }
+}
+
+impl<'a, Id, T> Iterator for ImplicitArgIterator<'a, T>
+where
+    Id: 'a,
+    T: Deref<Target = Type<Id, T>>,
+{
+    type Item = &'a T;
+    fn next(&mut self) -> Option<&'a T> {
+        self.typ
+            .as_function_with_type()
+            .and_then(|(arg_type, arg, ret)| {
+                if arg_type == ArgType::Implicit {
+                    self.typ = ret;
+                    Some(arg)
+                } else {
+                    None
+                }
+            })
+    }
+}
+
 impl<Id> ArcType<Id> {
     /// Returns the lowest level which this type contains. The level informs from where type
     /// variables where created.
@@ -1580,6 +1652,7 @@ where
 
         let p = self.prec;
         let typ = self.typ;
+
         let doc = match **typ {
             Type::Hole => arena.text("_"),
             Type::Opaque => arena.text("<opaque>"),
@@ -1605,6 +1678,7 @@ where
                     skolem.id.to_string()
                 ],
             Type::Generic(ref gen) => arena.text(gen.id.as_ref()),
+            Type::Function(..) => self.pretty_function(printer).nest(INDENT),
             Type::App(ref t, ref args) => match self.typ.as_function() {
                 Some(_) => self.pretty_function(printer).nest(INDENT),
                 None => {
@@ -1814,7 +1888,7 @@ where
             Type::Alias(ref alias) => arena.text(alias.name.as_ref()),
         };
         match **typ {
-            Type::App(..) | Type::ExtendRow { .. } | Type::Variant(..) => doc,
+            Type::App(..) | Type::ExtendRow { .. } | Type::Variant(..) | Type::Function(..) => doc,
             _ => {
                 let comment = printer.comments_before(typ.span().start);
                 comment.append(doc)
@@ -1828,10 +1902,12 @@ where
     {
         let arena = printer.arena;
         let p = self.prec;
-        match self.typ.as_function() {
-            Some((arg, ret)) => {
+        match self.typ.as_function_with_type() {
+            Some((arg_type, arg, ret)) => {
                 let doc = chain![arena;
+                    if arg_type == ArgType::Implicit { "[" } else { "" },
                     dt(Prec::Function, arg).pretty(printer).group(),
+                    if arg_type == ArgType::Implicit { "]" } else { "" },
                     printer.space_after(arg.span().end),
                     "-> ",
                     top(ret).pretty_function(printer)
@@ -1872,6 +1948,10 @@ where
 {
     match **typ {
         Type::Forall(_, ref typ, _) => f.walk(typ),
+        Type::Function(_, ref arg, ref ret) => {
+            f.walk(arg);
+            f.walk(ret);
+        }
         Type::App(ref t, ref args) => {
             f.walk(t);
             for a in args {
@@ -1911,6 +1991,10 @@ where
 {
     match **typ {
         Type::Forall(_, ref mut typ, _) => f.walk_mut(typ),
+        Type::Function(_, ref mut arg, ref mut ret) => {
+            f.walk_mut(arg);
+            f.walk_mut(ret);
+        }
         Type::App(ref mut t, ref mut args) => {
             f.walk_mut(t);
             for a in args {
@@ -2063,6 +2147,14 @@ where
     match *typ {
         Type::Forall(ref args, ref typ, ref vars) => f.visit(typ)
             .map(|typ| T::from(Type::Forall(args.clone(), typ, vars.clone()))),
+
+        Type::Function(arg_type, ref arg, ref ret) => {
+            let new_arg = f.visit(arg);
+            let new_ret = f.visit(ret);
+            merge(arg, new_arg, ret, new_ret, |arg, ret| {
+                T::from(Type::Function(arg_type, arg, ret))
+            })
+        }
         Type::App(ref id, ref args) => {
             let new_args = walk_move_types(args, |t| f.visit(t));
             merge(id, f.visit(id), args, new_args, Type::app)
@@ -2167,6 +2259,9 @@ where
     F: FnMut(&T) -> U,
 {
     match *typ {
+        Type::Function(arg_type, ref arg, ref ret) => {
+            U::from(Type::Function(arg_type, translate(arg), translate(ret)))
+        }
         Type::App(ref f, ref args) => Type::app(
             translate(f),
             args.iter().map(|typ| translate(typ)).collect(),

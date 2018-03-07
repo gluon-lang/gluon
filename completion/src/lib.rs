@@ -435,7 +435,9 @@ where
                     MatchState::Empty
                 };
             }
-            Expr::App(ref func, ref args) => {
+            Expr::App {
+                ref func, ref args, ..
+            } => {
                 self.visit_one(once(&**func).chain(args));
             }
             Expr::IfElse(ref pred, ref if_true, ref if_false) => {
@@ -466,16 +468,22 @@ where
                     }
                 }
             }
-            Expr::Infix(ref l, ref op, ref r) => {
-                match (l.span.containment(&self.pos), r.span.containment(&self.pos)) {
-                    (Ordering::Greater, Ordering::Less) => {
-                        self.found =
-                            MatchState::Found(Match::Ident(op.span, &op.value.name, &op.value.typ));
-                    }
-                    (_, Ordering::Greater) | (_, Ordering::Equal) => self.visit_expr(r),
-                    _ => self.visit_expr(l),
+            Expr::Infix {
+                ref lhs,
+                ref op,
+                ref rhs,
+                ..
+            } => match (
+                lhs.span.containment(&self.pos),
+                rhs.span.containment(&self.pos),
+            ) {
+                (Ordering::Greater, Ordering::Less) => {
+                    self.found =
+                        MatchState::Found(Match::Ident(op.span, &op.value.name, &op.value.typ));
                 }
-            }
+                (_, Ordering::Greater) | (_, Ordering::Equal) => self.visit_expr(rhs),
+                _ => self.visit_expr(lhs),
+            },
             Expr::LetBindings(ref bindings, ref expr) => {
                 for bind in bindings {
                     self.on_found.on_pattern(&bind.name);
@@ -485,7 +493,7 @@ where
                 }) {
                     (false, Some(bind)) => {
                         for arg in &bind.args {
-                            self.on_found.on_ident(&arg.value);
+                            self.on_found.on_ident(&arg.name.value);
                         }
 
                         enum Variant<'a> {
@@ -495,7 +503,7 @@ where
                             Expr(&'a SpannedExpr<Symbol>),
                         }
                         let iter = once(Variant::Pattern(&bind.name))
-                            .chain(bind.args.iter().map(Variant::Ident))
+                            .chain(bind.args.iter().map(|arg| Variant::Ident(&arg.name)))
                             .chain(bind.typ.iter().map(Variant::Type))
                             .chain(once(Variant::Expr(&bind.expr)));
                         let (_, sel) = self.select_spanned(iter, |x| match *x {
@@ -1078,6 +1086,7 @@ impl SuggestionQuery {
                                 ref typ,
                                 ref types,
                                 ref fields,
+                                ..
                             },
                         ..
                     }) => {
@@ -1286,7 +1295,7 @@ pub fn signature_help(
             // Should not return the signature for `test` but for `func`
             .take_while(|enclosing_match| match **enclosing_match {
                 Match::Expr(expr) => match expr.value {
-                    Expr::Ident(..) | Expr::Literal(..) | Expr::Projection(..) | Expr::App(..) | Expr::Tuple { .. } => {
+                    Expr::Ident(..) | Expr::Literal(..) | Expr::Projection(..) | Expr::App { .. } | Expr::Tuple { .. } => {
                         true
                     }
                     Expr::Record { ref exprs, ref base, ..} => exprs.is_empty() && base.is_none(),
@@ -1296,8 +1305,8 @@ pub fn signature_help(
             })
             .filter_map(|enclosing_match| match *enclosing_match {
                 Match::Expr(expr) => match expr.value {
-                    Expr::App(ref f, ref args) => f.try_type_of(env).ok().map(|typ| {
-                        let name = match f.value {
+                    Expr::App { ref func, ref args, .. } => func.try_type_of(env).ok().map(|typ| {
+                        let name = match func.value {
                             Expr::Ident(ref id) => id.name.declared_name().to_string(),
                             Expr::Projection(_, ref name, _) => name.declared_name().to_string(),
                             _ => "".to_string(),
@@ -1368,7 +1377,7 @@ pub fn get_metadata<'a>(
                     None
                 },
                 Match::Expr(&Spanned {
-                    value: Expr::Infix(..),
+                    value: Expr::Infix { .. },
                     ..
                 }) => env.get(id),
                 _ => None,

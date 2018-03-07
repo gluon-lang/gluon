@@ -43,11 +43,20 @@ pub(crate) fn variant_iter<'a>(xs: &'a [Value]) -> VariantIter<'a> {
     xs.iter().map(|v| unsafe { Variants::new(v) })
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(PartialEq)]
 #[repr(C)]
 pub struct ClosureData {
     pub(crate) function: GcPtr<BytecodeFunction>,
     pub(crate) upvars: Array<Value>,
+}
+
+impl fmt::Debug for ClosureData {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("ClosureData")
+            .field("function", &self.function.name)
+            .field("upvars", &self.upvars)
+            .finish()
+    }
 }
 
 impl Traverseable for ClosureData {
@@ -791,12 +800,12 @@ impl fmt::Debug for ValueRepr {
                     }
                     ValueRepr::PartialApplication(ref app) => {
                         let name = match app.function {
-                            Callable::Closure(_) => "<CLOSURE>",
-                            Callable::Extern(_) => "<EXTERN>",
+                            Callable::Closure(ref c) => &c.function.name,
+                            Callable::Extern(ref e) => &e.id,
                         };
                         write!(
                             f,
-                            "<App {:?}{:?}>",
+                            "<App {:?}, {:?}>",
                             name,
                             LevelSlice(level - 1, variant_iter(&app.args))
                         )

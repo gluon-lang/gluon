@@ -232,8 +232,8 @@ impl PrimitiveEnv for VmEnv {
 }
 
 impl MetadataEnv for VmEnv {
-    fn get_metadata(&self, id: &Symbol) -> Option<&Metadata> {
-        self.globals.get(id.definition_name()).map(|g| &g.metadata)
+    fn get_metadata(&self, id: &SymbolRef) -> Option<&Metadata> {
+        self.get_metadata(id.definition_name()).ok()
     }
 }
 
@@ -271,11 +271,9 @@ impl VmEnv {
         })
     }
 
-    pub fn get_binding(&self, name: &str) -> Result<(Value, Cow<ArcType>)> {
-        use base::resolve;
-
+    fn get_global<'s, 'n>(&'s self, name: &'n str) -> Option<(&'n Name, &'s Global)> {
         let globals = &self.globals;
-        let mut module = Name::new(name.trim_right_matches('@'));
+        let mut module = Name::new(name.trim_left_matches('@'));
         let global;
         // Try to find a global by successively reducing the module path
         // Input: "x.y.z.w"
@@ -285,7 +283,7 @@ impl VmEnv {
         // Test: -> Error
         loop {
             if module.as_str() == "" {
-                return Err(Error::UndefinedBinding(name.into()));
+                return None;
             }
             if let Some(g) = globals.get(module.as_str()) {
                 global = g;
@@ -293,12 +291,21 @@ impl VmEnv {
             }
             module = module.module();
         }
-        let remaining_offset = module.as_str().len() + 1; //Add 1 byte for the '.'
-        if remaining_offset >= name.len() {
+        let remaining_offset = ::std::cmp::min(name.len(), module.as_str().len() + 1); //Add 1 byte for the '.'
+        let remaining_fields = Name::new(&name[remaining_offset..]);
+        Some((remaining_fields, global))
+    }
+
+    pub fn get_binding(&self, name: &str) -> Result<(Value, Cow<ArcType>)> {
+        use base::resolve;
+
+        let (remaining_fields, global) = self.get_global(name)
+            .ok_or_else(|| Error::UndefinedBinding(name.into()))?;
+
+        if remaining_fields.as_str().is_empty() {
             // No fields left
             return Ok((global.value.clone(), Cow::Borrowed(&global.typ)));
         }
-        let remaining_fields = Name::new(&name[remaining_offset..]);
 
         let mut typ = Cow::Borrowed(&global.typ);
         let mut value = unsafe { Variants::new(&global.value) };
@@ -339,22 +346,11 @@ impl VmEnv {
     }
 
     pub fn get_metadata(&self, name_str: &str) -> Result<&Metadata> {
-        let globals = &self.globals;
-        let name = Name::new(name_str);
-        let mut components = name.components();
-        let global = match components.next() {
-            Some(comp) => globals
-                .get(comp)
-                .or_else(|| {
-                    components = name.name().components();
-                    globals.get(name.module().as_str())
-                })
-                .ok_or_else(|| Error::MetadataDoesNotExist(name_str.into()))?,
-            None => return Err(Error::MetadataDoesNotExist(name_str.into())),
-        };
+        let (remaining, global) = self.get_global(name_str)
+            .ok_or_else(|| Error::MetadataDoesNotExist(name_str.into()))?;
 
         let mut metadata = &global.metadata;
-        for field_name in components {
+        for field_name in remaining.components() {
             metadata = metadata
                 .module
                 .get(field_name)

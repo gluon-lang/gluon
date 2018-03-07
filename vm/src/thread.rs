@@ -499,7 +499,13 @@ impl Thread {
     ///     if x <= 1 { 1 } else { x * factorial(x - 1) }
     /// }
     /// # fn main() {
+    ///
+    /// # if ::std::env::var("GLUON_PATH").is_err() {
+    /// #     ::std::env::set_var("GLUON_PATH", "..");
+    /// # }
+    ///
     /// let vm = new_vm();
+    ///
     /// vm.define_global("factorial", primitive!(1 factorial)).unwrap();
     ///
     /// let result = Compiler::new()
@@ -542,7 +548,13 @@ impl Thread {
     /// # use gluon::{new_vm, Compiler, Thread};
     /// # use gluon::vm::api::{FunctionRef, Hole, OpaqueValue};
     /// # fn main() {
+    ///
+    /// # if ::std::env::var("GLUON_PATH").is_err() {
+    /// #     ::std::env::set_var("GLUON_PATH", "..");
+    /// # }
+    ///
     /// let vm = new_vm();
+    ///
     /// Compiler::new()
     ///     .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example",
     ///         r#" import! std.int "#)

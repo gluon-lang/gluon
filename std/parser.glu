@@ -2,12 +2,11 @@ let prelude = import! std.prelude
 let { Functor, Applicative, Alternative, Monad } = prelude
 let { id, flip } = import! std.function
 let { Bool } = import! std.bool
-let char = import! std.char
+let char @ { ? } = import! std.char
 let int = import! std.int
-let { (==) } = char.eq
 let { Result } = import! std.result
 let string = import! std.string
-let { (<>) } = prelude.make_Semigroup string.semigroup
+let { (<>) } = import! std.prelude
 let list @ { List } = import! std.list
 let { Option } = import! std.option
 
@@ -48,7 +47,7 @@ let applicative : Applicative Parser = {
     wrap = \value -> parser (\buffer -> Ok { value, buffer }),
 }
 
-let { (*>), (<*), wrap } = prelude.make_Applicative applicative
+let { (*>), (<*), wrap } = import! std.applicative
 
 let alternative : Alternative Parser = {
     applicative,
@@ -60,7 +59,7 @@ let alternative : Alternative Parser = {
     empty = parser (\stream -> Err { position = stream.start, message = "empty" }),
 }
 
-let { (<|>) } = prelude.make_Alternative alternative
+let { (<|>) } = import! std.prelude
 
 let monad : Monad Parser = {
     applicative,
@@ -71,7 +70,7 @@ let monad : Monad Parser = {
             | Err err -> Err err),
 }
 
-let { flat_map } = prelude.make_Monad monad
+let { flat_map } = import! std.prelude
 
 let uncons stream : OffsetString -> Option { char : Char, rest : OffsetString } =
     if stream.start == stream.end then

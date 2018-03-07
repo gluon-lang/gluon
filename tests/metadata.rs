@@ -18,7 +18,7 @@ fn make_vm() -> RootedThread {
 
 #[test]
 fn metadata_from_other_module() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let vm = make_vm();
     let text = r#"
 let { List, of }  = import! std.list
@@ -27,7 +27,7 @@ let { List, of }  = import! std.list
     Compiler::new()
         .load_script_async(&vm, "test", text)
         .sync_or_error()
-        .unwrap();
+        .unwrap_or_else(|err| panic!("{}", err));
 
     let env = vm.get_env();
     assert!(env.get_metadata("test.of").is_ok());

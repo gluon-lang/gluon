@@ -6,7 +6,7 @@ let { Bool } = import! std.bool
 let http_prim = import! http.prim
 let { (==) } = string.eq
 let { Functor, Applicative, Alternative, Monad } = prelude
-let { (<<), id } = prelude.make_Category function.category
+let { (<<), id } = import! std.prelude
 let { wrap } = io.applicative
 
 let {
@@ -44,7 +44,7 @@ let applicative : Applicative Handler = {
         flat_map (\f -> functor.map f m) a,
     wrap = \a -> make (\success _ state -> success a state),
 }
-let { (*>) } = prelude.make_Applicative applicative
+let { (*>) } = prelude
 
 let alternative : Alternative Handler = {
     applicative,
@@ -58,13 +58,13 @@ let alternative : Alternative Handler = {
             make l success failure2 state),
     empty = make (\_ failure state -> failure DontProcess state),
 }
-let { or, empty, (<|>) } = prelude.make_Alternative alternative
+let { or, empty, (<|>) } = import! std.prelude
 
 let monad : Monad Handler = {
     applicative,
     flat_map,
 }
-let { flat_map } = prelude.make_Monad monad
+let { flat_map } = import! std.prelude
 
 /// Handles the request if `predicate` returns `True
 let test predicate : (Request -> Bool) -> Handler () =

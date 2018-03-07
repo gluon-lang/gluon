@@ -5,12 +5,16 @@
 //! internal compiler error.
 #![doc(html_root_url = "https://docs.rs/gluon_check/0.7.1")] // # GLUON
 
+#[macro_use]
+extern crate collect_mac;
 #[cfg(test)]
 extern crate env_logger;
 extern crate itertools;
 #[macro_use]
 extern crate log;
 extern crate pretty;
+extern crate rpds;
+extern crate smallvec;
 extern crate strsim;
 extern crate union_find;
 
@@ -25,6 +29,8 @@ pub mod substitution;
 pub mod rename;
 pub mod metadata;
 
+mod implicits;
+
 use base::types::{ArcType, TypeEnv};
 
 /// Checks if `actual` can be assigned to a binding with the type signature `signature`
@@ -37,7 +43,7 @@ pub fn check_signature(env: &TypeEnv, signature: &ArcType, actual: &ArcType) -> 
 
     let subs = Substitution::new(Kind::typ());
     let state = unify_type::State::new(env, &subs);
-    let actual = unify_type::new_skolem_scope(&subs, &FnvMap::default(), actual);
+    let actual = unify_type::new_skolem_scope(&subs, actual);
     let actual = actual.instantiate_generics(&mut FnvMap::default());
     let result = unify_type::subsumes(&subs, &mut ScopedMap::new(), 0, state, signature, &actual);
     if let Err(ref err) = result {

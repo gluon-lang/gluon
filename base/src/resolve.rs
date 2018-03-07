@@ -11,6 +11,56 @@ quick_error! {
             description("undefined type")
             display("Type `{}` does not exist.", id)
         }
+        SelfRecursiveAlias(id: Symbol) {
+            description("undefined type")
+            display("Tried to remove self recursive alias `{}`.", id)
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct AliasRemover {
+    reduced_aliases: Vec<Symbol>,
+}
+
+impl AliasRemover {
+    pub fn new() -> AliasRemover {
+        Self::default()
+    }
+
+    pub fn len(&self) -> usize {
+        self.reduced_aliases.len()
+    }
+
+    pub fn reset(&mut self, to: usize) {
+        self.reduced_aliases.truncate(to)
+    }
+
+    pub fn remove_aliases(&mut self, env: &TypeEnv, mut typ: ArcType) -> Result<ArcType, Error> {
+        loop {
+            typ = match self.remove_alias(env, &typ)? {
+                Some(typ) => typ,
+                None => return Ok(typ),
+            };
+        }
+    }
+
+    pub fn remove_alias(&mut self, env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType>, Error> {
+        let typ = typ.skolemize(&mut FnvMap::default());
+        match peek_alias(env, &typ)? {
+            Some(alias) => {
+                if self.reduced_aliases.iter().any(|name| *name == alias.name) {
+                    return Err(Error::SelfRecursiveAlias(alias.name.clone()));
+                }
+                self.reduced_aliases.push(alias.name.clone());
+                // Opaque types should only exist as the alias itself
+                if **alias.unresolved_type().remove_forall() == Type::Opaque {
+                    return Ok(None);
+                }
+                Ok(alias.typ().apply_args(&typ.unapplied_args()))
+            }
+            None => Ok(None),
+        }
     }
 }
 

@@ -37,7 +37,9 @@ fn suggest_query(query: &SuggestionQuery, s: &str, pos: BytePos) -> Result<Vec<S
 
         fn visit_expr(&mut self, expr: &mut SpannedExpr<Symbol>) {
             let replacement = match expr.value {
-                Expr::App(ref id, ref args) => match id.value {
+                Expr::App {
+                    ref func, ref args, ..
+                } => match func.value {
                     Expr::Ident(ref id) if id.name.declared_name() == "import!" => {
                         let mut path = "@".to_string();
                         expr_to_path(&args[0], &mut path).unwrap();
@@ -97,7 +99,7 @@ fn suggest(s: &str, pos: BytePos) -> Result<Vec<String>, ()> {
 
 #[test]
 fn suggest_identifier_when_prefix() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let result = suggest(
         r#"
@@ -115,7 +117,7 @@ te
 
 #[test]
 fn suggest_arguments() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let result = suggest(
         r#"
@@ -132,7 +134,7 @@ let f test =
 
 #[test]
 fn suggest_after_unrelated_type_error() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let result = suggest(
         r#"
@@ -149,7 +151,7 @@ record.a
 
 #[test]
 fn suggest_through_aliases() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let result = suggest(
         r#"
@@ -167,7 +169,7 @@ record.ab
 
 #[test]
 fn suggest_generic_constructor() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let result = suggest(
         r#"
@@ -183,7 +185,7 @@ Te
 
 #[test]
 fn suggest_after_dot() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let result = suggest(
         r#"
@@ -199,7 +201,7 @@ record.
 
 #[test]
 fn suggest_from_record_unpack() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let result = suggest(
         r#"
@@ -215,7 +217,7 @@ a
 
 #[test]
 fn suggest_from_record_unpack_unordered() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let result = suggest_types(
         r#"
@@ -236,7 +238,7 @@ a
 
 #[test]
 fn suggest_as_pattern() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 let abc@ { y } = { y = 1 }
@@ -250,7 +252,7 @@ a
 
 #[test]
 fn suggest_on_record_in_field_access() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let result = suggest(
         r#"
@@ -266,7 +268,7 @@ record.aa
 
 #[test]
 fn suggest_end_of_identifier() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let result = suggest(
         r#"
@@ -283,7 +285,7 @@ abc
 
 #[test]
 fn suggest_after_identifier() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let result = suggest(
         r#"
@@ -300,7 +302,7 @@ abc
 
 #[test]
 fn suggest_between_expressions() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 let abc = 1
@@ -321,7 +323,7 @@ test  test1
 
 #[test]
 fn suggest_alternative() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 type Test = | A Int | B Int String
@@ -336,7 +338,7 @@ match A 3 with
 
 #[test]
 fn suggest_incomplete_pattern_name() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 type Test = | A Int | BC Int String
@@ -351,7 +353,7 @@ match A 3 with
 
 #[test]
 fn suggest_record_field_in_pattern_at_ident() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 let { ab } = { x = 1, abc = "", abcd = 2 }
@@ -365,7 +367,7 @@ let { ab } = { x = 1, abc = "", abcd = 2 }
 
 #[test]
 fn suggest_record_field_in_pattern_at_nothing() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 let { ab } = { x = 1, abc = "", abcd = 2 }
@@ -379,7 +381,7 @@ let { ab } = { x = 1, abc = "", abcd = 2 }
 
 #[test]
 fn suggest_record_field_in_pattern_before_field() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 let { a abc } = { x = 1, abc = "", abcd = 2 }
@@ -393,7 +395,7 @@ let { a abc } = { x = 1, abc = "", abcd = 2 }
 
 #[test]
 fn suggest_alias_field_in_pattern() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 type Test = { x : Int, abc : String, abcd : Int }
@@ -418,7 +420,7 @@ fn find_gluon_root() -> PathBuf {
 
 #[test]
 fn suggest_module_import() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 import! st
@@ -435,7 +437,7 @@ import! st
 
 #[test]
 fn suggest_module_import_nested() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 import! std.p
@@ -452,7 +454,7 @@ import! std.p
 
 #[test]
 fn suggest_module_import_on_dot() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 import! std.
@@ -474,7 +476,7 @@ import! std.
 
 #[test]
 fn suggest_module_import_typed() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 import! std.prelud
@@ -505,7 +507,7 @@ import! std.prelud
 
 #[test]
 fn suggest_module_import_with_module() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 import! example.
@@ -523,7 +525,7 @@ import! example.
 
 #[test]
 fn suggest_module_import_with_inner_module() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 import! example.
@@ -541,7 +543,7 @@ import! example.
 
 #[test]
 fn suggest_module_import_with_inner_module_last() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 import! example.test.inn
@@ -559,7 +561,7 @@ import! example.test.inn
 
 #[test]
 fn dont_suggest_variant_at_record_field() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 type Test = | Test Int
@@ -574,7 +576,7 @@ let { } = { abc = "" }
 
 #[test]
 fn dont_suggest_field_already_in_pattern() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 type Test = | Test Int
@@ -589,7 +591,7 @@ let { abc, a, Test } = { Test, x = 1, abc = "", abcd = 2 }
 
 #[test]
 fn suggest_exact_field_match_in_pattern() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 let { abc } = { abc = "" }
@@ -603,7 +605,7 @@ let { abc } = { abc = "" }
 
 #[test]
 fn suggest_type_field_in_record_pattern_at_ident() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 type Test = | Test Int
@@ -618,7 +620,7 @@ let { T } = { Test, x = 1 }
 
 #[test]
 fn suggest_type_field_in_record_pattern_at_empty() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 type Test = | Test Int
@@ -633,7 +635,7 @@ let {  } = { Test, x = 1 }
 
 #[test]
 fn suggest_in_type_binding() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 type Test = Int
@@ -648,7 +650,7 @@ type Abc = Te
 
 #[test]
 fn suggest_type_variable_in_type_binding() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 type Test a b ab = { x : a, y : b, z: ab }
@@ -662,7 +664,7 @@ type Test a b ab = { x : a, y : b, z: ab }
 
 #[test]
 fn suggest_in_type_of_let_binding() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 type Test = Int
@@ -678,7 +680,7 @@ let x: T = 1
 
 #[test]
 fn suggest_from_forall_params() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 let f x _ : forall abc b . a -> b -> abc = x
@@ -692,7 +694,7 @@ let f x _ : forall abc b . a -> b -> abc = x
 
 #[test]
 fn suggest_implicit_import() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 type Test = | Abc Int
@@ -714,7 +716,7 @@ match Abc 1 with
 
 #[test]
 fn suggest_implicit_import_from_pattern() {
-    let _ = env_logger::init();
+    let _ = env_logger::try_init();
 
     let text = r#"
 let { Test } =

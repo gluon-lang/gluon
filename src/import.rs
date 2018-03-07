@@ -58,6 +58,7 @@ macro_rules! std_libs {
     }
 }
 // Include the standard library distribution in the binary
+#[cfg(not(feature = "test"))]
 static STD_LIBS: &[(&str, &str)] = &std_libs!(
     "prelude",
     "types",
@@ -79,8 +80,15 @@ static STD_LIBS: &[(&str, &str)] = &std_libs!(
     "test",
     "unit",
     "writer",
-    "array"
+    "array",
+    "functor",
+    "applicative"
 );
+
+// When testing we use the files as-is in the repository to avoid recompiling after they are
+// changed
+#[cfg(feature = "test")]
+static STD_LIBS: &[(&str, &str)] = &std_libs!();
 
 pub trait Importer: Any + Clone + Sync + Send {
     fn import(
@@ -163,6 +171,10 @@ impl<I> Import<I> {
         self.paths.write().unwrap().push(path.into());
     }
 
+    pub fn set_paths(&self, paths: Vec<PathBuf>) {
+        *self.paths.write().unwrap() = paths;
+    }
+
     pub fn add_loader(&self, module: &str, loader: ExternLoader) {
         self.loaders
             .write()
@@ -203,9 +215,8 @@ impl<I> Import<I> {
                         return Ok(UnloadedModule::Extern(value));
                     }
                 }
-                let file = self.paths
-                    .read()
-                    .unwrap()
+                let paths = self.paths.read().unwrap();
+                let file = paths
                     .iter()
                     .filter_map(|p| {
                         let base = p.join(filename);
@@ -216,7 +227,14 @@ impl<I> Import<I> {
                     })
                     .next();
                 let mut file = file.ok_or_else(|| {
-                    Error::String(format!("Could not find module '{}'", module))
+                    Error::String(format!(
+                        "Could not find module '{}'. Searched {}.",
+                        module,
+                        paths
+                            .iter()
+                            .map(|p| format!("`{}`", p.display()))
+                            .format(", ")
+                    ))
                 })?;
                 file.read_to_string(&mut buffer)?;
                 UnloadedModule::Source(Cow::Owned(buffer))
@@ -318,9 +336,10 @@ impl<I> Import<I> {
                 let result =
                     file_contents.expand_macro_with(compiler, macros, &modulename, &file_contents);
 
-                let has_errors = macros.errors.has_errors();
+                let has_errors =
+                    macros.errors.has_errors() || result.is_err() || macros.error_in_expr;
                 let errors = mem::replace(&mut macros.errors, prev_errors);
-                if has_errors {
+                if errors.has_errors() {
                     macros.errors.push(pos::spanned(
                         span,
                         Box::new(::Error::Macro(InFile::new(
@@ -417,6 +436,7 @@ fn get_state<'m>(macros: &'m mut MacroExpander) -> &'m mut State {
         .or_insert_with(|| {
             Box::new(State {
                 visited: Vec::new(),
+                modules_with_errors: FnvMap::default(),
             })
         })
         .downcast_mut::<State>()
@@ -425,6 +445,7 @@ fn get_state<'m>(macros: &'m mut MacroExpander) -> &'m mut State {
 
 struct State {
     visited: Vec<String>,
+    modules_with_errors: FnvMap<String, Expr<Symbol>>,
 }
 
 impl<I> Macro for Import<I>
@@ -497,16 +518,26 @@ where
         // Only load the script if it is not already loaded
         debug!("Import '{}' {:?}", modulename, get_state(macros).visited);
         if !vm.global_env().global_exists(&modulename) {
+            if let Some(expr) = get_state(macros)
+                .modules_with_errors
+                .get(&modulename)
+                .cloned()
+            {
+                macros.error_in_expr = true;
+                return Ok(pos::spanned(args[0].span, expr));
+            }
+
             if let Err((typ, err)) =
                 self.load_module(&mut Compiler::new(), vm, macros, &name, args[0].span)
             {
-                match typ {
-                    Some(typ) => {
-                        macros.errors.push(pos::spanned(args[0].span, err));
-                        return Ok(pos::spanned(args[0].span, Expr::Error(Some(typ))));
-                    }
-                    None => return Err(err),
-                }
+                macros.errors.push(pos::spanned(args[0].span, err));
+
+                let expr = Expr::Error(typ);
+                get_state(macros)
+                    .modules_with_errors
+                    .insert(modulename, expr.clone());
+
+                return Ok(pos::spanned(args[0].span, expr));
             }
         }
         Ok(pos::spanned(

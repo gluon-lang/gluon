@@ -14,7 +14,7 @@ use base::types::TypeCache;
 
 mod pretty_print;
 
-pub fn pretty_expr(expr: &SpannedExpr<Symbol>, input: &str) -> String {
+pub fn pretty_expr(input: &str, expr: &SpannedExpr<Symbol>) -> String {
     let newline = match input.find(|c: char| c == '\n' || c == '\r') {
         Some(i) => {
             if input[i..].starts_with("\r\n") {
@@ -38,5 +38,5 @@ pub fn format_expr(input: &str) -> Result<String, parser::ParseErrors> {
     let type_cache = TypeCache::new();
     let expr = parser::parse_expr(&mut Symbols::new(), &type_cache, input)?;
 
-    Ok(pretty_expr(&expr, input))
+    Ok(pretty_expr(input, &expr))
 }

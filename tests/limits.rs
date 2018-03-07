@@ -12,7 +12,7 @@ use support::make_vm;
 
 #[test]
 fn out_of_memory() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let vm = make_vm();
     vm.set_memory_limit(10);
@@ -33,7 +33,7 @@ fn out_of_memory() {
 
 #[test]
 fn stack_overflow() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let vm = make_vm();
     vm.context().set_max_stack_size(3);

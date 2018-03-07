@@ -1,0 +1,29 @@
+//@NO-IMPLICIT-PRELUDE
+
+/// A `Functor` represents an action on a parameterized type which does not
+/// change the structure with the mapped type.
+///
+/// The following laws should hold:
+///
+/// * `map id == id`
+/// * `map (f << g) == map f << map g`
+/// @implicit
+type Functor f = {
+    /// Apply the supplied function to the contents of `f a`, converting it to
+    /// an `f b`
+    ///
+    /// # Examples
+    ///
+    /// * `option.functor.map show_Int.show (Some 1) == Some "1"`
+    /// * `result.functor.map show_Int.show (Some 1) == Ok "1"`
+    /// * `list.functor.map show_Int.show (list.of [1, 2]) == list.of ["1", "2"]`
+    ///
+    /// # Note
+    ///
+    /// * Known as `fmap` in Haskell
+    map : forall a b . (a -> b) -> f a -> f b
+}
+
+let map ?functor : [Functor f] -> (a -> b) -> f a -> f b = functor.map
+
+{ Functor, map }

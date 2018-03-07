@@ -115,7 +115,7 @@ impl PrimitiveEnv for MockEnv {
 }
 
 impl MetadataEnv for MockEnv {
-    fn get_metadata(&self, _id: &Symbol) -> Option<&Metadata> {
+    fn get_metadata(&self, _id: &SymbolRef) -> Option<&Metadata> {
         None
     }
 }
@@ -300,7 +300,7 @@ macro_rules! test_check {
     ($name : ident, $source: expr, $typ: expr) => {
         #[test]
         fn $name() {
-            let _ = env_logger::init();
+            let _ = env_logger::try_init();
 
             let text = $source;
             let result = support::typecheck(text);
@@ -317,7 +317,7 @@ macro_rules! assert_err {
         #[allow(unused_imports)]
         use check::unify::Error::{TypeMismatch, Substitution, Other};
         #[allow(unused_imports)]
-        use check::substitution::Error::{Occurs, Constraint};
+        use check::substitution::Error::Occurs;
         #[allow(unused_imports)]
         use check::unify_type::TypeError::FieldMismatch;
 
@@ -360,9 +360,9 @@ macro_rules! assert_multi_unify_err {
         #[allow(unused_imports)]
         use check::unify::Error::{TypeMismatch, Substitution, Other};
         #[allow(unused_imports)]
-        use check::substitution::Error::{Occurs, Constraint};
+        use check::substitution::Error::Occurs;
         #[allow(unused_imports)]
-        use check::unify_type::TypeError::{FieldMismatch, SelfRecursive, MissingFields};
+        use check::unify_type::TypeError::{FieldMismatch, SelfRecursiveAlias, MissingFields};
 
         match $e {
             Ok(x) => assert!(false, "Expected error, got {}", x),

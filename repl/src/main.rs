@@ -56,7 +56,7 @@ where
 
 #[cfg(feature = "env_logger")]
 fn init_env_logger() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 }
 
 #[cfg(not(feature = "env_logger"))]
@@ -165,10 +165,7 @@ fn main() {
     init_env_logger();
 
     if let Err(err) = run() {
-        let stderr = &mut io::stderr();
-        let errmsg = "Error writing to stderr";
-
-        write!(stderr, "error: {}", err).expect(errmsg);
+        eprintln!("error: {}", err);
 
         ::std::process::exit(1);
     }

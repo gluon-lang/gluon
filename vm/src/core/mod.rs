@@ -114,7 +114,7 @@ impl<'a> fmt::Display for Expr<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let arena = pretty::Arena::new();
         let mut s = Vec::new();
-        self.pretty(&arena).1.render(80, &mut s).unwrap();
+        self.pretty(&arena, Prec::Top).1.render(80, &mut s).unwrap();
         write!(f, "{}", ::std::str::from_utf8(&s).expect("utf-8"))
     }
 }
@@ -161,6 +161,26 @@ impl<'a> Binder<'a> {
     }
 }
 
+#[derive(Clone, Copy)]
+pub enum Prec {
+    Top,
+    Arg,
+}
+
+impl Prec {
+    pub fn enclose<'a>(
+        &self,
+        arena: &'a pretty::Arena<'a>,
+        doc: pretty::DocBuilder<'a, pretty::Arena<'a>>,
+    ) -> pretty::DocBuilder<'a, pretty::Arena<'a>> {
+        if let Prec::Arg = *self {
+            chain![arena; "(", doc, ")"]
+        } else {
+            doc
+        }
+    }
+}
+
 fn pretty_literal<'a>(
     l: &Literal,
     arena: &'a pretty::Arena<'a>,
@@ -178,14 +198,18 @@ impl<'a> Expr<'a> {
     pub fn pretty(
         &'a self,
         arena: &'a pretty::Arena<'a>,
+        prec: Prec,
     ) -> pretty::DocBuilder<'a, pretty::Arena<'a>> {
         match *self {
-            Expr::Call(f, args) => chain![arena;
-                    f.pretty(arena),
+            Expr::Call(f, args) => {
+                let doc = chain![arena;
+                    f.pretty(arena, Prec::Arg),
                     arena.concat(args.iter().map(|arg| {
-                        arena.space().append(arg.pretty(arena))
+                        arena.space().append(arg.pretty(arena, Prec::Arg))
                     }))
-                ].group(),
+                ].group();
+                prec.enclose(arena, doc)
+            }
             Expr::Const(ref l, _) => pretty_literal(l, arena),
             Expr::Data(ref ctor, args, _, _) => match *ctor.typ {
                 Type::Record(ref record) => chain![arena;
@@ -196,22 +220,26 @@ impl<'a> Expr<'a> {
                                     field.name.as_ref(),
                                     " =",
                                     arena.space(),
-                                    arg.pretty(arena),
+                                    arg.pretty(arena, Prec::Top),
                                     ","
                                 ]
                             })),
                             arena.space(),
                             "}"
                         ].group(),
-                _ => chain![arena;
+                _ => {
+                    let doc = chain![arena;
                             ctor.as_ref(),
                             arena.concat(args.iter().map(|arg| {
-                                arena.space().append(arg.pretty(arena))
+                                arena.space().append(arg.pretty(arena, Prec::Arg))
                             }))
-                        ].group(),
+                        ].group();
+                    prec.enclose(arena, doc)
+                }
             },
             Expr::Ident(ref id, _) => arena.text(id.as_ref()),
-            Expr::Let(ref bind, ref expr) => chain![arena;
+            Expr::Let(ref bind, ref expr) => {
+                let doc = chain![arena;
                     "let ",
                     match bind.expr {
                         Named::Expr(ref expr) => {
@@ -221,7 +249,7 @@ impl<'a> Expr<'a> {
                                 "=",
                                 arena.space(),
                                 chain![arena;
-                                    expr.pretty(arena),
+                                    expr.pretty(arena, Prec::Top),
                                     arena.space()
                                 ].group()
                             ].group().nest(INDENT)
@@ -236,7 +264,7 @@ impl<'a> Expr<'a> {
                                     "=",
                                     arena.space(),
                                     chain![arena;
-                                        closure.expr.pretty(arena),
+                                        closure.expr.pretty(arena, Prec::Top),
                                         arena.space()
                                     ].nest(INDENT).group()
                                 ].group()
@@ -244,8 +272,10 @@ impl<'a> Expr<'a> {
                         }
                     },
                     arena.newline(),
-                    expr.pretty(arena)
-                ],
+                    expr.pretty(arena, Prec::Top)
+                ];
+                prec.enclose(arena, doc)
+            }
             Expr::Match(expr, alts) => match alts.first() {
                 Some(
                     alt @ &Alternative {
@@ -254,34 +284,38 @@ impl<'a> Expr<'a> {
                     },
                 ) if alts.len() == 1 =>
                 {
-                    chain![arena;
-                            "match ",
-                            expr.pretty(arena),
-                            " with",
-                            arena.newline(),
+                    let doc = chain![arena;
+                        "match ",
+                        expr.pretty(arena, Prec::Top),
+                        " with",
+                        arena.newline(),
+                        chain![arena;
+                            alt.pattern.pretty(arena),
+                            arena.space(),
+                            "->"
+                        ].group(),
+                        arena.newline(),
+                        alt.expr.pretty(arena, Prec::Top).group()
+                    ].group();
+                    prec.enclose(arena, doc)
+                }
+                _ => {
+                    let doc = chain![arena;
+                        "match ",
+                        expr.pretty(arena, Prec::Top),
+                        " with",
+                        arena.newline(),
+                        arena.concat(alts.iter().map(|alt| {
                             chain![arena;
                                 alt.pattern.pretty(arena),
+                                " ->",
                                 arena.space(),
-                                "->"
-                            ].group(),
-                            arena.newline(),
-                            alt.expr.pretty(arena).group()
-                        ].group()
+                                alt.expr.pretty(arena, Prec::Top).nest(INDENT).group()
+                            ].nest(INDENT)
+                        }).intersperse(arena.newline()))
+                    ].group();
+                    prec.enclose(arena, doc)
                 }
-                _ => chain![arena;
-                            "match ",
-                            expr.pretty(arena),
-                            " with",
-                            arena.newline(),
-                            arena.concat(alts.iter().map(|alt| {
-                                chain![arena;
-                                    alt.pattern.pretty(arena),
-                                    " ->",
-                                    arena.space(),
-                                    alt.expr.pretty(arena).nest(INDENT).group()
-                                ].nest(INDENT)
-                            }).intersperse(arena.newline()))
-                        ].group(),
             },
         }
     }
@@ -459,9 +493,16 @@ impl<'a, 'e> Translator<'a, 'e> {
     fn translate_(&'a self, expr: &SpannedExpr<Symbol>) -> Expr<'a> {
         let arena = &self.allocator.arena;
         match expr.value {
-            ast::Expr::App(ref function, ref args) => {
-                let new_args: SmallVec<[_; 16]> =
-                    args.iter().map(|arg| self.translate(arg)).collect();
+            ast::Expr::App {
+                ref implicit_args,
+                func: ref function,
+                ref args,
+            } => {
+                let new_args: SmallVec<[_; 16]> = implicit_args
+                    .iter()
+                    .chain(args)
+                    .map(|arg| self.translate(arg))
+                    .collect();
                 match function.value {
                     ast::Expr::Ident(ref id) if is_constructor(&id.name) => {
                         let typ = expr.env_type_of(&self.env);
@@ -526,8 +567,19 @@ impl<'a, 'e> Translator<'a, 'e> {
                         .alloc_extend(alts.into_iter()),
                 )
             }
-            ast::Expr::Infix(ref l, ref op, ref r) => {
-                let args: SmallVec<[_; 2]> = collect![self.translate(l), self.translate(r)];
+            ast::Expr::Infix {
+                ref lhs,
+                ref op,
+                ref rhs,
+                ref implicit_args,
+            } => {
+                let args: SmallVec<[_; 2]> = implicit_args
+                    .iter()
+                    .chain(Some(&**lhs))
+                    .chain(Some(&**rhs))
+                    .map(|e| self.translate(e))
+                    .collect();
+
                 Expr::Call(
                     arena.alloc(Expr::Ident(op.value.clone(), op.span)),
                     arena.alloc_extend(args.into_iter()),
@@ -678,10 +730,11 @@ impl<'a, 'e> Translator<'a, 'e> {
                     body.span,
                 );
 
+                let f = self.translate_alloc(flat_map_id);
                 binder.into_expr(
                     arena,
                     Expr::Call(
-                        arena.alloc(Expr::Ident(flat_map_id.clone(), expr.span)),
+                        f,
                         arena.alloc_extend(Some(lambda).into_iter().chain(Some(bound_ident))),
                     ),
                 )
@@ -739,7 +792,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                         ast::Pattern::Ident(ref id) => id.clone(),
                         _ => unreachable!(),
                     },
-                    args: bind.args.iter().map(|arg| arg.value.clone()).collect(),
+                    args: bind.args.iter().map(|arg| arg.name.value.clone()).collect(),
                     expr: self.translate_alloc(&bind.expr),
                 })
                 .collect();
@@ -777,7 +830,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                         Closure {
                             pos: bind.name.span.start,
                             name: name.clone(),
-                            args: bind.args.iter().map(|arg| arg.value.clone()).collect(),
+                            args: bind.args.iter().map(|arg| arg.name.value.clone()).collect(),
                             expr: self.translate_alloc(&bind.expr),
                         },
                     ])
@@ -1429,20 +1482,48 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 .map(|equation| equation.result)
                 .unwrap_or(default),
             Some(_) => {
+                fn bind_variables<'b>(
+                    env: &PrimitiveEnv,
+                    pat: &ast::SpannedPattern<Symbol>,
+                    variable: CExpr<'b>,
+                    binder: &mut Binder<'b>,
+                ) {
+                    match pat.value {
+                        ast::Pattern::As(ref id, ref pat) => {
+                            binder.bind_id(
+                                TypedIdent {
+                                    name: id.clone(),
+                                    typ: pat.env_type_of(&env),
+                                },
+                                variable,
+                            );
+                            bind_variables(env, pat, variable, binder);
+                        }
+                        ast::Pattern::Record {
+                            implicit_import: Some(ref implicit_import),
+                            ..
+                        } => {
+                            binder.bind_id(
+                                TypedIdent {
+                                    name: implicit_import.value.clone(),
+                                    typ: pat.env_type_of(&env),
+                                },
+                                variable,
+                            );
+                        }
+                        _ => (),
+                    }
+                }
                 // Extract the identifier from each `id@PATTERN` and bind it with `let` before this match
                 {
-                    let as_pattern_ids = equations.iter().filter_map(|equation| {
-                        match equation.patterns.first().expect("Pattern").value {
-                            ast::Pattern::As(ref id, ref pat) => Some(TypedIdent {
-                                name: id.clone(),
-                                typ: pat.env_type_of(&self.0.env),
-                            }),
-                            _ => None,
-                        }
-                    });
-
-                    for id in as_pattern_ids {
-                        binder.bind_id(id, variables.first().expect("Variable"));
+                    for equation in equations {
+                        let pat = equation.patterns.first().expect("Pattern");
+                        bind_variables(
+                            self.0.env,
+                            pat,
+                            variables.first().expect("Variable"),
+                            &mut binder,
+                        );
                     }
                 }
 
@@ -1767,7 +1848,7 @@ mod tests {
     }
 
     fn check_translation(expr_str: &str, expected_str: &str) {
-        let _ = ::env_logger::init();
+        let _ = ::env_logger::try_init();
 
         let mut symbols = Symbols::new();
 

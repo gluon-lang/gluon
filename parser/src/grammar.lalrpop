@@ -1,12 +1,11 @@
-use std::str::FromStr;
-
 use itertools::Itertools;
 
-use base::ast::{Alternative, Array, AstType, Do, Comment, Expr, ExprField, Lambda, Literal, Pattern,
+use base::ast::{Alternative, Argument, Array, AstType, Do, Comment, Expr, ExprField, Lambda, Literal, Pattern,
     PatternField, SpannedExpr, SpannedIdent, TypeBinding, TypedIdent, ValueBinding};
 use base::kind::{ArcKind, Kind};
 use base::pos::{self, BytePos, Spanned};
-use base::types::{AliasData, ArcType, BuiltinType, Field, Generic, Type, TypeCache};
+use base::types::{AliasData, ArcType, ArgType, BuiltinType, Field, Generic, Type, TypeCache};
+use std::str::FromStr;
 
 use ::new_ident;
 use token::Token;
@@ -53,6 +52,7 @@ extern {
         "\\" => Token::Lambda,
         "|" => Token::Pipe,
         "->" => Token::RArrow,
+        "?" => Token::Question,
 
         "{" => Token::LBrace,
         "[" => Token::LBracket,
@@ -273,15 +273,21 @@ Type_ = {
                      ty,
                      None),
 
-    <lhs: AppType> <f: Sp<"->">> <rhs: Type> =>
-        Type::App(
-            AstType::from(pos::spanned(f.span, Type::Builtin(BuiltinType::Function))),
-            collect![lhs, rhs]
+    <lhs: ArgType> <f: Sp<"->">> <rhs: Type> =>
+        Type::Function(
+            lhs.0,
+            lhs.1,
+            rhs,
         )
 };
 
 Type : AstType<Id> = {
     <typ: Sp<Type_>> => AstType::from(typ),
+};
+
+ArgType: (ArgType, AstType<Id>) = {
+    <AppType> => (ArgType::Explicit, <>),
+    "[" <Type> "]" => (ArgType::Implicit, <>),
 };
 
 // Patterns
@@ -321,7 +327,7 @@ AtomicPattern: Pattern<Id> = {
             _ => Pattern::Tuple { typ: Type::hole(), elems: elems },
         },
 
-    "{" <fields: Comma<FieldPattern>> "}" => {
+    "{" <fields: Comma<FieldPattern>> <implicit_import: Sp<"?"?>> "}" => {
         let mut types = Vec::new();
         let mut values = Vec::new();
 
@@ -338,10 +344,15 @@ AtomicPattern: Pattern<Id> = {
             }
         }
 
+        let implicit_import_span = implicit_import.span;
+
         Pattern::Record {
             typ: Type::hole(),
             types: types,
             fields: values,
+            implicit_import: implicit_import
+                .value
+                .map(|_| pos::spanned(implicit_import_span, env.from_str(&format!("implicit?{}", implicit_import_span.start)))),
         }
     },
 };
@@ -414,6 +425,19 @@ FieldExpr: FieldExpr<Id> = {
     },
 };
 
+ValueArgument: Argument<Id> = {
+    <arg_type: "?"?> <name: SpannedIdent> => {
+        Argument {
+            arg_type: if arg_type.is_some() {
+                ArgType::Implicit
+            } else {
+                ArgType::Explicit
+            },
+            name,
+        }
+    }
+};
+
 ValueBinding: ValueBinding<Id> = {
     <comment: DocComment?> <name: Sp<AtomicPattern>> <typ: (":" <Type>)?> "=" <body: SpExpr> =>
         ValueBinding {
@@ -425,7 +449,7 @@ ValueBinding: ValueBinding<Id> = {
             expr: body,
         },
 
-    <comment: DocComment?> <name: Sp<Ident>> <args: SpannedIdent+> <typ: (":" <Type>)?> "=" <body: SpExpr> =>
+    <comment: DocComment?> <name: Sp<Ident>> <args: ValueArgument+> <typ: (":" <Type>)?> "=" <body: SpExpr> =>
         ValueBinding {
             comment,
             name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
@@ -500,11 +524,18 @@ SpAtomicExpr: SpannedExpr<Id> = {
     <Sp<AtomicExpr>> => super::shrink_hidden_spans(<>)
 };
 
+ImplicitArg: SpannedExpr<Id> = {
+    "?" <arg: Sp<AtomicExpr>> => arg
+};
+
 AppExpr = {
     AtomicExpr,
 
-    <expr: SpAtomicExpr> <args: SpAtomicExpr+> =>
-        Expr::App(Box::new(expr), args),
+    <expr: SpAtomicExpr> <implicit_args: ImplicitArg+> =>
+        Expr::App { func: Box::new(expr), implicit_args, args: Vec::new() },
+
+    <expr: SpAtomicExpr> <implicit_args: ImplicitArg*> <args: SpAtomicExpr+> =>
+        Expr::App { func: Box::new(expr), implicit_args, args },
 };
 
 InfixExpr = {
@@ -518,7 +549,7 @@ InfixExpr = {
         }),
 
     <lhs: Sp<AppExpr>> <op: Sp<Operator>> <rhs: Sp<InfixExpr>> =>
-        Expr::Infix(Box::new(lhs), op, Box::new(super::shrink_hidden_spans(rhs))),
+        Expr::Infix { lhs: Box::new(lhs), op, rhs: Box::new(super::shrink_hidden_spans(rhs)), implicit_args: Vec::new(), },
 };
 
 AndValueBinding: ValueBinding<Id> =

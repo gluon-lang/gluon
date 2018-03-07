@@ -92,7 +92,6 @@ impl AsRef<str> for Symbol {
     }
 }
 
-
 impl fmt::Debug for Symbol {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", &**self)
@@ -137,7 +136,6 @@ where
         Symbol(Arc::new(NameBuf(name.into())))
     }
 }
-
 
 #[derive(Eq)]
 #[cfg_attr(feature = "serde_derive", derive(SerializeState))]
@@ -235,13 +233,28 @@ impl PartialEq for Name {
     }
 }
 
-pub struct Components<'a>(::std::str::Split<'a, char>);
+pub struct Components<'a>(&'a str);
 
 impl<'a> Iterator for Components<'a> {
     type Item = &'a str;
 
     fn next(&mut self) -> Option<&'a str> {
-        self.0.next()
+        if self.0.is_empty() {
+            None
+        } else {
+            Some(match self.0.find('.') {
+                Some(i) => {
+                    let (before, after) = self.0.split_at(i);
+                    self.0 = &after[1..];
+                    before
+                }
+                None => {
+                    let s = self.0;
+                    self.0 = "";
+                    s
+                }
+            })
+        }
     }
 }
 
@@ -252,11 +265,12 @@ impl Name {
     }
 
     pub fn as_str(&self) -> &str {
-        &self.0
+        let name = &self.0;
+        name.split(':').next().unwrap_or(name)
     }
 
     pub fn components(&self) -> Components {
-        Components(self.0.split('.'))
+        Components(&self.0)
     }
 
     pub fn module(&self) -> &Name {

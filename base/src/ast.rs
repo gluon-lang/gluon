@@ -5,7 +5,7 @@ use std::ops::{Deref, DerefMut};
 
 use pos::{self, BytePos, HasSpan, Span, Spanned};
 use symbol::Symbol;
-use types::{self, Alias, AliasData, ArcType, Generic, Type, TypeEnv};
+use types::{self, Alias, AliasData, ArcType, ArgType, Generic, Type, TypeEnv};
 use ordered_float::NotNaN;
 
 pub trait DisplayEnv {
@@ -214,6 +214,7 @@ pub enum Pattern<Id> {
         typ: ArcType<Id>,
         types: Vec<PatternField<Id, Id>>,
         fields: Vec<PatternField<Id, SpannedPattern<Id>>>,
+        implicit_import: Option<Spanned<Id, BytePos>>,
     },
     /// Tuple pattern, eg: `(x, y)`
     Tuple {
@@ -265,9 +266,8 @@ pub struct Do<Id> {
     pub id: SpannedIdent<Id>,
     pub bound: Box<SpannedExpr<Id>>,
     pub body: Box<SpannedExpr<Id>>,
-    pub flat_map_id: Option<TypedIdent<Id>>,
+    pub flat_map_id: Option<Box<SpannedExpr<Id>>>,
 }
-
 
 /// The representation of gluon's expression syntax
 #[derive(Clone, PartialEq, Debug)]
@@ -277,7 +277,11 @@ pub enum Expr<Id> {
     /// Literal values
     Literal(Literal),
     /// Function application, eg. `f x`
-    App(Box<SpannedExpr<Id>>, Vec<SpannedExpr<Id>>),
+    App {
+        func: Box<SpannedExpr<Id>>,
+        implicit_args: Vec<SpannedExpr<Id>>,
+        args: Vec<SpannedExpr<Id>>,
+    },
     /// Lambda abstraction, eg. `\x y -> x * y`
     Lambda(Lambda<Id>),
     /// If-then-else conditional
@@ -289,7 +293,12 @@ pub enum Expr<Id> {
     /// Pattern match expression
     Match(Box<SpannedExpr<Id>>, Vec<Alternative<Id>>),
     /// Infix operator expression eg. `f >> g`
-    Infix(Box<SpannedExpr<Id>>, SpannedIdent<Id>, Box<SpannedExpr<Id>>),
+    Infix {
+        lhs: Box<SpannedExpr<Id>>,
+        op: SpannedIdent<Id>,
+        rhs: Box<SpannedExpr<Id>>,
+        implicit_args: Vec<SpannedExpr<Id>>,
+    },
     /// Record field projection, eg. `value.field`
     Projection(Box<SpannedExpr<Id>>, Id, ArcType<Id>),
     /// Array construction
@@ -334,6 +343,20 @@ impl<Id> TypeBinding<Id> {
     }
 }
 
+#[derive(Clone, PartialEq, Debug)]
+pub struct Argument<Id> {
+    pub arg_type: ArgType,
+    pub name: SpannedIdent<Id>,
+}
+
+impl<Id> Argument<Id> {
+    pub fn explicit(name: SpannedIdent<Id>) -> Self {
+        Argument {
+            arg_type: ArgType::Explicit,
+            name,
+        }
+    }
+}
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct ValueBinding<Id> {
@@ -341,7 +364,7 @@ pub struct ValueBinding<Id> {
     pub name: SpannedPattern<Id>,
     pub typ: Option<AstType<Id>>,
     pub resolved_type: ArcType<Id>,
-    pub args: Vec<SpannedIdent<Id>>,
+    pub args: Vec<Argument<Id>>,
     pub expr: SpannedExpr<Id>,
 }
 
@@ -388,16 +411,24 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
             v.visit_expr(if_true);
             v.visit_expr(if_false);
         }
-        Expr::Infix(ref mut lhs, ref mut id, ref mut rhs) => {
+        Expr::Infix {
+            ref mut lhs,
+            ref mut op,
+            ref mut rhs,
+            ref mut implicit_args,
+        } => {
             v.visit_expr(lhs);
-            v.visit_spanned_typed_ident(id);
+            v.visit_spanned_typed_ident(op);
             v.visit_expr(rhs);
+            for arg in implicit_args {
+                v.visit_expr(arg);
+            }
         }
         Expr::LetBindings(ref mut bindings, ref mut body) => {
             for bind in bindings {
                 v.visit_pattern(&mut bind.name);
                 for arg in &mut bind.args {
-                    v.visit_spanned_typed_ident(arg);
+                    v.visit_spanned_typed_ident(&mut arg.name);
                 }
                 v.visit_typ(&mut bind.resolved_type);
                 v.visit_expr(&mut bind.expr);
@@ -407,8 +438,15 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
             }
             v.visit_expr(body);
         }
-        Expr::App(ref mut func, ref mut args) => {
+        Expr::App {
+            ref mut func,
+            ref mut implicit_args,
+            ref mut args,
+        } => {
             v.visit_expr(func);
+            for arg in implicit_args {
+                v.visit_expr(arg);
+            }
             for arg in args {
                 v.visit_expr(arg);
             }
@@ -474,7 +512,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
             v.visit_expr(bound);
             v.visit_expr(body);
             if let Some(ref mut flat_map_id) = *flat_map_id {
-                v.visit_ident(flat_map_id);
+                v.visit_expr(flat_map_id);
             }
         }
 
@@ -548,6 +586,10 @@ pub fn walk_mut_ast_type<V: ?Sized + MutVisitor>(v: &mut V, s: &mut SpannedAstTy
                 }
             }
         }
+        Type::Function(_, ref mut arg, ref mut ret) => {
+            v.visit_ast_type(&mut arg._typ.1);
+            v.visit_ast_type(&mut ret._typ.1);
+        }
         Type::App(ref mut ast_type, ref mut ast_types) => {
             for ast_type in ast_types.iter_mut() {
                 v.visit_ast_type(&mut ast_type._typ.1);
@@ -596,10 +638,18 @@ pub fn walk_expr<'a, V: ?Sized + Visitor<'a>>(v: &mut V, e: &'a SpannedExpr<V::I
             v.visit_expr(if_true);
             v.visit_expr(if_false);
         }
-        Expr::Infix(ref lhs, ref id, ref rhs) => {
+        Expr::Infix {
+            ref lhs,
+            ref op,
+            ref rhs,
+            ref implicit_args,
+        } => {
             v.visit_expr(lhs);
-            v.visit_typ(&id.value.typ);
+            v.visit_typ(&op.value.typ);
             v.visit_expr(rhs);
+            for arg in implicit_args {
+                v.visit_expr(arg);
+            }
         }
         Expr::LetBindings(ref bindings, ref body) => {
             for bind in bindings {
@@ -608,8 +658,15 @@ pub fn walk_expr<'a, V: ?Sized + Visitor<'a>>(v: &mut V, e: &'a SpannedExpr<V::I
             }
             v.visit_expr(body);
         }
-        Expr::App(ref func, ref args) => {
+        Expr::App {
+            ref func,
+            ref implicit_args,
+            ref args,
+        } => {
             v.visit_expr(func);
+            for arg in implicit_args {
+                v.visit_expr(arg);
+            }
             for arg in args {
                 v.visit_expr(arg);
             }
@@ -751,25 +808,26 @@ impl Typed for Expr<Symbol> {
             | Expr::Tuple { ref typ, .. } => Ok(typ.clone()),
             Expr::Literal(ref lit) => lit.try_type_of(env),
             Expr::IfElse(_, ref arm, _) => arm.try_type_of(env),
-            Expr::Infix(_, ref op, _) => {
-                if let Type::App(_, ref args) = *op.value.typ.clone() {
-                    if let Type::App(_, ref args) = *args[1] {
-                        return Ok(args[1].clone());
-                    }
-                }
-                Err("Expected function type in binop".to_string())
-            }
+            Expr::Infix { ref op, .. } => op.value
+                .typ
+                .as_function()
+                .and_then(|(_, ret)| ret.as_function())
+                .map(|(_, ret)| ret.clone())
+                .ok_or_else(|| {
+                    debug!("`{}` is not a binary function type", op.value.typ);
+                    "Expected function type in binop".to_string()
+                }),
             Expr::LetBindings(_, ref expr)
             | Expr::TypeBindings(_, ref expr)
             | Expr::Do(Do { body: ref expr, .. }) => expr.try_type_of(env),
-            Expr::App(ref func, ref args) => {
-                get_return_type(env, &func.try_type_of(env)?, args.len())
-            }
+            Expr::App {
+                ref func, ref args, ..
+            } => get_return_type(env, &func.try_type_of(env)?, args.len()),
             Expr::Match(_, ref alts) => alts[0].expr.try_type_of(env),
             Expr::Array(ref array) => Ok(array.typ.clone()),
             Expr::Lambda(ref lambda) => Ok(lambda.id.typ.clone()),
             Expr::Block(ref exprs) => exprs.last().expect("Expr in block").try_type_of(env),
-            Expr::Error(ref typ) => typ.clone().ok_or_else(|| "Error has not type".to_string()),
+            Expr::Error(ref typ) => Ok(typ.clone().unwrap_or_else(|| Type::hole())),
         }
     }
 }
@@ -818,8 +876,7 @@ fn get_return_type(
         let alias_ident = alias_type.alias_ident().ok_or_else(|| {
             format!(
                 "Expected function with {} more arguments, found {:?}",
-                arg_count,
-                alias_type
+                arg_count, alias_type
             )
         })?;
 

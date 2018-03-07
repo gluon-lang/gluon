@@ -1,24 +1,21 @@
 let prelude = import! std.prelude
-let { Functor, Applicative, Monad } = prelude
+let { Foldable, Functor, Applicative, Monad } = prelude
 let { id } = import! std.function
 
 let string = import! std.string
-let { (==) } = string.eq
-let { (<>) } = prelude.make_Semigroup string.semigroup
+let { (<>) } = import! std.prelude
 
 let { Bool } = import! std.bool
 let float = import! std.float
 let int = import! std.int
-let result = import! std.result
-let { Result } = result
+let result @ { Result, ? } = import! std.result
 let { Option } = import! std.option
 
-let list = import! std.list
-let { List } = list
+let list @ { List, ? } = import! std.list
 
 let map = import! std.map
 let { Map } = map
-let prim_map = map.make string.ord
+let prim_map @ { ? } = map.make string.ord
 
 let { Expr, Function, Lisp, LispState } = import! "examples/lisp/types.glu"
 let parser = import! "examples/lisp/parser.glu"
@@ -30,7 +27,7 @@ let eq : Eq Expr =
         | (Int ls, Int rs) -> ls == rs
         | (Float ls, Float rs) -> ls == rs
         | (List ls, List rs) ->
-            let list_eq : Eq (List Expr) = list.eq { (==) = eq_expr }
+            let list_eq : Eq (List Expr) = list.eq ?{ (==) = eq_expr }
             list_eq.(==) ls rs
         | _ -> False
     { (==) = eq_expr }
@@ -88,8 +85,8 @@ let monad_Lisp : Monad Lisp = {
             | Err err -> Err err)
 }
 
-let { flat_map, (>>=) } = prelude.make_Monad monad_Lisp
-let fold_m = (prelude.make_Foldable list.foldable).fold_m monad_Lisp
+let { flat_map, (>>=) } = import! std.prelude
+let { fold_m } = import! std.prelude
 let traverse = list.traversable.traverse applicative_Lisp
 let { map = map_lisp } = functor_Lisp
 
@@ -111,23 +108,23 @@ let primitive name f : String -> _ -> Map String Expr = prim_map.singleton name 
 type Binop a = a -> a -> a
 
 let primitive_binop name int_op float_op : _ -> Binop Int -> Binop Float -> Map String Expr =
-    let unpack x : Expr -> Lisp Int =
+    let unpack_int x : Expr -> Lisp Int =
         match x with
         | Int i -> wrap i
         | _ -> fail "Expected integer"
-    let unpack x : Expr -> Lisp Float =
+    let unpack_float x : Expr -> Lisp Float =
         match x with
         | Float f -> wrap f
         | _ -> fail "Expected float"
 
-    let fold unpack op = fold_m (\acc x -> map_lisp (\y -> op acc y) (unpack x))
+    let fold unpack op : (Expr -> Lisp a) -> Binop a -> a -> List Expr -> _ = fold_m (\acc x -> map_lisp (\y -> op acc y) (unpack x))
 
     let f xs : List Expr -> Lisp Expr =
         match xs with
         | Cons l ys ->
             match l with
-            | Int li -> map_lisp Int (fold unpack int_op li ys)
-            | Float lf -> map_lisp Float (fold unpack float_op lf ys)
+            | Int li -> map_lisp Int (fold unpack_int int_op li ys)
+            | Float lf -> map_lisp Float (fold unpack_float float_op lf ys)
             | _ -> fail ("Cant add " <> show.show l)
         | _ -> fail ("Expected two arguments to binop, got " <> show.show (List xs))
     primitive name f
@@ -156,7 +153,7 @@ let define xs =
     | _ -> fail "Unexpected parameters to define `define`"
 
 let primitives =
-    let { (<>) = (++) } = prelude.make_Semigroup prim_map.semigroup
+    let { (<>) = (++) } = import! std.prelude
     primitive_binop "+" (+) (+)
         ++ primitive_binop "-" (-) (-)
         ++ primitive_binop "*" (*) (*)

@@ -52,6 +52,8 @@ let functor : Functor Stream =
     { map }
 
 {
+    Stream,
+
     from,
     repeat,
     next,

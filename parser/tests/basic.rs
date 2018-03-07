@@ -16,7 +16,7 @@ use support::*;
 
 #[test]
 fn dangling_in() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     // Check that the lexer does not insert an extra `in`
     let text = r#"
 let x = 1
@@ -31,7 +31,7 @@ y
 
 #[test]
 fn expression() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let e = parse_clear_span!("2 * 3 + 4");
     assert_eq!(e, binop(binop(int(2), "*", int(3)), "+", int(4)));
     let e = parse_clear_span!(r#"\x y -> x + y"#);
@@ -49,7 +49,7 @@ fn expression() {
 
 #[test]
 fn application() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let e = parse_clear_span!("let f = \\x y -> x + y in f 1 2");
     let a = let_(
         "f",
@@ -65,7 +65,7 @@ fn application() {
 
 #[test]
 fn if_else_test() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let e = parse_clear_span!("if True then 1 else 0");
     let a = if_else(id("True"), int(1), int(0));
     assert_eq!(e, a);
@@ -73,7 +73,7 @@ fn if_else_test() {
 
 #[test]
 fn let_type_decl() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let e = parse_clear_span!("let f: Int = \\x y -> x + y in f 1 2");
     match e.value {
         Expr::LetBindings(bind, _) => assert_eq!(bind[0].typ, Some(typ("Int"))),
@@ -83,7 +83,7 @@ fn let_type_decl() {
 
 #[test]
 fn let_args() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let e = parse_clear_span!("let f x y = y in f 2");
     assert_eq!(
         e,
@@ -93,7 +93,7 @@ fn let_args() {
 
 #[test]
 fn type_decl_record() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let e = parse_clear_span!("type Test = { x: Int, y: {} } in 1");
     let record = Type::record(
         Vec::new(),
@@ -107,7 +107,7 @@ fn type_decl_record() {
 
 #[test]
 fn type_mutually_recursive() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let e = parse_clear_span!("type Test = | Test Int and Test2 = { x: Int, y: {} } in 1");
     let test = Type::variant(vec![
         Field::new(
@@ -141,7 +141,7 @@ fn type_mutually_recursive() {
 
 #[test]
 fn type_decl_projection() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let e = parse_clear_span!("type Test = x.y.Z in 1");
     let record = Type::ident(intern("x.y.Z"));
     assert_eq!(e, type_decl(intern("Test"), vec![], record, int(1)));
@@ -149,7 +149,7 @@ fn type_decl_projection() {
 
 #[test]
 fn tuple_type() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let expr = r#"
         let _: (Int, String, Option Int) = (1, "", None)
@@ -159,7 +159,7 @@ fn tuple_type() {
 
 #[test]
 fn field_access_test() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let e = parse_clear_span!("{ x = 1 }.x");
     assert_eq!(
         e,
@@ -169,14 +169,14 @@ fn field_access_test() {
 
 #[test]
 fn builtin_op() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let e = parse_clear_span!("x #Int+ 1");
     assert_eq!(e, binop(id("x"), "#Int+", int(1)));
 }
 
 #[test]
 fn op_identifier() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let e = parse_clear_span!("let (==) = \\x y -> x #Int== y in (==) 1 2");
     assert_eq!(
         e,
@@ -194,7 +194,7 @@ fn op_identifier() {
 
 #[test]
 fn variant_type() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let e = parse_clear_span!("type Option a = | None | Some a in Some 1");
     let option = Type::app(typ("Option"), collect![typ("a")]);
     let none = Type::function(vec![], option.clone());
@@ -215,7 +215,7 @@ fn variant_type() {
 
 #[test]
 fn case_expr() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 match None with
     | Some x -> x
@@ -244,14 +244,14 @@ match None with
 
 #[test]
 fn array_expr() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let e = parse_clear_span!("[1, a]");
     assert_eq!(e, array(vec![int(1), id("a")]));
 }
 
 #[test]
 fn operator_expr() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let e = parse_clear_span!("test + 1 * 23 #Int- test");
     assert_eq!(
         e,
@@ -265,7 +265,7 @@ fn operator_expr() {
 
 #[test]
 fn record_trailing_comma() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let e = parse_clear_span!("{ y, x = z,}");
     assert_eq!(
         e,
@@ -275,14 +275,14 @@ fn record_trailing_comma() {
 
 #[test]
 fn array_trailing_comma() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let e = parse_clear_span!("[y, 1, 2,]");
     assert_eq!(e, array(vec![id("y"), int(1), int(2)]));
 }
 
 #[test]
 fn record_pattern() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let e = parse_clear_span!("match x with | { y, x = z } -> z");
     let pattern = Pattern::Record {
         typ: Type::hole(),
@@ -297,13 +297,14 @@ fn record_pattern() {
                 value: Some(no_loc(Pattern::Ident(TypedIdent::new(intern("z"))))),
             },
         ],
+        implicit_import: None,
     };
     assert_eq!(e, case(id("x"), vec![(pattern, id("z"))]));
 }
 
 #[test]
 fn let_pattern() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let e = parse_clear_span!("let {x, y} = test in x");
     assert_eq!(
         e,
@@ -324,6 +325,7 @@ fn let_pattern() {
                                 value: None,
                             },
                         ],
+                        implicit_import: None,
                     }),
                     typ: None,
                     resolved_type: Type::hole(),
@@ -338,7 +340,7 @@ fn let_pattern() {
 
 #[test]
 fn nested_pattern() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let e = parse_clear_span!("match x with | { y = Some x } -> z");
     let nested = no_loc(Pattern::Constructor(
         TypedIdent::new(intern("Some")),
@@ -353,13 +355,14 @@ fn nested_pattern() {
                 value: Some(nested),
             },
         ],
+        implicit_import: None,
     };
     assert_eq!(e, case(id("x"), vec![(pattern, id("z"))]));
 }
 
 #[test]
 fn nested_pattern_parens() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let e = parse_clear_span!("match x with | (Some (Some z)) -> z");
 
     let inner_pattern = no_loc(Pattern::Constructor(
@@ -372,7 +375,7 @@ fn nested_pattern_parens() {
 
 #[test]
 fn span_identifier() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let e = parse_new!("test");
     assert_eq!(e.span, Span::new(BytePos::from(0), BytePos::from(4)));
@@ -380,7 +383,7 @@ fn span_identifier() {
 
 #[test]
 fn span_integer() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let e = parse_new!("1234");
     assert_eq!(e.span, Span::new(BytePos::from(0), BytePos::from(4)));
@@ -388,7 +391,7 @@ fn span_integer() {
 
 #[test]
 fn span_string_literal() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let e = parse_new!(r#" "test" "#);
     assert_eq!(e.span, Span::new(BytePos::from(1), BytePos::from(7)));
@@ -396,7 +399,7 @@ fn span_string_literal() {
 
 #[test]
 fn span_app() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let e = parse_new!(r#" f 123 "asd""#);
     assert_eq!(e.span, Span::new(BytePos::from(1), BytePos::from(12)));
@@ -404,7 +407,7 @@ fn span_app() {
 
 #[test]
 fn span_match() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let e = parse_new!(
         r#"
@@ -418,7 +421,7 @@ match False with
 
 #[test]
 fn span_if_else() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let e = parse_new!(
         r#"
@@ -433,7 +436,7 @@ else
 
 #[test]
 fn span_byte() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let e = parse_new!(r#"124b"#);
     assert_eq!(e.span, Span::new(BytePos::from(0), BytePos::from(4)));
@@ -441,7 +444,7 @@ fn span_byte() {
 
 #[test]
 fn span_field_access() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let expr = parse_new!("record.x");
     assert_eq!(expr.span, Span::new(BytePos::from(0), BytePos::from(8)));
     match expr.value {
@@ -454,7 +457,7 @@ fn span_field_access() {
 
 #[test]
 fn comment_on_let() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 /// The identity function
 let id x = x
@@ -473,7 +476,7 @@ id
                     name: no_loc(Pattern::Ident(TypedIdent::new(intern("id")))),
                     typ: None,
                     resolved_type: Type::hole(),
-                    args: vec![no_loc(TypedIdent::new(intern("x")))],
+                    args: vec![Argument::explicit(no_loc(TypedIdent::new(intern("x"))))],
                     expr: id("x"),
                 },
             ],
@@ -484,7 +487,7 @@ id
 
 #[test]
 fn comment_on_and() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 let id x = x
 /// The identity function
@@ -501,7 +504,7 @@ id
                     name: no_loc(Pattern::Ident(TypedIdent::new(intern("id")))),
                     typ: None,
                     resolved_type: Type::hole(),
-                    args: vec![no_loc(TypedIdent::new(intern("x")))],
+                    args: vec![Argument::explicit(no_loc(TypedIdent::new(intern("x"))))],
                     expr: id("x"),
                 },
                 ValueBinding {
@@ -512,7 +515,7 @@ id
                     name: no_loc(Pattern::Ident(TypedIdent::new(intern("id2")))),
                     typ: None,
                     resolved_type: Type::hole(),
-                    args: vec![no_loc(TypedIdent::new(intern("y")))],
+                    args: vec![Argument::explicit(no_loc(TypedIdent::new(intern("y"))))],
                     expr: id("y"),
                 },
             ],
@@ -523,7 +526,7 @@ id
 
 #[test]
 fn comment_on_type() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 /** Test type */
 type Test = Int
@@ -551,7 +554,7 @@ id
 
 #[test]
 fn comment_after_integer() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 let x = 1
 
@@ -586,7 +589,7 @@ id
 
 #[test]
 fn merge_line_comments() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 /// Merge
 /// consecutive
@@ -616,7 +619,7 @@ id
 
 #[test]
 fn partial_field_access_simple() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"test."#;
     let e = parse(text);
     assert!(e.is_err());
@@ -631,7 +634,7 @@ fn partial_field_access_simple() {
 
 #[test]
 fn partial_field_access_in_block() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 test.
 test
@@ -655,7 +658,7 @@ test
 
 #[test]
 fn function_operator_application() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
 let x: ((->) Int Int) = x
 x
@@ -681,7 +684,7 @@ x
 
 #[test]
 fn quote_in_identifier() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let e = parse_clear_span!("let f' = \\x y -> x + y in f' 1 2");
     let a = let_(
         "f'",
@@ -698,7 +701,7 @@ fn quote_in_identifier() {
 // Test that this is `let x = 1 in {{ a; b }}` and not `{{ (let x = 1 in a) ; b }}`
 #[test]
 fn block_open_after_let_in() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
         let x = 1
         a
@@ -713,7 +716,7 @@ fn block_open_after_let_in() {
 
 #[test]
 fn block_open_after_explicit_let_in() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#"
         let x = 1
         in
@@ -729,7 +732,7 @@ fn block_open_after_explicit_let_in() {
 
 #[test]
 fn record_type_field() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r"{ Test, x }";
     let e = parse_clear_span!(text);
     assert_eq!(
@@ -740,7 +743,7 @@ fn record_type_field() {
 
 #[test]
 fn parse_macro() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r#" import! "#;
     let e = parse_clear_span!(text);
     assert_eq!(e, id("import!"));
@@ -748,7 +751,7 @@ fn parse_macro() {
 
 #[test]
 fn doc_comment_on_record_field() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r"{ /** test*/ Test,
     /// x binding
     x = 1 }";
@@ -784,7 +787,7 @@ fn doc_comment_on_record_field() {
 
 #[test]
 fn shebang_at_top_is_ignored() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r"#!/bin/gluon
 { Test, x }";
     let e = parse_clear_span!(text);
@@ -796,7 +799,7 @@ fn shebang_at_top_is_ignored() {
 
 #[test]
 fn do_in_parens() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
     let text = r"
         scope_state (
             do _ = add_args
@@ -808,7 +811,7 @@ fn do_in_parens() {
 
 #[test]
 fn parse_let_or_expr() {
-    let _ = ::env_logger::init();
+    let _ = ::env_logger::try_init();
 
     let mut module = MockEnv::new();
 
