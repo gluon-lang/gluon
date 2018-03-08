@@ -588,7 +588,11 @@ impl<'a, 'e> Translator<'a, 'e> {
             ast::Expr::Lambda(ref lambda) => self.new_lambda(
                 expr.span.start,
                 lambda.id.clone(),
-                lambda.args.iter().map(|arg| arg.value.clone()).collect(),
+                lambda
+                    .args
+                    .iter()
+                    .map(|arg| arg.name.value.clone())
+                    .collect(),
                 self.translate_alloc(&lambda.body),
                 expr.span,
             ),

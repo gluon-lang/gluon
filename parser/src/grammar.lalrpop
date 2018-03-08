@@ -538,10 +538,17 @@ AppExpr = {
         Expr::App { func: Box::new(expr), implicit_args, args },
 };
 
+
+LambdaArgument: Argument<Id> = {
+    <name: SpannedIdent> => {
+        Argument::explicit(name)
+    }
+};
+
 InfixExpr = {
     AppExpr,
 
-    "\\" <args: SpannedIdent+> "->" <body: SpExpr> =>
+    "\\" <args: LambdaArgument+> "->" <body: SpExpr> =>
         Expr::Lambda(Lambda {
             id: new_ident(type_cache, env.from_str("")),
             args,

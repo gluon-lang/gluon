@@ -492,20 +492,20 @@ This different looking argument is an implicit argument which means that you do 
 
 Since searching all possible bindings currently in scope would introduce to many ambiguity errors the compiler does not search all bindings when trying to determine an implicit argument. Instead, whether a binding is considered for implicit resolution is controlled by the `@implicit` attribute. When marking a `let` binding as `@implicit` and this binding is in scope it will be considered as a candidate for all implicit arguments. The `@implicit` attribute can also be set on a `type` binding in which case it applied to all `let` bindings which has the type declared by the `type` binding.
 
-```f#
+```f#,rust
 /// @implicit
 type Test = | Test ()
 let f y: [a] -> a -> a = y
 let i = Test ()
 // `i` gets selected as the implicit argument since `@implicit` is marked on the type and `i : Test`
-f (Test ())
+()
 ```
 
 #### Passing implicit arguments explicitly
 
 If you only use implicit functions as explained above then it might just seem like a different name for traits (Rust) or type classes (Haskell). While it is true that the main reason for implicit arguments is to emulate traits/type classes implicit arguments is more powerful than those approaches as it is also possible to override the implicit resolution and instead give the argument explicitly by prefixing the argument with `?`.
 
-```f#
+```f#,rust
 let list @ { List } = import! std.list
 // Make a custom equality function which returns true regardless of the elements of the list
 let { (==) = (===) } = list.eq ?{ (==) = \x y -> True }

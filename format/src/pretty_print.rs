@@ -380,7 +380,7 @@ where
                 let decl = chain![arena;
                     "\\",
                     arena.concat(lambda.args.iter().map(|arg| {
-                        arena.text(arg.value.name.as_ref()).append(" ")
+                        arena.text(arg.name.value.name.as_ref()).append(" ")
                     })),
                     "->"
                 ];
