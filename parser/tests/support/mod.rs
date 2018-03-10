@@ -196,7 +196,7 @@ pub fn lambda(name: &str, args: Vec<String>, body: SpExpr) -> SpExpr {
     no_loc(Expr::Lambda(Lambda {
         id: TypedIdent::new(intern(name)),
         args: args.into_iter()
-            .map(|id| no_loc(TypedIdent::new(id)))
+            .map(|id| Argument::explicit(no_loc(TypedIdent::new(id))))
             .collect(),
         body: Box::new(body),
     }))

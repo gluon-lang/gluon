@@ -471,6 +471,17 @@ r#"
 true
 }
 
+test_expr!{ implicit_argument_selection,
+r#"
+/// @implicit
+type Test = | Test ()
+let f y: [a] -> a -> () = ()
+let i = Test ()
+f (Test ())
+"#,
+()
+}
+
 #[test]
 fn rename_types_after_binding() {
     let _ = ::env_logger::try_init();

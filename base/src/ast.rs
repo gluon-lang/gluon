@@ -242,7 +242,7 @@ pub struct Array<Id> {
 #[derive(Clone, PartialEq, Debug)]
 pub struct Lambda<Id> {
     pub id: TypedIdent<Id>,
-    pub args: Vec<SpannedIdent<Id>>,
+    pub args: Vec<Argument<Id>>,
     pub body: Box<SpannedExpr<Id>>,
 }
 
@@ -353,6 +353,13 @@ impl<Id> Argument<Id> {
     pub fn explicit(name: SpannedIdent<Id>) -> Self {
         Argument {
             arg_type: ArgType::Explicit,
+            name,
+        }
+    }
+
+    pub fn implicit(name: SpannedIdent<Id>) -> Self {
+        Argument {
+            arg_type: ArgType::Implicit,
             name,
         }
     }
@@ -519,7 +526,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
         Expr::Lambda(ref mut lambda) => {
             v.visit_ident(&mut lambda.id);
             for arg in &mut lambda.args {
-                v.visit_spanned_typed_ident(arg);
+                v.visit_spanned_typed_ident(&mut arg.name);
             }
             v.visit_expr(&mut lambda.body);
         }

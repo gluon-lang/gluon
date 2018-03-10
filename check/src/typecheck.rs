@@ -9,9 +9,9 @@ use std::mem;
 use itertools::Itertools;
 
 use base::scoped_map::ScopedMap;
-use base::ast::{DisplayEnv, Do, Expr, Literal, MutVisitor, Pattern, PatternField, SpannedExpr};
-use base::ast::{AstType, SpannedIdent, SpannedPattern, TypeBinding, Typed, TypedIdent,
-                ValueBinding};
+use base::ast::{Argument, AstType, DisplayEnv, Do, Expr, Literal, MutVisitor, Pattern,
+                PatternField, SpannedExpr, SpannedIdent, SpannedPattern, TypeBinding, Typed,
+                TypedIdent, ValueBinding};
 use base::error::Errors;
 use base::fnv::{FnvMap, FnvSet};
 use base::metadata::{Metadata, MetadataEnv};
@@ -925,8 +925,12 @@ impl<'a> Typecheck<'a> {
                     .cloned()
                     .unwrap_or_else(|| self.subs.new_var());
 
-                let mut args = lambda.args.iter_mut().map(|arg| (ArgType::Explicit, arg));
-                let mut typ = self.typecheck_lambda(function_type, &mut args, &mut lambda.body);
+                let mut typ = self.typecheck_lambda(
+                    function_type,
+                    expr.span.start,
+                    &mut lambda.args,
+                    &mut lambda.body,
+                );
 
                 self.generalize_type(level, &mut typ);
                 lambda.id.typ = typ.clone();
@@ -1252,7 +1256,8 @@ impl<'a> Typecheck<'a> {
     fn typecheck_lambda<'i>(
         &mut self,
         mut function_type: ArcType,
-        args: &mut Iterator<Item = (ArgType, &'i mut SpannedIdent<Symbol>)>,
+        before_args_pos: BytePos,
+        args: &mut Vec<Argument<Symbol>>,
         body: &mut SpannedExpr<Symbol>,
     ) -> ArcType {
         self.enter_scope();
@@ -1263,7 +1268,6 @@ impl<'a> Typecheck<'a> {
             let mut return_type = function_type.clone();
             let mut iter1 = function_arg_iter(self, function_type);
 
-            let mut args = args.peekable();
             let mut next_type_arg = iter1.next();
 
             let make_new_arg = |tc: &mut Self, span: Span<BytePos>, typ: &mut ArcType| {
@@ -1280,7 +1284,9 @@ impl<'a> Typecheck<'a> {
                 arg
             };
 
-            while args.peek().is_some() || next_type_arg.is_some() {
+            let mut i = 0;
+
+            while i < args.len() || next_type_arg.is_some() {
                 let (type_implicit, arg_type) = match next_type_arg.take() {
                     Some((type_implicit, arg_type)) => (type_implicit, Some(arg_type)),
                     None => (ArgType::Explicit, None),
@@ -1289,9 +1295,34 @@ impl<'a> Typecheck<'a> {
                 match type_implicit {
                     ArgType::Implicit => {
                         let arg_type = arg_type.unwrap();
-                        let id = match args.peek().map(|t| t.0) {
-                            Some(ArgType::Implicit) => args.next().unwrap().1.value.name.clone(),
-                            _ => Symbol::from(format!("implicit_arg")),
+                        let id = match args.get(i).map(|t| t.arg_type) {
+                            Some(ArgType::Implicit) => {
+                                i += 1;
+                                args[i - 1].name.value.name.clone()
+                            }
+                            _ => {
+                                let id = Symbol::from(format!("implicit_arg"));
+                                let pos = if i == 0 {
+                                    before_args_pos
+                                } else {
+                                    args.get(i - 1)
+                                        .map(|arg| arg.name.span.end)
+                                        .unwrap_or(before_args_pos)
+                                };
+                                args.insert(
+                                    i,
+                                    Argument::implicit(pos::spanned2(
+                                        pos,
+                                        pos,
+                                        TypedIdent {
+                                            typ: arg_type.clone(),
+                                            name: id.clone(),
+                                        },
+                                    )),
+                                );
+                                i += 1;
+                                id
+                            }
                         };
                         arg_types.push(arg_type.clone());
                         iter1.tc.implicit_resolver.add_implicits_of_record(
@@ -1301,8 +1332,12 @@ impl<'a> Typecheck<'a> {
                         );
                         iter1.tc.stack_var(id, arg_type.clone());
                     }
-                    ArgType::Explicit => match args.next() {
-                        Some((ArgType::Implicit, arg)) => {
+                    ArgType::Explicit => match args.get_mut(i) {
+                        Some(&mut Argument {
+                            arg_type: ArgType::Implicit,
+                            name: ref arg,
+                        }) => {
+                            i += 1;
                             iter1.tc.error(
                                     arg.span,
                                     TypeError::Message(format!(
@@ -1310,7 +1345,11 @@ impl<'a> Typecheck<'a> {
                                     )),
                                 );
                         }
-                        Some((ArgType::Explicit, arg)) => {
+                        Some(&mut Argument {
+                            arg_type: ArgType::Explicit,
+                            name: ref mut arg,
+                        }) => {
+                            i += 1;
                             let arg_type = arg_type.unwrap_or_else(|| {
                                 make_new_arg(iter1.tc, arg.span, &mut iter1.typ)
                             });
@@ -1650,15 +1689,17 @@ impl<'a> Typecheck<'a> {
                 }
 
                 let typ = self.new_skolem_scope_signature(&bind.resolved_type);
-                self.typecheck_lambda(typ, &mut None.into_iter(), &mut bind.expr)
+                self.typecheck_lambda(typ, bind.name.span.end, &mut bind.args, &mut bind.expr)
             } else {
                 let typ = self.new_skolem_scope_signature(&bind.resolved_type);
                 let function_type = self.skolemize(&typ);
 
-                let mut args = bind.args
-                    .iter_mut()
-                    .map(|arg| (arg.arg_type, &mut arg.name));
-                self.typecheck_lambda(function_type, &mut args, &mut bind.expr)
+                self.typecheck_lambda(
+                    function_type,
+                    bind.name.span.end,
+                    &mut bind.args,
+                    &mut bind.expr,
+                )
             };
 
             debug!("let {:?} : {}", bind.name, typ);

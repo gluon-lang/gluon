@@ -325,14 +325,16 @@ where
                                 typ: typ.clone(),
                             },
                         );
-                        lambda.args.insert(implicit_arg_count, arg);
+                        lambda
+                            .args
+                            .insert(implicit_arg_count, ast::Argument::implicit(arg));
                         implicit_arg_count += 1;
                     }
                     for (typ, arg) in
                         types::arg_iter(iter.typ).zip(&mut lambda.args[implicit_arg_count..])
                     {
-                        arg.value.name =
-                            self.stack_var(arg.value.name.clone(), expr.span, typ.clone());
+                        arg.name.value.name =
+                            self.stack_var(arg.name.value.name.clone(), expr.span, typ.clone());
                     }
 
                     self.visit_expr(&mut lambda.body);

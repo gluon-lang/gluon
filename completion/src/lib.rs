@@ -587,16 +587,16 @@ where
             }
             Expr::Lambda(ref lambda) => {
                 for arg in &lambda.args {
-                    self.on_found.on_ident(&arg.value);
+                    self.on_found.on_ident(&arg.name.value);
                 }
 
-                let selection = self.select_spanned(&lambda.args, |arg| arg.span);
+                let selection = self.select_spanned(&lambda.args, |arg| arg.name.span);
                 match selection {
                     (false, Some(arg)) => {
                         self.found = MatchState::Found(Match::Ident(
-                            arg.span,
-                            &arg.value.name,
-                            &arg.value.typ,
+                            arg.name.span,
+                            &arg.name.value.name,
+                            &arg.name.value.typ,
                         ));
                     }
                     _ => self.visit_expr(&lambda.body),

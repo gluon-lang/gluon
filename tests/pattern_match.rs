@@ -105,9 +105,9 @@ id (match Test 0 with
 1i32
 }
 
-test_expr!{ nested_pattern,
+test_expr!{ nested_pattern1,
 r#"
-type Option a = | Some a | None
+type Option a = | None | Some a
 match Some (Some 123) with
 | None -> 0
 | Some None -> 1
@@ -118,7 +118,7 @@ match Some (Some 123) with
 
 test_expr!{ nested_pattern2,
 r#"
-type Option a = | Some a | None
+type Option a = | None | Some a
 match Some None with
 | None -> 0
 | Some None -> 1
@@ -157,4 +157,35 @@ let { i, m } = record
 a #Int+ i #Int+ m
 "#,
 20i32
+}
+
+test_expr!{ match_with_id_binding_in_two_patterns_record,
+r#"
+type Option a = | None | Some a
+match { _0 = 1, _1 = None } with
+| { _0 = x, _1 = Some y } -> y
+| { _0 = z, _1 = None } -> z
+"#,
+1
+}
+
+test_expr!{ match_with_id_binding_in_two_patterns_tuple,
+r#"
+type Option a = | None | Some a
+match (1, None) with
+| (x, Some y) -> y
+| (z, None) -> z
+"#,
+1
+}
+
+test_expr!{ match_with_id_binding_in_two_patterns_variant,
+r#"
+type Option a = | None | Some a
+match (Some 10, 1) with
+| (Some y, 1) -> y
+| (Some z, x) -> z
+| (None, a) -> a
+"#,
+10
 }
