@@ -380,7 +380,7 @@ impl<T: ?Sized + Hash> Hash for GcPtr<T> {
 }
 impl<T: ?Sized + fmt::Debug> fmt::Debug for GcPtr<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "GcPtr({:?})", &**self)
+        (**self).fmt(f)
     }
 }
 impl<T: ?Sized + fmt::Display> fmt::Display for GcPtr<T> {
