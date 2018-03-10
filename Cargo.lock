@@ -532,6 +532,8 @@ dependencies = [
 name = "gluon_doc"
 version = "0.7.1"
 dependencies = [
+ "clap 2.30.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "env_logger 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "failure 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "gluon 0.7.1",
  "handlebars 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",

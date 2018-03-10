@@ -5,9 +5,11 @@ authors = ["Markus Westerlind <marwes91@gmail.com>"]
 
 [dependencies]
 log = "0.4"
+env_logger = "0.5"
 walkdir = "1"
 failure = { version = "0.1", features = ["backtrace"] }
 handlebars = "0.32"
+clap = "2.22.0"
 
 serde = "1.0.0"
 serde_derive = "1.0.0"
