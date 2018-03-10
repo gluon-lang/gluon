@@ -1,5 +1,6 @@
 extern crate failure;
 extern crate handlebars;
+extern crate itertools;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -16,6 +17,10 @@ use std::io::{self, Read};
 use std::path::Path;
 
 use failure::ResultExt;
+
+use itertools::Itertools;
+
+use handlebars::{Handlebars, Helper, RenderContext, RenderError};
 
 use serde::Deserialize;
 
@@ -75,7 +80,13 @@ pub fn record<'a>(typ: &'a ArcType, meta: &'a Metadata) -> Record<'a> {
     }
 }
 
-pub fn generate<W>(out: &mut W, name: &str, typ: &ArcType, meta: &Metadata) -> Result<()>
+pub fn generate<W>(
+    reg: &Handlebars,
+    out: &mut W,
+    name: &str,
+    typ: &ArcType,
+    meta: &Metadata,
+) -> Result<()>
 where
     W: io::Write,
 {
@@ -86,10 +97,67 @@ where
 
     trace!("DOC: {:?}", r);
 
-    let reg = handlebars::Handlebars::new();
     let module_template = include_str!("doc/module.html");
-    reg.render_template_to_write(module_template, &r, out)?;
+    reg.render_template_to_write(module_template, &r, out)
+        .with_context(|err| format!("Unable to render {}: {}", name, err))?;
     Ok(())
+}
+
+fn handlebars() -> Handlebars {
+    let mut reg = Handlebars::new();
+
+    fn symbol_link(
+        h: &Helper,
+        _: &Handlebars,
+        rc: &mut RenderContext,
+    ) -> ::std::result::Result<(), RenderError> {
+        let param = String::deserialize(h.param(0).unwrap().value())?;
+        write!(rc.writer, "/{}.html", param.replace(".", "/"))?;
+        Ok(())
+    }
+    reg.register_helper("symbol_link", Box::new(symbol_link));
+
+    fn breadcrumbs(
+        h: &Helper,
+        _: &Handlebars,
+        rc: &mut RenderContext,
+    ) -> ::std::result::Result<(), RenderError> {
+        let param = String::deserialize(h.param(0).unwrap().value())?;
+        let parts: Vec<_> = param.split(".").collect();
+        for (i, part) in parts.iter().enumerate() {
+            write!(
+                rc.writer,
+                r##"<li class="breadcrumb-item{}">{}</li>"##,
+                if i + 1 == parts.len() { " active" } else { "" },
+                if i + 1 == parts.len() {
+                    handlebars::html_escape(&part)
+                } else {
+                    let path = (0..(parts.len() - i - 2)).map(|_| "../").format("");
+                    format!(
+                        r##"<a href="{}index.html">{}</a>"##,
+                        path,
+                        handlebars::html_escape(&part)
+                    )
+                },
+            )?;
+        }
+        Ok(())
+    }
+    reg.register_helper("breadcrumbs", Box::new(breadcrumbs));
+
+    fn style(
+        _: &Helper,
+        _: &Handlebars,
+        rc: &mut RenderContext,
+    ) -> ::std::result::Result<(), RenderError> {
+        write!(rc.writer, r#"
+<link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+               "#)?;
+        Ok(())
+    }
+    reg.register_helper("style", Box::new(style));
+
+    reg
 }
 
 pub fn generate_for_path<P, Q>(thread: &Thread, path: &P, out_path: &Q) -> Result<()>
@@ -97,12 +165,20 @@ where
     P: ?Sized + AsRef<Path>,
     Q: ?Sized + AsRef<Path>,
 {
-    let mut modules = Vec::new();
+    generate_for_path_(thread, path.as_ref(), out_path.as_ref())
+}
+
+pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Result<()> {
+    let reg = handlebars();
+    let mut directories = Vec::new();
     for entry in walkdir::WalkDir::new(path) {
         let entry = entry?;
         if !entry.file_type().is_file()
             || entry.path().extension().and_then(|ext| ext.to_str()) != Some("glu")
         {
+            if entry.file_type().is_dir() {
+                directories.push((entry.path().to_owned(), Vec::new()));
+            }
             continue;
         }
         let mut input = File::open(&*entry.path()).with_context(|err| {
@@ -123,13 +199,9 @@ where
         let (expr, typ) = Compiler::new().typecheck_str(thread, &name, &content, None)?;
         let (meta, _) = metadata(&*thread.get_env(), &expr);
 
-        create_dir_all(
-            out_path
-                .as_ref()
-                .join(entry.path().parent().unwrap_or(Path::new(""))),
-        )?;
+        create_dir_all(out_path.join(entry.path().parent().unwrap_or(Path::new(""))))?;
 
-        let out_path = out_path.as_ref().join(entry.path().with_extension("html"));
+        let out_path = out_path.join(entry.path().with_extension("html"));
         let mut doc_file = File::create(&*out_path).with_context(|err| {
             format!(
                 "Unable to open output file `{}`: {}",
@@ -138,39 +210,42 @@ where
             )
         })?;
 
-        generate(&mut doc_file, &name, &typ, &meta)?;
-        modules.push(name);
+        generate(&reg, &mut doc_file, &name, &typ, &meta)?;
+
+        directories
+            .last_mut()
+            .expect("Directory before this file")
+            .1
+            .push(name);
     }
-
-    let mut reg = handlebars::Handlebars::new();
-    let module_template = include_str!("doc/index.html");
-
-    fn symbol_link(
-        h: &handlebars::Helper,
-        _: &handlebars::Handlebars,
-        rc: &mut handlebars::RenderContext,
-    ) -> ::std::result::Result<(), handlebars::RenderError> {
-        let param = String::deserialize(h.param(0).unwrap().value())?;
-        write!(rc.writer, "{}.html", param.replace(".", "/"))?;
-        Ok(())
-    }
-    reg.register_helper("symbol_link", Box::new(symbol_link));
-
-    let index_path = out_path.as_ref().join("index.html");
-    let mut doc_file = File::create(&*index_path).with_context(|err| {
-        format!(
-            "Unable to open output file `{}`: {}",
-            index_path.display(),
-            err
-        )
-    })?;
 
     #[derive(Serialize)]
     struct Index {
+        name: String,
         modules: Vec<String>,
     }
 
-    reg.render_template_to_write(module_template, &Index { modules }, &mut doc_file)?;
+    let module_template = include_str!("doc/index.html");
+
+    for (path, modules) in directories {
+        let index_path = out_path.join(&*path).join("index.html");
+        trace!("Rendering index: {}", index_path.display());
+        let mut doc_file = File::create(&*index_path).with_context(|err| {
+            format!(
+                "Unable to open output file `{}`: {}",
+                index_path.display(),
+                err
+            )
+        })?;
+
+        let name = filename_to_module(path.to_str()
+            .ok_or_else(|| failure::err_msg("Non-UTF-8 filename"))?);
+
+        reg.render_template_to_write(module_template, &Index { name, modules }, &mut doc_file)
+            .with_context(|err| {
+                format!("Unable to render index {}: {}", index_path.display(), err)
+            })?;
+    }
 
     Ok(())
 }

@@ -2,27 +2,38 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    {{style ""}}
     <title>{{name}}</title>
 </head>
 <body>
-    <h1>{{name}}</h1>
+    <header>
+        <nav class="navbar navbar-dark bg-dark box-shadow">
+            <ol class="breadcrumb">
+                {{breadcrumbs name}}
+            </ol>
+        </nav>
+    </header>
 
-    <h2>Types</h2>
-    {{#each record.types}}
-    <div>
-        <h3>{{name}}</h3>
-        <code>{{type}}</code>
-        <div>{{comment}}</div>
-    </div>
-    {{/each}}
+    <main class="container">
+        <h1>{{name}}</h1>
 
-    <h2>Values</h2>
-    {{#each record.values}}
-    <div>
-        <h3>{{name}}</h3>
-        <code>{{type}}</code>
-        <div>{{comment}}</div>
-    </div>
-    {{/each}}
+        <h2>Types</h2>
+        {{#each record.types}}
+        <div>
+            <h3>{{name}}</h3>
+            <code>{{type}}</code>
+            <p>{{comment}}</p>
+        </div>
+        {{/each}}
+
+        <h2>Values</h2>
+        {{#each record.values}}
+        <div>
+            <h3>{{name}}</h3>
+            <code>{{type}}</code>
+            <p>{{comment}}</p>
+        </div>
+        {{/each}}
+    </main>
 </body>
 </html>

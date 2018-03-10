@@ -96,7 +96,6 @@ impl<'a, A, E> ToDoc<'a, A, E> for ArcKind {
     }
 }
 
-
 impl<'a> fmt::Display for DisplayKind<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self.1 {

@@ -57,12 +57,10 @@ impl Lines {
         if byte.to_usize() <= self.end {
             let line_index = self.line_number_at_byte(byte);
 
-            self.line(line_index).map(|line_byte| {
-                Location {
-                    line: line_index,
-                    column: Column::from((byte - line_byte).to_usize()),
-                    absolute: byte,
-                }
+            self.line(line_index).map(|line_byte| Location {
+                line: line_index,
+                column: Column::from((byte - line_byte).to_usize()),
+                absolute: byte,
             })
         } else {
             None
