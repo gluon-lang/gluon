@@ -1,22 +1,29 @@
 extern crate failure;
 extern crate handlebars;
 extern crate serde;
+#[macro_use]
+extern crate serde_derive;
 extern crate serde_json;
 extern crate walkdir;
+
+#[macro_use]
+extern crate log;
+
+extern crate gluon;
 
 use std::fs::{create_dir_all, File};
 use std::io::{self, Read};
 use std::path::Path;
 
-use self::failure::ResultExt;
+use failure::ResultExt;
 
 use serde::Deserialize;
 
-use base::filename_to_module;
-use base::types::ArcType;
-use base::metadata::Metadata;
-use check::metadata::metadata;
-use {Compiler, Thread};
+use gluon::base::filename_to_module;
+use gluon::base::types::ArcType;
+use gluon::base::metadata::Metadata;
+use gluon::check::metadata::metadata;
+use gluon::{Compiler, Thread};
 
 pub type Error = failure::Error;
 pub type Result<T> = ::std::result::Result<T, Error>;

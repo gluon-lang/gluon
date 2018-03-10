@@ -442,7 +442,6 @@ dependencies = [
  "curl 0.4.11 (registry+https://github.com/rust-lang/crates.io-index)",
  "either 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.5.6 (registry+https://github.com/rust-lang/crates.io-index)",
- "failure 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.19 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures-cpupool 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "gluon_base 0.7.1",
@@ -450,7 +449,6 @@ dependencies = [
  "gluon_completion 0.7.1",
  "gluon_parser 0.7.1",
  "gluon_vm 0.7.1",
- "handlebars 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "hyper 0.11.24 (registry+https://github.com/rust-lang/crates.io-index)",
  "itertools 0.7.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -528,6 +526,20 @@ dependencies = [
  "gluon_parser 0.7.1",
  "itertools 0.7.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "walkdir 2.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "gluon_doc"
+version = "0.7.1"
+dependencies = [
+ "failure 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "gluon 0.7.1",
+ "handlebars 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde 1.0.27 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_derive 1.0.27 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "walkdir 1.0.7 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]

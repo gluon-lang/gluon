@@ -1,8 +1,14 @@
 extern crate gluon;
+extern crate gluon_doc as doc;
 
-use gluon::{new_vm, Compiler};
+use gluon::{Compiler, RootedThread};
 use gluon::check::metadata::metadata;
-use gluon::doc;
+
+fn new_vm() -> RootedThread {
+    ::gluon::VmBuilder::new()
+        .import_paths(Some(vec!["..".into()]))
+        .build()
+}
 
 #[test]
 fn basic() {

@@ -1,0 +1,17 @@
+[package]
+name = "gluon_doc"
+version = "0.7.1" # GLUON
+authors = ["Markus Westerlind <marwes91@gmail.com>"]
+
+[dependencies]
+log = "0.4"
+walkdir = "1"
+failure = { version = "0.1", features = ["backtrace"] }
+handlebars = "0.32"
+
+serde = "1.0.0"
+serde_derive = "1.0.0"
+serde_json = "1.0.0"
+
+gluon = { version = "0.7.1", path = ".." } # GLUON
+

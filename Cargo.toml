@@ -14,7 +14,7 @@ documentation = "https://docs.rs/gluon"
 readme = "README.md"
 
 [workspace]
-members = ["c-api", "repl", "completion", "format"]
+members = ["c-api", "repl", "completion", "format", "doc"]
 
 [lib]
 
@@ -33,17 +33,10 @@ collect-mac = "0.1.0"
 either = "1.0.0"
 itertools = "0.7.0"
 futures = "0.1.11"
-walkdir = "2"
-failure = { version = "0.1", features = ["backtrace"] }
 
 serde = { version = "1.0.0", optional = true }
 serde_state = { version = "0.4.0", optional = true }
 serde_derive_state = { version = "0.4.0", optional = true }
-
-# Doc dependencies
-serde_derive = "1.0.0"
-serde_json = "1.0.0"
-handlebars = "0.32"
 
 # Binding crates
 regex = { version = "0.2.1", optional = true }
@@ -58,6 +51,7 @@ rand = { version = "0.3", optional = true }
 
 [build-dependencies]
 skeptic = { version = "0.13", optional = true }
+walkdir = { version = "2", optional = true }
 
 [dev-dependencies]
 bencher = "0.1.2"
@@ -85,7 +79,7 @@ serialization = ["serde", "serde_state", "serde_derive_state", "gluon_vm/seriali
 docs_rs = ["serialization"]
 
 test = ["serialization", "gluon_vm/test", "gluon_check/test", "gluon_parser/test"]
-test_skeptic = ["skeptic"]
+test_skeptic = ["skeptic", "walkdir"]
 nightly = ["compiletest_rs"]
 
 [[bench]]
@@ -149,8 +143,6 @@ name = "tutorial"
 name = "vm"
 [[test]]
 name = "ui"
-[[test]]
-name = "doc"
 
 [package.metadata.docs.rs]
 features = ["docs_rs"]

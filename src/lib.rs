@@ -21,9 +21,6 @@ extern crate tokio_core;
 
 #[cfg(feature = "serde_derive_state")]
 #[macro_use]
-extern crate serde_derive;
-#[cfg(feature = "serde_derive_state")]
-#[macro_use]
 extern crate serde_derive_state;
 #[cfg(feature = "serde")]
 extern crate serde_state as serde;
@@ -42,8 +39,6 @@ pub mod io;
 pub mod regex_bind;
 #[cfg(all(feature = "rand", not(target_arch = "wasm32")))]
 pub mod rand_bind;
-
-pub mod doc;
 
 pub use vm::thread::{RootedThread, Thread};
 
