@@ -464,7 +464,7 @@ dependencies = [
  "skeptic 0.13.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "tensile 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "tokio-core 0.1.16 (registry+https://github.com/rust-lang/crates.io-index)",
- "walkdir 1.0.7 (registry+https://github.com/rust-lang/crates.io-index)",
+ "walkdir 2.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -532,16 +532,16 @@ dependencies = [
 name = "gluon_doc"
 version = "0.7.1"
 dependencies = [
- "clap 2.30.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "env_logger 0.5.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "clap 2.31.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "env_logger 0.5.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "failure 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "gluon 0.7.1",
  "handlebars 0.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "itertools 0.7.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "itertools 0.7.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde 1.0.27 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde_derive 1.0.27 (registry+https://github.com/rust-lang/crates.io-index)",
- "serde_json 1.0.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde 1.0.34 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_derive 1.0.34 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.13 (registry+https://github.com/rust-lang/crates.io-index)",
  "walkdir 1.0.7 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 

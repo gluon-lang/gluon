@@ -13,7 +13,7 @@ extern crate log;
 extern crate gluon;
 
 use std::fs::{create_dir_all, File};
-use std::io::{self, Read};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
 use failure::ResultExt;
@@ -158,9 +158,16 @@ fn handlebars() -> Handlebars {
         _: &Handlebars,
         rc: &mut RenderContext,
     ) -> ::std::result::Result<(), RenderError> {
+        let current_module = &rc.context().data()["name"]
+            .as_str()
+            .expect("name")
+            .to_string();
+        let relative_path = current_module.split('.').map(|_| "../").format("");
+
         write!(rc.writer, r#"
 <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
-               "#)?;
+<link rel="stylesheet" href="{}style.css">
+               "#, relative_path)?;
         Ok(())
     }
     reg.register_helper("style", Box::new(style));
@@ -276,6 +283,9 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
             format!("Unable to render index {}: {}", index_path.display(), err)
         })?;
     }
+
+    let mut style_sheet = File::create(out_path.join("style.css"))?;
+    style_sheet.write_all(include_bytes!("doc/style.css"))?;
 
     Ok(())
 }
