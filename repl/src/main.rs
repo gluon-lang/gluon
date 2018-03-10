@@ -16,6 +16,7 @@ extern crate tokio_signal;
 extern crate walkdir;
 
 extern crate gluon;
+extern crate gluon_doc;
 extern crate gluon_format;
 #[macro_use]
 extern crate gluon_vm;
@@ -152,7 +153,7 @@ fn run() -> std::result::Result<(), Box<std::error::Error + Send + Sync>> {
     } else if let Some(fmt_matches) = matches.subcommand_matches("doc") {
         let input = fmt_matches.value_of("INPUT").expect("INPUT");
         let output = fmt_matches.value_of("OUTPUT").expect("OUTPUT");
-        gluon::doc::generate_for_path(&new_vm(), input, output)
+        gluon_doc::generate_for_path(&new_vm(), input, output)
             .map_err(|err| format!("{}\n{}", err, err.backtrace()))?;
     } else if matches.is_present("REPL") {
         repl::run()?;
