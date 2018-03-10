@@ -14,30 +14,44 @@
         </nav>
     </header>
 
-    <main class="container">
-        <h1>{{name}}</h1>
+    <div class="row">
 
-        {{#if record.types}}
-        <h2>Types</h2>
-        {{#each record.types}}
-        <div>
-            <h3>{{name}}</h3>
-            <code>{{type}}</code>
-            <p>{{comment}}</p>
-        </div>
-        {{/each}}
-        {{/if}}
+        <nav class="col-md-2 d-none d-md-block bg-light sidebar">
+            <ul class="nav flex-column">
+                {{#each sibling_modules}}
+                <li class="nav-item">
+                    <a class="nav-link active" href="{{symbol_link this}}">{{this}}</a>
+                </li> 
+                {{/each}}
+            </ul>
+        </nav>
 
-        {{#if record.values}}
-        <h2>Values</h2>
-        {{#each record.values}}
-        <div>
-            <h3>{{name}}</h3>
-            <code>{{type}}</code>
-            <p>{{comment}}</p>
-        </div>
-        {{/each}}
-        {{/if}}
-    </main>
+        <main class="col-md-9 ml-sm-auto cl-lg-10 pt-3 px-4" role="main">
+            <h1>{{name}}</h1>
+
+            {{#if record.types}}
+            <h2>Types</h2>
+            {{#each record.types}}
+
+                <h3>{{name}}</h3>
+                <code>{{type}}</code>
+                <p>{{comment}}</p>
+
+            {{/each}}
+            {{/if}}
+
+            {{#if record.values}}
+            <h2>Values</h2>
+            {{#each record.values}}
+
+                <h3>{{name}}</h3>
+                <code>{{type}}</code>
+                <p>{{comment}}</p>
+
+            {{/each}}
+            {{/if}}
+        </main>
+
+    </div>
 </body>
 </html>

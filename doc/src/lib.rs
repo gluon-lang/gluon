@@ -14,7 +14,7 @@ extern crate gluon;
 
 use std::fs::{create_dir_all, File};
 use std::io::{self, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use failure::ResultExt;
 
@@ -34,72 +34,70 @@ pub type Error = failure::Error;
 pub type Result<T> = ::std::result::Result<T, Error>;
 
 #[derive(Serialize, PartialEq, Debug)]
-pub struct Module<'a> {
-    pub name: &'a str,
-    pub record: Record<'a>,
+pub struct Module {
+    pub name: String,
+    pub record: Record,
 }
 
 #[derive(Serialize, PartialEq, Debug)]
-pub struct Record<'a> {
-    pub types: Vec<Field<'a>>,
-    pub values: Vec<Field<'a>>,
+pub struct Record {
+    pub types: Vec<Field>,
+    pub values: Vec<Field>,
 }
 
 #[derive(Serialize, PartialEq, Debug)]
-pub struct Field<'a> {
-    pub name: &'a str,
+pub struct Field {
+    pub name: String,
     #[serde(rename = "type")]
     pub typ: String,
-    pub comment: &'a str,
+    pub comment: String,
 }
 
-pub fn record<'a>(typ: &'a ArcType, meta: &'a Metadata) -> Record<'a> {
+pub fn record(typ: &ArcType, meta: &Metadata) -> Record {
     Record {
         types: typ.type_field_iter()
             .map(|field| Field {
-                name: field.name.as_ref(),
+                name: field.name.to_string(),
                 typ: field.typ.unresolved_type().to_string(),
                 comment: meta.module
                     .get(AsRef::<str>::as_ref(&field.name))
                     .and_then(|meta| meta.comment.as_ref().map(|s| &s[..]))
-                    .unwrap_or(""),
+                    .unwrap_or("")
+                    .to_string(),
             })
             .collect(),
 
         values: typ.row_iter()
             .map(|field| Field {
-                name: field.name.as_ref(),
+                name: field.name.to_string(),
                 typ: field.typ.to_string(),
 
                 comment: meta.module
                     .get(AsRef::<str>::as_ref(&field.name))
                     .and_then(|meta| meta.comment.as_ref().map(|s| &s[..]))
-                    .unwrap_or(""),
+                    .unwrap_or("")
+                    .to_string(),
             })
             .collect(),
     }
 }
 
-pub fn generate<W>(
-    reg: &Handlebars,
-    out: &mut W,
-    name: &str,
-    typ: &ArcType,
-    meta: &Metadata,
-) -> Result<()>
+#[derive(Serialize, Debug)]
+pub struct TemplateModule<'a> {
+    pub name: &'a str,
+    pub record: &'a Record,
+    pub sibling_modules: Vec<&'a str>,
+}
+
+pub fn generate<W>(reg: &Handlebars, out: &mut W, module: &TemplateModule) -> Result<()>
 where
     W: io::Write,
 {
-    let r = Module {
-        name,
-        record: record(typ, meta),
-    };
-
-    trace!("DOC: {:?}", r);
+    trace!("DOC: {:?}", module);
 
     let module_template = include_str!("doc/module.html");
-    reg.render_template_to_write(module_template, &r, out)
-        .with_context(|err| format!("Unable to render {}: {}", name, err))?;
+    reg.render_template_to_write(module_template, &module, out)
+        .with_context(|err| format!("Unable to render {}: {}", module.name, err))?;
     Ok(())
 }
 
@@ -201,22 +199,16 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
 
         create_dir_all(out_path.join(entry.path().parent().unwrap_or(Path::new(""))))?;
 
-        let out_path = out_path.join(entry.path().with_extension("html"));
-        let mut doc_file = File::create(&*out_path).with_context(|err| {
-            format!(
-                "Unable to open output file `{}`: {}",
-                out_path.display(),
-                err
-            )
-        })?;
-
-        generate(&reg, &mut doc_file, &name, &typ, &meta)?;
+        let module = Module {
+            name,
+            record: record(&typ, &meta),
+        };
 
         directories
             .last_mut()
             .expect("Directory before this file")
             .1
-            .push(name);
+            .push(module);
     }
 
     #[derive(Serialize)]
@@ -238,13 +230,41 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
             )
         })?;
 
+        for module in &modules {
+            let out_path =
+                out_path.join(PathBuf::from(module.name.replace(".", "/")).with_extension("html"));
+            let mut doc_file = File::create(&*out_path).with_context(|err| {
+                format!(
+                    "Unable to open output file `{}`: {}",
+                    out_path.display(),
+                    err
+                )
+            })?;
+
+            generate(
+                &reg,
+                &mut doc_file,
+                &TemplateModule {
+                    name: &module.name,
+                    record: &module.record,
+                    sibling_modules: modules.iter().map(|sibling| &*sibling.name).collect(),
+                },
+            )?;
+        }
+
         let name = filename_to_module(path.to_str()
             .ok_or_else(|| failure::err_msg("Non-UTF-8 filename"))?);
 
-        reg.render_template_to_write(module_template, &Index { name, modules }, &mut doc_file)
-            .with_context(|err| {
-                format!("Unable to render index {}: {}", index_path.display(), err)
-            })?;
+        reg.render_template_to_write(
+            module_template,
+            &Index {
+                name,
+                modules: modules.iter().map(|module| module.name.clone()).collect(),
+            },
+            &mut doc_file,
+        ).with_context(|err| {
+            format!("Unable to render index {}: {}", index_path.display(), err)
+        })?;
     }
 
     Ok(())
