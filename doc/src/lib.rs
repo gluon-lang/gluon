@@ -115,7 +115,12 @@ where
         let mut content = String::new();
         input.read_to_string(&mut content)?;
 
-        let (expr, typ) = Compiler::new().typecheck_str(thread, "basic", &content, None)?;
+        let name = filename_to_module(entry
+            .path()
+            .to_str()
+            .ok_or_else(|| failure::err_msg("Non-UTF-8 filename"))?);
+
+        let (expr, typ) = Compiler::new().typecheck_str(thread, &name, &content, None)?;
         let (meta, _) = metadata(&*thread.get_env(), &expr);
 
         create_dir_all(
@@ -132,11 +137,6 @@ where
                 err
             )
         })?;
-
-        let name = filename_to_module(entry
-            .path()
-            .to_str()
-            .ok_or_else(|| failure::err_msg("Non-UTF-8 filename"))?);
 
         generate(&mut doc_file, &name, &typ, &meta)?;
         modules.push(name);
