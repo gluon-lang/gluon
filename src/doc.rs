@@ -1,9 +1,9 @@
 extern crate failure;
+extern crate handlebars;
 extern crate walkdir;
 
-use std::fmt::{self, Write as WriteFmt};
 use std::fs::{create_dir_all, File};
-use std::io::{Read, Write};
+use std::io::{self, Read};
 use std::path::Path;
 
 use self::failure::ResultExt;
@@ -17,58 +17,67 @@ use {Compiler, Thread};
 pub type Error = failure::Error;
 pub type Result<T> = ::std::result::Result<T, Error>;
 
-fn generate_field<W>(
-    out: &mut W,
-    field_name: &str,
-    typ: &ArcType,
-    comment: Option<&str>,
-) -> Result<()>
-where
-    W: ?Sized + fmt::Write,
-{
-    writeln!(out, "### {}", field_name)?;
-
-    writeln!(out, "```gluon")?;
-    writeln!(out, "{}", typ)?;
-    writeln!(out, "```")?;
-
-    if let Some(comment) = comment {
-        writeln!(out, "{}", comment)?;
-    }
-    writeln!(out)?;
-    Ok(())
+#[derive(Serialize, PartialEq, Debug)]
+pub struct Module<'a> {
+    pub name: &'a str,
+    pub record: Record<'a>,
 }
 
-pub fn generate<W>(out: &mut W, typ: &ArcType, meta: &Metadata) -> Result<()>
+#[derive(Serialize, PartialEq, Debug)]
+pub struct Record<'a> {
+    pub types: Vec<Field<'a>>,
+    pub values: Vec<Field<'a>>,
+}
+
+#[derive(Serialize, PartialEq, Debug)]
+pub struct Field<'a> {
+    pub name: &'a str,
+    #[serde(rename = "type")]
+    pub typ: String,
+    pub comment: &'a str,
+}
+
+pub fn record<'a>(typ: &'a ArcType, meta: &'a Metadata) -> Record<'a> {
+    Record {
+        types: typ.type_field_iter()
+            .map(|field| Field {
+                name: field.name.as_ref(),
+                typ: field.typ.unresolved_type().to_string(),
+                comment: meta.module
+                    .get(AsRef::<str>::as_ref(&field.name))
+                    .and_then(|meta| meta.comment.as_ref().map(|s| &s[..]))
+                    .unwrap_or(""),
+            })
+            .collect(),
+
+        values: typ.row_iter()
+            .map(|field| Field {
+                name: field.name.as_ref(),
+                typ: field.typ.to_string(),
+
+                comment: meta.module
+                    .get(AsRef::<str>::as_ref(&field.name))
+                    .and_then(|meta| meta.comment.as_ref().map(|s| &s[..]))
+                    .unwrap_or(""),
+            })
+            .collect(),
+    }
+}
+
+pub fn generate<W>(out: &mut W, name: &str, typ: &ArcType, meta: &Metadata) -> Result<()>
 where
-    W: ?Sized + fmt::Write,
+    W: io::Write,
 {
-    if typ.type_field_iter().next().is_some() {
-        writeln!(out, "## Types")?;
-        writeln!(out)?;
-    }
-    for field in typ.type_field_iter() {
-        let field_name: &str = field.name.as_ref();
-        let field_type = &field.typ.unresolved_type();
-        let comment = meta.module
-            .get(field_name)
-            .and_then(|meta| meta.comment.as_ref().map(|s| &s[..]));
-        generate_field(out, field_name, field_type, comment)?;
-    }
+    let r = Module {
+        name,
+        record: record(typ, meta),
+    };
 
-    if typ.row_iter().next().is_some() {
-        writeln!(out, "## Values")?;
-        writeln!(out)?;
-    }
+    trace!("DOC: {:?}", r);
 
-    for field in typ.row_iter() {
-        let field_name: &str = field.name.as_ref();
-        let field_type = &field.typ;
-        let comment = meta.module
-            .get(field_name)
-            .and_then(|meta| meta.comment.as_ref().map(|s| &s[..]));
-        generate_field(out, field_name, field_type, comment)?;
-    }
+    let reg = handlebars::Handlebars::new();
+    let module_template = include_str!("doc/module.html");
+    reg.render_template_to_write(module_template, &r, out)?;
     Ok(())
 }
 
@@ -97,20 +106,13 @@ where
         let (expr, typ) = Compiler::new().typecheck_str(thread, "basic", &content, None)?;
         let (meta, _) = metadata(&*thread.get_env(), &expr);
 
-        let mut out = String::new();
-        if let Some(module_path) = entry.path().to_str() {
-            writeln!(out, "# {}", filename_to_module(module_path))?;
-            writeln!(out)?;
-        }
-        generate(&mut out, &typ, &meta)?;
-
         create_dir_all(
             out_path
                 .as_ref()
                 .join(entry.path().parent().unwrap_or(Path::new(""))),
         )?;
 
-        let out_path = out_path.as_ref().join(entry.path().with_extension("md"));
+        let out_path = out_path.as_ref().join(entry.path().with_extension("html"));
         let mut doc_file = File::create(&*out_path).with_context(|err| {
             format!(
                 "Unable to open output file `{}`: {}",
@@ -118,7 +120,12 @@ where
                 err
             )
         })?;
-        doc_file.write_all(out.as_bytes())?;
+
+        let name = filename_to_module(entry
+            .path()
+            .to_str()
+            .ok_or_else(|| failure::err_msg("Non-UTF-8 filename"))?);
+        generate(&mut doc_file, &name, &typ, &meta)?;
     }
     Ok(())
 }

@@ -17,15 +17,18 @@ let test x = x
         .unwrap();
     let (meta, _) = metadata(&*vm.get_env(), &expr);
 
-    let mut out = String::new();
-    doc::generate(&mut out, &typ, &meta).unwrap();
+    let out = doc::record(&typ, &meta);
     assert_eq!(
         out,
-        r#"## test
-```gluon
-forall a . a -> a
-```
-This is the test function
-"#
+        doc::Record {
+            types: Vec::new(),
+            values: vec![
+                doc::Field {
+                    name: "test",
+                    typ: "forall a . a -> a".to_string(),
+                    comment: "This is the test function",
+                },
+            ],
+        }
     );
 }

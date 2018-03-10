@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{name}}</title>
+</head>
+<body>
+    <h2>Types</h2>
+    {{#each record.types}}
+    <div>
+        <h3>{{name}}</h3>
+        <code>{{type}}</code>
+        <div>{{comment}}</div>
+    </div>
+    {{/each}}
+
+    <h2>Values</h2>
+    {{#each record.values}}
+    <div>
+        <h3>{{name}}</h3>
+        <code>{{type}}</code>
+        <div>{{comment}}</div>
+    </div>
+    {{/each}}
+</body>
+</html>

@@ -37,8 +37,11 @@ walkdir = "1"
 failure = { version = "0.1", features = ["backtrace"] }
 
 serde = { version = "1.0.0", optional = true }
+serde_derive = { version = "1.0.0", optional = true }
 serde_state = { version = "0.4.0", optional = true }
 serde_derive_state = { version = "0.4.0", optional = true }
+
+handlebars = "0.32"
 
 # Binding crates
 regex = { version = "0.2.1", optional = true }
@@ -76,7 +79,7 @@ gluon_completion = { path = "completion", version = "0.7.1" } # GLUON
 
 [features]
 default = ["regex", "rand"]
-serialization = ["serde", "serde_state", "serde_derive_state", "gluon_vm/serialization"]
+serialization = ["serde", "serde_derive", "serde_state", "serde_derive_state", "gluon_vm/serialization"]
 
 docs_rs = ["serialization"]
 
