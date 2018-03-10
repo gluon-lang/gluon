@@ -1,5 +1,7 @@
 extern crate failure;
 extern crate handlebars;
+extern crate serde;
+extern crate serde_json;
 extern crate walkdir;
 
 use std::fs::{create_dir_all, File};
@@ -7,6 +9,8 @@ use std::io::{self, Read};
 use std::path::Path;
 
 use self::failure::ResultExt;
+
+use serde::Deserialize;
 
 use base::filename_to_module;
 use base::types::ArcType;
@@ -86,6 +90,7 @@ where
     P: ?Sized + AsRef<Path>,
     Q: ?Sized + AsRef<Path>,
 {
+    let mut modules = Vec::new();
     for entry in walkdir::WalkDir::new(path) {
         let entry = entry?;
         if !entry.file_type().is_file()
@@ -125,7 +130,40 @@ where
             .path()
             .to_str()
             .ok_or_else(|| failure::err_msg("Non-UTF-8 filename"))?);
+
         generate(&mut doc_file, &name, &typ, &meta)?;
+        modules.push(name);
     }
+
+    let mut reg = handlebars::Handlebars::new();
+    let module_template = include_str!("doc/index.html");
+
+    fn symbol_link(
+        h: &handlebars::Helper,
+        _: &handlebars::Handlebars,
+        rc: &mut handlebars::RenderContext,
+    ) -> ::std::result::Result<(), handlebars::RenderError> {
+        let param = String::deserialize(h.param(0).unwrap().value())?;
+        write!(rc.writer, "{}.html", param.replace(".", "/"))?;
+        Ok(())
+    }
+    reg.register_helper("symbol_link", Box::new(symbol_link));
+
+    let index_path = out_path.as_ref().join("index.html");
+    let mut doc_file = File::create(&*index_path).with_context(|err| {
+        format!(
+            "Unable to open output file `{}`: {}",
+            index_path.display(),
+            err
+        )
+    })?;
+
+    #[derive(Serialize)]
+    struct Index {
+        modules: Vec<String>,
+    }
+
+    reg.render_template_to_write(module_template, &Index { modules }, &mut doc_file)?;
+
     Ok(())
 }
