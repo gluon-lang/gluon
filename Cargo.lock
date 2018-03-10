@@ -587,6 +587,7 @@ dependencies = [
  "futures-cpupool 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "gluon 0.7.1",
  "gluon_completion 0.7.1",
+ "gluon_doc 0.7.1",
  "gluon_format 0.7.1",
  "gluon_vm 0.7.1",
  "lazy_static 0.2.11 (registry+https://github.com/rust-lang/crates.io-index)",
