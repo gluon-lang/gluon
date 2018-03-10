@@ -109,8 +109,18 @@ fn handlebars() -> Handlebars {
         _: &Handlebars,
         rc: &mut RenderContext,
     ) -> ::std::result::Result<(), RenderError> {
+        let current_module = &rc.context().data()["name"]
+            .as_str()
+            .expect("name")
+            .to_string();
+
         let param = String::deserialize(h.param(0).unwrap().value())?;
-        write!(rc.writer, "/{}.html", param.replace(".", "/"))?;
+        write!(
+            rc.writer,
+            "{}{}.html",
+            current_module.split('.').map(|_| "../").format(""),
+            param.replace(".", "/")
+        )?;
         Ok(())
     }
     reg.register_helper("symbol_link", Box::new(symbol_link));
