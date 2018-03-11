@@ -162,7 +162,7 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
                 }
                 for field in field_ids {
                     match field.value {
-                        Some(_) => (),
+                        Some(ref value) => self.on_pattern(value),
                         None => {
                             let name = field.name.value.clone();
                             let typ = unaliased.row_iter()

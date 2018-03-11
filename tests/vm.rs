@@ -471,7 +471,7 @@ r#"
 true
 }
 
-test_expr!{ implicit_argument_selection,
+test_expr!{ implicit_argument_selection1,
 r#"
 /// @implicit
 type Test = | Test ()
@@ -480,6 +480,22 @@ let i = Test ()
 f (Test ())
 "#,
 ()
+}
+
+test_expr!{ prelude implicit_argument_selection2,
+r#"
+let string = import! std.string
+let { append = (++) } = string.semigroup
+
+let equality l r : [Eq a] -> a -> a -> String =
+    if l == r then " == " else " != "
+
+let cmp l r : [Show a] -> [Eq a] -> a -> a -> String =
+    (show l) ++ (equality l r) ++ (show r)
+
+cmp 5 6
+"#,
+String::from("5 != 6")
 }
 
 #[test]

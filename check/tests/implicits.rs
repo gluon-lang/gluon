@@ -9,7 +9,7 @@ extern crate gluon_check as check;
 extern crate gluon_format as format;
 extern crate gluon_parser as parser;
 
-use base::ast::{self, SpannedExpr, Typed, Visitor};
+use base::ast::{self, Expr, Pattern, SpannedExpr, Typed, Visitor};
 use base::types::{Field, Type};
 use base::symbol::Symbol;
 
@@ -31,9 +31,28 @@ let f ?x y: [Int] -> Int -> Int = x
 let i = 123
 f 42
 "#;
-    let result = support::typecheck(text);
+    let (expr, result) = support::typecheck_expr(text);
 
     assert_eq!(result, Ok(Type::int()));
+
+    // Verify that the insert implicit argument have the renamed symbol
+    match expr.value {
+        Expr::LetBindings(_, ref expr) => match expr.value {
+            Expr::LetBindings(ref bind, ref app) => match app.value {
+                Expr::App {
+                    ref implicit_args, ..
+                } => match (&implicit_args[0].value, &bind[0].name.value) {
+                    (&Expr::Ident(ref arg), &Pattern::Ident(ref bind_id)) => {
+                        assert_eq!(arg.name, bind_id.name)
+                    }
+                    _ => panic!(),
+                },
+                _ => panic!(),
+            },
+            _ => panic!(),
+        },
+        _ => panic!(),
+    }
 }
 
 #[test]

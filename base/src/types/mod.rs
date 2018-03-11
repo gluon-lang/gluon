@@ -1051,6 +1051,17 @@ pub fn type_field_iter<T>(typ: &T) -> TypeFieldIterator<T> {
     TypeFieldIterator { typ, current: 0 }
 }
 
+pub fn remove_forall<'a, Id, T>(typ: &'a T) -> &'a T
+where
+    T: Deref<Target = Type<Id, T>>,
+    Id: 'a,
+{
+    match **typ {
+        Type::Forall(_, ref typ, _) => remove_forall(typ),
+        _ => typ,
+    }
+}
+
 impl<Id> ArcType<Id> {
     pub fn new(typ: Type<Id, ArcType<Id>>) -> ArcType<Id> {
         ArcType { typ: Arc::new(typ) }
@@ -1080,10 +1091,7 @@ impl<Id> ArcType<Id> {
     }
 
     pub fn remove_forall(&self) -> &ArcType<Id> {
-        match **self {
-            Type::Forall(_, ref typ, _) => typ.remove_forall(),
-            _ => self,
-        }
+        remove_forall(self)
     }
 
     pub fn skolemize(&self, named_variables: &mut FnvMap<Id, ArcType<Id>>) -> ArcType<Id>
