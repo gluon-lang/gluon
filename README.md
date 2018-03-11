@@ -261,7 +261,7 @@ The [gluon extension][] for Visual Studio Code provides syntax highlighting and 
 
 ### Vim plugin
 
-[vim-gluon](https://github.com/salpalvv/vim-gluon) provides syntax highlighting and indentation.
+[vim-gluon](https://github.com/gluon-lang/vim-gluon) provides syntax highlighting and indentation.
 
 The gluon language server has been tested to work with https://github.com/autozimu/LanguageClient-neovim and https://github.com/prabirshrestha/vim-lsp. 
 
