@@ -62,28 +62,21 @@ in f "123"
     );
 }
 
-/// Test that overload resolution selects the closest implementation that matches even if another
-/// overload has a better match. If this wasn't the case it would be possible to get diffferent
-/// selection depending on the order that types are infered.
 #[test]
-fn overloaded_with_equal_aliases() {
+fn shadowed_binding() {
     let _ = env_logger::try_init();
 
     let text = r"
-type Test = Int
 let test x: Int -> Int = 1
-let test x: Test -> Test = 0
+let test x: Int -> Int = 0
 test 1
 ";
     let (expr, result) = support::typecheck_expr(text);
 
     assert!(result.is_ok());
     let (bind, call) = match expr.value {
-        Expr::TypeBindings(_, ref body) => match body.value {
-            Expr::LetBindings(_, ref body) => match body.value {
-                Expr::LetBindings(ref binds, ref body) => (&binds[0], body),
-                _ => panic!(),
-            },
+        Expr::LetBindings(_, ref body) => match body.value {
+            Expr::LetBindings(ref binds, ref body) => (&binds[0], body),
             _ => panic!(),
         },
         _ => panic!(),

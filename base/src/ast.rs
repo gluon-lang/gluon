@@ -127,6 +127,10 @@ impl<Id> AstType<Id> {
         self._typ.1.value
     }
 
+    pub fn as_mut(&mut self) -> &mut SpannedAstType<Id> {
+        &mut self._typ.1
+    }
+
     pub fn params_mut(&mut self) -> &mut [Generic<Id>] {
         match self._typ.1.value {
             Type::Forall(ref mut params, _, _) => params,

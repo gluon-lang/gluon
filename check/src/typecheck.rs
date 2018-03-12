@@ -26,7 +26,6 @@ use base::types::{self, Alias, AliasRef, AppVec, ArcType, ArgType, BuiltinType, 
 
 use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
 use substitution::{self, Substitution};
-use rename::RenameError;
 use unify::{self, Error as UnifyError};
 use unify_type::{self, new_skolem_scope, Error as UnifyTypeError};
 
@@ -47,8 +46,6 @@ pub enum TypeError<I> {
     Unification(ArcType<I>, ArcType<I>, Vec<UnifyTypeError<I>>),
     /// Error were found when trying to unify the kinds of two types
     KindError(KindCheckError<I>),
-    /// Errors found during renaming (overload resolution)
-    Rename(RenameError),
     /// Multiple types were declared with the same name in the same expression
     DuplicateTypeDefinition(I),
     /// A field was defined more than once in a record constructor or pattern match
@@ -74,12 +71,6 @@ impl<I> From<KindCheckError<I>> for TypeError<I> {
             UnifyError::Other(KindError::UndefinedType(name)) => TypeError::UndefinedType(name),
             e => TypeError::KindError(e),
         }
-    }
-}
-
-impl<I> From<RenameError> for TypeError<I> {
-    fn from(e: RenameError) -> TypeError<I> {
-        TypeError::Rename(e)
     }
 }
 
@@ -157,7 +148,6 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
                 write!(f, "Type {} has {} to few arguments", typ, expected_len)
             }
             KindError(ref err) => kindcheck::fmt_kind_error(err, f),
-            Rename(ref err) => write!(f, "{}", err),
             DuplicateTypeDefinition(ref id) => write!(
                 f,
                 "Type '{}' has been already been defined in this module",
@@ -449,6 +439,14 @@ impl<'a> Typecheck<'a> {
 
         self.implicit_resolver.on_stack_var(&id, &typ);
 
+        // HACK
+        // Insert the non_renamed symbol so that type projections in types can be translated (see
+        // translate_projected_type)
+        let non_renamed_symbol = self.symbols.symbol(id.declared_name());
+        self.environment
+            .stack
+            .insert(non_renamed_symbol, StackBinding { typ: typ.clone() });
+
         self.environment.stack.insert(id, StackBinding { typ: typ });
     }
 
@@ -571,7 +569,6 @@ impl<'a> Typecheck<'a> {
                 | UndefinedRecord { .. }
                 | EmptyCase
                 | KindError(_)
-                | Rename(_)
                 | Message(_)
                 | LoopInImplicitResolution(..) => (),
                 NotAFunction(ref mut typ)
@@ -633,6 +630,7 @@ impl<'a> Typecheck<'a> {
         self.subs.clear();
         self.environment.stack.clear();
 
+        let _ = ::rename::rename(&mut self.symbols, expr);
         self.implicit_resolver.metadata = ::metadata::metadata(&self.environment, expr).1;
 
         let mut typ = self.typecheck_opt(expr, expected_type);
@@ -652,7 +650,6 @@ impl<'a> Typecheck<'a> {
             self.generalize_type_errors(&mut errors);
             Err(errors)
         } else {
-            let _ = ::rename::rename(&mut self.symbols, &self.environment.environment, expr);
             debug!("Typecheck result: {}", typ);
             Ok(typ)
         }
@@ -1107,36 +1104,36 @@ impl<'a> Typecheck<'a> {
                 ref mut body,
                 ref mut flat_map_id,
             }) => {
-                let flat_map = self.symbols.symbol("flat_map");
-                let flat_map_type = match self.find(&flat_map) {
-                    Ok(x) => x,
-                    Err(error) => {
-                        self.error(
-                            id.span,
-                            ::base::error::Help {
-                                error,
-                                help: Some(Help::UndefinedFlatMapInDo),
-                            },
-                        );
-                        self.subs.new_var()
-                    }
+                let flat_map_type = match flat_map_id
+                    .as_mut()
+                    .expect("flat_map inserted during renaming")
+                    .value
+                {
+                    Expr::Ident(ref mut flat_map) => match self.find(&flat_map.name) {
+                        Ok(x) => x,
+                        Err(error) => {
+                            self.error(
+                                id.span,
+                                ::base::error::Help {
+                                    error,
+                                    help: Some(Help::UndefinedFlatMapInDo),
+                                },
+                            );
+                            self.subs.new_var()
+                        }
+                    },
+                    _ => ice!("flat_map_id not inserted during renaming"),
                 };
+
                 let flat_map_type = self.instantiate_generics(&flat_map_type);
 
-                let flat_map_expr = pos::spanned(
-                    id.span,
-                    Expr::Ident(TypedIdent {
-                        name: flat_map.clone(),
-                        typ: flat_map_type.clone(),
-                    }),
-                );
                 let flat_map_type = match *flat_map_type {
                     Type::Function(ArgType::Implicit, ref arg_type, ref r) => {
                         let name = self.implicit_resolver.make_implicit_ident(arg_type);
                         *flat_map_id = Some(Box::new(pos::spanned(
                             id.span,
                             Expr::App {
-                                func: Box::new(flat_map_expr),
+                                func: flat_map_id.take().unwrap(),
                                 args: vec![
                                     pos::spanned(
                                         id.span,
@@ -1151,10 +1148,7 @@ impl<'a> Typecheck<'a> {
                         )));
                         r.clone()
                     }
-                    _ => {
-                        *flat_map_id = Some(Box::new(flat_map_expr));
-                        flat_map_type.clone()
-                    }
+                    _ => flat_map_type.clone(),
                 };
 
                 id.value.typ = self.subs.new_var();

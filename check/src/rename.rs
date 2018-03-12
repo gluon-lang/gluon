@@ -1,95 +1,15 @@
-use std::fmt;
-
-use base::ast::{self, DisplayEnv, Do, Expr, MutVisitor, Pattern, SpannedExpr, Typed, TypedIdent};
-use base::error::Errors;
-use base::kind::{ArcKind, KindEnv};
-use base::pos::{self, BytePos, Span, Spanned};
+use base::ast::{self, DisplayEnv, Do, Expr, MutVisitor, Pattern, SpannedAlias, SpannedExpr,
+                TypedIdent};
+use base::pos::{self, BytePos, Span};
 use base::scoped_map::ScopedMap;
-use base::symbol::{Symbol, SymbolModule, SymbolRef};
-use base::types::{self, Alias, ArcType, RecordSelector, Type, TypeEnv};
+use base::symbol::{Symbol, SymbolModule};
+use base::types::{self, Type};
 
-pub type Error = Errors<Spanned<RenameError, BytePos>>;
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum RenameError {
-    NoMatchingType {
-        symbol: String,
-        expected: ArcType,
-        possible_types: Vec<(Option<Span<BytePos>>, ArcType)>,
-    },
+struct Environment {
+    stack: ScopedMap<Symbol, (Symbol, Span<BytePos>)>,
 }
 
-impl fmt::Display for RenameError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            RenameError::NoMatchingType {
-                ref symbol,
-                ref expected,
-                ref possible_types,
-            } => {
-                writeln!(
-                    f,
-                    "Could not resolve a binding for `{}` with type `{}`",
-                    symbol, expected
-                )?;
-                writeln!(f, "Possibilities:")?;
-                for &(ref span, ref typ) in possible_types {
-                    match *span {
-                        Some(ref span) => writeln!(f, "{} at {}", typ, span.start)?,
-                        None => writeln!(f, "{} at 'global'", typ)?,
-                    }
-                }
-                Ok(())
-            }
-        }
-    }
-}
-
-struct Environment<'b> {
-    env: &'b TypeEnv,
-    stack: ScopedMap<Symbol, (Symbol, Span<BytePos>, ArcType)>,
-    stack_types: ScopedMap<Symbol, Alias<Symbol, ArcType>>,
-}
-
-impl<'a> KindEnv for Environment<'a> {
-    fn find_kind(&self, _type_name: &SymbolRef) -> Option<ArcKind> {
-        None
-    }
-}
-
-impl<'a> TypeEnv for Environment<'a> {
-    fn find_type(&self, id: &SymbolRef) -> Option<&ArcType> {
-        self.stack
-            .get(id)
-            .map(|t| &t.2)
-            .or_else(|| self.env.find_type(id))
-    }
-
-    fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
-        self.stack_types
-            .get(id)
-            .or_else(|| self.env.find_type_info(id))
-    }
-
-    fn find_record(
-        &self,
-        _fields: &[Symbol],
-        _selector: RecordSelector,
-    ) -> Option<(ArcType, ArcType)> {
-        None
-    }
-}
-
-pub fn rename<E>(
-    symbols: &mut SymbolModule,
-    env: &E,
-    expr: &mut SpannedExpr<Symbol>,
-) -> Result<(), Error>
-where
-    E: TypeEnv,
-{
-    use base::resolve;
-
+pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
     enum TailCall {
         TailCall,
         Return,
@@ -97,75 +17,31 @@ where
 
     struct RenameVisitor<'a: 'b, 'b> {
         symbols: &'b mut SymbolModule<'a>,
-        env: Environment<'b>,
-        errors: Error,
+        env: Environment,
     }
 
     impl<'a, 'b> RenameVisitor<'a, 'b> {
-        fn find_fields(&self, typ: &ArcType) -> Vec<types::Field<Symbol, ArcType>> {
-            // Walk through all type aliases
-            let record = resolve::remove_aliases(&self.env, typ.remove_forall().clone());
-            record.row_iter().cloned().collect()
-        }
-
         fn new_pattern(&mut self, pattern: &mut ast::SpannedPattern<Symbol>) {
             match pattern.value {
-                Pattern::Record {
-                    ref mut fields,
-                    ref types,
-                    ref typ,
-                    ..
-                } => {
-                    let field_types = self.find_fields(typ);
-                    for field in fields {
-                        match field.value {
-                            Some(ref mut pat) => self.new_pattern(pat),
-                            None => {
-                                if let Some(field_type) = field_types
-                                    .iter()
-                                    .find(|field_type| field_type.name.name_eq(&field.name.value))
-                                {
-                                    let id = field.name.value.clone();
-                                    let pat = Pattern::Ident(TypedIdent {
-                                        name: self.stack_var(
-                                            id,
-                                            pattern.span,
-                                            field_type.typ.clone(),
-                                        ),
-                                        typ: field_type.typ.clone(),
-                                    });
-                                    field.value = Some(pos::spanned(field.name.span, pat));
-                                }
-                            }
+                Pattern::Record { ref mut fields, .. } => for field in fields {
+                    match field.value {
+                        Some(ref mut pat) => self.new_pattern(pat),
+                        None => {
+                            let id = field.name.value.clone();
+                            let pat = Pattern::Ident(TypedIdent {
+                                name: self.stack_var(id, pattern.span),
+                                typ: Type::hole(),
+                            });
+                            field.value = Some(pos::spanned(field.name.span, pat));
                         }
                     }
-
-                    let record_type = resolve::remove_aliases(&self.env, typ.clone()).clone();
-                    for ast_field in types {
-                        let field_type = record_type
-                            .remove_forall()
-                            .type_field_iter()
-                            .find(|field| field.name.name_eq(&ast_field.name.value))
-                            .unwrap_or_else(|| {
-                                panic!(
-                                    "ICE: Type `{}` does not have type field `{}`",
-                                    record_type, ast_field.name.value
-                                )
-                            });
-                        self.stack_type(
-                            ast_field.name.value.clone(),
-                            pattern.span,
-                            &field_type.typ,
-                        );
-                    }
-                }
+                },
                 Pattern::Ident(ref mut id) => {
-                    let new_name = self.stack_var(id.name.clone(), pattern.span, id.typ.clone());
+                    let new_name = self.stack_var(id.name.clone(), pattern.span);
                     id.name = new_name;
                 }
                 Pattern::As(ref mut id, ref mut pat) => {
-                    let typ = pat.env_type_of(&self.env);
-                    let new_name = self.stack_var(id.clone(), pattern.span, typ);
+                    let new_name = self.stack_var(id.clone(), pattern.span);
                     *id = new_name;
                     self.new_pattern(pat)
                 }
@@ -179,37 +55,29 @@ where
             }
         }
 
-        fn stack_var(&mut self, id: Symbol, span: Span<BytePos>, typ: ArcType) -> Symbol {
+        fn stack_var(&mut self, id: Symbol, span: Span<BytePos>) -> Symbol {
             let old_id = id.clone();
             let name = self.symbols.string(&id).to_owned();
             let new_id = self.symbols.symbol(format!("{}:{}", name, span.start));
             debug!(
-                "Rename binding `{}` = `{}` `{}`",
+                "Rename binding `{}` = `{}`",
                 self.symbols.string(&old_id),
                 self.symbols.string(&new_id),
-                typ
             );
-            self.env.stack.insert(old_id, (new_id.clone(), span, typ));
+            self.env.stack.insert(old_id, (new_id.clone(), span));
             new_id
         }
 
-        fn stack_type(&mut self, id: Symbol, span: Span<BytePos>, alias: &Alias<Symbol, ArcType>) {
+        fn stack_type(&mut self, span: Span<BytePos>, alias: &SpannedAlias<Symbol>) {
             // Insert variant constructors into the local scope
-            let aliased_type = alias.typ();
-            if let Type::Variant(ref row) = **aliased_type.remove_forall() {
-                for field in row.row_iter().cloned() {
+            let aliased_type = alias.value.unresolved_type();
+            if let Type::Variant(ref row) = **types::remove_forall(aliased_type) {
+                for field in types::row_iter(row).cloned() {
                     self.env
                         .stack
-                        .insert(field.name.clone(), (field.name, span, field.typ));
+                        .insert(field.name.clone(), (field.name, span));
                 }
             }
-
-            // FIXME: Workaround so that both the types name in this module and its global
-            // name are imported. Without this aliases may not be traversed properly
-            self.env
-                .stack_types
-                .insert(alias.name.clone(), alias.clone());
-            self.env.stack_types.insert(id, alias.clone());
         }
 
         /// Renames `id` to the unique identifier which have the type `expected`
@@ -219,20 +87,18 @@ where
             self.env.stack.get(id).map(|t| t.0.clone())
         }
 
-        fn rename_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> Result<TailCall, RenameError> {
+        fn rename_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> TailCall {
             match expr.value {
                 Expr::Ident(ref mut id) => if let Some(new_id) = self.rename(&id.name) {
                     debug!("Rename identifier {} = {}", id.name, new_id);
                     id.name = new_id;
                 },
                 Expr::Record {
-                    ref mut typ,
                     ref mut exprs,
                     ref mut base,
                     ..
                 } => {
-                    let field_types = self.find_fields(typ);
-                    for (field, expr_field) in field_types.iter().zip(exprs) {
+                    for expr_field in exprs {
                         match expr_field.value {
                             Some(ref mut expr) => self.visit_expr(expr),
                             None => if let Some(new_id) = self.rename(&expr_field.name.value) {
@@ -241,7 +107,7 @@ where
                                     expr_field.name.span,
                                     Expr::Ident(TypedIdent {
                                         name: new_id,
-                                        typ: field.typ.clone(),
+                                        typ: Type::hole(),
                                     }),
                                 ));
                             },
@@ -275,66 +141,43 @@ where
                 Expr::Match(ref mut expr, ref mut alts) => {
                     self.visit_expr(expr);
                     for alt in alts {
-                        self.env.stack_types.enter_scope();
                         self.env.stack.enter_scope();
                         self.new_pattern(&mut alt.pattern);
                         self.visit_expr(&mut alt.expr);
                         self.env.stack.exit_scope();
-                        self.env.stack_types.exit_scope();
                     }
                 }
                 Expr::LetBindings(ref mut bindings, ref mut expr) => {
-                    self.env.stack_types.enter_scope();
                     self.env.stack.enter_scope();
                     let is_recursive = bindings.iter().all(|bind| !bind.args.is_empty());
                     for bind in bindings.iter_mut() {
                         if !is_recursive {
                             self.visit_expr(&mut bind.expr);
                         }
+                        if let Some(ref mut typ) = bind.typ {
+                            self.visit_ast_type(typ.as_mut())
+                        }
                         self.new_pattern(&mut bind.name);
                     }
                     if is_recursive {
                         for bind in bindings {
                             self.env.stack.enter_scope();
-                            for (typ, arg) in types::arg_iter(bind.resolved_type.remove_forall())
-                                .zip(&mut bind.args)
-                            {
-                                arg.name.value.name = self.stack_var(
-                                    arg.name.value.name.clone(),
-                                    expr.span,
-                                    typ.clone(),
-                                );
+                            for arg in &mut bind.args {
+                                arg.name.value.name =
+                                    self.stack_var(arg.name.value.name.clone(), expr.span);
                             }
                             self.visit_expr(&mut bind.expr);
                             self.env.stack.exit_scope();
                         }
                     }
-                    return Ok(TailCall::TailCall);
+                    return TailCall::TailCall;
                 }
                 Expr::Lambda(ref mut lambda) => {
                     self.env.stack.enter_scope();
 
-                    let mut iter = types::implicit_arg_iter(lambda.id.typ.remove_forall());
-                    let mut implicit_arg_count = 0;
-                    for typ in iter.by_ref() {
-                        let name = Symbol::from("implicit_arg");
-                        let arg = pos::spanned(
-                            expr.span,
-                            TypedIdent {
-                                name: self.stack_var(name, expr.span, typ.clone()),
-                                typ: typ.clone(),
-                            },
-                        );
-                        lambda
-                            .args
-                            .insert(implicit_arg_count, ast::Argument::implicit(arg));
-                        implicit_arg_count += 1;
-                    }
-                    for (typ, arg) in
-                        types::arg_iter(iter.typ).zip(&mut lambda.args[implicit_arg_count..])
-                    {
+                    for arg in &mut lambda.args {
                         arg.name.value.name =
-                            self.stack_var(arg.name.value.name.clone(), expr.span, typ.clone());
+                            self.stack_var(arg.name.value.name.clone(), expr.span);
                     }
 
                     self.visit_expr(&mut lambda.body);
@@ -343,19 +186,11 @@ where
                 }
                 Expr::TypeBindings(ref bindings, _) => {
                     self.env.stack.enter_scope();
-                    self.env.stack_types.enter_scope();
                     for bind in bindings {
-                        self.stack_type(
-                            bind.name.value.clone(),
-                            expr.span,
-                            bind.finalized_alias.as_ref().expect(
-                                "ICE: Alias should have been finalized \
-                                 before renaming",
-                            ),
-                        );
+                        self.stack_type(expr.span, &bind.alias);
                     }
 
-                    return Ok(TailCall::TailCall);
+                    return TailCall::TailCall;
                 }
                 Expr::Do(Do {
                     ref mut id,
@@ -363,6 +198,15 @@ where
                     ref mut flat_map_id,
                     ..
                 }) => {
+                    let flat_map = self.symbols.symbol("flat_map");
+                    *flat_map_id = Some(Box::new(pos::spanned(
+                        id.span,
+                        Expr::Ident(TypedIdent {
+                            name: flat_map,
+                            typ: Type::hole(),
+                        }),
+                    )));
+
                     let flat_map_id = flat_map_id
                         .as_mut()
                         .unwrap_or_else(|| ice!("flat_map_id not set before renaming"));
@@ -371,17 +215,15 @@ where
                     self.visit_expr(bound);
 
                     self.env.stack.enter_scope();
-                    self.env.stack_types.enter_scope();
 
-                    id.value.name =
-                        self.stack_var(id.value.name.clone(), id.span, id.value.typ.clone());
+                    id.value.name = self.stack_var(id.value.name.clone(), id.span);
 
-                    return Ok(TailCall::TailCall);
+                    return TailCall::TailCall;
                 }
 
                 _ => ast::walk_mut_expr(self, expr),
             }
-            Ok(TailCall::Return)
+            TailCall::Return
         }
     }
 
@@ -392,8 +234,8 @@ where
             let mut i = 0;
             loop {
                 match self.rename_expr(expr) {
-                    Ok(TailCall::Return) => break,
-                    Ok(TailCall::TailCall) => {
+                    TailCall::Return => break,
+                    TailCall::TailCall => {
                         expr = match { expr }.value {
                             Expr::LetBindings(_, ref mut new_expr)
                             | Expr::TypeBindings(_, ref mut new_expr)
@@ -405,35 +247,20 @@ where
                         };
                         i += 1;
                     }
-                    Err(err) => {
-                        self.errors.push(Spanned {
-                            span: expr.span,
-                            value: err,
-                        });
-                    }
                 }
             }
 
             for _ in 0..i {
                 self.env.stack.exit_scope();
-                self.env.stack_types.exit_scope();
             }
         }
     }
 
     let mut visitor = RenameVisitor {
         symbols: symbols,
-        errors: Errors::new(),
         env: Environment {
-            env: env,
             stack: ScopedMap::new(),
-            stack_types: ScopedMap::new(),
         },
     };
     visitor.visit_expr(expr);
-    if visitor.errors.has_errors() {
-        Err(visitor.errors)
-    } else {
-        Ok(())
-    }
 }
