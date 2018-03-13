@@ -1,4 +1,4 @@
-let { run, writer, assert_ieq, ? } = import! std.test
+let { run, Test, assert_eq, ? } = import! std.test
 let prelude = import! std.prelude
 let { Applicative, (*>), wrap } = import! std.applicative
 let int = import! std.int
@@ -7,5 +7,8 @@ let { lazy, force } = import! std.lazy
 
 let l = lazy (\_ -> 123 + 57)
 
-assert_ieq (force (lazy (\_ -> 2))) 2 *> wrap ()
-    *> assert_ieq 180 (force l)
+let tests : Test () =
+    assert_eq (force (lazy (\_ -> 2))) 2 *> wrap ()
+        *> assert_eq 180 (force l)
+
+run tests

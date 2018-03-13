@@ -1,5 +1,5 @@
 let prelude = import! std.prelude
-let { run, writer, assert_eq, assert_ieq, ? } = import! std.test
+let { run, Test, assert_eq, ? } = import! std.test
 let { Applicative, (*>) } = import! std.applicative
 let int = import! std.int
 let stream @ { Stream } = import! std.stream
@@ -10,12 +10,13 @@ let s = stream.from (\i -> if i < 5 then Some i else None)
 
 let assert_leq s a : Stream Int -> Array Int -> _ =
     assert_eq
-        list.show
-        list.eq
         (stream.to_list s)
         (list.of a)
 
-assert_ieq (stream.fold (+) 0 s) 10
-    *> assert_leq s [4, 3, 2, 1, 0]
-    *> assert_leq (stream.functor.map (\x -> x + x) s) [8, 6, 4, 2, 0]
-    *> assert_leq (stream.zip_with (+) s s) [8, 6, 4, 2, 0]
+let tests : Test () =
+    assert_eq (stream.fold (+) 0 s) 10
+        *> assert_leq s [4, 3, 2, 1, 0]
+        *> assert_leq (stream.functor.map (\x -> x + x) s) [8, 6, 4, 2, 0]
+        *> assert_leq (stream.zip_with (+) s s) [8, 6, 4, 2, 0]
+
+run tests

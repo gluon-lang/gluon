@@ -1,6 +1,6 @@
 let prelude = import! std.prelude
-let { Test, run, writer, assert_eq, assert_seq, assert_ieq, ? } = import! std.test
-let { Applicative, (*>) } = import! std.applicative
+let { Test, run, writer, assert_eq, ? } = import! std.test
+let { Applicative, (*>), ? } = import! std.applicative
 let list @ { List, ? } = import! std.list
 
 let result @ { Result, ? } = import! std.result
@@ -9,52 +9,50 @@ let parser = import! std.parser
 
 let lisp @ { Expr, ? } = import! "examples/lisp/lisp.glu"
 
-let assert_leq : Result String Expr -> Result String Expr -> _ =
-    assert_eq result.show result.eq
-
 let parser_tests =
-    assert_leq (parser.parse lisp.expr "test") (Ok (Atom "test"))
-        *> assert_leq (parser.parse lisp.expr "()") (Ok (List Nil))
-        *> assert_leq
+    assert_eq (parser.parse lisp.expr "test") (Ok (Atom "test"))
+        *> assert_eq (parser.parse lisp.expr "()") (Ok (List Nil))
+        *> assert_eq
             (parser.parse lisp.expr "(test abc)")
             (Ok (List (Cons (Atom "test") (Cons (Atom "abc") Nil))))
-        *> assert_leq
+        *> assert_eq
             (parser.parse lisp.expr " ( test abc ) ")
             (Ok (List (Cons (Atom "test") (Cons (Atom "abc") Nil))))
-        *> assert_leq
+        *> assert_eq
             (parser.parse lisp.expr "(test (abc) d)")
             (Ok
                 (List
                     (Cons
                         (Atom "test")
                         (Cons (List (Cons (Atom "abc") Nil)) (Cons (Atom "d") Nil)))))
-        *> assert_leq
+        *> assert_eq
             (parser.parse lisp.expr "(test 123)")
             (Ok (List (Cons (Atom "test") (Cons (Int 123) Nil))))
-        *> assert_leq (parser.parse lisp.expr "123.45") (Ok (Float 123.45))
+        *> assert_eq (parser.parse lisp.expr "123.45") (Ok (Float 123.45))
 
 let { (>>=) } = import! std.prelude
 let eval_string s = parser.parse lisp.expr s >>= lisp.eval
 let eval_string_seq s = parser.parse (parser.many lisp.expr) s >>= lisp.eval_seq
 
 let eval_tests =
-    assert_leq (lisp.eval (Int 123)) (Ok (Int 123))
-        *> assert_leq
+    assert_eq (lisp.eval (Int 123)) (Ok (Int 123))
+        *> assert_eq
             (lisp.eval (List (Cons (Atom "+") (Cons (Int 1) (Cons (Int 2) Nil)))))
             (Ok (Int 3))
-        *> assert_leq (eval_string "()") (Ok (List Nil))
-        *> assert_leq (eval_string "(+ 1 2 3 4)") (Ok (Int (1 + 2 + 3 + 4)))
-        *> assert_leq (eval_string "(+ 1.0 2.5 3.14)") (Ok (Float (1.0 + 2.5 + 3.14)))
-        *> assert_leq (eval_string "(+ 1.0 (+ 2.5 3.14))") (Ok (Float (1.0 + 2.5 + 3.14)))
-        *> assert_leq (eval_string "(+ (+ 1 2) (+ 3 4))") (Ok (Int (1 + 2 + 3 + 4)))
-        *> assert_leq (eval_string "(- (* 2 3) (/ 2 2))") (Ok (Int ((2 * 3) - (2 / 2))))
+        *> assert_eq (eval_string "()") (Ok (List Nil))
+        *> assert_eq (eval_string "(+ 1 2 3 4)") (Ok (Int (1 + 2 + 3 + 4)))
+        *> assert_eq (eval_string "(+ 1.0 2.5 3.14)") (Ok (Float (1.0 + 2.5 + 3.14)))
+        *> assert_eq (eval_string "(+ 1.0 (+ 2.5 3.14))") (Ok (Float (1.0 + 2.5 + 3.14)))
+        *> assert_eq (eval_string "(+ (+ 1 2) (+ 3 4))") (Ok (Int (1 + 2 + 3 + 4)))
+        *> assert_eq (eval_string "(- (* 2 3) (/ 2 2))") (Ok (Int ((2 * 3) - (2 / 2))))
 
 let define_tests =
-    assert_leq (eval_string "(define x 3)") (Ok (Int 3))
-        *> assert_leq (eval_string_seq "(define y 3) y") (Ok (Int 3))
-        *> assert_leq (eval_string_seq "(define (id x) x) (id 4)") (Ok (Int 4))
-        *> assert_leq (eval_string_seq "(define (succ x) (+ x 1)) (succ 4)") (Ok (Int 5))
+    assert_eq (eval_string "(define x 3)") (Ok (Int 3))
+        *> assert_eq (eval_string_seq "(define y 3) y") (Ok (Int 3))
+        *> assert_eq (eval_string_seq "(define (id x) x) (id 4)") (Ok (Int 4))
+        *> assert_eq (eval_string_seq "(define (succ x) (+ x 1)) (succ 4)") (Ok (Int 5))
 
-let tests = parser_tests *> eval_tests *> define_tests
+let tests : Test () =
+    parser_tests *> eval_tests *> define_tests
 
 run tests

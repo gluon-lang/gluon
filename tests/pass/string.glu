@@ -1,58 +1,54 @@
-let prelude = import! std.prelude
-let { run, writer, assert_eq, assert_seq, assert_ieq, ? } = import! std.test
-let int = import! std.int
-let { Applicative, (*>) } = import! std.applicative
+let { run, Test, assert_eq, ? } = import! std.test
+let { Applicative, (*>), ? } = import! std.applicative
 
-let bool @ { Bool, ? } = import! std.bool
-let option @ { Option, ? } = import! std.option
 let string = import! std.string
-let result @ { Result, ? } = import! std.result
-let unit @ { ? } = import! std.unit
-
-let assert_oieq : Option Int -> Option Int -> _ = assert_eq option.show option.eq
-let assert_beq : Bool -> Bool -> _ = assert_eq bool.show bool.eq
-let assert_req : Result () String -> Result () String -> _ = assert_eq result.show result.eq
+let { Result, ? } = import! std.result
+let { ? } = import! std.unit
 
 let slice_tests =
-    assert_seq (string.slice "ab" 0 1) "a" *> assert_seq (string.slice "ab" 1 2) "b"
-        *> assert_seq (string.slice "abcd" 2 4) "cd"
+    assert_eq (string.slice "ab" 0 1) "a" *> assert_eq (string.slice "ab" 1 2) "b"
+        *> assert_eq (string.slice "abcd" 2 4) "cd"
 
 let append_tests =
     let { (<>) } = import! std.prelude
-    assert_seq ("ab" <> "cd") "abcd" *> assert_seq ("ab" <> "") "ab" *> assert_seq ("" <> "cd") "cd"
-        *> assert_seq ("" <> "") ""
+    assert_eq ("ab" <> "cd") "abcd" *> assert_eq ("ab" <> "") "ab" *> assert_eq ("" <> "cd") "cd"
+        *> assert_eq ("" <> "") ""
 
 let find_tests =
-    assert_oieq (string.find "abcd1234" "ab") (Some 0)
-        *> assert_oieq (string.find "abcd1234" "b") (Some 1)
-        *> assert_oieq (string.find "abcd1234" "4") (Some 7)
-        *> assert_oieq (string.find "abcd1234" "xyz") None
-        *> assert_oieq (string.rfind "abcdabcd" "b") (Some 5)
-        *> assert_oieq (string.rfind "abcdabcd" "d") (Some 7)
-        *> assert_oieq (string.rfind "abcd1234" "xyz") None
+    assert_eq (string.find "abcd1234" "ab") (Some 0)
+        *> assert_eq (string.find "abcd1234" "b") (Some 1)
+        *> assert_eq (string.find "abcd1234" "4") (Some 7)
+        *> assert_eq (string.find "abcd1234" "xyz") None
+        *> assert_eq (string.rfind "abcdabcd" "b") (Some 5)
+        *> assert_eq (string.rfind "abcdabcd" "d") (Some 7)
+        *> assert_eq (string.rfind "abcd1234" "xyz") None
 
 let starts_ends_tests =
-    assert_beq (string.starts_with "abcd1234" "ab") True
-        *> assert_beq (string.starts_with "abcd1234" "b") False
-        *> assert_beq (string.ends_with "abcd1234" "1234") True
-        *> assert_beq (string.ends_with "abcd1234" "4") True
-        *> assert_beq (string.ends_with "abcd1234" "ab") False
+    assert_eq (string.starts_with "abcd1234" "ab") True
+        *> assert_eq (string.starts_with "abcd1234" "b") False
+        *> assert_eq (string.ends_with "abcd1234" "1234") True
+        *> assert_eq (string.ends_with "abcd1234" "4") True
+        *> assert_eq (string.ends_with "abcd1234" "ab") False
 
 let trim_tests =
-    assert_seq (string.trim "ab") "ab" *> assert_seq (string.trim " ab ") "ab"
-        *> assert_seq (string.trim "ab \t") "ab"
-        *> assert_seq (string.trim "\t ab") "ab"
-        *> assert_seq (string.trim_left " ab ") "ab "
-        *> assert_seq (string.trim_right " ab ") " ab"
+    assert_eq (string.trim "ab") "ab" *> assert_eq (string.trim " ab ") "ab"
+        *> assert_eq (string.trim "ab \t") "ab"
+        *> assert_eq (string.trim "\t ab") "ab"
+        *> assert_eq (string.trim_left " ab ") "ab "
+        *> assert_eq (string.trim_right " ab ") " ab"
 
 let from_utf8_tests =
-    assert_req (string.from_utf8 []) (Ok "") *> assert_req (string.from_utf8 [32b]) (Ok " ")
-        *> assert_req (string.from_utf8 [195b, 165b, 195b, 164b, 195b, 182b]) (Ok "åäö")
-        *> assert_req (string.from_utf8 [195b, 165b, 195b, 164b, 195b]) (Err ())
-        *> assert_req (string.from_utf8 [195b, 165b, 195b, 195b, 182b]) (Err ())
+    assert_eq (string.from_utf8 []) (Ok "") *> assert_eq (string.from_utf8 [32b]) (Ok " ")
+        *> assert_eq (string.from_utf8 [195b, 165b, 195b, 164b, 195b, 182b]) (Ok "åäö")
+        *> assert_eq (string.from_utf8 [195b, 165b, 195b, 164b, 195b]) (Err ())
+        *> assert_eq (string.from_utf8 [195b, 165b, 195b, 195b, 182b]) (Err ())
 
 let tests =
-    slice_tests *> append_tests *> find_tests
+    slice_tests 
+        *> append_tests
+        *> find_tests
+        *> starts_ends_tests
+        *> trim_tests
         *> from_utf8_tests
 
 run tests

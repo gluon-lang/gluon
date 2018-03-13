@@ -1,13 +1,13 @@
 let prelude = import! std.prelude
-let { Test, run, writer, assert, assert_ieq, assert_feq, assert_seq, ? } = import! std.test
+let { Test, run, writer, assert, assert_eq, ? } = import! std.test
 let int = import! std.int
 let state @ { State, put, get, modify, runState, evalState, execState, ? } = import! std.state
-let { Applicative, (*>) } = import! std.applicative
+let { Applicative, (*>), ? } = import! std.applicative
 
 let tests =
-    assert_ieq (execState (modify (\x -> x + 2) *> modify (\x -> x * 4)) 0) 8
-        *> assert_ieq (evalState (modify (\x -> x + 2) *> get) 0) 2
-        *> assert_seq (evalState (put "hello" *> get) "") "hello"
-        *> assert_seq (runState (put "hello" *> get) "").value "hello"
+    assert_eq (execState (modify (\x -> x + 2) *> modify (\x -> x * 4)) 0) 8
+        *> assert_eq (evalState (modify (\x -> x + 2) *> get) 0) 2
+        *> assert_eq (evalState (put "hello" *> get) "") "hello"
+        *> assert_eq (runState (put "hello" *> get) "").value "hello"
 
 run tests
