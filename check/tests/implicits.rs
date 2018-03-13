@@ -693,3 +693,22 @@ let get : State s s = any ()
     let result = support::typecheck(text);
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn implicit_list_without_inner_type_determined() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+/// @implicit
+type Test a = | Test a
+
+type List a = | Nil | Cons a (List a)
+
+let int : Test Int = Test 0
+let list ?t : [Test a] -> Test (List a) = Test Nil
+
+let f x : [Test a] -> a -> a = x
+f Nil
+"#;
+    let result = support::typecheck(text);
+    assert_err!(result, TypeError::LoopInImplicitResolution(..));
+}
