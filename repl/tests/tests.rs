@@ -66,110 +66,118 @@ fn issue_365_run_io_from_command_line() {
 }
 
 
+static COMMAND: &str = "../target/debug/gluon -i";
 static TIMEOUT: u64 = 10_000;
-static PROMPT: &str = ">";
+static PROMPT: &str = "> ";
+
+macro_rules! test {
+    ($e: expr) => { $e.unwrap_or_else(|err| panic!("{}", err)) }
+}
 
 #[test]
 fn prompt() {
-    let mut repl = spawn("../target/debug/gluon -i", Some(TIMEOUT)).unwrap();
-    repl.exp_string(PROMPT).unwrap();
+    let mut repl = test!(spawn(COMMAND, Some(TIMEOUT)));
+    test!(repl.exp_string(PROMPT));
 }
 
 #[test]
 fn exit() {
-    let mut repl = spawn("../target/debug/gluon -i", Some(TIMEOUT)).unwrap();
-    repl.exp_string(PROMPT).unwrap();
+    let mut repl = test!(spawn(COMMAND, Some(TIMEOUT)));
+    test!(repl.exp_string(PROMPT));
 
-    repl.send_line(":q").unwrap();
-    repl.exp_eof().unwrap();
+    test!(repl.send_line(":q"));
+    test!(repl.exp_eof());
 }
 
 
 #[test]
+#[ignore] // TODO fix intermittent test failure
 fn hello_world() {
-    let mut repl = spawn("../target/debug/gluon -i", Some(TIMEOUT)).unwrap();
-    repl.exp_string(PROMPT).unwrap();
+    let mut repl = test!(spawn(COMMAND, Some(TIMEOUT)));
+    test!(repl.exp_string(PROMPT));
 
-    repl.send_line("let io = import! std.io").unwrap();
+    test!(repl.send_line("let io = import! std.io"));
 
-    repl.send_line("io.println \"Hello world\"").unwrap();
-    repl.exp_string("Hello world").unwrap();
-}
-
-#[test]
-fn names() {
-    let mut repl = spawn("../target/debug/gluon -i", Some(TIMEOUT)).unwrap();
-    repl.exp_string(PROMPT).unwrap();
-
-    repl.send_line(":i std.prelude.List").unwrap();
-    repl.exp_string("type std.prelude.List a = | Nil | Cons a (std.prelude.List a)").unwrap();
+    test!(repl.send_line("io.println \"Hello world\""));
+    test!(repl.exp_string("Hello world"));
 }
 
 #[test]
 fn expression_types() {
-    let mut repl = spawn("../target/debug/gluon -i", Some(TIMEOUT)).unwrap();
-    repl.exp_string(PROMPT).unwrap();
+    let mut repl = test!(spawn(COMMAND, Some(TIMEOUT)));
+    test!(repl.exp_string(PROMPT));
 
-    repl.send_line(":t 5").unwrap();
-    repl.exp_string("Int").unwrap();
+    test!(repl.send_line(":t 5"));
+    test!(repl.exp_string("Int"));
 
-    repl.send_line(":t 5 + 5").unwrap();
-    repl.exp_string("Int -> Int").unwrap();
+    test!(repl.send_line(":t 5 + 5"));
+    test!(repl.exp_string("Int -> Int"));
 
-    repl.send_line(":t \"gluon\"").unwrap();
-    repl.exp_string("String").unwrap();
+    test!(repl.send_line(":t \"gluon\""));
+    test!(repl.exp_string("String"));
+}
+
+#[test]
+fn names() {
+    let mut repl = test!(spawn(COMMAND, Some(TIMEOUT)));
+    test!(repl.exp_string(PROMPT));
+
+    test!(repl.send_line(":i std.prelude.show"));
+    test!(repl.exp_string("std.prelude.show: forall a . [std.prelude.Show a] -> a -> String"));
 }
 
 #[test]
 fn comments() {
-    let mut repl = spawn("../target/debug/gluon -i", Some(TIMEOUT)).unwrap();
-    repl.exp_string(PROMPT).unwrap();
+    let mut repl = test!(spawn(COMMAND, Some(TIMEOUT)));
+    test!(repl.exp_string(PROMPT));
 
-    repl.send_line("1 + 2 // Calls the + function on 1 and 2").unwrap();
-    repl.exp_string("3").unwrap();
+    test!(repl.send_line("1 + 2 // Calls the + function on 1 and 2"));
+    test!(repl.exp_string("3"));
 
-    repl.send_line("1 + 2 /* Calls the + function on 1 and 2 */").unwrap();
-    repl.exp_string("3").unwrap();
+    test!(repl.send_line("1 + 2 /* Calls the + function on 1 and 2 */"));
+    test!(repl.exp_string("3"));
 }
 
 #[test]
 fn if_expressions() {
-    let mut repl = spawn("../target/debug/gluon -i", Some(TIMEOUT)).unwrap();
-    repl.exp_string(PROMPT).unwrap();
-    
-    repl.send_line("if True then 1 else 0").unwrap();
-    repl.exp_string("1").unwrap();
+    let mut repl = test!(spawn(COMMAND, Some(TIMEOUT)));
+    test!(repl.exp_string(PROMPT));
 
-    repl.send_line("if False then 1 else 0").unwrap();
-    repl.exp_string("0").unwrap();
+    test!(repl.send_line("if True then 1 else 0"));
+    test!(repl.exp_string("1"));
+
+    test!(repl.send_line("if False then 1 else 0"));
+    test!(repl.exp_string("0"));
 }
 
 #[test]
 fn records() {
-    let mut repl = spawn("../target/debug/gluon -i", Some(TIMEOUT)).unwrap();
-    repl.exp_string(PROMPT).unwrap();
+    let mut repl = test!(spawn(COMMAND, Some(TIMEOUT)));
+    test!(repl.exp_string(PROMPT));
 
-    repl.send_line("let record = { pi = 3.14, add1 = (+) 1.0 }").unwrap();
+    test!(repl.send_line("let record = { pi = 3.14, add1 = (+) 1.0 }"));
 
-    repl.send_line("record.pi").unwrap();
-    repl.exp_string("3.14").unwrap();
+    test!(repl.send_line("record.pi"));
+    test!(repl.exp_string("3.14"));
 
-    repl.send_line("let record_2 = {x = 1 .. record }").unwrap();
+    test!(repl.send_line("let record_2 = {x = 1 .. record }"));
 
-    repl.send_line("record_2.x").unwrap();
-    repl.exp_string("1").unwrap();
+    test!(repl.send_line("record_2.x"));
+    test!(repl.exp_string("1"));
 
-    repl.send_line("record_2.pi").unwrap();
-    repl.exp_string("3.14").unwrap();
+    test!(repl.send_line("record_2.pi"));
+    test!(repl.exp_string("3.14"));
 }
 
 #[test]
 fn arrays() {
-    let mut repl = spawn("../target/debug/gluon -i", Some(TIMEOUT)).unwrap();
-    repl.exp_string(PROMPT).unwrap();
-    
-    repl.send_line("let array = import! std.array").unwrap();
-    repl.send_line("array.len [1, 2, 3]").unwrap();
-    repl.exp_string("3").unwrap();
+    let mut repl = test!(spawn(COMMAND, Some(TIMEOUT)));
+    test!(repl.exp_string(PROMPT));
+
+    test!(repl.send_line("let array = import! std.array"));
+
+    test!(repl.send_line("array.len [1, 2, 3]"));
+    test!(repl.exp_string("3"));
 }
+
 
