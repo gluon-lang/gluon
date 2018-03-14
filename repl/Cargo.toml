@@ -37,6 +37,7 @@ serde_derive = "1"
 
 [dev-dependencies]
 pretty_assertions = "0.4"
+rexpect = "0.3.0"
 
 [features]
 default = ["env_logger"]
