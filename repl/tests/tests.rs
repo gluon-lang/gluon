@@ -107,7 +107,7 @@ fn exit() {
 #[ignore] // TODO fix intermittent test failure
 fn hello_world() {
     test!({
-    let mut repl = spawn(COMMAND, Some(TIMEOUT))?;
+        let mut repl = spawn(COMMAND, Some(TIMEOUT))?;
         repl.exp_string(PROMPT)?;
 
         repl.send_line("let io = import! std.io")?;
@@ -220,5 +220,3 @@ fn arrays() {
         Ok(())
     });
 }
-
-
