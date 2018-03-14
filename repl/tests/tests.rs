@@ -73,6 +73,10 @@ static PROMPT: &str = "> ";
 
 macro_rules! test {
     ($b: block) => {
+        if ::std::env::var("GLUON_PATH").is_err() {
+            ::std::env::set_var("GLUON_PATH", "..");
+        }
+
         || -> Result<()> { 
             $b
         }().unwrap_or_else(|err| panic!("{}", err));
@@ -84,7 +88,7 @@ fn prompt() {
     test!({
         let mut repl = spawn(COMMAND, Some(TIMEOUT))?;
         repl.exp_string(PROMPT)?;
-        
+
         Ok(())
     });
 }
@@ -97,14 +101,13 @@ fn exit() {
 
         repl.send_line(":q")?;
         repl.exp_eof()?;
-        
+
         Ok(())
     });
 }
 
 
 #[test]
-#[ignore] // TODO fix intermittent test failure
 fn hello_world() {
     test!({
         let mut repl = spawn(COMMAND, Some(TIMEOUT))?;
@@ -114,7 +117,7 @@ fn hello_world() {
 
         repl.send_line("io.println \"Hello world\"")?;
         repl.exp_string("Hello world")?;
-    
+
         Ok(())
     });
 }
@@ -133,7 +136,7 @@ fn expression_types() {
 
         repl.send_line(":t \"gluon\"")?;
         repl.exp_string("String")?;
-        
+
         Ok(())
     });
 }
@@ -146,7 +149,7 @@ fn names() {
 
         repl.send_line(":i std.prelude.show")?;
         repl.exp_string("std.prelude.show: forall a . [std.prelude.Show a] -> a -> String")?;
-        
+
         Ok(())
     });
 }
@@ -162,7 +165,7 @@ fn comments() {
 
         repl.send_line("1 + 2 /* Calls the + function on 1 and 2 */")?;
         repl.exp_string("3")?;
-    
+
         Ok(())
     });
 }
