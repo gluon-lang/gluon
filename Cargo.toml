@@ -53,6 +53,7 @@ rand = { version = "0.3", optional = true }
 
 [build-dependencies]
 skeptic = { version = "0.13", optional = true }
+walkdir = { version = "2", optional = true }
 
 [dev-dependencies]
 bencher = "0.1.2"
@@ -79,6 +80,7 @@ serialization = ["serde", "serde_state", "serde_derive_state", "gluon_vm/seriali
 docs_rs = ["serialization"]
 
 test = ["serialization", "gluon_vm/test", "gluon_check/test", "gluon_parser/test"]
+test_skeptic = ["skeptic", "walkdir"]
 nightly = ["compiletest_rs"]
 
 [[bench]]

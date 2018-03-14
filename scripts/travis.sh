@@ -3,7 +3,7 @@ set -ex
 
 export RUST_BACKTRACE=1
 
-cargo test --features "test skeptic" --all "$@"
+cargo test --features "test test_skeptic" --all "$@"
 cargo check --benches --features test "$@"
 cargo check --all --no-default-features "$@"
 

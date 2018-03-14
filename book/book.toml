@@ -1,0 +1,6 @@
+[book]
+title = "Gluon Documentation"
+description = "Gluon is a static, type inferred and embeddable language written in Rust"
+authors = ["Markus Westerlind"]
+multilingual = false
+src = "src"
