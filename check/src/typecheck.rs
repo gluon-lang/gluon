@@ -639,11 +639,12 @@ impl<'a> Typecheck<'a> {
                 .unwrap_or_else(|| expected.clone());
             typ = self.subsumes_expr(expr_check_span(expr), 0, &expected, typ, expr);
         }
-        self.generalize_type(0, &mut typ);
-        typ = types::walk_move_type(typ, &mut unroll_typ);
         // Only the 'tail' expression need to be generalized at this point as all bindings
         // will have already been generalized
         self.generalize_variables(0, &mut [].iter_mut(), tail_expr(expr));
+
+        self.generalize_type(0, &mut typ);
+        typ = types::walk_move_type(typ, &mut unroll_typ);
 
         if self.errors.has_errors() {
             let mut errors = mem::replace(&mut self.errors, Errors::new());
