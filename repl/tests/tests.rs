@@ -66,7 +66,6 @@ fn issue_365_run_io_from_command_line() {
     assert_eq!(String::from_utf8_lossy(&output.stdout), "123\n");
 }
 
-
 static COMMAND: &str = "../target/debug/gluon -i";
 static TIMEOUT: u64 = 10_000;
 static PROMPT: &str = "> ";
@@ -77,7 +76,7 @@ macro_rules! test {
             ::std::env::set_var("GLUON_PATH", "..");
         }
 
-        || -> Result<()> { 
+        || -> Result<()> {
             $b
             Ok(())
         }().unwrap_or_else(|err| panic!("{}", err));
@@ -103,7 +102,6 @@ fn exit() {
     });
 }
 
-
 #[test]
 fn hello_world() {
     test!({
@@ -111,6 +109,8 @@ fn hello_world() {
         repl.exp_string(PROMPT)?;
 
         repl.send_line("let io = import! std.io")?;
+
+        repl.exp_regex("\\{[^}]+\\}")?;
 
         repl.send_line("io.println \"Hello world\"")?;
         repl.exp_string("Hello world")?;
