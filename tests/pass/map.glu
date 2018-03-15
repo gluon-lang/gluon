@@ -6,7 +6,7 @@ let { (<>) } = import! std.prelude
 let { Test, run, assert, assert_eq, ? }  = import! std.test
 let map @ { ? } = import! std.map
 let { Applicative, (*>) } = import! std.applicative
-let list @ { List } = import! std.list
+let list @ { List, ? } = import! std.list
 
 let show_Entry : Show { key : String, value : Int } = {
     show = \e -> e.key <> int.show.show e.value
@@ -16,11 +16,6 @@ let eq_Entry : Eq { key : String, value : Int } = {
     (==) = \l r -> l.key == r.key && l.value == r.value
 }
 
-let assert_entries = assert_eq ?(list.show ?show_Entry) ?(list.eq ?eq_Entry)
-let assert_keys = assert_eq ?(list.show ?string.show) ?(list.eq ?string.eq)
-let assert_values = assert_eq ?(list.show ?int.show) ?(list.eq ?int.eq)
-let assert_opt = assert_eq ?(option.show ?int.show) ?(option.eq ?int.eq)
-
 let ord_map = map.make string.ord
 let { singleton, find, insert, to_list, keys, values, ? } = ord_map
 let { empty } = ord_map.monoid
@@ -28,24 +23,24 @@ let { empty } = ord_map.monoid
 let basic_tests =
     let test_map = singleton "test" 1 <> singleton "asd" 2 <> singleton "a" 3
 
-    assert_opt (find "test" test_map) (Some 1)
-        *> assert_opt (find "asd" test_map) (Some 2)
-        *> assert_opt (find "b" test_map) None
-        *> assert_opt (find "test" (insert "test" 10 test_map)) (Some 10)
-        *> assert_opt (find "test" test_map) (Some 1)
-        *> assert_entries (to_list test_map) (list.of [{ key = "a", value = 3 },
+    assert_eq (find "test" test_map) (Some 1)
+        *> assert_eq (find "asd" test_map) (Some 2)
+        *> assert_eq (find "b" test_map) None
+        *> assert_eq (find "test" (insert "test" 10 test_map)) (Some 10)
+        *> assert_eq (find "test" test_map) (Some 1)
+        *> assert_eq (to_list test_map) (list.of [{ key = "a", value = 3 },
                                                        { key = "asd", value = 2 },
                                                        { key = "test", value = 1 }])
-        *> assert_keys (keys test_map) (list.of ["a", "asd", "test"])
-        *> assert_values (values test_map) (list.of [3, 2, 1])
-        *> assert_entries (to_list (test_map <> empty)) (to_list test_map)
-        *> assert_entries (to_list (empty <> test_map)) (to_list test_map)
+        *> assert_eq (keys test_map) (list.of ["a", "asd", "test"])
+        *> assert_eq (values test_map) (list.of [3, 2, 1])
+        *> assert_eq (to_list (test_map <> empty)) (to_list test_map)
+        *> assert_eq (to_list (empty <> test_map)) (to_list test_map)
 
 let append_tests =
     let test_map1 = singleton "a" 1 <> singleton "b" 2 <> singleton "c" 3
     let test_map2 = singleton "+" 1 <> (singleton "-" 2 <> singleton "*" 3)
-    assert_opt (find "b" test_map1) (Some 2)
-        *> assert_opt (find "*" test_map2) (Some 3)
+    assert_eq (find "b" test_map1) (Some 2)
+        *> assert_eq (find "*" test_map2) (Some 3)
 
 let tests: Test () =
     basic_tests *> append_tests
