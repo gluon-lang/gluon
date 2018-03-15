@@ -1,20 +1,12 @@
 let prelude = import! std.prelude
-let char = import! std.char
-let string = import! std.string
-let result @ { Result } = import! std.result
-let { Test, run, writer, assert, assert_eq } = import! std.test
-let { Writer } = import! std.writer
-
+let result @ { Result, ? } = import! std.result
+let { Test, run, writer, assert_eq } = import! std.test
+let { ? } = import! std.char
 let { Parser, applicative, functor, alternative, monad, any, parse } = import! std.parser
-let { Applicative, (*>), wrap } = import! std.applicative
+let { Applicative, (*>), ? } = import! std.applicative
 let { (<|>) } = import! std.prelude
 
-let assert_parse show eq : Show a -> Eq a -> Result String a -> Result String a -> _ =
-    assert_eq
-        result.show
-        result.eq
-
-let tests =
-    assert_parse char.show char.eq (parse any "abc") (Ok 'a')
+let tests : Test () =
+    assert_eq (parse any "abc") (Ok 'a')
 
 run tests

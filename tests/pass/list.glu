@@ -1,14 +1,12 @@
-let prelude  = import! std.prelude
-let { Test, run, writer, assert, assert_eq, ? }  = import! std.test
-let { Applicative, (*>) } = import! std.applicative
-let int @ { ? } = import! std.int
-let list @ { List } = import! std.list
+let { Test, run, assert_eq, ? }  = import! std.test
+let { Applicative, (*>), ? } = import! std.applicative
+let list @ { List, ? } = import! std.list
 
-let assert_list show eq : Show a -> Eq a -> List a -> List a -> _ = assert_eq list.show list.eq
-let assert_int_list = assert_list int.show int.eq
+let empty_list : List Int =
+    Nil
 
-let test_list =
-    assert_int_list (list.of []) Nil *>
-        assert_int_list (list.of [1, 2, 3]) (Cons 1 (Cons 2 (Cons 3 Nil)))
+let test_list : Test () =
+    assert_eq (list.of []) empty_list *>
+        assert_eq (list.of [1, 2, 3]) (Cons 1 (Cons 2 (Cons 3 Nil)))
 
 run test_list

@@ -1,14 +1,14 @@
 let prelude = import! std.prelude
 let list @ { ? } = import! std.list
 let { Writer, ? }  = import! std.writer
-let test @ { Test, run, writer, assert, assert_ieq, assert_feq, ? }  = import! std.test
-let { Applicative, (*>) } = import! std.applicative
+let { Test, run, assert, assert_eq, ? }  = import! std.test
+let { Applicative, (*>), ? } = import! std.applicative
 let { count } = import! std.prelude
 
 let tests =
-    assert_ieq 1 1
-        *> assert_ieq 1 2
-        *> assert_ieq 1 1
-        *> assert_feq 1.0 10.0
+    assert_eq 1 1
+        *> assert_eq 1 2
+        *> assert_eq 1 1
+        *> assert_eq 1.0 10.0
 
 assert (count tests.writer == 2)

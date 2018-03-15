@@ -3,7 +3,7 @@ let int = import! std.int
 let option @ { Option } = import! std.option
 let string = import! std.string
 let { (<>) } = import! std.prelude
-let { Test, run, writer, assert, assert_eq, ? }  = import! std.test
+let { Test, run, assert, assert_eq, ? }  = import! std.test
 let map @ { ? } = import! std.map
 let { Applicative, (*>) } = import! std.applicative
 let list @ { List } = import! std.list
@@ -16,10 +16,10 @@ let eq_Entry : Eq { key : String, value : Int } = {
     (==) = \l r -> l.key == r.key && l.value == r.value
 }
 
-let assert_entries = assert_eq (list.show ?show_Entry) (list.eq ?eq_Entry)
-let assert_keys = assert_eq (list.show ?string.show) (list.eq ?string.eq)
-let assert_values = assert_eq (list.show ?int.show) (list.eq ?int.eq)
-let assert_opt = assert_eq (option.show ?int.show) (option.eq ?int.eq)
+let assert_entries = assert_eq ?(list.show ?show_Entry) ?(list.eq ?eq_Entry)
+let assert_keys = assert_eq ?(list.show ?string.show) ?(list.eq ?string.eq)
+let assert_values = assert_eq ?(list.show ?int.show) ?(list.eq ?int.eq)
+let assert_opt = assert_eq ?(option.show ?int.show) ?(option.eq ?int.eq)
 
 let ord_map = map.make string.ord
 let { singleton, find, insert, to_list, keys, values, ? } = ord_map
@@ -47,4 +47,7 @@ let append_tests =
     assert_opt (find "b" test_map1) (Some 2)
         *> assert_opt (find "*" test_map2) (Some 3)
 
-run (basic_tests *> append_tests)
+let tests: Test () =
+    basic_tests *> append_tests
+
+run tests

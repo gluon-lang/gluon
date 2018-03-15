@@ -1,9 +1,6 @@
 let prelude = import! std.prelude
-let { run, writer, assert_eq, ? } = import! std.test
-let int = import! std.int
-let { (*>) } = import! std.applicative
-
-let assert_ieq = assert_eq int.show int.eq
+let { run, Test, assert_eq, ? } = import! std.test
+let { (*>), ? } = import! std.applicative
 
 let ints input =
     match input with
@@ -52,39 +49,39 @@ let test_m input =
     | _ -> 23
 
 let match_ns =
-    assert_ieq (ns (A 1)) 7
-        *> assert_ieq (ns (A 2)) 8
-        *> assert_ieq (ns B) 9
-        *> assert_ieq (ns (A 3)) 10
+    assert_eq (ns (A 1)) 7
+        *> assert_eq (ns (A 2)) 8
+        *> assert_eq (ns B) 9
+        *> assert_eq (ns (A 3)) 10
 
 let match_ints =
-    assert_ieq (ints 0) 1
-        *> assert_ieq (ints 1) 2
-        *> assert_ieq (ints 2) 3
-        *> assert_ieq (ints 3) 3
+    assert_eq (ints 0) 1
+        *> assert_eq (ints 1) 2
+        *> assert_eq (ints 2) 3
+        *> assert_eq (ints 3) 3
 
 let match_strings =
-    assert_ieq (strings "A") 4
-        *> assert_ieq (strings "B") 5
-        *> assert_ieq (strings "") 6
+    assert_eq (strings "A") 4
+        *> assert_eq (strings "B") 5
+        *> assert_eq (strings "") 6
 
 let match_r1 =
-    assert_ieq (r1 { x = 2 }) 11
-        *> assert_ieq (r1 { x = 3 }) 12
-        *> assert_ieq (r1 { x = 4 }) 13
+    assert_eq (r1 { x = 2 }) 11
+        *> assert_eq (r1 { x = 3 }) 12
+        *> assert_eq (r1 { x = 4 }) 13
 
 let match_r2 =
-    assert_ieq (r2 { x = 2, y = 3 }) 14
-        *> assert_ieq (r2 { x = 3, y = 4 }) 15
-        *> assert_ieq (r2 { x = 4, y = 4 }) 16
+    assert_eq (r2 { x = 2, y = 3 }) 14
+        *> assert_eq (r2 { x = 3, y = 4 }) 15
+        *> assert_eq (r2 { x = 4, y = 4 }) 16
 
 let match_test_m =
-    assert_ieq (test_m (TestM 1 "hello")) 20
-        *> assert_ieq (test_m (TestM 2 "world")) 21
-        *> assert_ieq (test_m (TestM 2 "hello")) 22
-        *> assert_ieq (test_m (TestM 3 "")) 23
+    assert_eq (test_m (TestM 1 "hello")) 20
+        *> assert_eq (test_m (TestM 2 "world")) 21
+        *> assert_eq (test_m (TestM 2 "hello")) 22
+        *> assert_eq (test_m (TestM 3 "")) 23
 
-let tests =
+let tests : Test () =
     match_ints *> match_strings *> match_ns *> match_r1 *> match_r2 *> match_test_m
 
 run tests
