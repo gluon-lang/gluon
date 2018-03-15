@@ -37,6 +37,8 @@ serde_derive = "1"
 
 [dev-dependencies]
 pretty_assertions = "0.4"
+
+[target.'cfg(unix)'.dev-dependencies]
 rexpect = "0.3.0"
 
 [features]
