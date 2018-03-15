@@ -27,6 +27,8 @@ build: false
 # Equivalent to Travis' `script` phase
 # TODO modify this phase as you see fit
 test_script:
+  - cargo test --features test --all
+  - cargo check --all --no-default-features
   - cargo build --release -p gluon_repl
 
 before_deploy:
