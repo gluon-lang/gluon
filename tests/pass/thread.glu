@@ -1,20 +1,18 @@
-let { run, writer, old_assert_eq, ? }  = import! std.test
+let { run, Test, assert_eq, ? }  = import! std.test
 let prelude  = import! std.prelude
 let { Bool } = import! std.bool
 let int = import! std.int
-let result @ { Result } = import! std.result
+let result @ { Result, ? } = import! std.result
 let string = import! std.string
-let unit = import! std.unit
+let unit @ { ? } = import! std.unit
 let { Applicative, (*>) } = import! std.applicative
 let { flat_map } = import! std.prelude
 let { send, recv, channel } = import! std.channel
 let { spawn, yield, resume } = import! std.thread
 
-let assert =
-    old_assert_eq (result.show ?unit.show ?int.show) (result.eq ?unit.eq ?int.eq)
 let assert_any_err =
-    old_assert_eq (result.show ?string.show ?unit.show)
-              (result.eq ?{ (==) = \x y -> True } ?unit.eq)
+    assert_eq ?(result.show ?string.show ?unit.show)
+              ?(result.eq ?{ (==) = \x y -> True } ?unit.eq)
 
 let { sender, receiver } = channel 0
 
@@ -26,13 +24,13 @@ let thread = spawn (\_ ->
     )
 resume thread
 
-let tests =
-    assert (recv receiver) (Ok 0) *> (
-            do _ = assert (recv receiver) (Err ())
+let tests : Test () =
+    assert_eq (recv receiver) (Ok 0) *> (
+            do _ = assert_eq (recv receiver) (Err ())
             resume thread
-            assert (recv receiver) (Ok 1)
+            assert_eq (recv receiver) (Ok 1)
         ) *> (
-            do _ = assert (recv receiver) (Err ())
+            do _ = assert_eq (recv receiver) (Err ())
             assert_any_err (resume thread) (Err "Any error message here")
         )
 

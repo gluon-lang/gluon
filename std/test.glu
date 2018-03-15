@@ -14,11 +14,6 @@ let testWriter = writer.make list.monoid
 
 let assert x = if x then () else error "Assertion failed"
 
-let old_assert_eq show eq = \x y ->
-    if eq.(==) x y
-    then testWriter.applicative.wrap ()
-    else writer.tell (Cons ("Assertion failed: " ++ show.show x ++ " != " ++ show.show y) Nil)
-
 let assert_eq l r : [Show a] -> [Eq a] -> a -> a -> Test () =
     if l == r
     then testWriter.applicative.wrap ()
@@ -37,6 +32,5 @@ let run test : Test a -> () =
     monad = testWriter.monad,
     assert,
     assert_eq,
-    old_assert_eq,
     run,
 }
