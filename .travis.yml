@@ -68,8 +68,11 @@ notifications:
     on_start: never
 
 before_deploy:
-- export GIT_HASH=$(git rev-parse HEAD)
-- sh scripts/before_deploy.sh
+- >
+    if [[ ! -z $DEPLOY ]]; then
+        export GIT_HASH=$(git rev-parse HEAD)
+        sh scripts/before_deploy.sh
+    fi
 deploy:
   - provider: pages
     skip-cleanup: true
