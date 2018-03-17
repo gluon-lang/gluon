@@ -805,3 +805,11 @@ match Test { x = 1 } with
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn expected_type_do_not_override_actual_type_for_returned_type() {
+    let text = "1";
+    let (_, result) = support::typecheck_expr_expected(text, Some(&Type::hole()));
+
+    assert_req!(result, Ok(typ("Int")));
+}
