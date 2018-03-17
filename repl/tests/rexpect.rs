@@ -66,7 +66,6 @@ impl REPL {
 fn prompt() {
     test!({
         let mut repl = REPL::new()?;
-        repl.test(repl.prompt, None)?;
     });
 }
 
