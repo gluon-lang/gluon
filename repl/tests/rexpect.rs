@@ -27,9 +27,9 @@ impl REPL {
         let command = "../target/debug/gluon -i";
         let timeout: u64 = 10_000;
 
-        let prompt: &'static str = "> ";
-
         let mut session = spawn(command, Some(timeout))?;
+
+        let prompt: &'static str = "> ";
         session.exp_string(prompt)?;
 
         Ok(REPL { session, prompt })
