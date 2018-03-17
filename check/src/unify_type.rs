@@ -1056,7 +1056,7 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for UnifierState<'a, Subsume<'e>> {
         // `l` and `r` must have the same type, if one is a variable that variable is
         // unified with whatever the other type is
         match (&**l, &**r) {
-            (&Type::Hole, _) => Ok(None),
+            (&Type::Hole, _) => Ok(Some(r.clone())),
             (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => Ok(None),
             (&Type::Skolem(ref skolem), &Type::Variable(ref r_var))
                 if subs.get_level(skolem.id) > r_var.id =>

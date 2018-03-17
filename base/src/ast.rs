@@ -819,15 +819,7 @@ impl Typed for Expr<Symbol> {
             | Expr::Tuple { ref typ, .. } => Ok(typ.clone()),
             Expr::Literal(ref lit) => lit.try_type_of(env),
             Expr::IfElse(_, ref arm, _) => arm.try_type_of(env),
-            Expr::Infix { ref op, .. } => op.value
-                .typ
-                .as_function()
-                .and_then(|(_, ret)| ret.as_function())
-                .map(|(_, ret)| ret.clone())
-                .ok_or_else(|| {
-                    debug!("`{}` is not a binary function type", op.value.typ);
-                    "Expected function type in binop".to_string()
-                }),
+            Expr::Infix { ref op, .. } => get_return_type(env, &op.value.typ, 2),
             Expr::LetBindings(_, ref expr)
             | Expr::TypeBindings(_, ref expr)
             | Expr::Do(Do { body: ref expr, .. }) => expr.try_type_of(env),
@@ -878,7 +870,7 @@ fn get_return_type(
         return Ok(alias_type.clone());
     }
 
-    let alias_type = alias_type.remove_forall();
+    let alias_type = alias_type.remove_forall_and_implicit_args();
     if let Some((_, ret)) = alias_type.as_function() {
         return get_return_type(env, ret, arg_count - 1);
     }

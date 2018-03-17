@@ -7,9 +7,12 @@ use std::ops::Deref;
 
 use pretty::{Arena, DocAllocator};
 
-use base::kind::Kind;
+use base::ast::{Expr, Literal, SpannedExpr, Typed, TypedIdent};
+use base::kind::{ArcKind, Kind, KindEnv};
 use base::types::*;
+use base::symbol::{Symbol, SymbolRef};
 use base::source::Source;
+use base::pos::{self, BytePos, Span, Spanned};
 
 fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
 where
@@ -340,4 +343,66 @@ fn break_record() {
 }
 "#
     );
+}
+
+pub struct MockEnv;
+
+impl KindEnv for MockEnv {
+    fn find_kind(&self, _id: &SymbolRef) -> Option<ArcKind> {
+        None
+    }
+}
+
+impl TypeEnv for MockEnv {
+    fn find_type(&self, _id: &SymbolRef) -> Option<&ArcType> {
+        None
+    }
+
+    fn find_type_info(&self, _id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
+        None
+    }
+
+    fn find_record(
+        &self,
+        _fields: &[Symbol],
+        _selector: RecordSelector,
+    ) -> Option<(ArcType, ArcType)> {
+        None
+    }
+}
+
+pub type SpExpr = SpannedExpr<Symbol>;
+
+pub fn intern(s: &str) -> Symbol {
+    Symbol::from(s)
+}
+
+pub fn no_loc<T>(value: T) -> Spanned<T, BytePos> {
+    pos::spanned(Span::default(), value)
+}
+
+pub fn int(i: i64) -> SpExpr {
+    no_loc(Expr::Literal(Literal::Int(i)))
+}
+
+pub fn binop(l: SpExpr, s: &str, r: SpExpr) -> SpExpr {
+    no_loc(Expr::Infix {
+        lhs: Box::new(l),
+        op: no_loc(TypedIdent::new(intern(s))),
+        rhs: Box::new(r),
+        implicit_args: Vec::new(),
+    })
+}
+
+#[test]
+fn take_implicits_into_account_on_infix_type() {
+    let mut expr = binop(int(1), "+", int(2));
+    if let Expr::Infix { ref mut op, .. } = expr.value {
+        op.value.typ = Type::function_implicit(
+            vec![Type::int()],
+            Type::function(vec![Type::int(), Type::int()], Type::int()),
+        );
+    }
+
+    assert_eq!(expr.env_type_of(&MockEnv), Type::int());
 }

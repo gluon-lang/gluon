@@ -92,7 +92,7 @@ fn expression_types() {
     let mut repl = REPL::new();
 
     repl.test(":t 5", Some("Int"));
-    // repl.test(":t 5 + 5", Some("Int -> Int"));
+    repl.test(":t 5 + 5", Some("Int"));
     repl.test(":t \"gluon\"", Some("String"));
 }
 

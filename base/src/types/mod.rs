@@ -765,6 +765,16 @@ where
         })
     }
 
+    pub fn function_implicit<I>(args: I, ret: T) -> T
+    where
+        I: IntoIterator<Item = T>,
+        I::IntoIter: DoubleEndedIterator<Item = T>,
+    {
+        args.into_iter().rev().fold(ret, |body, arg| {
+            T::from(Type::Function(ArgType::Implicit, arg, body))
+        })
+    }
+
     pub fn generic(typ: Generic<Id>) -> T {
         T::from(Type::Generic(typ))
     }
@@ -1092,6 +1102,14 @@ impl<Id> ArcType<Id> {
 
     pub fn remove_forall(&self) -> &ArcType<Id> {
         remove_forall(self)
+    }
+
+    pub fn remove_forall_and_implicit_args(&self) -> &ArcType<Id> {
+        match **self {
+            Type::Function(ArgType::Implicit, _, ref typ) => typ.remove_forall_and_implicit_args(),
+            Type::Forall(_, ref typ, _) => typ.remove_forall_and_implicit_args(),
+            _ => self,
+        }
     }
 
     pub fn skolemize(&self, named_variables: &mut FnvMap<Id, ArcType<Id>>) -> ArcType<Id>
