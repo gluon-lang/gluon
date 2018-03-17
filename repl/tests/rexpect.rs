@@ -70,7 +70,7 @@ fn prompt() {
 }
 
 #[test]
-fn exit() {
+fn quit() {
     test!({
         let mut repl = REPL::new()?;
         repl.quit()?;
