@@ -68,8 +68,9 @@ notifications:
     on_start: never
 
 before_deploy:
-- >
-    if [[ ! -z $DEPLOY ]]; then
+- > # Only run deployment on git tags
+    CURRENT_TAG=`git describe --exact-match --abbrev=0 --tags`
+    if [[ $CURRENT_TAG != "" ]]; then
         export GIT_HASH=$(git rev-parse HEAD)
         sh scripts/before_deploy.sh
     fi
