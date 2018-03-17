@@ -2,8 +2,9 @@
 
 extern crate rexpect;
 
-use rexpect::spawn;
-use rexpect::session::PtySession;
+use std::process::Command;
+
+use rexpect::session::{spawn_command, PtySession};
 use rexpect::errors::*;
 
 struct REPL {
@@ -20,14 +21,11 @@ impl REPL {
     /// Defines the command, timeout, and prompt settings.
     /// Wraps a rexpect::session::PtySession. expecting the prompt after launch.
     fn new_() -> Result<REPL> {
-        if ::std::env::var("GLUON_PATH").is_err() {
-            ::std::env::set_var("GLUON_PATH", "..");
-        }
+        let timeout: u64 = 30_000;
 
-        let command = "../target/debug/gluon -i";
-        let timeout: u64 = 10_000;
-
-        let mut session = spawn(command, Some(timeout))?;
+        let mut command = Command::new("../target/debug/gluon");
+        command.arg("-i").env("GLUON_PATH", "..");
+        let mut session = spawn_command(command, Some(timeout))?;
 
         let prompt: &'static str = "> ";
         session.exp_string(prompt)?;
