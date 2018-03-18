@@ -165,10 +165,21 @@ impl ExternModule {
     where
         T: VmType + api::Pushable<'vm> + Send + Sync,
     {
+        ExternModule::with_metadata(thread, value, Metadata::default())
+    }
+
+    pub fn with_metadata<'vm, T>(
+        thread: &'vm Thread,
+        value: T,
+        metadata: Metadata,
+    ) -> Result<ExternModule>
+    where
+        T: VmType + api::Pushable<'vm> + Send + Sync,
+    {
         Ok(ExternModule {
             value: value.marshal(thread)?,
             typ: T::make_forall_type(thread),
-            metadata: Metadata::default(),
+            metadata,
         })
     }
 }
