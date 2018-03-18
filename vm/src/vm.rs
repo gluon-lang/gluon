@@ -513,6 +513,17 @@ impl GlobalVmState {
         Ok(())
     }
 
+    // Currently necessary for the language server
+    #[doc(hidden)]
+    pub fn set_dummy_global(&self, id: &str, typ: ArcType, metadata: Metadata) -> Result<()> {
+        self.set_global(
+            Symbol::from(format!("@{}", id)),
+            typ,
+            metadata,
+            Value::int(0),
+        )
+    }
+
     pub fn get_generic(&self, name: &str) -> ArcType {
         let mut generics = self.generics.write().unwrap();
         if let Some(g) = generics.get(name) {
