@@ -52,7 +52,7 @@ script:
     elif [[ -z ${WASM+set} ]]; then
         # Skeptic may fail to build the tests if there are old artifacts around
         cargo clean
-        ./scripts/travis.sh
+        travis_wait 30 ./scripts/travis.sh
     else
         rustup target add wasm32-unknown-unknown
         cargo check --target wasm32-unknown-unknown -p gluon_c-api
@@ -69,7 +69,7 @@ notifications:
 
 before_deploy:
 # Only run deployment on git tags
-- CURRENT_TAG=`git describe --exact-match --abbrev=0 --tags`
+- CURRENT_TAG=`git describe --exact-match --abbrev=0 --tags || true`
 - >
     if [[ $CURRENT_TAG != "" ]]; then
         export GIT_HASH=$(git rev-parse HEAD)
