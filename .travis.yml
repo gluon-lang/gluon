@@ -69,7 +69,7 @@ notifications:
 
 before_deploy:
 # Only run deployment on git tags
-- CURRENT_TAG=`git describe --exact-match --abbrev=0 --tags`
+- CURRENT_TAG=`git describe --exact-match --abbrev=0 --tags || true`
 - >
     if [[ $CURRENT_TAG != "" ]]; then
         export GIT_HASH=$(git rev-parse HEAD)
