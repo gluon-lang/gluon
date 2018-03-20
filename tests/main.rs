@@ -7,22 +7,24 @@ extern crate serde_derive;
 extern crate collect_mac;
 
 extern crate futures;
+extern crate futures_cpupool;
 extern crate gluon;
 extern crate tensile;
+extern crate tokio_core;
 
 use gluon::base::types::{ArcType, Type};
-use gluon::vm::api::{Getable, Hole, OpaqueValue, OwnedFunction, VmType, IO};
+use gluon::vm::api::{Hole, OpaqueValue, OwnedFunction, VmType};
 use gluon::vm::api::de::De;
 use gluon::vm::thread::ThreadInternal;
 use gluon::{new_vm, Compiler, RootedThread, Thread};
-
-use futures::{future, Future};
 
 use std::io::Read;
 use std::fmt;
 use std::fs::{read_dir, File};
 use std::path::{Path, PathBuf};
 use std::error::Error;
+
+use futures::{stream, Future, Stream};
 
 #[derive(Debug)]
 pub struct StringError(String);
@@ -125,10 +127,10 @@ fn make_test<'t>(vm: &'t Thread, name: &str, filename: &Path) -> Result<TestCase
     let mut text = String::new();
     file.read_to_string(&mut text)
         .map_err(|err| err.to_string())?;
-    match compiler.run_expr_async(&vm, &name, &text).sync_or_error() {
-        Ok((De(test), _)) => Ok(test),
-        Err(err) => Err(err.to_string()),
-    }
+    let (De(test), _) = compiler
+        .run_expr(&vm, &name, &text)
+        .map_err(|err| err.to_string())?;
+    Ok(test)
 }
 
 fn run_file<'t>(
@@ -164,16 +166,23 @@ fn main_() -> Result<(), Box<Error>> {
 
     let iter = test_files("tests/pass")?.into_iter();
 
-    let pass_tests = iter.map(|filename| {
+    let pool = futures_cpupool::CpuPool::new_num_cpus();
+    let mut core = tokio_core::reactor::Core::new()?;
+    let pass_tests_future = stream::futures_ordered(iter.map(|filename| {
         let name = filename.to_str().unwrap_or("<unknown>").to_owned();
 
         let vm = vm.new_thread().unwrap();
 
-        match make_test(&vm, &name, &filename) {
-            Ok(test) => test.into_tensile_test(),
-            Err(err) => tensile::test(name, || Err(err)),
-        }
-    }).collect();
+        let name2 = name.clone();
+        pool.spawn_fn(move || make_test(&vm, &name, &filename))
+            .then(|result| -> Result<_, String> {
+                Ok(match result {
+                    Ok(test) => test.into_tensile_test(),
+                    Err(err) => tensile::test(name2, || Err(err)),
+                })
+            })
+    })).collect();
+    let pass_tests = core.run(pass_tests_future)?;
 
     let iter = test_files("tests/fail")?.into_iter();
 
@@ -184,9 +193,10 @@ fn main_() -> Result<(), Box<Error>> {
 
         tensile::test(name.clone(), move || -> Result<(), String> {
             match run_file(&vm, &name, &filename) {
-                Ok(x) => Err(format!(
-                    "Expected test '{}' to fail",
+                Ok(err) => Err(format!(
+                    "Expected test '{}' to fail\n{:?}",
                     filename.to_str().unwrap(),
+                    err.0,
                 )),
                 Err(_) => Ok(()),
             }

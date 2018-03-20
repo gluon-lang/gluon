@@ -416,6 +416,7 @@ dependencies = [
  "either 1.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.5.6 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.18 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures-cpupool 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "gluon_base 0.7.1",
  "gluon_check 0.7.1",
  "gluon_completion 0.7.1",
