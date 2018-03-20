@@ -1,9 +1,9 @@
 #![allow(unused)]
 
-use base::ast::{walk_mut_ast_type, walk_mut_expr, walk_mut_pattern, Alternative, Argument, Array,
-                AstType, DisplayEnv, Expr, ExprField, IdentEnv, Lambda, Literal, MutVisitor,
-                Pattern, SpannedAlias, SpannedAstType, SpannedExpr, SpannedIdent, SpannedPattern,
-                TypeBinding, TypedIdent, ValueBinding};
+use base::ast::{walk_mut_alias, walk_mut_ast_type, walk_mut_expr, walk_mut_pattern, Alternative,
+                Argument, Array, AstType, DisplayEnv, Expr, ExprField, IdentEnv, Lambda, Literal,
+                MutVisitor, Pattern, SpannedAlias, SpannedAstType, SpannedExpr, SpannedIdent,
+                SpannedPattern, TypeBinding, TypedIdent, ValueBinding};
 use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::kind::Kind;
@@ -39,7 +39,7 @@ where
 /// MutVisitor that clears spans.
 pub struct NoSpan;
 
-impl MutVisitor for NoSpan {
+impl<'a> MutVisitor<'a> for NoSpan {
     type Ident = String;
 
     fn visit_expr(&mut self, e: &mut SpannedExpr<Self::Ident>) {
@@ -59,10 +59,11 @@ impl MutVisitor for NoSpan {
 
     fn visit_alias(&mut self, alias: &mut SpannedAlias<Self::Ident>) {
         alias.span = Span::default();
+        walk_mut_alias(self, alias);
     }
 
     fn visit_spanned_ident(&mut self, s: &mut Spanned<Self::Ident, BytePos>) {
-        s.span = Span::default()
+        s.span = Span::default();
     }
 
     fn visit_ast_type(&mut self, s: &mut SpannedAstType<Self::Ident>) {

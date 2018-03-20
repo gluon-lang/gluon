@@ -388,34 +388,43 @@ impl<Id> ValueBinding<Id> {
 /// Visitor trait which walks over expressions calling `visit_*` on all encountered elements. By
 /// default the `visit_*` functions just walk the tree. If they are overridden the user will need to
 /// call `walk_mut_*` to continue traversing the tree.
-pub trait MutVisitor {
-    type Ident;
+pub trait MutVisitor<'a> {
+    type Ident: 'a;
 
-    fn visit_expr(&mut self, e: &mut SpannedExpr<Self::Ident>) {
+    fn visit_expr(&mut self, e: &'a mut SpannedExpr<Self::Ident>) {
         walk_mut_expr(self, e);
     }
 
-    fn visit_pattern(&mut self, e: &mut SpannedPattern<Self::Ident>) {
+    fn visit_pattern(&mut self, e: &'a mut SpannedPattern<Self::Ident>) {
         walk_mut_pattern(self, &mut e.value);
     }
 
-    fn visit_spanned_typed_ident(&mut self, id: &mut SpannedIdent<Self::Ident>) {
+    fn visit_spanned_typed_ident(&mut self, id: &'a mut SpannedIdent<Self::Ident>) {
         self.visit_ident(&mut id.value)
     }
 
-    fn visit_ident(&mut self, id: &mut TypedIdent<Self::Ident>) {
+    fn visit_ident(&mut self, id: &'a mut TypedIdent<Self::Ident>) {
         self.visit_typ(&mut id.typ)
     }
 
-    fn visit_alias(&mut self, _: &mut SpannedAlias<Self::Ident>) {}
-    fn visit_spanned_ident(&mut self, _: &mut Spanned<Self::Ident, BytePos>) {}
-    fn visit_typ(&mut self, _: &mut ArcType<Self::Ident>) {}
-    fn visit_ast_type(&mut self, s: &mut SpannedAstType<Self::Ident>) {
+    fn visit_alias(&mut self, alias: &'a mut SpannedAlias<Self::Ident>) {
+        walk_mut_alias(self, alias)
+    }
+    fn visit_spanned_ident(&mut self, _: &'a mut Spanned<Self::Ident, BytePos>) {}
+    fn visit_typ(&mut self, _: &'a mut ArcType<Self::Ident>) {}
+    fn visit_ast_type(&mut self, s: &'a mut SpannedAstType<Self::Ident>) {
         walk_mut_ast_type(self, s);
     }
 }
 
-pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::Ident>) {
+pub fn walk_mut_alias<'a, V: ?Sized + MutVisitor<'a>>(
+    v: &mut V,
+    alias: &'a mut SpannedAlias<V::Ident>,
+) {
+    v.visit_ast_type(&mut alias.value.unresolved_type_mut()._typ.1);
+}
+
+pub fn walk_mut_expr<'a, V: ?Sized + MutVisitor<'a>>(v: &mut V, e: &'a mut SpannedExpr<V::Ident>) {
     match e.value {
         Expr::IfElse(ref mut pred, ref mut if_true, ref mut if_false) => {
             v.visit_expr(pred);
@@ -538,7 +547,6 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
             for binding in bindings.iter_mut() {
                 v.visit_spanned_ident(&mut binding.name);
                 v.visit_alias(&mut binding.alias);
-                v.visit_ast_type(&mut binding.alias.value.unresolved_type_mut()._typ.1);
             }
             v.visit_expr(expr)
         }
@@ -548,7 +556,7 @@ pub fn walk_mut_expr<V: ?Sized + MutVisitor>(v: &mut V, e: &mut SpannedExpr<V::I
 }
 
 /// Walks a pattern, calling `visit_*` on all relevant elements
-pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::Ident>) {
+pub fn walk_mut_pattern<'a, V: ?Sized + MutVisitor<'a>>(v: &mut V, p: &'a mut Pattern<V::Ident>) {
     match *p {
         Pattern::As(_, ref mut pat) => {
             v.visit_pattern(pat);
@@ -586,7 +594,10 @@ pub fn walk_mut_pattern<V: ?Sized + MutVisitor>(v: &mut V, p: &mut Pattern<V::Id
     }
 }
 
-pub fn walk_mut_ast_type<V: ?Sized + MutVisitor>(v: &mut V, s: &mut SpannedAstType<V::Ident>) {
+pub fn walk_mut_ast_type<'a, V: ?Sized + MutVisitor<'a>>(
+    v: &mut V,
+    s: &'a mut SpannedAstType<V::Ident>,
+) {
     match s.value {
         Type::Hole | Type::Opaque | Type::Builtin(_) => (),
         Type::Forall(_, ref mut ast_type, ref mut ast_types) => {

@@ -159,7 +159,10 @@ impl<'s, Id> Reparser<'s, Id> {
     }
 }
 
-impl<'s, Id> MutVisitor for Reparser<'s, Id> {
+impl<'a, 's, Id> MutVisitor<'a> for Reparser<'s, Id>
+where
+    Id: 'a,
+{
     type Ident = Id;
 
     fn visit_expr(&mut self, e: &mut SpannedExpr<Self::Ident>) {
