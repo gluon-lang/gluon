@@ -1704,6 +1704,20 @@ where
     _marker: PhantomData<F>,
 }
 
+#[cfg(feature = "serde")]
+impl<'de, V> Deserialize<'de> for Function<RootedThread, V> {
+    fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = self::de::deserialize_raw_value(deserializer)?;
+        Ok(Function {
+            value,
+            _marker: PhantomData,
+        })
+    }
+}
+
 impl<T, F> Function<T, F>
 where
     T: Deref<Target = Thread>,

@@ -272,6 +272,15 @@ where
     opt_value.ok_or_else(|| D::Error::custom("Unable to deserialize raw value"))
 }
 
+impl<'de> de::Deserialize<'de> for RootedValue<RootedThread> {
+    fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        deserialize_raw_value(deserializer)
+    }
+}
+
 #[derive(Deserialize)]
 struct RawValueDeserialize;
 
@@ -524,8 +533,10 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
                 assert!(store.is_none());
                 *store = Some(self.state.thread.root_value(self.input.get_value()));
             });
+            visitor.visit_unit()
+        } else {
+            self.deserialize_unit(visitor)
         }
-        self.deserialize_unit(visitor)
     }
 
     fn deserialize_newtype_struct<V>(self, _name: &'static str, visitor: V) -> Result<V::Value>
