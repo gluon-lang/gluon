@@ -1,4 +1,5 @@
 let prelude = import! std.prelude
+let { (<|) } = import! std.function
 let { run, Test, assert_eq, test, group, ? } = import! std.test
 let { Applicative, (*>) } = import! std.applicative
 let int = import! std.int
@@ -14,8 +15,8 @@ let assert_leq s a : Stream Int -> Array Int -> _ =
         (list.of a)
 
 group "stream" [
-    test "fold" (assert_eq (stream.fold (+) 0 s) 10),
-    test "from" (assert_leq s [4, 3, 2, 1, 0]),
-    test "map" (assert_leq (stream.functor.map (\x -> x + x) s) [8, 6, 4, 2, 0]),
-    test "zip_with" (assert_leq (stream.zip_with (+) s s) [8, 6, 4, 2, 0])
+    test "fold" <| \_ -> (assert_eq (stream.fold (+) 0 s) 10),
+    test "from" <| \_ -> (assert_leq s [4, 3, 2, 1, 0]),
+    test "map" <| \_ -> (assert_leq (stream.functor.map (\x -> x + x) s) [8, 6, 4, 2, 0]),
+    test "zip_with" <| \_ -> (assert_leq (stream.zip_with (+) s s) [8, 6, 4, 2, 0])
 ]

@@ -13,7 +13,8 @@ extern crate tensile;
 extern crate tokio_core;
 
 use gluon::base::types::{ArcType, Type};
-use gluon::vm::api::{Hole, OpaqueValue, OwnedFunction, VmType};
+use gluon::vm::api::{Getable, Hole, OpaqueValue, OwnedFunction, VmType};
+use gluon::vm::future::FutureValue;
 use gluon::vm::api::de::De;
 use gluon::vm::thread::ThreadInternal;
 use gluon::{new_vm, Compiler, RootedThread, Thread};
@@ -24,7 +25,7 @@ use std::fs::{read_dir, File};
 use std::path::{Path, PathBuf};
 use std::error::Error;
 
-use futures::{stream, Future, Stream};
+use futures::{future, stream, Future, Stream};
 
 #[derive(Debug)]
 pub struct StringError(String);
@@ -80,16 +81,12 @@ macro_rules! define_test_type {
     }
 }
 
+type TestFn = OwnedFunction<fn(()) -> OpaqueValue<RootedThread, Test>>;
+
 #[derive(Deserialize)]
 enum TestCase {
-    Test {
-        name: String,
-        test: OpaqueValue<RootedThread, Test>,
-    },
-    Group {
-        name: String,
-        tests: Vec<TestCase>,
-    },
+    Test { name: String, test: TestFn },
+    Group { name: String, tests: Vec<TestCase> },
 }
 
 define_test_type! { TestCase }
@@ -98,18 +95,42 @@ struct Test;
 
 define_test_type! { Test }
 
+struct GluonTestable<F>(F);
+
+impl<F> tensile::Testable for GluonTestable<F>
+where
+    F: Future<Item = (), Error = String> + Send + Sync + 'static,
+{
+    type Error = String;
+
+    fn test(self) -> tensile::TestFuture<Self::Error> {
+        Box::new(self.0)
+    }
+}
+
 impl TestCase {
     fn into_tensile_test(self) -> tensile::Test<String> {
         match self {
             TestCase::Test { name, test } => {
-                let test = ::std::panic::AssertUnwindSafe(test);
+                let child_thread = test.vm().new_thread().unwrap();
+                let test = TestFn::from_value(&child_thread, test.get_variant());
+                let mut test = ::std::panic::AssertUnwindSafe(test);
                 tensile::test(name, move || {
-                    let mut action: OwnedFunction<
-                        fn(OpaqueValue<RootedThread, Test>) -> (),
-                    > = test.vm()
-                        .get_global("std.test.run")
-                        .map_err(|err| err.to_string())?;
-                    action.call(test.0).map_err(|err| err.to_string())
+                    let future = test.call_async(())
+                        .and_then(|test| {
+                            FutureValue::Future(
+                                future::result(test.vm().get_global("std.test.run")).and_then(
+                                    |action| {
+                                        let mut action: OwnedFunction<
+                                    fn(OpaqueValue<RootedThread, Test>) -> (),
+                                > = action;
+                                        action.call_async(test)
+                                    },
+                                ),
+                            )
+                        })
+                        .map_err(|err| err.to_string());
+                    GluonTestable(::std::panic::AssertUnwindSafe(future))
                 })
             }
             TestCase::Group { name, tests } => tensile::Test::Group {
@@ -166,7 +187,7 @@ fn main_() -> Result<(), Box<Error>> {
 
     let iter = test_files("tests/pass")?.into_iter();
 
-    let pool = futures_cpupool::CpuPool::new_num_cpus();
+    let pool = futures_cpupool::CpuPool::new(1);
     let mut core = tokio_core::reactor::Core::new()?;
     let pass_tests_future = stream::futures_ordered(iter.map(|filename| {
         let name = filename.to_str().unwrap_or("<unknown>").to_owned();

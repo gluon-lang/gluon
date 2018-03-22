@@ -1,4 +1,5 @@
 let { Test, run, writer, assert_eq, test, group, ? }  = import! std.test
+let { (<|) } = import! std.function
 let prelude  = import! std.prelude
 let { Applicative, (*>), ? } = import! std.applicative
 let int = import! std.int
@@ -17,4 +18,4 @@ let tests : Test () =
         *> assert_eq (recv receiver) (Ok 1)
         *> assert_eq (recv receiver) (Ok 2)
 
-test "channel" tests
+test "channel" <| \_ -> tests

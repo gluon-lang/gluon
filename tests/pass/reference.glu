@@ -1,4 +1,5 @@
 let { assert, group } = import! std.test
+let { (<|) } = import! std.function
 let int = import! std.int
 let { Bool } = import! std.bool
 let { ref, (<-), load } = import! std.reference

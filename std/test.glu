@@ -9,7 +9,7 @@ let { foldl } = list.foldable
 let { Option } = import! std.option
 
 type Test a = Writer (List String) a
-type TestCase a = | Test String (Test a) | Group String (Array (TestCase a))
+type TestCase a = | Test String (() -> Test a) | Group String (Array (TestCase a))
 
 let testWriter = writer.make list.monoid
 

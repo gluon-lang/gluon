@@ -1,4 +1,5 @@
 let { run, Test, assert_eq, test, group, ? }  = import! std.test
+let { (<|) } = import! std.function
 let prelude  = import! std.prelude
 let { Applicative, (*>), ? } = import! std.applicative
 let int = import! std.int
@@ -6,12 +7,12 @@ let float = import! std.float
 
 let int_tests =
     let { (+), (-), (*) } = int.num
-    test "int" (assert_eq 2 2
+    test "int" <| \_ -> (assert_eq 2 2
         *> assert_eq 12 (10 + 2)
         *> assert_eq 123 (50 * 2 + 9 * 3 - 4))
 
 let float_tests =
     let { (+), (-), (*) } = float.num
-    test "float" (assert_eq 91.0 (50.0 * 2.0 - 3.0 * 3.0))
+    test "float" <| \_ -> (assert_eq 91.0 (50.0 * 2.0 - 3.0 * 3.0))
 
 group "arithmetic" [int_tests, float_tests]

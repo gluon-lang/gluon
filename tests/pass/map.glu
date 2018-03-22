@@ -1,4 +1,5 @@
 let prelude @ { Eq, Show } = import! std.prelude
+let { (<|) } = import! std.function
 let int = import! std.int
 let option @ { Option } = import! std.option
 let string = import! std.string
@@ -24,19 +25,19 @@ let basic_tests =
     let test_map = singleton "test" 1 <> singleton "asd" 2 <> singleton "a" 3
 
     [
-        test "find" (assert_eq (find "test" test_map) (Some 1)
+        test "find" <| \_ -> (assert_eq (find "test" test_map) (Some 1)
             *> assert_eq (find "asd" test_map) (Some 2)
             *> assert_eq (find "b" test_map) None
             *> assert_eq (find "test" (insert "test" 10 test_map)) (Some 10)
             *> assert_eq (find "test" test_map) (Some 1)
         ),
-        test "to_list" (assert_eq (to_list test_map) (list.of [{ key = "a", value = 3 },
+        test "to_list" <| \_ -> (assert_eq (to_list test_map) (list.of [{ key = "a", value = 3 },
                                                        { key = "asd", value = 2 },
                                                        { key = "test", value = 1 }])),
-        test "keys" (assert_eq (keys test_map) (list.of ["a", "asd", "test"])),
-        test "values" (assert_eq (values test_map) (list.of [3, 2, 1])),
-        test "append" (assert_eq (to_list (test_map <> empty)) (to_list test_map)),
-        test "append" (assert_eq (to_list (empty <> test_map)) (to_list test_map)),
+        test "keys" <| \_ -> (assert_eq (keys test_map) (list.of ["a", "asd", "test"])),
+        test "values" <| \_ -> (assert_eq (values test_map) (list.of [3, 2, 1])),
+        test "append" <| \_ -> (assert_eq (to_list (test_map <> empty)) (to_list test_map)),
+        test "append" <| \_ -> (assert_eq (to_list (empty <> test_map)) (to_list test_map)),
     ]
 
 let append_tests =
@@ -45,5 +46,5 @@ let append_tests =
     assert_eq (find "b" test_map1) (Some 2)
         *> assert_eq (find "*" test_map2) (Some 3)
 
-group "map" [group "basic" basic_tests, test "append" append_tests]
+group "map" [group "basic" basic_tests, test "append" <| \_ -> append_tests]
 

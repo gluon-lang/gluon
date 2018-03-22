@@ -1,20 +1,21 @@
 let { (|>) } = import! std.function
+let { (<|) } = import! std.function
 let option @ { Option } = import! std.option
 let result @ { Result } = import! std.result
 let { assert_eq, test, group }  = import! std.test
 
 group "unwrap" [
-    test "one" (
+    test "one" <| \_ -> (
         let one = Some 1 |> option.unwrap
         assert_eq one 1
     ),
 
-    test "two" (
+    test "two" <| \_ -> (
         let two = Ok 2 |> result.unwrap_ok
         assert_eq two 2
     ),
 
-    test "three" (
+    test "three" <| \_ -> (
         let three = Err 3 |> result.unwrap_err
         assert_eq three 3
     )

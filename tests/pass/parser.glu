@@ -1,4 +1,5 @@
 let prelude = import! std.prelude
+let { (<|) } = import! std.function
 let result @ { Result, ? } = import! std.result
 let { Test, run, writer, assert_eq, test, group } = import! std.test
 let { ? } = import! std.char
@@ -7,5 +8,5 @@ let { Applicative, (*>), ? } = import! std.applicative
 let { (<|>) } = import! std.prelude
 
 group "parser" [
-    test "any" (assert_eq (parse any "abc") (Ok 'a'))
+    test "any" <| \_ -> (assert_eq (parse any "abc") (Ok 'a'))
 ]
