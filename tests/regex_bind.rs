@@ -47,6 +47,6 @@ fn regex_error() {
 
     assert_eq!(
         result.unwrap_or_else(|err| panic!("{}", err)).0,
-        "Error parsing regex near \')\' at character offset 0: Unopened parenthesis."
+        "regex parse error:\n    )\n    ^\nerror: unopened group"
     );
 }
