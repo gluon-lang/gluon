@@ -528,7 +528,7 @@ impl<'a> Typecheck<'a> {
             tc: &'a mut Typecheck<'b>,
         }
 
-        impl<'a, 'b> MutVisitor for ReplaceVisitor<'a, 'b> {
+        impl<'a, 'b, 'c> MutVisitor<'c> for ReplaceVisitor<'a, 'b> {
             type Ident = Symbol;
 
             fn visit_typ(&mut self, typ: &mut ArcType) {

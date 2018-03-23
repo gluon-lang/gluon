@@ -3,8 +3,7 @@ use std::fmt;
 use std::fs::File;
 use std::sync::Mutex;
 
-use futures::{Future, IntoFuture};
-use futures::future::Either;
+use futures::Future;
 
 use vm::{self, ExternModule, Result};
 use vm::future::FutureValue;
@@ -120,24 +119,24 @@ fn catch<'vm>(
     let mut action: OwnedFunction<fn(()) -> Generic<A>> =
         Getable::from_value(&vm, action.get_variant());
 
-    let future = action.call_async(()).then(move |result| match result {
-        Ok(value) => Either::A(Ok(IO::Value(value)).into_future()),
+    let future = action.call_fast_async(()).then(move |result| match result {
+        Ok(value) => FutureValue::Value(Ok(IO::Value(value))),
         Err(err) => {
             {
                 let mut context = vm.context();
                 let mut stack = StackFrame::current(&mut context.stack);
                 while stack.stack.get_frames().len() > frame_level {
                     if stack.exit_scope().is_err() {
-                        return Either::A(Ok(IO::Exception("Unknown error".into())).into_future());
+                        return FutureValue::Value(Ok(IO::Exception("Unknown error".into())));
                     }
                 }
             }
-            Either::B(catch.call_async(format!("{}", err)).then(|result| {
-                Ok(match result {
+            catch.call_fast_async(format!("{}", err)).then(|result| {
+                FutureValue::sync(Ok(match result {
                     Ok(value) => value,
                     Err(err) => IO::Exception(format!("{}", err)),
-                })
-            }))
+                }))
+            })
         }
     });
 

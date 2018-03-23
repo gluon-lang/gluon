@@ -61,6 +61,7 @@ tensile = "0.1.0"
 collect-mac = "0.1.0"
 env_logger = "0.5.0"
 pretty_assertions = "0.4"
+futures-cpupool = "0.1.8"
 
 hyper = "0.11.0"
 curl = "0.4.1"

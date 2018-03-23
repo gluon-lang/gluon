@@ -227,7 +227,7 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
         }
     }
 
-    impl<'a, 'b> MutVisitor for RenameVisitor<'a, 'b> {
+    impl<'a, 'b, 'c> MutVisitor<'c> for RenameVisitor<'a, 'b> {
         type Ident = Symbol;
 
         fn visit_expr(&mut self, mut expr: &mut SpannedExpr<Self::Ident>) {

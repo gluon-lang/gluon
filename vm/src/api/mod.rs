@@ -26,6 +26,9 @@ use futures::{Async, Future};
 
 pub use value::Userdata;
 
+#[cfg(feature = "serde")]
+use serde::de::{Deserialize, Deserializer};
+
 #[macro_use]
 pub mod mac;
 #[cfg(feature = "serde")]
@@ -1132,6 +1135,17 @@ pub struct OpaqueValue<T, V>(RootedValue<T>, PhantomData<V>)
 where
     T: Deref<Target = Thread>;
 
+#[cfg(feature = "serde")]
+impl<'de, V> Deserialize<'de> for OpaqueValue<RootedThread, V> {
+    fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = self::de::deserialize_raw_value(deserializer)?;
+        Ok(Self::from_value(value))
+    }
+}
+
 impl<T, V> fmt::Debug for OpaqueValue<T, V>
 where
     T: Deref<Target = Thread>,
@@ -1690,12 +1704,30 @@ where
     _marker: PhantomData<F>,
 }
 
+#[cfg(feature = "serde")]
+impl<'de, V> Deserialize<'de> for Function<RootedThread, V> {
+    fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = self::de::deserialize_raw_value(deserializer)?;
+        Ok(Function {
+            value,
+            _marker: PhantomData,
+        })
+    }
+}
+
 impl<T, F> Function<T, F>
 where
     T: Deref<Target = Thread>,
 {
     pub fn get_variant(&self) -> Variants {
         self.value.get_variant()
+    }
+
+    pub fn vm(&self) -> &Thread {
+        self.value.vm()
     }
 }
 
@@ -1894,13 +1926,13 @@ where $($args: Getable<'vm> + 'vm,)*
     }
 }
 
-impl<'vm, T, $($args,)* R> Function<T, fn($($args),*) -> R>
-    where $($args: Pushable<'vm>,)*
+impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
+    where $($args: for<'vm> Pushable<'vm>,)*
           T: Deref<Target = Thread>,
           R: VmType + for<'x> Getable<'x>,
 {
     #[allow(non_snake_case)]
-    pub fn call(&'vm mut self $(, $args: $args)*) -> Result<R> {
+    pub fn call(&mut self $(, $args: $args)*) -> Result<R> {
         match self.call_first($($args),*)? {
             Async::Ready(value) => Ok(value),
             Async::NotReady => Err(Error::Message("Unexpected async".into())),
@@ -1908,7 +1940,7 @@ impl<'vm, T, $($args,)* R> Function<T, fn($($args),*) -> R>
     }
 
     #[allow(non_snake_case)]
-    fn call_first(&'vm self $(, $args: $args)*) -> Result<Async<R>> {
+    fn call_first(&self $(, $args: $args)*) -> Result<Async<R>> {
         let vm = self.value.vm();
         let mut context = vm.context();
         context.stack.push(self.value.get_variant());
@@ -1937,35 +1969,62 @@ impl<'vm, T, $($args,)* R> Function<T, fn($($args),*) -> R>
     }
 }
 
-impl<'vm, T, $($args,)* R> Function<T, fn($($args),*) -> R>
-    where $($args: Pushable<'vm>,)*
-          T: Deref<Target = Thread> + Clone + Send + 'static,
-          R: VmType + for<'x> Getable<'x> + Send + 'static,
+impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
+    where $($args: for<'vm> Pushable<'vm>,)*
+          T: Deref<Target = Thread> + Clone + Send,
+          R: VmType + for<'x> Getable<'x> + Send + Sync + 'static,
 {
     #[allow(non_snake_case)]
     pub fn call_async(
-        &'vm mut self
+        &mut self
         $(, $args: $args)*
-        ) -> Box<Future<Item = R, Error = Error> + Send + 'static>
+        ) -> Box<Future<Item = R, Error = Error> + Send + Sync + 'static>
     {
-        use futures::{failed, finished};
-        use futures::future::Either;
         use thread::Execute;
+        use futures::IntoFuture;
 
-        Box::new(match self.call_first($($args),*) {
+        match self.call_first($($args),*) {
             Ok(ok) => {
-                Either::A(match ok {
-                    Async::Ready(value) => Either::A(finished(value)),
+                match ok {
+                    Async::Ready(value) => Box::new(Ok(value).into_future()),
                     Async::NotReady => {
-                        Either::B(Execute::new(self.value.clone_vm())
-                            .and_then(|(vm, value)| Self::return_value(&vm, value)))
+                        Box::new(
+                            Execute::new(self.value.vm().root_thread())
+                                .and_then(|(vm, value)| Self::return_value(&vm, value))
+                        )
                     }
-                })
+                }
             }
             Err(err) => {
-                Either::B(failed(err))
+                Box::new(Err(err).into_future())
             }
-        })
+        }
+    }
+
+    #[allow(non_snake_case)]
+    pub fn call_fast_async(
+        &mut self
+        $(, $args: $args)*
+        ) -> FutureValue<Box<Future<Item = R, Error = Error> + Send + Sync + 'static>>
+    {
+        use thread::Execute;
+
+        match self.call_first($($args),*) {
+            Ok(ok) => {
+                match ok {
+                    Async::Ready(value) => FutureValue::Value(Ok(value)),
+                    Async::NotReady => {
+                        FutureValue::Future(Box::new(
+                            Execute::new(self.value.vm().root_thread())
+                                .and_then(|(vm, value)| Self::return_value(&vm, value))
+                        ))
+                    }
+                }
+            }
+            Err(err) => {
+                FutureValue::Value(Err(err))
+            }
+        }
     }
 }
     )

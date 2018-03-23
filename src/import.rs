@@ -2,12 +2,16 @@
 
 use std::any::Any;
 use std::borrow::Cow;
-use std::sync::{Arc, Mutex, RwLock};
+use std::collections::hash_map::Entry;
+use std::sync::{Mutex, RwLock};
 use std::fs::File;
 use std::mem;
 use std::io;
 use std::io::Read;
 use std::path::PathBuf;
+
+use futures::sync::oneshot;
+use futures::{future, Future};
 
 use itertools::Itertools;
 
@@ -20,7 +24,7 @@ use base::symbol::Symbol;
 use base::types::ArcType;
 
 use vm::{ExternLoader, ExternModule};
-use vm::macros::{Error as MacroError, Macro, MacroExpander};
+use vm::macros::{Error as MacroError, Macro, MacroExpander, MacroFuture};
 use vm::thread::{Thread, ThreadInternal};
 
 use super::Compiler;
@@ -152,7 +156,7 @@ pub struct Import<I = DefaultImporter> {
     pub importer: I,
 
     /// Map of modules currently being loaded
-    loading: Mutex<FnvMap<String, Arc<Mutex<()>>>>,
+    loading: Mutex<FnvMap<String, future::Shared<oneshot::Receiver<()>>>>,
 }
 
 impl<I> Import<I> {
@@ -249,7 +253,7 @@ impl<I> Import<I> {
         macros: &mut MacroExpander,
         module_id: &Symbol,
         span: Span<BytePos>,
-    ) -> Result<(), (Option<ArcType>, MacroError)>
+    ) -> Result<Option<Box<Future<Item = (), Error = ()> + Send>>, (Option<ArcType>, MacroError)>
     where
         I: Importer,
     {
@@ -275,25 +279,36 @@ impl<I> Import<I> {
         }
 
         // Prevent any other threads from importing this module while we compile it
-        let lock = {
+        let sender = {
             let mut loading = self.loading.lock().unwrap();
-            loading
-                .entry(module_id.to_string())
-                .or_insert_with(|| Default::default())
-                .clone()
+            match loading.entry(module_id.to_string()) {
+                Entry::Occupied(entry) => {
+                    get_state(macros).visited.pop();
+                    return Ok(Some(Box::new(
+                        entry.get().clone().map(|_| ()).map_err(|_| ()),
+                    )));
+                }
+                Entry::Vacant(entry) => {
+                    let (sender, receiver) = oneshot::channel();
+                    entry.insert(receiver.shared());
+                    sender
+                }
+            }
         };
-        let _guard = lock.lock().unwrap();
         if vm.global_env().global_exists(module_id.definition_name()) {
+            let _ = sender.send(());
             get_state(macros).visited.pop();
-            return Ok(());
+            return Ok(None);
         }
 
         let result = self.load_module_(compiler, vm, macros, module_id, &filename, span);
 
+        let _ = sender.send(());
+
         get_state(macros).visited.pop();
         self.loading.lock().unwrap().remove(module_id.as_ref());
 
-        result
+        result.map(|_| None)
     }
 
     fn load_module_(
@@ -452,57 +467,34 @@ impl<I> Macro for Import<I>
 where
     I: Importer,
 {
-    fn expand(
-        &self,
-        macros: &mut MacroExpander,
-        args: &mut [SpannedExpr<Symbol>],
-    ) -> Result<SpannedExpr<Symbol>, MacroError> {
-        // If the modulename has been determined we always want to insert that name into the AST so
-        // that we can do completion on the name
-        let mut modulename = None;
-        self.expand_(macros, args, &mut modulename)
-            .or_else(move |err| match modulename {
-                None => Err(err),
-                Some(modulename) => {
-                    macros.errors.push(pos::spanned(args[0].span, err));
-                    Ok(pos::spanned(
-                        args[0].span,
-                        Expr::Ident(TypedIdent::new(modulename)),
-                    ))
-                }
-            })
-    }
-}
+    fn expand(&self, macros: &mut MacroExpander, args: Vec<SpannedExpr<Symbol>>) -> MacroFuture {
+        fn get_module_name(args: &[SpannedExpr<Symbol>]) -> Result<String, MacroError> {
+            if args.len() != 1 {
+                return Err(Error::String("Expected import to get 1 argument".into()).into());
+            }
 
-impl<I> Import<I>
-where
-    I: Importer,
-{
-    fn expand_(
-        &self,
-        macros: &mut MacroExpander,
-        args: &mut [SpannedExpr<Symbol>],
-        caller_modulename: &mut Option<Symbol>,
-    ) -> Result<SpannedExpr<Symbol>, MacroError> {
-        if args.len() != 1 {
-            return Err(Error::String("Expected import to get 1 argument".into()).into());
+            let modulename = match args[0].value {
+                Expr::Ident(_) | Expr::Projection(..) => {
+                    let mut modulename = String::new();
+                    expr_to_path(&args[0], &mut modulename)
+                        .map_err(|err| Error::String(err.to_string()))?;
+                    modulename
+                }
+                Expr::Literal(Literal::String(ref filename)) => {
+                    format!("@{}", filename_to_module(filename))
+                }
+                _ => {
+                    return Err(
+                        Error::String("Expected a string literal or path to import".into()).into(),
+                    )
+                }
+            };
+            Ok(modulename)
         }
 
-        let modulename = match args[0].value {
-            Expr::Ident(_) | Expr::Projection(..) => {
-                let mut modulename = String::new();
-                expr_to_path(&args[0], &mut modulename)
-                    .map_err(|err| Error::String(err.to_string()))?;
-                modulename
-            }
-            Expr::Literal(Literal::String(ref filename)) => {
-                format!("@{}", filename_to_module(filename))
-            }
-            _ => {
-                return Err(
-                    Error::String("Expected a string literal or path to import".into()).into(),
-                )
-            }
+        let modulename = match get_module_name(&args) {
+            Ok(modulename) => modulename,
+            Err(err) => return Box::new(future::err(err)),
         };
 
         let vm = macros.vm;
@@ -513,8 +505,6 @@ where
             format!("@{}", modulename)
         });
 
-        *caller_modulename = Some(name.clone());
-
         // Only load the script if it is not already loaded
         debug!("Import '{}' {:?}", modulename, get_state(macros).visited);
         if !vm.global_env().global_exists(&modulename) {
@@ -524,25 +514,34 @@ where
                 .cloned()
             {
                 macros.error_in_expr = true;
-                return Ok(pos::spanned(args[0].span, expr));
+                return Box::new(future::ok(pos::spanned(args[0].span, expr)));
             }
 
-            if let Err((typ, err)) =
-                self.load_module(&mut Compiler::new(), vm, macros, &name, args[0].span)
-            {
-                macros.errors.push(pos::spanned(args[0].span, err));
+            match self.load_module(&mut Compiler::new(), vm, macros, &name, args[0].span) {
+                Ok(Some(future)) => {
+                    let span = args[0].span;
+                    return Box::new(
+                        future
+                            .map_err(|_| unreachable!())
+                            .map(move |_| pos::spanned(span, Expr::Ident(TypedIdent::new(name)))),
+                    );
+                }
+                Ok(None) => (),
+                Err((typ, err)) => {
+                    macros.errors.push(pos::spanned(args[0].span, err));
 
-                let expr = Expr::Error(typ);
-                get_state(macros)
-                    .modules_with_errors
-                    .insert(modulename, expr.clone());
+                    let expr = Expr::Error(typ);
+                    get_state(macros)
+                        .modules_with_errors
+                        .insert(modulename, expr.clone());
 
-                return Ok(pos::spanned(args[0].span, expr));
+                    return Box::new(future::ok(pos::spanned(args[0].span, expr)));
+                }
             }
         }
-        Ok(pos::spanned(
+        Box::new(future::ok(pos::spanned(
             args[0].span,
             Expr::Ident(TypedIdent::new(name)),
-        ))
+        )))
     }
 }

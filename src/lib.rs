@@ -493,7 +493,7 @@ impl Compiler {
         use base::pos::UNKNOWN_EXPANSION;
         struct ExpandedSpans;
 
-        impl MutVisitor for ExpandedSpans {
+        impl<'a> MutVisitor<'a> for ExpandedSpans {
             type Ident = Symbol;
 
             fn visit_expr(&mut self, e: &mut SpannedExpr<Self::Ident>) {

@@ -1,5 +1,6 @@
 let prelude = import! std.prelude
-let { run, Test, assert_eq, ? } = import! std.test
+let { (<|) } = import! std.function
+let { run, Test, assert_eq, test, group, ? } = import! std.test
 let { (*>), ? } = import! std.applicative
 
 let ints input =
@@ -81,7 +82,4 @@ let match_test_m =
         *> assert_eq (test_m (TestM 2 "hello")) 22
         *> assert_eq (test_m (TestM 3 "")) 23
 
-let tests : Test () =
-    match_ints *> match_strings *> match_ns *> match_r1 *> match_r2 *> match_test_m
-
-run tests
+group "match_literal" [test "match_ints" <| \_ -> match_ints, test "match_strings" <| \_ -> match_strings, test "match_ns" <| \_ -> match_ns, test "match_r1" <| \_ -> match_r1, test "match_r2" <| \_ -> match_r2, test "match_test_m" <| \_ -> match_test_m]

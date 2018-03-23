@@ -1,4 +1,5 @@
-let { run, Test, assert_eq, ? }  = import! std.test
+let { run, Test, assert_eq, test, ? }  = import! std.test
+let { (<|) } = import! std.function
 let prelude  = import! std.prelude
 let { Bool } = import! std.bool
 let int = import! std.int
@@ -34,4 +35,4 @@ let tests : Test () =
             assert_any_err (resume thread) (Err "Any error message here")
         )
 
-run tests
+test "thread" <| \_ -> tests

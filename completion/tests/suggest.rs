@@ -32,7 +32,7 @@ fn suggest_query(query: &SuggestionQuery, s: &str, pos: BytePos) -> Result<Vec<S
 
     struct ReplaceImport;
 
-    impl MutVisitor for ReplaceImport {
+    impl<'a> MutVisitor<'a> for ReplaceImport {
         type Ident = Symbol;
 
         fn visit_expr(&mut self, expr: &mut SpannedExpr<Symbol>) {
