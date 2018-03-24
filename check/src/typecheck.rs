@@ -1470,7 +1470,7 @@ impl<'a> Typecheck<'a> {
                 };
                 typ = self.top_skolem_scope(&typ);
                 actual_type = self.top_skolem_scope(&actual_type);
-                self.unify_span(span, &match_type, typ);
+                self.unify_span(span, &typ, match_type.clone());
 
                 for field in fields {
                     let name = &field.name.value;
