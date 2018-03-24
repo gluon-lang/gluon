@@ -59,6 +59,19 @@ Test "" 2
 }
 
 #[test]
+fn undefined_type_in_pattern_match_triggers_only_one_error() {
+    let _ = env_logger::try_init();
+    let text = r#"
+let { Test } = {}
+type Test2 = Test
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert_err!(result, UndefinedField(..));
+}
+
+#[test]
 fn mutually_recursive_types_error() {
     let _ = env_logger::try_init();
     let text = r#"

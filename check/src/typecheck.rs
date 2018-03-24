@@ -1502,7 +1502,9 @@ impl<'a> Typecheck<'a> {
                     let field_type = actual_type
                         .type_field_iter()
                         .find(|field| field.name.name_eq(&name));
-                    match field_type {
+
+                    let alias;
+                    let alias = match field_type {
                         Some(field_type) => {
                             // This forces refresh_type to remap the name a type was given
                             // in this module to its actual name
@@ -1514,13 +1516,21 @@ impl<'a> Typecheck<'a> {
                                     .metadata
                                     .insert(field_type.typ.name.clone(), meta);
                             }
-
-                            self.stack_type(name, &field_type.typ);
+                            &field_type.typ
                         }
                         None => {
-                            self.error(span, TypeError::UndefinedField(match_type.clone(), name));
+                            self.error(
+                                span,
+                                TypeError::UndefinedField(match_type.clone(), name.clone()),
+                            );
+                            // We still define the type so that any uses later on in the program
+                            // won't error on UndefinedType
+                            alias = Alias::new(name.clone(), self.type_cache.hole());
+                            &alias
                         }
-                    }
+                    };
+
+                    self.stack_type(name, &alias);
                 }
 
                 if let Some(ref implicit_import) = *implicit_import {
