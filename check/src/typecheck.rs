@@ -1520,7 +1520,7 @@ impl<'a> Typecheck<'a> {
                         }
                         None => {
                             self.error(
-                                span,
+                                field.name.span,
                                 TypeError::UndefinedField(match_type.clone(), name.clone()),
                             );
                             // We still define the type so that any uses later on in the program
