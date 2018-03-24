@@ -972,23 +972,20 @@ impl<'a> Typecheck<'a> {
                             .unwrap_or_else(|| typ.clone());
                     }
 
-                    match self.find_type_info(&field.name.value)
+                    let alias = match self.find_type_info(&field.name.value)
                         .map(|alias| alias.clone())
                     {
-                        Ok(alias) => {
-                            if self.error_on_duplicated_field(
-                                &mut duplicated_fields,
-                                field.name.clone(),
-                            ) {
-                                new_types.push(Field::new(field.name.value.clone(), alias));
-                            }
-                        }
+                        Ok(alias) => alias,
                         Err(err) => {
                             self.errors.push(Spanned {
                                 span: field.name.span,
                                 value: err.into(),
                             });
+                            Alias::new(field.name.value.clone(), self.type_cache.hole())
                         }
+                    };
+                    if self.error_on_duplicated_field(&mut duplicated_fields, field.name.clone()) {
+                        new_types.push(Field::new(field.name.value.clone(), alias));
                     }
                 }
 

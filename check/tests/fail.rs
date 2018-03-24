@@ -72,6 +72,19 @@ type Test2 = Test
 }
 
 #[test]
+fn undefined_type_still_gets_exported() {
+    let _ = env_logger::try_init();
+    let text = r#"
+let { Test } = { Test }
+type Test2 = Test
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert_err!(result, UndefinedType(..));
+}
+
+#[test]
 fn mutually_recursive_types_error() {
     let _ = env_logger::try_init();
     let text = r#"
