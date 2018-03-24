@@ -20,7 +20,7 @@ use failure::ResultExt;
 
 use itertools::Itertools;
 
-use handlebars::{Handlebars, Helper, RenderContext, RenderError};
+use handlebars::{Handlebars, Helper, Output, RenderContext, RenderError};
 
 use serde::Deserialize;
 
@@ -108,6 +108,7 @@ fn handlebars() -> Handlebars {
         h: &Helper,
         _: &Handlebars,
         rc: &mut RenderContext,
+        out: &mut Output,
     ) -> ::std::result::Result<(), RenderError> {
         let current_module = &rc.context().data()["name"]
             .as_str()
@@ -115,12 +116,11 @@ fn handlebars() -> Handlebars {
             .to_string();
 
         let param = String::deserialize(h.param(0).unwrap().value())?;
-        write!(
-            rc.writer,
+        out.write(&format!(
             "{}{}.html",
             current_module.split('.').map(|_| "../").format(""),
             param.replace(".", "/")
-        )?;
+        ))?;
         Ok(())
     }
     reg.register_helper("symbol_link", Box::new(symbol_link));
@@ -128,13 +128,13 @@ fn handlebars() -> Handlebars {
     fn breadcrumbs(
         h: &Helper,
         _: &Handlebars,
-        rc: &mut RenderContext,
+        _: &mut RenderContext,
+        out: &mut Output,
     ) -> ::std::result::Result<(), RenderError> {
         let param = String::deserialize(h.param(0).unwrap().value())?;
         let parts: Vec<_> = param.split(".").collect();
         for (i, part) in parts.iter().enumerate() {
-            write!(
-                rc.writer,
+            out.write(&format!(
                 r##"<li class="breadcrumb-item{}">{}</li>"##,
                 if i + 1 == parts.len() { " active" } else { "" },
                 if i + 1 == parts.len() {
@@ -147,7 +147,7 @@ fn handlebars() -> Handlebars {
                         handlebars::html_escape(&part)
                     )
                 },
-            )?;
+            ))?;
         }
         Ok(())
     }
@@ -157,6 +157,7 @@ fn handlebars() -> Handlebars {
         _: &Helper,
         _: &Handlebars,
         rc: &mut RenderContext,
+        out: &mut Output,
     ) -> ::std::result::Result<(), RenderError> {
         let current_module = &rc.context().data()["name"]
             .as_str()
@@ -164,10 +165,10 @@ fn handlebars() -> Handlebars {
             .to_string();
         let relative_path = current_module.split('.').map(|_| "../").format("");
 
-        write!(rc.writer, r#"
+        out.write(&format!(r#"
 <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
 <link rel="stylesheet" href="{}style.css">
-               "#, relative_path)?;
+               "#, relative_path))?;
         Ok(())
     }
     reg.register_helper("style", Box::new(style));
