@@ -74,7 +74,7 @@ impl<I> From<KindCheckError<I>> for TypeError<I> {
     }
 }
 
-impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
+impl<I: fmt::Display + AsRef<str> + Clone> fmt::Display for TypeError<I> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::TypeError::*;
         use pretty::{Arena, DocAllocator};
@@ -83,7 +83,20 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
             NotAFunction(ref typ) => write!(f, "`{}` is not a function", typ),
             UndefinedType(ref name) => write!(f, "Type `{}` is not defined", name),
             UndefinedField(ref typ, ref field) => {
-                write!(f, "Type `{}` does not have the field `{}`", typ, field)
+                let fields = [field.clone()];
+                let filter = unify_type::similarity_filter(typ, &fields);
+                let arena = Arena::new();
+                write!(
+                    f,
+                    "Type `{}` does not have the field `{}`",
+                    TypeFormatter::new(typ)
+                        .filter(&*filter)
+                        .pretty(&arena)
+                        .1
+                        .pretty(80),
+                    field
+                )?;
+                Ok(())
             }
             Unification(ref expected, ref actual, ref errors) => {
                 let filters = errors
