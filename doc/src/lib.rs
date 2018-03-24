@@ -89,20 +89,14 @@ pub struct TemplateModule<'a> {
     pub sibling_modules: Vec<&'a str>,
 }
 
-pub fn generate<W>(reg: &Handlebars, out: &mut W, module: &TemplateModule) -> Result<()>
-where
-    W: io::Write,
-{
-    trace!("DOC: {:?}", module);
+const INDEX_TEMPLATE: &str = "index";
+const MODULE_TEMPLATE: &str = "module";
 
-    let module_template = include_str!("doc/module.html");
-    reg.render_template_to_write(module_template, &module, out)
-        .with_context(|err| format!("Unable to render {}: {}", module.name, err))?;
-    Ok(())
-}
-
-fn handlebars() -> Handlebars {
+fn handlebars() -> Result<Handlebars> {
     let mut reg = Handlebars::new();
+
+    reg.register_template_string(INDEX_TEMPLATE, include_str!("doc/index.html"))?;
+    reg.register_template_string(MODULE_TEMPLATE, include_str!("doc/module.html"))?;
 
     fn symbol_link(
         h: &Helper,
@@ -116,9 +110,18 @@ fn handlebars() -> Handlebars {
             .to_string();
 
         let param = String::deserialize(h.param(0).unwrap().value())?;
+        let skipped = if rc.get_root_template_name().map(|s| &s[..]) == Some(INDEX_TEMPLATE) {
+            0
+        } else {
+            1
+        };
         out.write(&format!(
             "{}{}.html",
-            current_module.split('.').map(|_| "../").format(""),
+            current_module
+                .split('.')
+                .skip(skipped)
+                .map(|_| "../")
+                .format(""),
             param.replace(".", "/")
         ))?;
         Ok(())
@@ -173,7 +176,18 @@ fn handlebars() -> Handlebars {
     }
     reg.register_helper("style", Box::new(style));
 
-    reg
+    Ok(reg)
+}
+
+fn generate_module<W>(reg: &Handlebars, out: &mut W, module: &TemplateModule) -> Result<()>
+where
+    W: io::Write,
+{
+    trace!("DOC: {:?}", module);
+
+    reg.render_to_write(MODULE_TEMPLATE, &module, out)
+        .with_context(|err| format!("Unable to render {}: {}", module.name, err))?;
+    Ok(())
 }
 
 pub fn generate_for_path<P, Q>(thread: &Thread, path: &P, out_path: &Q) -> Result<()>
@@ -185,7 +199,6 @@ where
 }
 
 pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Result<()> {
-    let reg = handlebars();
     let mut directories = Vec::new();
     for entry in walkdir::WalkDir::new(path) {
         let entry = entry?;
@@ -235,19 +248,9 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
         modules: Vec<String>,
     }
 
-    let module_template = include_str!("doc/index.html");
+    let reg = handlebars()?;
 
     for (path, modules) in directories {
-        let index_path = out_path.join(&*path).join("index.html");
-        trace!("Rendering index: {}", index_path.display());
-        let mut doc_file = File::create(&*index_path).with_context(|err| {
-            format!(
-                "Unable to open output file `{}`: {}",
-                index_path.display(),
-                err
-            )
-        })?;
-
         for module in &modules {
             let out_path =
                 out_path.join(PathBuf::from(module.name.replace(".", "/")).with_extension("html"));
@@ -259,7 +262,7 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
                 )
             })?;
 
-            generate(
+            generate_module(
                 &reg,
                 &mut doc_file,
                 &TemplateModule {
@@ -270,11 +273,21 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
             )?;
         }
 
+        let index_path = out_path.join(&*path).join("index.html");
+        trace!("Rendering index: {}", index_path.display());
+        let mut doc_file = File::create(&*index_path).with_context(|err| {
+            format!(
+                "Unable to open output file `{}`: {}",
+                index_path.display(),
+                err
+            )
+        })?;
+
         let name = filename_to_module(path.to_str()
             .ok_or_else(|| failure::err_msg("Non-UTF-8 filename"))?);
 
-        reg.render_template_to_write(
-            module_template,
+        reg.render_to_write(
+            INDEX_TEMPLATE,
             &Index {
                 name,
                 modules: modules.iter().map(|module| module.name.clone()).collect(),
