@@ -1,0 +1,66 @@
+//@NO-IMPLICIT-PRELUDE
+let { Bool, Option } = import! std.types
+let { Monoid } = import! std.monoid
+let { Monad } = import! std.monad
+let { Eq, (==) } = import! std.cmp
+
+/// @implicit
+type Foldable (f : Type -> Type) = {
+    foldr : forall a b . (a -> b -> b) -> b -> f a -> b,
+    foldl : forall a b . (b -> a -> b) -> b -> f a -> b
+}
+
+let foldr ?fold : forall a b . [Foldable f] -> (a -> b -> b) -> b -> f a -> b = fold.foldr
+let foldl ?fold : forall a b . [Foldable f] -> (b -> a -> b) -> b -> f a -> b = fold.foldl
+
+let concat ?fold monoid : [Foldable t] -> Monoid m -> t m -> m =
+    fold.foldr monoid.semigroup.append monoid.empty
+
+let concat_map ?fold monoid f : [Foldable t] -> Monoid m -> (a -> m) -> t a -> m =
+    fold.foldr (\x -> monoid.semigroup.append (f x)) monoid.empty
+
+let fold_m ?fold ?monad f z : [Foldable t] -> [Monad m] -> (a -> b -> m a) -> a -> t b -> m a =
+    fold.foldl (\acc y -> monad.flat_map (\x -> f x y) acc) (monad.applicative.wrap z)
+
+let find ?fold pred : [Foldable t] -> (a -> Bool) -> t a -> Option a =
+    let go acc next =
+        match acc with
+        | None -> if pred next then Some next else None
+        | Some _ -> acc
+
+    fold.foldl go None
+
+let find_map ?fold pred : [Foldable t] -> (a -> Option b) -> t a -> Option b =
+    let go acc next =
+        match acc with
+        | None -> pred next
+        | Some _ -> acc
+
+    fold.foldl go None
+
+let all ?fold pred : [Foldable t] -> (a -> Bool) -> t a -> Bool =
+    fold.foldl (\acc x -> acc && pred x) True
+
+let any ?fold pred : [Foldable t] -> (a -> Bool) -> t a -> Bool =
+    fold.foldl (\acc x -> acc || pred x) False
+
+let elem ?fold eq x : [Foldable t] -> Eq a -> a -> t a -> Bool =
+    any (eq.(==) x)
+
+let count ?fold : [Foldable t] -> t a -> Int =
+    fold.foldl (\acc _ -> acc #Int+ 1) 0
+
+{
+    Foldable,
+    foldr,
+    foldl,
+    fold_m,
+    concat,
+    concat_map,
+    find,
+    find_map,
+    all,
+    any,
+    elem,
+    count,
+}

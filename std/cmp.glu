@@ -1,0 +1,50 @@
+//@NO-IMPLICIT-PRELUDE
+
+let { Bool, Ordering } = import! std.types
+
+/// `Eq a` defines equality (==) on `a`
+/// @implicit
+type Eq a = { (==) : a -> a -> Bool }
+
+let (==) ?eq : [Eq a] -> a -> a -> Bool = eq.(==)
+let (/=) ?eq l r : [Eq a] -> a -> a -> Bool = if (eq.(==) l r) then False else True
+
+/// `Ord a` defines an ordering on `a`
+/// @implicit
+type Ord a = { eq : Eq a, compare : a -> a -> Ordering }
+
+let (<=) ?ord l r : [Ord a] -> a -> a -> Bool =
+    match ord.compare l r with
+    | LT -> True
+    | EQ -> True
+    | GT -> False
+
+let (<) ?ord l r : [Ord a] -> a -> a -> Bool =
+    match ord.compare l r with
+    | LT -> True
+    | EQ -> False
+    | GT -> False
+
+let (>) ?ord l r : [Ord a] -> a -> a -> Bool =
+    match ord.compare l r with
+    | LT -> False
+    | EQ -> False
+    | GT -> True
+
+let (>=) ?ord l r : [Ord a] -> a -> a -> Bool =
+    match ord.compare l r with
+    | LT -> False
+    | EQ -> True
+    | GT -> True
+
+{
+    Eq,
+    (==), (/=),
+
+    Bool,
+
+    Ord,
+    (<), (<=), (>=), (>),
+
+    Ordering,
+}

@@ -32,8 +32,8 @@ let {
 let { (<>) } =import! std.prelude
 
 let { Applicative, (<*), (*>), map2, wrap } = import! std.applicative
-let { (<|>) } = import! std.prelude
-let { flat_map } = import! std.prelude
+let { (<|>) } = import! std.applicative
+let { flat_map } = import! std.monad
 
 let atom : Parser Expr =
     let symbol = one_of "!#$%&|*+-/:<=>?@^_~"

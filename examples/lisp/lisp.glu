@@ -1,5 +1,6 @@
 let prelude = import! std.prelude
-let { Foldable, Functor, Applicative, Monad } = prelude
+let { Functor, Applicative, Monad } = prelude
+let { Foldable } = import! std.foldable
 let { id } = import! std.function
 
 let string = import! std.string
@@ -85,8 +86,8 @@ let monad_Lisp : Monad Lisp = {
             | Err err -> Err err)
 }
 
-let { flat_map, (>>=) } = import! std.prelude
-let { fold_m } = import! std.prelude
+let { flat_map, (>>=) } = import! std.monad
+let { fold_m } = import! std.foldable
 let traverse = list.traversable.traverse applicative_Lisp
 let { map = map_lisp } = functor_Lisp
 
