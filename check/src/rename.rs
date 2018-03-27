@@ -23,19 +23,30 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
     impl<'a, 'b> RenameVisitor<'a, 'b> {
         fn new_pattern(&mut self, pattern: &mut ast::SpannedPattern<Symbol>) {
             match pattern.value {
-                Pattern::Record { ref mut fields, .. } => for field in fields {
-                    match field.value {
-                        Some(ref mut pat) => self.new_pattern(pat),
-                        None => {
-                            let id = field.name.value.clone();
-                            let pat = Pattern::Ident(TypedIdent {
-                                name: self.stack_var(id, pattern.span),
-                                typ: Type::hole(),
-                            });
-                            field.value = Some(pos::spanned(field.name.span, pat));
+                Pattern::Record {
+                    ref mut fields,
+                    ref mut implicit_import,
+                    ..
+                } => {
+                    for field in fields {
+                        match field.value {
+                            Some(ref mut pat) => self.new_pattern(pat),
+                            None => {
+                                let id = field.name.value.clone();
+                                let pat = Pattern::Ident(TypedIdent {
+                                    name: self.stack_var(id, pattern.span),
+                                    typ: Type::hole(),
+                                });
+                                field.value = Some(pos::spanned(field.name.span, pat));
+                            }
                         }
                     }
-                },
+                    if let Some(ref mut implicit_import) = *implicit_import {
+                        let new_name =
+                            self.stack_var(implicit_import.value.clone(), implicit_import.span);
+                        implicit_import.value = new_name;
+                    }
+                }
                 Pattern::Ident(ref mut id) => {
                     let new_name = self.stack_var(id.name.clone(), pattern.span);
                     id.name = new_name;
