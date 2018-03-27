@@ -341,7 +341,7 @@ impl FunctionEnv {
         let mut count = 0;
         for x in self.stack.exit_scope() {
             count += 1;
-            debug!("Pop var: {:?}", x);
+            debug!("Pop var: ({:?}, {:?})", x.0, (x.1).0);
             if self.emit_debug_info && compiler.empty_symbol != x.0 {
                 self.function
                     .debug_info

@@ -67,9 +67,22 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
         }
 
         fn stack_var(&mut self, id: Symbol, span: Span<BytePos>) -> Symbol {
+            use std::fmt::Write;
+
             let old_id = id.clone();
             let name = self.symbols.string(&id).to_owned();
-            let new_id = self.symbols.symbol(format!("{}:{}", name, span.start));
+            let mut new_name = format!("{}:{}", name, span.start);
+            let mut i = 0;
+            while self.symbols.contains_name(&new_name) {
+                let truncate_len = new_name
+                    .trim_right_matches(|c: char| c.is_digit(10) || c == '_')
+                    .len();
+                new_name.truncate(truncate_len);
+
+                write!(new_name, "_{}", i).unwrap();
+                i += 1;
+            }
+            let new_id = self.symbols.symbol(new_name);
             debug!(
                 "Rename binding `{}` = `{}`",
                 self.symbols.string(&old_id),

@@ -411,6 +411,13 @@ impl Symbols {
         self.make_symbol(name.into())
     }
 
+    pub fn contains_name<N>(&mut self, name: N) -> bool
+    where
+        N: AsRef<Name>,
+    {
+        self.indexes.contains_key(name.as_ref())
+    }
+
     pub fn len(&self) -> usize {
         self.strings.len()
     }
@@ -440,6 +447,13 @@ impl<'a> SymbolModule<'a> {
         N: Into<NameBuf> + AsRef<Name>,
     {
         self.symbols.symbol(name)
+    }
+
+    pub fn contains_name<N>(&mut self, name: N) -> bool
+    where
+        N: AsRef<Name>,
+    {
+        self.symbols.contains_name(name.as_ref())
     }
 
     /// Creates a symbol which is prefixed by the `module` argument passed in `new`
