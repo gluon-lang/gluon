@@ -1,7 +1,8 @@
 let prelude = import! std.prelude
 let { Eq, Ord, Ordering, Show } = prelude
-let { Functor, Applicative, Monad, Foldable, Traversable } = prelude
+let { Functor, Applicative, Monad, Traversable } = prelude
 let { Result } = import! std.types
+let { Foldable } = import! std.foldable
 let { Bool } = import! std.bool
 let string = import! std.string
 

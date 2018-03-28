@@ -1,43 +1,19 @@
 //@NO-IMPLICIT-PRELUDE
 
-let { Bool, Option, Ordering } = import! std.types
+let { Option } = import! std.types
 let { Functor } = import! std.functor
-let { Applicative, (*>), wrap } = import! std.applicative
-
-/// `Semigroup a` represents an associative operation on `a`.
-/// This means the following laws must hold:
-///
-/// * `forall x . append x (append y z) == append (append x y) z`
-/// @implicit
-type Semigroup a = {
-    /// # Note
-    ///
-    /// * Known as `(<>)` or `mappend` in Haskell
-    append : a -> a -> a
-}
-
-let append ?s : [Semigroup a] -> a -> a -> a = s.append
-let (<>) ?s : [Semigroup a] -> a -> a -> a = s.append
+let { Applicative, Alternative, (*>), wrap } = import! std.applicative
+let { Foldable } = import! std.foldable
+let { Monad } = import! std.monad
+let { Semigroup, append, (<>) } = import! std.semigroup
+let { Monoid, empty } = import! std.monoid
+let { Eq, Ord, Bool, Ordering, (==), (/=), (<), (<=), (>=), (>) } = import! std.cmp
 
 let semigroup_Ordering : Semigroup Ordering = {
     append = \x y ->
         match x with
         | EQ -> y
         | _ -> x,
-}
-
-/// `Monoid a` represents an semigroup an which has an identity. This means
-/// the following additional laws must hold:
-///
-/// * `forall x . append x empty == x`
-/// * `forall x . append empty x == x`
-/// @implicit
-type Monoid a = {
-    semigroup : Semigroup a,
-    /// # Note
-    ///
-    /// * Known as `mempty` in Haskell
-    empty : a
 }
 
 let monoid_Ordering : Monoid Ordering = {
@@ -55,41 +31,6 @@ type Group a = {
     /// The inverse operation
     inverse : a -> a
 }
-
-/// `Eq a` defines equality (==) on `a`
-/// @implicit
-type Eq a = { (==) : a -> a -> Bool }
-
-let (==) ?eq : [Eq a] -> a -> a -> Bool = eq.(==)
-let (/=) ?eq l r : [Eq a] -> a -> a -> Bool = if (eq.(==) l r) then False else True
-
-/// `Ord a` defines an ordering on `a`
-/// @implicit
-type Ord a = { eq : Eq a, compare : a -> a -> Ordering }
-
-let (<=) ?ord l r : [Ord a] -> a -> a -> Bool =
-    match ord.compare l r with
-    | LT -> True
-    | EQ -> True
-    | GT -> False
-
-let (<) ?ord l r : [Ord a] -> a -> a -> Bool =
-    match ord.compare l r with
-    | LT -> True
-    | EQ -> False
-    | GT -> False
-
-let (>) ?ord l r : [Ord a] -> a -> a -> Bool =
-    match ord.compare l r with
-    | LT -> False
-    | EQ -> False
-    | GT -> True
-
-let (>=) ?ord l r : [Ord a] -> a -> a -> Bool =
-    match ord.compare l r with
-    | LT -> False
-    | EQ -> True
-    | GT -> True
 
 /// The basic operation on numbers.
 /// Defined for both the primitive type `Int` and `Float`
@@ -121,107 +62,11 @@ let (<<) ?cat : forall a b c . [Category cat] -> cat b c -> cat a b -> cat a c =
 /// Left-to-right composition. Alias for `compose`, but with the arguments flipped.
 let (>>) ?cat f g : forall a b c . [Category cat] -> cat a b -> cat b c -> cat a c = cat.compose g f
 
-/// @implicit
-type Alternative f = {
-    applicative : Applicative f,
-    or : forall a . f a -> f a -> f a,
-    empty : forall a . f a
-}
-
-let empty ?alt : [Alternative f] -> f a = alt.empty
-let or ?alt : [Alternative f] -> f a -> f a -> f a = alt.or
-let (<|>) ?alt : [Alternative f] -> f a -> f a -> f a = alt.or
-
-/// A generalised interface for imperatively sequencing actions
-/// @implicit
-type Monad (m : Type -> Type) = {
-    applicative : Applicative m,
-    /// This can be seen as akin to sequential variable binding in an
-    /// imperative language. For example in Javascript:
-    ///
-    /// ```js
-    /// var x = call_fallible("hello");
-    /// do_something(x);
-    /// ```
-    ///
-    /// In gluon this would look like:
-    ///
-    /// ```gluon
-    /// result.monad.flat_map (\x -> do_something x) (call_fallible "hello")
-    /// ```
-    ///
-    /// Note that it is sometimes more ergonomic to use the `(>>=)` operator:
-    ///
-    /// ```gluon
-    /// let { (>>=) } = import! std.prelude
-    ///
-    /// call_fallible "hello" >>= (\x -> do_something x)
-    /// ```
-    ///
-    /// # Note
-    ///
-    /// * Known as `(=<<) or `flip (>>=)` in Haskell
-    /// * Known as `Option::and_then` and `Result::and_then` in Rust
-    flat_map : forall a b . (a -> m b) -> m a -> m b
-}
-
-let flat_map ?m : [Monad m] -> (a -> m b) -> m a -> m b = m.flat_map
-let (=<<) ?m : [Monad m] -> (a -> m b) -> m a -> m b = m.flat_map
-let (>>=) ?m x f : [Monad m] -> m a -> (a -> m b) -> m b = m.flat_map f x
-
-let join ?m mm : [Monad m] -> m (m a) -> m a = mm >>= (\x -> x)
-
 /// `Show a` represents a conversion function from `a` to a readable string.
 /// @implicit
 type Show a = { show : forall a . a -> String }
 
 let show ?s : [Show a] -> a -> String = s.show
-
-/// @implicit
-type Foldable (f : Type -> Type) = {
-    foldr : forall a b . (a -> b -> b) -> b -> f a -> b,
-    foldl : forall a b . (b -> a -> b) -> b -> f a -> b
-}
-
-let foldr ?fold : forall a b . [Foldable f] -> (a -> b -> b) -> b -> f a -> b = fold.foldr
-let foldl ?fold : forall a b . [Foldable f] -> (b -> a -> b) -> b -> f a -> b = fold.foldl
-
-let concat ?fold monoid : [Foldable t] -> Monoid m -> t m -> m =
-    fold.foldr monoid.semigroup.append monoid.empty
-
-let concat_map ?fold monoid f : [Foldable t] -> Monoid m -> (a -> m) -> t a -> m =
-    fold.foldr (\x -> monoid.semigroup.append (f x)) monoid.empty
-
-let fold_m ?fold ?monad f z : [Foldable t] -> [Monad m] -> (a -> b -> m a) -> a -> t b -> m a =
-    fold.foldl (\acc y -> monad.flat_map (\x -> f x y) acc) (monad.applicative.wrap z)
-
-let find ?fold pred : [Foldable t] -> (a -> Bool) -> t a -> Option a =
-    let go acc next =
-        match acc with
-        | None -> if pred next then Some next else None
-        | Some _ -> acc
-
-    fold.foldl go None
-
-let find_map ?fold pred : [Foldable t] -> (a -> Option b) -> t a -> Option b =
-    let go acc next =
-        match acc with
-        | None -> pred next
-        | Some _ -> acc
-
-    fold.foldl go None
-
-let all ?fold pred : [Foldable t] -> (a -> Bool) -> t a -> Bool =
-    fold.foldl (\acc x -> acc && pred x) True
-
-let any ?fold pred : [Foldable t] -> (a -> Bool) -> t a -> Bool =
-    fold.foldl (\acc x -> acc || pred x) False
-
-let elem ?fold eq x : [Foldable t] -> Eq a -> a -> t a -> Bool =
-    any (eq.(==) x)
-
-let count ?fold : [Foldable t] -> t a -> Int =
-    fold.foldl (\acc _ -> acc #Int+ 1) 0
 
 /// @implicit
 type Traversable t = {
@@ -251,6 +96,7 @@ let for ?t applicative x f : [Traversable t] -> Applicative m -> t a -> (a -> m 
     (<>),
 
     Monoid,
+    empty,
     monoid_Ordering,
 
     Group,
@@ -265,27 +111,9 @@ let for ?t applicative x f : [Traversable t] -> Applicative m -> t a -> (a -> m 
     id, compose,
 
     Functor,
-
     Applicative,
-
     Alternative,
-    empty, or, (<|>),
-
     Monad,
-    flat_map, (>>=), (=<<), join,
-
-    Foldable,
-    foldr,
-    foldl,
-    fold_m,
-    concat,
-    concat_map,
-    find,
-    find_map,
-    all,
-    any,
-    elem,
-    count,
 
     Traversable,
     traverse, sequence, for,

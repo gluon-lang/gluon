@@ -75,7 +75,6 @@ impl<Id, T> Clone for Seed<Id, T> {
     }
 }
 
-
 pub fn deserialize_group<'de, Id, T, D>(
     seed: &mut Seed<Id, T>,
     deserializer: D,
@@ -191,7 +190,6 @@ impl<'seed, T, S> SharedSeed<'seed, T, S> {
         SharedSeed(s, PhantomData)
     }
 }
-
 
 impl<'seed, T, S> AsMut<S> for SharedSeed<'seed, T, S> {
     fn as_mut(&mut self) -> &mut S {

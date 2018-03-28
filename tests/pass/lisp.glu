@@ -33,7 +33,7 @@ let parser_tests =
         test "float" <| \_ -> (assert_eq (parser.parse lisp.expr "123.45") (Ok (Float 123.45))),
     ]
 
-let { (>>=) } = import! std.prelude
+let { (>>=) } = import! std.monad
 let eval_string s = parser.parse lisp.expr s >>= lisp.eval
 let eval_string_seq s = parser.parse (parser.many lisp.expr) s >>= lisp.eval_seq
 

@@ -1,13 +1,14 @@
 let prelude @ { Ordering, ? } = import! std.prelude
 let { Semigroup, Monoid, Eq, Show } = prelude
-let { Functor, Applicative, Alternative, Monad, Foldable, Traversable } = prelude
+let { Functor, Applicative, Alternative, Monad, Traversable } = prelude
+let { Foldable } = import! std.foldable
 let { Bool } = import! std.bool
 let string @ { ? } = import! std.string
 let array @ { ? } = import! std.array
 
 let { map } = import! std.functor
 let { (<*>), wrap } = import! std.applicative
-let { (<|>) } = import! std.prelude
+let { (<|>) } = import! std.applicative
 
 /// A linked list type
 type List a = | Nil | Cons a (List a)
@@ -99,7 +100,7 @@ let monad : Monad List =
 
     { applicative = applicative, flat_map }
 
-let show ?d: [Show a] -> Show (List a) =
+let show ?d : [Show a] -> Show (List a) =
     let (++) = string.semigroup.append
 
     {

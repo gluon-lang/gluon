@@ -14,7 +14,7 @@ let repl_prim = import! repl.prim
 let { (<<) } = import! std.function
 
 let { Applicative, wrap, (*>) } = import! std.applicative
-let { flat_map, (>>=) } = import! std.prelude
+let { flat_map, (>>=) } = import! std.monad
 
 let { append = (++) } = string.semigroup
 let ord_map @ { singleton, find, insert, ? } = map.make string.ord
@@ -139,7 +139,7 @@ let cmd_parser : Parser { cmd : String, arg : String } =
         monad = { flat_map },
         alternative,
         applicative } = import! std.parser
-    let { (<|>) } = import! std.prelude
+    let { (<|>) } = import! std.applicative
 
     let word = recognize (skip_many1 letter)
     let arg_parser = recognize (skip_many1 any)

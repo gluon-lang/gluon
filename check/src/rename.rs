@@ -23,19 +23,30 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
     impl<'a, 'b> RenameVisitor<'a, 'b> {
         fn new_pattern(&mut self, pattern: &mut ast::SpannedPattern<Symbol>) {
             match pattern.value {
-                Pattern::Record { ref mut fields, .. } => for field in fields {
-                    match field.value {
-                        Some(ref mut pat) => self.new_pattern(pat),
-                        None => {
-                            let id = field.name.value.clone();
-                            let pat = Pattern::Ident(TypedIdent {
-                                name: self.stack_var(id, pattern.span),
-                                typ: Type::hole(),
-                            });
-                            field.value = Some(pos::spanned(field.name.span, pat));
+                Pattern::Record {
+                    ref mut fields,
+                    ref mut implicit_import,
+                    ..
+                } => {
+                    for field in fields {
+                        match field.value {
+                            Some(ref mut pat) => self.new_pattern(pat),
+                            None => {
+                                let id = field.name.value.clone();
+                                let pat = Pattern::Ident(TypedIdent {
+                                    name: self.stack_var(id, pattern.span),
+                                    typ: Type::hole(),
+                                });
+                                field.value = Some(pos::spanned(field.name.span, pat));
+                            }
                         }
                     }
-                },
+                    if let Some(ref mut implicit_import) = *implicit_import {
+                        let new_name =
+                            self.stack_var(implicit_import.value.clone(), implicit_import.span);
+                        implicit_import.value = new_name;
+                    }
+                }
                 Pattern::Ident(ref mut id) => {
                     let new_name = self.stack_var(id.name.clone(), pattern.span);
                     id.name = new_name;
@@ -56,9 +67,22 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
         }
 
         fn stack_var(&mut self, id: Symbol, span: Span<BytePos>) -> Symbol {
+            use std::fmt::Write;
+
             let old_id = id.clone();
             let name = self.symbols.string(&id).to_owned();
-            let new_id = self.symbols.symbol(format!("{}:{}", name, span.start));
+            let mut new_name = format!("{}:{}", name, span.start);
+            let mut i = 0;
+            while self.symbols.contains_name(&new_name) {
+                let truncate_len = new_name
+                    .trim_right_matches(|c: char| c.is_digit(10) || c == '_')
+                    .len();
+                new_name.truncate(truncate_len);
+
+                write!(new_name, "_{}", i).unwrap();
+                i += 1;
+            }
+            let new_id = self.symbols.symbol(new_name);
             debug!(
                 "Rename binding `{}` = `{}`",
                 self.symbols.string(&old_id),

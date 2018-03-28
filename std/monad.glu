@@ -1,0 +1,47 @@
+//@NO-IMPLICIT-PRELUDE
+
+let { Applicative } = import! std.applicative
+
+/// A generalised interface for imperatively sequencing actions
+/// @implicit
+type Monad (m : Type -> Type) = {
+    applicative : Applicative m,
+    /// This can be seen as akin to sequential variable binding in an
+    /// imperative language. For example in Javascript:
+    ///
+    /// ```js
+    /// var x = call_fallible("hello");
+    /// do_something(x);
+    /// ```
+    ///
+    /// In gluon this would look like:
+    ///
+    /// ```gluon
+    /// result.monad.flat_map (\x -> do_something x) (call_fallible "hello")
+    /// ```
+    ///
+    /// Note that it is sometimes more ergonomic to use the `(>>=)` operator:
+    ///
+    /// ```gluon
+    /// let { (>>=) } = import! std.prelude
+    ///
+    /// call_fallible "hello" >>= (\x -> do_something x)
+    /// ```
+    ///
+    /// # Note
+    ///
+    /// * Known as `(=<<) or `flip (>>=)` in Haskell
+    /// * Known as `Option::and_then` and `Result::and_then` in Rust
+    flat_map : forall a b . (a -> m b) -> m a -> m b
+}
+
+let flat_map ?m : [Monad m] -> (a -> m b) -> m a -> m b = m.flat_map
+let (=<<) ?m : [Monad m] -> (a -> m b) -> m a -> m b = m.flat_map
+let (>>=) ?m x f : [Monad m] -> m a -> (a -> m b) -> m b = m.flat_map f x
+
+let join ?m mm : [Monad m] -> m (m a) -> m a = mm >>= (\x -> x)
+
+{
+    Monad,
+    flat_map, (>>=), (=<<), join,
+}

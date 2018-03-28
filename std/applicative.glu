@@ -39,7 +39,22 @@ let map2 ?app f a b : [Applicative f] -> (a -> b -> c)
 let map3 ?app f a b c : [Applicative f] -> (a -> b -> c -> d) -> f a -> f b -> f c -> f d =
     (app.functor.map f a) <*> b <*> c
 
+/// @implicit
+type Alternative f = {
+    applicative : Applicative f,
+    or : forall a . f a -> f a -> f a,
+    empty : forall a . f a
+}
+
+let empty ?alt : [Alternative f] -> f a = alt.empty
+let or ?alt : [Alternative f] -> f a -> f a -> f a = alt.or
+let (<|>) ?alt : [Alternative f] -> f a -> f a -> f a = alt.or
+
+
 {
     Applicative,
     apply, wrap, (<*>), (<*), (*>), map2, map3,
+
+    Alternative,
+    empty, or, (<|>),
 }

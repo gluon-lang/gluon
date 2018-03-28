@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    {{style ""}}
+    <title>{{name}}</title>
+</head>
+<body>
+    <header>
+        <nav class="navbar navbar-dark bg-dark box-shadow">
+            <ol class="breadcrumb">
+                {{breadcrumbs name}}
+            </ol>
+        </nav>
+    </header>
+
+    <div class="row">
+
+        <nav class="col-md-2 d-none d-md-block bg-light sidebar">
+            <ul class="nav flex-column">
+                {{#each sibling_modules}}
+                <li class="nav-item">
+                    <a class="nav-link active" href="{{symbol_link this}}">{{this}}</a>
+                </li> 
+                {{/each}}
+            </ul>
+        </nav>
+
+        <main class="col-md-9 ml-sm-auto cl-lg-10 pt-3 px-4" role="main">
+            <h1 class="pb-3 mb-4 border-bottom">{{name}}</h1>
+
+            {{#if record.types}}
+            <h2 class="pb-3 mb-4 border-bottom"><a class="anchor field" id="Types" href="#Types">Types</a></h2>
+            {{#each record.types}}
+
+                <h3><a class="anchor field" id="type.{{name}}" href="#type.{{name}}">{{name}}</a></h3>
+                <code>{{type}}</code>
+                <p>{{comment}}</p>
+
+            {{/each}}
+            {{/if}}
+
+            {{#if record.values}}
+            <h2 class="pb-3 mb-4 border-bottom"><a class="anchor field" id="Values" href="#Values">Values</a></h2>
+            {{#each record.values}}
+
+                <h3><a class="anchor field" id="value.{{name}}" href="#value.{{name}}">{{name}}</a></h3>
+                <code>{{type}}</code>
+                <p>{{comment}}</p>
+
+            {{/each}}
+            {{/if}}
+        </main>
+
+    </div>
+</body>
+</html>

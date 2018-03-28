@@ -134,6 +134,42 @@ where
     }
 }
 
+pub fn similarity_filter<'a, I>(typ: &'a ArcType<I>, fields: &'a [I]) -> Box<Fn(&I) -> Filter + 'a>
+where
+    I: AsRef<str>,
+{
+    let mut field_similarity = typ.type_field_iter()
+        .map(|field| &field.name)
+        .chain(typ.row_iter().map(|field| &field.name))
+        .map(|field_in_type| {
+            let similarity = fields
+                .iter()
+                .map(|missing_field| {
+                    ::strsim::jaro_winkler(missing_field.as_ref(), field_in_type.as_ref())
+                })
+                .max_by(|l, r| l.partial_cmp(&r).unwrap())
+                .expect("At least one missing field");
+            (field_in_type, (similarity * 1000000.) as i32)
+        })
+        .collect::<Vec<_>>();
+    field_similarity.sort_by_key(|t| ::std::cmp::Reverse(t.1));
+
+    Box::new(move |field: &I| {
+        // Keep the fields that were missing as-is (with full types)
+        if fields.iter().any(|f| f.as_ref() == field.as_ref()) {
+            Filter::Retain
+        } else if field_similarity
+            .iter()
+            .take(3)
+            .any(|t| t.0.as_ref() == field.as_ref())
+        {
+            Filter::RetainKey
+        } else {
+            Filter::Drop
+        }
+    })
+}
+
 impl<I> TypeError<I>
 where
     I: fmt::Display + AsRef<str>,
@@ -150,41 +186,7 @@ where
             TypeError::UndefinedType(_) => Box::new(|_| Filter::Retain),
             TypeError::SelfRecursiveAlias(_) => Box::new(|_| Filter::Retain),
             TypeError::UnableToGeneralize(_) => Box::new(|_| Filter::Retain),
-            TypeError::MissingFields(ref typ, ref fields) => {
-                let mut field_similarity = typ.type_field_iter()
-                    .map(|field| &field.name)
-                    .chain(typ.row_iter().map(|field| &field.name))
-                    .map(|field_in_type| {
-                        let similarity = fields
-                            .iter()
-                            .map(|missing_field| {
-                                ::strsim::jaro_winkler(
-                                    missing_field.as_ref(),
-                                    field_in_type.as_ref(),
-                                )
-                            })
-                            .max_by(|l, r| l.partial_cmp(&r).unwrap())
-                            .expect("At least one missing field");
-                        (field_in_type, (similarity * 1000000.) as i32)
-                    })
-                    .collect::<Vec<_>>();
-                field_similarity.sort_by_key(|t| ::std::cmp::Reverse(t.1));
-
-                Box::new(move |field: &I| {
-                    // Keep the fields that were missing as-is (with full types)
-                    if fields.iter().any(|f| f.as_ref() == field.as_ref()) {
-                        Filter::Retain
-                    } else if field_similarity
-                        .iter()
-                        .take(3)
-                        .any(|t| t.0.as_ref() == field.as_ref())
-                    {
-                        Filter::RetainKey
-                    } else {
-                        Filter::Drop
-                    }
-                })
-            }
+            TypeError::MissingFields(ref typ, ref fields) => similarity_filter(typ, fields),
         }
     }
 

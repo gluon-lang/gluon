@@ -5,9 +5,9 @@ let { Applicative, (*>) } = import! std.applicative
 let int = import! std.int
 let list @ { ? }= import! std.list
 let option = import! std.option
+let { (<|>), or, empty } = import! std.applicative
 
 let test_alt ?alt show eq : [Alternative f] -> Show (f Int) -> Eq (f Int) -> _ =
-    let { (<|>), or, empty } = import! std.prelude
     let { wrap } = alt.applicative
 
     let assert = assert_eq ?show ?eq

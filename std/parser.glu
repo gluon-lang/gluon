@@ -59,7 +59,7 @@ let alternative : Alternative Parser = {
     empty = parser (\stream -> Err { position = stream.start, message = "empty" }),
 }
 
-let { (<|>) } = import! std.prelude
+let { (<|>) } = import! std.applicative
 
 let monad : Monad Parser = {
     applicative,
@@ -70,7 +70,7 @@ let monad : Monad Parser = {
             | Err err -> Err err),
 }
 
-let { flat_map } = import! std.prelude
+let { flat_map } = import! std.monad
 
 let uncons stream : OffsetString -> Option { char : Char, rest : OffsetString } =
     if stream.start == stream.end then

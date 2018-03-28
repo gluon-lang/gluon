@@ -57,7 +57,7 @@ use base::error::{Errors, InFile};
 use base::metadata::Metadata;
 use base::symbol::{Symbol, SymbolModule, Symbols};
 use base::types::{ArcType, TypeCache};
-use base::pos::{BytePos, Span, Spanned};
+use base::pos::{self, BytePos, Span, Spanned};
 
 use vm::Variants;
 use vm::api::{Getable, Hole, OpaqueValue, VmType};
@@ -385,12 +385,12 @@ impl Compiler {
         };
         let module_name = Symbol::from(format!("@{}", filename_to_module(filename)));
         let mut macros = MacroExpander::new(vm);
-        FutureValue::from(
-            import
-                .load_module(self, vm, &mut macros, &module_name, Span::default())
-                .map_err(|(_, err)| Error::Other(err))
-                .and_then(|_| Ok(macros.finish()?)),
-        ).boxed()
+        if let Err((_, err)) =
+            import.load_module(self, vm, &mut macros, &module_name, Span::default())
+        {
+            macros.errors.push(pos::spanned(Span::default(), err));
+        };
+        FutureValue::from(macros.finish().map_err(|err| err.into())).boxed()
     }
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
@@ -523,7 +523,7 @@ impl Compiler {
 
 pub const PRELUDE: &'static str = r#"
 let __implicit_prelude = import! std.prelude
-and { Num, Eq, Ord, Show, Functor, Monad, ? } = __implicit_prelude
+and { Num, Eq, Ord, Show, Functor, Applicative, Monad, ? } = __implicit_prelude
 and { Bool, not, ? } = import! std.bool
 and { Option, ? } = import! std.option
 

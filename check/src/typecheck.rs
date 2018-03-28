@@ -74,7 +74,7 @@ impl<I> From<KindCheckError<I>> for TypeError<I> {
     }
 }
 
-impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
+impl<I: fmt::Display + AsRef<str> + Clone> fmt::Display for TypeError<I> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::TypeError::*;
         use pretty::{Arena, DocAllocator};
@@ -83,7 +83,20 @@ impl<I: fmt::Display + AsRef<str>> fmt::Display for TypeError<I> {
             NotAFunction(ref typ) => write!(f, "`{}` is not a function", typ),
             UndefinedType(ref name) => write!(f, "Type `{}` is not defined", name),
             UndefinedField(ref typ, ref field) => {
-                write!(f, "Type `{}` does not have the field `{}`", typ, field)
+                let fields = [field.clone()];
+                let filter = unify_type::similarity_filter(typ, &fields);
+                let arena = Arena::new();
+                write!(
+                    f,
+                    "Type `{}` does not have the field `{}`",
+                    TypeFormatter::new(typ)
+                        .filter(&*filter)
+                        .pretty(&arena)
+                        .1
+                        .pretty(80),
+                    field
+                )?;
+                Ok(())
             }
             Unification(ref expected, ref actual, ref errors) => {
                 let filters = errors
@@ -959,23 +972,20 @@ impl<'a> Typecheck<'a> {
                             .unwrap_or_else(|| typ.clone());
                     }
 
-                    match self.find_type_info(&field.name.value)
+                    let alias = match self.find_type_info(&field.name.value)
                         .map(|alias| alias.clone())
                     {
-                        Ok(alias) => {
-                            if self.error_on_duplicated_field(
-                                &mut duplicated_fields,
-                                field.name.clone(),
-                            ) {
-                                new_types.push(Field::new(field.name.value.clone(), alias));
-                            }
-                        }
+                        Ok(alias) => alias,
                         Err(err) => {
                             self.errors.push(Spanned {
                                 span: field.name.span,
                                 value: err.into(),
                             });
+                            Alias::new(field.name.value.clone(), self.type_cache.hole())
                         }
+                    };
+                    if self.error_on_duplicated_field(&mut duplicated_fields, field.name.clone()) {
+                        new_types.push(Field::new(field.name.value.clone(), alias));
                     }
                 }
 
@@ -1460,7 +1470,7 @@ impl<'a> Typecheck<'a> {
                 };
                 typ = self.top_skolem_scope(&typ);
                 actual_type = self.top_skolem_scope(&actual_type);
-                self.unify_span(span, &match_type, typ);
+                self.unify_span(span, &typ, match_type.clone());
 
                 for field in fields {
                     let name = &field.name.value;
@@ -1489,7 +1499,9 @@ impl<'a> Typecheck<'a> {
                     let field_type = actual_type
                         .type_field_iter()
                         .find(|field| field.name.name_eq(&name));
-                    match field_type {
+
+                    let alias;
+                    let alias = match field_type {
                         Some(field_type) => {
                             // This forces refresh_type to remap the name a type was given
                             // in this module to its actual name
@@ -1501,13 +1513,21 @@ impl<'a> Typecheck<'a> {
                                     .metadata
                                     .insert(field_type.typ.name.clone(), meta);
                             }
-
-                            self.stack_type(name, &field_type.typ);
+                            &field_type.typ
                         }
                         None => {
-                            self.error(span, TypeError::UndefinedField(match_type.clone(), name));
+                            self.error(
+                                field.name.span,
+                                TypeError::UndefinedField(match_type.clone(), name.clone()),
+                            );
+                            // We still define the type so that any uses later on in the program
+                            // won't error on UndefinedType
+                            alias = Alias::new(name.clone(), self.type_cache.hole());
+                            &alias
                         }
-                    }
+                    };
+
+                    self.stack_type(name, &alias);
                 }
 
                 if let Some(ref implicit_import) = *implicit_import {

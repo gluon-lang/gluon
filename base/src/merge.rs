@@ -39,7 +39,6 @@ where
     }
 }
 
-
 pub fn merge_tuple_iter<'a, I, F, T, R>(types: I, mut f: F) -> Option<R>
 where
     I: IntoIterator<Item = (&'a T, &'a T)>,

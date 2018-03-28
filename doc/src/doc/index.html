@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    {{style ""}}
+    <title>{{name}}</title>
+</head>
+<body>
+    <header>
+        <nav class="navbar navbar-dark bg-dark box-shadow">
+            <ol class="breadcrumb">
+                {{breadcrumbs name}}
+            </ol>
+        </nav>
+    </header>
+
+    <main class="container">
+        <h1>{{name}}</h1>
+
+        <h2>Modules</h2>
+        {{#each modules}}
+        <h3>
+            <a href="{{symbol_link this}}">{{this}}</a>
+        </h3>
+        {{/each}}
+    </main>
+</body>
+</html>

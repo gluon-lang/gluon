@@ -118,9 +118,9 @@ impl<'s> MacroExpandable for &'s mut SpannedExpr<Symbol> {
         compiler: &mut Compiler,
         macros: &mut MacroExpander,
         file: &str,
-        _expr_str: &str,
+        expr_str: &str,
     ) -> SalvageResult<MacroValue<Self::Expr>> {
-        if compiler.implicit_prelude {
+        if compiler.implicit_prelude && !expr_str.starts_with("//@NO-IMPLICIT-PRELUDE") {
             compiler.include_implicit_prelude(macros.vm.global_env().type_cache(), file, self);
         }
         macros.run(self);
@@ -138,7 +138,7 @@ impl MacroExpandable for SpannedExpr<Symbol> {
         file: &str,
         expr_str: &str,
     ) -> SalvageResult<MacroValue<Self::Expr>> {
-        if compiler.implicit_prelude {
+        if compiler.implicit_prelude && !expr_str.starts_with("//@NO-IMPLICIT-PRELUDE") {
             compiler.include_implicit_prelude(macros.vm.global_env().type_cache(), file, &mut self);
         }
         let prev_errors = mem::replace(&mut macros.errors, Errors::new());

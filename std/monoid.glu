@@ -1,0 +1,23 @@
+//@NO-IMPLICIT-PRELUDE
+let { Semigroup } = import! std.semigroup
+
+/// `Monoid a` represents an semigroup an which has an identity. This means
+/// the following additional laws must hold:
+///
+/// * `forall x . append x empty == x`
+/// * `forall x . append empty x == x`
+/// @implicit
+type Monoid a = {
+    semigroup : Semigroup a,
+    /// # Note
+    ///
+    /// * Known as `mempty` in Haskell
+    empty : a
+}
+
+let empty ?m : [Monoid a] -> a = m.empty
+
+{
+    Monoid,
+    empty,
+}

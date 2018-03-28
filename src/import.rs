@@ -57,7 +57,7 @@ quick_error! {
 }
 
 macro_rules! std_libs {
-    ($($file: expr),*) => {
+    ($($file: expr,)*) => {
         [$((concat!("std.", $file), include_str!(concat!("../std/", $file, ".glu")))),*]
     }
 }
@@ -86,7 +86,12 @@ static STD_LIBS: &[(&str, &str)] = &std_libs!(
     "writer",
     "array",
     "functor",
-    "applicative"
+    "applicative",
+    "cmp",
+    "foldable",
+    "monad",
+    "monoid",
+    "semigroup",
 );
 
 // When testing we use the files as-is in the repository to avoid recompiling after they are
