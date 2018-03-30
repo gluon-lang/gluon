@@ -465,6 +465,8 @@ pub fn load_char(vm: &Thread) -> Result<ExternModule> {
     ExternModule::new(
         vm,
         record! {
+            from_int => named_primitive!(1, "std.char.prim.from_int", ::std::char::from_u32),
+            to_int => named_primitive!(1, "std.char.prim.to_int", |c: char| c as u32),
             is_digit => primitive!(2 std::char::prim::is_digit),
             to_digit => primitive!(2 std::char::prim::to_digit),
             len_utf8 => primitive!(1 std::char::prim::len_utf8),

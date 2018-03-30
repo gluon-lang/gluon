@@ -1,0 +1,11 @@
+let { run, Test, assert_eq, test, group, ? }  = import! std.test
+let { (<|) } = import! std.function
+let prelude  = import! std.prelude
+let { Applicative, (*>), ? } = import! std.applicative
+let char @ { ? } = import! std.char
+
+group "char" [
+    test "from_int" <| \_ -> assert_eq (char.from_int 97) (Some 'a'),
+    test "from_int_error" <| \_ -> assert_eq (char.from_int 0x110000) None,
+    test "to_int" <| \_ -> assert_eq (char.to_int 'a') 97,
+]
