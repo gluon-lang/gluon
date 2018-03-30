@@ -185,7 +185,7 @@ where
                 })
                 .map(|last_offside| last_offside.location.column)
             {
-                Some(last_column) if span.start.column <= last_column => {
+                | Some(last_column) if span.start.column <= last_column => {
                     debug!(
                         "Inserting empty block due to {:?} <= {:?}",
                         self.indent_levels.last(),

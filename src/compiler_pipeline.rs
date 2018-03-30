@@ -18,13 +18,13 @@ use either::Either;
 use base::ast::SpannedExpr;
 use base::error::{Errors, InFile};
 use base::metadata::Metadata;
-use base::types::{ArcType, Type};
+use base::resolve;
 use base::source::Source;
 use base::symbol::{Name, NameBuf, Symbol, SymbolModule};
-use base::resolve;
+use base::types::{ArcType, Type};
 
-use vm::core;
 use vm::compiler::CompiledModule;
+use vm::core;
 use vm::future::{BoxFutureValue, FutureValue};
 use vm::macros::MacroExpander;
 use vm::thread::{Execute, RootedValue, Thread, ThreadInternal, VmRoot};
@@ -152,6 +152,91 @@ impl MacroExpandable for SpannedExpr<Symbol> {
     }
 }
 
+pub struct InfixReparsed<E> {
+    pub expr: E,
+}
+
+pub trait InfixReparseable: Sized {
+    type Expr: BorrowMut<SpannedExpr<Symbol>>;
+
+    fn reparse_infix(
+        self,
+        compiler: &mut Compiler,
+        thread: &Thread,
+        file: &str,
+        expr_str: &str,
+    ) -> SalvageResult<InfixReparsed<Self::Expr>>;
+}
+
+impl<T> InfixReparseable for T
+where
+    T: MacroExpandable,
+{
+    type Expr = T::Expr;
+
+    fn reparse_infix(
+        self,
+        compiler: &mut Compiler,
+        thread: &Thread,
+        file: &str,
+        expr_str: &str,
+    ) -> SalvageResult<InfixReparsed<Self::Expr>> {
+        let mut macro_error = None;
+        let expr = match self.expand_macro(compiler, thread, file, expr_str) {
+            Ok(expr) => expr,
+            Err((Some(expr), err)) => {
+                macro_error = Some(err);
+                expr
+            }
+            Err((None, err)) => return Err((None, err)),
+        };
+        match expr.reparse_infix(compiler, thread, file, expr_str) {
+            Ok(value) => match macro_error {
+                Some(err) => return Err((Some(value), err)),
+                None => Ok(value),
+            },
+            Err((opt, err)) => Err((
+                opt,
+                Errors::from(macro_error.into_iter().chain(Some(err)).collect::<Vec<_>>()).into(),
+            )),
+        }
+    }
+}
+
+impl<E> InfixReparseable for MacroValue<E>
+where
+    E: BorrowMut<SpannedExpr<Symbol>>,
+{
+    type Expr = E;
+
+    fn reparse_infix(
+        self,
+        compiler: &mut Compiler,
+        _thread: &Thread,
+        file: &str,
+        expr_str: &str,
+    ) -> SalvageResult<InfixReparsed<Self::Expr>> {
+        use parser::{OpTable, Reparser};
+
+        let MacroValue { mut expr } = self;
+        let mut reparser = Reparser::new(OpTable::default(), &mut compiler.symbols);
+        match reparser.reparse(expr.borrow_mut()) {
+            Err(errors) => Err((
+                Some(InfixReparsed { expr }),
+                InFile::new(
+                    file,
+                    expr_str,
+                    errors
+                        .into_iter()
+                        .map(|err| err.map(::parser::Error::from))
+                        .collect(),
+                ).into(),
+            )),
+            Ok(_) => Ok(InfixReparsed { expr }),
+        }
+    }
+}
+
 /// Result type of successful typechecking
 pub struct TypecheckValue<E> {
     pub expr: E,
@@ -182,7 +267,7 @@ pub trait Typecheckable: Sized {
 
 impl<T> Typecheckable for T
 where
-    T: MacroExpandable,
+    T: InfixReparseable,
 {
     type Expr = T::Expr;
 
@@ -195,7 +280,7 @@ where
         expected_type: Option<&ArcType>,
     ) -> Result<TypecheckValue<Self::Expr>> {
         let mut macro_error = None;
-        let expr = match self.expand_macro(compiler, thread, file, expr_str) {
+        let expr = match self.reparse_infix(compiler, thread, file, expr_str) {
             Ok(expr) => expr,
             Err((Some(expr), err)) => {
                 macro_error = Some(err);
@@ -215,7 +300,7 @@ where
     }
 }
 
-impl<E> Typecheckable for MacroValue<E>
+impl<E> Typecheckable for InfixReparsed<E>
 where
     E: BorrowMut<SpannedExpr<Symbol>>,
 {
@@ -583,8 +668,8 @@ where
     where
         T: Send + VmRoot<'vm>,
     {
-        use vm::serialization::DeSeed;
         use vm::internal::Global;
+        use vm::serialization::DeSeed;
 
         let Global {
             metadata,
@@ -647,8 +732,8 @@ where
     T: Send + VmRoot<'vm>,
 {
     use check::check_signature;
-    use vm::api::{VmType, IO};
     use vm::api::generic::A;
+    use vm::api::{VmType, IO};
 
     if check_signature(&*vm.get_env(), &v.typ, &IO::<A>::make_forall_type(&vm)) {
         let ExecuteValue {

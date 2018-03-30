@@ -23,11 +23,10 @@ use base::pos::{self, BytePos, Span, Spanned};
 use base::symbol::Symbol;
 use base::types::{ArcType, TypeCache};
 
-use infix::{OpTable, Reparser};
 use layout::Layout;
 use token::{Token, Tokenizer};
 
-pub use infix::Error as InfixError;
+pub use infix::{Error as InfixError, OpTable, Reparser};
 pub use layout::Error as LayoutError;
 pub use token::Error as TokenizeError;
 
@@ -273,9 +272,8 @@ type MutIdentEnv<'env, Id> = &'env mut IdentEnv<Ident = Id>;
 type ErrorEnv<'err, 'input> = &'err mut Errors<LalrpopError<'input>>;
 
 pub type ParseErrors = Errors<Spanned<Error, BytePos>>;
-
 macro_rules! layout {
-    ($result_ok_iter:ident, $input:expr) => {{
+    ($result_ok_iter: ident, $input: expr) => {{
         let tokenizer = Tokenizer::new($input);
         $result_ok_iter = RefCell::new(ResultOkIter::new(tokenizer));
 
@@ -327,19 +325,7 @@ where
     }
 
     match result {
-        Ok(mut expr) => {
-            let mut errors = transform_errors(parse_errors);
-            let mut reparser = Reparser::new(OpTable::default(), symbols);
-            if let Err(reparse_errors) = reparser.reparse(&mut expr) {
-                errors.extend(reparse_errors.into_iter().map(|err| err.map(Error::Infix)));
-            }
-
-            if errors.has_errors() {
-                Err((Some(expr), errors))
-            } else {
-                Ok(expr)
-            }
-        }
+        Ok(expr) => Ok(expr),
         Err(err) => {
             parse_errors.push(err);
             Err((None, transform_errors(parse_errors)))
