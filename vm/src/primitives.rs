@@ -234,6 +234,10 @@ fn show_char(c: char) -> String {
     format!("{}", c)
 }
 
+fn show_byte(c: u8) -> String {
+    format!("{}", c)
+}
+
 extern "C" fn error(_: &Thread) -> Status {
     // We expect a string as an argument to this function but we only return Status::Error
     // and let the caller take care of printing the message
@@ -266,6 +270,9 @@ mod std {
     }
     pub mod array {
         pub use primitives::array as prim;
+    }
+    pub mod byte {
+        pub type prim = u8;
     }
     pub mod int {
         pub type prim = ::types::VmInt;
@@ -342,7 +349,34 @@ pub fn load_float(thread: &Thread) -> Result<ExternModule> {
             tanh => primitive!(1 std::float::prim::tanh),
             acosh => primitive!(1 std::float::prim::acosh),
             atanh => primitive!(1 std::float::prim::atanh),
+            from_int => named_primitive!(1, "std.float.prim.from_int", |i: VmInt| i as f64),
             parse => named_primitive!(1, "std.float.prim.parse", parse::<f64>)
+        },
+    )
+}
+
+#[allow(non_camel_case_types)]
+pub fn load_byte(vm: &Thread) -> Result<ExternModule> {
+    use self::std;
+    ExternModule::new(
+        vm,
+        record! {
+            min_value => std::byte::prim::min_value(),
+            max_value => std::byte::prim::max_value(),
+            count_ones => primitive!(1 std::byte::prim::count_ones),
+            count_zeros => primitive!(1 std::byte::prim::count_zeros),
+            leading_zeros => primitive!(1 std::byte::prim::leading_zeros),
+            trailing_zeros => primitive!(1 std::byte::prim::trailing_zeros),
+            rotate_left => primitive!(2 std::byte::prim::rotate_left),
+            rotate_right => primitive!(2 std::byte::prim::rotate_right),
+            swap_bytes => primitive!(1 std::byte::prim::swap_bytes),
+            from_be => primitive!(1 std::byte::prim::from_be),
+            from_le => primitive!(1 std::byte::prim::from_le),
+            to_be => primitive!(1 std::byte::prim::to_be),
+            to_le => primitive!(1 std::byte::prim::to_le),
+            pow => primitive!(2 std::byte::prim::pow),
+            from_int => named_primitive!(1, "std.byte.prim.from_int", |i: VmInt| i as u8),
+            parse => named_primitive!(1, "std.byte.prim.parse", parse::<u8>)
         },
     )
 }
@@ -356,6 +390,9 @@ pub fn load_int(vm: &Thread) -> Result<ExternModule> {
             min_value => std::int::prim::min_value(),
             max_value => std::int::prim::max_value(),
             count_ones => primitive!(1 std::int::prim::count_ones),
+            count_zeros => primitive!(1 std::int::prim::count_zeros),
+            leading_zeros => primitive!(1 std::int::prim::leading_zeros),
+            trailing_zeros => primitive!(1 std::int::prim::trailing_zeros),
             rotate_left => primitive!(2 std::int::prim::rotate_left),
             rotate_right => primitive!(2 std::int::prim::rotate_right),
             swap_bytes => primitive!(1 std::int::prim::swap_bytes),
@@ -368,6 +405,8 @@ pub fn load_int(vm: &Thread) -> Result<ExternModule> {
             signum => primitive!(1 std::int::prim::signum),
             is_positive => primitive!(1 std::int::prim::is_positive),
             is_negative => primitive!(1 std::int::prim::is_negative),
+            from_byte => named_primitive!(1, "std.int.prim.from_byte", |b: u8| b as VmInt),
+            from_float => named_primitive!(1, "std.int.prim.from_float", |f: f64| f as VmInt),
             parse => named_primitive!(1, "std.int.prim.parse", parse::<VmInt>)
         },
     )
@@ -426,6 +465,8 @@ pub fn load_char(vm: &Thread) -> Result<ExternModule> {
     ExternModule::new(
         vm,
         record! {
+            from_int => named_primitive!(1, "std.char.prim.from_int", ::std::char::from_u32),
+            to_int => named_primitive!(1, "std.char.prim.to_int", |c: char| c as u32),
             is_digit => primitive!(2 std::char::prim::is_digit),
             to_digit => primitive!(2 std::char::prim::to_digit),
             len_utf8 => primitive!(1 std::char::prim::len_utf8),
@@ -436,7 +477,7 @@ pub fn load_char(vm: &Thread) -> Result<ExternModule> {
             is_whitespace => primitive!(1 std::char::prim::is_whitespace),
             is_alphanumeric => primitive!(1 std::char::prim::is_alphanumeric),
             is_control => primitive!(1 std::char::prim::is_control),
-            is_numeric => primitive!(1 std::char::prim::is_numeric)
+            is_numeric => primitive!(1 std::char::prim::is_numeric),
         },
     )
 }
@@ -460,6 +501,7 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
         record! {
             show_int => primitive!(1 std::prim::show_int),
             show_float => primitive!(1 std::prim::show_float),
+            show_byte => primitive!(1 std::prim::show_byte),
             show_char => primitive!(1 std::prim::show_char),
             string_compare => named_primitive!(2, "std.prim.string_compare", str::cmp),
             string_eq => named_primitive!(2, "std.prim.string_eq", <str as PartialEq>::eq),
