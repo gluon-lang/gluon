@@ -267,6 +267,9 @@ mod std {
     pub mod array {
         pub use primitives::array as prim;
     }
+    pub mod byte {
+        pub type prim = u8;
+    }
     pub mod int {
         pub type prim = ::types::VmInt;
     }
@@ -349,6 +352,32 @@ pub fn load_float(thread: &Thread) -> Result<ExternModule> {
 }
 
 #[allow(non_camel_case_types)]
+pub fn load_byte(vm: &Thread) -> Result<ExternModule> {
+    use self::std;
+    ExternModule::new(
+        vm,
+        record! {
+            min_value => std::byte::prim::min_value(),
+            max_value => std::byte::prim::max_value(),
+            count_ones => primitive!(1 std::byte::prim::count_ones),
+            count_zeroes => primitive!(1 std::byte::prim::count_zeroes),
+            leading_zeroes => primitive!(1 std::byte::prim::leading_zeroes),
+            trailing_zeroes => primitive!(1 std::byte::prim::trailing_zeroes),
+            rotate_left => primitive!(2 std::byte::prim::rotate_left),
+            rotate_right => primitive!(2 std::byte::prim::rotate_right),
+            swap_bytes => primitive!(1 std::byte::prim::swap_bytes),
+            from_be => primitive!(1 std::byte::prim::from_be),
+            from_le => primitive!(1 std::byte::prim::from_le),
+            to_be => primitive!(1 std::byte::prim::to_be),
+            to_le => primitive!(1 std::byte::prim::to_le),
+            pow => primitive!(2 std::byte::prim::pow),
+            from_float => named_primitive!(1, "std.byte.prim.from_int", |i: VmInt| i as u8),
+            parse => named_primitive!(1, "std.byte.prim.parse", parse::<VmInt>)
+        },
+    )
+}
+
+#[allow(non_camel_case_types)]
 pub fn load_int(vm: &Thread) -> Result<ExternModule> {
     use self::std;
     ExternModule::new(
@@ -357,6 +386,9 @@ pub fn load_int(vm: &Thread) -> Result<ExternModule> {
             min_value => std::int::prim::min_value(),
             max_value => std::int::prim::max_value(),
             count_ones => primitive!(1 std::int::prim::count_ones),
+            count_zeroes => primitive!(1 std::int::prim::count_zeroes),
+            leading_zeroes => primitive!(1 std::int::prim::leading_zeroes),
+            trailing_zeroes => primitive!(1 std::int::prim::trailing_zeroes),
             rotate_left => primitive!(2 std::int::prim::rotate_left),
             rotate_right => primitive!(2 std::int::prim::rotate_right),
             swap_bytes => primitive!(1 std::int::prim::swap_bytes),
