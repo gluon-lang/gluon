@@ -1,0 +1,63 @@
+let { Semigroup, Monoid, Group, Eq, Ord, Ordering, Num, Show } = import! std.prelude
+
+let additive =
+    let semigroup : Semigroup Byte = {
+        append = \x y -> x #Byte+ y
+    }
+
+    let monoid : Monoid Byte = {
+        semigroup = semigroup,
+        empty = 0b,
+    }
+
+    let group : Group Byte = {
+        monoid = monoid,
+        inverse = \x -> 0b #Byte- x,
+    }
+
+    { semigroup, monoid, group }
+
+let multiplicative =
+    let semigroup : Semigroup Byte = {
+        append = \x y -> x #Byte* y
+    }
+
+    let monoid : Monoid Byte = {
+        semigroup = semigroup,
+        empty = 1b,
+    }
+
+    { semigroup, monoid }
+
+let eq : Eq Byte = {
+    (==) = \l r -> l #Byte== r
+}
+
+let ord : Ord Byte = {
+    eq = eq,
+    compare = \l r -> if l #Byte< r then LT else if l #Byte== r then EQ else GT,
+}
+
+let num : Num Byte = {
+    ord = ord,
+    (+) = additive.semigroup.append,
+    (-) = \l r -> l #Byte- r,
+    (*) = multiplicative.semigroup.append,
+    (/) = \l r -> l #Byte/ r,
+    negate = additive.group.inverse,
+}
+
+let show : Show Byte = {
+    show = (import! std.prim).show_byte
+}
+
+{
+    additive,
+    multiplicative,
+    eq,
+    ord,
+    num,
+    show,
+    ..
+    import! std.byte.prim
+}

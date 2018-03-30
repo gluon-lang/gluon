@@ -7,18 +7,16 @@ let float = import! std.float
 let byte @ { ? } = import! std.byte
 
 let byte_tests =
-    let { (+), (-), (*) } = int.num
     group "byte" [
         test "arithmetic" <| \_ ->
             assert_eq 2b 2b
                 *> assert_eq 12b (10b + 2b)
                 *> assert_eq 123b (50b * 2b + 9b * 3b - 4b),
-        test "from_int" <| \_ -> assert_eq (byte.from_float 2.0) 2,
-        test "from_int_saturate" <| \_ -> assert_eq (byte.from_int 200) 256,
+        test "from_int" <| \_ -> assert_eq (byte.from_int 2) 2b,
+        test "from_int_truncate" <| \_ -> assert_eq (byte.from_int 2000) 208b,
     ]
 
 let int_tests =
-    let { (+), (-), (*) } = int.num
     group "int" [
         test "arithmetic" <| \_ ->
             assert_eq 2 2
@@ -30,11 +28,9 @@ let int_tests =
     ]
 
 let float_tests =
-    let { (+), (-), (*) } = float.num
     group "float" [
         test "float" <| \_ -> assert_eq 91.0 (50.0 * 2.0 - 3.0 * 3.0),
         test "from_int" <| \_ -> assert_eq (float.from_int 2) 2.0,
-        test "from_byte" <| \_ -> assert_eq (float.from_byte 2b) 2.0,
     ]
 
 group "arithmetic" [byte_tests, int_tests, float_tests]

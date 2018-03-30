@@ -594,6 +594,7 @@ impl VmBuilder {
             .unwrap_or_else(|err| panic!("{}", err));
 
         add_extern_module(&vm, "std.prim", ::vm::primitives::load);
+        add_extern_module(&vm, "std.byte.prim", ::vm::primitives::load_byte);
         add_extern_module(&vm, "std.int.prim", ::vm::primitives::load_int);
         add_extern_module(&vm, "std.float.prim", ::vm::primitives::load_float);
         add_extern_module(&vm, "std.string.prim", ::vm::primitives::load_string);

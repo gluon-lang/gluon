@@ -70,6 +70,7 @@ static STD_LIBS: &[(&str, &str)] = &std_libs!(
     "bool",
     "float",
     "int",
+    "byte",
     "char",
     "io",
     "list",
