@@ -7,12 +7,20 @@ let float = import! std.float
 
 let int_tests =
     let { (+), (-), (*) } = int.num
-    test "int" <| \_ -> (assert_eq 2 2
-        *> assert_eq 12 (10 + 2)
-        *> assert_eq 123 (50 * 2 + 9 * 3 - 4))
+    group "int" [
+        test "arithmetic" <| \_ ->
+            assert_eq 2 2
+                *> assert_eq 12 (10 + 2)
+                *> assert_eq 123 (50 * 2 + 9 * 3 - 4),
+        test "from_float" <| \_ -> assert_eq (int.from_float 2.0) 2,
+        test "from_float_truncate" <| \_ -> assert_eq (int.from_float 2.7) 2,
+    ]
 
 let float_tests =
     let { (+), (-), (*) } = float.num
-    test "float" <| \_ -> (assert_eq 91.0 (50.0 * 2.0 - 3.0 * 3.0))
+    group "float" [
+        test "float" <| \_ -> assert_eq 91.0 (50.0 * 2.0 - 3.0 * 3.0),
+        test "from_int" <| \_ -> assert_eq (float.from_int 2) 2.0,
+    ]
 
 group "arithmetic" [int_tests, float_tests]

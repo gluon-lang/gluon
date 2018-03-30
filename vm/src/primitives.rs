@@ -342,6 +342,7 @@ pub fn load_float(thread: &Thread) -> Result<ExternModule> {
             tanh => primitive!(1 std::float::prim::tanh),
             acosh => primitive!(1 std::float::prim::acosh),
             atanh => primitive!(1 std::float::prim::atanh),
+            from_int => named_primitive!(1, "std.float.prim.from_int", |i: VmInt| i as f64),
             parse => named_primitive!(1, "std.float.prim.parse", parse::<f64>)
         },
     )
@@ -368,6 +369,7 @@ pub fn load_int(vm: &Thread) -> Result<ExternModule> {
             signum => primitive!(1 std::int::prim::signum),
             is_positive => primitive!(1 std::int::prim::is_positive),
             is_negative => primitive!(1 std::int::prim::is_negative),
+            from_float => named_primitive!(1, "std.int.prim.from_float", |f: f64| f as VmInt),
             parse => named_primitive!(1, "std.int.prim.parse", parse::<VmInt>)
         },
     )
@@ -436,7 +438,7 @@ pub fn load_char(vm: &Thread) -> Result<ExternModule> {
             is_whitespace => primitive!(1 std::char::prim::is_whitespace),
             is_alphanumeric => primitive!(1 std::char::prim::is_alphanumeric),
             is_control => primitive!(1 std::char::prim::is_control),
-            is_numeric => primitive!(1 std::char::prim::is_numeric)
+            is_numeric => primitive!(1 std::char::prim::is_numeric),
         },
     )
 }
