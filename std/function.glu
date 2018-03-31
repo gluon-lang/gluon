@@ -41,15 +41,19 @@ let const : a -> b -> a = applicative.wrap
 let flip f x y : (a -> b -> c) -> b -> a -> c = f y x
 
 /// Backward function application, where `f <| x == f x`
+/// @infix right 0
 let (<|) f x : (a -> b) -> a -> b = f x
 
 /// Forward function application, where `x |> f == f x`
+/// @infix left 0
 let (|>) x f : a -> (a -> b) -> b = f x
 
 /// Right-to-left function composition
+/// @infix right 9
 let (<<) : (b -> c) -> (a -> b) -> a -> c = category.compose
 
 /// Left-to-right function composition
+/// @infix left 9
 let (>>) : (a -> b) -> (b -> c) -> a -> c = flip category.compose
 
 {

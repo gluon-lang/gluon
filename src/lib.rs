@@ -271,7 +271,7 @@ impl Compiler {
         expr_str: &str,
         expected_type: Option<&ArcType>,
     ) -> Result<(SpannedExpr<Symbol>, ArcType)> {
-        let TypecheckValue { expr, typ } =
+        let TypecheckValue { expr, typ, .. } =
             expr_str.typecheck_expected(self, vm, file, expr_str, expected_type)?;
         Ok((expr, typ))
     }
@@ -285,8 +285,9 @@ impl Compiler {
         expr: &SpannedExpr<Symbol>,
     ) -> Result<CompiledModule> {
         TypecheckValue {
-            expr: expr,
+            expr,
             typ: vm.global_env().type_cache().hole(),
+            metadata: Default::default(),
         }.compile(self, vm, filename, expr_str, ())
             .map(|result| result.module)
     }

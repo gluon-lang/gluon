@@ -1,5 +1,4 @@
 let string = import! std.string
-let { append = (++) } = string.semigroup
 let writer @ { Writer, ? } = import! std.writer
 let prelude @ { Semigroup } = import! std.prelude
 let float = import! std.float
@@ -7,6 +6,8 @@ let int = import! std.int
 let list @ { List, ? } = import! std.list
 let { Foldable, foldl } = import! std.foldable
 let { Option } = import! std.option
+let { (<>) } = import! std.semigroup
+
 
 type Test a = Writer (List String) a
 type TestCase a = | Test String (() -> Test a) | Group String (Array (TestCase a))
@@ -21,11 +22,11 @@ let assert x = if x then () else error "Assertion failed"
 let assert_eq l r : [Show a] -> [Eq a] -> a -> a -> Test () =
     if l == r
     then testWriter.applicative.wrap ()
-    else writer.tell (Cons ("Assertion failed: " ++ show l ++ " != " ++ show r) Nil)
+    else writer.tell (Cons ("Assertion failed: " <> show l <> " != " <> show r) Nil)
 
 let run test : Test a -> () =
     match test.writer with
-    | Cons _ _ -> error (foldl (\acc err -> acc ++ "\n" ++ err) "" test.writer)
+    | Cons _ _ -> error (foldl (\acc err -> acc <> "\n" <> err) "" test.writer)
     | Nil -> ()
 
 {

@@ -17,11 +17,14 @@ use either::Either;
 
 use base::ast::SpannedExpr;
 use base::error::{Errors, InFile};
+use base::fnv::FnvMap;
 use base::metadata::Metadata;
 use base::resolve;
 use base::source::Source;
 use base::symbol::{Name, NameBuf, Symbol, SymbolModule};
 use base::types::{ArcType, Type};
+
+use check::{metadata, rename};
 
 use vm::compiler::CompiledModule;
 use vm::core;
@@ -152,8 +155,153 @@ impl MacroExpandable for SpannedExpr<Symbol> {
     }
 }
 
+pub struct Renamed<E> {
+    pub expr: E,
+}
+
+pub trait Renameable: Sized {
+    type Expr: BorrowMut<SpannedExpr<Symbol>>;
+
+    fn rename(
+        self,
+        compiler: &mut Compiler,
+        thread: &Thread,
+        file: &str,
+        expr_str: &str,
+    ) -> SalvageResult<Renamed<Self::Expr>>;
+}
+
+impl<T> Renameable for T
+where
+    T: MacroExpandable,
+{
+    type Expr = T::Expr;
+
+    fn rename(
+        self,
+        compiler: &mut Compiler,
+        thread: &Thread,
+        file: &str,
+        expr_str: &str,
+    ) -> SalvageResult<Renamed<Self::Expr>> {
+        let mut macro_error = None;
+        let expr = match self.expand_macro(compiler, thread, file, expr_str) {
+            Ok(expr) => expr,
+            Err((Some(expr), err)) => {
+                macro_error = Some(err);
+                expr
+            }
+            Err((None, err)) => return Err((None, err)),
+        };
+        match expr.rename(compiler, thread, file, expr_str) {
+            Ok(value) => match macro_error {
+                Some(err) => return Err((Some(value), err)),
+                None => Ok(value),
+            },
+            Err((opt, err)) => Err((
+                opt,
+                Errors::from(macro_error.into_iter().chain(Some(err)).collect::<Vec<_>>()).into(),
+            )),
+        }
+    }
+}
+
+pub struct WithMetadata<E> {
+    pub expr: E,
+    pub metadata: FnvMap<Symbol, Metadata>,
+}
+
+pub trait MetadataExtractable: Sized {
+    type Expr: BorrowMut<SpannedExpr<Symbol>>;
+
+    fn extract_metadata(
+        self,
+        compiler: &mut Compiler,
+        thread: &Thread,
+        file: &str,
+        expr_str: &str,
+    ) -> SalvageResult<WithMetadata<Self::Expr>>;
+}
+
+impl<T> MetadataExtractable for T
+where
+    T: Renameable,
+{
+    type Expr = T::Expr;
+
+    fn extract_metadata(
+        self,
+        compiler: &mut Compiler,
+        thread: &Thread,
+        file: &str,
+        expr_str: &str,
+    ) -> SalvageResult<WithMetadata<Self::Expr>> {
+        let mut macro_error = None;
+        let expr = match self.rename(compiler, thread, file, expr_str) {
+            Ok(expr) => expr,
+            Err((Some(expr), err)) => {
+                macro_error = Some(err);
+                expr
+            }
+            Err((None, err)) => return Err((None, err)),
+        };
+        match expr.extract_metadata(compiler, thread, file, expr_str) {
+            Ok(value) => match macro_error {
+                Some(err) => return Err((Some(value), err)),
+                None => Ok(value),
+            },
+            Err((opt, err)) => Err((
+                opt,
+                Errors::from(macro_error.into_iter().chain(Some(err)).collect::<Vec<_>>()).into(),
+            )),
+        }
+    }
+}
+
+impl<E> MetadataExtractable for Renamed<E>
+where
+    E: BorrowMut<SpannedExpr<Symbol>>,
+{
+    type Expr = E;
+
+    fn extract_metadata(
+        mut self,
+        _compiler: &mut Compiler,
+        thread: &Thread,
+        _file: &str,
+        _expr_str: &str,
+    ) -> SalvageResult<WithMetadata<Self::Expr>> {
+        let env = thread.get_env();
+        let (_, metadata) = metadata::metadata(&*env, self.expr.borrow_mut());
+        Ok(WithMetadata {
+            expr: self.expr,
+            metadata,
+        })
+    }
+}
+
+impl<E> Renameable for MacroValue<E>
+where
+    E: BorrowMut<SpannedExpr<Symbol>>,
+{
+    type Expr = E;
+
+    fn rename(
+        mut self,
+        compiler: &mut Compiler,
+        _thread: &Thread,
+        file: &str,
+        _expr_str: &str,
+    ) -> SalvageResult<Renamed<Self::Expr>> {
+        let mut symbols = SymbolModule::new(String::from(file), &mut compiler.symbols);
+        rename::rename(&mut symbols, &mut self.expr.borrow_mut());
+        Ok(Renamed { expr: self.expr })
+    }
+}
+
 pub struct InfixReparsed<E> {
     pub expr: E,
+    pub metadata: FnvMap<Symbol, Metadata>,
 }
 
 pub trait InfixReparseable: Sized {
@@ -170,7 +318,7 @@ pub trait InfixReparseable: Sized {
 
 impl<T> InfixReparseable for T
 where
-    T: MacroExpandable,
+    T: MetadataExtractable,
 {
     type Expr = T::Expr;
 
@@ -182,7 +330,7 @@ where
         expr_str: &str,
     ) -> SalvageResult<InfixReparsed<Self::Expr>> {
         let mut macro_error = None;
-        let expr = match self.expand_macro(compiler, thread, file, expr_str) {
+        let expr = match self.extract_metadata(compiler, thread, file, expr_str) {
             Ok(expr) => expr,
             Err((Some(expr), err)) => {
                 macro_error = Some(err);
@@ -203,7 +351,7 @@ where
     }
 }
 
-impl<E> InfixReparseable for MacroValue<E>
+impl<E> InfixReparseable for WithMetadata<E>
 where
     E: BorrowMut<SpannedExpr<Symbol>>,
 {
@@ -216,23 +364,15 @@ where
         file: &str,
         expr_str: &str,
     ) -> SalvageResult<InfixReparsed<Self::Expr>> {
-        use parser::{OpTable, Reparser};
+        use parser::reparse_infix;
 
-        let MacroValue { mut expr } = self;
-        let mut reparser = Reparser::new(OpTable::default(), &mut compiler.symbols);
-        match reparser.reparse(expr.borrow_mut()) {
-            Err(errors) => Err((
-                Some(InfixReparsed { expr }),
-                InFile::new(
-                    file,
-                    expr_str,
-                    errors
-                        .into_iter()
-                        .map(|err| err.map(::parser::Error::from))
-                        .collect(),
-                ).into(),
+        let WithMetadata { mut expr, metadata } = self;
+        match reparse_infix(&metadata, &compiler.symbols, expr.borrow_mut()) {
+            Ok(()) => Ok(InfixReparsed { expr, metadata }),
+            Err(err) => Err((
+                Some(InfixReparsed { expr, metadata }),
+                InFile::new(file, expr_str, err).into(),
             )),
-            Ok(_) => Ok(InfixReparsed { expr }),
         }
     }
 }
@@ -241,6 +381,7 @@ where
 pub struct TypecheckValue<E> {
     pub expr: E,
     pub typ: ArcType,
+    pub metadata: FnvMap<Symbol, Metadata>,
 }
 
 pub trait Typecheckable: Sized {
@@ -307,7 +448,7 @@ where
     type Expr = E;
 
     fn typecheck_expected(
-        mut self,
+        self,
         compiler: &mut Compiler,
         thread: &Thread,
         file: &str,
@@ -316,23 +457,32 @@ where
     ) -> Result<TypecheckValue<Self::Expr>> {
         use check::typecheck::Typecheck;
 
-        let env = thread.get_env();
-        let mut tc = Typecheck::new(
-            file.into(),
-            &mut compiler.symbols,
-            &*env,
-            thread.global_env().type_cache().clone(),
-        );
+        let InfixReparsed {
+            mut expr,
+            mut metadata,
+        } = self;
 
-        let typ = tc.typecheck_expr_expected(self.expr.borrow_mut(), expected_type)
-            .map_err(|err| {
-                info!("Error when typechecking `{}`: {}", file, err);
-                InFile::new(file, expr_str, err)
-            })?;
+        let typ = {
+            let env = thread.get_env();
+            let mut tc = Typecheck::new(
+                file.into(),
+                &mut compiler.symbols,
+                &*env,
+                thread.global_env().type_cache().clone(),
+                &mut metadata,
+            );
+
+            tc.typecheck_expr_expected(expr.borrow_mut(), expected_type)
+                .map_err(|err| {
+                    info!("Error when typechecking `{}`: {}", file, err);
+                    InFile::new(file, expr_str, err)
+                })?
+        };
 
         Ok(TypecheckValue {
-            expr: self.expr,
-            typ: typ,
+            expr,
+            typ,
+            metadata,
         })
     }
 }

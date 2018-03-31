@@ -36,7 +36,16 @@ pub fn pretty_expr(input: &str, expr: &SpannedExpr<Symbol>) -> String {
 
 pub fn format_expr(input: &str) -> Result<String, parser::ParseErrors> {
     let type_cache = TypeCache::new();
-    let expr = parser::parse_expr(&mut Symbols::new(), &type_cache, input)?;
+    let mut symbols = Symbols::new();
+
+    let expr = parser::parse_expr(&mut symbols, &type_cache, input)?;
+
+    rename::rename(
+        &mut SymbolModule::new("test".into(), &mut symbols),
+        &mut expr,
+    );
+    let (_, mut metadata) = metadata::metadata(&env, &expr);
+    parser::reparse_infix(&metadata, &symbols, &mut expr)?;
 
     Ok(pretty_expr(input, &expr))
 }

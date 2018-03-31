@@ -16,17 +16,21 @@ extern crate quick_error;
 
 use std::cell::RefCell;
 use std::fmt;
+use std::hash::Hash;
 
 use base::ast::{Comment, Do, Expr, IdentEnv, SpannedExpr, SpannedPattern, TypedIdent, ValueBinding};
 use base::error::Errors;
+use base::fnv::FnvMap;
+use base::metadata::Metadata;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::symbol::Symbol;
 use base::types::{ArcType, TypeCache};
 
+use infix::{Fixity, OpMeta, OpTable, Reparser};
 use layout::Layout;
 use token::{Token, Tokenizer};
 
-pub use infix::{Error as InfixError, OpTable, Reparser};
+pub use infix::Error as InfixError;
 pub use layout::Error as LayoutError;
 pub use token::Error as TokenizeError;
 
@@ -348,7 +352,7 @@ pub fn parse_partial_let_or_expr<Id>(
     input: &str,
 ) -> Result<LetOrExpr<Id>, (Option<LetOrExpr<Id>>, ParseErrors)>
 where
-    Id: Clone,
+    Id: Clone + Eq + Hash + AsRef<str>,
 {
     let result_ok_iter;
     let layout = layout!(result_ok_iter, input);
@@ -404,4 +408,60 @@ pub fn parse_string<'env, 'input>(
     input: &'input str,
 ) -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, ParseErrors)> {
     parse_partial_expr(symbols, &TypeCache::new(), input)
+}
+
+pub fn reparse_infix<Id>(
+    metadata: &FnvMap<Id, Metadata>,
+    symbols: &IdentEnv<Ident = Id>,
+    expr: &mut SpannedExpr<Id>,
+) -> Result<(), ParseErrors>
+where
+    Id: Clone + Eq + Hash + AsRef<str>,
+{
+    let mut errors = Errors::new();
+    let op_table = OpTable::new(metadata.iter().filter_map(|(symbol, meta)| {
+        fn parse_infix(s: &str) -> Result<OpMeta, InfixError> {
+            let mut iter = s.splitn(2, " ");
+            let fixity = match iter.next().ok_or(InfixError::InvalidFixity)? {
+                "left" => Fixity::Left,
+                "right" => Fixity::Right,
+                _ => {
+                    return Err(InfixError::InvalidFixity);
+                }
+            };
+            let precedence = iter.next()
+                .and_then(|s| s.parse().ok())
+                .and_then(|precedence| {
+                    if precedence >= 0 {
+                        Some(precedence)
+                    } else {
+                        None
+                    }
+                })
+                .ok_or(InfixError::InvalidPrecedence)?;
+            Ok(OpMeta { fixity, precedence })
+        }
+        meta.get_attribute("infix")
+            .and_then(|s| match parse_infix(s) {
+                Ok(op_meta) => Some((symbol.clone(), op_meta)),
+                Err(err) => {
+                    errors.push(pos::spanned(Default::default(), err));
+                    None
+                }
+            })
+    }));
+
+    let mut reparser = Reparser::new(op_table, symbols);
+    match reparser.reparse(expr) {
+        Err(reparse_errors) => {
+            errors.extend(reparse_errors);
+        }
+        Ok(_) => {}
+    }
+
+    if errors.has_errors() {
+        Err(errors.into_iter().map(|err| err.map(Error::from)).collect())
+    } else {
+        Ok(())
+    }
 }

@@ -7,8 +7,10 @@ let { Functor, Monad, Traversable } = prelude
 let { Applicative, Alternative } = import! std.applicative
 let { Bool } = import! std.bool
 let { Option } = import! std.types
-let string = import! std.string
+let string @ { ? } = import! std.string
 let { Foldable } = import! std.foldable
+let { (<>) } = import! std.semigroup
+
 
 let unwrap opt : Option a -> a =
     match opt with
@@ -112,11 +114,9 @@ let monad : Monad Option = {
 }
 
 let show ?d : [Show a] -> Show (Option a) =
-    let (++) = string.append
-
     let show o =
         match o with
-        | Some x -> "Some (" ++ d.show x ++ ")"
+        | Some x -> "Some (" <> d.show x <> ")"
         | None -> "None"
 
     { show }

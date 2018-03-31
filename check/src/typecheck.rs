@@ -333,6 +333,7 @@ impl<'a> Typecheck<'a> {
         symbols: &'a mut Symbols,
         environment: &'a (TypecheckEnv + 'a),
         type_cache: TypeCache<Symbol, ArcType>,
+        metadata: &'a mut FnvMap<Symbol, Metadata>,
     ) -> Typecheck<'a> {
         let symbols = SymbolModule::new(module, symbols);
         let kind_cache = KindCache::new();
@@ -350,7 +351,7 @@ impl<'a> Typecheck<'a> {
             type_variables: ScopedMap::new(),
             type_cache: type_cache,
             kind_cache: kind_cache,
-            implicit_resolver: ::implicits::ImplicitResolver::new(environment),
+            implicit_resolver: ::implicits::ImplicitResolver::new(environment, metadata),
         }
     }
 
@@ -599,9 +600,6 @@ impl<'a> Typecheck<'a> {
         info!("Typechecking {}", self.symbols.module());
         self.subs.clear();
         self.environment.stack.clear();
-
-        let _ = ::rename::rename(&mut self.symbols, expr);
-        self.implicit_resolver.metadata = ::metadata::metadata(&self.environment, expr).1;
 
         let temp = expected_type.and_then(|expected| self.create_unifiable_signature(expected));
         let expected_type = temp.as_ref().or(expected_type);
