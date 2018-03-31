@@ -10,7 +10,7 @@ use base::types::{self, Alias, ArcType, Generic, PrimitiveEnv, Type, TypeCache,
 
 use check::typecheck::{self, Typecheck};
 use check::{metadata, rename};
-use parser::{parse_partial_expr, ParseErrors};
+use parser::{parse_partial_expr, reparse_infix, ParseErrors};
 
 use std::cell::RefCell;
 use std::marker::PhantomData;
@@ -203,7 +203,7 @@ pub fn typecheck_partial_expr(
         &mut expr,
     );
     let (_, mut metadata) = metadata::metadata(&env, &expr);
-    parser::reparse_infix(&metadata, &interner, &mut expr).unwrap_or_else(|err| panic!("{}", err));
+    reparse_infix(&metadata, &*interner, &mut expr).unwrap_or_else(|err| panic!("{}", err));
 
     let mut tc = Typecheck::new(
         "test".into(),

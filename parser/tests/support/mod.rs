@@ -9,6 +9,7 @@ use base::pos::{self, BytePos, Span, Spanned};
 use base::kind::Kind;
 use base::types::{Alias, AliasData, ArcType, Field, Generic, Type};
 use parser::{parse_string, Error, ParseErrors};
+use parser::infix::{Fixity, OpMeta, OpTable, Reparser};
 use std::marker::PhantomData;
 
 pub struct MockEnv<T>(PhantomData<T>);
@@ -75,7 +76,36 @@ impl<'a> MutVisitor<'a> for NoSpan {
 pub fn parse(
     input: &str,
 ) -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, ParseErrors)> {
-    parse_string(&mut MockEnv::new(), input)
+    let mut symbols = MockEnv::new();
+
+    let mut expr = parse_string(&mut symbols, input)?;
+    let op_table = OpTable::new(vec![
+        ("*", OpMeta::new(7, Fixity::Left)),
+        ("/", OpMeta::new(7, Fixity::Left)),
+        ("%", OpMeta::new(7, Fixity::Left)),
+        ("+", OpMeta::new(6, Fixity::Left)),
+        ("-", OpMeta::new(6, Fixity::Left)),
+        (":", OpMeta::new(5, Fixity::Right)),
+        ("++", OpMeta::new(5, Fixity::Right)),
+        ("&&", OpMeta::new(3, Fixity::Right)),
+        ("||", OpMeta::new(2, Fixity::Right)),
+        ("$", OpMeta::new(0, Fixity::Right)),
+        ("==", OpMeta::new(4, Fixity::Left)),
+        ("/=", OpMeta::new(4, Fixity::Left)),
+        ("<", OpMeta::new(4, Fixity::Left)),
+        (">", OpMeta::new(4, Fixity::Left)),
+        ("<=", OpMeta::new(4, Fixity::Left)),
+        (">=", OpMeta::new(4, Fixity::Left)),
+        // Hack for some library operators
+        ("<<", OpMeta::new(9, Fixity::Right)),
+        (">>", OpMeta::new(9, Fixity::Left)),
+        ("<|", OpMeta::new(0, Fixity::Right)),
+        ("|>", OpMeta::new(0, Fixity::Left)),
+    ].into_iter().map(|(s, op)| (s.to_string(), op)));
+
+    let mut reparser = Reparser::new(op_table, &mut symbols);
+    reparser.reparse(&mut expr).map_err(|err| (None, err.into_iter().map(|err| err.map(Error::from)).collect::<ParseErrors>()))?;
+    Ok(expr)
 }
 
 /// Clears spans of the expression.

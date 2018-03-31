@@ -6,25 +6,34 @@ extern crate pretty_assertions;
 
 extern crate gluon_base as base;
 extern crate gluon_format as format;
+extern crate gluon;
 
 use std::env;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
 
-use format::format_expr;
+use gluon::{Compiler, VmBuilder};
+
+fn format_expr(expr: &str) -> gluon::Result<String> {
+    let mut compiler = Compiler::new();
+    let thread = VmBuilder::new().import_paths(Some(vec!["..".into()])).build();
+    format::format_expr(&mut compiler, &thread, "test", expr)
+}
 
 fn test_format(name: &str) {
     let _ = env_logger::try_init();
 
-    let name = Path::new(name);
     let mut contents = String::new();
     File::open(Path::new("../").join(name))
         .unwrap()
         .read_to_string(&mut contents)
         .unwrap();
 
-    let out_str = format_expr(&contents).unwrap_or_else(|err| panic!("{}", err));
+    let mut compiler = Compiler::new();
+    let thread = VmBuilder::new().import_paths(Some(vec!["..".into()])).build();
+    let out_str = format::format_expr(&mut compiler, &thread, name, &contents)
+        .unwrap_or_else(|err| panic!("{}", err));
 
     if contents != out_str {
         let args: Vec<_> = env::args().collect();
@@ -32,7 +41,7 @@ fn test_format(name: &str) {
             .parent()
             .and_then(|p| p.parent())
             .expect("folder")
-            .join(name.file_name().unwrap());
+            .join(Path::new(name).file_name().unwrap());
         File::create(out_path)
             .unwrap()
             .write_all(out_str.as_bytes())

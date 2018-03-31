@@ -326,6 +326,10 @@ pub enum Expr<Id> {
     /// A group of sequenced expressions
     Block(Vec<SpannedExpr<Id>>),
     Do(Do<Id>),
+    MacroExpansion {
+        original: Box<SpannedExpr<Id>>,
+        replacement: Box<SpannedExpr<Id>>,
+    },
     /// An invalid expression
     Error(
         /// Provides a hint of what type the expression would have, if any
@@ -551,6 +555,9 @@ pub fn walk_mut_expr<'a, V: ?Sized + MutVisitor<'a>>(v: &mut V, e: &'a mut Spann
             v.visit_expr(expr)
         }
         Expr::Ident(ref mut id) => v.visit_ident(id),
+        Expr::MacroExpansion {
+            ref mut replacement, ..
+        } => v.visit_expr(replacement),
         Expr::Literal(..) | Expr::Error(..) => (),
     }
 }
@@ -746,6 +753,9 @@ pub fn walk_expr<'a, V: ?Sized + Visitor<'a>>(v: &mut V, e: &'a SpannedExpr<V::I
         }
         Expr::TypeBindings(_, ref expr) => v.visit_expr(expr),
         Expr::Ident(ref id) => v.visit_typ(&id.typ),
+        Expr::MacroExpansion {
+            ref replacement, ..
+        } => v.visit_expr(replacement),
         Expr::Literal(..) | Expr::Error(..) => (),
     }
 }
@@ -841,6 +851,9 @@ impl Typed for Expr<Symbol> {
             Expr::Array(ref array) => Ok(array.typ.clone()),
             Expr::Lambda(ref lambda) => Ok(lambda.id.typ.clone()),
             Expr::Block(ref exprs) => exprs.last().expect("Expr in block").try_type_of(env),
+            Expr::MacroExpansion {
+                ref replacement, ..
+            } => replacement.try_type_of(env),
             Expr::Error(ref typ) => Ok(typ.clone().unwrap_or_else(|| Type::hole())),
         }
     }

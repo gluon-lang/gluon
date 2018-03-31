@@ -205,7 +205,7 @@ fn spawn_on_runexpr_in_catch() {
             do a = thread.spawn_on eval_thread f
             do result = a
             wrap result.value
-        io.catch action wrap >>= io.println *> wrap "123"
+        (io.catch action wrap >>= io.println) *> wrap "123"
     "#;
 
     let mut core = self::tokio_core::reactor::Core::new().unwrap();

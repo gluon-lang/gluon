@@ -12,6 +12,12 @@ impl<'a, T: ?Sized + MetadataEnv> MetadataEnv for &'a T {
     }
 }
 
+impl MetadataEnv for () {
+    fn get_metadata(&self, _id: &SymbolRef) -> Option<&Metadata> {
+        None
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 #[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub struct Metadata {

@@ -743,6 +743,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                     ),
                 )
             }
+            ast::Expr::MacroExpansion { ref replacement, .. } => self.translate_(replacement),
             ast::Expr::Error(_) => ice!("ICE: Error expression found in the compiler"),
         }
     }

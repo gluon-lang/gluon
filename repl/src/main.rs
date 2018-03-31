@@ -31,7 +31,7 @@ use gluon::base;
 use gluon::parser;
 use gluon::vm;
 
-use base::error::InFile;
+use base::filename_to_module;
 
 use gluon::{new_vm, Compiler, Error, Result, Thread};
 use gluon::vm::thread::ThreadInternal;
@@ -63,10 +63,13 @@ fn init_env_logger() {
 #[cfg(not(feature = "env_logger"))]
 fn init_env_logger() {}
 
-fn format(writer: &mut Write, buffer: &str) -> Result<usize> {
+fn format(writer: &mut Write, file: &str, buffer: &str) -> Result<usize> {
     use gluon_format::format_expr;
 
-    let output = format_expr(buffer).map_err(|err| InFile::new("", buffer, err))?;
+    let mut compiler = Compiler::new();
+    let thread = new_vm();
+
+    let output = format_expr(&mut compiler, &thread, file, buffer)?;
     writer.write_all(output.as_bytes())?;
     Ok(output.len())
 }
@@ -86,7 +89,9 @@ fn fmt_file(name: &Path) -> Result<()> {
     }
 
     input_file.seek(SeekFrom::Start(0))?;
-    let written = format(&mut input_file, &buffer)?;
+
+    let module_name = filename_to_module(&name.display().to_string());
+    let written = format(&mut input_file, &module_name, &buffer)?;
     // Truncate the file to remove any data that were there before
     input_file.set_len(written as u64)?;
     Ok(())
@@ -98,7 +103,7 @@ fn fmt_stdio() -> Result<()> {
     let mut buffer = String::new();
     stdin().read_to_string(&mut buffer)?;
 
-    format(&mut stdout(), &buffer)?;
+    format(&mut stdout(), "<stdin>", &buffer)?;
     Ok(())
 }
 

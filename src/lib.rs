@@ -248,7 +248,10 @@ impl Compiler {
             &mut SymbolModule::new(file.into(), &mut self.symbols),
             type_cache,
             expr_str,
-        ).map_err(|(expr, err)| (expr, InFile::new(file, expr_str, err)))?)
+        ).map_err(|(expr, err)| {
+            info!("Parse error: {}", err);
+            (expr, InFile::new(file, expr_str, err))
+        })?)
     }
 
     /// Parse and typecheck `expr_str` returning the typechecked expression and type of the
@@ -288,6 +291,7 @@ impl Compiler {
             expr,
             typ: vm.global_env().type_cache().hole(),
             metadata: Default::default(),
+            metadata_map: Default::default(),
         }.compile(self, vm, filename, expr_str, ())
             .map(|result| result.module)
     }

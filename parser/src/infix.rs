@@ -12,7 +12,6 @@ use std::fmt;
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::mem;
-use std::ops::Index;
 
 /// The fixity (associativity) of an infix operator
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -54,7 +53,7 @@ pub struct OpMeta {
 }
 
 impl OpMeta {
-    fn new(precedence: i32, fixity: Fixity) -> OpMeta {
+    pub fn new(precedence: i32, fixity: Fixity) -> OpMeta {
         OpMeta {
             precedence: precedence,
             fixity: fixity,
@@ -71,7 +70,6 @@ impl fmt::Display for OpMeta {
 /// A table of operator metadata
 pub struct OpTable<Id> {
     pub operators: FnvMap<Id, OpMeta>,
-    pub default_meta: OpMeta,
 }
 
 impl<Id> OpTable<Id> {
@@ -82,51 +80,25 @@ impl<Id> OpTable<Id> {
     {
         OpTable {
             operators: ops.into_iter().collect(),
-            default_meta: OpMeta::new(9, Fixity::Left),
         }
     }
 }
 
-impl<Id> Default for OpTable<Id>
+impl<Id> OpTable<Id>
 where
-    Id: Eq + Hash,
+    Id: Eq + Hash + AsRef<str> + ::std::fmt::Debug,
 {
-    fn default() -> Self {
-        OpTable::new(vec![])
-        /*
-            ("*", OpMeta::new(7, Fixity::Left)),
-            ("/", OpMeta::new(7, Fixity::Left)),
-            ("%", OpMeta::new(7, Fixity::Left)),
-            ("+", OpMeta::new(6, Fixity::Left)),
-            ("-", OpMeta::new(6, Fixity::Left)),
-            (":", OpMeta::new(5, Fixity::Right)),
-            ("++", OpMeta::new(5, Fixity::Right)),
-            ("&&", OpMeta::new(3, Fixity::Right)),
-            ("||", OpMeta::new(2, Fixity::Right)),
-            ("$", OpMeta::new(0, Fixity::Right)),
-            ("==", OpMeta::new(4, Fixity::Left)),
-            ("/=", OpMeta::new(4, Fixity::Left)),
-            ("<", OpMeta::new(4, Fixity::Left)),
-            (">", OpMeta::new(4, Fixity::Left)),
-            ("<=", OpMeta::new(4, Fixity::Left)),
-            (">=", OpMeta::new(4, Fixity::Left)),
-            // Hack for some library operators
-            ("<<", OpMeta::new(9, Fixity::Right)),
-            (">>", OpMeta::new(9, Fixity::Left)),
-            ("<|", OpMeta::new(0, Fixity::Right)),
-            ("|>", OpMeta::new(0, Fixity::Left)),
-        ]*/
+    fn get_at(&self, name: &SpannedIdent<Id>) -> Result<&OpMeta, Spanned<Error, BytePos>> {
+        self.get(&name.value.name).ok_or_else(|| {
+            pos::spanned(
+                name.span,
+                Error::UndefinedFixity(name.value.name.as_ref().to_string()),
+            )
+        })
     }
-}
 
-impl<'a, Id> Index<&'a Id> for OpTable<Id>
-where
-    Id: Eq + Hash + AsRef<str>,
-{
-    type Output = OpMeta;
-
-    fn index(&self, name: &'a Id) -> &OpMeta {
-        self.operators.get(name).unwrap_or_else(|| {
+    fn get(&self, name: &Id) -> Option<&OpMeta> {
+        self.operators.get(name).or_else(|| {
             let name = name.as_ref();
             if name.starts_with('#') || name == "&&" || name == "||" {
                 const OPS: &[(&str, OpMeta)] = &[
@@ -219,16 +191,9 @@ where
                 let op = name.trim_left_matches('#')
                     .trim_left_matches(char::is_alphanumeric);
 
-                OPS.iter()
-                    .find(|t| t.0 == op)
-                    .map(|t| &t.1)
-                    .unwrap_or_else(|| {
-                        error!("Infix default: {}", name);
-                        &self.default_meta
-                    })
+                OPS.iter().find(|t| t.0 == op).map(|t| &t.1)
             } else {
-                error!("Infix default: {}", name);
-                &self.default_meta
+                None
             }
         })
     }
@@ -256,7 +221,7 @@ impl<'s, Id> Reparser<'s, Id> {
         expr: &mut SpannedExpr<Id>,
     ) -> Result<(), Errors<Spanned<Error, BytePos>>>
     where
-        Id: Eq + Hash + AsRef<str>,
+        Id: Eq + Hash + AsRef<str>  + ::std::fmt::Debug
     {
         self.visit_expr(expr);
         if self.errors.has_errors() {
@@ -269,7 +234,7 @@ impl<'s, Id> Reparser<'s, Id> {
 
 impl<'a, 's, Id> MutVisitor<'a> for Reparser<'s, Id>
 where
-    Id: Eq + Hash + AsRef<str> + 'a,
+    Id: Eq + Hash + AsRef<str> + ::std::fmt::Debug + 'a,
 {
     type Ident = Id;
 
@@ -295,6 +260,7 @@ where
 #[derive(Clone, Debug, PartialEq)]
 pub enum Error {
     ConflictingFixities((String, OpMeta), (String, OpMeta)),
+    UndefinedFixity(String),
     InvalidFixity,
     InvalidPrecedence,
 }
@@ -312,6 +278,7 @@ impl fmt::Display for Error {
                     lhs_meta, lhs_name, rhs_meta, rhs_name
                 )
             }
+            UndefinedFixity(ref op) => write!(f, "No fixity specified for `{}`. Fixity must be specified with the `@infix` attribute", op),
             InvalidFixity => write!(
                 f,
                 "Only `left` or `right` is valid associativity specifications"
@@ -339,7 +306,7 @@ pub fn reparse<Id>(
     operators: &OpTable<Id>,
 ) -> Result<SpannedExpr<Id>, Spanned<Error, BytePos>>
 where
-    Id: Eq + Hash + AsRef<str>,
+    Id: Eq + Hash + AsRef<str> + ::std::fmt::Debug,
 {
     use self::Error::*;
     use base::pos;
@@ -373,8 +340,8 @@ where
                     }
                 };
 
-                let next_op_meta = operators[&next_op.value.name];
-                let stack_op_meta = operators[&stack_op.value.name];
+                let next_op_meta = *operators.get_at(&next_op)?;
+                let stack_op_meta = *operators.get_at(&stack_op)?;
 
                 match i32::cmp(&next_op_meta.precedence, &stack_op_meta.precedence) {
                     // Reduce
@@ -710,6 +677,7 @@ mod tests {
     fn reparse_equal_precedence_conflicting_fixities_nested() {
         let env = MockEnv::new();
         let ops = OpTable::new(vec![
+            ("+".to_string(), OpMeta::new(6, Fixity::Left)),
             ("|>".to_string(), OpMeta::new(5, Fixity::Left)),
             ("<|".to_string(), OpMeta::new(5, Fixity::Right)),
         ]);

@@ -208,6 +208,7 @@ pub fn metadata(
                         .cloned()
                         .unwrap_or_default()
                 }
+                Expr::MacroExpansion { ref replacement, .. } => self.metadata_expr(replacement),
                 _ => {
                     ast::walk_expr(self, expr);
                     Metadata::default()

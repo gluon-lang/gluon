@@ -126,8 +126,15 @@ impl<'s> MacroExpandable for &'s mut SpannedExpr<Symbol> {
         if compiler.implicit_prelude && !expr_str.starts_with("//@NO-IMPLICIT-PRELUDE") {
             compiler.include_implicit_prelude(macros.vm.global_env().type_cache(), file, self);
         }
+        let prev_errors = mem::replace(&mut macros.errors, Errors::new());
         macros.run(self);
-        Ok(MacroValue { expr: self })
+        let errors = mem::replace(&mut macros.errors, prev_errors);
+        let value = MacroValue { expr: self };
+        if errors.has_errors() {
+            Err((Some(value), InFile::new(file, expr_str, errors).into()))
+        } else {
+            Ok(value)
+        }
     }
 }
 
@@ -141,16 +148,12 @@ impl MacroExpandable for SpannedExpr<Symbol> {
         file: &str,
         expr_str: &str,
     ) -> SalvageResult<MacroValue<Self::Expr>> {
-        if compiler.implicit_prelude && !expr_str.starts_with("//@NO-IMPLICIT-PRELUDE") {
-            compiler.include_implicit_prelude(macros.vm.global_env().type_cache(), file, &mut self);
-        }
-        let prev_errors = mem::replace(&mut macros.errors, Errors::new());
-        macros.run(&mut self);
-        let errors = mem::replace(&mut macros.errors, prev_errors);
-        if errors.has_errors() {
-            Err((None, InFile::new(file, expr_str, errors).into()))
-        } else {
-            Ok(MacroValue { expr: self })
+        let result = (&mut self).expand_macro_with(compiler, macros, file, expr_str).map(|_| ()).map_err(|(_, err)| err);
+
+        let value = MacroValue { expr: self };
+        match result {
+            Ok(()) => Ok(value),
+            Err(err) => Err((Some(value), err)),
         }
     }
 }
@@ -206,9 +209,29 @@ where
     }
 }
 
+impl<E> Renameable for MacroValue<E>
+where
+    E: BorrowMut<SpannedExpr<Symbol>>,
+{
+    type Expr = E;
+
+    fn rename(
+        mut self,
+        compiler: &mut Compiler,
+        _thread: &Thread,
+        file: &str,
+        _expr_str: &str,
+    ) -> SalvageResult<Renamed<Self::Expr>> {
+        let mut symbols = SymbolModule::new(String::from(file), &mut compiler.symbols);
+        rename::rename(&mut symbols, &mut self.expr.borrow_mut());
+        Ok(Renamed { expr: self.expr })
+    }
+}
+
 pub struct WithMetadata<E> {
     pub expr: E,
-    pub metadata: FnvMap<Symbol, Metadata>,
+    pub metadata_map: FnvMap<Symbol, Metadata>,
+    pub metadata: Metadata,
 }
 
 pub trait MetadataExtractable: Sized {
@@ -272,36 +295,19 @@ where
         _expr_str: &str,
     ) -> SalvageResult<WithMetadata<Self::Expr>> {
         let env = thread.get_env();
-        let (_, metadata) = metadata::metadata(&*env, self.expr.borrow_mut());
+        let (metadata, metadata_map) = metadata::metadata(&*env, self.expr.borrow_mut());
         Ok(WithMetadata {
             expr: self.expr,
             metadata,
+            metadata_map,
         })
-    }
-}
-
-impl<E> Renameable for MacroValue<E>
-where
-    E: BorrowMut<SpannedExpr<Symbol>>,
-{
-    type Expr = E;
-
-    fn rename(
-        mut self,
-        compiler: &mut Compiler,
-        _thread: &Thread,
-        file: &str,
-        _expr_str: &str,
-    ) -> SalvageResult<Renamed<Self::Expr>> {
-        let mut symbols = SymbolModule::new(String::from(file), &mut compiler.symbols);
-        rename::rename(&mut symbols, &mut self.expr.borrow_mut());
-        Ok(Renamed { expr: self.expr })
     }
 }
 
 pub struct InfixReparsed<E> {
     pub expr: E,
-    pub metadata: FnvMap<Symbol, Metadata>,
+    pub metadata_map: FnvMap<Symbol, Metadata>,
+    pub metadata: Metadata,
 }
 
 pub trait InfixReparseable: Sized {
@@ -366,11 +372,11 @@ where
     ) -> SalvageResult<InfixReparsed<Self::Expr>> {
         use parser::reparse_infix;
 
-        let WithMetadata { mut expr, metadata } = self;
-        match reparse_infix(&metadata, &compiler.symbols, expr.borrow_mut()) {
-            Ok(()) => Ok(InfixReparsed { expr, metadata }),
+        let WithMetadata { mut expr, metadata, metadata_map } = self;
+        match reparse_infix(&metadata_map, &compiler.symbols, expr.borrow_mut()) {
+            Ok(()) => Ok(InfixReparsed { expr, metadata, metadata_map }),
             Err(err) => Err((
-                Some(InfixReparsed { expr, metadata }),
+                Some(InfixReparsed { expr, metadata, metadata_map }),
                 InFile::new(file, expr_str, err).into(),
             )),
         }
@@ -381,7 +387,8 @@ where
 pub struct TypecheckValue<E> {
     pub expr: E,
     pub typ: ArcType,
-    pub metadata: FnvMap<Symbol, Metadata>,
+    pub metadata_map: FnvMap<Symbol, Metadata>,
+    pub metadata: Metadata,
 }
 
 pub trait Typecheckable: Sized {
@@ -459,7 +466,8 @@ where
 
         let InfixReparsed {
             mut expr,
-            mut metadata,
+            mut metadata_map,
+            metadata,
         } = self;
 
         let typ = {
@@ -469,7 +477,7 @@ where
                 &mut compiler.symbols,
                 &*env,
                 thread.global_env().type_cache().clone(),
-                &mut metadata,
+                &mut metadata_map,
             );
 
             tc.typecheck_expr_expected(expr.borrow_mut(), expected_type)
@@ -482,6 +490,7 @@ where
         Ok(TypecheckValue {
             expr,
             typ,
+            metadata_map,
             metadata,
         })
     }
@@ -491,6 +500,7 @@ where
 pub struct CompileValue<E> {
     pub expr: E,
     pub typ: ArcType,
+    pub metadata: Metadata,
     pub module: CompiledModule,
 }
 
@@ -577,6 +587,7 @@ where
         Ok(CompileValue {
             expr: self.expr,
             typ: self.typ,
+            metadata: self.metadata,
             module,
         })
     }
@@ -590,6 +601,7 @@ where
     pub id: Symbol,
     pub expr: E,
     pub typ: ArcType,
+    pub metadata: Metadata,
     pub value: RootedValue<T>,
 }
 
@@ -679,6 +691,7 @@ where
             expr,
             typ,
             mut module,
+            metadata,
         } = self;
         let run_io = compiler.run_io;
         let module_id = Symbol::from(format!("@{}", name));
@@ -692,6 +705,7 @@ where
                 expr: expr,
                 typ: typ,
                 value: vm.root_value_with_self(value),
+                metadata,
             })
             .map_err(Error::from)
             .and_then(move |v| {
@@ -714,8 +728,6 @@ where
     where
         T: Send + VmRoot<'vm>,
     {
-        use check::metadata;
-
         let run_io = compiler.run_io;
         let filename = filename.to_string();
 
@@ -729,12 +741,11 @@ where
                     FutureValue::sync(Ok(v)).boxed()
                 }
             })
-            .and_then(move |mut value| {
-                let (metadata, _) = metadata::metadata(&*vm.get_env(), value.expr.borrow_mut());
+            .and_then(move |value| {
                 try_future!(vm.set_global(
                     value.id.clone(),
                     value.typ,
-                    metadata,
+                    value.metadata,
                     value.value.get_value(),
                 ));
                 info!("Loaded module `{}` filename", filename);
@@ -795,6 +806,7 @@ where
                 .boxed();
         }
         let typ = module.typ;
+        let metadata = module.metadata;
         let vm1 = vm.clone();
         let closure = try_future!(vm.global_env().new_global_thunk(module.module));
         execute(vm1, |vm| vm.call_thunk(closure))
@@ -802,6 +814,7 @@ where
                 id: module_id,
                 expr: (),
                 typ: typ,
+                metadata,
                 value: vm.root_value_with_self(value),
             })
             .map_err(Error::from)
@@ -858,6 +871,7 @@ where
     let CompileValue {
         expr: _,
         typ,
+        metadata,
         module,
     } = self_
         .compile(compiler, thread, file, expr_str, arg)
@@ -865,7 +879,7 @@ where
         .map_err(Either::Left)?;
     let module = Module {
         typ,
-        metadata: Metadata::default(),
+        metadata,
         module,
     };
     module
@@ -891,6 +905,7 @@ where
             expr,
             typ,
             value,
+            metadata,
         } = v;
 
         let vm1 = vm.clone();
@@ -906,6 +921,7 @@ where
                     id,
                     expr,
                     value: vm.root_value_with_self(value),
+                    metadata,
                     typ: actual,
                 }
             })

@@ -36,7 +36,7 @@ pub use token::Error as TokenizeError;
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 mod grammar;
-mod infix;
+pub mod infix;
 mod layout;
 mod token;
 
@@ -75,6 +75,7 @@ fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
         | Expr::Array(_)
         | Expr::Record { .. }
         | Expr::Tuple { .. }
+        | Expr::MacroExpansion { .. }
         | Expr::Error(..) => (),
     }
     expr
@@ -329,7 +330,13 @@ where
     }
 
     match result {
-        Ok(expr) => Ok(expr),
+        Ok(expr) => {
+            if parse_errors.has_errors() {
+                Err((Some(expr), transform_errors(parse_errors)))
+            } else {
+                Ok(expr)
+            }
+        }
         Err(err) => {
             parse_errors.push(err);
             Err((None, transform_errors(parse_errors)))
@@ -352,7 +359,7 @@ pub fn parse_partial_let_or_expr<Id>(
     input: &str,
 ) -> Result<LetOrExpr<Id>, (Option<LetOrExpr<Id>>, ParseErrors)>
 where
-    Id: Clone + Eq + Hash + AsRef<str>,
+    Id: Clone + Eq + Hash + AsRef<str> + ::std::fmt::Debug,
 {
     let result_ok_iter;
     let layout = layout!(result_ok_iter, input);
@@ -378,19 +385,9 @@ where
     }
 
     match result {
-        Ok(mut let_or_expr) => {
-            let mut errors = transform_errors(parse_errors);
-            let mut reparser = Reparser::new(OpTable::default(), symbols);
-            let result = match let_or_expr {
-                Ok(ref mut expr) => reparser.reparse(expr),
-                Err(ref mut let_binding) => reparser.reparse(&mut let_binding.expr),
-            };
-            if let Err(reparse_errors) = result {
-                errors.extend(reparse_errors.into_iter().map(|err| err.map(Error::Infix)));
-            }
-
-            if errors.has_errors() {
-                Err((Some(let_or_expr), errors))
+        Ok(let_or_expr) => {
+            if parse_errors.has_errors() {
+                Err((Some(let_or_expr), transform_errors(parse_errors)))
             } else {
                 Ok(let_or_expr)
             }
@@ -416,7 +413,7 @@ pub fn reparse_infix<Id>(
     expr: &mut SpannedExpr<Id>,
 ) -> Result<(), ParseErrors>
 where
-    Id: Clone + Eq + Hash + AsRef<str>,
+    Id: Clone + Eq + Hash + AsRef<str> + ::std::fmt::Debug,
 {
     let mut errors = Errors::new();
     let op_table = OpTable::new(metadata.iter().filter_map(|(symbol, meta)| {

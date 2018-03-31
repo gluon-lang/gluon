@@ -1111,6 +1111,7 @@ impl<'a> Typecheck<'a> {
 
                 Ok(TailCall::Type(ret))
             }
+            Expr::MacroExpansion { ref mut replacement, .. } => self.typecheck_(replacement, expected_type),
             Expr::Error(ref typ) => Ok(TailCall::Type(
                 typ.clone().unwrap_or_else(|| self.subs.new_var()),
             )),
