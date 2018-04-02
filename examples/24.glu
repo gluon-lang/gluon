@@ -37,7 +37,8 @@ let string = import! std.string
 // Since imports in gluon returns regular values we can load specific parts of a module using pattern matches.
 let char @ { ? } = import! std.char
 
-let { (<>), flat_map } = import! std.prelude
+let { (<>) } = import! std.semigroup
+let { flat_map } = import! std.monad
 
 let { (*>), (<*), wrap } = import! std.applicative
 
@@ -61,7 +62,7 @@ let parse : String -> Result String Expr =
         chainl1,
         (<?>),
         ? } = import! std.parser
-    let { (<|>) } = import! std.prelude
+    let { (<|>) } = import! std.applicative
 
     let lex x = x <* spaces
 
