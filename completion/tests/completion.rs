@@ -11,11 +11,10 @@ extern crate gluon_parser as parser;
 use base::metadata::Metadata;
 use base::pos::{BytePos, Span};
 use base::types::{ArcType, Field, Type};
-use base::source::Source;
 
 #[allow(unused)]
 mod support;
-use support::{intern, typ, MockEnv};
+use support::{intern, loc, typ, MockEnv};
 
 fn find_span_type(s: &str, pos: BytePos) -> Result<(Span<BytePos>, ArcType), ()> {
     let env = MockEnv::new();
@@ -24,14 +23,14 @@ fn find_span_type(s: &str, pos: BytePos) -> Result<(Span<BytePos>, ArcType), ()>
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     let extract = (completion::SpanAt, completion::TypeAt { env: &env });
-    completion::completion(extract, &expr, pos)
+    completion::completion(extract, expr.span, &expr, pos)
 }
 
 fn find_all_symbols(s: &str, pos: BytePos) -> Result<(String, Vec<Span<BytePos>>), ()> {
     let (expr, result) = support::typecheck_expr(s);
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    completion::find_all_symbols(&expr, pos)
+    completion::find_all_symbols(expr.span, &expr, pos)
 }
 
 fn find_type(s: &str, pos: BytePos) -> Result<ArcType, ()> {
@@ -39,10 +38,7 @@ fn find_type(s: &str, pos: BytePos) -> Result<ArcType, ()> {
 }
 
 fn find_type_loc(s: &str, line: usize, column: usize) -> Result<ArcType, ()> {
-    let pos = Source::new(s)
-        .lines()
-        .offset(line.into(), column.into())
-        .unwrap();
+    let pos = loc(s, line, column);
     find_span_type(s, pos).map(|t| t.1)
 }
 
@@ -53,7 +49,7 @@ fn get_metadata(s: &str, pos: BytePos) -> Option<Metadata> {
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     let (_, metadata_map) = check::metadata::metadata(&env, &expr);
-    completion::get_metadata(&metadata_map, &expr, pos).cloned()
+    completion::get_metadata(&metadata_map, expr.span, &expr, pos).cloned()
 }
 
 fn suggest_metadata(s: &str, pos: BytePos, name: &str) -> Option<Metadata> {
@@ -62,7 +58,7 @@ fn suggest_metadata(s: &str, pos: BytePos, name: &str) -> Option<Metadata> {
     let (expr, _result) = support::typecheck_expr(s);
 
     let (_, metadata_map) = check::metadata::metadata(&env, &expr);
-    completion::suggest_metadata(&metadata_map, &env, &expr, pos, name).cloned()
+    completion::suggest_metadata(&metadata_map, &env, expr.span, &expr, pos, name).cloned()
 }
 
 #[test]
@@ -72,19 +68,19 @@ fn identifier() {
     let (expr, result) = support::typecheck_expr("let abc = 1 in abc");
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    let result = completion::find(&env, &expr, BytePos::from(15));
+    let result = completion::find(&env, expr.span, &expr, BytePos::from(15));
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
 
-    let result = completion::find(&env, &expr, BytePos::from(16));
+    let result = completion::find(&env, expr.span, &expr, BytePos::from(16));
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
 
-    let result = completion::find(&env, &expr, BytePos::from(17));
+    let result = completion::find(&env, expr.span, &expr, BytePos::from(17));
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
 
-    let result = completion::find(&env, &expr, BytePos::from(18));
+    let result = completion::find(&env, expr.span, &expr, BytePos::from(18));
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
 }
@@ -133,13 +129,11 @@ f
 fn function_app() {
     let _ = env_logger::try_init();
 
-    let result = find_type(
-        r#"
+    let text = r#"
 let f x = f x
 1
-"#,
-        BytePos::from(11),
-    );
+"#;
+    let result = find_type(text, loc(text, 1, 10));
     let expected = Ok("a -> a0".to_string());
 
     assert_eq!(result.map(|typ| typ.to_string()), expected);
@@ -151,26 +145,25 @@ fn binop() {
 
     let env = MockEnv::new();
 
-    let (expr, result) = support::typecheck_expr(
-        r#"
+    let text = r#"
 let (++) l r =
     l #Int+ 1
     r #Float+ 1.0
     l
 1 ++ 2.0
-"#,
-    );
+"#;
+    let (expr, result) = support::typecheck_expr(text);
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    let result = completion::find(&env, &expr, BytePos::from(57));
+    let result = completion::find(&env, expr.span, &expr, loc(text, 5, 3));
     let expected = Ok(Type::function(vec![typ("Int"), typ("Float")], typ("Int")));
     assert_eq!(result, expected);
 
-    let result = completion::find(&env, &expr, BytePos::from(54));
+    let result = completion::find(&env, expr.span, &expr, loc(text, 5, 1));
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
 
-    let result = completion::find(&env, &expr, BytePos::from(59));
+    let result = completion::find(&env, expr.span, &expr, loc(text, 5, 7));
     let expected = Ok(typ("Float"));
     assert_eq!(result, expected);
 }
@@ -189,14 +182,14 @@ r.x
     );
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    let result = completion::find(&typ_env, &expr, BytePos::from(19));
+    let result = completion::find(&typ_env, expr.span, &expr, BytePos::from(19));
     let expected = Ok(Type::record(
         vec![],
         vec![Field::new(intern("x"), typ("Int"))],
     ));
     assert_eq!(result.map(support::close_record), expected);
 
-    let result = completion::find(&typ_env, &expr, BytePos::from(22));
+    let result = completion::find(&typ_env, expr.span, &expr, BytePos::from(22));
     let expected = Ok(typ("Int"));
     assert_eq!(result, expected);
 }
@@ -238,13 +231,13 @@ let id x = x
     let env = MockEnv::new();
     let extract = (completion::SpanAt, completion::TypeAt { env: &env });
 
-    let result = completion::completion(extract, &expr, BytePos::from(14));
-    let expected = Ok((Span::new(14.into(), 20.into()), Type::int()));
+    let result = completion::completion(extract, expr.span, &expr, loc(text, 2, 0));
+    let expected = Ok((Span::new(loc(text, 2, 0), loc(text, 2, 6)), Type::int()));
     assert_eq!(result, expected);
 
-    let result = completion::completion(extract, &expr, BytePos::from(15));
+    let result = completion::completion(extract, expr.span, &expr, loc(text, 2, 2));
     let expected = Ok((
-        Span::new(15.into(), 17.into()),
+        Span::new(loc(text, 2, 1), loc(text, 2, 3)),
         Type::function(vec![Type::int()], Type::int()),
     ));
     assert_eq!(result, expected);
@@ -258,23 +251,16 @@ fn suggest_pattern_at_record_brace() {
 let { x } = { x = 1 }
 x
 "#;
-    let (expr, result) = support::typecheck_expr(text);
-    assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    let env = MockEnv::new();
-    let extract = (completion::SpanAt, completion::TypeAt { env: &env });
-
-    let result = completion::completion(extract, &expr, BytePos::from(5));
+    let result = find_span_type(text, loc(text, 1, 5));
     let expected = Ok((
-        Span::new(5.into(), 10.into()),
+        Span::new(loc(text, 1, 4), loc(text, 1, 9)),
         Type::record(
             vec![],
-            vec![
-                Field {
-                    name: intern("x"),
-                    typ: Type::int(),
-                },
-            ],
+            vec![Field {
+                name: intern("x"),
+                typ: Type::int(),
+            }],
         ),
     ));
     assert_eq!(result, expected);
@@ -321,7 +307,7 @@ fn function_arg() {
 let f x = x #Int+ 1
 ""
 "#,
-        BytePos::from(7),
+        BytePos::from(8),
     );
     let expected = Ok(Type::int());
 
@@ -332,13 +318,11 @@ let f x = x #Int+ 1
 fn lambda_arg() {
     let _ = env_logger::try_init();
 
-    let result = find_type(
-        r#"
+    let text = r#"
 let f : Int -> String -> String = \x y -> y
 1.0
-"#,
-        BytePos::from(38),
-    );
+"#;
+    let result = find_type(text, loc(text, 1, 37));
     let expected = Ok(Type::string());
 
     assert_eq!(result, expected);
@@ -476,9 +460,9 @@ test #Int+ test #Int+ dummy
         Ok((
             "test".to_string(),
             vec![
-                Span::new(5.into(), 9.into()),
-                Span::new(52.into(), 56.into()),
-                Span::new(63.into(), 67.into()),
+                Span::new(loc(text, 1, 4), loc(text, 1, 8)),
+                Span::new(loc(text, 5, 0), loc(text, 5, 4)),
+                Span::new(loc(text, 5, 11), loc(text, 5, 15)),
             ]
         ))
     );

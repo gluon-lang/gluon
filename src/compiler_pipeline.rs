@@ -73,7 +73,8 @@ pub trait MacroExpandable {
         let mut macros = MacroExpander::new(thread);
         let expr = self.expand_macro_with(compiler, &mut macros, file, expr_str)?;
         if let Err(err) = macros.finish() {
-            return Err((Some(expr), InFile::new(file, expr_str, err).into()));
+            let map = compiler.find_file(err[0].span.start(), file, expr_str);
+            return Err((Some(expr), InFile::new(map, err).into()));
         }
         Ok(expr)
     }
@@ -131,7 +132,8 @@ impl<'s> MacroExpandable for &'s mut SpannedExpr<Symbol> {
         let errors = mem::replace(&mut macros.errors, prev_errors);
         let value = MacroValue { expr: self };
         if errors.has_errors() {
-            Err((Some(value), InFile::new(file, expr_str, errors).into()))
+            let map = compiler.find_file(errors[0].span.start(), file, expr_str);
+            Err((Some(value), InFile::new(map, errors).into()))
         } else {
             Ok(value)
         }
@@ -148,7 +150,10 @@ impl MacroExpandable for SpannedExpr<Symbol> {
         file: &str,
         expr_str: &str,
     ) -> SalvageResult<MacroValue<Self::Expr>> {
-        let result = (&mut self).expand_macro_with(compiler, macros, file, expr_str).map(|_| ()).map_err(|(_, err)| err);
+        let result = (&mut self)
+            .expand_macro_with(compiler, macros, file, expr_str)
+            .map(|_| ())
+            .map_err(|(_, err)| err);
 
         let value = MacroValue { expr: self };
         match result {
@@ -372,13 +377,28 @@ where
     ) -> SalvageResult<InfixReparsed<Self::Expr>> {
         use parser::reparse_infix;
 
-        let WithMetadata { mut expr, metadata, metadata_map } = self;
+        let WithMetadata {
+            mut expr,
+            metadata,
+            metadata_map,
+        } = self;
         match reparse_infix(&metadata_map, &compiler.symbols, expr.borrow_mut()) {
-            Ok(()) => Ok(InfixReparsed { expr, metadata, metadata_map }),
-            Err(err) => Err((
-                Some(InfixReparsed { expr, metadata, metadata_map }),
-                InFile::new(file, expr_str, err).into(),
-            )),
+            Ok(()) => Ok(InfixReparsed {
+                expr,
+                metadata,
+                metadata_map,
+            }),
+            Err(err) => {
+                let map = compiler.find_file(err[0].span.start(), file, expr_str);
+                Err((
+                    Some(InfixReparsed {
+                        expr,
+                        metadata,
+                        metadata_map,
+                    }),
+                    InFile::new(map, err).into(),
+                ))
+            }
         }
     }
 }
@@ -471,20 +491,23 @@ where
         } = self;
 
         let typ = {
-            let env = thread.get_env();
-            let mut tc = Typecheck::new(
-                file.into(),
-                &mut compiler.symbols,
-                &*env,
-                thread.global_env().type_cache().clone(),
-                &mut metadata_map,
-            );
+            let result = {
+                let env = thread.get_env();
+                let mut tc = Typecheck::new(
+                    file.into(),
+                    &mut compiler.symbols,
+                    &*env,
+                    thread.global_env().type_cache().clone(),
+                    &mut metadata_map,
+                );
 
-            tc.typecheck_expr_expected(expr.borrow_mut(), expected_type)
-                .map_err(|err| {
-                    info!("Error when typechecking `{}`: {}", file, err);
-                    InFile::new(file, expr_str, err)
-                })?
+                tc.typecheck_expr_expected(expr.borrow_mut(), expected_type)
+            };
+            result.map_err(|err| {
+                info!("Error when typechecking `{}`: {}", file, err);
+                let map = compiler.find_file(err[0].span.start(), file, expr_str);
+                InFile::new(map, err)
+            })?
         };
 
         Ok(TypecheckValue {

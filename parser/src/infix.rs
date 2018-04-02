@@ -312,7 +312,7 @@ where
     use base::pos;
 
     let make_op = |lhs: Box<SpannedExpr<Id>>, op, rhs: Box<SpannedExpr<Id>>| {
-        let span = pos::span(lhs.span.start, rhs.span.end);
+        let span = pos::span(lhs.span.start(), rhs.span.end());
         Box::new(pos::spanned(
             span,
             Expr::Infix {
@@ -377,7 +377,7 @@ where
                                 let next_op_name = symbols.string(&next_op.value.name).to_string();
                                 let stack_op_name =
                                     symbols.string(&stack_op.value.name).to_string();
-                                let span = pos::span(stack_op.span.start, next_op.span.end);
+                                let span = pos::span(stack_op.span.start(), next_op.span.end());
                                 let error = ConflictingFixities(
                                     (stack_op_name, stack_op_meta),
                                     (next_op_name, next_op_meta),

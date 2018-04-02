@@ -3,6 +3,7 @@
 //! string interner and therefore also garbage collector needs to compiled before the parser.
 #![doc(html_root_url = "https://docs.rs/gluon_parser/0.7.1")] // # GLUON
 
+extern crate codespan;
 extern crate collect_mac;
 extern crate gluon_base as base;
 extern crate itertools;
@@ -57,16 +58,20 @@ fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
         | Expr::IfElse(_, _, ref last)
         | Expr::LetBindings(_, ref last)
         | Expr::TypeBindings(_, ref last)
-        | Expr::Do(Do { body: ref last, .. }) => expr.span.end = last.span.end,
-        Expr::Lambda(ref lambda) => expr.span.end = lambda.body.span.end,
+        | Expr::Do(Do { body: ref last, .. }) => {
+            expr.span = Span::new(expr.span.start(), last.span.end())
+        }
+        Expr::Lambda(ref lambda) => {
+            expr.span = Span::new(expr.span.start(), lambda.body.span.end())
+        }
         Expr::Block(ref mut exprs) => match exprs.len() {
             0 => (),
             1 => return exprs.pop().unwrap(),
-            _ => expr.span.end = exprs.last().unwrap().span.end,
+            _ => expr.span = Span::new(expr.span.start(), exprs.last().unwrap().span.end()),
         },
         Expr::Match(_, ref alts) => if let Some(last_alt) = alts.last() {
-            let end = last_alt.expr.span.end;
-            expr.span.end = end;
+            let end = last_alt.expr.span.end();
+            expr.span = Span::new(expr.span.start(), end);
         },
         Expr::App { .. }
         | Expr::Ident(_)
@@ -178,7 +183,7 @@ impl Error {
                 mut expected,
             } => {
                 remove_extra_quotes(&mut expected);
-                pos::spanned2(0.into(), 0.into(), Error::UnexpectedEof(expected))
+                pos::spanned2(1.into(), 1.into(), Error::UnexpectedEof(expected))
             }
             ExtraToken {
                 token: (lpos, token, rpos),
@@ -284,36 +289,59 @@ macro_rules! layout {
 
         Layout::new(SharedIter::new(&$result_ok_iter)).map(|token| {
             // Return the tokenizer error if one exists
-            $result_ok_iter.borrow_mut().result(()).map_err(|err| {
-                pos::spanned2(
-                    err.span.start.absolute,
-                    err.span.end.absolute,
-                    err.value.into(),
-                )
-            })?;
+            $result_ok_iter.borrow_mut()
+                .result(())
+                .map_err(|err| {
+                    pos::spanned2(err.span.start().absolute,
+                                err.span.end().absolute,
+                                err.value.into())
+                })?;
             let token = token.map_err(|err| pos::spanned(err.span, err.value.into()))?;
             debug!("Lex {:?}", token.value);
-            let Span { start, end, .. } = token.span;
-            Ok((start.absolute, token.value, end.absolute))
+            Ok((token.span.start().absolute, token.value, token.span.end().absolute))
         })
     }
     }
 }
 
-pub fn parse_partial_expr<Id>(
+pub trait ParserSource {
+    fn src(&self) -> &str;
+    fn start_index(&self) -> BytePos;
+}
+
+impl ParserSource for str {
+    fn src(&self) -> &str {
+        self
+    }
+    fn start_index(&self) -> BytePos {
+        BytePos::from(1)
+    }
+}
+
+impl ParserSource for codespan::FileMap {
+    fn src(&self) -> &str {
+        codespan::FileMap::src(self)
+    }
+    fn start_index(&self) -> BytePos {
+        codespan::FileMap::span(self).start()
+    }
+}
+
+pub fn parse_partial_expr<Id, S>(
     symbols: &mut IdentEnv<Ident = Id>,
     type_cache: &TypeCache<Id, ArcType<Id>>,
-    input: &str,
+    input: &S,
 ) -> Result<SpannedExpr<Id>, (Option<SpannedExpr<Id>>, ParseErrors)>
 where
     Id: Clone,
+    S: ?Sized + ParserSource,
 {
     let result_ok_iter;
     let layout = layout!(result_ok_iter, input);
 
     let mut parse_errors = Errors::new();
 
-    let result = grammar::TopExprParser::new().parse(input, type_cache, symbols, &mut parse_errors, layout);
+    let result = grammar::TopExprParser::new().parse(type_cache, symbols, &mut parse_errors, layout);
 
     // If there is a tokenizer error it may still exist in the result iterator wrapper.
     // If that is the case we return that error instead of the unexpected EOF error that lalrpop
@@ -322,8 +350,8 @@ where
         parse_errors.pop(); // Remove the EOF error
         parse_errors.push(lalrpop_util::ParseError::User {
             error: pos::spanned2(
-                err.span.start.absolute,
-                err.span.end.absolute,
+                err.span.start().absolute,
+                err.span.end().absolute,
                 err.value.into(),
             ),
         });
@@ -354,12 +382,13 @@ pub fn parse_expr(
 
 pub type LetOrExpr<Id> = Result<SpannedExpr<Id>, ValueBinding<Id>>;
 
-pub fn parse_partial_let_or_expr<Id>(
+pub fn parse_partial_let_or_expr<Id, S>(
     symbols: &mut IdentEnv<Ident = Id>,
-    input: &str,
+    input: &S,
 ) -> Result<LetOrExpr<Id>, (Option<LetOrExpr<Id>>, ParseErrors)>
 where
     Id: Clone + Eq + Hash + AsRef<str> + ::std::fmt::Debug,
+    S: ?Sized + ParserSource,
 {
     let result_ok_iter;
     let layout = layout!(result_ok_iter, input);
@@ -368,7 +397,7 @@ where
 
     let type_cache = TypeCache::new();
 
-    let result = grammar::LetOrExprParser::new().parse(input, &type_cache, symbols, &mut parse_errors, layout);
+    let result = grammar::LetOrExprParser::new().parse(&type_cache, symbols, &mut parse_errors, layout);
 
     // If there is a tokenizer error it may still exist in the result iterator wrapper.
     // If that is the case we return that error instead of the unexpected EOF error that lalrpop
@@ -377,8 +406,8 @@ where
         parse_errors.pop(); // Remove the EOF error
         parse_errors.push(lalrpop_util::ParseError::User {
             error: pos::spanned2(
-                err.span.start.absolute,
-                err.span.end.absolute,
+                err.span.start().absolute,
+                err.span.end().absolute,
                 err.value.into(),
             ),
         });

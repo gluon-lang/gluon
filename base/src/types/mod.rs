@@ -1177,7 +1177,7 @@ impl<Id> ArcType<Id> {
     where
         Id: AsRef<str>,
     {
-        top(self).pretty(&Printer::new(arena, &Source::new("")))
+        top(self).pretty(&Printer::new(arena, &()))
     }
 }
 
@@ -1609,15 +1609,15 @@ where
     I: AsRef<str>,
 {
     fn to_doc(&'a self, arena: &'a Arena<'a>, _: ()) -> DocBuilder<'a, Arena<'a>> {
-        self.to_doc(arena, &Source::new(""))
+        self.to_doc(arena, &() as &Source)
     }
 }
 
-impl<'a, 'e, I> ToDoc<'a, Arena<'a>, &'e Source<'a>> for ArcType<I>
+impl<'a, I> ToDoc<'a, Arena<'a>, &'a Source> for ArcType<I>
 where
     I: AsRef<str>,
 {
-    fn to_doc(&'a self, arena: &'a Arena<'a>, source: &'e Source<'a>) -> DocBuilder<'a, Arena<'a>> {
+    fn to_doc(&'a self, arena: &'a Arena<'a>, source: &'a Source) -> DocBuilder<'a, Arena<'a>> {
         let printer = Printer::new(arena, source);
         dt(Prec::Top, self).pretty(&printer)
     }
@@ -1638,7 +1638,7 @@ impl<'a, I, T> DisplayType<'a, T>
 where
     T: Deref<Target = Type<I, T>> + HasSpan + Commented + 'a,
 {
-    pub fn pretty<'e>(&self, printer: &Printer<'a, 'e, I>) -> DocBuilder<'a, Arena<'a>>
+    pub fn pretty(&self, printer: &Printer<'a, I>) -> DocBuilder<'a, Arena<'a>>
     where
         I: AsRef<str>,
     {
@@ -1886,13 +1886,13 @@ where
         match **typ {
             Type::App(..) | Type::ExtendRow { .. } | Type::Variant(..) | Type::Function(..) => doc,
             _ => {
-                let comment = printer.comments_before(typ.span().start);
+                let comment = printer.comments_before(typ.span().start());
                 comment.append(doc)
             }
         }
     }
 
-    fn pretty_function<'e>(&self, printer: &Printer<'a, 'e, I>) -> DocBuilder<'a, Arena<'a>>
+    fn pretty_function(&self, printer: &Printer<'a, I>) -> DocBuilder<'a, Arena<'a>>
     where
         I: AsRef<str>,
     {
@@ -1904,7 +1904,7 @@ where
                     if arg_type == ArgType::Implicit { "[" } else { "" },
                     dt(Prec::Function, arg).pretty(printer).group(),
                     if arg_type == ArgType::Implicit { "]" } else { "" },
-                    printer.space_after(arg.span().end),
+                    printer.space_after(arg.span().end()),
                     "-> ",
                     top(ret).pretty_function(printer)
                 ];
@@ -1916,10 +1916,7 @@ where
     }
 }
 
-pub fn pretty_print<'a, 'e, I, T>(
-    printer: &Printer<'a, 'e, I>,
-    typ: &'a T,
-) -> DocBuilder<'a, Arena<'a>>
+pub fn pretty_print<'a, I, T>(printer: &Printer<'a, I>, typ: &'a T) -> DocBuilder<'a, Arena<'a>>
 where
     I: AsRef<str> + 'a,
     T: Deref<Target = Type<I, T>> + HasSpan + Commented,

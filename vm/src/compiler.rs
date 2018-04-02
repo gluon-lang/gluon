@@ -1,18 +1,18 @@
-use std::ops::{Deref, DerefMut};
-use interner::InternedStr;
+use self::Variable::*;
 use base::ast::{self, DisplayEnv, Literal, Typed, TypedIdent};
-use base::resolve;
 use base::kind::{ArcKind, KindEnv};
-use base::types::{self, Alias, ArcType, BuiltinType, Type, TypeEnv};
+use base::pos::Line;
+use base::resolve;
 use base::scoped_map::ScopedMap;
-use base::symbol::{Symbol, SymbolModule, SymbolRef};
-use base::pos::{Line, NO_EXPANSION};
 use base::source::Source;
+use base::symbol::{Symbol, SymbolModule, SymbolRef};
+use base::types::{self, Alias, ArcType, BuiltinType, Type, TypeEnv};
 use core::{self, CExpr, Expr, Pattern};
+use interner::InternedStr;
+use source_map::{LocalMap, SourceMap};
+use std::ops::{Deref, DerefMut};
 use types::*;
 use vm::GlobalVmState;
-use source_map::{LocalMap, SourceMap};
-use self::Variable::*;
 
 use {Error, Result};
 
@@ -173,7 +173,7 @@ impl FunctionEnvs {
         ));
     }
 
-    fn end_function(&mut self, compiler: &mut Compiler, current_line: Line) -> FunctionEnv {
+    fn end_function(&mut self, compiler: &mut Compiler, current_line: Option<Line>) -> FunctionEnv {
         compiler.stack_types.exit_scope();
         compiler.stack_constructors.exit_scope();
         let instructions = self.function.instructions.len();
@@ -390,7 +390,7 @@ pub struct Compiler<'a> {
     symbols: SymbolModule<'a>,
     stack_constructors: ScopedMap<Symbol, ArcType>,
     stack_types: ScopedMap<Symbol, Alias<Symbol, ArcType>>,
-    source: &'a Source<'a>,
+    source: &'a ::codespan::FileMap,
     source_name: String,
     emit_debug_info: bool,
     empty_symbol: Symbol,
@@ -423,7 +423,7 @@ impl<'a> Compiler<'a> {
         globals: &'a (CompilerEnv + 'a),
         vm: &'a GlobalVmState,
         mut symbols: SymbolModule<'a>,
-        source: &'a Source<'a>,
+        source: &'a ::codespan::FileMap,
         source_name: String,
         emit_debug_info: bool,
     ) -> Compiler<'a> {
@@ -528,7 +528,7 @@ impl<'a> Compiler<'a> {
         env.start_function(self, 0, id, typ);
         info!("COMPILING: {}", expr);
         self.compile(&expr, &mut env, true)?;
-        let current_line = self.source.line_number_at_byte(expr.span().end);
+        let current_line = self.source.line_number_at_byte(expr.span().end());
         let FunctionEnv {
             function,
             free_vars,
@@ -563,12 +563,10 @@ impl<'a> Compiler<'a> {
     }
 
     fn update_line(&mut self, function: &mut FunctionEnvs, expr: CExpr) {
-        let is_macro_expanded = expr.span().expansion_id != NO_EXPANSION;
-
         // Don't update the current_line for macro expanded code as the lines in that code do not
         // come from this module
-        if !is_macro_expanded {
-            function.current_line = self.source.line_number_at_byte(expr.span().start);
+        if let Some(current_line) = self.source.line_number_at_byte(expr.span().start()) {
+            function.current_line = current_line;
         }
     }
 
@@ -637,7 +635,10 @@ impl<'a> Compiler<'a> {
                             );
                         }
                         for (i, closure) in closures.iter().enumerate() {
-                            function.current_line = self.source.line_number_at_byte(closure.pos);
+                            if let Some(current_line) = self.source.line_number_at_byte(closure.pos)
+                            {
+                                function.current_line = current_line;
+                            }
                             function.stack.enter_scope();
 
                             function.emit(Push(stack_start + i as VmIndex));
@@ -800,7 +801,7 @@ impl<'a> Compiler<'a> {
                         Jump(function.function.instructions.len() as VmIndex);
                 }
             }
-            Expr::Data(ref id, exprs, _, _) => {
+            Expr::Data(ref id, exprs, _) => {
                 for expr in exprs {
                     self.compile(expr, function, false)?;
                 }
@@ -993,7 +994,7 @@ impl<'a> Compiler<'a> {
 
         // Insert all free variables into the above globals free variables
         // if they arent in that lambdas scope
-        let current_line = self.source.line_number_at_byte(body.span().end);
+        let current_line = self.source.line_number_at_byte(body.span().end());
         let f = function.end_function(self, current_line);
         for &(ref var, _) in f.free_vars.iter() {
             match self.find(var, function).expect("free_vars: find") {

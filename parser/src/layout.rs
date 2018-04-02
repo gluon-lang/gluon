@@ -1,4 +1,4 @@
-use base::pos::{self, BytePos, Column, Line, Location, Spanned};
+use base::pos::{self, BytePos, Column, Line, Location, Span, Spanned};
 
 use token::{SpannedToken, Token};
 
@@ -145,7 +145,7 @@ where
                 let location = Location {
                     line: Line::from(0),
                     column: Column::from(1),
-                    absolute: BytePos::from(0),
+                    absolute: BytePos::from(1),
                 };
                 pos::spanned2(location, location, Token::EOF)
             })
@@ -185,17 +185,17 @@ where
                 })
                 .map(|last_offside| last_offside.location.column)
             {
-                Some(last_column) if span.start.column <= last_column => {
+                Some(last_column) if span.start().column <= last_column => {
                     debug!(
                         "Inserting empty block due to {:?} <= {:?}",
                         self.indent_levels.last(),
-                        span.start.column
+                        span.start().column
                     );
                     self.unprocessed_tokens
                         .push(pos::spanned(span, Token::CloseBlock));
                     self.unprocessed_tokens
                         .push(pos::spanned(span, Token::OpenBlock));
-                    return self.indent_levels.push(Offside::new(span.start, context));
+                    return self.indent_levels.push(Offside::new(span.start(), context));
                 }
                 _ => (),
             }
@@ -203,7 +203,7 @@ where
             self.unprocessed_tokens
                 .push(pos::spanned(span, Token::OpenBlock));
         }
-        self.indent_levels.push(Offside::new(span.start, context))
+        self.indent_levels.push(Offside::new(span.start(), context))
     }
 
     fn layout_next_token(&mut self) -> Result<SpannedToken<'input>, Spanned<Error, BytePos>> {
@@ -211,7 +211,10 @@ where
 
         let mut token = self.next_token();
         if token.value == Token::EOF {
-            token.span.start.column = Column::from(0);
+            let mut start = token.span.start();
+            start.column = Column::from(0);
+            token.span = Span::new(start, token.span.end());
+
             if self.indent_levels.is_empty() {
                 return Ok(token);
             }
@@ -224,7 +227,7 @@ where
                 (_, Some(offside)) => offside,
                 (_, None) => {
                     let offside =
-                        Offside::new(token.span.start, Context::Block { emit_semi: false });
+                        Offside::new(token.span.start(), Context::Block { emit_semi: false });
                     self.indent_levels.push(offside)?;
                     return Ok(self.layout_token(token, Token::OpenBlock));
                 }
@@ -323,7 +326,7 @@ where
                 token.value.is_doc_comment() && self.peek_token().value == Token::And;
 
             // Next we check offside rules for each of the contexts
-            let ordering = token.span.start.column.cmp(&offside.location.column);
+            let ordering = token.span.start().column.cmp(&offside.location.column);
             match (offside.context, ordering) {
                 (Context::Block { .. }, Ordering::Less) => {
                     self.unprocessed_tokens.push(token.clone());
@@ -431,7 +434,7 @@ where
                 _ => None,
             };
             if let Some(context) = push_context {
-                let offside = Offside::new(token.span.start, context);
+                let offside = Offside::new(token.span.start(), context);
                 return self.indent_levels.push(offside).map(move |()| token);
             }
 
@@ -463,8 +466,8 @@ where
                     //     2
                     // else
                     //     3
-                    let add_block =
-                        next.value != Token::If || next.span.start.line != token.span.start.line;
+                    let add_block = next.value != Token::If
+                        || next.span.start().line != token.span.start().line;
                     self.unprocessed_tokens.push(next);
                     if add_block {
                         self.scan_for_next_block(Context::Block { emit_semi: false })?;

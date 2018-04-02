@@ -7,8 +7,8 @@ use std::error::Error as StdError;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use futures::{Future, Sink, Stream};
 use futures::sync::mpsc;
+use futures::{Future, Sink, Stream};
 
 use base::ast::{Expr, Pattern, SpannedPattern, Typed};
 use base::error::InFile;
@@ -17,17 +17,17 @@ use base::pos;
 use base::symbol::{Symbol, SymbolModule};
 use base::types::ArcType;
 use parser::parse_partial_let_or_expr;
-use vm::{self, Error as VMError, Result as VMResult};
+use vm::api::generic::A;
 use vm::api::{FutureResult, Generic, Getable, OpaqueValue, OwnedFunction, PrimitiveFuture,
               Pushable, VmType, WithVM, IO};
-use vm::api::generic::A;
 use vm::future::FutureValue;
 use vm::internal::ValuePrinter;
 use vm::thread::{Context, RootStr, RootedValue, Thread, ThreadInternal};
+use vm::{self, Error as VMError, Result as VMResult};
 
-use gluon::{Compiler, Error as GluonError, Result as GluonResult, RootedThread};
-use gluon::import::add_extern_module;
 use gluon::compiler_pipeline::{Executable, ExecuteValue};
+use gluon::import::add_extern_module;
+use gluon::{Compiler, Error as GluonError, Result as GluonResult, RootedThread};
 
 fn type_of_expr(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     let WithVM { vm, value: args } = args;
@@ -111,7 +111,15 @@ fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonRe
 
     // Only need the typechecker to fill infer the types as best it can regardless of errors
     let _ = (&mut expr).typecheck(&mut compiler, thread, &name, fileinput);
-    let suggestions = completion::suggest(&*thread.get_env(), &expr, BytePos::from(pos));
+    let file_map = compiler
+        .get_filemap(&name)
+        .ok_or_else(|| VMError::from("FileMap is missing for completion".to_string()))?;
+    let suggestions = completion::suggest(
+        &*thread.get_env(),
+        file_map.span(),
+        &expr,
+        BytePos::from(pos as u32),
+    );
     Ok(suggestions
         .into_iter()
         .map(|ident| {
@@ -136,7 +144,7 @@ impl rustyline::completion::Completer for Completer {
 }
 
 macro_rules! impl_userdata {
-    ($name : ident) => {
+    ($name:ident) => {
         impl ::gluon::vm::api::Userdata for $name {}
 
         impl ::std::fmt::Debug for $name {
@@ -152,7 +160,7 @@ macro_rules! impl_userdata {
         impl ::gluon::vm::gc::Traverseable for $name {
             fn traverse(&self, _: &mut ::gluon::vm::gc::Gc) {}
         }
-    }
+    };
 }
 
 struct Editor(Mutex<rustyline::Editor<Completer>>);
@@ -170,7 +178,7 @@ pub enum ReadlineError {
 }
 
 macro_rules! define_vmtype {
-    ($name: ident) => {
+    ($name:ident) => {
         impl VmType for $name {
             type Type = $name;
             fn make_type(vm: &Thread) -> ArcType {
@@ -180,8 +188,7 @@ macro_rules! define_vmtype {
                     .into_type()
             }
         }
-
-    }
+    };
 }
 
 define_vmtype! { ReadlineError }
@@ -249,12 +256,13 @@ fn eval_line_(
     line: &str,
 ) -> FutureValue<Box<Future<Item = String, Error = GluonError> + Send>> {
     let mut compiler = Compiler::new();
+    let file_map = compiler.add_filemap("<line>", line);
     let let_or_expr = {
         let mut module = SymbolModule::new("<line>".into(), compiler.mut_symbols());
         match parse_partial_let_or_expr(&mut module, line) {
             Ok(x) => x,
             Err((_, err)) => {
-                return FutureValue::sync(Err(InFile::new("<line>", line, err).into())).boxed()
+                return FutureValue::sync(Err(InFile::new(file_map, err).into())).boxed()
             }
         }
     };
@@ -490,9 +498,9 @@ pub fn run() -> Result<(), Box<StdError + Send + Sync>> {
 mod tests {
     use super::*;
 
-    use vm::api::{FunctionRef, IO};
-    use gluon::{self, RootedThread};
     use gluon::import::Import;
+    use gluon::{self, RootedThread};
+    use vm::api::{FunctionRef, IO};
 
     fn new_vm() -> RootedThread {
         if ::std::env::var("GLUON_PATH").is_err() {

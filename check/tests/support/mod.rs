@@ -1,12 +1,13 @@
 #![allow(unused_macros)]
 
+extern crate codespan;
+
 use base::ast::{DisplayEnv, IdentEnv, SpannedExpr};
 use base::error::InFile;
 use base::kind::{ArcKind, Kind, KindEnv};
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
-use base::types::{self, Alias, ArcType, Generic, PrimitiveEnv, Type, TypeCache,
-                  TypeEnv};
+use base::types::{self, Alias, ArcType, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv};
 
 use check::typecheck::{self, Typecheck};
 use check::{metadata, rename};
@@ -15,6 +16,7 @@ use parser::{parse_partial_expr, reparse_infix, ParseErrors};
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;
+use std::sync::Arc;
 
 /// Returns a reference to the interner stored in TLD
 pub fn get_local_interner() -> Rc<RefCell<Symbols>> {
@@ -49,7 +51,7 @@ pub fn parse_new(
     let symbols = get_local_interner();
     let mut symbols = symbols.borrow_mut();
     let mut module = SymbolModule::new("test".into(), &mut symbols);
-    parse_partial_expr(&mut module, &TypeCache::new(), &s)
+    parse_partial_expr(&mut module, &TypeCache::new(), s)
 }
 
 #[allow(dead_code)]
@@ -169,7 +171,10 @@ pub fn typecheck_expr_expected(
 
     let result = tc.typecheck_expr_expected(&mut expr, expected);
 
-    (expr, result.map_err(|err| InFile::new("test", text, err)))
+    (
+        expr,
+        result.map_err(|err| InFile::new(Arc::new(codespan::FileMap::new("test".into(), text.into())), err)),
+    )
 }
 
 pub fn typecheck_expr(
@@ -215,7 +220,10 @@ pub fn typecheck_partial_expr(
 
     let result = tc.typecheck_expr(&mut expr);
 
-    (expr, result.map_err(|err| InFile::new("test", text, err)))
+    (
+        expr,
+        result.map_err(|err| InFile::new(Arc::new(codespan::FileMap::new("test".into(), text.into())), err)),
+    )
 }
 
 #[allow(dead_code)]
@@ -319,10 +327,10 @@ macro_rules! test_check {
         #[test]
         fn $name() {
             let _ = env_logger::try_init();
-
+        
             let text = $source;
             let result = support::typecheck(text);
-
+        
             assert_req!(result.map(|x| x.to_string()), Ok($typ.to_string()));
         }
     };

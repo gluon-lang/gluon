@@ -4,6 +4,7 @@
 extern crate app_dirs;
 #[macro_use]
 extern crate clap;
+extern crate codespan;
 #[cfg(feature = "env_logger")]
 extern crate env_logger;
 extern crate futures;
@@ -25,6 +26,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::ffi::OsStr;
 use std::path::Path;
+use std::sync::Arc;
 
 use walkdir::WalkDir;
 
@@ -64,19 +66,18 @@ fn init_env_logger() {
 #[cfg(not(feature = "env_logger"))]
 fn init_env_logger() {}
 
-fn format(file: &str, buffer: &str) -> Result<String> {
+fn format(file: &str, file_map: Arc<codespan::FileMap>) -> Result<String> {
     use gluon_format::format_expr;
 
     let mut compiler = Compiler::new();
     let thread = new_vm();
 
-    Ok(format_expr(&mut compiler, &thread, file, buffer)?)
+    Ok(format_expr(&mut compiler, &thread, file, file_map.src())?)
 }
 
 fn fmt_file(name: &Path) -> Result<()> {
     use std::io::Read;
     use std::fs::File;
-
 
     let mut buffer = String::new();
     {
@@ -84,12 +85,13 @@ fn fmt_file(name: &Path) -> Result<()> {
         input_file.read_to_string(&mut buffer)?;
     }
 
-
     let module_name = filename_to_module(&name.display().to_string());
-    let formatted = format(&module_name, &buffer)?;
+    let mut code_map = codespan::CodeMap::new();
+    let file_map = code_map.add_filemap(module_name.clone().into(), buffer);
+    let formatted = format(&module_name, file_map.clone())?;
 
     // Avoid touching the .glu file if it did not change
-    if buffer != formatted {
+    if file_map.src() != formatted {
         let bk_name = name.with_extension("glu.bk");
         let tmp_name = name.with_extension("tmp");
         {
@@ -108,7 +110,10 @@ fn fmt_stdio() -> Result<()> {
     let mut buffer = String::new();
     stdin().read_to_string(&mut buffer)?;
 
-    let formatted = format("<stdin>", &buffer)?;
+    let mut code_map = codespan::CodeMap::new();
+    let file_map = code_map.add_filemap("STDIN".into(), buffer);
+
+    let formatted = format("STDIN", file_map)?;
     stdout().write_all(formatted.as_bytes())?;
     Ok(())
 }

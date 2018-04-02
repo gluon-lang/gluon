@@ -1,5 +1,5 @@
 use base::ast::{Literal, TypedIdent};
-use base::pos::{BytePos, ExpansionId, Span};
+use base::pos::{BytePos, Span};
 use base::symbol::{Symbol, Symbols};
 use base::types::{Field, Type};
 
@@ -68,11 +68,11 @@ AtomicExpr: Expr<'a> = {
         let args = args.into_iter()
             .map(|(id, expr)| expr.unwrap_or_else(|| Expr::Ident(TypedIdent::new(id), Span::default())));
         let args = allocator.arena.alloc_extend(args);
-        Expr::Data(id, args, BytePos::default(), ExpansionId::default())
+        Expr::Data(id, args, BytePos::default())
     },
     <id: Identifier> => {
         if id.as_ref().starts_with(char::is_uppercase) {
-            Expr::Data(TypedIdent::new(id), &[], BytePos::default(), ExpansionId::default())
+            Expr::Data(TypedIdent::new(id), &[], BytePos::default())
         } else {
             Expr::Ident(TypedIdent::new(id), Span::default())
         }
@@ -108,7 +108,7 @@ pub Expr: Expr<'a> = {
         let args = allocator.arena.alloc_extend(args.into_iter());
         match f {
             Expr::Data(id, ..) =>
-                Expr::Data(id, args, BytePos::default(), ExpansionId::default()),
+                Expr::Data(id, args, BytePos::default()),
             f => Expr::Call(allocator.arena.alloc(f), args)
         }
     },

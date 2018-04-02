@@ -1,17 +1,28 @@
 #![allow(unused)]
 
+extern crate codespan;
+
 use base::ast::SpannedExpr;
 use base::error::InFile;
 use base::kind::{ArcKind, Kind, KindEnv};
 use base::metadata::{Metadata, MetadataEnv};
+use base::pos::BytePos;
 use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
 use base::types::{self, Alias, ArcType, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv};
+
 use check::typecheck::{self, Typecheck};
 use check::{metadata, rename};
 use parser::{parse_partial_expr, reparse_infix, ParseErrors};
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::sync::Arc;
+
+pub fn loc(src: &str, row: usize, column: usize) -> BytePos {
+    codespan::FileMap::new("test".into(), src.to_string())
+        .byte_index((row as u32).into(), (column as u32).into())
+        .expect("Position is not in source")
+}
 
 /// Returns a reference to the interner stored in TLD
 pub fn get_local_interner() -> Rc<RefCell<Symbols>> {
@@ -129,7 +140,14 @@ pub fn typecheck_expr_expected(
 
     let result = tc.typecheck_expr_expected(&mut expr, expected);
 
-    (expr, result.map_err(|err| InFile::new("test", text, err)))
+    (
+        expr,
+        result.map_err(|err| {
+            let source = codespan::CodeMap::new()
+                .add_filemap(codespan::FileName::virtual_("test"), text.into());
+            InFile::new(source, err)
+        }),
+    )
 }
 
 pub fn typecheck_expr(
@@ -173,7 +191,13 @@ pub fn typecheck_partial_expr(
 
     let result = tc.typecheck_expr(&mut expr);
 
-    (expr, result.map_err(|err| InFile::new("test", text, err)))
+    (
+        expr,
+        result.map_err(|err| {
+            let source = Arc::new(codespan::FileMap::new("test".into(), text.into()));
+            InFile::new(source, err)
+        }),
+    )
 }
 
 pub fn typ(s: &str) -> ArcType {

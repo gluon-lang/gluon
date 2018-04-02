@@ -116,12 +116,12 @@ impl<'a, I, T> TypeFormatter<'a, I, T> {
         use super::top;
         top(self.typ).pretty(&Printer {
             arena,
-            source: &Source::new(""),
+            source: &(),
             filter: self.filter,
         })
     }
 
-    pub fn build<'e>(&self, arena: &'a Arena<'a>, source: &'e Source<'a>) -> Printer<'a, 'e, I> {
+    pub fn build(&self, arena: &'a Arena<'a>, source: &'a Source) -> Printer<'a, I> {
         Printer {
             arena,
             source,
@@ -137,8 +137,8 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let arena = Arena::new();
-        let source = Source::new("");
-        let printer = self.build(&arena, &source);
+        let source = &();
+        let printer = self.build(&arena, source);
         let mut s = Vec::new();
 
         pretty_print(&printer, self.typ)
@@ -150,14 +150,14 @@ where
     }
 }
 
-pub struct Printer<'a: 'e, 'e, I: 'a> {
+pub struct Printer<'a, I: 'a> {
     pub arena: &'a Arena<'a>,
-    pub source: &'e Source<'a>,
+    pub source: &'a Source,
     filter: &'a Fn(&I) -> Filter,
 }
 
-impl<'a: 'e, 'e, I> Printer<'a, 'e, I> {
-    pub fn new(arena: &'a Arena<'a>, source: &'e Source<'a>) -> Printer<'a, 'e, I> {
+impl<'a, I> Printer<'a, I> {
+    pub fn new(arena: &'a Arena<'a>, source: &'a Source) -> Printer<'a, I> {
         Printer {
             arena,
             source,
@@ -203,7 +203,10 @@ impl<'a: 'e, 'e, I> Printer<'a, 'e, I> {
         let arena = self.arena;
         let mut doc = arena.nil();
         let mut comments = 0;
-        for comment in self.source.comments_between(Span::new(0.into(), pos)).rev() {
+        for comment in self.source
+            .comments_between(Span::new(self.source.span().start(), pos))
+            .rev()
+        {
             let x = if comment.is_empty() {
                 arena.newline()
             } else if comment.starts_with("//") {
@@ -219,7 +222,7 @@ impl<'a: 'e, 'e, I> Printer<'a, 'e, I> {
 
     pub fn comments_after(&self, end: BytePos) -> DocBuilder<'a, Arena<'a>> {
         let (doc, block_comments, _) =
-            self.comments_count(Span::new(end, self.source.src().len().into()));
+            self.comments_count(Span::new(end, self.source.span().end()));
         if block_comments == 0 {
             doc
         } else {

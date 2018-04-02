@@ -875,7 +875,7 @@ impl<'a> Typecheck<'a> {
                 Ok(TailCall::Type(array.typ.clone()))
             }
             Expr::Lambda(ref mut lambda) => {
-                let loc = format!("{}.lambda:{}", self.symbols.module(), expr.span.start);
+                let loc = format!("{}.lambda:{}", self.symbols.module(), expr.span.start());
                 lambda.id.name = self.symbols.symbol(loc);
                 let level = self.subs.var_id();
                 let function_type = expected_type
@@ -884,7 +884,7 @@ impl<'a> Typecheck<'a> {
 
                 let mut typ = self.typecheck_lambda(
                     function_type,
-                    expr.span.start,
+                    expr.span.start(),
                     &mut lambda.args,
                     &mut lambda.body,
                 );
@@ -1128,7 +1128,7 @@ impl<'a> Typecheck<'a> {
     where
         I: IntoIterator<Item = &'e mut SpannedExpr<Symbol>>,
     {
-        let mut prev_arg_end = span.end;
+        let mut prev_arg_end = span.end();
 
         func_type = self.new_skolem_scope(&func_type);
         for arg in &mut **implicit_args {
@@ -1152,7 +1152,7 @@ impl<'a> Typecheck<'a> {
                 }
                 None => return Err(TypeError::NotAFunction(func_type.clone())),
             };
-            prev_arg_end = arg.span.end;
+            prev_arg_end = arg.span.end();
         }
 
         for arg in args {
@@ -1161,7 +1161,7 @@ impl<'a> Typecheck<'a> {
             func_type = self.instantiate_generics(&func_type);
             let level = self.subs.var_id();
             self.subsumes_implicit(span, level, &f, func_type.clone(), &mut |implicit_arg| {
-                implicit_args.push(pos::spanned2(prev_arg_end, arg.span.start, implicit_arg));
+                implicit_args.push(pos::spanned2(prev_arg_end, arg.span.start(), implicit_arg));
             });
 
             func_type = match f.as_function() {
@@ -1178,7 +1178,7 @@ impl<'a> Typecheck<'a> {
                 None => return Err(TypeError::NotAFunction(func_type.clone())),
             };
 
-            prev_arg_end = arg.span.end;
+            prev_arg_end = arg.span.end();
         }
         Ok(TailCall::Type(func_type))
     }
@@ -1236,7 +1236,7 @@ impl<'a> Typecheck<'a> {
                                     before_args_pos
                                 } else {
                                     args.get(i - 1)
-                                        .map(|arg| arg.name.span.end)
+                                        .map(|arg| arg.name.span.end())
                                         .unwrap_or(before_args_pos)
                                 };
                                 args.insert(
@@ -1615,14 +1615,14 @@ impl<'a> Typecheck<'a> {
                 }
 
                 let typ = self.new_skolem_scope_signature(&bind.resolved_type);
-                self.typecheck_lambda(typ, bind.name.span.end, &mut bind.args, &mut bind.expr)
+                self.typecheck_lambda(typ, bind.name.span.end(), &mut bind.args, &mut bind.expr)
             } else {
                 let typ = self.new_skolem_scope_signature(&bind.resolved_type);
                 let function_type = self.skolemize(&typ);
 
                 self.typecheck_lambda(
                     function_type,
-                    bind.name.span.end,
+                    bind.name.span.end(),
                     &mut bind.args,
                     &mut bind.expr,
                 )

@@ -9,6 +9,8 @@
 #[cfg(test)]
 extern crate env_logger;
 
+extern crate codespan;
+extern crate codespan_reporting;
 pub extern crate either;
 extern crate futures;
 extern crate itertools;
@@ -35,10 +37,10 @@ pub extern crate gluon_vm as vm;
 pub mod compiler_pipeline;
 pub mod import;
 pub mod io;
-#[cfg(feature = "regex")]
-pub mod regex_bind;
 #[cfg(all(feature = "rand", not(target_arch = "wasm32")))]
 pub mod rand_bind;
+#[cfg(feature = "regex")]
+pub mod regex_bind;
 
 pub use vm::thread::{RootedThread, Thread};
 
@@ -46,27 +48,29 @@ pub use futures::Future;
 
 use either::Either;
 
-use std::error::Error as StdError;
-use std::result::Result as StdResult;
 use std::env;
+use std::error::Error as StdError;
 use std::path::PathBuf;
+use std::result::Result as StdResult;
+use std::sync::Arc;
 
-use base::filename_to_module;
 use base::ast::{self, SpannedExpr};
 use base::error::{Errors, InFile};
+use base::filename_to_module;
+use base::fnv::FnvMap;
 use base::metadata::Metadata;
+use base::pos::{self, BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolModule, Symbols};
 use base::types::{ArcType, TypeCache};
-use base::pos::{self, BytePos, Span, Spanned};
 
-use vm::Variants;
-use vm::api::{Getable, Hole, OpaqueValue, VmType};
-use vm::future::{BoxFutureValue, FutureValue};
-use vm::compiler::CompiledModule;
-use vm::thread::ThreadInternal;
-use vm::macros;
 use compiler_pipeline::*;
 use import::{add_extern_module, DefaultImporter, Import};
+use vm::api::{Getable, Hole, OpaqueValue, VmType};
+use vm::compiler::CompiledModule;
+use vm::future::{BoxFutureValue, FutureValue};
+use vm::macros;
+use vm::thread::ThreadInternal;
+use vm::Variants;
 
 quick_error! {
     /// Error type wrapping all possible errors that can be generated from gluon
@@ -161,12 +165,41 @@ impl From<Errors<Error>> for Error {
     }
 }
 
+impl Error {
+    pub fn emit_string(&self, code_map: &::codespan::CodeMap) -> ::std::io::Result<String> {
+        let mut output = Vec::new();
+        self.emit(&mut ::codespan_reporting::termcolor::NoColor::new(&mut output), code_map)?;
+        Ok(String::from_utf8(output).unwrap())
+    }
+
+    pub fn emit<W>(&self, writer: &mut W, code_map: &::codespan::CodeMap) -> ::std::io::Result<()>
+        where W: ?Sized + ::codespan_reporting::termcolor::WriteColor
+    {
+        match *self  {
+            Error::Parse(ref err) => err.emit(writer, code_map),
+            Error::Typecheck(ref err) => err.emit(writer, code_map),
+            Error::IO(ref err) => write!(writer, "{}", err),
+            Error::VM(ref err) => write!(writer, "{}", err),
+            Error::Macro(ref err) => err.emit(writer, code_map),
+            Error::Other(ref err) => write!(writer, "{}", err),
+            Error::Multiple(ref errors) => {
+                for err in errors {
+                    err.emit(writer, code_map)?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
 /// Type alias for results returned by gluon
 pub type Result<T> = StdResult<T, Error>;
 
 /// Type which makes parsing, typechecking and compiling an AST into bytecode
 pub struct Compiler {
     symbols: Symbols,
+    code_map: codespan::CodeMap,
+    index_map: FnvMap<String, BytePos>,
     implicit_prelude: bool,
     emit_debug_info: bool,
     run_io: bool,
@@ -197,6 +230,8 @@ impl Compiler {
     pub fn new() -> Compiler {
         Compiler {
             symbols: Symbols::new(),
+            code_map: codespan::CodeMap::new(),
+            index_map: FnvMap::default(),
             implicit_prelude: true,
             emit_debug_info: true,
             run_io: false,
@@ -222,6 +257,42 @@ impl Compiler {
         run_io set_run_io: bool
     }
 
+
+    pub fn code_map(&self) -> &codespan::CodeMap {
+        &self.code_map
+    }
+
+    pub fn get_filemap(&self, file: &str) -> Option<&Arc<codespan::FileMap>> {
+        self.index_map
+            .get(file)
+            .and_then(move |i| self.code_map.find_file(*i))
+    }
+
+    fn find_file(
+        &mut self,
+        pos: codespan::ByteIndex,
+        file: &str,
+        source: &str,
+    ) -> Arc<codespan::FileMap> {
+        self.code_map
+            .find_file(pos)
+            .cloned()
+            .unwrap_or_else(|| self.add_filemap(file, source))
+    }
+
+    #[doc(hidden)]
+    pub fn add_filemap<S>(&mut self, file: &str, source: S) -> Arc<codespan::FileMap>
+    where
+        S: Into<String>,
+    {
+        let file_map = self.code_map.add_filemap(
+            codespan::FileName::virtual_(file.to_string()),
+            source.into(),
+        );
+        self.index_map.insert(file.into(), file_map.span().start());
+        file_map
+    }
+
     pub fn mut_symbols(&mut self) -> &mut Symbols {
         &mut self.symbols
     }
@@ -244,13 +315,14 @@ impl Compiler {
         file: &str,
         expr_str: &str,
     ) -> StdResult<SpannedExpr<Symbol>, (Option<SpannedExpr<Symbol>>, InFile<parser::Error>)> {
+        let map = self.add_filemap(file, expr_str);
         Ok(parser::parse_partial_expr(
             &mut SymbolModule::new(file.into(), &mut self.symbols),
             type_cache,
-            expr_str,
+            &*map,
         ).map_err(|(expr, err)| {
             info!("Parse error: {}", err);
-            (expr, InFile::new(file, expr_str, err))
+            (expr, InFile::new(map, err))
         })?)
     }
 
@@ -495,19 +567,18 @@ impl Compiler {
         // Set all spans in the prelude expression to -1 so that completion requests always
         // skips searching the implicit prelude
         use base::ast::{walk_mut_expr, walk_mut_pattern, MutVisitor, SpannedPattern};
-        use base::pos::UNKNOWN_EXPANSION;
         struct ExpandedSpans;
 
         impl<'a> MutVisitor<'a> for ExpandedSpans {
             type Ident = Symbol;
 
             fn visit_expr(&mut self, e: &mut SpannedExpr<Self::Ident>) {
-                e.span.expansion_id = UNKNOWN_EXPANSION;
+                e.span = Span::new(u32::max_value().into(), u32::max_value().into());
                 walk_mut_expr(self, e);
             }
 
             fn visit_pattern(&mut self, p: &mut SpannedPattern<Self::Ident>) {
-                p.span.expansion_id = UNKNOWN_EXPANSION;
+                p.span = Span::new(u32::max_value().into(), u32::max_value().into());
                 walk_mut_pattern(self, &mut p.value);
             }
         }

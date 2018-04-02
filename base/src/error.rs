@@ -4,15 +4,20 @@
 use std::any::Any;
 use std::error::Error as StdError;
 use std::fmt;
+use std::io;
 use std::iter::{Extend, FromIterator};
+use std::ops::Index;
 use std::slice;
+use std::str;
+use std::sync::Arc;
 use std::vec;
 
-use pos::{BytePos, Location, Span, Spanned, spanned2};
-use source::Source;
+use codespan_reporting::{Diagnostic, Label, Severity};
+
+use pos::{BytePos, Spanned};
 
 /// An error type which can represent multiple errors.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Errors<T> {
     errors: Vec<T>,
 }
@@ -55,6 +60,13 @@ impl<T> Errors<T> {
 
     pub fn iter(&self) -> slice::Iter<T> {
         self.errors.iter()
+    }
+}
+
+impl<T> Index<usize> for Errors<T> {
+    type Output = T;
+    fn index(&self, index: usize) -> &T {
+        &self.errors[index]
     }
 }
 
@@ -135,86 +147,74 @@ impl<T: fmt::Display + fmt::Debug + Any> StdError for Errors<T> {
     }
 }
 
-#[derive(Debug, PartialEq)]
-struct SourceContext<E> {
-    line: String,
-    error: Spanned<E, Location>,
-}
-
-impl<E> SourceContext<E>
-where
-    E: fmt::Display,
-{
-    fn new(source: &Source, error: Spanned<E, BytePos>) -> SourceContext<E> {
-        debug_assert!(
-            error.span.start.to_usize() <= source.src().len()
-                && error.span.end.to_usize() <= source.src().len(),
-            "{}",
-            error,
-        );
-
-        let start = source.location(error.span.start).unwrap();
-        let end = source.location(error.span.end).unwrap();
-        let (_, line) = source.line_at_byte(error.span.start).unwrap();
-
-        SourceContext {
-            line: line.to_string(),
-            error: spanned2(start, end, error.value),
-        }
-    }
-}
-
 /// Error type which contains information of which file and where in the file the error occurred
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct InFile<E> {
-    pub source_name: String,
-    error: Errors<SourceContext<E>>,
+    source: Arc<::codespan::FileMap>,
+    error: Errors<Spanned<E, BytePos>>,
+}
+
+impl<E> PartialEq for InFile<E>
+where
+    E: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.error == other.error
+    }
 }
 
 impl<E: fmt::Display> InFile<E> {
     /// Creates a new `InFile` error which states that the error occurred in `file` using the file
     /// contents in `source` to provide a context to the span.
-    pub fn new(source_name: &str, source: &str, error: Errors<Spanned<E, BytePos>>) -> InFile<E> {
-        let source = Source::new(source);
-
-        InFile {
-            source_name: source_name.to_string(),
-            error: Errors {
-                errors: error
-                    .errors
-                    .into_iter()
-                    .map(|error| SourceContext::new(&source, error))
-                    .collect(),
-            },
-        }
+    pub fn new(source: Arc<::codespan::FileMap>, error: Errors<Spanned<E, BytePos>>) -> InFile<E> {
+        InFile { source, error }
     }
 
-    pub fn errors(self) -> Errors<Spanned<E, Location>> {
-        Errors {
-            errors: self.error.errors.into_iter().map(|err| err.error).collect(),
+    pub fn source_name(&self) -> &::codespan::FileName {
+        self.source.name()
+    }
+
+    pub fn errors(self) -> Errors<Spanned<E, BytePos>> {
+        self.error
+    }
+
+    pub fn emit_string(&self, code_map: &::codespan::CodeMap) -> io::Result<String> {
+        let mut output = Vec::new();
+        self.emit(
+            &mut ::codespan_reporting::termcolor::NoColor::new(&mut output),
+            code_map,
+        )?;
+        Ok(String::from_utf8(output).unwrap())
+    }
+
+    pub fn emit<W>(&self, writer: &mut W, code_map: &::codespan::CodeMap) -> io::Result<()>
+    where
+        W: ?Sized + ::codespan_reporting::termcolor::WriteColor,
+    {
+        let iter = self.error.iter().map(|err| Diagnostic {
+            severity: Severity::Error,
+            message: err.value.to_string(),
+            labels: vec![Label::new_primary(err.span)],
+        });
+        for diagnostic in iter {
+            ::codespan_reporting::emit(&mut *writer, &code_map, &diagnostic)?;
         }
+        Ok(())
     }
 }
 
 impl<E: fmt::Display> fmt::Display for InFile<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for error in &self.error.errors {
-            let Span { start, end, .. } = error.error.span;
+        let mut buffer = Vec::new();
+        {
+            let mut writer = ::codespan_reporting::termcolor::NoColor::new(&mut buffer);
+            let empty_code_map = ::codespan::CodeMap::new();
 
-            write!(f, "{}:{}\n{}\n", self.source_name, error.error, error.line)?;
-
-            for _ in 0..start.column.to_usize() {
-                write!(f, " ")?;
-            }
-
-            write!(f, "^")?;
-            for _ in (start.column.to_usize() + 1)..end.column.to_usize() {
-                write!(f, "~")?;
-            }
-
-            writeln!(f, "")?;
+            self.emit(&mut writer, &empty_code_map)
+                .map_err(|_| fmt::Error)?;
         }
-        Ok(())
+
+        write!(f, "{}", str::from_utf8(&buffer).unwrap())
     }
 }
 

@@ -11,7 +11,6 @@ use base::ast::{Expr, Literal, SpannedExpr, Typed, TypedIdent};
 use base::kind::{ArcKind, Kind, KindEnv};
 use base::types::*;
 use base::symbol::{Symbol, SymbolRef};
-use base::source::Source;
 use base::pos::{self, BytePos, Span, Spanned};
 
 fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
@@ -328,8 +327,8 @@ fn break_record() {
         ],
     );
     let arena = Arena::new();
-    let source = Source::new("");
-    let printer = pretty_print::Printer::new(&arena, &source);
+    let source = &();
+    let printer = pretty_print::Printer::new(&arena, source);
     let typ = arena
         .text("aaaaaaaaabbbbbbbbbbcccccccccc ")
         .append(pretty_print(&printer, &typ))

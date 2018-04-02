@@ -48,9 +48,9 @@ impl<'a, 'b> ExprProducer<'a, 'b> for DifferentLifetime<'a, 'b> {
             Expr::Ident(ref id, ref span) => {
                 self.0.arena.alloc(Expr::Ident(id.clone(), span.clone()))
             }
-            Expr::Data(ref id, args, pos, expansion) if args.is_empty() => self.0
-                .arena
-                .alloc(Expr::Data(id.clone(), &[], pos.clone(), expansion.clone())),
+            Expr::Data(ref id, args, pos) if args.is_empty() => {
+                self.0.arena.alloc(Expr::Data(id.clone(), &[], pos.clone()))
+            }
             _ => walk_expr_alloc(self, expr).unwrap(),
         }
     }
@@ -209,7 +209,7 @@ where
         }
         Expr::Const(_, _) => None,
         Expr::Ident(_, _) => None,
-        Expr::Data(ref id, exprs, pos, expansion) => merge_iter(
+        Expr::Data(ref id, exprs, pos) => merge_iter(
             exprs,
             |expr| visitor.visit_expr_(expr),
             |e| {
@@ -222,7 +222,6 @@ where
                 id.clone(),
                 visitor.allocator().arena.alloc_extend(exprs.into_iter()),
                 pos,
-                expansion,
             )
         }),
         Expr::Let(ref bind, expr) => {

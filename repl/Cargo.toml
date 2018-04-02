@@ -33,6 +33,10 @@ env_logger = { version = "0.5", optional = true }
 lazy_static = "0.2.0"
 rustyline = "1.0.0"
 walkdir = "2"
+codespan = "0.1.1"
+codespan-reporting = "0.1.1"
+
+
 serde = "1"
 serde_derive = "1"
 

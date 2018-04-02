@@ -4,11 +4,11 @@ extern crate rand;
 
 use self::rand::{Rng, SeedableRng};
 
-use vm::{self, ExternModule};
 use vm::api::{RuntimeResult, Userdata, VmType, IO};
 use vm::gc::{Gc, Traverseable};
 use vm::thread::Thread;
 use vm::types::VmInt;
+use vm::{self, ExternModule};
 
 #[derive(Debug, Clone)]
 struct XorShiftRng(self::rand::XorShiftRng);

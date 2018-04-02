@@ -67,7 +67,7 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
 
             let old_id = id.clone();
             let name = self.symbols.string(&id).to_owned();
-            let mut new_name = format!("{}:{}", name, span.start);
+            let mut new_name = format!("{}:{}", name, span.start());
             let mut i = 0;
             while self.symbols.contains_name(&new_name) {
                 let truncate_len = new_name

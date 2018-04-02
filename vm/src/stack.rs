@@ -502,7 +502,7 @@ impl fmt::Display for Stacktrace {
                     "{}: {}:Line {}",
                     i,
                     frame.name.declared_name(),
-                    frame.line
+                    frame.line.number()
                 ),
                 None => writeln!(f, "{}: <unknown>", i),
             }?
