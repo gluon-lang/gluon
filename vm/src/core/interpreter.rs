@@ -755,7 +755,7 @@ mod tests {
     use base::symbol::Symbols;
 
     use core::*;
-    use core::grammar::parse_Expr as parse_core_expr;
+    use core::grammar::ExprParser;
 
     macro_rules! assert_eq_expr {
         ($actual: expr, $expected: expr) => {
@@ -767,7 +767,7 @@ mod tests {
 
             let allocator = Allocator::new();
 
-            let actual_expr = parse_core_expr(&mut symbols, &allocator, $actual)
+            let actual_expr = ExprParser::new().parse(&mut symbols, &allocator, $actual)
                 .unwrap();
 
             let actual_expr = {
@@ -776,7 +776,7 @@ mod tests {
                     .unwrap()
             };
 
-            let expected_expr = parse_core_expr(&mut symbols, &allocator, $expected)
+            let expected_expr = ExprParser::new().parse(&mut symbols, &allocator, $expected)
                 .unwrap();
 
             assert_deq!(*actual_expr, expected_expr);
@@ -874,7 +874,7 @@ mod tests {
         let _ = ::env_logger::try_init();
         let mut symbols = Symbols::new();
         let global_allocator = Allocator::new();
-        let global = parse_core_expr(
+        let global = ExprParser::new().parse(
             &mut symbols,
             &global_allocator,
             "let f x y = (#Int+) x y in { f }",

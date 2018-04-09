@@ -1827,7 +1827,7 @@ mod tests {
     use base::symbol::{Symbol, SymbolModule, Symbols};
     use base::types::TypeCache;
 
-    use core::grammar::parse_Expr as parse_core_expr;
+    use core::grammar::ExprParser;
 
     use vm::RootedThread;
 
@@ -1931,7 +1931,7 @@ mod tests {
         let core_expr = translator.translate(&expr);
 
         let expected_expr =
-            parse_core_expr(&mut symbols, &translator.allocator, expected_str).unwrap();
+            ExprParser::new().parse(&mut symbols, &translator.allocator, expected_str).unwrap();
         assert_deq!(PatternEq(&core_expr), expected_expr);
     }
 

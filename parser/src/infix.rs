@@ -223,8 +223,8 @@ pub fn reparse<Id>(
     symbols: &IdentEnv<Ident = Id>,
     operators: &OpTable,
 ) -> Result<SpannedExpr<Id>, Spanned<Error, BytePos>> {
-    use base::pos;
     use self::Error::*;
+    use base::pos;
 
     let make_op = |lhs: Box<SpannedExpr<Id>>, op, rhs: Box<SpannedExpr<Id>>| {
         let span = pos::span(lhs.span.start, rhs.span.end);
@@ -402,8 +402,8 @@ mod tests {
     use base::pos::{self, BytePos, Spanned};
     use std::marker::PhantomData;
 
-    use super::{reparse, Fixity, InfixToken, Infixes, OpMeta, OpTable};
     use super::Error::*;
+    use super::{reparse, Fixity, InfixToken, Infixes, OpMeta, OpTable};
 
     pub struct MockEnv<T>(PhantomData<T>);
 
