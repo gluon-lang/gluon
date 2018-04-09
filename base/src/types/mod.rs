@@ -9,7 +9,7 @@ use pretty::{Arena, DocAllocator, DocBuilder};
 
 use smallvec::{SmallVec, VecLike};
 
-use ast::{Comment, Commented, IdentEnv};
+use ast::{Comment, Commented, EmptyEnv, IdentEnv};
 use fnv::FnvMap;
 use kind::{ArcKind, Kind, KindEnv};
 use merge::merge;
@@ -47,6 +47,17 @@ impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
         (**self).find_type_info(id)
     }
 }
+
+impl TypeEnv for EmptyEnv<Symbol> {
+    fn find_type(&self, _id: &SymbolRef) -> Option<&ArcType> {
+        None
+    }
+
+    fn find_type_info(&self, _id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
+        None
+    }
+}
+
 
 /// Trait which is a `TypeEnv` which also provides access to the type representation of some
 /// primitive types
