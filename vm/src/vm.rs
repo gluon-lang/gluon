@@ -1,8 +1,8 @@
-use std::borrow::Cow;
-use std::sync::{Mutex, RwLock, RwLockReadGuard};
 use std::any::{Any, TypeId};
+use std::borrow::Cow;
 use std::result::Result as StdResult;
 use std::string::String as StdString;
+use std::sync::{Mutex, RwLock, RwLockReadGuard};
 use std::usize;
 
 use base::ast;
@@ -10,22 +10,22 @@ use base::fnv::FnvMap;
 use base::kind::{ArcKind, Kind, KindEnv};
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Name, Symbol, SymbolRef};
-use base::types::{Alias, AliasData, AppVec, ArcType, Generic, PrimitiveEnv, RecordSelector, Type,
-                  TypeCache, TypeEnv};
+use base::types::{Alias, AliasData, AppVec, ArcType, Generic, PrimitiveEnv, Type, TypeCache,
+                  TypeEnv};
 
-use macros::MacroEnv;
-use {Error, Result, Variants};
-use types::*;
-use interner::{InternedStr, Interner};
-use gc::{Gc, GcPtr, Generation, Move, Traverseable};
-use compiler::{CompiledFunction, CompiledModule, CompilerEnv, Variable};
 use api::{ValueRef, IO};
+use compiler::{CompiledFunction, CompiledModule, CompilerEnv, Variable};
+use gc::{Gc, GcPtr, Generation, Move, Traverseable};
+use interner::{InternedStr, Interner};
 use lazy::Lazy;
+use macros::MacroEnv;
+use types::*;
+use {Error, Result, Variants};
 
 use value::{BytecodeFunction, ClosureData, ClosureDataDef, Value};
 
-pub use value::Userdata;
 pub use thread::{Root, RootStr, RootedThread, RootedValue, Status, Thread};
+pub use value::Userdata;
 
 fn new_bytecode(
     env: &VmEnv,
@@ -209,14 +209,6 @@ impl TypeEnv for VmEnv {
 
     fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
         self.type_infos.find_type_info(id)
-    }
-
-    fn find_record(
-        &self,
-        fields: &[Symbol],
-        selector: RecordSelector,
-    ) -> Option<(ArcType, ArcType)> {
-        self.type_infos.find_record(fields, selector)
     }
 }
 
@@ -415,9 +407,9 @@ impl GlobalVmStateBuilder {
 
 impl GlobalVmState {
     fn add_types(&mut self) -> StdResult<(), (TypeId, ArcType)> {
-        use base::types::BuiltinType;
-        use api::generic::A;
         use api::Generic;
+        use api::generic::A;
+        use base::types::BuiltinType;
         fn add_builtin_type<T: Any>(self_: &mut GlobalVmState, b: BuiltinType) {
             let typ = self_.type_cache.builtin_type(b);
             add_type::<T>(self_, b.to_str(), typ)

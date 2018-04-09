@@ -36,39 +36,6 @@ pub trait TypeEnv: KindEnv {
 
     /// Returns information about the type `id`
     fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>>;
-
-    /// Returns a record which contains all `fields`. The first element is the record type and the
-    /// second is the alias type.
-    fn find_record(
-        &self,
-        fields: &[Symbol],
-        selector: RecordSelector,
-    ) -> Option<(ArcType, ArcType)>;
-}
-
-pub enum RecordSelector {
-    // Selects a record which exactly has the fields
-    Exact,
-    // Selects a record which has all the passed fields (in any order)
-    Subset,
-}
-
-impl RecordSelector {
-    /// Returns `true` if the iterators matches according to the selector
-    pub fn matches<F, I, J>(&self, mut record: F, needle: J) -> bool
-    where
-        F: FnMut() -> I,
-        I: IntoIterator,
-        J: IntoIterator<Item = I::Item>,
-        I::Item: PartialEq,
-    {
-        match *self {
-            RecordSelector::Exact => record().into_iter().eq(needle),
-            RecordSelector::Subset => needle
-                .into_iter()
-                .all(|name| record().into_iter().any(|other| other == name)),
-        }
-    }
 }
 
 impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
@@ -78,14 +45,6 @@ impl<'a, T: ?Sized + TypeEnv> TypeEnv for &'a T {
 
     fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
         (**self).find_type_info(id)
-    }
-
-    fn find_record(
-        &self,
-        fields: &[Symbol],
-        selector: RecordSelector,
-    ) -> Option<(ArcType, ArcType)> {
-        (**self).find_record(fields, selector)
     }
 }
 

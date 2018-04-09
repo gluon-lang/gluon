@@ -21,7 +21,7 @@ use base::merge;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
 use base::types::{self, Alias, AliasRef, AppVec, ArcType, ArgType, BuiltinType, Field, Filter,
-                  Generic, PrimitiveEnv, RecordSelector, Skolem, Type, TypeCache, TypeEnv,
+                  Generic, PrimitiveEnv, Skolem, Type, TypeCache, TypeEnv,
                   TypeFormatter, TypeVariable};
 
 use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
@@ -282,28 +282,6 @@ impl<'a> TypeEnv for Environment<'a> {
             .map(|&(_, ref alias)| alias)
             .or_else(|| self.environment.find_type_info(id))
     }
-
-    fn find_record(
-        &self,
-        fields: &[Symbol],
-        selector: RecordSelector,
-    ) -> Option<(ArcType, ArcType)> {
-        self.stack_types
-            .iter()
-            .find(|&(_, &(_, ref alias))| match **alias.unresolved_type() {
-                Type::Record(ref row) => {
-                    let record_fields = || {
-                        row.row_iter()
-                            .map(|f| f.name.name())
-                            .chain(row.type_field_iter().map(|f| f.name.name()))
-                    };
-                    selector.matches(record_fields, fields.iter().map(|field| field.name()))
-                }
-                _ => false,
-            })
-            .map(|t| ((t.1).0.clone(), (t.1).1.typ().into_owned()))
-            .or_else(|| self.environment.find_record(fields, selector))
-    }
 }
 
 impl<'a> PrimitiveEnv for Environment<'a> {
@@ -417,27 +395,6 @@ impl<'a> Typecheck<'a> {
                     Err(TypeError::UndefinedVariable(id.clone()))
                 }
             }
-        }
-    }
-
-    fn find_record(
-        &self,
-        fields: &[Symbol],
-        selector: RecordSelector,
-    ) -> TcResult<(ArcType, ArcType)> {
-        // If fields is empty it is going to match any record which means this function probably
-        // returns the wrong record as the record we expect can still contain type fields.
-        // Just return an error so that inference continues without any guessed record type.
-        if fields.is_empty() {
-            Err(TypeError::UndefinedRecord {
-                fields: fields.to_owned(),
-            })
-        } else {
-            self.environment
-                .find_record(fields, selector)
-                .ok_or(TypeError::UndefinedRecord {
-                    fields: fields.to_owned(),
-                })
         }
     }
 
@@ -1064,12 +1021,6 @@ impl<'a> Typecheck<'a> {
                             .cloned(),
                     );
                 }
-
-                let record_fields = new_fields
-                    .iter()
-                    .map(|f| f.name.clone())
-                    .chain(new_types.iter().map(|f| f.name.clone()))
-                    .collect::<Vec<_>>();
 
                 *typ = self.type_cache.record(new_types, new_fields);
                 Ok(TailCall::Type(typ.clone()))

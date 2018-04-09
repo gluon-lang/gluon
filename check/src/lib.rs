@@ -21,13 +21,13 @@ extern crate union_find;
 #[macro_use]
 extern crate gluon_base as base;
 
-pub mod typecheck;
-pub mod unify_type;
-pub mod unify;
 pub mod kindcheck;
-pub mod substitution;
-pub mod rename;
 pub mod metadata;
+pub mod rename;
+pub mod substitution;
+pub mod typecheck;
+pub mod unify;
+pub mod unify_type;
 
 mod implicits;
 
@@ -35,9 +35,9 @@ use base::types::{ArcType, TypeEnv};
 
 /// Checks if `actual` can be assigned to a binding with the type signature `signature`
 pub fn check_signature(env: &TypeEnv, signature: &ArcType, actual: &ArcType) -> bool {
+    use base::fnv::FnvMap;
     use base::kind::Kind;
     use base::scoped_map::ScopedMap;
-    use base::fnv::FnvMap;
 
     use substitution::Substitution;
 
@@ -59,7 +59,7 @@ mod tests {
 
     use base::kind::{ArcKind, KindEnv};
     use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
-    use base::types::{Alias, ArcType, RecordSelector, TypeEnv};
+    use base::types::{Alias, ArcType, TypeEnv};
 
     pub struct MockEnv;
 
@@ -74,13 +74,6 @@ mod tests {
             None
         }
         fn find_type_info(&self, _id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
-            None
-        }
-        fn find_record(
-            &self,
-            _fields: &[Symbol],
-            _selector: RecordSelector,
-        ) -> Option<(ArcType, ArcType)> {
             None
         }
     }

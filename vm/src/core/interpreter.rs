@@ -1,13 +1,13 @@
-use std::ops::{Deref, DerefMut};
 use base::ast::{Literal, TypedIdent};
 use base::fnv::FnvSet;
-use base::merge::merge_iter;
 use base::kind::{ArcKind, KindEnv};
-use base::types::{Alias, ArcType, RecordSelector, TypeEnv};
+use base::merge::merge_iter;
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolRef};
-use core::{self, Allocator, CExpr, Closure, Expr, LetBinding, Named, Pattern};
+use base::types::{Alias, ArcType, TypeEnv};
 use core::optimize::{walk_expr_alloc, DifferentLifetime, ExprProducer, SameLifetime, Visitor};
+use core::{self, Allocator, CExpr, Closure, Expr, LetBinding, Named, Pattern};
+use std::ops::{Deref, DerefMut};
 use types::*;
 
 use {Error, Result};
@@ -287,14 +287,6 @@ impl<'a, 'e> TypeEnv for Compiler<'a, 'e> {
 
     fn find_type_info(&self, id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
         self.stack_types.get(id)
-    }
-
-    fn find_record(
-        &self,
-        _fields: &[Symbol],
-        _selector: RecordSelector,
-    ) -> Option<(ArcType, ArcType)> {
-        None
     }
 }
 
@@ -695,8 +687,8 @@ impl<'a, 'e> Compiler<'a, 'e> {
         args: &'e [Expr<'e>],
     ) -> Result<Option<ReducedExpr<'e, 'a>>> {
         macro_rules! binop {
-            () => { {
-                let f: fn (_, _) -> _ = match id.name.as_ref().chars().last().unwrap() {
+            () => {{
+                let f: fn(_, _) -> _ = match id.name.as_ref().chars().last().unwrap() {
                     '+' => |l, r| l + r,
                     '-' => |l, r| l - r,
                     '*' => |l, r| l * r,
@@ -704,7 +696,8 @@ impl<'a, 'e> Compiler<'a, 'e> {
                     _ => return Err(format!("Invalid binop `{}`", id.name).into()),
                 };
                 f
-            } }
+            }
+            }
         }
 
         let l = self.compile(&args[0], function)?;
@@ -754,20 +747,22 @@ mod tests {
 
     use base::symbol::Symbols;
 
-    use core::*;
     use core::grammar::ExprParser;
+    use core::*;
 
     macro_rules! assert_eq_expr {
-        ($actual: expr, $expected: expr) => {
+        ($actual:expr, $expected:expr) => {
+
             assert_eq_expr!($actual, $expected, |_: &Symbol| None)
         };
-        ($actual: expr, $expected: expr, $globals: expr) => { {
+        ($actual:expr, $expected:expr, $globals:expr) => {{
             let mut symbols = Symbols::new();
             let globals = $globals;
 
             let allocator = Allocator::new();
 
-            let actual_expr = ExprParser::new().parse(&mut symbols, &allocator, $actual)
+            let actual_expr = ExprParser::new()
+                .parse(&mut symbols, &allocator, $actual)
                 .unwrap();
 
             let actual_expr = {
@@ -776,11 +771,13 @@ mod tests {
                     .unwrap()
             };
 
-            let expected_expr = ExprParser::new().parse(&mut symbols, &allocator, $expected)
+            let expected_expr = ExprParser::new()
+                .parse(&mut symbols, &allocator, $expected)
                 .unwrap();
 
             assert_deq!(*actual_expr, expected_expr);
-        } }
+        }
+        }
     }
 
     #[test]
@@ -874,11 +871,13 @@ mod tests {
         let _ = ::env_logger::try_init();
         let mut symbols = Symbols::new();
         let global_allocator = Allocator::new();
-        let global = ExprParser::new().parse(
-            &mut symbols,
-            &global_allocator,
-            "let f x y = (#Int+) x y in { f }",
-        ).unwrap();
+        let global = ExprParser::new()
+            .parse(
+                &mut symbols,
+                &global_allocator,
+                "let f x y = (#Int+) x y in { f }",
+            )
+            .unwrap();
         let global: CExpr = global_allocator.arena.alloc(global);
 
         let expr = r#"
