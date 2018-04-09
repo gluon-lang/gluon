@@ -646,12 +646,10 @@ impl<'a> Typecheck<'a> {
         let _ = ::rename::rename(&mut self.symbols, expr);
         self.implicit_resolver.metadata = ::metadata::metadata(&self.environment, expr).1;
 
+        let temp = expected_type.and_then(|expected| self.create_unifiable_signature(expected));
+        let expected_type = temp.as_ref().or(expected_type);
+
         let mut typ = self.typecheck_opt(expr, expected_type);
-        if let Some(expected) = expected_type {
-            let expected = self.create_unifiable_signature(expected)
-                .unwrap_or_else(|| expected.clone());
-            typ = self.subsumes_expr(expr_check_span(expr), 0, &expected, typ, expr);
-        }
         // Only the 'tail' expression need to be generalized at this point as all bindings
         // will have already been generalized
         self.generalize_variables(0, &mut [].iter_mut(), tail_expr(expr));
@@ -908,12 +906,17 @@ impl<'a> Typecheck<'a> {
                 }
             }
             Expr::Array(ref mut array) => {
-                let mut expected_type = self.subs.new_var();
-                for expr in &mut array.exprs {
-                    let typ = self.typecheck(expr, &expected_type);
-                    expected_type = self.unify_span(expr.span, &expected_type, typ);
+                let mut expected_element_type = self.subs.new_var();
+
+                if let Some(expected_type) = expected_type.take() {
+                    array.typ = self.type_cache.array(expected_element_type.clone());
+                    self.unify_span(expr.span, &expected_type, array.typ.clone());
                 }
-                array.typ = self.type_cache.array(expected_type);
+
+                for expr in &mut array.exprs {
+                    expected_element_type = self.typecheck(expr, &expected_element_type);
+                }
+
                 Ok(TailCall::Type(array.typ.clone()))
             }
             Expr::Lambda(ref mut lambda) => {

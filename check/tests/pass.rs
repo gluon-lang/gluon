@@ -821,6 +821,15 @@ fn expected_type_do_not_override_actual_type_for_returned_type() {
 }
 
 #[test]
+fn expected_type_do_not_override_actual_type_for_returned_type_array() {
+    let text = "[1]";
+    let (_, result) = support::typecheck_expr_expected(text, Some(&Type::hole()));
+
+    assert_req!(result.map(|t| t.to_string()), Ok("Array Int"));
+}
+
+
+#[test]
 fn dont_guess_record_type() {
     let _ = env_logger::try_init();
 
@@ -834,4 +843,21 @@ let x : Test = { a = 0, b = "" }
     let result = support::typecheck(text);
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn generalize_function_in_record_and_array() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+let string x : String -> String = x
+let a: Array { f : String -> String } = [
+    { f = \x -> x },
+    { f = \x -> string x },
+]
+a
+"#;
+    let result = support::typecheck(text);
+
+    assert_req!(result.map(|t| t.to_string()), Ok("Array { f : String -> String }"));
 }
