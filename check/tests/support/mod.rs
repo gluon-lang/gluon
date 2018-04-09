@@ -259,11 +259,12 @@ pub fn close_record(typ: ArcType) -> ArcType {
 
 #[macro_export]
 macro_rules! assert_failed {
-    ($lhs: expr, $rhs: expr, $lhs_value: expr, $rhs_value: expr) => {
+    ($lhs:expr, $rhs:expr, $lhs_value:expr, $rhs_value:expr) => {
+
         panic!(
             r#"Assertion failed: `({} == {})`
-left: `{}`,
-right: `{}`"#,
+        left: `{}`,
+        right: `{}`"#,
             stringify!($lhs),
             stringify!($rhs),
             $lhs_value,
@@ -274,7 +275,8 @@ right: `{}`"#,
 
 #[macro_export]
 macro_rules! assert_req {
-    ($lhs: expr, $rhs: expr) => {
+    ($lhs:expr, $rhs:expr) => {
+
         match ($lhs, $rhs) {
             (Ok(lhs), Ok(rhs)) => {
                 if lhs != rhs {
@@ -286,18 +288,14 @@ macro_rules! assert_req {
                     assert_failed!($lhs, $rhs, lhs, rhs)
                 }
             }
-            (Ok(lhs), Err(rhs)) => {
-                assert_failed!($lhs, $rhs, lhs, rhs)
-            }
-            (Err(lhs), Ok(rhs)) => {
-                assert_failed!($lhs, $rhs, lhs, rhs)
-            }
+            (Ok(lhs), Err(rhs)) => assert_failed!($lhs, $rhs, lhs, rhs),
+            (Err(lhs), Ok(rhs)) => assert_failed!($lhs, $rhs, lhs, rhs),
         }
     };
 }
 
 macro_rules! test_check {
-    ($name : ident, $source: expr, $typ: expr) => {
+    ($name:ident, $source:expr, $typ:expr) => {
         #[test]
         fn $name() {
             let _ = env_logger::try_init();
@@ -307,7 +305,7 @@ macro_rules! test_check {
 
             assert_req!(result.map(|x| x.to_string()), Ok($typ.to_string()));
         }
-    }
+    };
 }
 
 macro_rules! assert_err {

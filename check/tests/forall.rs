@@ -341,38 +341,6 @@ match () with
 }
 
 #[test]
-fn precise_alias_selection_on_record_construction() {
-    let _ = ::env_logger::try_init();
-    let text = r#"
-type Test = {
-    x : Int,
-    y : Float
-}
-type Test2 = {
-    x : Int
-}
-{ x = 1 }
-"#;
-    let result = support::typecheck(text);
-
-    assert_eq!(
-        result,
-        Ok(Type::alias(
-            intern("Test2"),
-            Type::record(
-                vec![],
-                vec![
-                    Field {
-                        name: intern("x"),
-                        typ: Type::int(),
-                    },
-                ]
-            )
-        ))
-    );
-}
-
-#[test]
 fn alias_selection_on_pattern_match() {
     let _ = ::env_logger::try_init();
     let text = r#"
