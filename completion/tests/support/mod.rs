@@ -5,8 +5,7 @@ use base::error::InFile;
 use base::kind::{ArcKind, Kind, KindEnv};
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
-use base::types::{self, Alias, ArcType, Generic, PrimitiveEnv, RecordSelector, Type, TypeCache,
-                  TypeEnv};
+use base::types::{self, Alias, ArcType, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv};
 use check::typecheck::{self, Typecheck};
 use parser::{parse_partial_expr, ParseErrors};
 
@@ -85,14 +84,6 @@ impl TypeEnv for MockEnv {
             "Bool" => Some(&self.bool),
             _ => None,
         }
-    }
-
-    fn find_record(
-        &self,
-        _fields: &[Symbol],
-        _selector: RecordSelector,
-    ) -> Option<(ArcType, ArcType)> {
-        None
     }
 }
 

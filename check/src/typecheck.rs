@@ -21,7 +21,7 @@ use base::merge;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
 use base::types::{self, Alias, AliasRef, AppVec, ArcType, ArgType, BuiltinType, Field, Filter,
-                  Generic, PrimitiveEnv, RecordSelector, Skolem, Type, TypeCache, TypeEnv,
+                  Generic, PrimitiveEnv, Skolem, Type, TypeCache, TypeEnv,
                   TypeFormatter, TypeVariable};
 
 use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
@@ -282,28 +282,6 @@ impl<'a> TypeEnv for Environment<'a> {
             .map(|&(_, ref alias)| alias)
             .or_else(|| self.environment.find_type_info(id))
     }
-
-    fn find_record(
-        &self,
-        fields: &[Symbol],
-        selector: RecordSelector,
-    ) -> Option<(ArcType, ArcType)> {
-        self.stack_types
-            .iter()
-            .find(|&(_, &(_, ref alias))| match **alias.unresolved_type() {
-                Type::Record(ref row) => {
-                    let record_fields = || {
-                        row.row_iter()
-                            .map(|f| f.name.name())
-                            .chain(row.type_field_iter().map(|f| f.name.name()))
-                    };
-                    selector.matches(record_fields, fields.iter().map(|field| field.name()))
-                }
-                _ => false,
-            })
-            .map(|t| ((t.1).0.clone(), (t.1).1.typ().into_owned()))
-            .or_else(|| self.environment.find_record(fields, selector))
-    }
 }
 
 impl<'a> PrimitiveEnv for Environment<'a> {
@@ -417,27 +395,6 @@ impl<'a> Typecheck<'a> {
                     Err(TypeError::UndefinedVariable(id.clone()))
                 }
             }
-        }
-    }
-
-    fn find_record(
-        &self,
-        fields: &[Symbol],
-        selector: RecordSelector,
-    ) -> TcResult<(ArcType, ArcType)> {
-        // If fields is empty it is going to match any record which means this function probably
-        // returns the wrong record as the record we expect can still contain type fields.
-        // Just return an error so that inference continues without any guessed record type.
-        if fields.is_empty() {
-            Err(TypeError::UndefinedRecord {
-                fields: fields.to_owned(),
-            })
-        } else {
-            self.environment
-                .find_record(fields, selector)
-                .ok_or(TypeError::UndefinedRecord {
-                    fields: fields.to_owned(),
-                })
         }
     }
 
@@ -646,12 +603,10 @@ impl<'a> Typecheck<'a> {
         let _ = ::rename::rename(&mut self.symbols, expr);
         self.implicit_resolver.metadata = ::metadata::metadata(&self.environment, expr).1;
 
+        let temp = expected_type.and_then(|expected| self.create_unifiable_signature(expected));
+        let expected_type = temp.as_ref().or(expected_type);
+
         let mut typ = self.typecheck_opt(expr, expected_type);
-        if let Some(expected) = expected_type {
-            let expected = self.create_unifiable_signature(expected)
-                .unwrap_or_else(|| expected.clone());
-            typ = self.subsumes_expr(expr_check_span(expr), 0, &expected, typ, expr);
-        }
         // Only the 'tail' expression need to be generalized at this point as all bindings
         // will have already been generalized
         self.generalize_variables(0, &mut [].iter_mut(), tail_expr(expr));
@@ -879,18 +834,6 @@ impl<'a> Typecheck<'a> {
                     self.symbols.string(field_id)
                 );
                 self.subs.make_real(&mut expr_typ);
-                if let Type::Variable(_) = *expr_typ {
-                    // Eagerly attempt to find a record with `field_access` since infering to just
-                    // a polymorphic record may cause some code to fail to infer such as
-                    // the test `row_polymorphism::late_merge_with_signature`
-                    if let Ok(record_type) =
-                        self.find_record(&[field_id.clone()], RecordSelector::Subset)
-                            .map(|t| t.0.clone())
-                    {
-                        let record_type = self.new_skolem_scope(&record_type);
-                        expr_typ = self.unify(&record_type, expr_typ)?;
-                    }
-                }
                 expr_typ = self.instantiate_generics(&expr_typ);
                 let record = self.remove_aliases(expr_typ.clone());
                 match *record {
@@ -920,12 +863,17 @@ impl<'a> Typecheck<'a> {
                 }
             }
             Expr::Array(ref mut array) => {
-                let mut expected_type = self.subs.new_var();
-                for expr in &mut array.exprs {
-                    let typ = self.typecheck(expr, &expected_type);
-                    expected_type = self.unify_span(expr.span, &expected_type, typ);
+                let mut expected_element_type = self.subs.new_var();
+
+                if let Some(expected_type) = expected_type.take() {
+                    array.typ = self.type_cache.array(expected_element_type.clone());
+                    self.unify_span(expr.span, &expected_type, array.typ.clone());
                 }
-                array.typ = self.type_cache.array(expected_type);
+
+                for expr in &mut array.exprs {
+                    expected_element_type = self.typecheck(expr, &expected_element_type);
+                }
+
                 Ok(TailCall::Type(array.typ.clone()))
             }
             Expr::Lambda(ref mut lambda) => {
@@ -1074,30 +1022,8 @@ impl<'a> Typecheck<'a> {
                     );
                 }
 
-                let record_fields = new_fields
-                    .iter()
-                    .map(|f| f.name.clone())
-                    .chain(new_types.iter().map(|f| f.name.clone()))
-                    .collect::<Vec<_>>();
-                let result = self.find_record(&record_fields, RecordSelector::Exact)
-                    .map(|t| (t.0.clone(), t.1.clone()));
-                let (id_type, record_type) = match result {
-                    Ok(x) => x,
-                    Err(_) => {
-                        *typ = self.type_cache.record(new_types, new_fields);
-                        return Ok(TailCall::Type(typ.clone()));
-                    }
-                };
-
-                let id_type = self.new_skolem_scope(&id_type);
-                let record_type = new_skolem_scope(&self.subs, &record_type);
-
-                let level = self.subs.var_id();
-                let actual_record = self.type_cache.record(new_types, new_fields);
-                self.subsumes(expr.span, level, &record_type, actual_record);
-
-                *typ = id_type.clone();
-                Ok(TailCall::Type(id_type.clone()))
+                *typ = self.type_cache.record(new_types, new_fields);
+                Ok(TailCall::Type(typ.clone()))
             }
             Expr::Block(ref mut exprs) => {
                 let (last, exprs) = exprs.split_last_mut().expect("Expr in block");
@@ -1434,48 +1360,34 @@ impl<'a> Typecheck<'a> {
                     }
                 }
 
-                // actual_type is the record (not hidden behind an alias)
-                let record_guess = match *match_type {
-                    // If the type we are matching on already an alias we don't guess as it is
-                    // possible that we guess the wrong type (and we already have an alias anyway)
-                    Type::Alias(_) | Type::Record(_) => None,
-                    _ => self.find_record(&pattern_fields, RecordSelector::Subset)
-                        .map(|t| (t.0.clone(), t.1.clone()))
-                        .ok(),
-                };
-                let (mut typ, mut actual_type) = match record_guess {
-                    Some(typ) => typ,
-                    None => {
-                        // HACK Since there is no way to unify just the name of the 'type field's we
-                        // need to take the types from the matched type. This leaves the `types`
-                        // list incomplete however since it may miss some fields defined in the
-                        // pattern. These are catched later in this function.
-                        let x = self.remove_alias(match_type.clone());
-                        let types = x.type_field_iter()
-                            .filter(|field| {
-                                associated_types
-                                    .iter()
-                                    .any(|other| other.name.value.name_eq(&field.name))
-                            })
-                            .cloned()
-                            .collect();
+                let mut typ = {
+                    // HACK Since there is no way to unify just the name of the 'type field's we
+                    // need to take the types from the matched type. This leaves the `types`
+                    // list incomplete however since it may miss some fields defined in the
+                    // pattern. These are catched later in this function.
+                    let x = self.remove_alias(match_type.clone());
+                    let types = x.type_field_iter()
+                        .filter(|field| {
+                            associated_types
+                                .iter()
+                                .any(|other| other.name.value.name_eq(&field.name))
+                        })
+                        .cloned()
+                        .collect();
 
-                        let fields = fields
-                            .iter()
-                            .map(|field| Field::new(field.name.value.clone(), self.subs.new_var()))
-                            .collect();
-                        let t = Type::poly_record(types, fields, self.subs.new_var());
-                        (t.clone(), t)
-                    }
+                    let fields = fields
+                        .iter()
+                        .map(|field| Field::new(field.name.value.clone(), self.subs.new_var()))
+                        .collect();
+                    Type::poly_record(types, fields, self.subs.new_var())
                 };
                 typ = self.top_skolem_scope(&typ);
-                actual_type = self.top_skolem_scope(&actual_type);
                 self.unify_span(span, &typ, match_type.clone());
 
                 for field in fields {
                     let name = &field.name.value;
                     // The field should always exist since the type was constructed from the pattern
-                    let field_type = actual_type
+                    let field_type = typ
                         .row_iter()
                         .find(|f| f.name.name_eq(name))
                         .expect("ICE: Expected field to exist in type")
@@ -1496,7 +1408,7 @@ impl<'a> Typecheck<'a> {
                     let name = field.value.as_ref().unwrap_or(&field.name.value).clone();
                     // The `types` in the record type should have a type matching the
                     // `name`
-                    let field_type = actual_type
+                    let field_type = typ
                         .type_field_iter()
                         .find(|field| field.name.name_eq(&name));
 
@@ -1538,7 +1450,7 @@ impl<'a> Typecheck<'a> {
                     );
                 }
 
-                actual_type
+                typ
             }
             Pattern::Tuple {
                 ref mut typ,

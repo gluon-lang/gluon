@@ -45,7 +45,7 @@ impl<'a> Found<'a> {
 pub enum Match<'a> {
     Expr(&'a SpannedExpr<Symbol>),
     Pattern(&'a SpannedPattern<Symbol>),
-    Ident(Span<BytePos>, &'a Symbol, &'a ArcType),
+    Ident(Span<BytePos>, &'a Symbol, ArcType),
     Type(Span<BytePos>, &'a Symbol, ArcKind),
 }
 
@@ -294,6 +294,14 @@ where
     }
 }
 
+enum Variant<'a> {
+    Pattern(&'a SpannedPattern<Symbol>),
+    Ident(&'a SpannedIdent<Symbol>),
+    FieldIdent(&'a Spanned<Symbol, BytePos>, &'a ArcType),
+    Type(&'a AstType<Symbol>),
+    Expr(&'a SpannedExpr<Symbol>),
+}
+
 impl<'a, F> FindVisitor<'a, F>
 where
     F: OnFound,
@@ -304,6 +312,45 @@ where
     {
         let (_, expr) = self.select_spanned(iter, |e| e.span);
         self.visit_expr(expr.unwrap());
+    }
+
+    fn visit_any<I>(&mut self, iter: I)
+    where
+        I: IntoIterator<Item = Variant<'a>>
+    {
+        let (_, sel) = self.select_spanned(iter, |x| match *x {
+            Variant::Pattern(p) => p.span,
+            Variant::Ident(e) => e.span,
+            Variant::FieldIdent(e, _) => e.span,
+            Variant::Type(t) => t.span(),
+            Variant::Expr(e) => e.span,
+        });
+
+        match sel.unwrap() {
+            Variant::Pattern(pattern) => self.visit_pattern(pattern),
+            Variant::Ident(ident) => {
+                self.found = MatchState::Found(Match::Ident(
+                    ident.span,
+                    &ident.value.name,
+                    ident.value.typ.clone(),
+                ));
+            }
+            Variant::FieldIdent(ident, record_type) => {
+                let typ = resolve::remove_aliases(&::base::ast::EmptyEnv::default(), record_type.clone())
+                    .row_iter()
+                    .find(|field| field.name.name_eq(&ident.value))
+                    .map(|field| field.typ.clone())
+                    .unwrap_or_else(|| Type::hole());
+
+                self.found = MatchState::Found(Match::Ident(
+                    ident.span,
+                    &ident.value,
+                    typ,
+                ));
+            }
+            Variant::Type(t) => self.visit_ast_type(t),
+            Variant::Expr(expr) => self.visit_expr(expr),
+        }
     }
 
     fn visit_pattern(&mut self, current: &'a SpannedPattern<Symbol>) {
@@ -370,7 +417,7 @@ where
                                 self.found = MatchState::Found(Match::Ident(
                                     type_field.name.span,
                                     &type_field.name.value,
-                                    field_type,
+                                    field_type.clone(),
                                 ));
                             } else {
                                 self.found = MatchState::Empty;
@@ -388,7 +435,7 @@ where
                                 self.found = MatchState::Found(Match::Ident(
                                     field.name.span,
                                     &field.name.value,
-                                    field_type,
+                                    field_type.clone(),
                                 ));
                             }
                             (Ordering::Greater, &Some(ref pattern)) => self.visit_pattern(pattern),
@@ -479,7 +526,7 @@ where
             ) {
                 (Ordering::Greater, Ordering::Less) => {
                     self.found =
-                        MatchState::Found(Match::Ident(op.span, &op.value.name, &op.value.typ));
+                        MatchState::Found(Match::Ident(op.span, &op.value.name, op.value.typ.clone()));
                 }
                 (_, Ordering::Greater) | (_, Ordering::Equal) => self.visit_expr(rhs),
                 _ => self.visit_expr(lhs),
@@ -496,35 +543,11 @@ where
                             self.on_found.on_ident(&arg.name.value);
                         }
 
-                        enum Variant<'a> {
-                            Pattern(&'a SpannedPattern<Symbol>),
-                            Ident(&'a SpannedIdent<Symbol>),
-                            Type(&'a AstType<Symbol>),
-                            Expr(&'a SpannedExpr<Symbol>),
-                        }
                         let iter = once(Variant::Pattern(&bind.name))
                             .chain(bind.args.iter().map(|arg| Variant::Ident(&arg.name)))
                             .chain(bind.typ.iter().map(Variant::Type))
                             .chain(once(Variant::Expr(&bind.expr)));
-                        let (_, sel) = self.select_spanned(iter, |x| match *x {
-                            Variant::Pattern(p) => p.span,
-                            Variant::Ident(e) => e.span,
-                            Variant::Type(t) => t.span(),
-                            Variant::Expr(e) => e.span,
-                        });
-
-                        match sel.unwrap() {
-                            Variant::Pattern(pattern) => self.visit_pattern(pattern),
-                            Variant::Ident(ident) => {
-                                self.found = MatchState::Found(Match::Ident(
-                                    ident.span,
-                                    &ident.value.name,
-                                    &ident.value.typ,
-                                ));
-                            }
-                            Variant::Type(t) => self.visit_ast_type(t),
-                            Variant::Expr(expr) => self.visit_expr(expr),
-                        }
+                        self.visit_any(iter)
                     }
                     _ => self.visit_expr(expr),
                 }
@@ -568,22 +591,21 @@ where
                     self.visit_expr(expr);
                 } else {
                     self.enclosing_matches.push(Match::Expr(current));
-                    self.found = MatchState::Found(Match::Ident(current.span, id, typ));
+                    self.found = MatchState::Found(Match::Ident(current.span, id, typ.clone()));
                 }
             }
             Expr::Array(ref array) => self.visit_one(&array.exprs),
             Expr::Record {
                 ref exprs,
                 ref base,
+                typ: ref record_type,
                 ..
             } => {
-                let exprs = exprs
+                let iter = exprs
                     .iter()
-                    .filter_map(|tup| tup.value.as_ref())
-                    .chain(base.as_ref().map(|base| &**base));
-                if let (_, Some(expr)) = self.select_spanned(exprs, |e| e.span) {
-                    self.visit_expr(expr);
-                }
+                    .flat_map(|field| once(Variant::FieldIdent(&field.name, record_type)).chain(field.value.as_ref().map(Variant::Expr)))
+                    .chain(base.as_ref().map(|base| Variant::Expr(base)));
+                self.visit_any(iter)
             }
             Expr::Lambda(ref lambda) => {
                 for arg in &lambda.args {
@@ -596,7 +618,7 @@ where
                         self.found = MatchState::Found(Match::Ident(
                             arg.name.span,
                             &arg.name.value.name,
-                            &arg.name.value.typ,
+                            arg.name.value.typ.clone(),
                         ));
                     }
                     _ => self.visit_expr(&lambda.body),
@@ -620,7 +642,7 @@ where
                             self.found = MatchState::Found(Match::Ident(
                                 ident.span,
                                 &ident.value.name,
-                                &ident.value.typ,
+                                ident.value.typ.clone(),
                             ));
                         }
                         Either::Right(expr) => self.visit_expr(expr),
@@ -723,7 +745,7 @@ impl<'a> Extract for TypeAt<'a> {
     fn match_extract(self, found: &Match) -> Result<Self::Output, ()> {
         Ok(match *found {
             Match::Expr(expr) => expr.env_type_of(self.env),
-            Match::Ident(_, _, typ) => typ.clone(),
+            Match::Ident(_, _, ref typ) => typ.clone(),
             Match::Type(..) => return Err(()),
             Match::Pattern(pattern) => pattern.env_type_of(self.env),
         })

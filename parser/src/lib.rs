@@ -275,25 +275,26 @@ type ErrorEnv<'err, 'input> = &'err mut Errors<LalrpopError<'input>>;
 pub type ParseErrors = Errors<Spanned<Error, BytePos>>;
 
 macro_rules! layout {
-    ($result_ok_iter: ident, $input: expr) => { {
+    ($result_ok_iter:ident, $input:expr) => {{
         let tokenizer = Tokenizer::new($input);
         $result_ok_iter = RefCell::new(ResultOkIter::new(tokenizer));
 
         Layout::new(SharedIter::new(&$result_ok_iter)).map(|token| {
             // Return the tokenizer error if one exists
-            $result_ok_iter.borrow_mut()
-                .result(())
-                .map_err(|err| {
-                    pos::spanned2(err.span.start.absolute,
-                                err.span.end.absolute,
-                                err.value.into())
-                })?;
+            $result_ok_iter.borrow_mut().result(()).map_err(|err| {
+                pos::spanned2(
+                    err.span.start.absolute,
+                    err.span.end.absolute,
+                    err.value.into(),
+                )
+            })?;
             let token = token.map_err(|err| pos::spanned(err.span, err.value.into()))?;
             debug!("Lex {:?}", token.value);
             let Span { start, end, .. } = token.span;
             Ok((start.absolute, token.value, end.absolute))
         })
-    } }
+    }
+    }
 }
 
 pub fn parse_partial_expr<Id>(
@@ -309,7 +310,7 @@ where
 
     let mut parse_errors = Errors::new();
 
-    let result = grammar::parse_TopExpr(input, type_cache, symbols, &mut parse_errors, layout);
+    let result = grammar::TopExprParser::new().parse(input, type_cache, symbols, &mut parse_errors, layout);
 
     // If there is a tokenizer error it may still exist in the result iterator wrapper.
     // If that is the case we return that error instead of the unexpected EOF error that lalrpop
@@ -370,7 +371,7 @@ where
 
     let type_cache = TypeCache::new();
 
-    let result = grammar::parse_LetOrExpr(input, &type_cache, symbols, &mut parse_errors, layout);
+    let result = grammar::LetOrExprParser::new().parse(input, &type_cache, symbols, &mut parse_errors, layout);
 
     // If there is a tokenizer error it may still exist in the result iterator wrapper.
     // If that is the case we return that error instead of the unexpected EOF error that lalrpop

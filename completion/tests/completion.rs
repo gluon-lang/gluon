@@ -299,6 +299,20 @@ fn in_record() {
 }
 
 #[test]
+fn record_constructor_field() {
+    let _ = env_logger::try_init();
+
+    let result = find_type(
+        r#"{ test = 123 }"#,
+        BytePos::from(4),
+    );
+    let expected = Ok(typ("Int"));
+
+    assert_eq!(result, expected);
+}
+
+
+#[test]
 fn function_arg() {
     let _ = env_logger::try_init();
 

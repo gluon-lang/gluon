@@ -361,14 +361,6 @@ impl TypeEnv for MockEnv {
     fn find_type_info(&self, _id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
         None
     }
-
-    fn find_record(
-        &self,
-        _fields: &[Symbol],
-        _selector: RecordSelector,
-    ) -> Option<(ArcType, ArcType)> {
-        None
-    }
 }
 
 pub type SpExpr = SpannedExpr<Symbol>;

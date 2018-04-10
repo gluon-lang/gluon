@@ -1395,7 +1395,7 @@ mod tests {
     use types::VmInt;
 
     use base::kind::{ArcKind, KindEnv};
-    use base::types::{Alias, ArcType, Field, RecordSelector, Type, TypeEnv};
+    use base::types::{Alias, ArcType, Field, Type, TypeEnv};
     use base::symbol::{Symbol, SymbolRef};
 
     struct MockEnv(Option<Alias<Symbol, ArcType>>);
@@ -1413,14 +1413,6 @@ mod tests {
 
         fn find_type_info(&self, _id: &SymbolRef) -> Option<&Alias<Symbol, ArcType>> {
             self.0.as_ref()
-        }
-
-        fn find_record(
-            &self,
-            _fields: &[Symbol],
-            _selector: RecordSelector,
-        ) -> Option<(ArcType, ArcType)> {
-            None
         }
     }
 

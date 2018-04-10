@@ -324,7 +324,7 @@ mod tests {
     use base::symbol::Symbols;
 
     use core;
-    use core::grammar::parse_Expr as parse_core_expr;
+    use core::grammar::ExprParser;
 
     #[test]
     fn unnecessary_allocation() {
@@ -338,7 +338,7 @@ mod tests {
             "#;
         let initial_expr = allocator
             .arena
-            .alloc(parse_core_expr(&mut symbols, &allocator, initial_str).unwrap());
+            .alloc(ExprParser::new().parse(&mut symbols, &allocator, initial_str).unwrap());
 
         let optimized_expr = optimize(&allocator, initial_expr);
 
@@ -349,7 +349,7 @@ mod tests {
             in
             l
             "#;
-        let expected_expr = parse_core_expr(&mut symbols, &allocator, expected_str).unwrap();
+        let expected_expr = ExprParser::new().parse(&mut symbols, &allocator, expected_str).unwrap();
         assert_deq!(*optimized_expr, expected_expr);
     }
 }

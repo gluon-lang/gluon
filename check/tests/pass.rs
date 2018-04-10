@@ -19,11 +19,12 @@ use support::{alias, intern, typ, MockEnv};
 mod support;
 
 macro_rules! assert_pass {
-    ($e: expr) => {{
+    ($e:expr) => {{
         if !$e.is_ok() {
             panic!("assert_pass: {}", $e.unwrap_err());
         }
-    }};
+    }
+    }
 }
 
 /// Converts `Type::Alias` into the easy to construct `Type::Ident` variants to make the expected
@@ -90,7 +91,9 @@ fn type_decl() {
     let _ = env_logger::try_init();
 
     let text = r"
-type Test = { x: Int } in { x = 0 }
+type Test = { x: Int }
+let t : Test = { x = 0 }
+t
 ";
     let result = support::typecheck(text);
     let expected = Ok(alias(
@@ -138,7 +141,9 @@ fn record_type_simple() {
 
     let text = r"
 type T = { y: Int } in
-let f: T -> Int = \x -> x.y in { y = f { y = 123 } }
+let f: T -> Int = \x -> x.y
+let t: T = { y = f { y = 123 } }
+t
 ";
     let result = support::typecheck(text);
     let expected = Ok(alias(
@@ -202,10 +207,11 @@ in g 5
 }
 
 macro_rules! assert_match {
-    ($i: expr, $p: pat => $e: expr) => {
+    ($i:expr, $p:pat => $e:expr) => {
+
         match $i {
             $p => $e,
-            ref x => assert!(false, "Expected {}, found {:?}", stringify!($p), x)
+            ref x => assert!(false, "Expected {}, found {:?}", stringify!($p), x),
         }
     };
 }
@@ -812,4 +818,46 @@ fn expected_type_do_not_override_actual_type_for_returned_type() {
     let (_, result) = support::typecheck_expr_expected(text, Some(&Type::hole()));
 
     assert_req!(result, Ok(typ("Int")));
+}
+
+#[test]
+fn expected_type_do_not_override_actual_type_for_returned_type_array() {
+    let text = "[1]";
+    let (_, result) = support::typecheck_expr_expected(text, Some(&Type::hole()));
+
+    assert_req!(result.map(|t| t.to_string()), Ok("Array Int"));
+}
+
+
+#[test]
+fn dont_guess_record_type() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+type Test = { a : Int, b : String }
+type Test2 = { a : Int, b : Int }
+
+let x : Test = { a = 0, b = "" }
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn generalize_function_in_record_and_array() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+let string x : String -> String = x
+let a: Array { f : String -> String } = [
+    { f = \x -> x },
+    { f = \x -> string x },
+]
+a
+"#;
+    let result = support::typecheck(text);
+
+    assert_req!(result.map(|t| t.to_string()), Ok("Array { f : String -> String }"));
 }

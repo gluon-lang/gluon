@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use pretty::{Doc, DocAllocator, DocBuilder};
 
-use symbol::SymbolRef;
+use ast::EmptyEnv;
+use symbol::{Symbol, SymbolRef};
 use types::{ToDoc, Walker};
 
 /// Trait for values which contains kinded values which can be referred by name
@@ -18,6 +19,13 @@ impl<'a, T: ?Sized + KindEnv> KindEnv for &'a T {
         (**self).find_kind(id)
     }
 }
+
+impl KindEnv for EmptyEnv<Symbol> {
+    fn find_kind(&self, _id: &SymbolRef) -> Option<ArcKind> {
+        None
+    }
+}
+
 
 /// Kind representation
 ///
