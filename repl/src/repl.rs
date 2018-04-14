@@ -1,3 +1,4 @@
+extern crate codespan_reporting;
 extern crate futures_cpupool;
 extern crate rustyline;
 
@@ -20,6 +21,8 @@ use parser::parse_partial_let_or_expr;
 use vm::api::generic::A;
 use vm::api::{FutureResult, Generic, Getable, OpaqueValue, OwnedFunction, PrimitiveFuture,
               Pushable, VmType, WithVM, IO};
+use vm::api::de::De;
+use vm::api::ser::Ser;
 use vm::future::FutureValue;
 use vm::internal::ValuePrinter;
 use vm::thread::{Context, RootStr, RootedValue, Thread, ThreadInternal};
@@ -28,6 +31,10 @@ use vm::{self, Error as VMError, Result as VMResult};
 use gluon::compiler_pipeline::{Executable, ExecuteValue};
 use gluon::import::add_extern_module;
 use gluon::{Compiler, Error as GluonError, Result as GluonResult, RootedThread};
+
+use codespan_reporting::termcolor;
+
+use Color;
 
 fn type_of_expr(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     let WithVM { vm, value: args } = args;
@@ -163,7 +170,9 @@ macro_rules! impl_userdata {
     };
 }
 
-struct Editor(Mutex<rustyline::Editor<Completer>>);
+struct Editor {
+    editor: Mutex<rustyline::Editor<Completer>>,
+}
 
 impl_userdata!{ Editor }
 
@@ -216,11 +225,13 @@ fn new_editor(vm: WithVM<()>) -> IO<Editor> {
         warn!("Unable to load history: {}", err);
     }
     editor.set_completer(Some(Completer(vm.vm.root_thread())));
-    IO::Value(Editor(Mutex::new(editor)))
+    IO::Value(Editor {
+        editor: Mutex::new(editor),
+    })
 }
 
 fn readline(editor: &Editor, prompt: &str) -> IO<Result<String, ReadlineError>> {
-    let mut editor = editor.0.lock().unwrap();
+    let mut editor = editor.editor.lock().unwrap();
     let input = match editor.readline(prompt) {
         Ok(input) => input,
         Err(rustyline::error::ReadlineError::Eof) => return IO::Value(Err(ReadlineError::Eof)),
@@ -240,12 +251,21 @@ fn new_cpu_pool(size: usize) -> IO<CpuPool> {
     IO::Value(CpuPool(self::futures_cpupool::CpuPool::new(size)))
 }
 
-fn eval_line(WithVM { vm, value: line }: WithVM<&str>) -> PrimitiveFuture<IO<String>> {
+fn eval_line(
+    De(color): De<::Color>,
+    WithVM { vm, value: line }: WithVM<&str>,
+) -> PrimitiveFuture<IO<()>> {
     eval_line_(vm.root_thread(), line)
-        .then(|result| {
+        .then(move |result| {
             FutureValue::sync(Ok(match result {
                 Ok(x) => IO::Value(x),
-                Err(x) => IO::Exception(x.to_string()),
+                Err((compiler, err)) => {
+                    let mut stderr = termcolor::StandardStream::stderr(color.into());
+                    if let Err(err) = err.emit(&mut stderr, compiler.code_map()) {
+                        eprintln!("{}", err);
+                    }
+                    IO::Value(())
+                }
             }))
         })
         .boxed()
@@ -254,23 +274,25 @@ fn eval_line(WithVM { vm, value: line }: WithVM<&str>) -> PrimitiveFuture<IO<Str
 fn eval_line_(
     vm: RootedThread,
     line: &str,
-) -> FutureValue<Box<Future<Item = String, Error = GluonError> + Send>> {
+) -> FutureValue<Box<Future<Item = (), Error = (Compiler, GluonError)> + Send>> {
     let mut compiler = Compiler::new();
-    let file_map = compiler.add_filemap("<line>", line);
+    let file_map = compiler.add_filemap("line", line);
     let let_or_expr = {
-        let mut module = SymbolModule::new("<line>".into(), compiler.mut_symbols());
-        match parse_partial_let_or_expr(&mut module, line) {
+        let result = {
+            let mut module = SymbolModule::new("line".into(), compiler.mut_symbols());
+            parse_partial_let_or_expr(&mut module, line)
+        };
+        match result {
             Ok(x) => x,
             Err((_, err)) => {
-                return FutureValue::sync(Err(InFile::new(file_map, err).into())).boxed()
+                return FutureValue::sync(Err((compiler, InFile::new(file_map, err).into()))).boxed()
             }
         }
     };
     let future = match let_or_expr {
         Ok(expr) => {
             compiler = compiler.run_io(true);
-            expr.run_expr(&mut compiler, vm, "<line>", line, None)
-                .boxed()
+            expr.run_expr(&mut compiler, vm, "line", line, None).boxed()
         }
         Err(let_binding) => {
             let unpack_pattern = let_binding.name.clone();
@@ -285,7 +307,7 @@ fn eval_line_(
                 _ => let_binding.expr,
             };
             eval_expr
-                .run_expr(&mut compiler, vm.clone(), "<line>", line, None)
+                .run_expr(&mut compiler, vm.clone(), "line", line, None)
                 .and_then(move |value| {
                     if let Err(err) =
                         set_globals(&vm, &unpack_pattern, &value.typ, &value.value.as_ref())
@@ -298,13 +320,16 @@ fn eval_line_(
         }
     };
     future
+        .map_err(|x| (compiler, x))
         .map(move |ExecuteValue { value, typ, .. }| {
             let vm = value.vm();
             let env = vm.global_env().get_env();
-            ValuePrinter::new(&*env, &typ, value.get_variant())
-                .width(80)
-                .max_level(5)
-                .to_string()
+            println!(
+                "{}",
+                ValuePrinter::new(&*env, &typ, value.get_variant())
+                    .width(80)
+                    .max_level(5)
+            );
         })
         .boxed()
 }
@@ -413,7 +438,7 @@ fn finish_or_interrupt(
 fn save_history(editor: &Editor) -> IO<()> {
     let history_result = app_dir_root().and_then(|path| {
         editor
-            .0
+            .editor
             .lock()
             .unwrap()
             .save_history(&*path.join("history"))
@@ -450,19 +475,22 @@ fn load_repl(vm: &Thread) -> vm::Result<vm::ExternModule> {
             type_of_expr => primitive!(1 type_of_expr),
             find_info => primitive!(1 find_info),
             find_kind => primitive!(1 find_kind),
-            eval_line => primitive!(1 eval_line),
+            eval_line => primitive!(2 eval_line),
             finish_or_interrupt => primitive!(3 finish_or_interrupt),
             new_cpu_pool => primitive!(1 new_cpu_pool)
         ),
     )
 }
 
-fn compile_repl(vm: &Thread) -> Result<(), Box<StdError + Send + Sync>> {
-    let mut compiler = Compiler::new();
-
+fn compile_repl(compiler: &mut Compiler, vm: &Thread) -> Result<(), GluonError> {
     let rustyline_types_source = ::gluon::vm::api::typ::make_source::<ReadlineError>(vm)?;
     compiler
         .load_script_async(vm, "rustyline_types", &rustyline_types_source)
+        .sync_or_error()?;
+
+    let repl_types_source = ::gluon::vm::api::typ::make_source::<Color>(vm)?;
+    compiler
+        .load_script_async(vm, "repl_types", &repl_types_source)
         .sync_or_error()?;
 
     add_extern_module(vm, "repl.prim", load_repl);
@@ -478,18 +506,19 @@ fn compile_repl(vm: &Thread) -> Result<(), Box<StdError + Send + Sync>> {
 }
 
 #[allow(dead_code)]
-pub fn run() -> Result<(), Box<StdError + Send + Sync>> {
+pub fn run(color: Color) -> Result<(), Box<StdError + Send + Sync>> {
     let mut core = ::tokio_core::reactor::Core::new()?;
 
     let vm = ::gluon::VmBuilder::new()
         .event_loop(Some(core.remote()))
         .build();
 
-    compile_repl(&vm)?;
+    let mut compiler = Compiler::new();
+    compile_repl(&mut compiler, &vm).map_err(|err| err.emit_string(compiler.code_map()).unwrap())?;
 
-    let mut repl: OwnedFunction<fn(()) -> IO<()>> = vm.get_global("repl")?;
+    let mut repl: OwnedFunction<fn(Ser<Color>) -> IO<()>> = vm.get_global("repl")?;
     debug!("Starting repl");
-    core.run(repl.call_async(()))?;
+    core.run(repl.call_async(Ser(color)))?;
 
     Ok(())
 }

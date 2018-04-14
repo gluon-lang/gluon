@@ -5,6 +5,7 @@ extern crate app_dirs;
 #[macro_use]
 extern crate clap;
 extern crate codespan;
+extern crate codespan_reporting;
 #[cfg(feature = "env_logger")]
 extern crate env_logger;
 extern crate futures;
@@ -21,6 +22,8 @@ extern crate gluon_doc;
 extern crate gluon_format;
 #[macro_use]
 extern crate gluon_vm;
+
+use codespan_reporting::termcolor;
 
 use std::fs;
 use std::io::{self, Write};
@@ -47,11 +50,67 @@ const APP_INFO: app_dirs::AppInfo = app_dirs::AppInfo {
     author: "gluon-lang",
 };
 
-fn run_files<'s, I>(vm: &Thread, files: I) -> Result<()>
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Color {
+    Auto,
+    Always,
+    AlwaysAnsi,
+    Never,
+}
+
+impl Into<termcolor::ColorChoice> for Color {
+    fn into(self) -> termcolor::ColorChoice {
+        use termcolor::ColorChoice::*;
+        match self {
+            Color::Auto => Auto,
+            Color::Always => Always,
+            Color::AlwaysAnsi => AlwaysAnsi,
+            Color::Never => Never,
+        }
+    }
+}
+
+impl Default for Color {
+    fn default() -> Color {
+        Color::Auto
+    }
+}
+
+impl ::std::str::FromStr for Color {
+    type Err = &'static str;
+    fn from_str(s: &str) -> ::std::result::Result<Self, Self::Err> {
+        use Color::*;
+        Ok(match s {
+            "auto" => Auto,
+            "always" => Always,
+            "always-ansi" => AlwaysAnsi,
+            "never" => Never,
+            _ => return Err("Expected on of auto, always, always-ansi, never"),
+        })
+    }
+}
+
+macro_rules! define_vmtype {
+    ($name: ident) => {
+        impl ::gluon::vm::api::VmType for $name {
+            type Type = $name;
+            fn make_type(vm: &::gluon::Thread) -> ::base::types::ArcType {
+                let typ = concat!("repl_types.", stringify!($name));
+                (*vm.global_env().get_env().find_type_info(typ).unwrap())
+                    .clone()
+                    .into_type()
+            }
+        }
+
+    }
+}
+
+define_vmtype! { Color }
+
+fn run_files<'s, I>(compiler: &mut Compiler, vm: &Thread, files: I) -> Result<()>
 where
     I: Iterator<Item = &'s str>,
 {
-    let mut compiler = Compiler::new().run_io(true);
     for file in files {
         compiler.load_file(&vm, file)?;
     }
@@ -118,28 +177,12 @@ fn fmt_stdio() -> Result<()> {
     Ok(())
 }
 
-fn run() -> std::result::Result<(), Box<std::error::Error + Send + Sync>> {
-    let matches = clap_app!(gluon =>
-        (version: crate_version!())
-        (long_version:
-            concat!(
-                crate_version!(), "\n",
-                "commit: ", env!("GIT_HASH")
-            )
-        )
-        (about: "executes gluon programs")
-        (@arg REPL: -i --interactive "Starts the repl")
-        (@subcommand fmt =>
-            (about: "Formats gluon source code")
-            (@arg INPUT: ... "Formats each file")
-        )
-        (@subcommand doc =>
-            (about: "Documents gluon source code")
-            (@arg INPUT: +required "Documents the file or directory")
-            (@arg OUTPUT: +required "Outputs the documentation to this directory")
-        )
-        (@arg INPUT: ... "Executes each file as a gluon program")
-    ).get_matches();
+fn run(
+    matches: &clap::ArgMatches,
+    compiler: &mut Compiler,
+    color: Color,
+    vm: &Thread,
+) -> std::result::Result<(), gluon::Error> {
     if let Some(fmt_matches) = matches.subcommand_matches("fmt") {
         if let Some(args) = fmt_matches.values_of("INPUT") {
             let mut gluon_files = args.into_iter()
@@ -172,16 +215,9 @@ fn run() -> std::result::Result<(), Box<std::error::Error + Send + Sync>> {
         gluon_doc::generate_for_path(&new_vm(), input, output)
             .map_err(|err| format!("{}\n{}", err, err.backtrace()))?;
     } else if matches.is_present("REPL") {
-        repl::run()?;
+        repl::run(color)?;
     } else if let Some(args) = matches.values_of("INPUT") {
-        let vm = new_vm();
-        match run_files(&vm, args) {
-            Ok(()) => (),
-            Err(err @ Error::VM(VMError::Message(_))) => {
-                return Err(format!("{}\n{}", err, vm.context().stack.stacktrace(0)).into())
-            }
-            Err(err) => return Err(err.into()),
-        }
+        run_files(compiler, &vm, args)?;
     } else {
         write!(io::stderr(), "{}", matches.usage()).expect("Error writing help to stderr");
     }
@@ -191,9 +227,49 @@ fn run() -> std::result::Result<(), Box<std::error::Error + Send + Sync>> {
 fn main() {
     init_env_logger();
 
-    if let Err(err) = run() {
-        eprintln!("error: {}", err);
+    let matches = clap_app!(gluon =>
+        (version: crate_version!())
+        (long_version:
+            concat!(
+                crate_version!(), "\n",
+                "commit: ", env!("GIT_HASH")
+            )
+        )
+        (about: "executes gluon programs")
+        (@arg REPL: -i --interactive "Starts the repl")
+        (@arg COLOR: --color + takes_value "Coloring: auto, always, always-ansi, never")
+        (@subcommand fmt =>
+            (about: "Formats gluon source code")
+            (@arg INPUT: ... "Formats each file")
+        )
+        (@subcommand doc =>
+            (about: "Documents gluon source code")
+            (@arg INPUT: +required "Documents the file or directory")
+            (@arg OUTPUT: +required "Outputs the documentation to this directory")
+        )
+        (@arg INPUT: ... "Executes each file as a gluon program")
+    ).get_matches();
 
+    let mut compiler = Compiler::new().run_io(true);
+    let vm = new_vm();
+
+    let color = matches
+        .value_of("COLOR")
+        .and_then(|s| s.parse::<Color>().ok())
+        .unwrap_or_default();
+
+    if let Err(err) = run(&matches, &mut compiler, color, &vm) {
+        match err {
+            Error::VM(VMError::Message(_)) => {
+                eprintln!("{}\n{}", err, vm.context().stack.stacktrace(0))
+            }
+            _ => {
+                let mut stderr = termcolor::StandardStream::stderr(color.into());
+                if let Err(err) = err.emit(&mut stderr, compiler.code_map()) {
+                    eprintln!("{}", err);
+                }
+            }
+        }
         ::std::process::exit(1);
     }
 }

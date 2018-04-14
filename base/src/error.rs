@@ -198,6 +198,7 @@ impl<E: fmt::Display> InFile<E> {
         });
         for diagnostic in iter {
             ::codespan_reporting::emit(&mut *writer, &code_map, &diagnostic)?;
+            writeln!(writer)?;
         }
         Ok(())
     }

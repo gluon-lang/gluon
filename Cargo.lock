@@ -621,6 +621,7 @@ dependencies = [
  "clap 2.31.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "codespan 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "codespan-reporting 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "codespan-reporting 0.1.0 (git+https://github.com/Marwes/codespan?branch=hide_index)",
  "env_logger 0.5.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.21 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures-cpupool 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
