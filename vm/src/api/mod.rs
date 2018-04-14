@@ -2090,3 +2090,19 @@ impl<'vm, T: VmType> Pushable<'vm> for TypedBytecode<T> {
         Ok(())
     }
 }
+
+
+pub struct Map<K, V>(PhantomData<(K, V)>);
+
+impl<K: VmType, V: VmType> VmType for Map<K, V> where K::Type: Sized, V::Type: Sized {
+    type Type = Map<K::Type, V::Type>;
+
+    fn make_type(vm: &Thread) -> ArcType {
+        let map_alias = vm.find_type_info("std.map.Map")
+            .unwrap()
+            .clone()
+            .into_type();
+        Type::app(map_alias, collect![K::make_type(vm), V::make_type(vm)])
+    }
+}
+

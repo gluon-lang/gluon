@@ -1,16 +1,20 @@
 extern crate gluon;
 #[macro_use]
 extern crate gluon_vm;
+
+extern crate env_logger;
 #[macro_use]
 extern crate serde_derive;
+
+use std::collections::HashMap;
 
 use gluon::base::types::ArcType;
 
 use gluon::vm;
 use gluon::vm::thread::Context;
-use gluon::vm::api;
+use gluon::vm::api::{self, FunctionRef, OpaqueValue};
 
-use gluon::{new_vm, Compiler, Result, Thread};
+use gluon::{new_vm, Compiler, Result, RootedThread, Thread};
 
 #[derive(Debug, Deserialize, Serialize)]
 enum Enum {
@@ -42,10 +46,9 @@ impl<'vm> api::Getable<'vm> for Enum {
     }
 }
 
+field_decl!{ unwrap_b, value, key }
 
-field_decl!{ unwrap_b, value }
-
-fn main_() -> Result<()> {
+fn marshal_enum() -> Result<()> {
     let thread = new_vm();
 
     let enum_source = api::typ::make_source::<Enum>(&thread)?;
@@ -85,8 +88,72 @@ fn main_() -> Result<()> {
 
     Ok(())
 }
+
+fn marshal_map<I>(iterable: I) -> Result<()>
+where
+    I: IntoIterator<Item = (String, String)>,
+{
+    let thread = new_vm();
+
+    // Load std.map so that we can retrieve the `Map` type through the `VmType` trait
+    Compiler::new().run_expr::<()>(&thread, "example", "let _ = import! std.map in ()")?;
+
+    let config_example = r#"
+        let array = import! std.array
+        let string = import! std.string
+        let map @ { Map } = import! std.map
+
+        let string_map = map.make string.ord
+
+        let run config_array =
+            let f m entry : Map String String -> (String, String) -> _ =
+                string_map.insert entry._0 entry._1 m
+            array.foldable.foldl f string_map.empty config_array
+        run
+        "#;
+    let mut make_map: FunctionRef<
+        fn(Vec<(String, String)>) -> OpaqueValue<RootedThread, api::Map<String, String>>,
+    > = Compiler::new()
+        .run_expr(&thread, "example", config_example)?
+        .0;
+
+    let entries: Vec<_> = iterable.into_iter().collect();
+    let map = make_map.call(entries)?;
+
+    let config_query_example = r#"
+        let string = import! std.string
+        let map = import! std.map
+
+        let string_map = map.make string.ord
+
+        let run config_map =
+            (string_map.find "key" config_map, string_map.find "undefined" config_map)
+        run
+        "#;
+    let mut query_map: FunctionRef<
+        fn(OpaqueValue<RootedThread, api::Map<String, String>>) -> (Option<String>, Option<String>),
+    > = Compiler::new()
+        .run_expr(&thread, "example", config_query_example)?
+        .0;
+
+    let tuple = query_map.call(map)?;
+    assert_eq!(tuple, (Some("value".to_string()), None));
+    println!("Querying the map returned: {:?}", tuple);
+
+    Ok(())
+}
 fn main() {
-    if let Err(err) = main_() {
-        println!("{}", err)
+    env_logger::init();
+
+    if let Err(err) = marshal_enum() {
+        eprintln!("{}", err)
+    }
+
+    let mut map = HashMap::new();
+    map.insert("key".to_string(), "value".to_string());
+    map.insert("key2".to_string(), "value2".to_string());
+
+    if let Err(err) = marshal_map(map) {
+        eprintln!("{}", err)
     }
 }
