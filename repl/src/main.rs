@@ -21,6 +21,7 @@ extern crate gluon_format;
 #[macro_use]
 extern crate gluon_vm;
 
+use std::fs;
 use std::io::{self, Write};
 use std::ffi::OsStr;
 use std::path::Path;
@@ -63,37 +64,41 @@ fn init_env_logger() {
 #[cfg(not(feature = "env_logger"))]
 fn init_env_logger() {}
 
-fn format(writer: &mut Write, file: &str, buffer: &str) -> Result<usize> {
+fn format(file: &str, buffer: &str) -> Result<String> {
     use gluon_format::format_expr;
 
     let mut compiler = Compiler::new();
     let thread = new_vm();
 
-    let output = format_expr(&mut compiler, &thread, file, buffer)?;
-    writer.write_all(output.as_bytes())?;
-    Ok(output.len())
+    Ok(format_expr(&mut compiler, &thread, file, buffer)?)
 }
 
 fn fmt_file(name: &Path) -> Result<()> {
-    use std::io::{Read, Seek, SeekFrom};
-    use std::fs::{File, OpenOptions};
+    use std::io::Read;
+    use std::fs::File;
 
-    let mut input_file = OpenOptions::new().read(true).write(true).open(name)?;
 
     let mut buffer = String::new();
-    input_file.read_to_string(&mut buffer)?;
-
     {
-        let mut backup = File::create(name.with_extension("glu.bk"))?;
-        backup.write_all(buffer.as_bytes())?;
+        let mut input_file = File::open(name)?;
+        input_file.read_to_string(&mut buffer)?;
     }
 
-    input_file.seek(SeekFrom::Start(0))?;
 
     let module_name = filename_to_module(&name.display().to_string());
-    let written = format(&mut input_file, &module_name, &buffer)?;
-    // Truncate the file to remove any data that were there before
-    input_file.set_len(written as u64)?;
+    let formatted = format(&module_name, &buffer)?;
+
+    // Avoid touching the .glu file if it did not change
+    if buffer != formatted {
+        let bk_name = name.with_extension("glu.bk");
+        let tmp_name = name.with_extension("tmp");
+        {
+            let mut backup = File::create(&*bk_name)?;
+            backup.write_all(formatted.as_bytes())?;
+        }
+        fs::rename(name, tmp_name)?;
+        fs::rename(bk_name, name)?;
+    }
     Ok(())
 }
 
@@ -103,7 +108,8 @@ fn fmt_stdio() -> Result<()> {
     let mut buffer = String::new();
     stdin().read_to_string(&mut buffer)?;
 
-    format(&mut stdout(), "<stdin>", &buffer)?;
+    let formatted = format("<stdin>", &buffer)?;
+    stdout().write_all(formatted.as_bytes())?;
     Ok(())
 }
 
