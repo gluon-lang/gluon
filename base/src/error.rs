@@ -191,14 +191,19 @@ impl<E: fmt::Display> InFile<E> {
     where
         W: ?Sized + ::codespan_reporting::termcolor::WriteColor,
     {
-        let iter = self.error.iter().map(|err| Diagnostic {
-            severity: Severity::Error,
-            message: err.value.to_string(),
-            labels: vec![Label::new_primary(err.span)],
-        });
-        for diagnostic in iter {
+        let iter = self.error
+            .iter()
+            .map(|err| Diagnostic {
+                severity: Severity::Error,
+                message: err.value.to_string(),
+                labels: vec![Label::new_primary(err.span)],
+            })
+            .enumerate();
+        for (i, diagnostic) in iter {
+            if i != 0 {
+                writeln!(writer)?;
+            }
             ::codespan_reporting::emit(&mut *writer, &code_map, &diagnostic)?;
-            writeln!(writer)?;
         }
         Ok(())
     }

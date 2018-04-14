@@ -13,6 +13,8 @@ extern crate futures;
 extern crate log;
 #[macro_use]
 extern crate serde_derive;
+#[macro_use]
+extern crate structopt;
 extern crate tokio_core;
 extern crate tokio_signal;
 extern crate walkdir;
@@ -23,15 +25,15 @@ extern crate gluon_format;
 #[macro_use]
 extern crate gluon_vm;
 
-use codespan_reporting::termcolor;
-
 use std::fs;
 use std::io::{self, Write};
 use std::ffi::OsStr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use walkdir::WalkDir;
+use codespan_reporting::termcolor;
+use structopt::StructOpt;
 
 use gluon::base;
 use gluon::parser;
@@ -107,12 +109,44 @@ macro_rules! define_vmtype {
 
 define_vmtype! { Color }
 
-fn run_files<'s, I>(compiler: &mut Compiler, vm: &Thread, files: I) -> Result<()>
+#[derive(StructOpt)]
+#[structopt(about = "Formats gluon source code")]
+pub struct FmtOpt {
+    #[structopt(name = "FILE", parse(from_os_str), help = "Formats each file")]
+    input: Vec<PathBuf>,
+}
+
+#[derive(StructOpt)]
+pub enum SubOpt {
+    #[structopt(name = "fmt", about = "Formats gluon source code")]
+    Fmt(FmtOpt),
+    #[structopt(name = "doc", about = "Documents gluon source code")]
+    Doc(::gluon_doc::Opt),
+}
+
+const LONG_VERSION: &str = concat!(crate_version!(), "\n", "commit: ", env!("GIT_HASH"));
+
+#[derive(StructOpt)]
+#[structopt(about = "executes gluon programs", raw(long_version = "LONG_VERSION"))]
+pub struct Opt {
+    #[structopt(short = "i", long = "interactive", help = "Starts the repl")]
+    interactive: bool,
+    #[structopt(long = "color", default_value = "auto",
+                help = "Coloring: auto, always, always-ansi, never")]
+    color: Color,
+    #[structopt(name = "FILE", help = "Executes each file as a gluon program")]
+    input: Vec<String>,
+    #[structopt(subcommand)]
+    subcommand_opt: Option<SubOpt>,
+}
+
+fn run_files<I>(compiler: &mut Compiler, vm: &Thread, files: I) -> Result<()>
 where
-    I: Iterator<Item = &'s str>,
+    I: IntoIterator,
+    I::Item: AsRef<str>,
 {
     for file in files {
-        compiler.load_file(&vm, file)?;
+        compiler.load_file(&vm, file.as_ref())?;
     }
     Ok(())
 }
@@ -178,48 +212,55 @@ fn fmt_stdio() -> Result<()> {
 }
 
 fn run(
-    matches: &clap::ArgMatches,
+    opt: &Opt,
     compiler: &mut Compiler,
     color: Color,
     vm: &Thread,
 ) -> std::result::Result<(), gluon::Error> {
-    if let Some(fmt_matches) = matches.subcommand_matches("fmt") {
-        if let Some(args) = fmt_matches.values_of("INPUT") {
-            let mut gluon_files = args.into_iter()
-                .flat_map(|arg| {
-                    WalkDir::new(arg).into_iter().filter_map(|entry| {
-                        entry.ok().and_then(|entry| {
-                            if entry.file_type().is_file()
-                                && entry.path().extension() == Some(OsStr::new("glu"))
-                            {
-                                Some(entry.path().to_owned())
-                            } else {
-                                None
-                            }
+    match opt.subcommand_opt {
+        Some(SubOpt::Fmt(ref fmt_opt)) => {
+            if !fmt_opt.input.is_empty() {
+                let mut gluon_files = fmt_opt
+                    .input
+                    .iter()
+                    .flat_map(|arg| {
+                        WalkDir::new(arg).into_iter().filter_map(|entry| {
+                            entry.ok().and_then(|entry| {
+                                if entry.file_type().is_file()
+                                    && entry.path().extension() == Some(OsStr::new("glu"))
+                                {
+                                    Some(entry.path().to_owned())
+                                } else {
+                                    None
+                                }
+                            })
                         })
                     })
-                })
-                .collect::<Vec<_>>();
-            gluon_files.sort();
-            gluon_files.dedup();
+                    .collect::<Vec<_>>();
+                gluon_files.sort();
+                gluon_files.dedup();
 
-            for file in gluon_files {
-                fmt_file(&file)?;
+                for file in gluon_files {
+                    fmt_file(&file)?;
+                }
+            } else {
+                fmt_stdio()?;
             }
-        } else {
-            fmt_stdio()?;
         }
-    } else if let Some(fmt_matches) = matches.subcommand_matches("doc") {
-        let input = fmt_matches.value_of("INPUT").expect("INPUT");
-        let output = fmt_matches.value_of("OUTPUT").expect("OUTPUT");
-        gluon_doc::generate_for_path(&new_vm(), input, output)
-            .map_err(|err| format!("{}\n{}", err, err.backtrace()))?;
-    } else if matches.is_present("REPL") {
-        repl::run(color)?;
-    } else if let Some(args) = matches.values_of("INPUT") {
-        run_files(compiler, &vm, args)?;
-    } else {
-        write!(io::stderr(), "{}", matches.usage()).expect("Error writing help to stderr");
+        Some(SubOpt::Doc(ref doc_opt)) => {
+            let input = &doc_opt.input;
+            let output = &doc_opt.output;
+            gluon_doc::generate_for_path(&new_vm(), input, output)
+                .map_err(|err| format!("{}\n{}", err, err.backtrace()))?;
+        }
+        None => if opt.interactive {
+            repl::run(color)?;
+        } else if !opt.input.is_empty() {
+            run_files(compiler, &vm, &opt.input)?;
+        } else {
+            write!(io::stderr(), "{}", Opt::clap().get_matches().usage())
+                .expect("Error writing help to stderr");
+        },
     }
     Ok(())
 }
@@ -227,44 +268,18 @@ fn run(
 fn main() {
     init_env_logger();
 
-    let matches = clap_app!(gluon =>
-        (version: crate_version!())
-        (long_version:
-            concat!(
-                crate_version!(), "\n",
-                "commit: ", env!("GIT_HASH")
-            )
-        )
-        (about: "executes gluon programs")
-        (@arg REPL: -i --interactive "Starts the repl")
-        (@arg COLOR: --color + takes_value "Coloring: auto, always, always-ansi, never")
-        (@subcommand fmt =>
-            (about: "Formats gluon source code")
-            (@arg INPUT: ... "Formats each file")
-        )
-        (@subcommand doc =>
-            (about: "Documents gluon source code")
-            (@arg INPUT: +required "Documents the file or directory")
-            (@arg OUTPUT: +required "Outputs the documentation to this directory")
-        )
-        (@arg INPUT: ... "Executes each file as a gluon program")
-    ).get_matches();
+    let opt = Opt::from_args();
 
     let mut compiler = Compiler::new().run_io(true);
     let vm = new_vm();
 
-    let color = matches
-        .value_of("COLOR")
-        .and_then(|s| s.parse::<Color>().ok())
-        .unwrap_or_default();
-
-    if let Err(err) = run(&matches, &mut compiler, color, &vm) {
+    if let Err(err) = run(&opt, &mut compiler, opt.color, &vm) {
         match err {
             Error::VM(VMError::Message(_)) => {
                 eprintln!("{}\n{}", err, vm.context().stack.stacktrace(0))
             }
             _ => {
-                let mut stderr = termcolor::StandardStream::stderr(color.into());
+                let mut stderr = termcolor::StandardStream::stderr(opt.color.into());
                 if let Err(err) = err.emit(&mut stderr, compiler.code_map()) {
                     eprintln!("{}", err);
                 }

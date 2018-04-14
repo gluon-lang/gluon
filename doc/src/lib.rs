@@ -1,3 +1,5 @@
+#[macro_use]
+extern crate clap;
 extern crate failure;
 extern crate handlebars;
 extern crate itertools;
@@ -5,6 +7,8 @@ extern crate serde;
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_json;
+#[macro_use]
+extern crate structopt;
 extern crate walkdir;
 
 #[macro_use]
@@ -302,4 +306,14 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
     style_sheet.write_all(include_bytes!("doc/style.css"))?;
 
     Ok(())
+}
+
+const LONG_VERSION: &str = concat!(crate_version!(), "\n", "commit: ", env!("GIT_HASH"));
+#[derive(StructOpt)]
+#[structopt(about = "Documents gluon source code", raw(long_version = "LONG_VERSION"))]
+pub struct Opt {
+    #[structopt(help = "Documents the file or directory")]
+    pub input: String,
+    #[structopt(help = "Outputs the documentation to this directory")]
+    pub output: String,
 }
