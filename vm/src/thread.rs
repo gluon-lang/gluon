@@ -1762,10 +1762,15 @@ impl<'b> ExecuteContext<'b> {
                     let field = function.strings[i as usize];
                     match self.stack.pop().get_repr() {
                         Data(data) => {
-                            let v = data.get_field(field).expect("ICE: Field does not exist");
+                            let v = data.get_field(field).unwrap_or_else(|| {
+                                error!("{}", self.stack.stack.stacktrace(0));
+                                ice!("Field does not exist")
+                            });
                             self.stack.push(v);
                         }
-                        x => return Err(Error::Message(format!("GetField on {:?}", x))),
+                        x => {
+                            return Err(Error::Message(format!("GetField on {:?}", x)));
+                        }
                     }
                 }
                 TestTag(tag) => {
