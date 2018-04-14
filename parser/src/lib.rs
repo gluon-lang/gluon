@@ -16,14 +16,17 @@ extern crate quick_error;
 
 use std::cell::RefCell;
 use std::fmt;
+use std::hash::Hash;
 
 use base::ast::{Comment, Do, Expr, IdentEnv, SpannedExpr, SpannedPattern, TypedIdent, ValueBinding};
 use base::error::Errors;
+use base::fnv::FnvMap;
+use base::metadata::Metadata;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::symbol::Symbol;
 use base::types::{ArcType, TypeCache};
 
-use infix::{OpTable, Reparser};
+use infix::{Fixity, OpMeta, OpTable, Reparser};
 use layout::Layout;
 use token::{Token, Tokenizer};
 
@@ -33,7 +36,7 @@ pub use token::Error as TokenizeError;
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 mod grammar;
-mod infix;
+pub mod infix;
 mod layout;
 mod token;
 
@@ -72,6 +75,7 @@ fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
         | Expr::Array(_)
         | Expr::Record { .. }
         | Expr::Tuple { .. }
+        | Expr::MacroExpansion { .. }
         | Expr::Error(..) => (),
     }
     expr
@@ -273,9 +277,8 @@ type MutIdentEnv<'env, Id> = &'env mut IdentEnv<Ident = Id>;
 type ErrorEnv<'err, 'input> = &'err mut Errors<LalrpopError<'input>>;
 
 pub type ParseErrors = Errors<Spanned<Error, BytePos>>;
-
 macro_rules! layout {
-    ($result_ok_iter:ident, $input:expr) => {{
+    ($result_ok_iter: ident, $input: expr) => {{
         let tokenizer = Tokenizer::new($input);
         $result_ok_iter = RefCell::new(ResultOkIter::new(tokenizer));
 
@@ -327,15 +330,9 @@ where
     }
 
     match result {
-        Ok(mut expr) => {
-            let mut errors = transform_errors(parse_errors);
-            let mut reparser = Reparser::new(OpTable::default(), symbols);
-            if let Err(reparse_errors) = reparser.reparse(&mut expr) {
-                errors.extend(reparse_errors.into_iter().map(|err| err.map(Error::Infix)));
-            }
-
-            if errors.has_errors() {
-                Err((Some(expr), errors))
+        Ok(expr) => {
+            if parse_errors.has_errors() {
+                Err((Some(expr), transform_errors(parse_errors)))
             } else {
                 Ok(expr)
             }
@@ -362,7 +359,7 @@ pub fn parse_partial_let_or_expr<Id>(
     input: &str,
 ) -> Result<LetOrExpr<Id>, (Option<LetOrExpr<Id>>, ParseErrors)>
 where
-    Id: Clone,
+    Id: Clone + Eq + Hash + AsRef<str> + ::std::fmt::Debug,
 {
     let result_ok_iter;
     let layout = layout!(result_ok_iter, input);
@@ -388,19 +385,9 @@ where
     }
 
     match result {
-        Ok(mut let_or_expr) => {
-            let mut errors = transform_errors(parse_errors);
-            let mut reparser = Reparser::new(OpTable::default(), symbols);
-            let result = match let_or_expr {
-                Ok(ref mut expr) => reparser.reparse(expr),
-                Err(ref mut let_binding) => reparser.reparse(&mut let_binding.expr),
-            };
-            if let Err(reparse_errors) = result {
-                errors.extend(reparse_errors.into_iter().map(|err| err.map(Error::Infix)));
-            }
-
-            if errors.has_errors() {
-                Err((Some(let_or_expr), errors))
+        Ok(let_or_expr) => {
+            if parse_errors.has_errors() {
+                Err((Some(let_or_expr), transform_errors(parse_errors)))
             } else {
                 Ok(let_or_expr)
             }
@@ -418,4 +405,60 @@ pub fn parse_string<'env, 'input>(
     input: &'input str,
 ) -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, ParseErrors)> {
     parse_partial_expr(symbols, &TypeCache::new(), input)
+}
+
+pub fn reparse_infix<Id>(
+    metadata: &FnvMap<Id, Metadata>,
+    symbols: &IdentEnv<Ident = Id>,
+    expr: &mut SpannedExpr<Id>,
+) -> Result<(), ParseErrors>
+where
+    Id: Clone + Eq + Hash + AsRef<str> + ::std::fmt::Debug,
+{
+    let mut errors = Errors::new();
+    let op_table = OpTable::new(metadata.iter().filter_map(|(symbol, meta)| {
+        fn parse_infix(s: &str) -> Result<OpMeta, InfixError> {
+            let mut iter = s.splitn(2, " ");
+            let fixity = match iter.next().ok_or(InfixError::InvalidFixity)? {
+                "left" => Fixity::Left,
+                "right" => Fixity::Right,
+                _ => {
+                    return Err(InfixError::InvalidFixity);
+                }
+            };
+            let precedence = iter.next()
+                .and_then(|s| s.parse().ok())
+                .and_then(|precedence| {
+                    if precedence >= 0 {
+                        Some(precedence)
+                    } else {
+                        None
+                    }
+                })
+                .ok_or(InfixError::InvalidPrecedence)?;
+            Ok(OpMeta { fixity, precedence })
+        }
+        meta.get_attribute("infix")
+            .and_then(|s| match parse_infix(s) {
+                Ok(op_meta) => Some((symbol.clone(), op_meta)),
+                Err(err) => {
+                    errors.push(pos::spanned(Default::default(), err));
+                    None
+                }
+            })
+    }));
+
+    let mut reparser = Reparser::new(op_table, symbols);
+    match reparser.reparse(expr) {
+        Err(reparse_errors) => {
+            errors.extend(reparse_errors);
+        }
+        Ok(_) => {}
+    }
+
+    if errors.has_errors() {
+        Err(errors.into_iter().map(|err| err.map(Error::from)).collect())
+    } else {
+        Ok(())
+    }
 }

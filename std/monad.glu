@@ -36,7 +36,9 @@ type Monad (m : Type -> Type) = {
 }
 
 let flat_map ?m : [Monad m] -> (a -> m b) -> m a -> m b = m.flat_map
+/// @infix right 1
 let (=<<) ?m : [Monad m] -> (a -> m b) -> m a -> m b = m.flat_map
+/// @infix left 1
 let (>>=) ?m x f : [Monad m] -> m a -> (a -> m b) -> m b = m.flat_map f x
 
 let join ?m mm : [Monad m] -> m (m a) -> m a = mm >>= (\x -> x)

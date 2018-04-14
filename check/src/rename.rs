@@ -33,11 +33,7 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
                             Some(ref mut pat) => self.new_pattern(pat),
                             None => {
                                 let id = field.name.value.clone();
-                                let pat = Pattern::Ident(TypedIdent {
-                                    name: self.stack_var(id, pattern.span),
-                                    typ: Type::hole(),
-                                });
-                                field.value = Some(pos::spanned(field.name.span, pat));
+                                field.name.value = self.stack_var(id, pattern.span);
                             }
                         }
                     }
@@ -84,9 +80,9 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
             }
             let new_id = self.symbols.symbol(new_name);
             debug!(
-                "Rename binding `{}` = `{}`",
-                self.symbols.string(&old_id),
-                self.symbols.string(&new_id),
+                "Rename binding `{:?}` = `{:?}`",
+                (&old_id),
+                (&new_id),
             );
             self.env.stack.insert(old_id, (new_id.clone(), span));
             new_id
@@ -127,13 +123,7 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
                             Some(ref mut expr) => self.visit_expr(expr),
                             None => if let Some(new_id) = self.rename(&expr_field.name.value) {
                                 debug!("Rename record field {} = {}", expr_field.name, new_id);
-                                expr_field.value = Some(pos::spanned(
-                                    expr_field.name.span,
-                                    Expr::Ident(TypedIdent {
-                                        name: new_id,
-                                        typ: Type::hole(),
-                                    }),
-                                ));
+                                expr_field.name.value = new_id;
                             },
                         }
                     }

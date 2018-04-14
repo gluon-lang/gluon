@@ -9,7 +9,8 @@ use base::types::{self, Alias, ArcType, Generic, PrimitiveEnv, Type, TypeCache,
                   TypeEnv};
 
 use check::typecheck::{self, Typecheck};
-use parser::{parse_partial_expr, ParseErrors};
+use check::{metadata, rename};
+use parser::{parse_partial_expr, reparse_infix, ParseErrors};
 
 use std::cell::RefCell;
 use std::marker::PhantomData;
@@ -151,7 +152,20 @@ pub fn typecheck_expr_expected(
     let env = MockEnv::new();
     let interner = get_local_interner();
     let mut interner = interner.borrow_mut();
-    let mut tc = Typecheck::new("test".into(), &mut interner, &env, TypeCache::new());
+
+    rename::rename(
+        &mut SymbolModule::new("test".into(), &mut interner),
+        &mut expr,
+    );
+    let (_, mut metadata) = metadata::metadata(&env, &expr);
+
+    let mut tc = Typecheck::new(
+        "test".into(),
+        &mut interner,
+        &env,
+        TypeCache::new(),
+        &mut metadata,
+    );
 
     let result = tc.typecheck_expr_expected(&mut expr, expected);
 
@@ -183,7 +197,21 @@ pub fn typecheck_partial_expr(
     let env = MockEnv::new();
     let interner = get_local_interner();
     let mut interner = interner.borrow_mut();
-    let mut tc = Typecheck::new("test".into(), &mut interner, &env, TypeCache::new());
+
+    rename::rename(
+        &mut SymbolModule::new("test".into(), &mut interner),
+        &mut expr,
+    );
+    let (_, mut metadata) = metadata::metadata(&env, &expr);
+    reparse_infix(&metadata, &*interner, &mut expr).unwrap_or_else(|err| panic!("{}", err));
+
+    let mut tc = Typecheck::new(
+        "test".into(),
+        &mut interner,
+        &env,
+        TypeCache::new(),
+        &mut metadata,
+    );
 
     let result = tc.typecheck_expr(&mut expr);
 

@@ -7,32 +7,6 @@ use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Name, Symbol};
 use base::types::row_iter;
 
-pub struct AttributesIter<'a> {
-    comment: ::std::str::Lines<'a>,
-}
-
-impl<'a> Iterator for AttributesIter<'a> {
-    type Item = (&'a str, Option<&'a str>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        while let Some(line) = self.comment.next() {
-            if line.starts_with('@') {
-                let mut split = line[1..].splitn(2, ' ');
-                if let Some(x) = split.next().map(|key| (key, split.next())) {
-                    return Some(x);
-                }
-            }
-        }
-        None
-    }
-}
-
-pub fn attributes(comment: &str) -> AttributesIter {
-    AttributesIter {
-        comment: comment.lines(),
-    }
-}
-
 struct Environment<'b> {
     env: &'b MetadataEnv,
     stack: FnvMap<Symbol, Metadata>,
@@ -234,6 +208,7 @@ pub fn metadata(
                         .cloned()
                         .unwrap_or_default()
                 }
+                Expr::MacroExpansion { ref replacement, .. } => self.metadata_expr(replacement),
                 _ => {
                     ast::walk_expr(self, expr);
                     Metadata::default()

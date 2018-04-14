@@ -9,9 +9,9 @@ use base::pos::{self, BytePos, Spanned};
 use std::cmp::Ordering;
 use std::error::Error as StdError;
 use std::fmt;
+use std::hash::Hash;
 use std::marker::PhantomData;
 use std::mem;
-use std::ops::Index;
 
 /// The fixity (associativity) of an infix operator
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -53,7 +53,7 @@ pub struct OpMeta {
 }
 
 impl OpMeta {
-    fn new(precedence: i32, fixity: Fixity) -> OpMeta {
+    pub fn new(precedence: i32, fixity: Fixity) -> OpMeta {
         OpMeta {
             precedence: precedence,
             fixity: fixity,
@@ -68,76 +68,146 @@ impl fmt::Display for OpMeta {
 }
 
 /// A table of operator metadata
-pub struct OpTable {
-    pub operators: FnvMap<String, OpMeta>,
-    pub default_meta: OpMeta,
+pub struct OpTable<Id> {
+    pub operators: FnvMap<Id, OpMeta>,
 }
 
-impl OpTable {
-    fn new<I>(ops: I) -> OpTable
+impl<Id> OpTable<Id> {
+    pub fn new<I>(ops: I) -> OpTable<Id>
     where
-        I: IntoIterator<Item = (&'static str, OpMeta)>,
+        I: IntoIterator<Item = (Id, OpMeta)>,
+        Id: Eq + Hash,
     {
         OpTable {
-            operators: ops.into_iter()
-                .map(|(name, op)| (name.to_string(), op))
-                .collect(),
-            default_meta: OpMeta::new(9, Fixity::Left),
+            operators: ops.into_iter().collect(),
         }
     }
 }
 
-impl Default for OpTable {
-    fn default() -> OpTable {
-        OpTable::new(vec![
-            ("*", OpMeta::new(7, Fixity::Left)),
-            ("/", OpMeta::new(7, Fixity::Left)),
-            ("%", OpMeta::new(7, Fixity::Left)),
-            ("+", OpMeta::new(6, Fixity::Left)),
-            ("-", OpMeta::new(6, Fixity::Left)),
-            (":", OpMeta::new(5, Fixity::Right)),
-            ("++", OpMeta::new(5, Fixity::Right)),
-            ("&&", OpMeta::new(3, Fixity::Right)),
-            ("||", OpMeta::new(2, Fixity::Right)),
-            ("$", OpMeta::new(0, Fixity::Right)),
-            ("==", OpMeta::new(4, Fixity::Left)),
-            ("/=", OpMeta::new(4, Fixity::Left)),
-            ("<", OpMeta::new(4, Fixity::Left)),
-            (">", OpMeta::new(4, Fixity::Left)),
-            ("<=", OpMeta::new(4, Fixity::Left)),
-            (">=", OpMeta::new(4, Fixity::Left)),
-            // Hack for some library operators
-            ("<<", OpMeta::new(9, Fixity::Right)),
-            (">>", OpMeta::new(9, Fixity::Left)),
-            ("<|", OpMeta::new(0, Fixity::Right)),
-            ("|>", OpMeta::new(0, Fixity::Left)),
-        ])
+impl<Id> OpTable<Id>
+where
+    Id: Eq + Hash + AsRef<str> + ::std::fmt::Debug,
+{
+    fn get_at(&self, name: &SpannedIdent<Id>) -> Result<&OpMeta, Spanned<Error, BytePos>> {
+        self.get(&name.value.name).ok_or_else(|| {
+            pos::spanned(
+                name.span,
+                Error::UndefinedFixity(name.value.name.as_ref().to_string()),
+            )
+        })
     }
-}
 
-impl<'a> Index<&'a str> for OpTable {
-    type Output = OpMeta;
+    fn get(&self, name: &Id) -> Option<&OpMeta> {
+        self.operators.get(name).or_else(|| {
+            let name = name.as_ref();
+            if name.starts_with('#') || name == "&&" || name == "||" {
+                const OPS: &[(&str, OpMeta)] = &[
+                    (
+                        "*",
+                        OpMeta {
+                            precedence: 7,
+                            fixity: Fixity::Left,
+                        },
+                    ),
+                    (
+                        "/",
+                        OpMeta {
+                            precedence: 7,
+                            fixity: Fixity::Left,
+                        },
+                    ),
+                    (
+                        "+",
+                        OpMeta {
+                            precedence: 6,
+                            fixity: Fixity::Left,
+                        },
+                    ),
+                    (
+                        "-",
+                        OpMeta {
+                            precedence: 6,
+                            fixity: Fixity::Left,
+                        },
+                    ),
+                    (
+                        "==",
+                        OpMeta {
+                            precedence: 4,
+                            fixity: Fixity::Left,
+                        },
+                    ),
+                    (
+                        "/=",
+                        OpMeta {
+                            precedence: 4,
+                            fixity: Fixity::Left,
+                        },
+                    ),
+                    (
+                        "<",
+                        OpMeta {
+                            precedence: 4,
+                            fixity: Fixity::Left,
+                        },
+                    ),
+                    (
+                        ">",
+                        OpMeta {
+                            precedence: 4,
+                            fixity: Fixity::Left,
+                        },
+                    ),
+                    (
+                        "<=",
+                        OpMeta {
+                            precedence: 4,
+                            fixity: Fixity::Left,
+                        },
+                    ),
+                    (
+                        ">=",
+                        OpMeta {
+                            precedence: 4,
+                            fixity: Fixity::Left,
+                        },
+                    ),
+                    (
+                        "&&",
+                        OpMeta {
+                            precedence: 3,
+                            fixity: Fixity::Right,
+                        },
+                    ),
+                    (
+                        "||",
+                        OpMeta {
+                            precedence: 2,
+                            fixity: Fixity::Right,
+                        },
+                    ),
+                ];
 
-    fn index(&self, name: &'a str) -> &OpMeta {
-        self.operators.get(name).unwrap_or_else(|| {
-            if name.starts_with('#') {
-                &self[name[1..].trim_left_matches(char::is_alphanumeric)]
+                let op = name.trim_left_matches('#')
+                    .trim_left_matches(char::is_alphanumeric);
+
+                OPS.iter().find(|t| t.0 == op).map(|t| &t.1)
             } else {
-                &self.default_meta
+                None
             }
         })
     }
 }
 
 pub struct Reparser<'s, Id: 's> {
-    operators: OpTable,
+    operators: OpTable<Id>,
     symbols: &'s IdentEnv<Ident = Id>,
     errors: Errors<Spanned<Error, BytePos>>,
     _marker: PhantomData<Id>,
 }
 
 impl<'s, Id> Reparser<'s, Id> {
-    pub fn new(operators: OpTable, symbols: &'s IdentEnv<Ident = Id>) -> Reparser<'s, Id> {
+    pub fn new(operators: OpTable<Id>, symbols: &'s IdentEnv<Ident = Id>) -> Reparser<'s, Id> {
         Reparser {
             operators: operators,
             symbols: symbols,
@@ -149,7 +219,10 @@ impl<'s, Id> Reparser<'s, Id> {
     pub fn reparse(
         &mut self,
         expr: &mut SpannedExpr<Id>,
-    ) -> Result<(), Errors<Spanned<Error, BytePos>>> {
+    ) -> Result<(), Errors<Spanned<Error, BytePos>>>
+    where
+        Id: Eq + Hash + AsRef<str>  + ::std::fmt::Debug
+    {
         self.visit_expr(expr);
         if self.errors.has_errors() {
             Err(mem::replace(&mut self.errors, Errors::new()))
@@ -161,7 +234,7 @@ impl<'s, Id> Reparser<'s, Id> {
 
 impl<'a, 's, Id> MutVisitor<'a> for Reparser<'s, Id>
 where
-    Id: 'a,
+    Id: Eq + Hash + AsRef<str> + ::std::fmt::Debug + 'a,
 {
     type Ident = Id;
 
@@ -187,6 +260,9 @@ where
 #[derive(Clone, Debug, PartialEq)]
 pub enum Error {
     ConflictingFixities((String, OpMeta), (String, OpMeta)),
+    UndefinedFixity(String),
+    InvalidFixity,
+    InvalidPrecedence,
 }
 
 impl fmt::Display for Error {
@@ -202,6 +278,12 @@ impl fmt::Display for Error {
                     lhs_meta, lhs_name, rhs_meta, rhs_name
                 )
             }
+            UndefinedFixity(ref op) => write!(f, "No fixity specified for `{}`. Fixity must be specified with the `@infix` attribute", op),
+            InvalidFixity => write!(
+                f,
+                "Only `left` or `right` is valid associativity specifications"
+            ),
+            InvalidPrecedence => write!(f, "Only positive integers are valid precedences"),
         }
     }
 }
@@ -221,8 +303,11 @@ impl StdError for Error {
 pub fn reparse<Id>(
     expr: SpannedExpr<Id>,
     symbols: &IdentEnv<Ident = Id>,
-    operators: &OpTable,
-) -> Result<SpannedExpr<Id>, Spanned<Error, BytePos>> {
+    operators: &OpTable<Id>,
+) -> Result<SpannedExpr<Id>, Spanned<Error, BytePos>>
+where
+    Id: Eq + Hash + AsRef<str> + ::std::fmt::Debug,
+{
     use self::Error::*;
     use base::pos;
 
@@ -255,8 +340,8 @@ pub fn reparse<Id>(
                     }
                 };
 
-                let next_op_meta = operators[symbols.string(&next_op.value.name)];
-                let stack_op_meta = operators[symbols.string(&stack_op.value.name)];
+                let next_op_meta = *operators.get_at(&next_op)?;
+                let stack_op_meta = *operators.get_at(&stack_op)?;
 
                 match i32::cmp(&next_op_meta.precedence, &stack_op_meta.precedence) {
                     // Reduce
@@ -494,8 +579,8 @@ mod tests {
     fn reparse_less_precedence() {
         let env = MockEnv::new();
         let ops = OpTable::new(vec![
-            ("*", OpMeta::new(7, Fixity::Left)),
-            ("+", OpMeta::new(6, Fixity::Left)),
+            ("*".to_string(), OpMeta::new(7, Fixity::Left)),
+            ("+".to_string(), OpMeta::new(6, Fixity::Left)),
         ]);
 
         // 1 + (2 * 8)
@@ -509,8 +594,8 @@ mod tests {
     fn reparse_greater_precedence() {
         let env = MockEnv::new();
         let ops = OpTable::new(vec![
-            ("*", OpMeta::new(7, Fixity::Left)),
-            ("+", OpMeta::new(6, Fixity::Left)),
+            ("*".to_string(), OpMeta::new(7, Fixity::Left)),
+            ("+".to_string(), OpMeta::new(6, Fixity::Left)),
         ]);
 
         // 1 * (2 + 8)
@@ -525,8 +610,8 @@ mod tests {
     fn reparse_equal_precedence_left_fixity() {
         let env = MockEnv::new();
         let ops = OpTable::new(vec![
-            ("-", OpMeta::new(6, Fixity::Left)),
-            ("+", OpMeta::new(6, Fixity::Left)),
+            ("-".to_string(), OpMeta::new(6, Fixity::Left)),
+            ("+".to_string(), OpMeta::new(6, Fixity::Left)),
         ]);
 
         // 1 + (2 - 8)
@@ -541,8 +626,8 @@ mod tests {
     fn reparse_equal_precedence_right_fixity() {
         let env = MockEnv::new();
         let ops = OpTable::new(vec![
-            ("-", OpMeta::new(6, Fixity::Right)),
-            ("+", OpMeta::new(6, Fixity::Right)),
+            ("-".to_string(), OpMeta::new(6, Fixity::Right)),
+            ("+".to_string(), OpMeta::new(6, Fixity::Right)),
         ]);
 
         // 1 + (2 - 8)
@@ -556,9 +641,9 @@ mod tests {
     fn reparse_mixed_precedences_mixed_fixities() {
         let env = MockEnv::new();
         let ops = OpTable::new(vec![
-            ("*", OpMeta::new(7, Fixity::Left)),
-            ("-", OpMeta::new(6, Fixity::Left)),
-            ("+", OpMeta::new(6, Fixity::Left)),
+            ("*".to_string(), OpMeta::new(7, Fixity::Left)),
+            ("-".to_string(), OpMeta::new(6, Fixity::Left)),
+            ("+".to_string(), OpMeta::new(6, Fixity::Left)),
         ]);
 
         //  1  + (2  * (6   -  8))
@@ -573,8 +658,8 @@ mod tests {
     fn reparse_equal_precedence_conflicting_fixities() {
         let env = MockEnv::new();
         let ops = OpTable::new(vec![
-            ("|>", OpMeta::new(5, Fixity::Left)),
-            ("<|", OpMeta::new(5, Fixity::Right)),
+            ("|>".to_string(), OpMeta::new(5, Fixity::Left)),
+            ("<|".to_string(), OpMeta::new(5, Fixity::Right)),
         ]);
 
         // 1 |> (2 <| 8)
@@ -592,8 +677,9 @@ mod tests {
     fn reparse_equal_precedence_conflicting_fixities_nested() {
         let env = MockEnv::new();
         let ops = OpTable::new(vec![
-            ("|>", OpMeta::new(5, Fixity::Left)),
-            ("<|", OpMeta::new(5, Fixity::Right)),
+            ("+".to_string(), OpMeta::new(6, Fixity::Left)),
+            ("|>".to_string(), OpMeta::new(5, Fixity::Left)),
+            ("<|".to_string(), OpMeta::new(5, Fixity::Right)),
         ]);
 
         // 1 + (1 |> (2 <| 8))

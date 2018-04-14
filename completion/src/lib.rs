@@ -650,6 +650,7 @@ where
                     _ => unreachable!(),
                 }
             }
+            Expr::MacroExpansion { ref replacement, .. } => self.visit_expr(replacement),
             Expr::Error(..) => (),
         }
     }

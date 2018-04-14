@@ -30,14 +30,18 @@ macro_rules! rev_newlines_iter {
     }
 }
 
-pub(super) struct Printer<'a: 'e, 'e, I: 'a>(pretty_types::Printer<'a, 'e, I>);
+pub(super) struct Printer<'a: 'e, 'e, I: 'a> {
+    printer: pretty_types::Printer<'a, 'e, I>,
+}
 
 impl<'a: 'e, 'e, I> Printer<'a, 'e, I>
 where
     I: AsRef<str>,
 {
     pub(super) fn new(arena: &'a Arena<'a>, source: &'e source::Source<'a>) -> Self {
-        Printer(pretty_types::Printer::new(arena, source))
+        Printer {
+            printer: pretty_types::Printer::new(arena, source),
+        }
     }
 
     pub(super) fn format(
@@ -46,6 +50,7 @@ where
         newline: &'a str,
         expr: &'a SpannedExpr<I>,
     ) -> String {
+
         self.pretty_expr(expr)
             .1
             .pretty(width)
@@ -320,6 +325,7 @@ where
                         ].group(),
                         self.pretty_expr_(bound.span.end, body)
                     ],
+            Expr::MacroExpansion { ref original, .. } => return self.pretty_expr_(previous_end, original),
             Expr::Error(_) => arena.text("<error>"),
         };
         comments.append(doc)
@@ -717,7 +723,7 @@ impl<'a: 'e, 'e, I> ops::Deref for Printer<'a, 'e, I> {
     type Target = pretty_types::Printer<'a, 'e, I>;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.printer
     }
 }
 

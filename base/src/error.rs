@@ -52,6 +52,10 @@ impl<T> Errors<T> {
     pub fn pop(&mut self) -> Option<T> {
         self.errors.pop()
     }
+
+    pub fn iter(&self) -> slice::Iter<T> {
+        self.errors.iter()
+    }
 }
 
 impl<T> Extend<T> for Errors<T> {

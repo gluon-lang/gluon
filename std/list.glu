@@ -3,8 +3,8 @@ let { Semigroup, Monoid, Eq, Show } = prelude
 let { Functor, Applicative, Alternative, Monad, Traversable } = prelude
 let { Foldable } = import! std.foldable
 let { Bool } = import! std.bool
-let string @ { ? } = import! std.string
 let array @ { ? } = import! std.array
+let { (<>) } = import! std.semigroup
 
 let { map } = import! std.functor
 let { (<*>), wrap } = import! std.applicative
@@ -36,20 +36,18 @@ let semigroup : Semigroup (List a) =
 
     { append }
 
-let { (<>) } = import! std.prelude
-
 let monoid : Monoid (List a) = {
     semigroup = semigroup,
     empty = Nil,
 }
 
 let eq ?eq : [Eq a] -> Eq (List a) =
-    let (==) l r =
+    let list_eq l r =
         match (l, r) with
         | (Nil, Nil) -> True
-        | (Cons x xs, Cons y ys) -> eq.(==) x y && xs == ys
+        | (Cons x xs, Cons y ys) -> eq.(==) x y && list_eq xs ys
         | _ -> False
-    { (==) }
+    { (==) = list_eq }
 
 let functor : Functor List =
     let map f xs =
@@ -101,7 +99,6 @@ let monad : Monad List =
     { applicative = applicative, flat_map }
 
 let show ?d : [Show a] -> Show (List a) =
-    let (++) = string.semigroup.append
 
     {
         show = \xs ->
@@ -109,11 +106,11 @@ let show ?d : [Show a] -> Show (List a) =
                 match ys with
                 | Cons y ys2 ->
                     match ys2 with
-                    | Cons z zs -> d.show y ++ ", " ++ show_elems ys2
+                    | Cons z zs -> d.show y <> ", " <> show_elems ys2
                     | Nil -> d.show y
                 | Nil -> ""
 
-            "[" ++ show_elems xs ++ "]",
+            "[" <> show_elems xs <> "]",
     }
 
 let foldable : Foldable List =

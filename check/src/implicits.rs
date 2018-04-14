@@ -263,16 +263,19 @@ impl<'a, 'b, 'c> MutVisitor<'c> for ResolveImplicitsVisitor<'a, 'b> {
 }
 
 pub struct ImplicitResolver<'a> {
-    pub(crate) metadata: FnvMap<Symbol, Metadata>,
+    pub(crate) metadata: &'a mut FnvMap<Symbol, Metadata>,
     environment: &'a TypecheckEnv,
     pub(crate) implicit_bindings: Vec<ImplicitBindings>,
     implicit_vars: ScopedMap<Symbol, ImplicitBindings>,
 }
 
 impl<'a> ImplicitResolver<'a> {
-    pub fn new(environment: &'a TypecheckEnv) -> ImplicitResolver<'a> {
+    pub fn new(
+        environment: &'a TypecheckEnv,
+        metadata: &'a mut FnvMap<Symbol, Metadata>,
+    ) -> ImplicitResolver<'a> {
         ImplicitResolver {
-            metadata: FnvMap::default(),
+            metadata,
             environment,
             implicit_bindings: Vec::new(),
             implicit_vars: ScopedMap::new(),
@@ -355,13 +358,9 @@ impl<'a> ImplicitResolver<'a> {
         path: &mut Vec<TypedIdent<Symbol>>,
         consumer: &mut FnMut(Vec<TypedIdent<Symbol>>, &ArcType),
     ) {
-        let has_implicit_attribute = |metadata: &Metadata| {
-            metadata
-                .comment
-                .as_ref()
-                .map(|comment| ::metadata::attributes(&comment).any(|(key, _)| key == "implicit"))
-        };
-        let mut is_implicit = metadata.and_then(&has_implicit_attribute).unwrap_or(false);
+        let has_implicit_attribute =
+            |metadata: &Metadata| metadata.get_attribute("implicit").is_some();
+        let mut is_implicit = metadata.map(&has_implicit_attribute).unwrap_or(false);
 
         if !is_implicit {
             // Look at the type without any implicit arguments
@@ -374,7 +373,7 @@ impl<'a> ImplicitResolver<'a> {
                     self.metadata
                         .get(typename)
                         .or_else(|| self.environment.get_metadata(typename))
-                        .and_then(has_implicit_attribute)
+                        .map(has_implicit_attribute)
                 })
                 .unwrap_or(false);
         }

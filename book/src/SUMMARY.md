@@ -4,6 +4,8 @@
 
 - [Syntax and semantics](./syntax-and-semantics.md)
 
+- [Metadata](./metadata.md)
+
 - [Modules](./modules.md)
 
 - [Embedding API](./embedding-api.md)

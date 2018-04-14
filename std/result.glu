@@ -5,6 +5,7 @@ let { Result } = import! std.types
 let { Foldable } = import! std.foldable
 let { Bool } = import! std.bool
 let string = import! std.string
+let { (<>) } = import! std.semigroup
 
 let unwrap_ok res : Result e a -> a =
     match res with
@@ -80,12 +81,10 @@ let traversable : Traversable (Result e) = {
 }
 
 let show ?e ?t : [Show e] -> [Show t] -> Show (Result e t) =
-    let (++) = string.append
-
     let show o =
         match o with
-        | Ok x -> "Ok (" ++ t.show x ++ ")"
-        | Err x -> "Err (" ++ e.show x ++ ")"
+        | Ok x -> "Ok (" <> t.show x <> ")"
+        | Err x -> "Err (" <> e.show x <> ")"
 
     { show }
 

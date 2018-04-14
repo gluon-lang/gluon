@@ -12,6 +12,12 @@ impl<'a, T: ?Sized + MetadataEnv> MetadataEnv for &'a T {
     }
 }
 
+impl MetadataEnv for () {
+    fn get_metadata(&self, _id: &SymbolRef) -> Option<&Metadata> {
+        None
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 #[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub struct Metadata {
@@ -32,5 +38,41 @@ impl Metadata {
             self.module = other.module;
         }
         self
+    }
+
+    pub fn get_attribute(&self, attribute: &str) -> Option<&str> {
+        self.attributes()
+            .find(|&(name, _)| name == attribute)
+            .map(|t| t.1.unwrap_or(""))
+    }
+
+    pub fn attributes(&self) -> Attributes {
+        attributes(self.comment.as_ref().map_or("", |s| s))
+    }
+}
+
+pub struct Attributes<'a> {
+    comment: ::std::str::Lines<'a>,
+}
+
+impl<'a> Iterator for Attributes<'a> {
+    type Item = (&'a str, Option<&'a str>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(line) = self.comment.next() {
+            if line.starts_with('@') {
+                let mut split = line[1..].splitn(2, ' ');
+                if let Some(x) = split.next().map(|key| (key, split.next())) {
+                    return Some(x);
+                }
+            }
+        }
+        None
+    }
+}
+
+pub fn attributes(comment: &str) -> Attributes {
+    Attributes {
+        comment: comment.lines(),
     }
 }

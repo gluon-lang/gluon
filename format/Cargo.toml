@@ -16,7 +16,7 @@ pretty = "0.3.2"
 itertools = "0.7.0"
 
 gluon_base = { path = "../base", version = "0.7.1" } # GLUON
-gluon_parser = { path = "../parser", version = "0.7.1" } # GLUON
+gluon = { path = "..", version = "0.7.1" } # GLUON
 
 [dev-dependencies]
 env_logger = "0.5.0"

@@ -39,6 +39,7 @@ in f(22)
 
 test_expr!{ add_operator,
 r"
+/// @infix left 6
 let (+) = \x y -> x #Int+ y in 1 + 2 + 3
 ",
 6i32
@@ -486,6 +487,8 @@ test_expr!{ prelude implicit_argument_selection2,
 r#"
 let string = import! std.string
 let { append = (++) } = string.semigroup
+/// @infix left 6
+let (++) = (++)
 
 let equality l r : [Eq a] -> a -> a -> String =
     if l == r then " == " else " != "

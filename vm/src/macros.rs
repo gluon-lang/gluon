@@ -121,11 +121,12 @@ impl<'a> MacroExpander<'a> {
                     match result {
                         Ok(mut replacement) => {
                             replacement.span = expr.span;
-                            *expr = replacement;
+                            replace_expr(expr, replacement);
                             Ok(None)
                         }
                         Err(err) => {
-                            *expr = pos::spanned(expr.span, Expr::Error(None));
+                            let expr_span = expr.span;
+                            replace_expr(expr, pos::spanned(expr_span, Expr::Error(None)));
 
                             Ok(Some(pos::spanned(expr.span, err)))
                         }
@@ -143,6 +144,15 @@ impl<'a> MacroExpander<'a> {
             info!("Macro errors: {}", self.errors);
         }
     }
+}
+
+fn replace_expr(expr: &mut SpannedExpr<Symbol>, new: SpannedExpr<Symbol>) {
+    let expr_span = expr.span;
+    let original = mem::replace(expr, pos::spanned(expr_span, Expr::Error(None)));
+    *expr = pos::spanned(expr.span, Expr::MacroExpansion {
+        original: Box::new(original),
+        replacement: Box::new(new),
+    });
 }
 
 struct MacroVisitor<'a: 'b, 'b, 'c> {
@@ -170,7 +180,8 @@ impl<'a, 'b, 'c> MutVisitor<'c> for MacroVisitor<'a, 'b, 'c> {
 
                     let name = id.name.as_ref();
                     match self.expander.macros.get(&name[..name.len() - 1]) {
-                        Some(m) => Some(m.expand(self.expander, mem::replace(args, Vec::new()))),
+                        // FIXME Avoid cloning args
+                        Some(m) => Some(m.expand(self.expander, args.clone())),
                         None => None,
                     }
                 }
