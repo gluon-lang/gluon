@@ -73,8 +73,10 @@ pub trait MacroExpandable {
         let mut macros = MacroExpander::new(thread);
         let expr = self.expand_macro_with(compiler, &mut macros, file, expr_str)?;
         if let Err(err) = macros.finish() {
-            let map = compiler.find_file(err[0].span.start(), file, expr_str);
-            return Err((Some(expr), InFile::new(map, err).into()));
+            return Err((
+                Some(expr),
+                InFile::new(compiler.code_map().clone(), err).into(),
+            ));
         }
         Ok(expr)
     }
@@ -132,8 +134,10 @@ impl<'s> MacroExpandable for &'s mut SpannedExpr<Symbol> {
         let errors = mem::replace(&mut macros.errors, prev_errors);
         let value = MacroValue { expr: self };
         if errors.has_errors() {
-            let map = compiler.find_file(errors[0].span.start(), file, expr_str);
-            Err((Some(value), InFile::new(map, errors).into()))
+            Err((
+                Some(value),
+                InFile::new(compiler.code_map().clone(), errors).into(),
+            ))
         } else {
             Ok(value)
         }
@@ -372,8 +376,8 @@ where
         self,
         compiler: &mut Compiler,
         _thread: &Thread,
-        file: &str,
-        expr_str: &str,
+        _file: &str,
+        _expr_str: &str,
     ) -> SalvageResult<InfixReparsed<Self::Expr>> {
         use parser::reparse_infix;
 
@@ -388,17 +392,14 @@ where
                 metadata,
                 metadata_map,
             }),
-            Err(err) => {
-                let map = compiler.find_file(err[0].span.start(), file, expr_str);
-                Err((
-                    Some(InfixReparsed {
-                        expr,
-                        metadata,
-                        metadata_map,
-                    }),
-                    InFile::new(map, err).into(),
-                ))
-            }
+            Err(err) => Err((
+                Some(InfixReparsed {
+                    expr,
+                    metadata,
+                    metadata_map,
+                }),
+                InFile::new(compiler.code_map().clone(), err).into(),
+            )),
         }
     }
 }
@@ -479,7 +480,7 @@ where
         compiler: &mut Compiler,
         thread: &Thread,
         file: &str,
-        expr_str: &str,
+        _expr_str: &str,
         expected_type: Option<&ArcType>,
     ) -> Result<TypecheckValue<Self::Expr>> {
         use check::typecheck::Typecheck;
@@ -505,8 +506,7 @@ where
             };
             result.map_err(|err| {
                 info!("Error when typechecking `{}`: {}", file, err);
-                let map = compiler.find_file(err[0].span.start(), file, expr_str);
-                InFile::new(map, err)
+                InFile::new(compiler.code_map().clone(), err)
             })?
         };
 

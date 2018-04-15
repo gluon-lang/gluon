@@ -168,14 +168,18 @@ impl From<Errors<Error>> for Error {
 impl Error {
     pub fn emit_string(&self, code_map: &::codespan::CodeMap) -> ::std::io::Result<String> {
         let mut output = Vec::new();
-        self.emit(&mut ::codespan_reporting::termcolor::NoColor::new(&mut output), code_map)?;
+        self.emit(
+            &mut ::codespan_reporting::termcolor::NoColor::new(&mut output),
+            code_map,
+        )?;
         Ok(String::from_utf8(output).unwrap())
     }
 
     pub fn emit<W>(&self, writer: &mut W, code_map: &::codespan::CodeMap) -> ::std::io::Result<()>
-        where W: ?Sized + ::codespan_reporting::termcolor::WriteColor
+    where
+        W: ?Sized + ::codespan_reporting::termcolor::WriteColor,
     {
-        match *self  {
+        match *self {
             Error::Parse(ref err) => err.emit(writer, code_map),
             Error::Typecheck(ref err) => err.emit(writer, code_map),
             Error::IO(ref err) => write!(writer, "{}", err),
@@ -257,7 +261,6 @@ impl Compiler {
         run_io set_run_io: bool
     }
 
-
     pub fn code_map(&self) -> &codespan::CodeMap {
         &self.code_map
     }
@@ -266,18 +269,6 @@ impl Compiler {
         self.index_map
             .get(file)
             .and_then(move |i| self.code_map.find_file(*i))
-    }
-
-    fn find_file(
-        &mut self,
-        pos: codespan::ByteIndex,
-        file: &str,
-        source: &str,
-    ) -> Arc<codespan::FileMap> {
-        self.code_map
-            .find_file(pos)
-            .cloned()
-            .unwrap_or_else(|| self.add_filemap(file, source))
     }
 
     #[doc(hidden)]
@@ -322,7 +313,7 @@ impl Compiler {
             &*map,
         ).map_err(|(expr, err)| {
             info!("Parse error: {}", err);
-            (expr, InFile::new(map, err))
+            (expr, InFile::new(self.code_map().clone(), err))
         })?)
     }
 

@@ -143,8 +143,8 @@ pub fn typecheck_expr_expected(
     (
         expr,
         result.map_err(|err| {
-            let source = codespan::CodeMap::new()
-                .add_filemap(codespan::FileName::virtual_("test"), text.into());
+            let mut source = codespan::CodeMap::new();
+            source.add_filemap(codespan::FileName::virtual_("test"), text.into());
             InFile::new(source, err)
         }),
     )
@@ -194,7 +194,8 @@ pub fn typecheck_partial_expr(
     (
         expr,
         result.map_err(|err| {
-            let source = Arc::new(codespan::FileMap::new("test".into(), text.into()));
+            let mut source = codespan::CodeMap::new();
+            source.add_filemap("test".into(), text.into());
             InFile::new(source, err)
         }),
     )

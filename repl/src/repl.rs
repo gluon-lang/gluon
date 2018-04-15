@@ -276,7 +276,6 @@ fn eval_line_(
     line: &str,
 ) -> FutureValue<Box<Future<Item = (), Error = (Compiler, GluonError)> + Send>> {
     let mut compiler = Compiler::new();
-    let file_map = compiler.add_filemap("line", line);
     let let_or_expr = {
         let result = {
             let mut module = SymbolModule::new("line".into(), compiler.mut_symbols());
@@ -285,7 +284,8 @@ fn eval_line_(
         match result {
             Ok(x) => x,
             Err((_, err)) => {
-                return FutureValue::sync(Err((compiler, InFile::new(file_map, err).into()))).boxed()
+                let code_map = compiler.code_map().clone();
+                return FutureValue::sync(Err((compiler, InFile::new(code_map, err).into()))).boxed();
             }
         }
     };

@@ -338,10 +338,7 @@ y
     let result = support::typecheck_expr_expected(text, Some(&Type::int())).1;
     let errors: Vec<_> = result.unwrap_err().errors().into();
     assert_eq!(errors.len(), 1);
-    assert_eq!(
-        errors[0].span,
-        Span::new(14.into(), 15.into())
-    );
+    assert_eq!(errors[0].span, Span::new(14.into(), 15.into()));
 }
 
 #[test]
@@ -372,6 +369,9 @@ Found: ()
 Types do not match:
     Expected: Int -> a
     Found: ()
+- <test>:2:1
+2 | () 1
+  | ^^^^
 "#
     );
 }
@@ -396,6 +396,9 @@ Found: test.B
 Types do not match:
     Expected: test.A
     Found: test.B
+- <test>:5:11
+5 | eq (A 0) (B 0.0)
+  |           ^^^^^
 "#
     );
 }
@@ -418,6 +421,9 @@ Expected: ()
 Found: { x : Int }
 1 errors were found during unification:
 The type `()` lacks the following fields: x
+- <test>:4:7
+4 | f { } { x = 1 }
+  |       ^^^^^^^^^
 "#
     );
 }

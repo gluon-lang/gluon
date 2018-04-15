@@ -84,32 +84,42 @@ pub fn parse(
     let mut symbols = MockEnv::new();
 
     let mut expr = parse_string(&mut symbols, input)?;
-    let op_table = OpTable::new(vec![
-        ("*", OpMeta::new(7, Fixity::Left)),
-        ("/", OpMeta::new(7, Fixity::Left)),
-        ("%", OpMeta::new(7, Fixity::Left)),
-        ("+", OpMeta::new(6, Fixity::Left)),
-        ("-", OpMeta::new(6, Fixity::Left)),
-        (":", OpMeta::new(5, Fixity::Right)),
-        ("++", OpMeta::new(5, Fixity::Right)),
-        ("&&", OpMeta::new(3, Fixity::Right)),
-        ("||", OpMeta::new(2, Fixity::Right)),
-        ("$", OpMeta::new(0, Fixity::Right)),
-        ("==", OpMeta::new(4, Fixity::Left)),
-        ("/=", OpMeta::new(4, Fixity::Left)),
-        ("<", OpMeta::new(4, Fixity::Left)),
-        (">", OpMeta::new(4, Fixity::Left)),
-        ("<=", OpMeta::new(4, Fixity::Left)),
-        (">=", OpMeta::new(4, Fixity::Left)),
-        // Hack for some library operators
-        ("<<", OpMeta::new(9, Fixity::Right)),
-        (">>", OpMeta::new(9, Fixity::Left)),
-        ("<|", OpMeta::new(0, Fixity::Right)),
-        ("|>", OpMeta::new(0, Fixity::Left)),
-    ].into_iter().map(|(s, op)| (s.to_string(), op)));
+    let op_table = OpTable::new(
+        vec![
+            ("*", OpMeta::new(7, Fixity::Left)),
+            ("/", OpMeta::new(7, Fixity::Left)),
+            ("%", OpMeta::new(7, Fixity::Left)),
+            ("+", OpMeta::new(6, Fixity::Left)),
+            ("-", OpMeta::new(6, Fixity::Left)),
+            (":", OpMeta::new(5, Fixity::Right)),
+            ("++", OpMeta::new(5, Fixity::Right)),
+            ("&&", OpMeta::new(3, Fixity::Right)),
+            ("||", OpMeta::new(2, Fixity::Right)),
+            ("$", OpMeta::new(0, Fixity::Right)),
+            ("==", OpMeta::new(4, Fixity::Left)),
+            ("/=", OpMeta::new(4, Fixity::Left)),
+            ("<", OpMeta::new(4, Fixity::Left)),
+            (">", OpMeta::new(4, Fixity::Left)),
+            ("<=", OpMeta::new(4, Fixity::Left)),
+            (">=", OpMeta::new(4, Fixity::Left)),
+            // Hack for some library operators
+            ("<<", OpMeta::new(9, Fixity::Right)),
+            (">>", OpMeta::new(9, Fixity::Left)),
+            ("<|", OpMeta::new(0, Fixity::Right)),
+            ("|>", OpMeta::new(0, Fixity::Left)),
+        ].into_iter()
+            .map(|(s, op)| (s.to_string(), op)),
+    );
 
     let mut reparser = Reparser::new(op_table, &mut symbols);
-    reparser.reparse(&mut expr).map_err(|err| (None, err.into_iter().map(|err| err.map(Error::from)).collect::<ParseErrors>()))?;
+    reparser.reparse(&mut expr).map_err(|err| {
+        (
+            None,
+            err.into_iter()
+                .map(|err| err.map(Error::from))
+                .collect::<ParseErrors>(),
+        )
+    })?;
     Ok(expr)
 }
 
@@ -134,8 +144,8 @@ macro_rules! parse_new {
     ($input:expr) => {{
         // Replace windows line endings so that byte positions match up on multiline expressions
         let input = $input.replace("\r\n", "\n");
-        let source = ::support::codespan::CodeMap::new()
-            .add_filemap(::support::codespan::FileName::virtual_("test"), input.clone());
+        let mut source = ::support::codespan::CodeMap::new();
+        source.add_filemap(::support::codespan::FileName::virtual_("test"), input.clone());
         parse(&input)
             .unwrap_or_else(|(_, err)| {
                 panic!("{}", ::base::error::InFile::new(source, err))

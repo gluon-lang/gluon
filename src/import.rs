@@ -361,11 +361,12 @@ impl<I> Import<I> {
                     macros.errors.has_errors() || result.is_err() || macros.error_in_expr;
                 let errors = mem::replace(&mut macros.errors, prev_errors);
                 if errors.has_errors() {
-                    let file_map =
-                        compiler.find_file(errors[0].span.start(), &modulename, &file_contents);
                     macros.errors.push(pos::spanned(
                         span,
-                        Box::new(::Error::Macro(InFile::new(file_map, errors))),
+                        Box::new(::Error::Macro(InFile::new(
+                            compiler.code_map().clone(),
+                            errors,
+                        ))),
                     ));
                 }
 

@@ -16,7 +16,6 @@ use parser::{parse_partial_expr, reparse_infix, ParseErrors};
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;
-use std::sync::Arc;
 
 /// Returns a reference to the interner stored in TLD
 pub fn get_local_interner() -> Rc<RefCell<Symbols>> {
@@ -173,7 +172,11 @@ pub fn typecheck_expr_expected(
 
     (
         expr,
-        result.map_err(|err| InFile::new(Arc::new(codespan::FileMap::new("test".into(), text.into())), err)),
+        result.map_err(|err| {
+            let mut source = codespan::CodeMap::new();
+            source.add_filemap("test".into(), text.into());
+            InFile::new(source, err)
+        }),
     )
 }
 
@@ -222,7 +225,11 @@ pub fn typecheck_partial_expr(
 
     (
         expr,
-        result.map_err(|err| InFile::new(Arc::new(codespan::FileMap::new("test".into(), text.into())), err)),
+        result.map_err(|err| {
+            let mut source = codespan::CodeMap::new();
+            source.add_filemap("test".into(), text.into());
+            InFile::new(source, err)
+        }),
     )
 }
 
@@ -327,10 +334,10 @@ macro_rules! test_check {
         #[test]
         fn $name() {
             let _ = env_logger::try_init();
-        
+
             let text = $source;
             let result = support::typecheck(text);
-        
+
             assert_req!(result.map(|x| x.to_string()), Ok($typ.to_string()));
         }
     };

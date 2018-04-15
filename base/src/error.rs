@@ -9,7 +9,6 @@ use std::iter::{Extend, FromIterator};
 use std::ops::Index;
 use std::slice;
 use std::str;
-use std::sync::Arc;
 use std::vec;
 
 use codespan_reporting::{Diagnostic, Label, Severity};
@@ -150,7 +149,7 @@ impl<T: fmt::Display + fmt::Debug + Any> StdError for Errors<T> {
 /// Error type which contains information of which file and where in the file the error occurred
 #[derive(Clone, Debug)]
 pub struct InFile<E> {
-    source: Arc<::codespan::FileMap>,
+    source: ::codespan::CodeMap,
     error: Errors<Spanned<E, BytePos>>,
 }
 
@@ -166,12 +165,15 @@ where
 impl<E: fmt::Display> InFile<E> {
     /// Creates a new `InFile` error which states that the error occurred in `file` using the file
     /// contents in `source` to provide a context to the span.
-    pub fn new(source: Arc<::codespan::FileMap>, error: Errors<Spanned<E, BytePos>>) -> InFile<E> {
+    pub fn new(source: ::codespan::CodeMap, error: Errors<Spanned<E, BytePos>>) -> InFile<E> {
         InFile { source, error }
     }
 
     pub fn source_name(&self) -> &::codespan::FileName {
-        self.source.name()
+        self.source
+            .find_file(self.error[0].span.start())
+            .unwrap()
+            .name()
     }
 
     pub fn errors(self) -> Errors<Spanned<E, BytePos>> {
@@ -214,9 +216,8 @@ impl<E: fmt::Display> fmt::Display for InFile<E> {
         let mut buffer = Vec::new();
         {
             let mut writer = ::codespan_reporting::termcolor::NoColor::new(&mut buffer);
-            let empty_code_map = ::codespan::CodeMap::new();
 
-            self.emit(&mut writer, &empty_code_map)
+            self.emit(&mut writer, &self.source)
                 .map_err(|_| fmt::Error)?;
         }
 
