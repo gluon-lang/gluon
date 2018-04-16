@@ -389,6 +389,11 @@ pub fn load_int(vm: &Thread) -> Result<ExternModule> {
         record! {
             min_value => std::int::prim::min_value(),
             max_value => std::int::prim::max_value(),
+            from_str_radix => named_primitive!(
+                2,
+                "std.int.prim.from_str_radix",
+                |src, radix| std::int::prim::from_str_radix(src, radix).map_err(|_| ())
+            ),
             count_ones => primitive!(1 std::int::prim::count_ones),
             count_zeros => primitive!(1 std::int::prim::count_zeros),
             leading_zeros => primitive!(1 std::int::prim::leading_zeros),
@@ -432,9 +437,14 @@ pub fn load_string(vm: &Thread) -> Result<ExternModule> {
         record! {
             len => primitive!(1 std::string::prim::len),
             is_empty => primitive!(1 std::string::prim::is_empty),
+            is_char_boundary => primitive!(2 std::string::prim::is_char_boundary),
+            as_bytes => primitive!(1 std::string::prim::as_bytes),
             split_at => primitive!(2 std::string::prim::split_at),
-            find => named_primitive!(2, "std.string.prim.find", std::string::prim::find::<&str>),
-            rfind => named_primitive!(2, "std.string.prim.rfind", std::string::prim::rfind::<&str>),
+            contains => named_primitive!(
+                2,
+                "std.string.prim.contains",
+                std::string::prim::contains::<&str>
+            ),
             starts_with => named_primitive!(
                 2,
                 "std.string.prim.starts_with",
@@ -445,6 +455,8 @@ pub fn load_string(vm: &Thread) -> Result<ExternModule> {
                 "std.string.prim.ends_with",
                 std::string::prim::ends_with::<&str>
             ),
+            find => named_primitive!(2, "std.string.prim.find", std::string::prim::find::<&str>),
+            rfind => named_primitive!(2, "std.string.prim.rfind", std::string::prim::rfind::<&str>),
             trim => primitive!(1 std::string::prim::trim),
             trim_left => primitive!(1 std::string::prim::trim_left),
             trim_right => primitive!(1 std::string::prim::trim_right),
@@ -454,8 +466,7 @@ pub fn load_string(vm: &Thread) -> Result<ExternModule> {
                 "std.string.prim.from_utf8",
                 string::from_utf8
             ),
-            char_at => named_primitive!(2, "std.string.prim.char_at", string::char_at),
-            as_bytes => primitive!(1 std::string::prim::as_bytes)
+            char_at => named_primitive!(2, "std.string.prim.char_at", string::char_at)
         },
     )
 }

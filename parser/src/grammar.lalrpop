@@ -324,7 +324,7 @@ AtomicPattern: Pattern<Id> = {
         match elems.len() {
             // Parenthesized pattern
             1 => elems.into_iter().next().unwrap().value,
-            _ => Pattern::Tuple { typ: Type::hole(), elems: elems },
+            _ => Pattern::Tuple { typ: type_cache.hole(), elems: elems },
         },
 
     "{" <fields: Comma<FieldPattern>> <implicit_import: Sp<"?"?>> "}" => {
@@ -347,7 +347,7 @@ AtomicPattern: Pattern<Id> = {
         let implicit_import_span = implicit_import.span;
 
         Pattern::Record {
-            typ: Type::hole(),
+            typ: type_cache.hole(),
             types: types,
             fields: values,
             implicit_import: implicit_import
@@ -477,18 +477,18 @@ AtomicExpr: Expr<Id> = {
     //     Expr::Getter(id),
 
     <expr: SpAtomicExpr> "." <id: Ident> =>
-        Expr::Projection(Box::new(expr), id, Type::hole()),
+        Expr::Projection(Box::new(expr), id, type_cache.hole()),
 
     <expr: SpAtomicExpr> "." <err: !> => {
         errors.push(err.error);
-        Expr::Projection(Box::new(expr), env.from_str(""), Type::hole())
+        Expr::Projection(Box::new(expr), env.from_str(""), type_cache.hole())
     },
 
     "(" <elems: Comma<SpExpr>> ")" =>
-        Expr::Tuple { typ: Type::hole(), elems: elems },
+        Expr::Tuple { typ: type_cache.hole(), elems: elems },
 
     "[" <elems: Comma<SpExpr>> "]" => Expr::Array(Array {
-            typ: Type::hole(),
+            typ: type_cache.hole(),
             exprs: elems,
         }),
 
@@ -512,7 +512,7 @@ AtomicExpr: Expr<Id> = {
         }
 
         Expr::Record {
-            typ: Type::hole(),
+            typ: type_cache.hole(),
             types: types,
             exprs: values,
             base: base.map(Box::new),
