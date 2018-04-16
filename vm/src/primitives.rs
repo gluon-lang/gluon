@@ -389,6 +389,11 @@ pub fn load_int(vm: &Thread) -> Result<ExternModule> {
         record! {
             min_value => std::int::prim::min_value(),
             max_value => std::int::prim::max_value(),
+            from_str_radix => named_primitive!(
+                2,
+                "std.int.prim.from_str_radix",
+                |src, radix| std::int::prim::from_str_radix(src, radix).map_err(|_| ())
+            ),
             count_ones => primitive!(1 std::int::prim::count_ones),
             count_zeros => primitive!(1 std::int::prim::count_zeros),
             leading_zeros => primitive!(1 std::int::prim::leading_zeros),
