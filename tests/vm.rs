@@ -1,3 +1,4 @@
+extern crate codespan;
 extern crate env_logger;
 #[macro_use]
 extern crate pretty_assertions;
@@ -12,11 +13,10 @@ use support::*;
 
 use gluon::base::pos::BytePos;
 use gluon::base::types::Type;
-use gluon::base::source;
 use gluon::vm::api::{FunctionRef, Hole, OpaqueValue, ValueRef};
-use gluon::vm::thread::{RootedThread, Thread, ThreadInternal};
-use gluon::vm::internal::Value;
 use gluon::vm::channel::Sender;
+use gluon::vm::internal::Value;
+use gluon::vm::thread::{RootedThread, Thread, ThreadInternal};
 use gluon::{Compiler, Error};
 
 test_expr!{ pass_function_value,
@@ -784,15 +784,17 @@ let from f : (Int -> Option a) -> Stream a =
 { from }
 "#;
 
-    let (expr, _) = Compiler::new()
+    let mut compiler = Compiler::new();
+    let (expr, _) = compiler
         .typecheck_str(&vm, "example", source, None)
         .unwrap_or_else(|err| panic!("{}", err));
 
-    let lines = source::Lines::new(source.as_bytes().iter().cloned());
+    let lines = compiler.get_filemap("example").expect("file_map");
     let result = completion::find(
         &*vm.get_env(),
+        lines.span(),
         &expr,
-        lines.offset(14.into(), 29.into()).unwrap(),
+        lines.byte_index(14.into(), 29.into()).unwrap(),
     );
     assert_eq!(result, Ok(Type::int()));
 }
@@ -804,11 +806,13 @@ fn completion_with_prelude_at_0() {
 
     let expr = "1";
 
-    let (expr, _) = Compiler::new()
+    let mut compiler = Compiler::new();
+    let (expr, _) = compiler
         .typecheck_str(&vm, "example", expr, None)
         .unwrap_or_else(|err| panic!("{}", err));
 
-    let result = completion::find(&*vm.get_env(), &expr, BytePos::from(0));
+    let file_map = compiler.get_filemap("example").expect("file_map");
+    let result = completion::find(&*vm.get_env(), file_map.span(), &expr, BytePos::from(0));
     assert_eq!(result, Ok(Type::int()));
 }
 
@@ -819,11 +823,18 @@ fn suggestion_from_implicit_prelude() {
 
     let expr = "1 ";
 
-    let (expr, _) = Compiler::new()
+    let mut compiler = Compiler::new();
+    let (expr, _) = compiler
         .typecheck_str(&vm, "example", expr, None)
         .unwrap_or_else(|err| panic!("{}", err));
 
-    let result = completion::suggest(&*vm.get_env(), &expr, BytePos::from(2));
+    let lines = compiler.get_filemap("example").expect("file_map");
+    let result = completion::suggest(
+        &*vm.get_env(),
+        lines.span(),
+        &expr,
+        lines.byte_index(0.into(), 2.into()).unwrap(),
+    );
     assert!(!result.is_empty());
 }
 
@@ -848,8 +859,8 @@ fn value_size() {
 
 #[test]
 fn deep_clone_partial_application() {
-    use gluon::base::symbol::Symbol;
     use gluon::base::metadata::Metadata;
+    use gluon::base::symbol::Symbol;
 
     let _ = ::env_logger::try_init();
     let vm = RootedThread::new();

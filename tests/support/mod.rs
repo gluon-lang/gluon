@@ -5,9 +5,9 @@ pub extern crate futures;
 extern crate gluon;
 extern crate tokio_core;
 
+use gluon::import::Import;
 use gluon::vm::api::{Getable, VmType};
 use gluon::vm::thread::{RootedThread, Thread};
-use gluon::import::Import;
 use gluon::Compiler;
 
 #[allow(dead_code)]
@@ -57,24 +57,24 @@ pub fn make_async_vm(remote: Option<self::tokio_core::reactor::Remote>) -> Roote
 
 #[allow(unused_macros)]
 macro_rules! test_expr {
-    (prelude $name: ident, $expr: expr, $value: expr) => {
+    (prelude $name:ident, $expr:expr, $value:expr) => {
         #[test]
         fn $name() {
             let _ = ::env_logger::try_init();
             let mut vm = $crate::support::make_vm();
             let value = $crate::support::run_expr_(&mut vm, $expr, true);
             assert_eq!(value, $value);
-
+        
             // Help out the type inference by forcing that left and right are the same types
-            fn equiv<T>(_: &T, _: &T) { }
+            fn equiv<T>(_: &T, _: &T) {}
             equiv(&value, &$value);
         }
     };
-    (io $name: ident, $expr: expr, $value: expr) => {
+    (io $name:ident, $expr:expr, $value:expr) => {
         #[test]
         fn $name() {
             use gluon::vm::api::IO;
-
+        
             let _ = ::env_logger::try_init();
             let mut vm = $crate::support::make_vm();
             let (value, _) = ::gluon::Compiler::new()
@@ -85,16 +85,16 @@ macro_rules! test_expr {
             match value {
                 IO::Value(value) => {
                     assert_eq!(value, $value);
-
+        
                     // Help out the type inference by forcing that left and right are the same types
-                    fn equiv<T>(_: &T, _: &T) { }
+                    fn equiv<T>(_: &T, _: &T) {}
                     equiv(&value, &$value);
                 }
                 IO::Exception(err) => panic!("{}", err),
             }
         }
     };
-    (any $name: ident, $expr: expr, $value: expr) => {
+    (any $name:ident, $expr:expr, $value:expr) => {
         #[test]
         fn $name() {
             let _ = ::env_logger::try_init();
@@ -103,25 +103,25 @@ macro_rules! test_expr {
             assert_eq!(value.get_ref(), $value);
         }
     };
-    ($name: ident, $expr: expr, $value: expr) => {
+    ($name:ident, $expr:expr, $value:expr) => {
         #[test]
         fn $name() {
             let _ = ::env_logger::try_init();
             let mut vm = $crate::support::make_vm();
             let value = $crate::support::run_expr(&mut vm, $expr);
             assert_eq!(value, $value);
-
+        
             // Help out the type inference by forcing that left and right are the same types
-            fn equiv<T>(_: &T, _: &T) { }
+            fn equiv<T>(_: &T, _: &T) {}
             equiv(&value, &$value);
         }
     };
-    ($name: ident, $expr: expr) => {
+    ($name:ident, $expr:expr) => {
         #[test]
         fn $name() {
             let _ = ::env_logger::try_init();
             let mut vm = $crate::support::make_vm();
             $crate::support::run_expr::<OpaqueValue<&Thread, Hole>>(&mut vm, $expr);
         }
-    }
+    };
 }

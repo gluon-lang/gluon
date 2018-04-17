@@ -11,18 +11,14 @@ mod support;
 
 use support::*;
 
-use base::source::Source;
 use base::types::Type;
 
 use completion::SignatureHelp;
 
 fn signature_help(expr_str: &str, row: usize, column: usize) -> Option<SignatureHelp> {
-    let offset = Source::new(expr_str)
-        .lines()
-        .offset(row.into(), column.into())
-        .expect("Position is not in source");
+    let offset = loc(expr_str, row, column);
     let (expr, _result) = support::typecheck_partial_expr(expr_str);
-    completion::signature_help(&support::MockEnv::new(), &expr, offset)
+    completion::signature_help(&support::MockEnv::new(), expr.span, &expr, offset)
 }
 
 #[test]

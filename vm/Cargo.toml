@@ -24,6 +24,7 @@ itertools = "0.7.0"
 futures = "0.1.0"
 typed-arena = "1.2.0"
 smallvec = "0.2.1"
+codespan = "0.1.1"
 
 serde = { version = "1.0.0", optional = true }
 serde_state = { version = "0.4.0", optional = true }
@@ -52,5 +53,5 @@ serde_json = "1.0.0"
 gluon_parser = { path = "../parser", version = "0.7.1" } # GLUON
 
 [features]
-serialization = ["serde", "serde_state", "serde_derive", "serde_derive_state", "gluon_base/serialization"]
+serialization = ["serde", "serde_state", "serde_derive", "serde_derive_state", "gluon_base/serialization", "codespan/serialization"]
 test = ["lalrpop", "serialization"]

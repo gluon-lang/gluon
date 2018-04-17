@@ -377,7 +377,7 @@ fn nested_pattern_parens() {
 fn span_identifier() {
     let _ = ::env_logger::try_init();
 
-    let e = parse_new!("test");
+    let e = parse_zero_index!("test");
     assert_eq!(e.span, Span::new(BytePos::from(0), BytePos::from(4)));
 }
 
@@ -385,7 +385,7 @@ fn span_identifier() {
 fn span_integer() {
     let _ = ::env_logger::try_init();
 
-    let e = parse_new!("1234");
+    let e = parse_zero_index!("1234");
     assert_eq!(e.span, Span::new(BytePos::from(0), BytePos::from(4)));
 }
 
@@ -393,7 +393,7 @@ fn span_integer() {
 fn span_string_literal() {
     let _ = ::env_logger::try_init();
 
-    let e = parse_new!(r#" "test" "#);
+    let e = parse_zero_index!(r#" "test" "#);
     assert_eq!(e.span, Span::new(BytePos::from(1), BytePos::from(7)));
 }
 
@@ -401,7 +401,7 @@ fn span_string_literal() {
 fn span_app() {
     let _ = ::env_logger::try_init();
 
-    let e = parse_new!(r#" f 123 "asd""#);
+    let e = parse_zero_index!(r#" f 123 "asd""#);
     assert_eq!(e.span, Span::new(BytePos::from(1), BytePos::from(12)));
 }
 
@@ -409,7 +409,7 @@ fn span_app() {
 fn span_match() {
     let _ = ::env_logger::try_init();
 
-    let e = parse_new!(
+    let e = parse_zero_index!(
         r#"
 match False with
     | True -> "asd"
@@ -423,7 +423,7 @@ match False with
 fn span_if_else() {
     let _ = ::env_logger::try_init();
 
-    let e = parse_new!(
+    let e = parse_zero_index!(
         r#"
 if True then
     1
@@ -438,14 +438,14 @@ else
 fn span_byte() {
     let _ = ::env_logger::try_init();
 
-    let e = parse_new!(r#"124b"#);
+    let e = parse_zero_index!(r#"124b"#);
     assert_eq!(e.span, Span::new(BytePos::from(0), BytePos::from(4)));
 }
 
 #[test]
 fn span_field_access() {
     let _ = ::env_logger::try_init();
-    let expr = parse_new!("record.x");
+    let expr = parse_zero_index!("record.x");
     assert_eq!(expr.span, Span::new(BytePos::from(0), BytePos::from(8)));
     match expr.value {
         Expr::Projection(ref e, _, _) => {
@@ -707,7 +707,7 @@ fn block_open_after_let_in() {
         a
         b
         "#;
-    let e = parse_new!(text);
+    let e = parse_zero_index!(text);
     match e.value {
         Expr::LetBindings(..) => (),
         _ => panic!("{:?}", e),
@@ -723,7 +723,7 @@ fn block_open_after_explicit_let_in() {
         a
         b
         "#;
-    let e = parse_new!(text);
+    let e = parse_zero_index!(text);
     match e.value {
         Expr::LetBindings(..) => (),
         _ => panic!("{:?}", e),
@@ -822,16 +822,17 @@ fn parse_let_or_expr() {
             Err(ValueBinding {
                 comment: None,
                 name: pos::spanned2(
-                    4.into(),
+                    // Add one to each position since codespan return 1-indexed positions
                     5.into(),
+                    6.into(),
                     Pattern::Ident(TypedIdent::new(intern("x")))
                 ),
                 typ: None,
                 resolved_type: Type::hole(),
                 args: Vec::new(),
                 expr: pos::spanned2(
-                    8.into(),
-                    12.into(),
+                    9.into(),
+                    13.into(),
                     Expr::Ident(TypedIdent::new(intern("test")))
                 ),
             })

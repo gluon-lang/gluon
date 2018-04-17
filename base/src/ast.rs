@@ -347,7 +347,7 @@ pub struct TypeBinding<Id> {
 
 impl<Id> TypeBinding<Id> {
     pub fn span(&self) -> Span<BytePos> {
-        Span::new(self.name.span.start, self.alias.span.end)
+        Span::new(self.name.span.start(), self.alias.span.end())
     }
 }
 
@@ -385,7 +385,7 @@ pub struct ValueBinding<Id> {
 
 impl<Id> ValueBinding<Id> {
     pub fn span(&self) -> Span<BytePos> {
-        Span::new(self.name.span.start, self.expr.span.end)
+        Span::new(self.name.span.start(), self.expr.span.end())
     }
 }
 

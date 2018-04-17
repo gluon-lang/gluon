@@ -3,29 +3,29 @@
 use std::any::Any;
 use std::borrow::Cow;
 use std::collections::hash_map::Entry;
-use std::sync::{Mutex, RwLock};
 use std::fs::File;
-use std::mem;
 use std::io;
 use std::io::Read;
+use std::mem;
 use std::path::PathBuf;
+use std::sync::{Mutex, RwLock};
 
 use futures::sync::oneshot;
 use futures::{future, Future};
 
 use itertools::Itertools;
 
-use base::filename_to_module;
-use base::error::{Errors, InFile};
 use base::ast::{expr_to_path, Expr, Literal, SpannedExpr, Typed, TypedIdent};
+use base::error::{Errors, InFile};
+use base::filename_to_module;
 use base::fnv::FnvMap;
 use base::pos::{self, BytePos, Span};
 use base::symbol::Symbol;
 use base::types::ArcType;
 
-use vm::{ExternLoader, ExternModule};
 use vm::macros::{Error as MacroError, Macro, MacroExpander, MacroFuture};
 use vm::thread::{Thread, ThreadInternal};
+use vm::{ExternLoader, ExternModule};
 
 use super::Compiler;
 
@@ -364,8 +364,7 @@ impl<I> Import<I> {
                     macros.errors.push(pos::spanned(
                         span,
                         Box::new(::Error::Macro(InFile::new(
-                            &modulename,
-                            &file_contents,
+                            compiler.code_map().clone(),
                             errors,
                         ))),
                     ));

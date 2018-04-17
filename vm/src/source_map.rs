@@ -27,9 +27,11 @@ impl SourceMap {
         }
     }
 
-    pub fn close(&mut self, instruction_index: usize, current_line: Line) {
+    pub fn close(&mut self, instruction_index: usize, current_line: Option<Line>) {
         // Push one final item to indicate the end of the function
-        self.map.push((instruction_index, current_line));
+        if let Some(current_line) = current_line.or_else(|| self.map.last().map(|t| t.1)) {
+            self.map.push((instruction_index, current_line));
+        }
     }
 
     /// Returns the line where the instruction at `instruction_index` were defined

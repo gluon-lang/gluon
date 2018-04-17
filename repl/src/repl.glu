@@ -10,6 +10,7 @@ let array = import! std.array
 let { ref, load, (<-) } = import! std.reference
 let rustyline = import! rustyline
 let { ReadlineError } = import! rustyline_types
+let { Color } = import! repl_types
 let repl_prim = import! repl.prim
 let { (<<) } = import! std.function
 
@@ -168,7 +169,7 @@ let store line : String -> IO ReplAction =
         io.load_script binding expr *> wrap Continue
     | None -> io.println "Expected binding in definition" *> wrap Continue
 
-type Repl = { commands : Commands, editor : Editor, cpu_pool : CpuPool }
+type Repl = { commands : Commands, editor : Editor, cpu_pool : CpuPool, color : Color }
 
 let loop repl : Repl -> IO () =
     let run_line line =
@@ -179,10 +180,9 @@ let loop repl : Repl -> IO () =
         else
             let action =
                 do eval_thread = thread.new_thread ()
-                let eval_action = repl_prim.eval_line line
+                let eval_action = repl_prim.eval_line repl.color line
                 repl_prim.finish_or_interrupt repl.cpu_pool eval_thread eval_action
-            (io.catch action wrap >>= io.println)
-                *> wrap Continue
+            io.catch action io.println *> wrap Continue
 
     do line_result = rustyline.readline repl.editor "> "
     match line_result with
@@ -196,12 +196,12 @@ let loop repl : Repl -> IO () =
             do _ = rustyline.save_history repl.editor
             wrap ()
 
-let run x : () -> IO () =
+let run color : Color -> IO () =
     do _ = io.println "gluon (:h for help, :q to quit)"
     do editor = rustyline.new_editor ()
     do cpu_pool = repl_prim.new_cpu_pool 1
     let commands = make_commands cpu_pool
-    let repl = { commands, editor, cpu_pool }
+    let repl = { commands, editor, cpu_pool, color }
     loop repl
 
 run

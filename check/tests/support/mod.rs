@@ -1,12 +1,13 @@
 #![allow(unused_macros)]
 
+extern crate codespan;
+
 use base::ast::{DisplayEnv, IdentEnv, SpannedExpr};
 use base::error::InFile;
 use base::kind::{ArcKind, Kind, KindEnv};
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
-use base::types::{self, Alias, ArcType, Generic, PrimitiveEnv, Type, TypeCache,
-                  TypeEnv};
+use base::types::{self, Alias, ArcType, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv};
 
 use check::typecheck::{self, Typecheck};
 use check::{metadata, rename};
@@ -49,7 +50,7 @@ pub fn parse_new(
     let symbols = get_local_interner();
     let mut symbols = symbols.borrow_mut();
     let mut module = SymbolModule::new("test".into(), &mut symbols);
-    parse_partial_expr(&mut module, &TypeCache::new(), &s)
+    parse_partial_expr(&mut module, &TypeCache::new(), s)
 }
 
 #[allow(dead_code)]
@@ -169,7 +170,14 @@ pub fn typecheck_expr_expected(
 
     let result = tc.typecheck_expr_expected(&mut expr, expected);
 
-    (expr, result.map_err(|err| InFile::new("test", text, err)))
+    (
+        expr,
+        result.map_err(|err| {
+            let mut source = codespan::CodeMap::new();
+            source.add_filemap("test".into(), text.into());
+            InFile::new(source, err)
+        }),
+    )
 }
 
 pub fn typecheck_expr(
@@ -215,7 +223,14 @@ pub fn typecheck_partial_expr(
 
     let result = tc.typecheck_expr(&mut expr);
 
-    (expr, result.map_err(|err| InFile::new("test", text, err)))
+    (
+        expr,
+        result.map_err(|err| {
+            let mut source = codespan::CodeMap::new();
+            source.add_filemap("test".into(), text.into());
+            InFile::new(source, err)
+        }),
+    )
 }
 
 #[allow(dead_code)]

@@ -5,6 +5,7 @@
 
 #[macro_use]
 extern crate bitflags;
+extern crate codespan;
 #[macro_use]
 extern crate collect_mac;
 #[cfg(test)]

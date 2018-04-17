@@ -1,20 +1,20 @@
-use std::io::{stdin, Read};
 use std::fmt;
 use std::fs::File;
+use std::io::{stdin, Read};
 use std::sync::Mutex;
 
 use futures::Future;
 
-use vm::{self, ExternModule, Result};
-use vm::future::FutureValue;
-use vm::gc::{Gc, Traverseable};
-use vm::types::*;
-use vm::thread::{Thread, ThreadInternal};
+use vm::api::generic::{A, B};
 use vm::api::{self, Array, FutureResult, Generic, Getable, OpaqueValue, OwnedFunction,
               PrimitiveFuture, TypedBytecode, Userdata, VmType, WithVM, IO};
-use vm::api::generic::{A, B};
-use vm::stack::{StackFrame, State};
+use vm::future::FutureValue;
+use vm::gc::{Gc, Traverseable};
 use vm::internal::ValuePrinter;
+use vm::stack::{StackFrame, State};
+use vm::thread::{Thread, ThreadInternal};
+use vm::types::*;
+use vm::{self, ExternModule, Result};
 
 use compiler_pipeline::*;
 

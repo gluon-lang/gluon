@@ -338,10 +338,7 @@ y
     let result = support::typecheck_expr_expected(text, Some(&Type::int())).1;
     let errors: Vec<_> = result.unwrap_err().errors().into();
     assert_eq!(errors.len(), 1);
-    assert_eq!(
-        errors[0].span.map(|loc| loc.absolute),
-        Span::new(13.into(), 14.into())
-    );
+    assert_eq!(errors[0].span, Span::new(14.into(), 15.into()));
 }
 
 #[test]
@@ -365,15 +362,16 @@ fn no_inference_variable_in_error() {
 
     assert_eq!(
         &*format!("{}", result.unwrap_err()).replace("\t", "        "),
-        r#"test:Line: 2, Column: 1: Expected the following types to be equal
+        r#"error: Expected the following types to be equal
 Expected: Int -> a
 Found: ()
 1 errors were found during unification:
 Types do not match:
     Expected: Int -> a
     Found: ()
-() 1
-^~~~
+- <test>:2:1
+2 | () 1
+  | ^^^^
 "#
     );
 }
@@ -391,15 +389,16 @@ eq (A 0) (B 0.0)
 
     assert_eq!(
         &*format!("{}", result.unwrap_err()).replace("\t", "        "),
-        r#"test:Line: 5, Column: 11: Expected the following types to be equal
+        r#"error: Expected the following types to be equal
 Expected: test.A
 Found: test.B
 1 errors were found during unification:
 Types do not match:
     Expected: test.A
     Found: test.B
-eq (A 0) (B 0.0)
-          ^~~~~
+- <test>:5:11
+5 | eq (A 0) (B 0.0)
+  |           ^^^^^
 "#
     );
 }
@@ -417,13 +416,14 @@ f { } { x = 1 }
 
     assert_eq!(
         &*format!("{}", result.unwrap_err()).replace("\t", "        "),
-        r#"test:Line: 4, Column: 7: Expected the following types to be equal
+        r#"error: Expected the following types to be equal
 Expected: ()
 Found: { x : Int }
 1 errors were found during unification:
 The type `()` lacks the following fields: x
-f { } { x = 1 }
-      ^~~~~~~~~
+- <test>:4:7
+4 | f { } { x = 1 }
+  |       ^^^^^^^^^
 "#
     );
 }

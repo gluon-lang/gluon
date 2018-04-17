@@ -329,6 +329,6 @@ fn unterminated_char_literal() {
     let (_expr, err) = result.unwrap_err();
 
     let error = Error::Token(TokenizeError::UnterminatedCharLiteral);
-    let span = pos::span(BytePos::from(5), BytePos::from(5));
+    let span = pos::span(BytePos::from(6), BytePos::from(6));
     assert_eq!(err, ParseErrors::from(vec![pos::spanned(span, error)]));
 }

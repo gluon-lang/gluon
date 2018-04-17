@@ -1,37 +1,37 @@
 //! The thread/vm type
 use std::any::Any;
-use std::sync::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::cmp::Ordering;
 use std::fmt;
 use std::mem;
 use std::ops::{Add, Deref, DerefMut, Div, Mul, Sub};
-use std::string::String as StdString;
 use std::result::Result as StdResult;
+use std::string::String as StdString;
 use std::sync::Arc;
 use std::sync::atomic::{self, AtomicBool};
+use std::sync::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::usize;
 
-use futures::{Async, Future, Poll};
 use future::FutureValue;
+use futures::{Async, Future, Poll};
 
 use base::metadata::Metadata;
 use base::pos::Line;
 use base::symbol::Symbol;
-use base::types::ArcType;
 use base::types;
+use base::types::ArcType;
 
-use {Error, Result, Variants};
-use macros::MacroEnv;
 use api::{Getable, Pushable, ValueRef, VmType};
 use compiler::UpvarInfo;
 use gc::{DataDef, Gc, GcPtr, Generation, Move};
+use macros::MacroEnv;
 use source_map::LocalIter;
 use stack::{Frame, Lock, Stack, StackFrame, State};
 use types::*;
-use vm::{GlobalVmState, GlobalVmStateBuilder, VmEnv};
 use value::{BytecodeFunction, Callable, ClosureData, ClosureDataDef, ClosureInitDef, Def,
             ExternFunction, GcStr, PartialApplicationDataDef, RecordDef, Userdata, Value,
             ValueRepr};
+use vm::{GlobalVmState, GlobalVmStateBuilder, VmEnv};
+use {Error, Result, Variants};
 
 use value::ValueRepr::{Closure, Data, Float, Function, Int, PartialApplication, String};
 
@@ -1064,12 +1064,10 @@ pub struct Context {
 
     /// Stack of polling functions used for extern functions returning futures
     #[cfg_attr(feature = "serde_derive", serde(skip))]
-    poll_fns: Vec<
-        (
-            Option<Lock>,
-            Box<for<'vm> FnMut(&'vm Thread) -> Result<Async<OwnedContext<'vm>>> + Send>,
-        ),
-    >,
+    poll_fns: Vec<(
+        Option<Lock>,
+        Box<for<'vm> FnMut(&'vm Thread) -> Result<Async<OwnedContext<'vm>>> + Send>,
+    )>,
 }
 
 impl Context {

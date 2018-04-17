@@ -49,7 +49,7 @@ use pretty::{self, DocAllocator};
 
 use base::ast::{self, Literal, SpannedExpr, SpannedPattern, Typed, TypedIdent};
 use base::fnv::FnvSet;
-use base::pos::{spanned, BytePos, ExpansionId, Span};
+use base::pos::{spanned, BytePos, Span};
 use base::resolve::remove_aliases_cow;
 use base::symbol::Symbol;
 use base::types::{arg_iter, ArcType, PrimitiveEnv, Type, TypeEnv};
@@ -96,7 +96,7 @@ pub enum Expr<'a> {
     Const(Literal, Span<BytePos>),
     Ident(TypedIdent<Symbol>, Span<BytePos>),
     Call(&'a Expr<'a>, &'a [Expr<'a>]),
-    Data(TypedIdent<Symbol>, &'a [Expr<'a>], BytePos, ExpansionId),
+    Data(TypedIdent<Symbol>, &'a [Expr<'a>], BytePos),
     Let(LetBinding<'a>, &'a Expr<'a>),
     Match(&'a Expr<'a>, &'a [Alternative<'a>]),
 }
@@ -141,7 +141,7 @@ impl<'a> Binder<'a> {
         self.bindings.push(LetBinding {
             name,
             expr: Named::Expr(expr),
-            span_start: ident_expr.span().start,
+            span_start: ident_expr.span().start(),
         });
         ident_expr
     }
@@ -211,7 +211,7 @@ impl<'a> Expr<'a> {
                 prec.enclose(arena, doc)
             }
             Expr::Const(ref l, _) => pretty_literal(l, arena),
-            Expr::Data(ref ctor, args, _, _) => match *ctor.typ {
+            Expr::Data(ref ctor, args, ..) => match *ctor.typ {
                 Type::Record(ref record) => chain![arena;
                             "{",
                             arena.space(),
@@ -324,29 +324,21 @@ impl<'a> Expr<'a> {
         match *self {
             Expr::Call(expr, args) => {
                 let span = expr.span();
-                Span::with_id(
-                    span.start,
-                    args.last().unwrap().span().end,
-                    span.expansion_id,
-                )
+                Span::new(span.start(), args.last().unwrap().span().end())
             }
             Expr::Const(_, span) => span,
-            Expr::Data(_, args, span_start, expansion_id) => {
-                let span_end = args.last().map_or(span_start, |arg| arg.span().end);
-                Span::with_id(span_start, span_end, expansion_id)
+            Expr::Data(_, args, span_start) => {
+                let span_end = args.last().map_or(span_start, |arg| arg.span().end());
+                Span::new(span_start, span_end)
             }
             Expr::Ident(_, span) => span,
             Expr::Let(ref let_binding, ref body) => {
                 let span_end = body.span();
-                Span::with_id(let_binding.span_start, span_end.end, span_end.expansion_id)
+                Span::new(let_binding.span_start, span_end.end())
             }
             Expr::Match(expr, alts) => {
                 let span_start = expr.span();
-                Span::with_id(
-                    span_start.start,
-                    alts.last().unwrap().expr.span().end,
-                    span_start.expansion_id,
-                )
+                Span::new(span_start.start(), alts.last().unwrap().expr.span().end())
             }
         }
     }
@@ -479,7 +471,7 @@ impl<'a, 'e> Translator<'a, 'e> {
         let mut current = expr;
         let mut lets = Vec::new();
         while let ast::Expr::LetBindings(ref binds, ref tail) = current.value {
-            lets.push((current.span.start, binds));
+            lets.push((current.span.start(), binds));
             current = tail;
         }
         let tail = self.translate_(current);
@@ -526,8 +518,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                         typ: array.typ.clone(),
                     },
                     arena.alloc_extend(exprs.into_iter()),
-                    expr.span.start,
-                    expr.span.expansion_id,
+                    expr.span.start(),
                 )
             }
             ast::Expr::Block(ref exprs) => {
@@ -538,7 +529,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                         LetBinding {
                             name: self.dummy_symbol.clone(),
                             expr: Named::Expr(self.translate_alloc(expr)),
-                            span_start: expr.span.start,
+                            span_start: expr.span.start(),
                         },
                         arena.alloc(result),
                     )
@@ -586,7 +577,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                 )
             }
             ast::Expr::Lambda(ref lambda) => self.new_lambda(
-                expr.span.start,
+                expr.span.start(),
                 lambda.id.clone(),
                 lambda
                     .args
@@ -597,7 +588,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                 expr.span,
             ),
             ast::Expr::LetBindings(ref binds, ref tail) => {
-                self.translate_let(binds, self.translate(tail), expr.span.start)
+                self.translate_let(binds, self.translate(tail), expr.span.start())
             }
             ast::Expr::Literal(ref literal) => Expr::Const(literal.clone(), expr.span),
             ast::Expr::Match(ref expr, ref alts) => {
@@ -691,8 +682,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                         typ: typ.clone(),
                     },
                     arena.alloc_extend(args),
-                    expr.span.start,
-                    expr.span.expansion_id,
+                    expr.span.start(),
                 );
                 binder.into_expr(arena, record_constructor)
             }
@@ -707,8 +697,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                         typ: expr.env_type_of(&self.env),
                     },
                     arena.alloc_extend(args.into_iter()),
-                    expr.span.start,
-                    expr.span.expansion_id,
+                    expr.span.start(),
                 )
             },
             ast::Expr::TypeBindings(_, ref expr) => self.translate(expr),
@@ -727,7 +716,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                     binder.bind(self.translate_alloc(bound), bound.env_type_of(&self.env));
 
                 let lambda = self.new_lambda(
-                    expr.span.start,
+                    expr.span.start(),
                     id.value.clone(),
                     vec![id.value.clone()],
                     self.translate_alloc(body),
@@ -792,7 +781,7 @@ impl<'a, 'e> Translator<'a, 'e> {
             let closures = binds
                 .iter()
                 .map(|bind| Closure {
-                    pos: bind.name.span.start,
+                    pos: bind.name.span.start(),
                     name: match bind.name.value {
                         ast::Pattern::Ident(ref id) => id.clone(),
                         _ => unreachable!(),
@@ -833,7 +822,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                 } else {
                     Named::Recursive(vec![
                         Closure {
-                            pos: bind.name.span.start,
+                            pos: bind.name.span.start(),
                             name: name.clone(),
                             args: bind.args.iter().map(|arg| arg.name.value.clone()).collect(),
                             expr: self.translate_alloc(&bind.expr),
@@ -844,7 +833,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                     LetBinding {
                         name: name,
                         expr: named,
-                        span_start: bind.expr.span.start,
+                        span_start: bind.expr.span.start(),
                     },
                     arena.alloc(tail),
                 )
@@ -907,14 +896,13 @@ impl<'a, 'e> Translator<'a, 'e> {
                 typ: data_type,
             },
             arena.alloc_extend(new_args.into_iter()),
-            span.start,
-            span.expansion_id,
+            span.start(),
         );
         if unapplied_args.is_empty() {
             data
         } else {
             self.new_lambda(
-                span.start,
+                span.start(),
                 TypedIdent {
                     name: Symbol::from(format!("${}", id.name)),
                     typ: typ,
@@ -946,7 +934,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                         expr: body,
                     },
                 ]),
-                span_start: span.start,
+                span_start: span.start(),
             },
             arena.alloc(Expr::Ident(name, span)),
         )
@@ -960,7 +948,7 @@ impl<'a> Typed for Expr<'a> {
         match *self {
             Expr::Call(expr, args) => get_return_type(env, &expr.try_type_of(env)?, args.len()),
             Expr::Const(ref literal, _) => literal.try_type_of(env),
-            Expr::Data(ref id, _, _, _) => Ok(id.typ.clone()),
+            Expr::Data(ref id, ..) => Ok(id.typ.clone()),
             Expr::Ident(ref id, _) => Ok(id.typ.clone()),
             Expr::Let(_, ref body) => body.try_type_of(env),
             Expr::Match(_, alts) => alts[0].expr.try_type_of(env),
@@ -1467,7 +1455,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     LetBinding {
                         name: name,
                         expr: Named::Expr(expr),
-                        span_start: expr.span().start,
+                        span_start: expr.span().start(),
                     },
                     self.translate(default, &[id_expr], equations),
                 )

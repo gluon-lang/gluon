@@ -630,7 +630,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
                 match_reduce!{
                     pattern_expr, wrap;
 
-                    Expr::Data(ref data_id, ref exprs, _, _) => {
+                    Expr::Data(ref data_id, ref exprs, _) => {
                         for pattern_field in fields {
                             let field = data_id
                                 .typ

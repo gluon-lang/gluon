@@ -1,5 +1,7 @@
 #![allow(unused)]
 
+pub extern crate codespan;
+
 use base::ast::{walk_mut_alias, walk_mut_ast_type, walk_mut_expr, walk_mut_pattern, Alternative,
                 Argument, Array, AstType, DisplayEnv, Expr, ExprField, IdentEnv, Lambda, Literal,
                 MutVisitor, Pattern, SpannedAlias, SpannedAstType, SpannedExpr, SpannedIdent,
@@ -38,37 +40,40 @@ where
 }
 
 /// MutVisitor that clears spans.
-pub struct NoSpan;
+pub struct ModifySpan<F>(F);
 
-impl<'a> MutVisitor<'a> for NoSpan {
+impl<'a, F> MutVisitor<'a> for ModifySpan<F>
+where
+    F: FnMut(Span<BytePos>) -> Span<BytePos>,
+{
     type Ident = String;
 
     fn visit_expr(&mut self, e: &mut SpannedExpr<Self::Ident>) {
-        e.span = Span::default();
+        e.span = (self.0)(e.span);
         walk_mut_expr(self, e);
     }
 
     fn visit_pattern(&mut self, p: &mut SpannedPattern<Self::Ident>) {
-        p.span = Span::default();
+        p.span = (self.0)(p.span);
         walk_mut_pattern(self, &mut p.value);
     }
 
     fn visit_spanned_typed_ident(&mut self, id: &mut SpannedIdent<Self::Ident>) {
-        id.span = Span::default();
+        id.span = (self.0)(id.span);
         self.visit_ident(&mut id.value)
     }
 
     fn visit_alias(&mut self, alias: &mut SpannedAlias<Self::Ident>) {
-        alias.span = Span::default();
+        alias.span = (self.0)(alias.span);
         walk_mut_alias(self, alias);
     }
 
     fn visit_spanned_ident(&mut self, s: &mut Spanned<Self::Ident, BytePos>) {
-        s.span = Span::default();
+        s.span = (self.0)(s.span);
     }
 
     fn visit_ast_type(&mut self, s: &mut SpannedAstType<Self::Ident>) {
-        s.span = Span::default();
+        s.span = (self.0)(s.span);
         walk_mut_ast_type(self, s);
     }
 }
@@ -79,39 +84,59 @@ pub fn parse(
     let mut symbols = MockEnv::new();
 
     let mut expr = parse_string(&mut symbols, input)?;
-    let op_table = OpTable::new(vec![
-        ("*", OpMeta::new(7, Fixity::Left)),
-        ("/", OpMeta::new(7, Fixity::Left)),
-        ("%", OpMeta::new(7, Fixity::Left)),
-        ("+", OpMeta::new(6, Fixity::Left)),
-        ("-", OpMeta::new(6, Fixity::Left)),
-        (":", OpMeta::new(5, Fixity::Right)),
-        ("++", OpMeta::new(5, Fixity::Right)),
-        ("&&", OpMeta::new(3, Fixity::Right)),
-        ("||", OpMeta::new(2, Fixity::Right)),
-        ("$", OpMeta::new(0, Fixity::Right)),
-        ("==", OpMeta::new(4, Fixity::Left)),
-        ("/=", OpMeta::new(4, Fixity::Left)),
-        ("<", OpMeta::new(4, Fixity::Left)),
-        (">", OpMeta::new(4, Fixity::Left)),
-        ("<=", OpMeta::new(4, Fixity::Left)),
-        (">=", OpMeta::new(4, Fixity::Left)),
-        // Hack for some library operators
-        ("<<", OpMeta::new(9, Fixity::Right)),
-        (">>", OpMeta::new(9, Fixity::Left)),
-        ("<|", OpMeta::new(0, Fixity::Right)),
-        ("|>", OpMeta::new(0, Fixity::Left)),
-    ].into_iter().map(|(s, op)| (s.to_string(), op)));
+    let op_table = OpTable::new(
+        vec![
+            ("*", OpMeta::new(7, Fixity::Left)),
+            ("/", OpMeta::new(7, Fixity::Left)),
+            ("%", OpMeta::new(7, Fixity::Left)),
+            ("+", OpMeta::new(6, Fixity::Left)),
+            ("-", OpMeta::new(6, Fixity::Left)),
+            (":", OpMeta::new(5, Fixity::Right)),
+            ("++", OpMeta::new(5, Fixity::Right)),
+            ("&&", OpMeta::new(3, Fixity::Right)),
+            ("||", OpMeta::new(2, Fixity::Right)),
+            ("$", OpMeta::new(0, Fixity::Right)),
+            ("==", OpMeta::new(4, Fixity::Left)),
+            ("/=", OpMeta::new(4, Fixity::Left)),
+            ("<", OpMeta::new(4, Fixity::Left)),
+            (">", OpMeta::new(4, Fixity::Left)),
+            ("<=", OpMeta::new(4, Fixity::Left)),
+            (">=", OpMeta::new(4, Fixity::Left)),
+            // Hack for some library operators
+            ("<<", OpMeta::new(9, Fixity::Right)),
+            (">>", OpMeta::new(9, Fixity::Left)),
+            ("<|", OpMeta::new(0, Fixity::Right)),
+            ("|>", OpMeta::new(0, Fixity::Left)),
+        ].into_iter()
+            .map(|(s, op)| (s.to_string(), op)),
+    );
 
     let mut reparser = Reparser::new(op_table, &mut symbols);
-    reparser.reparse(&mut expr).map_err(|err| (None, err.into_iter().map(|err| err.map(Error::from)).collect::<ParseErrors>()))?;
+    reparser.reparse(&mut expr).map_err(|err| {
+        (
+            None,
+            err.into_iter()
+                .map(|err| err.map(Error::from))
+                .collect::<ParseErrors>(),
+        )
+    })?;
     Ok(expr)
 }
 
 /// Clears spans of the expression.
 pub fn clear_span(mut expr: SpannedExpr<String>) -> SpannedExpr<String> {
-    use support::NoSpan;
-    NoSpan.visit_expr(&mut expr);
+    ModifySpan(|_| Span::default()).visit_expr(&mut expr);
+    expr
+}
+
+/// Start all positions from 0
+pub fn zero_index(mut expr: SpannedExpr<String>) -> SpannedExpr<String> {
+    ModifySpan(|span: Span<BytePos>| -> Span<BytePos> {
+        Span::new(
+            (span.start().to_usize() as u32 - 1).into(),
+            (span.end().to_usize() as u32 - 1).into(),
+        )
+    }).visit_expr(&mut expr);
     expr
 }
 
@@ -119,7 +144,18 @@ macro_rules! parse_new {
     ($input:expr) => {{
         // Replace windows line endings so that byte positions match up on multiline expressions
         let input = $input.replace("\r\n", "\n");
-        parse(&input).unwrap_or_else(|(_, err)| panic!("{}", ::base::error::InFile::new("test", &input, err)))
+        let mut source = ::support::codespan::CodeMap::new();
+        source.add_filemap(::support::codespan::FileName::virtual_("test"), input.clone());
+        parse(&input)
+            .unwrap_or_else(|(_, err)| {
+                panic!("{}", ::base::error::InFile::new(source, err))
+            })
+    }}
+}
+
+macro_rules! parse_zero_index {
+    ($input:expr) => {{
+        zero_index(parse_new!($input))
     }}
 }
 

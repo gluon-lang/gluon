@@ -12,6 +12,9 @@ extern crate pretty;
 extern crate quick_error;
 extern crate smallvec;
 
+extern crate codespan;
+extern crate codespan_reporting;
+
 extern crate ordered_float;
 #[cfg(feature = "serde_derive")]
 #[macro_use]

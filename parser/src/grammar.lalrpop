@@ -13,7 +13,7 @@ use ordered_float::NotNaN;
 
 use {Error, ErrorEnv, FieldExpr, FieldPattern, MutIdentEnv};
 
-grammar<'input, 'env, Id>(src: &'input str, type_cache: &TypeCache<Id, ArcType<Id>>, env: MutIdentEnv<'env, Id>, errors: ErrorEnv<'env, 'input>)
+grammar<'input, 'env, Id>(type_cache: &TypeCache<Id, ArcType<Id>>, env: MutIdentEnv<'env, Id>, errors: ErrorEnv<'env, 'input>)
     where Id: Clone;
 
 extern {
@@ -352,7 +352,7 @@ AtomicPattern: Pattern<Id> = {
             fields: values,
             implicit_import: implicit_import
                 .value
-                .map(|_| pos::spanned(implicit_import_span, env.from_str(&format!("implicit?{}", implicit_import_span.start)))),
+                .map(|_| pos::spanned(implicit_import_span, env.from_str(&format!("implicit?{}", implicit_import_span.start())))),
         }
     },
 };
@@ -394,7 +394,7 @@ Alternative: Alternative<Id> = {
     },
     "|" <pat: Sp<NoErrorPattern>> <err: !> <end: @R>  => {
         errors.push(err.error);
-        let span = pos::Span::new(pat.span.end, end);
+        let span = pos::Span::new(pat.span.end(), end);
         Alternative {
             pattern: pat,
             expr: pos::spanned(span, Expr::Error(None)),

@@ -1,3 +1,4 @@
+extern crate codespan;
 #[macro_use]
 extern crate collect_mac;
 extern crate either;
@@ -13,15 +14,14 @@ use std::path::PathBuf;
 use either::Either;
 
 use base::ast::{expr_to_path, walk_mut_expr, Expr, MutVisitor, SpannedExpr, TypedIdent};
-use base::pos::{self, BytePos};
-use base::types::Type;
-use base::source::Source;
+use base::pos::{BytePos, Span};
 use base::symbol::Symbol;
+use base::types::Type;
 use completion::{Suggestion, SuggestionQuery};
 
 #[allow(unused)]
 mod support;
-use support::MockEnv;
+use support::{loc, MockEnv};
 
 fn suggest_types(s: &str, pos: BytePos) -> Result<Vec<Suggestion>, ()> {
     suggest_query(&SuggestionQuery::new(), s, pos)
@@ -63,19 +63,13 @@ fn suggest_query(query: &SuggestionQuery, s: &str, pos: BytePos) -> Result<Vec<S
 
     ReplaceImport.visit_expr(&mut expr);
 
-    let mut vec = query.suggest(&env, &expr, pos);
+    let mut vec = query.suggest(&env, expr.span, &expr, pos);
     vec.sort_by(|l, r| l.name.cmp(&r.name));
     Ok(vec)
 }
 
 fn suggest_loc(s: &str, row: usize, column: usize) -> Result<Vec<String>, ()> {
-    suggest(
-        s,
-        Source::new(s)
-            .lines()
-            .offset(row.into(), column.into())
-            .expect("Position is not in source"),
-    )
+    suggest(s, loc(s, row, column))
 }
 fn suggest_query_loc(
     query: &SuggestionQuery,
@@ -83,14 +77,8 @@ fn suggest_query_loc(
     row: usize,
     column: usize,
 ) -> Result<Vec<String>, ()> {
-    suggest_query(
-        query,
-        s,
-        Source::new(s)
-            .lines()
-            .offset(row.into(), column.into())
-            .expect("Position is not in source"),
-    ).map(|vec| vec.into_iter().map(|suggestion| suggestion.name).collect())
+    suggest_query(query, s, loc(s, row, column))
+        .map(|vec| vec.into_iter().map(|suggestion| suggestion.name).collect())
 }
 
 fn suggest(s: &str, pos: BytePos) -> Result<Vec<String>, ()> {
@@ -186,14 +174,11 @@ Te
 #[test]
 fn suggest_after_dot() {
     let _ = env_logger::try_init();
-
-    let result = suggest(
-        r#"
+    let text = r#"
 let record = { aa = 1, ab = 2, c = "" }
 record.
-"#,
-        BytePos::from(48),
-    );
+"#;
+    let result = suggest(text, loc(text, 2, 7));
     let expected = Ok(vec!["aa".into(), "ab".into(), "c".into()]);
 
     assert_eq!(result, expected);
@@ -202,14 +187,11 @@ record.
 #[test]
 fn suggest_from_record_unpack() {
     let _ = env_logger::try_init();
-
-    let result = suggest(
-        r#"
+    let text = r#"
 let { aa, c } = { aa = 1, ab = 2, c = "" }
 a
-"#,
-        BytePos::from(45),
-    );
+"#;
+    let result = suggest(text, loc(text, 2, 1));
     let expected = Ok(vec!["aa".into()]);
 
     assert_eq!(result, expected);
@@ -226,12 +208,10 @@ a
 "#,
         BytePos::from(47),
     );
-    let expected = Ok(vec![
-        Suggestion {
-            name: "aa".into(),
-            typ: Either::Right(Type::int()),
-        },
-    ]);
+    let expected = Ok(vec![Suggestion {
+        name: "aa".into(),
+        typ: Either::Right(Type::int()),
+    }]);
 
     assert_eq!(result, expected);
 }
@@ -310,12 +290,12 @@ let abb = 2
 test  test1
 ""  123
 "#;
-    let result = suggest(text, BytePos::from(30));
+    let result = suggest(text, loc(text, 3, 5));
     let expected = Ok(vec!["abb".into(), "abc".into()]);
 
     assert_eq!(result, expected);
 
-    let result = suggest(text, BytePos::from(40));
+    let result = suggest(text, loc(text, 4, 3));
     let expected = Ok(vec!["abb".into(), "abc".into()]);
 
     assert_eq!(result, expected);
@@ -373,7 +353,7 @@ fn suggest_record_field_in_pattern_at_nothing() {
 let { ab } = { x = 1, abc = "", abcd = 2 }
 ()
 "#;
-    let result = suggest(text, BytePos::from(10));
+    let result = suggest(text, loc(text, 1, 10));
     let expected = Ok(vec!["abc".into(), "abcd".into(), "x".into()]);
 
     assert_eq!(result, expected);
@@ -485,22 +465,13 @@ import! std.prelud
         paths: vec![find_gluon_root()],
         ..SuggestionQuery::default()
     };
-    let result = suggest_query(
-        &query,
-        text,
-        Source::new(text)
-            .lines()
-            .offset(1.into(), 12.into())
-            .expect("Position is not in source"),
-    );
+    let result = suggest_query(&query, text, loc(text, 1, 12));
     assert!(result.is_ok());
 
-    let expected = Ok(vec![
-        Suggestion {
-            name: "prelude".into(),
-            typ: Either::Right(Type::int()),
-        },
-    ]);
+    let expected = Ok(vec![Suggestion {
+        name: "prelude".into(),
+        typ: Either::Right(Type::int()),
+    }]);
 
     assert_eq!(result, expected);
 }
@@ -704,8 +675,10 @@ match Abc 1 with
     let env = MockEnv::new();
 
     let (mut expr, _result) = support::typecheck_partial_expr(text);
-    expr.span.expansion_id = pos::UNKNOWN_EXPANSION;
-    let result: Vec<_> = completion::suggest(&env, &expr, 42.into())
+    let source_span = expr.span;
+    // Mark the expression as if it was macro expanded
+    expr.span = Span::new(0.into(), 0.into());
+    let result: Vec<_> = completion::suggest(&env, source_span, &expr, loc(text, 3, 1))
         .into_iter()
         .map(|s| s.name)
         .collect();
@@ -728,8 +701,10 @@ match Abc 1 with
     let env = MockEnv::new();
 
     let (mut expr, _result) = support::typecheck_partial_expr(text);
-    expr.span.expansion_id = pos::UNKNOWN_EXPANSION;
-    let result: Vec<_> = completion::suggest(&env, &expr, 74.into())
+    let source_span = expr.span;
+    // Mark the expression as if it was macro expanded
+    expr.span = Span::new(0.into(), 0.into());
+    let result: Vec<_> = completion::suggest(&env, source_span, &expr, loc(text, 5, 2))
         .into_iter()
         .map(|s| s.name)
         .collect();

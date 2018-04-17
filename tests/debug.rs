@@ -4,16 +4,16 @@ extern crate env_logger;
 extern crate futures;
 extern crate gluon;
 
-use std::sync::{Arc, Mutex};
 use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 
 use futures::{Async, Future};
 
 use gluon::base::pos::Line;
 use gluon::base::types::{ArcType, Type};
-use gluon::{new_vm, Compiler};
 use gluon::vm::compiler::UpvarInfo;
 use gluon::vm::thread::{HookFlags, ThreadInternal};
+use gluon::{new_vm, Compiler};
 
 const SIMPLE_EXPR: &'static str = r#"
     let f x = x
@@ -177,6 +177,7 @@ fn implicit_prelude_lines_not_counted() {
     {
         let mut context = thread.context();
         context.set_hook(Some(Box::new(move |_, debug_info| {
+            eprintln!("{}", debug_info.stack_info(0).unwrap().source_name());
             if debug_info.stack_info(0).unwrap().source_name() == "test" {
                 Ok(Async::NotReady)
             } else {
@@ -198,7 +199,7 @@ fn implicit_prelude_lines_not_counted() {
                 let context = thread.context();
                 let debug_info = context.debug_info();
                 let stack_info = debug_info.stack_info(0).unwrap();
-                lines.push(stack_info.line().unwrap());
+                lines.extend(stack_info.line());
             }
             Err(err) => panic!("{}", err),
         }
@@ -256,21 +257,21 @@ fn read_variables() {
                 vec![
                     ("x".to_string(), Type::int()),
                     ("y2".to_string(), Type::string()),
-                ]
+                ],
             ),
             (
                 6,
                 vec![
                     ("x".to_string(), Type::int()),
                     ("y".to_string(), Type::unit()),
-                ]
+                ],
             ),
             (
                 7,
                 vec![
                     ("x".to_string(), Type::int()),
                     ("y".to_string(), Type::unit()),
-                ]
+                ],
             ),
             (
                 8,
@@ -278,7 +279,7 @@ fn read_variables() {
                     ("x".to_string(), Type::int()),
                     ("y".to_string(), Type::unit()),
                     ("z".to_string(), Type::float()),
-                ]
+                ],
             ),
         ]
     );

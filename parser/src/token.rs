@@ -3,6 +3,8 @@ use base::pos::{self, BytePos, Column, Line, Location, Spanned};
 use std::fmt;
 use std::str::Chars;
 
+use codespan::ByteOffset;
+
 use self::Error::*;
 
 #[derive(Clone, PartialEq, Debug)]
@@ -197,14 +199,17 @@ struct CharLocations<'input> {
 }
 
 impl<'input> CharLocations<'input> {
-    pub fn new(input: &'input str) -> CharLocations<'input> {
+    pub fn new<S>(input: &'input S) -> CharLocations<'input>
+    where
+        S: ?Sized + ::ParserSource,
+    {
         CharLocations {
             location: Location {
                 line: Line::from(0),
                 column: Column::from(1),
-                absolute: BytePos::from(0),
+                absolute: input.start_index(),
             },
-            chars: input.chars(),
+            chars: input.src().chars(),
         }
     }
 }
@@ -231,18 +236,23 @@ pub struct Tokenizer<'input> {
     chars: CharLocations<'input>,
     eof_location: Location,
     lookahead: Option<(Location, char)>,
+    start_index: BytePos,
 }
 
 impl<'input> Tokenizer<'input> {
-    pub fn new(input: &'input str) -> Tokenizer<'input> {
+    pub fn new<S>(input: &'input S) -> Tokenizer<'input>
+    where
+        S: ?Sized + ::ParserSource,
+    {
         let mut chars = CharLocations::new(input);
         let eof_location = chars.location;
 
         Tokenizer {
-            input: input,
+            input: input.src(),
             eof_location: eof_location,
             lookahead: chars.next(),
             chars: chars,
+            start_index: input.start_index(),
         }
     }
 
@@ -272,8 +282,8 @@ impl<'input> Tokenizer<'input> {
     }
 
     fn slice(&self, start: Location, end: Location) -> &'input str {
-        let start = start.absolute;
-        let end = end.absolute;
+        let start = start.absolute - ByteOffset::from(self.start_index.to_usize() as i64);
+        let end = end.absolute - ByteOffset::from(self.start_index.to_usize() as i64);
 
         &self.input[start.to_usize()..end.to_usize()]
     }
@@ -554,7 +564,7 @@ impl<'input> Iterator for Tokenizer<'input> {
                     Ok(None) => continue,
                     Err(err) => Some(Err(err)),
                 },
-                '#' if start.absolute == BytePos::from(0) && self.test_lookahead(|ch| {
+                '#' if start.absolute == self.start_index && self.test_lookahead(|ch| {
                     ch == '!'
                 }) =>
                 {
@@ -611,18 +621,19 @@ fn i64_from_hex(hex: &str, is_positive: bool) -> Result<i64, Error> {
 mod test {
     use base::ast::Comment;
     use base::pos::{self, BytePos, Column, Line, Location, Spanned};
-    use base::source;
+
+    use codespan::{ByteOffset, ColumnOffset};
 
     use super::*;
     use super::{error, Tokenizer};
     use token::Token;
     use token::Token::*;
 
-    fn loc(byte: usize) -> Location {
+    fn loc(byte: u32) -> Location {
         Location {
             line: Line::from(0),
             column: Column::from(byte + 1),
-            absolute: BytePos::from(byte),
+            absolute: BytePos::from(byte + 1),
         }
     }
 
@@ -638,20 +649,24 @@ mod test {
     }
 
     fn test(input: &str, expected: Vec<(&str, Token)>) {
+        use base::source::Source;
+
         let mut tokenizer = tokenizer(input);
         let mut count = 0;
         let length = expected.len();
-        let source = source::Lines::new(input.as_bytes().iter().cloned());
+        let source = ::codespan::FileMap::new("test".into(), input.to_string());
         for (token, (expected_span, expected_tok)) in tokenizer.by_ref().zip(expected.into_iter()) {
             count += 1;
             println!("{:?}", token);
-            let start_byte = expected_span.find("~").unwrap();
-            let mut start = source.location(start_byte.into()).unwrap();
-            start.column += Column::from(1);
+            let start_byte =
+                source.span().start() + ByteOffset::from(expected_span.find("~").unwrap() as i64);
+            let mut start = Source::location(&source, start_byte).unwrap();
+            start.column += ColumnOffset::from(1);
 
-            let end_byte = expected_span.rfind("~").unwrap() + 1;
-            let mut end = source.location(end_byte.into()).unwrap();
-            end.column += Column::from(1);
+            let end_byte = source.span().start()
+                + ByteOffset::from(expected_span.rfind("~").unwrap() as i64 + 1);
+            let mut end = Source::location(&source, end_byte.into()).unwrap();
+            end.column += ColumnOffset::from(1);
 
             assert_eq!(Ok(pos::spanned2(start, end, expected_tok)), token);
         }

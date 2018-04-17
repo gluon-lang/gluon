@@ -26,6 +26,8 @@ gluon_parser = { path = "../parser", version = "0.7.1", optional = true } # GLUO
 
 [dev-dependencies]
 env_logger = "0.5"
+codespan = "0.1.1"
+
 gluon_format = { path = "../format", version = "0.7.0" } # GLUON
 
 collect-mac = "0.1.0"

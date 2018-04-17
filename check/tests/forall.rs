@@ -57,8 +57,8 @@ in f "123"
     let errors: Vec<_> = result.unwrap_err().errors().into();
     assert_eq!(errors.len(), 1);
     assert_eq!(
-        errors[0].span.map(|loc| loc.absolute),
-        Span::new(BytePos::from(26), BytePos::from(31))
+        errors[0].span,
+        Span::new(BytePos::from(27), BytePos::from(32))
     );
 }
 

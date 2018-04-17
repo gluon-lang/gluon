@@ -1,6 +1,7 @@
 //! Primitive auto completion and type quering on ASTs
 #![doc(html_root_url = "https://docs.rs/gluon_completion/0.7.1")] // # GLUON
 
+extern crate codespan;
 extern crate either;
 extern crate itertools;
 extern crate walkdir;
@@ -8,22 +9,24 @@ extern crate walkdir;
 extern crate gluon_base as base;
 
 use std::borrow::Cow;
-use std::iter::once;
 use std::cmp::Ordering;
+use std::iter::once;
 use std::path::PathBuf;
+
+use codespan::ByteOffset;
 
 use either::Either;
 
 use itertools::Itertools;
 
-use base::filename_to_module;
 use base::ast::{walk_expr, walk_pattern, AstType, Expr, Pattern, PatternField, SpannedExpr,
                 SpannedIdent, SpannedPattern, Typed, TypedIdent, Visitor};
+use base::filename_to_module;
 use base::fnv::{FnvMap, FnvSet};
 use base::kind::{ArcKind, Kind};
 use base::metadata::Metadata;
+use base::pos::{self, BytePos, HasSpan, Span, Spanned};
 use base::resolve;
-use base::pos::{self, BytePos, HasSpan, Span, Spanned, NO_EXPANSION};
 use base::scoped_map::ScopedMap;
 use base::symbol::{Name, Symbol, SymbolRef};
 use base::types::{walk_type_, AliasData, ArcType, ControlVisitation, Generic, Type, TypeEnv};
@@ -214,6 +217,10 @@ struct FindVisitor<'a, F> {
     found: MatchState<'a>,
     enclosing_matches: Vec<Match<'a>>,
     near_matches: Vec<Match<'a>>,
+
+    /// The span of the currently inspected expression, used to determine if a position is in that
+    /// expression or outside it (macro expanded)
+    source_span: Span<BytePos>,
 }
 
 impl<'a, F> FindVisitor<'a, F> {
@@ -227,7 +234,7 @@ impl<'a, F> FindVisitor<'a, F> {
         loop {
             match iter.peek() {
                 Some(expr) => {
-                    match span(expr).containment(&self.pos) {
+                    match span(expr).containment(self.pos) {
                         Ordering::Equal => {
                             break;
                         }
@@ -244,6 +251,10 @@ impl<'a, F> FindVisitor<'a, F> {
         }
         (false, iter.next())
     }
+
+    fn is_macro_expanded(&self, span: Span<BytePos>) -> bool {
+        span.start().0 == 0 || !self.source_span.contains(span)
+    }
 }
 
 struct VisitUnExpanded<'a: 'e, 'e, F: 'e>(&'e mut FindVisitor<'a, F>);
@@ -256,7 +267,7 @@ where
 
     fn visit_expr(&mut self, e: &'a SpannedExpr<Self::Ident>) {
         if let MatchState::NotFound = self.0.found {
-            if e.span.expansion_id == NO_EXPANSION {
+            if !self.0.is_macro_expanded(e.span) {
                 self.0.visit_expr(e);
             } else {
                 match e.value {
@@ -284,7 +295,7 @@ where
     }
 
     fn visit_pattern(&mut self, e: &'a SpannedPattern<Self::Ident>) {
-        if e.span.expansion_id == NO_EXPANSION {
+        if !self.0.is_macro_expanded(e.span) {
             self.0.visit_pattern(e);
         } else {
             // Add variables into scope
@@ -354,7 +365,7 @@ where
     }
 
     fn visit_pattern(&mut self, current: &'a SpannedPattern<Symbol>) {
-        if current.span.containment(&self.pos) == Ordering::Equal {
+        if current.span.containment(self.pos) == Ordering::Equal {
             self.enclosing_matches.push(Match::Pattern(current));
         } else {
             self.near_matches.push(Match::Pattern(current));
@@ -364,10 +375,10 @@ where
             Pattern::As(_, ref pat) => self.visit_pattern(pat),
             Pattern::Constructor(ref id, ref args) => {
                 let id_span = Span::new(
-                    current.span.start,
-                    current.span.start + BytePos::from(id.as_ref().len()),
+                    current.span.start(),
+                    current.span.start() + ByteOffset::from(id.as_ref().len() as i64),
                 );
-                if id_span.containment(&self.pos) == Ordering::Equal {
+                if id_span.containment(self.pos) == Ordering::Equal {
                     self.found = MatchState::Found(Match::Pattern(current));
                     return;
                 }
@@ -383,22 +394,22 @@ where
                 ref fields,
                 ..
             } => {
-                let iter = types
-                    .iter()
-                    .map(Either::Left)
-                    .merge_by(fields.iter().map(Either::Right), |l, r| {
-                        l.left().unwrap().name.span.start < r.right().unwrap().name.span.start
-                    });
+                let iter = types.iter().map(Either::Left).merge_by(
+                    fields.iter().map(Either::Right),
+                    |l, r| {
+                        l.left().unwrap().name.span.start() < r.right().unwrap().name.span.start()
+                    },
+                );
                 let (on_whitespace, selected) = self.select_spanned(iter, |either| {
                     either.either(
                         |type_field| type_field.name.span,
                         |field| {
                             Span::new(
-                                field.name.span.start,
+                                field.name.span.start(),
                                 field
                                     .value
                                     .as_ref()
-                                    .map_or(field.name.span.end, |p| p.span.end),
+                                    .map_or(field.name.span.end(), |p| p.span.end()),
                             )
                         },
                     )
@@ -409,7 +420,7 @@ where
                 } else if let Some(either) = selected {
                     match either {
                         Either::Left(type_field) => {
-                            if type_field.name.span.containment(&self.pos) == Ordering::Equal {
+                            if type_field.name.span.containment(self.pos) == Ordering::Equal {
                                 let field_type = typ.type_field_iter()
                                     .find(|it| it.name.name_eq(&type_field.name.value))
                                     .map(|it| it.typ.as_type())
@@ -424,7 +435,7 @@ where
                             }
                         }
                         Either::Right(field) => match (
-                            field.name.span.containment(&self.pos),
+                            field.name.span.containment(self.pos),
                             &field.value,
                         ) {
                             (Ordering::Equal, _) => {
@@ -451,7 +462,7 @@ where
                 self.visit_pattern(field.unwrap());
             }
             Pattern::Ident(_) | Pattern::Literal(_) | Pattern::Error => {
-                self.found = if current.span.containment(&self.pos) == Ordering::Equal {
+                self.found = if current.span.containment(self.pos) == Ordering::Equal {
                     MatchState::Found(Match::Pattern(current))
                 } else {
                     MatchState::Empty
@@ -463,12 +474,12 @@ where
     fn visit_expr(&mut self, current: &'a SpannedExpr<Symbol>) {
         // When inside a macro expanded expression we do a exhaustive search for an unexpanded
         // expression
-        if current.span.expansion_id != NO_EXPANSION {
+        if self.is_macro_expanded(current.span) {
             VisitUnExpanded(self).visit_expr(current);
             return;
         }
 
-        if current.span.containment(&self.pos) == Ordering::Equal {
+        if current.span.containment(self.pos) == Ordering::Equal {
             self.enclosing_matches.push(Match::Expr(current));
         } else {
             self.near_matches.push(Match::Expr(current));
@@ -476,7 +487,7 @@ where
 
         match current.value {
             Expr::Ident(_) | Expr::Literal(_) => {
-                self.found = if current.span.containment(&self.pos) == Ordering::Equal {
+                self.found = if current.span.containment(self.pos) == Ordering::Equal {
                     MatchState::Found(Match::Expr(current))
                 } else {
                     MatchState::Empty
@@ -494,7 +505,7 @@ where
                 let iter = once(Ok(&**expr)).chain(alts.iter().map(Err));
                 let (_, sel) = self.select_spanned(iter, |x| match *x {
                     Ok(e) => e.span,
-                    Err(alt) => Span::new(alt.pattern.span.start, alt.expr.span.end),
+                    Err(alt) => Span::new(alt.pattern.span.start(), alt.expr.span.end()),
                 });
                 match sel.unwrap() {
                     Ok(expr) => {
@@ -521,8 +532,8 @@ where
                 ref rhs,
                 ..
             } => match (
-                lhs.span.containment(&self.pos),
-                rhs.span.containment(&self.pos),
+                lhs.span.containment(self.pos),
+                rhs.span.containment(self.pos),
             ) {
                 (Ordering::Greater, Ordering::Less) => {
                     self.found =
@@ -536,7 +547,7 @@ where
                     self.on_found.on_pattern(&bind.name);
                 }
                 match self.select_spanned(bindings, |b| {
-                    Span::new(b.name.span.start, b.expr.span.end)
+                    Span::new(b.name.span.start(), b.expr.span.end())
                 }) {
                     (false, Some(bind)) => {
                         for arg in &bind.args {
@@ -568,7 +579,7 @@ where
                 match self.select_spanned(iter, |x| x.either(|b| b.span(), |e| e.span)) {
                     (_, Some(either)) => match either {
                         Either::Left(bind) => {
-                            if bind.name.span.containment(&self.pos) == Ordering::Equal {
+                            if bind.name.span.containment(self.pos) == Ordering::Equal {
                                 self.found = MatchState::Found(Match::Type(
                                     bind.name.span,
                                     &bind.alias.value.name,
@@ -587,7 +598,7 @@ where
                 }
             }
             Expr::Projection(ref expr, ref id, ref typ) => {
-                if expr.span.containment(&self.pos) <= Ordering::Equal {
+                if expr.span.containment(self.pos) <= Ordering::Equal {
                     self.visit_expr(expr);
                 } else {
                     self.enclosing_matches.push(Match::Expr(current));
@@ -659,7 +670,7 @@ where
         match **typ {
             // ExtendRow do not have spans set properly so recurse unconditionally
             Type::ExtendRow { .. } => (),
-            _ if typ.span().containment(&self.pos) != Ordering::Equal => return,
+            _ if typ.span().containment(self.pos) != Ordering::Equal => return,
             _ => (),
         }
         match **typ {
@@ -695,7 +706,12 @@ where
     }
 }
 
-fn complete_at<F>(on_found: F, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Result<Found, ()>
+fn complete_at<F>(
+    on_found: F,
+    source_span: Span<BytePos>,
+    expr: &SpannedExpr<Symbol>,
+    pos: BytePos,
+) -> Result<Found, ()>
 where
     F: OnFound,
 {
@@ -705,6 +721,7 @@ where
         found: MatchState::NotFound,
         enclosing_matches: vec![Match::Expr(expr)],
         near_matches: vec![],
+        source_span,
     };
     visitor.visit_expr(expr);
     let enclosing_matches = visitor.enclosing_matches;
@@ -828,28 +845,39 @@ macro_rules! tuple_extract_ {
 
 tuple_extract!{A B C D E F G H}
 
-pub fn completion<T>(extract: T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Result<T::Output, ()>
+pub fn completion<T>(
+    extract: T,
+    source_span: Span<BytePos>,
+    expr: &SpannedExpr<Symbol>,
+    pos: BytePos,
+) -> Result<T::Output, ()>
 where
     T: Extract,
 {
-    let found = complete_at((), expr, pos)?;
+    let found = complete_at((), source_span, expr, pos)?;
     extract.extract(&found)
 }
 
-pub fn find<T>(env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Result<ArcType, ()>
+pub fn find<T>(
+    env: &T,
+    source_span: Span<BytePos>,
+    expr: &SpannedExpr<Symbol>,
+    pos: BytePos,
+) -> Result<ArcType, ()>
 where
     T: TypeEnv,
 {
     let extract = TypeAt { env };
-    completion(extract, expr, pos)
+    completion(extract, source_span, expr, pos)
 }
 
 pub fn find_all_symbols(
+    source_span: Span<BytePos>,
     expr: &SpannedExpr<Symbol>,
     pos: BytePos,
 ) -> Result<(String, Vec<Span<BytePos>>), ()> {
     let extract = IdentAt;
-    completion(extract, expr, pos).map(|symbol| {
+    completion(extract, source_span, expr, pos).map(|symbol| {
         struct ExtractIdents {
             result: Vec<Span<BytePos>>,
             symbol: Symbol,
@@ -944,17 +972,23 @@ pub fn all_symbols(expr: &SpannedExpr<Symbol>) -> Vec<Spanned<CompletionSymbol, 
     visitor.result
 }
 
-pub fn suggest<T>(env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Vec<Suggestion>
+pub fn suggest<T>(
+    env: &T,
+    source_span: Span<BytePos>,
+    expr: &SpannedExpr<Symbol>,
+    pos: BytePos,
+) -> Vec<Suggestion>
 where
     T: TypeEnv,
 {
-    SuggestionQuery::default().suggest(env, expr, pos)
+    SuggestionQuery::default().suggest(env, source_span, expr, pos)
 }
 
 pub struct SuggestionQuery {
     pub paths: Vec<PathBuf>,
     pub modules: Vec<Cow<'static, str>>,
     pub prefix_filter: bool,
+    pub span: Option<Span<BytePos>>,
 }
 
 impl Default for SuggestionQuery {
@@ -963,6 +997,7 @@ impl Default for SuggestionQuery {
             paths: Vec::new(),
             modules: Vec::new(),
             prefix_filter: true,
+            span: None,
         }
     }
 }
@@ -1029,13 +1064,19 @@ impl SuggestionQuery {
         }
     }
 
-    pub fn suggest<T>(&self, env: &T, expr: &SpannedExpr<Symbol>, pos: BytePos) -> Vec<Suggestion>
+    pub fn suggest<T>(
+        &self,
+        env: &T,
+        source_span: Span<BytePos>,
+        expr: &SpannedExpr<Symbol>,
+        pos: BytePos,
+    ) -> Vec<Suggestion>
     where
         T: TypeEnv,
     {
         let mut suggest = Suggest::new(env);
 
-        let found = match complete_at(&mut suggest, expr, pos) {
+        let found = match complete_at(&mut suggest, source_span, expr, pos) {
             Ok(x) => x,
             Err(()) => return vec![],
         };
@@ -1243,6 +1284,7 @@ impl SuggestionQuery {
         &self,
         env: &'a FnvMap<Symbol, Metadata>,
         type_env: &T,
+        source_span: Span<BytePos>,
         expr: &SpannedExpr<Symbol>,
         pos: BytePos,
         name: &'a str,
@@ -1251,46 +1293,48 @@ impl SuggestionQuery {
         T: TypeEnv,
     {
         let mut suggest = Suggest::new(type_env);
-        complete_at(&mut suggest, expr, pos).ok().and_then(|found| {
-            let enclosing_match = found.enclosing_matches.last().unwrap();
-            match found.match_ {
-                Some(match_) => match match_ {
-                    Match::Expr(expr) => {
-                        let suggestion = self.expr_iter(&suggest.stack, expr)
-                            .find(|&(stack_name, _)| stack_name.declared_name() == name);
-                        if let Some((name, _)) = suggestion {
-                            env.get(name)
-                        } else {
-                            None
+        complete_at(&mut suggest, source_span, expr, pos)
+            .ok()
+            .and_then(|found| {
+                let enclosing_match = found.enclosing_matches.last().unwrap();
+                match found.match_ {
+                    Some(match_) => match match_ {
+                        Match::Expr(expr) => {
+                            let suggestion = self.expr_iter(&suggest.stack, expr)
+                                .find(|&(stack_name, _)| stack_name.declared_name() == name);
+                            if let Some((name, _)) = suggestion {
+                                env.get(name)
+                            } else {
+                                None
+                            }
                         }
-                    }
 
-                    Match::Ident(_, _, _) => match *enclosing_match {
-                        Match::Expr(&Spanned {
-                            value: Expr::Projection(ref expr, _, _),
-                            ..
-                        }) => if let Expr::Ident(ref expr_ident) = expr.value {
-                            env.get(&expr_ident.name)
-                                .and_then(|metadata| metadata.module.get(name))
-                        } else {
-                            None
+                        Match::Ident(_, _, _) => match *enclosing_match {
+                            Match::Expr(&Spanned {
+                                value: Expr::Projection(ref expr, _, _),
+                                ..
+                            }) => if let Expr::Ident(ref expr_ident) = expr.value {
+                                env.get(&expr_ident.name)
+                                    .and_then(|metadata| metadata.module.get(name))
+                            } else {
+                                None
+                            },
+                            _ => None,
                         },
                         _ => None,
                     },
-                    _ => None,
-                },
 
-                None => match *enclosing_match {
-                    Match::Expr(..) | Match::Ident(..) => suggest
-                        .stack
-                        .iter()
-                        .find(|&(stack_name, _)| stack_name.declared_name() == name)
-                        .and_then(|t| env.get(t.0)),
+                    None => match *enclosing_match {
+                        Match::Expr(..) | Match::Ident(..) => suggest
+                            .stack
+                            .iter()
+                            .find(|&(stack_name, _)| stack_name.declared_name() == name)
+                            .and_then(|t| env.get(t.0)),
 
-                    _ => None,
-                },
-            }
-        })
+                        _ => None,
+                    },
+                }
+            })
     }
 }
 
@@ -1303,11 +1347,14 @@ pub struct SignatureHelp {
 
 pub fn signature_help(
     env: &TypeEnv,
+    source_span: Span<BytePos>,
     expr: &SpannedExpr<Symbol>,
     pos: BytePos,
 ) -> Option<SignatureHelp> {
-    complete_at((), expr, pos).ok().and_then(|found| {
-        let applications = found
+    complete_at((), source_span, expr, pos)
+        .ok()
+        .and_then(|found| {
+            let applications = found
             .enclosing_matches
             .iter()
             .chain(&found.near_matches)
@@ -1334,9 +1381,9 @@ pub fn signature_help(
                             Expr::Projection(_, ref name, _) => name.declared_name().to_string(),
                             _ => "".to_string(),
                         };
-                        let index = if args.first().map_or(false, |arg| pos >= arg.span.start) {
+                        let index = if args.first().map_or(false, |arg| pos >= arg.span.start()) {
                             Some(args.iter()
-                                .position(|arg| pos <= arg.span.end)
+                                .position(|arg| pos <= arg.span.end())
                                 .unwrap_or_else(|| args.len()) as u32)
                         } else {
                             None
@@ -1347,37 +1394,38 @@ pub fn signature_help(
                 },
                 _ => None,
             });
-        let any_expr = found
-            .enclosing_matches
-            .iter()
-            .chain(&found.near_matches)
-            .rev()
-            .filter_map(|enclosing_match| match *enclosing_match {
-                Match::Expr(expr) => {
-                    let name = match expr.value {
-                        Expr::Ident(ref id) => id.name.declared_name().to_string(),
-                        Expr::Projection(_, ref name, _) => name.declared_name().to_string(),
-                        _ => "".to_string(),
-                    };
+            let any_expr = found
+                .enclosing_matches
+                .iter()
+                .chain(&found.near_matches)
+                .rev()
+                .filter_map(|enclosing_match| match *enclosing_match {
+                    Match::Expr(expr) => {
+                        let name = match expr.value {
+                            Expr::Ident(ref id) => id.name.declared_name().to_string(),
+                            Expr::Projection(_, ref name, _) => name.declared_name().to_string(),
+                            _ => "".to_string(),
+                        };
 
-                    expr.value.try_type_of(env).ok().map(|typ| SignatureHelp {
-                        name,
-                        typ,
-                        index: if pos > expr.span.end { Some(0) } else { None },
-                    })
-                }
-                _ => None,
-            });
-        applications.chain(any_expr).next()
-    })
+                        expr.value.try_type_of(env).ok().map(|typ| SignatureHelp {
+                            name,
+                            typ,
+                            index: if pos > expr.span.end() { Some(0) } else { None },
+                        })
+                    }
+                    _ => None,
+                });
+            applications.chain(any_expr).next()
+        })
 }
 
 pub fn get_metadata<'a>(
     env: &'a FnvMap<Symbol, Metadata>,
+    source_span: Span<BytePos>,
     expr: &SpannedExpr<Symbol>,
     pos: BytePos,
 ) -> Option<&'a Metadata> {
-    complete_at((), expr, pos)
+    complete_at((), source_span, expr, pos)
         .ok()
         .and_then(|found| {
             let e = found.enclosing_match().clone();
@@ -1412,6 +1460,7 @@ pub fn get_metadata<'a>(
 pub fn suggest_metadata<'a, T>(
     env: &'a FnvMap<Symbol, Metadata>,
     type_env: &T,
+    source_span: Span<BytePos>,
     expr: &SpannedExpr<Symbol>,
     pos: BytePos,
     name: &'a str,
@@ -1419,5 +1468,5 @@ pub fn suggest_metadata<'a, T>(
 where
     T: TypeEnv,
 {
-    SuggestionQuery::new().suggest_metadata(env, type_env, expr, pos, name)
+    SuggestionQuery::new().suggest_metadata(env, type_env, source_span, expr, pos, name)
 }
