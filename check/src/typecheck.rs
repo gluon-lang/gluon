@@ -6,13 +6,17 @@ use std::fmt;
 use std::iter::once;
 use std::mem;
 
+use codespan_reporting::{Diagnostic, Label};
+
 use itertools::Itertools;
+
+use rpds;
 
 use base::scoped_map::ScopedMap;
 use base::ast::{Argument, AstType, DisplayEnv, Do, Expr, Literal, MutVisitor, Pattern,
                 PatternField, SpannedExpr, SpannedIdent, SpannedPattern, TypeBinding, Typed,
                 TypedIdent, ValueBinding};
-use base::error::Errors;
+use base::error::{AsDiagnostic, Errors};
 use base::fnv::{FnvMap, FnvSet};
 use base::metadata::{Metadata, MetadataEnv};
 use base::resolve;
@@ -21,8 +25,8 @@ use base::merge;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
 use base::types::{self, Alias, AliasRef, AppVec, ArcType, ArgType, BuiltinType, Field, Filter,
-                  Generic, PrimitiveEnv, Skolem, Type, TypeCache, TypeEnv,
-                  TypeFormatter, TypeVariable};
+                  Generic, PrimitiveEnv, Skolem, Type, TypeCache, TypeEnv, TypeFormatter,
+                  TypeVariable};
 
 use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
 use substitution::{self, Substitution};
@@ -60,7 +64,7 @@ pub enum TypeError<I> {
     EmptyCase,
     Message(String),
     /// An implicit parameter were not possible to resolve
-    UnableToResolveImplicit(ArcType<I>, Vec<String>),
+    UnableToResolveImplicit(ArcType<I>, rpds::List<ArcType<I>>),
     LoopInImplicitResolution(Vec<String>),
     AmbiguousImplicit(Vec<(String, ArcType<I>)>),
 }
@@ -184,11 +188,10 @@ impl<I: fmt::Display + AsRef<str> + Clone> fmt::Display for TypeError<I> {
             }
             EmptyCase => write!(f, "`case` expression with no alternatives"),
             Message(ref msg) => write!(f, "{}", msg),
-            UnableToResolveImplicit(ref typ, ref paths) => write!(
+            UnableToResolveImplicit(ref typ, _) => write!(
                 f,
-                "Implicit parameter with type `{}` could not be resolved.\nPossible bindings: {}",
+                "Implicit parameter with type `{}` could not be resolved.",
                 typ,
-                paths.iter().format(", ")
             ),
             LoopInImplicitResolution(ref paths) => write!(
                 f,
@@ -205,6 +208,28 @@ impl<I: fmt::Display + AsRef<str> + Clone> fmt::Display for TypeError<I> {
                         path, typ
                     )))
             ),
+        }
+    }
+}
+
+impl<I: fmt::Display + AsRef<str> + Clone> AsDiagnostic for TypeError<I> {
+    fn as_diagnostic(&self) -> Diagnostic {
+        use self::TypeError::*;
+        match *self {
+            UnableToResolveImplicit(_, ref reasons) => {
+                let diagnostic = Diagnostic::new_error(self.to_string());
+
+                reasons.iter().fold(diagnostic, |diagnostic, reason| {
+                    diagnostic.with_label(
+                        Label::new_secondary(Span::new(BytePos::none(), BytePos::none()))
+                            .with_message(format!(
+                                "Required because of an implicit parameter of `{}`",
+                                reason
+                            )),
+                    )
+                })
+            }
+            _ => Diagnostic::new_error(self.to_string()),
         }
     }
 }
@@ -545,9 +570,17 @@ impl<'a> Typecheck<'a> {
                 NotAFunction(ref mut typ)
                 | UndefinedField(ref mut typ, _)
                 | PatternError(ref mut typ, _)
-                | InvalidProjection(ref mut typ)
-                | UnableToResolveImplicit(ref mut typ, _) => {
+                | InvalidProjection(ref mut typ) => self.generalize_type(0, typ),
+                UnableToResolveImplicit(ref mut typ, ref mut demand) => {
                     self.generalize_type(0, typ);
+                    *demand = demand
+                        .iter()
+                        .map(|typ| {
+                            let mut typ = typ.clone();
+                            self.generalize_type(0, &mut typ);
+                            typ
+                        })
+                        .collect();
                 }
                 AmbiguousImplicit(ref mut xs) => for &mut (_, ref mut typ) in xs {
                     self.generalize_type(0, typ);
@@ -1111,7 +1144,10 @@ impl<'a> Typecheck<'a> {
 
                 Ok(TailCall::Type(ret))
             }
-            Expr::MacroExpansion { ref mut replacement, .. } => self.typecheck_(replacement, expected_type),
+            Expr::MacroExpansion {
+                ref mut replacement,
+                ..
+            } => self.typecheck_(replacement, expected_type),
             Expr::Error(ref typ) => Ok(TailCall::Type(
                 typ.clone().unwrap_or_else(|| self.subs.new_var()),
             )),
@@ -1386,8 +1422,7 @@ impl<'a> Typecheck<'a> {
                 for field in fields {
                     let name = &field.name.value;
                     // The field should always exist since the type was constructed from the pattern
-                    let field_type = typ
-                        .row_iter()
+                    let field_type = typ.row_iter()
                         .find(|f| f.name.name_eq(name))
                         .expect("ICE: Expected field to exist in type")
                         .typ
@@ -1407,8 +1442,7 @@ impl<'a> Typecheck<'a> {
                     let name = field.value.as_ref().unwrap_or(&field.name.value).clone();
                     // The `types` in the record type should have a type matching the
                     // `name`
-                    let field_type = typ
-                        .type_field_iter()
+                    let field_type = typ.type_field_iter()
                         .find(|field| field.name.name_eq(&name));
 
                     let alias;

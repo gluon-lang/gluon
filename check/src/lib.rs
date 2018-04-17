@@ -5,6 +5,8 @@
 //! internal compiler error.
 #![doc(html_root_url = "https://docs.rs/gluon_check/0.7.1")] // # GLUON
 
+extern crate codespan;
+extern crate codespan_reporting;
 #[macro_use]
 extern crate collect_mac;
 #[cfg(test)]

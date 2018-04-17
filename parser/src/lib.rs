@@ -4,6 +4,7 @@
 #![doc(html_root_url = "https://docs.rs/gluon_parser/0.7.1")] // # GLUON
 
 extern crate codespan;
+extern crate codespan_reporting;
 extern crate collect_mac;
 extern crate gluon_base as base;
 extern crate itertools;
@@ -20,7 +21,7 @@ use std::fmt;
 use std::hash::Hash;
 
 use base::ast::{Comment, Do, Expr, IdentEnv, SpannedExpr, SpannedPattern, TypedIdent, ValueBinding};
-use base::error::Errors;
+use base::error::{AsDiagnostic, Errors};
 use base::fnv::FnvMap;
 use base::metadata::Metadata;
 use base::pos::{self, BytePos, Span, Spanned};
@@ -148,6 +149,12 @@ quick_error! {
             display("{}", err)
             from()
         }
+    }
+}
+
+impl AsDiagnostic for Error {
+    fn as_diagnostic(&self) -> codespan_reporting::Diagnostic {
+        codespan_reporting::Diagnostic::new_error(self.to_string())
     }
 }
 
@@ -341,7 +348,8 @@ where
 
     let mut parse_errors = Errors::new();
 
-    let result = grammar::TopExprParser::new().parse(type_cache, symbols, &mut parse_errors, layout);
+    let result =
+        grammar::TopExprParser::new().parse(type_cache, symbols, &mut parse_errors, layout);
 
     // If there is a tokenizer error it may still exist in the result iterator wrapper.
     // If that is the case we return that error instead of the unexpected EOF error that lalrpop
@@ -397,7 +405,8 @@ where
 
     let type_cache = TypeCache::new();
 
-    let result = grammar::LetOrExprParser::new().parse(&type_cache, symbols, &mut parse_errors, layout);
+    let result =
+        grammar::LetOrExprParser::new().parse(&type_cache, symbols, &mut parse_errors, layout);
 
     // If there is a tokenizer error it may still exist in the result iterator wrapper.
     // If that is the case we return that error instead of the unexpected EOF error that lalrpop

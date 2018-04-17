@@ -79,11 +79,7 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
                 i += 1;
             }
             let new_id = self.symbols.symbol(new_name);
-            debug!(
-                "Rename binding `{:?}` = `{:?}`",
-                (&old_id),
-                (&new_id),
-            );
+            debug!("Rename binding `{:?}` = `{:?}`", (&old_id), (&new_id),);
             self.env.stack.insert(old_id, (new_id.clone(), span));
             new_id
         }

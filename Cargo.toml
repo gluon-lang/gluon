@@ -148,3 +148,6 @@ name = "ui"
 
 [package.metadata.docs.rs]
 features = ["docs_rs"]
+
+[profile.bench]
+debug = true

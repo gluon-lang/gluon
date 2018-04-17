@@ -221,7 +221,7 @@ impl<'s, Id> Reparser<'s, Id> {
         expr: &mut SpannedExpr<Id>,
     ) -> Result<(), Errors<Spanned<Error, BytePos>>>
     where
-        Id: Eq + Hash + AsRef<str>  + ::std::fmt::Debug
+        Id: Eq + Hash + AsRef<str> + ::std::fmt::Debug,
     {
         self.visit_expr(expr);
         if self.errors.has_errors() {

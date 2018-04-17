@@ -532,6 +532,7 @@ name = "gluon_check"
 version = "0.7.1"
 dependencies = [
  "codespan 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "codespan-reporting 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "collect-mac 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.5.7 (registry+https://github.com/rust-lang/crates.io-index)",
  "gluon_base 0.7.1",
@@ -600,6 +601,7 @@ name = "gluon_parser"
 version = "0.7.1"
 dependencies = [
  "codespan 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "codespan-reporting 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "collect-mac 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "difference 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.5.7 (registry+https://github.com/rust-lang/crates.io-index)",

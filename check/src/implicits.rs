@@ -1,5 +1,7 @@
 use itertools::Itertools;
 
+use rpds;
+
 use base::ast::{self, Expr, MutVisitor, SpannedExpr, TypedIdent};
 use base::fnv::FnvMap;
 use base::metadata::Metadata;
@@ -16,6 +18,11 @@ const MAX_IMPLICIT_LEVEL: u32 = 20;
 
 type ImplicitBindings = ::rpds::Vector<(Vec<TypedIdent<Symbol>>, ArcType)>;
 
+struct Demand {
+    reason: rpds::List<ArcType>,
+    constraint: ArcType,
+}
+
 struct ResolveImplicitsVisitor<'a, 'b: 'a> {
     tc: &'a mut Typecheck<'b>,
 }
@@ -27,7 +34,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
         implicit_bindings: &ImplicitBindings,
         span: Span<BytePos>,
         path: &[TypedIdent<Symbol>],
-        to_resolve: &[ArcType],
+        to_resolve: &[Demand],
     ) -> TcResult<Option<SpannedExpr<Symbol>>> {
         self.resolve_implicit_application_(level, implicit_bindings, span, path, to_resolve)
             .map_err(|mut err| {
@@ -44,7 +51,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
         implicit_bindings: &ImplicitBindings,
         span: Span<BytePos>,
         path: &[TypedIdent<Symbol>],
-        to_resolve: &[ArcType],
+        to_resolve: &[Demand],
     ) -> TcResult<Option<SpannedExpr<Symbol>>> {
         if level > MAX_IMPLICIT_LEVEL {
             return Err(TypeError::LoopInImplicitResolution(Vec::new()));
@@ -66,20 +73,19 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
         } else {
             let resolved_arguments = to_resolve
                 .iter()
-                .filter_map(|expected_type| {
+                .filter_map(|demand| {
                     let mut to_resolve = Vec::new();
-                    let result =
-                        self.find_implicit(implicit_bindings, &mut to_resolve, expected_type)
-                            .and_then(|path| {
-                                debug!("Success! Resolving arguments");
-                                self.resolve_implicit_application(
-                                    level + 1,
-                                    implicit_bindings,
-                                    span,
-                                    path,
-                                    &to_resolve,
-                                )
-                            });
+                    let result = self.find_implicit(implicit_bindings, &mut to_resolve, demand)
+                        .and_then(|path| {
+                            debug!("Success! Resolving arguments");
+                            self.resolve_implicit_application(
+                                level + 1,
+                                implicit_bindings,
+                                span,
+                                path,
+                                &to_resolve,
+                            )
+                        });
 
                     match result {
                         Ok(opt) => opt.map(Ok),
@@ -105,21 +111,24 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
     fn try_implicit(
         &mut self,
         path: &[TypedIdent<Symbol>],
-        to_resolve: &mut Vec<ArcType>,
-        expected_type: &ArcType,
+        to_resolve: &mut Vec<Demand>,
+        demand: &Demand,
         typ: &ArcType,
     ) -> bool {
         debug!(
             "Trying implicit `{}` : {}",
             path.iter().map(|id| &id.name).format("."),
-            typ
+            typ,
         );
 
         let typ = self.tc.new_skolem_scope(typ);
         let typ = self.tc.instantiate_generics(&typ);
         to_resolve.clear();
         let mut iter = types::implicit_arg_iter(&typ);
-        to_resolve.extend(iter.by_ref().cloned());
+        to_resolve.extend(iter.by_ref().cloned().map(|constraint| Demand {
+            reason: demand.reason.push_front(typ.clone()),
+            constraint,
+        }));
 
         let state = ::unify_type::State::new(&self.tc.environment, &self.tc.subs);
         ::unify_type::subsumes(
@@ -127,7 +136,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
             &mut ScopedMap::new(),
             0,
             state,
-            &expected_type,
+            &demand.constraint,
             &iter.typ,
         ).is_ok()
     }
@@ -135,16 +144,16 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
     fn find_implicit<'c>(
         &mut self,
         implicit_bindings: &'c ImplicitBindings,
-        to_resolve: &mut Vec<ArcType>,
-        expected_type: &ArcType,
+        to_resolve: &mut Vec<Demand>,
+        demand: &Demand,
     ) -> TcResult<&'c [TypedIdent<Symbol>]> {
         let mut iter = implicit_bindings.iter().rev();
         let found_candidate = iter.by_ref()
-            .find(|&&(ref path, ref typ)| self.try_implicit(path, to_resolve, expected_type, typ));
+            .find(|&&(ref path, ref typ)| self.try_implicit(path, to_resolve, demand, typ));
         match found_candidate {
             Some(candidate) => {
                 let mut additional_candidates: Vec<_> = iter.filter(|&&(ref path, ref typ)| {
-                    self.try_implicit(path, &mut Vec::new(), expected_type, typ)
+                    self.try_implicit(path, &mut Vec::new(), demand, typ)
                 }).map(|bind| {
                         (
                             bind.0.iter().map(|id| &id.name).format(".").to_string(),
@@ -168,11 +177,8 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
                 }
             }
             None => Err(TypeError::UnableToResolveImplicit(
-                expected_type.clone(),
-                implicit_bindings
-                    .iter()
-                    .map(|&(ref path, _)| path.iter().map(|id| &id.name).format(".").to_string())
-                    .collect(),
+                demand.constraint.clone(),
+                demand.reason.clone(),
             )),
         }
     }
@@ -197,7 +203,14 @@ impl<'a, 'b, 'c> MutVisitor<'c> for ResolveImplicitsVisitor<'a, 'b> {
                 );
                 let span = expr.span;
                 let mut to_resolve = Vec::new();
-                match self.find_implicit(&implicit_bindings, &mut to_resolve, &id.typ) {
+                match self.find_implicit(
+                    &implicit_bindings,
+                    &mut to_resolve,
+                    &Demand {
+                        reason: rpds::List::new(),
+                        constraint: id.typ.clone(),
+                    },
+                ) {
                     Ok(path_of_candidate) => {
                         debug!(
                             "Found implicit candidate `{}`. Trying its implicit arguments (if any)",
@@ -231,15 +244,7 @@ impl<'a, 'b, 'c> MutVisitor<'c> for ResolveImplicitsVisitor<'a, 'b> {
                                     span: expr.span,
                                     value: TypeError::UnableToResolveImplicit(
                                         id.typ.clone(),
-                                        implicit_bindings
-                                            .iter()
-                                            .map(|&(ref path, _)| {
-                                                path.iter()
-                                                    .map(|id| &id.name)
-                                                    .format(".")
-                                                    .to_string()
-                                            })
-                                            .collect(),
+                                        rpds::List::new(),
                                     ).into(),
                                 });
                                 None
