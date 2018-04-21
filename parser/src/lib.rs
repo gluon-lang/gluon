@@ -403,7 +403,7 @@ where
 
     let mut parse_errors = Errors::new();
 
-    let type_cache = TypeCache::new();
+    let type_cache = TypeCache::default();
 
     let result =
         grammar::LetOrExprParser::new().parse(&type_cache, symbols, &mut parse_errors, layout);
@@ -442,7 +442,7 @@ pub fn parse_string<'env, 'input>(
     symbols: &'env mut IdentEnv<Ident = String>,
     input: &'input str,
 ) -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, ParseErrors)> {
-    parse_partial_expr(symbols, &TypeCache::new(), input)
+    parse_partial_expr(symbols, &TypeCache::default(), input)
 }
 
 pub fn reparse_infix<Id>(

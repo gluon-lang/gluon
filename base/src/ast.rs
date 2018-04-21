@@ -556,7 +556,8 @@ pub fn walk_mut_expr<'a, V: ?Sized + MutVisitor<'a>>(v: &mut V, e: &'a mut Spann
         }
         Expr::Ident(ref mut id) => v.visit_ident(id),
         Expr::MacroExpansion {
-            ref mut replacement, ..
+            ref mut replacement,
+            ..
         } => v.visit_expr(replacement),
         Expr::Literal(..) | Expr::Error(..) => (),
     }

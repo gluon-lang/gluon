@@ -26,7 +26,6 @@ impl KindEnv for EmptyEnv<Symbol> {
     }
 }
 
-
 /// Kind representation
 ///
 /// All types in gluon has a kind. Most types encountered are of the `Type` kind which
@@ -179,7 +178,7 @@ impl fmt::Display for ArcKind {
     }
 }
 
-type_cache! { KindCache() { ArcKind, Kind } row hole typ }
+type_cache! { KindCache() () { ArcKind, Kind } row hole typ }
 
 impl<'a, F: ?Sized> Walker<'a, ArcKind> for F
 where

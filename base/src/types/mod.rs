@@ -58,7 +58,6 @@ impl TypeEnv for EmptyEnv<Symbol> {
     }
 }
 
-
 /// Trait which is a `TypeEnv` which also provides access to the type representation of some
 /// primitive types
 pub trait PrimitiveEnv: TypeEnv {
@@ -71,7 +70,10 @@ impl<'a, T: ?Sized + PrimitiveEnv> PrimitiveEnv for &'a T {
     }
 }
 
-type_cache! { TypeCache(Id, T) { T, Type }
+type_cache! {
+    TypeCache(Id, T)
+    (kind_cache: ::kind::KindCache)
+    { T, Type }
     hole opaque int byte float string char
     function_builtin array_builtin unit empty_row
 }
