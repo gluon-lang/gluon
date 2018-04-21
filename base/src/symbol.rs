@@ -381,22 +381,21 @@ impl<'a> From<&'a Name> for NameBuf {
 /// Used to make identifiers within a single module point to the same symbol
 #[derive(Debug, Default)]
 pub struct Symbols {
-    strings: FnvMap<Symbol, NameBuf>,
-    indexes: FnvMap<NameBuf, Symbol>,
+    indexes: FnvMap<&'static Name, Symbol>,
 }
 
 impl Symbols {
     pub fn new() -> Symbols {
         Symbols {
-            strings: FnvMap::default(),
             indexes: FnvMap::default(),
         }
     }
 
     fn make_symbol(&mut self, name: NameBuf) -> Symbol {
-        let s = Symbol(Arc::new(name.clone()));
-        self.indexes.insert(name.clone(), s.clone());
-        self.strings.insert(s.clone(), name);
+        // `name` is fixed in memory and the key lives as long as `s` this is safe
+        let key = unsafe { ::std::mem::transmute::<&Name, &Name>(&name) };
+        let s = Symbol(Arc::new(name));
+        self.indexes.insert(key, s.clone());
         s
     }
 
@@ -419,7 +418,7 @@ impl Symbols {
     }
 
     pub fn len(&self) -> usize {
-        self.strings.len()
+        self.indexes.len()
     }
 }
 
@@ -491,9 +490,7 @@ impl DisplayEnv for Symbols {
     type Ident = Symbol;
 
     fn string<'a>(&'a self, ident: &'a Self::Ident) -> &'a str {
-        self.strings
-            .get(ident)
-            .map_or(ident.as_ref(), |name| &*name.0)
+        ident.as_ref()
     }
 }
 
