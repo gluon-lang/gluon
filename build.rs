@@ -7,7 +7,7 @@ mod gen_skeptic {
     extern crate walkdir;
 
     use std::env;
-    use std::fs::File;
+    use std::fs::{self, File};
     use std::io::prelude::*;
     use std::path::{Path, PathBuf};
 
@@ -47,6 +47,11 @@ fn main() {{
 
         // Preprocess the readme to inject the skeptic template needed to to run the examples
         let out_file_name = Path::new(&env::var("OUT_DIR").unwrap()).join(file);
+
+        if let Some(parent_dir) = out_file_name.parent() {
+            fs::create_dir_all(parent_dir).unwrap();
+        }
+
         let mut contents = TEMPLATE.as_bytes().into();
         File::open(file)
             .and_then(|mut raw_file| raw_file.read_to_end(&mut contents))
@@ -60,11 +65,23 @@ fn main() {{
     pub fn generate() {
         let test_locations: Vec<_> = self::walkdir::WalkDir::new("book/src")
             .into_iter()
-            .filter_entry(|e| e.path().extension().and_then(|p| p.to_str()) == Some("md"))
-            .map(|e| e.unwrap().path().to_owned())
+            .filter_map(|e| {
+                let e = e.unwrap();
+                if e.path().extension().and_then(|p| p.to_str()) == Some("md") {
+                    eprintln!("{}", e.path().display());
+                    Some(e.path().to_owned())
+                } else {
+                    None
+                }
+            })
             .chain(Some(PathBuf::from("README.md")))
             .map(|p| generate_skeptic_tests(&p))
             .collect();
+
+        assert!(
+            test_locations.len() > 10,
+            "Search for skeptic tests appear to have missed some files"
+        );
 
         let str_vec: Vec<_> = test_locations.iter().map(|s| &s[..]).collect();
         skeptic::generate_doc_tests(&str_vec);

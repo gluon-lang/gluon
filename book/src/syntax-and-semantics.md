@@ -474,13 +474,13 @@ let i = Test ()
 
 Since importing each individual binding used as an implicit argument quickly becomes tedious there is a short-hand to bring all implicit bindings from a record into scope.
 
-```f#,rust
+```f#,ignore
 let { eq, ord } = import! std.int
 1 == 1 && 1 < 2
 ```
 
-```f#,rust
-// Alsow brings in `show`, `num` ...
+```f#,ignore
+// Also brings in `show`, `num` ...
 let { ? } = import! std.int
 1 == 1 && 1 < 2
 ```
