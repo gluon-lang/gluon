@@ -234,7 +234,6 @@ impl<'input> Iterator for CharLocations<'input> {
 pub struct Tokenizer<'input> {
     input: &'input str,
     chars: CharLocations<'input>,
-    eof_location: Location,
     lookahead: Option<(Location, char)>,
     start_index: BytePos,
 }
@@ -245,11 +244,9 @@ impl<'input> Tokenizer<'input> {
         S: ?Sized + ::ParserSource,
     {
         let mut chars = CharLocations::new(input);
-        let eof_location = chars.location;
 
         Tokenizer {
             input: input.src(),
-            eof_location: eof_location,
             lookahead: chars.next(),
             chars: chars,
             start_index: input.start_index(),
@@ -259,7 +256,6 @@ impl<'input> Tokenizer<'input> {
     fn bump(&mut self) -> Option<(Location, char)> {
         match self.lookahead {
             Some((location, ch)) => {
-                self.eof_location = self.eof_location.shift(ch);
                 self.lookahead = self.chars.next();
                 Some((location, ch))
             }
@@ -276,8 +272,12 @@ impl<'input> Tokenizer<'input> {
         error(location, code)
     }
 
+    fn next_loc(&self) -> Location {
+        self.lookahead.as_ref().map_or(self.chars.location, |l| l.0)
+    }
+
     fn eof_error<T>(&mut self) -> Result<T, SpError> {
-        let location = self.eof_location;
+        let location = self.next_loc();
         self.error(location, UnexpectedEof)
     }
 
@@ -306,7 +306,7 @@ impl<'input> Tokenizer<'input> {
                 self.bump();
             }
         }
-        (self.eof_location, self.slice(start, self.eof_location))
+        (self.next_loc(), self.slice(start, self.next_loc()))
     }
 
     fn test_lookahead<F>(&self, mut test: F) -> bool
@@ -338,15 +338,16 @@ impl<'input> Tokenizer<'input> {
             let (_, comment) = self.take_until(start, |ch| ch == '*');
             self.bump(); // Skip next '*'
             match self.lookahead {
-                Some((end, '/')) => {
+                Some((_, '/')) => {
                     self.bump();
+                    let end = self.next_loc();
                     if comment.starts_with("/**") && comment != "/**" {
                         // FIXME: whitespace alignment
                         let doc = Token::DocComment(Comment {
                             typ: CommentType::Block,
                             content: comment[3..].trim().to_string(),
                         });
-                        return Ok(Some(pos::spanned2(start, end.shift('/'), doc)));
+                        return Ok(Some(pos::spanned2(start, end, doc)));
                     } else {
                         return Ok(None);
                     }
@@ -398,11 +399,11 @@ impl<'input> Tokenizer<'input> {
     fn string_literal(&mut self, start: Location) -> Result<SpannedToken<'input>, SpError> {
         let mut string = String::new();
 
-        while let Some((next, ch)) = self.bump() {
+        while let Some((_, ch)) = self.bump() {
             match ch {
                 '\\' => string.push(self.escape_code()?),
                 '"' => {
-                    let end = next.shift(ch);
+                    let end = self.next_loc();
                     let token = Token::StringLiteral(string);
                     return Ok(pos::spanned2(start, end, token));
                 }
@@ -435,9 +436,9 @@ impl<'input> Tokenizer<'input> {
         };
 
         match self.bump() {
-            Some((end, '\'')) => Ok(pos::spanned2(
+            Some((_, '\'')) => Ok(pos::spanned2(
                 start,
-                end.shift('\''),
+                self.next_loc(),
                 Token::CharLiteral(ch),
             )),
             Some((_, _)) => self.error(start, UnterminatedCharLiteral), // UnexpectedEscapeCode?
@@ -459,9 +460,10 @@ impl<'input> Tokenizer<'input> {
                     _ => (start, end, Token::FloatLiteral(float.parse().unwrap())),
                 }
             }
-            Some((end, 'x')) => {
+            Some((_, 'x')) => {
                 self.bump(); // Skip 'x'
-                let (end, hex) = self.take_while(end.shift('x'), is_hex);
+                let int_start = self.next_loc();
+                let (end, hex) = self.take_while(int_start, is_hex);
                 match int {
                     "0" | "-0" => match self.lookahead {
                         Some((_, ch)) if is_ident_start(ch) => {
@@ -481,14 +483,15 @@ impl<'input> Tokenizer<'input> {
                     _ => return self.error(start, HexLiteralWrongPrefix),
                 }
             }
-            Some((end, 'b')) => {
+            Some((_, 'b')) => {
                 self.bump(); // Skip 'b'
+                let end = self.next_loc();
                 match self.lookahead {
                     Some((pos, ch)) if is_ident_start(ch) => {
                         return self.error(pos, UnexpectedChar(ch))
                     }
                     _ => if let Ok(val) = int.parse() {
-                        (start, end.shift('b'), Token::ByteLiteral(val))
+                        (start, end, Token::ByteLiteral(val))
                     } else {
                         return self.error(start, NonParseableInt);
                     },
@@ -542,15 +545,15 @@ impl<'input> Iterator for Tokenizer<'input> {
     fn next(&mut self) -> Option<Result<SpannedToken<'input>, SpError>> {
         while let Some((start, ch)) = self.bump() {
             return match ch {
-                ',' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::Comma))),
-                '\\' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::Lambda))),
-                '{' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::LBrace))),
-                '[' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::LBracket))),
-                '(' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::LParen))),
-                '}' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::RBrace))),
-                ']' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::RBracket))),
-                ')' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::RParen))),
-                '?' => Some(Ok(pos::spanned2(start, start.shift(ch), Token::Question))),
+                ',' => Some(Ok(pos::spanned2(start, self.next_loc(), Token::Comma))),
+                '\\' => Some(Ok(pos::spanned2(start, self.next_loc(), Token::Lambda))),
+                '{' => Some(Ok(pos::spanned2(start, self.next_loc(), Token::LBrace))),
+                '[' => Some(Ok(pos::spanned2(start, self.next_loc(), Token::LBracket))),
+                '(' => Some(Ok(pos::spanned2(start, self.next_loc(), Token::LParen))),
+                '}' => Some(Ok(pos::spanned2(start, self.next_loc(), Token::RBrace))),
+                ']' => Some(Ok(pos::spanned2(start, self.next_loc(), Token::RBracket))),
+                ')' => Some(Ok(pos::spanned2(start, self.next_loc(), Token::RParen))),
+                '?' => Some(Ok(pos::spanned2(start, self.next_loc(), Token::Question))),
 
                 '"' => Some(self.string_literal(start)),
                 '\'' => Some(self.char_literal(start)),
@@ -586,8 +589,8 @@ impl<'input> Iterator for Tokenizer<'input> {
         }
         // Return EOF instead of None so that the layout algorithm receives the eof location
         Some(Ok(pos::spanned2(
-            self.eof_location,
-            self.eof_location,
+            self.next_loc(),
+            self.next_loc(),
             Token::EOF,
         )))
     }

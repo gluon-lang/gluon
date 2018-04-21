@@ -18,12 +18,12 @@ pub struct Location {
 impl Location {
     pub fn shift(mut self, ch: char) -> Location {
         if ch == '\n' {
-            self.line += LineOffset::from(1);
-            self.column = Column::from(1);
+            self.line += LineOffset(1);
+            self.column = Column(1);
         } else {
-            self.column += ColumnOffset::from(1);
+            self.column += ColumnOffset(1);
         }
-        self.absolute += ByteOffset::from(ch.len_utf8() as i64);
+        self.absolute += ByteOffset(ch.len_utf8() as i64);
         self
     }
 }
