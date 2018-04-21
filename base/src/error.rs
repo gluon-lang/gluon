@@ -11,9 +11,9 @@ use std::slice;
 use std::str;
 use std::vec;
 
-use codespan_reporting::{Diagnostic, Label, Severity};
+use codespan_reporting::{Diagnostic, Label};
 
-use pos::{BytePos, Spanned};
+use pos::{BytePos, Span, Spanned};
 
 /// An error type which can represent multiple errors.
 #[derive(Clone, Debug, PartialEq)]
@@ -180,7 +180,10 @@ impl<E: fmt::Display> InFile<E> {
         self.error
     }
 
-    pub fn emit_string(&self, code_map: &::codespan::CodeMap) -> io::Result<String> {
+    pub fn emit_string(&self, code_map: &::codespan::CodeMap) -> io::Result<String>
+    where
+        E: AsDiagnostic,
+    {
         let mut output = Vec::new();
         self.emit(
             &mut ::codespan_reporting::termcolor::NoColor::new(&mut output),
@@ -192,14 +195,11 @@ impl<E: fmt::Display> InFile<E> {
     pub fn emit<W>(&self, writer: &mut W, code_map: &::codespan::CodeMap) -> io::Result<()>
     where
         W: ?Sized + ::codespan_reporting::termcolor::WriteColor,
+        E: AsDiagnostic,
     {
         let iter = self.error
             .iter()
-            .map(|err| Diagnostic {
-                severity: Severity::Error,
-                message: err.value.to_string(),
-                labels: vec![Label::new_primary(err.span)],
-            })
+            .map(AsDiagnostic::as_diagnostic)
             .enumerate();
         for (i, diagnostic) in iter {
             if i != 0 {
@@ -211,7 +211,7 @@ impl<E: fmt::Display> InFile<E> {
     }
 }
 
-impl<E: fmt::Display> fmt::Display for InFile<E> {
+impl<E: fmt::Display + AsDiagnostic> fmt::Display for InFile<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut buffer = Vec::new();
         {
@@ -225,7 +225,7 @@ impl<E: fmt::Display> fmt::Display for InFile<E> {
     }
 }
 
-impl<E: fmt::Display + fmt::Debug + Any> StdError for InFile<E> {
+impl<E: fmt::Display + fmt::Debug + Any + AsDiagnostic> StdError for InFile<E> {
     fn description(&self) -> &str {
         "Error in file"
     }
@@ -255,5 +255,43 @@ where
 impl<E, H> From<E> for Help<E, H> {
     fn from(error: E) -> Help<E, H> {
         Help { error, help: None }
+    }
+}
+
+pub trait AsDiagnostic {
+    fn as_diagnostic(&self) -> Diagnostic;
+}
+
+impl<E> AsDiagnostic for Spanned<E, BytePos>
+where
+    E: AsDiagnostic,
+{
+    fn as_diagnostic(&self) -> Diagnostic {
+        let mut diagnostic = self.value.as_diagnostic();
+        diagnostic.labels.insert(0, Label::new_primary(self.span));
+        diagnostic
+    }
+}
+
+impl<E, H> AsDiagnostic for Help<E, H>
+where
+    E: AsDiagnostic,
+    H: fmt::Display,
+{
+    fn as_diagnostic(&self) -> Diagnostic {
+        let mut diagnostic = self.error.as_diagnostic();
+        if let Some(ref help) = self.help {
+            diagnostic.labels.push(
+                Label::new_secondary(Span::new(BytePos::none(), BytePos::none()))
+                    .with_message(help.to_string()),
+            );
+        }
+        diagnostic
+    }
+}
+
+impl AsDiagnostic for Box<::std::error::Error + Send + Sync> {
+    fn as_diagnostic(&self) -> Diagnostic {
+        Diagnostic::new_error(self.to_string())
     }
 }

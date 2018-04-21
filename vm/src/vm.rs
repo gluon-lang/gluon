@@ -394,7 +394,7 @@ impl GlobalVmStateBuilder {
             interner: RwLock::new(Interner::new()),
             gc: Mutex::new(Gc::new(Generation::default(), usize::MAX)),
             macros: MacroEnv::new(),
-            type_cache: TypeCache::new(),
+            type_cache: TypeCache::default(),
             generation_0_threads: RwLock::new(Vec::new()),
 
             #[cfg(not(target_arch = "wasm32"))]

@@ -122,9 +122,9 @@ AtomicKind: ArcKind = {
         use lalrpop_util::ParseError;
 
         match id {
-            "_" => Ok(Kind::hole()),
-            "Type" => Ok(Kind::typ()),
-            "Row" => Ok(Kind::row()),
+            "_" => Ok(type_cache.kind_cache.hole()),
+            "Type" => Ok(type_cache.kind_cache.typ()),
+            "Row" => Ok(type_cache.kind_cache.row()),
             id => Err(ParseError::User {
                 error: pos::spanned2(
                     l.into(),
@@ -150,7 +150,7 @@ Kind: ArcKind = {
 
 TypeParam: Generic<Id> = {
     <id : Ident> =>
-        Generic::new(id, Kind::hole()),
+        Generic::new(id, type_cache.kind_cache.hole()),
 
     "(" <id: Ident> ":" <kind: Kind> ")" =>
         Generic::new(id, kind),
@@ -219,7 +219,7 @@ AtomicType_: Type<Id, AstType<Id>> = {
                         Type::Ident(env.from_str(last))
                     }
                     Err(_) => {
-                        Type::Generic(Generic::new(env.from_str(last), Kind::hole()))
+                        Type::Generic(Generic::new(env.from_str(last), type_cache.kind_cache.hole()))
                     }
                 }
             }
@@ -268,7 +268,7 @@ Type_ = {
     AppType_,
     "forall" <args: Ident+> "." <ty: Type> =>
         Type::Forall(args.into_iter()
-                         .map(|id| Generic::new(id, Kind::variable(0)))
+                         .map(|id| Generic::new(id, type_cache.kind_cache.hole()))
                          .collect(),
                      ty,
                      None),

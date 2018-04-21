@@ -5,7 +5,7 @@ use base::symbol::{Symbol, Symbols};
 
 use {Error as VmError, Result};
 use api::VmType;
-use thread::Thread;
+use thread::{Thread, ThreadInternal};
 
 use serde::de::{self, DeserializeOwned, DeserializeSeed, EnumAccess, Error, IntoDeserializer,
                 MapAccess, SeqAccess, VariantAccess, Visitor};
@@ -37,7 +37,7 @@ fn from_rust_<T>(symbols: &mut Symbols, thread: &Thread) -> Result<(String, ArcT
 where
     T: DeserializeOwned,
 {
-    let type_cache = TypeCache::new();
+    let type_cache = thread.global_env().type_cache();
     let mut deserializer = Deserializer::from_value(&type_cache, thread, symbols);
     T::deserialize(&mut deserializer)?;
     let mut variants = Vec::new();

@@ -556,7 +556,8 @@ pub fn walk_mut_expr<'a, V: ?Sized + MutVisitor<'a>>(v: &mut V, e: &'a mut Spann
         }
         Expr::Ident(ref mut id) => v.visit_ident(id),
         Expr::MacroExpansion {
-            ref mut replacement, ..
+            ref mut replacement,
+            ..
         } => v.visit_expr(replacement),
         Expr::Literal(..) | Expr::Error(..) => (),
     }
@@ -931,7 +932,36 @@ fn get_return_type(
 }
 
 pub fn is_operator_char(c: char) -> bool {
-    "!#$%&*+-./<=>?@\\^|-~:".chars().any(|x| x == c)
+    macro_rules! match_token {
+        ($($x: pat),*) => {
+            match c {
+                $($x)|* => true,
+                _ => false,
+            }
+        }
+    }
+    match_token! {
+        '!',
+        '#',
+        '$',
+        '%',
+        '&',
+        '*',
+        '+',
+        '-',
+        '.',
+        '/',
+        '<',
+        '=',
+        '>',
+        '?',
+        '@',
+        '\\',
+        '^',
+        '|',
+        '~',
+        ':'
+    }
 }
 
 pub fn is_constructor(s: &str) -> bool {

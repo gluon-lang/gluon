@@ -429,6 +429,36 @@ The type `()` lacks the following fields: x
 }
 
 #[test]
+fn unable_to_resolve_implicit_error_message() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+/// @implicit
+type Eq a = { }
+
+type Test a = | Test a
+
+let eq_Test : [Eq a] -> Eq (Test a) = { }
+
+let f x : [Eq a] -> a -> a = x
+
+f (Test (Test 1))
+"#;
+
+    let result = support::typecheck(text);
+
+    assert_eq!(
+        &*format!("{}", result.unwrap_err()).replace("\t", "        "),
+        r#"error: Implicit parameter with type `test.Eq Int` could not be resolved.
+- <test>:11:3
+11 | f (Test (Test 1))
+   |   ^^^^^^^^^^^^^^^
+- Required because of an implicit parameter of `[test.Eq Int] -> test.Eq (test.Test Int)`
+- Required because of an implicit parameter of `[test.Eq (test.Test Int)] -> test.Eq (test.Test (test.Test Int))`
+"#
+    );
+}
+
+#[test]
 fn long_type_error_format() {
     let long_type: ArcType = Type::function(
         vec![Type::int()],

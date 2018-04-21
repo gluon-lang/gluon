@@ -4,6 +4,7 @@ extern crate bencher;
 extern crate gluon;
 
 extern crate bincode;
+extern crate serde_json;
 extern crate serde_state;
 
 use std::fs::File;
@@ -11,36 +12,36 @@ use std::io::Read;
 
 use bencher::{black_box, Bencher};
 
-use serde_state::ser::SerializeState;
-
 use gluon::{new_vm, Compiler, Future};
-use gluon::vm::thread::ThreadInternal;
-use gluon::vm::serialization::SeSeed;
+use gluon::compiler_pipeline::compile_to;
 
 fn precompiled_prelude(b: &mut Bencher) {
     let thread = new_vm();
-    Compiler::new()
-        .implicit_prelude(false)
-        .load_file(&thread, "std/prelude.glu")
-        .unwrap();
+    let prelude = {
+        let mut out = String::new();
+        File::open("std/prelude.glu")
+            .unwrap()
+            .read_to_string(&mut out)
+            .unwrap();
+        out
+    };
     let mut serialized_prelude = Vec::new();
     {
-        let env = thread.global_env().get_env();
-        let prelude = env.globals.get("std.prelude").unwrap();
-        prelude
-            .serialize_state(
-                &mut bincode::Serializer::new(&mut serialized_prelude),
-                &SeSeed::new(),
-            )
-            .unwrap();
+        let mut serializer = serde_json::Serializer::new(&mut serialized_prelude);
+        compile_to(
+            &prelude[..],
+            &mut Compiler::new(),
+            &thread,
+            "std.prelude",
+            &prelude,
+            None,
+            &mut serializer,
+        ).unwrap()
     }
     b.iter(|| {
         use gluon::compiler_pipeline::{Executable, Precompiled};
 
-        let mut deserializer = bincode::Deserializer::new(
-            bincode::read_types::SliceReader::new(&serialized_prelude),
-            bincode::Infinite,
-        );
+        let mut deserializer = serde_json::Deserializer::from_slice(&serialized_prelude);
         let result = Precompiled(&mut deserializer)
             .run_expr(&mut Compiler::new(), &*thread, "std.prelude", "", ())
             .wait()

@@ -8,10 +8,20 @@ matrix:
   - rust: beta
   - rust: stable
     env: ARCH=i686
+
   - rust: stable
     env:
       - DEPLOY=1
       - TARGET=x86_64-unknown-linux-gnu
+
+    # Run benchmark and a no-default-features check in a separate
+  - rust: stable
+    env:
+      - DEPLOY=1
+      - NO_NORMAL_TEST=1
+      - BENCH_DEFAULT_FEATURES_CHECK=1
+      - TARGET=x86_64-unknown-linux-gnu
+
   - rust: nightly-2017-12-18
     env: WASM=1
 
@@ -51,7 +61,9 @@ script:
         return
     elif [[ -z ${WASM+set} ]]; then
         # Skeptic may fail to build the tests if there are old artifacts around
-        cargo clean
+        if [ -z $NO_NORMAL_TEST ]; then
+            cargo clean
+        fi
         ./scripts/travis.sh
     else
         rustup target add wasm32-unknown-unknown

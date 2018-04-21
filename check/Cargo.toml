@@ -19,6 +19,9 @@ pretty = "0.3.0"
 smallvec = "0.2.1"
 rpds = "0.3"
 
+codespan = "0.1"
+codespan-reporting = "0.1"
+
 strsim = "0.7.0"
 
 gluon_base = { path = "../base", version = "0.7.1" } # GLUON
@@ -26,7 +29,6 @@ gluon_parser = { path = "../parser", version = "0.7.1", optional = true } # GLUO
 
 [dev-dependencies]
 env_logger = "0.5"
-codespan = "0.1.1"
 
 gluon_format = { path = "../format", version = "0.7.0" } # GLUON
 
