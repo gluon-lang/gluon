@@ -1,8 +1,13 @@
+use std::fmt;
+
 use itertools::Itertools;
 
 use rpds;
 
+use codespan_reporting::{Diagnostic, Label};
+
 use base::ast::{self, Expr, MutVisitor, SpannedExpr, TypedIdent};
+use base::error::AsDiagnostic;
 use base::fnv::FnvMap;
 use base::metadata::Metadata;
 use base::types::{self, ArcType, Type};
@@ -11,12 +16,75 @@ use base::resolve;
 use base::scoped_map::ScopedMap;
 use base::symbol::Symbol;
 
-use typecheck::{TcResult, TypeError, Typecheck, TypecheckEnv};
+use typecheck::{TypeError, Typecheck, TypecheckEnv};
 use substitution::Substitution;
 
 const MAX_IMPLICIT_LEVEL: u32 = 20;
 
 type ImplicitBindings = ::rpds::Vector<(Vec<TypedIdent<Symbol>>, ArcType)>;
+
+type Result<T> = ::std::result::Result<T, Error<Symbol>>;
+
+#[derive(Debug, PartialEq)]
+pub struct Error<I> {
+    pub kind: ErrorKind<I>,
+    pub reason: rpds::List<ArcType<I>>,
+}
+
+impl<I: fmt::Display + AsRef<str> + Clone> fmt::Display for Error<I> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.kind)
+    }
+}
+
+impl<I: fmt::Display + AsRef<str> + Clone> AsDiagnostic for Error<I> {
+    fn as_diagnostic(&self) -> Diagnostic {
+        let diagnostic = Diagnostic::new_error(self.to_string());
+        self.reason.iter().fold(diagnostic, |diagnostic, reason| {
+            diagnostic.with_label(
+                Label::new_secondary(Span::new(BytePos::none(), BytePos::none())).with_message(
+                    format!("Required because of an implicit parameter of `{}`", reason),
+                ),
+            )
+        })
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum ErrorKind<I> {
+    /// An implicit parameter were not possible to resolve
+    MissingImplicit(ArcType<I>),
+    LoopInImplicitResolution(Vec<String>),
+    AmbiguousImplicit(Vec<(String, ArcType<I>)>),
+}
+
+impl<I: fmt::Display + AsRef<str> + Clone> fmt::Display for ErrorKind<I> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        use self::ErrorKind::*;
+        match *self {
+            MissingImplicit(ref typ) => write!(
+                f,
+                "Implicit parameter with type `{}` could not be resolved.",
+                typ,
+            ),
+            LoopInImplicitResolution(ref paths) => write!(
+                f,
+                "Unable to resolve implicit, possible infinite loop. When resolving, {}",
+                paths.iter().format(", ")
+            ),
+            AmbiguousImplicit(ref candidates) => write!(
+                f,
+                "Unable to resolve implicit. Multiple candidates were found: {}",
+                candidates
+                    .iter()
+                    .format_with(", ", |&(ref path, ref typ), fmt| fmt(&format_args!(
+                        "{}: {}",
+                        path, typ
+                    )))
+            ),
+        }
+    }
+}
 
 struct Demand {
     reason: rpds::List<ArcType>,
@@ -35,10 +103,10 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
         span: Span<BytePos>,
         path: &[TypedIdent<Symbol>],
         to_resolve: &[Demand],
-    ) -> TcResult<Option<SpannedExpr<Symbol>>> {
+    ) -> Result<Option<SpannedExpr<Symbol>>> {
         self.resolve_implicit_application_(level, implicit_bindings, span, path, to_resolve)
             .map_err(|mut err| {
-                if let TypeError::LoopInImplicitResolution(ref mut paths) = err {
+                if let ErrorKind::LoopInImplicitResolution(ref mut paths) = err.kind {
                     paths.push(path.iter().map(|id| &id.name).format(".").to_string());
                 }
                 err
@@ -52,9 +120,15 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
         span: Span<BytePos>,
         path: &[TypedIdent<Symbol>],
         to_resolve: &[Demand],
-    ) -> TcResult<Option<SpannedExpr<Symbol>>> {
-        if level > MAX_IMPLICIT_LEVEL {
-            return Err(TypeError::LoopInImplicitResolution(Vec::new()));
+    ) -> Result<Option<SpannedExpr<Symbol>>> {
+        match to_resolve.first() {
+            Some(demand) if level > MAX_IMPLICIT_LEVEL => {
+                return Err(Error {
+                    kind: ErrorKind::LoopInImplicitResolution(Vec::new()),
+                    reason: demand.reason.clone(),
+                });
+            }
+            _ => (),
         }
 
         let base_ident = path[0].clone();
@@ -92,7 +166,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
                         Err(err) => Some(Err(err)),
                     }
                 })
-                .collect::<TcResult<Vec<_>>>()?;
+                .collect::<Result<Vec<_>>>()?;
             if resolved_arguments.len() == to_resolve.len() {
                 Some(pos::spanned(
                     span,
@@ -146,7 +220,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
         implicit_bindings: &'c ImplicitBindings,
         to_resolve: &mut Vec<Demand>,
         demand: &Demand,
-    ) -> TcResult<&'c [TypedIdent<Symbol>]> {
+    ) -> Result<&'c [TypedIdent<Symbol>]> {
         let mut iter = implicit_bindings.iter().rev();
         let found_candidate = iter.by_ref()
             .find(|&&(ref path, ref typ)| self.try_implicit(path, to_resolve, demand, typ));
@@ -173,13 +247,16 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
                             .to_string(),
                         candidate.1.clone(),
                     ));
-                    Err(TypeError::AmbiguousImplicit(additional_candidates))
+                    Err(Error {
+                        kind: ErrorKind::AmbiguousImplicit(additional_candidates),
+                        reason: demand.reason.clone(),
+                    })
                 }
             }
-            None => Err(TypeError::UnableToResolveImplicit(
-                demand.constraint.clone(),
-                demand.reason.clone(),
-            )),
+            None => Err(Error {
+                kind: ErrorKind::MissingImplicit(demand.constraint.clone()),
+                reason: demand.reason.clone(),
+            }),
         }
     }
 }
@@ -235,24 +312,34 @@ impl<'a, 'b, 'c> MutVisitor<'c> for ResolveImplicitsVisitor<'a, 'b> {
                         replacement = match resolution_result {
                             Some(Ok(replacement)) => Some(replacement),
                             Some(Err(err)) => {
-                                self.tc.error(span, err);
+                                self.tc.errors.push(Spanned {
+                                    span: expr.span,
+                                    value: TypeError::UnableToResolveImplicit(err).into(),
+                                });
                                 None
                             }
                             None => {
                                 debug!("UnableToResolveImplicit {:?} {}", id.name, id.typ);
                                 self.tc.errors.push(Spanned {
                                     span: expr.span,
-                                    value: TypeError::UnableToResolveImplicit(
-                                        id.typ.clone(),
-                                        rpds::List::new(),
-                                    ).into(),
+                                    value: TypeError::UnableToResolveImplicit(Error {
+                                        kind: ErrorKind::MissingImplicit(id.typ.clone()),
+                                        reason: to_resolve
+                                            .first()
+                                            .map_or_else(rpds::List::new, |demand| {
+                                                demand.reason.clone()
+                                            }),
+                                    }).into(),
                                 });
                                 None
                             }
                         };
                     }
                     Err(err) => {
-                        self.tc.error(span, err);
+                        self.tc.errors.push(Spanned {
+                            span: expr.span,
+                            value: TypeError::UnableToResolveImplicit(err).into(),
+                        });
                     }
                 }
             }

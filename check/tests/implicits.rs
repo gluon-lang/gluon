@@ -13,7 +13,7 @@ use base::ast::{self, Expr, Pattern, SpannedExpr, Typed, Visitor};
 use base::types::{Field, Type};
 use base::symbol::Symbol;
 
-use check::typecheck::TypeError;
+use check::typecheck::{ImplicitError, ImplicitErrorKind, TypeError};
 
 use support::MockEnv;
 
@@ -290,7 +290,13 @@ g 1
 "#;
     let result = support::typecheck(text);
 
-    assert_err!(result, TypeError::LoopInImplicitResolution(..));
+    assert_err!(
+        result,
+        TypeError::UnableToResolveImplicit(ImplicitError {
+            kind: ImplicitErrorKind::LoopInImplicitResolution(..),
+            ..
+        })
+    );
 }
 
 #[test]
@@ -710,5 +716,11 @@ let f x : [Test a] -> a -> a = x
 f Nil
 "#;
     let result = support::typecheck(text);
-    assert_err!(result, TypeError::LoopInImplicitResolution(..));
+    assert_err!(
+        result,
+        TypeError::UnableToResolveImplicit(ImplicitError {
+            kind: ImplicitErrorKind::LoopInImplicitResolution(..),
+            ..
+        })
+    );
 }

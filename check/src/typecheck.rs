@@ -6,11 +6,7 @@ use std::fmt;
 use std::iter::once;
 use std::mem;
 
-use codespan_reporting::{Diagnostic, Label};
-
-use itertools::Itertools;
-
-use rpds;
+use codespan_reporting::Diagnostic;
 
 use base::scoped_map::ScopedMap;
 use base::ast::{Argument, AstType, DisplayEnv, Do, Expr, Literal, MutVisitor, Pattern,
@@ -32,6 +28,7 @@ use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
 use substitution::{self, Substitution};
 use unify::{self, Error as UnifyError};
 use unify_type::{self, new_skolem_scope, Error as UnifyTypeError};
+use implicits;
 
 /// Type representing a single error when checking a type
 #[derive(Debug, PartialEq)]
@@ -63,10 +60,7 @@ pub enum TypeError<I> {
     /// Found a case expression without any alternatives
     EmptyCase,
     Message(String),
-    /// An implicit parameter were not possible to resolve
-    UnableToResolveImplicit(ArcType<I>, rpds::List<ArcType<I>>),
-    LoopInImplicitResolution(Vec<String>),
-    AmbiguousImplicit(Vec<(String, ArcType<I>)>),
+    UnableToResolveImplicit(implicits::Error<I>),
 }
 
 impl<I> From<KindCheckError<I>> for TypeError<I> {
@@ -75,6 +69,11 @@ impl<I> From<KindCheckError<I>> for TypeError<I> {
             UnifyError::Other(KindError::UndefinedType(name)) => TypeError::UndefinedType(name),
             e => TypeError::KindError(e),
         }
+    }
+}
+impl<I> From<implicits::Error<I>> for TypeError<I> {
+    fn from(e: implicits::Error<I>) -> Self {
+        TypeError::UnableToResolveImplicit(e)
     }
 }
 
@@ -188,26 +187,7 @@ impl<I: fmt::Display + AsRef<str> + Clone> fmt::Display for TypeError<I> {
             }
             EmptyCase => write!(f, "`case` expression with no alternatives"),
             Message(ref msg) => write!(f, "{}", msg),
-            UnableToResolveImplicit(ref typ, _) => write!(
-                f,
-                "Implicit parameter with type `{}` could not be resolved.",
-                typ,
-            ),
-            LoopInImplicitResolution(ref paths) => write!(
-                f,
-                "Unable to resolve implicit, possible infinite loop. When resolving, {}",
-                paths.iter().format(", ")
-            ),
-            AmbiguousImplicit(ref candidates) => write!(
-                f,
-                "Unable to resolve implicit. Multiple candidates were found: {}",
-                candidates
-                    .iter()
-                    .format_with(", ", |&(ref path, ref typ), fmt| fmt(&format_args!(
-                        "{}: {}",
-                        path, typ
-                    )))
-            ),
+            UnableToResolveImplicit(ref err) => write!(f, "{}", err),
         }
     }
 }
@@ -216,19 +196,7 @@ impl<I: fmt::Display + AsRef<str> + Clone> AsDiagnostic for TypeError<I> {
     fn as_diagnostic(&self) -> Diagnostic {
         use self::TypeError::*;
         match *self {
-            UnableToResolveImplicit(_, ref reasons) => {
-                let diagnostic = Diagnostic::new_error(self.to_string());
-
-                reasons.iter().fold(diagnostic, |diagnostic, reason| {
-                    diagnostic.with_label(
-                        Label::new_secondary(Span::new(BytePos::none(), BytePos::none()))
-                            .with_message(format!(
-                                "Required because of an implicit parameter of `{}`",
-                                reason
-                            )),
-                    )
-                })
-            }
+            UnableToResolveImplicit(ref err) => err.as_diagnostic(),
             _ => Diagnostic::new_error(self.to_string()),
         }
     }
@@ -350,6 +318,8 @@ pub struct Typecheck<'a> {
 
 /// Error returned when unsuccessfully typechecking an expression
 pub type Error = Errors<SpannedTypeError<Symbol>>;
+
+pub use implicits::{Error as ImplicitError, ErrorKind as ImplicitErrorKind};
 
 impl<'a> Typecheck<'a> {
     /// Create a new typechecker which typechecks expressions in `module`
@@ -565,15 +535,23 @@ impl<'a> Typecheck<'a> {
                 | UndefinedRecord { .. }
                 | EmptyCase
                 | KindError(_)
-                | Message(_)
-                | LoopInImplicitResolution(..) => (),
+                | Message(_) => (),
                 NotAFunction(ref mut typ)
                 | UndefinedField(ref mut typ, _)
                 | PatternError(ref mut typ, _)
                 | InvalidProjection(ref mut typ) => self.generalize_type(0, typ),
-                UnableToResolveImplicit(ref mut typ, ref mut demand) => {
-                    self.generalize_type(0, typ);
-                    *demand = demand
+                UnableToResolveImplicit(ref mut err) => {
+                    use implicits::ErrorKind::*;
+                    match err.kind {
+                        MissingImplicit(ref mut typ) => {
+                            self.generalize_type(0, typ);
+                        }
+                        AmbiguousImplicit(ref mut xs) => for &mut (_, ref mut typ) in xs {
+                            self.generalize_type(0, typ);
+                        },
+                        LoopInImplicitResolution(..) => (),
+                    }
+                    err.reason = err.reason
                         .iter()
                         .map(|typ| {
                             let mut typ = typ.clone();
@@ -582,9 +560,6 @@ impl<'a> Typecheck<'a> {
                         })
                         .collect();
                 }
-                AmbiguousImplicit(ref mut xs) => for &mut (_, ref mut typ) in xs {
-                    self.generalize_type(0, typ);
-                },
                 Unification(ref mut expected, ref mut actual, ref mut errors) => {
                     self.generalize_type_without_forall(0, expected);
                     self.generalize_type_without_forall(0, actual);
