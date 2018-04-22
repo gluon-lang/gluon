@@ -1,6 +1,6 @@
 # Standard types and functions
 
-https://github.com/gluon-lang/gluon/tree/master/std
+https://gluon-lang.org/doc/nightly/std/index.html
 
 TODO
 

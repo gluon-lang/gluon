@@ -472,6 +472,21 @@ let i = Test ()
 ()
 ```
 
+Since importing each individual binding used as an implicit argument quickly becomes tedious there is a short-hand to bring all implicit bindings from a record into scope.
+
+```f#,ignore
+let { eq, ord } = import! std.int
+1 == 1 && 1 < 2
+```
+
+```f#,ignore
+// Also brings in `show`, `num` ...
+let { ? } = import! std.int
+1 == 1 && 1 < 2
+```
+
+For standard types such as `Int`, `Float`, `String`, `Bool` and `Option` this gets injected through the implicit prelude that is inserted before all code which lets `==`, `<` etc to work out of the box.
+
 #### Passing implicit arguments explicitly
 
 If you only use implicit functions as explained above then it might just seem like a different name for traits (Rust) or type classes (Haskell). While it is true that the main reason for implicit arguments is to emulate traits/type classes implicit arguments is more powerful than those approaches as it is also possible to override the implicit resolution and instead give the argument explicitly by prefixing the argument with `?`.
