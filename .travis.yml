@@ -2,6 +2,17 @@ language: rust
 sudo: required
 services: docker
 cache: cargo
+
+# bors setup
+branches:
+  only:
+    - staging
+    - trying
+    # Build PRs
+    - master
+    # Build release tags
+    - /^v?\d+\.\d+(\.\d+)?(-\S*)?$/
+
 matrix:
   include:
   - rust: nightly-2017-12-18
