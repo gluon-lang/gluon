@@ -51,7 +51,7 @@ tokio-core = "0.1"
 rand = { version = "0.3", optional = true }
 
 [build-dependencies]
-skeptic = { git = "https://github.com/Marwes/rust-skeptic", optional = true, branch = "fix_8_and_18" }
+little-skeptic = { version = "0.14.0", optional = true }
 walkdir = { version = "2", optional = true }
 
 [dev-dependencies]
@@ -79,7 +79,7 @@ serialization = ["serde", "serde_state", "serde_derive_state", "gluon_vm/seriali
 
 docs_rs = ["serialization"]
 
-test = ["serialization", "skeptic", "walkdir", "gluon_vm/test", "gluon_check/test", "gluon_parser/test"]
+test = ["serialization", "little-skeptic", "walkdir", "gluon_vm/test", "gluon_check/test", "gluon_parser/test"]
 nightly = ["compiletest_rs"]
 
 [[bench]]

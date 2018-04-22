@@ -22,4 +22,3 @@ libc = "0.2.14"
 [features]
 test = ["gluon/test"]
 nightly = ["gluon/nightly"]
-skeptic = ["gluon/skeptic"]

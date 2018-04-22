@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 
 #[cfg(feature = "test")]
 mod gen_skeptic {
-    extern crate skeptic;
+    extern crate little_skeptic as skeptic;
     extern crate walkdir;
 
     use std::env;
