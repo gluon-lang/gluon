@@ -17,27 +17,23 @@ mod gen_skeptic {
     /// gives f# syntax highlight while still running the tests through the template
     const TEMPLATE: &'static str = r##"
 ```rust,skeptic-template
-extern crate env_logger;
-extern crate gluon;
 
-use gluon::vm::api::{{Hole, OpaqueValue}};
-use gluon::{{VmBuilder, Compiler, Thread}};
+use gluon::vm::api::{Hole, OpaqueValue};
+use gluon::{VmBuilder, Compiler, Thread};
 
-fn main() {{
-    let _ = ::env_logger::try_init();
-    let text = r#"{}"#;
-    let manifest_path = ::std::env::var("CARGO_MANIFEST_DIR").unwrap();
-    let vm = VmBuilder::new()
-        .import_paths(Some(vec![".".into(), manifest_path.into()]))
-        .build();
-    match Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", text) {{
-        Ok(_value) => (),
-        Err(err) => {{
-            panic!("{{}}", err);
-        }}
-    }}
-    return;
-}}
+let _ = ::env_logger::try_init();
+let text = r#"{{test}}"#;
+let manifest_path = ::std::env::var("CARGO_MANIFEST_DIR").unwrap();
+let vm = VmBuilder::new()
+    .import_paths(Some(vec![".".into(), manifest_path.into()]))
+    .build();
+match Compiler::new().run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", text) {
+    Ok(_value) => (),
+    Err(err) => {
+        panic!("{}", err);
+    }
+}
+return;
 ```
 
 "##;
@@ -68,13 +64,13 @@ fn main() {{
             .filter_map(|e| {
                 let e = e.unwrap();
                 if e.path().extension().and_then(|p| p.to_str()) == Some("md") {
-                    eprintln!("{}", e.path().display());
                     Some(e.path().to_owned())
                 } else {
                     None
                 }
             })
             .chain(Some(PathBuf::from("README.md")))
+            .chain(Some(PathBuf::from("tests/skeptic-template.md")))
             .map(|p| generate_skeptic_tests(&p))
             .collect();
 

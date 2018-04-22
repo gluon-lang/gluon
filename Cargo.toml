@@ -45,14 +45,14 @@ regex = { version = "0.2.1", optional = true }
 
 # Crates used in testing
 compiletest_rs = { version = "0.3", optional = true }
-skeptic = { version = "0.13", optional = true }
+skeptic = { git = "https://github.com/Marwes/rust-skeptic", optional = true, branch = "fix_8_and_18" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio-core = "0.1"
 rand = { version = "0.3", optional = true }
 
 [build-dependencies]
-skeptic = { version = "0.13", optional = true }
+skeptic = { git = "https://github.com/Marwes/rust-skeptic", optional = true, branch = "fix_8_and_18" }
 walkdir = { version = "2", optional = true }
 
 [dev-dependencies]
