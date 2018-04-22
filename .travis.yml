@@ -60,10 +60,6 @@ script:
     if [ ! -z $DISABLE_TESTS ]; then
         return
     elif [[ -z ${WASM+set} ]]; then
-        # Skeptic may fail to build the tests if there are old artifacts around
-        if [ -z $NO_NORMAL_TEST ]; then
-            cargo clean
-        fi
         ./scripts/travis.sh
     else
         rustup target add wasm32-unknown-unknown

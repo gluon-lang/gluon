@@ -45,7 +45,6 @@ regex = { version = "0.2.1", optional = true }
 
 # Crates used in testing
 compiletest_rs = { version = "0.3", optional = true }
-skeptic = { git = "https://github.com/Marwes/rust-skeptic", optional = true, branch = "fix_8_and_18" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio-core = "0.1"
@@ -80,8 +79,7 @@ serialization = ["serde", "serde_state", "serde_derive_state", "gluon_vm/seriali
 
 docs_rs = ["serialization"]
 
-test = ["serialization", "gluon_vm/test", "gluon_check/test", "gluon_parser/test"]
-test_skeptic = ["skeptic", "walkdir"]
+test = ["serialization", "skeptic", "walkdir", "gluon_vm/test", "gluon_check/test", "gluon_parser/test"]
 nightly = ["compiletest_rs"]
 
 [[bench]]

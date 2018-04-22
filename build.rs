@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::{Read, Write};
 
-#[cfg(feature = "skeptic")]
+#[cfg(feature = "test")]
 mod gen_skeptic {
     extern crate skeptic;
     extern crate walkdir;
@@ -84,7 +84,7 @@ return;
     }
 }
 
-#[cfg(not(feature = "skeptic"))]
+#[cfg(not(feature = "test"))]
 mod gen_skeptic {
     pub fn generate() {
         // If we dont run skeptic we do not need to rebuild anything unless the script itself is
