@@ -18,7 +18,7 @@ Gluon is a small, statically-typed, functional programming language designed for
 
 * **Thread safe** - Gluon is written in Rust, which guarantees thread safety. Gluon keeps the same guarantees, allowing multiple gluon programs to run in parallel ([example][parallel])\*
 
-[easy_embed]:https://github.com/gluon-lang/gluon/blob/master/TUTORIAL.md#embedding-api
+[easy_embed]:http://gluon-lang.org/book/embedding-api.html
 [parallel]:https://github.com/gluon-lang/gluon/blob/master/tests/parallel.rs
 
 \* Parallel execution of gluon programs is a recent addition and may still have issues such as deadlocks.
@@ -281,7 +281,7 @@ nnoremap <silent> gd :call LanguageClient_textDocument_definition()<CR>
 
 ## Documentation
 
-[Tutorial (WIP)](https://github.com/gluon-lang/gluon/blob/master/TUTORIAL.md)
+[Tutorial (WIP)](http://gluon-lang.org/book/introduction.html)
 
 [Rustdoc](https://docs.rs/gluon/*/gluon/index.html)
 
