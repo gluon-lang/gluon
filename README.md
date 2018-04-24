@@ -1,6 +1,6 @@
 # gluon
 
-[![Build Status](https://travis-ci.org/gluon-lang/gluon.svg?branch=master)](https://travis-ci.org/gluon-lang/gluon) [![Gitter](https://badges.gitter.im/gluon-lang/gluon.svg)](https://gitter.im/gluon-lang/gluon?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge) [![Documentation](https://docs.rs/gluon/badge.svg)](https://docs.rs/crate/gluon)
+[![Build Status](https://travis-ci.org/gluon-lang/gluon.svg?branch=master)](https://travis-ci.org/gluon-lang/gluon) [![Gitter](https://badges.gitter.im/gluon-lang/gluon.svg)](https://gitter.im/gluon-lang/gluon?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge) [![crates.io](https://meritbadge.herokuapp.com/gluon)](https://crates.io/crates/gluon)  [![Documentation](https://docs.rs/gluon/badge.svg)](https://docs.rs/crate/gluon) [![Book](https://img.shields.io/badge/gluon-book-yellow.svg)](http://gluon-lang.org/book/introduction.html) [![std](https://img.shields.io/badge/gluon-std-green.svg)](http://gluon-lang.org/doc/nightly/std/index.html)
 
 Gluon is a small, statically-typed, functional programming language designed for application embedding.
 
@@ -18,7 +18,7 @@ Gluon is a small, statically-typed, functional programming language designed for
 
 * **Thread safe** - Gluon is written in Rust, which guarantees thread safety. Gluon keeps the same guarantees, allowing multiple gluon programs to run in parallel ([example][parallel])\*
 
-[easy_embed]:https://github.com/gluon-lang/gluon/blob/master/TUTORIAL.md#embedding-api
+[easy_embed]:http://gluon-lang.org/book/embedding-api.html
 [parallel]:https://github.com/gluon-lang/gluon/blob/master/tests/parallel.rs
 
 \* Parallel execution of gluon programs is a recent addition and may still have issues such as deadlocks.
@@ -281,9 +281,11 @@ nnoremap <silent> gd :call LanguageClient_textDocument_definition()<CR>
 
 ## Documentation
 
-[Tutorial (WIP)](https://github.com/gluon-lang/gluon/blob/master/TUTORIAL.md)
+[The Gluon Book](http://gluon-lang.org/book/introduction.html)
 
-[Rustdoc](https://docs.rs/gluon/*/gluon/index.html)
+[Gluon Standard Library API Reference](http://gluon-lang.org/doc/nightly/std/index.html)
+
+[Rust API Docs](https://docs.rs/gluon/*/gluon/index.html)
 
 
 ## Usage
