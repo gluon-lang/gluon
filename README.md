@@ -1,6 +1,6 @@
 # gluon
 
-[![Build Status](https://travis-ci.org/gluon-lang/gluon.svg?branch=master)](https://travis-ci.org/gluon-lang/gluon) [![Gitter](https://badges.gitter.im/gluon-lang/gluon.svg)](https://gitter.im/gluon-lang/gluon?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge) [![Documentation](https://docs.rs/gluon/badge.svg)](https://docs.rs/crate/gluon) [![Book](https://img.shields.io/badge/gluon-book-yellow.svg)](http://gluon-lang.org/book/introduction.html) [![std](https://img.shields.io/badge/gluon-std-orange.svg)](http://gluon-lang.org/doc/nightly/std/index.html)
+[![Build Status](https://travis-ci.org/gluon-lang/gluon.svg?branch=master)](https://travis-ci.org/gluon-lang/gluon) [![Gitter](https://badges.gitter.im/gluon-lang/gluon.svg)](https://gitter.im/gluon-lang/gluon?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge) [![crates.io](https://meritbadge.herokuapp.com/gluon)](https://crates.io/crates/gluon)  [![Documentation](https://docs.rs/gluon/badge.svg)](https://docs.rs/crate/gluon) [![Book](https://img.shields.io/badge/gluon-book-yellow.svg)](http://gluon-lang.org/book/introduction.html) [![std](https://img.shields.io/badge/gluon-std-green.svg)](http://gluon-lang.org/doc/nightly/std/index.html)
 
 Gluon is a small, statically-typed, functional programming language designed for application embedding.
 
