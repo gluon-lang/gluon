@@ -338,29 +338,30 @@ where
             &Type::App(ref r, ref r_args),
         ) => {
             let l_args = collect![l_arg.clone(), l_ret.clone()];
-            Ok(unify_app(
+            unify_app(
                 unifier,
                 &Type::builtin(BuiltinType::Function),
                 &l_args,
                 r,
                 r_args,
-            ))
+            ).map_err(|_| UnifyError::TypeMismatch(expected.clone(), actual.clone()))
         }
         (
             &Type::App(ref l, ref l_args),
             &Type::Function(ArgType::Explicit, ref r_arg, ref r_ret),
         ) => {
             let r_args = collect![r_arg.clone(), r_ret.clone()];
-            Ok(unify_app(
+            unify_app(
                 unifier,
                 l,
                 l_args,
                 &Type::builtin(BuiltinType::Function),
                 &r_args,
-            ))
+            ).map_err(|_| UnifyError::TypeMismatch(expected.clone(), actual.clone()))
         }
         (&Type::App(ref l, ref l_args), &Type::App(ref r, ref r_args)) => {
-            Ok(unify_app(unifier, l, l_args, r, r_args))
+            unify_app(unifier, l, l_args, r, r_args)
+                .map_err(|_| UnifyError::TypeMismatch(expected.clone(), actual.clone()))
         }
         (&Type::Variant(ref l_row), &Type::Variant(ref r_row)) => match (&**l_row, &**r_row) {
             (
@@ -617,13 +618,13 @@ fn unify_app<'a, U>(
     l_args: &AppVec<ArcType>,
     r: &ArcType,
     r_args: &AppVec<ArcType>,
-) -> Option<ArcType>
+) -> Result<Option<ArcType>, ()>
 where
     UnifierState<'a, U>: Unifier<State<'a>, ArcType>,
 {
     use std::cmp::Ordering::*;
     // Applications are curried `a b c d` == `((a b) c) d` we need to unify the last
-    // argument which eachother followed by the second last etc.
+    // argument which each other followed by the second last etc.
     // If the number of arguments are not equal, the application with fewer arguments are
     // unified with the other type applied on its remaining arguments
     // a b c <> d e
@@ -635,29 +636,39 @@ where
             let new_type = unifier.try_match(l, r);
             let new_args =
                 merge::merge_tuple_iter(l_args.iter().zip(r_args), |l, r| unifier.try_match(l, r));
-            merge::merge(l, new_type, l_args, new_args, Type::app)
+            Ok(merge::merge(l, new_type, l_args, new_args, Type::app))
         }
         Less => {
             let offset = r_args.len() - l_args.len();
 
             let reduced_r = Type::app(r.clone(), r_args[..offset].iter().cloned().collect());
-            let new_type = unifier.try_match(l, &reduced_r);
+            let new_type = match unifier.try_match_res(l, &reduced_r) {
+                Ok(new_type) => new_type,
+                Err(_err) => {
+                    return Err(());
+                }
+            };
 
             let new_args = merge::merge_tuple_iter(l_args.iter().zip(&r_args[offset..]), |l, r| {
                 unifier.try_match(l, r)
             });
-            merge::merge(l, new_type, l_args, new_args, Type::app)
+            Ok(merge::merge(l, new_type, l_args, new_args, Type::app))
         }
         Greater => {
             let offset = l_args.len() - r_args.len();
 
             let reduced_l = Type::app(l.clone(), l_args[..offset].iter().cloned().collect());
-            let new_type = unifier.try_match(&reduced_l, r);
+            let new_type = match unifier.try_match_res(&reduced_l, r) {
+                Ok(new_type) => new_type,
+                Err(_err) => {
+                    return Err(());
+                }
+            };
 
             let new_args = merge::merge_tuple_iter(l_args[offset..].iter().zip(r_args), |l, r| {
                 unifier.try_match(l, r)
             });
-            merge::merge(r, new_type, r_args, new_args, Type::app)
+            Ok(merge::merge(r, new_type, r_args, new_args, Type::app))
         }
     }
 }

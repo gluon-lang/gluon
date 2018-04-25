@@ -369,9 +369,10 @@ Found: ()
 Types do not match:
     Expected: Int -> a
     Found: ()
-- <test>:2:1
+- <test>:2:4
 2 | () 1
-  | ^^^^
+  |    ^
+- Attempted to call a non-function value
 "#
     );
 }
@@ -650,4 +651,30 @@ let test x : () = () in 1
     let result = support::typecheck(text);
 
     assert_unify_err!(result, TypeMismatch(..));
+}
+
+#[test]
+fn multiple_extra_parameters_error() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+let id x = x
+id "" 1 1.0
+"#;
+    let result = support::typecheck(text);
+
+    assert_eq!(
+        &*format!("{}", result.unwrap_err()).replace("\t", "        "),
+        r#"error: Expected the following types to be equal
+Expected: Int -> Float -> a
+Found: String
+1 errors were found during unification:
+Types do not match:
+    Expected: Int -> Float -> a
+    Found: String
+- <test>:3:7
+3 | id "" 1 1.0
+  |       ^^^^^
+- Attempted to call function with 3 arguments but its type only has 1
+"#
+    );
 }
