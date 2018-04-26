@@ -1,4 +1,7 @@
+use std::borrow::Borrow;
+use std::cmp::Ordering;
 use std::fmt;
+use std::hash::{Hash, Hasher};
 
 use itertools::Itertools;
 
@@ -10,18 +13,153 @@ use base::ast::{self, Expr, MutVisitor, SpannedExpr, TypedIdent};
 use base::error::AsDiagnostic;
 use base::fnv::FnvMap;
 use base::metadata::Metadata;
-use base::types::{self, ArcType, Type};
+use base::types::{self, ArcType, ArgType, BuiltinType, Type};
 use base::pos::{self, BytePos, Span, Spanned};
 use base::resolve;
 use base::scoped_map::ScopedMap;
-use base::symbol::Symbol;
+use base::symbol::{Symbol, SymbolRef};
 
 use typecheck::{TypeError, Typecheck, TypecheckEnv};
 use substitution::Substitution;
 
 const MAX_IMPLICIT_LEVEL: u32 = 20;
 
-type ImplicitBindings = ::rpds::Vector<(Vec<TypedIdent<Symbol>>, ArcType)>;
+impl SymbolKey {
+    pub fn new(typ: &ArcType) -> Option<SymbolKey> {
+        match **typ {
+            Type::App(ref id, _) => SymbolKey::new(id),
+            Type::Function(ArgType::Implicit, _, ref ret_type) => SymbolKey::new(ret_type),
+            Type::Function(ArgType::Explicit, ..) => {
+                Some(SymbolKey::Ref(BuiltinType::Function.symbol()))
+            }
+            Type::Ident(ref id) => Some(SymbolKey::Owned(id.clone())),
+            Type::Alias(ref alias) => Some(SymbolKey::Owned(alias.name.clone())),
+            Type::Builtin(ref builtin) => Some(SymbolKey::Ref(builtin.symbol())),
+            Type::Forall(_, ref typ, _) => SymbolKey::new(typ),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Eq, Clone, Debug)]
+pub enum SymbolKey {
+    Owned(Symbol),
+    Ref(&'static SymbolRef),
+}
+
+impl Hash for SymbolKey {
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: Hasher,
+    {
+        Borrow::<SymbolRef>::borrow(self).hash(state)
+    }
+}
+
+impl PartialEq for SymbolKey {
+    fn eq(&self, other: &Self) -> bool {
+        Borrow::<SymbolRef>::borrow(self) == Borrow::<SymbolRef>::borrow(other)
+    }
+}
+
+impl PartialOrd for SymbolKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Borrow::<SymbolRef>::borrow(self).partial_cmp(Borrow::<SymbolRef>::borrow(other))
+    }
+}
+
+impl Ord for SymbolKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        Borrow::<SymbolRef>::borrow(self).cmp(Borrow::<SymbolRef>::borrow(other))
+    }
+}
+
+impl Borrow<SymbolRef> for SymbolKey {
+    fn borrow(&self) -> &SymbolRef {
+        match *self {
+            SymbolKey::Owned(ref s) => s,
+            SymbolKey::Ref(s) => s,
+        }
+    }
+}
+
+type ImplicitBinding = (Vec<TypedIdent<Symbol>>, ArcType);
+type ImplicitVector = ::rpds::Vector<ImplicitBinding>;
+
+#[derive(Clone, Default, Debug)]
+pub(crate) struct ImplicitBindings {
+    partioned: ::rpds::RedBlackTreeMap<SymbolKey, ImplicitVector>,
+    rest: ImplicitVector,
+}
+
+impl ImplicitBindings {
+    fn new() -> ImplicitBindings {
+        ImplicitBindings::default()
+    }
+
+    fn insert(&mut self, path: Vec<TypedIdent<Symbol>>, typ: ArcType) {
+        match SymbolKey::new(&typ) {
+            Some(symbol) => {
+                let mut vec = self.partioned.get(&symbol).cloned().unwrap_or_default();
+                vec.push_back_mut((path, typ));
+                self.partioned.insert_mut(symbol, vec);
+            }
+            None => self.rest.push_back_mut((path, typ)),
+        }
+    }
+
+    pub fn update<F>(&mut self, mut f: F)
+    where
+        F: FnMut(&Symbol) -> Option<ArcType>,
+    {
+        fn update_vec<F>(vec: &mut ImplicitVector, mut f: F) -> bool
+        where
+            F: FnMut(&Symbol) -> Option<ArcType>,
+        {
+            let mut updated = false;
+
+            for i in 0..vec.len() {
+                let opt = {
+                    let bind = vec.get(i).unwrap();
+                    if bind.0.len() == 1 {
+                        let typ = f(&bind.0[0].name).unwrap();
+                        Some((bind.0.clone(), typ))
+                    } else {
+                        None
+                    }
+                };
+                if let Some(new) = opt {
+                    vec.set_mut(i, new);
+                    updated = true;
+                }
+            }
+            updated
+        }
+
+        for (key, vec) in &self.partioned.clone() {
+            let mut vec = vec.clone();
+            if update_vec(&mut vec, &mut f) {
+                self.partioned.insert_mut(key.clone(), vec);
+            }
+        }
+
+        update_vec(&mut self.rest, &mut f);
+    }
+
+    fn iter<'a>(
+        &'a self,
+        typ: &ArcType,
+    ) -> Box<DoubleEndedIterator<Item = &'a ImplicitBinding> + 'a> {
+        match SymbolKey::new(&typ) {
+            Some(symbol) => Box::new(self.partioned.get(&symbol).unwrap_or(&self.rest).iter()),
+            None => Box::new(
+                self.rest
+                    .iter()
+                    .chain(self.partioned.values().flat_map(|x| x.iter())),
+            ),
+        }
+    }
+}
 
 type Result<T> = ::std::result::Result<T, Error<Symbol>>;
 
@@ -221,7 +359,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
         to_resolve: &mut Vec<Demand>,
         demand: &Demand,
     ) -> Result<&'c [TypedIdent<Symbol>]> {
-        let mut iter = implicit_bindings.iter().rev();
+        let mut iter = implicit_bindings.iter(&demand.constraint).rev();
         let found_candidate = iter.by_ref()
             .find(|&&(ref path, ref typ)| self.try_implicit(path, to_resolve, demand, typ));
         match found_candidate {
@@ -276,7 +414,7 @@ impl<'a, 'b, 'c> MutVisitor<'c> for ResolveImplicitsVisitor<'a, 'b> {
                 debug!(
                     "Resolving {} against:\n{}",
                     id.typ,
-                    implicit_bindings.iter().map(|t| &t.1).format("\n")
+                    implicit_bindings.iter(&id.typ).map(|t| &t.1).format("\n")
                 );
                 let span = expr.span;
                 let mut to_resolve = Vec::new();
@@ -376,7 +514,7 @@ impl<'a> ImplicitResolver<'a> {
 
     pub fn on_stack_var(&mut self, id: &Symbol, typ: &ArcType) {
         if self.implicit_bindings.is_empty() {
-            self.implicit_bindings.push(::rpds::Vector::new());
+            self.implicit_bindings.push(ImplicitBindings::new());
         }
         let mut bindings = self.implicit_bindings.last_mut().unwrap().clone();
         let metadata = self.metadata.get(id);
@@ -386,7 +524,7 @@ impl<'a> ImplicitResolver<'a> {
             &typ,
             &mut Vec::new(),
             &mut |path, implicit_type| {
-                bindings = bindings.push_back((path, implicit_type.clone()));
+                bindings.insert(path, implicit_type.clone());
             },
         );
         *self.implicit_bindings.last_mut().unwrap() = bindings;
@@ -401,9 +539,9 @@ impl<'a> ImplicitResolver<'a> {
         info!("Trying to resolve implicit {}", typ);
 
         if self.implicit_bindings.is_empty() {
-            self.implicit_bindings.push(::rpds::Vector::new());
+            self.implicit_bindings.push(ImplicitBindings::new());
         }
-        let mut bindings = self.implicit_bindings.last_mut().unwrap().clone();
+        let mut bindings = self.implicit_bindings.last().unwrap().clone();
 
         let mut path = Vec::new();
         let metadata = self.metadata.get(id);
@@ -432,7 +570,7 @@ impl<'a> ImplicitResolver<'a> {
                     &field.typ,
                     &mut path,
                     &mut |path, implicit_type| {
-                        bindings = bindings.push_back((path, implicit_type.clone()));
+                        bindings.insert(path, implicit_type.clone());
                     },
                 );
                 path.pop();
@@ -480,19 +618,10 @@ impl<'a> ImplicitResolver<'a> {
         }
     }
 
-    pub fn make_implicit_ident(&mut self, typ: &ArcType) -> Symbol {
+    pub fn make_implicit_ident(&mut self, _typ: &ArcType) -> Symbol {
         let name = Symbol::from("implicit_arg");
-        let typ = typ.clone();
 
         let implicits = self.implicit_bindings.last().unwrap().clone();
-        debug!(
-            "Implicits for {}: {}",
-            typ,
-            implicits
-                .iter()
-                .map(|t| format!("{}: {}", t.0.iter().map(|id| &id.name).format("."), t.1))
-                .format(",")
-        );
         self.implicit_vars.insert(name.clone(), implicits);
         name
     }

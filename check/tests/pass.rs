@@ -828,7 +828,6 @@ fn expected_type_do_not_override_actual_type_for_returned_type_array() {
     assert_req!(result.map(|t| t.to_string()), Ok("Array Int"));
 }
 
-
 #[test]
 fn dont_guess_record_type() {
     let _ = env_logger::try_init();
@@ -859,5 +858,8 @@ a
 "#;
     let result = support::typecheck(text);
 
-    assert_req!(result.map(|t| t.to_string()), Ok("Array { f : String -> String }"));
+    assert_req!(
+        result.map(|t| t.to_string()),
+        Ok("Array { f : String -> String }")
+    );
 }

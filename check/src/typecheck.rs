@@ -1708,31 +1708,10 @@ impl<'a> Typecheck<'a> {
             }
 
             // Update the implicit bindings with the generalized types we just created
-            let mut bindings = self.implicit_resolver
-                .implicit_bindings
-                .last()
-                .unwrap()
-                .clone();
-            for i in 0..bindings.len() {
-                let opt = {
-                    let bind = bindings.get(i).unwrap();
-                    if bind.0.len() == 1 {
-                        let typ = self.environment
-                            .stack
-                            .get(&bind.0[0].name)
-                            .unwrap()
-                            .typ
-                            .clone();
-                        Some((bind.0.clone(), typ))
-                    } else {
-                        None
-                    }
-                };
-                if let Some(new) = opt {
-                    bindings = bindings.set(i, new).unwrap();
-                }
-            }
-            *self.implicit_resolver.implicit_bindings.last_mut().unwrap() = bindings;
+            let bindings = self.implicit_resolver.implicit_bindings.last_mut().unwrap();
+
+            let stack = &self.environment.stack;
+            bindings.update(|name| Some(stack.get(name).unwrap().typ.clone()));
         }
 
         debug!("Typecheck `in`");

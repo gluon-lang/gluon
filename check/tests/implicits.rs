@@ -33,7 +33,7 @@ f 42
 "#;
     let (expr, result) = support::typecheck_expr(text);
 
-    assert_eq!(result, Ok(Type::int()));
+    assert_req!(result, Ok(Type::int()));
 
     // Verify that the insert implicit argument have the renamed symbol
     match expr.value {
