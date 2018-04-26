@@ -6,7 +6,7 @@ use std::error::Error as StdError;
 use std::fmt;
 use std::io;
 use std::iter::{Extend, FromIterator};
-use std::ops::Index;
+use std::ops::{Index, IndexMut};
 use std::slice;
 use std::str;
 use std::vec;
@@ -66,6 +66,12 @@ impl<T> Index<usize> for Errors<T> {
     type Output = T;
     fn index(&self, index: usize) -> &T {
         &self.errors[index]
+    }
+}
+
+impl<T> IndexMut<usize> for Errors<T> {
+    fn index_mut(&mut self, index: usize) -> &mut T {
+        &mut self.errors[index]
     }
 }
 

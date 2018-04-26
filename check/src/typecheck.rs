@@ -1,7 +1,7 @@
 //! The main typechecking interface which is responsible for typechecking expressions, patterns,
 //! etc. Only checks which need to be aware of expressions are handled here the actual unifying and
 //! checking of types are done in the `unify_type` and `kindcheck` modules.
-use std::borrow::Cow;
+use std::borrow::{BorrowMut, Cow};
 use std::fmt;
 use std::iter::once;
 use std::mem;
@@ -205,6 +205,7 @@ impl<I: fmt::Display + AsRef<str> + Clone> AsDiagnostic for TypeError<I> {
 #[derive(Debug, PartialEq)]
 pub enum Help {
     UndefinedFlatMapInDo,
+    ExtraArgument(u32, u32),
 }
 
 impl fmt::Display for Help {
@@ -215,6 +216,17 @@ impl fmt::Display for Help {
                 "Try bringing the `flat_map` function found in the `Monad`\
                  instance for your type into scope"
             ),
+            Help::ExtraArgument(expected, actual) => if expected == 0 {
+                write!(f, "Attempted to call a non-function value")
+            } else {
+                write!(
+                    f,
+                    "Attempted to call function with {} argument{} but its type only has {}",
+                    actual,
+                    if actual == 1 { "" } else { "s" },
+                    expected,
+                )
+            },
         }
     }
 }
@@ -779,7 +791,7 @@ impl<'a> Typecheck<'a> {
                     op.span,
                     func_type,
                     implicit_args,
-                    Some(&mut **lhs).into_iter().chain(Some(&mut **rhs)),
+                    &mut [&mut **lhs, &mut **rhs],
                 )
             }
             Expr::Tuple {
@@ -1129,68 +1141,100 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn typecheck_application<'e, I>(
+    fn typecheck_application<E>(
         &mut self,
         span: Span<BytePos>,
         mut func_type: ArcType,
         implicit_args: &mut Vec<SpannedExpr<Symbol>>,
-        args: I,
+        args: &mut [E],
     ) -> Result<TailCall, TypeError<Symbol>>
     where
-        I: IntoIterator<Item = &'e mut SpannedExpr<Symbol>>,
+        E: BorrowMut<SpannedExpr<Symbol>>,
     {
-        let mut prev_arg_end = span.end();
-
-        func_type = self.new_skolem_scope(&func_type);
-        for arg in &mut **implicit_args {
-            let f = self.type_cache
-                .function_implicit(once(self.subs.new_var()), self.subs.new_var());
-            func_type = self.instantiate_generics(&func_type);
-            let level = self.subs.var_id();
-
-            self.subsumes(arg.span, level, &f, func_type.clone());
-
-            func_type = match f.as_function() {
-                Some((arg_ty, ret_ty)) => {
-                    let arg_ty = self.subs.real(arg_ty).clone();
-                    let actual = self.typecheck(arg, &arg_ty);
-                    let actual = self.instantiate_generics(&actual);
-
-                    let level = self.subs.var_id();
-                    self.subsumes_expr(expr_check_span(arg), level, &arg_ty, actual, arg);
-
-                    ret_ty.clone()
-                }
-                None => return Err(TypeError::NotAFunction(func_type.clone())),
-            };
-            prev_arg_end = arg.span.end();
+        fn attach_extra_argument_help<F, R>(self_: &mut Typecheck, actual: u32, f: F) -> R
+        where
+            F: FnOnce(&mut Typecheck) -> R,
+        {
+            let errors_before = self_.errors.len();
+            let t = f(self_);
+            if errors_before != self_.errors.len() {
+                let len = self_.errors.len();
+                let expected_type = match self_.errors[len - 1].value.error {
+                    TypeError::Unification(ref expected_type, ..) => expected_type.clone(),
+                    _ => return t,
+                };
+                let extra = function_arg_iter(self_, expected_type).count() as u32;
+                self_.errors[len - 1].value.help =
+                    Some(Help::ExtraArgument(actual - extra, actual));
+            }
+            t
         }
 
-        for arg in args {
+        func_type = self.new_skolem_scope(&func_type);
+
+        for arg in &mut **implicit_args {
+            let arg_ty = self.subs.new_var();
+            let ret_ty = self.subs.new_var();
             let f = self.type_cache
-                .function(once(self.subs.new_var()), self.subs.new_var());
-            func_type = self.instantiate_generics(&func_type);
+                .function_implicit(once(arg_ty.clone()), ret_ty.clone());
+
             let level = self.subs.var_id();
+            self.subsumes(arg.span, level, &f, func_type.clone());
+
+            self.typecheck(arg, &arg_ty);
+
+            func_type = ret_ty;
+        }
+
+        let mut not_a_function_index = None;
+
+        let mut prev_arg_end = implicit_args.last().map_or(span, |arg| arg.span).end();
+        for (i, arg) in args.iter_mut().map(|arg| arg.borrow_mut()).enumerate() {
+            let arg_ty = self.subs.new_var();
+            let ret_ty = self.subs.new_var();
+            let f = self.type_cache
+                .function(once(arg_ty.clone()), ret_ty.clone());
+
+            let level = self.subs.var_id();
+            let errors_before = self.errors.len();
             self.subsumes_implicit(span, level, &f, func_type.clone(), &mut |implicit_arg| {
                 implicit_args.push(pos::spanned2(prev_arg_end, arg.span.start(), implicit_arg));
             });
 
-            func_type = match f.as_function() {
-                Some((arg_ty, ret_ty)) => {
-                    let arg_ty = self.subs.real(arg_ty).clone();
-                    let actual = self.typecheck(arg, &arg_ty);
-                    let actual = self.instantiate_generics(&actual);
+            if errors_before != self.errors.len() {
+                self.errors.pop();
+                not_a_function_index = Some(i);
+                break;
+            }
 
-                    let level = self.subs.var_id();
-                    self.subsumes_expr(expr_check_span(arg), level, &arg_ty, actual, arg);
+            self.typecheck(arg, &arg_ty);
 
-                    ret_ty.clone()
-                }
-                None => return Err(TypeError::NotAFunction(func_type.clone())),
-            };
+            func_type = ret_ty;
 
             prev_arg_end = arg.span.end();
         }
+
+        if let Some(i) = not_a_function_index {
+            let args_len = args.len() as u32;
+            let extra_args = &mut args[i..];
+            let arg_types = extra_args
+                .iter_mut()
+                .map(|arg| self.infer_expr(arg.borrow_mut()))
+                .collect::<Vec<_>>();
+            let actual = self.type_cache.function(arg_types, self.subs.new_var());
+
+            let span = Span::new(
+                extra_args.first_mut().unwrap().borrow_mut().span.start(),
+                extra_args.last_mut().unwrap().borrow_mut().span.end(),
+            );
+            let level = self.subs.var_id();
+            attach_extra_argument_help(self, args_len, |self_| {
+                self_.subsumes(span, level, &actual, func_type.clone())
+            });
+
+            func_type = actual;
+        }
+
         Ok(TailCall::Type(func_type))
     }
 
