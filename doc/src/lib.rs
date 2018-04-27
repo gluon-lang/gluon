@@ -61,7 +61,7 @@ pub fn record(typ: &ArcType, meta: &Metadata) -> Record {
     Record {
         types: typ.type_field_iter()
             .map(|field| Field {
-                name: field.name.to_string(),
+                name: field.name.definition_name().to_string(),
                 typ: field.typ.unresolved_type().to_string(),
                 comment: meta.module
                     .get(AsRef::<str>::as_ref(&field.name))
@@ -73,7 +73,7 @@ pub fn record(typ: &ArcType, meta: &Metadata) -> Record {
 
         values: typ.row_iter()
             .map(|field| Field {
-                name: field.name.to_string(),
+                name: field.name.definition_name().to_string(),
                 typ: field.typ.to_string(),
 
                 comment: meta.module
