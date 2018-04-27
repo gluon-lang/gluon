@@ -1104,8 +1104,12 @@ impl<Id> ArcType<Id> {
             named_variables.extend(iter);
             typ = inner_type;
         }
-        typ.skolemize_(named_variables)
-            .unwrap_or_else(|| typ.clone())
+        if named_variables.is_empty() {
+            typ.clone()
+        } else {
+            typ.skolemize_(named_variables)
+                .unwrap_or_else(|| typ.clone())
+        }
     }
 
     fn skolemize_(&self, named_variables: &mut FnvMap<Id, ArcType<Id>>) -> Option<ArcType<Id>>
@@ -1135,8 +1139,12 @@ impl<Id> ArcType<Id> {
             );
             typ = inner_type;
         }
-        typ.instantiate_generics_(named_variables)
-            .unwrap_or_else(|| typ.clone())
+        if named_variables.is_empty() {
+            typ.clone()
+        } else {
+            typ.instantiate_generics_(named_variables)
+                .unwrap_or_else(|| typ.clone())
+        }
     }
 
     pub fn instantiate_generics_(
