@@ -7,7 +7,7 @@ use std::marker::PhantomData;
 
 use pretty::{Arena, DocAllocator, DocBuilder};
 
-use smallvec::{SmallVec, VecLike};
+use smallvec::SmallVec;
 
 use ast::{Comment, Commented, EmptyEnv, IdentEnv};
 use fnv::FnvMap;
@@ -2195,7 +2195,7 @@ where
     I: IntoIterator<Item = &'a T>,
     F: FnMut(&'a T) -> Option<T>,
     T: Clone + 'a,
-    R: Default + VecLike<T> + DerefMut<Target = [T]>,
+    R: Default + Extend<T> + DerefMut<Target = [T]>,
 {
     let mut out = R::default();
     walk_move_types2(types.into_iter(), false, &mut out, &mut f);
@@ -2211,17 +2211,17 @@ where
     I: Iterator<Item = &'a T>,
     F: FnMut(&'a T) -> Option<T>,
     T: Clone + 'a,
-    R: VecLike<T> + DerefMut<Target = [T]>,
+    R: Extend<T> + DerefMut<Target = [T]>,
 {
     if let Some(typ) = types.next() {
         let new = f(typ);
         walk_move_types2(types, replaced || new.is_some(), output, f);
         match new {
             Some(typ) => {
-                output.push(typ);
+                output.extend(Some(typ));
             }
             None if replaced || !output.is_empty() => {
-                output.push(typ.clone());
+                output.extend(Some(typ.clone()));
             }
             None => (),
         }

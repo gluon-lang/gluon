@@ -10,7 +10,7 @@ walkdir = "1"
 failure = { version = "0.1", features = ["backtrace"] }
 handlebars = "=1.0.0-beta.1"
 clap = "2.22.0"
-itertools = "0.7.0"
+itertools = "0.7"
 structopt = "0.2"
 
 serde = "1.0.0"

@@ -12,8 +12,8 @@ documentation = "https://docs.rs/gluon"
 
 [dependencies]
 log = "0.4"
-pretty = "0.3.2"
-itertools = "0.7.0"
+pretty = "0.3"
+itertools = "0.7"
 codespan = "0.1.1"
 
 gluon_base = { path = "../base", version = "0.7.1" } # GLUON
@@ -21,8 +21,8 @@ gluon = { path = "..", version = "0.7.1" } # GLUON
 
 [dev-dependencies]
 env_logger = "0.5.0"
-difference = "1.0"
-pretty_assertions = "0.4"
+difference = "2"
+pretty_assertions = "0.5"
 
 [features]
 test = []

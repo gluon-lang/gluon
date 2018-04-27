@@ -13,10 +13,10 @@ documentation = "https://docs.rs/gluon"
 [dependencies]
 collect-mac = "0.1.0"
 log = "0.4"
-itertools = "0.7.0"
+itertools = "0.7"
 union-find = "0.3.1"
-pretty = "0.3.0"
-smallvec = "0.2.1"
+pretty = "0.3"
+smallvec = "0.6"
 rpds = "0.5"
 
 codespan = "0.1"
@@ -33,7 +33,7 @@ env_logger = "0.5"
 gluon_format = { path = "../format", version = "0.7.0" } # GLUON
 
 collect-mac = "0.1.0"
-pretty_assertions = "0.4"
+pretty_assertions = "0.5"
 
 [features]
 test = ["gluon_parser"]

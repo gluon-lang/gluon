@@ -1,4 +1,4 @@
-use smallvec::VecLike;
+use std::ops::DerefMut;
 
 /// Merges two values using `f` if either or both them is `Some(..)`.
 /// If both are `None`, `None` is returned.
@@ -44,7 +44,7 @@ where
     I: IntoIterator<Item = (&'a T, &'a T)>,
     F: FnMut(&'a T, &'a T) -> Option<T>,
     T: Clone + 'a,
-    R: Default + VecLike<T>,
+    R: Default + Extend<T> + DerefMut<Target = [T]>,
 {
     merge_iter(types, |(l, r)| f(l, r), |(l, _)| l.clone())
 }
@@ -55,7 +55,7 @@ where
     F: FnMut(I::Item) -> Option<U>,
     G: FnMut(I::Item) -> U,
     I::Item: Copy,
-    R: Default + VecLike<U>,
+    R: Default + Extend<U> + DerefMut<Target = [U]>,
 {
     let mut out = R::default();
     merge_iter_(
@@ -65,10 +65,10 @@ where
         &mut action,
         &mut converter,
     );
-    if out[..].is_empty() {
+    if out.is_empty() {
         None
     } else {
-        out[..].reverse();
+        out.reverse();
         Some(out)
     }
 }
@@ -84,17 +84,17 @@ fn merge_iter_<'a, I, F, G, U, R>(
     F: FnMut(I::Item) -> Option<U>,
     G: FnMut(I::Item) -> U,
     I::Item: Copy,
-    R: Default + VecLike<U>,
+    R: Default + Extend<U> + DerefMut<Target = [U]>,
 {
     if let Some(l) = types.next() {
         let new = f(l);
         merge_iter_(types, replaced || new.is_some(), output, f, converter);
         match new {
             Some(typ) => {
-                output.push(typ);
+                output.extend(Some(typ));
             }
             None if replaced || !output[..].is_empty() => {
-                output.push(converter(l));
+                output.extend(Some(converter(l)));
             }
             None => (),
         }
