@@ -31,7 +31,7 @@ log = "0.4"
 quick-error = "1.0.0"
 collect-mac = "0.1.0"
 either = "1.0.0"
-itertools = "0.7.0"
+itertools = "0.7"
 futures = "0.1.11"
 codespan = "0.1.1"
 codespan-reporting = "0.1.1"
@@ -48,7 +48,7 @@ compiletest_rs = { version = "0.3", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio-core = "0.1"
-rand = { version = "0.3", optional = true }
+rand = { version = "0.4", optional = true }
 
 [build-dependencies]
 little-skeptic = { version = "0.14.0", optional = true }
@@ -59,7 +59,7 @@ bencher = "0.1.2"
 tensile = "0.1.0"
 collect-mac = "0.1.0"
 env_logger = "0.5.0"
-pretty_assertions = "0.4"
+pretty_assertions = "0.5"
 futures-cpupool = "0.1.8"
 
 hyper = "0.11.0"
@@ -69,7 +69,7 @@ serde = "1.0.0"
 serde_derive = "1.0.0"
 serde_derive_state = { version = "0.4.0" }
 serde_json = "1.0.0"
-bincode = "0.8.0"
+bincode = "1"
 
 gluon_completion = { path = "completion", version = "0.7.1" } # GLUON
 

@@ -1455,7 +1455,7 @@ pub use self::record::Record;
 pub mod record {
     use std::any::Any;
 
-    use frunk_core::hlist::{h_cons, HCons, HList, HNil, Plucker};
+    use frunk_core::hlist::{h_cons, HCons, HList, HNil};
 
     use base::types;
     use base::types::ArcType;
@@ -1545,7 +1545,7 @@ pub mod record {
     impl<T: FieldTypes> VmType for Record<T> {
         type Type = Record<T::Type>;
         fn make_type(vm: &Thread) -> ArcType {
-            let len = T::static_len();
+            let len = T::LEN;
             let mut fields = Vec::with_capacity(len);
             T::field_types(vm, &mut fields);
             let type_cache = vm.global_env().type_cache();
@@ -1558,7 +1558,7 @@ pub mod record {
     {
         fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
             self.fields.push(thread, context)?;
-            let len = T::static_len() as VmIndex;
+            let len = T::LEN as VmIndex;
             let offset = context.stack.len() - len;
             let value = thread::alloc(
                 &mut context.gc,
@@ -2091,10 +2091,13 @@ impl<'vm, T: VmType> Pushable<'vm> for TypedBytecode<T> {
     }
 }
 
-
 pub struct Map<K, V>(PhantomData<(K, V)>);
 
-impl<K: VmType, V: VmType> VmType for Map<K, V> where K::Type: Sized, V::Type: Sized {
+impl<K: VmType, V: VmType> VmType for Map<K, V>
+where
+    K::Type: Sized,
+    V::Type: Sized,
+{
     type Type = Map<K::Type, V::Type>;
 
     fn make_type(vm: &Thread) -> ArcType {
@@ -2105,4 +2108,3 @@ impl<K: VmType, V: VmType> VmType for Map<K, V> where K::Type: Sized, V::Type: S
         Type::app(map_alias, collect![K::make_type(vm), V::make_type(vm)])
     }
 }
-

@@ -387,8 +387,6 @@ impl<'a> Typecheck<'a> {
     fn find(&mut self, id: &Symbol) -> TcResult<ArcType> {
         match self.environment.find_type(id).map(ArcType::clone) {
             Some(typ) => {
-                let typ = self.subs.set_type(typ);
-
                 self.named_variables.clear();
                 let typ = new_skolem_scope(&self.subs, &typ);
                 debug!("Find {} : {}", self.symbols.string(id), typ);
@@ -2234,7 +2232,7 @@ impl<'a> Typecheck<'a> {
         span: Span<BytePos>,
         level: u32,
         expected: &ArcType,
-        mut actual: ArcType,
+        actual: ArcType,
     ) -> ArcType {
         debug!("Merge {} : {}", expected, actual);
         let expected = self.skolemize(&expected);
@@ -2247,16 +2245,13 @@ impl<'a> Typecheck<'a> {
             &expected,
             &actual,
         ) {
-            Ok(typ) => self.subs.set_type(typ),
+            Ok(typ) => typ,
             Err(errors) => {
-                let mut expected = expected.clone();
-                expected = self.subs.set_type(expected);
-                actual = self.subs.set_type(actual);
                 debug!(
                     "Error '{:?}' between:\n>> {}\n>> {}",
                     errors, expected, actual
                 );
-                let err = TypeError::Unification(expected, actual, apply_subs(&self.subs, errors));
+                let err = TypeError::Unification(expected, actual, errors.into());
                 self.errors.push(Spanned {
                     span: span,
                     // TODO Help what caused this unification failure
@@ -2281,23 +2276,20 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn unify(&self, expected: &ArcType, mut actual: ArcType) -> TcResult<ArcType> {
+    fn unify(&self, expected: &ArcType, actual: ArcType) -> TcResult<ArcType> {
         debug!("Unify start {} <=> {}", expected, actual);
         let state = unify_type::State::new(&self.environment, &self.subs);
         match unify::unify(&self.subs, state, expected, &actual) {
-            Ok(typ) => Ok(self.subs.set_type(typ)),
+            Ok(typ) => Ok(typ),
             Err(errors) => {
-                let mut expected = expected.clone();
-                expected = self.subs.set_type(expected);
-                actual = self.subs.set_type(actual);
                 debug!(
                     "Error '{:?}' between:\n>> {}\n>> {}",
                     errors, expected, actual
                 );
                 Err(TypeError::Unification(
-                    expected,
+                    expected.clone(),
                     actual,
-                    apply_subs(&self.subs, errors),
+                    errors.into(),
                 ))
             }
         }
@@ -2371,27 +2363,6 @@ fn with_pattern_types<F>(
             f(&field.name.value, &mut field.value, &associated_type.typ);
         }
     }
-}
-
-fn apply_subs(
-    subs: &Substitution<ArcType>,
-    errors: Errors<UnifyTypeError<Symbol>>,
-) -> Vec<UnifyTypeError<Symbol>> {
-    use unify::Error::*;
-    errors
-        .into_iter()
-        .map(|error| match error {
-            TypeMismatch(expected, actual) => {
-                TypeMismatch(subs.set_type(expected), subs.set_type(actual))
-            }
-            Substitution(err) => Substitution(match err {
-                substitution::Error::Occurs(var, typ) => {
-                    substitution::Error::Occurs(var, subs.set_type(typ))
-                }
-            }),
-            Other(err) => Other(err),
-        })
-        .collect()
 }
 
 pub fn extract_generics(args: &[ArcType]) -> Vec<Generic<Symbol>> {
