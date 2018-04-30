@@ -378,6 +378,10 @@ impl Value {
         Value(ValueRepr::Tag(tag))
     }
 
+    pub fn get_variants(&self) -> Variants {
+        unsafe { Variants::new(self) }
+    }
+
     pub(crate) fn get_repr(&self) -> ValueRepr {
         self.0
     }
