@@ -64,7 +64,7 @@ macro_rules! test_expr {
             let mut vm = $crate::support::make_vm();
             let value = $crate::support::run_expr_(&mut vm, $expr, true);
             assert_eq!(value, $value);
-        
+
             // Help out the type inference by forcing that left and right are the same types
             fn equiv<T>(_: &T, _: &T) {}
             equiv(&value, &$value);
@@ -74,7 +74,7 @@ macro_rules! test_expr {
         #[test]
         fn $name() {
             use gluon::vm::api::IO;
-        
+
             let _ = ::env_logger::try_init();
             let mut vm = $crate::support::make_vm();
             let (value, _) = ::gluon::Compiler::new()
@@ -85,7 +85,7 @@ macro_rules! test_expr {
             match value {
                 IO::Value(value) => {
                     assert_eq!(value, $value);
-        
+
                     // Help out the type inference by forcing that left and right are the same types
                     fn equiv<T>(_: &T, _: &T) {}
                     equiv(&value, &$value);
@@ -110,7 +110,7 @@ macro_rules! test_expr {
             let mut vm = $crate::support::make_vm();
             let value = $crate::support::run_expr(&mut vm, $expr);
             assert_eq!(value, $value);
-        
+
             // Help out the type inference by forcing that left and right are the same types
             fn equiv<T>(_: &T, _: &T) {}
             equiv(&value, &$value);

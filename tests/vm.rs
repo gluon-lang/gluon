@@ -425,7 +425,7 @@ test_expr!{ record_base_duplicate_fields,
 r#"
 { x = "" ..  { x = 1 } }.x
 "#,
-""
+"".to_string()
 }
 
 test_expr!{ record_base_duplicate_fields2,
@@ -899,4 +899,12 @@ fn deep_clone_partial_application() {
         global_memory_without_closures + memory_for_closures,
         global_memory_with_closures
     );
+}
+
+#[test]
+#[should_panic]
+fn run_expr_to_string_reference_is_ice() {
+    let vm = make_vm();
+
+    let _ = Compiler::new().run_expr::<&str>(&vm, "", r#" "test" "#);
 }

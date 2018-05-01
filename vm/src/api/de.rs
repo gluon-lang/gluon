@@ -239,7 +239,8 @@ impl<'de, 't> Deserializer<'de, 't> {
     {
         let typ = resolve::remove_aliases_cow(self.state.env, self.typ);
         if expected(&typ) {
-            visit(T::from_value(self.state.thread, self.input))
+            // We can rely on `self.input` being rooted for `de` letting us use `from_value_unsafe`
+            unsafe { visit(T::from_value_unsafe(self.state.thread, self.input)) }
         } else {
             Err(VmError::Message(format!(
                 "Unable to deserialize `{}`",
