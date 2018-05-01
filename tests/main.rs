@@ -1,16 +1,14 @@
-extern crate env_logger;
-
-#[macro_use]
-extern crate serde_derive;
-
 #[macro_use]
 extern crate collect_mac;
-
+extern crate env_logger;
+extern crate failure;
 extern crate futures;
 extern crate futures_cpupool;
 extern crate gluon;
+#[macro_use]
+extern crate serde_derive;
 extern crate tensile;
-extern crate tokio_core;
+extern crate tokio;
 
 use gluon::base::types::{ArcType, Type};
 use gluon::vm::api::{Getable, Hole, OpaqueValue, OwnedFunction, VmType};
@@ -43,12 +41,12 @@ impl Error for StringError {
 }
 
 fn main() {
-    if let Err(err) = main_() {
-        assert!(false, "{}", err);
-    }
+    tokio::run(main_().map_err(|err| {
+        panic!("{}", err);
+    }));
 }
 
-fn test_files(path: &str) -> Result<Vec<PathBuf>, Box<Error>> {
+fn test_files(path: &str) -> Result<Vec<PathBuf>, failure::Error> {
     let dir = read_dir(path)?;
     let paths: Vec<_> = dir.filter_map(|f| {
         f.ok().and_then(|f| {
@@ -141,16 +139,13 @@ impl TestCase {
     }
 }
 
-fn make_test<'t>(vm: &'t Thread, name: &str, filename: &Path) -> Result<TestCase, String> {
+fn make_test<'t>(vm: &'t Thread, name: &str, filename: &Path) -> Result<TestCase, failure::Error> {
     let mut compiler = Compiler::new();
 
-    let mut file = File::open(&filename).map_err(|err| err.to_string())?;
+    let mut file = File::open(&filename)?;
     let mut text = String::new();
-    file.read_to_string(&mut text)
-        .map_err(|err| err.to_string())?;
-    let (De(test), _) = compiler
-        .run_expr(&vm, &name, &text)
-        .map_err(|err| err.to_string())?;
+    file.read_to_string(&mut text)?;
+    let (De(test), _) = compiler.run_expr(&vm, &name, &text)?;
     Ok(test)
 }
 
@@ -166,73 +161,80 @@ fn run_file<'t>(
     file.read_to_string(&mut text)
         .map_err(|err| err.to_string())?;
     compiler
-        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, &name, &text)
-        .sync_or_error()
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, &name, &text)
         .map_err(|err| err.to_string())
 }
 
-fn main_() -> Result<(), Box<Error>> {
+fn main_() -> Box<Future<Item = (), Error = failure::Error> + Send + 'static> {
     let _ = ::env_logger::try_init();
     let args: Vec<_> = ::std::env::args().collect();
     let filter = if args.len() > 1 && args.last().unwrap() != "main" {
-        args.last()
+        args.last().cloned()
     } else {
         None
     };
 
     let vm = new_vm();
-    Compiler::new()
-        .load_file_async(&vm, "std/test.glu")
-        .sync_or_error()?;
 
-    let iter = test_files("tests/pass")?.into_iter();
+    let pass_tests_future = {
+        let vm = vm.clone();
+        Compiler::new()
+            .load_file_async(&vm, "std/test.glu")
+            .from_err::<failure::Error>()
+            .join(future::result(test_files("tests/pass")).from_err())
+            .and_then(move |(_, iterable)| {
+                let pool = futures_cpupool::CpuPool::new(1);
+                stream::futures_ordered(iterable.into_iter().map(|filename| {
+                    let name = filename.to_str().unwrap_or("<unknown>").to_owned();
 
-    let pool = futures_cpupool::CpuPool::new(1);
-    let mut core = tokio_core::reactor::Core::new()?;
-    let pass_tests_future = stream::futures_ordered(iter.map(|filename| {
-        let name = filename.to_str().unwrap_or("<unknown>").to_owned();
+                    let vm = vm.new_thread().unwrap();
 
-        let vm = vm.new_thread().unwrap();
-
-        let name2 = name.clone();
-        pool.spawn_fn(move || make_test(&vm, &name, &filename))
-            .then(|result| -> Result<_, String> {
-                Ok(match result {
-                    Ok(test) => test.into_tensile_test(),
-                    Err(err) => tensile::test(name2, || Err(err)),
-                })
+                    let name2 = name.clone();
+                    pool.spawn_fn(move || make_test(&vm, &name, &filename))
+                        .then(|result| -> Result<_, failure::Error> {
+                            Ok(match result {
+                                Ok(test) => test.into_tensile_test(),
+                                Err(err) => {
+                                    let err_msg = err.to_string();
+                                    tensile::test(name2, move || Err(err_msg))
+                                }
+                            })
+                        })
+                })).collect()
             })
-    })).collect();
-    let pass_tests = core.run(pass_tests_future)?;
+    };
+    Box::new(
+        pass_tests_future.and_then(move |pass_tests| -> Result<_, failure::Error> {
+            let iter = test_files("tests/fail")?.into_iter();
 
-    let iter = test_files("tests/fail")?.into_iter();
+            let fail_tests = iter.map(|filename| {
+                let name = filename.to_str().unwrap_or("<unknown>").to_owned();
 
-    let fail_tests = iter.map(|filename| {
-        let name = filename.to_str().unwrap_or("<unknown>").to_owned();
+                let vm = vm.new_thread().unwrap();
 
-        let vm = vm.new_thread().unwrap();
+                tensile::test(name.clone(), move || -> Result<(), String> {
+                    match run_file(&vm, &name, &filename) {
+                        Ok(err) => Err(format!(
+                            "Expected test '{}' to fail\n{:?}",
+                            filename.to_str().unwrap(),
+                            err.0,
+                        )),
+                        Err(_) => Ok(()),
+                    }
+                })
+            }).collect();
 
-        tensile::test(name.clone(), move || -> Result<(), String> {
-            match run_file(&vm, &name, &filename) {
-                Ok(err) => Err(format!(
-                    "Expected test '{}' to fail\n{:?}",
-                    filename.to_str().unwrap(),
-                    err.0,
-                )),
-                Err(_) => Ok(()),
-            }
-        })
-    }).collect();
-
-    tensile::console_runner(
-        tensile::group(
-            "main",
-            vec![
-                tensile::group("pass", pass_tests),
-                tensile::group("fail", fail_tests),
-            ],
-        ),
-        &tensile::Options::default().filter(filter.map_or("", |s| &s[..])),
-    ).unwrap();
-    Ok(())
+            tensile::console_runner(
+                tensile::group(
+                    "main",
+                    vec![
+                        tensile::group("pass", pass_tests),
+                        tensile::group("fail", fail_tests),
+                    ],
+                ),
+                &tensile::Options::default().filter(filter.as_ref().map_or("", |s| &s[..])),
+            ).unwrap();
+            Ok(())
+        }),
+    )
 }

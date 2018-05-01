@@ -143,10 +143,6 @@ pub struct GlobalVmState {
     // thread
     #[cfg_attr(feature = "serde_derive", serde(state))]
     pub generation_0_threads: RwLock<Vec<GcPtr<Thread>>>,
-
-    #[cfg_attr(feature = "serde_derive", serde(skip))]
-    #[cfg(not(target_arch = "wasm32"))]
-    event_loop: Option<::std::panic::AssertUnwindSafe<::tokio_core::reactor::Remote>>,
 }
 
 impl Traverseable for GlobalVmState {
@@ -352,36 +348,13 @@ impl VmEnv {
     }
 }
 
-macro_rules! option {
-    ($(#[$attr:meta])* $name: ident $set_name: ident : $typ: ty) => {
-        $(#[$attr])*
-        pub fn $name(mut self, $name: $typ) -> Self {
-            self.$name = $name;
-            self
-        }
-
-        $(#[$attr])*
-        pub fn $set_name(&mut self, $name: $typ) {
-            self.$name = $name;
-        }
-    };
-}
-
 #[derive(Default)]
-pub struct GlobalVmStateBuilder {
-    #[cfg(not(target_arch = "wasm32"))]
-    event_loop: Option<::tokio_core::reactor::Remote>,
-}
+pub struct GlobalVmStateBuilder {}
 
 impl GlobalVmStateBuilder {
     pub fn new() -> Self {
         Self::default()
     }
-
-    option!(
-        #[cfg(not(target_arch = "wasm32"))]
-        event_loop set_event_loop: Option<::tokio_core::reactor::Remote>
-    );
 
     pub fn build(self) -> GlobalVmState {
         let mut vm = GlobalVmState {
@@ -396,9 +369,6 @@ impl GlobalVmStateBuilder {
             macros: MacroEnv::new(),
             type_cache: TypeCache::default(),
             generation_0_threads: RwLock::new(Vec::new()),
-
-            #[cfg(not(target_arch = "wasm32"))]
-            event_loop: self.event_loop.map(::std::panic::AssertUnwindSafe),
         };
         vm.add_types().unwrap();
         vm
@@ -443,11 +413,6 @@ impl GlobalVmState {
             .unwrap();
         self.register_type::<Thread>("Thread", &[]).unwrap();
         Ok(())
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn get_event_loop(&self) -> Option<::tokio_core::reactor::Remote> {
-        self.event_loop.as_ref().map(|x| x.0.clone())
     }
 
     pub fn type_cache(&self) -> &TypeCache<Symbol, ArcType> {

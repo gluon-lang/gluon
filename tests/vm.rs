@@ -514,8 +514,7 @@ in Cons 1 Nil == Nil
 "#;
     let mut vm = make_vm();
     let (result, _) = Compiler::new()
-        .run_expr_async::<bool>(&mut vm, "<top>", text)
-        .sync_or_error()
+        .run_expr::<bool>(&mut vm, "<top>", text)
         .unwrap_or_else(|err| panic!("{}", err));
     let expected = false;
 
@@ -548,8 +547,7 @@ fn test_implicit_prelude() {
     let text = r#"1.0 + 3.0 - 2.0"#;
     let mut vm = make_vm();
     Compiler::new()
-        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&mut vm, "<top>", text)
-        .sync_or_error()
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&mut vm, "<top>", text)
         .unwrap_or_else(|err| panic!("{}", err));
 }
 
@@ -570,8 +568,7 @@ fn access_operator_without_parentheses() {
     let _ = ::env_logger::try_init();
     let vm = make_vm();
     Compiler::new()
-        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example", r#" import! std.prelude "#)
-        .sync_or_error()
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", r#" import! std.prelude "#)
         .unwrap();
     let result: Result<FunctionRef<fn(i32, i32) -> i32>, _> =
         vm.get_global("std.prelude.num_Int.+");
@@ -634,8 +631,7 @@ fn opaque_value_type_mismatch() {
 
     Compiler::new()
         .implicit_prelude(false)
-        .run_expr_async::<()>(&vm, "<top>", "let _ = import! std.channel in ()")
-        .sync_or_error()
+        .run_expr::<()>(&vm, "<top>", "let _ = import! std.channel in ()")
         .unwrap();
 
     let expr = r#"
@@ -645,8 +641,7 @@ sender
 "#;
     let result = Compiler::new()
         .implicit_prelude(false)
-        .run_expr_async::<OpaqueValue<&Thread, Sender<f64>>>(&vm, "<top>", expr)
-        .sync_or_error();
+        .run_expr::<OpaqueValue<&Thread, Sender<f64>>>(&vm, "<top>", expr);
     match result {
         Err(Error::Typecheck(..)) => (),
         Err(err) => panic!("Unexpected error `{}`", err),
@@ -663,9 +658,7 @@ let s = "åäö"
 string.slice s 1 (string.len s)
 "#;
     let mut vm = make_vm();
-    let result = Compiler::new()
-        .run_expr_async::<String>(&mut vm, "<top>", text)
-        .sync_or_error();
+    let result = Compiler::new().run_expr::<String>(&mut vm, "<top>", text);
     match result {
         Err(Error::VM(..)) => (),
         Err(err) => panic!("Unexpected error `{}`", err),
@@ -702,9 +695,7 @@ and g x = 1 + f (x / 2)
 g 10
 "#;
     let mut vm = make_vm();
-    let result = Compiler::new()
-        .run_expr_async::<i32>(&mut vm, "<top>", text)
-        .sync_or_error();
+    let result = Compiler::new().run_expr::<i32>(&mut vm, "<top>", text);
     match result {
         Err(Error::VM(..)) => {
             let stacktrace = vm.context().stack.stacktrace(1);

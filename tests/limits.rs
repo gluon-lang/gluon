@@ -20,8 +20,7 @@ fn out_of_memory() {
     let expr = " [1, 2, 3, 4] ";
     let result = Compiler::new()
         .implicit_prelude(false)
-        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr)
-        .sync_or_error();
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr);
 
     match result {
         // FIXME This should just need to match on the explicit out of memory error
@@ -41,8 +40,7 @@ fn stack_overflow() {
     let expr = " [1, 2, 3, 4] ";
     let result = Compiler::new()
         .implicit_prelude(false)
-        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr)
-        .sync_or_error();
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr);
 
     match result {
         Err(Error::VM(VMError::StackOverflow(3))) => (),

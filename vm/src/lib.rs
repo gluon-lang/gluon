@@ -22,8 +22,7 @@ extern crate mopa;
 extern crate pretty;
 #[macro_use]
 extern crate quick_error;
-#[cfg(not(target_arch = "wasm32"))]
-extern crate tokio_core;
+extern crate tokio_reactor;
 
 #[cfg(feature = "serde_derive")]
 #[macro_use]
