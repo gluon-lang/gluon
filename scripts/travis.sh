@@ -10,7 +10,7 @@ if [ -z $NO_NORMAL_TEST ]; then
     echo "" | cargo run --features "test" --example 24
 
     echo "TRAVIS_RUST_VERSION=$TRAVIS_RUST_VERSION"
-    [ "$TRAVIS_RUST_VERSION" != "nightly" ] || cargo test --features "test nightly" -p gluon compile_test "$@"
+    (echo $TRAVIS_RUST_VERSION | grep -v nightly) && cargo test --features "test nightly" -p gluon compile_test "$@"
 fi
 
 if [ ! -z $BENCH_DEFAULT_FEATURES_CHECK ] || [ -z CI ]; then

@@ -37,7 +37,7 @@ fn lib_dir(out_dir: &Path, lib_name: &str) -> PathBuf {
 
 fn run_mode(mode: &'static str) {
     // Retrieve the path where library dependencies are output
-    let mut out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let mut out_dir = PathBuf::from(env!("OUT_DIR"));
     loop {
         match out_dir.file_name() {
             Some(name) => match name.to_str() {
