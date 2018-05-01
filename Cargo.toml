@@ -81,6 +81,7 @@ docs_rs = ["serialization"]
 
 test = ["serialization", "little-skeptic", "walkdir", "gluon_vm/test", "gluon_check/test", "gluon_parser/test"]
 nightly = ["compiletest_rs"]
+test_nightly = ["test", "nightly"]
 
 [[bench]]
 name = "check"

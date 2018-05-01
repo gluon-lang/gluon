@@ -519,18 +519,21 @@ where
     }
     // Only allow the unsafe version to be used
     fn from_value(_vm: &'vm Thread, _value: Variants) -> Self {
-        ice!("Getable::from_value usage")
+        panic!("Getable::from_value on references is only allowed in unsafe contexts")
     }
 }
 
 impl<'vm> Getable<'vm> for &'vm str {
-    fn from_value(_vm: &'vm Thread, value: Variants) -> Self {
-        unsafe {
-            match value.as_ref() {
-                ValueRef::String(ref s) => forget_lifetime(s),
-                _ => ice!("ValueRef is not a String"),
-            }
+    unsafe fn from_value_unsafe(_vm: &'vm Thread, value: Variants) -> Self {
+        match value.as_ref() {
+            ValueRef::String(ref s) => forget_lifetime(s),
+            _ => ice!("ValueRef is not a String"),
         }
+    }
+
+    // Only allow the unsafe version to be used
+    fn from_value(_vm: &'vm Thread, _value: Variants) -> Self {
+        panic!("Getable::from_value on references is only allowed in unsafe contexts")
     }
 }
 

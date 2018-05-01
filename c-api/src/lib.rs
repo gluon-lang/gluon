@@ -212,7 +212,7 @@ pub unsafe extern "C" fn glu_get_string(
     let stack = context.stack.current_frame();
     match stack
         .get_variant(index)
-        .map(|value| <&str>::from_value(vm, value))
+        .map(|value| <&str>::from_value_unsafe(vm, value))
     {
         Some(value) => {
             *out = &*value.as_ptr();
