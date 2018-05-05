@@ -732,7 +732,9 @@ impl<'a, 'e> Translator<'a, 'e> {
                     ),
                 )
             }
-            ast::Expr::MacroExpansion { ref replacement, .. } => self.translate_(replacement),
+            ast::Expr::MacroExpansion {
+                ref replacement, ..
+            } => self.translate_(replacement),
             ast::Expr::Error(_) => ice!("ICE: Error expression found in the compiler"),
         }
     }
@@ -1919,8 +1921,9 @@ mod tests {
         let expr = parse_expr(&mut symbols, expr_str);
         let core_expr = translator.translate(&expr);
 
-        let expected_expr =
-            ExprParser::new().parse(&mut symbols, &translator.allocator, expected_str).unwrap();
+        let expected_expr = ExprParser::new()
+            .parse(&mut symbols, &translator.allocator, expected_str)
+            .unwrap();
         assert_deq!(PatternEq(&core_expr), expected_expr);
     }
 

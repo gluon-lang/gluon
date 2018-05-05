@@ -1064,10 +1064,12 @@ pub struct Context {
 
     /// Stack of polling functions used for extern functions returning futures
     #[cfg_attr(feature = "serde_derive", serde(skip))]
-    poll_fns: Vec<(
-        Option<Lock>,
-        Box<for<'vm> FnMut(&'vm Thread) -> Result<Async<OwnedContext<'vm>>> + Send>,
-    )>,
+    poll_fns: Vec<
+        (
+            Option<Lock>,
+            Box<for<'vm> FnMut(&'vm Thread) -> Result<Async<OwnedContext<'vm>>> + Send>,
+        ),
+    >,
 }
 
 impl Context {
@@ -1353,7 +1355,7 @@ impl<'b> OwnedContext<'b> {
 
             if status == Status::Error {
                 return match self.stack.pop().get_repr() {
-                    String(s) => Err(Error::Panic(s.to_string())),
+                    String(s) => Err(Error::Panic(s.to_string(), Some(self.stack.stacktrace(0)))),
                     _ => Err(Error::Message(format!(
                         "Unexpected error calling function `{}`",
                         function.id
@@ -1441,7 +1443,7 @@ impl<'b> OwnedContext<'b> {
             Status::Ok => Ok(Async::Ready(self)),
             Status::Yield => Ok(Async::NotReady),
             Status::Error => match self.stack.pop().get_repr() {
-                String(s) => Err(Error::Panic(s.to_string())),
+                String(s) => Err(Error::Panic(s.to_string(), Some(self.stack.stacktrace(0)))),
                 _ => Err(Error::Message(format!(
                     "Unexpected error calling function `{}`",
                     function.id

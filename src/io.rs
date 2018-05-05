@@ -153,7 +153,8 @@ fn clear_frames<T>(err: Error, stack: StackFrame) -> IO<T> {
             .unwrap_or(0);
 
         let fmt = match err {
-            Error::VM(vm::Error::Panic(_)) => {
+            // Ignore the stacktrace as we take a more specific range of the stack here
+            Error::VM(vm::Error::Panic(ref err, _)) => {
                 let trace = stack.stack.stacktrace(frame_level);
                 format!("{}\n{}", err, trace)
             }

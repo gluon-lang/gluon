@@ -335,9 +335,11 @@ mod tests {
             | { l, r } -> l
             end
             "#;
-        let initial_expr = allocator
-            .arena
-            .alloc(ExprParser::new().parse(&mut symbols, &allocator, initial_str).unwrap());
+        let initial_expr = allocator.arena.alloc(
+            ExprParser::new()
+                .parse(&mut symbols, &allocator, initial_str)
+                .unwrap(),
+        );
 
         let optimized_expr = optimize(&allocator, initial_expr);
 
@@ -348,7 +350,9 @@ mod tests {
             in
             l
             "#;
-        let expected_expr = ExprParser::new().parse(&mut symbols, &allocator, expected_str).unwrap();
+        let expected_expr = ExprParser::new()
+            .parse(&mut symbols, &allocator, expected_str)
+            .unwrap();
         assert_deq!(*optimized_expr, expected_expr);
     }
 }
