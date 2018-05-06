@@ -5,6 +5,7 @@ mod support;
 
 use gluon::{Compiler, Error};
 use gluon::check::typecheck::TypeError;
+use gluon::vm::Error as VMError;
 
 #[test]
 fn dont_panic_when_error_span_is_at_eof() {
@@ -48,5 +49,17 @@ fn dont_miss_errors_in_file_if_import_has_errors() {
             );
         }
         error => panic!("{}", error),
+    }
+}
+
+#[test]
+fn panics_contain_stacktrace() {
+    let _ = ::env_logger::try_init();
+
+    let vm = support::make_vm();
+    let result = Compiler::new().run_expr::<i32>(&vm, "test", "error \"some error\"");
+    match result {
+        Err(Error::VM(VMError::Panic(_, Some(_)))) => (),
+        _ => panic!("Expected error with stacktrace {:?}", result),
     }
 }

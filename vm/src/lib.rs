@@ -68,6 +68,7 @@ mod source_map;
 mod value;
 
 use std::marker::PhantomData;
+use std::fmt;
 
 use api::{ValueRef, VmType};
 use value::{Value, ValueRepr};
@@ -76,6 +77,7 @@ use base::types::ArcType;
 use base::symbol::Symbol;
 use base::metadata::Metadata;
 use thread::{RootedThread, RootedValue, Thread};
+use stack::Stacktrace;
 
 unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
     ::std::mem::transmute(x)
@@ -147,9 +149,25 @@ quick_error! {
         Interrupted {
             display("Thread was interrupted")
         }
-        Panic(err: String) {
-            display("{}", err)
+        Panic(err: String, stacktrace: Option<Stacktrace>) {
+            display("{}", Panic { err, stacktrace })
         }
+    }
+}
+
+struct Panic<'a> {
+    err: &'a String,
+    stacktrace: &'a Option<Stacktrace>,
+}
+
+impl<'a> fmt::Display for Panic<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let Panic { err, stacktrace } = *self;
+        write!(f, "{}", err)?;
+        if let Some(ref stacktrace) = *stacktrace {
+            write!(f, "\n\n{}", stacktrace)?;
+        }
+        Ok(())
     }
 }
 

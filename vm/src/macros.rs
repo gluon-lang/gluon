@@ -149,10 +149,13 @@ impl<'a> MacroExpander<'a> {
 fn replace_expr(expr: &mut SpannedExpr<Symbol>, new: SpannedExpr<Symbol>) {
     let expr_span = expr.span;
     let original = mem::replace(expr, pos::spanned(expr_span, Expr::Error(None)));
-    *expr = pos::spanned(expr.span, Expr::MacroExpansion {
-        original: Box::new(original),
-        replacement: Box::new(new),
-    });
+    *expr = pos::spanned(
+        expr.span,
+        Expr::MacroExpansion {
+            original: Box::new(original),
+            replacement: Box::new(new),
+        },
+    );
 }
 
 struct MacroVisitor<'a: 'b, 'b, 'c> {
