@@ -556,9 +556,8 @@ impl Thread {
     /// let vm = new_vm();
     ///
     /// Compiler::new()
-    ///     .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example",
+    ///     .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example",
     ///         r#" import! std.int "#)
-    ///     .sync_or_error()
     ///     .unwrap_or_else(|err| panic!("{}", err));
     /// let mut add: FunctionRef<fn(i32, i32) -> i32> =
     ///     vm.get_global("std.int.num.(+)").unwrap();
