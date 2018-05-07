@@ -47,7 +47,7 @@ regex = { version = "0.2.1", optional = true }
 compiletest_rs = { version = "0.3", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-tokio-core = "0.1"
+tokio-reactor = "0.1"
 rand = { version = "0.4", optional = true }
 
 [build-dependencies]
@@ -56,14 +56,16 @@ walkdir = { version = "2", optional = true }
 
 [dev-dependencies]
 bencher = "0.1.2"
-tensile = "0.1.0"
+tensile = "0.2.0"
 collect-mac = "0.1.0"
 env_logger = "0.5.0"
 pretty_assertions = "0.5"
 futures-cpupool = "0.1.8"
+failure = "0.1"
 
 hyper = "0.11.0"
 curl = "0.4.1"
+tokio = "0.1"
 
 serde = "1.0.0"
 serde_derive = "1.0.0"

@@ -3,8 +3,7 @@ use std::fmt;
 use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
 
-use futures::Future;
-use futures::sync::oneshot;
+use futures::{future, Future};
 
 use base::types::{ArcType, Type};
 
@@ -288,10 +287,7 @@ fn spawn_on<'vm>(
     let WithVM { vm, value: action } = action;
     let mut action = OwnedFunction::<Action>::from_value(&thread, action.get_variant());
 
-    let future = oneshot::spawn_fn(
-        move || action.call_async(()),
-        &vm.global_env().get_event_loop().expect("event loop"),
-    );
+    let future = future::lazy(move || action.call_async(()));
 
     let mut context = vm.context();
 

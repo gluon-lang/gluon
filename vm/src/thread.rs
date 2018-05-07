@@ -691,7 +691,7 @@ impl Thread {
     }
 }
 
-pub trait VmRoot<'a>: Deref<Target = Thread> + Clone + 'a {
+pub trait VmRoot<'a>: Deref<Target = Thread> + Clone + Send + 'a {
     fn root(thread: &'a Thread) -> Self;
 
     /// Roots a value

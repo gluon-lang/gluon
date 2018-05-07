@@ -1,4 +1,3 @@
-
 extern crate gluon;
 #[macro_use]
 extern crate gluon_vm;
@@ -49,10 +48,8 @@ fn parallel_() -> Result<(), Error> {
         f
         "#;
         let mut compiler = Compiler::new();
-        let mut f: FunctionRef<fn(OpaqueValue<RootedThread, Sender<i32>>)> = compiler
-            .run_expr_async(&child, "<top>", expr)
-            .sync_or_error()?
-            .0;
+        let mut f: FunctionRef<fn(OpaqueValue<RootedThread, Sender<i32>>)> =
+            compiler.run_expr(&child, "<top>", expr)?.0;
         Ok(f.call(sender)?)
     });
 
@@ -75,10 +72,8 @@ fn parallel_() -> Result<(), Error> {
         f
         "#;
         let mut compiler = Compiler::new();
-        let mut f: FunctionRef<fn(OpaqueValue<RootedThread, Receiver<i32>>)> = compiler
-            .run_expr_async(&child2, "<top>", expr)
-            .sync_or_error()?
-            .0;
+        let mut f: FunctionRef<fn(OpaqueValue<RootedThread, Receiver<i32>>)> =
+            compiler.run_expr(&child2, "<top>", expr)?.0;
         Ok(f.call(receiver)?)
     });
 

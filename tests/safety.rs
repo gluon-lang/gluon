@@ -24,8 +24,7 @@ fn verify_value_cloned(from: &Thread, to: &Thread) {
         "#;
 
     let (value, _) = Compiler::new()
-        .run_expr_async::<OpaqueValue<RootedThread, Reference<i32>>>(&from, "example", expr)
-        .sync_or_error()
+        .run_expr::<OpaqueValue<RootedThread, Reference<i32>>>(&from, "example", expr)
         .unwrap_or_else(|err| panic!("{}", err));
 
     // Load the prelude
@@ -35,8 +34,7 @@ fn verify_value_cloned(from: &Thread, to: &Thread) {
         \r -> r <- 1
         "#;
     let (mut store_1, _) = Compiler::new()
-        .run_expr_async::<Fn>(&to, "store_1", store_expr)
-        .sync_or_error()
+        .run_expr::<Fn>(&to, "store_1", store_expr)
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(store_1.call(value.clone()), Ok(()));
 

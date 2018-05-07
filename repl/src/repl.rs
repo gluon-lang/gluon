@@ -8,8 +8,7 @@ use std::error::Error as StdError;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use futures::sync::mpsc;
-use futures::{Future, Sink, Stream};
+use futures::{Future, Stream};
 
 use base::ast::{Expr, Pattern, SpannedPattern, Typed};
 use base::error::InFile;
@@ -285,7 +284,8 @@ fn eval_line_(
             Ok(x) => x,
             Err((_, err)) => {
                 let code_map = compiler.code_map().clone();
-                return FutureValue::sync(Err((compiler, InFile::new(code_map, err).into()))).boxed();
+                return FutureValue::sync(Err((compiler, InFile::new(code_map, err).into())))
+                    .boxed();
             }
         }
     };
@@ -396,29 +396,21 @@ fn finish_or_interrupt(
     thread: RootedThread,
     action: OpaqueValue<&Thread, IO<Generic<A>>>,
 ) -> FutureResult<Box<Future<Item = IO<Generic<A>>, Error = VMError> + Send>> {
-    let remote = thread.global_env().get_event_loop().expect("event_loop");
-
-    let (sender, receiver) = mpsc::channel(1);
-
-    remote.spawn(|handle| {
-        ::tokio_signal::ctrl_c(handle)
-            .map(|x| {
-                info!("Installed Ctrl-C handler");
-                x
-            })
-            .flatten_stream()
-            .map_err(|err| {
-                panic!("Error installing signal handler: {}", err);
-            })
-            .forward(sender.sink_map_err(|_| ()))
-            .map(|_| ())
-    });
+    let ctrl_c = ::tokio_signal::ctrl_c()
+        .map(|x| {
+            info!("Installed Ctrl-C handler");
+            x
+        })
+        .flatten_stream()
+        .map_err(|err| {
+            panic!("Error installing signal handler: {}", err);
+        });
 
     let mut action =
         OwnedFunction::<fn() -> IO<Generic<A>>>::from_value(&thread, action.get_variant());
     let action_future = cpu_pool.0.spawn_fn(move || action.call_async());
 
-    let ctrl_c_future = receiver
+    let ctrl_c_future = ctrl_c
         .into_future()
         .map(move |(next, _)| {
             next.unwrap();
@@ -507,18 +499,17 @@ fn compile_repl(compiler: &mut Compiler, vm: &Thread) -> Result<(), GluonError> 
 
 #[allow(dead_code)]
 pub fn run(color: Color) -> Result<(), Box<StdError + Send + Sync>> {
-    let mut core = ::tokio_core::reactor::Core::new()?;
-
-    let vm = ::gluon::VmBuilder::new()
-        .event_loop(Some(core.remote()))
-        .build();
+    let vm = ::gluon::VmBuilder::new().build();
 
     let mut compiler = Compiler::new();
     compile_repl(&mut compiler, &vm).map_err(|err| err.emit_string(compiler.code_map()).unwrap())?;
 
     let mut repl: OwnedFunction<fn(Ser<Color>) -> IO<()>> = vm.get_global("repl")?;
     debug!("Starting repl");
-    core.run(repl.call_async(Ser(color)))?;
+    ::tokio::run(repl.call_async(Ser(color)).map(|_| ()).map_err(|err| {
+        // FIXME
+        panic!("{}", err)
+    }));
 
     Ok(())
 }

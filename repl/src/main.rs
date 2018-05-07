@@ -15,7 +15,7 @@ extern crate log;
 extern crate serde_derive;
 #[macro_use]
 extern crate structopt;
-extern crate tokio_core;
+extern crate tokio;
 extern crate tokio_signal;
 extern crate walkdir;
 
