@@ -6,8 +6,8 @@ use base::symbol::{Symbol, Symbols};
 use base::scoped_map::ScopedMap;
 use stack::{Lock, StackFrame};
 use vm::{self, Root, RootStr, RootedValue, Status, Thread};
-use value::{ArrayDef, ArrayRepr, Cloner, DataStruct, Def, ExternFunction, GcStr, Value,
-            ValueArray, ValueRepr};
+use value::{ArrayDef, ArrayRepr, Cloner, ClosureData, DataStruct, Def, ExternFunction, GcStr,
+            Value, ValueArray, ValueRepr};
 use thread::{self, Context, RootedThread, VmRoot};
 use thread::ThreadInternal;
 use base::types::{self, ArcType, Type};
@@ -54,6 +54,7 @@ pub enum ValueRef<'a> {
     Array(ArrayRef<'a>),
     Userdata(&'a vm::Userdata),
     Thread(&'a Thread),
+    Closure(Closure<'a>),
     Internal,
 }
 
@@ -95,10 +96,24 @@ impl<'a> ValueRef<'a> {
             ValueRepr::Array(array) => ValueRef::Array(ArrayRef(forget_lifetime(&*array))),
             ValueRepr::Userdata(data) => ValueRef::Userdata(forget_lifetime(&**data)),
             ValueRepr::Thread(thread) => ValueRef::Thread(forget_lifetime(&*thread)),
-            ValueRepr::Function(_) | ValueRepr::Closure(_) | ValueRepr::PartialApplication(_) => {
-                ValueRef::Internal
-            }
+            ValueRepr::Closure(c) => ValueRef::Closure(Closure(forget_lifetime(&*c))),
+            ValueRepr::Function(_) | ValueRepr::PartialApplication(_) => ValueRef::Internal,
         }
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Debug)]
+pub struct Closure<'a>(&'a ClosureData);
+
+impl<'a> Closure<'a> {
+    pub fn name(&self) -> &str {
+        self.0.function.name.definition_name()
+    }
+    pub fn upvars(&self) -> ::value::VariantIter {
+        ::value::variant_iter(&self.0.upvars)
+    }
+    pub fn debug_info(&self) -> &::compiler::DebugInfo {
+        &self.0.function.debug_info
     }
 }
 
@@ -1252,6 +1267,10 @@ impl<'vm> ArrayRef<'vm> {
         } else {
             None
         }
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
     }
 
     pub fn as_slice<T>(&self) -> Option<&[T]>

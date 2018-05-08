@@ -313,9 +313,13 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
             ValueRef::Float(_) => self.deserialize_f64(visitor),
             ValueRef::Int(_) => self.deserialize_i64(visitor),
             ValueRef::String(ref s) => visitor.visit_borrowed_str(s),
-            ValueRef::Userdata(_) | ValueRef::Thread(_) | ValueRef::Internal => Err(
-                VmError::Message(format!("Unable to deserialize `{}`", self.typ)),
-            ),
+            ValueRef::Closure(_)
+            | ValueRef::Userdata(_)
+            | ValueRef::Thread(_)
+            | ValueRef::Internal => Err(VmError::Message(format!(
+                "Unable to deserialize `{}`",
+                self.typ
+            ))),
         }
     }
 

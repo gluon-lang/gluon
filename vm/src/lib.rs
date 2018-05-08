@@ -97,7 +97,8 @@ impl<'a> Variants<'a> {
         Variants(value, PhantomData)
     }
 
-    pub(crate) fn get_value(&self) -> Value {
+    #[doc(hidden)]
+    pub fn get_value(&self) -> Value {
         self.0.into()
     }
 

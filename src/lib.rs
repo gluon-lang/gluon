@@ -265,6 +265,22 @@ impl Compiler {
         &self.code_map
     }
 
+    pub fn update_filemap<S>(&mut self, file: &str, source: S) -> Option<Arc<codespan::FileMap>>
+    where
+        S: Into<String>,
+    {
+        let index_map = &mut self.index_map;
+        let code_map = &mut self.code_map;
+        index_map
+            .get(file)
+            .cloned()
+            .and_then(|i| code_map.update(i, source.into()))
+            .map(|file_map| {
+                index_map.insert(file.into(), file_map.span().start());
+                file_map
+            })
+    }
+
     pub fn get_filemap(&self, file: &str) -> Option<&Arc<codespan::FileMap>> {
         self.index_map
             .get(file)
@@ -274,8 +290,12 @@ impl Compiler {
     #[doc(hidden)]
     pub fn add_filemap<S>(&mut self, file: &str, source: S) -> Arc<codespan::FileMap>
     where
-        S: Into<String>,
+        S: AsRef<str> + Into<String>,
     {
+        match self.get_filemap(file) {
+            Some(file_map) if file_map.src() == source.as_ref() => return file_map.clone(),
+            _ => (),
+        }
         let file_map = self.code_map.add_filemap(
             codespan::FileName::virtual_(file.to_string()),
             source.into(),
