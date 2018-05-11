@@ -789,7 +789,7 @@ impl<'a> Typecheck<'a> {
                     op.span,
                     func_type,
                     implicit_args,
-                    &mut [&mut **lhs, &mut **rhs],
+                    [&mut **lhs, &mut **rhs].iter_mut().map(|expr| &mut **expr),
                 )
             }
             Expr::Tuple {
@@ -1139,16 +1139,27 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn typecheck_application<E>(
+    fn typecheck_application<'e, I>(
+        &mut self,
+        span: Span<BytePos>,
+        func_type: ArcType,
+        implicit_args: &mut Vec<SpannedExpr<Symbol>>,
+        args: I,
+    ) -> Result<TailCall, TypeError<Symbol>>
+    where
+        I: IntoIterator<Item = &'e mut SpannedExpr<Symbol>>,
+        I::IntoIter: ExactSizeIterator,
+    {
+        self.typecheck_application_(span, func_type, implicit_args, &mut args.into_iter())
+    }
+
+    fn typecheck_application_<'e>(
         &mut self,
         span: Span<BytePos>,
         mut func_type: ArcType,
         implicit_args: &mut Vec<SpannedExpr<Symbol>>,
-        args: &mut [E],
-    ) -> Result<TailCall, TypeError<Symbol>>
-    where
-        E: BorrowMut<SpannedExpr<Symbol>>,
-    {
+        args: &mut ExactSizeIterator<Item = &'e mut SpannedExpr<Symbol>>,
+    ) -> Result<TailCall, TypeError<Symbol>> {
         fn attach_extra_argument_help<F, R>(self_: &mut Typecheck, actual: u32, f: F) -> R
         where
             F: FnOnce(&mut Typecheck) -> R,
@@ -1167,6 +1178,8 @@ impl<'a> Typecheck<'a> {
             }
             t
         }
+
+        let args_len = args.len() as u32;
 
         func_type = self.new_skolem_scope(&func_type);
 
@@ -1187,7 +1200,7 @@ impl<'a> Typecheck<'a> {
         let mut not_a_function_index = None;
 
         let mut prev_arg_end = implicit_args.last().map_or(span, |arg| arg.span).end();
-        for (i, arg) in args.iter_mut().map(|arg| arg.borrow_mut()).enumerate() {
+        for arg in args.map(|arg| arg.borrow_mut()) {
             let arg_ty = self.subs.new_var();
             let ret_ty = self.subs.new_var();
             let f = self.type_cache
@@ -1201,7 +1214,7 @@ impl<'a> Typecheck<'a> {
 
             if errors_before != self.errors.len() {
                 self.errors.pop();
-                not_a_function_index = Some(i);
+                not_a_function_index = Some(arg);
                 break;
             }
 
@@ -1212,19 +1225,21 @@ impl<'a> Typecheck<'a> {
             prev_arg_end = arg.span.end();
         }
 
-        if let Some(i) = not_a_function_index {
-            let args_len = args.len() as u32;
-            let extra_args = &mut args[i..];
+        if let Some(arg) = not_a_function_index {
+            let span_start = arg.span.start();
+
+            let extra_args = Some(arg).into_iter().chain(args);
+
+            let mut span_end = BytePos::default();
             let arg_types = extra_args
-                .iter_mut()
-                .map(|arg| self.infer_expr(arg.borrow_mut()))
+                .map(|arg| {
+                    span_end = arg.span.end();
+                    self.infer_expr(arg.borrow_mut())
+                })
                 .collect::<Vec<_>>();
             let actual = self.type_cache.function(arg_types, self.subs.new_var());
 
-            let span = Span::new(
-                extra_args.first_mut().unwrap().borrow_mut().span.start(),
-                extra_args.last_mut().unwrap().borrow_mut().span.end(),
-            );
+            let span = Span::new(span_start, span_end);
             let level = self.subs.var_id();
             attach_extra_argument_help(self, args_len, |self_| {
                 self_.subsumes(span, level, &actual, func_type.clone())

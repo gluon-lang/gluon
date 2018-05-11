@@ -1109,7 +1109,7 @@ impl ValueArray {
     }
 
     unsafe fn unsafe_get<T: Copy>(&self, index: usize) -> T {
-        ::std::mem::transmute::<&Array<_>, &Array<T>>(&self.array)[index]
+        self.unsafe_array()[index]
     }
 
     unsafe fn unsafe_array<T>(&self) -> &Array<T> {

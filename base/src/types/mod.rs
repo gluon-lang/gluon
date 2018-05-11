@@ -2241,15 +2241,6 @@ where
     }
 }
 
-pub fn translate_type<Id, T, U>(cache: &TypeCache<Id, U>, typ: &Type<Id, T>) -> U
-where
-    T: Deref<Target = Type<Id, T>>,
-    U: From<Type<Id, U>> + Clone,
-    Id: Clone,
-{
-    translate_type_with(cache, typ, |t| translate_type(cache, t))
-}
-
 pub fn translate_type_with<Id, T, U, F>(
     cache: &TypeCache<Id, U>,
     typ: &Type<Id, T>,
@@ -2302,7 +2293,7 @@ where
                     typ: translate(&field.typ),
                 })
                 .collect(),
-            translate_type(cache, rest),
+            translate(rest),
         ),
         Type::Hole => cache.hole(),
         Type::Opaque => cache.opaque(),

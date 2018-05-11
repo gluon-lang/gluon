@@ -242,21 +242,24 @@ unsafe impl Send for AllocPtr {}
 
 impl AllocPtr {
     fn new<T>(type_info: *const TypeInfo, value_size: usize) -> AllocPtr {
-        debug_assert!(mem::align_of::<T>() <= mem::align_of::<f64>());
-        unsafe {
-            let alloc_size = GcHeader::value_offset() + value_size;
-            let ptr = allocate(alloc_size) as *mut GcHeader;
-            ptr::write(
-                ptr,
-                GcHeader {
-                    next: None,
-                    type_info: type_info,
-                    value_size: value_size,
-                    marked: Cell::new(false),
-                },
-            );
-            AllocPtr { ptr: ptr }
+        fn new(type_info: *const TypeInfo, value_size: usize) -> AllocPtr {
+            unsafe {
+                let alloc_size = GcHeader::value_offset() + value_size;
+                let ptr = allocate(alloc_size) as *mut GcHeader;
+                ptr::write(
+                    ptr,
+                    GcHeader {
+                        next: None,
+                        type_info: type_info,
+                        value_size: value_size,
+                        marked: Cell::new(false),
+                    },
+                );
+                AllocPtr { ptr: ptr }
+            }
         }
+        debug_assert!(mem::align_of::<T>() <= mem::align_of::<f64>());
+        new(type_info, value_size)
     }
 
     fn size(&self) -> usize {
@@ -680,15 +683,13 @@ impl Gc {
         self.alloc_ignore_limit_(def.size(), def)
     }
 
-    fn alloc_ignore_limit_<D>(&mut self, size: usize, def: D) -> GcPtr<D::Value>
-    where
-        D: DataDef,
-        D::Value: Sized + Any,
-    {
-        unsafe fn drop<T>(t: *mut ()) {
-            ptr::drop_in_place(t as *mut T);
-        }
-        let type_info: *const TypeInfo = match def.fields() {
+    fn get_type_info(
+        &mut self,
+        fields: Option<&[InternedStr]>,
+        type_id: TypeId,
+        drop: unsafe fn(*mut ()),
+    ) -> *const TypeInfo {
+        match fields {
             Some(fields) => match self.record_infos
                 .get(fields)
                 .map(|info| &**info as *const _)
@@ -697,7 +698,7 @@ impl Gc {
                 None => &**self.record_infos
                     .entry(fields.to_owned())
                     .or_insert(Box::new(TypeInfo {
-                        drop: drop::<D::Value>,
+                        drop,
                         generation: self.generation,
                         fields: fields
                             .iter()
@@ -707,16 +708,30 @@ impl Gc {
                         fields_key: Arc::new(fields.to_owned()),
                     })),
             },
-            None => match self.type_infos.entry(TypeId::of::<D::Value>()) {
+            None => match self.type_infos.entry(type_id) {
                 Entry::Occupied(entry) => &**entry.get(),
                 Entry::Vacant(entry) => &**entry.insert(Box::new(TypeInfo {
-                    drop: drop::<D::Value>,
+                    drop,
                     generation: self.generation,
                     fields: FnvMap::default(),
                     fields_key: Arc::new(Vec::new()),
                 })),
             },
-        };
+        }
+    }
+
+    fn alloc_ignore_limit_<D>(&mut self, size: usize, def: D) -> GcPtr<D::Value>
+    where
+        D: DataDef,
+        D::Value: Sized + Any,
+    {
+        unsafe fn drop<T>(t: *mut ()) {
+            ptr::drop_in_place(t as *mut T);
+        }
+
+        let type_info =
+            self.get_type_info(def.fields(), TypeId::of::<D::Value>(), drop::<D::Value>);
+
         let mut ptr = AllocPtr::new::<D::Value>(type_info, size);
         ptr.next = self.values.take();
         self.allocated_memory += ptr.size();
