@@ -233,39 +233,7 @@ impl<'b> ::gc::CollectScope for Roots<'b> {
         // can't move the RwLockGuard into the vec. This does end up safe in the end because we
         // never leak any lifetimes outside of this function
         unsafe {
-            let mut stack: Vec<GcPtr<Thread>> = Vec::new();
-            let mut locks: Vec<(_, _, GcPtr<Thread>)> = Vec::new();
-
-            let child_threads = self.vm.child_threads.read().unwrap();
-            for child in &*child_threads {
-                Vec::push(&mut stack, *child);
-            }
-
-            while let Some(thread_ptr) = stack.pop() {
-                if locks.iter().any(|&(_, _, lock_thread)| {
-                    &*thread_ptr as *const Thread == &*lock_thread as *const Thread
-                }) {
-                    continue;
-                }
-
-                let thread = mem::transmute::<&Thread, &'static Thread>(&*thread_ptr);
-                let child_threads = thread.child_threads.read().unwrap();
-                for child in &*child_threads {
-                    Vec::push(&mut stack, *child);
-                }
-
-                let context = thread.context.lock().unwrap();
-
-                // Since we locked the context we need to scan the thread using `Roots` rather than
-                // letting it be scanned normally
-                Roots {
-                    vm: thread_ptr,
-                    stack: &context.stack,
-                }.traverse(gc);
-
-                Vec::push(&mut locks, (child_threads, context, thread_ptr));
-            }
-
+            let locks = self.mark_child_roots(gc);
             // Scan `self` sweep `gc`
             f(gc);
 
@@ -274,6 +242,53 @@ impl<'b> ::gc::CollectScope for Roots<'b> {
                 context.gc.sweep();
             }
         }
+    }
+}
+
+impl<'b> Roots<'b> {
+    unsafe fn mark_child_roots(
+        &self,
+        gc: &mut Gc,
+    ) -> Vec<
+        (
+            RwLockReadGuard<Vec<GcPtr<Thread>>>,
+            MutexGuard<Context>,
+            GcPtr<Thread>,
+        ),
+    > {
+        let mut stack: Vec<GcPtr<Thread>> = Vec::new();
+        let mut locks: Vec<(_, _, GcPtr<Thread>)> = Vec::new();
+
+        let child_threads = self.vm.child_threads.read().unwrap();
+        for child in &*child_threads {
+            Vec::push(&mut stack, *child);
+        }
+
+        while let Some(thread_ptr) = stack.pop() {
+            if locks.iter().any(|&(_, _, lock_thread)| {
+                &*thread_ptr as *const Thread == &*lock_thread as *const Thread
+            }) {
+                continue;
+            }
+
+            let thread = mem::transmute::<&Thread, &'static Thread>(&*thread_ptr);
+            let child_threads = thread.child_threads.read().unwrap();
+            for child in &*child_threads {
+                Vec::push(&mut stack, *child);
+            }
+
+            let context = thread.context.lock().unwrap();
+
+            // Since we locked the context we need to scan the thread using `Roots` rather than
+            // letting it be scanned normally
+            Roots {
+                vm: thread_ptr,
+                stack: &context.stack,
+            }.traverse(gc);
+
+            Vec::push(&mut locks, (child_threads, context, thread_ptr));
+        }
+        locks
     }
 }
 

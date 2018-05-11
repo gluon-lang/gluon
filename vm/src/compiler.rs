@@ -704,10 +704,9 @@ impl<'a> Compiler<'a> {
                                 || {
                                     ice!(
                                         "ICE: Could not find tag for {}::{} when matching on \
-                                         expression `{}`",
+                                         expression",
                                         typ,
                                         self.symbols.string(&id.name),
-                                        expr
                                     )
                                 },
                             );

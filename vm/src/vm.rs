@@ -411,13 +411,16 @@ impl GlobalVmState {
         use api::generic::A;
         use base::types::BuiltinType;
         fn add_builtin_type<T: Any>(self_: &mut GlobalVmState, b: BuiltinType) {
-            let typ = self_.type_cache.builtin_type(b);
-            add_type::<T>(self_, b.to_str(), typ)
+            add_builtin_type_(self_, b, TypeId::of::<T>())
         }
-        fn add_type<T: Any>(self_: &mut GlobalVmState, name: &str, typ: ArcType) {
+        fn add_builtin_type_(self_: &mut GlobalVmState, b: BuiltinType, id: TypeId) {
+            let typ = self_.type_cache.builtin_type(b);
+            add_type(self_, b.to_str(), typ, id)
+        }
+        fn add_type(self_: &mut GlobalVmState, name: &str, typ: ArcType, id: TypeId) {
             let ids = self_.typeids.get_mut().unwrap();
             let env = self_.env.get_mut().unwrap();
-            ids.insert(TypeId::of::<T>(), typ);
+            ids.insert(id, typ);
             // Insert aliases so that `find_info` can retrieve information about the primitives
             env.type_infos.id_to_type.insert(
                 name.into(),
@@ -431,7 +434,7 @@ impl GlobalVmState {
 
         {
             let unit = self.type_cache.unit();
-            add_type::<()>(self, "()", unit);
+            add_type(self, "()", unit, TypeId::of::<()>());
             add_builtin_type::<VmInt>(self, BuiltinType::Int);
             add_builtin_type::<u8>(self, BuiltinType::Byte);
             add_builtin_type::<f64>(self, BuiltinType::Float);
@@ -528,12 +531,15 @@ impl GlobalVmState {
 
     /// Registers a new type called `name`
     pub fn register_type<T: ?Sized + Any>(&self, name: &str, args: &[&str]) -> Result<ArcType> {
+        self.register_type_(name, args, TypeId::of::<T>())
+    }
+
+    fn register_type_(&self, name: &str, args: &[&str], id: TypeId) -> Result<ArcType> {
         let mut env = self.env.write().unwrap();
         let type_infos = &mut env.type_infos;
         if type_infos.id_to_type.contains_key(name) {
             Err(Error::TypeAlreadyExists(name.into()))
         } else {
-            let id = TypeId::of::<T>();
             let arg_types: AppVec<_> = args.iter().map(|g| self.get_generic(g)).collect();
             let args = arg_types
                 .iter()
