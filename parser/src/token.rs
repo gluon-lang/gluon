@@ -1,4 +1,5 @@
-use base::ast::{is_operator_char, Comment, CommentType};
+use base::ast::is_operator_char;
+use base::metadata::{Comment, CommentType};
 use base::pos::{self, BytePos, Column, Line, Location, Spanned};
 use std::fmt;
 use std::str::Chars;
@@ -54,6 +55,8 @@ pub enum Token<'input> {
     CloseBlock,
     Semi,
 
+    AttributeOpen,
+
     EOF, // Required for the layout algorithm
 }
 
@@ -106,6 +109,8 @@ impl<'input> fmt::Display for Token<'input> {
             OpenBlock => "OpenBlock",
             CloseBlock => "CloseBlock",
             Semi => "Semi",
+
+            AttributeOpen => "#[",
 
             EOF => "EOF",
         };
@@ -577,6 +582,15 @@ impl<'input> Iterator for Tokenizer<'input> {
                     }
                 }
 
+                '#' if self.test_lookahead(|ch| ch == '[') => {
+                    self.bump();
+                    Some(Ok(pos::spanned2(
+                        start,
+                        self.next_loc(),
+                        Token::AttributeOpen,
+                    )))
+                }
+
                 ch if is_ident_start(ch) => Some(Ok(self.identifier(start))),
                 ch if is_digit(ch) || (ch == '-' && self.test_lookahead(is_digit)) => {
                     Some(self.numeric_literal(start))
@@ -622,7 +636,7 @@ fn i64_from_hex(hex: &str, is_positive: bool) -> Result<i64, Error> {
 
 #[cfg(test)]
 mod test {
-    use base::ast::Comment;
+    use base::metadata::Comment;
     use base::pos::{self, BytePos, Column, Line, Location, Spanned};
 
     use codespan::{ByteOffset, ColumnOffset};

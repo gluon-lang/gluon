@@ -88,7 +88,9 @@ fn make_ref(a: WithVM<Generic<A>>) -> Reference<A> {
 }
 
 mod std {
-    pub use reference;
+    pub mod reference {
+        pub use reference as prim;
+    }
 }
 
 pub fn load(vm: &Thread) -> Result<ExternModule> {
@@ -98,9 +100,9 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
     ExternModule::new(
         vm,
         record!{
-            (store "<-") => named_primitive!(2, "std.reference.(<-)", std::reference::set),
-            load => named_primitive!(1, "std.reference.load", std::reference::get),
-            (ref_ "ref") =>  named_primitive!(1, "std.reference.ref", std::reference::make_ref),
+            (store "<-") => named_primitive!(2, "std.reference.prim.(<-)", std::reference::prim::set),
+            load => named_primitive!(1, "std.reference.prim.load", std::reference::prim::get),
+            (ref_ "ref") =>  named_primitive!(1, "std.reference.prim.ref", std::reference::prim::make_ref),
         },
     )
 }

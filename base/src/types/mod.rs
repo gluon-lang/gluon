@@ -9,10 +9,11 @@ use pretty::{Arena, DocAllocator, DocBuilder};
 
 use smallvec::SmallVec;
 
-use ast::{Comment, Commented, EmptyEnv, IdentEnv};
+use ast::{Commented, EmptyEnv, IdentEnv};
 use fnv::FnvMap;
 use kind::{ArcKind, Kind, KindEnv};
 use merge::merge;
+use metadata::Comment;
 use pos::{BytePos, HasSpan, Span};
 use source::Source;
 use symbol::{Symbol, SymbolRef};

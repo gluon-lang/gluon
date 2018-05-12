@@ -6,7 +6,7 @@ let { Semigroup } = import! std.semigroup
 ///
 /// * `forall x . append x empty == x`
 /// * `forall x . append empty x == x`
-/// @implicit
+#[implicit]
 type Monoid a = {
     semigroup : Semigroup a,
     /// # Note

@@ -572,7 +572,7 @@ where
         _: Extra,
     ) -> Result<CompileValue<Self::Expr>> {
         use vm::compiler::Compiler;
-        debug!("Compile `{}`", filename);
+        info!("Compile `{}`", filename);
         let mut module = {
             let env = thread.get_env();
 

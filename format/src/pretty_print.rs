@@ -6,6 +6,7 @@ use pretty::{Arena, DocAllocator, DocBuilder};
 
 use self::types::pretty_print as pretty_types;
 use base::ast::{Do, Expr, Pattern, SpannedExpr, SpannedPattern, ValueBinding};
+use base::metadata::Attribute;
 use base::kind::Kind;
 use base::pos::{self, BytePos, HasSpan, Span, Spanned};
 use base::source;
@@ -211,7 +212,8 @@ where
                         "="
                     ];
                     chain![arena;
-                        pretty_types::doc_comment(arena, bind.comment.as_ref()),
+                        pretty_types::doc_comment(arena, bind.metadata.comment.as_ref()),
+                        self.pretty_attributes(&bind.metadata.attributes),
                         self.hang(decl, &bind.expr).group()
                     ]
                 };
@@ -264,7 +266,8 @@ where
             Expr::TypeBindings(ref binds, ref body) => {
                 let prefixes = iter::once("type").chain(iter::repeat("and"));
                 chain![arena;
-                    pretty_types::doc_comment(arena, binds.first().unwrap().comment.as_ref()),
+                    pretty_types::doc_comment(arena, binds.first().unwrap().metadata.comment.as_ref()),
+                    self.pretty_attributes(&binds.first().unwrap().metadata.attributes),
                     arena.concat(binds.iter().zip(prefixes).map(|(bind, prefix)| {
                         let typ = bind.alias.value.unresolved_type();
                         let typ = match **typ {
@@ -535,6 +538,29 @@ where
             parens: false,
             _marker: ::std::marker::PhantomData,
         }
+    }
+
+    fn pretty_attributes<J>(&self, attributes: J) -> DocBuilder<'a, Arena<'a>>
+    where
+        J: IntoIterator<Item = &'a Attribute>,
+    {
+        let arena = self.arena;
+        arena.concat(attributes.into_iter().map(|attribute| {
+            chain![arena;
+                "#[",
+                &attribute.name[..],
+                match attribute.arguments {
+                    Some(ref arguments) => chain![arena;
+                        "(",
+                        &arguments[..],
+                        ")"
+                    ],
+                    None => arena.nil(),
+                },
+                "]",
+                arena.newline()
+            ]
+        }))
     }
 
     fn pretty_pattern(&self, pattern: &'a SpannedPattern<I>) -> DocBuilder<'a, Arena<'a>> {

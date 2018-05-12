@@ -54,6 +54,7 @@ let string_prim = import! std.string.prim
 test_expr!{ let_record_pattern,
 r#"
 let string_prim = import! std.string.prim
+#[infix(left, 6)]
 let (+) x y = x #Int+ y
 in
 let a = { x = 10, y = "abc" }

@@ -65,7 +65,7 @@ pub fn record(typ: &ArcType, meta: &Metadata) -> Record {
                 typ: field.typ.unresolved_type().to_string(),
                 comment: meta.module
                     .get(AsRef::<str>::as_ref(&field.name))
-                    .and_then(|meta| meta.comment.as_ref().map(|s| &s[..]))
+                    .and_then(|meta| meta.comment.as_ref().map(|s| &s.content[..]))
                     .unwrap_or("")
                     .to_string(),
             })
@@ -78,7 +78,7 @@ pub fn record(typ: &ArcType, meta: &Metadata) -> Record {
 
                 comment: meta.module
                     .get(AsRef::<str>::as_ref(&field.name))
-                    .and_then(|meta| meta.comment.as_ref().map(|s| &s[..]))
+                    .and_then(|meta| meta.comment.as_ref().map(|s| &s.content[..]))
                     .unwrap_or("")
                     .to_string(),
             })

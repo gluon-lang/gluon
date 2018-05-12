@@ -2,7 +2,7 @@
 //! associative with the same precedence. Therefore we need to rebalance them
 //! after the fact.
 
-use base::ast::{walk_mut_expr, Expr, IdentEnv, Literal, MutVisitor, SpannedExpr, SpannedIdent};
+use base::ast::{walk_mut_expr, Expr, IdentEnv, MutVisitor, SpannedExpr, SpannedIdent};
 use base::error::Errors;
 use base::fnv::FnvMap;
 use base::pos::{self, BytePos, Spanned};
@@ -240,16 +240,17 @@ where
 
     fn visit_expr(&mut self, e: &mut SpannedExpr<Self::Ident>) {
         if let Expr::Infix { .. } = e.value {
-            let dummy = pos::spanned2(
-                BytePos::from(0),
-                BytePos::from(0),
-                Expr::Literal(Literal::Int(0)),
-            );
+            let dummy = pos::spanned(e.span, Expr::Error(None));
             let expr = mem::replace(e, dummy);
             match reparse(expr, self.symbols, &self.operators) {
                 Ok(expr) => {
                     *e = expr;
                 }
+                // Undefined fixity errors are reported at the definition site
+                Err(Spanned {
+                    value: Error::UndefinedFixity(_),
+                    ..
+                }) => (),
                 Err(err) => self.errors.push(err),
             }
         }
@@ -278,7 +279,7 @@ impl fmt::Display for Error {
                     lhs_meta, lhs_name, rhs_meta, rhs_name
                 )
             }
-            UndefinedFixity(ref op) => write!(f, "No fixity specified for `{}`. Fixity must be specified with the `@infix` attribute", op),
+            UndefinedFixity(ref op) => write!(f, "No fixity specified for `{}`. Fixity must be specified with the `#[infix]` attribute", op),
             InvalidFixity => write!(
                 f,
                 "Only `left` or `right` is valid associativity specifications"

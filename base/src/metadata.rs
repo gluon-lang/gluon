@@ -18,61 +18,62 @@ impl MetadataEnv for () {
     }
 }
 
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
+#[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
+pub enum CommentType {
+    Block,
+    Line,
+}
+
+#[derive(Clone, Eq, PartialEq, Debug)]
+#[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
+pub struct Comment {
+    pub typ: CommentType,
+    pub content: String,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
+pub struct Attribute {
+    pub name: String,
+    pub arguments: Option<String>,
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 #[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub struct Metadata {
-    pub comment: Option<String>,
+    pub comment: Option<Comment>,
+    pub attributes: Vec<Attribute>,
     pub module: BTreeMap<String, Metadata>,
 }
 
 impl Metadata {
     pub fn has_data(&self) -> bool {
-        self.comment.is_some() || !self.module.is_empty()
+        self.comment.is_some() || !self.module.is_empty() || !self.attributes.is_empty()
     }
 
     pub fn merge(mut self, other: Metadata) -> Metadata {
+        self.merge_with(other);
+        self
+    }
+
+    pub fn merge_with(&mut self, other: Metadata) {
         if self.comment.is_none() {
             self.comment = other.comment;
         }
         if self.module.is_empty() {
             self.module = other.module;
         }
-        self
+        self.attributes.extend(other.attributes);
     }
 
-    pub fn get_attribute(&self, attribute: &str) -> Option<&str> {
+    pub fn get_attribute(&self, name: &str) -> Option<&str> {
         self.attributes()
-            .find(|&(name, _)| name == attribute)
-            .map(|t| t.1.unwrap_or(""))
+            .find(|attribute| attribute.name == name)
+            .map(|t| t.arguments.as_ref().map_or("", |s| s))
     }
 
-    pub fn attributes(&self) -> Attributes {
-        attributes(self.comment.as_ref().map_or("", |s| s))
-    }
-}
-
-pub struct Attributes<'a> {
-    comment: ::std::str::Lines<'a>,
-}
-
-impl<'a> Iterator for Attributes<'a> {
-    type Item = (&'a str, Option<&'a str>);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        while let Some(line) = self.comment.next() {
-            if line.starts_with('@') {
-                let mut split = line[1..].splitn(2, ' ');
-                if let Some(x) = split.next().map(|key| (key, split.next())) {
-                    return Some(x);
-                }
-            }
-        }
-        None
-    }
-}
-
-pub fn attributes(comment: &str) -> Attributes {
-    Attributes {
-        comment: comment.lines(),
+    pub fn attributes(&self) -> impl Iterator<Item = &Attribute> {
+        self.attributes.iter()
     }
 }

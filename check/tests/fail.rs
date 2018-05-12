@@ -433,7 +433,7 @@ The type `()` lacks the following fields: x
 fn unable_to_resolve_implicit_error_message() {
     let _ = ::env_logger::try_init();
     let text = r#"
-/// @implicit
+#[implicit]
 type Eq a = { }
 
 type Test a = | Test a

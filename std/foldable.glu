@@ -4,7 +4,7 @@ let { Monoid } = import! std.monoid
 let { Monad } = import! std.monad
 let { Eq, (==) } = import! std.cmp
 
-/// @implicit
+#[implicit]
 type Foldable (f : Type -> Type) = {
     foldr : forall a b . (a -> b -> b) -> b -> f a -> b,
     foldl : forall a b . (b -> a -> b) -> b -> f a -> b

@@ -11,10 +11,21 @@ extern crate gluon_parser as parser;
 use base::metadata::Metadata;
 use base::pos::{BytePos, Span};
 use base::types::{ArcType, Field, Type};
+use base::metadata::{Comment, CommentType};
 
 #[allow(unused)]
 mod support;
 use support::{intern, loc, typ, MockEnv};
+
+fn line_comment<S>(s: S) -> Comment
+where
+    S: Into<String>,
+{
+    Comment {
+        typ: CommentType::Line,
+        content: s.into(),
+    }
+}
 
 fn find_span_type(s: &str, pos: BytePos) -> Result<(Span<BytePos>, ArcType), ()> {
     let env = MockEnv::new();
@@ -257,10 +268,12 @@ x
         Span::new(loc(text, 1, 4), loc(text, 1, 9)),
         Type::record(
             vec![],
-            vec![Field {
-                name: intern("x"),
-                typ: Type::int(),
-            }],
+            vec![
+                Field {
+                    name: intern("x"),
+                    typ: Type::int(),
+                },
+            ],
         ),
     ));
     assert_eq!(result, expected);
@@ -288,15 +301,11 @@ fn in_record() {
 fn record_constructor_field() {
     let _ = env_logger::try_init();
 
-    let result = find_type(
-        r#"{ test = 123 }"#,
-        BytePos::from(4),
-    );
+    let result = find_type(r#"{ test = 123 }"#, BytePos::from(4));
     let expected = Ok(typ("Int"));
 
     assert_eq!(result, expected);
 }
-
 
 #[test]
 fn function_arg() {
@@ -357,7 +366,7 @@ abc
     let result = get_metadata(text, BytePos::from(41));
 
     let expected = Some(Metadata {
-        comment: Some("test".to_string()),
+        comment: Some(line_comment("test".to_string())),
         ..Metadata::default()
     });
     assert_eq!(result, expected);
@@ -375,7 +384,7 @@ let (+++) x y = 1
     let result = get_metadata(text, BytePos::from(32));
 
     let expected = Some(Metadata {
-        comment: Some("test".to_string()),
+        comment: Some(line_comment("test".to_string())),
         ..Metadata::default()
     });
     assert_eq!(result, expected);
@@ -396,7 +405,7 @@ module.abc
     let result = get_metadata(text, BytePos::from(81));
 
     let expected = Some(Metadata {
-        comment: Some("test".to_string()),
+        comment: Some(line_comment("test".to_string())),
         ..Metadata::default()
     });
     assert_eq!(result, expected);
@@ -415,7 +424,7 @@ ab
     let result = suggest_metadata(text, BytePos::from(36), "abc");
 
     let expected = Some(Metadata {
-        comment: Some("test".to_string()),
+        comment: Some(line_comment("test".to_string())),
         ..Metadata::default()
     });
     assert_eq!(result, expected);
@@ -436,7 +445,7 @@ module.ab
     let result = suggest_metadata(text, BytePos::from(81), "abc");
 
     let expected = Some(Metadata {
-        comment: Some("test".to_string()),
+        comment: Some(line_comment("test".to_string())),
         ..Metadata::default()
     });
     assert_eq!(result, expected);

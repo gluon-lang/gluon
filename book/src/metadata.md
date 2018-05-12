@@ -14,7 +14,7 @@ let add2 x = x + 2
 add1 // Looking up the metadata of this variable yields the documentation of `add1`
 
 // It can't be statically determined which branch the `if` takes (since constant folding do not
-// take place). Thus `addN` do not get any metadta from either `add1` or `add2`
+// take place). Thus `addN` do not get any metadata from either `add1` or `add2`
 let addN = if True then add1 else add2
 addN
 ```
@@ -24,40 +24,44 @@ addN
 
 In addtion to documentation comments gluon also has a special notion of attributes that get propagated in the same manner. These are specified using the following syntax.
 
-```f#
-/// @<NAME> <VALUE?>
+```
+Attribute : #[ AttributeContents ]
+
+AttributeContents :
+      #[ IDENTIFIER ]
+    | #[ IDENTIFIER ( TOKENS* ) ]
 ```
 
-### @infix
+### #[infix(..)]
 
 ```f#
-/// @infix (left|right) <NON-NEGATIVE INTEGER>
+#[infix(<left|right>, <NON-NEGATIVE INTEGER>)]
 ```
 
-The `@infix` attribute is used to specified the fixity and precedence of infix operators. This lets us specify that multiplication binds tighter that addition.
+The `#[infix]` attribute is used to specified the fixity and precedence of infix operators. This lets us specify that multiplication binds tighter that addition.
 
 ```f#
-/// @infix left 6
-let (+) ?num : [num a] -> a -> a -> a = num.(+)
-/// @infix left 7
-let (*) ?num : [num a] -> a -> a -> a = num.(*)
+#[infix(left, 6)]
+let (+) ?num : [Num a] -> a -> a -> a = num.(+)
+#[infix(left, 7)]
+let (*) ?num : [Num a] -> a -> a -> a = num.(*)
 ```
 
 
-### @implicit
+### #[implicit]
 
 ```f#
-/// @implicit
+#[implicit]
 ```
 
-The `@implicit` attribute is used to mark value bindings or type bindings as usable for implicit resolution. If specified on a value binding then only that specific binding can be used on implicit resolution. If specified on a type binding then all bindings that has that type can be used in implicit resolution.
+The `#[implicit]` attribute is used to mark value bindings or type bindings as usable for implicit resolution. If specified on a value binding then only that specific binding can be used on implicit resolution. If specified on a type binding then all bindings that has that type can be used in implicit resolution.
 
 ```
 // Can be used as an implicit argument
-/// @implicit
+#[implicit]
 let binding : MyType = ..
 
-/// @implicit
+#[implicit]
 type Eq a = { (==) : a -> a -> Bool }
 
 // Can be used as an implicit argument

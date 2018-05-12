@@ -27,7 +27,7 @@ fn single_implicit_arg() {
     let text = r#"
 
 let f ?x y: [Int] -> Int -> Int = x
-/// @implicit
+#[implicit]
 let i = 123
 f 42
 "#;
@@ -60,7 +60,7 @@ fn single_implicit_implicit_arg() {
     let _ = ::env_logger::try_init();
     let text = r#"
 let f y : [Int] -> Int -> Int = y
-/// @implicit
+#[implicit]
 let i = 123
 f 42
 "#;
@@ -69,7 +69,7 @@ f 42
     assert_eq!(result, Ok(Type::int()));
     assert_eq!(
         r#"let f ?implicit_arg y : [Int] -> Int -> Int = y
-/// @implicit
+#[implicit]
 let i = 123
 f ?i 42"#,
         format::pretty_expr(text, &expr).trim()
@@ -95,9 +95,9 @@ fn multiple_implicit_args() {
     let text = r#"
 
 let f ?x ?y z w: [Int] -> [String] -> String -> Int -> Int = x
-/// @implicit
+#[implicit]
 let i = 123
-/// @implicit
+#[implicit]
 let x = "abc"
 f x 42
 "#;
@@ -112,7 +112,7 @@ fn just_a_implicit_arg() {
     let text = r#"
 
 let f ?x: [Int] -> Int = x
-/// @implicit
+#[implicit]
 let i = 123
 f
 "#;
@@ -127,9 +127,9 @@ fn function_implicit_arg() {
     let text = r#"
 
 let f ?eq l r: [a -> a -> Bool] -> a -> a -> Bool = eq l r
-/// @implicit
+#[implicit]
 let eq_int l r : Int -> Int -> Bool = True
-/// @implicit
+#[implicit]
 let eq_string l r : String -> String -> Bool = True
 f 1 2
 f "" ""
@@ -146,9 +146,9 @@ fn infix_implicit_arg() {
     let text = r#"
 
 let (==) ?eq l r: [a -> a -> Bool] -> a -> a -> Bool = eq l r
-/// @implicit
+#[implicit]
 let eq_int l r : Int -> Int -> Bool = True
-/// @implicit
+#[implicit]
 let eq_string l r : String -> String -> Bool = True
 "" == ""
 "#;
@@ -183,10 +183,10 @@ fn implicit_from_record_field() {
     let text = r#"
 
 let f ?eq l r: [a -> a -> Bool] -> a -> a -> Bool = eq l r
-/// @implicit
+#[implicit]
 let eq_int l r : Int -> Int -> Bool = True
 let eq_string @ { ? } =
-    /// @implicit
+    #[implicit]
     let eq l r : String -> String -> Bool = True
     { eq }
 f 1 2
@@ -202,7 +202,7 @@ f "" ""
 fn implicit_on_type() {
     let _ = ::env_logger::try_init();
     let text = r#"
-/// @implicit
+#[implicit]
 type Test = | Test ()
 let f ?x y: [a] -> a -> a = x
 let i = Test ()
@@ -227,7 +227,7 @@ f (Test ())
 fn implicit_with_implicit_arguments() {
     let _ = ::env_logger::try_init();
     let text = r#"
-/// @implicit
+#[implicit]
 type Test a = | Test a
 
 type List a = | Nil | Cons a (List a)
@@ -278,7 +278,7 @@ f (Cons 1 Nil)
 fn catch_infinite_loop() {
     let _ = ::env_logger::try_init();
     let text = r#"
-/// @implicit
+#[implicit]
 type Test a = | Test a
 
 type List a = | Nil | Cons a (List a)
@@ -303,10 +303,10 @@ g 1
 fn implicit_ord() {
     let _ = ::env_logger::try_init();
     let text = r#"
-/// @implicit
+#[implicit]
 type Eq a = { (==) : a -> a -> Bool }
 
-/// @implicit
+#[implicit]
 type Ord a = { eq : Eq a, compare : a -> a -> () }
 
 type Option a = | None | Some a
@@ -332,7 +332,7 @@ let ord : [Ord a] -> Ord (Option a) =
 fn forward_implicit_parameter() {
     let _ = ::env_logger::try_init();
     let text = r#"
-/// @implicit
+#[implicit]
 type Test a = | Test a
 let f ?x y : [Test a] -> () -> Test a = x
 let g ?x y : [Test a] -> a -> Test a = f ()
@@ -379,9 +379,9 @@ fn implicit_as_function_argument() {
     let _ = ::env_logger::try_init();
     let text = r#"
 let (==) ?eq l r: [a -> a -> Bool] -> a -> a -> Bool = eq l r
-/// @implicit
+#[implicit]
 let eq_int l r : Int -> Int -> Bool = True
-/// @implicit
+#[implicit]
 let eq_string l r : String -> String -> Bool = True
 
 let f eq l r : (a -> a -> Bool) -> a -> a -> Bool = eq l r
@@ -419,12 +419,12 @@ f (==) 1 2
 fn applicative_resolve_implicit() {
     let _ = ::env_logger::try_init();
     let text = r#"
-/// @implicit
+#[implicit]
 type Functor f = {
     map : forall a b . (a -> b) -> f a -> f b
 }
 
-/// @implicit
+#[implicit]
 type Applicative (f : Type -> Type) = {
     functor : Functor f,
     apply : forall a b . f (a -> b) -> f a -> f b,
@@ -442,12 +442,12 @@ let (<*) ?app l r : [Applicative f] -> f a -> f b -> f a = app.functor.map (\x _
 fn select_functor_from_applicative() {
     let _ = ::env_logger::try_init();
     let text = r#"
-/// @implicit
+#[implicit]
 type Functor f = {
     map : forall a b . (a -> b) -> f a -> f b
 }
 
-/// @implicit
+#[implicit]
 type Applicative (f : Type -> Type) = {
     functor : Functor f,
     apply : forall a b . f (a -> b) -> f a -> f b,
@@ -468,7 +468,7 @@ fn wrap_call_selection() {
     let _ = ::env_logger::try_init();
     let text = r#"
 
-/// @implicit
+#[implicit]
 type Applicative (f : Type -> Type) = {
     wrap : forall a . a -> f a,
 }
@@ -493,7 +493,7 @@ fn unknown_implicit_arg_type() {
     let _ = ::env_logger::try_init();
     let text = r#"
 
-/// @implicit
+#[implicit]
 type Applicative (f : Type -> Type) = {
     wrap : forall a . a -> f a,
 }
@@ -518,7 +518,7 @@ fn dont_insert_extra_implicit_arg_type() {
     let _ = ::env_logger::try_init();
     let text = r#"
 
-/// @implicit
+#[implicit]
 type Applicative (f : Type -> Type) = {
     wrap : forall a . a -> f a,
 }
@@ -545,7 +545,7 @@ fn dont_insert_implicit_with_unresolved_arguments() {
     let _ = ::env_logger::try_init();
     let text = r#"
 
-/// @implicit
+#[implicit]
 type Alternative f = {
     empty : forall a . f a
 }
@@ -567,7 +567,7 @@ fn resolve_implicit_for_fold_m() {
     let text = r#"
 type List a = | Nil | Cons a (List a)
 
-/// @implicit
+#[implicit]
 type Foldable (f : Type -> Type) = {
 }
 
@@ -595,7 +595,7 @@ f
 fn resolve_implicit_which_is_generic() {
     let _ = ::env_logger::try_init();
     let text = r#"
-/// @implicit
+#[implicit]
 type Semigroup a = {
     append : a -> a -> a
 }
@@ -622,17 +622,17 @@ Nil <> Nil
 fn resolve_implicit_semigroup() {
     let _ = ::env_logger::try_init();
     let text = r#"
-/// @implicit
+#[implicit]
 type Semigroup a = {
     append : a -> a -> a
 }
 
-/// @implicit
+#[implicit]
 type Applicative (f : Type -> Type) = {
     apply : forall a b . f (a -> b) -> f a -> f b,
 }
 
-/// @implicit
+#[implicit]
 type Eq a = { (==) : a -> a -> Bool }
 
 type List a = | Nil | Cons a (List a)
@@ -672,7 +672,7 @@ let applicative : Applicative List =
 fn resolve_generic_type_multiple_times() {
     let _ = ::env_logger::try_init();
     let text = r#"
-/// @implicit
+#[implicit]
 type Applicative (f : Type -> Type) = {
 }
 
@@ -704,7 +704,7 @@ let get : State s s = any ()
 fn implicit_list_without_inner_type_determined() {
     let _ = ::env_logger::try_init();
     let text = r#"
-/// @implicit
+#[implicit]
 type Test a = | Test a
 
 type List a = | Nil | Cons a (List a)
