@@ -1,7 +1,9 @@
 language: rust
 sudo: required
 services: docker
-cache: cargo
+cache:
+    cargo: true
+    timeout: 1000
 
 # bors setup
 branches:
