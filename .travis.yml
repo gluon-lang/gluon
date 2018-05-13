@@ -1,7 +1,9 @@
 language: rust
 sudo: required
 services: docker
-cache: cargo
+cache:
+    directories:
+    - $HOME/.cargo
 
 # bors setup
 branches:
@@ -66,8 +68,6 @@ env:
   global:
     - CRATE_NAME=gluon
     - RUST_BACKTRACE=1
-    # Incremental compilation produces to much data making it impossible to cache anything
-    - CARGO_INCREMENTAL=0
 script:
 - >
     if [ ! -z $DISABLE_TESTS ]; then
