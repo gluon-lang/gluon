@@ -94,7 +94,7 @@ fn find_info(args: WithVM<RootStr>) -> IO<Result<String, String>> {
         .ok()
         .and_then(|metadata| metadata.comment.as_ref());
     if let Some(comment) = maybe_comment {
-        for line in comment.lines() {
+        for line in comment.content.lines() {
             write!(&mut buffer, "\n/// {}", line).unwrap();
         }
     }
@@ -285,7 +285,8 @@ fn eval_line_(
             Ok(x) => x,
             Err((_, err)) => {
                 let code_map = compiler.code_map().clone();
-                return FutureValue::sync(Err((compiler, InFile::new(code_map, err).into()))).boxed();
+                return FutureValue::sync(Err((compiler, InFile::new(code_map, err).into())))
+                    .boxed();
             }
         }
     };

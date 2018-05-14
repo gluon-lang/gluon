@@ -2,7 +2,7 @@
 
 let { Functor } = import! std.functor
 
-/// @implicit
+#[implicit]
 type Applicative (f : Type -> Type) = {
     functor : Functor f,
     /// Like `functor.map`, but this time the supplied function is embedded in `f`
@@ -27,11 +27,11 @@ type Applicative (f : Type -> Type) = {
 
 let wrap ?app : [Applicative f] -> a -> f a = app.wrap
 let apply ?app : [Applicative f] -> f (a -> b) -> f a -> f b = app.apply
-/// @infix left 4
+#[infix(left, 4)]
 let (<*>) ?app : [Applicative f] -> f (a -> b) -> f a -> f b = app.apply
-/// @infix left 4
+#[infix(left, 4)]
 let (<*) ?app l r : [Applicative f] -> f a -> f b -> f a = app.functor.map (\x _ -> x) l <*> r
-/// @infix left 4
+#[infix(left, 4)]
 let (*>) ?app l r : [Applicative f] -> f a -> f b -> f b = app.functor.map (\_ x -> x) l <*> r
 
 let map2 ?app f a b : [Applicative f] -> (a -> b -> c)
@@ -42,7 +42,7 @@ let map2 ?app f a b : [Applicative f] -> (a -> b -> c)
 let map3 ?app f a b c : [Applicative f] -> (a -> b -> c -> d) -> f a -> f b -> f c -> f d =
     (app.functor.map f a) <*> b <*> c
 
-/// @implicit
+#[implicit]
 type Alternative f = {
     applicative : Applicative f,
     or : forall a . f a -> f a -> f a,
@@ -51,7 +51,7 @@ type Alternative f = {
 
 let empty ?alt : [Alternative f] -> f a = alt.empty
 let or ?alt : [Alternative f] -> f a -> f a -> f a = alt.or
-/// @infix left 3
+#[infix(left, 3)]
 let (<|>) ?alt : [Alternative f] -> f a -> f a -> f a = alt.or
 
 

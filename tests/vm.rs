@@ -39,11 +39,12 @@ in f(22)
 
 test_expr!{ add_operator,
 r"
-/// @infix left 6
+#[infix(left, 6)]
 let (+) = \x y -> x #Int+ y in 1 + 2 + 3
 ",
 6i32
 }
+
 test_expr!{ divide_int,
 r" 120 #Int/ 4
 ",
@@ -54,6 +55,16 @@ test_expr!{ divide_float,
 r" 120.0 #Float/ 4.0
 ",
 30.0f64
+}
+
+test_expr!{ infix_propagates,
+r"
+#[infix(left, 6)]
+let (+) = \x y -> x #Int+ y
+let { (+) = (++) } = { (+) }
+1 ++ 2 ++ 3
+",
+6i32
 }
 
 #[test]
@@ -401,9 +412,9 @@ f 0 (\r -> { x = r #Int+ 1 })
 fn overloaded_bindings() {
     let _ = ::env_logger::try_init();
     let text = r#"
-/// @implicit
+#[implicit]
 let add_int x y = x #Int+ y
-/// @implicit
+#[implicit]
 let add_float x y = x #Float+ y
 
 let add ?f: [a -> a -> a] -> a -> a -> a = f
@@ -457,7 +468,7 @@ test_expr!{ function_with_implicit_argument_from_record,
 r#"
 let f ?t x: [Int] -> () -> Int = t
 let x @ { ? } =
-    /// @implicit
+    #[implicit]
     let test = 1
     { test }
 f ()
@@ -474,7 +485,7 @@ true
 
 test_expr!{ implicit_argument_selection1,
 r#"
-/// @implicit
+#[implicit]
 type Test = | Test ()
 let f y: [a] -> a -> () = ()
 let i = Test ()
@@ -486,9 +497,9 @@ f (Test ())
 test_expr!{ prelude implicit_argument_selection2,
 r#"
 let string = import! std.string
-let { append = (++) } = string.semigroup
-/// @infix left 6
-let (++) = (++)
+let { append } = string.semigroup
+#[infix(left, 6)]
+let (++) = append
 
 let equality l r : [Eq a] -> a -> a -> String =
     if l == r then " == " else " != "

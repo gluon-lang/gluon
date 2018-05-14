@@ -1,9 +1,12 @@
 extern crate env_logger;
 extern crate gluon;
 
+use gluon::{base, parser};
+
 mod support;
 
 use gluon::{Compiler, Error};
+use gluon::compiler_pipeline::*;
 use gluon::check::typecheck::TypeError;
 use gluon::vm::Error as VMError;
 
@@ -61,5 +64,37 @@ fn panics_contain_stacktrace() {
     match result {
         Err(Error::VM(VMError::Panic(_, Some(_)))) => (),
         _ => panic!("Expected error with stacktrace {:?}", result),
+    }
+}
+
+#[test]
+fn undefined_infix() {
+    let _ = ::env_logger::try_init();
+
+    use parser::{InfixError, ParseErrors};
+    use base::pos::{self, BytePos};
+
+    let expr = r#"
+    let (+) x y = 1
+    1 + 2
+    "#;
+
+    let vm = support::make_vm();
+    let result = expr.reparse_infix(
+        &mut Compiler::new().implicit_prelude(false),
+        &vm,
+        "test",
+        expr,
+    );
+    match result {
+        Err((_, Error::Parse(err))) => {
+            let error = parser::Error::Infix(InfixError::UndefinedFixity("+".to_string()));
+            let span = pos::span(BytePos::from(10), BytePos::from(13));
+            assert_eq!(
+                err.errors(),
+                ParseErrors::from(vec![pos::spanned(span, error)])
+            );
+        }
+        _ => panic!(),
     }
 }

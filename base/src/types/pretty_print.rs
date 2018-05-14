@@ -5,7 +5,8 @@ use std::ops::Deref;
 
 use pretty::{Arena, DocAllocator, DocBuilder};
 
-use ast::{is_operator_char, Comment, CommentType, Commented};
+use ast::{is_operator_char, Commented};
+use metadata::{Comment, CommentType};
 use pos::{BytePos, HasSpan, Span};
 use source::Source;
 

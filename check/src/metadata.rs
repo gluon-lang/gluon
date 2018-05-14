@@ -25,18 +25,12 @@ pub fn metadata(
         fn new_binding(&mut self, metadata: Metadata, bind: &ValueBinding<Symbol>) {
             match bind.name.value {
                 Pattern::As(ref id, _) => {
-                    let metadata = bind.comment.as_ref().map_or(metadata, |comment| Metadata {
-                        comment: Some(comment.content.clone()),
-                        module: BTreeMap::new(),
-                    });
+                    let metadata = bind.metadata.clone().merge(metadata);
                     self.stack_var(id.clone(), metadata.clone());
                     self.new_pattern(metadata, &bind.name);
                 }
                 Pattern::Ident(ref id) => {
-                    let metadata = bind.comment.as_ref().map_or(metadata, |comment| Metadata {
-                        comment: Some(comment.content.clone()),
-                        module: BTreeMap::new(),
-                    });
+                    let metadata = bind.metadata.clone().merge(metadata);
                     self.stack_var(id.name.clone(), metadata);
                 }
                 Pattern::Constructor(..)
@@ -139,17 +133,13 @@ pub fn metadata(
                             }
                             None => self.metadata(&field.name.value).cloned(),
                         };
-                        let field_metadata = field.comment.clone().map(|comment| Metadata {
-                            comment: Some(comment.content),
-                            module: BTreeMap::new(),
-                        });
-                        let maybe_metadata = match (field_metadata, maybe_metadata) {
-                            (Some(l), Some(r)) => Some(l.merge(r)),
-                            (None, Some(x)) | (Some(x), None) => Some(x),
-                            (None, None) => None,
+                        let field_metadata = field.metadata.clone();
+                        let maybe_metadata = match maybe_metadata {
+                            Some(r) => field_metadata.merge(r),
+                            None => field_metadata,
                         };
-                        if let Some(metadata) = maybe_metadata {
-                            module.insert(String::from(field.name.value.as_ref()), metadata);
+                        if maybe_metadata.has_data() {
+                            module.insert(String::from(field.name.value.as_ref()), maybe_metadata);
                         }
                     }
                     for field in types {
@@ -160,8 +150,8 @@ pub fn metadata(
                         }
                     }
                     Metadata {
-                        comment: None,
-                        module: module,
+                        module,
+                        ..Metadata::default()
                     }
                 }
                 Expr::LetBindings(ref bindings, ref expr) => {
@@ -186,12 +176,12 @@ pub fn metadata(
                     for bind in bindings {
                         let mut type_metadata =
                             Self::metadata_of_type(bind.alias.value.unresolved_type());
-                        if let Some(ref comment) = bind.comment {
-                            let mut metadata = type_metadata.unwrap_or_default();
-                            metadata.comment = Some(comment.content.clone());
-                            type_metadata = Some(metadata);
-                        }
-                        if let Some(metadata) = type_metadata {
+                        let metadata = type_metadata.map_or_else(
+                            || bind.metadata.clone(),
+                            |m| m.merge(bind.metadata.clone()),
+                        );
+
+                        if metadata.has_data() {
                             // FIXME Shouldn't need to insert this metadata twice
                             self.stack_var(bind.alias.value.name.clone(), metadata.clone());
                             self.stack_var(bind.name.value.clone(), metadata);
@@ -225,7 +215,7 @@ pub fn metadata(
                     let field_metadata = match field.typ.comment() {
                         Some(comment) => {
                             let mut metadata = field_metadata.unwrap_or_default();
-                            metadata.comment = Some(comment.content.clone());
+                            metadata.comment = Some(comment.clone());
                             Some(metadata)
                         }
                         None => field_metadata,
@@ -238,8 +228,8 @@ pub fn metadata(
                 None
             } else {
                 Some(Metadata {
-                    comment: None,
                     module,
+                    ..Metadata::default()
                 })
             }
         }

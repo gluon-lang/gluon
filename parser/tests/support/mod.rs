@@ -9,6 +9,7 @@ use base::ast::{walk_mut_alias, walk_mut_ast_type, walk_mut_expr, walk_mut_patte
 use base::error::Errors;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::kind::Kind;
+use base::metadata::Metadata;
 use base::types::{Alias, AliasData, ArcType, Field, Generic, Type};
 use parser::{parse_string, Error, ParseErrors};
 use parser::infix::{Fixity, OpMeta, OpTable, Reparser};
@@ -196,7 +197,7 @@ pub fn let_a(s: &str, args: &[&str], e: SpExpr, b: SpExpr) -> SpExpr {
     no_loc(Expr::LetBindings(
         vec![
             ValueBinding {
-                comment: None,
+                metadata: Metadata::default(),
                 name: no_loc(Pattern::Ident(TypedIdent::new(intern(s)))),
                 typ: None,
                 resolved_type: Type::hole(),
@@ -278,7 +279,7 @@ pub fn type_decl(
     type_decls(
         vec![
             TypeBinding {
-                comment: None,
+                metadata: Metadata::default(),
                 name: no_loc(name.clone()),
                 alias: no_loc(AliasData::new(name, args, typ)),
                 finalized_alias: None,
@@ -305,7 +306,7 @@ pub fn record_a(
         types: types
             .into_iter()
             .map(|(name, value)| ExprField {
-                comment: None,
+                metadata: Metadata::default(),
                 name: no_loc(name),
                 value: value,
             })
@@ -313,7 +314,7 @@ pub fn record_a(
         exprs: fields
             .into_iter()
             .map(|(name, value)| ExprField {
-                comment: None,
+                metadata: Metadata::default(),
                 name: no_loc(name),
                 value: value,
             })

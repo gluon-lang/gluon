@@ -461,14 +461,14 @@ Sometimes, there is a need to overload a name with multiple differing implementa
 
 This different looking argument is an implicit argument which means that you do not need to pass a value for this argument, instead, the compiler will try to find a value with a type that matches the type signature. So if you were to call `1 == 2` the compiler will see that the type variable `a` has been unified to `Int`. Then when the implicit argument is resolved it will look for a value with the type `Eq Int`.
 
-Since searching all possible bindings currently in scope would introduce to many ambiguity errors the compiler does not search all bindings when trying to determine an implicit argument. Instead, whether a binding is considered for implicit resolution is controlled by the `@implicit` attribute. When marking a `let` binding as `@implicit` and this binding is in scope it will be considered as a candidate for all implicit arguments. The `@implicit` attribute can also be set on a `type` binding in which case it applied to all `let` bindings which has the type declared by the `type` binding.
+Since searching all possible bindings currently in scope would introduce to many ambiguity errors the compiler does not search all bindings when trying to determine an implicit argument. Instead, whether a binding is considered for implicit resolution is controlled by the `#[implicit]` attribute. When marking a `let` binding as `#[implicit]` and this binding is in scope it will be considered as a candidate for all implicit arguments. The `#[implicit]` attribute can also be set on a `type` binding in which case it applied to all `let` bindings which has the type declared by the `type` binding.
 
 ```f#,rust
-/// @implicit
+#[implicit]
 type Test = | Test ()
 let f y: [a] -> a -> a = y
 let i = Test ()
-// `i` gets selected as the implicit argument since `@implicit` is marked on the type and `i : Test`
+// `i` gets selected as the implicit argument since `#[implicit]` is marked on the type and `i : Test`
 ()
 ```
 
@@ -494,7 +494,8 @@ If you only use implicit functions as explained above then it might just seem li
 ```f#,rust
 let list @ { List } = import! std.list
 // Make a custom equality function which returns true regardless of the elements of the list
-let { (==) = (===) } = list.eq ?{ (==) = \x y -> True }
+#[infix(left, 4)]
+let (===) = (list.eq ?{ (==) = \x y -> True }).(==)
 Cons 1 (Cons 2 Nil) === Cons 3 (Cons 4 Nil)
 ```
 

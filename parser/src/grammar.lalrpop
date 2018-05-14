@@ -1,10 +1,12 @@
 use itertools::Itertools;
 
-use base::ast::{Alternative, Argument, Array, AstType, Do, Comment, Expr, ExprField, Lambda, Literal, Pattern,
+use base::ast::{Alternative, Argument, Array, AstType, Do, Expr, ExprField, Lambda, Literal, Pattern,
     PatternField, SpannedExpr, SpannedIdent, TypeBinding, TypedIdent, ValueBinding};
 use base::kind::{ArcKind, Kind};
 use base::pos::{self, BytePos, Spanned};
 use base::types::{AliasData, ArcType, ArgType, BuiltinType, Field, Generic, Type, TypeCache};
+use base::metadata::{Attribute, Metadata, Comment};
+
 use std::str::FromStr;
 
 use ::new_ident;
@@ -13,7 +15,7 @@ use ordered_float::NotNaN;
 
 use {Error, ErrorEnv, FieldExpr, FieldPattern, MutIdentEnv};
 
-grammar<'input, 'env, Id>(type_cache: &TypeCache<Id, ArcType<Id>>, env: MutIdentEnv<'env, Id>, errors: ErrorEnv<'env, 'input>)
+grammar<'input, 'env, Id>(input: &'input ::ParserSource, type_cache: &TypeCache<Id, ArcType<Id>>, env: MutIdentEnv<'env, Id>, errors: ErrorEnv<'env, 'input>)
     where Id: Clone;
 
 extern {
@@ -62,6 +64,8 @@ extern {
         "]" => Token::RBracket,
         ")" => Token::RParen,
 
+        "#[" => Token::AttributeOpen,
+
         "block open" => Token::OpenBlock,
         "block close" => Token::CloseBlock,
         "block separator" => Token::Semi,
@@ -72,7 +76,6 @@ extern {
 
 SingleComma: () = {
     "," => (),
-    // Necessar
     <!> => errors.push(<>.error)
 };
 
@@ -114,6 +117,43 @@ DocComment: Comment =
             content: <>.into_iter().map(|comment| comment.content).join("\n")
         }
     };
+
+Any: () = {
+    <"identifier">,
+    <"operator">,
+    <"string literal">,
+    <"char literal">,
+    <"int literal">,
+    <"byte literal">,
+    <"float literal">,
+
+    <",">,
+    <"=">,
+
+    "(" AttributeContents ")",
+    "[" AttributeContents "]",
+    "{" AttributeContents "}",
+};
+ 
+AttributeContents: () = {
+    Any*
+};
+
+AttributeArguments: Option<String> = {
+    "(" <start: @L> AttributeContents <end: @R> ")" =>
+        Some(input.src()[(start.to_usize() - input.start_index().to_usize())..(end.to_usize() - input.start_index().to_usize())].to_string()),
+    => None,
+};
+
+Attribute: Attribute = {
+    "#[" <name: IdentStr> <arguments: AttributeArguments> "]" => Attribute { name: name.into(), arguments, },
+};
+
+Metadata: Metadata = {
+    <comment: DocComment> => Metadata { comment: Some(comment), .. Metadata::default() },
+    <comment: DocComment> <attributes: Attribute+> => Metadata { comment: Some(comment), attributes, .. Metadata::default() },
+    <attributes: Attribute+> => Metadata { attributes, .. Metadata::default() },
+};
 
 // Kinds
 
@@ -177,7 +217,7 @@ TypeBinding: TypeBinding<Id> = {
             .collect();
 
         TypeBinding {
-            comment: None,
+            metadata: Metadata::default(),
             name: id.clone(),
             alias: pos::spanned(
                 row_span,
@@ -196,7 +236,7 @@ TypeBinding: TypeBinding<Id> = {
 
     <id: Sp<Ident>> <params: TypeParam*> "=" <body: Sp<Type>> => {
         TypeBinding {
-            comment: None,
+            metadata: Metadata::default(),
             name: id.clone(),
             alias: pos::spanned(body.span, AliasData::new(id.value.clone(), params, body.value)),
             finalized_alias: None,
@@ -411,16 +451,17 @@ Alternative: Alternative<Id> = {
 };
 
 FieldExpr: FieldExpr<Id> = {
-    <comment: DocComment?> <id: Sp<Ident>> "=" <body: SpExpr> => {
-        FieldExpr::Value(comment, id, Some(body))
+    <metadata: Metadata?> <id: Sp<Ident>> "=" <body: SpExpr> => {
+        FieldExpr::Value(metadata.unwrap_or_default(), id, Some(body))
     },
 
-    <comment: DocComment?> <id_str: Sp<IdentStr>> => {
+    <metadata: Metadata?> <id_str: Sp<IdentStr>> => {
+        let metadata = metadata.unwrap_or_default();
         let id = pos::spanned(id_str.span, env.from_str(id_str.value));
         if id_str.value.starts_with(char::is_uppercase) {
-            FieldExpr::Type(comment, id, None)
+            FieldExpr::Type(metadata, id, None)
         } else {
-            FieldExpr::Value(comment, id, None)
+            FieldExpr::Value(metadata, id, None)
         }
     },
 };
@@ -439,9 +480,9 @@ ValueArgument: Argument<Id> = {
 };
 
 ValueBinding: ValueBinding<Id> = {
-    <comment: DocComment?> <name: Sp<AtomicPattern>> <typ: (":" <Type>)?> "=" <body: SpExpr> =>
+    <name: Sp<AtomicPattern>> <typ: (":" <Type>)?> "=" <body: SpExpr> =>
         ValueBinding {
-            comment: comment,
+            metadata: Metadata::default(),
             name: name,
             typ: typ,
             resolved_type: type_cache.hole(),
@@ -449,9 +490,9 @@ ValueBinding: ValueBinding<Id> = {
             expr: body,
         },
 
-    <comment: DocComment?> <name: Sp<Ident>> <args: ValueArgument+> <typ: (":" <Type>)?> "=" <body: SpExpr> =>
+    <name: Sp<Ident>> <args: ValueArgument+> <typ: (":" <Type>)?> "=" <body: SpExpr> =>
         ValueBinding {
-            comment,
+            metadata: Metadata::default(),
             name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
             typ: typ,
             resolved_type: type_cache.hole(),
@@ -498,13 +539,13 @@ AtomicExpr: Expr<Id> = {
 
         for field in fields {
             match field {
-                FieldExpr::Type(comment, id, typ) => types.push(ExprField {
-                    comment: comment,
+                FieldExpr::Type(metadata, id, typ) => types.push(ExprField {
+                    metadata,
                     name: id,
                     value: typ
                 }),
-                FieldExpr::Value(comment, id, expr) => values.push(ExprField {
-                    comment: comment,
+                FieldExpr::Value(metadata, id, expr) => values.push(ExprField {
+                    metadata,
                     name: id,
                     value: expr
                 }),
@@ -560,16 +601,16 @@ InfixExpr = {
 };
 
 AndValueBinding: ValueBinding<Id> =
-    <comment: DocComment?> "and" <binding: ValueBinding> => {
+    <metadata: Metadata?> "and" <binding: ValueBinding> => {
         let mut binding = binding;
-        binding.comment = comment;
+        binding.metadata = metadata.unwrap_or_default();
         binding
     };
 
 AndTypeBinding: TypeBinding<Id> =
-    <comment: DocComment?> "and" <binding: TypeBinding> => {
+    <metadata: Metadata?> "and" <binding: TypeBinding> => {
         let mut binding = binding;
-        binding.comment = comment;
+        binding.metadata = metadata.unwrap_or_default();
         binding
     };
 
@@ -579,22 +620,22 @@ Expr: Expr<Id> = {
     "if" <pred: SpExpr> "then" <if_true: SpExpr> "else" <if_false: SpExpr> =>
         Expr::IfElse(Box::new(pred), Box::new(if_true), Box::new(if_false)),
 
-    "match" <input: SpExpr> "with" <arms: Alternative+> =>
-        Expr::Match(Box::new(input), arms),
+    "match" <body: SpExpr> "with" <arms: Alternative+> =>
+        Expr::Match(Box::new(body), arms),
 
-    <comment: DocComment?> "let" <first: ValueBinding> <bindings: AndValueBinding*> SkipExtraTokens "in" <body: SpExpr> => {
+    <metadata: Metadata?> "let" <first: ValueBinding> <bindings: AndValueBinding*> SkipExtraTokens "in" <body: SpExpr> => {
         let mut first = first;
+        first.metadata = metadata.unwrap_or_default();
         let mut bindings = bindings;
-        first.comment = comment;
         bindings.insert(0, first);
 
         Expr::LetBindings(bindings, Box::new(body))
     },
 
-    <comment: DocComment?> "type" <first: TypeBinding> <bindings: AndTypeBinding*> SkipExtraTokens "in" <body: SpExpr> => {
+    <metadata: Metadata?> "type" <first: TypeBinding> <bindings: AndTypeBinding*> SkipExtraTokens "in" <body: SpExpr> => {
         let mut first = first;
+        first.metadata = metadata.unwrap_or_default();
         let mut bindings = bindings;
-        first.comment = comment;
         bindings.insert(0, first);
 
         Expr::TypeBindings(bindings, Box::new(body))

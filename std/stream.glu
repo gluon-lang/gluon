@@ -1,5 +1,4 @@
 let { Functor, Applicative } = import! std.prelude
-let int @ { num = { (+) } } = import! std.int
 let list @ { List } = import! std.list
 let { Bool } = import! std.bool
 let { Option } = import! std.option

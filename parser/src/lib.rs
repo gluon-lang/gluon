@@ -20,7 +20,7 @@ use std::cell::RefCell;
 use std::fmt;
 use std::hash::Hash;
 
-use base::ast::{Comment, Do, Expr, IdentEnv, SpannedExpr, SpannedPattern, TypedIdent, ValueBinding};
+use base::ast::{Do, Expr, IdentEnv, SpannedExpr, SpannedPattern, TypedIdent, ValueBinding};
 use base::error::{AsDiagnostic, Errors};
 use base::fnv::FnvMap;
 use base::metadata::Metadata;
@@ -276,12 +276,8 @@ pub enum FieldPattern<Id> {
 }
 
 pub enum FieldExpr<Id> {
-    Type(Option<Comment>, Spanned<Id, BytePos>, Option<ArcType<Id>>),
-    Value(
-        Option<Comment>,
-        Spanned<Id, BytePos>,
-        Option<SpannedExpr<Id>>,
-    ),
+    Type(Metadata, Spanned<Id, BytePos>, Option<ArcType<Id>>),
+    Value(Metadata, Spanned<Id, BytePos>, Option<SpannedExpr<Id>>),
 }
 
 // Hack around LALRPOP's limited type syntax
@@ -314,6 +310,18 @@ macro_rules! layout {
 pub trait ParserSource {
     fn src(&self) -> &str;
     fn start_index(&self) -> BytePos;
+}
+
+impl<'a, S> ParserSource for &'a S
+where
+    S: ?Sized + ParserSource,
+{
+    fn src(&self) -> &str {
+        (**self).src()
+    }
+    fn start_index(&self) -> BytePos {
+        (**self).start_index()
+    }
 }
 
 impl ParserSource for str {
@@ -349,7 +357,7 @@ where
     let mut parse_errors = Errors::new();
 
     let result =
-        grammar::TopExprParser::new().parse(type_cache, symbols, &mut parse_errors, layout);
+        grammar::TopExprParser::new().parse(&input, type_cache, symbols, &mut parse_errors, layout);
 
     // If there is a tokenizer error it may still exist in the result iterator wrapper.
     // If that is the case we return that error instead of the unexpected EOF error that lalrpop
@@ -405,8 +413,13 @@ where
 
     let type_cache = TypeCache::default();
 
-    let result =
-        grammar::LetOrExprParser::new().parse(&type_cache, symbols, &mut parse_errors, layout);
+    let result = grammar::LetOrExprParser::new().parse(
+        &input,
+        &type_cache,
+        symbols,
+        &mut parse_errors,
+        layout,
+    );
 
     // If there is a tokenizer error it may still exist in the result iterator wrapper.
     // If that is the case we return that error instead of the unexpected EOF error that lalrpop
@@ -453,49 +466,109 @@ pub fn reparse_infix<Id>(
 where
     Id: Clone + Eq + Hash + AsRef<str> + ::std::fmt::Debug,
 {
+    use base::ast::{is_operator_char, walk_pattern, Pattern, Visitor};
+
     let mut errors = Errors::new();
-    let op_table = OpTable::new(metadata.iter().filter_map(|(symbol, meta)| {
-        fn parse_infix(s: &str) -> Result<OpMeta, InfixError> {
-            let mut iter = s.splitn(2, " ");
-            let fixity = match iter.next().ok_or(InfixError::InvalidFixity)? {
-                "left" => Fixity::Left,
-                "right" => Fixity::Right,
-                _ => {
-                    return Err(InfixError::InvalidFixity);
-                }
-            };
-            let precedence = iter.next()
-                .and_then(|s| s.parse().ok())
-                .and_then(|precedence| {
-                    if precedence >= 0 {
-                        Some(precedence)
-                    } else {
-                        None
+
+    struct CheckInfix<'b, Id>
+    where
+        Id: 'b,
+    {
+        metadata: &'b FnvMap<Id, Metadata>,
+        errors: &'b mut Errors<Spanned<Error, BytePos>>,
+        op_table: &'b mut OpTable<Id>,
+    }
+
+    impl<'b, Id> CheckInfix<'b, Id>
+    where
+        Id: Clone + Eq + Hash + AsRef<str>,
+    {
+        fn insert_infix(&mut self, id: &Id, span: Span<BytePos>) {
+            match self.metadata
+                .get(id)
+                .and_then(|meta| meta.get_attribute("infix"))
+            {
+                Some(infix_attribute) => {
+                    fn parse_infix(s: &str) -> Result<OpMeta, InfixError> {
+                        let mut iter = s.splitn(2, ",");
+                        let fixity = match iter.next().ok_or(InfixError::InvalidFixity)?.trim() {
+                            "left" => Fixity::Left,
+                            "right" => Fixity::Right,
+                            _ => {
+                                return Err(InfixError::InvalidFixity);
+                            }
+                        };
+                        let precedence = iter.next()
+                            .and_then(|s| s.trim().parse().ok())
+                            .and_then(|precedence| {
+                                if precedence >= 0 {
+                                    Some(precedence)
+                                } else {
+                                    None
+                                }
+                            })
+                            .ok_or(InfixError::InvalidPrecedence)?;
+                        Ok(OpMeta { fixity, precedence })
                     }
-                })
-                .ok_or(InfixError::InvalidPrecedence)?;
-            Ok(OpMeta { fixity, precedence })
-        }
-        meta.get_attribute("infix")
-            .and_then(|s| match parse_infix(s) {
-                Ok(op_meta) => Some((symbol.clone(), op_meta)),
-                Err(err) => {
-                    errors.push(pos::spanned(Default::default(), err));
-                    None
+
+                    match parse_infix(infix_attribute) {
+                        Ok(op_meta) => {
+                            self.op_table.operators.insert(id.clone(), op_meta);
+                        }
+                        Err(err) => {
+                            self.errors.push(pos::spanned(span, err.into()));
+                        }
+                    }
                 }
-            })
-    }));
+
+                None => if id.as_ref().starts_with(is_operator_char) {
+                    self.errors.push(pos::spanned(
+                        span,
+                        InfixError::UndefinedFixity(id.as_ref().into()).into(),
+                    ))
+                },
+            }
+        }
+    }
+    impl<'a, 'b, Id> Visitor<'a> for CheckInfix<'b, Id>
+    where
+        Id: Clone + Eq + Hash + AsRef<str> + 'a,
+    {
+        type Ident = Id;
+
+        fn visit_pattern(&mut self, pattern: &'a SpannedPattern<Id>) {
+            match pattern.value {
+                Pattern::Ident(ref id) => {
+                    self.insert_infix(&id.name, pattern.span);
+                }
+                Pattern::Record { ref fields, .. } => {
+                    for field in fields.iter().filter(|field| field.value.is_none()) {
+                        self.insert_infix(&field.name.value, field.name.span);
+                    }
+                }
+                _ => (),
+            }
+            walk_pattern(self, &pattern.value);
+        }
+    }
+
+    let mut op_table = OpTable::new(None);
+    CheckInfix {
+        metadata,
+        errors: &mut errors,
+        op_table: &mut op_table,
+    }.visit_expr(expr);
 
     let mut reparser = Reparser::new(op_table, symbols);
     match reparser.reparse(expr) {
         Err(reparse_errors) => {
-            errors.extend(reparse_errors);
+            errors.extend(reparse_errors.into_iter().map(|err| err.map(Error::from)));
         }
         Ok(_) => {}
     }
 
     if errors.has_errors() {
-        Err(errors.into_iter().map(|err| err.map(Error::from)).collect())
+        Err(errors)
     } else {
         Ok(())
     }

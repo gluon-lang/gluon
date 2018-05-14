@@ -2,8 +2,6 @@ let { run, Test, assert_eq, test, ? } = import! std.test
 let { (<|) } = import! std.function
 let prelude = import! std.prelude
 let { Applicative, (*>), wrap } = import! std.applicative
-let int = import! std.int
-let { (+), (-), (*) } = int.num
 let { lazy, force } = import! std.lazy
 
 let l = lazy (\_ -> 123 + 57)

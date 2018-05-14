@@ -9,6 +9,7 @@ extern crate gluon_parser as parser;
 use base::ast::SpannedExpr;
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Symbol, SymbolRef};
+use base::metadata::{Comment, CommentType};
 
 fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
     check::metadata::metadata(env, expr).0
@@ -21,6 +22,13 @@ struct MockEnv;
 impl MetadataEnv for MockEnv {
     fn get_metadata(&self, _id: &SymbolRef) -> Option<&Metadata> {
         None
+    }
+}
+
+fn line_comment(s: &str) -> Comment {
+    Comment {
+        typ: CommentType::Line,
+        content: s.into(),
     }
 }
 
@@ -41,8 +49,8 @@ id
     assert_eq!(
         metadata,
         Metadata {
-            comment: Some("The identity function".into()),
-            module: Default::default(),
+            comment: Some(line_comment("The identity function")),
+            ..Metadata::default()
         }
     );
 }
@@ -64,8 +72,8 @@ let id x = x
     assert_eq!(
         metadata.module.get("id"),
         Some(&Metadata {
-            comment: Some("The identity function".into()),
-            module: Default::default(),
+            comment: Some(line_comment("The identity function")),
+            ..Metadata::default()
         })
     );
 }
@@ -87,8 +95,8 @@ type Test = Int
     assert_eq!(
         metadata.module.get("Test"),
         Some(&Metadata {
-            comment: Some("A test type".into()),
-            module: Default::default(),
+            comment: Some(line_comment("A test type")),
+            ..Metadata::default()
         })
     );
 }
@@ -111,8 +119,8 @@ fn propagate_metadata_record_field_comment() {
     assert_eq!(
         metadata.module.get("id"),
         Some(&Metadata {
-            comment: Some("The identity function".into()),
-            module: Default::default(),
+            comment: Some(line_comment("The identity function")),
+            ..Metadata::default()
         })
     );
 }
@@ -136,8 +144,8 @@ x.id
     assert_eq!(
         metadata,
         Metadata {
-            comment: Some("The identity function".into()),
-            module: Default::default(),
+            comment: Some(line_comment("The identity function")),
+            ..Metadata::default()
         }
     );
 }
@@ -164,8 +172,8 @@ type Test = {
             .get("Test")
             .and_then(|metadata| metadata.module.get("x")),
         Some(&Metadata {
-            comment: Some("A field".into()),
-            module: Default::default(),
+            comment: Some(line_comment("A field")),
+            ..Metadata::default()
         })
     );
 }

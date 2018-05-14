@@ -12,6 +12,7 @@ mod support;
 use base::ast::*;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::types::{Field, Type};
+use base::metadata::*;
 use support::*;
 
 #[test]
@@ -124,13 +125,13 @@ fn type_mutually_recursive() {
     );
     let binds = vec![
         TypeBinding {
-            comment: None,
+            metadata: Metadata::default(),
             name: no_loc(intern("Test")),
             alias: alias(intern("Test"), Vec::new(), test),
             finalized_alias: None,
         },
         TypeBinding {
-            comment: None,
+            metadata: Metadata::default(),
             name: no_loc(intern("Test2")),
             alias: alias(intern("Test2"), Vec::new(), test2),
             finalized_alias: None,
@@ -311,7 +312,7 @@ fn let_pattern() {
         no_loc(Expr::LetBindings(
             vec![
                 ValueBinding {
-                    comment: None,
+                    metadata: Metadata::default(),
                     name: no_loc(Pattern::Record {
                         typ: Type::hole(),
                         types: Vec::new(),
@@ -469,10 +470,13 @@ id
         no_loc(Expr::LetBindings(
             vec![
                 ValueBinding {
-                    comment: Some(Comment {
-                        typ: CommentType::Line,
-                        content: "The identity function".into(),
-                    }),
+                    metadata: Metadata {
+                        comment: Some(Comment {
+                            typ: CommentType::Line,
+                            content: "The identity function".into(),
+                        }),
+                        ..Metadata::default()
+                    },
                     name: no_loc(Pattern::Ident(TypedIdent::new(intern("id")))),
                     typ: None,
                     resolved_type: Type::hole(),
@@ -500,7 +504,7 @@ id
         no_loc(Expr::LetBindings(
             vec![
                 ValueBinding {
-                    comment: None,
+                    metadata: Metadata::default(),
                     name: no_loc(Pattern::Ident(TypedIdent::new(intern("id")))),
                     typ: None,
                     resolved_type: Type::hole(),
@@ -508,10 +512,13 @@ id
                     expr: id("x"),
                 },
                 ValueBinding {
-                    comment: Some(Comment {
-                        typ: CommentType::Line,
-                        content: "The identity function".into(),
-                    }),
+                    metadata: Metadata {
+                        comment: Some(Comment {
+                            typ: CommentType::Line,
+                            content: "The identity function".into(),
+                        }),
+                        ..Metadata::default()
+                    },
                     name: no_loc(Pattern::Ident(TypedIdent::new(intern("id2")))),
                     typ: None,
                     resolved_type: Type::hole(),
@@ -538,10 +545,13 @@ id
         type_decls(
             vec![
                 TypeBinding {
-                    comment: Some(Comment {
-                        typ: CommentType::Block,
-                        content: "Test type".into(),
-                    }),
+                    metadata: Metadata {
+                        comment: Some(Comment {
+                            typ: CommentType::Block,
+                            content: "Test type".into(),
+                        }),
+                        ..Metadata::default()
+                    },
                     name: no_loc(intern("Test")),
                     alias: alias(intern("Test"), Vec::new(), typ("Int")),
                     finalized_alias: None,
@@ -572,10 +582,13 @@ id
             type_decls(
                 vec![
                     TypeBinding {
-                        comment: Some(Comment {
-                            typ: CommentType::Block,
-                            content: "Test type".into(),
-                        }),
+                        metadata: Metadata {
+                            comment: Some(Comment {
+                                typ: CommentType::Block,
+                                content: "Test type".into(),
+                            }),
+                            ..Metadata::default()
+                        },
                         name: no_loc(intern("Test")),
                         alias: alias(intern("Test"), Vec::new(), typ("Int")),
                         finalized_alias: None,
@@ -603,10 +616,13 @@ id
         type_decls(
             vec![
                 TypeBinding {
-                    comment: Some(Comment {
-                        typ: CommentType::Line,
-                        content: "Merge\nconsecutive\nline comments.".into(),
-                    }),
+                    metadata: Metadata {
+                        comment: Some(Comment {
+                            typ: CommentType::Line,
+                            content: "Merge\nconsecutive\nline comments.".into(),
+                        }),
+                        ..Metadata::default()
+                    },
                     name: no_loc(intern("Test")),
                     alias: alias(intern("Test"), Vec::new(), typ("Int")),
                     finalized_alias: None,
@@ -669,7 +685,7 @@ x
         no_loc(Expr::LetBindings(
             vec![
                 ValueBinding {
-                    comment: None,
+                    metadata: Metadata::default(),
                     name: no_loc(Pattern::Ident(TypedIdent::new(intern("x")))),
                     typ: Some(Type::app(typ("->"), collect![typ("Int"), typ("Int")])),
                     resolved_type: Type::hole(),
@@ -762,20 +778,26 @@ fn doc_comment_on_record_field() {
             typ: Type::hole(),
             types: vec![
                 ExprField {
-                    comment: Some(Comment {
-                        typ: CommentType::Block,
-                        content: "test".into(),
-                    }),
+                    metadata: Metadata {
+                        comment: Some(Comment {
+                            typ: CommentType::Block,
+                            content: "test".into(),
+                        }),
+                        ..Metadata::default()
+                    },
                     name: no_loc("Test".into()),
                     value: None,
                 },
             ],
             exprs: vec![
                 ExprField {
-                    comment: Some(Comment {
-                        typ: CommentType::Line,
-                        content: "x binding".into(),
-                    }),
+                    metadata: Metadata {
+                        comment: Some(Comment {
+                            typ: CommentType::Line,
+                            content: "x binding".into(),
+                        }),
+                        ..Metadata::default()
+                    },
                     name: no_loc("x".into()),
                     value: Some(int(1)),
                 },
@@ -820,7 +842,7 @@ fn parse_let_or_expr() {
         Ok(x) => assert_eq!(
             x,
             Err(ValueBinding {
-                comment: None,
+                metadata: Metadata::default(),
                 name: pos::spanned2(
                     // Add one to each position since codespan return 1-indexed positions
                     5.into(),

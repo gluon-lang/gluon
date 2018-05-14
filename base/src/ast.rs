@@ -6,6 +6,7 @@ use std::ops::{Deref, DerefMut};
 use pos::{self, BytePos, HasSpan, Span, Spanned};
 use symbol::Symbol;
 use types::{self, Alias, AliasData, ArcType, ArgType, Generic, Type, TypeEnv};
+use metadata::{Comment, Metadata};
 use ordered_float::NotNaN;
 
 pub trait DisplayEnv {
@@ -100,6 +101,10 @@ impl<Id> HasSpan for AstType<Id> {
     }
 }
 
+pub trait Commented {
+    fn comment(&self) -> Option<&Comment>;
+}
+
 impl<Id> Commented for AstType<Id> {
     fn comment(&self) -> Option<&Comment> {
         self._typ.0.as_ref()
@@ -145,22 +150,6 @@ impl<Id> AstType<Id> {
             _ => self,
         }
     }
-}
-
-pub trait Commented {
-    fn comment(&self) -> Option<&Comment>;
-}
-
-#[derive(Clone, Copy, Eq, PartialEq, Debug)]
-pub enum CommentType {
-    Block,
-    Line,
-}
-
-#[derive(Clone, Eq, PartialEq, Debug)]
-pub struct Comment {
-    pub typ: CommentType,
-    pub content: String,
 }
 
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -260,7 +249,7 @@ pub type SpannedAstType<Id> = Spanned<Type<Id, AstType<Id>>, BytePos>;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct ExprField<Id, E> {
-    pub comment: Option<Comment>,
+    pub metadata: Metadata,
     pub name: Spanned<Id, BytePos>,
     pub value: Option<E>,
 }
@@ -339,7 +328,7 @@ pub enum Expr<Id> {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct TypeBinding<Id> {
-    pub comment: Option<Comment>,
+    pub metadata: Metadata,
     pub name: Spanned<Id, BytePos>,
     pub alias: SpannedAlias<Id>,
     pub finalized_alias: Option<Alias<Id, ArcType<Id>>>,
@@ -375,7 +364,7 @@ impl<Id> Argument<Id> {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct ValueBinding<Id> {
-    pub comment: Option<Comment>,
+    pub metadata: Metadata,
     pub name: SpannedPattern<Id>,
     pub typ: Option<AstType<Id>>,
     pub resolved_type: ArcType<Id>,
@@ -639,11 +628,11 @@ pub fn walk_mut_ast_type<'a, V: ?Sized + MutVisitor<'a>>(
             }
             v.visit_ast_type(&mut rest._typ.1);
         }
-        Type::Ident(_) => (),
-        Type::Variable(_) => (),
-        Type::Generic(_) => (),
-        Type::Alias(_) => (),
-        Type::Skolem(_) => (),
+        Type::Ident(_)
+        | Type::Variable(_)
+        | Type::Generic(_)
+        | Type::Alias(_)
+        | Type::Skolem(_) => (),
     }
 }
 
@@ -654,8 +643,8 @@ pub trait Visitor<'a> {
         walk_expr(self, e);
     }
 
-    fn visit_pattern(&mut self, e: &'a SpannedPattern<Self::Ident>) {
-        walk_pattern(self, &e.value);
+    fn visit_pattern(&mut self, p: &'a SpannedPattern<Self::Ident>) {
+        walk_pattern(self, &p.value);
     }
 
     fn visit_typ(&mut self, _: &'a ArcType<Self::Ident>) {}

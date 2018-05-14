@@ -1,7 +1,9 @@
 language: rust
 sudo: required
 services: docker
-cache: cargo
+cache:
+    directories:
+    - $HOME/.cargo
 
 # bors setup
 branches:
@@ -15,7 +17,7 @@ branches:
 
 matrix:
   include:
-  - rust: nightly-2018-04-18
+  - rust: nightly-2018-05-11
   - rust: beta
   - rust: stable
     env: ARCH=i686
@@ -33,7 +35,7 @@ matrix:
       - BENCH_DEFAULT_FEATURES_CHECK=1
       - TARGET=x86_64-unknown-linux-gnu
 
-  - rust: nightly-2017-12-18
+  - rust: nightly-2018-05-11
     env: WASM=1
 
     # Only for deployment

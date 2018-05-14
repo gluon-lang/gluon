@@ -91,6 +91,7 @@ let update_position c position : Char -> Position -> Position =
     position + char.len_utf8 c
 
 /// Returns `message` as what was expected by `p`
+#[infix(left, 0)]
 let (<?>) p message : Parser a -> String -> Parser a =
     parser (\stream ->
         match p stream with

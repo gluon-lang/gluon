@@ -48,6 +48,8 @@ enum Context {
     MatchClause,
     /// In a lambda function
     Lambda,
+    /// In an attribute
+    Attribute,
 }
 
 #[derive(Debug)]
@@ -265,7 +267,10 @@ where
                     if token_closes_context(&token.value, offside.context) {
                         match offside.context {
                             Context::If => (),
-                            Context::Brace | Context::Bracket | Context::Paren => return Ok(token),
+                            Context::Brace
+                            | Context::Bracket
+                            | Context::Paren
+                            | Context::Attribute => return Ok(token),
                             Context::Block { .. } if token.value == Token::CloseBlock => {
                                 if let Some(offside) = self.indent_levels.last_mut() {
                                     // The enclosing block should not emit a block separator for the next
@@ -348,7 +353,7 @@ where
                 }
                 (Context::Block { emit_semi: false }, Ordering::Equal) => {
                     match token.value {
-                        Token::DocComment { .. } | Token::OpenBlock => (),
+                        Token::AttributeOpen | Token::DocComment { .. } | Token::OpenBlock => (),
                         _ => {
                             // If it is the first token in a sequence we dont want to emit a
                             // separator
@@ -431,6 +436,7 @@ where
                 Token::LBrace => Some(Context::Brace),
                 Token::LBracket => Some(Context::Bracket),
                 Token::LParen => Some(Context::Paren),
+                Token::AttributeOpen => Some(Context::Attribute),
                 _ => None,
             };
             if let Some(context) = push_context {
@@ -503,6 +509,7 @@ fn token_closes_context(token: &Token, context: Context) -> bool {
         | (&Token::CloseBlock, Context::Block { .. })
         | (&Token::In, Context::Let)
         | (&Token::In, Context::Type)
+        | (&Token::RBracket, Context::Attribute)
         | (_, Context::Block { .. }) => true,
         (_, _) => false,
     }

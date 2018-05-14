@@ -7,7 +7,7 @@
 ///
 /// * `map id == id`
 /// * `map (f << g) == map f << map g`
-/// @implicit
+#[implicit]
 type Functor f = {
     /// Apply the supplied function to the contents of `f a`, converting it to
     /// an `f b`
