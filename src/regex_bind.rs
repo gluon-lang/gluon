@@ -65,6 +65,8 @@ pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
     ExternModule::new(
         vm,
         record!{
+            type Error => Error,
+            type Regex => Regex,
             new => primitive!(1 std::regex::new),
             is_match => primitive!(2 std::regex::is_match),
             error_to_string => primitive!(1 std::regex::error_to_string)

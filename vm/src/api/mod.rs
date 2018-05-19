@@ -519,6 +519,19 @@ impl<'vm> Getable<'vm> for Value {
     }
 }
 
+impl<'vm, T: ?Sized + VmType> VmType for PhantomData<T> {
+    type Type = T::Type;
+    fn make_forall_type(vm: &Thread) -> ArcType {
+        T::make_forall_type(vm)
+    }
+    fn make_type(vm: &Thread) -> ArcType {
+        T::make_type(vm)
+    }
+    fn extra_args() -> VmIndex {
+        T::extra_args()
+    }
+}
+
 impl<'vm, T: ?Sized + VmType> VmType for &'vm T {
     type Type = T::Type;
     fn make_type(vm: &Thread) -> ArcType {
@@ -1484,8 +1497,7 @@ pub mod record {
     use frunk_core::hlist::{h_cons, HCons, HList, HNil};
 
     use base::symbol::Symbol;
-    use base::types;
-    use base::types::ArcType;
+    use base::types::{self, Alias, AliasData, ArcType, Generic};
 
     use super::{Getable, Pushable, VmType};
     use thread::{self, Context, ThreadInternal};
@@ -1494,17 +1506,29 @@ pub mod record {
     use vm::Thread;
     use {Result, Variants};
 
-    pub struct Record<T> {
-        pub fields: T,
+    pub struct Record<T, U> {
+        pub type_fields: T,
+        pub fields: U,
     }
 
     pub trait Field: Default {
         fn name() -> &'static str;
+        fn args() -> &'static [&'static str] {
+            &[]
+        }
     }
 
     pub trait FieldTypes: HList {
         type Type: Any;
-        fn field_types(vm: &Thread, fields: &mut Vec<types::Field<Symbol, ArcType>>);
+        fn field_types(
+            vm: &Thread,
+            type_fields: &mut Vec<types::Field<Symbol, Alias<Symbol, ArcType>>>,
+        );
+    }
+
+    pub trait FieldValues: HList {
+        type Type: Any;
+        fn field_values(vm: &Thread, fields: &mut Vec<types::Field<Symbol, ArcType>>);
     }
 
     pub trait PushableFieldList<'vm>: HList {
@@ -1530,7 +1554,7 @@ pub mod record {
 
     impl FieldTypes for HNil {
         type Type = ();
-        fn field_types(_: &Thread, _: &mut Vec<types::Field<Symbol, ArcType>>) {}
+        fn field_types(_: &Thread, _: &mut Vec<types::Field<Symbol, Alias<Symbol, ArcType>>>) {}
     }
 
     impl<F: Field, H: VmType, T> FieldTypes for HCons<(F, H), T>
@@ -1539,9 +1563,53 @@ pub mod record {
         H::Type: Sized,
     {
         type Type = HCons<(&'static str, H::Type), T::Type>;
-        fn field_types(vm: &Thread, fields: &mut Vec<types::Field<Symbol, ArcType>>) {
-            fields.push(types::Field::new(Symbol::from(F::name()), H::make_type(vm)));
-            T::field_types(vm, fields);
+        fn field_types(
+            vm: &Thread,
+            type_fields: &mut Vec<types::Field<Symbol, Alias<Symbol, ArcType>>>,
+        ) {
+            let name = Symbol::from(F::name());
+            let args = F::args();
+            assert!(
+                name.definition_name().starts_with(char::is_uppercase),
+                "{}",
+                name
+            );
+            type_fields.push(types::Field::new(
+                name.clone(),
+                Alias::from(AliasData::new(
+                    name,
+                    args.iter()
+                        .map(|arg| {
+                            Generic::new(
+                                Symbol::from(*arg),
+                                vm.global_env().type_cache().kind_cache.typ(),
+                            )
+                        })
+                        .collect(),
+                    H::make_type(vm),
+                )),
+            ));
+            T::field_types(vm, type_fields);
+        }
+    }
+
+    impl FieldValues for HNil {
+        type Type = ();
+        fn field_values(_: &Thread, _: &mut Vec<types::Field<Symbol, ArcType>>) {}
+    }
+
+    impl<F: Field, H: VmType, T> FieldValues for HCons<(F, H), T>
+    where
+        T: FieldValues,
+        H::Type: Sized,
+    {
+        type Type = HCons<(&'static str, H::Type), T::Type>;
+        fn field_values(vm: &Thread, fields: &mut Vec<types::Field<Symbol, ArcType>>) {
+            let name = Symbol::from(F::name());
+            let args = F::args();
+            debug_assert!(args.is_empty());
+            fields.push(types::Field::new(name, H::make_type(vm)));
+            T::field_values(vm, fields);
         }
     }
 
@@ -1568,23 +1636,24 @@ pub mod record {
         }
     }
 
-    impl<T: FieldTypes> VmType for Record<T> {
-        type Type = Record<T::Type>;
+    impl<T: FieldTypes, U: FieldValues> VmType for Record<T, U> {
+        type Type = Record<T::Type, U::Type>;
         fn make_type(vm: &Thread) -> ArcType {
-            let len = T::LEN;
-            let mut fields = Vec::with_capacity(len);
-            T::field_types(vm, &mut fields);
+            let mut type_fields = Vec::new();
+            T::field_types(vm, &mut type_fields);
+            let mut fields = Vec::new();
+            U::field_values(vm, &mut fields);
             let type_cache = vm.global_env().type_cache();
-            type_cache.record(Vec::new(), fields)
+            type_cache.record(type_fields, fields)
         }
     }
-    impl<'vm, T> Pushable<'vm> for Record<T>
+    impl<'vm, T, U> Pushable<'vm> for Record<T, U>
     where
-        T: PushableFieldList<'vm>,
+        U: PushableFieldList<'vm>,
     {
         fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
             self.fields.push(thread, context)?;
-            let len = T::LEN as VmIndex;
+            let len = U::LEN as VmIndex;
             let offset = context.stack.len() - len;
             let value = thread::alloc(
                 &mut context.gc,
@@ -1602,15 +1671,19 @@ pub mod record {
             Ok(())
         }
     }
-    impl<'vm, T> Getable<'vm> for Record<T>
+    impl<'vm, T, U> Getable<'vm> for Record<T, U>
     where
-        T: GetableFieldList<'vm>,
+        T: Default,
+        U: GetableFieldList<'vm>,
     {
         fn from_value(vm: &'vm Thread, value: Variants) -> Self {
             match value.0 {
                 ValueRepr::Data(ref data) => {
-                    let fields = T::from_value(vm, &data.fields).unwrap();
-                    Record { fields }
+                    let fields = U::from_value(vm, &data.fields).unwrap();
+                    Record {
+                        type_fields: T::default(),
+                        fields,
+                    }
                 }
                 _ => ice!("Value is not a Record"),
             }

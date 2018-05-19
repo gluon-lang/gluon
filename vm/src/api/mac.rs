@@ -122,6 +122,20 @@ macro_rules! field_decl_inner {
         }
     };
 
+    (type $field: ident $($args: ident)*) => {
+        #[allow(non_camel_case_types)]
+        #[derive(Default)]
+        pub struct $field;
+        impl $crate::api::record::Field for $field {
+            fn name() -> &'static str {
+                stringify!($field)
+            }
+            fn args() -> &'static [&'static str] {
+                &[$(stringify!($args)),*]
+            }
+        }
+    };
+
     ($field: ident, $($rest: tt)*) => {
         field_decl_inner!{
             ($field stringify!($field)),
@@ -130,6 +144,10 @@ macro_rules! field_decl_inner {
     };
     (($alias: ident $field: expr), $($rest: tt)*) => {
         field_decl_inner!{ ($alias $field) }
+        field_decl_inner!{$($rest)*}
+    };
+    (type $alias: ident $($arg: ident)*, $($rest: tt)*) => {
+        field_decl_inner!{ type $alias $($arg)* }
         field_decl_inner!{$($rest)*}
     }
 }
@@ -167,6 +185,11 @@ macro_rules! field_decl_record {
             [$($acc)* ($alias $field),]
         }
     };
+    ([ $($acc: tt)* ] type $alias: ident $($arg: ident)* => $ignore: ty) => {
+        field_decl_record!{
+            [$($acc)* type $alias $($arg)*,]
+        }
+    };
 
     ([ $($acc: tt)* ] $field: ident => $ignore: expr, $($rest: tt)*) => {
         field_decl_record!{
@@ -177,6 +200,12 @@ macro_rules! field_decl_record {
     ([ $($acc: tt)* ] ($alias: ident $field: expr) => $ignore: expr, $($rest: tt)*) => {
         field_decl_record!{
             [$($acc)* ($alias $field),]
+            $($rest)*
+        }
+    };
+    ([ $($acc: tt)* ] type $field: ident $($arg: ident)* => $ignore: ty, $($rest: tt)*) => {
+        field_decl_record!{
+            [$($acc)* type $field $($arg)*,]
             $($rest)*
         }
     }
@@ -192,6 +221,10 @@ macro_rules! record_no_decl_inner {
     ( ($field: ident $ignore: expr) => $value: expr) => {
         record_no_decl_inner!($field => $value)
     };
+    ( type $field: ident $($arg: ident)* => $value: ty) => {
+        record_no_decl_inner!()
+    };
+
     ($field: ident => $value: expr, $($rest: tt)*) => {
         $crate::frunk_core::hlist::h_cons(
             (_field::$field, $value),
@@ -200,6 +233,37 @@ macro_rules! record_no_decl_inner {
     };
     ( ($field: ident $ignore: expr) => $value: expr, $($rest: tt)*) => {
         record_no_decl_inner!($field => $value, $($rest)*)
+    };
+    ( type $field: ident $($arg: ident)* => $value: ty, $($rest: tt)*) => {
+        record_no_decl_inner!($($rest)*)
+    };
+}
+
+#[doc(hidden)]
+#[macro_export]
+macro_rules! record_no_decl_inner_types {
+    () => { $crate::frunk_core::hlist::HNil };
+    ($field: ident => $value: expr) => {
+        record_no_decl_inner_types!()
+    };
+    ( ($field: ident $ignore: expr) => $value: expr) => {
+        record_no_decl_inner_types!($field => $value)
+    };
+    ( type $field: ident $($arg: ident)* => $value: ty) => {
+        $crate::frunk_core::hlist::h_cons((_field::$field, ::std::marker::PhantomData::<$value>), record_no_decl_inner_types!())
+    };
+
+    ($field: ident => $value: expr, $($rest: tt)*) => {
+        record_no_decl_inner_types!($($rest)*)
+    };
+    ( ($field: ident $ignore: expr) => $value: expr, $($rest: tt)*) => {
+        record_no_decl_inner_types!($field => $value, $($rest)*)
+    };
+    ( type $field: ident $($arg: ident)* => $value: ty, $($rest: tt)*) => {
+        $crate::frunk_core::hlist::h_cons(
+            (_field::$field, ::std::marker::PhantomData::<$value>),
+            record_no_decl_inner_types!($($rest)*)
+        )
     };
 }
 
@@ -221,7 +285,8 @@ macro_rules! record_no_decl {
     ($($tt: tt)*) => {
         {
             $crate::api::Record {
-                fields: record_no_decl_inner!($($tt)*)
+                type_fields: record_no_decl_inner_types!($($tt)*),
+                fields: record_no_decl_inner!($($tt)*),
             }
         }
     }
@@ -254,6 +319,10 @@ macro_rules! record_type_inner {
     ($field: ident => $value: ty, $($field_tail: ident => $value_tail: ty),*) => {
         $crate::frunk_core::hlist::HCons<(_field::$field, $value),
                                 record_type_inner!( $($field_tail => $value_tail),*)>
+    };
+    (type $field: ident $($arg: ident)* => $value: ty, $($field_tail: ident => $value_tail: ty),*) => {
+        $crate::frunk_core::hlist::HCons<(_field::$field, $value),
+                                record_type_inner!( $($field_tail => $value_tail),*)>
     }
 }
 
@@ -273,6 +342,7 @@ macro_rules! record_type_inner {
 macro_rules! record_type {
     ($($field: ident => $value: ty),*) => {
         $crate::api::Record<
+            $crate::frunk_core::hlist::HNil,
             record_type_inner!($($field => $value),*)
             >
     }
@@ -307,7 +377,29 @@ macro_rules! record_p_impl {
 macro_rules! record_p {
     ($($field: pat),*) => {
         $crate::api::Record {
-            fields: record_p_impl!($($field),*)
+            fields: record_p_impl!($($field),*),
+            type_fields: _
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use api::VmType;
+    use thread::RootedThread;
+
+    fn type_for<T: VmType>(_: &T) -> String {
+        let vm = RootedThread::new();
+        T::make_type(&vm).to_string()
+    }
+
+    #[test]
+    fn record_type_field() {
+        use api::generic::{A, B};
+        assert_eq!(type_for(&record!(type Test => i32)), "{ Test = Int }");
+        assert_eq!(
+            type_for(&record!(type Pair a b => (A, B))),
+            "{ Pair = forall a b . (a, b) }"
+        );
     }
 }

@@ -77,6 +77,7 @@ pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
     ExternModule::new(
         vm,
         record!{
+            type XorShiftRng => XorShiftRng,
             next_int => primitive!(1 std::random::prim::next_int),
             next_float => primitive!(1 std::random::prim::next_float),
             gen_int_range => primitive!(2 std::random::prim::gen_int_range),

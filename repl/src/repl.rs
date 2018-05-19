@@ -465,6 +465,8 @@ fn load_rustyline(vm: &Thread) -> vm::Result<vm::ExternModule> {
     vm::ExternModule::new(
         vm,
         record!(
+            type Editor => Editor,
+            type CpuPool => CpuPool,
             new_editor => primitive!(1 new_editor),
             readline => primitive!(2 readline),
             save_history => primitive!(1 save_history)
