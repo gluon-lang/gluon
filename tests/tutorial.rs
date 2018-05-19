@@ -4,11 +4,11 @@ extern crate gluon;
 extern crate gluon_vm;
 
 use gluon::base::types::Type;
-use gluon::vm::api::{FunctionRef, Hole, OpaqueValue};
-use gluon::vm;
-use gluon::{RootedThread, Thread};
 use gluon::import::{add_extern_module, Import};
+use gluon::vm;
+use gluon::vm::api::{FunctionRef, Hole, OpaqueValue};
 use gluon::Compiler;
+use gluon::{RootedThread, Thread};
 
 fn new_vm() -> RootedThread {
     let vm = ::gluon::new_vm();

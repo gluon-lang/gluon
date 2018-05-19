@@ -6,15 +6,17 @@ use std::marker::PhantomData;
 use std::result::Result as StdResult;
 
 use base::resolve;
-use base::types::{arg_iter, ArcType, BuiltinType, Type, TypeEnv};
 use base::symbol::Symbol;
+use base::types::{arg_iter, ArcType, BuiltinType, Type, TypeEnv};
 
-use {Error as VmError, Result, Variants};
 use api::{Getable, ValueRef, VmType};
 use thread::{RootedThread, RootedValue, Thread, ThreadInternal};
+use {Error as VmError, Result, Variants};
 
-use serde::de::{self, DeserializeOwned, DeserializeSeed, EnumAccess, Error, IntoDeserializer,
-                MapAccess, SeqAccess, VariantAccess, Visitor};
+use serde::de::{
+    self, DeserializeOwned, DeserializeSeed, EnumAccess, Error, IntoDeserializer, MapAccess,
+    SeqAccess, VariantAccess, Visitor,
+};
 
 impl de::Error for VmError {
     fn custom<T>(msg: T) -> Self
@@ -679,11 +681,13 @@ where
         T: DeserializeSeed<'de>,
     {
         match self.iter.next() {
-            Some((value, typ)) => seed.deserialize(&mut Deserializer {
-                state: self.state.clone(),
-                input: value,
-                typ: typ,
-            }).map(Some),
+            Some((value, typ)) => {
+                seed.deserialize(&mut Deserializer {
+                    state: self.state.clone(),
+                    input: value,
+                    typ: typ,
+                }).map(Some)
+            }
             None => Ok(None),
         }
     }

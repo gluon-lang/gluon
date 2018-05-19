@@ -85,7 +85,8 @@ impl<T> Array<T> {
         I: IntoIterator<Item = T>,
     {
         let iter = iterable.into_iter();
-        self.len = iter.size_hint()
+        self.len = iter
+            .size_hint()
             .1
             .expect("initialize expected a known length");
         for (field, value) in self.iter_mut().zip(iter) {

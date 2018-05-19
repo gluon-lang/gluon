@@ -1,13 +1,12 @@
-
 extern crate gluon;
 #[macro_use]
 extern crate gluon_vm;
 
 use std::thread::spawn;
 
-use gluon::vm::channel::{ChannelRecord, Receiver, Sender};
-use gluon::vm::api::OpaqueValue;
 use gluon::vm::api::FunctionRef;
+use gluon::vm::api::OpaqueValue;
+use gluon::vm::channel::{ChannelRecord, Receiver, Sender};
 use gluon::RootedThread;
 use gluon::{new_vm, Compiler, Error};
 

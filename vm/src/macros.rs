@@ -1,16 +1,16 @@
 //! Module providing the building blocks to create macros and expand them.
 use std::any::Any;
+use std::error::Error as StdError;
 use std::mem;
 use std::sync::{Arc, RwLock};
-use std::error::Error as StdError;
 
 use futures::{stream, Future, Stream};
 
 use base::ast::{self, Expr, MutVisitor, SpannedExpr};
-use base::pos::{BytePos, Spanned};
 use base::error::Errors as BaseErrors;
 use base::fnv::FnvMap;
 use base::pos;
+use base::pos::{BytePos, Spanned};
 use base::symbol::Symbol;
 
 use thread::Thread;

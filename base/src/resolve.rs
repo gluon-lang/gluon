@@ -1,8 +1,8 @@
 use std::borrow::Cow;
 
 use fnv::FnvMap;
-use types::{AliasData, AliasRef, ArcType, Type, TypeEnv};
 use symbol::Symbol;
+use types::{AliasData, AliasRef, ArcType, Type, TypeEnv};
 
 quick_error! {
     #[derive(Debug)]
@@ -129,7 +129,8 @@ pub fn peek_alias<'t>(
         Some(id) => {
             let alias = match maybe_alias {
                 Some(alias) => alias,
-                None => env.find_type_info(id)
+                None => env
+                    .find_type_info(id)
                     .ok_or_else(|| Error::UndefinedType(id.clone()))?,
             };
             Ok(Some(alias))

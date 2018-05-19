@@ -19,33 +19,35 @@ extern crate hyper;
 extern crate log;
 
 use std::env;
-use std::fmt;
 use std::error::Error as StdError;
+use std::fmt;
 use std::fs::File;
 use std::io::{stderr, Read, Write};
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 
-use hyper::{Chunk, Method, StatusCode};
 use hyper::server::Service;
+use hyper::{Chunk, Method, StatusCode};
 
-use futures::Async;
 use futures::future::Future;
 use futures::sink::Sink;
 use futures::stream::Stream;
 use futures::sync::mpsc::Sender;
+use futures::Async;
 
 use base::types::{ArcType, Type};
 
 use vm::{Error as VmError, ExternModule, Result as VmResult};
 
+use gluon::import::add_extern_module;
+use vm::api::{
+    Function, FunctionRef, FutureResult, Getable, OpaqueValue, PushAsRef, Pushable, Userdata,
+    ValueRef, VmType, WithVM, IO,
+};
+use vm::gc::{Gc, Traverseable};
 use vm::thread::ThreadInternal;
 use vm::thread::{Context, RootedThread, Thread};
 use vm::Variants;
-use vm::api::{Function, FunctionRef, FutureResult, Getable, OpaqueValue, PushAsRef, Pushable,
-              Userdata, ValueRef, VmType, WithVM, IO};
-use vm::gc::{Gc, Traverseable};
-use gluon::import::add_extern_module;
 
 use vm::internal::Value;
 
@@ -58,7 +60,8 @@ struct Handler<T>(PhantomData<T>);
 impl<T: VmType + 'static> VmType for Handler<T> {
     type Type = Self;
     fn make_type(vm: &Thread) -> ArcType {
-        let typ = (*vm.global_env()
+        let typ = (*vm
+            .global_env()
             .get_env()
             .find_type_info("examples.http_types.Handler")
             .unwrap())
@@ -74,7 +77,7 @@ impl<T: VmType + 'static> VmType for Handler<T> {
 struct Wrap<T>(T);
 
 macro_rules! define_vmtype {
-    ($name: ident) => {
+    ($name:ident) => {
         impl VmType for Wrap<$name> {
             type Type = $name;
             fn make_type(vm: &Thread) -> ArcType {
@@ -84,8 +87,7 @@ macro_rules! define_vmtype {
                     .into_type()
             }
         }
-
-    }
+    };
 }
 
 define_vmtype! { Method }

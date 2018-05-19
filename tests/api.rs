@@ -5,16 +5,16 @@ extern crate gluon;
 #[macro_use]
 extern crate gluon_vm;
 
-use futures::{Future, IntoFuture};
 use futures::future::lazy;
+use futures::{Future, IntoFuture};
 
 use gluon::base::types::Type;
-use gluon::vm::{Error, ExternModule};
+use gluon::import::{add_extern_module, Import};
 use gluon::vm::api::{FunctionRef, FutureResult, Userdata, VmType, IO};
 use gluon::vm::thread::{Root, RootStr, RootedThread, Thread, Traverseable};
 use gluon::vm::types::VmInt;
+use gluon::vm::{Error, ExternModule};
 use gluon::Compiler;
-use gluon::import::{add_extern_module, Import};
 
 fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<()> {
     Compiler::new()
@@ -172,8 +172,8 @@ fn return_finished_future() {
 fn poll_n(
     s: String,
 ) -> FutureResult<Box<Future<Item = IO<String>, Error = Error> + Send + 'static>> {
-    use std::thread::spawn;
     use futures::sync::oneshot::channel;
+    use std::thread::spawn;
 
     let (ping_c, ping_p) = channel();
     let (pong_c, pong_p) = channel();
@@ -271,9 +271,9 @@ fn io_future() {
 
 #[test]
 fn generic_record_type() {
+    use gluon::base::types::ArcType;
     use gluon::vm::api::generic::A;
     use gluon::vm::api::Generic;
-    use gluon::base::types::ArcType;
 
     fn type_of<T: VmType>(thread: &Thread, _: &T) -> ArcType {
         T::make_forall_type(thread)

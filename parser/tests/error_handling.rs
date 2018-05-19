@@ -249,22 +249,18 @@ fn incomplete_alternative_with_partial_pattern() {
         clear_span(expr.unwrap()),
         case(
             int(1),
-            vec![
-                (
-                    Pattern::Record {
-                        typ: Type::hole(),
-                        types: vec![],
-                        fields: vec![
-                            PatternField {
-                                name: no_loc(intern("x")),
-                                value: Some(no_loc(Pattern::Error)),
-                            },
-                        ],
-                        implicit_import: None,
-                    },
-                    error(),
-                ),
-            ],
+            vec![(
+                Pattern::Record {
+                    typ: Type::hole(),
+                    types: vec![],
+                    fields: vec![PatternField {
+                        name: no_loc(intern("x")),
+                        value: Some(no_loc(Pattern::Error)),
+                    }],
+                    implicit_import: None,
+                },
+                error(),
+            )],
         )
     );
 

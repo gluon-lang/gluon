@@ -7,9 +7,9 @@ extern crate gluon_check as check;
 extern crate gluon_parser as parser;
 
 use base::ast::SpannedExpr;
+use base::metadata::{Comment, CommentType};
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Symbol, SymbolRef};
-use base::metadata::{Comment, CommentType};
 
 fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
     check::metadata::metadata(env, expr).0

@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 
-use base::ast::{self, AstType, Commented, Expr, Pattern, SpannedExpr, SpannedPattern, ValueBinding};
 use base::ast::Visitor;
+use base::ast::{
+    self, AstType, Commented, Expr, Pattern, SpannedExpr, SpannedPattern, ValueBinding,
+};
 use base::fnv::FnvMap;
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Name, Symbol};
@@ -68,7 +70,8 @@ pub fn metadata(
                     for field in types {
                         if let Some(m) = metadata.module.remove(field.name.value.as_ref()) {
                             // FIXME Shouldn't need to insert this metadata twice
-                            if let Some(type_field) = typ.type_field_iter()
+                            if let Some(type_field) = typ
+                                .type_field_iter()
                                 .find(|type_field| type_field.name.name_eq(&field.name.value))
                             {
                                 self.stack_var(type_field.typ.name.clone(), m.clone());
@@ -112,7 +115,8 @@ pub fn metadata(
 
         fn metadata_expr(&mut self, expr: &SpannedExpr<Symbol>) -> Metadata {
             match expr.value {
-                Expr::Ident(ref id) => self.metadata(&id.name)
+                Expr::Ident(ref id) => self
+                    .metadata(&id.name)
                     .cloned()
                     .unwrap_or_else(Metadata::default),
                 Expr::Record {

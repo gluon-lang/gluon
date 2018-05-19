@@ -1,14 +1,16 @@
 //! Rust type to gluon type conversion
 
-use base::types::{ArcType, Field, Type, TypeCache};
 use base::symbol::{Symbol, Symbols};
+use base::types::{ArcType, Field, Type, TypeCache};
 
-use {Error as VmError, Result};
 use api::VmType;
 use thread::{Thread, ThreadInternal};
+use {Error as VmError, Result};
 
-use serde::de::{self, DeserializeOwned, DeserializeSeed, EnumAccess, Error, IntoDeserializer,
-                MapAccess, SeqAccess, VariantAccess, Visitor};
+use serde::de::{
+    self, DeserializeOwned, DeserializeSeed, EnumAccess, Error, IntoDeserializer, MapAccess,
+    SeqAccess, VariantAccess, Visitor,
+};
 
 pub fn make_source<T>(thread: &Thread) -> Result<String>
 where
@@ -235,7 +237,8 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: Visitor<'de>,
     {
         let value = visitor.visit_some(&mut *self)?;
-        let option_alias = self.state
+        let option_alias = self
+            .state
             .thread
             .find_type_info("std.types.Option")
             .unwrap()
@@ -539,8 +542,8 @@ impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::from_rust_;
+    use super::*;
     use thread::RootedThread;
 
     #[allow(dead_code)]

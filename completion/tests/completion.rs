@@ -9,9 +9,9 @@ extern crate gluon_completion as completion;
 extern crate gluon_parser as parser;
 
 use base::metadata::Metadata;
+use base::metadata::{Comment, CommentType};
 use base::pos::{BytePos, Span};
 use base::types::{ArcType, Field, Type};
-use base::metadata::{Comment, CommentType};
 
 #[allow(unused)]
 mod support;
@@ -268,12 +268,10 @@ x
         Span::new(loc(text, 1, 4), loc(text, 1, 9)),
         Type::record(
             vec![],
-            vec![
-                Field {
-                    name: intern("x"),
-                    typ: Type::int(),
-                },
-            ],
+            vec![Field {
+                name: intern("x"),
+                typ: Type::int(),
+            }],
         ),
     ));
     assert_eq!(result, expected);

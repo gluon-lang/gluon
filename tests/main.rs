@@ -13,17 +13,17 @@ extern crate tensile;
 extern crate tokio_core;
 
 use gluon::base::types::{ArcType, Type};
+use gluon::vm::api::de::De;
 use gluon::vm::api::{Getable, Hole, OpaqueValue, OwnedFunction, VmType};
 use gluon::vm::future::FutureValue;
-use gluon::vm::api::de::De;
 use gluon::vm::thread::ThreadInternal;
 use gluon::{new_vm, Compiler, RootedThread, Thread};
 
-use std::io::Read;
+use std::error::Error;
 use std::fmt;
 use std::fs::{read_dir, File};
+use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::error::Error;
 
 use futures::{future, stream, Future, Stream};
 
@@ -50,22 +50,23 @@ fn main() {
 
 fn test_files(path: &str) -> Result<Vec<PathBuf>, Box<Error>> {
     let dir = read_dir(path)?;
-    let paths: Vec<_> = dir.filter_map(|f| {
-        f.ok().and_then(|f| {
-            let path = f.path();
-            if path.extension().and_then(|e| e.to_str()) == Some("glu") {
-                Some(path)
-            } else {
-                None
-            }
-        })
-    }).collect();
+    let paths: Vec<_> =
+        dir.filter_map(|f| {
+            f.ok().and_then(|f| {
+                let path = f.path();
+                if path.extension().and_then(|e| e.to_str()) == Some("glu") {
+                    Some(path)
+                } else {
+                    None
+                }
+            })
+        }).collect();
     assert!(!paths.is_empty(), "Expected test files");
     Ok(paths)
 }
 
 macro_rules! define_test_type {
-    ($name: ident) => {
+    ($name:ident) => {
         impl VmType for $name {
             type Type = $name;
             fn make_type(vm: &Thread) -> ArcType {
@@ -78,7 +79,7 @@ macro_rules! define_test_type {
                 )
             }
         }
-    }
+    };
 }
 
 type TestFn = OwnedFunction<fn(()) -> OpaqueValue<RootedThread, Test>>;
@@ -116,7 +117,8 @@ impl TestCase {
                 let test = TestFn::from_value(&child_thread, test.get_variant());
                 let mut test = ::std::panic::AssertUnwindSafe(test);
                 tensile::test(name, move || {
-                    let future = test.call_async(())
+                    let future = test
+                        .call_async(())
                         .and_then(|test| {
                             FutureValue::Future(
                                 future::result(test.vm().get_global("std.test.run")).and_then(
@@ -207,22 +209,23 @@ fn main_() -> Result<(), Box<Error>> {
 
     let iter = test_files("tests/fail")?.into_iter();
 
-    let fail_tests = iter.map(|filename| {
-        let name = filename.to_str().unwrap_or("<unknown>").to_owned();
+    let fail_tests =
+        iter.map(|filename| {
+            let name = filename.to_str().unwrap_or("<unknown>").to_owned();
 
-        let vm = vm.new_thread().unwrap();
+            let vm = vm.new_thread().unwrap();
 
-        tensile::test(name.clone(), move || -> Result<(), String> {
-            match run_file(&vm, &name, &filename) {
-                Ok(err) => Err(format!(
-                    "Expected test '{}' to fail\n{:?}",
-                    filename.to_str().unwrap(),
-                    err.0,
-                )),
-                Err(_) => Ok(()),
-            }
-        })
-    }).collect();
+            tensile::test(name.clone(), move || -> Result<(), String> {
+                match run_file(&vm, &name, &filename) {
+                    Ok(err) => Err(format!(
+                        "Expected test '{}' to fail\n{:?}",
+                        filename.to_str().unwrap(),
+                        err.0,
+                    )),
+                    Err(_) => Ok(()),
+                }
+            })
+        }).collect();
 
     tensile::console_runner(
         tensile::group(

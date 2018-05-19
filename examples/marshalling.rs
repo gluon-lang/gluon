@@ -11,8 +11,8 @@ use std::collections::HashMap;
 use gluon::base::types::ArcType;
 
 use gluon::vm;
-use gluon::vm::thread::Context;
 use gluon::vm::api::{self, FunctionRef, OpaqueValue};
+use gluon::vm::thread::Context;
 
 use gluon::{new_vm, Compiler, Result, RootedThread, Thread};
 

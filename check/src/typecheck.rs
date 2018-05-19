@@ -8,27 +8,29 @@ use std::mem;
 
 use codespan_reporting::Diagnostic;
 
-use base::scoped_map::ScopedMap;
-use base::ast::{Argument, AstType, DisplayEnv, Do, Expr, Literal, MutVisitor, Pattern,
-                PatternField, SpannedExpr, SpannedIdent, SpannedPattern, TypeBinding, Typed,
-                TypedIdent, ValueBinding};
+use base::ast::{
+    Argument, AstType, DisplayEnv, Do, Expr, Literal, MutVisitor, Pattern, PatternField,
+    SpannedExpr, SpannedIdent, SpannedPattern, TypeBinding, Typed, TypedIdent, ValueBinding,
+};
 use base::error::{AsDiagnostic, Errors};
 use base::fnv::{FnvMap, FnvSet};
-use base::metadata::{Metadata, MetadataEnv};
-use base::resolve;
 use base::kind::{ArcKind, Kind, KindCache, KindEnv};
 use base::merge;
+use base::metadata::{Metadata, MetadataEnv};
 use base::pos::{self, BytePos, Span, Spanned};
+use base::resolve;
+use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
-use base::types::{self, Alias, AliasRef, AppVec, ArcType, ArgType, BuiltinType, Field, Filter,
-                  Generic, PrimitiveEnv, Skolem, Type, TypeCache, TypeEnv, TypeFormatter,
-                  TypeVariable};
+use base::types::{
+    self, Alias, AliasRef, AppVec, ArcType, ArgType, BuiltinType, Field, Filter, Generic,
+    PrimitiveEnv, Skolem, Type, TypeCache, TypeEnv, TypeFormatter, TypeVariable,
+};
 
+use implicits;
 use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
 use substitution::{self, Substitution};
 use unify::{self, Error as UnifyError};
 use unify_type::{self, new_skolem_scope, Error as UnifyTypeError};
-use implicits;
 
 /// Type representing a single error when checking a type
 #[derive(Debug, PartialEq)]
@@ -561,7 +563,8 @@ impl<'a> Typecheck<'a> {
                         },
                         LoopInImplicitResolution(..) => (),
                     }
-                    err.reason = err.reason
+                    err.reason = err
+                        .reason
                         .iter()
                         .map(|typ| {
                             let mut typ = typ.clone();
@@ -777,7 +780,8 @@ impl<'a> Typecheck<'a> {
                     )
                 } else {
                     match &*op_name {
-                        "&&" | "||" => self.type_cache
+                        "&&" | "||" => self
+                            .type_cache
                             .function(vec![self.bool(), self.bool()], self.bool()),
                         _ => self.find(&op.value.name)?,
                     }
@@ -932,11 +936,13 @@ impl<'a> Typecheck<'a> {
                 let mut duplicated_fields = FnvSet::default();
                 for field in types {
                     if let Some(ref mut typ) = field.value {
-                        *typ = self.create_unifiable_signature(typ)
+                        *typ = self
+                            .create_unifiable_signature(typ)
                             .unwrap_or_else(|| typ.clone());
                     }
 
-                    let alias = match self.find_type_info(&field.name.value)
+                    let alias = match self
+                        .find_type_info(&field.name.value)
                         .map(|alias| alias.clone())
                     {
                         Ok(alias) => alias,
@@ -1046,10 +1052,9 @@ impl<'a> Typecheck<'a> {
                 for expr in exprs {
                     self.infer_expr(expr);
                 }
-                Ok(TailCall::Type(self.typecheck_opt(
-                    last,
-                    expected_type.take(),
-                )))
+                Ok(TailCall::Type(
+                    self.typecheck_opt(last, expected_type.take()),
+                ))
             }
             Expr::Do(Do {
                 ref mut id,
@@ -1087,15 +1092,13 @@ impl<'a> Typecheck<'a> {
                             id.span,
                             Expr::App {
                                 func: flat_map_id.take().unwrap(),
-                                args: vec![
-                                    pos::spanned(
-                                        id.span,
-                                        Expr::Ident(TypedIdent {
-                                            name,
-                                            typ: arg_type.clone(),
-                                        }),
-                                    ),
-                                ],
+                                args: vec![pos::spanned(
+                                    id.span,
+                                    Expr::Ident(TypedIdent {
+                                        name,
+                                        typ: arg_type.clone(),
+                                    }),
+                                )],
                                 implicit_args: Vec::new(),
                             },
                         )));
@@ -1105,14 +1108,16 @@ impl<'a> Typecheck<'a> {
                 };
 
                 id.value.typ = self.subs.new_var();
-                let arg1 = self.type_cache
+                let arg1 = self
+                    .type_cache
                     .function(Some(id.value.typ.clone()), self.subs.new_var());
 
                 let arg2 = self.subs.new_var();
                 let ret = expected_type
                     .cloned()
                     .unwrap_or_else(|| self.subs.new_var());
-                let func_type = self.type_cache
+                let func_type = self
+                    .type_cache
                     .function(vec![arg1.clone(), arg2.clone()], ret.clone());
 
                 self.unify_span(expr.span, &flat_map_type, func_type);
@@ -1186,7 +1191,8 @@ impl<'a> Typecheck<'a> {
         for arg in &mut **implicit_args {
             let arg_ty = self.subs.new_var();
             let ret_ty = self.subs.new_var();
-            let f = self.type_cache
+            let f = self
+                .type_cache
                 .function_implicit(once(arg_ty.clone()), ret_ty.clone());
 
             let level = self.subs.var_id();
@@ -1203,7 +1209,8 @@ impl<'a> Typecheck<'a> {
         for arg in args.map(|arg| arg.borrow_mut()) {
             let arg_ty = self.subs.new_var();
             let ret_ty = self.subs.new_var();
-            let f = self.type_cache
+            let f = self
+                .type_cache
                 .function(once(arg_ty.clone()), ret_ty.clone());
 
             let level = self.subs.var_id();
@@ -1433,7 +1440,8 @@ impl<'a> Typecheck<'a> {
                     // list incomplete however since it may miss some fields defined in the
                     // pattern. These are catched later in this function.
                     let x = self.remove_alias(match_type.clone());
-                    let types = x.type_field_iter()
+                    let types = x
+                        .type_field_iter()
                         .filter(|field| {
                             associated_types
                                 .iter()
@@ -1454,7 +1462,8 @@ impl<'a> Typecheck<'a> {
                 for field in fields {
                     let name = &field.name.value;
                     // The field should always exist since the type was constructed from the pattern
-                    let field_type = typ.row_iter()
+                    let field_type = typ
+                        .row_iter()
                         .find(|f| f.name.name_eq(name))
                         .expect("ICE: Expected field to exist in type")
                         .typ
@@ -1474,7 +1483,8 @@ impl<'a> Typecheck<'a> {
                     let name = field.value.as_ref().unwrap_or(&field.name.value).clone();
                     // The `types` in the record type should have a type matching the
                     // `name`
-                    let field_type = typ.type_field_iter()
+                    let field_type = typ
+                        .type_field_iter()
                         .find(|field| field.name.name_eq(&name));
 
                     let alias;
@@ -1573,7 +1583,8 @@ impl<'a> Typecheck<'a> {
         for component in id.name().module().components() {
             let symbol = self.symbols.symbol(component);
             lookup_type = match lookup_type {
-                Some(typ) => Some(self.remove_aliases(typ.clone())
+                Some(typ) => Some(self
+                    .remove_aliases(typ.clone())
                     .row_iter()
                     .find(|field| field.name.name_eq(&symbol))
                     .map(|field| field.typ.clone())
@@ -1760,7 +1771,8 @@ impl<'a> Typecheck<'a> {
                 // and bind the same variables to the arguments of the type binding
                 // ('a' and 'b' in the example)
                 let mut id_kind = check.type_kind();
-                for generic in bind.alias
+                for generic in bind
+                    .alias
                     .value
                     .unresolved_type_mut()
                     .params_mut()
@@ -1777,7 +1789,8 @@ impl<'a> Typecheck<'a> {
             for bind in &mut *bindings {
                 check.set_variables(bind.alias.value.params());
 
-                let typ = bind.alias
+                let typ = bind
+                    .alias
                     .value
                     .unresolved_type_mut()
                     .remove_single_forall();
@@ -1803,7 +1816,8 @@ impl<'a> Typecheck<'a> {
             self.original_symbols
                 .insert(bind.alias.value.name.clone(), new.clone());
 
-            if let Some(meta) = self.implicit_resolver
+            if let Some(meta) = self
+                .implicit_resolver
                 .metadata
                 .remove(&bind.alias.value.name)
             {
@@ -2056,7 +2070,8 @@ impl<'a> Typecheck<'a> {
         self.type_variables.enter_scope();
         let result_type = self.create_unifiable_signature_(typ);
 
-        let params = self.type_variables
+        let params = self
+            .type_variables
             .exit_scope()
             .map(|(id, var)| {
                 let kind = var.kind().into_owned();
@@ -2372,7 +2387,8 @@ fn with_pattern_types<F>(
     for field in fields {
         // If the field in the pattern does not exist (undefined field error) then skip it as
         // the error itself will already have been reported
-        let opt = typ.row_iter()
+        let opt = typ
+            .row_iter()
             .find(|type_field| type_field.name.name_eq(&field.name.value));
         if let Some(associated_type) = opt {
             f(&field.name.value, &mut field.value, &associated_type.typ);
@@ -2591,7 +2607,8 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
     }
 
     fn generalize_type(&mut self, typ: &ArcType) -> Option<ArcType> {
-        let replacement = self.subs
+        let replacement = self
+            .subs
             .replace_variable(typ)
             .map(|t| self.generalize_type(&t).unwrap_or(t));
         let mut typ = typ;

@@ -5,9 +5,9 @@ extern crate gluon;
 
 use bencher::{black_box, Bencher};
 
-use gluon::{new_vm, Compiler};
-use gluon::vm::thread::{Status, Thread};
 use gluon::vm::api::{primitive, FunctionRef, Primitive};
+use gluon::vm::thread::{Status, Thread};
+use gluon::{new_vm, Compiler};
 
 // Benchmarks function calls
 fn factorial(b: &mut Bencher) {
@@ -73,7 +73,8 @@ fn gluon_rust_boundary_overhead(b: &mut Bencher) {
 
     let mut test: FunctionRef<fn(i32, Primitive<fn(i32)>) -> ()> = vm.get_global("test").unwrap();
     b.iter(|| {
-        let result = test.call(1000, primitive::<fn(i32)>("test_fn", test_fn))
+        let result = test
+            .call(1000, primitive::<fn(i32)>("test_fn", test_fn))
             .unwrap();
         black_box(result)
     })

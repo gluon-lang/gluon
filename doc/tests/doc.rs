@@ -1,8 +1,8 @@
 extern crate gluon;
 extern crate gluon_doc as doc;
 
-use gluon::{Compiler, RootedThread};
 use gluon::check::metadata::metadata;
+use gluon::{Compiler, RootedThread};
 
 fn new_vm() -> RootedThread {
     ::gluon::VmBuilder::new()
@@ -28,13 +28,11 @@ let test x = x
         out,
         doc::Record {
             types: Vec::new(),
-            values: vec![
-                doc::Field {
-                    name: "test".to_string(),
-                    typ: "forall a . a -> a".to_string(),
-                    comment: "This is the test function".to_string(),
-                },
-            ],
+            values: vec![doc::Field {
+                name: "test".to_string(),
+                typ: "forall a . a -> a".to_string(),
+                comment: "This is the test function".to_string(),
+            }],
         }
     );
 }

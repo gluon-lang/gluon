@@ -10,8 +10,8 @@ extern crate gluon_format as format;
 extern crate gluon_parser as parser;
 
 use base::ast::{self, Expr, Pattern, SpannedExpr, Typed, Visitor};
-use base::types::{Field, Type};
 use base::symbol::Symbol;
+use base::types::{Field, Type};
 
 use check::typecheck::{ImplicitError, ImplicitErrorKind, TypeError};
 
@@ -213,12 +213,10 @@ f (Test ())
     let test = support::alias(
         "Test",
         &[],
-        Type::variant(vec![
-            Field::new(
-                support::intern("Test"),
-                Type::function(vec![Type::unit()], support::typ("Test")),
-            ),
-        ]),
+        Type::variant(vec![Field::new(
+            support::intern("Test"),
+            Type::function(vec![Type::unit()], support::typ("Test")),
+        )]),
     );
     assert_req!(result, Ok(test));
 }

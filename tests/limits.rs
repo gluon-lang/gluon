@@ -3,10 +3,10 @@ extern crate gluon;
 
 mod support;
 
-use gluon::{Compiler, Error, Thread};
-use gluon::vm::Error as VMError;
 use gluon::vm::api::{Hole, OpaqueValue};
 use gluon::vm::thread::ThreadInternal;
+use gluon::vm::Error as VMError;
+use gluon::{Compiler, Error, Thread};
 
 use support::make_vm;
 

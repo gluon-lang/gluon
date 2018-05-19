@@ -286,25 +286,28 @@ type ErrorEnv<'err, 'input> = &'err mut Errors<LalrpopError<'input>>;
 
 pub type ParseErrors = Errors<Spanned<Error, BytePos>>;
 macro_rules! layout {
-    ($result_ok_iter: ident, $input: expr) => {{
+    ($result_ok_iter:ident, $input:expr) => {{
         let tokenizer = Tokenizer::new($input);
         $result_ok_iter = RefCell::new(ResultOkIter::new(tokenizer));
-
+    
         Layout::new(SharedIter::new(&$result_ok_iter)).map(|token| {
             // Return the tokenizer error if one exists
-            $result_ok_iter.borrow_mut()
-                .result(())
-                .map_err(|err| {
-                    pos::spanned2(err.span.start().absolute,
-                                err.span.end().absolute,
-                                err.value.into())
-                })?;
+            $result_ok_iter.borrow_mut().result(()).map_err(|err| {
+                pos::spanned2(
+                    err.span.start().absolute,
+                    err.span.end().absolute,
+                    err.value.into(),
+                )
+            })?;
             let token = token.map_err(|err| pos::spanned(err.span, err.value.into()))?;
             debug!("Lex {:?}", token.value);
-            Ok((token.span.start().absolute, token.value, token.span.end().absolute))
+            Ok((
+                token.span.start().absolute,
+                token.value,
+                token.span.end().absolute,
+            ))
         })
-    }
-    }
+    }};
 }
 
 pub trait ParserSource {
@@ -484,7 +487,8 @@ where
         Id: Clone + Eq + Hash + AsRef<str>,
     {
         fn insert_infix(&mut self, id: &Id, span: Span<BytePos>) {
-            match self.metadata
+            match self
+                .metadata
                 .get(id)
                 .and_then(|meta| meta.get_attribute("infix"))
             {
@@ -498,7 +502,8 @@ where
                                 return Err(InfixError::InvalidFixity);
                             }
                         };
-                        let precedence = iter.next()
+                        let precedence = iter
+                            .next()
                             .and_then(|s| s.trim().parse().ok())
                             .and_then(|precedence| {
                                 if precedence >= 0 {

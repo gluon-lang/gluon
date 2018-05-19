@@ -1,5 +1,5 @@
-use futures::{AndThen, Async, Future, Map, MapErr, OrElse, Poll, Then};
 use futures::future::{Either, FutureResult};
+use futures::{AndThen, Async, Future, Map, MapErr, OrElse, Poll, Then};
 
 use Error;
 
@@ -173,10 +173,11 @@ where
 
 #[macro_export]
 macro_rules! try_future {
-    ($e: expr) => {
+    ($e:expr) => {
+
         match $e {
             Ok(ok) => ok,
             Err(err) => return $crate::future::FutureValue::Value(Err(err.into())),
         }
-    }
+    };
 }

@@ -3,14 +3,14 @@
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 
-use base::types::ArcType;
-use {Error, Result};
 use api::{Pushable, VmType};
+use base::types::ArcType;
 use interner::InternedStr;
+use serde::ser::{self, Serialize};
 use thread::{Context, Thread, ThreadInternal};
 use types::{VmIndex, VmTag};
 use value::{Def, RecordDef, ValueRepr};
-use serde::ser::{self, Serialize};
+use {Error, Result};
 
 /**
 `Pushable` wrapper which pushes `T` by serializing it.

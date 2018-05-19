@@ -8,12 +8,12 @@ extern crate gluon_base as base;
 extern crate itertools;
 extern crate pretty;
 
-use gluon::{Compiler, Error, Result, Thread};
 use gluon::compiler_pipeline::*;
+use gluon::{Compiler, Error, Result, Thread};
 
 use base::ast::{self, SpannedExpr};
-use base::symbol::Symbol;
 use base::pos::{BytePos, Span};
+use base::symbol::Symbol;
 
 mod pretty_print;
 

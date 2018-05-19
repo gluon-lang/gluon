@@ -350,7 +350,8 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
         let typ = resolved_type.unwrap_or(typ);
         // Nothing needs to be done if both are the same variable already (also prevents the occurs
         // check from failing)
-        if typ.get_var()
+        if typ
+            .get_var()
             .map_or(false, |other| other.get_id() == id.get_id())
         {
             return Ok(None);

@@ -6,8 +6,8 @@ use std::mem;
 use std::ops::{Add, Deref, DerefMut, Div, Mul, Sub};
 use std::result::Result as StdResult;
 use std::string::String as StdString;
-use std::sync::Arc;
 use std::sync::atomic::{self, AtomicBool};
+use std::sync::Arc;
 use std::sync::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::usize;
 
@@ -27,9 +27,10 @@ use macros::MacroEnv;
 use source_map::LocalIter;
 use stack::{Frame, Lock, Stack, StackFrame, State};
 use types::*;
-use value::{BytecodeFunction, Callable, ClosureData, ClosureDataDef, ClosureInitDef, Def,
-            ExternFunction, GcStr, PartialApplicationDataDef, RecordDef, Userdata, Value,
-            ValueRepr};
+use value::{
+    BytecodeFunction, Callable, ClosureData, ClosureDataDef, ClosureInitDef, Def, ExternFunction,
+    GcStr, PartialApplicationDataDef, RecordDef, Userdata, Value, ValueRepr,
+};
 use vm::{GlobalVmState, GlobalVmStateBuilder, VmEnv};
 use {Error, Result, Variants};
 
@@ -161,7 +162,8 @@ where
         T: VmRoot<'vm>,
     {
         match self.get_variant().as_ref() {
-            ValueRef::Data(ref v) => v.get_variant(index)
+            ValueRef::Data(ref v) => v
+                .get_variant(index)
                 .map(|value| self.vm.root_value(value.get_value())),
             _ => None,
         }
@@ -249,13 +251,11 @@ impl<'b> Roots<'b> {
     unsafe fn mark_child_roots(
         &self,
         gc: &mut Gc,
-    ) -> Vec<
-        (
-            RwLockReadGuard<Vec<GcPtr<Thread>>>,
-            MutexGuard<Context>,
-            GcPtr<Thread>,
-        ),
-    > {
+    ) -> Vec<(
+        RwLockReadGuard<Vec<GcPtr<Thread>>>,
+        MutexGuard<Context>,
+        GcPtr<Thread>,
+    )> {
         let mut stack: Vec<GcPtr<Thread>> = Vec::new();
         let mut locks: Vec<(_, _, GcPtr<Thread>)> = Vec::new();
 
@@ -437,7 +437,8 @@ impl RootedThread {
             interrupt: AtomicBool::new(false),
         };
         let mut gc = Gc::new(Generation::default(), usize::MAX);
-        let vm = gc.alloc(Move(thread))
+        let vm = gc
+            .alloc(Move(thread))
             .expect("Not enough memory to allocate thread")
             .root_thread();
         *vm.global_state.gc.lock().unwrap() = gc;
@@ -1078,12 +1079,10 @@ pub struct Context {
 
     /// Stack of polling functions used for extern functions returning futures
     #[cfg_attr(feature = "serde_derive", serde(skip))]
-    poll_fns: Vec<
-        (
-            Option<Lock>,
-            Box<for<'vm> FnMut(&'vm Thread) -> Result<Async<OwnedContext<'vm>>> + Send>,
-        ),
-    >,
+    poll_fns: Vec<(
+        Option<Lock>,
+        Box<for<'vm> FnMut(&'vm Thread) -> Result<Async<OwnedContext<'vm>>> + Send>,
+    )>,
 }
 
 impl Context {

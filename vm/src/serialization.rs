@@ -6,21 +6,23 @@ use std::sync::Arc;
 
 use itertools::Itertools;
 
-use serde::Deserializer;
 use serde::de::{Deserialize, DeserializeSeed, DeserializeState, Error};
 use serde::ser::{Seeded, SerializeSeq, SerializeState, Serializer};
+use serde::Deserializer;
 
 use base::serialization::{NodeMap, NodeToId};
 use base::symbol::{Symbol, Symbols};
 use base::types::ArcType;
 
-use Variants;
 use array::Array;
 use gc::{DataDef, GcPtr, WriteOnly};
 use thread::{RootedThread, Thread, ThreadInternal};
 use types::VmIndex;
-use value::{BytecodeFunction, Callable, ClosureData, ExternFunction, PartialApplicationData,
-            PartialApplicationDataDef, Value, ValueRepr};
+use value::{
+    BytecodeFunction, Callable, ClosureData, ExternFunction, PartialApplicationData,
+    PartialApplicationDataDef, Value, ValueRepr,
+};
+use Variants;
 
 #[derive(Clone)]
 pub struct DeSeed {
@@ -108,9 +110,9 @@ pub mod gc {
     use serde::ser::{Serialize, SerializeState, Serializer};
 
     use interner::InternedStr;
-    use value::{DataStruct, GcStr, ValueArray};
     use thread::ThreadInternal;
     use types::VmTag;
+    use value::{DataStruct, GcStr, ValueArray};
 
     impl Serialize for GcStr {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -178,14 +180,18 @@ pub mod gc {
     #[derive(DeserializeState, SerializeState)]
     #[serde(deserialize_state = "::serialization::DeSeed")]
     #[serde(serialize_state = "::serialization::SeSeed")]
-    #[serde(bound(deserialize = "F: DeserializeState<'de, ::serialization::DeSeed>,
+    #[serde(
+        bound(
+            deserialize = "F: DeserializeState<'de, ::serialization::DeSeed>,
                                  S: ::std::ops::Deref + ::std::any::Any + Clone
                                     + ::base::serialization::Shared
                                     + DeserializeState<'de, ::serialization::DeSeed>",
-                  serialize = "F: SerializeState<::serialization::SeSeed>,
+            serialize = "F: SerializeState<::serialization::SeSeed>,
                                S: ::std::ops::Deref + ::std::any::Any + Clone
                                     + ::base::serialization::Shared,
-                               S::Target: SerializeState<::serialization::SeSeed>"))]
+                               S::Target: SerializeState<::serialization::SeSeed>"
+        )
+    )]
     struct Data<F, S> {
         #[serde(state)]
         tag: DataTag<S>,
@@ -196,12 +202,16 @@ pub mod gc {
     #[derive(DeserializeState, SerializeState)]
     #[serde(deserialize_state = "::serialization::DeSeed")]
     #[serde(serialize_state = "::serialization::SeSeed")]
-    #[serde(bound(deserialize = "S: ::std::ops::Deref + ::std::any::Any + Clone
+    #[serde(
+        bound(
+            deserialize = "S: ::std::ops::Deref + ::std::any::Any + Clone
                                     + ::base::serialization::Shared
                                     + DeserializeState<'de, ::serialization::DeSeed>",
-                  serialize = "S: ::std::ops::Deref + ::std::any::Any + Clone
+            serialize = "S: ::std::ops::Deref + ::std::any::Any + Clone
                                     + ::base::serialization::Shared,
-                               S::Target: SerializeState<::serialization::SeSeed>"))]
+                               S::Target: SerializeState<::serialization::SeSeed>"
+        )
+    )]
     enum DataTag<S> {
         Record(#[serde(state_with = "::base::serialization::shared")] S),
         Data(VmTag),
@@ -258,7 +268,8 @@ pub mod gc {
                 )?;
                 use value::{Def, RecordDef};
                 match def.tag {
-                    DataTag::Record(fields) => seed.thread
+                    DataTag::Record(fields) => seed
+                        .thread
                         .context()
                         .gc
                         .alloc(RecordDef {
@@ -266,7 +277,8 @@ pub mod gc {
                             fields: &fields[..],
                         })
                         .map_err(D::Error::custom),
-                    DataTag::Data(tag) => seed.thread
+                    DataTag::Data(tag) => seed
+                        .thread
                         .context()
                         .gc
                         .alloc(Def {
@@ -322,8 +334,8 @@ pub mod gc {
 pub mod symbol {
     use super::*;
     use base::symbol::Symbol;
-    use serde::{Deserialize, Deserializer};
     use serde::ser::{Serialize, Serializer};
+    use serde::{Deserialize, Deserializer};
 
     pub fn deserialize<'de, D>(seed: &mut DeSeed, deserializer: D) -> Result<Symbol, D::Error>
     where
@@ -346,8 +358,8 @@ pub mod intern {
     use interner::InternedStr;
     use thread::ThreadInternal;
 
-    use serde::{Deserialize, Deserializer};
     use serde::ser::{Serialize, SerializeState, Serializer};
+    use serde::{Deserialize, Deserializer};
 
     impl<'de> DeserializeState<'de, DeSeed> for InternedStr {
         fn deserialize_state<D>(seed: &mut DeSeed, deserializer: D) -> Result<Self, D::Error>
@@ -402,8 +414,8 @@ pub mod borrow {
 
 pub mod typ {
     use super::*;
-    use base::types::ArcType;
     use base::symbol::Symbol;
+    use base::types::ArcType;
 
     impl ::std::borrow::Borrow<::base::serialization::Seed<Symbol, ArcType<Symbol>>> for DeSeed {
         fn borrow(&self) -> &::base::serialization::Seed<Symbol, ArcType<Symbol>> {
@@ -515,21 +527,23 @@ pub mod closure {
                     where
                         V: SeqAccess<'de>,
                     {
-                        let variant = seq.next_element()?
+                        let variant = seq
+                            .next_element()?
                             .ok_or_else(|| V::Error::invalid_length(0, &self))?;
                         unsafe {
                             match variant {
                                 GraphVariant::Marked(id) => {
-                                    let function = seq.next_element_seed(::serde::de::Seed::new(
-                                        &mut self.state,
-                                    ))?
+                                    let function = seq
+                                        .next_element_seed(::serde::de::Seed::new(&mut self.state))?
                                         .ok_or_else(|| V::Error::invalid_length(1, &self))?;
-                                    let upvars = seq.next_element()?
+                                    let upvars = seq
+                                        .next_element()?
                                         .ok_or_else(|| V::Error::invalid_length(2, &self))?;
 
                                     let mut closure: GcPtr<
                                         ClosureData,
-                                    > = self.state
+                                    > = self
+                                        .state
                                         .thread
                                         .context()
                                         .gc
@@ -541,9 +555,10 @@ pub mod closure {
                                     self.state.gc_map.insert(id, closure);
 
                                     for i in 0..upvars {
-                                        let value = seq.next_element_seed(::serde::de::Seed::new(
-                                            &mut self.state,
-                                        ))?
+                                        let value = seq
+                                            .next_element_seed(::serde::de::Seed::new(
+                                                &mut self.state,
+                                            ))?
                                             .ok_or_else(|| V::Error::invalid_length(i + 2, &self))?;
                                         closure.as_mut().upvars[i] = value;
                                     }
@@ -702,7 +717,8 @@ impl<'de> DeserializeState<'de, DeSeed> for ExternFunction {
         for s in iter {
             escaped_id += s;
         }
-        let function = seed.thread
+        let function = seed
+            .thread
             .get_global::<OpaqueValue<&Thread, Hole>>(&escaped_id)
             .map_err(|err| D::Error::custom(err))?;
         unsafe {
@@ -759,8 +775,8 @@ mod tests {
     extern crate serde_json;
 
     use super::*;
-    use value::Value;
     use thread::RootedThread;
+    use value::Value;
 
     #[test]
     fn str_value() {

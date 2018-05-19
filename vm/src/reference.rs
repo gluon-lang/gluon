@@ -1,16 +1,16 @@
 use std::any::Any;
 use std::fmt;
-use std::sync::Mutex;
 use std::marker::PhantomData;
+use std::sync::Mutex;
 
+use api::generic::A;
+use api::{Generic, RuntimeResult, Userdata, VmType, WithVM};
 use base::types::{ArcType, Type};
-use {ExternModule, Result};
 use gc::{Gc, GcPtr, Move, Traverseable};
-use vm::Thread;
 use thread::ThreadInternal;
 use value::{Cloner, Value};
-use api::{Generic, RuntimeResult, Userdata, VmType, WithVM};
-use api::generic::A;
+use vm::Thread;
+use {ExternModule, Result};
 
 pub struct Reference<T> {
     value: Mutex<Value>,

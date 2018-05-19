@@ -1,10 +1,10 @@
 use std::marker::PhantomData;
 
 use base::ast::TypedIdent;
-use base::types::{ArcType, Field};
 use base::merge::{merge_fn, merge_iter};
 use base::pos;
 use base::symbol::Symbol;
+use base::types::{ArcType, Field};
 
 use core::{Allocator, Alternative, CExpr, Closure, Expr, LetBinding, Named, Pattern};
 
@@ -198,7 +198,8 @@ where
                 new_f,
                 &args,
                 |a| {
-                    let a = a.iter()
+                    let a = a
+                        .iter()
                         .map(|a| V::Producer::new(visitor.allocator()).produce(a).clone())
                         .collect::<Vec<_>>();
                     visitor.allocator().arena.alloc_extend(a)
@@ -258,7 +259,8 @@ where
                 new_expr,
                 &alts,
                 |a| {
-                    let a = a.iter()
+                    let a = a
+                        .iter()
                         .map(|a| Alternative {
                             pattern: a.pattern.clone(),
                             expr: V::Producer::new(visitor.allocator()).produce(a.expr),

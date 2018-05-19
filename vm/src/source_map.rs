@@ -38,7 +38,8 @@ impl SourceMap {
     pub fn line(&self, instruction_index: usize) -> Option<Line> {
         // The line for `instruction_index` is at the last index still larger than
         // the index in `map`
-        let p = self.map
+        let p = self
+            .map
             .iter()
             .position(|&(index, _)| index > instruction_index)
             .unwrap_or(self.map.len());

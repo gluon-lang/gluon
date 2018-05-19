@@ -13,14 +13,14 @@ use base::ast::{self, Expr, MutVisitor, SpannedExpr, TypedIdent};
 use base::error::AsDiagnostic;
 use base::fnv::FnvMap;
 use base::metadata::Metadata;
-use base::types::{self, ArcType, ArgType, BuiltinType, Type};
 use base::pos::{self, BytePos, Span, Spanned};
 use base::resolve;
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolRef};
+use base::types::{self, ArcType, ArgType, BuiltinType, Type};
 
-use typecheck::{TypeError, Typecheck, TypecheckEnv};
 use substitution::Substitution;
+use typecheck::{TypeError, Typecheck, TypecheckEnv};
 
 const MAX_IMPLICIT_LEVEL: u32 = 20;
 
@@ -215,10 +215,9 @@ impl<I: fmt::Display + AsRef<str> + Clone> fmt::Display for ErrorKind<I> {
                 "Unable to resolve implicit. Multiple candidates were found: {}",
                 candidates
                     .iter()
-                    .format_with(", ", |&(ref path, ref typ), fmt| fmt(&format_args!(
-                        "{}: {}",
-                        path, typ
-                    )))
+                    .format_with(", ", |&(ref path, ref typ), fmt| {
+                        fmt(&format_args!("{}: {}", path, typ))
+                    })
             ),
         }
     }
@@ -287,7 +286,8 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
                 .iter()
                 .filter_map(|demand| {
                     let mut to_resolve = Vec::new();
-                    let result = self.find_implicit(implicit_bindings, &mut to_resolve, demand)
+                    let result = self
+                        .find_implicit(implicit_bindings, &mut to_resolve, demand)
                         .and_then(|path| {
                             debug!("Success! Resolving arguments");
                             self.resolve_implicit_application(
@@ -360,19 +360,21 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
         demand: &Demand,
     ) -> Result<&'c [TypedIdent<Symbol>]> {
         let mut iter = implicit_bindings.iter(&demand.constraint).rev();
-        let found_candidate = iter.by_ref()
+        let found_candidate = iter
+            .by_ref()
             .find(|&&(ref path, ref typ)| self.try_implicit(path, to_resolve, demand, typ));
         match found_candidate {
             Some(candidate) => {
-                let mut additional_candidates: Vec<_> = iter.filter(|&&(ref path, ref typ)| {
-                    self.try_implicit(path, &mut Vec::new(), demand, typ)
-                }).map(|bind| {
-                        (
-                            bind.0.iter().map(|id| &id.name).format(".").to_string(),
-                            bind.1.clone(),
-                        )
-                    })
-                    .collect();
+                let mut additional_candidates: Vec<_> =
+                    iter.filter(|&&(ref path, ref typ)| {
+                        self.try_implicit(path, &mut Vec::new(), demand, typ)
+                    }).map(|bind| {
+                            (
+                                bind.0.iter().map(|id| &id.name).format(".").to_string(),
+                                bind.1.clone(),
+                            )
+                        })
+                        .collect();
                 if additional_candidates.is_empty() {
                     Ok(&candidate.0)
                 } else {
@@ -405,7 +407,8 @@ impl<'a, 'b, 'c> MutVisitor<'c> for ResolveImplicitsVisitor<'a, 'b> {
     fn visit_expr(&mut self, expr: &mut SpannedExpr<Symbol>) {
         let mut replacement = None;
         if let Expr::Ident(ref mut id) = expr.value {
-            let implicit_bindings = self.tc
+            let implicit_bindings = self
+                .tc
                 .implicit_resolver
                 .implicit_vars
                 .get(&id.name)
@@ -596,7 +599,8 @@ impl<'a> ImplicitResolver<'a> {
             // Look at the type without any implicit arguments
             let mut iter = types::implicit_arg_iter(typ.remove_forall());
             for _ in iter.by_ref() {}
-            is_implicit = iter.typ
+            is_implicit = iter
+                .typ
                 .remove_forall()
                 .name()
                 .and_then(|typename| {

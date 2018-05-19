@@ -1,18 +1,18 @@
 //! Module containing functions for interacting with gluon's primitive types.
 use std::result::Result as StdResult;
-use std::string::String as StdString;
 use std::str::FromStr;
+use std::string::String as StdString;
 
-use {Error, ExternModule, Variants};
-use api::{generic, primitive, Array, Generic, Getable, Pushable, RuntimeResult, ValueRef, WithVM};
 use api::generic::A;
+use api::{generic, primitive, Array, Generic, Getable, Pushable, RuntimeResult, ValueRef, WithVM};
 use gc::{DataDef, Gc, Traverseable, WriteOnly};
-use Result;
-use vm::{Status, Thread};
-use value::{Def, GcStr, Repr, ValueArray, ValueRepr};
 use stack::StackFrame;
 use thread::ThreadInternal;
 use types::VmInt;
+use value::{Def, GcStr, Repr, ValueArray, ValueRepr};
+use vm::{Status, Thread};
+use Result;
+use {Error, ExternModule, Variants};
 
 #[doc(hidden)]
 pub mod array {
@@ -284,8 +284,8 @@ mod std {
 
 #[allow(non_camel_case_types)]
 pub fn load_float(thread: &Thread) -> Result<ExternModule> {
-    use std::f64;
     use self::std;
+    use std::f64;
 
     ExternModule::new(
         thread,

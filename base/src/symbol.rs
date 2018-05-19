@@ -1,10 +1,10 @@
 //! Module which contains types working with symbols
-use std::cmp::Ordering;
-use std::hash::{Hash, Hasher};
-use std::fmt;
-use std::sync::Arc;
 use std::borrow::Borrow;
+use std::cmp::Ordering;
+use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::ops::Deref;
+use std::sync::Arc;
 
 use ast::{DisplayEnv, IdentEnv};
 use fnv::FnvMap;
@@ -19,9 +19,9 @@ pub struct Symbol(Arc<NameBuf>);
 mod serialization {
     use super::*;
 
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use serde::de::DeserializeState;
     use serde::ser::SerializeState;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use serialization::SeSeed;
 
     impl<'de> Deserialize<'de> for Symbol {

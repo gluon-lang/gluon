@@ -1,14 +1,14 @@
-use std::fmt;
-use std::mem;
-use std::ptr;
+use std::any::{Any, TypeId};
+use std::cell::Cell;
+use std::cmp::Ordering;
 use std::collections::hash_map::Entry;
 use std::collections::VecDeque;
-use std::cmp::Ordering;
+use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::ops::{Deref, DerefMut};
-use std::cell::Cell;
-use std::any::{Any, TypeId};
 use std::marker::PhantomData;
+use std::mem;
+use std::ops::{Deref, DerefMut};
+use std::ptr;
 use std::sync::Arc;
 
 use base::fnv::FnvMap;
@@ -690,12 +690,14 @@ impl Gc {
         drop: unsafe fn(*mut ()),
     ) -> *const TypeInfo {
         match fields {
-            Some(fields) => match self.record_infos
+            Some(fields) => match self
+                .record_infos
                 .get(fields)
                 .map(|info| &**info as *const _)
             {
                 Some(info) => info,
-                None => &**self.record_infos
+                None => &**self
+                    .record_infos
                     .entry(fields.to_owned())
                     .or_insert(Box::new(TypeInfo {
                         drop,
@@ -845,10 +847,10 @@ impl Gc {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::Cell;
     use std::fmt;
     use std::mem;
     use std::rc::Rc;
-    use std::cell::Cell;
     use std::usize;
 
     use self::Value::*;
@@ -990,9 +992,10 @@ mod tests {
         let dropped = Rc::new(Cell::new(false));
         let mut gc = Gc::new(Generation::default(), usize::MAX);
         {
-            let ptr = gc.alloc(Move(Dropable {
-                dropped: dropped.clone(),
-            })).unwrap();
+            let ptr =
+                gc.alloc(Move(Dropable {
+                    dropped: dropped.clone(),
+                })).unwrap();
             assert_eq!(false, ptr.dropped.get());
         }
         assert_eq!(false, dropped.get());

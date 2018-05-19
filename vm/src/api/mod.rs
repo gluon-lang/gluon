@@ -1,18 +1,20 @@
 //! The marshalling api
-use {forget_lifetime, Error, Result, Variants};
+use base::scoped_map::ScopedMap;
+use base::symbol::{Symbol, Symbols};
+use base::types::{self, ArcType, Type};
+use compiler::{CompiledFunction, CompiledModule};
 use future::FutureValue;
 use gc::{DataDef, Gc, GcPtr, Move, Traverseable};
-use base::symbol::{Symbol, Symbols};
-use base::scoped_map::ScopedMap;
 use stack::{Lock, StackFrame};
-use vm::{self, Root, RootStr, RootedValue, Status, Thread};
-use value::{ArrayDef, ArrayRepr, Cloner, ClosureData, DataStruct, Def, ExternFunction, GcStr,
-            Value, ValueArray, ValueRepr};
-use thread::{self, Context, RootedThread, VmRoot};
 use thread::ThreadInternal;
-use base::types::{self, ArcType, Type};
+use thread::{self, Context, RootedThread, VmRoot};
 use types::{Instruction, VmIndex, VmInt, VmTag};
-use compiler::{CompiledFunction, CompiledModule};
+use value::{
+    ArrayDef, ArrayRepr, Cloner, ClosureData, DataStruct, Def, ExternFunction, GcStr, Value,
+    ValueArray, ValueRepr,
+};
+use vm::{self, Root, RootStr, RootedValue, Status, Thread};
+use {forget_lifetime, Error, Result, Variants};
 
 use std::any::Any;
 use std::cell::Ref;
@@ -32,9 +34,9 @@ use serde::de::{Deserialize, Deserializer};
 #[macro_use]
 pub mod mac;
 #[cfg(feature = "serde")]
-pub mod ser;
-#[cfg(feature = "serde")]
 pub mod de;
+#[cfg(feature = "serde")]
+pub mod ser;
 #[cfg(feature = "serde")]
 pub mod typ;
 
@@ -304,8 +306,8 @@ impl<T> Traverseable for Generic<T> {
 pub mod generic {
     use super::VmType;
     use base::types::ArcType;
-    use vm::Thread;
     use thread::ThreadInternal;
+    use vm::Thread;
 
     macro_rules! make_generics {
         ($($i: ident)+) => {
@@ -910,7 +912,8 @@ where
 {
     type Type = Option<T::Type>;
     fn make_type(vm: &Thread) -> ArcType {
-        let option_alias = vm.find_type_info("std.types.Option")
+        let option_alias = vm
+            .find_type_info("std.types.Option")
             .unwrap()
             .clone()
             .into_type();
@@ -953,7 +956,8 @@ where
 {
     type Type = StdResult<T::Type, E::Type>;
     fn make_type(vm: &Thread) -> ArcType {
-        let result_alias = vm.find_type_info("std.types.Result")
+        let result_alias = vm
+            .find_type_info("std.types.Result")
             .unwrap()
             .clone()
             .into_type();
@@ -1479,16 +1483,16 @@ pub mod record {
 
     use frunk_core::hlist::{h_cons, HCons, HList, HNil};
 
+    use base::symbol::Symbol;
     use base::types;
     use base::types::ArcType;
-    use base::symbol::Symbol;
 
-    use {Result, Variants};
+    use super::{Getable, Pushable, VmType};
     use thread::{self, Context, ThreadInternal};
     use types::VmIndex;
-    use vm::Thread;
     use value::{Def, Value, ValueRepr};
-    use super::{Getable, Pushable, VmType};
+    use vm::Thread;
+    use {Result, Variants};
 
     pub struct Record<T> {
         pub fields: T,
@@ -2123,7 +2127,8 @@ where
     type Type = Map<K::Type, V::Type>;
 
     fn make_type(vm: &Thread) -> ArcType {
-        let map_alias = vm.find_type_info("std.map.Map")
+        let map_alias = vm
+            .find_type_info("std.map.Map")
             .unwrap()
             .clone()
             .into_type();

@@ -11,8 +11,8 @@ use std::io::Read;
 
 use bencher::{black_box, Bencher};
 
-use gluon::{new_vm, Compiler};
 use gluon::compiler_pipeline::*;
+use gluon::{new_vm, Compiler};
 
 fn typecheck_prelude(b: &mut Bencher) {
     let vm = new_vm();

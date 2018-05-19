@@ -10,8 +10,9 @@ use base::fnv::FnvMap;
 use base::kind::{ArcKind, Kind, KindEnv};
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Name, Symbol, SymbolRef};
-use base::types::{Alias, AliasData, AppVec, ArcType, Generic, PrimitiveEnv, Type, TypeCache,
-                  TypeEnv};
+use base::types::{
+    Alias, AliasData, AppVec, ArcType, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv,
+};
 
 use api::{ValueRef, IO};
 use compiler::{CompiledFunction, CompiledModule, CompilerEnv, Variable};
@@ -197,7 +198,8 @@ impl TypeEnv for VmEnv {
                     .id_to_type
                     .values()
                     .filter_map(|alias| match **alias.unresolved_type() {
-                        Type::Variant(ref row) => row.row_iter()
+                        Type::Variant(ref row) => row
+                            .row_iter()
                             .find(|field| *field.name == *id)
                             .map(|field| &field.typ),
                         _ => None,
@@ -291,7 +293,8 @@ impl VmEnv {
     pub fn get_binding(&self, name: &str) -> Result<(Value, Cow<ArcType>)> {
         use base::resolve;
 
-        let (remaining_fields, global) = self.get_global(name)
+        let (remaining_fields, global) = self
+            .get_global(name)
             .ok_or_else(|| Error::UndefinedBinding(name.into()))?;
 
         if remaining_fields.as_str().is_empty() {
@@ -338,7 +341,8 @@ impl VmEnv {
     }
 
     pub fn get_metadata(&self, name_str: &str) -> Result<&Metadata> {
-        let (remaining, global) = self.get_global(name_str)
+        let (remaining, global) = self
+            .get_global(name_str)
             .ok_or_else(|| Error::MetadataDoesNotExist(name_str.into()))?;
 
         let mut metadata = &global.metadata;
@@ -407,8 +411,8 @@ impl GlobalVmStateBuilder {
 
 impl GlobalVmState {
     fn add_types(&mut self) -> StdResult<(), (TypeId, ArcType)> {
-        use api::Generic;
         use api::generic::A;
+        use api::Generic;
         use base::types::BuiltinType;
         fn add_builtin_type<T: Any>(self_: &mut GlobalVmState, b: BuiltinType) {
             add_builtin_type_(self_, b, TypeId::of::<T>())
