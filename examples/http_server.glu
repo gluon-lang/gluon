@@ -1,9 +1,10 @@
 let prelude = import! std.prelude
-let int = import! std.int
-let io = import! std.io
+let io @ { ? } = import! std.io
 let string = import! std.string
 let { (<>) } = import! std.prelude
-let { (*>), wrap } = import! std.applicative
+let { map } = import! std.functor
+let { (*>), wrap, (<|>) } = import! std.applicative
+let { flat_map, (>>=) } = import! std.monad
 
 let {
     Request, Response, Handler, StatusCode,
@@ -19,15 +20,8 @@ let {
     write_response,
     fail,
     catch_error,
-    functor,
-    applicative,
-    alternative,
-    monad
+    ?
 } = import! "examples/http.glu"
-
-let { map } = functor
-let { (<|>) } = import! std.prelude
-let { (>>=) } = import! std.prelude
 
 let hello_world : Handler Response =
     write_response (string.as_bytes "Hello World")
@@ -40,7 +34,7 @@ let echo_body request : Request -> Handler () =
     | None -> wrap ()
 
 let echo : Handler Response =
-    get_request >>= echo_body
+    (get_request >>= echo_body)
         *> wrap { status = OK }
 
 let handler =
@@ -50,5 +44,5 @@ let handler =
 let print_error h = catch_error h (\msg -> io_handler (io.println msg))
 
 \port ->
-io.println ("Opened server on port " <> int.show.show port)
-    *> listen port handler
+    io.println ("Opened server on port " <> show port)
+        *> listen port handler

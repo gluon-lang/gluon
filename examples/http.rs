@@ -352,12 +352,12 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
 // To let the `http_types` module refer to `Body` and `ResponseBody` we register these types in a
 // separate function which is called before loading `http_types`
 pub fn load_types(vm: &Thread) -> VmResult<()> {
-    vm.register_type::<Body>("Body", &[])?;
-    vm.register_type::<ResponseBody>("ResponseBody", &[])?;
     Ok(())
 }
 
 pub fn load(vm: &Thread) -> VmResult<ExternModule> {
+    vm.register_type::<Body>("Body", &[])?;
+    vm.register_type::<ResponseBody>("ResponseBody", &[])?;
     ExternModule::new(
         vm,
         record! {
@@ -401,8 +401,11 @@ fn main_() -> Result<(), Box<StdError>> {
         let mut file = File::open("examples/http_server.glu")?;
         file.read_to_string(&mut expr)?;
     }
-    let (mut listen, _) =
-        Compiler::new().run_expr::<FunctionRef<fn(i32) -> IO<()>>>(&thread, "http_test", &expr)?;
+    let (mut listen, _) = Compiler::new().run_expr::<FunctionRef<fn(i32) -> IO<()>>>(
+        &thread,
+        "examples/http_server.glu",
+        &expr,
+    )?;
 
     listen.call(port)?;
     Ok(())
