@@ -1,37 +1,58 @@
 use gluon::vm::types::VmTag;
-use proc_macro::TokenStream;
-use quote;
+use proc_macro2::{Span, TokenStream};
 use syn::{
     self, Data, DataEnum, DataStruct, DeriveInput, Field, Fields, FieldsNamed, FieldsUnnamed,
-    Ident, Variant,
+    GenericParam, Generics, Ident, Lifetime, LifetimeDef, Variant,
 };
 
 pub fn derive(input: TokenStream) -> TokenStream {
-    let DeriveInput { ident, data, .. } = syn::parse(input).expect("Input is checked by rustc");
+    let DeriveInput {
+        ident,
+        data,
+        generics,
+        ..
+    } = syn::parse2(input).expect("Input is checked by rustc");
 
     let tokens = match data {
-        Data::Struct(ast) => derive_struct(ast, ident),
-        Data::Enum(ast) => derive_enum(ast, ident),
+        Data::Struct(ast) => derive_struct(ast, ident, generics),
+        Data::Enum(ast) => derive_enum(ast, ident, generics),
         Data::Union(_) => panic!("Unions are not supported"),
     };
 
     tokens.into()
 }
 
-fn derive_struct(ast: DataStruct, ident: Ident) -> quote::Tokens {
+fn derive_struct(ast: DataStruct, ident: Ident, generics: Generics) -> TokenStream {
     // TODO: impl derive for structs
     unimplemented!()
 }
 
-fn derive_enum(ast: DataEnum, ident: Ident) -> quote::Tokens {
+fn derive_enum(ast: DataEnum, ident: Ident, generics: Generics) -> TokenStream {
     let variants: Vec<_> = ast.variants
-        .into_iter()
+        .iter()
         .enumerate()
-        .map(|(tag, variant)| gen_variant_match(ident, tag as VmTag, variant))
+        .map(|(tag, variant)| gen_variant_match(&ident, tag as VmTag, variant))
         .collect();
 
+    let (_, ty_generics, where_clause) = generics.split_for_impl();
+    let where_clause = where_clause
+        .map(|clause| quote! { #clause, })
+        .unwrap_or(quote! { where });
+
+    let mut generics = generics.clone();
+    let lifetime =
+        GenericParam::Lifetime(LifetimeDef::new(Lifetime::new("'vm", Span::call_site())));
+    generics.params.insert(0, lifetime);
+    let (impl_generics, ..) = generics.split_for_impl();
+
+    let getable_bounds = ast.variants
+        .iter()
+        .flat_map(|variant| create_getable_bounds(&variant.fields));
+
     quote! {
-        impl<'vm> ::gluon::vm::api::Getable<'vm> for #ident {
+        impl #impl_generics ::gluon::vm::api::Getable<'vm> for #ident #ty_generics
+        #where_clause #(#getable_bounds),*
+        {
             fn from_value(vm: &'vm ::gluon::vm::thread::Thread, variants: ::gluon::vm::Variants) -> Self {
                 let data = match variants.as_ref() {
                     ::gluon::vm::api::ValueRef::Data(data) => data,
@@ -47,10 +68,10 @@ fn derive_enum(ast: DataEnum, ident: Ident) -> quote::Tokens {
     }
 }
 
-fn gen_variant_match(ident: Ident, tag: VmTag, variant: Variant) -> quote::Tokens {
-    let variant_ident = variant.ident;
+fn gen_variant_match(ident: &Ident, tag: VmTag, variant: &Variant) -> TokenStream {
+    let variant_ident = &variant.ident;
 
-    match variant.fields {
+    match &variant.fields {
         Fields::Unit => quote! {
             #tag => #ident::#variant_ident
         },
@@ -71,12 +92,12 @@ fn gen_variant_match(ident: Ident, tag: VmTag, variant: Variant) -> quote::Token
     }
 }
 
-fn gen_tuple_cons(fields: Vec<Field>) -> quote::Tokens {
+fn gen_tuple_cons(fields: Vec<&Field>) -> TokenStream {
     let fields: Vec<_> = fields
         .into_iter()
         .enumerate()
         .map(|(idx, field)| {
-            let field_ty = field.ty;
+            let field_ty = &field.ty;
 
             quote! {
                 if let Some(val) = data.get_variant(#idx) {
@@ -93,13 +114,16 @@ fn gen_tuple_cons(fields: Vec<Field>) -> quote::Tokens {
     }
 }
 
-fn gen_struct_cons(fields: Vec<Field>) -> quote::Tokens {
+fn gen_struct_cons(fields: Vec<&Field>) -> TokenStream {
     let fields: Vec<_> = fields
         .into_iter()
         .enumerate()
         .map(|(idx, field)| {
-            let field_ty = field.ty;
-            let field_ident = field.ident.expect("Struct fields always have names");
+            let field_ty = &field.ty;
+            let field_ident = field
+                .ident
+                .as_ref()
+                .expect("Struct fields always have names");
 
             quote! {
                 #field_ident: if let Some(val) = data.get_variant(#idx) {
@@ -114,4 +138,23 @@ fn gen_struct_cons(fields: Vec<Field>) -> quote::Tokens {
     quote!{
         {#(#fields),*}
     }
+}
+
+fn create_getable_bounds(fields: &Fields) -> Vec<TokenStream> {
+    let fields = match fields {
+        Fields::Named(FieldsNamed { named, .. }) => named.iter().collect(),
+        Fields::Unnamed(FieldsUnnamed { unnamed, .. }) => unnamed.iter().collect(),
+        Fields::Unit => Vec::new(),
+    };
+
+    fields
+        .into_iter()
+        .map(|field| {
+            let ty = &field.ty;
+
+            quote! {
+                #ty: ::gluon::vm::api::Getable<'vm>
+            }
+        })
+        .collect()
 }

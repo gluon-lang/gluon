@@ -76,6 +76,43 @@ fn struct_enum_to_str(val: StructEnum) -> String {
     format!("{:?}", val)
 }
 
+#[derive(Getable, Debug, Serialize, Deserialize)]
+enum GenericEnum<T>
+where
+    T: 'static + Into<String>,
+{
+    Val(T),
+    Other(u32),
+}
+
+impl<T> VmType for GenericEnum<T>
+where
+    T: 'static + Into<String>,
+{
+    type Type = GenericEnum<T>;
+
+    fn make_type(vm: &Thread) -> ArcType {
+        vm.global_env()
+            .get_env()
+            .find_type_info("types.GenericEnum")
+            .unwrap()
+            .into_owned()
+            .into_type()
+    }
+}
+
+fn load_generic_enum_mod(vm: &Thread) -> vm::Result<ExternModule> {
+    let module = record! {
+        generic_enum_to_str => primitive!(1 generic_enum_to_str),
+    };
+
+    ExternModule::new(vm, module)
+}
+
+fn generic_enum_to_str(val: GenericEnum<String>) -> String {
+    format!("{:?}", val)
+}
+
 #[test]
 fn enum_tuple_variants() {
     let vm = new_vm();
@@ -102,7 +139,7 @@ fn enum_tuple_variants() {
 }
 
 #[test]
-fn struct_tuple_variants() {
+fn enum_struct_variants() {
     let vm = new_vm();
     let mut compiler = Compiler::new();
 
@@ -117,6 +154,29 @@ fn struct_tuple_variants() {
 
         assert (struct_enum_to_str (OneField 1337) == "OneField { field: 1337 }")
         assert (struct_enum_to_str (TwoFields "Pi" 3.14) == "TwoFields { name: \"Pi\", val: 3.14 }")
+    "#;
+
+    if let Err(why) = compiler.run_expr::<()>(&vm, "test", script) {
+        panic!("{}", why);
+    }
+}
+
+#[test]
+fn enum_generic_variants() {
+    let vm = new_vm();
+    let mut compiler = Compiler::new();
+
+    let src = api::typ::make_source::<GenericEnum<String>>(&vm).unwrap();
+    compiler.load_script(&vm, "types", &src).unwrap();
+    import::add_extern_module(&vm, "functions", load_generic_enum_mod);
+
+    let script = r#"
+        let { GenericEnum } = import! types
+        let { generic_enum_to_str } = import! functions
+        let { assert } = import! std.test
+
+        assert (generic_enum_to_str (Other 13) == "Other(13)")
+        assert (generic_enum_to_str (Val "str") == "Val(\"str\")")
     "#;
 
     if let Err(why) = compiler.run_expr::<()>(&vm, "test", script) {

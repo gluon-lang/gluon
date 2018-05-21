@@ -14,8 +14,9 @@ documentation = "https://docs.rs/gluon"
 proc-macro = true
 
 [dependencies]
-syn = "0.12.13"
-quote = "0.4.2"
+syn = "0.14"
+quote = "0.6"
+proc-macro2 = "0.4"
 
 gluon = { version = "0.7.1", path = ".." } # GLUON
 
