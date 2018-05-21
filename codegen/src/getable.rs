@@ -1,5 +1,5 @@
-use proc_macro::TokenStream;
 use gluon::vm::types::VmTag;
+use proc_macro::TokenStream;
 use quote;
 use syn::{
     self, Data, DataEnum, DataStruct, DeriveInput, Field, Fields, FieldsNamed, FieldsUnnamed,
@@ -19,6 +19,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
 }
 
 fn derive_struct(ast: DataStruct, ident: Ident) -> quote::Tokens {
+    // TODO: impl derive for structs
     unimplemented!()
 }
 
@@ -71,11 +72,12 @@ fn gen_variant_match(ident: Ident, tag: VmTag, variant: Variant) -> quote::Token
 }
 
 fn gen_tuple_cons(fields: Vec<Field>) -> quote::Tokens {
-    let getters: Vec<_> = fields
+    let fields: Vec<_> = fields
         .into_iter()
         .enumerate()
         .map(|(idx, field)| {
             let field_ty = field.ty;
+
             quote! {
                 if let Some(val) = data.get_variant(#idx) {
                     <#field_ty as ::gluon::vm::api::Getable<'vm>>::from_value(vm, val)
@@ -87,10 +89,29 @@ fn gen_tuple_cons(fields: Vec<Field>) -> quote::Tokens {
         .collect();
 
     quote!{
-        (#(#getters),*)
+        (#(#fields),*)
     }
 }
 
 fn gen_struct_cons(fields: Vec<Field>) -> quote::Tokens {
-    unimplemented!()
+    let fields: Vec<_> = fields
+        .into_iter()
+        .enumerate()
+        .map(|(idx, field)| {
+            let field_ty = field.ty;
+            let field_ident = field.ident.expect("Struct fields always have names");
+
+            quote! {
+                #field_ident: if let Some(val) = data.get_variant(#idx) {
+                    <#field_ty as ::gluon::vm::api::Getable<'vm>>::from_value(vm, val)
+                } else {
+                    panic!("Enum does not contain data at index '{}'. Do the type definitions match?", #idx)
+                }
+            }
+        })
+        .collect();
+
+    quote!{
+        {#(#fields),*}
+    }
 }

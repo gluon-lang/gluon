@@ -7,10 +7,10 @@ extern crate serde_derive;
 #[macro_use]
 extern crate gluon_vm;
 
-use gluon::vm::api::{self, VmType};
-use gluon::vm::{self, ExternModule, thread::ThreadInternal};
-use gluon::{new_vm, Compiler, import, Thread};
 use gluon::base::types::ArcType;
+use gluon::vm::api::{self, VmType};
+use gluon::vm::{self, thread::ThreadInternal, ExternModule};
+use gluon::{import, new_vm, Compiler, Thread};
 
 #[derive(Getable, Debug, Serialize, Deserialize)]
 enum TupleEnum {
@@ -45,6 +45,37 @@ fn tuple_enum_to_str(val: TupleEnum) -> String {
     format!("{:?}", val)
 }
 
+#[derive(Getable, Debug, Serialize, Deserialize)]
+enum StructEnum {
+    OneField { field: i32 },
+    TwoFields { name: String, val: f64 },
+}
+
+impl VmType for StructEnum {
+    type Type = StructEnum;
+
+    fn make_type(vm: &Thread) -> ArcType {
+        vm.global_env()
+            .get_env()
+            .find_type_info("types.StructEnum")
+            .unwrap()
+            .into_owned()
+            .into_type()
+    }
+}
+
+fn load_struct_enum_mod(vm: &Thread) -> vm::Result<ExternModule> {
+    let module = record! {
+        struct_enum_to_str => primitive!(1 struct_enum_to_str),
+    };
+
+    ExternModule::new(vm, module)
+}
+
+fn struct_enum_to_str(val: StructEnum) -> String {
+    format!("{:?}", val)
+}
+
 #[test]
 fn enum_tuple_variants() {
     let vm = new_vm();
@@ -63,6 +94,29 @@ fn enum_tuple_variants() {
         assert (tuple_enum_to_str OtherVariant == "OtherVariant")
         assert (tuple_enum_to_str (One 1) == "One(1)")
         assert (tuple_enum_to_str (LotsOfTupleThings 42 "Text" 0.0) == "LotsOfTupleThings(42, \"Text\", 0.0)")
+    "#;
+
+    if let Err(why) = compiler.run_expr::<()>(&vm, "test", script) {
+        panic!("{}", why);
+    }
+}
+
+#[test]
+fn struct_tuple_variants() {
+    let vm = new_vm();
+    let mut compiler = Compiler::new();
+
+    let src = api::typ::make_source::<StructEnum>(&vm).unwrap();
+    compiler.load_script(&vm, "types", &src).unwrap();
+    import::add_extern_module(&vm, "functions", load_struct_enum_mod);
+
+    let script = r#"
+        let { StructEnum } = import! types
+        let { struct_enum_to_str } = import! functions
+        let { assert } = import! std.test
+
+        assert (struct_enum_to_str (OneField 1337) == "OneField { field: 1337 }")
+        assert (struct_enum_to_str (TwoFields "Pi" 3.14) == "TwoFields { name: \"Pi\", val: 3.14 }")
     "#;
 
     if let Err(why) = compiler.run_expr::<()>(&vm, "test", script) {
