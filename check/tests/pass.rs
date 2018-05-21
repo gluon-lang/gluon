@@ -848,3 +848,19 @@ a
         Ok("Array { f : String -> String }")
     );
 }
+
+#[test]
+fn forward_aliased_type() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+let { Test } =
+    type Test2 = | A Int
+    type Test = Test2
+    { Test }
+A 1
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}

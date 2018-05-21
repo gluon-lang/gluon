@@ -430,7 +430,7 @@ impl<'a> Typecheck<'a> {
 
     fn stack_type(&mut self, id: Symbol, alias: &Alias<Symbol, ArcType>) {
         // Insert variant constructors into the local scope
-        let aliased_type = alias.typ();
+        let aliased_type = resolve::remove_aliases(&self.environment, alias.typ().into_owned());
         if let Type::Variant(ref row) = **aliased_type.remove_forall() {
             for field in row.row_iter().cloned() {
                 let symbol = self.symbols.symbol(field.name.as_ref());
