@@ -41,7 +41,7 @@ fn derive_enum(ast: DataEnum, ident: Ident, generics: Generics) -> TokenStream {
 
     let mut generics = generics.clone();
     let lifetime =
-        GenericParam::Lifetime(LifetimeDef::new(Lifetime::new("'vm", Span::call_site())));
+        GenericParam::Lifetime(LifetimeDef::new(Lifetime::new("'__vm", Span::call_site())));
     generics.params.insert(0, lifetime);
     let (impl_generics, ..) = generics.split_for_impl();
 
@@ -50,10 +50,10 @@ fn derive_enum(ast: DataEnum, ident: Ident, generics: Generics) -> TokenStream {
         .flat_map(|variant| create_getable_bounds(&variant.fields));
 
     quote! {
-        impl #impl_generics ::gluon::vm::api::Getable<'vm> for #ident #ty_generics
+        impl #impl_generics ::gluon::vm::api::Getable<'__vm> for #ident #ty_generics
         #where_clause #(#getable_bounds),*
         {
-            fn from_value(vm: &'vm ::gluon::vm::thread::Thread, variants: ::gluon::vm::Variants) -> Self {
+            fn from_value(vm: &'__vm ::gluon::vm::thread::Thread, variants: ::gluon::vm::Variants) -> Self {
                 let data = match variants.as_ref() {
                     ::gluon::vm::api::ValueRef::Data(data) => data,
                     val => panic!("Unexpected value: '{:?}'. Do the type definitions match?", val),
@@ -101,7 +101,7 @@ fn gen_tuple_cons(fields: Vec<&Field>) -> TokenStream {
 
             quote! {
                 if let Some(val) = data.get_variant(#idx) {
-                    <#field_ty as ::gluon::vm::api::Getable<'vm>>::from_value(vm, val)
+                    <#field_ty as ::gluon::vm::api::Getable<'__vm>>::from_value(vm, val)
                 } else {
                     panic!("Enum does not contain data at index '{}'. Do the type definitions match?", #idx)
                 }
@@ -127,7 +127,7 @@ fn gen_struct_cons(fields: Vec<&Field>) -> TokenStream {
 
             quote! {
                 #field_ident: if let Some(val) = data.get_variant(#idx) {
-                    <#field_ty as ::gluon::vm::api::Getable<'vm>>::from_value(vm, val)
+                    <#field_ty as ::gluon::vm::api::Getable<'__vm>>::from_value(vm, val)
                 } else {
                     panic!("Enum does not contain data at index '{}'. Do the type definitions match?", #idx)
                 }
@@ -153,7 +153,7 @@ fn create_getable_bounds(fields: &Fields) -> Vec<TokenStream> {
             let ty = &field.ty;
 
             quote! {
-                #ty: ::gluon::vm::api::Getable<'vm>
+                #ty: ::gluon::vm::api::Getable<'__vm>
             }
         })
         .collect()
