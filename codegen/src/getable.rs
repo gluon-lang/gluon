@@ -34,17 +34,21 @@ fn derive_enum(ast: DataEnum, ident: Ident, generics: Generics) -> TokenStream {
         .map(|(tag, variant)| gen_variant_match(&ident, tag as VmTag, variant))
         .collect();
 
+    // add trailing comma or add a where if there are no predicates
     let (_, ty_generics, where_clause) = generics.split_for_impl();
     let where_clause = where_clause
         .map(|clause| quote! { #clause, })
         .unwrap_or(quote! { where });
 
+    // generate the generic params for the impl block
+    // these need an additional lifetime used by Getable
     let mut generics = generics.clone();
     let lifetime =
         GenericParam::Lifetime(LifetimeDef::new(Lifetime::new("'__vm", Span::call_site())));
     generics.params.insert(0, lifetime);
     let (impl_generics, ..) = generics.split_for_impl();
 
+    // generate bounds like T: Getable for every type used in one of the variants fields
     let getable_bounds = ast.variants
         .iter()
         .flat_map(|variant| create_getable_bounds(&variant.fields));
@@ -59,6 +63,8 @@ fn derive_enum(ast: DataEnum, ident: Ident, generics: Generics) -> TokenStream {
                     val => panic!("Unexpected value: '{:?}'. Do the type definitions match?", val),
                 };
 
+                // data contains the the data for each field of a variant; the variant of the passed value
+                // is defined by the tag(), which is defined by order of the variants (the first variant is 0)
                 match data.tag() {
                     #(#variants,)*
                     tag => panic!("Unexpected tag: '{}'. Do the type definitions match?", tag)
@@ -71,10 +77,15 @@ fn derive_enum(ast: DataEnum, ident: Ident, generics: Generics) -> TokenStream {
 fn gen_variant_match(ident: &Ident, tag: VmTag, variant: &Variant) -> TokenStream {
     let variant_ident = &variant.ident;
 
+    // depending on the type of the variant we need to generate different constructors
+    // for the enum
     match &variant.fields {
         Fields::Unit => quote! {
             #tag => #ident::#variant_ident
         },
+        // both constructors that need to marshall values extract them by using the index
+        // of the field to get the content from Data::get_variant;
+        // the data variable was assigned in the function body above
         Fields::Unnamed(FieldsUnnamed { unnamed, .. }) => {
             let cons = gen_tuple_cons(unnamed.into_iter().collect());
 
@@ -147,6 +158,8 @@ fn create_getable_bounds(fields: &Fields) -> Vec<TokenStream> {
         Fields::Unit => Vec::new(),
     };
 
+    // simply add a bound for each type;
+    // duplicates or bounds for concrete types are fine
     fields
         .into_iter()
         .map(|field| {
