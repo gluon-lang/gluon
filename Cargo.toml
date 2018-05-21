@@ -14,7 +14,7 @@ documentation = "https://docs.rs/gluon"
 readme = "README.md"
 
 [workspace]
-members = ["c-api", "repl", "completion", "format", "doc"]
+members = ["c-api", "repl", "completion", "format", "doc", "codegen"]
 
 [lib]
 
