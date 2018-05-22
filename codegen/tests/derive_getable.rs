@@ -45,6 +45,31 @@ fn tuple_enum_to_str(val: TupleEnum) -> String {
     format!("{:?}", val)
 }
 
+#[test]
+fn enum_tuple_variants() {
+    let vm = new_vm();
+    let mut compiler = Compiler::new();
+
+    let src = api::typ::make_source::<TupleEnum>(&vm).unwrap();
+    compiler.load_script(&vm, "types", &src).unwrap();
+    import::add_extern_module(&vm, "functions", load_tuple_enum_mod);
+
+    let script = r#"
+        let { TupleEnum } = import! types
+        let { tuple_enum_to_str } = import! functions
+        let { assert } = import! std.test
+
+        assert (tuple_enum_to_str Variant == "Variant")
+        assert (tuple_enum_to_str OtherVariant == "OtherVariant")
+        assert (tuple_enum_to_str (One 1) == "One(1)")
+        assert (tuple_enum_to_str (LotsOfTupleThings 42 "Text" 0.0) == "LotsOfTupleThings(42, \"Text\", 0.0)")
+    "#;
+
+    if let Err(why) = compiler.run_expr::<()>(&vm, "test", script) {
+        panic!("{}", why);
+    }
+}
+
 #[derive(Getable, Debug, Serialize, Deserialize)]
 enum StructEnum {
     OneField { field: i32 },
@@ -74,6 +99,29 @@ fn load_struct_enum_mod(vm: &Thread) -> vm::Result<ExternModule> {
 
 fn struct_enum_to_str(val: StructEnum) -> String {
     format!("{:?}", val)
+}
+
+#[test]
+fn enum_struct_variants() {
+    let vm = new_vm();
+    let mut compiler = Compiler::new();
+
+    let src = api::typ::make_source::<StructEnum>(&vm).unwrap();
+    compiler.load_script(&vm, "types", &src).unwrap();
+    import::add_extern_module(&vm, "functions", load_struct_enum_mod);
+
+    let script = r#"
+        let { StructEnum } = import! types
+        let { struct_enum_to_str } = import! functions
+        let { assert } = import! std.test
+
+        assert (struct_enum_to_str (OneField 1337) == "OneField { field: 1337 }")
+        assert (struct_enum_to_str (TwoFields "Pi" 3.14) == "TwoFields { name: \"Pi\", val: 3.14 }")
+    "#;
+
+    if let Err(why) = compiler.run_expr::<()>(&vm, "test", script) {
+        panic!("{}", why);
+    }
 }
 
 #[derive(Getable, Debug, Serialize, Deserialize)]
@@ -111,54 +159,6 @@ fn load_generic_enum_mod(vm: &Thread) -> vm::Result<ExternModule> {
 
 fn generic_enum_to_str(val: GenericEnum<String>) -> String {
     format!("{:?}", val)
-}
-
-#[test]
-fn enum_tuple_variants() {
-    let vm = new_vm();
-    let mut compiler = Compiler::new();
-
-    let src = api::typ::make_source::<TupleEnum>(&vm).unwrap();
-    compiler.load_script(&vm, "types", &src).unwrap();
-    import::add_extern_module(&vm, "functions", load_tuple_enum_mod);
-
-    let script = r#"
-        let { TupleEnum } = import! types
-        let { tuple_enum_to_str } = import! functions
-        let { assert } = import! std.test
-
-        assert (tuple_enum_to_str Variant == "Variant")
-        assert (tuple_enum_to_str OtherVariant == "OtherVariant")
-        assert (tuple_enum_to_str (One 1) == "One(1)")
-        assert (tuple_enum_to_str (LotsOfTupleThings 42 "Text" 0.0) == "LotsOfTupleThings(42, \"Text\", 0.0)")
-    "#;
-
-    if let Err(why) = compiler.run_expr::<()>(&vm, "test", script) {
-        panic!("{}", why);
-    }
-}
-
-#[test]
-fn enum_struct_variants() {
-    let vm = new_vm();
-    let mut compiler = Compiler::new();
-
-    let src = api::typ::make_source::<StructEnum>(&vm).unwrap();
-    compiler.load_script(&vm, "types", &src).unwrap();
-    import::add_extern_module(&vm, "functions", load_struct_enum_mod);
-
-    let script = r#"
-        let { StructEnum } = import! types
-        let { struct_enum_to_str } = import! functions
-        let { assert } = import! std.test
-
-        assert (struct_enum_to_str (OneField 1337) == "OneField { field: 1337 }")
-        assert (struct_enum_to_str (TwoFields "Pi" 3.14) == "TwoFields { name: \"Pi\", val: 3.14 }")
-    "#;
-
-    if let Err(why) = compiler.run_expr::<()>(&vm, "test", script) {
-        panic!("{}", why);
-    }
 }
 
 // TODO: needs safe interface for Getable::from_value() when used with references
