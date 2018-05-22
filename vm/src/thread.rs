@@ -1,5 +1,5 @@
 //! The thread/vm type
-use std::any::Any;
+use std::any::{Any, TypeId};
 use std::cmp::Ordering;
 use std::fmt;
 use std::mem;
@@ -17,8 +17,7 @@ use futures::{Async, Future, Poll};
 use base::metadata::Metadata;
 use base::pos::Line;
 use base::symbol::Symbol;
-use base::types;
-use base::types::ArcType;
+use base::types::{self, Alias, ArcType};
 
 use api::{Getable, Pushable, ValueRef, VmType};
 use compiler::UpvarInfo;
@@ -591,10 +590,13 @@ impl Thread {
         T: Getable<'vm> + VmType,
     {
         use check::check_signature;
+
+        let expected = T::make_type(self);
+
         let env = self.get_env();
         let (value, actual) = env.get_binding(name)?;
+
         // Finally check that type of the returned value is correct
-        let expected = T::make_type(self);
         if check_signature(&*env, &expected, &actual) {
             unsafe { Ok(T::from_value(self, Variants::new(&value))) }
         } else {
@@ -610,13 +612,21 @@ impl Thread {
     }
 
     /// Returns the gluon type that was bound to `T`
-    pub fn get_type<T: ?Sized + Any>(&self) -> ArcType {
+    pub fn get_type<T: ?Sized + Any>(&self) -> Option<ArcType> {
         self.global_env().get_type::<T>()
     }
 
     /// Registers the type `T` as being a gluon type called `name` with generic arguments `args`
     pub fn register_type<T: ?Sized + Any>(&self, name: &str, args: &[&str]) -> Result<ArcType> {
         self.global_env().register_type::<T>(name, args)
+    }
+    pub fn register_type_as(
+        &self,
+        name: Symbol,
+        alias: Alias<Symbol, ArcType>,
+        id: TypeId,
+    ) -> Result<ArcType> {
+        self.global_env().register_type_as(name, alias, id)
     }
 
     /// Locks and retrieves the global environment of the vm

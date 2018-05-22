@@ -25,7 +25,7 @@ let {
 
 let hello_world : Handler Response =
     write_response (string.as_bytes "Hello World")
-        *> (wrap { status = OK })
+        *> (wrap { status = Ok })
 
 let echo_body request : Request -> Handler () =
     do chunk = io_handler (read_chunk request.body)
@@ -35,7 +35,7 @@ let echo_body request : Request -> Handler () =
 
 let echo : Handler Response =
     (get_request >>= echo_body)
-        *> wrap { status = OK }
+        *> wrap { status = Ok }
 
 let handler =
     (get *> path "/" *> hello_world) <|> (post *> path "/echo" *> echo)

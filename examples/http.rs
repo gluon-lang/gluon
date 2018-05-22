@@ -17,6 +17,8 @@ extern crate futures;
 extern crate hyper;
 #[macro_use]
 extern crate log;
+#[macro_use]
+extern crate serde_derive;
 
 use std::env;
 use std::error::Error as StdError;
@@ -42,14 +44,11 @@ use vm::{Error as VmError, ExternModule, Result as VmResult};
 use gluon::import::add_extern_module;
 use vm::api::{
     Function, FunctionRef, FutureResult, Getable, OpaqueValue, PushAsRef, Pushable, Userdata,
-    ValueRef, VmType, WithVM, IO,
+    VmType, WithVM, IO,
 };
 use vm::gc::{Gc, Traverseable};
-use vm::thread::ThreadInternal;
 use vm::thread::{Context, RootedThread, Thread};
 use vm::Variants;
-
-use vm::internal::Value;
 
 use gluon::{new_vm, Compiler};
 
@@ -60,12 +59,9 @@ struct Handler<T>(PhantomData<T>);
 impl<T: VmType + 'static> VmType for Handler<T> {
     type Type = Self;
     fn make_type(vm: &Thread) -> ArcType {
-        let typ = (*vm
-            .global_env()
-            .get_env()
+        let typ = vm
             .find_type_info("examples.http_types.Handler")
-            .unwrap())
-            .clone()
+            .unwrap_or_else(|err| panic!("{}", err))
             .into_type();
         Type::app(typ, collect![T::make_type(vm)])
     }
@@ -77,53 +73,136 @@ impl<T: VmType + 'static> VmType for Handler<T> {
 struct Wrap<T>(T);
 
 macro_rules! define_vmtype {
-    ($name:ident) => {
+    ($name:ident, $wrapper:ident) => {
         impl VmType for Wrap<$name> {
             type Type = $name;
             fn make_type(vm: &Thread) -> ArcType {
-                let typ = concat!("examples.http_types.", stringify!($name));
-                (*vm.global_env().get_env().find_type_info(typ).unwrap())
-                    .clone()
-                    .into_type()
+                $wrapper::make_type(vm)
+            }
+        }
+        
+        impl VmType for $wrapper {
+            type Type = $name;
+            fn make_type(vm: &Thread) -> ArcType {
+                use gluon::base::types::Alias;
+        
+                if let Some(typ) = vm.get_type::<$name>() {
+                    return typ;
+                }
+        
+                let (name, typ) = gluon::vm::api::typ::from_rust::<Self>(vm).unwrap();
+                vm.register_type_as(
+                    name.clone(),
+                    Alias::new(name, typ),
+                    ::std::any::TypeId::of::<$name>(),
+                ).unwrap()
             }
         }
     };
 }
 
-define_vmtype! { Method }
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "Method")]
+#[serde(rename = "Method")]
+pub enum RemoteMethod {
+    Options,
+    Get,
+    Post,
+    Put,
+    Delete,
+    Head,
+    Trace,
+    Connect,
+    Patch,
+    Extension(String),
+}
+#[derive(Serialize, Deserialize)]
+struct RemoteMethodContainer(#[serde(with = "RemoteMethod")] Method);
+
+define_vmtype! { Method, RemoteMethodContainer }
 
 impl<'vm> Pushable<'vm> for Wrap<Method> {
-    fn push(self, _: &'vm Thread, context: &mut Context) -> VmResult<()> {
-        use hyper::Method::*;
-        context.stack.push(Value::tag(match self.0 {
-            Get => 0,
-            Post => 1,
-            Delete => 2,
-            _ => {
-                return Err(VmError::Message(format!(
-                    "Method `{:?}` does not exist in gluon",
-                    self.0
-                )).into())
-            }
-        }));
-        Ok(())
+    fn push(self, vm: &'vm Thread, context: &mut Context) -> VmResult<()> {
+        use gluon::vm::api::ser::Ser;
+        Ser(RemoteMethodContainer(self.0)).push(vm, context)
     }
 }
 
-define_vmtype! { StatusCode }
+#[derive(Serialize, Deserialize)]
+#[serde(remote = "StatusCode")]
+#[serde(rename = "StatusCode")]
+pub enum RemoteStatusCode {
+    Continue,
+    SwitchingProtocols,
+    Processing,
+    Ok,
+    Created,
+    Accepted,
+    NonAuthoritativeInformation,
+    NoContent,
+    ResetContent,
+    PartialContent,
+    MultiStatus,
+    AlreadyReported,
+    ImUsed,
+    MultipleChoices,
+    MovedPermanently,
+    Found,
+    SeeOther,
+    NotModified,
+    UseProxy,
+    TemporaryRedirect,
+    PermanentRedirect,
+    BadRequest,
+    Unauthorized,
+    PaymentRequired,
+    Forbidden,
+    NotFound,
+    MethodNotAllowed,
+    NotAcceptable,
+    ProxyAuthenticationRequired,
+    RequestTimeout,
+    Conflict,
+    Gone,
+    LengthRequired,
+    PreconditionFailed,
+    PayloadTooLarge,
+    UriTooLong,
+    UnsupportedMediaType,
+    RangeNotSatisfiable,
+    ExpectationFailed,
+    ImATeapot,
+    MisdirectedRequest,
+    UnprocessableEntity,
+    Locked,
+    FailedDependency,
+    UpgradeRequired,
+    PreconditionRequired,
+    TooManyRequests,
+    RequestHeaderFieldsTooLarge,
+    UnavailableForLegalReasons,
+    InternalServerError,
+    NotImplemented,
+    BadGateway,
+    ServiceUnavailable,
+    GatewayTimeout,
+    HttpVersionNotSupported,
+    VariantAlsoNegotiates,
+    InsufficientStorage,
+    LoopDetected,
+    NotExtended,
+    NetworkAuthenticationRequired,
+    Unregistered(u16),
+}
+#[derive(Serialize, Deserialize)]
+struct StatusCodeContainer(#[serde(with = "RemoteStatusCode")] StatusCode);
+
+define_vmtype! { StatusCode, StatusCodeContainer }
 
 impl<'vm> Getable<'vm> for Wrap<StatusCode> {
-    fn from_value(_: &'vm Thread, value: Variants) -> Self {
-        use hyper::StatusCode::*;
-        match value.as_ref() {
-            ValueRef::Data(data) => Wrap(match data.tag() {
-                0 => Ok,
-                1 => NotFound,
-                2 => InternalServerError,
-                _ => panic!("Unexpected tag"),
-            }),
-            _ => panic!(),
-        }
+    fn from_value(vm: &'vm Thread, value: Variants) -> Self {
+        use gluon::vm::api::de::De;
+        Wrap((De::<StatusCodeContainer>::from_value(vm, value).0).0)
     }
 }
 
@@ -351,13 +430,22 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
 
 // To let the `http_types` module refer to `Body` and `ResponseBody` we register these types in a
 // separate function which is called before loading `http_types`
-pub fn load_types(vm: &Thread) -> VmResult<()> {
-    Ok(())
+pub fn load_types(vm: &Thread) -> VmResult<ExternModule> {
+    vm.register_type::<Body>("Body", &[])?;
+    vm.register_type::<ResponseBody>("ResponseBody", &[])?;
+
+    ExternModule::new(
+        vm,
+        record! {
+            type Body => Body,
+            type ResponseBody => ResponseBody,
+            type Method => Wrap<Method>,
+            type StatusCode => Wrap<StatusCode>
+        },
+    )
 }
 
 pub fn load(vm: &Thread) -> VmResult<ExternModule> {
-    vm.register_type::<Body>("Body", &[])?;
-    vm.register_type::<ResponseBody>("ResponseBody", &[])?;
     ExternModule::new(
         vm,
         record! {
@@ -375,7 +463,8 @@ fn main() {
 }
 
 fn main_() -> Result<(), Box<StdError>> {
-    let _ = env_logger::try_init();
+    env_logger::init();
+
     let port = env::args()
         .nth(1)
         .map(|port| port.parse::<i32>().expect("port"))
@@ -383,15 +472,7 @@ fn main_() -> Result<(), Box<StdError>> {
 
     let thread = new_vm();
 
-    // First load all the http types so we can refer to them from gluon
-    load_types(&thread)?;
-    Compiler::new().run_expr::<()>(
-        &thread,
-        "",
-        r#"let _ = import! "examples/http_types.glu" in () "#,
-    )?;
-
-    // Load the primitive functions we define in this module
+    add_extern_module(&thread, "http.prim_types", load_types);
     add_extern_module(&thread, "http.prim", load);
 
     // Last we run our `http_server.glu` module which returns a function which starts listening

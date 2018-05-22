@@ -351,6 +351,8 @@ pub fn load_channel<'vm>(vm: &'vm Thread) -> VmResult<ExternModule> {
     ExternModule::new(
         vm,
         record!{
+            type Sender a => Sender<A>,
+            type Receiver a => Sender<A>,
             channel => primitive!(1 std::channel::channel),
             recv => primitive!(1 std::channel::recv),
             send => primitive!(2 std::channel::send),
@@ -362,8 +364,6 @@ pub fn load_thread<'vm>(vm: &'vm Thread) -> VmResult<ExternModule> {
     ExternModule::new(
         vm,
         record!{
-            type Sender a => Sender<A>,
-            type Receiver a => Sender<A>,
             resume => primitive::<fn(&'vm Thread) -> Result<(), String>>("std.thread.prim.resume", resume),
             (yield_ "yield") => primitive::<fn(())>("std.thread.prim.yield", yield_),
             spawn => primitive!(1 std::thread::prim::spawn),

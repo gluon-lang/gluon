@@ -4,7 +4,6 @@ let io @ { ? } = import! std.io
 let { (<<), ? } = import! std.function
 let string = import! std.string
 let { Bool } = import! std.bool
-let http_prim = import! http.prim
 let { Functor, Applicative, Alternative, Monad } = prelude
 let { id } = import! std.prelude
 let { flat_map } = import! std.monad
@@ -17,7 +16,8 @@ let {
     StatusCode,
     Response,
     Handler,
-    HttpState } = import! "examples/http_types.glu"
+    HttpState } = import! examples.http_types
+let http_prim = import! http.prim
 
 /// Force the value to be a Handler. Necessary to make the the type inference work for
 /// higher-kinded types
@@ -98,7 +98,7 @@ let get_response_body : Handler ResponseBody =
     make (\success failure state -> success state.response state)
 
 /// Returns `OK` with an empty body
-let empty_response = { status = OK }
+let empty_response = { status = Ok }
 
 /// Converts an `IO` into a `Handler`
 let io_handler action : IO a -> Handler a =

@@ -1,5 +1,7 @@
 extern crate env_logger;
 extern crate futures;
+#[macro_use]
+extern crate serde_derive;
 
 extern crate gluon;
 #[macro_use]
@@ -8,8 +10,9 @@ extern crate gluon_vm;
 use futures::future::lazy;
 use futures::{Future, IntoFuture};
 
-use gluon::base::types::Type;
+use gluon::base::types::{Alias, ArcType, Type};
 use gluon::import::{add_extern_module, Import};
+use gluon::vm::api::de::De;
 use gluon::vm::api::{FunctionRef, FutureResult, Userdata, VmType, IO};
 use gluon::vm::thread::{Root, RootStr, RootedThread, Thread, Traverseable};
 use gluon::vm::types::VmInt;
@@ -297,4 +300,44 @@ fn tuples_start_at_0() {
         <(i32, f64, String)>::make_type(&thread).to_string(),
         "(Int, Float, String)"
     );
+}
+
+#[test]
+fn use_type_from_type_field() {
+    let _ = ::env_logger::try_init();
+    let vm = make_vm();
+
+    #[derive(Serialize, Deserialize, PartialEq, Debug)]
+    enum Test {
+        A(i32),
+        B(String),
+        C,
+    }
+    impl VmType for Test {
+        type Type = Self;
+        fn make_type(vm: &Thread) -> ArcType {
+            if let Some(typ) = vm.get_type::<Self>() {
+                return typ;
+            }
+
+            let (name, typ) = gluon::vm::api::typ::from_rust::<Self>(vm).unwrap();
+            vm.register_type_as(
+                name.clone(),
+                Alias::new(name, typ),
+                ::std::any::TypeId::of::<Self>(),
+            ).unwrap()
+        }
+    }
+
+    add_extern_module(&vm, "test_types", |vm| {
+        ExternModule::new(vm, record!{ type Test => Test })
+    });
+    let text = r#"
+        let { Test } = import! test_types
+        B "abc"
+    "#;
+    let (De(actual), _) = Compiler::new()
+        .run_expr::<De<Test>>(&vm, "test", text)
+        .unwrap_or_else(|err| panic!("{}", err));
+    assert_eq!(actual, Test::B("abc".to_string()));
 }

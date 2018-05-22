@@ -27,15 +27,18 @@ type {0} = {1}
 }
 
 /// Deserializes `T` from a gluon value assuming that `value` is of type `typ`.
-pub fn from_rust<T>(thread: &Thread) -> Result<(String, ArcType)>
+pub fn from_rust<T>(thread: &Thread) -> Result<(Symbol, ArcType)>
 where
     T: DeserializeOwned,
 {
     let mut symbols = Symbols::new();
-    from_rust_::<T>(&mut symbols, thread)
+    from_rust_with_symbols::<T>(&mut symbols, thread)
 }
 
-fn from_rust_<T>(symbols: &mut Symbols, thread: &Thread) -> Result<(String, ArcType)>
+pub fn from_rust_with_symbols<T>(
+    symbols: &mut Symbols,
+    thread: &Thread,
+) -> Result<(Symbol, ArcType)>
 where
     T: DeserializeOwned,
 {
@@ -57,7 +60,7 @@ where
     } else {
         type_cache.variant(variants)
     };
-    Ok((deserializer.name.to_string(), typ))
+    Ok((deserializer.state.symbols.symbol(deserializer.name), typ))
 }
 
 struct State<'de> {
@@ -542,7 +545,7 @@ impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
 
 #[cfg(test)]
 mod tests {
-    use super::from_rust_;
+    use super::from_rust_with_symbols;
     use super::*;
     use thread::RootedThread;
 
@@ -556,8 +559,9 @@ mod tests {
     #[test]
     fn struct_type() {
         let mut symbols = Symbols::new();
-        let (name, typ) = from_rust_::<Test>(&mut symbols, &RootedThread::new()).unwrap();
-        assert_eq!(name, "Test");
+        let (name, typ) =
+            from_rust_with_symbols::<Test>(&mut symbols, &RootedThread::new()).unwrap();
+        assert_eq!(name.declared_name(), "Test");
         assert_eq!(
             typ,
             Type::record(
@@ -581,8 +585,9 @@ mod tests {
     #[test]
     fn enum_type() {
         let mut symbols = Symbols::new();
-        let (name, typ) = from_rust_::<Enum>(&mut symbols, &RootedThread::new()).unwrap();
-        assert_eq!(name, "Enum");
+        let (name, typ) =
+            from_rust_with_symbols::<Enum>(&mut symbols, &RootedThread::new()).unwrap();
+        assert_eq!(name.declared_name(), "Enum");
         assert_eq!(
             typ,
             Type::variant(vec![

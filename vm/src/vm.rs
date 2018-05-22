@@ -468,19 +468,9 @@ impl GlobalVmState {
         new_bytecode(&env, &mut interner, &mut gc, self, f)
     }
 
-    pub fn get_type<T: ?Sized + Any>(&self) -> ArcType {
+    pub fn get_type<T: ?Sized + Any>(&self) -> Option<ArcType> {
         let id = TypeId::of::<T>();
-        self.typeids
-            .read()
-            .unwrap()
-            .get(&id)
-            .cloned()
-            .unwrap_or_else(|| {
-                ice!(
-                    "Expected type to be inserted before get_type call. \
-                     Did you forget to call `Thread::register_type`?"
-                )
-            })
+        self.typeids.read().unwrap().get(&id).cloned()
     }
 
     /// Checks if a global exists called `name`
@@ -539,27 +529,38 @@ impl GlobalVmState {
     }
 
     fn register_type_(&self, name: &str, args: &[&str], id: TypeId) -> Result<ArcType> {
+        let arg_types: AppVec<_> = args.iter().map(|g| self.get_generic(g)).collect();
+        let args = arg_types
+            .iter()
+            .map(|g| match **g {
+                Type::Generic(ref g) => g.clone(),
+                _ => unreachable!(),
+            })
+            .collect();
+        let n = Symbol::from(name);
+        let alias = Alias::from(AliasData::new(n.clone(), args, self.type_cache.opaque()));
+        self.register_type_as(n, alias, id)
+    }
+
+    pub fn register_type_as(
+        &self,
+        name: Symbol,
+        alias: Alias<Symbol, ArcType>,
+        id: TypeId,
+    ) -> Result<ArcType> {
         let mut env = self.env.write().unwrap();
         let type_infos = &mut env.type_infos;
-        if type_infos.id_to_type.contains_key(name) {
-            Err(Error::TypeAlreadyExists(name.into()))
+        if type_infos.id_to_type.contains_key(name.declared_name()) {
+            Err(Error::TypeAlreadyExists(name.declared_name().into()))
         } else {
-            let arg_types: AppVec<_> = args.iter().map(|g| self.get_generic(g)).collect();
-            let args = arg_types
-                .iter()
-                .map(|g| match **g {
-                    Type::Generic(ref g) => g.clone(),
-                    _ => unreachable!(),
-                })
-                .collect();
-            let n = Symbol::from(name);
-            let typ: ArcType = Type::app(Type::ident(n.clone()), arg_types);
-            self.typeids.write().unwrap().insert(id, typ.clone());
-            let t = self.typeids.read().unwrap().get(&id).unwrap().clone();
-            type_infos.id_to_type.insert(
-                name.into(),
-                Alias::from(AliasData::new(n, args, self.type_cache.opaque())),
-            );
+            self.typeids
+                .write()
+                .unwrap()
+                .insert(id, alias.clone().into_type());
+            let t = alias.clone().into_type();
+            type_infos
+                .id_to_type
+                .insert(name.declared_name().into(), alias);
             Ok(t)
         }
     }

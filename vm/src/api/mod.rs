@@ -385,7 +385,12 @@ pub trait VmType {
 
     /// Creates an gluon type which maps to `Self` in rust
     fn make_type(vm: &Thread) -> ArcType {
-        vm.get_type::<Self::Type>()
+        vm.get_type::<Self::Type>().unwrap_or_else(|| {
+            ice!(
+                "Expected type to be inserted before get_type call. \
+                 Did you forget to call `Thread::register_type`?"
+            )
+        })
     }
 
     /// How many extra arguments a function returning this type requires.
@@ -1497,7 +1502,7 @@ pub mod record {
     use frunk_core::hlist::{h_cons, HCons, HList, HNil};
 
     use base::symbol::Symbol;
-    use base::types::{self, Alias, AliasData, ArcType, Generic};
+    use base::types::{self, Alias, AliasData, ArcType, Generic, Type};
 
     use super::{Getable, Pushable, VmType};
     use thread::{self, Context, ThreadInternal};
@@ -1547,7 +1552,7 @@ pub mod record {
 
     impl<'vm> GetableFieldList<'vm> for HNil {
         fn from_value(_vm: &'vm Thread, values: &[Value]) -> Option<Self> {
-            debug_assert!(values.is_empty(), "{:?}", values);
+            debug_assert!(values.is_empty(), "Retrieving type {:?}", values);
             Some(HNil)
         }
     }
@@ -1567,7 +1572,21 @@ pub mod record {
             vm: &Thread,
             type_fields: &mut Vec<types::Field<Symbol, Alias<Symbol, ArcType>>>,
         ) {
-            let name = Symbol::from(F::name());
+            let typ = H::make_type(vm);
+            let name = {
+                let mut self_symbol = None;
+                types::walk_type(&typ, |typ: &ArcType| {
+                    if self_symbol.is_none() {
+                        match **typ {
+                            Type::Ident(ref id) if id.definition_name() == F::name() => {
+                                self_symbol = Some(id.clone())
+                            }
+                            _ => (),
+                        }
+                    }
+                });
+                self_symbol.unwrap_or_else(|| Symbol::from(F::name()))
+            };
             let args = F::args();
             assert!(
                 name.definition_name().starts_with(char::is_uppercase),
@@ -1586,7 +1605,7 @@ pub mod record {
                             )
                         })
                         .collect(),
-                    H::make_type(vm),
+                    typ,
                 )),
             ));
             T::field_types(vm, type_fields);
