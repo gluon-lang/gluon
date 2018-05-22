@@ -28,12 +28,27 @@ fn derive_struct(ast: DataStruct, ident: Ident, generics: Generics) -> TokenStre
 }
 
 fn derive_enum(ast: DataEnum, ident: Ident, generics: Generics) -> TokenStream {
-    let variants: Vec<_> = ast.variants
-        .iter()
-        .enumerate()
-        .map(|(tag, variant)| gen_variant_match(&ident, tag as VmTag, variant))
-        .collect();
+    let cons;
+    {
+        let variants = ast.variants
+            .iter()
+            .enumerate()
+            .map(|(tag, variant)| gen_variant_match(&ident, tag as VmTag, variant));
 
+        // data contains the the data for each field of a variant; the variant of the passed value
+        // is defined by the tag(), which is defined by order of the variants (the first variant is 0)
+        cons = quote! {
+            match data.tag() {
+                #(#variants,)*
+                tag => panic!("Unexpected tag: '{}'. Do the type definitions match?", tag)
+            }
+        };
+    }
+
+    gen_impl(ident, generics, cons)
+}
+
+fn gen_impl(ident: Ident, generics: Generics, cons_expr: TokenStream) -> TokenStream {
     // add trailing comma or add a where if there are no predicates
     let (_, ty_generics, where_clause) = generics.split_for_impl();
     let where_clause = where_clause
@@ -67,12 +82,7 @@ fn derive_enum(ast: DataEnum, ident: Ident, generics: Generics) -> TokenStream {
                     val => panic!("Unexpected value: '{:?}'. Do the type definitions match?", val),
                 };
 
-                // data contains the the data for each field of a variant; the variant of the passed value
-                // is defined by the tag(), which is defined by order of the variants (the first variant is 0)
-                match data.tag() {
-                    #(#variants,)*
-                    tag => panic!("Unexpected tag: '{}'. Do the type definitions match?", tag)
-                }
+                #cons_expr
             }
         }
     }
