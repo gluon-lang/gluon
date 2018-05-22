@@ -2,7 +2,7 @@ use gluon::vm::types::VmTag;
 use proc_macro2::{Span, TokenStream};
 use syn::{
     self, Data, DataEnum, DataStruct, DeriveInput, Field, Fields, FieldsNamed, FieldsUnnamed,
-    GenericParam, Generics, Ident, Lifetime, LifetimeDef, Path, Type, TypePath, Variant,
+    GenericParam, Generics, Ident, Lifetime, LifetimeDef, Variant,
 };
 
 pub fn derive(input: TokenStream) -> TokenStream {
@@ -23,8 +23,37 @@ pub fn derive(input: TokenStream) -> TokenStream {
 }
 
 fn derive_struct(ast: DataStruct, ident: Ident, generics: Generics) -> TokenStream {
-    // TODO: impl derive for structs
-    unimplemented!()
+    let fields = match ast.fields {
+        Fields::Named(FieldsNamed { named, .. }) => named,
+        _ => panic!("Struct fields always have names"),
+    };
+
+    // lookup each field by its name and then convert to its type using the Getable
+    // impl of the fields type
+    let field_initializers = fields.iter().map(|field| {
+        let field_ty = &field.ty;
+        let ident = field
+            .ident
+            .as_ref()
+            .expect("Struct fields always have names");
+        let quoted_ident = format!("{}", quote! { #ident });
+
+        quote! {
+            #ident: if let Some(val) = data.lookup_field(vm, #quoted_ident) {
+                <#field_ty as ::gluon::vm::api::Getable<'__vm>>::from_value(vm, val)
+            } else {
+                panic!("Cannot find the field '{}'. Do the type definitions match?", #quoted_ident);
+            }
+        }
+    });
+
+    let cons = quote! {
+        #ident {
+            #(#field_initializers,)*
+        }
+    };
+
+    gen_impl(ident, generics, cons)
 }
 
 fn derive_enum(ast: DataEnum, ident: Ident, generics: Generics) -> TokenStream {

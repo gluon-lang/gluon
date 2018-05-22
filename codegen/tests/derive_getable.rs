@@ -190,3 +190,57 @@ fn enum_generic_variants() {
         panic!("{}", why);
     }
 }
+
+#[derive(Getable, Debug, Serialize, Deserialize)]
+struct Struct {
+    string: String,
+    int: i32,
+    tuple: (f64, f64),
+}
+
+impl VmType for Struct {
+    type Type = Struct;
+
+    fn make_type(vm: &Thread) -> ArcType {
+        vm.global_env()
+            .get_env()
+            .find_type_info("types.Struct")
+            .unwrap()
+            .into_owned()
+            .into_type()
+    }
+}
+
+fn load_struct_mod(vm: &Thread) -> vm::Result<ExternModule> {
+    let module = record! {
+        struct_to_str => primitive!(1 struct_to_str),
+    };
+
+    ExternModule::new(vm, module)
+}
+
+fn struct_to_str(val: Struct) -> String {
+    format!("{:?}", val)
+}
+
+#[test]
+fn struct_derive() {
+    let vm = new_vm();
+    let mut compiler = Compiler::new();
+
+    let src = api::typ::make_source::<Struct>(&vm).unwrap();
+    compiler.load_script(&vm, "types", &src).unwrap();
+    import::add_extern_module(&vm, "functions", load_struct_mod);
+
+    let script = r#"
+        let { Struct } = import! types
+        let { struct_to_str } = import! functions
+        let { assert } = import! std.test
+
+        assert (struct_to_str { string = "test", int = 55, tuple = (0.0, 1.0) } == "Struct { string: \"test\", int: 55, tuple: (0.0, 1.0) }")
+    "#;
+
+    if let Err(why) = compiler.run_expr::<()>(&vm, "test", script) {
+        panic!("{}", why);
+    }
+}
