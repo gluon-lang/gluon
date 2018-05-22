@@ -2,7 +2,7 @@ use gluon::vm::types::VmTag;
 use proc_macro2::{Span, TokenStream};
 use syn::{
     self, Data, DataEnum, DataStruct, DeriveInput, Field, Fields, FieldsNamed, FieldsUnnamed,
-    GenericParam, Generics, Ident, Lifetime, LifetimeDef, Variant,
+    GenericParam, Generics, Ident, Lifetime, LifetimeDef, Path, Type, TypePath, Variant,
 };
 
 pub fn derive(input: TokenStream) -> TokenStream {
@@ -40,22 +40,26 @@ fn derive_enum(ast: DataEnum, ident: Ident, generics: Generics) -> TokenStream {
         .map(|clause| quote! { #clause, })
         .unwrap_or(quote! { where });
 
+    // lifetime bounds like '__vm: 'a, 'a: '__vm (which implies => 'a == '__vm)
+    // writing bounds like this is a lot easier than actually replacing all lifetimes
+    // with '__vm
+    let lifetime_bounds = create_lifetime_bounds(&generics);
+
+    // generate bounds like T: Getable for every type parameter
+    let getable_bounds = create_getable_bounds(&generics);
+
     // generate the generic params for the impl block
     // these need an additional lifetime used by Getable
     let mut generics = generics.clone();
-    let lifetime =
-        GenericParam::Lifetime(LifetimeDef::new(Lifetime::new("'__vm", Span::call_site())));
+    let lifetime = GenericParam::from(LifetimeDef::new(Lifetime::new("'__vm", Span::call_site())));
     generics.params.insert(0, lifetime);
     let (impl_generics, ..) = generics.split_for_impl();
 
-    // generate bounds like T: Getable for every type used in one of the variants fields
-    let getable_bounds = ast.variants
-        .iter()
-        .flat_map(|variant| create_getable_bounds(&variant.fields));
-
     quote! {
+        #[automatically_derived]
+        #[allow(unused_attributes)]
         impl #impl_generics ::gluon::vm::api::Getable<'__vm> for #ident #ty_generics
-        #where_clause #(#getable_bounds),*
+        #where_clause #(#getable_bounds,)* #(#lifetime_bounds),*
         {
             fn from_value(vm: &'__vm ::gluon::vm::thread::Thread, variants: ::gluon::vm::Variants) -> Self {
                 let data = match variants.as_ref() {
@@ -151,23 +155,30 @@ fn gen_struct_cons(fields: Vec<&Field>) -> TokenStream {
     }
 }
 
-fn create_getable_bounds(fields: &Fields) -> Vec<TokenStream> {
-    let fields = match fields {
-        Fields::Named(FieldsNamed { named, .. }) => named.iter().collect(),
-        Fields::Unnamed(FieldsUnnamed { unnamed, .. }) => unnamed.iter().collect(),
-        Fields::Unit => Vec::new(),
-    };
-
-    // simply add a bound for each type;
-    // duplicates or bounds for concrete types are fine
-    fields
-        .into_iter()
-        .map(|field| {
-            let ty = &field.ty;
-
+fn create_getable_bounds(generics: &Generics) -> Vec<TokenStream> {
+    generics
+        .params
+        .iter()
+        .filter_map(|param| match param {
+            GenericParam::Type(param) => Some(&param.ident),
+            _ => None,
+        })
+        .map(|ty| {
             quote! {
                 #ty: ::gluon::vm::api::Getable<'__vm>
             }
         })
+        .collect()
+}
+
+fn create_lifetime_bounds(generics: &Generics) -> Vec<TokenStream> {
+    generics
+        .params
+        .iter()
+        .filter_map(|param| match param {
+            GenericParam::Lifetime(def) => Some(&def.lifetime),
+            _ => None,
+        })
+        .flat_map(|lifetime| vec![quote! { #lifetime: '__vm }, quote! { '__vm: #lifetime }])
         .collect()
 }

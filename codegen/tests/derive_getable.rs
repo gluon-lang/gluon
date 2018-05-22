@@ -77,19 +77,19 @@ fn struct_enum_to_str(val: StructEnum) -> String {
 }
 
 #[derive(Getable, Debug, Serialize, Deserialize)]
-enum GenericEnum<T>
+enum GenericEnum<'a, T>
 where
     T: 'static + Into<String>,
 {
     Val(T),
-    Other(u32),
+    Lifetime(&'a str),
 }
 
-impl<T> VmType for GenericEnum<T>
+impl<'a, T> VmType for GenericEnum<'a, T>
 where
     T: 'static + Into<String>,
 {
-    type Type = GenericEnum<T>;
+    type Type = GenericEnum<'static, T>;
 
     fn make_type(vm: &Thread) -> ArcType {
         vm.global_env()
@@ -161,13 +161,20 @@ fn enum_struct_variants() {
     }
 }
 
+// TODO: needs safe interface for Getable::from_value() when used with references
 #[test]
+#[ignore]
 fn enum_generic_variants() {
     let vm = new_vm();
     let mut compiler = Compiler::new();
 
-    let src = api::typ::make_source::<GenericEnum<String>>(&vm).unwrap();
-    compiler.load_script(&vm, "types", &src).unwrap();
+    // make_source does not work with &str
+    let src = r#"
+        type GenericEnum = | Val String | Lifetime String
+        { GenericEnum }
+    "#;
+
+    compiler.load_script(&vm, "types", src).unwrap();
     import::add_extern_module(&vm, "functions", load_generic_enum_mod);
 
     let script = r#"
@@ -175,7 +182,7 @@ fn enum_generic_variants() {
         let { generic_enum_to_str } = import! functions
         let { assert } = import! std.test
 
-        assert (generic_enum_to_str (Other 13) == "Other(13)")
+        assert (generic_enum_to_str (Lifetime "'vm") == "Lifetime(\"'vm\")")
         assert (generic_enum_to_str (Val "str") == "Val(\"str\")")
     "#;
 
