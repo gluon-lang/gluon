@@ -1787,7 +1787,7 @@ impl<'b> ExecuteContext<'b> {
                         Data(data) => {
                             let v = data.get_field(field).unwrap_or_else(|| {
                                 error!("{}", self.stack.stack.stacktrace(0));
-                                ice!("Field does not exist")
+                                ice!("Field `{}` does not exist", field)
                             });
                             self.stack.push(v);
                         }

@@ -124,8 +124,8 @@ let catch_error action catch : Handler a -> (String -> Handler a) -> Handler a =
 
 /// Takes a `Handler` and a `Request` tries to process the request
 let handle handler state : Handler Response -> HttpState -> IO Response =
-    let not_found _ _ : _ -> _ -> IO _ =
-        wrap { status = NotFound, body = "Page not found" }
+    let not_found _ state : _ -> _ -> IO Response =
+        http_prim.write_response state.response  (string.as_bytes "Page not found") *> wrap { status = NotFound }
     handler (\response _ -> wrap response) not_found state
 
 {
