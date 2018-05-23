@@ -7,6 +7,7 @@ export RUST_BACKTRACE=1
 
 if [ -z $NO_NORMAL_TEST ]; then
     cargo test --features "test" --all "$@"
+    cargo test --features "test" --examples
     echo "" | cargo run --features "test" --example 24
 
     echo "TRAVIS_RUST_VERSION=$TRAVIS_RUST_VERSION"

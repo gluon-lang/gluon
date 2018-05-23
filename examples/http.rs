@@ -15,6 +15,7 @@ extern crate collect_mac;
 extern crate env_logger;
 extern crate futures;
 extern crate hyper;
+extern crate tokio_core;
 #[macro_use]
 extern crate log;
 #[macro_use]
@@ -31,11 +32,14 @@ use std::sync::{Arc, Mutex};
 use hyper::server::Service;
 use hyper::{Chunk, Method, StatusCode};
 
-use futures::future::Future;
+use futures::future::Either;
 use futures::sink::Sink;
 use futures::stream::Stream;
 use futures::sync::mpsc::Sender;
-use futures::Async;
+use futures::sync::oneshot;
+use futures::{future, Async, Future};
+
+use tokio_core::reactor::Core;
 
 use base::types::{ArcType, Type};
 
@@ -43,14 +47,15 @@ use vm::{Error as VmError, ExternModule, Result as VmResult};
 
 use gluon::import::add_extern_module;
 use vm::api::{
-    Function, FunctionRef, FutureResult, Getable, OpaqueValue, PushAsRef, Pushable, Userdata,
+    Function, FutureResult, Getable, OpaqueValue, OwnedFunction, PushAsRef, Pushable, Userdata,
     VmType, WithVM, IO,
 };
+use vm::future::FutureValue;
 use vm::gc::{Gc, Traverseable};
 use vm::thread::{Context, RootedThread, Thread};
 use vm::Variants;
 
-use gluon::{new_vm, Compiler};
+use gluon::{Compiler, VmBuilder};
 
 // `Handler` is a type defined in http.glu but since we need to refer to it in the signature of
 // listen we define a phantom type which we can use with `OpaqueValue` to store a `Handler` in Rust
@@ -331,13 +336,21 @@ type HttpState = record_type!{
     response => ResponseBody
 };
 
-fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>) -> IO<()> {
+fn listen(
+    port: i32,
+    value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>,
+) -> FutureResult<impl Future<Item = IO<()>, Error = vm::Error> + Send + 'static> {
     let WithVM {
         value: handler,
         vm: thread,
     } = value;
 
     use hyper::server::{Http, Request as HyperRequest, Response as HyperResponse};
+
+    let thread = match thread.new_thread() {
+        Ok(thread) => thread,
+        Err(err) => return FutureResult(Either::A(future::err(err))),
+    };
 
     // Retrieve the `handle` function from the http module which we use to evaluate values of type
     // `Handler Response`
@@ -413,19 +426,31 @@ fn listen(port: i32, value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>
     }
 
     let addr = format!("127.0.0.1:{}", port).parse().unwrap();
-    let result = Http::new()
-        .bind(&addr, move || {
-            Ok(Listen {
-                handle: handle.clone(),
-                handler: handler.clone(),
-            })
-        })
-        .and_then(|server| server.run());
 
-    match result {
-        Ok(()) => IO::Value(()),
-        Err(err) => IO::Exception(format!("{}", err)),
-    }
+    let (sender, receiver) = oneshot::channel();
+    thread
+        .get_event_loop()
+        .expect("event loop")
+        .spawn(move |h| {
+            let h = h.clone();
+            future::result(Http::new().serve_addr_handle(&addr, &h, move || {
+                Ok(Listen {
+                    handle: handle.clone(),
+                    handler: handler.clone(),
+                })
+            })).flatten_stream()
+                .for_each(move |con| {
+                    h.spawn(con.map(|_| ()).map_err(|err| error!("{}", err)));
+                    Ok(())
+                })
+                .map_err(|err| {
+                    error!("{}", err);
+                })
+                .and_then(|_| sender.send(IO::Value(())).map_err(|_| ()))
+        });
+    FutureResult(Either::B(
+        receiver.map_err(|_| vm::Error::from("Server error".to_string())),
+    ))
 }
 
 // To let the `http_types` module refer to `Body` and `ResponseBody` we register these types in a
@@ -457,37 +482,50 @@ pub fn load(vm: &Thread) -> VmResult<ExternModule> {
 }
 
 fn main() {
-    if let Err(err) = main_() {
-        panic!("{}", err)
-    }
-}
-
-fn main_() -> Result<(), Box<StdError>> {
     env_logger::init();
 
     let port = env::args()
         .nth(1)
-        .map(|port| port.parse::<i32>().expect("port"))
+        .map(|port| port.parse::<u16>().expect("port"))
         .unwrap_or(80);
 
-    let thread = new_vm();
+    let mut core = Core::new().unwrap();
 
+    let thread = VmBuilder::new().event_loop(Some(core.remote())).build();
+    let result = core.run(start(&thread, port));
+    if let Err(err) = result {
+        panic!("{}", err)
+    }
+}
+
+fn start<'vm>(
+    thread: &'vm Thread,
+    port: u16,
+) -> impl Future<Item = (), Error = Box<StdError + 'static>> + 'vm {
     add_extern_module(&thread, "http.prim_types", load_types);
     add_extern_module(&thread, "http.prim", load);
 
-    // Last we run our `http_server.glu` module which returns a function which starts listening
-    // on the port we passed from the command line
-    let mut expr = String::new();
-    {
-        let mut file = File::open("examples/http_server.glu")?;
-        file.read_to_string(&mut expr)?;
-    }
-    let (mut listen, _) = Compiler::new().run_expr::<FunctionRef<fn(i32) -> IO<()>>>(
-        &thread,
-        "examples/http_server.glu",
-        &expr,
-    )?;
-
-    listen.call(port)?;
-    Ok(())
+    future::lazy(|| -> Result<_, Box<StdError>> {
+        // Last we run our `http_server.glu` module which returns a function which starts listening
+        // on the port we passed from the command line
+        let mut expr = String::new();
+        {
+            let mut file = File::open("examples/http_server.glu")?;
+            file.read_to_string(&mut expr)?;
+        }
+        Ok(expr)
+    }).and_then(move |expr| {
+        Compiler::new()
+            .run_expr_async::<OwnedFunction<fn(u16) -> IO<()>>>(
+                &thread,
+                "examples/http_server.glu",
+                &expr,
+            )
+            .from_err()
+            .and_then(move |(mut listen, _)| {
+                FutureValue::Future(listen.call_async(port))
+                    .from_err()
+                    .map(|_| ())
+            })
+    })
 }

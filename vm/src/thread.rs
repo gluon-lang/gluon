@@ -639,6 +639,11 @@ impl Thread {
         self.global_env().get_macros()
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn get_event_loop(&self) -> Option<::tokio_core::reactor::Remote> {
+        self.global_env().get_event_loop()
+    }
+
     /// Runs a garbage collection.
     pub fn collect(&self) {
         let mut context = self.current_context();
