@@ -1,4 +1,3 @@
-use gluon::vm::types::VmTag;
 use proc_macro2::{Span, TokenStream};
 use syn::{
     self, Data, DataEnum, DataStruct, DeriveInput, Field, Fields, FieldsNamed, FieldsUnnamed,
@@ -62,12 +61,12 @@ fn derive_enum(ast: DataEnum, ident: Ident, generics: Generics) -> TokenStream {
         let variants = ast.variants
             .iter()
             .enumerate()
-            .map(|(tag, variant)| gen_variant_match(&ident, tag as VmTag, variant));
+            .map(|(tag, variant)| gen_variant_match(&ident, tag, variant));
 
         // data contains the the data for each field of a variant; the variant of the passed value
         // is defined by the tag(), which is defined by order of the variants (the first variant is 0)
         cons = quote! {
-            match data.tag() {
+            match data.tag() as usize {
                 #(#variants,)*
                 tag => panic!("Unexpected tag: '{}'. Do the type definitions match?", tag)
             }
@@ -117,7 +116,7 @@ fn gen_impl(ident: Ident, generics: Generics, cons_expr: TokenStream) -> TokenSt
     }
 }
 
-fn gen_variant_match(ident: &Ident, tag: VmTag, variant: &Variant) -> TokenStream {
+fn gen_variant_match(ident: &Ident, tag: usize, variant: &Variant) -> TokenStream {
     let variant_ident = &variant.ident;
 
     // depending on the type of the variant we need to generate different constructors
