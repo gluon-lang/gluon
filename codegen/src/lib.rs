@@ -7,8 +7,14 @@ extern crate quote;
 extern crate syn;
 
 mod getable;
+mod pushable;
 
 #[proc_macro_derive(Getable)]
 pub fn getable(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     getable::derive(input.into()).into()
+}
+
+#[proc_macro_derive(Pushable)]
+pub fn pushable(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    pushable::derive(input.into()).into()
 }
