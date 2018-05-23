@@ -104,7 +104,6 @@ fn gen_impl(ident: &Ident, generics: Generics, push_impl: TokenStream) -> TokenS
 
 fn gen_push_impl(tag: usize, field_idents: &[Cow<Ident>], field_types: &[&Type]) -> TokenStream {
     debug_assert!(field_idents.len() == field_types.len());
-    let len = field_idents.len();
 
     // push each field onto the stack
     // this has to be done in reverse order so the fields come out in the correct
@@ -119,22 +118,15 @@ fn gen_push_impl(tag: usize, field_idents: &[Cow<Ident>], field_types: &[&Type])
         })
         .rev();
 
-    // since the number of fields is statically known, we can allocate all values in an array
-    let array_init = iter::repeat(quote! { ::gluon::vm::internal::Value::int(0) }).take(len);
-    let stack_init = quote! {
-        let mut fields = [ #(#array_init),* ];
-
-        for i in 0..#len {
-            fields[i] = ctx.stack.pop();
-        }
-
-        let val = ctx.new_data(vm, #tag as ::gluon::vm::types::VmTag, &fields)?;
-        ctx.stack.push(val);
-    };
+    // since the number of fields is statically known, we can allocate an array
+    // by popping the stack for each field
+    let array_init = iter::repeat(quote! { ctx.stack.pop() }).take(field_idents.len());
 
     quote! {
         #(#stack_pushes)*
-        #stack_init
+        let fields = [ #(#array_init),* ];
+        let val = ctx.new_data(vm, #tag as ::gluon::vm::types::VmTag, &fields)?;
+        ctx.stack.push(val);
     }
 }
 
