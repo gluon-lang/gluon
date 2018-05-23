@@ -156,7 +156,10 @@ impl<I: fmt::Display + AsRef<str> + Clone> fmt::Display for TypeError<I> {
                 }
                 for error in &errors[..errors.len() - 1] {
                     match *error {
-                        UnifyError::Other(ref err) => err.filter_fmt(&filter, f)?,
+                        UnifyError::Other(ref err) => {
+                            err.filter_fmt(&filter, f)?;
+                            writeln!(f)?;
+                        }
                         _ => writeln!(f, "{}", error)?,
                     }
                 }

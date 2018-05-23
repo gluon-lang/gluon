@@ -200,7 +200,7 @@ where
                 "Field names in record do not match.\n\tExpected: {}\n\tFound: {}",
                 l, r
             ),
-            TypeError::UndefinedType(ref id) => write!(f, "Type `{}` does not exist.", id),
+            TypeError::UndefinedType(ref id) => write!(f, "Type `{}` is not defined.", id),
             TypeError::SelfRecursiveAlias(ref id) => write!(
                 f,
                 "The use of self recursion in type `{}` could not be unified.",
