@@ -130,14 +130,14 @@ fn gen_variant_match(ident: &Ident, tag: VmTag, variant: &Variant) -> TokenStrea
         // of the field to get the content from Data::get_variant;
         // the data variable was assigned in the function body above
         Fields::Unnamed(FieldsUnnamed { unnamed, .. }) => {
-            let cons = gen_tuple_cons(unnamed.into_iter().collect());
+            let cons = gen_tuple_cons(unnamed);
 
             quote! {
                 #tag => #ident::#variant_ident#cons
             }
         }
         Fields::Named(FieldsNamed { named, .. }) => {
-            let cons = gen_struct_cons(named.into_iter().collect());
+            let cons = gen_struct_cons(named);
 
             quote! {
                 #tag => #ident::#variant_ident#cons
@@ -146,48 +146,46 @@ fn gen_variant_match(ident: &Ident, tag: VmTag, variant: &Variant) -> TokenStrea
     }
 }
 
-fn gen_tuple_cons(fields: Vec<&Field>) -> TokenStream {
-    let fields: Vec<_> = fields
-        .into_iter()
-        .enumerate()
-        .map(|(idx, field)| {
-            let field_ty = &field.ty;
+fn gen_tuple_cons<'a, I>(fields: I) -> TokenStream
+where
+    I: IntoIterator<Item = &'a Field>,
+{
+    let fields = fields.into_iter().enumerate().map(|(idx, field)| {
+        let field_ty = &field.ty;
 
-            quote! {
-                if let Some(val) = data.get_variant(#idx) {
-                    <#field_ty as ::gluon::vm::api::Getable<'__vm>>::from_value(vm, val)
-                } else {
-                    panic!("Enum does not contain data at index '{}'. Do the type definitions match?", #idx)
-                }
+        quote! {
+            if let Some(val) = data.get_variant(#idx) {
+                <#field_ty as ::gluon::vm::api::Getable<'__vm>>::from_value(vm, val)
+            } else {
+                panic!("Enum does not contain data at index '{}'. Do the type definitions match?", #idx)
             }
-        })
-        .collect();
+        }
+    });
 
     quote!{
         (#(#fields),*)
     }
 }
 
-fn gen_struct_cons(fields: Vec<&Field>) -> TokenStream {
-    let fields: Vec<_> = fields
-        .into_iter()
-        .enumerate()
-        .map(|(idx, field)| {
-            let field_ty = &field.ty;
-            let field_ident = field
-                .ident
-                .as_ref()
-                .expect("Struct fields always have names");
+fn gen_struct_cons<'a, I>(fields: I) -> TokenStream
+where
+    I: IntoIterator<Item = &'a Field>,
+{
+    let fields = fields.into_iter().enumerate().map(|(idx, field)| {
+        let field_ty = &field.ty;
+        let field_ident = field
+            .ident
+            .as_ref()
+            .expect("Struct fields always have names");
 
-            quote! {
-                #field_ident: if let Some(val) = data.get_variant(#idx) {
-                    <#field_ty as ::gluon::vm::api::Getable<'__vm>>::from_value(vm, val)
-                } else {
-                    panic!("Enum does not contain data at index '{}'. Do the type definitions match?", #idx)
-                }
+        quote! {
+            #field_ident: if let Some(val) = data.get_variant(#idx) {
+                <#field_ty as ::gluon::vm::api::Getable<'__vm>>::from_value(vm, val)
+            } else {
+                panic!("Enum does not contain data at index '{}'. Do the type definitions match?", #idx)
             }
-        })
-        .collect();
+        }
+    });
 
     quote!{
         {#(#fields),*}
