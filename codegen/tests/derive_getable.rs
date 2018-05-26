@@ -7,8 +7,8 @@ extern crate serde_derive;
 #[macro_use]
 extern crate gluon_vm;
 
-use gluon::base::types::ArcType;
-use gluon::vm::api::{self, VmType};
+use gluon::base::types::{ArcType, Type, AppVec};
+use gluon::vm::api::{self, VmType, Generic, generic};
 use gluon::vm::{self, thread::ThreadInternal, ExternModule};
 use gluon::{import, new_vm, Compiler, Thread};
 
@@ -124,72 +124,99 @@ fn enum_struct_variants() {
     }
 }
 
-#[derive(Getable, Debug, Serialize, Deserialize)]
-enum GenericEnum<'a, T>
-where
-    T: 'static + Into<String>,
+#[derive(Getable)]
+enum Either<L, R>
 {
-    Val(T),
-    Lifetime(&'a str),
+    Left(L),
+    Right(R),
 }
 
-impl<'a, T> VmType for GenericEnum<'a, T>
+impl<L, R> VmType for Either<L, R>
 where
-    T: 'static + Into<String>,
+    L: 'static + VmType,
+    R: 'static + VmType,
 {
-    type Type = GenericEnum<'static, T>;
+    type Type = Either<L, R>;
 
     fn make_type(vm: &Thread) -> ArcType {
-        vm.global_env()
+        let ty = vm.global_env()
             .get_env()
-            .find_type_info("types.GenericEnum")
+            .find_type_info("types.Either")
             .unwrap()
             .into_owned()
-            .into_type()
+            .into_type();
+
+        let mut vec = AppVec::new();
+        vec.push(L::make_type(vm));
+        vec.push(R::make_type(vm));
+        Type::app(ty, vec)
     }
 }
 
-fn load_generic_enum_mod(vm: &Thread) -> vm::Result<ExternModule> {
+fn load_either_mod(vm: &Thread) -> vm::Result<ExternModule> {
     let module = record! {
-        generic_enum_to_str => primitive!(1 generic_enum_to_str),
+        left => primitive!(1 left),
+        extract_str => primitive!(1 extract_str),
     };
 
     ExternModule::new(vm, module)
 }
 
-fn generic_enum_to_str(val: GenericEnum<String>) -> String {
-    format!("{:?}", val)
+type GenericL = Generic<generic::L>;
+type GenericR = Generic<generic::R>;
+
+fn left(either: Either<GenericL, GenericR>) -> Option<GenericL> {
+    match either {
+        Either::Left(left) => Some(left),
+        _ => None,
+    }
 }
 
-// TODO: needs safe interface for Getable::from_value() when used with references
+fn extract_str(either: Either<String, String>) -> String {
+    match either {
+        Either::Left(string) => string,
+        Either::Right(string) => string,
+    }
+}
+
+
 #[test]
-#[ignore]
 fn enum_generic_variants() {
     let vm = new_vm();
     let mut compiler = Compiler::new();
 
-    // make_source does not work with &str
     let src = r#"
-        type GenericEnum = | Val String | Lifetime String
-        { GenericEnum }
+        type Either l r = | Left l | Right r
+        { Either }
     "#;
 
     compiler.load_script(&vm, "types", src).unwrap();
-    import::add_extern_module(&vm, "functions", load_generic_enum_mod);
+    import::add_extern_module(&vm, "functions", load_either_mod);
 
     let script = r#"
-        let { GenericEnum } = import! types
-        let { generic_enum_to_str } = import! functions
+        let { Either } = import! types
+        let { left, extract_str } = import! functions
         let { assert } = import! std.test
 
-        assert (generic_enum_to_str (Lifetime "'vm") == "Lifetime(\"'vm\")")
-        assert (generic_enum_to_str (Val "str") == "Val(\"str\")")
+        assert (left (Left 42) == Some 42)
+        assert (left (Right 0.0) == None)
+
+        assert (extract_str (Left "left") == "left")
+        assert (extract_str (Right "right") == "right")
     "#;
 
     if let Err(why) = compiler.run_expr::<()>(&vm, "test", script) {
         panic!("{}", why);
     }
 }
+
+#[derive(Getable)]
+struct LifetimeStruct<'a> {
+    _str: &'a str,
+}
+
+// TODO: impl tests for lifetimes, this requires
+// a safe interface for Getable::from_value()
 
 #[derive(Getable, Debug, Serialize, Deserialize)]
 struct Struct {

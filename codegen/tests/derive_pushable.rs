@@ -7,8 +7,8 @@ extern crate serde_derive;
 #[macro_use]
 extern crate gluon_vm;
 
-use gluon::base::types::ArcType;
-use gluon::vm::api::{self, VmType};
+use gluon::base::types::{AppVec, ArcType, Type};
+use gluon::vm::api::{self, generic::A, Generic, VmType};
 use gluon::vm::{self, thread::ThreadInternal, ExternModule};
 use gluon::{import, new_vm, Compiler, Thread};
 
@@ -83,7 +83,7 @@ fn normal_struct() {
     }
 }
 
-#[derive(Pushable, Serialize, Deserialize)]
+#[derive(Pushable)]
 struct GenericStruct<T> {
     generic: T,
     other: u32,
@@ -91,17 +91,21 @@ struct GenericStruct<T> {
 
 impl<T> VmType for GenericStruct<T>
 where
-    T: 'static,
+    T: 'static + VmType,
 {
     type Type = GenericStruct<T>;
 
     fn make_type(vm: &Thread) -> ArcType {
-        vm.global_env()
+        let ty = vm.global_env()
             .get_env()
             .find_type_info("types.GenericStruct")
             .unwrap()
             .into_owned()
-            .into_type()
+            .into_type();
+
+        let mut vec = AppVec::new();
+        vec.push(T::make_type(vm));
+        Type::app(ty, vec)
     }
 }
 
@@ -113,9 +117,9 @@ fn load_generic_struct_mod(vm: &Thread) -> vm::Result<ExternModule> {
     ExternModule::new(vm, module)
 }
 
-fn new_generic_struct(_: ()) -> GenericStruct<String> {
+fn new_generic_struct(arg: Generic<A>) -> GenericStruct<Generic<A>> {
     GenericStruct {
-        generic: "hi gluon".to_owned(),
+        generic: arg,
         other: 2012,
     }
 }
@@ -125,7 +129,11 @@ fn generic_struct() {
     let vm = new_vm();
     let mut compiler = Compiler::new();
 
-    let src = api::typ::make_source::<GenericStruct<String>>(&vm).unwrap();
+    let src = r#"
+        type GenericStruct a = { generic: a, other: u32 }
+        { GenericStruct }
+    "#;
+
     compiler.load_script(&vm, "types", &src).unwrap();
     import::add_extern_module(&vm, "functions", load_generic_struct_mod);
 
@@ -134,9 +142,14 @@ fn generic_struct() {
         let { new_generic_struct } = import! functions
         let { assert } = import! std.test
 
-        let { generic, other } = new_generic_struct ()
+        let { generic, other } = new_generic_struct "hi rust"
 
-        assert (generic == "hi gluon")
+        assert (generic == "hi rust")
+        assert (other == 2012)
+
+        let { generic, other } = new_generic_struct 3.14
+
+        assert (generic == 3.14)
         assert (other == 2012)
     "#;
 
@@ -189,7 +202,7 @@ fn lifetime_struct() {
         type LifetimeStruct = { string: String, other: Float }
         { LifetimeStruct }
     "#;
-    
+
     compiler.load_script(&vm, "types", &src).unwrap();
     import::add_extern_module(&vm, "functions", load_lifetime_struct_mod);
 
