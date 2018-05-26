@@ -9,6 +9,7 @@ extern crate syn;
 mod getable;
 mod pushable;
 mod shared;
+mod userdata;
 
 #[proc_macro_derive(Getable)]
 pub fn getable(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
@@ -18,4 +19,9 @@ pub fn getable(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 #[proc_macro_derive(Pushable)]
 pub fn pushable(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     pushable::derive(input.into()).into()
+}
+
+#[proc_macro_derive(Userdata)]
+pub fn userdata(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    userdata::derive(input.into()).into()
 }
