@@ -1,7 +1,8 @@
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::TokenStream;
+use shared::{map_lifetimes, map_type_params, split_for_impl};
 use syn::{
     self, Data, DataEnum, DataStruct, DeriveInput, Field, Fields, FieldsNamed, FieldsUnnamed,
-    GenericParam, Generics, Ident, Lifetime, LifetimeDef, Variant,
+    Generics, Ident, Variant,
 };
 
 pub fn derive(input: TokenStream) -> TokenStream {
@@ -77,12 +78,6 @@ fn derive_enum(ast: DataEnum, ident: Ident, generics: Generics) -> TokenStream {
 }
 
 fn gen_impl(ident: Ident, generics: Generics, cons_expr: TokenStream) -> TokenStream {
-    // add trailing comma or add a where if there are no predicates
-    let (_, ty_generics, where_clause) = generics.split_for_impl();
-    let where_clause = where_clause
-        .map(|clause| quote! { #clause, })
-        .unwrap_or(quote! { where });
-
     // lifetime bounds like '__vm: 'a, 'a: '__vm (which implies => 'a == '__vm)
     // writing bounds like this is a lot easier than actually replacing all lifetimes
     // with '__vm
@@ -91,12 +86,7 @@ fn gen_impl(ident: Ident, generics: Generics, cons_expr: TokenStream) -> TokenSt
     // generate bounds like T: Getable for every type parameter
     let getable_bounds = create_getable_bounds(&generics);
 
-    // generate the generic params for the impl block
-    // these need an additional lifetime used by Getable
-    let mut generics = generics.clone();
-    let lifetime = GenericParam::from(LifetimeDef::new(Lifetime::new("'__vm", Span::call_site())));
-    generics.params.insert(0, lifetime);
-    let (impl_generics, ..) = generics.split_for_impl();
+    let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &["'__vm"]);
 
     quote! {
         #[automatically_derived]
@@ -192,29 +182,15 @@ where
 }
 
 fn create_getable_bounds(generics: &Generics) -> Vec<TokenStream> {
-    generics
-        .params
-        .iter()
-        .filter_map(|param| match param {
-            GenericParam::Type(param) => Some(&param.ident),
-            _ => None,
-        })
-        .map(|ty| {
-            quote! {
-                #ty: ::gluon::vm::api::Getable<'__vm>
-            }
-        })
-        .collect()
+    map_type_params(generics, |ty| {
+        quote! {
+            #ty: ::gluon::vm::api::Getable<'__vm>
+        }
+    })
 }
 
 fn create_lifetime_bounds(generics: &Generics) -> Vec<TokenStream> {
-    generics
-        .params
-        .iter()
-        .filter_map(|param| match param {
-            GenericParam::Lifetime(def) => Some(&def.lifetime),
-            _ => None,
-        })
-        .flat_map(|lifetime| vec![quote! { #lifetime: '__vm }, quote! { '__vm: #lifetime }])
-        .collect()
+    map_lifetimes(generics, |lifetime| {
+        quote! { #lifetime: '__vm, '__vm: #lifetime }
+    })
 }

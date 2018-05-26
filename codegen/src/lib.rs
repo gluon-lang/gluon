@@ -8,6 +8,7 @@ extern crate syn;
 
 mod getable;
 mod pushable;
+mod shared;
 
 #[proc_macro_derive(Getable)]
 pub fn getable(input: proc_macro::TokenStream) -> proc_macro::TokenStream {

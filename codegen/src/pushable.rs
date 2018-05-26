@@ -1,9 +1,10 @@
 use proc_macro2::{Span, TokenStream};
+use shared::{map_type_params, split_for_impl};
 use std::borrow::Cow;
 use std::iter;
 use syn::{
-    self, Data, DataEnum, DataStruct, DeriveInput, Fields, FieldsNamed, FieldsUnnamed,
-    GenericParam, Generics, Ident, Lifetime, LifetimeDef, Type,
+    self, Data, DataEnum, DataStruct, DeriveInput, Fields, FieldsNamed, FieldsUnnamed, Generics,
+    Ident, Type,
 };
 
 pub fn derive(input: TokenStream) -> TokenStream {
@@ -73,20 +74,8 @@ fn derive_enum(ast: DataEnum, ident: Ident, generics: Generics) -> TokenStream {
 }
 
 fn gen_impl(ident: &Ident, generics: Generics, push_impl: TokenStream) -> TokenStream {
-    // add trailing comma or add a where if there are no predicates
-    let (_, ty_generics, where_clause) = generics.split_for_impl();
-    let where_clause = where_clause
-        .map(|clause| quote! { #clause, })
-        .unwrap_or(quote! { where });
-
-    // generate the generic params for the impl block
-    // these need an additional lifetime used by Pushable
-    let mut generics = generics.clone();
-    let lifetime = GenericParam::from(LifetimeDef::new(Lifetime::new("'__vm", Span::call_site())));
-    generics.params.insert(0, lifetime);
-    let (impl_generics, ..) = generics.split_for_impl();
-
     let pushable_bounds = create_pushable_bounds(&generics);
+    let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &["'__vm"]);
 
     quote! {
         #[automatically_derived]
@@ -131,19 +120,11 @@ fn gen_push_impl(tag: usize, field_idents: &[Cow<Ident>], field_types: &[&Type])
 }
 
 fn create_pushable_bounds(generics: &Generics) -> Vec<TokenStream> {
-    generics
-        .params
-        .iter()
-        .filter_map(|param| match param {
-            GenericParam::Type(param) => Some(&param.ident),
-            _ => None,
-        })
-        .map(|ty| {
-            quote! {
-                #ty: ::gluon::vm::api::Pushable<'__vm>
-            }
-        })
-        .collect()
+    map_type_params(generics, |ty| {
+        quote! {
+            #ty: ::gluon::vm::api::Pushable<'__vm>
+        }
+    })
 }
 
 fn get_info_from_fields(fields: &Fields) -> (Vec<Cow<Ident>>, Vec<&Type>) {
