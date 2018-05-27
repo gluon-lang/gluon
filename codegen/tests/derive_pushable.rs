@@ -9,30 +9,17 @@ extern crate gluon_vm;
 
 mod init;
 
-use gluon::base::types::{AppVec, ArcType, Type};
-use gluon::vm::api::{self, generic::A, Generic, VmType};
-use gluon::vm::{self, thread::ThreadInternal, ExternModule};
+use gluon::vm::api::{self, generic::A, Generic};
+use gluon::vm::{self, ExternModule};
 use gluon::{import, Compiler, Thread};
 use init::new_vm;
 
-#[derive(Pushable, Serialize, Deserialize)]
+#[derive(Pushable, VmType, Serialize, Deserialize)]
+#[gluon(vm_type = "types.Struct")]
 struct Struct {
     string: String,
     number: u32,
     vec: Vec<f64>,
-}
-
-impl VmType for Struct {
-    type Type = Struct;
-
-    fn make_type(vm: &Thread) -> ArcType {
-        vm.global_env()
-            .get_env()
-            .find_type_info("types.Struct")
-            .unwrap()
-            .into_owned()
-            .into_type()
-    }
 }
 
 fn load_struct_mod(vm: &Thread) -> vm::Result<ExternModule> {
@@ -86,30 +73,11 @@ fn normal_struct() {
     }
 }
 
-#[derive(Pushable)]
+#[derive(Pushable, VmType)]
+#[gluon(vm_type = "types.GenericStruct")]
 struct GenericStruct<T> {
     generic: T,
     other: u32,
-}
-
-impl<T> VmType for GenericStruct<T>
-where
-    T: 'static + VmType,
-{
-    type Type = GenericStruct<T>;
-
-    fn make_type(vm: &Thread) -> ArcType {
-        let ty = vm.global_env()
-            .get_env()
-            .find_type_info("types.GenericStruct")
-            .unwrap()
-            .into_owned()
-            .into_type();
-
-        let mut vec = AppVec::new();
-        vec.push(T::make_type(vm));
-        Type::app(ty, vec)
-    }
 }
 
 fn load_generic_struct_mod(vm: &Thread) -> vm::Result<ExternModule> {
@@ -161,23 +129,11 @@ fn generic_struct() {
     }
 }
 
-#[derive(Pushable, Serialize, Deserialize)]
+#[derive(Pushable, VmType, Serialize, Deserialize)]
+#[gluon(vm_type = "types.LifetimeStruct")]
 struct LifetimeStruct<'a> {
     string: &'a str,
     other: f64,
-}
-
-impl<'a> VmType for LifetimeStruct<'a> {
-    type Type = LifetimeStruct<'static>;
-
-    fn make_type(vm: &Thread) -> ArcType {
-        vm.global_env()
-            .get_env()
-            .find_type_info("types.LifetimeStruct")
-            .unwrap()
-            .into_owned()
-            .into_type()
-    }
 }
 
 fn load_lifetime_struct_mod(vm: &Thread) -> vm::Result<ExternModule> {
@@ -225,24 +181,12 @@ fn lifetime_struct() {
     }
 }
 
-#[derive(Pushable, Serialize, Deserialize)]
+#[derive(Pushable, VmType, Serialize, Deserialize)]
+#[gluon(vm_type = "types.Enum")]
 enum Enum {
     Nothing,
     Tuple(u32, u32),
     Struct { key: String, value: String },
-}
-
-impl VmType for Enum {
-    type Type = Enum;
-
-    fn make_type(vm: &Thread) -> ArcType {
-        vm.global_env()
-            .get_env()
-            .find_type_info("types.Enum")
-            .unwrap()
-            .into_owned()
-            .into_type()
-    }
 }
 
 fn load_enum_mod(vm: &Thread) -> vm::Result<ExternModule> {

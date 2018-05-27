@@ -9,31 +9,18 @@ extern crate gluon_vm;
 
 mod init;
 
-use gluon::base::types::{AppVec, ArcType, Type};
-use gluon::vm::api::{self, generic, Generic, VmType};
-use gluon::vm::{self, thread::ThreadInternal, ExternModule};
+use gluon::vm::api::{self, generic, Generic};
+use gluon::vm::{self, ExternModule};
 use gluon::{import, Compiler, Thread};
 use init::new_vm;
 
-#[derive(Getable, Debug, Serialize, Deserialize)]
+#[derive(Getable, VmType, Debug, Serialize, Deserialize)]
+#[gluon(vm_type = "types.TupleEnum")]
 enum TupleEnum {
     Variant,
     OtherVariant,
     One(u32),
     LotsOfTupleThings(i32, String, f64),
-}
-
-impl VmType for TupleEnum {
-    type Type = TupleEnum;
-
-    fn make_type(vm: &Thread) -> ArcType {
-        vm.global_env()
-            .get_env()
-            .find_type_info("types.TupleEnum")
-            .unwrap()
-            .into_owned()
-            .into_type()
-    }
 }
 
 fn load_tuple_enum_mod(vm: &Thread) -> vm::Result<ExternModule> {
@@ -73,23 +60,11 @@ fn enum_tuple_variants() {
     }
 }
 
-#[derive(Getable, Debug, Serialize, Deserialize)]
+#[derive(Getable, VmType, Debug, Serialize, Deserialize)]
+#[gluon(vm_type = "types.StructEnum")]
 enum StructEnum {
     OneField { field: i32 },
     TwoFields { name: String, val: f64 },
-}
-
-impl VmType for StructEnum {
-    type Type = StructEnum;
-
-    fn make_type(vm: &Thread) -> ArcType {
-        vm.global_env()
-            .get_env()
-            .find_type_info("types.StructEnum")
-            .unwrap()
-            .into_owned()
-            .into_type()
-    }
 }
 
 fn load_struct_enum_mod(vm: &Thread) -> vm::Result<ExternModule> {
@@ -127,32 +102,11 @@ fn enum_struct_variants() {
     }
 }
 
-#[derive(Getable)]
+#[derive(Getable, VmType)]
+#[gluon(vm_type = "types.Either")]
 enum Either<L, R> {
     Left(L),
     Right(R),
-}
-
-impl<L, R> VmType for Either<L, R>
-where
-    L: 'static + VmType,
-    R: 'static + VmType,
-{
-    type Type = Either<L, R>;
-
-    fn make_type(vm: &Thread) -> ArcType {
-        let ty = vm.global_env()
-            .get_env()
-            .find_type_info("types.Either")
-            .unwrap()
-            .into_owned()
-            .into_type();
-
-        let mut vec = AppVec::new();
-        vec.push(L::make_type(vm));
-        vec.push(R::make_type(vm));
-        Type::app(ty, vec)
-    }
 }
 
 fn load_either_mod(vm: &Thread) -> vm::Result<ExternModule> {
@@ -219,24 +173,12 @@ struct LifetimeStruct<'a> {
 // TODO: impl tests for lifetimes, this requires
 // a safe interface for Getable::from_value()
 
-#[derive(Getable, Debug, Serialize, Deserialize)]
+#[derive(Getable, VmType, Debug, Serialize, Deserialize)]
+#[gluon(vm_type = "types.Struct")]
 struct Struct {
     string: String,
     int: i32,
     tuple: (f64, f64),
-}
-
-impl VmType for Struct {
-    type Type = Struct;
-
-    fn make_type(vm: &Thread) -> ArcType {
-        vm.global_env()
-            .get_env()
-            .find_type_info("types.Struct")
-            .unwrap()
-            .into_owned()
-            .into_type()
-    }
 }
 
 fn load_struct_mod(vm: &Thread) -> vm::Result<ExternModule> {
