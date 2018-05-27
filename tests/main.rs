@@ -168,8 +168,7 @@ fn run_file<'t>(
     file.read_to_string(&mut text)
         .map_err(|err| err.to_string())?;
     compiler
-        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, &name, &text)
-        .sync_or_error()
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, &name, &text)
         .map_err(|err| err.to_string())
 }
 

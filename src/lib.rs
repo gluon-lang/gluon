@@ -513,7 +513,16 @@ impl Compiler {
     where
         T: Getable<'vm> + VmType + Send + 'vm,
     {
-        self.run_expr_async(vm, name, expr_str).wait()
+        let expected = T::make_type(vm);
+        expr_str
+            .run_expr(self, vm, name, expr_str, Some(&expected))
+            .and_then(move |execute_value| unsafe {
+                FutureValue::sync(Ok((
+                    T::from_value(vm, Variants::new(&execute_value.value.get_value())),
+                    execute_value.typ,
+                )))
+            })
+            .wait()
     }
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
@@ -540,21 +549,22 @@ impl Compiler {
     /// }
     /// ```
     ///
-    pub fn run_expr_async<'vm, T>(
+    pub fn run_expr_async<T>(
         &mut self,
-        vm: &'vm Thread,
+        vm: &Thread,
         name: &str,
         expr_str: &str,
-    ) -> BoxFutureValue<'vm, (T, ArcType), Error>
+    ) -> BoxFutureValue<'static, (T, ArcType), Error>
     where
-        T: Getable<'vm> + VmType + Send + 'vm,
+        T: for<'vm> Getable<'vm> + VmType + Send + 'static,
     {
-        let expected = T::make_type(vm);
+        let expected = T::make_type(&vm);
+        let vm = vm.root_thread();
         expr_str
-            .run_expr(self, vm, name, expr_str, Some(&expected))
+            .run_expr(self, vm.clone(), name, expr_str, Some(&expected))
             .and_then(move |execute_value| unsafe {
                 FutureValue::sync(Ok((
-                    T::from_value(vm, Variants::new(&execute_value.value.get_value())),
+                    T::from_value(&vm, Variants::new(&execute_value.value.get_value())),
                     execute_value.typ,
                 )))
             })
@@ -676,8 +686,7 @@ impl VmBuilder {
 
         Compiler::new()
             .implicit_prelude(false)
-            .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "", r#" import! std.types "#)
-            .sync_or_error()
+            .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "", r#" import! std.types "#)
             .unwrap_or_else(|err| panic!("{}", err));
 
         add_extern_module(&vm, "std.prim", ::vm::primitives::load);

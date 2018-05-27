@@ -25,8 +25,7 @@ where
 {
     Compiler::new()
         .implicit_prelude(implicit_prelude)
-        .run_expr_async(vm, "<top>", s)
-        .sync_or_error()
+        .run_expr(vm, "<top>", s)
         .unwrap_or_else(|err| panic!("{}", err))
         .0
 }

@@ -34,8 +34,7 @@ fn read_file() {
         "#;
     let result = Compiler::new()
         .run_io(true)
-        .run_expr_async::<IO<u8>>(&thread, "<top>", text)
-        .sync_or_error();
+        .run_expr::<IO<u8>>(&thread, "<top>", text);
 
     match result {
         Ok((IO::Value(value), _)) => assert_eq!(value, b']'),
@@ -108,8 +107,7 @@ let { wrap } = io.applicative
 wrap 123
 "#;
     let value = Compiler::new()
-        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr)
-        .sync_or_error()
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr)
         .unwrap_or_else(|err| panic!("{}", err));
     assert!(
         value.0.get_ref() != ValueRef::Int(123),

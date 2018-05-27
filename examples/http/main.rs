@@ -453,7 +453,7 @@ fn listen(
                 .and_then(|_| sender.send(IO::Value(())).map_err(|_| ()))
         });
     FutureResult(Either::B(
-        receiver.map_err(|_| vm::Error::from("Server error".to_string())),
+        receiver.map_err(|err| vm::Error::from(format!("Server error: {}", err))),
     ))
 }
 
@@ -506,13 +506,11 @@ fn main() {
     }
 }
 
-fn start<'vm>(
-    thread: &'vm Thread,
-    port: u16,
-) -> impl Future<Item = (), Error = Box<StdError + 'static>> + 'vm {
+fn start(thread: &Thread, port: u16) -> impl Future<Item = (), Error = Box<StdError + 'static>> {
     add_extern_module(&thread, "http.prim_types", load_types);
     add_extern_module(&thread, "http.prim", load);
 
+    let thread = thread.root_thread();
     future::lazy(|| -> Result<_, Box<StdError>> {
         // Last we run our `http_server.glu` module which returns a function which starts listening
         // on the port we passed from the command line
@@ -536,4 +534,57 @@ fn start<'vm>(
                     .map(|_| ())
             })
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use std::str;
+
+    use hyper::Client;
+
+    #[test]
+    fn hello_world() {
+        let mut core = Core::new().unwrap();
+
+        let port = 1222;
+        let thread = VmBuilder::new().event_loop(Some(core.remote())).build();
+        core.handle()
+            .spawn(start(&thread, port).map_err(|err| panic!("{}", err)));
+
+        let handle = core.handle();
+        core.run(
+            Client::new(&handle)
+                .get(format!("http://localhost:{}", port).parse().unwrap())
+                .and_then(|response| {
+                    response.body().concat2().map(|body| {
+                        assert_eq!(str::from_utf8(&body).unwrap(), "Hello World");
+                    })
+                }),
+        ).unwrap();
+    }
+
+    #[test]
+    fn echo() {
+        let mut core = Core::new().unwrap();
+
+        let port = 1223;
+        let thread = VmBuilder::new().event_loop(Some(core.remote())).build();
+        core.handle()
+            .spawn(start(&thread, port).map_err(|err| panic!("{}", err)));
+
+        let handle = core.handle();
+
+        let mut request = hyper::Request::new(
+            Method::Post,
+            format!("http://localhost:{}/echo", port).parse().unwrap(),
+        );
+        request.set_body(hyper::Body::from("test"));
+        core.run(Client::new(&handle).request(request).and_then(|response| {
+            response.body().concat2().map(|body| {
+                assert_eq!(str::from_utf8(&body).unwrap(), "test");
+            })
+        })).unwrap();
+    }
 }
