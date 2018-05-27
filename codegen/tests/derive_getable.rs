@@ -7,10 +7,13 @@ extern crate serde_derive;
 #[macro_use]
 extern crate gluon_vm;
 
-use gluon::base::types::{ArcType, Type, AppVec};
-use gluon::vm::api::{self, VmType, Generic, generic};
+mod init;
+
+use gluon::base::types::{AppVec, ArcType, Type};
+use gluon::vm::api::{self, generic, Generic, VmType};
 use gluon::vm::{self, thread::ThreadInternal, ExternModule};
-use gluon::{import, new_vm, Compiler, Thread};
+use gluon::{import, Compiler, Thread};
+use init::new_vm;
 
 #[derive(Getable, Debug, Serialize, Deserialize)]
 enum TupleEnum {
@@ -125,8 +128,7 @@ fn enum_struct_variants() {
 }
 
 #[derive(Getable)]
-enum Either<L, R>
-{
+enum Either<L, R> {
     Left(L),
     Right(R),
 }
@@ -178,7 +180,6 @@ fn extract_str(either: Either<String, String>) -> String {
         Either::Right(string) => string,
     }
 }
-
 
 #[test]
 fn enum_generic_variants() {

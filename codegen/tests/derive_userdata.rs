@@ -4,10 +4,11 @@ extern crate gluon;
 #[macro_use]
 extern crate gluon_vm;
 
-use gluon::base::types::{AppVec, ArcType, Type};
-use gluon::vm::api::{self, generic::A, Generic, VmType};
-use gluon::vm::{self, thread::ThreadInternal, ExternModule};
-use gluon::{import, new_vm, Compiler, Thread};
+mod init;
+
+use gluon::vm::{self, ExternModule};
+use gluon::{import, Compiler, Thread};
+use init::new_vm;
 use std::sync::Arc;
 
 #[derive(Userdata, Debug)]

@@ -7,10 +7,13 @@ extern crate serde_derive;
 #[macro_use]
 extern crate gluon_vm;
 
+mod init;
+
 use gluon::base::types::{AppVec, ArcType, Type};
 use gluon::vm::api::{self, generic::A, Generic, VmType};
 use gluon::vm::{self, thread::ThreadInternal, ExternModule};
-use gluon::{import, new_vm, Compiler, Thread};
+use gluon::{import, Compiler, Thread};
+use init::new_vm;
 
 #[derive(Pushable, Serialize, Deserialize)]
 struct Struct {
