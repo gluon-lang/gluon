@@ -149,10 +149,7 @@ where
     T: Serialize,
 {
     fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
-        let mut serializer = Serializer {
-            thread: thread,
-            context: context,
-        };
+        let mut serializer = Serializer::new(thread, context);
         self.0.serialize(&mut serializer)
     }
 }
@@ -166,12 +163,16 @@ impl ser::Error for Error {
     }
 }
 
-struct Serializer<'t> {
+pub struct Serializer<'t> {
     thread: &'t Thread,
     context: &'t mut Context,
 }
 
 impl<'t> Serializer<'t> {
+    pub fn new(thread: &'t Thread, context: &'t mut Context) -> Self {
+        Serializer { thread, context }
+    }
+
     fn to_value<T>(&mut self, value: T) -> Result<()>
     where
         T: Pushable<'t>,
@@ -204,7 +205,8 @@ impl<'t> Serializer<'t> {
     }
 }
 
-struct RecordSerializer<'s, 'vm: 's> {
+#[doc(hidden)]
+pub struct RecordSerializer<'s, 'vm: 's> {
     serializer: &'s mut Serializer<'vm>,
     variant_index: VmTag,
     values: VmIndex,

@@ -91,10 +91,12 @@ macro_rules! define_vmtype {
             fn make_type(vm: &Thread) -> ArcType {
                 use gluon::base::types::Alias;
         
+                // If we have already created $name then return it immediately
                 if let Some(typ) = vm.get_type::<$name>() {
                     return typ;
                 }
         
+                // Otherwise construct the type using the `Deserialize` impl for the type
                 let (name, typ) = gluon::vm::api::typ::from_rust::<Self>(vm).unwrap();
                 vm.register_type_as(
                     name.clone(),
@@ -106,6 +108,8 @@ macro_rules! define_vmtype {
     };
 }
 
+// This type, and the `StatusCode` type below are defined in hyper so we can't implement any traits
+// on them. Instead we use serde's remote derive support to workaround it.
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "Method")]
 #[serde(rename = "Method")]
@@ -462,10 +466,14 @@ pub fn load_types(vm: &Thread) -> VmResult<ExternModule> {
     ExternModule::new(
         vm,
         record! {
+            // Define the types so that they can be used from gluon
             type Body => Body,
             type ResponseBody => ResponseBody,
             type Method => Wrap<Method>,
-            type StatusCode => Wrap<StatusCode>
+            type StatusCode => Wrap<StatusCode>,
+            type Request => Request,
+            type Response => Response,
+            type HttpState => HttpState
         },
     )
 }

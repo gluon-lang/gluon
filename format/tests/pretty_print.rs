@@ -362,3 +362,17 @@ abc ""
 "#;
     assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
 }
+
+#[test]
+fn function_type_with_comments() {
+    let expr = r#"
+type Handler a =
+    // Success continuation
+    (a -> HttpState -> IO Response)
+    // Failure continuation
+    -> (Failure -> HttpState -> IO Response)
+    -> IO Response
+()
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+}
