@@ -145,6 +145,17 @@ name = "vm"
 [[test]]
 name = "ui"
 
+[[example]]
+name = "24"
+[[example]]
+name = "marshalling"
+[[example]]
+name = "http"
+path = "examples/http/main.rs"
+#[[example]]
+#name = "lisp"
+#path = "examples/lisp/main.rs"
+
 [package.metadata.docs.rs]
 features = ["docs_rs"]
 

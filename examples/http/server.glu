@@ -21,7 +21,7 @@ let {
     fail,
     catch_error,
     ?
-} = import! "examples/http.glu"
+} = import! examples.http.http
 
 let hello_world : Handler Response =
     write_response (string.as_bytes "Hello World")

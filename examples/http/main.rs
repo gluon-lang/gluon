@@ -65,7 +65,7 @@ impl<T: VmType + 'static> VmType for Handler<T> {
     type Type = Self;
     fn make_type(vm: &Thread) -> ArcType {
         let typ = vm
-            .find_type_info("examples.http_types.Handler")
+            .find_type_info("examples.http.types.Handler")
             .unwrap_or_else(|err| panic!("{}", err))
             .into_type();
         Type::app(typ, collect![T::make_type(vm)])
@@ -360,7 +360,7 @@ fn listen(
     // `Handler Response`
     type ListenFn = fn(OpaqueValue<RootedThread, Handler<Response>>, HttpState) -> IO<Response>;
     let handle: Function<RootedThread, ListenFn> = thread
-        .get_global("examples.http.handle")
+        .get_global("examples.http.http.handle")
         .unwrap_or_else(|err| panic!("{}", err));
 
     struct Listen {
@@ -518,7 +518,7 @@ fn start<'vm>(
         // on the port we passed from the command line
         let mut expr = String::new();
         {
-            let mut file = File::open("examples/http_server.glu")?;
+            let mut file = File::open("examples/http/server.glu")?;
             file.read_to_string(&mut expr)?;
         }
         Ok(expr)
@@ -526,7 +526,7 @@ fn start<'vm>(
         Compiler::new()
             .run_expr_async::<OwnedFunction<fn(u16) -> IO<()>>>(
                 &thread,
-                "examples/http_server.glu",
+                "examples/http/server.glu",
                 &expr,
             )
             .from_err()

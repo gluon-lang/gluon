@@ -16,7 +16,7 @@ let {
     StatusCode,
     Response,
     Handler,
-    HttpState } = import! examples.http_types
+    HttpState } = import! examples.http.types
 let http_prim = import! http.prim
 
 /// Force the value to be a Handler. Necessary to make the the type inference work for
