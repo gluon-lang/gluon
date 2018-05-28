@@ -18,11 +18,13 @@ use base::pos;
 use base::symbol::{Symbol, SymbolModule};
 use base::types::ArcType;
 use parser::parse_partial_let_or_expr;
-use vm::api::generic::A;
-use vm::api::{FutureResult, Generic, Getable, OpaqueValue, OwnedFunction, PrimitiveFuture,
-              Pushable, VmType, WithVM, IO};
 use vm::api::de::De;
+use vm::api::generic::A;
 use vm::api::ser::Ser;
+use vm::api::{
+    FutureResult, Generic, Getable, OpaqueValue, OwnedFunction, PrimitiveFuture, Pushable, VmType,
+    WithVM, IO,
+};
 use vm::future::FutureValue;
 use vm::internal::ValuePrinter;
 use vm::thread::{Context, RootStr, RootedValue, Thread, ThreadInternal};
@@ -90,7 +92,8 @@ fn find_info(args: WithVM<RootStr>) -> IO<Result<String, String>> {
             }
         }
     }
-    let maybe_comment = env.get_metadata(args)
+    let maybe_comment = env
+        .get_metadata(args)
         .ok()
         .and_then(|metadata| metadata.comment.as_ref());
     if let Some(comment) = maybe_comment {
@@ -153,17 +156,17 @@ impl rustyline::completion::Completer for Completer {
 macro_rules! impl_userdata {
     ($name:ident) => {
         impl ::gluon::vm::api::Userdata for $name {}
-
+        
         impl ::std::fmt::Debug for $name {
             fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
                 write!(f, concat!(stringify!($name), "(..)"))
             }
         }
-
+        
         impl ::gluon::vm::api::VmType for $name {
             type Type = Self;
         }
-
+        
         impl ::gluon::vm::gc::Traverseable for $name {
             fn traverse(&self, _: &mut ::gluon::vm::gc::Gc) {}
         }
@@ -462,6 +465,8 @@ fn load_rustyline(vm: &Thread) -> vm::Result<vm::ExternModule> {
     vm::ExternModule::new(
         vm,
         record!(
+            type Editor => Editor,
+            type CpuPool => CpuPool,
             new_editor => primitive!(1 new_editor),
             readline => primitive!(2 readline),
             save_history => primitive!(1 save_history)

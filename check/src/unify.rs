@@ -345,9 +345,10 @@ mod test {
         let result = unify(&subs, &var1, &int);
         assert_eq!(
             result,
-            Err(Errors::from(vec![
-                Error::TypeMismatch(string.clone(), int.clone()),
-            ],),)
+            Err(Errors::from(vec![Error::TypeMismatch(
+                string.clone(),
+                int.clone(),
+            )],),)
         );
     }
 
@@ -361,9 +362,9 @@ mod test {
         let result = unify(&subs, &fun, &var1);
         assert_eq!(
             result,
-            Err(Errors::from(vec![
-                Error::Substitution(::substitution::Error::Occurs(var1, fun.clone())),
-            ]))
+            Err(Errors::from(vec![Error::Substitution(
+                ::substitution::Error::Occurs(var1, fun.clone()),
+            )]))
         );
     }
 }

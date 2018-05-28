@@ -3,17 +3,19 @@ use std::mem;
 
 use base::error::Errors;
 use base::fnv::FnvMap;
-use base::merge;
 use base::kind::ArcKind;
-use base::types::{self, AppVec, ArcType, ArgType, BuiltinType, Field, Filter, Generic, Skolem,
-                  Type, TypeEnv, TypeFormatter, TypeVariable};
-use base::symbol::{Symbol, SymbolRef};
+use base::merge;
 use base::resolve::{self, Error as ResolveError};
 use base::scoped_map::ScopedMap;
+use base::symbol::{Symbol, SymbolRef};
+use base::types::{
+    self, AppVec, ArcType, ArgType, BuiltinType, Field, Filter, Generic, Skolem, Type, TypeEnv,
+    TypeFormatter, TypeVariable,
+};
 
+use substitution::{Substitutable, Substitution, Variable, VariableFactory};
 use unify;
 use unify::{Error as UnifyError, GenericVariant, Unifiable, Unifier};
-use substitution::{Substitutable, Substitution, Variable, VariableFactory};
 
 impl VariableFactory for ArcKind {
     type Variable = TypeVariable;
@@ -138,7 +140,8 @@ pub fn similarity_filter<'a, I>(typ: &'a ArcType<I>, fields: &'a [I]) -> Box<Fn(
 where
     I: AsRef<str>,
 {
-    let mut field_similarity = typ.type_field_iter()
+    let mut field_similarity = typ
+        .type_field_iter()
         .map(|field| &field.name)
         .chain(typ.row_iter().map(|field| &field.name))
         .map(|field_in_type| {
@@ -197,7 +200,7 @@ where
                 "Field names in record do not match.\n\tExpected: {}\n\tFound: {}",
                 l, r
             ),
-            TypeError::UndefinedType(ref id) => write!(f, "Type `{}` does not exist.", id),
+            TypeError::UndefinedType(ref id) => write!(f, "Type `{}` is not defined.", id),
             TypeError::SelfRecursiveAlias(ref id) => write!(
                 f,
                 "The use of self recursion in type `{}` could not be unified.",
@@ -1187,12 +1190,12 @@ mod tests {
     use super::*;
     use base::error::Errors;
 
-    use unify::Error::*;
-    use unify::unify;
-    use substitution::Substitution;
     use base::kind::Kind;
     use base::types::{ArcType, Field, Type};
+    use substitution::Substitution;
     use tests::*;
+    use unify::unify;
+    use unify::Error::*;
 
     #[test]
     fn detect_multiple_type_errors_in_single_type() {

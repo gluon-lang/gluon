@@ -188,7 +188,8 @@ where
                     ),
                 ];
 
-                let op = name.trim_left_matches('#')
+                let op = name
+                    .trim_left_matches('#')
                     .trim_left_matches(char::is_alphanumeric);
 
                 OPS.iter().find(|t| t.0 == op).map(|t| &t.1)

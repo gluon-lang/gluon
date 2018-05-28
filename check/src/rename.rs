@@ -1,5 +1,6 @@
-use base::ast::{self, DisplayEnv, Do, Expr, MutVisitor, Pattern, SpannedAlias, SpannedExpr,
-                TypedIdent};
+use base::ast::{
+    self, DisplayEnv, Do, Expr, MutVisitor, Pattern, SpannedAlias, SpannedExpr, TypedIdent,
+};
 use base::pos::{self, BytePos, Span};
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolModule};

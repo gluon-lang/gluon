@@ -4,9 +4,9 @@ extern crate env_logger;
 #[macro_use]
 extern crate pretty_assertions;
 
+extern crate gluon;
 extern crate gluon_base as base;
 extern crate gluon_format as format;
-extern crate gluon;
 
 use std::env;
 use std::fs::File;
@@ -17,7 +17,9 @@ use gluon::{Compiler, VmBuilder};
 
 fn format_expr(expr: &str) -> gluon::Result<String> {
     let mut compiler = Compiler::new();
-    let thread = VmBuilder::new().import_paths(Some(vec!["..".into()])).build();
+    let thread = VmBuilder::new()
+        .import_paths(Some(vec!["..".into()]))
+        .build();
     format::format_expr(&mut compiler, &thread, "test", expr)
 }
 
@@ -31,7 +33,9 @@ fn test_format(name: &str) {
         .unwrap();
 
     let mut compiler = Compiler::new();
-    let thread = VmBuilder::new().import_paths(Some(vec!["..".into()])).build();
+    let thread = VmBuilder::new()
+        .import_paths(Some(vec!["..".into()]))
+        .build();
     let out_str = format::format_expr(&mut compiler, &thread, name, &contents)
         .unwrap_or_else(|err| panic!("{}", err));
 
@@ -355,6 +359,21 @@ test 123
 
 abc ""
 // test2
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+}
+
+#[test]
+#[ignore] // TODO
+fn function_type_with_comments() {
+    let expr = r#"
+type Handler a =
+    // Success continuation
+    (a -> HttpState -> IO Response)
+    // Failure continuation
+    -> (Failure -> HttpState -> IO Response)
+    -> IO Response
+()
 "#;
     assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
 }

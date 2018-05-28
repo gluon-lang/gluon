@@ -559,8 +559,7 @@ fn test_implicit_prelude() {
     let text = r#"1.0 + 3.0 - 2.0"#;
     let mut vm = make_vm();
     Compiler::new()
-        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&mut vm, "<top>", text)
-        .sync_or_error()
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&mut vm, "<top>", text)
         .unwrap_or_else(|err| panic!("{}", err));
 }
 
@@ -581,8 +580,7 @@ fn access_operator_without_parentheses() {
     let _ = ::env_logger::try_init();
     let vm = make_vm();
     Compiler::new()
-        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example", r#" import! std.prelude "#)
-        .sync_or_error()
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", r#" import! std.prelude "#)
         .unwrap();
     let result: Result<FunctionRef<fn(i32, i32) -> i32>, _> =
         vm.get_global("std.prelude.num_Int.+");
@@ -609,7 +607,8 @@ fn get_binding_with_generic_params() {
 
     let vm = make_vm();
     run_expr::<OpaqueValue<&Thread, Hole>>(&vm, r#" import! std.function "#);
-    let mut id: FunctionRef<fn(String) -> String> = vm.get_global("std.function.id")
+    let mut id: FunctionRef<fn(String) -> String> = vm
+        .get_global("std.function.id")
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(id.call("test".to_string()), Ok("test".to_string()));
 }
@@ -656,8 +655,7 @@ sender
 "#;
     let result = Compiler::new()
         .implicit_prelude(false)
-        .run_expr_async::<OpaqueValue<&Thread, Sender<f64>>>(&vm, "<top>", expr)
-        .sync_or_error();
+        .run_expr::<OpaqueValue<&Thread, Sender<f64>>>(&vm, "<top>", expr);
     match result {
         Err(Error::Typecheck(..)) => (),
         Err(err) => panic!("Unexpected error `{}`", err),

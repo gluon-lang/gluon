@@ -4,8 +4,8 @@ extern crate rexpect;
 
 use std::process::Command;
 
-use rexpect::session::{spawn_command, PtySession};
 use rexpect::errors::*;
+use rexpect::session::{spawn_command, PtySession};
 
 struct REPL {
     session: PtySession,

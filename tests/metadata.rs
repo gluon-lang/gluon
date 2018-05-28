@@ -1,8 +1,8 @@
 extern crate env_logger;
 extern crate gluon;
 
-use gluon::vm::thread::RootedThread;
 use gluon::import::Import;
+use gluon::vm::thread::RootedThread;
 use gluon::Compiler;
 
 fn make_vm() -> RootedThread {

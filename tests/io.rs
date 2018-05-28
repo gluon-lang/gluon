@@ -2,8 +2,8 @@ extern crate env_logger;
 extern crate gluon;
 extern crate tokio_core;
 
-use gluon::{new_vm, Compiler, Thread};
 use gluon::vm::api::{Hole, OpaqueValue, ValueRef, IO};
+use gluon::{new_vm, Compiler, Thread};
 
 #[macro_use]
 mod support;
@@ -34,8 +34,7 @@ fn read_file() {
         "#;
     let result = Compiler::new()
         .run_io(true)
-        .run_expr_async::<IO<u8>>(&thread, "<top>", text)
-        .sync_or_error();
+        .run_expr::<IO<u8>>(&thread, "<top>", text);
 
     match result {
         Ok((IO::Value(value), _)) => assert_eq!(value, b']'),
@@ -108,8 +107,7 @@ let { wrap } = io.applicative
 wrap 123
 "#;
     let value = Compiler::new()
-        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr)
-        .sync_or_error()
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", expr)
         .unwrap_or_else(|err| panic!("{}", err));
     assert!(
         value.0.get_ref() != ValueRef::Int(123),
@@ -133,11 +131,12 @@ fn spawn_on_twice() {
 
     let mut core = self::tokio_core::reactor::Core::new().unwrap();
     let vm = make_async_vm(Some(core.remote()));
-    let (result, _) = core.run(Compiler::new().run_io(true).run_expr_async::<IO<String>>(
-        &vm,
-        "<top>",
-        text,
-    )).unwrap_or_else(|err| panic!("{}", err));
+    let (result, _) =
+        core.run(
+            Compiler::new()
+                .run_io(true)
+                .run_expr_async::<IO<String>>(&vm, "<top>", text),
+        ).unwrap_or_else(|err| panic!("{}", err));
     match result {
         IO::Value(result) => {
             assert_eq!(result, "abc");
@@ -145,11 +144,12 @@ fn spawn_on_twice() {
         IO::Exception(err) => panic!("{}", err),
     }
 
-    let (result, _) = core.run(Compiler::new().run_io(true).run_expr_async::<IO<String>>(
-        &vm,
-        "<top>",
-        text,
-    )).unwrap_or_else(|err| panic!("{}", err));
+    let (result, _) =
+        core.run(
+            Compiler::new()
+                .run_io(true)
+                .run_expr_async::<IO<String>>(&vm, "<top>", text),
+        ).unwrap_or_else(|err| panic!("{}", err));
     match result {
         IO::Value(result) => {
             assert_eq!(result, "abc");
@@ -175,11 +175,12 @@ fn spawn_on_runexpr() {
 
     let mut core = self::tokio_core::reactor::Core::new().unwrap();
     let vm = make_async_vm(Some(core.remote()));
-    let (result, _) = core.run(Compiler::new().run_io(true).run_expr_async::<IO<String>>(
-        &vm,
-        "<top>",
-        text,
-    )).unwrap_or_else(|err| panic!("{}", err));
+    let (result, _) =
+        core.run(
+            Compiler::new()
+                .run_io(true)
+                .run_expr_async::<IO<String>>(&vm, "<top>", text),
+        ).unwrap_or_else(|err| panic!("{}", err));
     match result {
         IO::Value(result) => {
             assert_eq!(result, "123");
@@ -210,11 +211,12 @@ fn spawn_on_runexpr_in_catch() {
 
     let mut core = self::tokio_core::reactor::Core::new().unwrap();
     let vm = make_async_vm(Some(core.remote()));
-    let (result, _) = core.run(Compiler::new().run_io(true).run_expr_async::<IO<String>>(
-        &vm,
-        "<top>",
-        text,
-    )).unwrap_or_else(|err| panic!("{}", err));
+    let (result, _) =
+        core.run(
+            Compiler::new()
+                .run_io(true)
+                .run_expr_async::<IO<String>>(&vm, "<top>", text),
+        ).unwrap_or_else(|err| panic!("{}", err));
     match result {
         IO::Value(result) => {
             assert_eq!(result, "123");
@@ -222,11 +224,12 @@ fn spawn_on_runexpr_in_catch() {
         IO::Exception(err) => panic!("{}", err),
     }
 
-    let (result, _) = core.run(Compiler::new().run_io(true).run_expr_async::<IO<String>>(
-        &vm,
-        "<top>",
-        text,
-    )).unwrap_or_else(|err| panic!("{}", err));
+    let (result, _) =
+        core.run(
+            Compiler::new()
+                .run_io(true)
+                .run_expr_async::<IO<String>>(&vm, "<top>", text),
+        ).unwrap_or_else(|err| panic!("{}", err));
     match result {
         IO::Value(result) => {
             assert_eq!(result, "123");

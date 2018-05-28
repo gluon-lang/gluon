@@ -4,8 +4,10 @@
 
 use std::fmt;
 
-pub use codespan::{ByteIndex as BytePos, ByteOffset, ColumnIndex as Column, ColumnOffset,
-                   LineIndex as Line, LineOffset, Span};
+pub use codespan::{
+    ByteIndex as BytePos, ByteOffset, ColumnIndex as Column, ColumnOffset, LineIndex as Line,
+    LineOffset, Span,
+};
 
 /// A location in a source file
 #[derive(Copy, Clone, Default, Eq, PartialEq, Debug, Hash, Ord, PartialOrd)]

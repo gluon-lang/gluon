@@ -2,17 +2,19 @@
 
 pub extern crate codespan;
 
-use base::ast::{walk_mut_alias, walk_mut_ast_type, walk_mut_expr, walk_mut_pattern, Alternative,
-                Argument, Array, AstType, DisplayEnv, Expr, ExprField, IdentEnv, Lambda, Literal,
-                MutVisitor, Pattern, SpannedAlias, SpannedAstType, SpannedExpr, SpannedIdent,
-                SpannedPattern, TypeBinding, TypedIdent, ValueBinding};
+use base::ast::{
+    walk_mut_alias, walk_mut_ast_type, walk_mut_expr, walk_mut_pattern, Alternative, Argument,
+    Array, AstType, DisplayEnv, Expr, ExprField, IdentEnv, Lambda, Literal, MutVisitor, Pattern,
+    SpannedAlias, SpannedAstType, SpannedExpr, SpannedIdent, SpannedPattern, TypeBinding,
+    TypedIdent, ValueBinding,
+};
 use base::error::Errors;
-use base::pos::{self, BytePos, Span, Spanned};
 use base::kind::Kind;
 use base::metadata::Metadata;
+use base::pos::{self, BytePos, Span, Spanned};
 use base::types::{Alias, AliasData, ArcType, Field, Generic, Type};
-use parser::{parse_string, Error, ParseErrors};
 use parser::infix::{Fixity, OpMeta, OpTable, Reparser};
+use parser::{parse_string, Error, ParseErrors};
 use std::marker::PhantomData;
 
 pub struct MockEnv<T>(PhantomData<T>);
@@ -146,24 +148,25 @@ macro_rules! parse_new {
         // Replace windows line endings so that byte positions match up on multiline expressions
         let input = $input.replace("\r\n", "\n");
         let mut source = ::support::codespan::CodeMap::new();
-        source.add_filemap(::support::codespan::FileName::virtual_("test"), input.clone());
+        source.add_filemap(
+            ::support::codespan::FileName::virtual_("test"),
+            input.clone(),
+        );
         parse(&input)
-            .unwrap_or_else(|(_, err)| {
-                panic!("{}", ::base::error::InFile::new(source, err))
-            })
-    }}
+            .unwrap_or_else(|(_, err)| panic!("{}", ::base::error::InFile::new(source, err)))
+    }};
 }
 
 macro_rules! parse_zero_index {
     ($input:expr) => {{
         zero_index(parse_new!($input))
-    }}
+    }};
 }
 
 macro_rules! parse_clear_span {
     ($input:expr) => {{
         clear_span(parse_new!($input))
-    }}
+    }};
 }
 
 pub fn intern(s: &str) -> String {
@@ -195,18 +198,17 @@ pub fn let_(s: &str, e: SpExpr, b: SpExpr) -> SpExpr {
 
 pub fn let_a(s: &str, args: &[&str], e: SpExpr, b: SpExpr) -> SpExpr {
     no_loc(Expr::LetBindings(
-        vec![
-            ValueBinding {
-                metadata: Metadata::default(),
-                name: no_loc(Pattern::Ident(TypedIdent::new(intern(s)))),
-                typ: None,
-                resolved_type: Type::hole(),
-                args: args.iter()
-                    .map(|i| Argument::explicit(no_loc(TypedIdent::new(intern(i)))))
-                    .collect(),
-                expr: e,
-            },
-        ],
+        vec![ValueBinding {
+            metadata: Metadata::default(),
+            name: no_loc(Pattern::Ident(TypedIdent::new(intern(s)))),
+            typ: None,
+            resolved_type: Type::hole(),
+            args: args
+                .iter()
+                .map(|i| Argument::explicit(no_loc(TypedIdent::new(intern(i)))))
+                .collect(),
+            expr: e,
+        }],
         Box::new(b),
     ))
 }
@@ -263,7 +265,8 @@ pub fn case(e: SpExpr, alts: Vec<(Pattern<String>, SpExpr)>) -> SpExpr {
 pub fn lambda(name: &str, args: Vec<String>, body: SpExpr) -> SpExpr {
     no_loc(Expr::Lambda(Lambda {
         id: TypedIdent::new(intern(name)),
-        args: args.into_iter()
+        args: args
+            .into_iter()
             .map(|id| Argument::explicit(no_loc(TypedIdent::new(id))))
             .collect(),
         body: Box::new(body),
@@ -277,14 +280,12 @@ pub fn type_decl(
     body: SpExpr,
 ) -> SpExpr {
     type_decls(
-        vec![
-            TypeBinding {
-                metadata: Metadata::default(),
-                name: no_loc(name.clone()),
-                alias: no_loc(AliasData::new(name, args, typ)),
-                finalized_alias: None,
-            },
-        ],
+        vec![TypeBinding {
+            metadata: Metadata::default(),
+            name: no_loc(name.clone()),
+            alias: no_loc(AliasData::new(name, args, typ)),
+            finalized_alias: None,
+        }],
         body,
     )
 }

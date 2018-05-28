@@ -27,9 +27,7 @@ match A with
 | B -> True
 ";
     let mut vm = make_vm();
-    let result = Compiler::new()
-        .run_expr_async::<bool>(&mut vm, "<top>", text)
-        .sync_or_error();
+    let result = Compiler::new().run_expr::<bool>(&mut vm, "<top>", text);
     assert!(result.is_err());
 }
 

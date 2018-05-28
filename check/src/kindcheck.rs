@@ -4,9 +4,9 @@ use std::result::Result as StdResult;
 use base::ast::{self, AstType};
 use base::kind::{self, ArcKind, Kind, KindCache, KindEnv};
 use base::merge;
+use base::pos::{self, BytePos, HasSpan, Span, Spanned};
 use base::symbol::Symbol;
 use base::types::{self, BuiltinType, Generic, Type, Walker};
-use base::pos::{self, BytePos, HasSpan, Span, Spanned};
 
 use substitution::{Substitutable, Substitution};
 use unify::{self, Error as UnifyError, Unifiable, Unifier, UnifierState};
@@ -121,7 +121,8 @@ impl<'a> KindCheck<'a> {
     }
 
     fn find(&mut self, span: Span<BytePos>, id: &Symbol) -> Result<ArcKind> {
-        let kind = self.variables
+        let kind = self
+            .variables
             .iter()
             .find(|var| var.id == *id)
             .map(|t| t.kind.clone())
@@ -315,7 +316,8 @@ impl<'a> KindCheck<'a> {
 
 fn update_kind(subs: &Substitution<ArcKind>, kind: ArcKind, default: Option<&ArcKind>) -> ArcKind {
     walk_move_kind(kind, &mut |kind| match *kind {
-        Kind::Variable(id) => subs.find_type_for_var(id)
+        Kind::Variable(id) => subs
+            .find_type_for_var(id)
             .map(|kind| update_kind(subs, kind.clone(), default))
             .or_else(|| default.cloned()),
         _ => None,

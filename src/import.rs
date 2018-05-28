@@ -335,7 +335,8 @@ impl<I> Import<I> {
         let modulename = module_id.name().definition_name();
         // Retrieve the source, first looking in the standard library included in the
         // binary
-        let unloaded_module = self.get_unloaded_module(vm, &modulename, &filename)
+        let unloaded_module = self
+            .get_unloaded_module(vm, &modulename, &filename)
             .map_err(|err| (None, err.into()))?;
 
         match unloaded_module {

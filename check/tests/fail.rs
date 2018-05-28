@@ -220,10 +220,11 @@ fn recursive_types_with_differing_aliases() {
     let _ = env_logger::try_init();
     let text = r"
 type Option a = | None | Some a
+let none = None
 type R1 = Option R1
 and R2 = Option R2
 
-let x: R1 = None
+let x: R1 = none
 let y: R2 = x
 y
 ";

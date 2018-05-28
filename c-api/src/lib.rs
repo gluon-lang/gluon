@@ -5,12 +5,12 @@ extern crate gluon;
 #[cfg(not(target_arch = "wasm32"))]
 extern crate libc;
 
-use std::str;
 use std::slice;
+use std::str;
 
 use gluon::vm::api::{CPrimitive, Getable, Hole, OpaqueValue, Pushable};
-use gluon::vm::types::{VmIndex, VmInt};
 use gluon::vm::thread::{RootedThread, Status, Thread, ThreadInternal};
+use gluon::vm::types::{VmIndex, VmInt};
 
 use gluon::Compiler;
 
@@ -263,8 +263,8 @@ mod tests {
     use gluon::vm::thread::{Status, Thread};
 
     use std::ptr;
-    use std::str;
     use std::slice;
+    use std::str;
 
     #[test]
     fn push_pop() {

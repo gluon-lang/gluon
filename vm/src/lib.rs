@@ -46,8 +46,8 @@ pub mod serialization;
 #[macro_use]
 pub mod api;
 pub mod channel;
-pub mod core;
 pub mod compiler;
+pub mod core;
 pub mod debug;
 pub mod dynamic;
 #[macro_use]
@@ -55,10 +55,10 @@ pub mod future;
 pub mod gc;
 pub mod lazy;
 pub mod macros;
-pub mod thread;
 pub mod primitives;
 pub mod reference;
 pub mod stack;
+pub mod thread;
 pub mod types;
 pub mod vm;
 
@@ -67,17 +67,17 @@ mod interner;
 mod source_map;
 mod value;
 
-use std::marker::PhantomData;
 use std::fmt;
+use std::marker::PhantomData;
 
 use api::{ValueRef, VmType};
-use value::{Value, ValueRepr};
-use types::VmIndex;
-use base::types::ArcType;
-use base::symbol::Symbol;
 use base::metadata::Metadata;
-use thread::{RootedThread, RootedValue, Thread};
+use base::symbol::Symbol;
+use base::types::ArcType;
 use stack::Stacktrace;
+use thread::{RootedThread, RootedValue, Thread};
+use types::VmIndex;
+use value::{Value, ValueRepr};
 
 unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
     ::std::mem::transmute(x)

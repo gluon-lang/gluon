@@ -1,20 +1,23 @@
 extern crate env_logger;
 extern crate futures;
+#[macro_use]
+extern crate serde_derive;
 
 extern crate gluon;
 #[macro_use]
 extern crate gluon_vm;
 
-use futures::{Future, IntoFuture};
 use futures::future::lazy;
+use futures::{Future, IntoFuture};
 
-use gluon::base::types::Type;
-use gluon::vm::{Error, ExternModule};
+use gluon::base::types::{Alias, ArcType, Type};
+use gluon::import::{add_extern_module, Import};
+use gluon::vm::api::de::De;
 use gluon::vm::api::{FunctionRef, FutureResult, Userdata, VmType, IO};
 use gluon::vm::thread::{Root, RootStr, RootedThread, Thread, Traverseable};
 use gluon::vm::types::VmInt;
+use gluon::vm::{Error, ExternModule};
 use gluon::Compiler;
-use gluon::import::{add_extern_module, Import};
 
 fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<()> {
     Compiler::new()
@@ -172,8 +175,8 @@ fn return_finished_future() {
 fn poll_n(
     s: String,
 ) -> FutureResult<Box<Future<Item = IO<String>, Error = Error> + Send + 'static>> {
-    use std::thread::spawn;
     use futures::sync::oneshot::channel;
+    use std::thread::spawn;
 
     let (ping_c, ping_p) = channel();
     let (pong_c, pong_p) = channel();
@@ -271,9 +274,9 @@ fn io_future() {
 
 #[test]
 fn generic_record_type() {
+    use gluon::base::types::ArcType;
     use gluon::vm::api::generic::A;
     use gluon::vm::api::Generic;
-    use gluon::base::types::ArcType;
 
     fn type_of<T: VmType>(thread: &Thread, _: &T) -> ArcType {
         T::make_forall_type(thread)
@@ -292,12 +295,49 @@ fn generic_record_type() {
 #[test]
 fn tuples_start_at_0() {
     let thread = make_vm();
-    assert_eq!(
-        <(i32, f64)>::make_type(&thread).to_string(),
-        "{ _0 : Int, _1 : Float }"
-    );
+    assert_eq!(<(i32, f64)>::make_type(&thread).to_string(), "(Int, Float)");
     assert_eq!(
         <(i32, f64, String)>::make_type(&thread).to_string(),
-        "{ _0 : Int, _1 : Float, _2 : String }"
+        "(Int, Float, String)"
     );
+}
+
+#[test]
+fn use_type_from_type_field() {
+    let _ = ::env_logger::try_init();
+    let vm = make_vm();
+
+    #[derive(Serialize, Deserialize, PartialEq, Debug)]
+    enum Test {
+        A(i32),
+        B(String),
+        C,
+    }
+    impl VmType for Test {
+        type Type = Self;
+        fn make_type(vm: &Thread) -> ArcType {
+            if let Some(typ) = vm.get_type::<Self>() {
+                return typ;
+            }
+
+            let (name, typ) = gluon::vm::api::typ::from_rust::<Self>(vm).unwrap();
+            vm.register_type_as(
+                name.clone(),
+                Alias::new(name, typ),
+                ::std::any::TypeId::of::<Self>(),
+            ).unwrap()
+        }
+    }
+
+    add_extern_module(&vm, "test_types", |vm| {
+        ExternModule::new(vm, record!{ type Test => Test })
+    });
+    let text = r#"
+        let { Test } = import! test_types
+        B "abc"
+    "#;
+    let (De(actual), _) = Compiler::new()
+        .run_expr::<De<Test>>(&vm, "test", text)
+        .unwrap_or_else(|err| panic!("{}", err));
+    assert_eq!(actual, Test::B("abc".to_string()));
 }

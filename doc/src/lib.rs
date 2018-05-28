@@ -29,8 +29,8 @@ use handlebars::{Handlebars, Helper, Output, RenderContext, RenderError};
 use serde::Deserialize;
 
 use gluon::base::filename_to_module;
-use gluon::base::types::ArcType;
 use gluon::base::metadata::Metadata;
+use gluon::base::types::ArcType;
 use gluon::check::metadata::metadata;
 use gluon::{Compiler, Thread};
 
@@ -59,11 +59,13 @@ pub struct Field {
 
 pub fn record(typ: &ArcType, meta: &Metadata) -> Record {
     Record {
-        types: typ.type_field_iter()
+        types: typ
+            .type_field_iter()
             .map(|field| Field {
                 name: field.name.definition_name().to_string(),
                 typ: field.typ.unresolved_type().to_string(),
-                comment: meta.module
+                comment: meta
+                    .module
                     .get(AsRef::<str>::as_ref(&field.name))
                     .and_then(|meta| meta.comment.as_ref().map(|s| &s.content[..]))
                     .unwrap_or("")
@@ -71,12 +73,14 @@ pub fn record(typ: &ArcType, meta: &Metadata) -> Record {
             })
             .collect(),
 
-        values: typ.row_iter()
+        values: typ
+            .row_iter()
             .map(|field| Field {
                 name: field.name.definition_name().to_string(),
                 typ: field.typ.to_string(),
 
-                comment: meta.module
+                comment: meta
+                    .module
                     .get(AsRef::<str>::as_ref(&field.name))
                     .and_then(|meta| meta.comment.as_ref().map(|s| &s.content[..]))
                     .unwrap_or("")
@@ -287,7 +291,8 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
             )
         })?;
 
-        let name = filename_to_module(path.to_str()
+        let name = filename_to_module(path
+            .to_str()
             .ok_or_else(|| failure::err_msg("Non-UTF-8 filename"))?);
 
         reg.render_to_write(

@@ -38,8 +38,9 @@ impl KindEnv for EmptyEnv<Symbol> {
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "S"))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "S"))]
-#[cfg_attr(feature = "serde_derive",
-           serde(bound(deserialize = "S: AsMut<::serialization::NodeMap>")))]
+#[cfg_attr(
+    feature = "serde_derive", serde(bound(deserialize = "S: AsMut<::serialization::NodeMap>"))
+)]
 pub enum Kind {
     Hole,
     /// Representation for a kind which is yet to be inferred.

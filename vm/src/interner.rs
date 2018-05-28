@@ -1,9 +1,9 @@
+use base::fnv::FnvMap;
 use std::cmp::Ordering;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use Result;
-use base::fnv::FnvMap;
 
 use gc::{Gc, Traverseable};
 use value::GcStr;

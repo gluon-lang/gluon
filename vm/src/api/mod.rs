@@ -1,18 +1,20 @@
 //! The marshalling api
-use {forget_lifetime, Error, Result, Variants};
+use base::scoped_map::ScopedMap;
+use base::symbol::{Symbol, Symbols};
+use base::types::{self, ArcType, Type};
+use compiler::{CompiledFunction, CompiledModule};
 use future::FutureValue;
 use gc::{DataDef, Gc, GcPtr, Move, Traverseable};
-use base::symbol::{Symbol, Symbols};
-use base::scoped_map::ScopedMap;
 use stack::{Lock, StackFrame};
-use vm::{self, Root, RootStr, RootedValue, Status, Thread};
-use value::{ArrayDef, ArrayRepr, Cloner, ClosureData, DataStruct, Def, ExternFunction, GcStr,
-            Value, ValueArray, ValueRepr};
-use thread::{self, Context, RootedThread, VmRoot};
 use thread::ThreadInternal;
-use base::types::{self, ArcType, Type};
+use thread::{self, Context, RootedThread, VmRoot};
 use types::{Instruction, VmIndex, VmInt, VmTag};
-use compiler::{CompiledFunction, CompiledModule};
+use value::{
+    ArrayDef, ArrayRepr, Cloner, ClosureData, DataStruct, Def, ExternFunction, GcStr, Value,
+    ValueArray, ValueRepr,
+};
+use vm::{self, Root, RootStr, RootedValue, Status, Thread};
+use {forget_lifetime, Error, Result, Variants};
 
 use std::any::Any;
 use std::cell::Ref;
@@ -32,9 +34,9 @@ use serde::de::{Deserialize, Deserializer};
 #[macro_use]
 pub mod mac;
 #[cfg(feature = "serde")]
-pub mod ser;
-#[cfg(feature = "serde")]
 pub mod de;
+#[cfg(feature = "serde")]
+pub mod ser;
 #[cfg(feature = "serde")]
 pub mod typ;
 
@@ -304,8 +306,8 @@ impl<T> Traverseable for Generic<T> {
 pub mod generic {
     use super::VmType;
     use base::types::ArcType;
-    use vm::Thread;
     use thread::ThreadInternal;
+    use vm::Thread;
 
     macro_rules! make_generics {
         ($($i: ident)+) => {
@@ -383,7 +385,12 @@ pub trait VmType {
 
     /// Creates an gluon type which maps to `Self` in rust
     fn make_type(vm: &Thread) -> ArcType {
-        vm.get_type::<Self::Type>()
+        vm.get_type::<Self::Type>().unwrap_or_else(|| {
+            ice!(
+                "Expected type to be inserted before get_type call. \
+                 Did you forget to call `Thread::register_type`?"
+            )
+        })
     }
 
     /// How many extra arguments a function returning this type requires.
@@ -514,6 +521,19 @@ impl<'vm, T: vm::Userdata> Pushable<'vm> for T {
 impl<'vm> Getable<'vm> for Value {
     fn from_value(_vm: &'vm Thread, value: Variants) -> Self {
         value.get_value()
+    }
+}
+
+impl<'vm, T: ?Sized + VmType> VmType for PhantomData<T> {
+    type Type = T::Type;
+    fn make_forall_type(vm: &Thread) -> ArcType {
+        T::make_forall_type(vm)
+    }
+    fn make_type(vm: &Thread) -> ArcType {
+        T::make_type(vm)
+    }
+    fn extra_args() -> VmIndex {
+        T::extra_args()
     }
 }
 
@@ -910,7 +930,8 @@ where
 {
     type Type = Option<T::Type>;
     fn make_type(vm: &Thread) -> ArcType {
-        let option_alias = vm.find_type_info("std.types.Option")
+        let option_alias = vm
+            .find_type_info("std.types.Option")
             .unwrap()
             .clone()
             .into_type();
@@ -953,7 +974,8 @@ where
 {
     type Type = StdResult<T::Type, E::Type>;
     fn make_type(vm: &Thread) -> ArcType {
-        let result_alias = vm.find_type_info("std.types.Result")
+        let result_alias = vm
+            .find_type_info("std.types.Result")
             .unwrap()
             .clone()
             .into_type();
@@ -1479,28 +1501,39 @@ pub mod record {
 
     use frunk_core::hlist::{h_cons, HCons, HList, HNil};
 
-    use base::types;
-    use base::types::ArcType;
     use base::symbol::Symbol;
+    use base::types::{self, Alias, AliasData, ArcType, Generic, Type};
 
-    use {Result, Variants};
+    use super::{Getable, Pushable, VmType};
     use thread::{self, Context, ThreadInternal};
     use types::VmIndex;
-    use vm::Thread;
     use value::{Def, Value, ValueRepr};
-    use super::{Getable, Pushable, VmType};
+    use vm::Thread;
+    use {Result, Variants};
 
-    pub struct Record<T> {
-        pub fields: T,
+    pub struct Record<T, U> {
+        pub type_fields: T,
+        pub fields: U,
     }
 
     pub trait Field: Default {
         fn name() -> &'static str;
+        fn args() -> &'static [&'static str] {
+            &[]
+        }
     }
 
     pub trait FieldTypes: HList {
         type Type: Any;
-        fn field_types(vm: &Thread, fields: &mut Vec<types::Field<Symbol, ArcType>>);
+        fn field_types(
+            vm: &Thread,
+            type_fields: &mut Vec<types::Field<Symbol, Alias<Symbol, ArcType>>>,
+        );
+    }
+
+    pub trait FieldValues: HList {
+        type Type: Any;
+        fn field_values(vm: &Thread, fields: &mut Vec<types::Field<Symbol, ArcType>>);
     }
 
     pub trait PushableFieldList<'vm>: HList {
@@ -1519,14 +1552,14 @@ pub mod record {
 
     impl<'vm> GetableFieldList<'vm> for HNil {
         fn from_value(_vm: &'vm Thread, values: &[Value]) -> Option<Self> {
-            debug_assert!(values.is_empty(), "{:?}", values);
+            debug_assert!(values.is_empty(), "Retrieving type {:?}", values);
             Some(HNil)
         }
     }
 
     impl FieldTypes for HNil {
         type Type = ();
-        fn field_types(_: &Thread, _: &mut Vec<types::Field<Symbol, ArcType>>) {}
+        fn field_types(_: &Thread, _: &mut Vec<types::Field<Symbol, Alias<Symbol, ArcType>>>) {}
     }
 
     impl<F: Field, H: VmType, T> FieldTypes for HCons<(F, H), T>
@@ -1535,9 +1568,67 @@ pub mod record {
         H::Type: Sized,
     {
         type Type = HCons<(&'static str, H::Type), T::Type>;
-        fn field_types(vm: &Thread, fields: &mut Vec<types::Field<Symbol, ArcType>>) {
-            fields.push(types::Field::new(Symbol::from(F::name()), H::make_type(vm)));
-            T::field_types(vm, fields);
+        fn field_types(
+            vm: &Thread,
+            type_fields: &mut Vec<types::Field<Symbol, Alias<Symbol, ArcType>>>,
+        ) {
+            let typ = H::make_type(vm);
+            let name = {
+                let mut self_symbol = None;
+                types::walk_type(&typ, |typ: &ArcType| {
+                    if self_symbol.is_none() {
+                        match **typ {
+                            Type::Ident(ref id) if id.definition_name() == F::name() => {
+                                self_symbol = Some(id.clone())
+                            }
+                            _ => (),
+                        }
+                    }
+                });
+                self_symbol.unwrap_or_else(|| Symbol::from(F::name()))
+            };
+            let args = F::args();
+            assert!(
+                name.definition_name().starts_with(char::is_uppercase),
+                "{}",
+                name
+            );
+            type_fields.push(types::Field::new(
+                name.clone(),
+                Alias::from(AliasData::new(
+                    name,
+                    args.iter()
+                        .map(|arg| {
+                            Generic::new(
+                                Symbol::from(*arg),
+                                vm.global_env().type_cache().kind_cache.typ(),
+                            )
+                        })
+                        .collect(),
+                    typ,
+                )),
+            ));
+            T::field_types(vm, type_fields);
+        }
+    }
+
+    impl FieldValues for HNil {
+        type Type = ();
+        fn field_values(_: &Thread, _: &mut Vec<types::Field<Symbol, ArcType>>) {}
+    }
+
+    impl<F: Field, H: VmType, T> FieldValues for HCons<(F, H), T>
+    where
+        T: FieldValues,
+        H::Type: Sized,
+    {
+        type Type = HCons<(&'static str, H::Type), T::Type>;
+        fn field_values(vm: &Thread, fields: &mut Vec<types::Field<Symbol, ArcType>>) {
+            let name = Symbol::from(F::name());
+            let args = F::args();
+            debug_assert!(args.is_empty());
+            fields.push(types::Field::new(name, H::make_type(vm)));
+            T::field_values(vm, fields);
         }
     }
 
@@ -1564,23 +1655,24 @@ pub mod record {
         }
     }
 
-    impl<T: FieldTypes> VmType for Record<T> {
-        type Type = Record<T::Type>;
+    impl<T: FieldTypes, U: FieldValues> VmType for Record<T, U> {
+        type Type = Record<T::Type, U::Type>;
         fn make_type(vm: &Thread) -> ArcType {
-            let len = T::LEN;
-            let mut fields = Vec::with_capacity(len);
-            T::field_types(vm, &mut fields);
+            let mut type_fields = Vec::new();
+            T::field_types(vm, &mut type_fields);
+            let mut fields = Vec::new();
+            U::field_values(vm, &mut fields);
             let type_cache = vm.global_env().type_cache();
-            type_cache.record(Vec::new(), fields)
+            type_cache.record(type_fields, fields)
         }
     }
-    impl<'vm, T> Pushable<'vm> for Record<T>
+    impl<'vm, T, U> Pushable<'vm> for Record<T, U>
     where
-        T: PushableFieldList<'vm>,
+        U: PushableFieldList<'vm>,
     {
         fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
             self.fields.push(thread, context)?;
-            let len = T::LEN as VmIndex;
+            let len = U::LEN as VmIndex;
             let offset = context.stack.len() - len;
             let value = thread::alloc(
                 &mut context.gc,
@@ -1598,15 +1690,19 @@ pub mod record {
             Ok(())
         }
     }
-    impl<'vm, T> Getable<'vm> for Record<T>
+    impl<'vm, T, U> Getable<'vm> for Record<T, U>
     where
-        T: GetableFieldList<'vm>,
+        T: Default,
+        U: GetableFieldList<'vm>,
     {
         fn from_value(vm: &'vm Thread, value: Variants) -> Self {
             match value.0 {
                 ValueRepr::Data(ref data) => {
-                    let fields = T::from_value(vm, &data.fields).unwrap();
-                    Record { fields }
+                    let fields = U::from_value(vm, &data.fields).unwrap();
+                    Record {
+                        type_fields: T::default(),
+                        fields,
+                    }
                 }
                 _ => ice!("Value is not a Record"),
             }
@@ -2123,7 +2219,8 @@ where
     type Type = Map<K::Type, V::Type>;
 
     fn make_type(vm: &Thread) -> ArcType {
-        let map_alias = vm.find_type_info("std.map.Map")
+        let map_alias = vm
+            .find_type_info("std.map.Map")
             .unwrap()
             .clone()
             .into_type();

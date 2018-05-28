@@ -1,13 +1,13 @@
 use std::fmt;
 use std::ops::{Deref, DerefMut, Index, IndexMut, Range, RangeFrom, RangeFull, RangeTo};
 
-use base::symbol::Symbol;
 use base::pos::Line;
+use base::symbol::Symbol;
 
-use Variants;
 use gc::{Gc, GcPtr, Traverseable};
-use value::{ClosureData, DataStruct, ExternFunction, Value, ValueRepr};
 use types::VmIndex;
+use value::{ClosureData, DataStruct, ExternFunction, Value, ValueRepr};
+use Variants;
 
 pub trait StackPrimitive {
     fn push_to(&self, stack: &mut Stack);
@@ -174,7 +174,8 @@ impl Stack {
     ///
     /// Panics if the lock is not the top-most lock
     pub fn release_lock(&mut self, lock: Lock) {
-        let i = self.frames
+        let i = self
+            .frames
             .iter()
             .rposition(|frame| frame.state == State::Lock)
             .unwrap();

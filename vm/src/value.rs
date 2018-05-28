@@ -7,16 +7,16 @@ use itertools::Itertools;
 
 use pretty::{Arena, DocAllocator, DocBuilder};
 
+use base::fnv::FnvMap;
 use base::symbol::Symbol;
+use base::types::pretty_print::ident as pretty_ident;
 use base::types::{ArcType, Type, TypeEnv};
 use types::*;
-use base::fnv::FnvMap;
-use base::types::pretty_print::ident as pretty_ident;
 
-use interner::InternedStr;
+use array::Array;
 use compiler::DebugInfo;
 use gc::{DataDef, Gc, GcPtr, Generation, Move, Traverseable, WriteOnly};
-use array::Array;
+use interner::InternedStr;
 use thread::{Status, Thread};
 use {Error, Result, Variants};
 
@@ -250,8 +250,8 @@ mod gc_str {
     use gc::{Gc, GcPtr, Generation, Traverseable};
 
     use std::fmt;
-    use std::str;
     use std::ops::Deref;
+    use std::str;
 
     #[derive(Copy, Clone, PartialEq)]
     pub struct GcStr(GcPtr<ValueArray>);
@@ -318,14 +318,18 @@ pub(crate) enum ValueRepr {
     String(#[cfg_attr(feature = "serde_derive", serde(deserialize_state))] GcStr),
     Tag(VmTag),
     Data(
-        #[cfg_attr(feature = "serde_derive",
-                   serde(deserialize_state_with = "::serialization::gc::deserialize_data"))]
+        #[cfg_attr(
+            feature = "serde_derive",
+            serde(deserialize_state_with = "::serialization::gc::deserialize_data")
+        )]
         #[cfg_attr(feature = "serde_derive", serde(serialize_state))]
         GcPtr<DataStruct>,
     ),
     Array(
-        #[cfg_attr(feature = "serde_derive",
-                   serde(deserialize_state_with = "::serialization::gc::deserialize_array"))]
+        #[cfg_attr(
+            feature = "serde_derive",
+            serde(deserialize_state_with = "::serialization::gc::deserialize_array")
+        )]
         #[cfg_attr(feature = "serde_derive", serde(serialize_state))]
         GcPtr<ValueArray>,
     ),
@@ -335,16 +339,19 @@ pub(crate) enum ValueRepr {
         GcPtr<ClosureData>,
     ),
     PartialApplication(
-        #[cfg_attr(feature = "serde_derive",
-                   serde(deserialize_state_with = "::serialization::deserialize_application"))]
+        #[cfg_attr(
+            feature = "serde_derive",
+            serde(deserialize_state_with = "::serialization::deserialize_application")
+        )]
         #[cfg_attr(feature = "serde_derive", serde(serialize_state))]
         GcPtr<PartialApplicationData>,
     ),
     // TODO Implement serializing of userdata
     #[cfg_attr(feature = "serde_derive", serde(skip_deserializing))]
     Userdata(
-        #[cfg_attr(feature = "serde_derive",
-                   serde(serialize_with = "::serialization::serialize_userdata"))]
+        #[cfg_attr(
+            feature = "serde_derive", serde(serialize_with = "::serialization::serialize_userdata")
+        )]
         GcPtr<Box<Userdata>>,
     ),
     #[cfg_attr(feature = "serde_derive", serde(skip_deserializing))]
@@ -589,7 +596,8 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                         ]
             }
             Type::Variant(ref row) => {
-                let type_field = row.row_iter()
+                let type_field = row
+                    .row_iter()
                     .nth(tag as usize)
                     .expect("Variant tag is out of bounds");
                 let mut empty = true;
@@ -826,8 +834,9 @@ impl fmt::Debug for ValueRepr {
 #[cfg_attr(feature = "serde_derive", derive(SerializeState))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
 pub struct ExternFunction {
-    #[cfg_attr(feature = "serde_derive",
-               serde(serialize_state_with = "::serialization::symbol::serialize"))]
+    #[cfg_attr(
+        feature = "serde_derive", serde(serialize_state_with = "::serialization::symbol::serialize")
+    )]
     pub id: Symbol,
     pub args: VmIndex,
     #[cfg_attr(feature = "serde_derive", serde(skip_serializing))]
@@ -846,7 +855,8 @@ impl Clone for ExternFunction {
 
 impl PartialEq for ExternFunction {
     fn eq(&self, other: &ExternFunction) -> bool {
-        self.id == other.id && self.args == other.args
+        self.id == other.id
+            && self.args == other.args
             && self.function as usize == other.function as usize
     }
 }
@@ -957,23 +967,21 @@ impl Repr {
 }
 
 macro_rules! on_array {
-    ($array: expr, $f: expr) => {
-        {
-            let ref array = $array;
-            unsafe {
-                match array.repr() {
-                    Repr::Byte => $f(array.unsafe_array::<u8>()),
-                    Repr::Int => $f(array.unsafe_array::<VmInt>()),
-                    Repr::Float => $f(array.unsafe_array::<f64>()),
-                    Repr::String => $f(array.unsafe_array::<GcStr>()),
-                    Repr::Array => $f(array.unsafe_array::<GcPtr<ValueArray>>()),
-                    Repr::Unknown => $f(array.unsafe_array::<Value>()),
-                    Repr::Userdata => $f(array.unsafe_array::<GcPtr<Box<Userdata>>>()),
-                    Repr::Thread => $f(array.unsafe_array::<GcPtr<Thread>>()),
-                }
+    ($array:expr, $f:expr) => {{
+        let ref array = $array;
+        unsafe {
+            match array.repr() {
+                Repr::Byte => $f(array.unsafe_array::<u8>()),
+                Repr::Int => $f(array.unsafe_array::<VmInt>()),
+                Repr::Float => $f(array.unsafe_array::<f64>()),
+                Repr::String => $f(array.unsafe_array::<GcStr>()),
+                Repr::Array => $f(array.unsafe_array::<GcPtr<ValueArray>>()),
+                Repr::Unknown => $f(array.unsafe_array::<Value>()),
+                Repr::Userdata => $f(array.unsafe_array::<GcPtr<Box<Userdata>>>()),
+                Repr::Thread => $f(array.unsafe_array::<GcPtr<Thread>>()),
             }
         }
-    }
+    }};
 }
 
 #[repr(C)]
@@ -1209,7 +1217,8 @@ impl<'t> Cloner<'t> {
     pub(crate) fn deep_clone(&mut self, value: &Value) -> Result<Value> {
         // Only need to clone values which belong to a younger generation than the gc that the new
         // value will live in
-        if self.receiver_generation
+        if self
+            .receiver_generation
             .can_contain_values_from(value.generation())
         {
             return Ok(value.clone());
@@ -1222,7 +1231,8 @@ impl<'t> Cloner<'t> {
             PartialApplication(data) => {
                 self.deep_clone_app(data).map(ValueRepr::PartialApplication)
             }
-            Function(f) => self.gc
+            Function(f) => self
+                .gc
                 .alloc(Move(ExternFunction::clone(&f)))
                 .map(ValueRepr::Function),
             ValueRepr::Tag(i) => Ok(ValueRepr::Tag(i)),
@@ -1258,10 +1268,11 @@ impl<'t> Cloner<'t> {
 
     fn deep_clone_str(&mut self, data: GcStr) -> Result<ValueRepr> {
         unsafe {
-            Ok(self.deep_clone_ptr(data.into_inner(), |gc, data| {
-                let ptr = GcStr::from_utf8_unchecked(gc.alloc(data)?);
-                Ok((String(ptr), ptr))
-            })?
+            Ok(self
+                .deep_clone_ptr(data.into_inner(), |gc, data| {
+                    let ptr = GcStr::from_utf8_unchecked(gc.alloc(data)?);
+                    Ok((String(ptr), ptr))
+                })?
                 .unwrap_or_else(String))
         }
     }
@@ -1399,8 +1410,8 @@ mod tests {
     use types::VmInt;
 
     use base::kind::{ArcKind, KindEnv};
-    use base::types::{Alias, ArcType, Field, Type, TypeEnv};
     use base::symbol::{Symbol, SymbolRef};
+    use base::types::{Alias, ArcType, Field, Type, TypeEnv};
 
     struct MockEnv(Option<Alias<Symbol, ArcType>>);
 
@@ -1449,10 +1460,12 @@ mod tests {
             ),
             "Nil"
         );
-        let list1 = Value::from(ValueRepr::Data(gc.alloc(Def {
-            tag: 0,
-            elems: &[Value::from(ValueRepr::Int(123)), nil],
-        }).unwrap()));
+        let list1 = Value::from(ValueRepr::Data(
+            gc.alloc(Def {
+                tag: 0,
+                elems: &[Value::from(ValueRepr::Int(123)), nil],
+            }).unwrap(),
+        ));
         assert_eq!(
             format!(
                 "{}",
@@ -1460,10 +1473,12 @@ mod tests {
             ),
             "Cons 123 Nil"
         );
-        let list2 = Value::from(ValueRepr::Data(gc.alloc(Def {
-            tag: 0,
-            elems: &[ValueRepr::Int(0).into(), list1],
-        }).unwrap()));
+        let list2 = Value::from(ValueRepr::Data(
+            gc.alloc(Def {
+                tag: 0,
+                elems: &[ValueRepr::Int(0).into(), list1],
+            }).unwrap(),
+        ));
         assert_eq!(
             format!(
                 "{}",

@@ -3,11 +3,11 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
+use metadata::{Comment, Metadata};
+use ordered_float::NotNaN;
 use pos::{self, BytePos, HasSpan, Span, Spanned};
 use symbol::Symbol;
 use types::{self, Alias, AliasData, ArcType, ArgType, Generic, Type, TypeEnv};
-use metadata::{Comment, Metadata};
-use ordered_float::NotNaN;
 
 pub trait DisplayEnv {
     type Ident;

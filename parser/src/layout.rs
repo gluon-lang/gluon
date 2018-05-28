@@ -178,7 +178,8 @@ where
             //     1
             //  // ^~ Next token begins at or before the previous block
             // ```
-            match self.indent_levels
+            match self
+                .indent_levels
                 .stack
                 .iter()
                 .find(|last_offside| match last_offside.context {
@@ -256,7 +257,8 @@ where
                     // syntax error. Just return the token directly in that case to avoid an
                     // infinite loop caused by repeatedly inserting a default block and removing
                     // it.
-                    if self.indent_levels
+                    if self
+                        .indent_levels
                         .stack
                         .iter()
                         .all(|offside| !token_closes_context(&token.value, offside.context))
@@ -286,7 +288,8 @@ where
                             }
                             Context::Let | Context::Type => {
                                 let location = {
-                                    let offside = self.indent_levels
+                                    let offside = self
+                                        .indent_levels
                                         .last_mut()
                                         .expect("No top level block found");
                                     // The enclosing block should not emit a block separator for the next
@@ -386,14 +389,16 @@ where
                 | (Context::Type, Ordering::Equal)
                 | (Context::Let, Ordering::Less)
                 | (Context::Type, Ordering::Less)
-                    if token.value != Token::And && token.value != Token::RBrace
+                    if token.value != Token::And
+                        && token.value != Token::RBrace
                         && !doc_comment_followed_by_and =>
                 {
                     // Insert an `in` token
 
                     let let_location = self.indent_levels.pop().unwrap().location;
                     {
-                        let offside = self.indent_levels
+                        let offside = self
+                            .indent_levels
                             .last_mut()
                             .expect("No top level block found");
                         // The enclosing block should not emit a block separator for the next

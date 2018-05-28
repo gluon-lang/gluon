@@ -3,21 +3,21 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::sync::Mutex;
 
-use futures::Future;
 use futures::future::Shared;
 use futures::sync::oneshot;
+use futures::Future;
 
+use api::generic::A;
+use api::Generic;
+use api::{FunctionRef, Getable, OpaqueValue, PrimitiveFuture, Userdata, VmType, WithVM};
 use base::types;
 use base::types::{ArcType, Type};
-use gc::{Gc, GcPtr, Move, Traverseable};
-use api::{FunctionRef, Getable, OpaqueValue, PrimitiveFuture, Userdata, VmType, WithVM};
 use future::FutureValue;
-use api::Generic;
-use api::generic::A;
+use gc::{Gc, GcPtr, Move, Traverseable};
+use thread::ThreadInternal;
+use value::{Cloner, Value};
 use vm::Thread;
 use {Error, ExternModule, Result, Variants};
-use value::{Cloner, Value};
-use thread::ThreadInternal;
 
 pub struct Lazy<T> {
     value: Mutex<Lazy_>,

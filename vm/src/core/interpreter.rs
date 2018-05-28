@@ -548,7 +548,8 @@ impl<'a, 'e> Compiler<'a, 'e> {
                 }
             }
             Expr::Match(expr, alts) => {
-                let expr = self.compile(expr, function)?
+                let expr = self
+                    .compile(expr, function)?
                     .unwrap_or(Reduced::Local(expr));
                 for alt in alts {
                     self.stack_constructors.enter_scope();
@@ -565,7 +566,8 @@ impl<'a, 'e> Compiler<'a, 'e> {
                         }
                         Pattern::Literal(_) => (),
                     }
-                    let new_expr = self.compile(&alt.expr, function)?
+                    let new_expr = self
+                        .compile(&alt.expr, function)?
                         .unwrap_or(Reduced::Local(&alt.expr));
                     function.exit_scope();
                     self.stack_constructors.exit_scope();
@@ -696,8 +698,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
                     _ => return Err(format!("Invalid binop `{}`", id.name).into()),
                 };
                 f
-            }
-            }
+            }};
         }
 
         let l = self.compile(&args[0], function)?;
@@ -731,7 +732,8 @@ impl<'a, 'e> Compiler<'a, 'e> {
                         l.map_or(args[0].clone(), |l| l.into_local(self.allocator).clone()),
                         r.map_or(args[1].clone(), |r| r.into_local(self.allocator).clone()),
                     ]);
-                    Some(Reduced::Local(&*self.allocator
+                    Some(Reduced::Local(&*self
+                        .allocator
                         .arena
                         .alloc(Expr::Call(f, new_args))))
                 }
@@ -758,26 +760,25 @@ mod tests {
         ($actual:expr, $expected:expr, $globals:expr) => {{
             let mut symbols = Symbols::new();
             let globals = $globals;
-
+        
             let allocator = Allocator::new();
-
+        
             let actual_expr = ExprParser::new()
                 .parse(&mut symbols, &allocator, $actual)
                 .unwrap();
-
+        
             let actual_expr = {
                 Compiler::new(&allocator, &globals)
                     .compile_expr(allocator.arena.alloc(actual_expr))
                     .unwrap()
             };
-
+        
             let expected_expr = ExprParser::new()
                 .parse(&mut symbols, &allocator, $expected)
                 .unwrap();
-
+        
             assert_deq!(*actual_expr, expected_expr);
-        }
-        }
+        }};
     }
 
     #[test]

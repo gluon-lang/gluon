@@ -9,9 +9,9 @@ use pretty::{Arena, DocAllocator};
 
 use base::ast::{Expr, Literal, SpannedExpr, Typed, TypedIdent};
 use base::kind::{ArcKind, Kind, KindEnv};
-use base::types::*;
-use base::symbol::{Symbol, SymbolRef};
 use base::pos::{self, BytePos, Span, Spanned};
+use base::symbol::{Symbol, SymbolRef, Symbols};
+use base::types::*;
 
 fn type_con<I, T>(s: I, args: Vec<T>) -> Type<I, T>
 where
@@ -27,9 +27,9 @@ where
 }
 
 macro_rules! assert_eq_display {
-    ($l: expr, $r: expr) => {
+    ($l:expr, $r:expr) => {
         assert_eq!($l.to_string(), $r.to_string());
-    }
+    };
 }
 
 #[test]
@@ -74,15 +74,13 @@ fn show_record_singleton_polymorphic() {
     let data = |s, a| ArcType::from(type_con(s, a));
     let fun = Type::function(vec![data("a", vec![])], Type::string());
     let typ = Type::record(
-        vec![
-            Field::new(
+        vec![Field::new(
+            "Test",
+            Alias::new(
                 "Test",
-                Alias::new(
-                    "Test",
-                    Type::forall(vec![Generic::new("a", Kind::typ())], fun.clone()),
-                ),
+                Type::forall(vec![Generic::new("a", Kind::typ())], fun.clone()),
             ),
-        ],
+        )],
         vec![],
     );
     assert_eq_display!(format!("{}", typ), "{ Test = forall a . a -> String }");
@@ -93,15 +91,13 @@ fn show_record_multifield() {
     let data = |s, a| ArcType::from(type_con(s, a));
     let fun = Type::function(vec![data("a", vec![])], Type::string());
     let typ = Type::record(
-        vec![
-            Field::new(
+        vec![Field::new(
+            "Test",
+            Alias::new(
                 "Test",
-                Alias::new(
-                    "Test",
-                    Type::forall(vec![Generic::new("a", Kind::typ())], fun.clone()),
-                ),
+                Type::forall(vec![Generic::new("a", Kind::typ())], fun.clone()),
             ),
-        ],
+        )],
         vec![Field::new("x", Type::int())],
     );
     assert_eq_display!(
@@ -115,15 +111,13 @@ fn show_record_multiline() {
     let fun = Type::function(vec![data("a", vec![])], Type::string());
     let test = data("Test", vec![data("a", vec![])]);
     let record = Type::record(
-        vec![
-            Field::new(
+        vec![Field::new(
+            "Test",
+            Alias::new(
                 "Test",
-                Alias::new(
-                    "Test",
-                    Type::forall(vec![Generic::new("a", Kind::typ())], fun.clone()),
-                ),
+                Type::forall(vec![Generic::new("a", Kind::typ())], fun.clone()),
             ),
-        ],
+        )],
         vec![
             Field::new("x", Type::int()),
             Field::new("test", test.clone()),
@@ -201,15 +195,13 @@ fn show_record_multi_line_nested() {
     let fun = Type::function(vec![data("a", vec![])], Type::string());
     let test = data("Test", vec![data("a", vec![])]);
     let inner_record = Type::record(
-        vec![
-            Field::new(
+        vec![Field::new(
+            "Test",
+            Alias::new(
                 "Test",
-                Alias::new(
-                    "Test",
-                    Type::forall(vec![Generic::new("a", Kind::typ())], fun.clone()),
-                ),
+                Type::forall(vec![Generic::new("a", Kind::typ())], fun.clone()),
             ),
-        ],
+        )],
         vec![
             Field::new("x", Type::int()),
             Field::new("test", test.clone()),
@@ -220,15 +212,13 @@ fn show_record_multi_line_nested() {
         ],
     );
     let record = Type::record(
-        vec![
-            Field::new(
+        vec![Field::new(
+            "Test",
+            Alias::new(
                 "Test",
-                Alias::new(
-                    "Test",
-                    Type::forall(vec![Generic::new("a", Kind::typ())], fun.clone()),
-                ),
+                Type::forall(vec![Generic::new("a", Kind::typ())], fun.clone()),
             ),
-        ],
+        )],
         vec![
             Field::new("x", Type::int()),
             Field::new(
@@ -297,15 +287,13 @@ fn show_polymorphic_record() {
 
 #[test]
 fn show_polymorphic_record_associated_type() {
-    let type_fields = vec![
-        Field::new(
+    let type_fields = vec![Field::new(
+        "Test",
+        Alias::new(
             "Test",
-            Alias::new(
-                "Test",
-                Type::forall(vec![Generic::new("a", Kind::typ())], Type::ident("a")),
-            ),
+            Type::forall(vec![Generic::new("a", Kind::typ())], Type::ident("a")),
         ),
-    ];
+    )];
     let typ: ArcType<&str> = Type::poly_record(type_fields, vec![], Type::ident("r"));
     assert_eq_display!(format!("{}", typ), "{ Test = forall a . a | r }");
 }
@@ -342,6 +330,12 @@ fn break_record() {
 }
 "#
     );
+}
+
+#[test]
+fn tuple() {
+    let typ: ArcType<Symbol> = Type::tuple(&mut Symbols::new(), vec![Type::int(), Type::string()]);
+    assert_eq_display!(format!("{}", typ), "(Int, String)");
 }
 
 pub struct MockEnv;

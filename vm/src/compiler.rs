@@ -369,7 +369,8 @@ impl CompilerEnv for TypeInfos {
         self.id_to_type
             .iter()
             .filter_map(|(_, ref alias)| match **alias.unresolved_type() {
-                Type::Variant(ref row) => row.row_iter()
+                Type::Variant(ref row) => row
+                    .row_iter()
                     .enumerate()
                     .find(|&(_, field)| field.name == *id),
                 _ => None,
@@ -448,7 +449,8 @@ impl<'a> Compiler<'a> {
         self.stack_constructors
             .iter()
             .filter_map(|(_, typ)| match **typ {
-                Type::Variant(ref row) => row.row_iter()
+                Type::Variant(ref row) => row
+                    .row_iter()
                     .enumerate()
                     .find(|&(_, field)| field.name == *id),
                 _ => None,
@@ -510,7 +512,8 @@ impl<'a> Compiler<'a> {
     fn find_tag(&self, typ: &ArcType, constructor: &Symbol) -> Option<VmTag> {
         let x = resolve::remove_aliases_cow(self, typ);
         match **x {
-            Type::Variant(ref row) => row.row_iter()
+            Type::Variant(ref row) => row
+                .row_iter()
                 .enumerate()
                 .find(|&(_, field)| field.name == *constructor)
                 .map(|(tag, _)| tag as VmTag),
@@ -939,7 +942,8 @@ impl<'a> Compiler<'a> {
                                 function.emit(Push(record_index));
                                 function.emit_field(self, &typ, &pattern_field.0.name)?;
 
-                                let field = typ.row_iter()
+                                let field = typ
+                                    .row_iter()
                                     .find(|field| field.name.name_eq(&pattern_field.0.name))
                                     .expect("ICE: Record field does not exist");
                                 let field_name = pattern_field

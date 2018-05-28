@@ -15,11 +15,11 @@ use futures::Future;
 
 use serde::ser::SerializeState;
 
-use gluon::{new_vm, Compiler};
 use gluon::vm::api::{Hole, OpaqueValue};
-use gluon::vm::thread::{RootedThread, RootedValue, Thread, ThreadInternal};
-use gluon::vm::serialization::{DeSeed, SeSeed};
 use gluon::vm::internal::Value;
+use gluon::vm::serialization::{DeSeed, SeSeed};
+use gluon::vm::thread::{RootedThread, RootedValue, Thread, ThreadInternal};
+use gluon::{new_vm, Compiler};
 
 fn serialize_value(value: &Value) {
     let mut buffer = Vec::new();
@@ -159,7 +159,8 @@ fn precompile() {
     let thread2 = new_vm();
     assert_eq!(
         serialize_value(
-            &text.run_expr(&mut Compiler::new(), &*thread2, "test", &text, None)
+            &text
+                .run_expr(&mut Compiler::new(), &*thread2, "test", &text, None)
                 .wait()
                 .unwrap()
                 .value

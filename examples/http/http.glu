@@ -1,13 +1,13 @@
 let prelude = import! std.prelude
 let function = import! std.function
-let io = import! std.io
+let io @ { ? } = import! std.io
+let { (<<), ? } = import! std.function
 let string = import! std.string
 let { Bool } = import! std.bool
-let http_prim = import! http.prim
-let { (==) } = string.eq
 let { Functor, Applicative, Alternative, Monad } = prelude
-let { (<<), id } = import! std.prelude
-let { wrap } = io.applicative
+let { id } = import! std.prelude
+let { flat_map } = import! std.monad
+let { wrap, or, empty, (<|>), (*>) } = import! std.applicative
 
 let {
     Method,
@@ -16,7 +16,8 @@ let {
     StatusCode,
     Response,
     Handler,
-    HttpState } = import! "examples/http_types.glu"
+    HttpState } = import! examples.http.types
+let http_prim = import! http.prim
 
 /// Force the value to be a Handler. Necessary to make the the type inference work for
 /// higher-kinded types
@@ -44,7 +45,6 @@ let applicative : Applicative Handler = {
         flat_map (\f -> functor.map f m) a,
     wrap = \a -> make (\success _ state -> success a state),
 }
-let { (*>) } = prelude
 
 let alternative : Alternative Handler = {
     applicative,
@@ -58,13 +58,11 @@ let alternative : Alternative Handler = {
             make l success failure2 state),
     empty = make (\_ failure state -> failure DontProcess state),
 }
-let { or, empty, (<|>) } = import! std.prelude
 
 let monad : Monad Handler = {
     applicative,
     flat_map,
 }
-let { flat_map } = import! std.prelude
 
 /// Handles the request if `predicate` returns `True
 let test predicate : (Request -> Bool) -> Handler () =
@@ -100,7 +98,7 @@ let get_response_body : Handler ResponseBody =
     make (\success failure state -> success state.response state)
 
 /// Returns `OK` with an empty body
-let empty_response = { status = OK }
+let empty_response = { status = Ok }
 
 /// Converts an `IO` into a `Handler`
 let io_handler action : IO a -> Handler a =
@@ -126,8 +124,8 @@ let catch_error action catch : Handler a -> (String -> Handler a) -> Handler a =
 
 /// Takes a `Handler` and a `Request` tries to process the request
 let handle handler state : Handler Response -> HttpState -> IO Response =
-    let not_found _ _ =
-        wrap { status = NotFound, body = "Page not found" }
+    let not_found _ state : _ -> _ -> IO Response =
+        http_prim.write_response state.response  (string.as_bytes "Page not found") *> wrap { status = NotFound }
     handler (\response _ -> wrap response) not_found state
 
 {

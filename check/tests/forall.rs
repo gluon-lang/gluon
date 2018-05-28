@@ -11,8 +11,8 @@ extern crate gluon_parser as parser;
 use base::ast::{Expr, Pattern, SpannedExpr};
 use base::kind::Kind;
 use base::pos::{BytePos, Span};
-use base::types::{Field, Generic, Type};
 use base::symbol::Symbol;
+use base::types::{Field, Generic, Type};
 
 use support::{alias, intern, typ, MockEnv};
 

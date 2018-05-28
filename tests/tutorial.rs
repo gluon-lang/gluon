@@ -4,11 +4,11 @@ extern crate gluon;
 extern crate gluon_vm;
 
 use gluon::base::types::Type;
-use gluon::vm::api::{FunctionRef, Hole, OpaqueValue};
-use gluon::vm;
-use gluon::{RootedThread, Thread};
 use gluon::import::{add_extern_module, Import};
+use gluon::vm;
+use gluon::vm::api::{FunctionRef, Hole, OpaqueValue};
 use gluon::Compiler;
+use gluon::{RootedThread, Thread};
 
 fn new_vm() -> RootedThread {
     let vm = ::gluon::new_vm();
@@ -26,8 +26,7 @@ fn access_field_through_alias() {
     let _ = ::env_logger::try_init();
     let vm = new_vm();
     Compiler::new()
-        .run_expr_async::<OpaqueValue<&Thread, Hole>>(&vm, "example", r#" import! std.int "#)
-        .sync_or_error()
+        .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "example", r#" import! std.int "#)
         .unwrap();
     let mut add: FunctionRef<fn(i32, i32) -> i32> = vm.get_global("std.int.num.(+)").unwrap();
     let result = add.call(1, 2);
@@ -61,8 +60,7 @@ fn call_rust_from_gluon() {
     "#;
 
     let (result, _) = Compiler::new()
-        .run_expr_async::<i32>(&vm, "factorial", expr)
-        .sync_or_error()
+        .run_expr::<i32>(&vm, "factorial", expr)
         .unwrap();
 
     assert_eq!(result, 120);
@@ -74,13 +72,12 @@ fn use_string_module() {
 
     let vm = new_vm();
     let result = Compiler::new()
-        .run_expr_async::<String>(
+        .run_expr::<String>(
             &vm,
             "example",
             " let string  = import! \"std/string.glu\" in string.trim \"  \
              Hello world  \t\" ",
         )
-        .sync_or_error()
         .unwrap();
     let expected = ("Hello world".to_string(), Type::string());
 

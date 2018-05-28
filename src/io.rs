@@ -6,8 +6,10 @@ use std::sync::Mutex;
 use futures::Future;
 
 use vm::api::generic::{A, B};
-use vm::api::{self, Array, FutureResult, Generic, Getable, OpaqueValue, OwnedFunction,
-              PrimitiveFuture, TypedBytecode, Userdata, VmType, WithVM, IO};
+use vm::api::{
+    self, Array, FutureResult, Generic, Getable, OpaqueValue, OwnedFunction, PrimitiveFuture,
+    TypedBytecode, Userdata, VmType, WithVM, IO,
+};
 use vm::future::FutureValue;
 use vm::gc::{Gc, Traverseable};
 use vm::internal::ValuePrinter;
@@ -174,7 +176,8 @@ fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> PrimitiveFuture<IO<RunE
     let vm = vm.root_thread();
 
     let vm1 = vm.clone();
-    let future = expr.run_expr(&mut Compiler::new().run_io(true), vm1, "<top>", expr, None)
+    let future = expr
+        .run_expr(&mut Compiler::new().run_io(true), vm1, "<top>", expr, None)
         .then(move |run_result| {
             let mut context = vm.context();
             let stack = StackFrame::current(&mut context.stack);
@@ -201,7 +204,8 @@ fn load_script(
     let vm1 = vm.root_thread();
     let vm = vm.root_thread();
     let name = name.to_string();
-    let future = expr.load_script(&mut Compiler::new(), vm1, &name, expr, None)
+    let future = expr
+        .load_script(&mut Compiler::new(), vm1, &name, expr, None)
         .then(move |run_result| {
             let mut context = vm.context();
             let stack = StackFrame::current(&mut context.stack);
@@ -243,6 +247,7 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
     ExternModule::new(
         vm,
         record! {
+            type File => GluonFile,
             flat_map => TypedBytecode::<FlatMap>::new("std.io.prim.flat_map", 3, flat_map),
             wrap => TypedBytecode::<Wrap>::new("std.io.prim.wrap", 2, wrap),
             open_file => primitive!(1 std::io::prim::open_file),

@@ -25,15 +25,15 @@ extern crate gluon_format;
 #[macro_use]
 extern crate gluon_vm;
 
+use std::ffi::OsStr;
 use std::fs;
 use std::io::{self, Write};
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use walkdir::WalkDir;
 use codespan_reporting::termcolor;
 use structopt::StructOpt;
+use walkdir::WalkDir;
 
 use gluon::base;
 use gluon::parser;
@@ -41,9 +41,9 @@ use gluon::vm;
 
 use base::filename_to_module;
 
-use gluon::{new_vm, Compiler, Error, Result, Thread};
 use gluon::vm::thread::ThreadInternal;
 use gluon::vm::Error as VMError;
+use gluon::{new_vm, Compiler, Error, Result, Thread};
 
 mod repl;
 
@@ -93,7 +93,7 @@ impl ::std::str::FromStr for Color {
 }
 
 macro_rules! define_vmtype {
-    ($name: ident) => {
+    ($name:ident) => {
         impl ::gluon::vm::api::VmType for $name {
             type Type = $name;
             fn make_type(vm: &::gluon::Thread) -> ::base::types::ArcType {
@@ -103,8 +103,7 @@ macro_rules! define_vmtype {
                     .into_type()
             }
         }
-
-    }
+    };
 }
 
 define_vmtype! { Color }
@@ -131,8 +130,9 @@ const LONG_VERSION: &str = concat!(crate_version!(), "\n", "commit: ", env!("GIT
 pub struct Opt {
     #[structopt(short = "i", long = "interactive", help = "Starts the repl")]
     interactive: bool,
-    #[structopt(long = "color", default_value = "auto",
-                help = "Coloring: auto, always, always-ansi, never")]
+    #[structopt(
+        long = "color", default_value = "auto", help = "Coloring: auto, always, always-ansi, never"
+    )]
     color: Color,
     #[structopt(name = "FILE", help = "Executes each file as a gluon program")]
     input: Vec<String>,
@@ -169,8 +169,8 @@ fn format(file: &str, file_map: Arc<codespan::FileMap>) -> Result<String> {
 }
 
 fn fmt_file(name: &Path) -> Result<()> {
-    use std::io::Read;
     use std::fs::File;
+    use std::io::Read;
 
     let mut buffer = String::new();
     {
