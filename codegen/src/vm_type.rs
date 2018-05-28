@@ -84,14 +84,8 @@ fn gen_impl(ident: Ident, generics: Generics, gluon_type: &str) -> TokenStream {
             type Type = Self;
 
             fn make_type(vm: &::gluon::vm::thread::Thread) -> ::gluon::base::types::ArcType {
-                let env = <::gluon::vm::thread::Thread as ::gluon::vm::thread::ThreadInternal>::global_env(
-                    vm,
-                ).get_env();
-
-                let info = env.find_type_info(#gluon_type);
-
-                let ty = match info {
-                    Ok(info) => info.into_owned().into_type(),
+                let ty = match vm.find_type_info(#gluon_type) {
+                    Ok(info) => info.into_type(),
                     Err(_) => panic!("Could not find type '{}'. Is the module defining the type loaded?", #gluon_type),
                 };
 
