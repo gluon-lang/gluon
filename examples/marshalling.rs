@@ -1,3 +1,5 @@
+#[macro_use]
+extern crate gluon_codegen;
 extern crate gluon;
 #[macro_use]
 extern crate gluon_vm;
@@ -10,11 +12,11 @@ use std::collections::HashMap;
 
 use gluon::base::types::ArcType;
 
-use gluon::vm;
-use gluon::vm::api::{self, FunctionRef, OpaqueValue};
+use gluon::vm::api::generic::{L, R};
+use gluon::vm::api::{self, FunctionRef, Generic, OpaqueValue, IO};
 use gluon::vm::thread::Context;
-
-use gluon::{new_vm, Compiler, Result, RootedThread, Thread};
+use gluon::vm::{self, ExternModule};
+use gluon::{import, new_vm, Compiler, Result, RootedThread, Thread};
 
 #[derive(Debug, Deserialize, Serialize)]
 enum Enum {
@@ -47,6 +49,14 @@ impl<'vm> api::Getable<'vm> for Enum {
 }
 
 field_decl!{ unwrap_b, value, key }
+
+// we define Either with type parameters, just like in Gluon
+#[derive(Getable, Pushable, VmType)]
+#[gluon(vm_type = "examples.either.Either")]
+enum Either<L, R> {
+    Left(L),
+    Right(R),
+}
 
 fn marshal_enum() -> Result<()> {
     let thread = new_vm();
@@ -142,6 +152,70 @@ where
 
     Ok(())
 }
+
+// the function takes an Either instantiated with the `Generic` struct,
+// which will handle the generic Gluon values for us
+fn flip(either: Either<Generic<L>, Generic<R>>) -> Either<Generic<R>, Generic<L>> {
+    match either {
+        Either::Left(val) => Either::Right(val),
+        Either::Right(val) => Either::Left(val),
+    }
+}
+
+fn marshal_generic() -> Result<()> {
+    let vm = new_vm();
+    let mut compiler = Compiler::new();
+
+    // define the gluon type that maps to the rust Either
+    let src = r#"
+        type Either l r = | Left l | Right r
+        { Either }
+    "#;
+
+    // load the type and then the module containing the rust function
+    fn load_mod(vm: &Thread) -> vm::Result<ExternModule> {
+        let module = record! {
+            flip => primitive!(1 flip),
+        };
+
+        ExternModule::new(vm, module)
+    }
+
+    compiler.load_script(&vm, "examples.either", src).unwrap();
+    import::add_extern_module(&vm, "examples.prim", load_mod);
+
+    let script = r#"
+        let { Either } = import! examples.either
+        let { flip } = import! examples.prim
+        let { (<>) } = import! std.semigroup
+        let io @ { flat_map } = import! std.io
+
+        // Either is defined as:
+        // type Either l r = | Left l | Right r
+        let either: forall r . Either String r = Left "hello rust!"
+
+        // we can pass the generic Either to the Rust function without an issue
+        do _ = 
+            match flip either with
+            | Left _ -> error "unreachable!"
+            | Right val -> io.println ("Right is: " <> val)
+
+        // using an Int instead also works
+        let either: forall r . Either Int r = Left 42
+
+        match flip either with
+        | Left _ -> error "also unreachable!"
+        | Right 42 -> io.println "this is the right answer"
+        | Right _ -> error "wrong answer!"
+    "#;
+
+    compiler
+        .run_io(true)
+        .run_expr::<IO<()>>(&vm, "example", script)?;
+
+    Ok(())
+}
+
 fn main() {
     env_logger::init();
 
@@ -154,6 +228,10 @@ fn main() {
     map.insert("key2".to_string(), "value2".to_string());
 
     if let Err(err) = marshal_map(map) {
+        eprintln!("{}", err)
+    }
+
+    if let Err(err) = marshal_generic() {
         eprintln!("{}", err)
     }
 }

@@ -72,6 +72,7 @@ serde_json = "1.0.0"
 bincode = "1"
 
 gluon_completion = { path = "completion", version = "0.7.1" } # GLUON
+gluon_codegen = { path = "codegen", version = "0.7.1" } # GLUON
 
 [features]
 default = ["regex", "rand"]
