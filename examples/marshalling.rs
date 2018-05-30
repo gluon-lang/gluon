@@ -12,10 +12,13 @@ use std::collections::HashMap;
 
 use gluon::base::types::ArcType;
 
-use gluon::vm::api::generic::{L, R};
-use gluon::vm::api::{self, FunctionRef, Generic, OpaqueValue, IO};
+use gluon::base::types::{AppVec, Type};
+use gluon::vm::api::generic::{A, L, R};
+use gluon::vm::api::{
+    self, FunctionRef, Generic, Getable, OpaqueValue, Pushable, ValueRef, VmType, IO,
+};
 use gluon::vm::thread::Context;
-use gluon::vm::{self, ExternModule};
+use gluon::vm::{self, ExternModule, Variants};
 use gluon::{import, new_vm, Compiler, Result, RootedThread, Thread};
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -216,6 +219,126 @@ fn marshal_generic() -> Result<()> {
     Ok(())
 }
 
+// if this were a foreign type, we would not be able to
+// directly implement traits for it
+#[derive(Debug)]
+struct User<T> {
+    name: String,
+    age: u32,
+    data: T,
+}
+
+// but it's possible to wrap it and manually implement traits for it
+struct GluonUser<T> {
+    inner: User<T>,
+}
+
+impl<T> VmType for GluonUser<T>
+where
+    T: 'static + VmType,
+{
+    type Type = Self;
+
+    fn make_type(vm: &Thread) -> ArcType {
+        // get the type defined in Gluon
+        let ty = vm.find_type_info("examples.wrapper.User")
+            .expect("Could not find type")
+            .into_type();
+
+        // apply all generic parameters to the type
+        let mut vec = AppVec::new();
+        vec.push(T::make_type(vm));
+        Type::app(ty, vec)
+    }
+}
+
+impl<'vm, T> Pushable<'vm> for GluonUser<T>
+where
+    T: Pushable<'vm>,
+{
+    fn push(self, vm: &'vm Thread, ctx: &mut Context) -> vm::Result<()> {
+        // push the fields to the stack in reverse order
+        self.inner.data.push(vm, ctx)?;
+        self.inner.age.push(vm, ctx)?;
+        self.inner.name.push(vm, ctx)?;
+
+        // Pop the values and create a complex type from them,
+        // then push it onto the stack
+        let fields = [ctx.stack.pop(), ctx.stack.pop(), ctx.stack.pop()];
+
+        // the second arg in this case doesn't matter, if this were an enum
+        // it would be the tag of the current variant
+        let val = ctx.new_data(vm, 0, &fields)?;
+        ctx.stack.push(val);
+
+        Ok(())
+    }
+}
+
+impl<'vm, T> Getable<'vm> for GluonUser<T>
+where
+    T: Getable<'vm>,
+{
+    fn from_value(vm: &'vm Thread, data: Variants) -> GluonUser<T> {
+        // get the data, it must be a complex type
+        let data = match data.as_ref() {
+            ValueRef::Data(data) => data,
+            _ => panic!("Value is not a complex type"),
+        };
+
+        GluonUser {
+            inner: User {
+                // lookup the fields by name; in case of a tuple variant we
+                // would use Data::get_variant instead
+                name: String::from_value(vm, data.lookup_field(vm, "name").unwrap()),
+                age: u32::from_value(vm, data.lookup_field(vm, "age").unwrap()),
+                data: T::from_value(vm, data.lookup_field(vm, "data").unwrap()),
+            },
+        }
+    }
+}
+
+fn marshal_wrapper() -> Result<()> {
+    let vm = new_vm();
+    let mut compiler = Compiler::new();
+
+    let src = r#"
+        type User a = { name: String, age: Int, data: a }
+        { User }
+    "#;
+
+    fn load_mod(vm: &Thread) -> vm::Result<ExternModule> {
+        let module = record! {
+            roundtrip => primitive!(1 |user: GluonUser<Generic<A>>| {
+                println!("name: {}, age: {}", user.inner.name, user.inner.age);
+                user
+            }),
+        };
+
+        ExternModule::new(vm, module)
+    }
+
+    compiler.load_script(&vm, "examples.wrapper", src).unwrap();
+    import::add_extern_module(&vm, "examples.prim", load_mod);
+
+    let script = r#"
+        let { User } = import! examples.wrapper
+        let { roundtrip } = import! examples.prim
+        let { assert } = import! std.test
+
+        let actual = { name = "Bob", age = 11, data = True }
+        let expected = roundtrip actual
+
+        assert (actual.name == expected.name)
+        assert (actual.age == expected.age)
+        assert (actual.data == expected.data)
+    "#;
+
+    compiler.run_expr::<()>(&vm, "example", script)?;
+
+    Ok(())
+}
+
 fn main() {
     env_logger::init();
 
@@ -232,6 +355,10 @@ fn main() {
     }
 
     if let Err(err) = marshal_generic() {
+        eprintln!("{}", err)
+    }
+
+    if let Err(err) = marshal_wrapper() {
         eprintln!("{}", err)
     }
 }
