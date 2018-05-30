@@ -12,6 +12,25 @@ use serde::de::{
     SeqAccess, VariantAccess, Visitor,
 };
 
+/// Generates a Gluon expression for a type that is the Gluon equivalent to`T`.
+/// 
+/// ## Examples
+/// 
+/// For this `T`:
+/// 
+/// ```rust
+/// struct Address {
+///     street: String,
+///     city: String,
+/// }
+/// ```
+/// 
+/// the following code will be generated:
+/// 
+/// ```gluon
+/// type Address = { street: String, city: String }
+/// { Address }
+/// ```
 pub fn make_source<T>(thread: &Thread) -> Result<String>
 where
     T: DeserializeOwned,
