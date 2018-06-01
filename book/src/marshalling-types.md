@@ -14,10 +14,12 @@ Gluon provides several traits for safely marshalling types to and from Gluon cod
 
 - [Getable][]: Types that implement `Getable` can be marshalled from Gluon to Rust. This
   means you can use these types anywhere you are receiving values from Gluon, for example
-  as parameters for a function.
+  as parameters for a function implemented on the Rust side or as return type of a Gluon
+  function you want to call from Rust.
 
 - [Pushable][] is the counterpart to `Getable`. It allows implementing types to be marshalled
-  to Gluon. Values of these types can returned from embedded rust functions.
+  to Gluon. Values of these types can returned from embedded Rust functions and be used as
+  parameters to Gluon functions.
 
 - [Userdata][] allows a Rust type to be marshalled as completely opaque type. The Gluon code
   will be able to receive and pass values of this type, but cannot inspect it at all. This is
@@ -55,8 +57,8 @@ lifetime.
 ### Implementing by hand
 
 The following examples will all assume a simple struct `User<T>`, which is defined in a different
-crate. To implement the marshalling traits, we to have create a wrapper and implement the traits
-for it.
+crate (You can find the full code in the [marshalling example][]). To implement the marshalling traits,
+we have to create a wrapper and implement the traits for it.
 
 ```rust,ignore
 // defined by a different crate
@@ -250,3 +252,4 @@ match flip either with
 [Generic]: https://docs.rs/gluon_vm/*/gluon_vm/api/struct.Generic.html
 [generic_mod]: https://docs.rs/gluon_vm/*/gluon_vm/api/generic/index.html
 [gluon_codegen]: https://docs.rs/gluon_codegen/0.7.1/gluon_codegen/
+[marshalling example]: https://github.com/gluon-lang/gluon/blob/master/examples/marshalling.rs
