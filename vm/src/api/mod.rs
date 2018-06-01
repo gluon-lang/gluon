@@ -125,10 +125,29 @@ enum DataInner<'a> {
     Data(&'a DataStruct),
 }
 
+/// Stores values of variants and records.
 #[derive(Copy, Clone, PartialEq, Debug)]
 pub struct Data<'a>(DataInner<'a>);
 
 impl<'a> Data<'a> {
+    /// The tag of this variant. If this value is a variant, the tag is the zero-based 
+    /// index of the variant that is present, in order of the declaration.
+    /// 
+    /// Use this method to find out what variant you are dealing with, before extracting
+    /// data from it.
+    /// 
+    /// ## Examples
+    /// 
+    /// ```gluon
+    /// type OneOfFour =
+    ///     | First
+    ///     | Second
+    ///     | Third
+    ///     | Fourth
+    /// 
+    /// let val = First // has the tag '0'
+    /// let val = Fourth // has the tag '3'
+    /// ```
     pub fn tag(&self) -> VmTag {
         match self.0 {
             DataInner::Tag(tag) => tag,
@@ -136,6 +155,7 @@ impl<'a> Data<'a> {
         }
     }
 
+    /// Returns the number of fields of this value.
     pub fn len(&self) -> usize {
         match self.0 {
             DataInner::Tag(_) => 0,
@@ -143,6 +163,8 @@ impl<'a> Data<'a> {
         }
     }
 
+    /// Retrieves the value of the field at `index`, like `get_variant`, but does
+    /// wrap it in a `Variants` struct.
     pub fn get(&self, index: usize) -> Option<ValueRef<'a>> {
         match self.0 {
             DataInner::Tag(_) => None,
@@ -150,6 +172,7 @@ impl<'a> Data<'a> {
         }
     }
 
+    /// Creates an iterator over the fields of this value.
     pub fn iter(&self) -> ::value::VariantIter {
         let fields = match self.0 {
             DataInner::Tag(_) => &[][..],
@@ -158,6 +181,9 @@ impl<'a> Data<'a> {
         ::value::variant_iter(fields)
     }
 
+    /// Retrieves the value of the field at `index`. This is useful if you cannot
+    /// name the field (like in a variant). If the value is a record, use
+    /// `lookup_field` instead.
     pub fn get_variant(&self, index: usize) -> Option<Variants<'a>> {
         match self.0 {
             DataInner::Tag(_) => None,
@@ -165,7 +191,7 @@ impl<'a> Data<'a> {
         }
     }
 
-    // Retrieves the field `name` from this record
+    /// Retrieves the field `name` from this record.
     pub fn lookup_field(&self, thread: &Thread, name: &str) -> Option<Variants<'a>> {
         match self.0 {
             DataInner::Tag(_) => None,

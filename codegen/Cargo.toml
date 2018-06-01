@@ -1,0 +1,25 @@
+[package]
+name = "gluon_codegen"
+version = "0.7.1" # GLUON
+authors = ["Markus <marwes91@gmail.com>"]
+
+license = "MIT"
+
+description = "Code generation macros for the gluon programming language"
+
+repository = "https://github.com/gluon-lang/gluon"
+documentation = "https://docs.rs/gluon"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = "0.14"
+quote = "0.6"
+proc-macro2 = "0.4"
+
+[dev-dependencies]
+serde = "1.0.0"
+serde_derive = "1.0.0"
+gluon = { version = "0.7.1", path = "..", features = ["serialization"] } # GLUON
+gluon_vm = { version = "0.7.1", path = "../vm" } # GLUON

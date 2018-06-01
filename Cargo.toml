@@ -14,7 +14,7 @@ documentation = "https://docs.rs/gluon"
 readme = "README.md"
 
 [workspace]
-members = ["c-api", "repl", "completion", "format", "doc"]
+members = ["c-api", "repl", "completion", "format", "doc", "codegen"]
 
 [lib]
 
@@ -72,6 +72,7 @@ serde_json = "1.0.0"
 bincode = "1"
 
 gluon_completion = { path = "completion", version = "0.7.1" } # GLUON
+gluon_codegen = { path = "codegen", version = "0.7.1" } # GLUON
 
 [features]
 default = ["regex", "rand"]

@@ -1,3 +1,5 @@
+#[macro_use]
+extern crate gluon_codegen;
 extern crate gluon;
 #[macro_use]
 extern crate gluon_vm;
@@ -10,11 +12,14 @@ use std::collections::HashMap;
 
 use gluon::base::types::ArcType;
 
-use gluon::vm;
-use gluon::vm::api::{self, FunctionRef, OpaqueValue};
+use gluon::base::types::{AppVec, Type};
+use gluon::vm::api::generic::{A, L, R};
+use gluon::vm::api::{
+    self, FunctionRef, Generic, Getable, OpaqueValue, Pushable, ValueRef, VmType, IO,
+};
 use gluon::vm::thread::Context;
-
-use gluon::{new_vm, Compiler, Result, RootedThread, Thread};
+use gluon::vm::{self, ExternModule, Variants};
+use gluon::{import, new_vm, Compiler, Result, RootedThread, Thread};
 
 #[derive(Debug, Deserialize, Serialize)]
 enum Enum {
@@ -47,6 +52,14 @@ impl<'vm> api::Getable<'vm> for Enum {
 }
 
 field_decl!{ unwrap_b, value, key }
+
+// we define Either with type parameters, just like in Gluon
+#[derive(Getable, Pushable, VmType)]
+#[gluon(vm_type = "examples.either.Either")]
+enum Either<L, R> {
+    Left(L),
+    Right(R),
+}
 
 fn marshal_enum() -> Result<()> {
     let thread = new_vm();
@@ -142,6 +155,190 @@ where
 
     Ok(())
 }
+
+// the function takes an Either instantiated with the `Generic` struct,
+// which will handle the generic Gluon values for us
+fn flip(either: Either<Generic<L>, Generic<R>>) -> Either<Generic<R>, Generic<L>> {
+    match either {
+        Either::Left(val) => Either::Right(val),
+        Either::Right(val) => Either::Left(val),
+    }
+}
+
+fn marshal_generic() -> Result<()> {
+    let vm = new_vm();
+    let mut compiler = Compiler::new();
+
+    // define the gluon type that maps to the rust Either
+    let src = r#"
+        type Either l r = | Left l | Right r
+        { Either }
+    "#;
+
+    // load the type and then the module containing the rust function
+    fn load_mod(vm: &Thread) -> vm::Result<ExternModule> {
+        let module = record! {
+            flip => primitive!(1 flip),
+        };
+
+        ExternModule::new(vm, module)
+    }
+
+    compiler.load_script(&vm, "examples.either", src).unwrap();
+    import::add_extern_module(&vm, "examples.prim", load_mod);
+
+    let script = r#"
+        let { Either } = import! examples.either
+        let { flip } = import! examples.prim
+        let { (<>) } = import! std.semigroup
+        let io @ { flat_map } = import! std.io
+
+        // Either is defined as:
+        // type Either l r = | Left l | Right r
+        let either: forall r . Either String r = Left "hello rust!"
+
+        // we can pass the generic Either to the Rust function without an issue
+        do _ = 
+            match flip either with
+            | Left _ -> error "unreachable!"
+            | Right val -> io.println ("Right is: " <> val)
+
+        // using an Int instead also works
+        let either: forall r . Either Int r = Left 42
+
+        match flip either with
+        | Left _ -> error "also unreachable!"
+        | Right 42 -> io.println "this is the right answer"
+        | Right _ -> error "wrong answer!"
+    "#;
+
+    compiler
+        .run_io(true)
+        .run_expr::<IO<()>>(&vm, "example", script)?;
+
+    Ok(())
+}
+
+// if this were a foreign type, we would not be able to
+// directly implement traits for it
+#[derive(Debug)]
+struct User<T> {
+    name: String,
+    age: u32,
+    data: T,
+}
+
+// but it's possible to wrap it and manually implement traits for it
+struct GluonUser<T> {
+    inner: User<T>,
+}
+
+impl<T> VmType for GluonUser<T>
+where
+    T: 'static + VmType,
+{
+    type Type = Self;
+
+    fn make_type(vm: &Thread) -> ArcType {
+        // get the type defined in Gluon
+        let ty = vm.find_type_info("examples.wrapper.User")
+            .expect("Could not find type")
+            .into_type();
+
+        // apply all generic parameters to the type
+        let mut vec = AppVec::new();
+        vec.push(T::make_type(vm));
+        Type::app(ty, vec)
+    }
+}
+
+impl<'vm, T> Pushable<'vm> for GluonUser<T>
+where
+    T: Pushable<'vm>,
+{
+    fn push(self, vm: &'vm Thread, ctx: &mut Context) -> vm::Result<()> {
+        // push the fields to the stack in reverse order
+        self.inner.data.push(vm, ctx)?;
+        self.inner.age.push(vm, ctx)?;
+        self.inner.name.push(vm, ctx)?;
+
+        // Pop the values and create a complex type from them,
+        // then push it onto the stack
+        let fields = [ctx.stack.pop(), ctx.stack.pop(), ctx.stack.pop()];
+
+        // the second arg in this case doesn't matter, if this were an enum
+        // it would be the tag of the current variant
+        let val = ctx.new_data(vm, 0, &fields)?;
+        ctx.stack.push(val);
+
+        Ok(())
+    }
+}
+
+impl<'vm, T> Getable<'vm> for GluonUser<T>
+where
+    T: Getable<'vm>,
+{
+    fn from_value(vm: &'vm Thread, data: Variants) -> GluonUser<T> {
+        // get the data, it must be a complex type
+        let data = match data.as_ref() {
+            ValueRef::Data(data) => data,
+            _ => panic!("Value is not a complex type"),
+        };
+
+        GluonUser {
+            inner: User {
+                // lookup the fields by name; in case of a tuple variant we
+                // would use Data::get_variant instead
+                name: String::from_value(vm, data.lookup_field(vm, "name").unwrap()),
+                age: u32::from_value(vm, data.lookup_field(vm, "age").unwrap()),
+                data: T::from_value(vm, data.lookup_field(vm, "data").unwrap()),
+            },
+        }
+    }
+}
+
+fn marshal_wrapper() -> Result<()> {
+    let vm = new_vm();
+    let mut compiler = Compiler::new();
+
+    let src = r#"
+        type User a = { name: String, age: Int, data: a }
+        { User }
+    "#;
+
+    fn load_mod(vm: &Thread) -> vm::Result<ExternModule> {
+        let module = record! {
+            roundtrip => primitive!(1 |user: GluonUser<Generic<A>>| {
+                println!("name: {}, age: {}", user.inner.name, user.inner.age);
+                user
+            }),
+        };
+
+        ExternModule::new(vm, module)
+    }
+
+    compiler.load_script(&vm, "examples.wrapper", src).unwrap();
+    import::add_extern_module(&vm, "examples.prim", load_mod);
+
+    let script = r#"
+        let { User } = import! examples.wrapper
+        let { roundtrip } = import! examples.prim
+        let { assert } = import! std.test
+
+        let actual = { name = "Bob", age = 11, data = True }
+        let expected = roundtrip actual
+
+        assert (actual.name == expected.name)
+        assert (actual.age == expected.age)
+        assert (actual.data == expected.data)
+    "#;
+
+    compiler.run_expr::<()>(&vm, "example", script)?;
+
+    Ok(())
+}
+
 fn main() {
     env_logger::init();
 
@@ -154,6 +351,14 @@ fn main() {
     map.insert("key2".to_string(), "value2".to_string());
 
     if let Err(err) = marshal_map(map) {
+        eprintln!("{}", err)
+    }
+
+    if let Err(err) = marshal_generic() {
+        eprintln!("{}", err)
+    }
+
+    if let Err(err) = marshal_wrapper() {
         eprintln!("{}", err)
     }
 }
