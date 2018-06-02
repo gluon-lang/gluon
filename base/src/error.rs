@@ -172,7 +172,13 @@ impl<E: fmt::Display> InFile<E> {
     /// Creates a new `InFile` error which states that the error occurred in `file` using the file
     /// contents in `source` to provide a context to the span.
     pub fn new(source: ::codespan::CodeMap, error: Errors<Spanned<E, BytePos>>) -> InFile<E> {
-        InFile { source, error }
+        let err = InFile { source, error };
+        // Verify that the source name can be accessed
+        debug_assert!({
+            err.source_name();
+            true
+        });
+        err
     }
 
     pub fn source_name(&self) -> &::codespan::FileName {

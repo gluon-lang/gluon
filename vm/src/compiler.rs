@@ -705,6 +705,7 @@ impl<'a> Compiler<'a> {
                         Pattern::Constructor(ref id, _) => {
                             let tag = self.find_tag(typ.remove_forall(), &id.name).unwrap_or_else(
                                 || {
+                                    eprintln!("{}", expr);
                                     ice!(
                                         "ICE: Could not find tag for {}::{} when matching on \
                                          expression",

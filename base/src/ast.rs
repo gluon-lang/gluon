@@ -1,4 +1,5 @@
 //! Module containing the types which make up `gluon`'s AST (Abstract Syntax Tree)
+use std::borrow::Cow;
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
@@ -6,6 +7,7 @@ use std::ops::{Deref, DerefMut};
 use metadata::{Comment, Metadata};
 use ordered_float::NotNaN;
 use pos::{self, BytePos, HasSpan, Span, Spanned};
+use resolve::remove_aliases_cow;
 use symbol::Symbol;
 use types::{self, Alias, AliasData, ArcType, ArgType, Generic, Type, TypeEnv};
 
@@ -878,46 +880,18 @@ fn get_return_type(
     alias_type: &ArcType,
     arg_count: usize,
 ) -> Result<ArcType, String> {
-    // We don't want to panic if we attempt to get the return type of a hole so return a type hole
-    // as the return type
     if arg_count == 0 || **alias_type == Type::Hole {
         return Ok(alias_type.clone());
     }
+    let function_type = remove_aliases_cow(env, alias_type);
 
-    let alias_type = alias_type.remove_forall_and_implicit_args();
-    if let Some((_, ret)) = alias_type.as_function() {
-        return get_return_type(env, ret, arg_count - 1);
-    }
+    let ret = function_type
+        .remove_forall_and_implicit_args()
+        .as_function()
+        .map(|t| Cow::Borrowed(t.1))
+        .ok_or_else(|| format!("Unexpected type {} is not a function", alias_type))?;
 
-    let alias = {
-        let alias_ident = alias_type.alias_ident().ok_or_else(|| {
-            format!(
-                "Expected function with {} more arguments, found {:?}",
-                arg_count, alias_type
-            )
-        })?;
-
-        env.find_type_info(alias_ident)
-            .ok_or_else(|| format!("Unexpected type {} is not a function", alias_type))?
-    };
-
-    let typ = types::walk_move_type(alias.typ().into_owned(), &mut |typ| {
-        match **typ {
-            Type::Generic(ref generic) => {
-                // Replace the generic variable with the type from the list
-                // or if it is not found the make a fresh variable
-                alias
-                    .params()
-                    .iter()
-                    .zip(&*alias_type.unapplied_args())
-                    .find(|&(arg, _)| arg.id == generic.id)
-                    .map(|(_, typ)| typ.clone())
-            }
-            _ => None,
-        }
-    });
-
-    get_return_type(env, &typ, arg_count)
+    get_return_type(env, &ret, arg_count - 1)
 }
 
 pub fn is_operator_char(c: char) -> bool {
