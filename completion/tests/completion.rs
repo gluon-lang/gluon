@@ -493,7 +493,7 @@ let { x, y } = { x = 1, y = 2 }
     let (expr, result) = support::typecheck_expr(text);
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    let symbols = completion::all_symbols(&expr);
+    let symbols = completion::all_symbols(expr.span, &expr);
 
     assert_eq!(symbols.len(), 4);
 }

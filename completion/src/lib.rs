@@ -938,45 +938,54 @@ pub enum CompletionSymbol<'a> {
     },
 }
 
-pub fn all_symbols(expr: &SpannedExpr<Symbol>) -> Vec<Spanned<CompletionSymbol, BytePos>> {
+pub fn all_symbols(
+    source_span: Span<BytePos>,
+    expr: &SpannedExpr<Symbol>,
+) -> Vec<Spanned<CompletionSymbol, BytePos>> {
     struct AllIdents<'a> {
+        source_span: Span<BytePos>,
         result: Vec<Spanned<CompletionSymbol<'a>, BytePos>>,
     }
     impl<'a> Visitor<'a> for AllIdents<'a> {
         type Ident = Symbol;
 
         fn visit_expr(&mut self, e: &'a SpannedExpr<Self::Ident>) {
-            match e.value {
-                Expr::TypeBindings(ref binds, _) => {
-                    self.result.extend(binds.iter().map(|bind| {
-                        pos::spanned(
-                            bind.name.span,
-                            CompletionSymbol::Type {
-                                name: &bind.name.value,
-                                alias: &bind.alias.value,
-                            },
-                        )
-                    }));
+            if self.source_span.contains(e.span) {
+                match e.value {
+                    Expr::TypeBindings(ref binds, _) => {
+                        self.result.extend(binds.iter().map(|bind| {
+                            pos::spanned(
+                                bind.name.span,
+                                CompletionSymbol::Type {
+                                    name: &bind.name.value,
+                                    alias: &bind.alias.value,
+                                },
+                            )
+                        }));
+                    }
+                    Expr::LetBindings(ref binds, _) => self.result.extend(binds.iter().flat_map(
+                        |bind| match bind.name.value {
+                            Pattern::Ident(ref id) => Some(pos::spanned(
+                                bind.name.span,
+                                CompletionSymbol::Value {
+                                    name: &id.name,
+                                    typ: &id.typ,
+                                    expr: &bind.expr,
+                                },
+                            )),
+                            _ => None,
+                        },
+                    )),
+                    _ => (),
                 }
-                Expr::LetBindings(ref binds, _) => self.result.extend(binds.iter().flat_map(
-                    |bind| match bind.name.value {
-                        Pattern::Ident(ref id) => Some(pos::spanned(
-                            bind.name.span,
-                            CompletionSymbol::Value {
-                                name: &id.name,
-                                typ: &id.typ,
-                                expr: &bind.expr,
-                            },
-                        )),
-                        _ => None,
-                    },
-                )),
-                _ => (),
             }
             walk_expr(self, e)
         }
     }
-    let mut visitor = AllIdents { result: Vec::new() };
+    let mut visitor = AllIdents {
+        source_span,
+        result: Vec::new(),
+    };
     visitor.visit_expr(expr);
     visitor.result
 }
