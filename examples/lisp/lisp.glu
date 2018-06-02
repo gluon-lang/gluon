@@ -19,7 +19,8 @@ let { Map } = map
 let prim_map @ { ? } = map.make string.ord
 
 let { Expr, Function, Lisp, LispState } = import! "examples/lisp/types.glu"
-let parser = import! "examples/lisp/parser.glu"
+let lisp_parser = import! "examples/lisp/parser.glu"
+let parser = import! std.parser
 
 let eq : Eq Expr =
     let eq_expr l r : Expr -> Expr -> Bool =
@@ -33,7 +34,7 @@ let eq : Eq Expr =
         | _ -> False
     { (==) = eq_expr }
 
-let show : Show Expr =
+let show_expr : Show Expr =
     let spaced show_ xs =
         match xs with
         | Cons y ys -> show_ y <> spaced1 show_ ys
@@ -77,8 +78,6 @@ let applicative_Lisp : Applicative Lisp = {
     wrap = \value -> lisp (\state -> Ok { value, state }),
 }
 
-let { wrap } = applicative_Lisp
-
 let monad_Lisp : Monad Lisp = {
     applicative = applicative_Lisp,
     flat_map = \f m -> lisp (\state ->
@@ -87,6 +86,7 @@ let monad_Lisp : Monad Lisp = {
             | Err err -> Err err),
 }
 
+let { wrap } = import! std.applicative
 let { flat_map, (>>=) } = import! std.monad
 let { fold_m } = import! std.foldable
 let traverse = list.traversable.traverse applicative_Lisp
@@ -132,8 +132,8 @@ let primitive_binop name int_op float_op : _ -> Binop Int -> Binop Float -> Map 
             match l with
             | Int li -> map_lisp Int (fold unpack_int int_op li ys)
             | Float lf -> map_lisp Float (fold unpack_float float_op lf ys)
-            | _ -> fail ("Cant add " <> show.show l)
-        | _ -> fail ("Expected two arguments to binop, got " <> show.show (List xs))
+            | _ -> fail ("Cant add " <> show l)
+        | _ -> fail ("Expected two arguments to binop, got " <> show (List xs))
     primitive name f
 
 let define xs =
@@ -147,7 +147,7 @@ let define xs =
         do closure = get_state
 
         let function = Function {
-                    params = list.functor.map show.show params,
+                    params = list.functor.map show params,
                     vararg = None,
                     body,
                     closure,
@@ -159,7 +159,7 @@ let define xs =
         wrap function
     | _ -> fail "Unexpected parameters to define `define`"
 
-let primitives =
+let primitives : LispState =
     let { (<>) = (++) } = import! std.prelude
     primitive_binop "+" (+) (+) ++ primitive_binop "-" (-) (-) ++ primitive_binop "*" (*) (*)
         ++ primitive_binop "/" (/) (/)
@@ -180,7 +180,7 @@ let apply f xs : Expr -> List Expr -> Lisp Expr =
         scope_state (
             do _ = add_args function.params xs
             eval_exprs function.body)
-    | _ -> fail ("Can\'t call value: " <> show.show f)
+    | _ -> fail ("Can\'t call value: " <> show f)
 
 and eval_lisp expr : Expr -> Lisp Expr =
     match expr with
@@ -206,25 +206,37 @@ and eval_lisp expr : Expr -> Lisp Expr =
                         do evaluated_args = traverse eval_lisp xs
                         apply prim evaluated_args
                     | None -> fail ("Variable `" <> name <> "` does not exist")
-            | _ -> fail ("Cant apply" <> show.show x)
+            | _ -> fail ("Cant apply " <> show x)
         | Nil -> wrap expr
 
 and eval_exprs exprs = fold_m (\_result expr -> eval_lisp expr) (List Nil) exprs
 
-let run_lisp expr env : Lisp a -> Map String Expr -> Result String a =
+let eval_env expr env : Lisp a -> Map String Expr -> Result String a =
     result.functor.map (\r -> r.value) (lisp expr env)
 
-let eval expr : Expr -> Result String Expr = run_lisp (eval_lisp expr) primitives
+let eval expr : Expr -> Result String Expr = eval_env (eval_lisp expr) primitives
 let eval_seq exprs =
     match exprs with
-    | Cons _ _ -> run_lisp (eval_exprs exprs) primitives
+    | Cons _ _ -> eval_env (eval_exprs exprs) primitives
     | Nil -> error "Expected at least one lisp expression"
 
+let eval_string s = parser.parse lisp_parser.expr s >>= eval
+let eval_env_string s env =
+    do e = parser.parse lisp_parser.expr s
+    do l = lisp (eval_lisp e) env
+    wrap (l.value, l.state)
+
 {
+    LispState,
     Expr,
     eq,
-    show,
-    expr = parser.expr,
+    show = show_expr,
+    expr = lisp_parser.expr,
+
+    default_env = primitives,
+
     eval,
     eval_seq,
+    eval_string,
+    eval_env_string,
 }
