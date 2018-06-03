@@ -9,10 +9,13 @@ extern crate gluon_completion as completion;
 extern crate gluon_parser as parser;
 
 use base::ast::Argument;
+use base::kind::{ArcKind, Kind};
 use base::metadata::Metadata;
 use base::metadata::{Comment, CommentType};
 use base::pos::{BytePos, Span};
 use base::types::{ArcType, Field, Type};
+
+use either::Either;
 
 #[allow(unused)]
 mod support;
@@ -28,7 +31,7 @@ where
     }
 }
 
-fn find_span_type(s: &str, pos: BytePos) -> Result<(Span<BytePos>, ArcType), ()> {
+fn find_span_type(s: &str, pos: BytePos) -> Result<(Span<BytePos>, Either<ArcKind, ArcType>), ()> {
     let env = MockEnv::new();
 
     let (expr, result) = support::typecheck_expr(s);
@@ -45,13 +48,17 @@ fn find_all_symbols(s: &str, pos: BytePos) -> Result<(String, Vec<Span<BytePos>>
     completion::find_all_symbols(expr.span, &expr, pos)
 }
 
+fn find_kind(s: &str, pos: BytePos) -> Result<ArcKind, ()> {
+    find_span_type(s, pos).map(|t| t.1.left().expect("Kind"))
+}
+
 fn find_type(s: &str, pos: BytePos) -> Result<ArcType, ()> {
-    find_span_type(s, pos).map(|t| t.1)
+    find_span_type(s, pos).map(|t| t.1.right().expect("Type"))
 }
 
 fn find_type_loc(s: &str, line: usize, column: usize) -> Result<ArcType, ()> {
     let pos = loc(s, line, column);
-    find_span_type(s, pos).map(|t| t.1)
+    find_span_type(s, pos).map(|t| t.1.right().expect("Type"))
 }
 
 fn get_metadata(s: &str, pos: BytePos) -> Option<Metadata> {
@@ -81,19 +88,19 @@ fn identifier() {
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     let result = completion::find(&env, expr.span, &expr, BytePos::from(15));
-    let expected = Ok(typ("Int"));
+    let expected = Ok(Either::Right(typ("Int")));
     assert_eq!(result, expected);
 
     let result = completion::find(&env, expr.span, &expr, BytePos::from(16));
-    let expected = Ok(typ("Int"));
+    let expected = Ok(Either::Right(typ("Int")));
     assert_eq!(result, expected);
 
     let result = completion::find(&env, expr.span, &expr, BytePos::from(17));
-    let expected = Ok(typ("Int"));
+    let expected = Ok(Either::Right(typ("Int")));
     assert_eq!(result, expected);
 
     let result = completion::find(&env, expr.span, &expr, BytePos::from(18));
-    let expected = Ok(typ("Int"));
+    let expected = Ok(Either::Right(typ("Int")));
     assert_eq!(result, expected);
 }
 
@@ -168,15 +175,18 @@ let (++) l r =
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     let result = completion::find(&env, expr.span, &expr, loc(text, 5, 3));
-    let expected = Ok(Type::function(vec![typ("Int"), typ("Float")], typ("Int")));
+    let expected = Ok(Either::Right(Type::function(
+        vec![typ("Int"), typ("Float")],
+        typ("Int"),
+    )));
     assert_eq!(result, expected);
 
     let result = completion::find(&env, expr.span, &expr, loc(text, 5, 1));
-    let expected = Ok(typ("Int"));
+    let expected = Ok(Either::Right(typ("Int")));
     assert_eq!(result, expected);
 
     let result = completion::find(&env, expr.span, &expr, loc(text, 5, 7));
-    let expected = Ok(typ("Float"));
+    let expected = Ok(Either::Right(typ("Float")));
     assert_eq!(result, expected);
 }
 
@@ -195,14 +205,14 @@ r.x
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     let result = completion::find(&typ_env, expr.span, &expr, BytePos::from(19));
-    let expected = Ok(Type::record(
+    let expected = Ok(Either::Right(Type::record(
         vec![],
         vec![Field::new(intern("x"), typ("Int"))],
-    ));
-    assert_eq!(result.map(support::close_record), expected);
+    )));
+    assert_eq!(result.map(|x| x.map_right(support::close_record)), expected);
 
     let result = completion::find(&typ_env, expr.span, &expr, BytePos::from(22));
-    let expected = Ok(typ("Int"));
+    let expected = Ok(Either::Right(typ("Int")));
     assert_eq!(result, expected);
 }
 
@@ -244,13 +254,16 @@ let id x = x
     let extract = (completion::SpanAt, completion::TypeAt { env: &env });
 
     let result = completion::completion(extract, expr.span, &expr, loc(text, 2, 0));
-    let expected = Ok((Span::new(loc(text, 2, 0), loc(text, 2, 6)), Type::int()));
+    let expected = Ok((
+        Span::new(loc(text, 2, 0), loc(text, 2, 6)),
+        Either::Right(Type::int()),
+    ));
     assert_eq!(result, expected);
 
     let result = completion::completion(extract, expr.span, &expr, loc(text, 2, 2));
     let expected = Ok((
         Span::new(loc(text, 2, 1), loc(text, 2, 3)),
-        Type::function(vec![Type::int()], Type::int()),
+        Either::Right(Type::function(vec![Type::int()], Type::int())),
     ));
     assert_eq!(result, expected);
 }
@@ -267,13 +280,13 @@ x
     let result = find_span_type(text, loc(text, 1, 5));
     let expected = Ok((
         Span::new(loc(text, 1, 4), loc(text, 1, 9)),
-        Type::record(
+        Either::Right(Type::record(
             vec![],
             vec![Field {
                 name: intern("x"),
                 typ: Type::int(),
             }],
-        ),
+        )),
     ));
     assert_eq!(result, expected);
 }
@@ -501,4 +514,65 @@ let { x, y } = { x = 1, y = 2 }
     let symbols = completion::all_symbols(expr.span, &expr);
 
     assert_eq!(symbols.len(), 4);
+}
+
+#[test]
+fn completion_on_type() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+type Test a = | Test a
+let x : Test Int = Test 1
+1.0
+"#;
+    let result = find_kind(text, loc(text, 2, 11));
+    let expected = Ok(Kind::function(Kind::typ(), Kind::typ()));
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn completion_on_builtin_type() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+type Test a = | Test a
+let x : Test Int = Test 1
+1.0
+"#;
+    let result = find_kind(text, loc(text, 2, 15));
+    let expected = Ok(Kind::typ());
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn completion_on_declared_type() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+type Test a = | Test a
+let x : Test Int = Test 1
+1.0
+"#;
+    let result = find_kind(text, loc(text, 1, 7));
+    let expected = Ok(Kind::function(Kind::typ(), Kind::typ()));
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+// TODO Implement
+#[ignore]
+fn completion_on_function_type() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+let f x : Int -> Int = x
+1.0
+"#;
+    let result = find_kind(text, loc(text, 1, 15));
+    let expected = Ok(Kind::typ());
+
+    assert_eq!(result, expected);
 }

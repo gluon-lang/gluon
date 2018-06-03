@@ -51,7 +51,7 @@ pub enum Match<'a> {
     Expr(&'a SpannedExpr<Symbol>),
     Pattern(&'a SpannedPattern<Symbol>),
     Ident(Span<BytePos>, &'a Symbol, ArcType),
-    Type(Span<BytePos>, &'a Symbol, ArcKind),
+    Type(Span<BytePos>, &'a SymbolRef, ArcKind),
 }
 
 impl<'a> Match<'a> {
@@ -587,7 +587,7 @@ where
                                 self.found = MatchState::Found(Match::Type(
                                     bind.name.span,
                                     &bind.alias.value.name,
-                                    bind.alias.value.unresolved_type().kind().into_owned(),
+                                    bind.alias.value.kind().into_owned(),
                                 ));
                             } else {
                                 for param in bind.alias.value.params() {
@@ -687,6 +687,14 @@ where
                 self.found = MatchState::Found(Match::Type(typ.span(), id, Kind::hole()));
             }
 
+            Type::Builtin(ref builtin) => {
+                self.found = MatchState::Found(Match::Type(
+                    typ.span(),
+                    builtin.symbol(),
+                    typ.kind().into_owned(),
+                ));
+            }
+
             Type::Generic(ref gen) => {
                 self.found = MatchState::Found(Match::Type(typ.span(), &gen.id, gen.kind.clone()));
             }
@@ -761,7 +769,7 @@ pub struct TypeAt<'a> {
     pub env: &'a TypeEnv,
 }
 impl<'a> Extract for TypeAt<'a> {
-    type Output = ArcType;
+    type Output = Either<ArcKind, ArcType>;
     fn extract(self, found: &Found) -> Result<Self::Output, ()> {
         match found.match_ {
             Some(ref match_) => self.match_extract(match_),
@@ -771,10 +779,10 @@ impl<'a> Extract for TypeAt<'a> {
 
     fn match_extract(self, found: &Match) -> Result<Self::Output, ()> {
         Ok(match *found {
-            Match::Expr(expr) => expr.env_type_of(self.env),
-            Match::Ident(_, _, ref typ) => typ.clone(),
-            Match::Type(..) => return Err(()),
-            Match::Pattern(pattern) => pattern.env_type_of(self.env),
+            Match::Expr(expr) => Either::Right(expr.env_type_of(self.env)),
+            Match::Ident(_, _, ref typ) => Either::Right(typ.clone()),
+            Match::Type(_, _, ref kind) => Either::Left(kind.clone()),
+            Match::Pattern(pattern) => Either::Right(pattern.env_type_of(self.env)),
         })
     }
 }
@@ -872,7 +880,7 @@ pub fn find<T>(
     source_span: Span<BytePos>,
     expr: &SpannedExpr<Symbol>,
     pos: BytePos,
-) -> Result<ArcType, ()>
+) -> Result<Either<ArcKind, ArcType>, ()>
 where
     T: TypeEnv,
 {

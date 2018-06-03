@@ -1586,12 +1586,13 @@ impl<'a> Typecheck<'a> {
         for component in id.name().module().components() {
             let symbol = self.symbols.symbol(component);
             lookup_type = match lookup_type {
-                Some(typ) => Some(self
-                    .remove_aliases(typ.clone())
-                    .row_iter()
-                    .find(|field| field.name.name_eq(&symbol))
-                    .map(|field| field.typ.clone())
-                    .ok_or_else(|| TypeError::UndefinedField(typ, symbol))?),
+                Some(typ) => Some(
+                    self.remove_aliases(typ.clone())
+                        .row_iter()
+                        .find(|field| field.name.name_eq(&symbol))
+                        .map(|field| field.typ.clone())
+                        .ok_or_else(|| TypeError::UndefinedField(typ, symbol))?,
+                ),
                 None => Some(self.find(&symbol)?),
             };
         }
@@ -1612,6 +1613,12 @@ impl<'a> Typecheck<'a> {
         use base::pos::HasSpan;
 
         match **ast_type {
+            Type::Alias(ref alias) if alias.name.name().module().as_str() != "" => {
+                match self.translate_projected_type(&alias.name) {
+                    Ok(typ) => typ,
+                    Err(err) => self.error(ast_type.span(), err),
+                }
+            }
             Type::Ident(ref id) if id.name().module().as_str() != "" => {
                 match self.translate_projected_type(id) {
                     Ok(typ) => typ,
