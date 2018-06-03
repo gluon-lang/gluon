@@ -277,7 +277,7 @@ where
                         };
                         let mut type_doc = types::pretty_print(self, typ);
                         match **typ {
-                            Type::Record(_) => (),
+                            Type::Record(_) | Type::Variant(_) => (),
                             _ => type_doc = type_doc.nest(INDENT),
                         }
                         chain![arena;
@@ -302,10 +302,21 @@ where
                                     arena.space()
                                 ]
                             })).group(),
-                            chain![arena;
-                                "= ",
-                                type_doc
-                            ].group()
+                            match **typ {
+                                Type::Variant(_) => {
+                                    chain![arena;
+                                        "=",
+                                        arena.newline(),
+                                        type_doc
+                                    ].nest(INDENT)
+                                }
+                                _ => {
+                                    chain![arena;
+                                        "= ",
+                                        type_doc
+                                    ].group()
+                                }
+                            }
                         ].group()
                     }).interleave(newlines_iter!(self, binds.iter().map(|bind| bind.span())))),
                     self.pretty_expr_(binds.last().unwrap().alias.span.end(), body)

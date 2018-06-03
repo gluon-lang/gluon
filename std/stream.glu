@@ -4,7 +4,9 @@ let { Bool } = import! std.bool
 let { Option } = import! std.option
 let { lazy, force } = import! std.lazy
 
-type Stream_ a = | Value a (Stream a) | Empty
+type Stream_ a =
+    | Value a (Stream a)
+    | Empty
 and Stream a = Lazy (Stream_ a)
 
 let from f : (Int -> Option a) -> Stream a =

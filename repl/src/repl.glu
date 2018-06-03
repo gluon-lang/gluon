@@ -56,7 +56,9 @@ let run_file cpu_pool filename : CpuPool -> String -> IO () =
     | Ok _ -> io.println ""
     | Err x -> io.println x
 
-type ReplAction = | Continue | Quit
+type ReplAction =
+    | Continue
+    | Quit
 type Cmd = { name : String, alias : String, info : String, action : String -> IO ReplAction }
 type Commands = Map String Cmd
 

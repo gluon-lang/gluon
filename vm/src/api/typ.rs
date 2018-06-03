@@ -41,7 +41,8 @@ where
 type {0} = {1}
 {{ {0} }}
 "#,
-        name, typ
+        name,
+        typ.pretty(&::pretty::Arena::new()).nest(4).1.pretty(80)
     ))
 }
 

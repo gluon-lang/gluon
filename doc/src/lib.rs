@@ -30,7 +30,7 @@ use handlebars::{Handlebars, Helper, Output, RenderContext, RenderError};
 
 use serde::Deserialize;
 
-use pretty::Arena;
+use pretty::{Arena, DocAllocator};
 
 use gluon::base::filename_to_module;
 use gluon::base::metadata::Metadata;
@@ -73,11 +73,12 @@ fn print_type(typ: &ArcType) -> String {
     let mut doc = typ.pretty(&arena);
     match **typ {
         Type::Record(_) => (),
+        Type::Variant(_) => doc = arena.newline().append(doc).nest(4),
         _ => {
             doc = doc.nest(4);
         }
     }
-    doc.nest(4).1.pretty(80).to_string()
+    doc.group().1.pretty(80).to_string()
 }
 
 pub fn record(typ: &ArcType, meta: &Metadata) -> Record {

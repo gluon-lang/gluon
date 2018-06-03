@@ -7,7 +7,9 @@ let { flip, const } = import! std.function
 let list @ { List } = import! std.list
 let { Option } = import! std.option
 
-type Map k a = | Bin k a (Map k a) (Map k a) | Tip
+type Map k a =
+    | Bin k a (Map k a) (Map k a)
+    | Tip
 
 let empty = Tip
 

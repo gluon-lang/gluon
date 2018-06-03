@@ -11,7 +11,9 @@ let { (<*>), wrap } = import! std.applicative
 let { (<|>) } = import! std.applicative
 
 /// A linked list type
-type List a = | Nil | Cons a (List a)
+type List a =
+    | Nil
+    | Cons a (List a)
 
 /// Constructs a list from an array. Useful to emulate list literals
 ///
@@ -147,7 +149,7 @@ let scan compare xs less equal greater : (a -> Ordering)
         -> List a
         -> List a
         -> List a
-        -> { _0 : List a, _1 : List a, _2 : List a } =
+        -> (List a, List a, List a) =
     match xs with
     | Nil -> (less, equal, greater)
     | Cons y ys ->

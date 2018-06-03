@@ -1768,24 +1768,29 @@ where
             },
             Type::Variant(ref row) => {
                 let mut first = true;
-                let mut doc = arena.nil();
 
-                match **row {
-                    Type::EmptyRow => (),
-                    Type::ExtendRow { ref fields, .. } => for field in fields.iter() {
-                        if !first {
-                            doc = doc.append(arena.space());
-                        }
-                        first = false;
-                        doc = doc.append("| ").append(field.name.as_ref());
-                        for arg in arg_iter(&field.typ) {
-                            doc = chain![arena;
-                                doc,
-                                " ",
-                                dt(Prec::Constructor, arg).pretty(printer)
-                            ];
-                        }
-                    },
+                let doc = match **row {
+                    Type::EmptyRow => arena.nil(),
+                    Type::ExtendRow { ref fields, .. } => {
+                        arena.concat(fields.iter().map(|field| {
+                            chain![arena;
+                                if first {
+                                    first = false;
+                                    arena.nil()
+                                } else {
+                                    arena.newline()
+                                },
+                                "| ",
+                                field.name.as_ref(),
+                                arena.concat(arg_iter(&field.typ).map(|arg| {
+                                    chain![arena;
+                                        " ",
+                                        dt(Prec::Constructor, arg).pretty(printer)
+                                    ]
+                                }))
+                            ].group()
+                        }))
+                    }
                     _ => ice!("Unexpected type in variant"),
                 };
 
