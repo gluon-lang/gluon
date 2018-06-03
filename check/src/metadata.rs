@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use base::ast::Visitor;
 use base::ast::{
-    self, AstType, Commented, Expr, Pattern, SpannedExpr, SpannedPattern, ValueBinding,
+    self, Argument, AstType, Commented, Expr, Pattern, SpannedExpr, SpannedPattern, ValueBinding,
 };
 use base::fnv::FnvMap;
 use base::metadata::{Metadata, MetadataEnv};
@@ -32,7 +32,15 @@ pub fn metadata(
                     self.new_pattern(metadata, &bind.name);
                 }
                 Pattern::Ident(ref id) => {
-                    let metadata = bind.metadata.clone().merge(metadata);
+                    let mut metadata = bind.metadata.clone().merge(metadata);
+                    metadata.args = bind
+                        .args
+                        .iter()
+                        .map(|arg| Argument {
+                            name: arg.name.value.name.clone(),
+                            arg_type: arg.arg_type,
+                        })
+                        .collect();
                     self.stack_var(id.name.clone(), metadata);
                 }
                 Pattern::Constructor(..)

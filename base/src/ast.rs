@@ -237,7 +237,7 @@ pub struct Array<Id> {
 #[derive(Clone, PartialEq, Debug)]
 pub struct Lambda<Id> {
     pub id: TypedIdent<Id>,
-    pub args: Vec<Argument<Id>>,
+    pub args: Vec<Argument<SpannedIdent<Id>>>,
     pub body: Box<SpannedExpr<Id>>,
 }
 
@@ -342,21 +342,22 @@ impl<Id> TypeBinding<Id> {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
+#[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub struct Argument<Id> {
     pub arg_type: ArgType,
-    pub name: SpannedIdent<Id>,
+    pub name: Id,
 }
 
 impl<Id> Argument<Id> {
-    pub fn explicit(name: SpannedIdent<Id>) -> Self {
+    pub fn explicit(name: Id) -> Self {
         Argument {
             arg_type: ArgType::Explicit,
             name,
         }
     }
 
-    pub fn implicit(name: SpannedIdent<Id>) -> Self {
+    pub fn implicit(name: Id) -> Self {
         Argument {
             arg_type: ArgType::Implicit,
             name,
@@ -370,7 +371,7 @@ pub struct ValueBinding<Id> {
     pub name: SpannedPattern<Id>,
     pub typ: Option<AstType<Id>>,
     pub resolved_type: ArcType<Id>,
-    pub args: Vec<Argument<Id>>,
+    pub args: Vec<Argument<SpannedIdent<Id>>>,
     pub expr: SpannedExpr<Id>,
 }
 

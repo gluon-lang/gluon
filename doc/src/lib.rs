@@ -9,6 +9,7 @@ extern crate serde_derive;
 extern crate serde_json;
 #[macro_use]
 extern crate structopt;
+extern crate pretty;
 extern crate walkdir;
 
 #[macro_use]
@@ -28,9 +29,11 @@ use handlebars::{Handlebars, Helper, Output, RenderContext, RenderError};
 
 use serde::Deserialize;
 
+use pretty::Arena;
+
 use gluon::base::filename_to_module;
 use gluon::base::metadata::Metadata;
-use gluon::base::types::ArcType;
+use gluon::base::types::{ArcType, ArgType, Type};
 use gluon::check::metadata::metadata;
 use gluon::{Compiler, Thread};
 
@@ -50,11 +53,30 @@ pub struct Record {
 }
 
 #[derive(Serialize, PartialEq, Debug)]
+pub struct Argument {
+    pub implicit: bool,
+    pub name: String,
+}
+
+#[derive(Serialize, PartialEq, Debug)]
 pub struct Field {
     pub name: String,
+    pub args: Vec<Argument>,
     #[serde(rename = "type")]
     pub typ: String,
     pub comment: String,
+}
+
+fn print_type(typ: &ArcType) -> String {
+    let arena = Arena::new();
+    let mut doc = typ.pretty(&arena);
+    match **typ {
+        Type::Record(_) => (),
+        _ => {
+            doc = doc.nest(4);
+        }
+    }
+    doc.nest(4).1.pretty(80).to_string()
 }
 
 pub fn record(typ: &ArcType, meta: &Metadata) -> Record {
@@ -63,7 +85,16 @@ pub fn record(typ: &ArcType, meta: &Metadata) -> Record {
             .type_field_iter()
             .map(|field| Field {
                 name: field.name.definition_name().to_string(),
-                typ: field.typ.unresolved_type().to_string(),
+                args: field
+                    .typ
+                    .params()
+                    .iter()
+                    .map(|gen| Argument {
+                        implicit: false,
+                        name: gen.id.to_string(),
+                    })
+                    .collect(),
+                typ: print_type(&field.typ.unresolved_type().remove_forall()),
                 comment: meta
                     .module
                     .get(AsRef::<str>::as_ref(&field.name))
@@ -75,16 +106,28 @@ pub fn record(typ: &ArcType, meta: &Metadata) -> Record {
 
         values: typ
             .row_iter()
-            .map(|field| Field {
-                name: field.name.definition_name().to_string(),
-                typ: field.typ.to_string(),
+            .map(|field| {
+                let meta_opt = meta.module.get(AsRef::<str>::as_ref(&field.name));
+                Field {
+                    name: field.name.definition_name().to_string(),
+                    args: meta_opt
+                        .map(|meta| {
+                            meta.args
+                                .iter()
+                                .map(|arg| Argument {
+                                    implicit: arg.arg_type == ArgType::Implicit,
+                                    name: arg.name.definition_name().to_string(),
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                    typ: print_type(&field.typ),
 
-                comment: meta
-                    .module
-                    .get(AsRef::<str>::as_ref(&field.name))
-                    .and_then(|meta| meta.comment.as_ref().map(|s| &s.content[..]))
-                    .unwrap_or("")
-                    .to_string(),
+                    comment: meta_opt
+                        .and_then(|meta| meta.comment.as_ref().map(|s| &s.content[..]))
+                        .unwrap_or("")
+                        .to_string(),
+                }
             })
             .collect(),
     }

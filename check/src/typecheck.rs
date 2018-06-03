@@ -1265,7 +1265,7 @@ impl<'a> Typecheck<'a> {
         &mut self,
         mut function_type: ArcType,
         before_args_pos: BytePos,
-        args: &mut Vec<Argument<Symbol>>,
+        args: &mut Vec<Argument<SpannedIdent<Symbol>>>,
         body: &mut SpannedExpr<Symbol>,
     ) -> ArcType {
         self.enter_scope();

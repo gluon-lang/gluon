@@ -466,7 +466,7 @@ FieldExpr: FieldExpr<Id> = {
     },
 };
 
-ValueArgument: Argument<Id> = {
+ValueArgument: Argument<SpannedIdent<Id>> = {
     <arg_type: "?"?> <name: SpannedIdent> => {
         Argument {
             arg_type: if arg_type.is_some() {
@@ -580,7 +580,7 @@ AppExpr = {
 };
 
 
-LambdaArgument: Argument<Id> = {
+LambdaArgument: Argument<SpannedIdent<Id>> = {
     <name: SpannedIdent> => {
         Argument::explicit(name)
     }

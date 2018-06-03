@@ -12,6 +12,7 @@ handlebars = "=1.0.0-beta.1"
 clap = "2.22.0"
 itertools = "0.7"
 structopt = "0.2"
+pretty = "0.3"
 
 serde = "1.0.0"
 serde_derive = "1.0.0"

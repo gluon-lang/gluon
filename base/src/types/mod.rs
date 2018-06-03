@@ -1239,6 +1239,10 @@ impl<Id> ArcType<Id> {
     {
         top(self).pretty(&Printer::new(arena, &()))
     }
+
+    pub fn display(&self, width: usize) -> TypeFormatter<Id, Self> {
+        TypeFormatter::new(self).width(width)
+    }
 }
 
 pub struct ForallScopeIter<'a, Id: 'a> {

@@ -30,6 +30,7 @@ let test x = x
             types: Vec::new(),
             values: vec![doc::Field {
                 name: "test".to_string(),
+                args: vec!["x".to_string()],
                 typ: "forall a . a -> a".to_string(),
                 comment: "This is the test function".to_string(),
             }],
