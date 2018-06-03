@@ -339,27 +339,39 @@ where
             Variant::Expr(e) => e.span,
         });
 
-        match sel.unwrap() {
-            Variant::Pattern(pattern) => self.visit_pattern(pattern),
-            Variant::Ident(ident) => {
-                self.found = MatchState::Found(Match::Ident(
-                    ident.span,
-                    &ident.value.name,
-                    ident.value.typ.clone(),
-                ));
-            }
-            Variant::FieldIdent(ident, record_type) => {
-                let typ =
-                    resolve::remove_aliases(&::base::ast::EmptyEnv::default(), record_type.clone())
-                        .row_iter()
-                        .find(|field| field.name.name_eq(&ident.value))
-                        .map(|field| field.typ.clone())
-                        .unwrap_or_else(|| Type::hole());
+        match sel {
+            Some(sel) => match sel {
+                Variant::Pattern(pattern) => self.visit_pattern(pattern),
+                Variant::Ident(ident) => {
+                    if ident.span.containment(self.pos) == Ordering::Equal {
+                        self.found = MatchState::Found(Match::Ident(
+                            ident.span,
+                            &ident.value.name,
+                            ident.value.typ.clone(),
+                        ));
+                    } else {
+                        self.found = MatchState::Empty;
+                    }
+                }
+                Variant::FieldIdent(ident, record_type) => {
+                    if ident.span.containment(self.pos) == Ordering::Equal {
+                        let typ = resolve::remove_aliases(
+                            &::base::ast::EmptyEnv::default(),
+                            record_type.clone(),
+                        ).row_iter()
+                            .find(|field| field.name.name_eq(&ident.value))
+                            .map(|field| field.typ.clone())
+                            .unwrap_or_else(|| Type::hole());
 
-                self.found = MatchState::Found(Match::Ident(ident.span, &ident.value, typ));
-            }
-            Variant::Type(t) => self.visit_ast_type(t),
-            Variant::Expr(expr) => self.visit_expr(expr),
+                        self.found = MatchState::Found(Match::Ident(ident.span, &ident.value, typ));
+                    } else {
+                        self.found = MatchState::Empty;
+                    }
+                }
+                Variant::Type(t) => self.visit_ast_type(t),
+                Variant::Expr(expr) => self.visit_expr(expr),
+            },
+            None => self.found = MatchState::Empty,
         }
     }
 

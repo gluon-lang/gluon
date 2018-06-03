@@ -733,3 +733,39 @@ let xyz = 2
 
     assert_eq!(result, expected);
 }
+
+#[test]
+fn suggest_record_field_on_nothing() {
+    let _ = env_logger::try_init();
+
+    let result = suggest_loc(
+        r#"
+let abc = 1
+
+{  }
+"#,
+        3,
+        2,
+    );
+    let expected = Ok(vec!["abc".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_record_field_on_nothing_with_fields() {
+    let _ = env_logger::try_init();
+
+    let result = suggest_loc(
+        r#"
+let abc = 1
+
+{ b,  }
+"#,
+        3,
+        4,
+    );
+    let expected = Ok(vec!["abc".into()]);
+
+    assert_eq!(result, expected);
+}
