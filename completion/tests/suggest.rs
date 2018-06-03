@@ -721,11 +721,12 @@ fn suggest_record_field_shorthand() {
         r#"
 let abc = 1
 let abb = "asd"
+let aba = ""
 let xyz = 2
 
-{ a }
+{ a, aba }
 "#,
-        5,
+        6,
         3,
     );
     let expected = Ok(vec!["abb".into(), "abc".into()]);
