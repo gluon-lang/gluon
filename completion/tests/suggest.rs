@@ -712,3 +712,23 @@ match Abc 1 with
     let expected = ["Abc".to_string()];
     assert_eq!(result, expected);
 }
+
+#[test]
+fn suggest_record_field_shorthand() {
+    let _ = env_logger::try_init();
+
+    let result = suggest_loc(
+        r#"
+let abc = 1
+let abb = "asd"
+let xyz = 2
+
+{ a }
+"#,
+        5,
+        3,
+    );
+    let expected = Ok(vec!["abb".into(), "abc".into()]);
+
+    assert_eq!(result, expected);
+}

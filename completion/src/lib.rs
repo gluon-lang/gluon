@@ -1171,7 +1171,18 @@ impl SuggestionQuery {
                         Expr::Ident(ref id) if id.name.is_global() => {
                             self.suggest_module_import(env, &id.name.as_ref()[1..], &mut result);
                         }
-                        _ => (),
+                        _ => result.extend(
+                            suggest
+                                .stack
+                                .iter()
+                                .filter(move |&(k, _)| {
+                                    self.filter(k.declared_name(), ident.declared_name())
+                                })
+                                .map(|(k, typ)| Suggestion {
+                                    name: k.declared_name().into(),
+                                    typ: Either::Right(typ.clone()),
+                                }),
+                        ),
                     },
                     Match::Pattern(&Spanned {
                         value:
