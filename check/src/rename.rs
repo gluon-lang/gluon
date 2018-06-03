@@ -158,7 +158,7 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
                         self.env.stack.exit_scope();
                     }
                 }
-                Expr::LetBindings(ref mut bindings, ref mut expr) => {
+                Expr::LetBindings(ref mut bindings, _) => {
                     self.env.stack.enter_scope();
                     let is_recursive = bindings.iter().all(|bind| !bind.args.is_empty());
                     for bind in bindings.iter_mut() {
@@ -175,7 +175,7 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
                             self.env.stack.enter_scope();
                             for arg in &mut bind.args {
                                 arg.name.value.name =
-                                    self.stack_var(arg.name.value.name.clone(), expr.span);
+                                    self.stack_var(arg.name.value.name.clone(), arg.name.span);
                             }
                             self.visit_expr(&mut bind.expr);
                             self.env.stack.exit_scope();

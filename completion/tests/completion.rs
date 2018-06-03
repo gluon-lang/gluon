@@ -8,6 +8,7 @@ extern crate gluon_check as check;
 extern crate gluon_completion as completion;
 extern crate gluon_parser as parser;
 
+use base::ast::Argument;
 use base::metadata::Metadata;
 use base::metadata::{Comment, CommentType};
 use base::pos::{BytePos, Span};
@@ -383,6 +384,10 @@ let (+++) x y = 1
 
     let expected = Some(Metadata {
         comment: Some(line_comment("test".to_string())),
+        args: ["x:21", "y:23"]
+            .iter()
+            .map(|arg| Argument::explicit(intern(arg)))
+            .collect(),
         ..Metadata::default()
     });
     assert_eq!(result, expected);

@@ -10,6 +10,7 @@ extern crate serde_json;
 #[macro_use]
 extern crate structopt;
 extern crate pretty;
+extern crate pulldown_cmark;
 extern crate walkdir;
 
 #[macro_use]
@@ -226,6 +227,23 @@ fn handlebars() -> Result<Handlebars> {
         Ok(())
     }
     reg.register_helper("style", Box::new(style));
+
+    fn markdown(
+        h: &Helper,
+        _: &Handlebars,
+        _: &mut RenderContext,
+        out: &mut Output,
+    ) -> ::std::result::Result<(), RenderError> {
+        let param = String::deserialize(h.param(0).unwrap().value())?;
+
+        let parser = pulldown_cmark::Parser::new(&param);
+        let mut buf = String::new();
+        pulldown_cmark::html::push_html(&mut buf, parser);
+        out.write(&buf)?;
+
+        Ok(())
+    }
+    reg.register_helper("markdown", Box::new(markdown));
 
     Ok(reg)
 }

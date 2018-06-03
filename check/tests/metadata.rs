@@ -6,7 +6,7 @@ extern crate gluon_base as base;
 extern crate gluon_check as check;
 extern crate gluon_parser as parser;
 
-use base::ast::SpannedExpr;
+use base::ast::{Argument, SpannedExpr};
 use base::metadata::{Comment, CommentType};
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Symbol, SymbolRef};
@@ -16,6 +16,8 @@ fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
 }
 
 mod support;
+
+use support::intern;
 
 struct MockEnv;
 
@@ -50,6 +52,7 @@ id
         metadata,
         Metadata {
             comment: Some(line_comment("The identity function")),
+            args: vec![Argument::explicit(intern("x:35"))],
             ..Metadata::default()
         }
     );
@@ -73,6 +76,7 @@ let id x = x
         metadata.module.get("id"),
         Some(&Metadata {
             comment: Some(line_comment("The identity function")),
+            args: vec![Argument::explicit(intern("x:35"))],
             ..Metadata::default()
         })
     );

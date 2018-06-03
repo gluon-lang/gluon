@@ -37,7 +37,7 @@
                     <pre>type <a class="anchor field" id="type.{{name}}" href="#type.{{name}}">{{name}}</a>{{#each args}} {{name}}{{/each}} = {{type}}
                     </pre>
                 </h4>
-                <p>{{comment}}</p>
+                <p>{{markdown comment}}</p>
 
             {{/each}}
             {{/if}}
@@ -52,8 +52,8 @@
                         {{~#if implicit}} ?{{name}}{{else}} {{name}}{{~/if~}}
                     {{~/each}} : {{type}}
                 </pre>
-                <p>{{comment}}</p>
                 </h4>
+                <p>{{markdown comment}}</p>
 
             {{/each}}
             {{/if}}
