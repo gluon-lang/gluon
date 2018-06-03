@@ -2,8 +2,10 @@
 
 let string_prim = import! std.string.prim
 let prim = import! std.prim
-let prelude = import! std.prelude
-let { Num, Eq, Ord, Ordering, Semigroup, Monoid, Show } = prelude
+let { Semigroup } = import! std.semigroup
+let { Monoid } = import! std.monoid
+let { Show } = import! std.show
+let { Eq, Ord, Ordering } = import! std.cmp
 let function = import! std.function
 
 let semigroup : Semigroup String = { append = string_prim.append }

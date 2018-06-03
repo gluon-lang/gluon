@@ -446,6 +446,14 @@ r#"
 2
 }
 
+test_expr!{ load_option,
+r#"
+let _ = import! std.option
+()
+"#,
+()
+}
+
 test_expr!{ prelude do_expression_option_some,
 r#"
 let { monad = { flat_map } } = import! std.option

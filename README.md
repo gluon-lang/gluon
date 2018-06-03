@@ -91,7 +91,7 @@ let { flat_map } = import! std.monad
 
 let { (*>), (<*), wrap } = import! std.applicative
 
-let { for } = import! std.prelude
+let { for } = import! std.traversable
 
 type Op = | Add | Sub | Div | Mul
 type Expr = | Int Int | Binop Expr Op Expr

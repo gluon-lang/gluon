@@ -1,10 +1,14 @@
 //@NO-IMPLICIT-PRELUDE
 
-let prelude = import! std.prelude
 let { error } = import! std.prim
-let { Semigroup, Monoid, Eq, Ord, Ordering, Show } = prelude
-let { Functor, Monad, Traversable } = prelude
+let { Semigroup } = import! std.semigroup
+let { Monoid } = import! std.monoid
+let { Eq, Ord, Ordering } = import! std.cmp
+let { Functor } = import! std.functor
+let { Monad } = import! std.monad
+let { Traversable } = import! std.traversable
 let { Applicative, Alternative } = import! std.applicative
+let { Show } = import! std.show
 let { Bool } = import! std.bool
 let { Option } = import! std.types
 let string @ { ? } = import! std.string

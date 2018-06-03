@@ -2,8 +2,9 @@
 
 let prim = import! std.array.prim
 let int @ { ? } = import! std.int
-let prelude @ { Num, Eq, Ord, Traversable, Functor, (<), (==), (-), (+) } = import! std.prelude
+let prelude @ { Num, Eq, Ord, Functor, (<), (==), (-), (+) } = import! std.prelude
 let { Foldable } = import! std.foldable
+let { Traversable } = import! std.traversable
 
 // FIXME Implement the functions using this in Rust so we don't have quadratic complexity for `map` etc
 let cons l r = prim.append [l] r

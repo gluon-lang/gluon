@@ -1,6 +1,8 @@
 //@NO-IMPLICIT-PRELUDE
 
 let { Bool, Ordering } = import! std.types
+let { Semigroup } = import! std.semigroup
+let { Monoid } = import! std.monoid
 
 /// `Eq a` defines equality (==) on `a`
 #[implicit]
@@ -43,6 +45,19 @@ let (>=) ?ord l r : [Ord a] -> a -> a -> Bool =
     | EQ -> True
     | GT -> True
 
+
+let semigroup : Semigroup Ordering = {
+    append = \x y ->
+        match x with
+        | EQ -> y
+        | _ -> x,
+}
+
+let monoid : Monoid Ordering = {
+    semigroup,
+    empty = EQ,
+}
+
 {
     Eq,
     (==), (/=),
@@ -53,4 +68,8 @@ let (>=) ?ord l r : [Ord a] -> a -> a -> Bool =
     (<), (<=), (>=), (>),
 
     Ordering,
+
+    semigroup,
+
+    monoid,
 }

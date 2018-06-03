@@ -94,6 +94,11 @@ static STD_LIBS: &[(&str, &str)] = &std_libs!(
     "monoid",
     "semigroup",
     "reference",
+    "show",
+    "traversable",
+    "group",
+    "category",
+    "num",
 );
 
 // When testing we use the files as-is in the repository to avoid recompiling after they are

@@ -1,7 +1,8 @@
 let prelude = import! std.prelude
 let { Ordering, Ord, Semigroup, Monoid } = prelude
-let { Functor, Applicative, Traversable } = prelude
+let { Functor, Applicative } = prelude
 let { Foldable } = import! std.foldable
+let { Traversable } = import! std.traversable
 
 let { flip, const } = import! std.function
 let list @ { List } = import! std.list

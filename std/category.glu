@@ -1,0 +1,24 @@
+//@NO-IMPLICIT-PRELUDE
+
+#[implicit]
+type Category (cat : Type -> Type -> Type) = {
+    id : forall a . cat a a,
+    compose : forall a b c . cat b c -> cat a b -> cat a c
+}
+
+let id ?cat : forall cat a . [Category cat] -> cat a a = cat.id
+let compose ?cat : forall a b c . [Category cat] -> cat b c -> cat a b -> cat a c = cat.compose
+/// Right-to-left composition. Alias for `compose`.
+#[infix(right, 9)]
+let (<<) ?cat : forall a b c . [Category cat] -> cat b c -> cat a b -> cat a c = cat.compose
+/// Left-to-right composition. Alias for `compose`, but with the arguments flipped.
+#[infix(left, 9)]
+let (>>) ?cat f g : forall a b c . [Category cat] -> cat a b -> cat b c -> cat a c = cat.compose g f
+
+{
+    Category,
+    id, compose,
+
+    (<<),
+    (>>),
+}

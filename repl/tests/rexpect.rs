@@ -100,7 +100,7 @@ fn names() {
 
     repl.test(
         ":i std.prelude.show",
-        Some("std.prelude.show: forall a . [std.prelude.Show a] -> a -> String"),
+        Some("std.prelude.show: forall a . [std.show.Show a] -> a -> String"),
     );
 }
 

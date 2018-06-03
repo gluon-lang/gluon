@@ -1,7 +1,8 @@
 let prelude @ { Ordering, ? } = import! std.prelude
 let { Semigroup, Monoid, Eq, Show } = prelude
-let { Functor, Applicative, Alternative, Monad, Traversable } = prelude
+let { Functor, Applicative, Alternative, Monad } = prelude
 let { Foldable } = import! std.foldable
+let { Traversable } = import! std.traversable
 let { Bool } = import! std.bool
 let array @ { ? } = import! std.array
 let { (<>) } = import! std.semigroup
