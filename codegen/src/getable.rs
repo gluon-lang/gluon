@@ -90,7 +90,7 @@ fn gen_impl(ident: Ident, generics: Generics, cons_expr: TokenStream) -> TokenSt
 
     quote! {
         #[automatically_derived]
-        #[allow(unused_attributes)]
+        #[allow(unused_attributes, unused_variables)]
         impl #impl_generics ::gluon::vm::api::Getable<'__vm> for #ident #ty_generics
         #where_clause #(#getable_bounds,)* #(#lifetime_bounds),*
         {

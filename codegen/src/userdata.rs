@@ -28,13 +28,19 @@ fn gen_impl(ident: Ident, generics: Generics) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[]);
 
     quote! {
+        #[automatically_derived]
+        #[allow(unused_attributes, unused_variables)]
         impl #impl_generics ::gluon::vm::api::Userdata for #ident #ty_generics
         #where_clause #(#trait_bounds,)* #(#lifetime_bounds),*
         {
         }
 
+        #[automatically_derived]
+        #[allow(unused_attributes, unused_variables)]
         impl #impl_generics ::gluon::vm::gc::Traverseable for #ident #ty_generics {}
-
+        
+        #[automatically_derived]
+        #[allow(unused_attributes, unused_variables)]
         impl #impl_generics ::gluon::vm::api::VmType for #ident #ty_generics
         #where_clause #(#trait_bounds,)* #(#lifetime_bounds),*
         {

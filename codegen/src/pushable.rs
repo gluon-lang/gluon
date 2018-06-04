@@ -79,7 +79,7 @@ fn gen_impl(ident: &Ident, generics: Generics, push_impl: TokenStream) -> TokenS
 
     quote! {
         #[automatically_derived]
-        #[allow(unused_attributes)]
+        #[allow(unused_attributes, unused_variables)]
         impl #impl_generics ::gluon::vm::api::Pushable<'__vm> for #ident #ty_generics
         #where_clause #(#pushable_bounds),*
         {
