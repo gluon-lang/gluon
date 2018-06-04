@@ -420,15 +420,7 @@ where
                 ref base,
                 ..
             } => {
-                let ordered_iter = || {
-                    types.iter().map(Either::Left).merge_by(
-                        exprs.iter().map(Either::Right),
-                        |x, y| {
-                            x.either(|l| l.name.span.start(), |r| r.name.span.start())
-                                < y.either(|l| l.name.span.start(), |r| r.name.span.start())
-                        },
-                    )
-                };
+                let ordered_iter = || expr.value.field_iter();
                 let spans = || {
                     ordered_iter().map(|x| {
                         x.either(

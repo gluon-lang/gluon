@@ -4,6 +4,10 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
+use either::Either;
+
+use itertools::Itertools;
+
 use metadata::{Comment, Metadata};
 use ordered_float::NotNaN;
 use pos::{self, BytePos, HasSpan, Span, Spanned};
@@ -326,6 +330,31 @@ pub enum Expr<Id> {
         /// Provides a hint of what type the expression would have, if any
         Option<ArcType<Id>>,
     ),
+}
+
+impl<Id> Expr<Id> {
+    // TODO Use impl Trait
+    pub fn field_iter<'a>(
+        &'a self,
+    ) -> Box<
+        Iterator<Item = Either<&'a ExprField<Id, ArcType<Id>>, &'a ExprField<Id, SpannedExpr<Id>>>>
+            + 'a,
+    > {
+        match *self {
+            Expr::Record {
+                ref types,
+                ref exprs,
+                ..
+            } => Box::new(types.iter().map(Either::Left).merge_by(
+                exprs.iter().map(Either::Right),
+                |x, y| {
+                    x.either(|l| l.name.span.start(), |r| r.name.span.start())
+                        < y.either(|l| l.name.span.start(), |r| r.name.span.start())
+                },
+            )),
+            _ => Box::new(None.into_iter()),
+        }
+    }
 }
 
 #[derive(Clone, PartialEq, Debug)]

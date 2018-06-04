@@ -623,16 +623,20 @@ where
             }
             Expr::Array(ref array) => self.visit_one(&array.exprs),
             Expr::Record {
-                ref exprs,
                 ref base,
                 typ: ref record_type,
                 ..
             } => {
-                let iter = exprs
-                    .iter()
-                    .flat_map(|field| {
-                        once(Variant::FieldIdent(&field.name, record_type))
-                            .chain(field.value.as_ref().map(Variant::Expr))
+                let iter = current
+                    .value
+                    .field_iter()
+                    .flat_map(|either| {
+                        either
+                            .map_left(|field| once(Variant::FieldIdent(&field.name, record_type)))
+                            .map_right(|field| {
+                                once(Variant::FieldIdent(&field.name, record_type))
+                                    .chain(field.value.as_ref().map(Variant::Expr))
+                            })
                     })
                     .chain(base.as_ref().map(|base| Variant::Expr(base)));
                 self.visit_any(iter)
@@ -1130,14 +1134,15 @@ impl SuggestionQuery {
                         let name = id.name.definition_name();
                         self.suggest_module_import(env, name, &mut result);
                     }
-                    _ => {
-                        result.extend(self.expr_iter(&suggest.stack, expr).map(|(k, typ)| {
-                            Suggestion {
-                                name: k.declared_name().into(),
-                                typ: Either::Right(typ.clone()),
-                            }
-                        }));
+                    Expr::Ident(ref id) => {
+                        self.suggest_local(
+                            &mut result,
+                            &suggest,
+                            &enclosing_match,
+                            id.name.declared_name(),
+                        );
                     }
+                    _ => self.suggest_local(&mut result, &suggest, &enclosing_match, ""),
                 },
 
                 Match::Pattern(pattern) => {
@@ -1183,30 +1188,23 @@ impl SuggestionQuery {
                         Expr::Ident(ref id) if id.name.is_global() => {
                             self.suggest_module_import(env, &id.name.as_ref()[1..], &mut result);
                         }
-                        Expr::Record {
-                            ref exprs,
-                            ref types,
-                            ..
-                        } => result.extend(
-                            suggest
-                                .stack
-                                .iter()
-                                .filter(move |&(k, _)| {
-                                    self.filter(k.declared_name(), ident.declared_name())
-                                })
-                                .filter(|&(k, _)| {
-                                    exprs
-                                        .iter()
-                                        .map(|field| &field.name)
-                                        .chain(types.iter().map(|field| &field.name))
-                                        .all(|already_used_field| already_used_field.value != *k)
-                                })
-                                .map(|(k, typ)| Suggestion {
-                                    name: k.declared_name().into(),
-                                    typ: Either::Right(typ.clone()),
-                                }),
-                        ),
-                        _ => (),
+                        _ => {
+                            self.suggest_local(
+                                &mut result,
+                                &suggest,
+                                enclosing_match,
+                                ident.declared_name(),
+                            );
+
+                            if let Expr::Record { .. } = context.value {
+                                self.suggest_local_type(
+                                    &mut result,
+                                    &suggest,
+                                    enclosing_match,
+                                    ident.declared_name(),
+                                );
+                            }
+                        }
                     },
                     Match::Pattern(&Spanned {
                         value:
@@ -1230,40 +1228,32 @@ impl SuggestionQuery {
                     _ => (),
                 },
 
-                Match::Type(_, ident, _) => {
-                    result.extend(
-                        suggest
-                            .type_stack
-                            .iter()
-                            .filter(|&(k, _)| self.filter(k.declared_name(), ident.declared_name()))
-                            .map(|(name, kind)| Suggestion {
-                                name: name.declared_name().into(),
-                                typ: Either::Left(kind.clone()),
-                            }),
-                    );
-                }
+                Match::Type(_, ident, _) => self.suggest_local_type(
+                    &mut result,
+                    &suggest,
+                    enclosing_match,
+                    ident.declared_name(),
+                ),
             },
 
             None => match *enclosing_match {
                 Match::Expr(..) | Match::Ident(..) => {
-                    result.extend(suggest.stack.iter().map(|(name, typ)| Suggestion {
-                        name: name.declared_name().into(),
-                        typ: Either::Right(typ.clone()),
-                    }));
+                    self.suggest_local(&mut result, &suggest, &enclosing_match, "");
+                    if let Match::Expr(Spanned {
+                        value: Expr::Record { .. },
+                        ..
+                    }) = *enclosing_match
+                    {
+                        self.suggest_local_type(&mut result, &suggest, enclosing_match, "");
+                    }
                 }
 
-                Match::Type(_, ident, _) => {
-                    result.extend(
-                        suggest
-                            .type_stack
-                            .iter()
-                            .filter(|&(k, _)| self.filter(k.declared_name(), ident.declared_name()))
-                            .map(|(name, kind)| Suggestion {
-                                name: name.declared_name().into(),
-                                typ: Either::Left(kind.clone()),
-                            }),
-                    );
-                }
+                Match::Type(_, ident, _) => self.suggest_local_type(
+                    &mut result,
+                    &suggest,
+                    enclosing_match,
+                    ident.declared_name(),
+                ),
 
                 Match::Pattern(pattern) => match pattern.value {
                     Pattern::Record {
@@ -1282,6 +1272,82 @@ impl SuggestionQuery {
             },
         }
         result
+    }
+
+    fn suggest_local<T>(
+        &self,
+        result: &mut Vec<Suggestion>,
+        suggest: &Suggest<T>,
+        context: &Match,
+        ident: &str,
+    ) where
+        T: TypeEnv,
+    {
+        result.extend(
+            suggest
+                .stack
+                .iter()
+                .filter(move |&(k, _)| self.filter(k.declared_name(), ident))
+                .filter(|&(k, _)| match context {
+                    // If inside a record expression, remove any fields that have already been used
+                    Match::Expr(&Spanned {
+                        value:
+                            Expr::Record {
+                                ref types,
+                                ref exprs,
+                                ..
+                            },
+                        ..
+                    }) => exprs
+                        .iter()
+                        .map(|field| &field.name)
+                        .chain(types.iter().map(|field| &field.name))
+                        .all(|already_used_field| already_used_field.value != *k),
+                    _ => true,
+                })
+                .map(|(k, typ)| Suggestion {
+                    name: k.declared_name().into(),
+                    typ: Either::Right(typ.clone()),
+                }),
+        )
+    }
+
+    fn suggest_local_type<T>(
+        &self,
+        result: &mut Vec<Suggestion>,
+        suggest: &Suggest<T>,
+        context: &Match,
+        ident: &str,
+    ) where
+        T: TypeEnv,
+    {
+        result.extend(
+            suggest
+                .type_stack
+                .iter()
+                .filter(|&(k, _)| self.filter(k.declared_name(), ident))
+                .filter(|&(k, _)| match context {
+                    // If inside a record expression, remove any fields that have already been used
+                    Match::Expr(&Spanned {
+                        value:
+                            Expr::Record {
+                                ref types,
+                                ref exprs,
+                                ..
+                            },
+                        ..
+                    }) => exprs
+                        .iter()
+                        .map(|field| &field.name)
+                        .chain(types.iter().map(|field| &field.name))
+                        .all(|already_used_field| already_used_field.value != *k),
+                    _ => true,
+                })
+                .map(|(name, kind)| Suggestion {
+                    name: name.declared_name().into(),
+                    typ: Either::Left(kind.clone()),
+                }),
+        );
     }
 
     fn suggest_module_import<T>(&self, env: &T, path: &str, suggestions: &mut Vec<Suggestion>)
