@@ -214,3 +214,45 @@ fn struct_derive() {
         panic!("{}", why);
     }
 }
+
+#[derive(Serialize, Deserialize, Debug, VmType, Getable)]
+#[gluon(vm_type = "types.TupleStruct")]
+struct TupleStruct(i32, i32);
+
+fn load_tuple_struct_mod(vm: &Thread) -> vm::Result<ExternModule> {
+    let module = record! {
+        tuple_struct_to_str => primitive!(1 tuple_struct_to_str),
+    };
+
+    ExternModule::new(vm, module)
+}
+
+fn tuple_struct_to_str(val: TupleStruct) -> String {
+    format!("{:?}", val)
+}
+
+#[test]
+fn tuple_struct_derive() {
+    let vm = new_vm();
+    let mut compiler = Compiler::new();
+
+    let src = r#"
+        type TupleStruct = (Int, Int)
+        { TupleStruct }
+    "#;
+
+    compiler.load_script(&vm, "types", &src).unwrap();
+    import::add_extern_module(&vm, "functions", load_tuple_struct_mod);
+
+    let script = r#"
+        let { TupleStruct } = import! types
+        let { tuple_struct_to_str } = import! functions
+        let { assert } = import! std.test
+
+        assert (tuple_struct_to_str (1, 2) == "TupleStruct(1, 2)")
+    "#;
+
+    if let Err(why) = compiler.run_expr::<()>(&vm, "test", script) {
+        panic!("{}", why);
+    }
+}

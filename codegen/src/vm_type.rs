@@ -78,6 +78,8 @@ fn gen_impl(ident: Ident, generics: Generics, gluon_type: &str) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[]);
 
     quote! {
+        #[automatically_derived]
+        #[allow(unused_attributes, unused_variables)]
         impl #impl_generics ::gluon::vm::api::VmType for #ident #ty_generics
         #where_clause #(#trait_bounds,)* #(#lifetime_bounds),*
         {
