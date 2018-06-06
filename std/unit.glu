@@ -1,3 +1,5 @@
+//! The unit type.
+
 let { Eq, Ord, Ordering, Show } = import! std.prelude
 let { const } = import! std.function
 let { Bool } = import! std.bool

@@ -1,4 +1,5 @@
 //@NO-IMPLICIT-PRELUDE
+//! The signed 64-bit integer type.
 
 let { Semigroup, Monoid, Group, Eq, Ord, Ordering, Num, Show } = import! std.prelude
 

@@ -1,4 +1,5 @@
 //@NO-IMPLICIT-PRELUDE
+//! Operations on numbers.
 
 let { Ord } = import! std.cmp
 
@@ -7,10 +8,15 @@ let { Ord } = import! std.cmp
 #[implicit]
 type Num a = {
     ord : Ord a,
+    /// The addition operator
     (+) : a -> a -> a,
+    /// The subtraction operator
     (-) : a -> a -> a,
+    /// The multiplication operator
     (*) : a -> a -> a,
+    /// The division operator
     (/) : a -> a -> a,
+    /// The negation function
     negate : a -> a
 }
 

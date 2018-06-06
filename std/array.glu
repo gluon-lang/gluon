@@ -1,4 +1,5 @@
 //@NO-IMPLICIT-PRELUDE
+//! A dynamically sized contigous sequence.
 
 let prim = import! std.array.prim
 let int @ { ? } = import! std.int

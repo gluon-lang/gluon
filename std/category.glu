@@ -1,4 +1,5 @@
 //@NO-IMPLICIT-PRELUDE
+//! Implementation of the `Category` type
 
 #[implicit]
 type Category (cat : Type -> Type -> Type) = {
@@ -8,12 +9,14 @@ type Category (cat : Type -> Type -> Type) = {
 
 let id ?cat : forall cat a . [Category cat] -> cat a a = cat.id
 let compose ?cat : forall a b c . [Category cat] -> cat b c -> cat a b -> cat a c = cat.compose
+
 /// Right-to-left composition. Alias for `compose`.
 #[infix(right, 9)]
-let (<<) ?cat : forall a b c . [Category cat] -> cat b c -> cat a b -> cat a c = cat.compose
+let (<<) : forall a b c . [Category cat] -> cat b c -> cat a b -> cat a c = compose
+
 /// Left-to-right composition. Alias for `compose`, but with the arguments flipped.
 #[infix(left, 9)]
-let (>>) ?cat f g : forall a b c . [Category cat] -> cat a b -> cat b c -> cat a c = cat.compose g f
+let (>>) f g : forall a b c . [Category cat] -> cat a b -> cat b c -> cat a c = compose g f
 
 {
     Category,

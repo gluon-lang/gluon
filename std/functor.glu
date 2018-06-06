@@ -1,4 +1,5 @@
 //@NO-IMPLICIT-PRELUDE
+//! Implementation of the `Functor` type
 
 /// A `Functor` represents an action on a parameterized type which does not
 /// change the structure with the mapped type.

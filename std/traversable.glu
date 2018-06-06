@@ -1,4 +1,5 @@
 //@NO-IMPLICIT-PRELUDE
+//! Implementation of the `Traversable` type
 
 let { Functor } = import! std.functor
 let { Foldable } = import! std.foldable

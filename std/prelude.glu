@@ -1,4 +1,5 @@
 //@NO-IMPLICIT-PRELUDE
+//! Definitions which gets implicit re-export in every file.
 
 let { Option } = import! std.types
 let { Functor } = import! std.functor
@@ -12,6 +13,8 @@ let { Eq, Ord, Bool, Ordering, (==), (/=), (<), (<=), (>=), (>) } = import! std.
 let { Show, show } = import! std.show
 let { Category, id, compose } = import! std.category
 let { Num, (+), (-), (*), (/), negate } = import! std.num
+let { Bool, not } = import! std.bool
+let { error } = import! std.prim
 
 {
     Ordering,
@@ -44,4 +47,11 @@ let { Num, (+), (-), (*), (/), negate } = import! std.num
 
     Show,
     show,
+
+    Option,
+    Bool,
+
+    not,
+    
+    error,
 }

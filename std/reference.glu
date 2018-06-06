@@ -1,3 +1,5 @@
+//! A mutable reference type
+
 let reference = import! std.reference.prim
 #[infix(right, 9)]
 let (<-) = reference.(<-)

@@ -1,3 +1,5 @@
+//! Lazy stream type.
+
 let { Functor, Applicative } = import! std.prelude
 let list @ { List } = import! std.list
 let { Bool } = import! std.bool

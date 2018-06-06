@@ -1,3 +1,5 @@
+//! A linked list type.
+
 let prelude @ { Ordering, ? } = import! std.prelude
 let { Semigroup, Monoid, Eq, Show } = prelude
 let { Functor, Applicative, Alternative, Monad } = prelude

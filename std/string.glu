@@ -1,4 +1,5 @@
 //@NO-IMPLICIT-PRELUDE
+//! A UTF-8 encoded string
 
 let string_prim = import! std.string.prim
 let prim = import! std.prim

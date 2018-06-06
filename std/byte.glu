@@ -1,3 +1,5 @@
+//! An 8-bit unsigned integer.
+
 let { Semigroup, Monoid, Group, Eq, Ord, Ordering, Num, Show } = import! std.prelude
 
 let additive =

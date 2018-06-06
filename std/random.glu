@@ -1,3 +1,5 @@
+//! Basic random number generation
+
 let prim = import! std.random.prim
 
 type RandomGen g = { next : g -> { value : Int, gen : g } }

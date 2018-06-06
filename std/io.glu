@@ -1,3 +1,5 @@
+//! Functions for working with I/O
+
 let io_prim = import! std.io.prim
 let { Functor, Applicative, Monad } = import! std.prelude
 

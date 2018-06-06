@@ -1,3 +1,5 @@
+//! A simple test library.
+
 let string = import! std.string
 let writer @ { Writer, ? } = import! std.writer
 let prelude @ { Semigroup } = import! std.prelude

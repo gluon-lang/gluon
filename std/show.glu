@@ -1,4 +1,5 @@
 //@NO-IMPLICIT-PRELUDE
+//! Value to string conversion.
 
 /// `Show a` represents a conversion function from `a` to a readable string.
 #[implicit]

@@ -1,4 +1,5 @@
 //@NO-IMPLICIT-PRELUDE
+//! The boolean type.
 
 let { Bool, Ordering } = import! std.types
 let { Semigroup } = import! std.semigroup

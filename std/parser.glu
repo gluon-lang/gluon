@@ -1,3 +1,5 @@
+//! A simple parser combinator library.
+
 let prelude = import! std.prelude
 let { Functor, Applicative, Alternative, Monad } = prelude
 let { id, flip } = import! std.function
@@ -281,6 +283,7 @@ let parse p input : Parser a -> String -> Result String a =
     chainl,
     (<?>),
 
+    alpha_num,
     letter,
     digit,
     space,

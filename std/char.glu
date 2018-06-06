@@ -1,3 +1,5 @@
+//! A character type.
+
 let { Eq, Ord, Ordering, Show } = import! std.prelude
 
 let eq : Eq Char = { (==) = \l r -> l #Char== r }

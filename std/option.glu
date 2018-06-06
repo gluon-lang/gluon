@@ -1,4 +1,5 @@
 //@NO-IMPLICIT-PRELUDE
+//! A type that can represent the abscence of a value
 
 let { error } = import! std.prim
 let { Semigroup } = import! std.semigroup
