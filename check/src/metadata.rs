@@ -42,8 +42,11 @@ pub fn metadata(
                         })
                         .collect();
 
-                    if let Some(type_metadata) =
-                        id.typ.alias_ident().and_then(|id| self.metadata(id))
+                    if let Some(type_metadata) = id
+                        .typ
+                        .remove_forall_and_implicit_args()
+                        .alias_ident()
+                        .and_then(|id| self.metadata(id))
                     {
                         metadata.merge_with(type_metadata.clone());
                     }

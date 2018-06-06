@@ -334,10 +334,8 @@ macro_rules! test_check {
         #[test]
         fn $name() {
             let _ = env_logger::try_init();
-        
             let text = $source;
             let result = support::typecheck(text);
-        
             assert_req!(result.map(|x| x.to_string()), Ok($typ.to_string()));
         }
     };

@@ -7,8 +7,7 @@ extern crate gluon_check as check;
 extern crate gluon_parser as parser;
 
 use base::ast::{Argument, SpannedExpr};
-use base::metadata::{Comment, CommentType};
-use base::metadata::{Metadata, MetadataEnv};
+use base::metadata::{Attribute, Comment, CommentType, Metadata, MetadataEnv};
 use base::symbol::{Symbol, SymbolRef};
 
 fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
@@ -256,11 +255,69 @@ let x ?test : [Test a] -> a = test.x
 
     let metadata = metadata(&MockEnv, &mut expr);
     assert_eq!(
-        metadata
-            .module
-            .get("x"),
+        metadata.module.get("x"),
         Some(&Metadata {
             comment: Some(line_comment("A field")),
+            ..Metadata::default()
+        })
+    );
+}
+
+#[test]
+fn propagate_metadata_through_argument() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+type Test a = {
+    /// A field
+    x : a,
+}
+
+let x ?test : [Test a] -> a = test.x
+{ x }
+"#;
+    let (mut expr, result) = support::typecheck_expr(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+
+    let metadata = metadata(&MockEnv, &mut expr);
+    assert_eq!(
+        metadata.module.get("x"),
+        Some(&Metadata {
+            comment: Some(line_comment("A field")),
+            ..Metadata::default()
+        })
+    );
+}
+
+#[test]
+fn propagate_metadata_through_implicits() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+#[attribute]
+type Test a = {
+    x : a,
+}
+
+type Wrap a = | Wrap a
+
+let x ?test : [Test a] -> Test (Wrap a) = { x = Wrap test.x }
+{ x }
+"#;
+    let (mut expr, result) = support::typecheck_expr(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+
+    let metadata = metadata(&MockEnv, &mut expr);
+    assert_eq!(
+        metadata.module.get("x"),
+        Some(&Metadata {
+            attributes: vec![Attribute {
+                name: "attribute".into(),
+                arguments: None,
+            }],
+            args: vec![Argument::implicit(intern("test:76"))],
             ..Metadata::default()
         })
     );
