@@ -34,7 +34,7 @@
             {{#each record.types}}
 
                 <h4>
-                    <pre>type <a class="anchor field" id="type.{{name}}" href="#type.{{name}}">{{name}}</a>{{#each args}} {{name}}{{/each}} = {{type}}
+                    <pre>type <a class="anchor field" id="type.{{name}}" href="#type.{{name}}">{{name}}</a>{{#each args}} {{name}}{{/each}} = {{type~}}
                     </pre>
                 </h4>
                 <p>{{markdown comment}}</p>
@@ -50,7 +50,7 @@
                 <pre>let <a class="anchor field" id="value.{{name}}" href="#value.{{name}}">{{name}}</a>
                     {{~#each args~}}
                         {{~#if implicit}} ?{{name}}{{else}} {{name}}{{~/if~}}
-                    {{~/each}} : {{type}}
+                    {{~/each}} : {{type~}}
                 </pre>
                 </h4>
                 <p>{{markdown comment}}</p>
