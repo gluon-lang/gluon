@@ -1309,7 +1309,7 @@ impl<'a> Typecheck<'a> {
                                 &mut args[i - 1].name.value
                             }
                             _ => {
-                                let id = Symbol::from(format!("implicit_arg"));
+                                let id = Symbol::from(format!("#implicit_arg"));
                                 let pos = if i == 0 {
                                     before_args_pos
                                 } else {
