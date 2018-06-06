@@ -41,6 +41,13 @@ pub fn metadata(
                             arg_type: arg.arg_type,
                         })
                         .collect();
+
+                    if let Some(type_metadata) =
+                        id.typ.alias_ident().and_then(|id| self.metadata(id))
+                    {
+                        metadata.merge_with(type_metadata.clone());
+                    }
+
                     self.stack_var(id.name.clone(), metadata);
                 }
                 Pattern::Constructor(..)

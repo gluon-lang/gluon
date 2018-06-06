@@ -181,3 +181,44 @@ type Test = {
         })
     );
 }
+
+#[test]
+fn propagate_metadata_from_types_to_values() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+/// A type
+type Test = {
+    /// A field
+    x : Int
+}
+
+/// Shadowing comment
+let test: Test = {
+    x = 1
+}
+{ test }
+"#;
+    let (mut expr, result) = support::typecheck_expr(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+
+    let metadata = metadata(&MockEnv, &mut expr);
+    assert_eq!(
+        metadata
+            .module
+            .get("test")
+            .and_then(|metadata| metadata.module.get("x")),
+        Some(&Metadata {
+            comment: Some(line_comment("A field")),
+            ..Metadata::default()
+        })
+    );
+    assert_eq!(
+        metadata
+            .module
+            .get("test")
+            .and_then(|metadata| metadata.comment.as_ref()),
+        Some(&line_comment("Shadowing comment"))
+    );
+}

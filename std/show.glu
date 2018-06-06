@@ -2,7 +2,7 @@
 
 /// `Show a` represents a conversion function from `a` to a readable string.
 #[implicit]
-type Show a = { show : forall a . a -> String }
+type Show a = { show : a -> String }
 
 let show ?s : [Show a] -> a -> String = s.show
 
