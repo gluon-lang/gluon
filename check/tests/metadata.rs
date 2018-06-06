@@ -190,12 +190,16 @@ fn propagate_metadata_from_types_to_values() {
 /// A type
 type Test = {
     /// A field
-    x : Int
+    x : Int,
+    /// Another field
+    y : String,
 }
 
 /// Shadowing comment
 let test: Test = {
-    x = 1
+    x = 1,
+    /// Shadowing field comment
+    y = "",
 }
 { test }
 "#;
@@ -218,7 +222,46 @@ let test: Test = {
         metadata
             .module
             .get("test")
+            .and_then(|metadata| metadata.module.get("y")),
+        Some(&Metadata {
+            comment: Some(line_comment("Shadowing field comment")),
+            ..Metadata::default()
+        })
+    );
+    assert_eq!(
+        metadata
+            .module
+            .get("test")
             .and_then(|metadata| metadata.comment.as_ref()),
         Some(&line_comment("Shadowing comment"))
+    );
+}
+
+#[test]
+fn propagate_metadata_from_types_through_arg() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+type Test a = {
+    /// A field
+    x : a,
+}
+
+let x ?test : [Test a] -> a = test.x
+{ x }
+"#;
+    let (mut expr, result) = support::typecheck_expr(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+
+    let metadata = metadata(&MockEnv, &mut expr);
+    assert_eq!(
+        metadata
+            .module
+            .get("x"),
+        Some(&Metadata {
+            comment: Some(line_comment("A field")),
+            ..Metadata::default()
+        })
     );
 }

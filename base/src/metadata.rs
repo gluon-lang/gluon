@@ -63,8 +63,14 @@ impl Metadata {
         if self.comment.is_none() {
             self.comment = other.comment;
         }
-        if self.module.is_empty() {
-            self.module = other.module;
+        for (key, value) in other.module {
+            use std::collections::btree_map::Entry;
+            match self.module.entry(key) {
+                Entry::Vacant(entry) => {
+                    entry.insert(value);
+                }
+                Entry::Occupied(entry) => entry.into_mut().merge_with(value),
+            }
         }
         self.attributes.extend(other.attributes);
         if self.args.is_empty() {

@@ -1303,10 +1303,10 @@ impl<'a> Typecheck<'a> {
                 match type_implicit {
                     ArgType::Implicit => {
                         let arg_type = arg_type.unwrap();
-                        let id = match args.get(i).map(|t| t.arg_type) {
+                        let arg = match args.get(i).map(|t| t.arg_type) {
                             Some(ArgType::Implicit) => {
                                 i += 1;
-                                args[i - 1].name.value.name.clone()
+                                &mut args[i - 1].name.value
                             }
                             _ => {
                                 let id = Symbol::from(format!("implicit_arg"));
@@ -1329,16 +1329,17 @@ impl<'a> Typecheck<'a> {
                                     )),
                                 );
                                 i += 1;
-                                id
+                                &mut args.last_mut().unwrap().name.value
                             }
                         };
+                        arg.typ = arg_type.clone();
                         arg_types.push(arg_type.clone());
                         iter1.tc.implicit_resolver.add_implicits_of_record(
                             &iter1.tc.subs,
-                            &id,
+                            &arg.name,
                             &arg_type,
                         );
-                        iter1.tc.stack_var(id, arg_type.clone());
+                        iter1.tc.stack_var(arg.name.clone(), arg_type.clone());
                     }
                     ArgType::Explicit => match args.get_mut(i) {
                         Some(&mut Argument {

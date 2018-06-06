@@ -180,7 +180,30 @@ pub fn metadata(
                             self.new_binding(Metadata::default(), bind);
                         }
                         for bind in bindings {
-                            self.metadata_expr(&bind.expr);
+                            for arg in &bind.args {
+                                if let Some(type_metadata) = arg
+                                    .name
+                                    .value
+                                    .typ
+                                    .alias_ident()
+                                    .and_then(|id| self.metadata(id))
+                                    .cloned()
+                                {
+                                    self.stack_var(arg.name.value.name.clone(), type_metadata);
+                                }
+                            }
+
+                            let expr_metadata = self.metadata_expr(&bind.expr);
+
+                            if let Pattern::Ident(ref id) = bind.name.value {
+                                if expr_metadata.has_data() {
+                                    self.env
+                                        .stack
+                                        .entry(id.name.clone())
+                                        .or_insert_with(Default::default)
+                                        .merge_with(expr_metadata);
+                                }
+                            }
                         }
                     } else {
                         for bind in bindings {
@@ -194,7 +217,7 @@ pub fn metadata(
                 Expr::TypeBindings(ref bindings, ref expr) => {
                     for bind in bindings {
                         let mut type_metadata =
-                            Self::metadata_of_type(bind.alias.value.unresolved_type());
+                            Self::metadata_of_type(bind.alias.value.aliased_type());
                         let metadata = type_metadata.map_or_else(
                             || bind.metadata.clone(),
                             |m| m.merge(bind.metadata.clone()),
@@ -213,7 +236,7 @@ pub fn metadata(
                     let metadata = self.metadata_expr(expr);
                     metadata
                         .module
-                        .get(field.as_ref())
+                        .get(field.definition_name())
                         .cloned()
                         .unwrap_or_default()
                 }
