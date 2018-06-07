@@ -37,7 +37,7 @@ pub fn metadata(
                         .args
                         .iter()
                         // Ignore generated arguments
-                        .filter(|arg| !arg.name.value.name.definition_name().starts_with('#'))
+                        .filter(|arg| !arg.name.value.name.definition_name().starts_with("__"))
                         .map(|arg| Argument {
                             name: arg.name.value.name.clone(),
                             arg_type: arg.arg_type,

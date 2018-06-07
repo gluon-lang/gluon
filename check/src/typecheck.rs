@@ -1309,7 +1309,7 @@ impl<'a> Typecheck<'a> {
                                 &mut args[i - 1].name.value
                             }
                             _ => {
-                                let id = Symbol::from(format!("#implicit_arg"));
+                                let id = Symbol::from(format!("__implicit_arg"));
                                 let pos = if i == 0 {
                                     before_args_pos
                                 } else {
@@ -1329,7 +1329,7 @@ impl<'a> Typecheck<'a> {
                                     )),
                                 );
                                 i += 1;
-                                &mut args.last_mut().unwrap().name.value
+                                &mut args[i - 1].name.value
                             }
                         };
                         arg.typ = arg_type.clone();

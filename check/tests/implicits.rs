@@ -68,7 +68,7 @@ f 42
 
     assert_eq!(result, Ok(Type::int()));
     assert_eq!(
-        r#"let f ?implicit_arg y : [Int] -> Int -> Int = y
+        r#"let f ?__implicit_arg y : [Int] -> Int -> Int = y
 #[implicit]
 let i = 123
 f ?i 42"#,
@@ -721,4 +721,57 @@ f Nil
             ..
         })
     );
+}
+
+#[test]
+fn compare() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+type Ordering = | LT | EQ | GT
+#[implicit]
+type Ord a = { compare : a -> a -> Ordering }
+
+let compare ?ord : [Ord a] -> a -> a -> Ordering = ord.compare
+
+let (<) l r : [Ord a] -> a -> a -> Bool =
+    match compare l r with
+    | LT -> True
+    | EQ -> False
+    | GT -> False
+()
+"#;
+    let (expr, _result) = support::typecheck_expr(text);
+
+    struct Visitor {
+        text: &'static str,
+        done: bool,
+    }
+    impl<'a> base::ast::Visitor<'a> for Visitor {
+        type Ident = Symbol;
+
+        fn visit_expr(&mut self, expr: &'a SpannedExpr<Symbol>) {
+            match expr.value {
+                ast::Expr::App {
+                    ref func,
+                    ref implicit_args,
+                    ..
+                } => {
+                    if let ast::Expr::Ident(ref id) = func.value {
+                        if id.name.definition_name() == "compare" {
+                            assert_eq!(
+                                "__implicit_arg",
+                                format::pretty_expr(self.text, &implicit_args[0]).trim()
+                            );
+                            self.done = true;
+                        }
+                    }
+                }
+                _ => (),
+            }
+            base::ast::walk_expr(self, expr)
+        }
+    }
+    let mut visitor = Visitor { text, done: false };
+    visitor.visit_expr(&expr);
+    assert!(visitor.done);
 }
