@@ -7,19 +7,29 @@ let { Monoid } = import! std.monoid
 
 /// `Eq a` defines equality (==) on `a`
 #[implicit]
-type Eq a = { (==) : a -> a -> Bool }
+type Eq a = {
+    /// Tests whether the values are equal.
+    (==) : a -> a -> Bool,
+}
 
 #[infix(left, 4)]
 let (==) ?eq : [Eq a] -> a -> a -> Bool = eq.(==)
+
+/// Tests whether the values are not equal.
 #[infix(left, 4)]
 let (/=) ?eq l r : [Eq a] -> a -> a -> Bool = if (eq.(==) l r) then False else True
 
 /// `Ord a` defines an ordering on `a`
 #[implicit]
-type Ord a = { eq : Eq a, compare : a -> a -> Ordering }
+type Ord a = {
+    eq : Eq a,
+    /// Compares two values and returns wheter the first is less than, equal or greater than the second.
+    compare : a -> a -> Ordering,
+}
 
 let compare ?ord : [Ord a] -> a -> a -> Ordering = ord.compare
 
+/// Returns whether `l` is less than or equal to `r`.
 #[infix(left, 4)]
 let (<=) l r : [Ord a] -> a -> a -> Bool =
     match compare l r with
@@ -27,13 +37,15 @@ let (<=) l r : [Ord a] -> a -> a -> Bool =
     | EQ -> True
     | GT -> False
 
+/// Returns whether `l` is less than `r`.
 #[infix(left, 4)]
-let (<) ?x l r : [Ord a] -> a -> a -> Bool =
+let (<) l r : [Ord a] -> a -> a -> Bool =
     match compare l r with
     | LT -> True
     | EQ -> False
     | GT -> False
 
+/// Returns whether `l` is greater than `r`.
 #[infix(left, 4)]
 let (>) l r : [Ord a] -> a -> a -> Bool =
     match compare l r with
@@ -41,6 +53,7 @@ let (>) l r : [Ord a] -> a -> a -> Bool =
     | EQ -> False
     | GT -> True
 
+/// Returns whether `l` is greater than or equal to `r`.
 #[infix(left, 4)]
 let (>=) l r : [Ord a] -> a -> a -> Bool =
     match compare l r with

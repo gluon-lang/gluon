@@ -342,7 +342,9 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
                 .ok_or_else(|| failure::err_msg("Non-UTF-8 filename"))?,
         );
 
-        let (expr, typ) = Compiler::new().typecheck_str(thread, &name, &content, None)?;
+        let (expr, typ) = Compiler::new()
+            .full_metadata(true)
+            .typecheck_str(thread, &name, &content, None)?;
         let (meta, _) = metadata(&*thread.get_env(), &expr);
 
         create_dir_all(out_path.join(entry.path().parent().unwrap_or(Path::new(""))))?;

@@ -133,6 +133,23 @@ pub fn metadata(
                 .or_else(|| self.env.env.get_metadata(id))
         }
 
+        fn metadata_binding(&mut self, bind: &ValueBinding<Symbol>) -> Metadata {
+            for arg in &bind.args {
+                if let Some(type_metadata) = arg
+                    .name
+                    .value
+                    .typ
+                    .alias_ident()
+                    .and_then(|id| self.metadata(id))
+                    .cloned()
+                {
+                    self.stack_var(arg.name.value.name.clone(), type_metadata);
+                }
+            }
+
+            self.metadata_expr(&bind.expr)
+        }
+
         fn metadata_expr(&mut self, expr: &SpannedExpr<Symbol>) -> Metadata {
             match expr.value {
                 Expr::Ident(ref id) => self
@@ -163,7 +180,8 @@ pub fn metadata(
                             None => field_metadata,
                         };
                         if maybe_metadata.has_data() {
-                            module.insert(String::from(field.name.value.as_ref()), maybe_metadata);
+                            let field_name = String::from(field.name.value.as_ref());
+                            module.insert(field_name, maybe_metadata);
                         }
                     }
                     for field in types {
@@ -185,20 +203,7 @@ pub fn metadata(
                             self.new_binding(Metadata::default(), bind);
                         }
                         for bind in bindings {
-                            for arg in &bind.args {
-                                if let Some(type_metadata) = arg
-                                    .name
-                                    .value
-                                    .typ
-                                    .alias_ident()
-                                    .and_then(|id| self.metadata(id))
-                                    .cloned()
-                                {
-                                    self.stack_var(arg.name.value.name.clone(), type_metadata);
-                                }
-                            }
-
-                            let expr_metadata = self.metadata_expr(&bind.expr);
+                            let expr_metadata = self.metadata_binding(&bind);
 
                             if let Pattern::Ident(ref id) = bind.name.value {
                                 if expr_metadata.has_data() {
@@ -212,7 +217,7 @@ pub fn metadata(
                         }
                     } else {
                         for bind in bindings {
-                            let metadata = self.metadata_expr(&bind.expr);
+                            let metadata = self.metadata_binding(&bind);
                             self.new_binding(metadata, bind);
                         }
                     }

@@ -529,7 +529,15 @@ where
                 return Box::new(future::ok(pos::spanned(args[0].span, expr)));
             }
 
-            match self.load_module(&mut Compiler::new(), vm, macros, &name, args[0].span) {
+            // TODO Inherit settings from the parent compiler instead of forcing full_metadata here
+            // (which is necessary for the doc generator)
+            match self.load_module(
+                &mut Compiler::new().full_metadata(true),
+                vm,
+                macros,
+                &name,
+                args[0].span,
+            ) {
                 Ok(Some(future)) => {
                     let span = args[0].span;
                     return Box::new(

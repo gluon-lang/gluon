@@ -207,6 +207,7 @@ pub struct Compiler {
     implicit_prelude: bool,
     emit_debug_info: bool,
     run_io: bool,
+    full_metadata: bool,
 }
 
 impl Default for Compiler {
@@ -239,6 +240,7 @@ impl Compiler {
             implicit_prelude: true,
             emit_debug_info: true,
             run_io: false,
+            full_metadata: false,
         }
     }
 
@@ -259,6 +261,12 @@ impl Compiler {
         /// Sets whether `IO` expressions are evaluated.
         /// (default: false)
         run_io set_run_io: bool
+    }
+
+    option!{
+        /// Sets whether full metadata is required
+        /// (default: false)
+        full_metadata set_full_metadata: bool
     }
 
     pub fn code_map(&self) -> &codespan::CodeMap {
