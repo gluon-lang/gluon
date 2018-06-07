@@ -8,111 +8,125 @@ let { Traversable } = import! std.traversable
 let { flip, const } = import! std.function
 let list @ { List } = import! std.list
 let { Option } = import! std.option
+let { compare } = import! std.cmp
 
 type Map k a =
     | Bin k a (Map k a) (Map k a)
     | Tip
 
+/// The empty map.
 let empty = Tip
 
+/// Creates a map with a single entry.
 let singleton k v = Bin k v empty empty
 
-let make ord : Ord k -> _ =
-    let find k m : k -> Map k a -> Option a =
+/// Searches the map `m` for `k`. Returns `Some` with the element if it is found and otherwise `None`.
+let find k m : [Ord k] -> k -> Map k a -> Option a =
+    match m with
+    | Bin k2 v l r ->
+        match compare k k2 with
+        | LT -> find k l
+        | EQ -> Some v
+        | GT -> find k r
+    | Tip -> None
+
+/// Inserts the value `v` at the key `k` in the map `m`. If the key already exists in the map the current value gets replaced.
+let insert k v m : [Ord k] -> k -> a -> Map k a -> Map k a =
+    match m with
+    | Bin k2 v2 l r ->
+        match compare k k2 with
+        | LT -> Bin k2 v2 (insert k v l) r
+        | EQ -> Bin k v l r
+        | GT -> Bin k2 v2 l (insert k v r)
+    | Tip -> Bin k v empty empty
+
+let map f m : [Ord k] -> (a -> b) -> Map k a -> Map k b =
+    match m with
+    | Tip -> Tip
+    | Bin k x l r -> Bin k (f x) (map f l) (map f r)
+
+/// Performs a map over the `Map` where the key gets passed to the function in additon to the value.
+let map_with_key f m : [Ord k] -> (k -> a -> b) -> Map k a -> Map k b =
+    match m with
+    | Tip -> Tip
+    | Bin k x l r -> Bin k (f k x) (map_with_key f l) (map_with_key f r)
+
+let foldr f z m : [Ord k] -> (a -> b -> b) -> b -> Map k a -> b =
+    match m with
+    | Tip -> z
+    | Bin _ x l r -> foldr f (f x (foldr f z r)) l
+
+let foldl f z m : [Ord k] -> (a -> b -> a) -> a -> Map k b -> a =
+    match m with
+    | Tip -> z
+    | Bin _ x l r -> foldl f (f (foldl f z l) x) r
+
+let foldr_with_key f z m : [Ord k] -> (k -> a -> b -> b) -> b -> Map k a -> b =
+    match m with
+    | Tip -> z
+    | Bin k v l r -> foldr_with_key f (f k v (foldr_with_key f z r)) l
+
+/// Performs a fold over the `Map` where the key gets passed to the function in addition to the value.
+let foldl_with_key f z m : [Ord k] -> (a -> k -> b -> a) -> a -> Map k b -> a =
+    match m with
+    | Tip -> z
+    | Bin k x l r -> foldl_with_key f (f (foldl_with_key f z l) k x) r
+
+/// Performs a traverse over the `Map` where the key gets passed to the function in addition to the value.
+let traverse_with_key app f m : [Ord k] -> Applicative t
+        -> (k -> a -> t b)
+        -> Map k a
+        -> t (Map k b)
+    =
+    let { map3 } = import! std.applicative
+
+    let go m =
         match m with
-        | Bin k2 v l r ->
-            match ord.compare k k2 with
-            | LT -> find k l
-            | EQ -> Some v
-            | GT -> find k r
-        | Tip -> None
+        | Tip -> app.wrap Tip
+        | Bin k v l r ->
+            map3 (flip (Bin k)) (go l) (f k v) (go r)
 
-    let insert k v m : k -> a -> Map k a -> Map k a =
-        match m with
-        | Bin k2 v2 l r ->
-            match ord.compare k k2 with
-            | LT -> Bin k2 v2 (insert k v l) r
-            | EQ -> Bin k v l r
-            | GT -> Bin k2 v2 l (insert k v r)
-        | Tip -> Bin k v empty empty
+    go m
 
-    let map f m : (a -> b) -> Map k a -> Map k b =
-        match m with
-        | Tip -> Tip
-        | Bin k x l r -> Bin k (f x) (map f l) (map f r)
+let traverse app f : [Ord k] -> Applicative t -> (a -> t b) -> Map k a -> t (Map k b) =
+    traverse_with_key app (const f)
 
-    let map_with_key f m : (k -> a -> b) -> Map k a -> Map k b =
-        match m with
-        | Tip -> Tip
-        | Bin k x l r -> Bin k (f k x) (map_with_key f l) (map_with_key f r)
+/// Combines two maps into one. If a key exists in both maps the value in `r` takes precedence.
+let append l r : [Ord k] -> Map k a -> Map k a -> Map k a = foldr_with_key insert l r
 
-    let foldr f z m : (a -> b -> b) -> b -> Map k a -> b =
-        match m with
-        | Tip -> z
-        | Bin _ x l r -> foldr f (f x (foldr f z r)) l
+let semigroup : [Ord k] -> Semigroup (Map k a) = { append }
+let monoid : [Ord k] -> Monoid (Map k a) = { semigroup, empty }
 
-    let foldl f z m : (a -> b -> a) -> a -> Map k b -> a =
-        match m with
-        | Tip -> z
-        | Bin _ x l r -> foldl f (f (foldl f z l) x) r
+let functor : [Ord k] -> Functor (Map k) = { map }
+let foldable : [Ord k] -> Foldable (Map k) = { foldr, foldl }
+let traversable : [Ord k] -> Traversable (Map k) = { functor, foldable, traverse }
 
-    let foldr_with_key f z m : (k -> a -> b -> b) -> b -> Map k a -> b =
-        match m with
-        | Tip -> z
-        | Bin k v l r -> foldr_with_key f (f k v (foldr_with_key f z r)) l
+let to_list : [Ord k] -> Map k a -> List { key : k, value : a } =
+    foldr_with_key (\key value acc -> Cons { key, value } acc) Nil
 
-    let foldl_with_key f z m : (a -> k -> b -> a) -> a -> Map k b -> a =
-        match m with
-        | Tip -> z
-        | Bin k x l r -> foldl_with_key f (f (foldl_with_key f z l) k x) r
+/// Returns a list of all keys in the map.
+let keys : [Ord k] -> Map k a -> List k = foldr_with_key (\k _ acc -> Cons k acc) Nil
 
-    let traverse_with_key app f m : Applicative t -> (k -> a -> t b) -> Map k a -> t (Map k b) =
-        let { map3 } = import! std.applicative
+/// Returns a list of all values in the map.
+let values : [Ord k] -> Map k a -> List a = foldr Cons Nil
 
-        let go m =
-            match m with
-            | Tip -> app.wrap Tip
-            | Bin k v l r ->
-                map3 (flip (Bin k)) (go l) (f k v) (go r)
+{
+    Map,
 
-        go m
-
-    let traverse app f : Applicative t -> (a -> t b) -> Map k a -> t (Map k b) =
-        traverse_with_key app (const f)
-
-    let append l r : Map k a -> Map k a -> Map k a = foldr_with_key insert l r
-
-    let semigroup : Semigroup (Map k a) = { append }
-    let monoid : Monoid (Map k a) = { semigroup, empty }
-
-    let functor : Functor (Map k) = { map }
-    let foldable : Foldable (Map k) = { foldr, foldl }
-    let traversable : Traversable (Map k) = { functor, foldable, traverse }
-
-    let to_list : Map k a -> List { key : k, value : a } =
-        foldr_with_key (\key value acc -> Cons { key, value } acc) Nil
-
-    let keys : Map k a -> List k = foldr_with_key (\k _ acc -> Cons k acc) Nil
-
-    let values : Map k a -> List a = foldr Cons Nil
-
-    {
-        semigroup,
-        monoid,
-        functor,
-        foldable,
-        traversable,
-        singleton,
-        empty,
-        find,
-        insert,
-        map_with_key,
-        foldr_with_key,
-        foldl_with_key,
-        traverse_with_key,
-        to_list,
-        keys,
-        values,
-    }
-
-{ Map, make }
+    semigroup,
+    monoid,
+    functor,
+    foldable,
+    traversable,
+    singleton,
+    empty,
+    find,
+    insert,
+    map_with_key,
+    foldr_with_key,
+    foldl_with_key,
+    traverse_with_key,
+    to_list,
+    keys,
+    values,
+}

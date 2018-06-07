@@ -5,7 +5,7 @@ let option @ { Option } = import! std.option
 let string = import! std.string
 let { (<>) } = import! std.prelude
 let { Test, run, assert, assert_eq, test, group, ? }  = import! std.test
-let map @ { ? } = import! std.map
+let map @ { empty, singleton, find, insert, to_list, keys, values, ? } = import! std.map
 let { Applicative, (*>) } = import! std.applicative
 let list @ { List, ? } = import! std.list
 
@@ -16,10 +16,6 @@ let show_Entry : Show { key : String, value : Int } = {
 let eq_Entry : Eq { key : String, value : Int } = {
     (==) = \l r -> l.key == r.key && l.value == r.value
 }
-
-let ord_map = map.make string.ord
-let { singleton, find, insert, to_list, keys, values, ? } = ord_map
-let { empty } = ord_map.monoid
 
 let basic_tests =
     let test_map = singleton "test" 1 <> singleton "asd" 2 <> singleton "a" 3

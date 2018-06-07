@@ -72,9 +72,9 @@ let empty ?alt : [Alternative f] -> f a = alt.empty
 
 let or ?alt : [Alternative f] -> f a -> f a -> f a = alt.or
 
-/// Alias of `or` 
+/// Alias of `or`
 #[infix(left, 3)]
-let (<|>): [Alternative f] -> f a -> f a -> f a = or
+let (<|>) : [Alternative f] -> f a -> f a -> f a = or
 
 
 {

@@ -28,7 +28,7 @@ let (<=) l r : [Ord a] -> a -> a -> Bool =
     | GT -> False
 
 #[infix(left, 4)]
-let (<) l r : [Ord a] -> a -> a -> Bool =
+let (<) ?x l r : [Ord a] -> a -> a -> Bool =
     match compare l r with
     | LT -> True
     | EQ -> False

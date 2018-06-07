@@ -9,6 +9,7 @@ let list @ { List, ? } = import! std.list
 let { Foldable, foldl } = import! std.foldable
 let { Option } = import! std.option
 let { (<>) } = import! std.semigroup
+let { error } = import! std.prim
 
 
 type Test a = Writer (List String) a

@@ -620,14 +620,15 @@ impl Compiler {
 
 pub const PRELUDE: &'static str = r#"
 let __implicit_prelude = import! std.prelude
-and { Num, Eq, Ord, Show, Functor, Applicative, Monad, ? } = __implicit_prelude
-and { Bool, not, ? } = import! std.bool
-and { Option, ? } = import! std.option
+and { Num, Eq, Ord, Show, Functor, Applicative, Monad, Option, Bool, ? } = __implicit_prelude
 
-let { (+), (-), (*), (/), (==), (/=), (<), (<=), (>=), (>), show, ? } = __implicit_prelude
+let { (+), (-), (*), (/), (==), (/=), (<), (<=), (>=), (>), show, not } = __implicit_prelude
+
+let __implicit_bool @ { ? } = import! std.bool
+
+let { ? } = import! std.option
 
 let __implicit_float @ { ? } = import! std.float
-
 
 let __implicit_int @ { ? } = import! std.int
 

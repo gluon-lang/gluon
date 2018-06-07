@@ -14,9 +14,7 @@ let { Option } = import! std.option
 
 let list @ { List, ? } = import! std.list
 
-let map = import! std.map
-let { Map } = map
-let prim_map @ { ? } = map.make string.ord
+let map @ { Map, ? } = import! std.map
 
 let { Expr, Function, Lisp, LispState } = import! "examples/lisp/types.glu"
 let lisp_parser = import! "examples/lisp/parser.glu"
@@ -105,7 +103,7 @@ let scope_state run : Lisp a -> Lisp a =
 
 let fail msg : String -> Lisp a = lisp (\_ -> Err msg)
 
-let primitive name f : String -> _ -> Map String Expr = prim_map.singleton name (Primitive f)
+let primitive name f : String -> _ -> Map String Expr = map.singleton name (Primitive f)
 
 type Binop a = a -> a -> a
 
@@ -140,7 +138,7 @@ let define xs =
     match xs with
     | Cons (Atom name) (Cons value Nil) ->
         do state = get_state
-        let new_state = prim_map.insert name value state
+        let new_state = map.insert name value state
         do _ = set_state new_state
         wrap value
     | Cons (List (Cons (Atom name) params)) body ->
@@ -152,7 +150,7 @@ let define xs =
                     body,
                     closure,
                 }
-        let new_state = prim_map.insert name function closure
+        let new_state = map.insert name function closure
 
         do _ = set_state new_state
 
@@ -169,7 +167,7 @@ let apply f xs : Expr -> List Expr -> Lisp Expr =
     let add_args names values =
         match (names, values) with
         | (Cons name names, Cons value values) ->
-            do _ = modify_state (\state -> prim_map.insert name value state)
+            do _ = modify_state (\state -> map.insert name value state)
             add_args names values
         | (Nil, _) -> wrap ()
         | _ -> fail "Not enough arguments to function"
@@ -186,7 +184,7 @@ and eval_lisp expr : Expr -> Lisp Expr =
     match expr with
     | Atom name ->
         do state = get_state
-        match prim_map.find name state with
+        match map.find name state with
         | Some value -> wrap value
         | None -> fail ("Binding `" <> name <> "` is not defined")
     | Int _ -> wrap expr
@@ -201,7 +199,7 @@ and eval_lisp expr : Expr -> Lisp Expr =
                 if name == "define" then
                     define xs
                 else
-                    match prim_map.find name state with
+                    match map.find name state with
                     | Some prim ->
                         do evaluated_args = traverse eval_lisp xs
                         apply prim evaluated_args

@@ -13,6 +13,7 @@ let { Bool } = import! std.bool
 let { compare } = import! std.cmp
 let string @ { ? } = import! std.string
 let { (<>) } = import! std.semigroup
+let { error } = import! std.prim
 
 let unwrap_ok res : Result e a -> a =
     match res with
