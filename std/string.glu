@@ -25,6 +25,10 @@ let show : Show String = { show = function.id }
     show,
     semigroup,
     monoid,
+    /// Appends two strings.
+    ///
+    /// Re-export of `semigroup.append`.
+    (++) = semigroup.append,
     ..
     string_prim
 }
