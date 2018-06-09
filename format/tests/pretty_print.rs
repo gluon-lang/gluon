@@ -292,6 +292,18 @@ x
 }
 
 #[test]
+fn doc_comment_in_record_expr() {
+    let expr = r#"
+{
+    /// test
+    /// test
+    field1 = 1,
+}
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+}
+
+#[test]
 fn preserve_comments_in_empty_record() {
     let expr = r#"
 {

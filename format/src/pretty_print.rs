@@ -448,10 +448,16 @@ where
                 let newline_in_fields = newlines
                     .iter()
                     .any(|&(ref l, ref r)| l.1 != arena.nil().1 || r.1 != arena.nil().1);
+                let newline_from_doc_comment = expr.value.field_iter().any(|either| {
+                    either
+                        .either(|f| &f.metadata, |f| &f.metadata)
+                        .comment
+                        .is_some()
+                });
                 let newline_in_base = base.as_ref().map_or(false, |base| {
                     self.space_before(base.span.start()).1 != arena.nil().1
                 });
-                if newline_in_fields || newline_in_base {
+                if newline_in_fields || newline_in_base | newline_from_doc_comment {
                     line = arena.newline();
                 }
 
@@ -469,8 +475,9 @@ where
                             ),
                             Either::Right(r) => {
                                 let id = pretty_types::ident(arena, r.name.value.as_ref());
-                                pos::spanned(
-                                    r.name.span,
+                                let doc = chain![
+                                    arena;
+                                    pretty_types::doc_comment(arena, r.metadata.comment.as_ref()),
                                     match r.value {
                                         Some(ref expr) => {
                                             let x = chain![arena;
@@ -481,8 +488,9 @@ where
                                             self.hang(x, expr)
                                         }
                                         None => id,
-                                    },
-                                )
+                                    }
+                                ];
+                                pos::spanned(r.name.span, doc)
                             }
                         }),
                         |spanned| spanned.value,
