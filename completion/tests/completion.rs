@@ -428,6 +428,26 @@ module.abc
 }
 
 #[test]
+fn metadata_at_type_pattern() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+let { Test } =
+    /// test
+    type Test = Int
+    { Test }
+()
+"#;
+    let result = get_metadata(text, loc(text, 1, 7));
+
+    let expected = Some(Metadata {
+        comment: Some(line_comment("test".to_string())),
+        ..Metadata::default()
+    });
+    assert_eq!(result, expected);
+}
+
+#[test]
 fn suggest_metadata_at_variable() {
     let _ = env_logger::try_init();
 

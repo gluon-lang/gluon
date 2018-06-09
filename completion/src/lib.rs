@@ -1583,7 +1583,7 @@ pub fn get_metadata<'a>(
                     value: Expr::Infix { .. },
                     ..
                 }) => env.get(id),
-                _ => None,
+                _ => env.get(id),
             },
             _ => None,
         })
