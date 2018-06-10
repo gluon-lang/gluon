@@ -3,12 +3,63 @@
 
 let prim = import! std.array.prim
 let int @ { ? } = import! std.int
-let prelude @ { Num, Eq, Ord, Functor, (<), (==), (-), (+) } = import! std.prelude
+let { (++) } = import! std.string
+let prelude @ { Num, Eq, Ord, Show, Functor, (<), (==), (/=), (-), (+) } = import! std.prelude
+let { Bool, Ordering, compare, min } = import! std.cmp
 let { Foldable } = import! std.foldable
 let { Traversable } = import! std.traversable
 
 // FIXME Implement the functions using this in Rust so we don't have quadratic complexity for `map` etc
 let cons l r = prim.append [l] r
+
+let eq ?eq : [Eq a] -> Eq (Array a) =
+    let array_eq l r =
+        if prim.len l /= prim.len r then
+            False
+        else
+            let len = prim.len l
+            let array_eq_ i =
+                if i < len then
+                    let x = prim.index l i
+                    let y = prim.index r i
+                    eq.(==) x y && array_eq_ (i + 1)
+                else
+                    True
+            array_eq_ 0
+    { (==) = array_eq }
+
+let ord ?ord : [Ord a] -> Ord (Array a) =
+    let array_cmp l r =
+        let min_len = min (prim.len l) (prim.len r)
+        let array_cmp_ i =
+            if i < min_len then
+                let x = prim.index l i
+                let y = prim.index r i
+                match ord.compare x y with
+                | EQ -> array_cmp_ (i + 1)
+                | o -> o
+            else
+                compare (prim.len l) (prim.len r)
+
+        array_cmp_ 0
+    { eq, compare = array_cmp }
+
+let show ?d : [Show a] -> Show (Array a) =
+
+    let show xs =
+        let len = prim.len xs
+        if len == 0 then
+            "[]"
+        else
+            let show_elems i =
+                if i < len then
+                    let x = prim.index xs i
+                    ", " ++ d.show x ++ show_elems (i + 1)
+                else
+                    ""
+
+            "[" ++ d.show (prim.index xs 0) ++ show_elems 1 ++ "]"
+    { show }
 
 let functor : Functor Array =
     let map f xs =
@@ -57,6 +108,9 @@ let traversable : Traversable Array =
 
 
 {
+    eq,
+    ord,
+    show,
     functor,
     foldable,
     traversable,
