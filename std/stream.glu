@@ -1,13 +1,14 @@
 //! Lazy stream type.
 
-let { Functor, Applicative } = import! std.prelude
+let { Functor, Applicative, Show } = import! std.prelude
 let list @ { List } = import! std.list
 let array = import! std.array
 let { Ordering } = import! std.cmp
 let { Bool } = import! std.bool
 let { Option } = import! std.option
 let { Monoid } = import! std.monoid
-let { Semigroup } = import! std.semigroup
+let { Semigroup, (<>) } = import! std.semigroup
+let { Foldable } = import! std.foldable
 let { lazy, force } = import! std.lazy
 
 type Stream_ a =
@@ -60,18 +61,41 @@ let take n xs : Int -> Stream a -> Stream a =
     else
         empty
 
+/// Checks if the stream is empty
+///
+/// ```
+/// let stream = import! std.stream
+/// let { assert } = import! std.test
+///
+/// assert (stream.is_empty stream.empty)
+/// ```
 let is_empty stream : Stream a -> Bool =
     match force stream with
     | Value _ _ -> False
     | Empty -> True
 
-let fold f b stream : (a -> b -> b) -> b -> Stream a -> b =
+let foldl f b stream : (b -> a -> b) -> b -> Stream a -> b =
     match force stream with
-    | Value x xs -> fold f (f x b) xs
+    | Value x xs -> foldl f (f b x) xs
     | Empty -> b
 
+let foldr f b stream : (a -> b -> b) -> b -> Stream a -> b =
+    match force stream with
+    | Value x xs -> f x (foldr f b xs)
+    | Empty -> b
+
+
+/// Converts the `Stream` to a `List`
+///
+/// ```
+/// let stream = import! std.stream
+/// let list @ { ? } = import! std.list
+/// let { assert } = import! std.test
+///
+/// assert (stream.to_list (stream.of ["a", "b"]) == list.of ["a", "b"])
+/// ```
 let to_list : Stream a -> List a =
-    fold Cons Nil
+    foldr Cons Nil
 
 let zip_with f xs ys : (a -> b -> c) -> Stream a -> Stream b -> Stream c =
     lazy (\_ ->
@@ -99,6 +123,21 @@ let ord ?ord : [Ord a] -> Ord (Stream a) =
         | (None, Some _) -> LT
     { eq, compare = stream_cmp }
 
+let show ?d : [Show a] -> Show (Stream a) =
+
+    {
+        show = \xs ->
+            let show_elems ys =
+                match uncons ys with
+                | Some (y, ys2) ->
+                    match uncons ys2 with
+                    | Some (z, zs) -> d.show y <> ", " <> show_elems ys2
+                    | None -> d.show y
+                | None -> ""
+
+            "[" <> show_elems xs <> "]",
+    }
+
 let semigroup : Semigroup (Stream a) =
     let append xs ys =
         match uncons xs with
@@ -106,6 +145,9 @@ let semigroup : Semigroup (Stream a) =
         | None -> ys
 
     { append }
+
+let foldable : Foldable Stream =
+    { foldr, foldl }
 
 let monoid : Monoid (Stream a) = {
     semigroup,
@@ -131,13 +173,16 @@ let functor : Functor Stream =
     take,
     next,
     is_empty,
-    fold,
     to_list,
     zip_with,
 
     eq,
     ord,
+    show,
+
     functor,
+    foldable,
+
     monoid,
     semigroup,
 }

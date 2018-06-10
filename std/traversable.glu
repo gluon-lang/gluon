@@ -18,10 +18,10 @@ let traverse ?t : forall a b m . [Traversable t] -> Applicative m
         -> m (t b)
     = t.traverse
 
-let sequence ?t applicative : [Traversable t] -> Applicative m -> t (m a) -> m (t a) =
+let sequence applicative : [Traversable t] -> Applicative m -> t (m a) -> m (t a) =
     traverse applicative (\x -> x)
 
-let for ?t applicative x f : [Traversable t] -> Applicative m -> t a -> (a -> m b) -> m (t b) =
+let for applicative x f : [Traversable t] -> Applicative m -> t a -> (a -> m b) -> m (t b) =
     traverse applicative f x
 
 

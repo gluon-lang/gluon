@@ -274,11 +274,10 @@ fn run_doc_tests<'t>(
     Ok(tests
         .into_iter()
         .map(move |(test_name, test_source)| {
-            let full_test_name = format!("{}:{}", name, test_name);
             let vm = vm.new_thread().unwrap();
-            tensile::test(full_test_name.clone(), move || {
+            tensile::test(test_name.clone(), move || {
                 Compiler::new()
-                    .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, &full_test_name, &test_source)
+                    .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, &test_name, &test_source)
                     .map_err(|err| err.to_string())?;
                 Ok(())
             })
