@@ -61,6 +61,11 @@ let (>=) l r : [Ord a] -> a -> a -> Bool =
     | EQ -> True
     | GT -> True
 
+let min l r : [Ord a] -> a -> a -> a =
+    if l <= r then l else r
+
+let max l r : [Ord a] -> a -> a -> a =
+    if r >= l then r else l
 
 let semigroup : Semigroup Ordering = {
     append = \x y ->
@@ -81,7 +86,7 @@ let monoid : Monoid Ordering = {
     Bool,
 
     Ord,
-    compare, (<), (<=), (>=), (>),
+    compare, (<), (<=), (>=), (>), min, max,
 
     Ordering,
 
