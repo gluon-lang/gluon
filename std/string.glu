@@ -3,7 +3,7 @@
 
 let string_prim = import! std.string.prim
 let prim = import! std.prim
-let { Semigroup } = import! std.semigroup
+let { Semigroup, (<>) } = import! std.semigroup
 let { Monoid } = import! std.monoid
 let { Show } = import! std.show
 let { Eq, Ord, Ordering } = import! std.cmp
@@ -19,16 +19,19 @@ let ord : Ord String = { eq, compare = prim.string_compare }
 
 let show : Show String = { show = function.id }
 
+/// Appends two strings.
+///
+/// Re-export of `semigroup.append`.
+#[infix(left, 4)]
+let (++) : String -> String -> String = (<>)
+
 {
     eq,
     ord,
     show,
     semigroup,
     monoid,
-    /// Appends two strings.
-    ///
-    /// Re-export of `semigroup.append`.
-    (++) = semigroup.append,
+    (++),
     ..
     string_prim
 }
