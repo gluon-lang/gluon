@@ -145,6 +145,7 @@ fn infix_implicit_arg() {
     let _ = ::env_logger::try_init();
     let text = r#"
 
+#[infix(left, 1)]
 let (==) ?eq l r: [a -> a -> Bool] -> a -> a -> Bool = eq l r
 #[implicit]
 let eq_int l r : Int -> Int -> Bool = True
@@ -376,6 +377,7 @@ g 2
 fn implicit_as_function_argument() {
     let _ = ::env_logger::try_init();
     let text = r#"
+#[infix(left, 1)]
 let (==) ?eq l r: [a -> a -> Bool] -> a -> a -> Bool = eq l r
 #[implicit]
 let eq_int l r : Int -> Int -> Bool = True
@@ -428,7 +430,9 @@ type Applicative (f : Type -> Type) = {
     apply : forall a b . f (a -> b) -> f a -> f b,
 }
 
+#[infix(left, 1)]
 let (<*>) ?app : [Applicative f] -> f (a -> b) -> f a -> f b = app.apply
+#[infix(left, 1)]
 let (<*) ?app l r : [Applicative f] -> f a -> f b -> f a = app.functor.map (\x _ -> x) l <*> r
 ()
 "#;
@@ -608,6 +612,7 @@ let semigroup : Semigroup (List a) =
 
     { append }
 
+#[infix(left, 1)]
 let (<>) ?s : [Semigroup a] -> a -> a -> a = s.append
 
 Nil <> Nil
@@ -640,10 +645,12 @@ let any x = any x
 let semigroup : Semigroup (List a) = any ()
 
 let eq ?eq : [Eq a] -> Eq (List a) =
+    #[infix(left, 1)]
     let (==) l r = True
     { (==) }
 
 
+#[infix(left, 1)]
 let (<>) ?s : [Semigroup a] -> a -> a -> a = s.append
 
 let map f xs =
@@ -685,6 +692,7 @@ let impls =
 
 let { ? } = impls
 
+#[infix(left, 1)]
 let (*>) ?app l r : [Applicative f] -> f a -> f b -> f b = any ()
 
 let put value : s -> State s () = any ()
@@ -733,6 +741,7 @@ type Ord a = { compare : a -> a -> Ordering }
 
 let compare ?ord : [Ord a] -> a -> a -> Ordering = ord.compare
 
+#[infix(left, 1)]
 let (<) l r : [Ord a] -> a -> a -> Bool =
     match compare l r with
     | LT -> True

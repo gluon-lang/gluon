@@ -253,6 +253,7 @@ fn binop_as_function() {
     let _ = env_logger::try_init();
 
     let text = r"
+#[infix(left, 1)]
 let (+) = \x y -> x #Int+ y
 in 1 + 2
 ";
@@ -380,6 +381,7 @@ let monad_Test: Monad Test = {
     return = \x -> T x
 }
 
+#[infix(left, 1)]
 let (>>=) = monad_Test.(>>=)
 
 let test: Test () = T 1 >>= \x -> monad_Test.return ()
@@ -495,6 +497,7 @@ type Monad m = {
 } in
 type State s a = s -> { value: a, state: s }
 in
+#[infix(left, 1)]
 let (>>=) m f: State s a -> (a -> State s b) -> State s b =
     \state ->
         let { value, state } = m state
@@ -768,9 +771,11 @@ fn eq_unresolved_constraint_bug() {
 type Eq a = { (==) : a -> a -> Bool }
 type List a = | Nil | Cons a (List a)
 
+#[infix(left, 1)]
 let (==): Int -> Int -> Bool = \x y -> True
 
 let eq a : Eq a -> Eq (List a) =
+    #[infix(left, 1)]
     let (==) l r : List a -> List a -> Bool =
         match (l, r) with
         | (Cons x xs, Cons y ys) -> a.(==) x y

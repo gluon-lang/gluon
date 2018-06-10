@@ -247,12 +247,17 @@ where
                 Ok(expr) => {
                     *e = expr;
                 }
-                // Undefined fixity errors are reported at the definition site
-                Err(Spanned {
-                    value: Error::UndefinedFixity(_),
-                    ..
-                }) => (),
-                Err(err) => self.errors.push(err),
+                Err((err, reconstructed_expr)) => {
+                    info!("Infix error: {}", err);
+                    if let Some(reconstructed_expr) = reconstructed_expr {
+                        e.value = reconstructed_expr;
+                    }
+                    match err.value {
+                        // Undefined fixity errors are reported at the definition site
+                        Error::UndefinedFixity(_) => (),
+                        _ => self.errors.push(err),
+                    }
+                }
             }
         }
         walk_mut_expr(self, e);
@@ -306,7 +311,7 @@ pub fn reparse<Id>(
     expr: SpannedExpr<Id>,
     symbols: &IdentEnv<Ident = Id>,
     operators: &OpTable<Id>,
-) -> Result<SpannedExpr<Id>, Spanned<Error, BytePos>>
+) -> Result<SpannedExpr<Id>, (Spanned<Error, BytePos>, Option<Expr<Id>>)>
 where
     Id: Eq + Hash + AsRef<str> + ::std::fmt::Debug,
 {
@@ -342,8 +347,32 @@ where
                     }
                 };
 
-                let next_op_meta = *operators.get_at(&next_op)?;
-                let stack_op_meta = *operators.get_at(&stack_op)?;
+                macro_rules! try_infix {
+                    ($expr:expr) => {
+                        match $expr {
+                            Ok(e) => e,
+                            Err(err) => {
+                                match infixes.remaining_expr {
+                                    Some(expr) => arg_stack.push(expr),
+                                    None => ()
+                                }
+                                op_stack.push(next_op);
+                                op_stack.push(stack_op);
+                                while arg_stack.len() > 1 {
+                                    let rhs = arg_stack.pop().unwrap();
+                                    let lhs = arg_stack.pop().unwrap();
+                                    let op = op_stack.pop().unwrap();
+
+                                    arg_stack.push(make_op(lhs, op, rhs));
+                                }
+                                return Err((err, arg_stack.pop().map(|original| original.value)));
+                            }
+                        }
+                    };
+                }
+
+                let next_op_meta = *try_infix!(operators.get_at(&next_op));
+                let stack_op_meta = *try_infix!(operators.get_at(&stack_op));
 
                 match i32::cmp(&next_op_meta.precedence, &stack_op_meta.precedence) {
                     // Reduce
@@ -385,7 +414,7 @@ where
                                     (next_op_name, next_op_meta),
                                 );
 
-                                return Err(pos::spanned(span, error));
+                                return Err((pos::spanned(span, error), None));
                             }
                         }
                     }
@@ -490,7 +519,18 @@ mod tests {
     use std::marker::PhantomData;
 
     use super::Error::*;
-    use super::{reparse, Fixity, InfixToken, Infixes, OpMeta, OpTable};
+    use super::*;
+
+    fn reparse<Id>(
+        expr: SpannedExpr<Id>,
+        symbols: &IdentEnv<Ident = Id>,
+        operators: &OpTable<Id>,
+    ) -> Result<SpannedExpr<Id>, Spanned<Error, BytePos>>
+    where
+        Id: Eq + Hash + AsRef<str> + ::std::fmt::Debug,
+    {
+        super::reparse(expr, symbols, operators).map_err(|t| t.0)
+    }
 
     pub struct MockEnv<T>(PhantomData<T>);
 

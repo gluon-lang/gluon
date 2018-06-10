@@ -206,6 +206,7 @@ let make_Ord ord : forall a . Ord a -> _ =
                 | EQ -> True
                 | GT -> False
     }
+#[infix(left, 4)]
 let (<=) = (make_Ord ord_Int).(<=)
 
 "" <= ""
@@ -607,6 +608,18 @@ type Test = | Test In
     let result = support::typecheck(text);
 
     assert_err!(result, UndefinedType(..));
+}
+
+#[test]
+fn missing_infix_operator_is_reported() {
+    let _ = ::env_logger::try_init();
+
+    let text = r#"
+2 <> 2 <> 2
+"#;
+    let result = support::typecheck(text);
+
+    assert_err!(result, UndefinedVariable(..), UndefinedVariable(..));
 }
 
 #[test]

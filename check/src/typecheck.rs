@@ -786,7 +786,7 @@ impl<'a> Typecheck<'a> {
                         "&&" | "||" => self
                             .type_cache
                             .function(vec![self.bool(), self.bool()], self.bool()),
-                        _ => self.find(&op.value.name)?,
+                        _ => self.find_at(op.span, &op.value.name),
                     }
                 };
 
@@ -1141,6 +1141,7 @@ impl<'a> Typecheck<'a> {
                 ref mut replacement,
                 ..
             } => self.typecheck_(replacement, expected_type),
+
             Expr::Error(ref typ) => Ok(TailCall::Type(
                 typ.clone().unwrap_or_else(|| self.subs.new_var()),
             )),
