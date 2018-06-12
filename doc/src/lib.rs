@@ -9,6 +9,11 @@ extern crate serde_derive;
 extern crate serde_json;
 #[macro_use]
 extern crate structopt;
+#[macro_use]
+extern crate lazy_static;
+extern crate pretty;
+extern crate pulldown_cmark;
+extern crate regex;
 extern crate walkdir;
 
 #[macro_use]
@@ -28,9 +33,11 @@ use handlebars::{Handlebars, Helper, Output, RenderContext, RenderError};
 
 use serde::Deserialize;
 
+use pretty::{Arena, DocAllocator};
+
 use gluon::base::filename_to_module;
 use gluon::base::metadata::Metadata;
-use gluon::base::types::ArcType;
+use gluon::base::types::{ArcType, ArgType, Type};
 use gluon::check::metadata::metadata;
 use gluon::{Compiler, Thread};
 
@@ -40,6 +47,7 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 #[derive(Serialize, PartialEq, Debug)]
 pub struct Module {
     pub name: String,
+    pub comment: String,
     pub record: Record,
 }
 
@@ -50,11 +58,31 @@ pub struct Record {
 }
 
 #[derive(Serialize, PartialEq, Debug)]
+pub struct Argument {
+    pub implicit: bool,
+    pub name: String,
+}
+
+#[derive(Serialize, PartialEq, Debug)]
 pub struct Field {
     pub name: String,
+    pub args: Vec<Argument>,
     #[serde(rename = "type")]
     pub typ: String,
     pub comment: String,
+}
+
+fn print_type(typ: &ArcType) -> String {
+    let arena = Arena::new();
+    let mut doc = typ.pretty(&arena);
+    match **typ {
+        Type::Record(_) => (),
+        Type::Variant(_) => doc = arena.newline().append(doc).nest(4),
+        _ => {
+            doc = doc.nest(4);
+        }
+    }
+    doc.group().1.pretty(80).to_string()
 }
 
 pub fn record(typ: &ArcType, meta: &Metadata) -> Record {
@@ -63,7 +91,16 @@ pub fn record(typ: &ArcType, meta: &Metadata) -> Record {
             .type_field_iter()
             .map(|field| Field {
                 name: field.name.definition_name().to_string(),
-                typ: field.typ.unresolved_type().to_string(),
+                args: field
+                    .typ
+                    .params()
+                    .iter()
+                    .map(|gen| Argument {
+                        implicit: false,
+                        name: gen.id.to_string(),
+                    })
+                    .collect(),
+                typ: print_type(&field.typ.unresolved_type().remove_forall()),
                 comment: meta
                     .module
                     .get(AsRef::<str>::as_ref(&field.name))
@@ -75,16 +112,28 @@ pub fn record(typ: &ArcType, meta: &Metadata) -> Record {
 
         values: typ
             .row_iter()
-            .map(|field| Field {
-                name: field.name.definition_name().to_string(),
-                typ: field.typ.to_string(),
+            .map(|field| {
+                let meta_opt = meta.module.get(AsRef::<str>::as_ref(&field.name));
+                Field {
+                    name: field.name.definition_name().to_string(),
+                    args: meta_opt
+                        .map(|meta| {
+                            meta.args
+                                .iter()
+                                .map(|arg| Argument {
+                                    implicit: arg.arg_type == ArgType::Implicit,
+                                    name: arg.name.definition_name().to_string(),
+                                })
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                    typ: print_type(&field.typ),
 
-                comment: meta
-                    .module
-                    .get(AsRef::<str>::as_ref(&field.name))
-                    .and_then(|meta| meta.comment.as_ref().map(|s| &s.content[..]))
-                    .unwrap_or("")
-                    .to_string(),
+                    comment: meta_opt
+                        .and_then(|meta| meta.comment.as_ref().map(|s| &s.content[..]))
+                        .unwrap_or("")
+                        .to_string(),
+                }
             })
             .collect(),
     }
@@ -93,6 +142,7 @@ pub fn record(typ: &ArcType, meta: &Metadata) -> Record {
 #[derive(Serialize, Debug)]
 pub struct TemplateModule<'a> {
     pub name: &'a str,
+    pub comment: &'a str,
     pub record: &'a Record,
     pub sibling_modules: Vec<&'a str>,
 }
@@ -184,6 +234,63 @@ fn handlebars() -> Result<Handlebars> {
     }
     reg.register_helper("style", Box::new(style));
 
+    fn markdown(
+        h: &Helper,
+        _: &Handlebars,
+        _: &mut RenderContext,
+        out: &mut Output,
+    ) -> ::std::result::Result<(), RenderError> {
+        let param = String::deserialize(h.param(0).unwrap().value())?;
+
+        let parser = pulldown_cmark::Parser::new(&param);
+        let mut buf = String::new();
+        pulldown_cmark::html::push_html(&mut buf, parser);
+
+        // HACK
+        // This markdown is embedded so shrink the headings found in the markdown
+        lazy_static! {
+            static ref REGEX: regex::Regex = regex::Regex::new(r#"<(/?)h(\d)>"#).unwrap();
+        }
+        let buf = REGEX.replace_all(&buf, |captures: &regex::Captures| {
+            format!(
+                "<{}h{}>",
+                &captures[1],
+                captures[2].parse::<i32>().expect("Digit from regex") + 4
+            )
+        });
+
+        out.write(&buf)?;
+
+        Ok(())
+    }
+    reg.register_helper("markdown", Box::new(markdown));
+
+    fn markdown_first_paragraph(
+        h: &Helper,
+        _: &Handlebars,
+        _: &mut RenderContext,
+        out: &mut Output,
+    ) -> ::std::result::Result<(), RenderError> {
+        let param = String::deserialize(h.param(0).unwrap().value())?;
+
+        let first_paragraph: String = param.lines().take_while(|s| !s.is_empty()).collect();
+
+        let parser = pulldown_cmark::Parser::new(&first_paragraph);
+        let mut buf = String::new();
+        pulldown_cmark::html::push_html(&mut buf, parser);
+        let buf = buf
+            .trim()
+            .trim_left_matches("<p>")
+            .trim_right_matches("</p>");
+        out.write(buf)?;
+
+        Ok(())
+    }
+    reg.register_helper(
+        "markdown_first_paragraph",
+        Box::new(markdown_first_paragraph),
+    );
+
     Ok(reg)
 }
 
@@ -228,18 +335,32 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
         let mut content = String::new();
         input.read_to_string(&mut content)?;
 
-        let name = filename_to_module(entry
-            .path()
-            .to_str()
-            .ok_or_else(|| failure::err_msg("Non-UTF-8 filename"))?);
+        let name = filename_to_module(
+            entry
+                .path()
+                .to_str()
+                .ok_or_else(|| failure::err_msg("Non-UTF-8 filename"))?,
+        );
 
-        let (expr, typ) = Compiler::new().typecheck_str(thread, &name, &content, None)?;
+        let (expr, typ) = Compiler::new()
+            .full_metadata(true)
+            .typecheck_str(thread, &name, &content, None)?;
         let (meta, _) = metadata(&*thread.get_env(), &expr);
 
         create_dir_all(out_path.join(entry.path().parent().unwrap_or(Path::new(""))))?;
 
+        let comment = content
+            .lines()
+            .map(|s| s.trim())
+            .skip_while(|s| s.is_empty() || s.starts_with("//@"))
+            .take_while(|s| s.starts_with("//!"))
+            .map(|s| &s["//!".len()..])
+            .format("\n")
+            .to_string();
+
         let module = Module {
             name,
+            comment,
             record: record(&typ, &meta),
         };
 
@@ -251,9 +372,9 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
     }
 
     #[derive(Serialize)]
-    struct Index {
+    struct Index<'a> {
         name: String,
-        modules: Vec<String>,
+        modules: &'a [Module],
     }
 
     let reg = handlebars()?;
@@ -275,6 +396,7 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
                 &mut doc_file,
                 &TemplateModule {
                     name: &module.name,
+                    comment: &module.comment,
                     record: &module.record,
                     sibling_modules: modules.iter().map(|sibling| &*sibling.name).collect(),
                 },
@@ -291,15 +413,16 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
             )
         })?;
 
-        let name = filename_to_module(path
-            .to_str()
-            .ok_or_else(|| failure::err_msg("Non-UTF-8 filename"))?);
+        let name = filename_to_module(
+            path.to_str()
+                .ok_or_else(|| failure::err_msg("Non-UTF-8 filename"))?,
+        );
 
         reg.render_to_write(
             INDEX_TEMPLATE,
             &Index {
                 name,
-                modules: modules.iter().map(|module| module.name.clone()).collect(),
+                modules: &modules,
             },
             &mut doc_file,
         ).with_context(|err| {

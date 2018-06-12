@@ -130,21 +130,21 @@ enum DataInner<'a> {
 pub struct Data<'a>(DataInner<'a>);
 
 impl<'a> Data<'a> {
-    /// The tag of this variant. If this value is a variant, the tag is the zero-based 
+    /// The tag of this variant. If this value is a variant, the tag is the zero-based
     /// index of the variant that is present, in order of the declaration.
-    /// 
+    ///
     /// Use this method to find out what variant you are dealing with, before extracting
     /// data from it.
-    /// 
+    ///
     /// ## Examples
-    /// 
+    ///
     /// ```gluon
     /// type OneOfFour =
     ///     | First
     ///     | Second
     ///     | Third
     ///     | Fourth
-    /// 
+    ///
     /// let val = First // has the tag '0'
     /// let val = Fourth // has the tag '3'
     /// ```

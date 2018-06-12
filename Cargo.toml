@@ -71,6 +71,8 @@ serde_derive_state = { version = "0.4.0" }
 serde_json = "1.0.0"
 bincode = "1"
 
+pulldown-cmark = "0.1"
+
 gluon_completion = { path = "completion", version = "0.7.1" } # GLUON
 gluon_codegen = { path = "codegen", version = "0.7.1" } # GLUON
 
@@ -153,9 +155,9 @@ name = "marshalling"
 [[example]]
 name = "http"
 path = "examples/http/main.rs"
-#[[example]]
-#name = "lisp"
-#path = "examples/lisp/main.rs"
+[[example]]
+name = "lisp"
+path = "examples/lisp/main.rs"
 
 [package.metadata.docs.rs]
 features = ["docs_rs"]

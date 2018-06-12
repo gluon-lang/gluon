@@ -1,8 +1,11 @@
 //@NO-IMPLICIT-PRELUDE
+//! Conveniences for working with functions.
 
-let prelude = import! std.prelude
-let { Semigroup, Monoid, Category } = prelude
-let { Functor, Monad } = prelude
+let { Semigroup } = import! std.semigroup
+let { Monoid } = import! std.monoid
+let { Category } = import! std.category
+let { Functor } = import! std.functor
+let { Monad } = import! std.monad
 let { Applicative } = import! std.applicative
 
 let semigroup s : Semigroup b -> Semigroup (a -> b) = {

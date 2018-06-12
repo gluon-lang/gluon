@@ -1,11 +1,17 @@
 //! Module containing the types which make up `gluon`'s AST (Abstract Syntax Tree)
+use std::borrow::Cow;
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 
+use either::Either;
+
+use itertools::Itertools;
+
 use metadata::{Comment, Metadata};
 use ordered_float::NotNaN;
 use pos::{self, BytePos, HasSpan, Span, Spanned};
+use resolve::remove_aliases_cow;
 use symbol::Symbol;
 use types::{self, Alias, AliasData, ArcType, ArgType, Generic, Type, TypeEnv};
 
@@ -235,7 +241,7 @@ pub struct Array<Id> {
 #[derive(Clone, PartialEq, Debug)]
 pub struct Lambda<Id> {
     pub id: TypedIdent<Id>,
-    pub args: Vec<Argument<Id>>,
+    pub args: Vec<Argument<SpannedIdent<Id>>>,
     pub body: Box<SpannedExpr<Id>>,
 }
 
@@ -326,6 +332,31 @@ pub enum Expr<Id> {
     ),
 }
 
+impl<Id> Expr<Id> {
+    // TODO Use impl Trait
+    pub fn field_iter<'a>(
+        &'a self,
+    ) -> Box<
+        Iterator<Item = Either<&'a ExprField<Id, ArcType<Id>>, &'a ExprField<Id, SpannedExpr<Id>>>>
+            + 'a,
+    > {
+        match *self {
+            Expr::Record {
+                ref types,
+                ref exprs,
+                ..
+            } => Box::new(types.iter().map(Either::Left).merge_by(
+                exprs.iter().map(Either::Right),
+                |x, y| {
+                    x.either(|l| l.name.span.start(), |r| r.name.span.start())
+                        < y.either(|l| l.name.span.start(), |r| r.name.span.start())
+                },
+            )),
+            _ => Box::new(None.into_iter()),
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Debug)]
 pub struct TypeBinding<Id> {
     pub metadata: Metadata,
@@ -340,21 +371,22 @@ impl<Id> TypeBinding<Id> {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Eq, PartialEq, Debug)]
+#[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub struct Argument<Id> {
     pub arg_type: ArgType,
-    pub name: SpannedIdent<Id>,
+    pub name: Id,
 }
 
 impl<Id> Argument<Id> {
-    pub fn explicit(name: SpannedIdent<Id>) -> Self {
+    pub fn explicit(name: Id) -> Self {
         Argument {
             arg_type: ArgType::Explicit,
             name,
         }
     }
 
-    pub fn implicit(name: SpannedIdent<Id>) -> Self {
+    pub fn implicit(name: Id) -> Self {
         Argument {
             arg_type: ArgType::Implicit,
             name,
@@ -368,7 +400,7 @@ pub struct ValueBinding<Id> {
     pub name: SpannedPattern<Id>,
     pub typ: Option<AstType<Id>>,
     pub resolved_type: ArcType<Id>,
-    pub args: Vec<Argument<Id>>,
+    pub args: Vec<Argument<SpannedIdent<Id>>>,
     pub expr: SpannedExpr<Id>,
 }
 
@@ -878,46 +910,18 @@ fn get_return_type(
     alias_type: &ArcType,
     arg_count: usize,
 ) -> Result<ArcType, String> {
-    // We don't want to panic if we attempt to get the return type of a hole so return a type hole
-    // as the return type
     if arg_count == 0 || **alias_type == Type::Hole {
         return Ok(alias_type.clone());
     }
+    let function_type = remove_aliases_cow(env, alias_type);
 
-    let alias_type = alias_type.remove_forall_and_implicit_args();
-    if let Some((_, ret)) = alias_type.as_function() {
-        return get_return_type(env, ret, arg_count - 1);
-    }
+    let ret = function_type
+        .remove_forall_and_implicit_args()
+        .as_function()
+        .map(|t| Cow::Borrowed(t.1))
+        .ok_or_else(|| format!("Unexpected type {} is not a function", alias_type))?;
 
-    let alias = {
-        let alias_ident = alias_type.alias_ident().ok_or_else(|| {
-            format!(
-                "Expected function with {} more arguments, found {:?}",
-                arg_count, alias_type
-            )
-        })?;
-
-        env.find_type_info(alias_ident)
-            .ok_or_else(|| format!("Unexpected type {} is not a function", alias_type))?
-    };
-
-    let typ = types::walk_move_type(alias.typ().into_owned(), &mut |typ| {
-        match **typ {
-            Type::Generic(ref generic) => {
-                // Replace the generic variable with the type from the list
-                // or if it is not found the make a fresh variable
-                alias
-                    .params()
-                    .iter()
-                    .zip(&*alias_type.unapplied_args())
-                    .find(|&(arg, _)| arg.id == generic.id)
-                    .map(|(_, typ)| typ.clone())
-            }
-            _ => None,
-        }
-    });
-
-    get_return_type(env, &typ, arg_count)
+    get_return_type(env, &ret, arg_count - 1)
 }
 
 pub fn is_operator_char(c: char) -> bool {

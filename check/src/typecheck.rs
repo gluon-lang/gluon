@@ -786,7 +786,7 @@ impl<'a> Typecheck<'a> {
                         "&&" | "||" => self
                             .type_cache
                             .function(vec![self.bool(), self.bool()], self.bool()),
-                        _ => self.find(&op.value.name)?,
+                        _ => self.find_at(op.span, &op.value.name),
                     }
                 };
 
@@ -1141,6 +1141,7 @@ impl<'a> Typecheck<'a> {
                 ref mut replacement,
                 ..
             } => self.typecheck_(replacement, expected_type),
+
             Expr::Error(ref typ) => Ok(TailCall::Type(
                 typ.clone().unwrap_or_else(|| self.subs.new_var()),
             )),
@@ -1265,7 +1266,7 @@ impl<'a> Typecheck<'a> {
         &mut self,
         mut function_type: ArcType,
         before_args_pos: BytePos,
-        args: &mut Vec<Argument<Symbol>>,
+        args: &mut Vec<Argument<SpannedIdent<Symbol>>>,
         body: &mut SpannedExpr<Symbol>,
     ) -> ArcType {
         self.enter_scope();
@@ -1303,13 +1304,13 @@ impl<'a> Typecheck<'a> {
                 match type_implicit {
                     ArgType::Implicit => {
                         let arg_type = arg_type.unwrap();
-                        let id = match args.get(i).map(|t| t.arg_type) {
+                        let arg = match args.get(i).map(|t| t.arg_type) {
                             Some(ArgType::Implicit) => {
                                 i += 1;
-                                args[i - 1].name.value.name.clone()
+                                &mut args[i - 1].name.value
                             }
                             _ => {
-                                let id = Symbol::from(format!("implicit_arg"));
+                                let id = Symbol::from(format!("__implicit_arg"));
                                 let pos = if i == 0 {
                                     before_args_pos
                                 } else {
@@ -1329,16 +1330,17 @@ impl<'a> Typecheck<'a> {
                                     )),
                                 );
                                 i += 1;
-                                id
+                                &mut args[i - 1].name.value
                             }
                         };
+                        arg.typ = arg_type.clone();
                         arg_types.push(arg_type.clone());
                         iter1.tc.implicit_resolver.add_implicits_of_record(
                             &iter1.tc.subs,
-                            &id,
+                            &arg.name,
                             &arg_type,
                         );
-                        iter1.tc.stack_var(id, arg_type.clone());
+                        iter1.tc.stack_var(arg.name.clone(), arg_type.clone());
                     }
                     ArgType::Explicit => match args.get_mut(i) {
                         Some(&mut Argument {
@@ -1586,12 +1588,13 @@ impl<'a> Typecheck<'a> {
         for component in id.name().module().components() {
             let symbol = self.symbols.symbol(component);
             lookup_type = match lookup_type {
-                Some(typ) => Some(self
-                    .remove_aliases(typ.clone())
-                    .row_iter()
-                    .find(|field| field.name.name_eq(&symbol))
-                    .map(|field| field.typ.clone())
-                    .ok_or_else(|| TypeError::UndefinedField(typ, symbol))?),
+                Some(typ) => Some(
+                    self.remove_aliases(typ.clone())
+                        .row_iter()
+                        .find(|field| field.name.name_eq(&symbol))
+                        .map(|field| field.typ.clone())
+                        .ok_or_else(|| TypeError::UndefinedField(typ, symbol))?,
+                ),
                 None => Some(self.find(&symbol)?),
             };
         }
@@ -1612,6 +1615,12 @@ impl<'a> Typecheck<'a> {
         use base::pos::HasSpan;
 
         match **ast_type {
+            Type::Alias(ref alias) if alias.name.name().module().as_str() != "" => {
+                match self.translate_projected_type(&alias.name) {
+                    Ok(typ) => typ,
+                    Err(err) => self.error(ast_type.span(), err),
+                }
+            }
             Type::Ident(ref id) if id.name().module().as_str() != "" => {
                 match self.translate_projected_type(id) {
                     Ok(typ) => typ,

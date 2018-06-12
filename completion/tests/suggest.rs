@@ -712,3 +712,99 @@ match Abc 1 with
     let expected = ["Abc".to_string()];
     assert_eq!(result, expected);
 }
+
+#[test]
+fn suggest_record_field_shorthand() {
+    let _ = env_logger::try_init();
+
+    let result = suggest_loc(
+        r#"
+let abc = 1
+let abb = "asd"
+let aba = ""
+let xyz = 2
+
+{ a, aba }
+"#,
+        6,
+        3,
+    );
+    let expected = Ok(vec!["abb".into(), "abc".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_record_field_on_nothing() {
+    let _ = env_logger::try_init();
+
+    let result = suggest_loc(
+        r#"
+let abc = 1
+
+{  }
+"#,
+        3,
+        2,
+    );
+    let expected = Ok(vec!["abc".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_record_field_on_nothing_with_fields() {
+    let _ = env_logger::try_init();
+
+    let result = suggest_loc(
+        r#"
+let abc = 1
+
+{ b,  }
+"#,
+        3,
+        4,
+    );
+    let expected = Ok(vec!["abc".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_record_type_field() {
+    let _ = env_logger::try_init();
+
+    let result = suggest_loc(
+        r#"
+type Test = Int
+type Xyz = Test
+let abc = 1
+
+{ Te }
+"#,
+        5,
+        2,
+    );
+    let expected = Ok(vec!["Test".into()]);
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn suggest_record_type_field_on_nothing() {
+    let _ = env_logger::try_init();
+
+    let result = suggest_loc(
+        r#"
+type Test = Int
+let abc = 1
+
+{ }
+"#,
+        4,
+        1,
+    );
+    let expected = Ok(vec!["Test".into(), "abc".into()]);
+
+    assert_eq!(result, expected);
+}

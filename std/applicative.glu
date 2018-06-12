@@ -1,7 +1,16 @@
 //@NO-IMPLICIT-PRELUDE
+//! Implementation of the `Applicative` type
 
-let { Functor } = import! std.functor
+let { Functor, map } = import! std.functor
 
+/// A `Functor` with application.
+///
+/// The following laws should hold:
+///
+/// * wrap id <*> v = v
+/// * wrap (<<) <*> u <*> v <*> w = u <*> (v <*> w)
+/// * wrap f <*> wrap x = wrap (f x)
+/// * u <*> wrap y = wrap (\g -> g x) <*> u
 #[implicit]
 type Applicative (f : Type -> Type) = {
     functor : Functor f,
@@ -27,21 +36,31 @@ type Applicative (f : Type -> Type) = {
 
 let wrap ?app : [Applicative f] -> a -> f a = app.wrap
 let apply ?app : [Applicative f] -> f (a -> b) -> f a -> f b = app.apply
-#[infix(left, 4)]
-let (<*>) ?app : [Applicative f] -> f (a -> b) -> f a -> f b = app.apply
-#[infix(left, 4)]
-let (<*) ?app l r : [Applicative f] -> f a -> f b -> f a = app.functor.map (\x _ -> x) l <*> r
-#[infix(left, 4)]
-let (*>) ?app l r : [Applicative f] -> f a -> f b -> f b = app.functor.map (\_ x -> x) l <*> r
 
-let map2 ?app f a b : [Applicative f] -> (a -> b -> c)
+/// Alias of `<*>`
+#[infix(left, 4)]
+let (<*>) : [Applicative f] -> f (a -> b) -> f a -> f b = apply
+
+/// Sequence actions, discargin the value of the second argument
+#[infix(left, 4)]
+let (<*) l r : [Applicative f] -> f a -> f b -> f a = map (\x _ -> x) l <*> r
+
+/// Sequence actions, discargin the value of the first argument
+#[infix(left, 4)]
+let (*>) l r : [Applicative f] -> f a -> f b -> f b = map (\_ x -> x) l <*> r
+
+/// Maps over two actions
+let map2 f a b : [Applicative f] -> (a -> b -> c)
         -> f a
         -> f b
         -> f c
-    = (app.functor.map f a) <*> b
-let map3 ?app f a b c : [Applicative f] -> (a -> b -> c -> d) -> f a -> f b -> f c -> f d =
-    (app.functor.map f a) <*> b <*> c
+    = map f a <*> b
 
+/// Maps over three actions
+let map3 f a b c : [Applicative f] -> (a -> b -> c -> d) -> f a -> f b -> f c -> f d =
+    map f a <*> b <*> c
+
+/// A monoid on applicative functors.
 #[implicit]
 type Alternative f = {
     applicative : Applicative f,
@@ -50,9 +69,12 @@ type Alternative f = {
 }
 
 let empty ?alt : [Alternative f] -> f a = alt.empty
+
 let or ?alt : [Alternative f] -> f a -> f a -> f a = alt.or
+
+/// Alias of `or`
 #[infix(left, 3)]
-let (<|>) ?alt : [Alternative f] -> f a -> f a -> f a = alt.or
+let (<|>) : [Alternative f] -> f a -> f a -> f a = or
 
 
 {

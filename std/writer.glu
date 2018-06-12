@@ -1,6 +1,9 @@
+//! Implementation of the `Writer` type
+
 let prelude = import! std.prelude
 let { Applicative, Functor, Monad, Monoid } = prelude
 
+/// The writer Monad
 type Writer w a = { value : a, writer : w }
 
 type Impl w = {

@@ -328,3 +328,21 @@ fn unterminated_char_literal() {
     let span = pos::span(BytePos::from(6), BytePos::from(6));
     assert_eq!(err, ParseErrors::from(vec![pos::spanned(span, error)]));
 }
+
+#[test]
+fn missing_close_paren() {
+    let _ = ::env_logger::try_init();
+
+    let expr = r#"
+    let x =
+        (1
+    x
+    "#;
+    let result = parse(expr);
+    assert!(result.is_err());
+    let (_expr, err) = result.unwrap_err();
+
+    let error = Error::UnexpectedEof([")", ",", "]"].iter().map(|s| s.to_string()).collect());
+    let span = pos::span(BytePos::from(35), BytePos::from(35));
+    assert_eq!(err, ParseErrors::from(vec![pos::spanned(span, error)]));
+}

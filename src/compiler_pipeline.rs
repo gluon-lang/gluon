@@ -510,6 +510,14 @@ where
             })?
         };
 
+        // Some metadata requires typechecking so recompute it if full metadata is required
+        let (metadata, metadata_map) = if compiler.full_metadata {
+            let env = thread.get_env();
+            metadata::metadata(&*env, expr.borrow_mut())
+        } else {
+            (metadata, metadata_map)
+        };
+
         Ok(TypecheckValue {
             expr,
             typ,

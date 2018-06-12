@@ -29,13 +29,17 @@
         <main class="col-md-9 ml-sm-auto cl-lg-10 pt-3 px-4" role="main">
             <h1 class="pb-3 mb-4 border-bottom">{{name}}</h1>
 
+            <div class="docblock">{{markdown comment}}</div>
+
             {{#if record.types}}
             <h2 class="pb-3 mb-4 border-bottom"><a class="anchor field" id="Types" href="#Types">Types</a></h2>
             {{#each record.types}}
 
-                <h3><a class="anchor field" id="type.{{name}}" href="#type.{{name}}">{{name}}</a></h3>
-                <code>{{type}}</code>
-                <p>{{comment}}</p>
+                <h4>
+                    <pre>type <a class="anchor field" id="type.{{name}}" href="#type.{{name}}">{{name}}</a>{{#each args}} {{name}}{{/each}} = {{type~}}
+                    </pre>
+                </h4>
+                <div class="docblock">{{markdown comment}}</div>
 
             {{/each}}
             {{/if}}
@@ -44,9 +48,14 @@
             <h2 class="pb-3 mb-4 border-bottom"><a class="anchor field" id="Values" href="#Values">Values</a></h2>
             {{#each record.values}}
 
-                <h3><a class="anchor field" id="value.{{name}}" href="#value.{{name}}">{{name}}</a></h3>
-                <code>{{type}}</code>
-                <p>{{comment}}</p>
+                <h4>
+                <pre>let <a class="anchor field" id="value.{{name}}" href="#value.{{name}}">{{name}}</a>
+                    {{~#each args~}}
+                        {{~#if implicit}} ?{{name}}{{else}} {{name}}{{~/if~}}
+                    {{~/each}} : {{type~}}
+                </pre>
+                </h4>
+                <div class="docblock">{{markdown comment}}</div>
 
             {{/each}}
             {{/if}}

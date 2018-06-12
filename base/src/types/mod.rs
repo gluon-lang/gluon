@@ -514,6 +514,19 @@ where
     }
 }
 
+impl<Id, T> AliasData<Id, T>
+where
+    T: From<Type<Id, T>>,
+    T: Deref<Target = Type<Id, T>>,
+{
+    pub fn kind(&self) -> Cow<ArcKind> {
+        let result_type = self.unresolved_type().kind();
+        self.params().iter().rev().fold(result_type, |acc, param| {
+            Cow::Owned(Kind::function(param.kind.clone(), acc.into_owned()))
+        })
+    }
+}
+
 impl<Id, T> Deref for AliasRef<Id, T> {
     type Target = AliasData<Id, T>;
 
@@ -1239,6 +1252,10 @@ impl<Id> ArcType<Id> {
     {
         top(self).pretty(&Printer::new(arena, &()))
     }
+
+    pub fn display(&self, width: usize) -> TypeFormatter<Id, Self> {
+        TypeFormatter::new(self).width(width)
+    }
 }
 
 pub struct ForallScopeIter<'a, Id: 'a> {
@@ -1764,24 +1781,29 @@ where
             },
             Type::Variant(ref row) => {
                 let mut first = true;
-                let mut doc = arena.nil();
 
-                match **row {
-                    Type::EmptyRow => (),
-                    Type::ExtendRow { ref fields, .. } => for field in fields.iter() {
-                        if !first {
-                            doc = doc.append(arena.space());
-                        }
-                        first = false;
-                        doc = doc.append("| ").append(field.name.as_ref());
-                        for arg in arg_iter(&field.typ) {
-                            doc = chain![arena;
-                                doc,
-                                " ",
-                                dt(Prec::Constructor, arg).pretty(printer)
-                            ];
-                        }
-                    },
+                let doc = match **row {
+                    Type::EmptyRow => arena.nil(),
+                    Type::ExtendRow { ref fields, .. } => {
+                        arena.concat(fields.iter().map(|field| {
+                            chain![arena;
+                                if first {
+                                    first = false;
+                                    arena.nil()
+                                } else {
+                                    arena.newline()
+                                },
+                                "| ",
+                                field.name.as_ref(),
+                                arena.concat(arg_iter(&field.typ).map(|arg| {
+                                    chain![arena;
+                                        " ",
+                                        dt(Prec::Constructor, arg).pretty(printer)
+                                    ]
+                                }))
+                            ].group()
+                        }))
+                    }
                     _ => ice!("Unexpected type in variant"),
                 };
 
@@ -2406,7 +2428,7 @@ where
         Type::Variable(ref var) => Type::variable(var.clone()),
         Type::Generic(ref gen) => Type::generic(gen.clone()),
         Type::Ident(ref id) => Type::ident(id.clone()),
-        Type::Alias(_) => ice!("translate_type called on alias"),
+        Type::Alias(ref alias) => Type::ident(alias.name.clone()),
         Type::EmptyRow => cache.empty_row(),
     }
 }

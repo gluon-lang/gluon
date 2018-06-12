@@ -32,7 +32,7 @@ macro_rules! assert_deq {
 mod grammar;
 pub mod interpreter;
 pub mod optimize;
-#[cfg(test)]
+#[cfg(feature = "test")]
 mod pretty;
 
 use std::borrow::Cow;
@@ -101,7 +101,7 @@ pub enum Expr<'a> {
     Match(&'a Expr<'a>, &'a [Alternative<'a>]),
 }
 
-#[cfg(test)]
+#[cfg(feature = "test")]
 impl fmt::Display for Pattern {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use pretty;
@@ -111,14 +111,14 @@ impl fmt::Display for Pattern {
         write!(f, "{}", ::std::str::from_utf8(&s).expect("utf-8"))
     }
 }
-#[cfg(not(test))]
+#[cfg(not(feature = "test"))]
 impl fmt::Display for Pattern {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self)
     }
 }
 
-#[cfg(test)]
+#[cfg(feature = "test")]
 impl<'a> fmt::Display for Expr<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use core::pretty::Prec;
@@ -130,7 +130,7 @@ impl<'a> fmt::Display for Expr<'a> {
     }
 }
 
-#[cfg(not(test))]
+#[cfg(not(feature = "test"))]
 impl<'a> fmt::Display for Expr<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self)
@@ -770,12 +770,13 @@ impl<'a> Typed for Expr<'a> {
         }
     }
 }
+
 fn get_return_type(
     env: &TypeEnv,
     alias_type: &ArcType,
     arg_count: usize,
 ) -> Result<ArcType, String> {
-    if arg_count == 0 {
+    if arg_count == 0 || **alias_type == Type::Hole {
         return Ok(alias_type.clone());
     }
     let function_type = remove_aliases_cow(env, alias_type);
@@ -785,12 +786,9 @@ fn get_return_type(
         .as_function()
         .map(|t| Cow::Borrowed(t.1))
         .unwrap_or_else(|| {
-            warn!(
-                "Call expression with a non function type `{}`",
-                function_type
-            );
-            Cow::Owned(Type::hole())
+            panic!("Unexpected type {} is not a function", function_type);
         });
+
     get_return_type(env, &ret, arg_count - 1)
 }
 

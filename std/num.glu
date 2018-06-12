@@ -1,0 +1,38 @@
+//@NO-IMPLICIT-PRELUDE
+//! Operations on numbers.
+
+let { Ord } = import! std.cmp
+
+/// The basic operation on numbers.
+/// Defined for both the primitive type `Int` and `Float`
+#[implicit]
+type Num a = {
+    ord : Ord a,
+    /// The addition operator
+    (+) : a -> a -> a,
+    /// The subtraction operator
+    (-) : a -> a -> a,
+    /// The multiplication operator
+    (*) : a -> a -> a,
+    /// The division operator
+    (/) : a -> a -> a,
+    /// The negation function
+    negate : a -> a
+}
+
+#[infix(left, 6)]
+let (+) ?num : [Num a] -> a -> a -> a = num.(+)
+#[infix(left, 6)]
+let (-) ?num : [Num a] -> a -> a -> a = num.(-)
+#[infix(left, 7)]
+let (*) ?num : [Num a] -> a -> a -> a = num.(*)
+#[infix(left, 7)]
+let (/) ?num : [Num a] -> a -> a -> a = num.(/)
+
+let negate ?num : [Num a] -> a -> a = num.negate
+
+{
+    Num,
+
+    (+), (-), (*), (/), negate,
+}

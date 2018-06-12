@@ -1,0 +1,19 @@
+//@NO-IMPLICIT-PRELUDE
+//! Implementation of the `Group` type
+
+let { Monoid } = import! std.monoid
+
+/// `Group a` represents an monoid an which has an inverse element. This means
+/// the following additional laws must hold:
+///
+/// * `forall x . append (inverse x) x = empty = append x (inverse x)`
+#[implicit]
+type Group a = {
+    monoid : Monoid a,
+    /// The inverse operation
+    inverse : a -> a
+}
+
+{
+    Group
+}

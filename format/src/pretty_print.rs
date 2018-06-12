@@ -277,7 +277,7 @@ where
                         };
                         let mut type_doc = types::pretty_print(self, typ);
                         match **typ {
-                            Type::Record(_) => (),
+                            Type::Record(_) | Type::Variant(_) => (),
                             _ => type_doc = type_doc.nest(INDENT),
                         }
                         chain![arena;
@@ -302,10 +302,21 @@ where
                                     arena.space()
                                 ]
                             })).group(),
-                            chain![arena;
-                                "= ",
-                                type_doc
-                            ].group()
+                            match **typ {
+                                Type::Variant(_) => {
+                                    chain![arena;
+                                        "=",
+                                        arena.newline(),
+                                        type_doc
+                                    ].nest(INDENT)
+                                }
+                                _ => {
+                                    chain![arena;
+                                        "= ",
+                                        type_doc
+                                    ].group()
+                                }
+                            }
                         ].group()
                     }).interleave(newlines_iter!(self, binds.iter().map(|bind| bind.span())))),
                     self.pretty_expr_(binds.last().unwrap().alias.span.end(), body)
@@ -409,15 +420,7 @@ where
                 ref base,
                 ..
             } => {
-                let ordered_iter = || {
-                    types.iter().map(Either::Left).merge_by(
-                        exprs.iter().map(Either::Right),
-                        |x, y| {
-                            x.either(|l| l.name.span.start(), |r| r.name.span.start())
-                                < y.either(|l| l.name.span.start(), |r| r.name.span.start())
-                        },
-                    )
-                };
+                let ordered_iter = || expr.value.field_iter();
                 let spans = || {
                     ordered_iter().map(|x| {
                         x.either(
@@ -445,10 +448,16 @@ where
                 let newline_in_fields = newlines
                     .iter()
                     .any(|&(ref l, ref r)| l.1 != arena.nil().1 || r.1 != arena.nil().1);
+                let newline_from_doc_comment = expr.value.field_iter().any(|either| {
+                    either
+                        .either(|f| &f.metadata, |f| &f.metadata)
+                        .comment
+                        .is_some()
+                });
                 let newline_in_base = base.as_ref().map_or(false, |base| {
                     self.space_before(base.span.start()).1 != arena.nil().1
                 });
-                if newline_in_fields || newline_in_base {
+                if newline_in_fields || newline_in_base | newline_from_doc_comment {
                     line = arena.newline();
                 }
 
@@ -466,8 +475,9 @@ where
                             ),
                             Either::Right(r) => {
                                 let id = pretty_types::ident(arena, r.name.value.as_ref());
-                                pos::spanned(
-                                    r.name.span,
+                                let doc = chain![
+                                    arena;
+                                    pretty_types::doc_comment(arena, r.metadata.comment.as_ref()),
                                     match r.value {
                                         Some(ref expr) => {
                                             let x = chain![arena;
@@ -478,8 +488,9 @@ where
                                             self.hang(x, expr)
                                         }
                                         None => id,
-                                    },
-                                )
+                                    }
+                                ];
+                                pos::spanned(r.name.span, doc)
                             }
                         }),
                         |spanned| spanned.value,

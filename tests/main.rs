@@ -12,11 +12,17 @@ extern crate gluon;
 extern crate tensile;
 extern crate tokio_core;
 
+extern crate pulldown_cmark;
+
+use gluon::base::ast::{Expr, Pattern, SpannedExpr};
+use gluon::base::symbol::Symbol;
 use gluon::base::types::{ArcType, Type};
+
 use gluon::vm::api::de::De;
 use gluon::vm::api::{Getable, Hole, OpaqueValue, OwnedFunction, VmType};
 use gluon::vm::future::FutureValue;
 use gluon::vm::thread::ThreadInternal;
+
 use gluon::{new_vm, Compiler, RootedThread, Thread};
 
 use std::error::Error;
@@ -172,6 +178,113 @@ fn run_file<'t>(
         .map_err(|err| err.to_string())
 }
 
+fn gather_doc_tests(expr: &SpannedExpr<Symbol>) -> Vec<(String, String)> {
+    use gluon::base::ast::{walk_expr, Visitor};
+
+    fn make_test(comment: &str) -> String {
+        let mut parser = pulldown_cmark::Parser::new(comment);
+
+        let mut source = String::new();
+        loop {
+            let content = match parser.next() {
+                Some(pulldown_cmark::Event::Start(pulldown_cmark::Tag::CodeBlock(code))) => code,
+                None => break,
+                _ => continue,
+            };
+            source.push_str(&content);
+            loop {
+                match parser.next() {
+                    Some(pulldown_cmark::Event::End(pulldown_cmark::Tag::CodeBlock(content))) => {
+                        source.push_str(&content);
+                        break;
+                    }
+                    Some(pulldown_cmark::Event::Text(content)) => {
+                        source.push_str(&content);
+                    }
+                    None => break,
+                    _ => continue,
+                }
+            }
+        }
+        source
+    }
+
+    struct DocVisitor(Vec<(String, String)>);
+    impl<'a> Visitor<'a> for DocVisitor {
+        type Ident = Symbol;
+
+        fn visit_expr(&mut self, expr: &SpannedExpr<Symbol>) {
+            match expr.value {
+                Expr::LetBindings(ref binds, _) => {
+                    for bind in binds {
+                        if let Some(ref comment) = bind.metadata.comment {
+                            let mut source = make_test(&comment.content);
+                            if !source.is_empty() {
+                                let name = match bind.name.value {
+                                    Pattern::Ident(ref id) => id.name.declared_name(),
+                                    _ => "Unknown",
+                                };
+                                self.0.push((format!("{}", name), String::from(source)));
+                            }
+                        }
+                    }
+                }
+                Expr::TypeBindings(ref binds, _) => {
+                    for bind in binds {
+                        if let Some(ref comment) = bind.metadata.comment {
+                            let mut source = make_test(&comment.content);
+                            if !source.is_empty() {
+                                self.0.push((
+                                    format!("{}", bind.name.value.declared_name()),
+                                    String::from(source),
+                                ));
+                            }
+                        }
+                    }
+                }
+                _ => (),
+            }
+            walk_expr(self, expr);
+        }
+    }
+    let mut visitor = DocVisitor(Vec::new());
+
+    visitor.visit_expr(expr);
+
+    visitor.0
+}
+
+fn run_doc_tests<'t>(
+    vm: &'t Thread,
+    name: &str,
+    filename: &Path,
+) -> Result<Vec<tensile::Test<String>>, String> {
+    let mut compiler = Compiler::new();
+
+    let mut file = File::open(&filename).map_err(|err| err.to_string())?;
+    let mut text = String::new();
+    file.read_to_string(&mut text)
+        .map_err(|err| err.to_string())?;
+
+    let (expr, _, _) = compiler
+        .extract_metadata(&vm, &name, &text)
+        .map_err(|err| err.to_string())?;
+
+    let tests = gather_doc_tests(&expr);
+    Ok(tests
+        .into_iter()
+        .map(move |(test_name, test_source)| {
+            let vm = vm.new_thread().unwrap();
+            tensile::test(test_name.clone(), move || {
+                Compiler::new()
+                    .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, &test_name, &test_source)
+                    .map_err(|err| err.to_string())?;
+                Ok(())
+            })
+        })
+        .collect())
+}
+
 fn main_() -> Result<(), Box<Error>> {
     let _ = ::env_logger::try_init();
     let args: Vec<_> = ::std::env::args().collect();
@@ -226,12 +339,26 @@ fn main_() -> Result<(), Box<Error>> {
             })
         }).collect();
 
+    let doc_tests = test_files("std")?
+        .into_iter()
+        .map(|filename| {
+            let name = filename.to_str().unwrap_or("<unknown>").to_owned();
+
+            let vm = vm.new_thread().unwrap();
+            match run_doc_tests(&vm, &name, &filename) {
+                Ok(tests) => tensile::group(name.clone(), tests),
+                Err(err) => tensile::test(name.clone(), || Err(err)),
+            }
+        })
+        .collect();
+
     tensile::console_runner(
         tensile::group(
             "main",
             vec![
                 tensile::group("pass", pass_tests),
                 tensile::group("fail", fail_tests),
+                tensile::group("doc", doc_tests),
             ],
         ),
         &tensile::Options::default().filter(filter.map_or("", |s| &s[..])),

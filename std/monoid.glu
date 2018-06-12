@@ -1,4 +1,6 @@
 //@NO-IMPLICIT-PRELUDE
+//! Implementation of the `Monoid` type
+
 let { Semigroup } = import! std.semigroup
 
 /// `Monoid a` represents an semigroup an which has an identity. This means

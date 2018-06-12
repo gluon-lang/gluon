@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
-use symbol::SymbolRef;
+use ast::Argument;
+use symbol::{Symbol, SymbolRef};
 
 pub trait MetadataEnv {
     fn get_metadata(&self, id: &SymbolRef) -> Option<&Metadata>;
@@ -44,6 +45,7 @@ pub struct Attribute {
 pub struct Metadata {
     pub comment: Option<Comment>,
     pub attributes: Vec<Attribute>,
+    pub args: Vec<Argument<Symbol>>,
     pub module: BTreeMap<String, Metadata>,
 }
 
@@ -61,10 +63,19 @@ impl Metadata {
         if self.comment.is_none() {
             self.comment = other.comment;
         }
-        if self.module.is_empty() {
-            self.module = other.module;
+        for (key, value) in other.module {
+            use std::collections::btree_map::Entry;
+            match self.module.entry(key) {
+                Entry::Vacant(entry) => {
+                    entry.insert(value);
+                }
+                Entry::Occupied(entry) => entry.into_mut().merge_with(value),
+            }
         }
         self.attributes.extend(other.attributes);
+        if self.args.is_empty() {
+            self.args = other.args;
+        }
     }
 
     pub fn get_attribute(&self, name: &str) -> Option<&str> {

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use base::ast::Visitor;
 use base::ast::{
-    self, AstType, Commented, Expr, Pattern, SpannedExpr, SpannedPattern, ValueBinding,
+    self, Argument, AstType, Commented, Expr, Pattern, SpannedExpr, SpannedPattern, ValueBinding,
 };
 use base::fnv::FnvMap;
 use base::metadata::{Metadata, MetadataEnv};
@@ -32,7 +32,27 @@ pub fn metadata(
                     self.new_pattern(metadata, &bind.name);
                 }
                 Pattern::Ident(ref id) => {
-                    let metadata = bind.metadata.clone().merge(metadata);
+                    let mut metadata = bind.metadata.clone().merge(metadata);
+                    metadata.args = bind
+                        .args
+                        .iter()
+                        // Ignore generated arguments
+                        .filter(|arg| !arg.name.value.name.definition_name().starts_with("__"))
+                        .map(|arg| Argument {
+                            name: arg.name.value.name.clone(),
+                            arg_type: arg.arg_type,
+                        })
+                        .collect();
+
+                    if let Some(type_metadata) = id
+                        .typ
+                        .remove_forall_and_implicit_args()
+                        .alias_ident()
+                        .and_then(|id| self.metadata(id))
+                    {
+                        metadata.merge_with(type_metadata.clone());
+                    }
+
                     self.stack_var(id.name.clone(), metadata);
                 }
                 Pattern::Constructor(..)
@@ -113,6 +133,23 @@ pub fn metadata(
                 .or_else(|| self.env.env.get_metadata(id))
         }
 
+        fn metadata_binding(&mut self, bind: &ValueBinding<Symbol>) -> Metadata {
+            for arg in &bind.args {
+                if let Some(type_metadata) = arg
+                    .name
+                    .value
+                    .typ
+                    .alias_ident()
+                    .and_then(|id| self.metadata(id))
+                    .cloned()
+                {
+                    self.stack_var(arg.name.value.name.clone(), type_metadata);
+                }
+            }
+
+            self.metadata_expr(&bind.expr)
+        }
+
         fn metadata_expr(&mut self, expr: &SpannedExpr<Symbol>) -> Metadata {
             match expr.value {
                 Expr::Ident(ref id) => self
@@ -143,7 +180,8 @@ pub fn metadata(
                             None => field_metadata,
                         };
                         if maybe_metadata.has_data() {
-                            module.insert(String::from(field.name.value.as_ref()), maybe_metadata);
+                            let field_name = String::from(field.name.value.as_ref());
+                            module.insert(field_name, maybe_metadata);
                         }
                     }
                     for field in types {
@@ -165,11 +203,21 @@ pub fn metadata(
                             self.new_binding(Metadata::default(), bind);
                         }
                         for bind in bindings {
-                            self.metadata_expr(&bind.expr);
+                            let expr_metadata = self.metadata_binding(&bind);
+
+                            if let Pattern::Ident(ref id) = bind.name.value {
+                                if expr_metadata.has_data() {
+                                    self.env
+                                        .stack
+                                        .entry(id.name.clone())
+                                        .or_insert_with(Default::default)
+                                        .merge_with(expr_metadata);
+                                }
+                            }
                         }
                     } else {
                         for bind in bindings {
-                            let metadata = self.metadata_expr(&bind.expr);
+                            let metadata = self.metadata_binding(&bind);
                             self.new_binding(metadata, bind);
                         }
                     }
@@ -179,7 +227,7 @@ pub fn metadata(
                 Expr::TypeBindings(ref bindings, ref expr) => {
                     for bind in bindings {
                         let mut type_metadata =
-                            Self::metadata_of_type(bind.alias.value.unresolved_type());
+                            Self::metadata_of_type(bind.alias.value.aliased_type());
                         let metadata = type_metadata.map_or_else(
                             || bind.metadata.clone(),
                             |m| m.merge(bind.metadata.clone()),
@@ -198,7 +246,7 @@ pub fn metadata(
                     let metadata = self.metadata_expr(expr);
                     metadata
                         .module
-                        .get(field.as_ref())
+                        .get(field.definition_name())
                         .cloned()
                         .unwrap_or_default()
                 }

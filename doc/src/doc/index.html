@@ -18,11 +18,21 @@
         <h1>{{name}}</h1>
 
         <h2>Modules</h2>
+
+        <table class="table-sm">
+        <tbody>
         {{#each modules}}
-        <h3>
-            <a href="{{symbol_link this}}">{{this}}</a>
-        </h3>
+            <tr>
+                <td>
+                    <a href="{{symbol_link name}}">{{name}}</a>
+                </td>
+                <td valign="middle">
+                    {{markdown_first_paragraph comment}}
+                </td>
+            </tr>
         {{/each}}
+        </tbody>
+        </table>
     </main>
 </body>
 </html>

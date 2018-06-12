@@ -1,9 +1,12 @@
 //@NO-IMPLICIT-PRELUDE
+//! A UTF-8 encoded string
 
 let string_prim = import! std.string.prim
 let prim = import! std.prim
-let prelude = import! std.prelude
-let { Num, Eq, Ord, Ordering, Semigroup, Monoid, Show } = prelude
+let { Semigroup, (<>) } = import! std.semigroup
+let { Monoid } = import! std.monoid
+let { Show } = import! std.show
+let { Eq, Ord, Ordering } = import! std.cmp
 let function = import! std.function
 
 let semigroup : Semigroup String = { append = string_prim.append }
@@ -16,12 +19,19 @@ let ord : Ord String = { eq, compare = prim.string_compare }
 
 let show : Show String = { show = function.id }
 
+/// Appends two strings.
+///
+/// Re-export of `semigroup.append`.
+#[infix(left, 4)]
+let (++) : String -> String -> String = (<>)
+
 {
     eq,
     ord,
     show,
     semigroup,
     monoid,
+    (++),
     ..
     string_prim
 }

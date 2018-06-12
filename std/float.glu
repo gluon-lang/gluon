@@ -1,4 +1,5 @@
 //@NO-IMPLICIT-PRELUDE
+//! The 64-bit floating point type.
 
 let { Semigroup, Monoid, Group, Eq, Ord, Ordering, Num, Show } = import! std.prelude
 

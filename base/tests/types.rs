@@ -267,7 +267,7 @@ fn show_variant() {
         Field::new("A", Type::function(vec![Type::int()], Type::ident("A"))),
         Field::new("B", Type::ident("A")),
     ]);
-    assert_eq_display!(format!("{}", typ), "| A Int | B");
+    assert_eq_display!(format!("{}", typ), "| A Int\n| B");
 }
 
 #[test]

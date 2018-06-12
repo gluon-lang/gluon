@@ -159,6 +159,8 @@ pub fn typecheck_expr_expected(
         &mut expr,
     );
     let (_, mut metadata) = metadata::metadata(&env, &expr);
+    reparse_infix(&metadata, &*interner, &mut expr).unwrap_or_else(|err| panic!("{}", err));
+    eprintln!("{:?}", expr);
 
     let mut tc = Typecheck::new(
         "test".into(),
@@ -334,10 +336,8 @@ macro_rules! test_check {
         #[test]
         fn $name() {
             let _ = env_logger::try_init();
-        
             let text = $source;
             let result = support::typecheck(text);
-        
             assert_req!(result.map(|x| x.to_string()), Ok($typ.to_string()));
         }
     };

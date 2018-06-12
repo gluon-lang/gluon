@@ -1,4 +1,5 @@
 //@NO-IMPLICIT-PRELUDE
+//! Definitions which gets implicit re-export in every file.
 
 let { Option } = import! std.types
 let { Functor } = import! std.functor
@@ -7,103 +8,23 @@ let { Foldable } = import! std.foldable
 let { Monad } = import! std.monad
 let { Semigroup, append, (<>) } = import! std.semigroup
 let { Monoid, empty } = import! std.monoid
+let { Group } = import! std.group
 let { Eq, Ord, Bool, Ordering, (==), (/=), (<), (<=), (>=), (>) } = import! std.cmp
-
-let semigroup_Ordering : Semigroup Ordering = {
-    append = \x y ->
-        match x with
-        | EQ -> y
-        | _ -> x,
-}
-
-let monoid_Ordering : Monoid Ordering = {
-    semigroup = semigroup_Ordering,
-    empty = EQ,
-}
-
-/// `Group a` represents an monoid an which has an inverse element. This means
-/// the following additional laws must hold:
-///
-/// * `forall x . append (inverse x) x = empty = append x (inverse x)`
-#[implicit]
-type Group a = {
-    monoid : Monoid a,
-    /// The inverse operation
-    inverse : a -> a
-}
-
-/// The basic operation on numbers.
-/// Defined for both the primitive type `Int` and `Float`
-#[implicit]
-type Num a = {
-    ord : Ord a,
-    (+) : a -> a -> a,
-    (-) : a -> a -> a,
-    (*) : a -> a -> a,
-    (/) : a -> a -> a,
-    negate : a -> a
-}
-
-#[infix(left, 6)]
-let (+) ?num : [Num a] -> a -> a -> a = num.(+)
-#[infix(left, 6)]
-let (-) ?num : [Num a] -> a -> a -> a = num.(-)
-#[infix(left, 7)]
-let (*) ?num : [Num a] -> a -> a -> a = num.(*)
-#[infix(left, 7)]
-let (/) ?num : [Num a] -> a -> a -> a = num.(/)
-
-#[implicit]
-type Category (cat : Type -> Type -> Type) = {
-    id : forall a . cat a a,
-    compose : forall a b c . cat b c -> cat a b -> cat a c
-}
-
-let id ?cat : forall cat a . [Category cat] -> cat a a = cat.id
-let compose ?cat : forall a b c . [Category cat] -> cat b c -> cat a b -> cat a c = cat.compose
-/// Right-to-left composition. Alias for `compose`.
-#[infix(right, 9)]
-let (<<) ?cat : forall a b c . [Category cat] -> cat b c -> cat a b -> cat a c = cat.compose
-/// Left-to-right composition. Alias for `compose`, but with the arguments flipped.
-#[infix(left, 9)]
-let (>>) ?cat f g : forall a b c . [Category cat] -> cat a b -> cat b c -> cat a c = cat.compose g f
-
-/// `Show a` represents a conversion function from `a` to a readable string.
-#[implicit]
-type Show a = { show : forall a . a -> String }
-
-let show ?s : [Show a] -> a -> String = s.show
-
-#[implicit]
-type Traversable t = {
-    functor : Functor t,
-    foldable : Foldable t,
-    traverse : forall a b m . Applicative m -> (a -> m b) -> t a -> m (t b)
-}
-
-let traverse ?t : forall a b m . [Traversable t] -> Applicative m
-        -> (a -> m b)
-        -> t a
-        -> m (t b)
-    = t.traverse
-
-let sequence ?t applicative : [Traversable t] -> Applicative m -> t (m a) -> m (t a) =
-    traverse applicative (\x -> x)
-
-let for ?t applicative x f : [Traversable t] -> Applicative m -> t a -> (a -> m b) -> m (t b) =
-    traverse applicative f x
+let { Show, show } = import! std.show
+let { Category, id, compose } = import! std.category
+let { Num, (+), (-), (*), (/), negate } = import! std.num
+let { Bool, not } = import! std.bool
+let { error } = import! std.prim
 
 {
     Ordering,
 
     Semigroup,
-    semigroup_Ordering,
     append,
     (<>),
 
     Monoid,
     empty,
-    monoid_Ordering,
 
     Group,
 
@@ -121,12 +42,16 @@ let for ?t applicative x f : [Traversable t] -> Applicative m -> t a -> (a -> m 
     Alternative,
     Monad,
 
-    Traversable,
-    traverse, sequence, for,
-
     Num,
-    (+), (-), (*), (/),
+    (+), (-), (*), (/), negate,
 
     Show,
     show,
+
+    Option,
+    Bool,
+
+    not,
+
+    error,
 }

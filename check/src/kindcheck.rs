@@ -294,17 +294,35 @@ impl<'a> KindCheck<'a> {
         }
     }
 
-    pub fn finalize_type(&self, typ: &mut AstType<Symbol>) {
-        let default = Some(&self.kind_cache.typ);
-        types::walk_type_mut(typ, &mut |typ: &mut AstType<Symbol>| match **typ {
-            Type::Variable(ref mut var) => {
-                var.kind = update_kind(&self.subs, var.kind.clone(), default);
+    pub fn finalize_type(&mut self, typ: &mut AstType<Symbol>) {
+        types::walk_type_mut(typ, &mut |typ: &mut AstType<Symbol>| {
+            if let Type::Ident(_) = **typ {
+                let id = match **typ {
+                    Type::Ident(ref id) => id.clone(),
+                    _ => unreachable!(),
+                };
+                if let Ok(kind) = self.find(typ.span(), &id) {
+                    // HACK Use a "generic" type as the rhs of the alias to make the type have the
+                    // correct kind
+                    **typ = Type::<_, AstType<_>>::alias(
+                        id.clone(),
+                        Type::generic(Generic::new(id, kind)),
+                    ).into_inner();
+                }
+                return;
             }
-            Type::Generic(ref mut var) => *var = self.finalize_generic(var),
-            Type::Forall(ref mut params, _, _) => for param in params {
-                *param = self.finalize_generic(&param);
-            },
-            _ => (),
+
+            match **typ {
+                Type::Variable(ref mut var) => {
+                    let default = Some(&self.kind_cache.typ);
+                    var.kind = update_kind(&self.subs, var.kind.clone(), default);
+                }
+                Type::Generic(ref mut var) => *var = self.finalize_generic(var),
+                Type::Forall(ref mut params, _, _) => for param in params {
+                    *param = self.finalize_generic(&param);
+                },
+                _ => (),
+            }
         });
     }
     pub fn finalize_generic(&self, var: &Generic<Symbol>) -> Generic<Symbol> {

@@ -1,4 +1,5 @@
 //@NO-IMPLICIT-PRELUDE
+//! Implementation of the `Applicative` type
 
 /// `Semigroup a` represents an associative operation on `a`.
 /// This means the following laws must hold:
@@ -14,7 +15,7 @@ type Semigroup a = {
 
 let append ?s : [Semigroup a] -> a -> a -> a = s.append
 #[infix(left, 4)]
-let (<>) ?s : [Semigroup a] -> a -> a -> a = s.append
+let (<>) : [Semigroup a] -> a -> a -> a = append
 
 {
     Semigroup,

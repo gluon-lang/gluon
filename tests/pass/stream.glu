@@ -3,20 +3,16 @@ let { (<|) } = import! std.function
 let { run, Test, assert_eq, test, group, ? } = import! std.test
 let { Applicative, (*>) } = import! std.applicative
 let int = import! std.int
-let stream @ { Stream } = import! std.stream
+let stream @ { Stream, ? } = import! std.stream
 let list @ { List, ? } = import! std.list
 let { Option } = import! std.option
+let { foldl } = import! std.foldable
 
 let s = stream.from (\i -> if i < 5 then Some i else None)
 
-let assert_leq s a : Stream Int -> Array Int -> _ =
-    assert_eq
-        (stream.to_list s)
-        (list.of a)
-
 group "stream" [
-    test "fold" <| \_ -> (assert_eq (stream.fold (+) 0 s) 10),
-    test "from" <| \_ -> (assert_leq s [4, 3, 2, 1, 0]),
-    test "map" <| \_ -> (assert_leq (stream.functor.map (\x -> x + x) s) [8, 6, 4, 2, 0]),
-    test "zip_with" <| \_ -> (assert_leq (stream.zip_with (+) s s) [8, 6, 4, 2, 0])
+    test "fold" <| \_ -> (assert_eq (foldl (+) 0 s) 10),
+    test "from" <| \_ -> (assert_eq s (stream.of [0, 1, 2, 3, 4])),
+    test "map" <| \_ -> (assert_eq (stream.functor.map (\x -> x + x) s) (stream.of [0, 2, 4, 6, 8])),
+    test "zip_with" <| \_ -> (assert_eq (stream.zip_with (+) s s) (stream.of [0, 2, 4, 6, 8]))
 ]

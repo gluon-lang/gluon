@@ -1,11 +1,22 @@
-let { Functor, Applicative } = import! std.prelude
+//! Lazy stream type.
+
+let { Functor, Applicative, Show } = import! std.prelude
 let list @ { List } = import! std.list
+let array = import! std.array
+let { Ordering } = import! std.cmp
 let { Bool } = import! std.bool
 let { Option } = import! std.option
+let { Monoid } = import! std.monoid
+let { Semigroup, (<>) } = import! std.semigroup
+let { Foldable } = import! std.foldable
 let { lazy, force } = import! std.lazy
 
-type Stream_ a = | Value a (Stream a) | Empty
+type Stream_ a =
+    | Value a (Stream a)
+    | Empty
 and Stream a = Lazy (Stream_ a)
+
+let empty : Stream a = lazy (\_ -> Empty)
 
 let from f : (Int -> Option a) -> Stream a =
     let go i = lazy (\_ ->
@@ -13,6 +24,12 @@ let from f : (Int -> Option a) -> Stream a =
             | Some x -> Value x (go (i + 1))
             | None -> Empty)
     go 0
+
+let of xs : Array a -> Stream a =
+    from (\i ->
+        if i < array.len xs
+        then Some (array.index xs i)
+        else None)
 
 let repeat x : a -> Stream a =
     lazy (\_ -> Value x (repeat x))
@@ -22,24 +39,120 @@ let next stream : Stream a -> Option a =
     | Value x _ -> Some x
     | Empty -> None
 
+let uncons stream : Stream a -> Option (a, Stream a) =
+    match force stream with
+    | Value x xs -> Some (x, xs)
+    | Empty -> None
+
+/// Takes the first `n` elements of `xs`.
+///
+/// ```
+/// let stream @ { take, repeat, empty, ? } = import! std.stream
+/// let { assert } = import! std.test
+///
+/// assert (take 0 (repeat "abc") == empty)
+/// assert (take 3 (repeat 1) == stream.of [1, 1, 1])
+/// ```
+let take n xs : Int -> Stream a -> Stream a =
+    if n /= 0 then
+        match uncons xs with
+        | Some (y, ys) -> lazy (\_ -> Value y (take (n - 1) ys))
+        | None -> empty
+    else
+        empty
+
+/// Checks if the stream is empty
+///
+/// ```
+/// let stream = import! std.stream
+/// let { assert } = import! std.test
+///
+/// assert (stream.is_empty stream.empty)
+/// ```
 let is_empty stream : Stream a -> Bool =
     match force stream with
     | Value _ _ -> False
     | Empty -> True
 
-let fold f b stream : (a -> b -> b) -> b -> Stream a -> b =
+let foldl f b stream : (b -> a -> b) -> b -> Stream a -> b =
     match force stream with
-    | Value x xs -> fold f (f x b) xs
+    | Value x xs -> foldl f (f b x) xs
     | Empty -> b
 
+let foldr f b stream : (a -> b -> b) -> b -> Stream a -> b =
+    match force stream with
+    | Value x xs -> f x (foldr f b xs)
+    | Empty -> b
+
+
+/// Converts the `Stream` to a `List`
+///
+/// ```
+/// let stream = import! std.stream
+/// let list @ { ? } = import! std.list
+/// let { assert } = import! std.test
+///
+/// assert (stream.to_list (stream.of ["a", "b"]) == list.of ["a", "b"])
+/// ```
 let to_list : Stream a -> List a =
-    fold Cons Nil
+    foldr Cons Nil
 
 let zip_with f xs ys : (a -> b -> c) -> Stream a -> Stream b -> Stream c =
     lazy (\_ ->
         match (force xs, force ys) with
         | (Value x rest_xs, Value y rest_ys) -> Value (f x y) (zip_with f rest_xs rest_ys)
         | (_, _) -> Empty)
+
+let eq ?eq : [Eq a] -> Eq (Stream a) =
+    let stream_eq l r =
+        match (uncons l, uncons r) with
+        | (None, None) -> True
+        | (Some (x, xs), Some (y, ys)) -> eq.(==) x y && stream_eq xs ys
+        | _ -> False
+    { (==) = stream_eq }
+
+let ord ?ord : [Ord a] -> Ord (Stream a) =
+    let stream_cmp l r =
+        match (uncons l, uncons r) with
+        | (None, None) -> EQ
+        | (Some (x, xs), Some (y, ys)) ->
+            match ord.compare x y with
+            | EQ -> stream_cmp xs ys
+            | o -> o
+        | (Some _, None) -> GT
+        | (None, Some _) -> LT
+    { eq, compare = stream_cmp }
+
+let show ?d : [Show a] -> Show (Stream a) =
+
+    {
+        show = \xs ->
+            let show_elems ys =
+                match uncons ys with
+                | Some (y, ys2) ->
+                    match uncons ys2 with
+                    | Some (z, zs) -> d.show y <> ", " <> show_elems ys2
+                    | None -> d.show y
+                | None -> ""
+
+            "[" <> show_elems xs <> "]",
+    }
+
+let semigroup : Semigroup (Stream a) =
+    let append xs ys =
+        match uncons xs with
+        | Some (z, zs) -> lazy (\_ -> Value z (append zs ys))
+        | None -> ys
+
+    { append }
+
+let foldable : Foldable Stream =
+    { foldr, foldl }
+
+let monoid : Monoid (Stream a) = {
+    semigroup,
+    empty,
+}
 
 let functor : Functor Stream =
     let map f xs : (a -> b) -> Stream a -> Stream b =
@@ -53,12 +166,23 @@ let functor : Functor Stream =
 {
     Stream,
 
+    empty,
     from,
+    of,
     repeat,
+    take,
     next,
     is_empty,
-    fold,
     to_list,
     zip_with,
+
+    eq,
+    ord,
+    show,
+
     functor,
+    foldable,
+
+    monoid,
+    semigroup,
 }

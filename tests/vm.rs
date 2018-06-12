@@ -446,6 +446,14 @@ r#"
 2
 }
 
+test_expr!{ load_option,
+r#"
+let _ = import! std.option
+()
+"#,
+()
+}
+
 test_expr!{ prelude do_expression_option_some,
 r#"
 let { monad = { flat_map } } = import! std.option
@@ -804,7 +812,7 @@ let from f : (Int -> Option a) -> Stream a =
         lines.span(),
         &expr,
         lines.byte_index(14.into(), 29.into()).unwrap(),
-    );
+    ).map(|either| either.right().unwrap());
     assert_eq!(result, Ok(Type::int()));
 }
 
@@ -821,7 +829,8 @@ fn completion_with_prelude_at_0() {
         .unwrap_or_else(|err| panic!("{}", err));
 
     let file_map = compiler.get_filemap("example").expect("file_map");
-    let result = completion::find(&*vm.get_env(), file_map.span(), &expr, BytePos::from(0));
+    let result = completion::find(&*vm.get_env(), file_map.span(), &expr, BytePos::from(0))
+        .map(|either| either.right().unwrap());
     assert_eq!(result, Ok(Type::int()));
 }
 

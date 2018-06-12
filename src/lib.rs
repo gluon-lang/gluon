@@ -207,6 +207,7 @@ pub struct Compiler {
     implicit_prelude: bool,
     emit_debug_info: bool,
     run_io: bool,
+    full_metadata: bool,
 }
 
 impl Default for Compiler {
@@ -239,6 +240,7 @@ impl Compiler {
             implicit_prelude: true,
             emit_debug_info: true,
             run_io: false,
+            full_metadata: false,
         }
     }
 
@@ -259,6 +261,12 @@ impl Compiler {
         /// Sets whether `IO` expressions are evaluated.
         /// (default: false)
         run_io set_run_io: bool
+    }
+
+    option!{
+        /// Sets whether full metadata is required
+        /// (default: false)
+        full_metadata set_full_metadata: bool
     }
 
     pub fn code_map(&self) -> &codespan::CodeMap {
@@ -620,14 +628,15 @@ impl Compiler {
 
 pub const PRELUDE: &'static str = r#"
 let __implicit_prelude = import! std.prelude
-and { Num, Eq, Ord, Show, Functor, Applicative, Monad, ? } = __implicit_prelude
-and { Bool, not, ? } = import! std.bool
-and { Option, ? } = import! std.option
+and { Num, Eq, Ord, Show, Functor, Applicative, Monad, Option, Bool, ? } = __implicit_prelude
 
-let { (+), (-), (*), (/), (==), (/=), (<), (<=), (>=), (>), show, ? } = __implicit_prelude
+let { (+), (-), (*), (/), (==), (/=), (<), (<=), (>=), (>), show, not } = __implicit_prelude
+
+let __implicit_bool @ { ? } = import! std.bool
+
+let { ? } = import! std.option
 
 let __implicit_float @ { ? } = import! std.float
-
 
 let __implicit_int @ { ? } = import! std.int
 

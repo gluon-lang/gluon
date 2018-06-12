@@ -177,6 +177,7 @@ let const : forall a b. a -> b -> a = \x _ -> x
 let make_applicative app : forall f. Applicative f -> _ =
     let { map, apply } = app
 
+    #[infix(left, 1)]
     let (*>) l r: forall a b . f a -> f b -> f b =
         apply (map (const id) l) r
 
@@ -449,6 +450,7 @@ let category_Function : Category (->) = {
 let make_Category cat : Category cat -> _ =
     let { id, compose } = cat
 
+    #[infix(left, 1)]
     let (<<) : forall a b c . cat b c -> cat a b -> cat a c = compose
 
     { id, compose, (<<) }
@@ -738,7 +740,8 @@ let alternative : Alternative Option = {
 let make_Alternative alternative : Alternative f -> _ =
     { (<|>) = alternative.or }
 
-let { (<|>) } = make_Alternative alternative
+#[infix(left, 1)]
+let (<|>) = (make_Alternative alternative).(<|>)
 
 None <|> Some 1
 "#;
@@ -878,7 +881,9 @@ type Applicative (f : Type -> Type) = {
 type Writer w a = { value : a, writer : w }
 
 let make monoid : Monoid w -> () =
-    let { append = (<>) } = monoid
+    let { append } = monoid
+    #[infix(left, 1)]
+    let (<>) = append
 
     let applicative : Applicative (Writer w) = {
         apply = \mf m -> { value = mf.value m.value, writer = mf.writer <> m.writer },
@@ -921,6 +926,7 @@ type Show a = {
 let any x = any x
 
 let show : Show a -> Show (List a) = \d ->
+    #[infix(left, 1)]
     let (++) : String -> String -> String = any ()
 
     {

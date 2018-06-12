@@ -732,10 +732,9 @@ impl<'a, 'e> Compiler<'a, 'e> {
                         l.map_or(args[0].clone(), |l| l.into_local(self.allocator).clone()),
                         r.map_or(args[1].clone(), |r| r.into_local(self.allocator).clone()),
                     ]);
-                    Some(Reduced::Local(&*self
-                        .allocator
-                        .arena
-                        .alloc(Expr::Call(f, new_args))))
+                    Some(Reduced::Local(
+                        &*self.allocator.arena.alloc(Expr::Call(f, new_args)),
+                    ))
                 }
                 _ => unreachable!(),
             },

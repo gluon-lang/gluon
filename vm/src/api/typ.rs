@@ -13,20 +13,20 @@ use serde::de::{
 };
 
 /// Generates a Gluon expression for a type that is the Gluon equivalent to`T`.
-/// 
+///
 /// ## Examples
-/// 
+///
 /// For this `T`:
-/// 
+///
 /// ```rust
 /// struct Address {
 ///     street: String,
 ///     city: String,
 /// }
 /// ```
-/// 
+///
 /// the following code will be generated:
-/// 
+///
 /// ```gluon
 /// type Address = { street: String, city: String }
 /// { Address }
@@ -41,7 +41,8 @@ where
 type {0} = {1}
 {{ {0} }}
 "#,
-        name, typ
+        name,
+        typ.pretty(&::pretty::Arena::new()).nest(4).1.pretty(80)
     ))
 }
 
@@ -301,11 +302,13 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: Visitor<'de>,
     {
-        let value = {
+        let (value, typ) = {
             let mut seq_deserializer = SeqDeserializer::new(&mut *self, 1);
-            visitor.visit_seq(&mut seq_deserializer)?
+            let value = visitor.visit_seq(&mut seq_deserializer)?;
+            assert!(seq_deserializer.types.len() == 1);
+            (value, seq_deserializer.types.pop().unwrap())
         };
-        self.typ = Some(Type::array(self.state.cache.byte()));
+        self.typ = Some(Type::array(typ));
         Ok(value)
     }
 
@@ -624,5 +627,17 @@ mod tests {
                 ),
             ])
         );
+    }
+
+    #[derive(Deserialize)]
+    struct MyArray(Vec<f64>);
+
+    #[test]
+    fn vec_type() {
+        let mut symbols = Symbols::new();
+        let (name, typ) =
+            from_rust_with_symbols::<MyArray>(&mut symbols, &RootedThread::new()).unwrap();
+        assert_eq!(name.declared_name(), "MyArray");
+        assert_eq!(typ, Type::array(Type::float()));
     }
 }

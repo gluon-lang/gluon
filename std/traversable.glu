@@ -1,0 +1,34 @@
+//@NO-IMPLICIT-PRELUDE
+//! Implementation of the `Traversable` type
+
+let { Functor } = import! std.functor
+let { Foldable } = import! std.foldable
+let { Applicative } = import! std.applicative
+
+#[implicit]
+type Traversable t = {
+    functor : Functor t,
+    foldable : Foldable t,
+    traverse : forall a b m . Applicative m -> (a -> m b) -> t a -> m (t b)
+}
+
+let traverse ?t : forall a b m . [Traversable t] -> Applicative m
+        -> (a -> m b)
+        -> t a
+        -> m (t b)
+    = t.traverse
+
+let sequence applicative : [Traversable t] -> Applicative m -> t (m a) -> m (t a) =
+    traverse applicative (\x -> x)
+
+let for applicative x f : [Traversable t] -> Applicative m -> t a -> (a -> m b) -> m (t b) =
+    traverse applicative f x
+
+
+{
+    Traversable,
+
+    traverse,
+    sequence,
+    for,
+}

@@ -24,7 +24,7 @@ use base::ast::{Do, Expr, IdentEnv, SpannedExpr, SpannedPattern, TypedIdent, Val
 use base::error::{AsDiagnostic, Errors};
 use base::fnv::FnvMap;
 use base::metadata::Metadata;
-use base::pos::{self, BytePos, Span, Spanned};
+use base::pos::{self, ByteOffset, BytePos, Span, Spanned};
 use base::symbol::Symbol;
 use base::types::{ArcType, TypeCache};
 
@@ -87,11 +87,17 @@ fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
     expr
 }
 
-fn transform_errors<'a, Iter>(errors: Iter) -> Errors<Spanned<Error, BytePos>>
+fn transform_errors<'a, Iter>(
+    source_span: Span<BytePos>,
+    errors: Iter,
+) -> Errors<Spanned<Error, BytePos>>
 where
     Iter: IntoIterator<Item = LalrpopError<'a>>,
 {
-    errors.into_iter().map(Error::from_lalrpop).collect()
+    errors
+        .into_iter()
+        .map(|err| Error::from_lalrpop(source_span, err))
+        .collect()
 }
 
 struct Expected<'a>(&'a [String]);
@@ -169,7 +175,7 @@ fn remove_extra_quotes(tokens: &mut [String]) {
 }
 
 impl Error {
-    fn from_lalrpop(err: LalrpopError) -> Spanned<Error, BytePos> {
+    fn from_lalrpop(source_span: Span<BytePos>, err: LalrpopError) -> Spanned<Error, BytePos> {
         use lalrpop_util::ParseError::*;
 
         match err {
@@ -190,7 +196,11 @@ impl Error {
                 mut expected,
             } => {
                 remove_extra_quotes(&mut expected);
-                pos::spanned2(1.into(), 1.into(), Error::UnexpectedEof(expected))
+                pos::spanned2(
+                    source_span.end(),
+                    source_span.end(),
+                    Error::UnexpectedEof(expected),
+                )
             }
             ExtraToken {
                 token: (lpos, token, rpos),
@@ -313,6 +323,11 @@ macro_rules! layout {
 pub trait ParserSource {
     fn src(&self) -> &str;
     fn start_index(&self) -> BytePos;
+
+    fn span(&self) -> Span<BytePos> {
+        let start = self.start_index();
+        Span::new(start, start + ByteOffset::from(self.src().len() as i64))
+    }
 }
 
 impl<'a, S> ParserSource for &'a S
@@ -379,14 +394,14 @@ where
     match result {
         Ok(expr) => {
             if parse_errors.has_errors() {
-                Err((Some(expr), transform_errors(parse_errors)))
+                Err((Some(expr), transform_errors(input.span(), parse_errors)))
             } else {
                 Ok(expr)
             }
         }
         Err(err) => {
             parse_errors.push(err);
-            Err((None, transform_errors(parse_errors)))
+            Err((None, transform_errors(input.span(), parse_errors)))
         }
     }
 }
@@ -441,14 +456,17 @@ where
     match result {
         Ok(let_or_expr) => {
             if parse_errors.has_errors() {
-                Err((Some(let_or_expr), transform_errors(parse_errors)))
+                Err((
+                    Some(let_or_expr),
+                    transform_errors(input.span(), parse_errors),
+                ))
             } else {
                 Ok(let_or_expr)
             }
         }
         Err(err) => {
             parse_errors.push(err);
-            Err((None, transform_errors(parse_errors)))
+            Err((None, transform_errors(input.span(), parse_errors)))
         }
     }
 }

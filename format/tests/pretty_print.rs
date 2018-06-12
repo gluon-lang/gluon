@@ -292,6 +292,18 @@ x
 }
 
 #[test]
+fn doc_comment_in_record_expr() {
+    let expr = r#"
+{
+    /// test
+    /// test
+    field1 = 1,
+}
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+}
+
+#[test]
 fn preserve_comments_in_empty_record() {
     let expr = r#"
 {
@@ -376,4 +388,20 @@ type Handler a =
 ()
 "#;
     assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+}
+
+#[test]
+fn variant_type() {
+    let expr = r#"
+type TestCase a =
+    | LoooooooooooooooooongTest String (() -> std.test.Test a)
+    | LoooooooooooooooooooooooongGroup String (Array (std.test.TestCase a))
+()
+"#;
+    assert_diff!(
+        &format_expr(expr).unwrap_or_else(|err| panic!("{}", err)),
+        expr,
+        " ",
+        0
+    );
 }

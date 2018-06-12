@@ -1,6 +1,6 @@
 let prelude = import! std.prelude
 let io @ { ? } = import! std.io
-let map @ { Map } = import! std.map
+let map @ { Map, empty, singleton, find, insert, ? } = import! std.map
 let { Bool } = import! std.bool
 let { Option } = import! std.option
 let { Result } = import! std.result
@@ -17,10 +17,8 @@ let { (<<) } = import! std.function
 let { Applicative, wrap, (*>) } = import! std.applicative
 let { flat_map, (>>=) } = import! std.monad
 
-let ord_map @ { singleton, find, insert, ? } = map.make string.ord
 let { (<>) } = import! std.prelude
 let (++) = (<>)
-let { empty } = ord_map.monoid
 
 
 let run_interruptible_io cpu_pool action : CpuPool -> IO String -> IO (Result String String) =
@@ -56,7 +54,9 @@ let run_file cpu_pool filename : CpuPool -> String -> IO () =
     | Ok _ -> io.println ""
     | Err x -> io.println x
 
-type ReplAction = | Continue | Quit
+type ReplAction =
+    | Continue
+    | Quit
 type Cmd = { name : String, alias : String, info : String, action : String -> IO ReplAction }
 type Commands = Map String Cmd
 

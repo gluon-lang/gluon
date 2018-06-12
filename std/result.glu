@@ -1,11 +1,19 @@
-let prelude = import! std.prelude
-let { Eq, Ord, Ordering, Show } = prelude
-let { Functor, Applicative, Monad, Traversable } = prelude
+//@NO-IMPLICIT-PRELUDEJ
+//! Error handling type.
+
+let { Eq, Ord, Ordering, (==) } = import! std.cmp
+let { Show } = import! std.show
+let { Functor } = import! std.functor
+let { Applicative } = import! std.applicative
+let { Monad } = import! std.monad
 let { Result } = import! std.types
 let { Foldable } = import! std.foldable
+let { Traversable } = import! std.traversable
 let { Bool } = import! std.bool
-let string = import! std.string
+let { compare } = import! std.cmp
+let string @ { ? } = import! std.string
 let { (<>) } = import! std.semigroup
+let { error } = import! std.prim
 
 let unwrap_ok res : Result e a -> a =
     match res with
@@ -17,20 +25,20 @@ let unwrap_err res : Result e a -> e =
     | Ok _ -> error "Result was an Ok"
     | Err x -> x
 
-let eq ?e ?a : [Eq e] -> [Eq a] -> Eq (Result e a) = {
+let eq : [Eq e] -> [Eq a] -> Eq (Result e a) = {
     (==) = \l r ->
         match (l, r) with
-        | (Ok l_val, Ok r_val) -> a.(==) l_val r_val
-        | (Err l_val, Err r_val) -> e.(==) l_val r_val
+        | (Ok l_val, Ok r_val) -> l_val == r_val
+        | (Err l_val, Err r_val) -> l_val == r_val
         | _ -> False,
 }
 
-let ord ?e ?a : [Ord e] -> [Ord a] -> Ord (Result e a) = {
-    eq = eq,
+let ord : [Ord e] -> [Ord a] -> Ord (Result e a) = {
+    eq,
     compare = \l r ->
         match (l, r) with
-        | (Ok l_val, Ok r_val) -> a.compare l_val r_val
-        | (Err l_val, Err r_val) -> e.compare l_val r_val
+        | (Ok l_val, Ok r_val) -> compare l_val r_val
+        | (Err l_val, Err r_val) -> compare l_val r_val
         | (Ok _, Err _) -> LT
         | (Err _, Ok _) -> GT,
 }
@@ -43,7 +51,7 @@ let functor : Functor (Result e) = {
 }
 
 let applicative : Applicative (Result e) = {
-    functor = functor,
+    functor,
     apply = \f x ->
         match (f, x) with
         | (Ok g, Ok y) -> Ok (g y)
@@ -72,8 +80,8 @@ let foldable : Foldable (Result e) = {
 }
 
 let traversable : Traversable (Result e) = {
-    functor = functor,
-    foldable = foldable,
+    functor,
+    foldable,
     traverse = \app f r ->
         match r with
         | Err e -> app.wrap (Err e)

@@ -6,9 +6,8 @@ extern crate gluon_base as base;
 extern crate gluon_check as check;
 extern crate gluon_parser as parser;
 
-use base::ast::SpannedExpr;
-use base::metadata::{Comment, CommentType};
-use base::metadata::{Metadata, MetadataEnv};
+use base::ast::{Argument, SpannedExpr};
+use base::metadata::{Attribute, Comment, CommentType, Metadata, MetadataEnv};
 use base::symbol::{Symbol, SymbolRef};
 
 fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
@@ -16,6 +15,8 @@ fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
 }
 
 mod support;
+
+use support::intern;
 
 struct MockEnv;
 
@@ -50,6 +51,7 @@ id
         metadata,
         Metadata {
             comment: Some(line_comment("The identity function")),
+            args: vec![Argument::explicit(intern("x:35"))],
             ..Metadata::default()
         }
     );
@@ -73,6 +75,7 @@ let id x = x
         metadata.module.get("id"),
         Some(&Metadata {
             comment: Some(line_comment("The identity function")),
+            args: vec![Argument::explicit(intern("x:35"))],
             ..Metadata::default()
         })
     );
@@ -173,6 +176,148 @@ type Test = {
             .and_then(|metadata| metadata.module.get("x")),
         Some(&Metadata {
             comment: Some(line_comment("A field")),
+            ..Metadata::default()
+        })
+    );
+}
+
+#[test]
+fn propagate_metadata_from_types_to_values() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+/// A type
+type Test = {
+    /// A field
+    x : Int,
+    /// Another field
+    y : String,
+}
+
+/// Shadowing comment
+let test: Test = {
+    x = 1,
+    /// Shadowing field comment
+    y = "",
+}
+{ test }
+"#;
+    let (mut expr, result) = support::typecheck_expr(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+
+    let metadata = metadata(&MockEnv, &mut expr);
+    assert_eq!(
+        metadata
+            .module
+            .get("test")
+            .and_then(|metadata| metadata.module.get("x")),
+        Some(&Metadata {
+            comment: Some(line_comment("A field")),
+            ..Metadata::default()
+        })
+    );
+    assert_eq!(
+        metadata
+            .module
+            .get("test")
+            .and_then(|metadata| metadata.module.get("y")),
+        Some(&Metadata {
+            comment: Some(line_comment("Shadowing field comment")),
+            ..Metadata::default()
+        })
+    );
+    assert_eq!(
+        metadata
+            .module
+            .get("test")
+            .and_then(|metadata| metadata.comment.as_ref()),
+        Some(&line_comment("Shadowing comment"))
+    );
+}
+
+#[test]
+fn propagate_metadata_from_types_through_arg() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+type Test a = {
+    /// A field
+    x : a,
+}
+
+let x ?test : [Test a] -> a = test.x
+{ x }
+"#;
+    let (mut expr, result) = support::typecheck_expr(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+
+    let metadata = metadata(&MockEnv, &mut expr);
+    assert_eq!(
+        metadata.module.get("x"),
+        Some(&Metadata {
+            comment: Some(line_comment("A field")),
+            ..Metadata::default()
+        })
+    );
+}
+
+#[test]
+fn propagate_metadata_through_argument() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+type Test a = {
+    /// A field
+    x : a,
+}
+
+let x ?test : [Test a] -> a = test.x
+{ x }
+"#;
+    let (mut expr, result) = support::typecheck_expr(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+
+    let metadata = metadata(&MockEnv, &mut expr);
+    assert_eq!(
+        metadata.module.get("x"),
+        Some(&Metadata {
+            comment: Some(line_comment("A field")),
+            ..Metadata::default()
+        })
+    );
+}
+
+#[test]
+fn propagate_metadata_through_implicits() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+#[attribute]
+type Test a = {
+    x : a,
+}
+
+type Wrap a = | Wrap a
+
+let x ?test : [Test a] -> Test (Wrap a) = { x = Wrap test.x }
+{ x }
+"#;
+    let (mut expr, result) = support::typecheck_expr(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+
+    let metadata = metadata(&MockEnv, &mut expr);
+    assert_eq!(
+        metadata.module.get("x"),
+        Some(&Metadata {
+            attributes: vec![Attribute {
+                name: "attribute".into(),
+                arguments: None,
+            }],
+            args: vec![Argument::implicit(intern("test:76"))],
             ..Metadata::default()
         })
     );

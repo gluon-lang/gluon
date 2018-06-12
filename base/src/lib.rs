@@ -10,6 +10,7 @@ extern crate log;
 extern crate pretty;
 #[macro_use]
 extern crate quick_error;
+extern crate either;
 extern crate smallvec;
 
 extern crate codespan;

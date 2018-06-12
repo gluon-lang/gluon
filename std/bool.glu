@@ -1,7 +1,12 @@
 //@NO-IMPLICIT-PRELUDE
+//! The boolean type.
 
 let { Bool, Ordering } = import! std.types
-let { Semigroup, Monoid, Group, Eq, Ord, Show } = import! std.prelude
+let { Semigroup } = import! std.semigroup
+let { Monoid } = import! std.monoid
+let { Group } = import! std.group
+let { Eq, Ord } = import! std.cmp
+let { Show } = import! std.show
 let { id } = import! std.function
 
 /// Boolean 'not'
