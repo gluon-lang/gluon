@@ -1,11 +1,20 @@
 #!/bin/sh
+set -ex
 
-(cd base && cargo publish $@) &&
-    (cd parser && cargo publish $@) &&
-    (cd check && cargo publish $@) &&
-    (cd completion && cargo publish $@) &&
-    (cd vm && cargo publish $@) &&
-    (cd format && cargo publish $@) &&
-    cargo publish $@ &&
-    (cd c-api && cargo publish $@) &&
-    (cd repl && cargo publish $@)
+PROJECTS=(
+    base
+    parser
+    check
+    completion
+    vm
+    format
+    codegen
+    .
+    c-api
+    repl
+)
+
+for PROJECT in "$PROJECTS"
+do
+    (cd $PROJECT && cargo publish $@)
+done
