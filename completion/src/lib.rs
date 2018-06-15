@@ -144,7 +144,10 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
     fn on_pattern(&mut self, pattern: &SpannedPattern<Symbol>) {
         match pattern.value {
             Pattern::As(ref id, ref pat) => {
-                self.stack.insert(id.clone(), pat.env_type_of(&self.env));
+                self.stack.insert(
+                    id.clone(),
+                    pat.try_type_of(&self.env).unwrap_or_else(|_| Type::hole()),
+                );
                 self.on_pattern(pat);
             }
             Pattern::Ident(ref id) => {
@@ -795,10 +798,16 @@ impl<'a> Extract for TypeAt<'a> {
 
     fn match_extract(self, found: &Match) -> Result<Self::Output, ()> {
         Ok(match *found {
-            Match::Expr(expr) => Either::Right(expr.env_type_of(self.env)),
+            Match::Expr(expr) => expr
+                .try_type_of(self.env)
+                .map(Either::Right)
+                .map_err(|_| ())?,
             Match::Ident(_, _, ref typ) => Either::Right(typ.clone()),
             Match::Type(_, _, ref kind) => Either::Left(kind.clone()),
-            Match::Pattern(pattern) => Either::Right(pattern.env_type_of(self.env)),
+            Match::Pattern(pattern) => pattern
+                .try_type_of(self.env)
+                .map(Either::Right)
+                .map_err(|_| ())?,
         })
     }
 }
@@ -1153,8 +1162,10 @@ impl SuggestionQuery {
                             ref fields,
                             ..
                         } => {
-                            let typ = resolve::remove_aliases(env, pattern.env_type_of(env));
-                            self.suggest_fields_of_type(&mut result, types, fields, "", &typ);
+                            if let Ok(typ) = expr.try_type_of(&env) {
+                                let typ = resolve::remove_aliases(env, typ);
+                                self.suggest_fields_of_type(&mut result, types, fields, "", &typ);
+                            }
                             ""
                         }
                         _ => "",
@@ -1173,17 +1184,19 @@ impl SuggestionQuery {
                 Match::Ident(_, ident, _) => match *enclosing_match {
                     Match::Expr(context) => match context.value {
                         Expr::Projection(ref expr, _, _) => {
-                            let typ = resolve::remove_aliases(&env, expr.env_type_of(&env));
-                            let id = ident.as_ref();
+                            if let Ok(typ) = expr.try_type_of(&env) {
+                                let typ = resolve::remove_aliases(&env, typ);
+                                let id = ident.as_ref();
 
-                            let iter = typ
-                                .row_iter()
-                                .filter(move |field| self.filter(field.name.as_ref(), id))
-                                .map(|field| (field.name.clone(), field.typ.clone()));
-                            result.extend(iter.map(|(name, typ)| Suggestion {
-                                name: name.declared_name().into(),
-                                typ: Either::Right(typ),
-                            }));
+                                let iter = typ
+                                    .row_iter()
+                                    .filter(move |field| self.filter(field.name.as_ref(), id))
+                                    .map(|field| (field.name.clone(), field.typ.clone()));
+                                result.extend(iter.map(|(name, typ)| Suggestion {
+                                    name: name.declared_name().into(),
+                                    typ: Either::Right(typ),
+                                }));
+                            }
                         }
                         Expr::Ident(ref id) if id.name.is_global() => {
                             self.suggest_module_import(env, &id.name.as_ref()[1..], &mut result);
@@ -1261,8 +1274,10 @@ impl SuggestionQuery {
                         ref fields,
                         ..
                     } => {
-                        let typ = resolve::remove_aliases(env, pattern.env_type_of(env));
-                        self.suggest_fields_of_type(&mut result, types, fields, "", &typ);
+                        if let Ok(typ) = pattern.try_type_of(env) {
+                            let typ = resolve::remove_aliases(env, typ);
+                            self.suggest_fields_of_type(&mut result, types, fields, "", &typ);
+                        }
                     }
                     _ => result.extend(suggest.patterns.iter().map(|(name, typ)| Suggestion {
                         name: name.declared_name().into(),
