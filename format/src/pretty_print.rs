@@ -225,7 +225,13 @@ where
                     self.pretty_expr_(binds.last().unwrap().span().end(), body).group()
                 ]
             }
-            Expr::Literal(_) => arena.text(self.source.src_slice(expr.span)),
+            Expr::Literal(_) => arena.concat(
+                self.source
+                    .src_slice(expr.span)
+                    .lines()
+                    .map(|line| arena.text(line))
+                    .intersperse(arena.newline()),
+            ),
             Expr::Match(ref expr, ref alts) => chain![arena;
                     chain![arena;
                         "match ",
