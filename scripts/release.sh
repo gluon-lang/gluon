@@ -1,20 +1,21 @@
 #!/bin/sh
 set -ex
 
-PROJECTS=(
+declare -a PROJECTS=(
     base
     parser
     check
     completion
     vm
-    format
     codegen
     .
+    format
     c-api
+    doc
     repl
 )
 
-for PROJECT in "$PROJECTS"
+for PROJECT in "${PROJECTS[@]}"
 do
     (cd $PROJECT && cargo publish $@)
 done

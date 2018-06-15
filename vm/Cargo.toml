@@ -44,7 +44,7 @@ lalrpop = { version = "0.15.1", optional = true }
 env_logger = "0.5"
 # HACK Trick crates.io into letting letting this be published with a dependency on gluon
 # (which requires gluon_vm to be published)
-gluon = { path = "..", version = "<0.9.0, >=0.8.0" }
+gluon = { path = "..", version = "<0.9.0, >=0.7.0" }
 
 lalrpop-util = "0.15.1"
 regex = "0.2.0"

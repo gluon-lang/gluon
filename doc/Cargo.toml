@@ -3,6 +3,13 @@ name = "gluon_doc"
 version = "0.8.0" # GLUON
 authors = ["Markus Westerlind <marwes91@gmail.com>"]
 
+license = "MIT"
+
+description = "The documentation generator for the gluon programming language"
+
+repository = "https://github.com/gluon-lang/gluon"
+documentation = "https://docs.rs/gluon"
+
 [dependencies]
 log = "0.4"
 env_logger = "0.5"
