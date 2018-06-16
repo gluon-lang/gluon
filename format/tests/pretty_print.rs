@@ -409,9 +409,10 @@ type TestCase a =
 #[test]
 fn multiline_string() {
     let expr = r#"
-"abc
-    123
- "
+let x = "abc
+        123
+    "
+x
 "#;
     assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
 }

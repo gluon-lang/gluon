@@ -153,8 +153,6 @@ name = "24"
 [[example]]
 name = "marshalling"
 [[example]]
-name = "c_parser"
-[[example]]
 name = "http"
 path = "examples/http/main.rs"
 [[example]]
@@ -166,3 +164,4 @@ features = ["docs_rs"]
 
 [profile.bench]
 debug = true
+

@@ -12,7 +12,7 @@ documentation = "https://docs.rs/gluon"
 
 [dependencies]
 log = "0.4"
-pretty = "0.3"
+pretty = "0.5"
 itertools = "0.7"
 codespan = "0.1.1"
 
