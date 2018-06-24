@@ -15,6 +15,7 @@ extern crate tokio_core;
 extern crate pulldown_cmark;
 
 use gluon::base::ast::{Expr, Pattern, SpannedExpr};
+use gluon::base::filename_to_module;
 use gluon::base::symbol::Symbol;
 use gluon::base::types::{ArcType, Type};
 
@@ -308,7 +309,7 @@ fn main_() -> Result<(), Box<Error>> {
     let mut core = tokio_core::reactor::Core::new()?;
     let pass_tests_future = stream::futures_ordered(
         iter.filter_map(|filename| {
-            let name = filename.to_str().unwrap_or("<unknown>").to_owned();
+            let name = filename_to_module(filename.to_str().unwrap_or("<unknown>"));
 
             match filter {
                 Some(ref filter) if file_filter && !name.contains(&filter[..]) => None,
@@ -333,7 +334,7 @@ fn main_() -> Result<(), Box<Error>> {
 
     let fail_tests =
         iter.filter_map(|filename| {
-            let name = filename.to_str().unwrap_or("<unknown>").to_owned();
+            let name = filename_to_module(filename.to_str().unwrap_or("<unknown>"));
 
             match filter {
                 Some(ref filter) if file_filter && !name.contains(&filter[..]) => None,
@@ -358,7 +359,7 @@ fn main_() -> Result<(), Box<Error>> {
     let doc_tests = test_files("std")?
         .into_iter()
         .filter_map(|filename| {
-            let name = filename.to_str().unwrap_or("<unknown>").to_owned();
+            let name = filename_to_module(filename.to_str().unwrap_or("<unknown>"));
 
             match filter {
                 Some(ref filter) if file_filter && !name.contains(&filter[..]) => None,

@@ -1,45 +1,62 @@
 let prelude @ { Eq, Show } = import! std.prelude
 let { (<|) } = import! std.function
-let { Test, run, assert, assert_eq, test, group, ? } = import! std.test
+let { Test, run, assert, assert_eq, assert_neq, test, group, ? } = import! std.test
 let { Applicative, (*>) } = import! std.applicative
 
-#[derive(Eq)]
+#[derive(Eq, Show)]
 type TestVariant =
     | A Int
+    | B String Bool
 
-let variant =
-    [
-        test "neq" <| \_ ->
-            assert_eq ((A 2) == (A 1)) False,
-        test "eq" <| \_ ->
-            assert_eq ((A 2) == (A 2)) True,
-    ]
-
-#[derive(Eq)]
+#[derive(Eq, Show)]
 type TestRecord = { x : Int, name : String }
 
-let record =
-    [
-        test "neq" <| \_ ->
-            assert_eq ({ x = 1, name = "a" } == { x = 1, name = "" }) False,
-        test "eq" <| \_ ->
-            assert_eq ({ x = 1, name = "a" } == { x = 1, name = "a" }) True,
-    ]
 
-#[derive(Eq)]
+#[derive(Eq, Show)]
 type Nested = { variant : TestVariant, record : TestRecord }
 
-let nested =
-    let a = { variant = A 1, record = { x = 1, name = "" } }
+let eq_tests =
+    let variant =
+        [
+            test "neq" <| \_ ->
+                assert_neq (A 2) (A 1),
+            test "eq" <| \_ ->
+                assert_eq (A 2) (A 2),
+        ]
+
+    let record =
+        [
+            test "neq" <| \_ ->
+                assert_eq ({ x = 1, name = "a" } == { x = 1, name = "" }) False,
+            test "eq" <| \_ ->
+                assert_eq ({ x = 1, name = "a" } == { x = 1, name = "a" }) True,
+        ]
+
+    let nested =
+        let a = { variant = A 1, record = { x = 1, name = "" } }
+        [
+            test "neq" <| \_ ->
+                assert_eq (a == { variant = A 2, .. a }) False,
+            test "eq" <| \_ ->
+                assert_eq (a == a) True,
+        ]
+
     [
-        test "neq" <| \_ ->
-            assert_eq (a == { variant = A 2, .. a }) False,
-        test "eq" <| \_ ->
-            assert_eq (a == a) True,
+        group "variant" variant,
+        group "record" record,
+        group "nested" nested,
+    ]
+
+let show_tests =
+    let record = { x = 123, name = "abc" }
+    [
+        test "variant_a" <| \_ -> assert_eq (show (A 2)) "A (2)",
+        test "variant_b" <| \_ -> assert_eq (show (B "test" False)) "B (\"test\") (False)",
+        test "record" <| \_ -> assert_eq (show record) "{ x = 123, name = \"abc\" }",
+        test "nested" <| \_ -> assert_eq (show { variant = A 100, record }) "{ variant = A (100), record = { x = 123, name = \"abc\" } }",
     ]
 
 group "derive" [
-    group "variant" variant,
-    group "record" record,
-    group "nested" nested,
+    group "show" show_tests,
+    group "eq" eq_tests,
 ]

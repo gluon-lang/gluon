@@ -210,6 +210,7 @@ impl<'a, 'b, 'c> MutVisitor<'c> for MacroVisitor<'a, 'b, 'c> {
                             Some(ref args) => for arg in args.split(',').map(|s| s.trim()) {
                                 let result = match arg {
                                     "Eq" => generate_eq(self.symbols, bind),
+                                    "Show" => generate_show(self.symbols, bind),
                                     _ => panic!(),
                                 };
                                 let generated_binding = match result {
@@ -251,13 +252,29 @@ impl<'a, 'b, 'c> MutVisitor<'c> for MacroVisitor<'a, 'b, 'c> {
 }
 
 use base::ast::{
-    Alternative, Argument, ExprField, Pattern, PatternField, TypeBinding, TypedIdent, ValueBinding,
+    Alternative, Argument, ExprField, Literal, Pattern, PatternField, TypeBinding, TypedIdent,
+    ValueBinding,
 };
 use base::pos::Span;
 use base::types::{arg_iter, row_iter, Type};
 
 fn ident(span: Span<BytePos>, s: Symbol) -> SpannedExpr<Symbol> {
     pos::spanned(span, Expr::Ident(TypedIdent::new(s)))
+}
+
+fn literal(span: Span<BytePos>, s: &str) -> SpannedExpr<Symbol> {
+    pos::spanned(span, Expr::Literal(Literal::String(s.to_string())))
+}
+
+fn app(span: Span<BytePos>, func: Symbol, args: Vec<SpannedExpr<Symbol>>) -> SpannedExpr<Symbol> {
+    pos::spanned(
+        Default::default(),
+        Expr::App {
+            func: Box::new(pos::spanned(span, Expr::Ident(TypedIdent::new(func)))),
+            implicit_args: Vec::new(),
+            args,
+        },
+    )
 }
 
 fn infix(
@@ -275,6 +292,186 @@ fn infix(
             implicit_args: Vec::new(),
         },
     )
+}
+
+fn generate_show(
+    symbols: &mut Symbols,
+    bind: &TypeBinding<Symbol>,
+) -> Result<ValueBinding<Symbol>, Error> {
+    let span = bind.name.span;
+
+    let x = Symbol::from("x");
+
+    let show_expr = match **bind.alias.value.unresolved_type() {
+        Type::Variant(ref variants) => {
+            let alts = row_iter(variants)
+                .map(|variant| {
+                    let pattern_args: Vec<_> = arg_iter(&variant.typ)
+                        .enumerate()
+                        .map(|(i, _)| TypedIdent::new(Symbol::from(format!("arg_{}", i))))
+                        .collect();
+
+                    let expr = {
+                        let open_brace = literal(span, variant.name.declared_name());
+
+                        pattern_args.iter().fold(open_brace, |acc, x| {
+                            let show = infix(
+                                span,
+                                literal(span, "("),
+                                symbols.symbol("++"),
+                                infix(
+                                    span,
+                                    app(
+                                        span,
+                                        symbols.symbol("show"),
+                                        vec![ident(span, x.name.clone())],
+                                    ),
+                                    symbols.symbol("++"),
+                                    literal(span, ")"),
+                                ),
+                            );
+                            infix(
+                                span,
+                                acc,
+                                symbols.symbol("++"),
+                                infix(span, literal(span, " "), symbols.symbol("++"), show),
+                            )
+                        })
+                    };
+
+                    let ctor_pattern = |pattern_args: Vec<_>| {
+                        pos::spanned(
+                            span,
+                            Pattern::Constructor(
+                                TypedIdent::new(variant.name.clone()),
+                                pattern_args
+                                    .into_iter()
+                                    .map(|arg| pos::spanned(span, Pattern::Ident(arg)))
+                                    .collect(),
+                            ),
+                        )
+                    };
+                    Alternative {
+                        pattern: ctor_pattern(pattern_args),
+                        expr,
+                    }
+                })
+                .collect();
+            Expr::Match(Box::new(ident(span, x.clone())), alts)
+        }
+        Type::Record(ref row) => {
+            let field_symbols: Vec<_> = row_iter(row)
+                .map(|field| {
+                    TypedIdent::new(Symbol::from(format!("{}", field.name.declared_name())))
+                })
+                .collect();
+
+            let expr = {
+                let open_brace = literal(span, "{ ");
+
+                let show_expr = field_symbols
+                    .iter()
+                    .enumerate()
+                    .fold(open_brace, |acc, (i, x)| {
+                        let show = app(
+                            span,
+                            symbols.symbol("show"),
+                            vec![ident(span, x.name.clone())],
+                        );
+
+                        let show_field = infix(
+                            span,
+                            acc,
+                            symbols.symbol("++"),
+                            infix(
+                                span,
+                                literal(span, &format!("{} = ", x.name.declared_name())),
+                                symbols.symbol("++"),
+                                show,
+                            ),
+                        );
+
+                        let last = i == field_symbols.len() - 1;
+                        let suffix = if last { " " } else { ", " };
+                        infix(
+                            span,
+                            show_field,
+                            symbols.symbol("++"),
+                            literal(span, suffix),
+                        )
+                    });
+
+                infix(span, show_expr, symbols.symbol("++"), literal(span, "}"))
+            };
+            let generate_record_pattern = |symbols| {
+                pos::spanned(
+                    span,
+                    Pattern::Record {
+                        implicit_import: None,
+                        typ: Type::hole(),
+                        types: Vec::new(),
+                        fields: row_iter(row)
+                            .zip(symbols)
+                            .map(|(field, bind)| PatternField {
+                                name: pos::spanned(span, field.name.clone()),
+                                value: Some(pos::spanned(span, Pattern::Ident(bind))),
+                            })
+                            .collect(),
+                    },
+                )
+            };
+            Expr::Match(
+                Box::new(ident(span, x.clone())),
+                vec![Alternative {
+                    pattern: generate_record_pattern(field_symbols),
+                    expr,
+                }],
+            )
+        }
+        _ => return Err("Unable to derive Show for this type".into()),
+    };
+
+    let show_fn = TypedIdent::new(symbols.symbol("show_"));
+    let show_record_expr = Expr::LetBindings(
+        vec![ValueBinding {
+            name: pos::spanned(span, Pattern::Ident(show_fn.clone())),
+            args: vec![Argument::explicit(pos::spanned(
+                span,
+                TypedIdent::new(x.clone()),
+            ))],
+            expr: pos::spanned(span, show_expr),
+            metadata: Default::default(),
+            typ: Some(Type::function(
+                vec![Type::ident(bind.alias.value.name.clone())],
+                Type::string(),
+            )),
+            resolved_type: Type::hole(),
+        }],
+        Box::new(pos::spanned(
+            span,
+            Expr::Record {
+                typ: Type::hole(),
+                types: Vec::new(),
+                exprs: vec![ExprField {
+                    metadata: Default::default(),
+                    name: pos::spanned(span, symbols.symbol("show")),
+                    value: Some(ident(span, show_fn.name.clone())),
+                }],
+                base: None,
+            },
+        )),
+    );
+    Ok(ValueBinding {
+        name: pos::spanned(span, Pattern::Ident(TypedIdent::new(Symbol::from("show")))),
+        args: Vec::new(),
+        expr: pos::spanned(span, show_record_expr),
+        metadata: Default::default(),
+        typ: Some(Type::app(
+            Type::ident(symbols.symbol("Show")),
+            collect![Type::ident(bind.alias.value.name.clone())],
+        )),
+        resolved_type: Type::hole(),
+    })
 }
 
 fn generate_eq(
