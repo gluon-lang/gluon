@@ -20,6 +20,8 @@ let eq_tests =
         [
             test "neq" <| \_ ->
                 assert_neq (A 2) (A 1),
+            test "neq" <| \_ ->
+                assert_neq (A 2) (B "" True),
             test "eq" <| \_ ->
                 assert_eq (A 2) (A 2),
         ]
@@ -27,18 +29,18 @@ let eq_tests =
     let record =
         [
             test "neq" <| \_ ->
-                assert_eq ({ x = 1, name = "a" } == { x = 1, name = "" }) False,
+                assert_neq { x = 1, name = "a" } { x = 1, name = "" },
             test "eq" <| \_ ->
-                assert_eq ({ x = 1, name = "a" } == { x = 1, name = "a" }) True,
+                assert_eq { x = 1, name = "a" } { x = 1, name = "a" },
         ]
 
     let nested =
         let a = { variant = A 1, record = { x = 1, name = "" } }
         [
             test "neq" <| \_ ->
-                assert_eq (a == { variant = A 2, .. a }) False,
+                assert_eq a { variant = A 2, .. a },
             test "eq" <| \_ ->
-                assert_eq (a == a) True,
+                assert_eq a a,
         ]
 
     [

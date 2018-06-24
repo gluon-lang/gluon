@@ -511,6 +511,11 @@ fn generate_eq(
 
     let comparison_expr = match **bind.alias.value.unresolved_type() {
         Type::Variant(ref variants) => {
+            let catch_all_alternative = Alternative {
+                pattern: pos::spanned(span, Pattern::Ident(TypedIdent::new(symbols.symbol("_")))),
+                expr: ident(span, symbols.symbol("False")),
+            };
+
             let alts = row_iter(variants)
                 .map(|variant| {
                     let l_pattern_args: Vec<_> = arg_iter(&variant.typ)
@@ -551,6 +556,7 @@ fn generate_eq(
                         expr,
                     }
                 })
+                .chain(Some(catch_all_alternative))
                 .collect();
             Expr::Match(matcher, alts)
         }
