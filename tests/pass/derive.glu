@@ -1,0 +1,45 @@
+let prelude @ { Eq, Show } = import! std.prelude
+let { (<|) } = import! std.function
+let { Test, run, assert, assert_eq, test, group, ? } = import! std.test
+let { Applicative, (*>) } = import! std.applicative
+
+#[derive(Eq)]
+type TestVariant =
+    | A Int
+
+let variant =
+    [
+        test "neq" <| \_ ->
+            assert_eq ((A 2) == (A 1)) False,
+        test "eq" <| \_ ->
+            assert_eq ((A 2) == (A 2)) True,
+    ]
+
+#[derive(Eq)]
+type TestRecord = { x : Int, name : String }
+
+let record =
+    [
+        test "neq" <| \_ ->
+            assert_eq ({ x = 1, name = "a" } == { x = 1, name = "" }) False,
+        test "eq" <| \_ ->
+            assert_eq ({ x = 1, name = "a" } == { x = 1, name = "a" }) True,
+    ]
+
+#[derive(Eq)]
+type Nested = { variant : TestVariant, record : TestRecord }
+
+let nested =
+    let a = { variant = A 1, record = { x = 1, name = "" } }
+    [
+        test "neq" <| \_ ->
+            assert_eq (a == { variant = A 2, .. a }) False,
+        test "eq" <| \_ ->
+            assert_eq (a == a) True,
+    ]
+
+group "derive" [
+    group "variant" variant,
+    group "record" record,
+    group "nested" nested,
+]

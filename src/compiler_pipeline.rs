@@ -130,7 +130,7 @@ impl<'s> MacroExpandable for &'s mut SpannedExpr<Symbol> {
             compiler.include_implicit_prelude(macros.vm.global_env().type_cache(), file, self);
         }
         let prev_errors = mem::replace(&mut macros.errors, Errors::new());
-        macros.run(self);
+        macros.run(&mut compiler.symbols, self);
         let errors = mem::replace(&mut macros.errors, prev_errors);
         let value = MacroValue { expr: self };
         if errors.has_errors() {
