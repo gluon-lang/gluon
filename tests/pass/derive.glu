@@ -38,7 +38,7 @@ let eq_tests =
         let a = { variant = A 1, record = { x = 1, name = "" } }
         [
             test "neq" <| \_ ->
-                assert_eq a { variant = A 2, .. a },
+                assert_neq a { variant = A 2, .. a },
             test "eq" <| \_ ->
                 assert_eq a a,
         ]
