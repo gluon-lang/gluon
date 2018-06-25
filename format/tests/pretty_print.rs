@@ -1,8 +1,8 @@
-#[macro_use(assert_diff)]
 extern crate difference;
 extern crate env_logger;
 #[macro_use]
 extern crate pretty_assertions;
+extern crate termcolor;
 
 extern crate gluon;
 extern crate gluon_base as base;
@@ -10,10 +10,78 @@ extern crate gluon_format as format;
 
 use std::env;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::path::Path;
 
+use difference::{Changeset, Difference};
+
 use gluon::{Compiler, VmBuilder};
+
+fn assert_diff(text1: &str, text2: &str) -> io::Result<()> {
+    let Changeset { diffs, .. } = Changeset::new(text1, text2, "\n");
+
+    use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
+
+    let mut t = StandardStream::stdout(ColorChoice::Auto);
+
+    for i in 0..diffs.len() {
+        match diffs[i] {
+            Difference::Same(ref x) => {
+                t.reset()?;
+                writeln!(t, " {}", x)?;
+            }
+            Difference::Add(ref x) => {
+                match diffs[i - 1] {
+                    Difference::Rem(ref y) => {
+                        t.set_color(ColorSpec::new().set_fg(Some(Color::Green)))?;
+                        write!(t, "+")?;
+                        let Changeset { diffs, .. } = Changeset::new(y, x, " ");
+                        for c in diffs {
+                            match c {
+                                Difference::Same(ref z) => {
+                                    t.set_color(ColorSpec::new().set_fg(Some(Color::Green)))?;
+                                    write!(t, "{}", z)?;
+                                    write!(t, " ")?;
+                                }
+                                Difference::Add(ref z) => {
+                                    t.set_color(ColorSpec::new().set_fg(Some(Color::White)))?;
+                                    t.set_color(ColorSpec::new().set_bg(Some(Color::Green)))?;
+                                    write!(t, "{}", z)?;
+                                    t.reset()?;
+                                    write!(t, " ")?;
+                                }
+                                _ => (),
+                            }
+                        }
+                        writeln!(t)?;
+                    }
+                    _ => {
+                        t.set_color(
+                            ColorSpec::new()
+                                .set_fg(Some(Color::Green))
+                                .set_intense(true),
+                        )?;
+                        writeln!(t, "+{}", x)?;
+                    }
+                };
+            }
+            Difference::Rem(ref x) => {
+                t.set_color(ColorSpec::new().set_fg(Some(Color::Red)))?;
+                writeln!(t, "-{}", x)?;
+            }
+        }
+    }
+    t.reset()?;
+    t.flush()?;
+    Ok(())
+}
+
+macro_rules! assert_diff {
+    ($lhs:expr, $rhs:expr, $sep:expr, $distance:expr) => {
+
+        assert_diff($lhs, $rhs).unwrap();
+    };
+}
 
 fn format_expr(expr: &str) -> gluon::Result<String> {
     let mut compiler = Compiler::new();
@@ -21,6 +89,14 @@ fn format_expr(expr: &str) -> gluon::Result<String> {
         .import_paths(Some(vec!["..".into()]))
         .build();
     format::format_expr(&mut compiler, &thread, "test", expr)
+}
+
+fn format_expr_expanded(expr: &str) -> gluon::Result<String> {
+    let mut compiler = Compiler::new();
+    let thread = VmBuilder::new()
+        .import_paths(Some(vec!["..".into()]))
+        .build();
+    format::Formatter { expanded: true }.format_expr(&mut compiler, &thread, "test", expr)
 }
 
 fn test_format(name: &str) {
@@ -415,4 +491,37 @@ let x = "abc
 x
 "#;
     assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+}
+
+#[test]
+fn derive() {
+    let expr = r#"
+#[derive(Show)]
+type Test =
+    | Test
+Test
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+}
+
+#[test]
+fn derive_expanded() {
+    let expr = r#"
+#[derive(Show)]
+type Test =
+    | Test
+Test
+"#;
+    let expected = r#"
+#[derive(Show)]
+type Test =
+    | Test
+let show =
+    let show_ x =
+        match x with
+        | Test -> "Test"
+    { show }
+Test
+"#;
+    assert_diff!(&format_expr_expanded(expr).unwrap(), expected, " ", 0);
 }
