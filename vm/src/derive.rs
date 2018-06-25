@@ -1,5 +1,5 @@
 use base::ast::{
-    Alternative, Argument, Expr, ExprField, Literal, Pattern, PatternField, SpannedExpr,
+    Alternative, Argument, AstType, Expr, ExprField, Literal, Pattern, PatternField, SpannedExpr,
     TypeBinding, TypedIdent, ValueBinding,
 };
 use base::metadata::Attribute;
@@ -64,6 +64,15 @@ fn infix(
     )
 }
 
+fn is_self_type(self_: &Symbol, typ: &AstType<Symbol>) -> bool {
+    match **typ {
+        Type::App(ref f, _) => is_self_type(self_, f),
+        Type::Alias(ref alias) => alias.name == *self_,
+        Type::Ident(ref id) => id == self_,
+        _ => false,
+    }
+}
+
 fn generate_show(
     symbols: &mut Symbols,
     bind: &TypeBinding<Symbol>,
@@ -71,6 +80,7 @@ fn generate_show(
     let span = bind.name.span;
 
     let x = Symbol::from("x");
+    let show_fn = TypedIdent::new(symbols.symbol("show_"));
 
     let show_expr = match **bind.alias.value.unresolved_type() {
         Type::Variant(ref variants) => {
@@ -78,35 +88,43 @@ fn generate_show(
                 .map(|variant| {
                     let pattern_args: Vec<_> = arg_iter(&variant.typ)
                         .enumerate()
-                        .map(|(i, _)| TypedIdent::new(Symbol::from(format!("arg_{}", i))))
+                        .map(|(i, typ)| {
+                            (
+                                is_self_type(&bind.alias.value.name, typ),
+                                TypedIdent::new(Symbol::from(format!("arg_{}", i))),
+                            )
+                        })
                         .collect();
 
                     let expr = {
                         let open_brace = literal(span, variant.name.declared_name());
 
-                        pattern_args.iter().fold(open_brace, |acc, x| {
-                            let show = infix(
-                                span,
-                                literal(span, "("),
-                                symbols.symbol("++"),
+                        pattern_args
+                            .iter()
+                            .fold(open_brace, |acc, &(self_type, ref x)| {
+                                let show_function = if self_type {
+                                    show_fn.name.clone()
+                                } else {
+                                    symbols.symbol("show")
+                                };
+                                let show = infix(
+                                    span,
+                                    literal(span, "("),
+                                    symbols.symbol("++"),
+                                    infix(
+                                        span,
+                                        app(span, show_function, vec![ident(span, x.name.clone())]),
+                                        symbols.symbol("++"),
+                                        literal(span, ")"),
+                                    ),
+                                );
                                 infix(
                                     span,
-                                    app(
-                                        span,
-                                        symbols.symbol("show"),
-                                        vec![ident(span, x.name.clone())],
-                                    ),
+                                    acc,
                                     symbols.symbol("++"),
-                                    literal(span, ")"),
-                                ),
-                            );
-                            infix(
-                                span,
-                                acc,
-                                symbols.symbol("++"),
-                                infix(span, literal(span, " "), symbols.symbol("++"), show),
-                            )
-                        })
+                                    infix(span, literal(span, " "), symbols.symbol("++"), show),
+                                )
+                            })
                     };
 
                     let ctor_pattern = |pattern_args: Vec<_>| {
@@ -122,7 +140,7 @@ fn generate_show(
                         )
                     };
                     Alternative {
-                        pattern: ctor_pattern(pattern_args),
+                        pattern: ctor_pattern(pattern_args.into_iter().map(|t| t.1).collect()),
                         expr,
                     }
                 })
@@ -201,7 +219,6 @@ fn generate_show(
         _ => return Err("Unable to derive Show for this type".into()),
     };
 
-    let show_fn = TypedIdent::new(symbols.symbol("show_"));
     let show_record_expr = Expr::LetBindings(
         vec![ValueBinding {
             name: pos::spanned(span, Pattern::Ident(show_fn.clone())),
@@ -250,8 +267,10 @@ fn generate_eq(
 ) -> Result<ValueBinding<Symbol>, Error> {
     let span = bind.name.span;
 
+    let eq = TypedIdent::new(symbols.symbol("eq"));
     let l = Symbol::from("l");
     let r = Symbol::from("r");
+
     let matcher = Box::new(pos::spanned(
         span,
         Expr::Tuple {
@@ -262,18 +281,25 @@ fn generate_eq(
 
     let generate_and_chain =
         |symbols: &mut Symbols,
-         iter: &mut Iterator<Item = (&TypedIdent<Symbol>, &TypedIdent<Symbol>)>| {
+         iter: &mut Iterator<Item = (&(bool, TypedIdent<Symbol>), &TypedIdent<Symbol>)>| {
             let true_expr = ident(span, symbols.symbol("True"));
-            iter.fold(true_expr, |acc, (l, r)| {
+            iter.fold(true_expr, |acc, (&(self_type, ref l), r)| {
+                let equal_symbol = if self_type {
+                    eq.name.clone()
+                } else {
+                    symbols.symbol("==")
+                };
                 infix(
                     span,
                     acc,
                     symbols.symbol("&&"),
-                    infix(
+                    app(
                         span,
-                        ident(span, l.name.clone()).into(),
-                        symbols.symbol("=="),
-                        ident(span, r.name.clone()),
+                        equal_symbol,
+                        vec![
+                            ident(span, l.name.clone()).into(),
+                            ident(span, r.name.clone()),
+                        ],
                     ),
                 )
             })
@@ -289,7 +315,12 @@ fn generate_eq(
             let alts = row_iter(variants)
                 .map(|variant| {
                     let l_pattern_args: Vec<_> = arg_iter(&variant.typ)
-                        .map(|_| TypedIdent::new(Symbol::from("arg_l")))
+                        .map(|typ| {
+                            (
+                                is_self_type(&bind.alias.value.name, typ),
+                                TypedIdent::new(Symbol::from("arg_l")),
+                            )
+                        })
                         .collect();
                     let r_pattern_args: Vec<_> = arg_iter(&variant.typ)
                         .map(|_| TypedIdent::new(Symbol::from("arg_r")))
@@ -318,7 +349,7 @@ fn generate_eq(
                             Pattern::Tuple {
                                 typ: Type::hole(),
                                 elems: vec![
-                                    ctor_pattern(l_pattern_args),
+                                    ctor_pattern(l_pattern_args.into_iter().map(|t| t.1).collect()),
                                     ctor_pattern(r_pattern_args),
                                 ],
                             },
@@ -333,7 +364,10 @@ fn generate_eq(
         Type::Record(ref row) => {
             let l_symbols: Vec<_> = row_iter(row)
                 .map(|field| {
-                    TypedIdent::new(Symbol::from(format!("{}_l", field.name.declared_name())))
+                    (
+                        is_self_type(&bind.alias.value.name, &field.typ),
+                        TypedIdent::new(Symbol::from(format!("{}_l", field.name.declared_name()))),
+                    )
                 })
                 .collect();
             let r_symbols: Vec<_> = row_iter(row)
@@ -367,7 +401,9 @@ fn generate_eq(
                         span,
                         Pattern::Tuple {
                             elems: vec![
-                                generate_record_pattern(l_symbols),
+                                generate_record_pattern(
+                                    l_symbols.into_iter().map(|t| t.1).collect(),
+                                ),
                                 generate_record_pattern(r_symbols),
                             ],
                             typ: Type::hole(),
@@ -379,7 +415,6 @@ fn generate_eq(
         }
         _ => return Err("Unable to derive eq for this type".into()),
     };
-    let eq = TypedIdent::new(symbols.symbol("eq"));
     let eq_record_expr = Expr::LetBindings(
         vec![ValueBinding {
             name: pos::spanned(span, Pattern::Ident(eq.clone())),
