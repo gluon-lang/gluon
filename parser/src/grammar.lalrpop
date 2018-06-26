@@ -9,7 +9,7 @@ use base::metadata::{Attribute, Metadata, Comment};
 
 use std::str::FromStr;
 
-use ::new_ident;
+use ::{ReplLine, new_ident};
 use token::Token;
 use ordered_float::NotNaN;
 
@@ -669,9 +669,10 @@ pub TopExpr: SpannedExpr<Id> = {
     "shebang line"? <expr: SpExpr> SkipExtraTokens => expr,
 };
 
-pub LetOrExpr: Result<SpannedExpr<Id>, ValueBinding<Id>> = {
-    <TopExpr> => Ok(<>),
+pub LetOrExpr: Option<ReplLine<Id>> = {
+    <TopExpr> => Some(ReplLine::Expr(<>)),
     "block open" "let" <ValueBinding> SkipExtraTokens
         // Ugh but I just need the parser to be happy for now
-        "in" "block close" "block close" "block open" "block open" => Err(<>)
+        "in" "block close" "block close" "block open" "block open" => Some(ReplLine::Let(<>)),
+    => None,
 };

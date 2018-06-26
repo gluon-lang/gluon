@@ -139,3 +139,10 @@ fn arrays() {
     repl.test("let array = import! std.array", None);
     repl.test("array.len [1, 2, 3]", Some("3"));
 }
+
+#[test]
+fn comment() {
+    let mut repl = REPL::new();
+
+    repl.test("// test", None);
+}

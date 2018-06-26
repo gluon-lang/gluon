@@ -842,3 +842,16 @@ fn parse_let_or_expr() {
         Err((_, err)) => panic!("{}", err),
     }
 }
+
+#[test]
+fn parse_let_or_expr_only_comment() {
+    let _ = ::env_logger::try_init();
+
+    let mut module = MockEnv::new();
+
+    let line = " // test ";
+    match parser::parse_partial_let_or_expr(&mut module, line) {
+        Ok(x) => assert_eq!(x, None),
+        Err((_, err)) => panic!("{}", err),
+    }
+}
