@@ -669,7 +669,7 @@ pub TopExpr: SpannedExpr<Id> = {
     "shebang line"? <expr: SpExpr> SkipExtraTokens => expr,
 };
 
-pub LetOrExpr: Option<ReplLine<Id>> = {
+pub ReplLine: Option<ReplLine<Id>> = {
     <TopExpr> => Some(ReplLine::Expr(<>)),
     "block open" "let" <ValueBinding> SkipExtraTokens
         // Ugh but I just need the parser to be happy for now

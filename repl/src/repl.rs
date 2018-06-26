@@ -17,7 +17,7 @@ use base::kind::Kind;
 use base::pos;
 use base::symbol::{Symbol, SymbolModule};
 use base::types::ArcType;
-use parser::{parse_partial_let_or_expr, ReplLine};
+use parser::{parse_partial_repl_line, ReplLine};
 use vm::api::de::De;
 use vm::api::generic::A;
 use vm::api::ser::Ser;
@@ -279,10 +279,10 @@ fn eval_line_(
     line: &str,
 ) -> FutureValue<Box<Future<Item = (), Error = (Compiler, GluonError)> + Send>> {
     let mut compiler = Compiler::new();
-    let let_or_expr = {
+    let repl_line = {
         let result = {
             let mut module = SymbolModule::new("line".into(), compiler.mut_symbols());
-            parse_partial_let_or_expr(&mut module, line)
+            parse_partial_repl_line(&mut module, line)
         };
         match result {
             Ok(x) => x,
@@ -293,7 +293,7 @@ fn eval_line_(
             }
         }
     };
-    let future = match let_or_expr {
+    let future = match repl_line {
         None => return FutureValue::sync(Ok(())).boxed(),
         Some(ReplLine::Expr(expr)) => {
             compiler = compiler.run_io(true);

@@ -9,11 +9,14 @@ extern crate pretty_assertions;
 #[macro_use]
 mod support;
 
+use support::*;
+
 use base::ast::*;
 use base::metadata::*;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::types::{Field, Type};
-use support::*;
+
+use parser::ReplLine;
 
 #[test]
 fn dangling_in() {
@@ -812,16 +815,16 @@ fn do_in_parens() {
 }
 
 #[test]
-fn parse_let_or_expr() {
+fn parse_repl_line() {
     let _ = ::env_logger::try_init();
 
     let mut module = MockEnv::new();
 
     let line = "let x = test";
-    match parser::parse_partial_let_or_expr(&mut module, line) {
+    match parser::parse_partial_repl_line(&mut module, line) {
         Ok(x) => assert_eq!(
             x,
-            Err(ValueBinding {
+            Some(ReplLine::Let(ValueBinding {
                 metadata: Metadata::default(),
                 name: pos::spanned2(
                     // Add one to each position since codespan return 1-indexed positions
@@ -837,20 +840,20 @@ fn parse_let_or_expr() {
                     13.into(),
                     Expr::Ident(TypedIdent::new(intern("test")))
                 ),
-            })
+            }))
         ),
         Err((_, err)) => panic!("{}", err),
     }
 }
 
 #[test]
-fn parse_let_or_expr_only_comment() {
+fn parse_repl_line_only_comment() {
     let _ = ::env_logger::try_init();
 
-    let mut module = MockEnv::new();
+    let mut module = MockEnv::<String>::new();
 
     let line = " // test ";
-    match parser::parse_partial_let_or_expr(&mut module, line) {
+    match parser::parse_partial_repl_line(&mut module, line) {
         Ok(x) => assert_eq!(x, None),
         Err((_, err)) => panic!("{}", err),
     }
