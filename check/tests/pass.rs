@@ -899,3 +899,23 @@ Test "" 1
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn allow_more_generalize_variant_to_be_used_despite_specialized_imported_first() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+let record =
+    type Test a = | Test a
+    type TestInt = Test Int
+    { Test, TestInt }
+
+let { TestInt } = record
+let { Test } = record
+
+Test ""
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
