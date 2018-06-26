@@ -16,7 +16,7 @@ Evaluating only a single expression can get quite unwieldy so if we want to brea
 ```
 > let pi_2 = 3.14 * 2.0
 6.28
-> pi * 3.0
+> pi_2 * 3.0
 18.84
 ```
 
