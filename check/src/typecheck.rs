@@ -916,8 +916,8 @@ impl<'a> Typecheck<'a> {
             Expr::Array(ref mut array) => {
                 let mut expected_element_type = self.subs.new_var();
 
+                array.typ = self.type_cache.array(expected_element_type.clone());
                 if let Some(expected_type) = expected_type.take() {
-                    array.typ = self.type_cache.array(expected_element_type.clone());
                     self.unify_span(expr.span, &expected_type, array.typ.clone());
                 }
 
