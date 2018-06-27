@@ -16,7 +16,8 @@ use base::error::InFile;
 use base::kind::Kind;
 use base::pos;
 use base::symbol::{Symbol, SymbolModule};
-use base::types::ArcType;
+use base::types::{Type, ArcType};
+use base::resolve;
 use parser::parse_partial_let_or_expr;
 use vm::api::de::De;
 use vm::api::generic::A;
@@ -362,17 +363,41 @@ fn set_globals(
             Ok(())
         }
         Pattern::Record { ref fields, .. } => {
-            let iter = fields
-                .iter()
-                .zip(::vm::dynamic::field_iter(&value, typ, vm));
-            for (field, (field_value, field_type)) in iter {
-                match field.value {
-                    Some(ref field_pattern) => {
-                        set_globals(vm, field_pattern, &field_type, &field_value)?
+            // FIXME: not sure if this is necessary, or if this has already
+            // been done. ::vm::dynamic::field_iter did this
+            // so I'm doing it too
+            let resolved_type = resolve::remove_aliases_cow(&*vm.global_env().get_env(), typ);
+
+            for pattern_field in fields.iter() {
+                let field_name: &Symbol = &pattern_field.name.value;
+                let field_value: RootedValue<&Thread> =
+                    value.get_field(field_name.declared_name())
+                    // FIXME: can I use the type checker for this error?
+                    // FIXME: apparently this error message isn't actually getting displayed. not sure why
+                    .ok_or_else(|| VMError::Message(format!(
+                        "The record doesn't have a field by the name `{}`",
+                        field_name.declared_name()
+                    )))?;
+                let field_type = match **resolved_type {
+                    Type::Record(ref row) => match **row {
+                        Type::ExtendRow {ref fields, ..} => {
+                            fields.iter().find(|f| f.name == *field_name)
+                                // if the field didn't exist, we would have errored
+                                // when getting the field value
+                                .unwrap_or_else(|| panic!("Record type doesn't have that field"))
+                                .typ.clone()
+                        }
+                        _ => panic!("Expected ExtendRow")
+                    }
+                    _ => panic!("Expected Record")
+                };
+                match pattern_field.value {
+                    Some(ref sub_pattern) => {
+                        set_globals(vm, sub_pattern, &field_type, &field_value)?
                     }
                     None => vm.set_global(
-                        Symbol::from(format!("@{}", field.name.value.declared_name())),
-                        field_type,
+                        Symbol::from(format!("@{}", pattern_field.name.value.declared_name())),
+                        field_type.to_owned(),
                         Default::default(),
                         field_value.get_value(),
                     )?,
@@ -558,6 +583,21 @@ mod tests {
         compile_repl(&mut Compiler::new(), &vm).unwrap_or_else(|err| panic!("{}", err));
         let repl: Result<FunctionRef<fn(Color) -> IO<()>>, _> = vm.get_global("repl");
         assert!(repl.is_ok(), "{}", repl.err().unwrap());
+    }
+
+    #[test]
+    fn record_patterns() {
+        let _ = ::env_logger::try_init();
+        let vm = new_vm();
+        compile_repl(&mut Compiler::new(), &vm).unwrap_or_else(|err| panic!("{}", err));
+        eval_line_(vm.clone(), r#"let {y, x} = {x = "x", y = "y"}"#)
+            .wait()
+            .map_err(|(_, err)| err)
+            .expect("Error evaluating let binding");
+        let x: String = vm.get_global("x")
+            .expect("Error getting x");
+        assert_eq!(x, "x");
+
     }
 
     type QueryFn = fn(&'static str) -> IO<Result<String, String>>;
