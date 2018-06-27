@@ -175,7 +175,7 @@ fn marshal_generic() -> Result<()> {
     // load the type and then the module containing the rust function
     fn load_mod(vm: &Thread) -> vm::Result<ExternModule> {
         let module = record! {
-            flip => primitive!(1 flip),
+            flip => primitive!(1, flip),
         };
 
         ExternModule::new(vm, module)
@@ -297,7 +297,7 @@ fn marshal_wrapper() -> Result<()> {
 
     fn load_mod(vm: &Thread) -> vm::Result<ExternModule> {
         let module = record! {
-            roundtrip => primitive!(1 |user: GluonUser<OpaqueValue<RootedThread, A>>| {
+            roundtrip => primitive!(1, |user: GluonUser<OpaqueValue<RootedThread, A>>| {
                 println!("name: {}, age: {}", user.inner.name, user.inner.age);
                 user
             }),
@@ -337,9 +337,9 @@ fn load_mod(vm: &gluon::Thread) -> vm::Result<ExternModule> {
     vm.register_type::<WindowHandle>("WindowHandle", &[])?;
 
     let module = record! {
-        create_hwnd => primitive!(2 create_hwnd),
-        id => primitive!(1 id),
-        metadata => primitive!(1 metadata),
+        create_hwnd => primitive!(2, create_hwnd),
+        id => primitive!(1, id),
+        metadata => primitive!(1, metadata),
     };
 
     ExternModule::new(vm, module)
@@ -386,7 +386,8 @@ fn marshal_userdata() -> Result<()> {
 
     // If cloning would be expansive we can instate use `OpaqueValue` to get a smart pointer to the
     // userdata which implements `Deref` for easy access
-    let (handle, _) = compiler.run_expr::<OpaqueValue<&Thread, WindowHandle>>(&vm, "test", script)?;
+    let (handle, _) =
+        compiler.run_expr::<OpaqueValue<&Thread, WindowHandle>>(&vm, "test", script)?;
     assert_eq!(*handle.id, 0);
     assert_eq!(&*handle.metadata, "Window1");
     Ok(())

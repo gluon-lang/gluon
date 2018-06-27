@@ -507,9 +507,9 @@ fn load_rustyline(vm: &Thread) -> vm::Result<vm::ExternModule> {
         record!(
             type Editor => Editor,
             type CpuPool => CpuPool,
-            new_editor => primitive!(1 new_editor),
-            readline => primitive!(2 readline),
-            save_history => primitive!(1 save_history)
+            new_editor => primitive!(1, new_editor),
+            readline => primitive!(2, readline),
+            save_history => primitive!(1, save_history)
         ),
     )
 }
@@ -518,12 +518,12 @@ fn load_repl(vm: &Thread) -> vm::Result<vm::ExternModule> {
     vm::ExternModule::new(
         vm,
         record!(
-            type_of_expr => primitive!(1 type_of_expr),
-            find_info => primitive!(1 find_info),
-            find_kind => primitive!(1 find_kind),
-            eval_line => primitive!(2 eval_line),
-            finish_or_interrupt => primitive!(3 finish_or_interrupt),
-            new_cpu_pool => primitive!(1 new_cpu_pool)
+            type_of_expr => primitive!(1, type_of_expr),
+            find_info => primitive!(1, find_info),
+            find_kind => primitive!(1, find_kind),
+            eval_line => primitive!(2, eval_line),
+            finish_or_interrupt => primitive!(3, finish_or_interrupt),
+            new_cpu_pool => primitive!(1, new_cpu_pool)
         ),
     )
 }

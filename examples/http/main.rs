@@ -329,9 +329,9 @@ pub fn load(vm: &Thread) -> VmResult<ExternModule> {
     ExternModule::new(
         vm,
         record! {
-            listen => primitive!(2 listen),
-            read_chunk => primitive!(1 read_chunk),
-            write_response => primitive!(2 write_response)
+            listen => primitive!(2, listen),
+            read_chunk => primitive!(1, read_chunk),
+            write_response => primitive!(2, write_response)
         },
     )
 }

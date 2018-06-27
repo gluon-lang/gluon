@@ -590,7 +590,7 @@ impl Thread {
     ///
     /// let vm = new_vm();
     ///
-    /// vm.define_global("factorial", primitive!(1 factorial)).unwrap();
+    /// vm.define_global("factorial", primitive!(1, factorial)).unwrap();
     ///
     /// let result = Compiler::new()
     ///     .run_expr_async::<i32>(&vm, "example", "factorial 5")

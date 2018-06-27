@@ -370,7 +370,7 @@ impl<I> Import<I> {
 ///         thread,
 ///         record!{
 ///             message => "Hello World!",
-///             yell => primitive!(1 yell)
+///             yell => primitive!(1, yell)
 ///         }
 ///     )
 /// }

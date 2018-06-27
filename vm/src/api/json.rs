@@ -40,17 +40,17 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
     ExternModule::new(
         vm,
         record! {
-            deserialize => named_primitive!(
+            deserialize => primitive!(
                 1,
                 "std.json.prim.deserialize",
                 deserialize
             ),
-            serialize => named_primitive!(
+            serialize => primitive!(
                 1,
                 "std.json.prim.serialize",
                 |v| serialize(v, serde_json::ser::CompactFormatter)
             ),
-            serialize_pretty => named_primitive!(
+            serialize_pretty => primitive!(
                 1,
                 "std.json.prim.serialize_pretty",
                 |v| serialize(v, serde_json::ser::PrettyFormatter::new())

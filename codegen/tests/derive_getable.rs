@@ -25,7 +25,7 @@ enum TupleEnum {
 
 fn load_tuple_enum_mod(vm: &Thread) -> vm::Result<ExternModule> {
     let module = record! {
-        tuple_enum_to_str => primitive!(1 tuple_enum_to_str),
+        tuple_enum_to_str => primitive!(1, tuple_enum_to_str),
     };
 
     ExternModule::new(vm, module)
@@ -69,7 +69,7 @@ enum StructEnum {
 
 fn load_struct_enum_mod(vm: &Thread) -> vm::Result<ExternModule> {
     let module = record! {
-        struct_enum_to_str => primitive!(1 struct_enum_to_str),
+        struct_enum_to_str => primitive!(1, struct_enum_to_str),
     };
 
     ExternModule::new(vm, module)
@@ -111,8 +111,8 @@ enum Either<L, R> {
 
 fn load_either_mod(vm: &Thread) -> vm::Result<ExternModule> {
     let module = record! {
-        left => primitive!(1 left),
-        extract_str => primitive!(1 extract_str),
+        left => primitive!(1, left),
+        extract_str => primitive!(1, extract_str),
     };
 
     ExternModule::new(vm, module)
@@ -183,7 +183,7 @@ struct Struct {
 
 fn load_struct_mod(vm: &Thread) -> vm::Result<ExternModule> {
     let module = record! {
-        struct_to_str => primitive!(1 struct_to_str),
+        struct_to_str => primitive!(1, struct_to_str),
     };
 
     ExternModule::new(vm, module)
@@ -221,7 +221,7 @@ struct TupleStruct(i32, i32);
 
 fn load_tuple_struct_mod(vm: &Thread) -> vm::Result<ExternModule> {
     let module = record! {
-        tuple_struct_to_str => primitive!(1 tuple_struct_to_str),
+        tuple_struct_to_str => primitive!(1, tuple_struct_to_str),
     };
 
     ExternModule::new(vm, module)

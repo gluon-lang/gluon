@@ -193,8 +193,8 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
     ExternModule::new(
         vm,
         record!{
-            lazy => primitive!(1 std::lazy::lazy),
-            force => primitive!(1 std::lazy::force)
+            lazy => primitive!(1, std::lazy::lazy),
+            force => primitive!(1, std::lazy::force)
         },
     )
 }

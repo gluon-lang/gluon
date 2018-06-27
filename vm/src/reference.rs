@@ -99,9 +99,9 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
         vm,
         record!{
             type Reference a => Reference<A>,
-            (store "<-") => named_primitive!(2, "std.reference.prim.(<-)", std::reference::prim::set),
-            load => named_primitive!(1, "std.reference.prim.load", std::reference::prim::get),
-            (ref_ "ref") =>  named_primitive!(1, "std.reference.prim.ref", std::reference::prim::make_ref),
+            (store "<-") => primitive!(2, "std.reference.prim.(<-)", std::reference::prim::set),
+            load => primitive!(1, "std.reference.prim.load", std::reference::prim::get),
+            (ref_ "ref") =>  primitive!(1, "std.reference.prim.ref", std::reference::prim::make_ref),
         },
     )
 }

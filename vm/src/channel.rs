@@ -358,9 +358,9 @@ pub fn load_channel<'vm>(vm: &'vm Thread) -> VmResult<ExternModule> {
         record!{
             type Sender a => Sender<A>,
             type Receiver a => Sender<A>,
-            channel => primitive!(1 std::channel::channel),
-            recv => primitive!(1 std::channel::recv),
-            send => primitive!(2 std::channel::send),
+            channel => primitive!(1, std::channel::channel),
+            recv => primitive!(1, std::channel::recv),
+            send => primitive!(2, std::channel::send),
         },
     )
 }
@@ -371,11 +371,11 @@ pub fn load_thread<'vm>(vm: &'vm Thread) -> VmResult<ExternModule> {
         record!{
             resume => primitive::<fn(&'vm Thread) -> Result<(), String>>("std.thread.prim.resume", resume),
             (yield_ "yield") => primitive::<fn(())>("std.thread.prim.yield", yield_),
-            spawn => primitive!(1 std::thread::prim::spawn),
-            spawn_on => primitive!(2 std::thread::prim::spawn_on),
-            new_thread => primitive!(1 std::thread::prim::new_thread),
-            interrupt => primitive!(1 std::thread::prim::interrupt),
-            sleep => primitive!(1 std::thread::prim::sleep)
+            spawn => primitive!(1, std::thread::prim::spawn),
+            spawn_on => primitive!(2, std::thread::prim::spawn_on),
+            new_thread => primitive!(1, std::thread::prim::new_thread),
+            interrupt => primitive!(1, std::thread::prim::interrupt),
+            sleep => primitive!(1, std::thread::prim::sleep)
         },
     )
 }

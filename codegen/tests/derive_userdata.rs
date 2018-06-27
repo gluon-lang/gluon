@@ -21,9 +21,9 @@ fn load_mod(vm: &Thread) -> vm::Result<ExternModule> {
     vm.register_type::<WindowHandle>("WindowHandle", &[])?;
 
     let module = record! {
-        create_hwnd => primitive!(2 create_hwnd),
-        id => primitive!(1 id),
-        metadata => primitive!(1 metadata),
+        create_hwnd => primitive!(2, create_hwnd),
+        id => primitive!(1, id),
+        metadata => primitive!(1, metadata),
     };
 
     ExternModule::new(vm, module)

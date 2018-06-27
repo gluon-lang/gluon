@@ -24,7 +24,7 @@ struct Struct {
 
 fn load_struct_mod(vm: &Thread) -> vm::Result<ExternModule> {
     let module = record! {
-        new_struct => primitive!(1 new_struct),
+        new_struct => primitive!(1, new_struct),
     };
 
     ExternModule::new(vm, module)
@@ -82,7 +82,7 @@ struct GenericStruct<T> {
 
 fn load_generic_struct_mod(vm: &Thread) -> vm::Result<ExternModule> {
     let module = record! {
-        new_generic_struct => primitive!(1 new_generic_struct),
+        new_generic_struct => primitive!(1, new_generic_struct),
     };
 
     ExternModule::new(vm, module)
@@ -140,7 +140,7 @@ struct LifetimeStruct<'a> {
 
 fn load_lifetime_struct_mod(vm: &Thread) -> vm::Result<ExternModule> {
     let module = record! {
-        new_lifetime_struct => primitive!(1 new_lifetime_struct),
+        new_lifetime_struct => primitive!(1, new_lifetime_struct),
     };
 
     ExternModule::new(vm, module)
@@ -193,7 +193,7 @@ enum Enum {
 
 fn load_enum_mod(vm: &Thread) -> vm::Result<ExternModule> {
     let module = record! {
-        new_enum => primitive!(1 new_enum),
+        new_enum => primitive!(1, new_enum),
     };
 
     ExternModule::new(vm, module)
