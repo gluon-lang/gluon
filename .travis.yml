@@ -94,7 +94,7 @@ before_deploy:
 - >
     if [[ $CURRENT_TAG != "" ]]; then
         export GIT_HASH=$(git rev-parse HEAD)
-        travis_wait sh scripts/before_deploy.sh
+        sh scripts/before_deploy.sh
     fi
 deploy:
   - provider: pages
