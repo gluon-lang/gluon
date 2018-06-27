@@ -919,3 +919,16 @@ Test ""
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn array_expr_gets_type_assigned_without_expected_type_issue_555() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+[1]
+"#;
+    let (expr, result) = support::typecheck_expr(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+    assert_eq!(expr.env_type_of(&MockEnv::new()).to_string(), "Array Int");
+}
