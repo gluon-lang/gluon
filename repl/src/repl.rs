@@ -580,6 +580,8 @@ mod tests {
         let _ = ::env_logger::try_init();
         let vm = new_vm();
         compile_repl(&mut Compiler::new(), &vm).unwrap_or_else(|err| panic!("{}", err));
+
+        // pattern with field names out of order
         eval_line_(vm.clone(), r#"let {y, x} = {x = "x", y = "y"}"#)
             .wait()
             .map_err(|(_, err)| err)
@@ -587,7 +589,17 @@ mod tests {
         let x: String = vm.get_global("x")
             .expect("Error getting x");
         assert_eq!(x, "x");
+        let y: String = vm.get_global("y")
+            .expect("Error getting y");
+        assert_eq!(y, "y");
 
+        // pattern with field names out of order and different field types
+        eval_line_(vm.clone(), r#"let {y} = {x = "x", y = ()}"#)
+            .wait()
+            .map_err(|(_, err)| err)
+            .expect("Error evaluating let binding 2");
+        let () = vm.get_global("y")
+            .expect("Error getting y");
     }
 
     type QueryFn = fn(&'static str) -> IO<Result<String, String>>;
