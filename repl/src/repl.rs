@@ -373,6 +373,8 @@ fn set_globals(
 
             for pattern_field in fields.iter() {
                 let field_name: &Symbol = &pattern_field.name.value;
+                // if the record didn't have a field with this name,
+                // there should have already been a type error. So we can just panic here
                 let field_value: RootedValue<&Thread> =
                     value.get_field(field_name.declared_name())
                     .unwrap_or_else(|| panic!(
@@ -380,10 +382,9 @@ fn set_globals(
                     ));
                 let field_type = resolved_type.row_iter()
                     .find(|f| f.name == *field_name)
-                    // if the field didn't exist, we would have errored
-                    // when getting the field value
-                    .unwrap_or_else(|| panic!("Record type doesn't have that field"))
-                    .typ.clone();
+                    .unwrap_or_else(|| panic!(
+                        "record type doesn't have field `{}`", field_name.declared_name()
+                    )).typ.clone();
                 match pattern_field.value {
                     Some(ref sub_pattern) => {
                         set_globals(vm, sub_pattern, &field_type, &field_value)?
