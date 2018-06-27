@@ -16,7 +16,7 @@ use base::error::InFile;
 use base::kind::Kind;
 use base::pos;
 use base::symbol::{Symbol, SymbolModule};
-use base::types::{Type, ArcType};
+use base::types::ArcType;
 use base::resolve;
 use parser::parse_partial_let_or_expr;
 use vm::api::de::De;
@@ -363,9 +363,6 @@ fn set_globals(
             Ok(())
         }
         Pattern::Record { ref fields, .. } => {
-            // FIXME: not sure if this is necessary, or if this has already
-            // been done. ::vm::dynamic::field_iter did this
-            // so I'm doing it too
             let resolved_type = resolve::remove_aliases_cow(&*vm.global_env().get_env(), typ);
 
             for pattern_field in fields.iter() {
@@ -378,19 +375,12 @@ fn set_globals(
                         "The record doesn't have a field by the name `{}`",
                         field_name.declared_name()
                     )))?;
-                let field_type = match **resolved_type {
-                    Type::Record(ref row) => match **row {
-                        Type::ExtendRow {ref fields, ..} => {
-                            fields.iter().find(|f| f.name == *field_name)
-                                // if the field didn't exist, we would have errored
-                                // when getting the field value
-                                .unwrap_or_else(|| panic!("Record type doesn't have that field"))
-                                .typ.clone()
-                        }
-                        _ => panic!("Expected ExtendRow")
-                    }
-                    _ => panic!("Expected Record")
-                };
+                let field_type = resolved_type.row_iter()
+                    .find(|f| f.name == *field_name)
+                    // if the field didn't exist, we would have errored
+                    // when getting the field value
+                    .unwrap_or_else(|| panic!("Record type doesn't have that field"))
+                    .typ.clone();
                 match pattern_field.value {
                     Some(ref sub_pattern) => {
                         set_globals(vm, sub_pattern, &field_type, &field_value)?
