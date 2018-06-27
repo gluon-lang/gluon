@@ -163,7 +163,7 @@ impl<'a> Data<'a> {
         }
     }
 
-    /// Retrieves the value of the field at `index`, like `get_variant`, but does
+    /// Retrieves the value of the field at `index`, like `get_variant`, but does not
     /// wrap it in a `Variants` struct.
     pub fn get(&self, index: usize) -> Option<ValueRef<'a>> {
         match self.0 {
