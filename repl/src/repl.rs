@@ -11,7 +11,7 @@ use std::sync::Mutex;
 use futures::sync::mpsc;
 use futures::{Future, Sink, Stream};
 
-use base::ast::{Expr, Pattern, SpannedPattern, Typed};
+use base::ast::{Expr, Pattern, SpannedPattern, Typed, TypedIdent};
 use base::error::InFile;
 use base::kind::Kind;
 use base::pos;
@@ -299,18 +299,24 @@ fn eval_line_(
             compiler = compiler.run_io(true);
             expr.run_expr(&mut compiler, vm, "line", line, None).boxed()
         }
-        Err(let_binding) => {
+        Err(mut let_binding) => {
             let unpack_pattern = let_binding.name.clone();
-            let eval_expr = match unpack_pattern.value {
+            // We can't compile function bindings by only looking at `let_binding.expr`
+            // so rewrite `let f x y = <expr>` into `let f x y = <expr> in f`
+            // and `let { x } = <expr>` into `let repl_temp @ { x } = <expr> in repl_temp`
+            let id = match unpack_pattern.value {
                 Pattern::Ident(ref id) if !let_binding.args.is_empty() => {
-                    // We can't compile function bindings by only looking at `let_binding.expr`
-                    // so rewrite `let f x y = <expr>` into `let f x y = <expr> in f`
-                    let id = pos::spanned2(0.into(), 0.into(), Expr::Ident(id.clone()));
-                    let expr = Expr::LetBindings(vec![let_binding], Box::new(id));
-                    pos::spanned2(0.into(), 0.into(), expr)
+                    id.clone()
                 }
-                _ => let_binding.expr,
+                _ => {
+                    let id = Symbol::from("repl_temp");
+                    let_binding.name = pos::spanned(let_binding.name.span, Pattern::As(id.clone(), Box::new(let_binding.name)));
+                    TypedIdent::new(id)
+                }
             };
+            let id = pos::spanned2(0.into(), 0.into(), Expr::Ident(id.clone()));
+            let expr = Expr::LetBindings(vec![let_binding], Box::new(id));
+            let eval_expr = pos::spanned2(0.into(), 0.into(), expr);
             eval_expr
                 .run_expr(&mut compiler, vm.clone(), "line", line, None)
                 .and_then(move |value| {
@@ -369,12 +375,9 @@ fn set_globals(
                 let field_name: &Symbol = &pattern_field.name.value;
                 let field_value: RootedValue<&Thread> =
                     value.get_field(field_name.declared_name())
-                    // FIXME: can I use the type checker for this error?
-                    // FIXME: apparently this error message isn't actually getting displayed. not sure why
-                    .ok_or_else(|| VMError::Message(format!(
-                        "The record doesn't have a field by the name `{}`",
-                        field_name.declared_name()
-                    )))?;
+                    .unwrap_or_else(|| panic!(
+                        "record doesn't have field `{}`", field_name.declared_name()
+                    ));
                 let field_type = resolved_type.row_iter()
                     .find(|f| f.name == *field_name)
                     // if the field didn't exist, we would have errored
