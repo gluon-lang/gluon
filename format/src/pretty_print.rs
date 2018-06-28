@@ -122,6 +122,7 @@ where
                     .append(arena.concat(arg_iter).nest(INDENT))
                     .group()
             }
+
             Expr::Array(ref array) => arena
                 .text("[")
                 .append(
@@ -135,6 +136,7 @@ where
                 )
                 .append("]")
                 .group(),
+
             Expr::Block(ref elems) => if elems.len() == 1 {
                 chain![arena;
                         "(",
@@ -152,7 +154,9 @@ where
                     }
                 }))
             },
+
             Expr::Ident(ref id) => pretty_types::ident(arena, id.name.as_ref()),
+
             Expr::IfElse(ref body, ref if_true, ref if_false) => {
                 let space = newline(arena, expr);
                 chain![arena;
@@ -165,6 +169,7 @@ where
                     self.pretty_else_expr(space, if_false)
                 ]
             }
+
             Expr::Infix {
                 ref lhs,
                 ref op,
@@ -179,10 +184,12 @@ where
                         pretty(rhs).group()
                     ].nest(INDENT)
                 ],
+
             Expr::Lambda(_) => {
                 let (arguments, body) = self.pretty_lambda(previous_end, expr);
                 arguments.group().append(body)
             }
+
             Expr::LetBindings(ref binds, ref body) => {
                 let binding = |prefix: &'a str, bind: &'a ValueBinding<I>| {
                     let decl = chain![arena;
@@ -225,7 +232,9 @@ where
                     self.pretty_expr_(binds.last().unwrap().span().end(), body).group()
                 ]
             }
+
             Expr::Literal(_) => arena.text(self.source.src_slice(expr.span)),
+
             Expr::Match(ref expr, ref alts) => chain![arena;
                     chain![arena;
                         "match ",
@@ -242,15 +251,18 @@ where
                         ]
                     }).intersperse(arena.newline()))
                 ],
+
             Expr::Projection(ref expr, ref field, _) => chain![arena;
                     pretty(expr),
                     ".",
                     pretty_types::ident(arena, field.as_ref())
                 ],
+
             Expr::Record { .. } => {
                 let (x, y) = self.pretty_lambda(previous_end, expr);
                 x.append(y).group()
             }
+
             Expr::Tuple { ref elems, .. } => chain![arena;
                     "(",
                     arena.concat(
@@ -263,6 +275,7 @@ where
                     ),
                     ")"
                 ].group(),
+
             Expr::TypeBindings(ref binds, ref body) => {
                 let prefixes = iter::once("type").chain(iter::repeat("and"));
                 chain![arena;
@@ -322,6 +335,7 @@ where
                     self.pretty_expr_(binds.last().unwrap().alias.span.end(), body)
                 ].group()
             }
+
             Expr::Do(Do {
                 ref id,
                 ref bound,

@@ -433,9 +433,36 @@ impl<'a> Typecheck<'a> {
 
     fn stack_type(&mut self, id: Symbol, alias: &Alias<Symbol, ArcType>) {
         // Insert variant constructors into the local scope
-        let aliased_type = resolve::remove_aliases(&self.environment, alias.typ().into_owned());
-        if let Type::Variant(ref row) = **aliased_type.remove_forall() {
-            for field in row.row_iter().cloned() {
+
+        // We want to prevent the constructors of more specialized aliases from shadowing the more
+        // general ones so we get the canonical alias and then take its inner type without applying
+        // any types to always get the most general type of the constructors
+        //
+        // ```
+        // type Option a = | None | Some a
+        // type OptionInt = Option Int
+        // // Should work
+        // Some ""
+        // ```
+        let aliased_type = alias.typ();
+        let canonical_alias = resolve::canonical_alias(&self.environment, &aliased_type, |alias| {
+            match **alias.unresolved_type().remove_forall() {
+                Type::Variant(_) => true,
+                _ => false,
+            }
+        });
+
+        let canonical_alias = match **canonical_alias.remove_forall() {
+            Type::App(ref func, _) => match **func {
+                Type::Alias(ref alias) => alias.typ(),
+                _ => Cow::Borrowed(func),
+            },
+            Type::Alias(ref alias) => alias.typ(),
+            _ => Cow::Borrowed(canonical_alias.remove_forall()),
+        };
+
+        if let Type::Variant(ref variants) = **canonical_alias {
+            for field in variants.row_iter().cloned() {
                 let symbol = self.symbols.symbol(field.name.as_ref());
                 self.original_symbols.insert(symbol, field.name.clone());
                 self.stack_var(
@@ -444,6 +471,7 @@ impl<'a> Typecheck<'a> {
                 );
             }
         }
+
         let generic_args = alias.params().iter().cloned().map(Type::generic).collect();
         let typ = Type::<_, ArcType>::app(alias.as_ref().clone(), generic_args);
         {
@@ -888,8 +916,8 @@ impl<'a> Typecheck<'a> {
             Expr::Array(ref mut array) => {
                 let mut expected_element_type = self.subs.new_var();
 
+                array.typ = self.type_cache.array(expected_element_type.clone());
                 if let Some(expected_type) = expected_type.take() {
-                    array.typ = self.type_cache.array(expected_element_type.clone());
                     self.unify_span(expr.span, &expected_type, array.typ.clone());
                 }
 

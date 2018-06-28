@@ -566,7 +566,7 @@ Test 1
     let result = support::typecheck(text);
     let expected = Ok(support::typ_a("Test", vec![typ("Int")]));
 
-    assert_eq!(result.map(make_ident_type), expected);
+    assert_req!(result.map(make_ident_type), expected);
 }
 
 #[test]
@@ -644,7 +644,7 @@ in Node { value = 1, tree = Empty } rhs
     let result = support::typecheck(text);
     let expected = Ok(support::typ_a("Tree", vec![typ("Int")]));
 
-    assert_eq!(result.map(make_ident_type), expected);
+    assert_req!(result.map(make_ident_type), expected);
 }
 
 #[test]
@@ -868,4 +868,67 @@ A 1
     let result = support::typecheck(text);
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn dont_shadow_more_generalize_variant_issue_548() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+type Test a = | Test a
+type TestInt = Test Int
+
+Test ""
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn dont_shadow_more_generalize_variant_2_issue_548() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+type Test a b = | Test a b
+type TestInt b = Test Int b
+
+Test "" 1
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn allow_more_generalize_variant_to_be_used_despite_specialized_imported_first() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+let record =
+    type Test a = | Test a
+    type TestInt = Test Int
+    { Test, TestInt }
+
+let { TestInt } = record
+let { Test } = record
+
+Test ""
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn array_expr_gets_type_assigned_without_expected_type_issue_555() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+[1]
+"#;
+    let (expr, result) = support::typecheck_expr(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+    assert_eq!(expr.env_type_of(&MockEnv::new()).to_string(), "Array Int");
 }

@@ -18,7 +18,7 @@ use base::pos;
 use base::symbol::{Symbol, SymbolModule};
 use base::types::ArcType;
 use base::resolve;
-use parser::parse_partial_let_or_expr;
+use parser::{parse_partial_repl_line, ReplLine};
 use vm::api::de::De;
 use vm::api::generic::A;
 use vm::api::ser::Ser;
@@ -280,10 +280,10 @@ fn eval_line_(
     line: &str,
 ) -> FutureValue<Box<Future<Item = (), Error = (Compiler, GluonError)> + Send>> {
     let mut compiler = Compiler::new();
-    let let_or_expr = {
+    let repl_line = {
         let result = {
             let mut module = SymbolModule::new("line".into(), compiler.mut_symbols());
-            parse_partial_let_or_expr(&mut module, line)
+            parse_partial_repl_line(&mut module, line)
         };
         match result {
             Ok(x) => x,
@@ -294,12 +294,13 @@ fn eval_line_(
             }
         }
     };
-    let future = match let_or_expr {
-        Ok(expr) => {
+    let future = match repl_line {
+        None => return FutureValue::sync(Ok(())).boxed(),
+        Some(ReplLine::Expr(expr)) => {
             compiler = compiler.run_io(true);
             expr.run_expr(&mut compiler, vm, "line", line, None).boxed()
         }
-        Err(mut let_binding) => {
+        Some(ReplLine::Let(mut let_binding)) => {
             let unpack_pattern = let_binding.name.clone();
             // We can't compile function bindings by only looking at `let_binding.expr`
             // so rewrite `let f x y = <expr>` into `let f x y = <expr> in f`

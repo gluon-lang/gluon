@@ -405,3 +405,14 @@ type TestCase a =
         0
     );
 }
+
+#[test]
+fn multiline_string() {
+    let expr = r#"
+let x = "abc
+        123
+    "
+x
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+}

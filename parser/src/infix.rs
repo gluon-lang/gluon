@@ -349,12 +349,13 @@ where
 
                 macro_rules! try_infix {
                     ($expr:expr) => {
+
                         match $expr {
                             Ok(e) => e,
                             Err(err) => {
                                 match infixes.remaining_expr {
                                     Some(expr) => arg_stack.push(expr),
-                                    None => ()
+                                    None => (),
                                 }
                                 op_stack.push(next_op);
                                 op_stack.push(stack_op);
@@ -362,10 +363,13 @@ where
                                     let rhs = arg_stack.pop().unwrap();
                                     let lhs = arg_stack.pop().unwrap();
                                     let op = op_stack.pop().unwrap();
-
+                        
                                     arg_stack.push(make_op(lhs, op, rhs));
                                 }
-                                return Err((err, arg_stack.pop().map(|original| original.value)));
+                                return Err((
+                                    err,
+                                    arg_stack.pop().map(|original| original.value),
+                                ));
                             }
                         }
                     };

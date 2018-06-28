@@ -160,7 +160,6 @@ pub fn typecheck_expr_expected(
     );
     let (_, mut metadata) = metadata::metadata(&env, &expr);
     reparse_infix(&metadata, &*interner, &mut expr).unwrap_or_else(|err| panic!("{}", err));
-    eprintln!("{:?}", expr);
 
     let mut tc = Typecheck::new(
         "test".into(),
