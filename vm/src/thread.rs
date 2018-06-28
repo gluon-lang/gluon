@@ -156,6 +156,7 @@ where
         self.vm.clone()
     }
 
+    /// looks up the field at the given offset
     pub fn get<'vm>(&'vm self, index: usize) -> Option<RootedValue<T>>
     where
         T: VmRoot<'vm>,
@@ -163,6 +164,19 @@ where
         match self.get_variant().as_ref() {
             ValueRef::Data(ref v) => v
                 .get_variant(index)
+                .map(|value| self.vm.root_value(value.get_value())),
+            _ => None,
+        }
+    }
+
+    /// looks up the record field with the given name
+    pub fn get_field<'vm>(&'vm self, name: &str) -> Option<RootedValue<T>>
+    where
+        T: VmRoot<'vm>,
+    {
+        match self.get_variant().as_ref() {
+            ValueRef::Data(ref v) => v
+                .lookup_field(&*self.vm, name)
                 .map(|value| self.vm.root_value(value.get_value())),
             _ => None,
         }
