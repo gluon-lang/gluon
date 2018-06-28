@@ -321,12 +321,12 @@ fn eval_line_(
             eval_expr
                 .run_expr(&mut compiler, vm.clone(), "line", line, None)
                 .and_then(move |value| {
-                    if let Err(err) =
-                        set_globals(&vm, &unpack_pattern, &value.typ, &value.value.as_ref())
-                    {
-                        return FutureValue::sync(Err(err));
-                    }
-                    FutureValue::sync(Ok(value))
+                    FutureValue::sync({
+                        // Hack to get around borrow-checker. Method-chaining didn't work,
+                        // even with #[feature(nll)]. Seems like a bug
+                        let temp = set_globals(&vm, &unpack_pattern, &value.typ, &value.value.as_ref());
+                        temp.and(Ok(value))
+                    })
                 })
                 .boxed()
         }
