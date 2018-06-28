@@ -5,14 +5,13 @@ use std::ops::Deref;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Deserializer};
 
-use futures::{Async, Future};
+use futures::{future, Async, Future};
 
 use base::symbol::Symbol;
 use base::types::ArcType;
 
 use api::{ActiveThread, AsyncPushable, Getable, Pushable, RootedValue, VmType};
 use compiler::{CompiledFunction, CompiledModule};
-use future::FutureValue;
 use gc::Move;
 use stack::{ExternState, StackFrame};
 use thread::{RootedThread, Status, Thread, ThreadInternal};
@@ -446,24 +445,24 @@ impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
     pub fn call_fast_async(
         &mut self
         $(, $args: $args)*
-        ) -> FutureValue<Box<Future<Item = R, Error = Error> + Send + Sync + 'static>>
+        ) -> Box<Future<Item = R, Error = Error> + Send + Sync + 'static>
     {
         use thread::Execute;
 
         match self.call_first($($args),*) {
             Ok(ok) => {
                 match ok {
-                    Async::Ready(value) => FutureValue::Value(Ok(value)),
+                    Async::Ready(value) => Box::new(future::ok(value)),
                     Async::NotReady => {
-                        FutureValue::Future(Box::new(
+                        Box::new(
                             Execute::new(self.value.vm().root_thread())
                                 .and_then(|value| Self::return_value(value.vm(), value.get_variant()))
-                        ))
+                        )
                     }
                 }
             }
             Err(err) => {
-                FutureValue::Value(Err(err))
+                Box::new(future::err(err))
             }
         }
     }

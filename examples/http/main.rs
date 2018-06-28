@@ -47,7 +47,6 @@ use gluon::import::add_extern_module;
 use vm::api::{
     Function, FutureResult, OpaqueValue, OwnedFunction, PushAsRef, Userdata, VmType, WithVM, IO,
 };
-use vm::future::FutureValue;
 use vm::gc::{Gc, Traverseable};
 use vm::thread::{RootedThread, Thread};
 
@@ -374,7 +373,7 @@ fn start(
             )
             .from_err()
             .and_then(move |(mut listen, _)| {
-                FutureValue::Future(listen.call_async(port))
+                listen.call_async(port)
                     .from_err()
                     .map(|_| ())
             })

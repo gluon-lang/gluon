@@ -20,9 +20,7 @@ use gluon::vm::{Error, ExternModule};
 use gluon::Compiler;
 
 fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<()> {
-    Compiler::new()
-        .load_script_async(vm, filename, input)
-        .sync_or_error()
+    Compiler::new().load_script(vm, filename, input)
 }
 
 fn make_vm() -> RootedThread {

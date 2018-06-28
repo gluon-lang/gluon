@@ -3,14 +3,16 @@ use std::fs::File;
 use std::io::{stdin, Read};
 use std::sync::Mutex;
 
-use futures::Future;
+use futures::{
+    future::{self, Either},
+    Future,
+};
 
 use vm::api::generic::{A, B};
 use vm::api::{
-    self, Array, FutureResult, Getable, OpaqueValue, OwnedFunction, PrimitiveFuture, TypedBytecode,
-    Userdata, VmType, WithVM, IO,
+    self, Array, Getable, OpaqueValue, OwnedFunction, TypedBytecode, Userdata, VmType,
+    WithVM, IO,
 };
-use vm::future::FutureValue;
 use vm::gc::{Gc, Traverseable};
 use vm::internal::ValuePrinter;
 use vm::stack::{self, StackFrame};
@@ -115,33 +117,31 @@ fn read_line() -> IO<String> {
 fn catch<'vm>(
     action: OpaqueValue<&'vm Thread, IO<A>>,
     mut catch: OwnedFunction<fn(String) -> IO<OpaqueValue<RootedThread, A>>>,
-) -> FutureResult<impl Future<Item = IO<OpaqueValue<RootedThread, A>>, Error = vm::Error>> {
+) -> impl Future<Item = IO<OpaqueValue<RootedThread, A>>, Error = vm::Error> {
     let vm = action.vm().root_thread();
     let frame_level = vm.context().frame_level();
     let mut action: OwnedFunction<fn(()) -> OpaqueValue<RootedThread, A>> =
         Getable::from_value(&vm, action.get_variant());
 
-    let future = action.call_fast_async(()).then(move |result| match result {
-        Ok(value) => FutureValue::Value(Ok(IO::Value(value))),
+    action.call_fast_async(()).then(move |result| match result {
+        Ok(value) => Either::A(future::ok(IO::Value(value))),
         Err(err) => {
             {
                 let mut context = vm.context();
                 let mut stack = context.stack_frame::<stack::State>();
 
                 if let Err(err) = ::vm::thread::reset_stack(stack, frame_level) {
-                    return FutureValue::Value(Ok(IO::Exception(err.to_string().into())));
+                    return Either::A(future::ok(IO::Exception(err.to_string().into())));
                 }
             }
-            catch.call_fast_async(format!("{}", err)).then(|result| {
-                FutureValue::sync(Ok(match result {
+            Either::B(catch.call_fast_async(format!("{}", err)).then(|result| {
+                Ok(match result {
                     Ok(value) => value,
                     Err(err) => IO::Exception(format!("{}", err)),
-                }))
-            })
+                })
+            }))
         }
-    });
-
-    FutureResult(future)
+    })
 }
 
 fn clear_frames<T>(mut err: Error, stack: StackFrame) -> IO<T> {
@@ -159,18 +159,21 @@ fn clear_frames<T>(mut err: Error, stack: StackFrame) -> IO<T> {
 
 field_decl! { value, typ }
 
+// Can't create a minimal reproduction for why this reports as being unused...
+#[allow(dead_code)]
 type RunExpr = record_type!{ value => String, typ => String };
 
-fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> PrimitiveFuture<IO<RunExpr>> {
+fn run_expr(
+    WithVM { vm, value: expr }: WithVM<&str>,
+) -> impl Future<Item = IO<RunExpr>, Error = vm::Error> {
     let vm = vm.root_thread();
 
     let vm1 = vm.clone();
-    let future = expr
-        .run_expr(&mut Compiler::new().run_io(true), vm1, "<top>", expr, None)
+    expr.run_expr(&mut Compiler::new().run_io(true), vm1, "<top>", expr, None)
         .then(move |run_result| {
             let mut context = vm.context();
             let stack = context.stack_frame::<stack::State>();
-            FutureValue::sync(Ok(match run_result {
+            Ok(match run_result {
                 Ok(execute_value) => {
                     let env = vm.global_env().get_env();
                     let typ = execute_value.typ;
@@ -180,21 +183,18 @@ fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> PrimitiveFuture<IO<RunE
                     })
                 }
                 Err(err) => clear_frames(err, stack),
-            }))
-        });
-
-    future.boxed()
+            })
+        })
 }
 
 fn load_script(
     WithVM { vm, value: name }: WithVM<&str>,
     expr: &str,
-) -> PrimitiveFuture<IO<String>> {
+) -> impl Future<Item = IO<String>, Error = vm::Error> {
     let vm1 = vm.root_thread();
     let vm = vm.root_thread();
     let name = name.to_string();
-    let future = expr
-        .load_script(&mut Compiler::new(), vm1, &name, expr, None)
+    expr.load_script(&mut Compiler::new(), vm1, &name, expr, None)
         .then(move |run_result| {
             let mut context = vm.context();
             let stack = context.stack_frame::<stack::State>();
@@ -202,9 +202,8 @@ fn load_script(
                 Ok(()) => IO::Value(format!("Loaded {}", name)),
                 Err(err) => clear_frames(err, stack),
             };
-            Ok(io).into()
-        });
-    future.boxed()
+            Ok(io)
+        })
 }
 
 mod std {
@@ -246,9 +245,9 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
             read_line => primitive!(0, std::io::prim::read_line),
             print => primitive!(1, std::io::prim::print),
             println => primitive!(1, std::io::prim::println),
-            catch => primitive!(2, std::io::prim::catch),
-            run_expr => primitive!(1, std::io::prim::run_expr),
-            load_script => primitive!(2, std::io::prim::load_script),
+            catch => primitive!(2, async fn std::io::prim::catch),
+            run_expr => primitive!(1, async fn std::io::prim::run_expr),
+            load_script => primitive!(2, async fn std::io::prim::load_script),
         },
     )
 }

@@ -22,9 +22,7 @@ fn regex_match() {
         let match_hello = regex.new "hello, .*" |> unwrap_ok
         regex.is_match match_hello "hello, world"
         "#;
-    let result = Compiler::new()
-        .run_expr_async::<bool>(&thread, "<top>", text)
-        .sync_or_error();
+    let result = Compiler::new().run_expr::<bool>(&thread, "<top>", text);
 
     assert!(result.unwrap_or_else(|err| panic!("{}", err)).0);
 }
@@ -41,9 +39,7 @@ fn regex_error() {
 
         regex.new ")" |> unwrap_err |> regex.error_to_string
         "#;
-    let result = Compiler::new()
-        .run_expr_async::<String>(&thread, "<top>", text)
-        .sync_or_error();
+    let result = Compiler::new().run_expr::<String>(&thread, "<top>", text);
 
     assert_eq!(
         result.unwrap_or_else(|err| panic!("{}", err)).0,

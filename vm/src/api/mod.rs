@@ -2,7 +2,6 @@
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, Symbols};
 use base::types::{self, ArcType, Type};
-use future::FutureValue;
 use gc::{DataDef, Gc, GcPtr, Move, Traverseable};
 use stack::Lock;
 use thread::ThreadInternal;
@@ -1192,45 +1191,6 @@ where
             context.context().return_future(self.0, lock);
         }
         Ok(Async::Ready(()))
-    }
-}
-
-pub type PrimitiveFuture<T> = FutureValue<Box<Future<Item = T, Error = Error> + Send>>;
-
-impl<F> VmType for FutureValue<F>
-where
-    F: Future,
-    F::Item: VmType,
-{
-    type Type = <F::Item as VmType>::Type;
-    fn make_type(vm: &Thread) -> ArcType {
-        <F::Item>::make_type(vm)
-    }
-    fn extra_args() -> VmIndex {
-        <F::Item>::extra_args()
-    }
-}
-
-impl<'vm, F> AsyncPushable<'vm> for FutureValue<F>
-where
-    F: Future<Error = Error> + Send + 'static,
-    F::Item: Pushable<'vm>,
-{
-    fn async_push(self, context: &mut ActiveThread<'vm>, lock: Lock) -> Result<Async<()>> {
-        match self {
-            FutureValue::Value(result) => {
-                context.stack().release_lock(lock);
-                let value = result?;
-                value.push(context).map(Async::Ready)
-            }
-            FutureValue::Future(future) => {
-                unsafe {
-                    context.context().return_future(future, lock);
-                }
-                Ok(Async::Ready(()))
-            }
-            FutureValue::Polled => ice!("Tried to push a polled future to gluon"),
-        }
     }
 }
 

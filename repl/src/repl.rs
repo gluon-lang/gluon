@@ -8,7 +8,7 @@ use std::error::Error as StdError;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-use futures::future::Either;
+use futures::future::{self, Either};
 use futures::sync::mpsc;
 use futures::{Future, Sink, Stream};
 
@@ -23,11 +23,7 @@ use parser::{parse_partial_repl_line, ReplLine};
 use vm::api::de::De;
 use vm::api::generic::A;
 use vm::api::ser::Ser;
-use vm::api::{
-    FutureResult, Generic, Getable, OpaqueValue, OwnedFunction, PrimitiveFuture, Pushable, VmType,
-    WithVM, IO,
-};
-use vm::future::FutureValue;
+use vm::api::{Generic, Getable, OpaqueValue, OwnedFunction, Pushable, VmType, WithVM, IO};
 use vm::internal::ValuePrinter;
 use vm::thread::{ActiveThread, RootedValue, Thread, ThreadInternal};
 use vm::{self, Error as VMError, Result as VMResult};
@@ -268,27 +264,25 @@ fn new_cpu_pool(size: usize) -> IO<CpuPool> {
 fn eval_line(
     De(color): De<::Color>,
     WithVM { vm, value: line }: WithVM<&str>,
-) -> PrimitiveFuture<IO<()>> {
-    eval_line_(vm.root_thread(), line)
-        .then(move |result| {
-            FutureValue::sync(Ok(match result {
-                Ok(x) => IO::Value(x),
-                Err((compiler, err)) => {
-                    let mut stderr = termcolor::StandardStream::stderr(color.into());
-                    if let Err(err) = err.emit(&mut stderr, compiler.code_map()) {
-                        eprintln!("{}", err);
-                    }
-                    IO::Value(())
+) -> impl Future<Item = IO<()>, Error = vm::Error> {
+    eval_line_(vm.root_thread(), line).then(move |result| {
+        Ok(match result {
+            Ok(x) => IO::Value(x),
+            Err((compiler, err)) => {
+                let mut stderr = termcolor::StandardStream::stderr(color.into());
+                if let Err(err) = err.emit(&mut stderr, compiler.code_map()) {
+                    eprintln!("{}", err);
                 }
-            }))
+                IO::Value(())
+            }
         })
-        .boxed()
+    })
 }
 
 fn eval_line_(
     vm: RootedThread,
     line: &str,
-) -> FutureValue<impl Future<Item = (), Error = (Compiler, GluonError)>> {
+) -> impl Future<Item = (), Error = (Compiler, GluonError)> {
     let mut compiler = Compiler::new();
     let repl_line = {
         let result = {
@@ -300,16 +294,15 @@ fn eval_line_(
             Ok(x) => x,
             Err((_, err)) => {
                 let code_map = compiler.code_map().clone();
-                return FutureValue::sync(Err((compiler, InFile::new(code_map, err).into())))
-                    .boxed();
+                return Either::A(future::err((compiler, InFile::new(code_map, err).into())));
             }
         }
     };
     let future = match repl_line {
-        None => return FutureValue::sync(Ok(())).boxed(),
+        None => return Either::A(future::ok(())),
         Some(ReplLine::Expr(expr)) => {
             compiler = compiler.run_io(true);
-            expr.run_expr(&mut compiler, vm, "line", line, None).boxed()
+            Either::A(expr.run_expr(&mut compiler, vm, "line", line, None))
         }
         Some(ReplLine::Let(mut let_binding)) => {
             let unpack_pattern = let_binding.name.clone();
@@ -330,33 +323,33 @@ fn eval_line_(
             let id = pos::spanned2(0.into(), 0.into(), Expr::Ident(id.clone()));
             let expr = Expr::LetBindings(vec![let_binding], Box::new(id));
             let eval_expr = pos::spanned2(0.into(), 0.into(), expr);
-            eval_expr
+            Either::B(eval_expr
                 .run_expr(&mut compiler, vm.clone(), "line", line, None)
                 .and_then(move |value| {
-                    FutureValue::sync({
+                    
                         // Hack to get around borrow-checker. Method-chaining didn't work,
                         // even with #[feature(nll)]. Seems like a bug
                         let temp =
                             set_globals(&vm, &unpack_pattern, &value.typ, &value.value.as_ref());
                         temp.and(Ok(value))
-                    })
                 })
-                .boxed()
+            )
         }
     };
-    future
-        .map_err(|x| (compiler, x))
-        .map(move |ExecuteValue { value, typ, .. }| {
-            let vm = value.vm();
-            let env = vm.global_env().get_env();
-            println!(
-                "{}",
-                ValuePrinter::new(&*env, &typ, value.get_variant())
-                    .width(80)
-                    .max_level(5)
-            );
-        })
-        .boxed()
+    Either::B(
+        future
+            .map_err(|x| (compiler, x))
+            .map(move |ExecuteValue { value, typ, .. }| {
+                let vm = value.vm();
+                let env = vm.global_env().get_env();
+                println!(
+                    "{}",
+                    ValuePrinter::new(&*env, &typ, value.get_variant())
+                        .width(80)
+                        .max_level(5)
+                );
+            }),
+    )
 }
 
 fn set_globals(
@@ -439,7 +432,7 @@ fn finish_or_interrupt(
     cpu_pool: &CpuPool,
     thread: RootedThread,
     action: OpaqueValue<&Thread, IO<Generic<A>>>,
-) -> FutureResult<impl Future<Item = IO<OpaqueValue<RootedThread, A>>, Error = VMError>> {
+) -> impl Future<Item = IO<OpaqueValue<RootedThread, A>>, Error = VMError> {
     let (sender, receiver) = mpsc::channel(1);
 
     ::tokio::spawn(
@@ -471,12 +464,10 @@ fn finish_or_interrupt(
         })
         .map_err(|_| panic!("Error in Ctrl-C handling"));
 
-    FutureResult(
-        ctrl_c_future
-            .select(action_future)
-            .map(|(value, _)| value)
-            .map_err(|(err, _)| err),
-    )
+    ctrl_c_future
+        .select(action_future)
+        .map(|(value, _)| value)
+        .map_err(|(err, _)| err)
 }
 
 fn save_history(editor: &Editor) -> IO<()> {
@@ -521,8 +512,8 @@ fn load_repl(vm: &Thread) -> vm::Result<vm::ExternModule> {
             type_of_expr => primitive!(1, type_of_expr),
             find_info => primitive!(1, find_info),
             find_kind => primitive!(1, find_kind),
-            eval_line => primitive!(2, eval_line),
-            finish_or_interrupt => primitive!(3, finish_or_interrupt),
+            eval_line => primitive!(2, async fn eval_line),
+            finish_or_interrupt => primitive!(3, async fn finish_or_interrupt),
             new_cpu_pool => primitive!(1, new_cpu_pool)
         ),
     )
@@ -530,14 +521,10 @@ fn load_repl(vm: &Thread) -> vm::Result<vm::ExternModule> {
 
 fn compile_repl(compiler: &mut Compiler, vm: &Thread) -> Result<(), GluonError> {
     let rustyline_types_source = ::gluon::vm::api::typ::make_source::<ReadlineError>(vm)?;
-    compiler
-        .load_script_async(vm, "rustyline_types", &rustyline_types_source)
-        .sync_or_error()?;
+    compiler.load_script(vm, "rustyline_types", &rustyline_types_source)?;
 
     let repl_types_source = ::gluon::vm::api::typ::make_source::<Color>(vm)?;
-    compiler
-        .load_script_async(vm, "repl_types", &repl_types_source)
-        .sync_or_error()?;
+    compiler.load_script(vm, "repl_types", &repl_types_source)?;
 
     add_extern_module(vm, "repl.prim", load_repl);
     add_extern_module(vm, "rustyline", load_rustyline);
@@ -545,9 +532,7 @@ fn compile_repl(compiler: &mut Compiler, vm: &Thread) -> Result<(), GluonError> 
     const REPL_SOURCE: &'static str =
         include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/repl.glu"));
 
-    compiler
-        .load_script_async(vm, "repl", REPL_SOURCE)
-        .sync_or_error()?;
+    compiler.load_script(vm, "repl", REPL_SOURCE)?;
     Ok(())
 }
 

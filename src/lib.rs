@@ -43,7 +43,7 @@ pub mod regex_bind;
 
 pub use vm::thread::{RootedThread, Thread};
 
-pub use futures::Future;
+use futures::{Future, IntoFuture};
 
 use either::Either;
 
@@ -66,7 +66,6 @@ use compiler_pipeline::*;
 use import::{add_extern_module, DefaultImporter, Import};
 use vm::api::{Getable, Hole, OpaqueValue, VmType};
 use vm::compiler::CompiledModule;
-use vm::future::{BoxFutureValue, FutureValue};
 use vm::macros;
 
 quick_error! {
@@ -409,7 +408,7 @@ impl Compiler {
         thread: &'vm Thread,
         name: &str,
         deserializer: D,
-    ) -> BoxFutureValue<'vm, (), Error>
+    ) -> impl Future<Item = (), Error = Error> + 'vm
     where
         D: serde::Deserializer<'vm> + 'vm,
         D::Error: Send + Sync,
@@ -446,7 +445,7 @@ impl Compiler {
         vm: &'vm Thread,
         filename: &str,
         input: &str,
-    ) -> BoxFutureValue<'vm, (), Error> {
+    ) -> impl Future<Item = (), Error = Error> + 'vm {
         input.load_script(self, vm, filename, input, None)
     }
 
@@ -459,7 +458,7 @@ impl Compiler {
         &mut self,
         vm: &'vm Thread,
         filename: &str,
-    ) -> BoxFutureValue<'vm, (), Error> {
+    ) -> impl Future<Item = (), Error = Error> {
         use macros::MacroExpander;
 
         // Use the import macro's path resolution if it exists so that we mimick the import
@@ -483,7 +482,7 @@ impl Compiler {
         {
             macros.errors.push(pos::spanned(Span::default(), err));
         };
-        FutureValue::from(macros.finish().map_err(|err| err.into())).boxed()
+        macros.finish().map_err(|err| err.into()).into_future()
     }
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
@@ -522,10 +521,10 @@ impl Compiler {
         expr_str
             .run_expr(self, vm, name, expr_str, Some(&expected))
             .and_then(move |execute_value| {
-                FutureValue::sync(Ok((
+                Ok((
                     T::from_value(vm, execute_value.value.get_variant()),
                     execute_value.typ,
-                )))
+                ))
             })
             .wait()
     }
@@ -544,9 +543,8 @@ impl Compiler {
     /// # fn main() {
     /// let vm = new_vm();
     /// let result = Compiler::new()
-    ///     .run_expr_async::<String>(&vm, "example",
+    ///     .run_expr::<String>(&vm, "example",
     ///         " let string  = import! \"std/string.glu\" in string.trim \"    Hello world  \t\" ")
-    ///     .sync_or_error()
     ///     .unwrap();
     /// let expected = ("Hello world".to_string(), Type::string());
     ///
@@ -559,7 +557,7 @@ impl Compiler {
         vm: &Thread,
         name: &str,
         expr_str: &str,
-    ) -> BoxFutureValue<'static, (T, ArcType), Error>
+    ) -> impl Future<Item = (T, ArcType), Error = Error>
     where
         T: for<'vm, 'value> Getable<'vm, 'value> + VmType + Send + 'static,
     {
@@ -568,12 +566,11 @@ impl Compiler {
         expr_str
             .run_expr(self, vm.clone(), name, expr_str, Some(&expected))
             .and_then(move |execute_value| {
-                FutureValue::sync(Ok((
+                Ok((
                     T::from_value(&vm, execute_value.value.get_variant()),
                     execute_value.typ,
-                )))
+                ))
             })
-            .boxed()
     }
 
     fn include_implicit_prelude(

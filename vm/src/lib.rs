@@ -40,6 +40,20 @@ extern crate gluon_check as check;
 #[cfg(feature = "serde_state")]
 extern crate gluon_codegen;
 
+macro_rules! try_future {
+    ($e:expr) => {
+        try_future!($e, Box::new)
+    };
+    ($e:expr, $f:expr) => {
+        match $e {
+            Ok(x) => x,
+            Err(err) => return $f(::futures::future::err(err.into())),
+        }
+    };
+}
+
+pub type BoxFuture<'vm, T, E> = Box<futures::Future<Item = T, Error = E> + Send + 'vm>;
+
 #[macro_use]
 #[cfg(feature = "serde")]
 pub mod serialization;
@@ -51,8 +65,6 @@ pub mod compiler;
 pub mod core;
 pub mod debug;
 pub mod dynamic;
-#[macro_use]
-pub mod future;
 pub mod gc;
 pub mod lazy;
 pub mod macros;

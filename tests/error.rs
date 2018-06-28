@@ -16,8 +16,7 @@ fn dont_panic_when_error_span_is_at_eof() {
     let vm = support::make_vm();
     let text = r#"abc"#;
     let result = Compiler::new()
-        .load_script_async(&vm, "test", text)
-        .sync_or_error();
+        .load_script(&vm, "test", text);
     assert!(result.is_err());
 }
 
@@ -30,8 +29,7 @@ fn dont_miss_errors_in_file_if_import_has_errors() {
         f x
     "#;
     let error = Compiler::new()
-        .load_script_async(&vm, "test", text)
-        .sync_or_error()
+        .load_script(&vm, "test", text)
         .unwrap_err();
 
     match error {

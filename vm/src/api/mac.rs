@@ -27,6 +27,35 @@ macro_rules! primitive_cast {
     };
 }
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! closure_wrapper {
+    (0, $name:expr) => {
+        || $crate::api::FutureResult::new($name())
+    };
+    (1, $name:expr) => {
+        |a| $crate::api::FutureResult::new($name(a))
+    };
+    (2, $name:expr) => {
+        |a, b| $crate::api::FutureResult::new($name(a, b))
+    };
+    (3, $name:expr) => {
+        |a, b, c| $crate::api::FutureResult::new($name(a, b, c))
+    };
+    (4, $name:expr) => {
+        |a, b, c, d| $crate::api::FutureResult::new($name(a, b, c, d))
+    };
+    (5, $name:expr) => {
+        |a, b, c, d, e| $crate::api::FutureResult::new($name(a, b, c, d, e))
+    };
+    (6, $name:expr) => {
+        |a, b, c, d, e, f| $crate::api::FutureResult::new($name(a, b, c, d, e, f))
+    };
+    (7, $name:expr) => {
+        |a, b, c, d, e, f, g| $crate::api::FutureResult::new($name(a, b, c, d, e, f, g))
+    };
+}
+
 /// Creates a `GluonFunction` from a function implementing `VMFunction`
 ///
 /// ```rust
@@ -37,11 +66,15 @@ macro_rules! primitive_cast {
 /// }
 ///
 /// fn main() {
-///     primitive!(2 test);
+///     primitive!(2, test);
 /// }
 /// ```
 #[macro_export]
 macro_rules! primitive {
+    ($arg_count:tt,async fn $name:expr) => {
+        primitive!($arg_count, stringify!($name), async fn $name)
+    };
+
     ($arg_count:tt, $name:expr) => {
         primitive!($arg_count, stringify!($name), $name)
     };
@@ -55,6 +88,9 @@ macro_rules! primitive {
             }
             $crate::api::primitive_f($name, wrapper, primitive_cast!($arg_count, $func))
         }
+    };
+    ($arg_count:tt, $name:expr,async fn $func:expr) => {
+        primitive!($arg_count, $name, closure_wrapper!($arg_count, $func))
     };
 }
 

@@ -82,8 +82,7 @@ let expr = r#"
 "#;
 
 let (result, _) = Compiler::new()
-    .run_expr_async::<i32>(&vm, "factorial", expr)
-    .sync_or_error()
+    .run_expr::<i32>(&vm, "factorial", expr)
     .unwrap();
 
 assert_eq!(result, 120);

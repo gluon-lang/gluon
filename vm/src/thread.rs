@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::sync::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::usize;
 
-use future::FutureValue;
+use futures::future::{self, Either, FutureResult};
 use futures::{Async, Future, Poll};
 
 use base::metadata::Metadata;
@@ -34,11 +34,13 @@ use value::{
     PartialApplicationDataDef, RecordDef, Userdata, Value, ValueRepr,
 };
 use vm::{GlobalVmState, GlobalVmStateBuilder, VmEnv};
-use {Error, Result, Variants};
+use {BoxFuture, Error, Result, Variants};
 
 use value::ValueRepr::{Closure, Data, Float, Function, Int, PartialApplication, String};
 
 pub use gc::Traverseable;
+
+pub type FutureValue<F> = Either<FutureResult<<F as Future>::Item, <F as Future>::Error>, F>;
 
 pub struct Execute<T> {
     thread: Option<T>,
@@ -51,6 +53,12 @@ where
     pub fn new(thread: T) -> Execute<T> {
         Execute {
             thread: Some(thread),
+        }
+    }
+
+    pub fn root(&self) -> Execute<RootedThread> {
+        Execute {
+            thread: self.thread.as_ref().map(|t| t.root_thread()),
         }
     }
 }
@@ -593,8 +601,7 @@ impl Thread {
     /// vm.define_global("factorial", primitive!(1, factorial)).unwrap();
     ///
     /// let result = Compiler::new()
-    ///     .run_expr_async::<i32>(&vm, "example", "factorial 5")
-    ///     .sync_or_error()
+    ///     .run_expr::<i32>(&vm, "example", "factorial 5")
     ///     .unwrap_or_else(|err| panic!("{}", err));
     /// let expected = (120, Type::int());
     ///
@@ -837,9 +844,9 @@ impl<'a> VmRoot<'a> for RootedThread {
 
 /// Internal functions for interacting with threads. These functions should be considered both
 /// unsafe and unstable.
-pub trait ThreadInternal
+pub trait ThreadInternal: Sized
 where
-    for<'a> &'a Self: Deref<Target = Thread>,
+    Self: ::std::borrow::Borrow<Thread>,
 {
     /// Locks and retrives this threads stack
     fn context(&self) -> OwnedContext;
@@ -850,51 +857,50 @@ where
         T: VmRoot<'vm>;
 
     /// Evaluates a zero argument function (a thunk)
-    fn call_thunk<'vm, T>(&'vm self, closure: GcPtr<ClosureData>) -> FutureValue<Execute<T>>
-    where
-        T: VmRoot<'vm>;
+    fn call_thunk<'vm>(
+        &'vm self,
+        closure: GcPtr<ClosureData>,
+    ) -> FutureValue<Execute<RootedThread>>;
 
-    fn call_thunk_top<'vm, T>(&'vm self, closure: GcPtr<ClosureData>) -> FutureValue<ExecuteTop<T>>
+    fn call_thunk_top<'vm>(
+        &'vm self,
+        closure: GcPtr<ClosureData>,
+    ) -> BoxFuture<'static, RootedValue<RootedThread>, Error>
     where
-        T: VmRoot<'vm>,
+        Self: Send + Sync,
     {
-        match self.call_thunk(closure) {
-            FutureValue::Value(v) => FutureValue::Value(v.or_else(|mut err| {
-                let mut context = self.context();
-                let stack = StackFrame::<State>::current(&mut context.stack);
-                let new_trace = reset_stack(stack, 1)?;
-                if let Error::Panic(_, ref mut trace) = err {
-                    *trace = Some(new_trace);
-                }
-                Err(err)
-            })),
-            FutureValue::Future(f) => FutureValue::Future(ExecuteTop(f)),
-            FutureValue::Polled => FutureValue::Polled,
-        }
+        let self_ = RootedThread::root(self.borrow());
+        Box::new(self.call_thunk(closure).or_else(move |mut err| {
+            let mut context = self_.context();
+            let stack = StackFrame::<State>::current(&mut context.stack);
+            let new_trace = reset_stack(stack, 1)?;
+            if let Error::Panic(_, ref mut trace) = err {
+                *trace = Some(new_trace);
+            }
+            Err(err)
+        }))
     }
 
     /// Executes an `IO` action
-    fn execute_io<'vm, T>(&'vm self, value: Variants) -> FutureValue<Execute<T>>
-    where
-        T: VmRoot<'vm>;
+    fn execute_io<'vm>(&'vm self, value: Variants) -> FutureValue<Execute<RootedThread>>;
 
-    fn execute_io_top<'vm, T>(&'vm self, value: Variants) -> FutureValue<ExecuteTop<T>>
+    fn execute_io_top<'vm>(
+        &'vm self,
+        value: Variants,
+    ) -> BoxFuture<'static, RootedValue<RootedThread>, Error>
     where
-        T: VmRoot<'vm>,
+        Self: Send + Sync,
     {
-        match self.execute_io(value) {
-            FutureValue::Value(v) => FutureValue::Value(v.or_else(|mut err| {
-                let mut context = self.context();
-                let stack = StackFrame::<State>::current(&mut context.stack);
-                let new_trace = reset_stack(stack, 1)?;
-                if let Error::Panic(_, ref mut trace) = err {
-                    *trace = Some(new_trace);
-                }
-                Err(err)
-            })),
-            FutureValue::Future(f) => FutureValue::Future(ExecuteTop(f)),
-            FutureValue::Polled => FutureValue::Polled,
-        }
+        let self_ = RootedThread::root(self.borrow());
+        Box::new(self.execute_io(value).or_else(move |mut err| {
+            let mut context = self_.context();
+            let stack = StackFrame::<State>::current(&mut context.stack);
+            let new_trace = reset_stack(stack, 1)?;
+            if let Error::Panic(_, ref mut trace) = err {
+                *trace = Some(new_trace);
+            }
+            Err(err)
+        }))
     }
 
     /// Calls a function on the stack.
@@ -943,10 +949,10 @@ impl ThreadInternal for Thread {
         }
     }
 
-    fn call_thunk<'vm, T>(&'vm self, closure: GcPtr<ClosureData>) -> FutureValue<Execute<T>>
-    where
-        T: VmRoot<'vm>,
-    {
+    fn call_thunk<'vm>(
+        &'vm self,
+        closure: GcPtr<ClosureData>,
+    ) -> FutureValue<Execute<RootedThread>> {
         let mut context = self.owned_context();
         context.stack.push(Closure(closure));
         StackFrame::<State>::current(&mut context.stack).enter_scope(
@@ -956,22 +962,19 @@ impl ThreadInternal for Thread {
                 instruction_index: 0,
             },
         );
-        match try_future!(context.execute(false)) {
+        match try_future!(context.execute(false), Either::A) {
             Async::Ready(context) => {
                 let mut context = context.unwrap();
                 let value = self.root_value(context.stack.last().unwrap());
                 context.stack.pop();
-                FutureValue::Value(Ok(value))
+                Either::A(future::ok(value))
             }
-            Async::NotReady => FutureValue::Future(Execute::new(T::root(self))),
+            Async::NotReady => Either::B(Execute::new(self.root_thread())),
         }
     }
 
     /// Calls a module, allowed to to run IO expressions
-    fn execute_io<'vm, T>(&'vm self, value: Variants) -> FutureValue<Execute<T>>
-    where
-        T: VmRoot<'vm>,
-    {
+    fn execute_io<'vm>(&'vm self, value: Variants) -> FutureValue<Execute<RootedThread>> {
         debug!("Run IO {:?}", value);
         let mut context = self.context();
         // Dummy value to fill the place of the function for TailCall
@@ -981,9 +984,9 @@ impl ThreadInternal for Thread {
         context.stack.push(Int(0));
 
         context.borrow_mut().enter_scope(2, State::Unknown);
-        context = match try_future!(self.call_function(context, 1)) {
+        context = match try_future!(self.call_function(context, 1), Either::A) {
             Async::Ready(context) => context.expect("call_module to have the stack remaining"),
-            Async::NotReady => return FutureValue::Future(Execute::new(T::root(self))),
+            Async::NotReady => return Either::B(Execute::new(self.root_thread())),
         };
         let result = self.root_value(context.stack.last().unwrap());
         context.stack.pop();
@@ -994,7 +997,7 @@ impl ThreadInternal for Thread {
             }
         }
         let _ = context.exit_scope();
-        FutureValue::Value(Ok(result))
+        Either::A(future::ok(result))
     }
 
     /// Calls a function on the stack.

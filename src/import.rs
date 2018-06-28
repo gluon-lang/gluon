@@ -99,7 +99,7 @@ impl Importer for DefaultImporter {
             result.and_then(|value| {
                 value
                     .load_script(compiler, vm, modulename, input, ())
-                    .sync_or_error()
+                    .wait()
             })
         };
 

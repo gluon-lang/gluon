@@ -18,7 +18,6 @@ use gluon::base::types::{ArcType, Type};
 
 use gluon::vm::api::de::De;
 use gluon::vm::api::{Getable, Hole, OpaqueValue, OwnedFunction, VmType};
-use gluon::vm::future::FutureValue;
 
 use gluon::{new_vm, Compiler, RootedThread, Thread};
 
@@ -124,15 +123,13 @@ impl TestCase {
                     let future = test
                         .call_async(())
                         .and_then(|test| {
-                            FutureValue::Future(
-                                future::result(test.vm().get_global("std.test.run")).and_then(
-                                    |action| {
-                                        let mut action: OwnedFunction<
+                            future::result(test.vm().get_global("std.test.run")).and_then(
+                                |action| {
+                                    let mut action: OwnedFunction<
                                     fn(OpaqueValue<RootedThread, Test>) -> (),
                                 > = action;
-                                        action.call_async(test)
-                                    },
-                                ),
+                                    action.call_async(test)
+                                },
                             )
                         })
                         .map_err(|err| err.to_string());
@@ -296,9 +293,7 @@ fn main_() -> Result<(), Box<Error>> {
     let filter = filter.as_ref().map(|f| f.trim_left_matches('@'));
 
     let vm = new_vm();
-    Compiler::new()
-        .load_file_async(&vm, "std/test.glu")
-        .sync_or_error()?;
+    Compiler::new().load_file(&vm, "std/test.glu")?;
 
     let iter = test_files("tests/pass")?.into_iter();
 

@@ -3,17 +3,16 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::sync::Mutex;
 
-use futures::future::Shared;
-use futures::sync::oneshot;
-use futures::Future;
+use futures::{
+    future::{self, Either, Shared},
+    sync::oneshot,
+    Future,
+};
 
 use api::generic::A;
-use api::{
-    FunctionRef, Getable, OpaqueValue, PrimitiveFuture, Pushable, Pushed, Userdata, VmType, WithVM,
-};
+use api::{FunctionRef, Getable, OpaqueValue, Pushable, Pushed, Userdata, VmType, WithVM};
 use base::types;
 use base::types::{ArcType, Type};
-use future::FutureValue;
 use gc::{Gc, GcPtr, Move, Traverseable};
 use thread::{RootedThread, ThreadInternal};
 use value::{Cloner, Value};
@@ -89,7 +88,9 @@ where
     }
 }
 
-fn force(WithVM { vm, value: lazy }: WithVM<&Lazy<A>>) -> PrimitiveFuture<Pushed<A>> {
+fn force(
+    WithVM { vm, value: lazy }: WithVM<&Lazy<A>>,
+) -> impl Future<Item = Pushed<A>, Error = Error> {
     let mut lazy_lock = lazy.value.lock().unwrap();
     let lazy: GcPtr<Lazy<A>> = unsafe { GcPtr::from_raw(lazy) };
     let thunk = match *lazy_lock {
@@ -107,15 +108,14 @@ fn force(WithVM { vm, value: lazy }: WithVM<&Lazy<A>>) -> PrimitiveFuture<Pushed
             };
             drop(lazy_lock);
             let vm = vm.root_thread();
-            function
-                .call_fast_async(())
-                .then(move |result| match result {
+            Either::B(Either::A(function.call_fast_async(()).then(
+                move |result| match result {
                     Ok(value) => {
                         {
                             let value = match lazy.thread.deep_clone_value(&vm, value.get_variant())
                             {
                                 Ok(value) => value,
-                                Err(err) => return FutureValue::sync(Err(err.to_string().into())),
+                                Err(err) => return Err(err.to_string().into()),
                             };
                             let mut lazy_lock = lazy.value.lock().unwrap();
                             match *lazy_lock {
@@ -129,17 +129,17 @@ fn force(WithVM { vm, value: lazy }: WithVM<&Lazy<A>>) -> PrimitiveFuture<Pushed
                             *lazy_lock = Lazy_::Value(value);
                         }
                         value.push(&mut vm.current_context()).unwrap();
-                        FutureValue::sync(Ok(Pushed::default()))
+                        Ok(Pushed::default())
                     }
-                    Err(err) => FutureValue::sync(Err(format!("{}", err).into())),
-                })
-                .boxed()
+                    Err(err) => Err(format!("{}", err).into()),
+                },
+            )))
         }
         None => match *lazy_lock {
             Lazy_::Blackhole(ref evaluating_thread, _)
                 if *evaluating_thread == vm as *const Thread as usize =>
             {
-                FutureValue::Value(Err("<<loop>>".to_string().into()))
+                Either::A(future::err("<<loop>>".to_string().into()))
             }
             Lazy_::Blackhole(_, ref mut opt) => {
                 // The current thread was not the one that started evaluating the lazy value.
@@ -151,22 +151,26 @@ fn force(WithVM { vm, value: lazy }: WithVM<&Lazy<A>>) -> PrimitiveFuture<Pushed
                 }
                 let ready = opt.as_ref().unwrap().1.clone();
                 let vm = vm.root_thread();
-                FutureValue::Future(Box::new(
+                Either::B(Either::B(
                     ready
                         .map_err(|_| {
                             panic!("Lazy: Sender where dropped before sending that the lazy value were evaluated")
                         })
-                        .and_then(move |_| {
-                            force(WithVM {
-                                vm: &vm,
-                                value: &*lazy,
-                            })
+                        .map(move |_| {
+                            let lazy_lock = lazy.value.lock().unwrap();
+                            match *lazy_lock {
+                                Lazy_::Value(ref value) =>  {
+                                    vm.current_context().push(value.clone());
+                                    Pushed::default()
+                                }
+                                _ => unreachable!()
+                            }
                         }),
                 ))
             }
             Lazy_::Value(ref value) => {
                 vm.current_context().push(value.clone());
-                FutureValue::Value(Ok(Pushed::default()))
+                Either::A(future::ok(Pushed::default()))
             }
             _ => unreachable!(),
         },
@@ -194,7 +198,7 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
         vm,
         record!{
             lazy => primitive!(1, std::lazy::lazy),
-            force => primitive!(1, std::lazy::force)
+            force => primitive!(1, async fn std::lazy::force)
         },
     )
 }
