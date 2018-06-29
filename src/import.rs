@@ -99,6 +99,9 @@ static STD_LIBS: &[(&str, &str)] = &std_libs!(
     "group",
     "category",
     "num",
+    "lazy",
+    "channel",
+    "debug",
 );
 
 // When testing we use the files as-is in the repository to avoid recompiling after they are

@@ -1,0 +1,8 @@
+//! Debug library.
+
+let prim = import! std.debug.prim
+
+{
+    ..
+    prim
+}

@@ -1,0 +1,12 @@
+//! Lazy values.
+//!
+//! A lazy value will only be evaluated once the `force` function is called on it.
+//! The value returned by `force` is cached so any subsequence calls of `force` on the same value
+//! will only return the cached value and not evaluate the lazy value again.
+
+let prim = import! std.lazy.prim
+
+{
+    ..
+    prim
+}

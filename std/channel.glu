@@ -1,0 +1,8 @@
+//! Mpmc channels.
+
+let prim = import! std.channel.prim
+
+{
+    ..
+    prim
+}
