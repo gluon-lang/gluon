@@ -1,4 +1,6 @@
 //! Rust -> Gluon value conversion via the `serde::Serialize` trait
+//! 
+//! _This module requires Gluon to be built with the `serde` feature._
 
 use std::fmt;
 use std::ops::{Deref, DerefMut};

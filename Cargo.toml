@@ -152,9 +152,11 @@ name = "ui"
 name = "24"
 [[example]]
 name = "marshalling"
+required-features = ["serialization"]
 [[example]]
 name = "http"
 path = "examples/http/main.rs"
+required-features = ["serialization"]
 [[example]]
 name = "lisp"
 path = "examples/lisp/main.rs"
