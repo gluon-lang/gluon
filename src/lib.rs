@@ -709,7 +709,7 @@ impl VmBuilder {
         add_extern_module(&vm, "std.lazy.prim", ::vm::lazy::load);
         add_extern_module(&vm, "std.reference.prim", ::vm::reference::load);
 
-        add_extern_module(&vm, "std.channel", ::vm::channel::load_channel);
+        add_extern_module(&vm, "std.channel.prim", ::vm::channel::load_channel);
         add_extern_module(&vm, "std.thread.prim", ::vm::channel::load_thread);
         add_extern_module(&vm, "std.debug", ::vm::debug::load);
         add_extern_module(&vm, "std.io.prim", ::io::load);
