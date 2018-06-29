@@ -711,7 +711,7 @@ impl VmBuilder {
 
         add_extern_module(&vm, "std.channel.prim", ::vm::channel::load_channel);
         add_extern_module(&vm, "std.thread.prim", ::vm::channel::load_thread);
-        add_extern_module(&vm, "std.debug", ::vm::debug::load);
+        add_extern_module(&vm, "std.debug.prim", ::vm::debug::load);
         add_extern_module(&vm, "std.io.prim", ::io::load);
 
         load_regex(&vm);
