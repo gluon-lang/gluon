@@ -24,7 +24,11 @@ impl REPL {
         let timeout: u64 = 30_000;
 
         let mut command = Command::new("../target/debug/gluon");
-        command.arg("-i").env("GLUON_PATH", "..");
+        command
+            .arg("-i")
+            .arg("--color")
+            .arg("never")
+            .env("GLUON_PATH", "..");
         let mut session = spawn_command(command, Some(timeout))?;
 
         let prompt: &'static str = "> ";
@@ -145,4 +149,11 @@ fn comment() {
     let mut repl = REPL::new();
 
     repl.test("// test", None);
+}
+
+#[test]
+fn error_reports_correct_line() {
+    let mut repl = REPL::new();
+
+    repl.test("let { x } = {}", Some("let { x } = {}"));
 }
