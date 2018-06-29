@@ -7,6 +7,10 @@ fn trace(a: Generic<A>) {
     println!("{:?}", a);
 }
 
+fn show(a: Generic<A>) -> String {
+    format!("{:?}", a)
+}
+
 mod std {
     pub use debug;
 }
@@ -17,7 +21,8 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
     ExternModule::new(
         vm,
         record!{
-            trace => primitive!(1 std::debug::trace)
+            trace => primitive!(1 std::debug::trace),
+            show => primitive!(1 std::debug::show)
         },
     )
 }
