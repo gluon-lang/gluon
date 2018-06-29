@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 
 use rpds;
 
@@ -146,13 +146,10 @@ impl ImplicitBindings {
         update_vec(&mut self.rest, &mut f);
     }
 
-    fn iter<'a>(
-        &'a self,
-        typ: &ArcType,
-    ) -> Box<DoubleEndedIterator<Item = &'a ImplicitBinding> + 'a> {
+    fn iter<'a>(&'a self, typ: &ArcType) -> impl DoubleEndedIterator<Item = &'a ImplicitBinding> {
         match SymbolKey::new(&typ) {
-            Some(symbol) => Box::new(self.partioned.get(&symbol).unwrap_or(&self.rest).iter()),
-            None => Box::new(
+            Some(symbol) => Either::Left(self.partioned.get(&symbol).unwrap_or(&self.rest).iter()),
+            None => Either::Right(
                 self.rest
                     .iter()
                     .chain(self.partioned.values().flat_map(|x| x.iter())),
