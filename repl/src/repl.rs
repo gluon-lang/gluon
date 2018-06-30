@@ -282,8 +282,9 @@ fn eval_line_(
     let mut compiler = Compiler::new();
     let repl_line = {
         let result = {
+            let filemap = compiler.add_filemap("line", line);
             let mut module = SymbolModule::new("line".into(), compiler.mut_symbols());
-            parse_partial_repl_line(&mut module, line)
+            parse_partial_repl_line(&mut module, &*filemap)
         };
         match result {
             Ok(x) => x,
