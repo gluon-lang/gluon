@@ -296,7 +296,6 @@ pub fn close_record(typ: ArcType) -> ArcType {
 #[macro_export]
 macro_rules! assert_failed {
     ($lhs:expr, $rhs:expr, $lhs_value:expr, $rhs_value:expr) => {
-
         panic!(
             r#"Assertion failed: `({} == {})`
         left: `{}`,
@@ -312,7 +311,6 @@ macro_rules! assert_failed {
 #[macro_export]
 macro_rules! assert_req {
     ($lhs:expr, $rhs:expr) => {
-
         match ($lhs, $rhs) {
             (Ok(lhs), Ok(rhs)) => {
                 if lhs != rhs {

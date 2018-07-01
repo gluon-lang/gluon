@@ -14,7 +14,7 @@ use support::*;
 use base::ast::*;
 use base::metadata::*;
 use base::pos::{self, BytePos, Span, Spanned};
-use base::types::{Field, Type};
+use base::types::{Alias, Field, Type};
 
 use parser::ReplLine;
 
@@ -847,14 +847,34 @@ fn parse_repl_line() {
 }
 
 #[test]
-fn parse_repl_line_only_comment() {
+fn alias_in_record_type() {
     let _ = ::env_logger::try_init();
 
-    let mut module = MockEnv::<String>::new();
-
-    let line = " // test ";
-    match parser::parse_partial_repl_line(&mut module, line) {
-        Ok(x) => assert_eq!(x, None),
-        Err((_, err)) => panic!("{}", err),
-    }
+    let text = r#"
+        type Test = { MyInt }
+        1
+        "#;
+    let e = parse_clear_span!(text);
+    assert_eq!(
+        e,
+        no_loc(Expr::TypeBindings(
+            vec![TypeBinding {
+                metadata: Metadata::default(),
+                name: no_loc(intern("Test")),
+                alias: alias(
+                    intern("Test"),
+                    Vec::new(),
+                    Type::record(
+                        vec![Field {
+                            name: intern("MyInt"),
+                            typ: Alias::new(intern("MyInt"), Type::hole()),
+                        }],
+                        vec![],
+                    ),
+                ),
+                finalized_alias: None,
+            }],
+            Box::new(int(1))
+        ),)
+    )
 }

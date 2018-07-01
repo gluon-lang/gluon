@@ -205,7 +205,6 @@ in g 5
 
 macro_rules! assert_match {
     ($i:expr, $p:pat => $e:expr) => {
-
         match $i {
             $p => $e,
             ref x => assert!(false, "Expected {}, found {:?}", stringify!($p), x),
@@ -931,4 +930,20 @@ fn array_expr_gets_type_assigned_without_expected_type_issue_555() {
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
     assert_eq!(expr.env_type_of(&MockEnv::new()).to_string(), "Array Int");
+}
+
+#[test]
+fn alias_in_record_type() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+type MyInt = Int
+type Test = { MyInt }
+
+let t: Test = { MyInt }
+t
+"#;
+    let result = support::typecheck(text);
+
+    assert_req!(result.map(|t| t.to_string()), Ok("test.Test"));
 }

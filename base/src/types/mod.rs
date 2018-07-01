@@ -305,6 +305,18 @@ where
     }
 }
 
+impl<Id, T> DerefMut for Alias<Id, T>
+where
+    T: DerefMut<Target = Type<Id, T>>,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match *self._typ {
+            Type::Alias(ref mut alias) => alias,
+            _ => unreachable!(),
+        }
+    }
+}
+
 impl<Id, T> From<AliasData<Id, T>> for Alias<Id, T>
 where
     T: From<Type<Id, T>>,
@@ -414,6 +426,13 @@ pub struct AliasRef<Id, T> {
     )]
     /// The other aliases defined in this group
     pub group: Arc<Vec<AliasData<Id, T>>>,
+}
+
+impl<Id, T> AliasRef<Id, T> {
+    pub fn try_get_alias_mut(&mut self) -> Option<&mut AliasData<Id, T>> {
+        let index = self.index;
+        Arc::get_mut(&mut self.group).map(|group| &mut group[index])
+    }
 }
 
 impl<Id, T> AliasRef<Id, T>

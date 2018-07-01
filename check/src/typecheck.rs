@@ -243,11 +243,7 @@ pub(crate) type TcResult<T> = Result<T, TypeError<Symbol>>;
 
 pub trait TypecheckEnv: PrimitiveEnv + MetadataEnv {}
 
-impl<T> TypecheckEnv for T
-where
-    T: PrimitiveEnv + MetadataEnv,
-{
-}
+impl<T> TypecheckEnv for T where T: PrimitiveEnv + MetadataEnv {}
 
 #[derive(Clone, Debug)]
 struct StackBinding {
@@ -405,6 +401,19 @@ impl<'a> Typecheck<'a> {
                 } else {
                     Err(TypeError::UndefinedVariable(id.clone()))
                 }
+            }
+        }
+    }
+
+    fn find_type_info_at(&mut self, span: Span<BytePos>, id: &Symbol) -> Alias<Symbol, ArcType> {
+        match self.find_type_info(id).map(|alias| alias.clone()) {
+            Ok(alias) => alias,
+            Err(err) => {
+                self.errors.push(Spanned {
+                    span: span,
+                    value: err.into(),
+                });
+                Alias::new(id.clone(), self.type_cache.hole())
             }
         }
     }
@@ -972,19 +981,7 @@ impl<'a> Typecheck<'a> {
                             .unwrap_or_else(|| typ.clone());
                     }
 
-                    let alias = match self
-                        .find_type_info(&field.name.value)
-                        .map(|alias| alias.clone())
-                    {
-                        Ok(alias) => alias,
-                        Err(err) => {
-                            self.errors.push(Spanned {
-                                span: field.name.span,
-                                value: err.into(),
-                            });
-                            Alias::new(field.name.value.clone(), self.type_cache.hole())
-                        }
-                    };
+                    let alias = self.find_type_info_at(field.name.span, &field.name.value);
                     if self.error_on_duplicated_field(&mut duplicated_fields, field.name.clone()) {
                         new_types.push(Field::new(field.name.value.clone(), alias));
                     }
@@ -1649,6 +1646,33 @@ impl<'a> Typecheck<'a> {
                     Err(err) => self.error(ast_type.span(), err),
                 }
             }
+            Type::ExtendRow {
+                ref types,
+                ref fields,
+                ref rest,
+            } => Type::extend_row(
+                types
+                    .iter()
+                    .map(|field| Field {
+                        name: field.name.clone(),
+                        typ: if let Type::Hole = **field.typ.unresolved_type() {
+                            self.find_type_info_at(field.typ.unresolved_type().span(), &field.name)
+                        } else {
+                            Alias::from(types::translate_alias(&field.typ, |typ| {
+                                self.translate_ast_type(type_cache, typ)
+                            }))
+                        },
+                    })
+                    .collect(),
+                fields
+                    .iter()
+                    .map(|field| Field {
+                        name: field.name.clone(),
+                        typ: self.translate_ast_type(type_cache, &field.typ),
+                    })
+                    .collect(),
+                self.translate_ast_type(type_cache, rest),
+            ),
             Type::Ident(ref id) if id.name().module().as_str() != "" => {
                 match self.translate_projected_type(id) {
                     Ok(typ) => typ,

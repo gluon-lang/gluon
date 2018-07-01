@@ -1,10 +1,10 @@
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 
 use base::ast::{Alternative, Argument, Array, AstType, Do, Expr, ExprField, Lambda, Literal, Pattern,
     PatternField, SpannedExpr, SpannedIdent, TypeBinding, TypedIdent, ValueBinding};
 use base::kind::{ArcKind, Kind};
 use base::pos::{self, BytePos, Spanned};
-use base::types::{AliasData, ArcType, ArgType, BuiltinType, Field, Generic, Type, TypeCache};
+use base::types::{Alias, AliasData, ArcType, ArgType, BuiltinType, Field, Generic, Type, TypeCache};
 use base::metadata::{Attribute, Metadata, Comment};
 
 use std::str::FromStr;
@@ -196,12 +196,23 @@ TypeParam: Generic<Id> = {
         Generic::new(id, kind),
 };
 
-RecordField: Field<Id, AstType<Id>> =
+RecordField: Either<Field<Id, Alias<Id, AstType<Id>>>, Field<Id, AstType<Id>>> = {
+    <comment: DocComment?> <id: Sp<Ident>> <alias: ("=" <Sp<Type_>>)?> => {
+        let span = id.span;
+        Either::Left(Field::new(
+            id.value.clone(),
+            Alias::new(
+                id.value,
+                AstType::with_comment(comment, alias.unwrap_or_else(|| pos::spanned(span, Type::Hole))),
+            ),
+        ))
+    },
     <comment: DocComment?> <id: Ident> ":" <typ: Sp<Type_>> =>
-        Field::new(
+        Either::Right(Field::new(
             id,
             AstType::with_comment(comment, typ),
-        );
+        )),
+};
 
 VariantField: (Id, Vec<AstType<Id>>) =
     "|" <Ident> <AtomicType*> => (<>);
@@ -281,12 +292,14 @@ AtomicType_: Type<Id, AstType<Id>> = {
             _ => Type::tuple_(env, elems),
         },
 
-    "{" <row: Comma<RecordField>> "}" =>
+    "{" <row: Comma<RecordField>> "}" => {
+        let (types, fields) = row.into_iter().partition_map(|x| x);
         Type::Record(Type::extend_row(
-            vec![],
-            row,
+            types,
+            fields,
             Type::empty_row(),
-        )),
+        ))
+    },
 };
 
 AtomicType : AstType<Id> = {
