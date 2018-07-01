@@ -495,6 +495,18 @@ pub struct AliasData<Id, T> {
     typ: T,
 }
 
+impl<Id, T> AliasData<Id, T> {
+    /// Returns the type aliased by `self` with out `Type::Ident` resolved to their actual
+    /// `Type::Alias` representation
+    pub fn unresolved_type(&self) -> &T {
+        &self.typ
+    }
+
+    pub fn unresolved_type_mut(&mut self) -> &mut T {
+        &mut self.typ
+    }
+}
+
 impl<Id, T> AliasData<Id, T>
 where
     T: From<Type<Id, T>>,
@@ -504,16 +516,6 @@ where
             name: name,
             typ: Type::forall(args, typ),
         }
-    }
-
-    /// Returns the type aliased by `self` with out `Type::Ident` resolved to their actual
-    /// `Type::Alias` representation
-    pub fn unresolved_type(&self) -> &T {
-        &self.typ
-    }
-
-    pub fn unresolved_type_mut(&mut self) -> &mut T {
-        &mut self.typ
     }
 }
 
@@ -2151,11 +2153,16 @@ where
         }
         Type::Record(ref mut row) | Type::Variant(ref mut row) => f.walk_mut(row),
         Type::ExtendRow {
-            // Can't visit types mutably as they are always shared
-            types: _,
+            ref mut types,
             ref mut fields,
             ref mut rest,
         } => {
+            for field in types {
+                if let Some(alias) = field.typ.try_get_alias_mut() {
+                    let field_type = alias.unresolved_type_mut();
+                    f.walk_mut(field_type);
+                }
+            }
             for field in fields {
                 f.walk_mut(&mut field.typ);
             }

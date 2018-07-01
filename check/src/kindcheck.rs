@@ -5,7 +5,6 @@ use base::ast::{self, AstType};
 use base::kind::{self, ArcKind, Kind, KindCache};
 use base::merge;
 use base::pos::{self, BytePos, HasSpan, Span, Spanned};
-use base::resolve;
 use base::symbol::Symbol;
 use base::types::{self, ArcType, BuiltinType, Generic, Type, TypeEnv, Walker};
 
@@ -132,10 +131,9 @@ impl<'a> KindCheck<'a> {
             .map_or_else(
                 || {
                     if self.idents.string(id).contains('.') {
-                        Ok(self.translate_projected_type(id).unwrap_or_else(|_| {
-                            // Errors get reported in typecheck as well so ignore them here
-                            self.subs.new_var()
-                        }))
+                        Ok(self
+                            .translate_projected_type(id)
+                            .unwrap_or_else(|| self.subs.new_var()))
                     } else if self.idents.string(id).starts_with(char::is_uppercase) {
                         Err(UnifyError::Other(KindError::UndefinedType(id.clone())))
                     } else {
@@ -154,37 +152,11 @@ impl<'a> KindCheck<'a> {
         kind.map_err(|err| pos::spanned(span, err))
     }
 
-    fn translate_projected_type(&mut self, id: &Symbol) -> StdResult<ArcKind, KindError<Symbol>> {
-        let mut lookup_type: Option<ArcType> = None;
-        for component in id.name().module().components() {
-            let symbol = self.idents.from_str(component);
-            lookup_type = match lookup_type {
-                Some(typ) => Some(
-                    self.remove_aliases(typ.clone())
-                        .row_iter()
-                        .find(|field| field.name.name_eq(&symbol))
-                        .map(|field| field.typ.clone())
-                        .ok_or_else(|| KindError::UndefinedField(typ, symbol))?,
-                ),
-                None => Some(
-                    self.info
-                        .find_type(&symbol)
-                        .cloned()
-                        .ok_or_else(|| KindError::UndefinedType(symbol))?,
-                ),
-            };
-        }
-        let typ = lookup_type.unwrap();
-        let type_symbol = self.idents.from_str(id.name().name().as_str());
-        self.remove_aliases(typ.clone())
-            .type_field_iter()
-            .find(|field| field.name.name_eq(&type_symbol))
-            .map(|field| field.typ.kind().into_owned())
-            .ok_or_else(|| KindError::UndefinedField(typ, type_symbol))
-    }
-
-    fn remove_aliases(&self, typ: ArcType) -> ArcType {
-        resolve::remove_aliases(self.info, typ)
+    fn translate_projected_type(&mut self, id: &Symbol) -> Option<ArcKind> {
+        // Errors get reported in typecheck as well so ignore them here
+        ::typecheck::translate_projected_type(self.info, self.idents, id)
+            .ok()
+            .map(|typ| typ.kind().into_owned())
     }
 
     // Kindhecks `typ`, infering it to be of kind `Type`
@@ -288,10 +260,18 @@ impl<'a> KindCheck<'a> {
                 Ok(self.type_kind())
             }
             Type::ExtendRow {
-                types: _,
+                ref mut types,
                 ref mut fields,
                 ref mut rest,
             } => {
+                for field in types {
+                    if let Some(alias) = field.typ.try_get_alias_mut() {
+                        let field_type = alias.unresolved_type_mut();
+                        let kind = self.kindcheck(field_type)?;
+                        let type_kind = self.type_kind();
+                        self.unify(field_type.span(), &type_kind, kind)?;
+                    }
+                }
                 for field in fields {
                     let kind = self.kindcheck(&mut field.typ)?;
                     let type_kind = self.type_kind();
@@ -324,10 +304,9 @@ impl<'a> KindCheck<'a> {
                 let mut expected = expected.clone();
                 expected = update_kind(&self.subs, expected, None);
                 actual = update_kind(&self.subs, actual, None);
-                Err(pos::spanned(
-                    span,
-                    UnifyError::TypeMismatch(expected, actual),
-                ))
+                let err = pos::spanned(span, UnifyError::TypeMismatch(expected, actual));
+                debug!("Kind unify error: {}", err);
+                Err(err)
             }
         }
     }

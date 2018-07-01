@@ -197,13 +197,26 @@ TypeParam: Generic<Id> = {
 };
 
 RecordField: Either<Field<Id, Alias<Id, AstType<Id>>>, Field<Id, AstType<Id>>> = {
-    <comment: DocComment?> <id: Sp<Ident>> <alias: ("=" <Sp<Type_>>)?> => {
+    <comment: DocComment?> <id: Sp<Ident>> <args: Ident*> <alias: ("=" <Sp<Type_>>)> => {
+        let span = id.span;
+        Either::Left(Field::new(
+            id.value.clone(),
+            Alias::from(AliasData::new(
+                id.value,
+                args.into_iter()
+                    .map(|id| Generic::new(id, type_cache.kind_cache.hole()))
+                    .collect(),
+                AstType::with_comment(comment, alias),
+            )),
+        ))
+    },
+    <comment: DocComment?> <id: Sp<Ident>> => {
         let span = id.span;
         Either::Left(Field::new(
             id.value.clone(),
             Alias::new(
                 id.value,
-                AstType::with_comment(comment, alias.unwrap_or_else(|| pos::spanned(span, Type::Hole))),
+                AstType::with_comment(comment, pos::spanned(span, Type::Hole)),
             ),
         ))
     },

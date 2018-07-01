@@ -947,3 +947,18 @@ t
 
     assert_req!(result.map(|t| t.to_string()), Ok("test.Test"));
 }
+
+#[test]
+fn alias_with_parameters_in_record_type() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+type Test = { Params a b = { x : a, y : b } }
+
+let t: Test.Params Int String = { x = 1, y = "" }
+t
+"#;
+    let result = support::typecheck(text);
+
+    assert_req!(result.map(|t| t.to_string()), Ok("Params Int String"));
+}

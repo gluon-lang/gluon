@@ -9,7 +9,7 @@ use std::mem;
 use codespan_reporting::Diagnostic;
 
 use base::ast::{
-    Argument, AstType, DisplayEnv, Do, Expr, Literal, MutVisitor, Pattern, PatternField,
+    Argument, AstType, DisplayEnv, Do, Expr, IdentEnv, Literal, MutVisitor, Pattern, PatternField,
     SpannedExpr, SpannedIdent, SpannedPattern, TypeBinding, Typed, TypedIdent, ValueBinding,
 };
 use base::error::{AsDiagnostic, Errors};
@@ -1612,27 +1612,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn translate_projected_type(&mut self, id: &Symbol) -> TcResult<ArcType> {
-        let mut lookup_type: Option<ArcType> = None;
-        for component in id.name().module().components() {
-            let symbol = self.symbols.symbol(component);
-            lookup_type = match lookup_type {
-                Some(typ) => Some(
-                    self.remove_aliases(typ.clone())
-                        .row_iter()
-                        .find(|field| field.name.name_eq(&symbol))
-                        .map(|field| field.typ.clone())
-                        .ok_or_else(|| TypeError::UndefinedField(typ, symbol))?,
-                ),
-                None => Some(self.find(&symbol)?),
-            };
-        }
-        let typ = lookup_type.unwrap();
-        let type_symbol = self.symbols.symbol(id.name().name());
-        self.remove_aliases(typ.clone())
-            .type_field_iter()
-            .find(|field| field.name.name_eq(&type_symbol))
-            .map(|field| field.typ.clone().into_type())
-            .ok_or_else(|| TypeError::UndefinedField(typ, type_symbol))
+        translate_projected_type(&self.environment, &mut self.symbols, id)
     }
 
     fn translate_ast_type(
@@ -2448,6 +2428,58 @@ impl<'a> Typecheck<'a> {
                 false
             })
     }
+}
+
+pub fn translate_projected_type(
+    env: &TypeEnv,
+    symbols: &mut IdentEnv<Ident = Symbol>,
+    id: &Symbol,
+) -> TcResult<ArcType> {
+    let mut lookup_type: Option<ArcType> = None;
+    for component in id.name().module().components() {
+        let symbol = symbols.from_str(component);
+        lookup_type = match lookup_type {
+            Some(typ) => {
+                let aliased_type = resolve::remove_aliases(env, typ.clone());
+                Some(
+                    aliased_type
+                        .type_field_iter()
+                        .filter_map(|field| {
+                            if field.name.name_eq(&symbol) {
+                                Some(field.typ.clone().into_type())
+                            } else {
+                                None
+                            }
+                        })
+                        .chain(aliased_type.row_iter().filter_map(|field| {
+                            if field.name.name_eq(&symbol) {
+                                Some(field.typ.clone())
+                            } else {
+                                None
+                            }
+                        }))
+                        .next()
+                        .ok_or_else(|| TypeError::UndefinedField(typ, symbol))?,
+                )
+            }
+            None => Some(
+                env.find_type(&symbol)
+                    .cloned()
+                    .or_else(|| {
+                        env.find_type_info(&symbol)
+                            .map(|alias| alias.typ().into_owned())
+                    })
+                    .ok_or_else(|| TypeError::UndefinedVariable(symbol.clone()))?,
+            ),
+        };
+    }
+    let typ = lookup_type.unwrap();
+    let type_symbol = symbols.from_str(id.name().name().as_str());
+    resolve::remove_aliases(env, typ.clone())
+        .type_field_iter()
+        .find(|field| field.name.name_eq(&type_symbol))
+        .map(|field| field.typ.clone().into_type())
+        .ok_or_else(|| TypeError::UndefinedField(typ, type_symbol))
 }
 
 fn with_pattern_types<F>(
