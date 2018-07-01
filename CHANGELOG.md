@@ -1,3 +1,29 @@
+<a name="v0.8.1"></a>
+### v0.8.1 (2018-07-01)
+
+
+#### Bug Fixes
+
+*   Reject programs which use lowercase letters for types ([bd54a83f](https://github.com/gluon-lang/gluon/commit/bd54a83f572ab25e15c2602bf05bea40f08314b0))
+*   Display type fields with the parameters on the left side of = ([ef6fc9bc](https://github.com/gluon-lang/gluon/commit/ef6fc9bcea491449cf1d8d8e4815065d47188beb))
+*   Handle type projection in kind check ([3b78e370](https://github.com/gluon-lang/gluon/commit/3b78e3708c98dc3a383c6f2acec792ab91e157f4))
+*   Print the correct source on errors in the repl ([159eaf99](https://github.com/gluon-lang/gluon/commit/159eaf99aeaafbff43ce55557fadb8d5e843ab19), closes [#568](https://github.com/gluon-lang/gluon/issues/568))
+* **check:**  Don't shadow more general variant constructors ([182c3960](https://github.com/gluon-lang/gluon/commit/182c396086e17bbc03111f445436099fa31ab5c2), closes [#548](https://github.com/gluon-lang/gluon/issues/548))
+* **completion:**  Avoid panicking on env_type_of calls ([c63cf2fb](https://github.com/gluon-lang/gluon/commit/c63cf2fbe52f4cd4604ce580889a0035e43dc8f5))
+* **format:**
+  *  Update pretty to avoid panickingon multiline strings in debug mode ([bb4d05da](https://github.com/gluon-lang/gluon/commit/bb4d05da9e5158186dea3d81769993ffe6dc05eb))
+  *  Don't panic on multiline strings ([7662f38f](https://github.com/gluon-lang/gluon/commit/7662f38f30744cbac83222fd5b855a36eb47b9ec))
+* **repl:**
+  *  Don't panic on solo array literals ([5bffdfa9](https://github.com/gluon-lang/gluon/commit/5bffdfa97e80f5e69bf8d58d7c3328936cfa76e8), closes [#555](https://github.com/gluon-lang/gluon/issues/555))
+  *  Don't fail with a parse error on lines only containing a comment ([f5819bca](https://github.com/gluon-lang/gluon/commit/f5819bca3b7ea9013088ed798c93a53697edbee3), closes [#559](https://github.com/gluon-lang/gluon/issues/559))
+
+#### Features
+
+*   Allow type definitions to be declared inside types ([d47508d9](https://github.com/gluon-lang/gluon/commit/d47508d9fb610b7c25a742c619f62bb7730e1408))
+*   Add debug.show ([0c962722](https://github.com/gluon-lang/gluon/commit/0c96272237567e098f2f692e5ac9350b19e39c30))
+
+
+
 <a name="v0.8.0"></a>
 ## v0.8.0 (2018-06-14)
 
