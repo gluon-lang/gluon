@@ -2197,14 +2197,31 @@ impl<'a> Typecheck<'a> {
                 ref fields,
                 ref rest,
             } => {
+                let new_types = types::walk_move_types(types, |field| {
+                    let typ = self
+                        .create_unifiable_signature2(field.typ.unresolved_type())
+                        .unwrap_or_else(|| field.typ.unresolved_type().clone());
+                    let alias_name = self
+                        .original_symbols
+                        .get(&field.name)
+                        .unwrap_or(&field.name)
+                        .clone();
+                    Some(Field::new(field.name.clone(), Alias::new(alias_name, typ)))
+                });
                 let new_fields = types::walk_move_types(fields, |field| {
                     self.create_unifiable_signature2(&field.typ)
                         .map(|typ| Field::new(field.name.clone(), typ))
                 });
                 let new_rest = self.create_unifiable_signature_(rest);
-                merge::merge(fields, new_fields, rest, new_rest, |fields, rest| {
-                    Type::extend_row(types.clone(), fields, rest)
-                })
+                merge::merge3(
+                    types,
+                    new_types,
+                    fields,
+                    new_fields,
+                    rest,
+                    new_rest,
+                    Type::extend_row,
+                )
             }
             Type::Forall(ref params, ref typ, _) => {
                 for param in params {

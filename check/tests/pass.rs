@@ -949,6 +949,21 @@ t
 }
 
 #[test]
+fn alias_in_record_type_is_equal() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+type Test = { x : Int }
+
+let x: { Test = { x : Int } } = { Test }
+x
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
 fn alias_with_parameters_in_record_type() {
     let _ = env_logger::try_init();
 
