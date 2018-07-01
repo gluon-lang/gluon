@@ -4,6 +4,8 @@
 # A script to bump the version number on all Cargo.toml files etc in
 # an atomic fashion.
 
+set -ex
+
 if [ "$1" == "" ]; then
     echo "Usage: version.sh <new-version-number>"
     exit 1
@@ -32,3 +34,7 @@ perl -p -i -e 's/^gluon *= *"[0-9.]+"/gluon = "'$1'"/' \
 
 perl -p -i -e 's/[0-9][0-9.]+([^#]+)# GLUON/'$1'$1# GLUON/' \
      $(ls **/src/lib.rs src/lib.rs)
+
+git add .
+git commit -m "Version 0.8.1"
+git tag "v${1}"
