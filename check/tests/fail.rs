@@ -692,3 +692,17 @@ Types do not match:
 "#
     );
 }
+
+#[test]
+fn undefined_alias_in_record_type() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+type Test = { MyInt }
+
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert_err!(result, UndefinedType(..));
+}

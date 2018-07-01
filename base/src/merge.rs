@@ -1,5 +1,32 @@
 use std::ops::DerefMut;
 
+pub fn merge3<F, A: ?Sized, B: ?Sized, C: ?Sized, R>(
+    a_original: &A,
+    a: Option<A::Owned>,
+    b_original: &B,
+    b: Option<B::Owned>,
+    c_original: &C,
+    c: Option<C::Owned>,
+    f: F,
+) -> Option<R>
+where
+    A: ToOwned,
+    B: ToOwned,
+    C: ToOwned,
+    F: FnOnce(A::Owned, B::Owned, C::Owned) -> R,
+{
+    let a_b = merge(a_original, a, b_original, b, |a, b| (a, b));
+    merge_fn(
+        &(a_original, b_original),
+        |_| (a_original.to_owned(), b_original.to_owned()),
+        a_b,
+        c_original,
+        C::to_owned,
+        c,
+        |(a, b), c| f(a, b, c),
+    )
+}
+
 /// Merges two values using `f` if either or both them is `Some(..)`.
 /// If both are `None`, `None` is returned.
 pub fn merge<F, A: ?Sized, B: ?Sized, R>(

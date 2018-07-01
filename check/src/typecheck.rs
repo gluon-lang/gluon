@@ -9,7 +9,7 @@ use std::mem;
 use codespan_reporting::Diagnostic;
 
 use base::ast::{
-    Argument, AstType, DisplayEnv, Do, Expr, Literal, MutVisitor, Pattern, PatternField,
+    Argument, AstType, DisplayEnv, Do, Expr, IdentEnv, Literal, MutVisitor, Pattern, PatternField,
     SpannedExpr, SpannedIdent, SpannedPattern, TypeBinding, Typed, TypedIdent, ValueBinding,
 };
 use base::error::{AsDiagnostic, Errors};
@@ -69,6 +69,9 @@ impl<I> From<KindCheckError<I>> for TypeError<I> {
     fn from(e: KindCheckError<I>) -> Self {
         match e {
             UnifyError::Other(KindError::UndefinedType(name)) => TypeError::UndefinedType(name),
+            UnifyError::Other(KindError::UndefinedField(typ, name)) => {
+                TypeError::UndefinedField(typ, name)
+            }
             e => TypeError::KindError(e),
         }
     }
@@ -243,11 +246,7 @@ pub(crate) type TcResult<T> = Result<T, TypeError<Symbol>>;
 
 pub trait TypecheckEnv: PrimitiveEnv + MetadataEnv {}
 
-impl<T> TypecheckEnv for T
-where
-    T: PrimitiveEnv + MetadataEnv,
-{
-}
+impl<T> TypecheckEnv for T where T: PrimitiveEnv + MetadataEnv {}
 
 #[derive(Clone, Debug)]
 struct StackBinding {
@@ -405,6 +404,19 @@ impl<'a> Typecheck<'a> {
                 } else {
                     Err(TypeError::UndefinedVariable(id.clone()))
                 }
+            }
+        }
+    }
+
+    fn find_type_info_at(&mut self, span: Span<BytePos>, id: &Symbol) -> Alias<Symbol, ArcType> {
+        match self.find_type_info(id).map(|alias| alias.clone()) {
+            Ok(alias) => alias,
+            Err(err) => {
+                self.errors.push(Spanned {
+                    span: span,
+                    value: err.into(),
+                });
+                Alias::new(id.clone(), self.type_cache.hole())
             }
         }
     }
@@ -972,19 +984,7 @@ impl<'a> Typecheck<'a> {
                             .unwrap_or_else(|| typ.clone());
                     }
 
-                    let alias = match self
-                        .find_type_info(&field.name.value)
-                        .map(|alias| alias.clone())
-                    {
-                        Ok(alias) => alias,
-                        Err(err) => {
-                            self.errors.push(Spanned {
-                                span: field.name.span,
-                                value: err.into(),
-                            });
-                            Alias::new(field.name.value.clone(), self.type_cache.hole())
-                        }
-                    };
+                    let alias = self.find_type_info_at(field.name.span, &field.name.value);
                     if self.error_on_duplicated_field(&mut duplicated_fields, field.name.clone()) {
                         new_types.push(Field::new(field.name.value.clone(), alias));
                     }
@@ -1612,27 +1612,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn translate_projected_type(&mut self, id: &Symbol) -> TcResult<ArcType> {
-        let mut lookup_type: Option<ArcType> = None;
-        for component in id.name().module().components() {
-            let symbol = self.symbols.symbol(component);
-            lookup_type = match lookup_type {
-                Some(typ) => Some(
-                    self.remove_aliases(typ.clone())
-                        .row_iter()
-                        .find(|field| field.name.name_eq(&symbol))
-                        .map(|field| field.typ.clone())
-                        .ok_or_else(|| TypeError::UndefinedField(typ, symbol))?,
-                ),
-                None => Some(self.find(&symbol)?),
-            };
-        }
-        let typ = lookup_type.unwrap();
-        let type_symbol = self.symbols.symbol(id.name().name());
-        self.remove_aliases(typ.clone())
-            .type_field_iter()
-            .find(|field| field.name.name_eq(&type_symbol))
-            .map(|field| field.typ.clone().into_type())
-            .ok_or_else(|| TypeError::UndefinedField(typ, type_symbol))
+        translate_projected_type(&self.environment, &mut self.symbols, id)
     }
 
     fn translate_ast_type(
@@ -1649,6 +1629,33 @@ impl<'a> Typecheck<'a> {
                     Err(err) => self.error(ast_type.span(), err),
                 }
             }
+            Type::ExtendRow {
+                ref types,
+                ref fields,
+                ref rest,
+            } => Type::extend_row(
+                types
+                    .iter()
+                    .map(|field| Field {
+                        name: field.name.clone(),
+                        typ: if let Type::Hole = **field.typ.unresolved_type() {
+                            self.find_type_info_at(field.typ.unresolved_type().span(), &field.name)
+                        } else {
+                            Alias::from(types::translate_alias(&field.typ, |typ| {
+                                self.translate_ast_type(type_cache, typ)
+                            }))
+                        },
+                    })
+                    .collect(),
+                fields
+                    .iter()
+                    .map(|field| Field {
+                        name: field.name.clone(),
+                        typ: self.translate_ast_type(type_cache, &field.typ),
+                    })
+                    .collect(),
+                self.translate_ast_type(type_cache, rest),
+            ),
             Type::Ident(ref id) if id.name().module().as_str() != "" => {
                 match self.translate_projected_type(id) {
                     Ok(typ) => typ,
@@ -1800,8 +1807,11 @@ impl<'a> Typecheck<'a> {
         }
 
         {
-            let mut check =
-                KindCheck::new(&self.environment, &self.symbols, self.kind_cache.clone());
+            let mut check = KindCheck::new(
+                &self.environment,
+                &mut self.symbols,
+                self.kind_cache.clone(),
+            );
 
             // Setup kind variables for all holes and insert the types in the
             // the type expression into the kindcheck environment
@@ -1915,8 +1925,11 @@ impl<'a> Typecheck<'a> {
 
     fn kindcheck(&mut self, typ: &mut AstType<Symbol>) {
         let result = {
-            let mut check =
-                KindCheck::new(&self.environment, &self.symbols, self.kind_cache.clone());
+            let mut check = KindCheck::new(
+                &self.environment,
+                &mut self.symbols,
+                self.kind_cache.clone(),
+            );
             check.kindcheck_type(typ)
         };
         if let Err(err) = result {
@@ -2184,14 +2197,31 @@ impl<'a> Typecheck<'a> {
                 ref fields,
                 ref rest,
             } => {
+                let new_types = types::walk_move_types(types, |field| {
+                    let typ = self
+                        .create_unifiable_signature2(field.typ.unresolved_type())
+                        .unwrap_or_else(|| field.typ.unresolved_type().clone());
+                    let alias_name = self
+                        .original_symbols
+                        .get(&field.name)
+                        .unwrap_or(&field.name)
+                        .clone();
+                    Some(Field::new(field.name.clone(), Alias::new(alias_name, typ)))
+                });
                 let new_fields = types::walk_move_types(fields, |field| {
                     self.create_unifiable_signature2(&field.typ)
                         .map(|typ| Field::new(field.name.clone(), typ))
                 });
                 let new_rest = self.create_unifiable_signature_(rest);
-                merge::merge(fields, new_fields, rest, new_rest, |fields, rest| {
-                    Type::extend_row(types.clone(), fields, rest)
-                })
+                merge::merge3(
+                    types,
+                    new_types,
+                    fields,
+                    new_fields,
+                    rest,
+                    new_rest,
+                    Type::extend_row,
+                )
             }
             Type::Forall(ref params, ref typ, _) => {
                 for param in params {
@@ -2415,6 +2445,58 @@ impl<'a> Typecheck<'a> {
                 false
             })
     }
+}
+
+pub fn translate_projected_type(
+    env: &TypeEnv,
+    symbols: &mut IdentEnv<Ident = Symbol>,
+    id: &Symbol,
+) -> TcResult<ArcType> {
+    let mut lookup_type: Option<ArcType> = None;
+    for component in id.name().module().components() {
+        let symbol = symbols.from_str(component);
+        lookup_type = match lookup_type {
+            Some(typ) => {
+                let aliased_type = resolve::remove_aliases(env, typ.clone());
+                Some(
+                    aliased_type
+                        .type_field_iter()
+                        .filter_map(|field| {
+                            if field.name.name_eq(&symbol) {
+                                Some(field.typ.clone().into_type())
+                            } else {
+                                None
+                            }
+                        })
+                        .chain(aliased_type.row_iter().filter_map(|field| {
+                            if field.name.name_eq(&symbol) {
+                                Some(field.typ.clone())
+                            } else {
+                                None
+                            }
+                        }))
+                        .next()
+                        .ok_or_else(|| TypeError::UndefinedField(typ, symbol))?,
+                )
+            }
+            None => Some(
+                env.find_type(&symbol)
+                    .cloned()
+                    .or_else(|| {
+                        env.find_type_info(&symbol)
+                            .map(|alias| alias.typ().into_owned())
+                    })
+                    .ok_or_else(|| TypeError::UndefinedVariable(symbol.clone()))?,
+            ),
+        };
+    }
+    let typ = lookup_type.unwrap();
+    let type_symbol = symbols.from_str(id.name().name().as_str());
+    resolve::remove_aliases(env, typ.clone())
+        .type_field_iter()
+        .find(|field| field.name.name_eq(&type_symbol))
+        .map(|field| field.typ.clone().into_type())
+        .ok_or_else(|| TypeError::UndefinedField(typ, type_symbol))
 }
 
 fn with_pattern_types<F>(

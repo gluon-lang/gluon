@@ -1,10 +1,10 @@
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 
 use base::ast::{Alternative, Argument, Array, AstType, Do, Expr, ExprField, Lambda, Literal, Pattern,
     PatternField, SpannedExpr, SpannedIdent, TypeBinding, TypedIdent, ValueBinding};
 use base::kind::{ArcKind, Kind};
 use base::pos::{self, BytePos, Spanned};
-use base::types::{AliasData, ArcType, ArgType, BuiltinType, Field, Generic, Type, TypeCache};
+use base::types::{Alias, AliasData, ArcType, ArgType, BuiltinType, Field, Generic, Type, TypeCache};
 use base::metadata::{Attribute, Metadata, Comment};
 
 use std::str::FromStr;
@@ -196,18 +196,62 @@ TypeParam: Generic<Id> = {
         Generic::new(id, kind),
 };
 
-RecordField: Field<Id, AstType<Id>> =
-    <comment: DocComment?> <id: Ident> ":" <typ: Sp<Type_>> =>
-        Field::new(
-            id,
-            AstType::with_comment(comment, typ),
-        );
+RecordField: Either<Field<Id, Alias<Id, AstType<Id>>>, Field<Id, AstType<Id>>> = {
+    <comment: DocComment?> <id: Sp<Ident>> <args: Ident*> <alias: ("=" <Sp<Type_>>)> => {
+        let span = id.span;
+        Either::Left(Field::new(
+            id.value.clone(),
+            Alias::from(AliasData::new(
+                id.value,
+                args.into_iter()
+                    .map(|id| Generic::new(id, type_cache.kind_cache.hole()))
+                    .collect(),
+                AstType::with_comment(comment, alias),
+            )),
+        ))
+    },
+    <comment: DocComment?> <id: Sp<Ident>> => {
+        let span = id.span;
+        Either::Left(Field::new(
+            id.value.clone(),
+            Alias::new(
+                id.value,
+                AstType::with_comment(comment, pos::spanned(span, Type::Hole)),
+            ),
+        ))
+    },
+    <comment: DocComment?> <id: Ident> ":" <typ: Sp<Type_>> => {
+        if env.string(&id).starts_with(char::is_uppercase) {
+            errors.push(::lalrpop_util::ParseError::User {
+                error: pos::spanned(typ.span, format!("Defining a kind for a type in this location is not supported yet").into()),
+            });
+            Either::Left(Field::new(
+                id.clone(),
+                Alias::new(
+                    id,
+                    AstType::with_comment(comment, typ),
+                ),
+            ))
+        } else {
+            Either::Right(Field::new(
+                id,
+                AstType::with_comment(comment, typ),
+            ))
+        }
+    },
+};
 
 VariantField: (Id, Vec<AstType<Id>>) =
     "|" <Ident> <AtomicType*> => (<>);
 
 TypeBinding: TypeBinding<Id> = {
     <id: Sp<Ident>> <params: TypeParam*> "=" <row: Sp<VariantField+>> => {
+        if !env.string(&id.value).starts_with(char::is_uppercase) {
+            errors.push(::lalrpop_util::ParseError::User {
+                error: pos::spanned(id.span, format!("A type must start with an uppercase letter").into()),
+            });
+        }
+
         let typ_args = params.iter().cloned().map(Type::generic).collect();
         let typ: AstType<Id> = Type::app(Type::ident(id.value.clone()), typ_args);
 
@@ -235,6 +279,12 @@ TypeBinding: TypeBinding<Id> = {
     },
 
     <id: Sp<Ident>> <params: TypeParam*> "=" <body: Sp<Type>> => {
+        if !env.string(&id.value).starts_with(char::is_uppercase) {
+            errors.push(::lalrpop_util::ParseError::User {
+                error: pos::spanned(id.span, format!("A type must start with an uppercase letter").into()),
+            });
+        }
+
         TypeBinding {
             metadata: Metadata::default(),
             name: id.clone(),
@@ -281,12 +331,14 @@ AtomicType_: Type<Id, AstType<Id>> = {
             _ => Type::tuple_(env, elems),
         },
 
-    "{" <row: Comma<RecordField>> "}" =>
+    "{" <row: Comma<RecordField>> "}" => {
+        let (types, fields) = row.into_iter().partition_map(|x| x);
         Type::Record(Type::extend_row(
-            vec![],
-            row,
+            types,
+            fields,
             Type::empty_row(),
-        )),
+        ))
+    },
 };
 
 AtomicType : AstType<Id> = {

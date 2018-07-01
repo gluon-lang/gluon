@@ -205,7 +205,6 @@ in g 5
 
 macro_rules! assert_match {
     ($i:expr, $p:pat => $e:expr) => {
-
         match $i {
             $p => $e,
             ref x => assert!(false, "Expected {}, found {:?}", stringify!($p), x),

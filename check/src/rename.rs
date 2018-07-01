@@ -1,5 +1,6 @@
 use base::ast::{
-    self, DisplayEnv, Do, Expr, MutVisitor, Pattern, SpannedAlias, SpannedExpr, TypedIdent,
+    self, DisplayEnv, Do, Expr, MutVisitor, Pattern, SpannedAlias, SpannedAstType, SpannedExpr,
+    TypedIdent,
 };
 use base::pos::{self, BytePos, Span};
 use base::scoped_map::ScopedMap;
@@ -195,10 +196,11 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
 
                     self.env.stack.exit_scope();
                 }
-                Expr::TypeBindings(ref bindings, _) => {
+                Expr::TypeBindings(ref mut bindings, _) => {
                     self.env.stack.enter_scope();
                     for bind in bindings {
                         self.stack_type(expr.span, &bind.alias);
+                        self.visit_alias(&mut bind.alias);
                     }
 
                     return TailCall::TailCall;
@@ -264,6 +266,19 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
             for _ in 0..i {
                 self.env.stack.exit_scope();
             }
+        }
+
+        fn visit_ast_type(&mut self, s: &'c mut SpannedAstType<Self::Ident>) {
+            if let Type::ExtendRow { ref mut types, .. } = s.value {
+                for field in types {
+                    if let Some(alias) = field.typ.try_get_alias_mut() {
+                        if let Some(new_name) = self.rename(&field.name) {
+                            alias.name = new_name;
+                        }
+                    }
+                }
+            }
+            ast::walk_mut_ast_type(self, s)
         }
     }
 

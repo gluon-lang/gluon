@@ -305,6 +305,18 @@ where
     }
 }
 
+impl<Id, T> DerefMut for Alias<Id, T>
+where
+    T: DerefMut<Target = Type<Id, T>>,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match *self._typ {
+            Type::Alias(ref mut alias) => alias,
+            _ => unreachable!(),
+        }
+    }
+}
+
 impl<Id, T> From<AliasData<Id, T>> for Alias<Id, T>
 where
     T: From<Type<Id, T>>,
@@ -416,6 +428,13 @@ pub struct AliasRef<Id, T> {
     pub group: Arc<Vec<AliasData<Id, T>>>,
 }
 
+impl<Id, T> AliasRef<Id, T> {
+    pub fn try_get_alias_mut(&mut self) -> Option<&mut AliasData<Id, T>> {
+        let index = self.index;
+        Arc::get_mut(&mut self.group).map(|group| &mut group[index])
+    }
+}
+
 impl<Id, T> AliasRef<Id, T>
 where
     T: From<Type<Id, T>> + Deref<Target = Type<Id, T>> + Clone,
@@ -476,6 +495,18 @@ pub struct AliasData<Id, T> {
     typ: T,
 }
 
+impl<Id, T> AliasData<Id, T> {
+    /// Returns the type aliased by `self` with out `Type::Ident` resolved to their actual
+    /// `Type::Alias` representation
+    pub fn unresolved_type(&self) -> &T {
+        &self.typ
+    }
+
+    pub fn unresolved_type_mut(&mut self) -> &mut T {
+        &mut self.typ
+    }
+}
+
 impl<Id, T> AliasData<Id, T>
 where
     T: From<Type<Id, T>>,
@@ -485,16 +516,6 @@ where
             name: name,
             typ: Type::forall(args, typ),
         }
-    }
-
-    /// Returns the type aliased by `self` with out `Type::Ident` resolved to their actual
-    /// `Type::Alias` representation
-    pub fn unresolved_type(&self) -> &T {
-        &self.typ
-    }
-
-    pub fn unresolved_type_mut(&mut self) -> &mut T {
-        &mut self.typ
     }
 }
 
@@ -1933,11 +1954,14 @@ where
                 let f = chain![arena;
                     field.name.as_ref(),
                     arena.space(),
+                    arena.concat(field.typ.params().iter().map(|param| {
+                        arena.text(param.id.as_ref()).append(arena.space())
+                    })),
                     arena.text("= "),
                     if filter == Filter::RetainKey {
                         arena.text("...")
                     } else {
-                         top(&field.typ.typ).pretty(printer)
+                         top(remove_forall(&field.typ.typ)).pretty(printer)
                     },
                     if i + 1 != types.len() || print_any_field {
                         arena.text(",")
@@ -2132,11 +2156,16 @@ where
         }
         Type::Record(ref mut row) | Type::Variant(ref mut row) => f.walk_mut(row),
         Type::ExtendRow {
-            // Can't visit types mutably as they are always shared
-            types: _,
+            ref mut types,
             ref mut fields,
             ref mut rest,
         } => {
+            for field in types {
+                if let Some(alias) = field.typ.try_get_alias_mut() {
+                    let field_type = alias.unresolved_type_mut();
+                    f.walk_mut(field_type);
+                }
+            }
             for field in fields {
                 f.walk_mut(&mut field.typ);
             }

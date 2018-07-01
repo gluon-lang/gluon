@@ -651,20 +651,26 @@ pub fn walk_mut_ast_type<'a, V: ?Sized + MutVisitor<'a>>(
         Type::Variant(ref mut ast_type) => v.visit_ast_type(&mut ast_type._typ.1),
         Type::EmptyRow => (),
         Type::ExtendRow {
-            types: _,
+            ref mut types,
             ref mut fields,
             ref mut rest,
         } => {
-            for field in fields.iter_mut() {
+            for field in types {
+                if let Some(alias) = field.typ.try_get_alias_mut() {
+                    v.visit_ast_type(&mut alias.unresolved_type_mut()._typ.1);
+                }
+            }
+            for field in fields {
                 v.visit_ast_type(&mut field.typ._typ.1);
             }
             v.visit_ast_type(&mut rest._typ.1);
         }
-        Type::Ident(_)
-        | Type::Variable(_)
-        | Type::Generic(_)
-        | Type::Alias(_)
-        | Type::Skolem(_) => (),
+        Type::Alias(ref mut alias) => {
+            if let Some(alias) = alias.try_get_alias_mut() {
+                v.visit_ast_type(&mut alias.unresolved_type_mut()._typ.1);
+            }
+        }
+        Type::Ident(_) | Type::Variable(_) | Type::Generic(_) | Type::Skolem(_) => (),
     }
 }
 

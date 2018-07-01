@@ -155,6 +155,11 @@ quick_error! {
             display("{}", err)
             from()
         }
+        Message(msg: String) {
+            description(msg)
+            display("{}", msg)
+            from()
+        }
     }
 }
 
@@ -299,7 +304,7 @@ macro_rules! layout {
     ($result_ok_iter:ident, $input:expr) => {{
         let tokenizer = Tokenizer::new($input);
         $result_ok_iter = RefCell::new(ResultOkIter::new(tokenizer));
-    
+
         Layout::new(SharedIter::new(&$result_ok_iter)).map(|token| {
             // Return the tokenizer error if one exists
             $result_ok_iter.borrow_mut().result(()).map_err(|err| {
@@ -460,10 +465,7 @@ where
     match result {
         Ok(repl_line) => {
             if parse_errors.has_errors() {
-                Err((
-                    repl_line,
-                    transform_errors(input.span(), parse_errors),
-                ))
+                Err((repl_line, transform_errors(input.span(), parse_errors)))
             } else {
                 Ok(repl_line)
             }

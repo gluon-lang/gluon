@@ -349,7 +349,6 @@ where
 
                 macro_rules! try_infix {
                     ($expr:expr) => {
-
                         match $expr {
                             Ok(e) => e,
                             Err(err) => {
@@ -363,7 +362,7 @@ where
                                     let rhs = arg_stack.pop().unwrap();
                                     let lhs = arg_stack.pop().unwrap();
                                     let op = op_stack.pop().unwrap();
-                        
+
                                     arg_stack.push(make_op(lhs, op, rhs));
                                 }
                                 return Err((
