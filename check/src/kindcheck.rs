@@ -2,11 +2,12 @@ use std::fmt;
 use std::result::Result as StdResult;
 
 use base::ast::{self, AstType};
-use base::kind::{self, ArcKind, Kind, KindCache, KindEnv};
+use base::kind::{self, ArcKind, Kind, KindCache};
 use base::merge;
 use base::pos::{self, BytePos, HasSpan, Span, Spanned};
+use base::resolve;
 use base::symbol::Symbol;
-use base::types::{self, BuiltinType, Generic, Type, Walker};
+use base::types::{self, ArcType, BuiltinType, Generic, Type, TypeEnv, Walker};
 
 use substitution::{Substitutable, Substitution};
 use unify::{self, Error as UnifyError, Unifiable, Unifier, UnifierState};
@@ -21,8 +22,8 @@ pub struct KindCheck<'a> {
     variables: Vec<Generic<Symbol>>,
     /// Type bindings local to the current kindcheck invocation
     locals: Vec<(Symbol, ArcKind)>,
-    info: &'a (KindEnv + 'a),
-    idents: &'a (ast::IdentEnv<Ident = Symbol> + 'a),
+    info: &'a (TypeEnv + 'a),
+    idents: &'a mut (ast::IdentEnv<Ident = Symbol> + 'a),
     pub subs: Substitution<ArcKind>,
     kind_cache: KindCache,
     /// A cached one argument kind function, `Type -> Type`
@@ -61,8 +62,8 @@ where
 
 impl<'a> KindCheck<'a> {
     pub fn new(
-        info: &'a (KindEnv + 'a),
-        idents: &'a (ast::IdentEnv<Ident = Symbol> + 'a),
+        info: &'a (TypeEnv + 'a),
+        idents: &'a mut (ast::IdentEnv<Ident = Symbol> + 'a),
         kind_cache: KindCache,
     ) -> KindCheck<'a> {
         let typ = kind_cache.typ();
@@ -130,8 +131,12 @@ impl<'a> KindCheck<'a> {
             .or_else(|| self.info.find_kind(id))
             .map_or_else(
                 || {
-                    let id_str = self.idents.string(id);
-                    if id_str.starts_with(char::is_uppercase) {
+                    if self.idents.string(id).contains('.') {
+                        Ok(self.translate_projected_type(id).unwrap_or_else(|_| {
+                            // Errors get reported in typecheck as well so ignore them here
+                            self.subs.new_var()
+                        }))
+                    } else if self.idents.string(id).starts_with(char::is_uppercase) {
                         Err(UnifyError::Other(KindError::UndefinedType(id.clone())))
                     } else {
                         // Create a new variable
@@ -147,6 +152,39 @@ impl<'a> KindCheck<'a> {
         }
 
         kind.map_err(|err| pos::spanned(span, err))
+    }
+
+    fn translate_projected_type(&mut self, id: &Symbol) -> StdResult<ArcKind, KindError<Symbol>> {
+        let mut lookup_type: Option<ArcType> = None;
+        for component in id.name().module().components() {
+            let symbol = self.idents.from_str(component);
+            lookup_type = match lookup_type {
+                Some(typ) => Some(
+                    self.remove_aliases(typ.clone())
+                        .row_iter()
+                        .find(|field| field.name.name_eq(&symbol))
+                        .map(|field| field.typ.clone())
+                        .ok_or_else(|| KindError::UndefinedField(typ, symbol))?,
+                ),
+                None => Some(
+                    self.info
+                        .find_type(&symbol)
+                        .cloned()
+                        .ok_or_else(|| KindError::UndefinedType(symbol))?,
+                ),
+            };
+        }
+        let typ = lookup_type.unwrap();
+        let type_symbol = self.idents.from_str(id.name().name().as_str());
+        self.remove_aliases(typ.clone())
+            .type_field_iter()
+            .find(|field| field.name.name_eq(&type_symbol))
+            .map(|field| field.typ.kind().into_owned())
+            .ok_or_else(|| KindError::UndefinedField(typ, type_symbol))
+    }
+
+    fn remove_aliases(&self, typ: ArcType) -> ArcType {
+        resolve::remove_aliases(self.info, typ)
     }
 
     // Kindhecks `typ`, infering it to be of kind `Type`
@@ -347,22 +385,26 @@ fn update_kind(subs: &Substitution<ArcKind>, kind: ArcKind, default: Option<&Arc
 pub enum KindError<I> {
     /// The type is not defined in the current scope
     UndefinedType(I),
+    UndefinedField(ArcType<I>, I),
 }
 
 impl<I> fmt::Display for KindError<I>
 where
-    I: fmt::Display,
+    I: fmt::Display + AsRef<str>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             KindError::UndefinedType(ref name) => write!(f, "Type '{}' is not defined", name),
+            KindError::UndefinedField(ref typ, ref name) => {
+                write!(f, "Type '{}' does not have the field '{}'", typ, name)
+            }
         }
     }
 }
 
 pub fn fmt_kind_error<I>(error: &Error<I>, f: &mut fmt::Formatter) -> fmt::Result
 where
-    I: fmt::Display,
+    I: fmt::Display + AsRef<str>,
 {
     use unify::Error::*;
     match *error {

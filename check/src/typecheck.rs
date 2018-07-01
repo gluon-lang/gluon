@@ -69,6 +69,9 @@ impl<I> From<KindCheckError<I>> for TypeError<I> {
     fn from(e: KindCheckError<I>) -> Self {
         match e {
             UnifyError::Other(KindError::UndefinedType(name)) => TypeError::UndefinedType(name),
+            UnifyError::Other(KindError::UndefinedField(typ, name)) => {
+                TypeError::UndefinedField(typ, name)
+            }
             e => TypeError::KindError(e),
         }
     }
@@ -1824,8 +1827,11 @@ impl<'a> Typecheck<'a> {
         }
 
         {
-            let mut check =
-                KindCheck::new(&self.environment, &self.symbols, self.kind_cache.clone());
+            let mut check = KindCheck::new(
+                &self.environment,
+                &mut self.symbols,
+                self.kind_cache.clone(),
+            );
 
             // Setup kind variables for all holes and insert the types in the
             // the type expression into the kindcheck environment
@@ -1939,8 +1945,11 @@ impl<'a> Typecheck<'a> {
 
     fn kindcheck(&mut self, typ: &mut AstType<Symbol>) {
         let result = {
-            let mut check =
-                KindCheck::new(&self.environment, &self.symbols, self.kind_cache.clone());
+            let mut check = KindCheck::new(
+                &self.environment,
+                &mut self.symbols,
+                self.kind_cache.clone(),
+            );
             check.kindcheck_type(typ)
         };
         if let Err(err) = result {
