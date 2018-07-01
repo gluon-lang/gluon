@@ -341,6 +341,8 @@ module.id module.pi
 
 ## Typesystem
 
+In gluon, identifiers starting with an uppercase letter is a type whereas identifiers starting with a lowercase letter are type variables. 
+
 ### Function types
 
 ```
@@ -352,8 +354,22 @@ Function types are written using the `(->)` operator, which is right associative
 ### Record type
 
 ```
-{ (<identifier> <identifier>* = <type>,)* (<identifier> : <type>,)* }
-{ pi : Float, sin : Float -> Float }
+type_identifier := [A-Z][A-Za-z_0-9]*
+variable_identifier := [a-z][A-Za-z_0-9]*
+
+field := <type_identifier> <variable_identifier>* = <type>
+       | <type_identifier>
+       | <variable_identifier> : <type>
+
+record_type := { (field,)* }
+
+// Example
+{
+    Float,
+    BinaryOp = Float -> Float -> Float,
+    pi : Float,
+    sin : Float -> Float
+}
 ```
 
 Records are Gluon's main way of creating associating related data and they should look quite familiar if you are familiar with dynamic languages such as javascript. Looks can be deceiving however as gluon's records are more similar to a struct in Rust or C as the order of the fields are significant, `{ x : Int, y : String } != { y : String, x : Int }`. Furthermore, records are immutable, meaning fields cannot be added nor removed and the values within cannot be modified.
