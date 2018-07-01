@@ -1954,11 +1954,14 @@ where
                 let f = chain![arena;
                     field.name.as_ref(),
                     arena.space(),
+                    arena.concat(field.typ.params().iter().map(|param| {
+                        arena.text(param.id.as_ref()).append(arena.space())
+                    })),
                     arena.text("= "),
                     if filter == Filter::RetainKey {
                         arena.text("...")
                     } else {
-                         top(&field.typ.typ).pretty(printer)
+                         top(remove_forall(&field.typ.typ)).pretty(printer)
                     },
                     if i + 1 != types.len() || print_any_field {
                         arena.text(",")

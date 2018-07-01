@@ -382,7 +382,7 @@ mod tests {
         assert_eq!(type_for(&record!(type Test => i32)), "{ Test = Int }");
         assert_eq!(
             type_for(&record!(type Pair a b => (A, B))),
-            "{ Pair = forall a b . (a, b) }"
+            "{ Pair a b = (a, b) }"
         );
     }
 }

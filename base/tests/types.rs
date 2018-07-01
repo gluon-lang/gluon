@@ -83,7 +83,7 @@ fn show_record_singleton_polymorphic() {
         )],
         vec![],
     );
-    assert_eq_display!(format!("{}", typ), "{ Test = forall a . a -> String }");
+    assert_eq_display!(format!("{}", typ), "{ Test a = a -> String }");
 }
 
 #[test]
@@ -100,23 +100,24 @@ fn show_record_multifield() {
         )],
         vec![Field::new("x", Type::int())],
     );
-    assert_eq_display!(
-        format!("{}", typ),
-        "{ Test = forall a . a -> String, x : Int }"
-    );
+    assert_eq_display!(format!("{}", typ), "{ Test a = a -> String, x : Int }");
 }
 #[test]
 fn show_record_multiline() {
     let data = |s, a| ArcType::from(type_con(s, a));
-    let fun = Type::function(vec![data("a", vec![])], Type::string());
+    let fun = Type::function(
+        vec![data("a", vec![]), data("a", vec![]), data("a", vec![])],
+        Type::string(),
+    );
     let test = data("Test", vec![data("a", vec![])]);
     let record = Type::record(
         vec![Field::new(
             "Test",
-            Alias::new(
+            Alias::from(AliasData::new(
                 "Test",
-                Type::forall(vec![Generic::new("a", Kind::typ())], fun.clone()),
-            ),
+                vec![Generic::new("a", Kind::typ())],
+                fun.clone(),
+            )),
         )],
         vec![
             Field::new("x", Type::int()),
@@ -131,7 +132,7 @@ fn show_record_multiline() {
     assert_eq_display!(
         format!("{}", record),
         r#"{
-    Test = forall a . a -> String,
+    Test a = a -> a -> a -> String,
     x : Int,
     test : Test a,
     (+) : Int -> Int -> Int
@@ -241,7 +242,7 @@ fn show_record_multi_line_nested() {
         ],
     );
     let expected = r#"{
-    Test = forall a . a -> String,
+    Test a = a -> String,
     x : Int,
     test : Test Int (a -> String)
             -> Float
@@ -250,7 +251,7 @@ fn show_record_multi_line_nested() {
             -> a
             -> String,
     record_looooooooooooooooooooooooooooooooooong : {
-        Test = forall a . a -> String,
+        Test a = a -> String,
         x : Int,
         test : Test a,
         (+) : Int -> Int -> Int
@@ -295,7 +296,7 @@ fn show_polymorphic_record_associated_type() {
         ),
     )];
     let typ: ArcType<&str> = Type::poly_record(type_fields, vec![], Type::ident("r"));
-    assert_eq_display!(format!("{}", typ), "{ Test = forall a . a | r }");
+    assert_eq_display!(format!("{}", typ), "{ Test a = a | r }");
 }
 
 #[test]
