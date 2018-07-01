@@ -346,3 +346,12 @@ fn missing_close_paren() {
     let span = pos::span(BytePos::from(35), BytePos::from(35));
     assert_eq!(err, ParseErrors::from(vec![pos::spanned(span, error)]));
 }
+
+#[test]
+fn invalid_case() {
+    let _ = env_logger::try_init();
+
+    assert!(parse(r#"type X = { Test : Type } in ()"#).is_err());
+    assert!(parse(r#"type x = { } in ()"#).is_err());
+    assert!(parse(r#"type x = | Test in ()"#).is_err());
+}

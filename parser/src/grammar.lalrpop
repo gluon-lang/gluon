@@ -220,11 +220,25 @@ RecordField: Either<Field<Id, Alias<Id, AstType<Id>>>, Field<Id, AstType<Id>>> =
             ),
         ))
     },
-    <comment: DocComment?> <id: Ident> ":" <typ: Sp<Type_>> =>
-        Either::Right(Field::new(
-            id,
-            AstType::with_comment(comment, typ),
-        )),
+    <comment: DocComment?> <id: Ident> ":" <typ: Sp<Type_>> => {
+        if env.string(&id).starts_with(char::is_uppercase) {
+            errors.push(::lalrpop_util::ParseError::User {
+                error: pos::spanned(typ.span, format!("Defining a kind for a type in this location is not supported yet").into()),
+            });
+            Either::Left(Field::new(
+                id.clone(),
+                Alias::new(
+                    id,
+                    AstType::with_comment(comment, typ),
+                ),
+            ))
+        } else {
+            Either::Right(Field::new(
+                id,
+                AstType::with_comment(comment, typ),
+            ))
+        }
+    },
 };
 
 VariantField: (Id, Vec<AstType<Id>>) =
@@ -232,6 +246,12 @@ VariantField: (Id, Vec<AstType<Id>>) =
 
 TypeBinding: TypeBinding<Id> = {
     <id: Sp<Ident>> <params: TypeParam*> "=" <row: Sp<VariantField+>> => {
+        if !env.string(&id.value).starts_with(char::is_uppercase) {
+            errors.push(::lalrpop_util::ParseError::User {
+                error: pos::spanned(id.span, format!("A type must start with an uppercase letter").into()),
+            });
+        }
+
         let typ_args = params.iter().cloned().map(Type::generic).collect();
         let typ: AstType<Id> = Type::app(Type::ident(id.value.clone()), typ_args);
 
@@ -259,6 +279,12 @@ TypeBinding: TypeBinding<Id> = {
     },
 
     <id: Sp<Ident>> <params: TypeParam*> "=" <body: Sp<Type>> => {
+        if !env.string(&id.value).starts_with(char::is_uppercase) {
+            errors.push(::lalrpop_util::ParseError::User {
+                error: pos::spanned(id.span, format!("A type must start with an uppercase letter").into()),
+            });
+        }
+
         TypeBinding {
             metadata: Metadata::default(),
             name: id.clone(),
