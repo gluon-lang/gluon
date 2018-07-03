@@ -42,7 +42,7 @@ pub fn pretty_expr(input: &str, expr: &SpannedExpr<Symbol>) -> String {
     };
 
     let source = codespan::FileMap::new("test".into(), input.into());
-    let arena = pretty::Arena::new();
+    let arena = pretty::Arena::<()>::new();
     let printer = pretty_print::Printer::new(&arena, &source);
     printer.format(100, newline, &expr)
 }
