@@ -1,5 +1,6 @@
 extern crate gluon;
 extern crate gluon_doc as doc;
+extern crate handlebars;
 
 use gluon::check::metadata::metadata;
 use gluon::{Compiler, RootedThread};
@@ -23,7 +24,7 @@ let test x = x
         .unwrap();
     let (meta, _) = metadata(&*vm.get_env(), &expr);
 
-    let out = doc::record(&typ, &meta);
+    let out = doc::record("basic", &typ, &meta);
     assert_eq!(
         out,
         doc::Record {
@@ -34,7 +35,7 @@ let test x = x
                     implicit: false,
                     name: "x".to_string(),
                 }],
-                typ: "forall a . a -> a".to_string(),
+                typ: handlebars::html_escape("forall a . a -> a"),
                 comment: "This is the test function".to_string(),
             }],
         }

@@ -76,29 +76,32 @@ impl From<bool> for Filter {
     }
 }
 
-pub struct TypeFormatter<'a, I, T>
+pub struct TypeFormatter<'a, I, T, A>
 where
     I: 'a,
     T: 'a,
+    A: 'a,
 {
     width: usize,
     typ: &'a T,
     filter: &'a Fn(&I) -> Filter,
+    annotate_symbol: &'a Fn(&I) -> Option<A>,
     _marker: PhantomData<I>,
 }
 
-impl<'a, I, T> TypeFormatter<'a, I, T> {
+impl<'a, I, T, A> TypeFormatter<'a, I, T, A> {
     pub fn new(typ: &'a T) -> Self {
         TypeFormatter {
             width: 80,
             typ: typ,
             filter: &|_| Filter::Retain,
+            annotate_symbol: &|_| None,
             _marker: PhantomData,
         }
     }
 }
 
-impl<'a, I, T> TypeFormatter<'a, I, T> {
+impl<'a, I, T, A> TypeFormatter<'a, I, T, A> {
     pub fn width(mut self, width: usize) -> Self {
         self.width = width;
         self
@@ -109,7 +112,12 @@ impl<'a, I, T> TypeFormatter<'a, I, T> {
         self
     }
 
-    pub fn pretty<A>(&self, arena: &'a Arena<'a, A>) -> DocBuilder<'a, Arena<'a, A>, A>
+    pub fn annotate_symbol(mut self, annotate_symbol: &'a Fn(&I) -> Option<A>) -> Self {
+        self.annotate_symbol = annotate_symbol;
+        self
+    }
+
+    pub fn pretty(&self, arena: &'a Arena<'a, A>) -> DocBuilder<'a, Arena<'a, A>, A>
     where
         T: Deref<Target = Type<I, T>> + HasSpan + Commented + 'a,
         I: AsRef<str>,
@@ -120,19 +128,21 @@ impl<'a, I, T> TypeFormatter<'a, I, T> {
             arena,
             source: &(),
             filter: self.filter,
+            annotate_symbol: self.annotate_symbol,
         })
     }
 
-    pub fn build<A>(&self, arena: &'a Arena<'a, A>, source: &'a Source) -> Printer<'a, I, A> {
+    pub fn build(&self, arena: &'a Arena<'a, A>, source: &'a Source) -> Printer<'a, I, A> {
         Printer {
             arena,
             source,
             filter: self.filter,
+            annotate_symbol: self.annotate_symbol,
         }
     }
 }
 
-impl<'a, I, T> fmt::Display for TypeFormatter<'a, I, T>
+impl<'a, I, T> fmt::Display for TypeFormatter<'a, I, T, ()>
 where
     T: Deref<Target = Type<I, T>> + HasSpan + Commented + 'a,
     I: AsRef<str>,
@@ -156,6 +166,7 @@ pub struct Printer<'a, I: 'a, A: 'a> {
     pub arena: &'a Arena<'a, A>,
     pub source: &'a Source,
     filter: &'a Fn(&I) -> Filter,
+    annotate_symbol: &'a Fn(&I) -> Option<A>,
 }
 
 impl<'a, I, A> Printer<'a, I, A> {
@@ -164,11 +175,23 @@ impl<'a, I, A> Printer<'a, I, A> {
             arena,
             source,
             filter: &|_| Filter::Retain,
+            annotate_symbol: &|_| None,
         }
     }
 
     pub fn filter(&self, field: &I) -> Filter {
         (self.filter)(field)
+    }
+
+    pub fn symbol(&self, symbol: &'a I) -> DocBuilder<'a, Arena<'a, A>, A>
+    where
+        I: AsRef<str>,
+    {
+        let doc = self.arena.text(symbol.as_ref());
+        match (self.annotate_symbol)(symbol) {
+            Some(ann) => doc.annotate(ann),
+            None => doc,
+        }
     }
 
     pub fn space_before(&self, pos: BytePos) -> DocBuilder<'a, Arena<'a, A>, A> {

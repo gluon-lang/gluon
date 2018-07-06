@@ -1275,7 +1275,7 @@ impl<Id> ArcType<Id> {
         top(self).pretty(&Printer::new(arena, &()))
     }
 
-    pub fn display(&self, width: usize) -> TypeFormatter<Id, Self> {
+    pub fn display<A>(&self, width: usize) -> TypeFormatter<Id, Self, A> {
         TypeFormatter::new(self).width(width)
     }
 }
@@ -1907,8 +1907,8 @@ where
             // This should not be displayed normally as it should only exist in `ExtendRow`
             // which handles `EmptyRow` explicitly
             Type::EmptyRow => arena.text("EmptyRow"),
-            Type::Ident(ref id) => arena.text(id.as_ref()),
-            Type::Alias(ref alias) => arena.text(alias.name.as_ref()),
+            Type::Ident(ref id) => printer.symbol(id),
+            Type::Alias(ref alias) => printer.symbol(&alias.name),
         };
         match **typ {
             Type::App(..) | Type::ExtendRow { .. } | Type::Variant(..) | Type::Function(..) => doc,
