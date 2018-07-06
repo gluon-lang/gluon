@@ -1,5 +1,5 @@
 //! Rust type to gluon type conversion
-//! 
+//!
 //! _This module requires Gluon to be built with the `serde` feature._
 
 use base::symbol::{Symbol, Symbols};
@@ -44,7 +44,10 @@ type {0} = {1}
 {{ {0} }}
 "#,
         name,
-        typ.pretty(&::pretty::Arena::new()).nest(4).1.pretty(80)
+        typ.pretty(&::pretty::Arena::<()>::new())
+            .nest(4)
+            .1
+            .pretty(80)
     ))
 }
 

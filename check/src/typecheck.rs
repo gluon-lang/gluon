@@ -93,7 +93,7 @@ impl<I: fmt::Display + AsRef<str> + Clone> fmt::Display for TypeError<I> {
             UndefinedField(ref typ, ref field) => {
                 let fields = [field.clone()];
                 let filter = unify_type::similarity_filter(typ, &fields);
-                let arena = Arena::new();
+                let arena = Arena::<()>::new();
                 write!(
                     f,
                     "Type `{}` does not have the field `{}`",
@@ -131,7 +131,7 @@ impl<I: fmt::Display + AsRef<str> + Clone> fmt::Display for TypeError<I> {
                     }
                 };
 
-                let arena = Arena::new();
+                let arena = Arena::<()>::new();
                 let types = chain![&arena;
                     "Expected:",
                     chain![&arena;

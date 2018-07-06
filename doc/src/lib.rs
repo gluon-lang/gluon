@@ -24,12 +24,13 @@ extern crate gluon;
 use std::fs::{create_dir_all, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
+use std::result::Result as StdResult;
 
 use failure::ResultExt;
 
 use itertools::Itertools;
 
-use handlebars::{Handlebars, Helper, Output, RenderContext, RenderError};
+use handlebars::{Context, Handlebars, Helper, Output, RenderContext, RenderError};
 
 use serde::Deserialize;
 
@@ -37,6 +38,7 @@ use pretty::{Arena, DocAllocator};
 
 use gluon::base::filename_to_module;
 use gluon::base::metadata::Metadata;
+use gluon::base::symbol::Symbol;
 use gluon::base::types::{ArcType, ArgType, Type};
 use gluon::check::metadata::metadata;
 use gluon::{Compiler, Thread};
@@ -72,9 +74,54 @@ pub struct Field {
     pub comment: String,
 }
 
-fn print_type(typ: &ArcType) -> String {
+struct SymbolLinkRenderer {
+    escaped: String,
+    un_escaped: String,
+}
+
+impl SymbolLinkRenderer {
+    fn flush_to_escaped(&mut self) {
+        self.escaped
+            .push_str(&handlebars::html_escape(&self.un_escaped));
+        self.un_escaped.clear();
+    }
+    fn finish(mut self) -> String {
+        self.escaped
+            .push_str(&handlebars::html_escape(&self.un_escaped));
+        self.escaped
+    }
+}
+
+impl pretty::Render for SymbolLinkRenderer {
+    type Error = ();
+    fn write_str(&mut self, s: &str) -> StdResult<usize, Self::Error> {
+        self.un_escaped.push_str(s);
+        Ok(s.len())
+    }
+}
+
+impl pretty::RenderAnnotated<String> for SymbolLinkRenderer {
+    fn push_annotation(&mut self, annotation: &String) -> StdResult<(), Self::Error> {
+        self.flush_to_escaped();
+        self.escaped
+            .push_str(&format!(r#"<a href="{}">"#, annotation));
+        Ok(())
+    }
+    fn pop_annotation(&mut self) -> StdResult<(), Self::Error> {
+        self.flush_to_escaped();
+        self.escaped.push_str("</a>");
+        Ok(())
+    }
+}
+
+fn print_type(current_module: &str, typ: &ArcType) -> String {
+    let annotate_symbol =
+        |symbol: &Symbol| Some(symbol_link(false, current_module, symbol.as_ref()));
     let arena = Arena::new();
-    let mut doc = typ.pretty(&arena);
+    let mut doc = typ
+        .display(80)
+        .annotate_symbol(&annotate_symbol)
+        .pretty(&arena);
     match **typ {
         Type::Record(_) => (),
         Type::Variant(_) => doc = arena.newline().append(doc).nest(4),
@@ -82,10 +129,16 @@ fn print_type(typ: &ArcType) -> String {
             doc = doc.nest(4);
         }
     }
-    doc.group().1.pretty(80).to_string()
+
+    let mut renderer = SymbolLinkRenderer {
+        un_escaped: String::new(),
+        escaped: String::new(),
+    };
+    doc.group().1.render_raw(80, &mut renderer).unwrap();
+    renderer.finish()
 }
 
-pub fn record(typ: &ArcType, meta: &Metadata) -> Record {
+pub fn record(current_module: &str, typ: &ArcType, meta: &Metadata) -> Record {
     Record {
         types: typ
             .type_field_iter()
@@ -100,7 +153,7 @@ pub fn record(typ: &ArcType, meta: &Metadata) -> Record {
                         name: gen.id.to_string(),
                     })
                     .collect(),
-                typ: print_type(&field.typ.unresolved_type().remove_forall()),
+                typ: print_type(current_module, &field.typ.unresolved_type().remove_forall()),
                 comment: meta
                     .module
                     .get(AsRef::<str>::as_ref(&field.name))
@@ -127,7 +180,7 @@ pub fn record(typ: &ArcType, meta: &Metadata) -> Record {
                                 .collect()
                         })
                         .unwrap_or_default(),
-                    typ: print_type(&field.typ),
+                    typ: print_type(current_module, &field.typ),
 
                     comment: meta_opt
                         .and_then(|meta| meta.comment.as_ref().map(|s| &s.content[..]))
@@ -150,45 +203,63 @@ pub struct TemplateModule<'a> {
 const INDEX_TEMPLATE: &str = "index";
 const MODULE_TEMPLATE: &str = "module";
 
+fn symbol_link(index: bool, current_module: &str, param: &str) -> String {
+    let skipped = if index { 0 } else { 1 };
+
+    let parts: Vec<_> = param.split('.').collect();
+    let (typ, module_parts) = parts.split_last().unwrap();
+
+    format!(
+        "{}{}.html#type.{}",
+        current_module
+            .split('.')
+            .skip(skipped)
+            .map(|_| "../")
+            .format(""),
+        module_parts.iter().format("/"),
+        typ
+    )
+}
+
+fn module_link(index: bool, current_module: &str, param: &str) -> String {
+    let skipped = if index { 0 } else { 1 };
+    format!(
+        "{}{}.html",
+        current_module
+            .split('.')
+            .skip(skipped)
+            .map(|_| "../")
+            .format(""),
+        param.replace(".", "/")
+    )
+}
+
 fn handlebars() -> Result<Handlebars> {
     let mut reg = Handlebars::new();
 
     reg.register_template_string(INDEX_TEMPLATE, include_str!("doc/index.html"))?;
     reg.register_template_string(MODULE_TEMPLATE, include_str!("doc/module.html"))?;
 
-    fn symbol_link(
+    fn module_link_helper(
         h: &Helper,
         _: &Handlebars,
+        context: &Context,
         rc: &mut RenderContext,
         out: &mut Output,
     ) -> ::std::result::Result<(), RenderError> {
-        let current_module = &rc.context().data()["name"]
-            .as_str()
-            .expect("name")
-            .to_string();
+        let current_module = &context.data()["name"].as_str().expect("name").to_string();
 
         let param = String::deserialize(h.param(0).unwrap().value())?;
-        let skipped = if rc.get_root_template_name().map(|s| &s[..]) == Some(INDEX_TEMPLATE) {
-            0
-        } else {
-            1
-        };
-        out.write(&format!(
-            "{}{}.html",
-            current_module
-                .split('.')
-                .skip(skipped)
-                .map(|_| "../")
-                .format(""),
-            param.replace(".", "/")
-        ))?;
+        let index = rc.get_root_template_name().map(|s| &s[..]) == Some(INDEX_TEMPLATE);
+        out.write(&module_link(index, current_module, &param))?;
         Ok(())
     }
-    reg.register_helper("symbol_link", Box::new(symbol_link));
+    reg.register_helper("module_link", Box::new(module_link_helper));
 
     fn breadcrumbs(
         h: &Helper,
         _: &Handlebars,
+        _: &Context,
         _: &mut RenderContext,
         out: &mut Output,
     ) -> ::std::result::Result<(), RenderError> {
@@ -217,13 +288,11 @@ fn handlebars() -> Result<Handlebars> {
     fn style(
         _: &Helper,
         _: &Handlebars,
-        rc: &mut RenderContext,
+        context: &Context,
+        _: &mut RenderContext,
         out: &mut Output,
     ) -> ::std::result::Result<(), RenderError> {
-        let current_module = &rc.context().data()["name"]
-            .as_str()
-            .expect("name")
-            .to_string();
+        let current_module = &context.data()["name"].as_str().expect("name").to_string();
         let relative_path = current_module.split('.').map(|_| "../").format("");
 
         out.write(&format!(r#"
@@ -237,6 +306,7 @@ fn handlebars() -> Result<Handlebars> {
     fn markdown(
         h: &Helper,
         _: &Handlebars,
+        _: &Context,
         _: &mut RenderContext,
         out: &mut Output,
     ) -> ::std::result::Result<(), RenderError> {
@@ -268,6 +338,7 @@ fn handlebars() -> Result<Handlebars> {
     fn markdown_first_paragraph(
         h: &Helper,
         _: &Handlebars,
+        _: &Context,
         _: &mut RenderContext,
         out: &mut Output,
     ) -> ::std::result::Result<(), RenderError> {
@@ -359,9 +430,9 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
             .to_string();
 
         let module = Module {
+            record: record(&name, &typ, &meta),
             name,
             comment,
-            record: record(&typ, &meta),
         };
 
         directories

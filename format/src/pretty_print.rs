@@ -2,7 +2,7 @@ use std::{iter, ops};
 
 use codespan::{ByteOffset, RawOffset};
 use itertools::{Either, Itertools};
-use pretty::{Arena, DocAllocator, DocBuilder};
+use pretty::{Arena, Doc, DocAllocator, DocBuilder};
 
 use self::types::pretty_print as pretty_types;
 use base::ast::{Do, Expr, Pattern, SpannedExpr, SpannedPattern, ValueBinding};
@@ -16,7 +16,6 @@ const INDENT: usize = 4;
 
 macro_rules! newlines_iter {
     ($self_:ident, $iterable:expr) => {
-
         $iterable
             .into_iter()
             .tuple_windows()
@@ -26,7 +25,6 @@ macro_rules! newlines_iter {
 
 macro_rules! rev_newlines_iter {
     ($self_:ident, $iterable:expr) => {
-
         $iterable
             .into_iter()
             .tuple_windows()
@@ -34,26 +32,39 @@ macro_rules! rev_newlines_iter {
     };
 }
 
-pub(super) struct Printer<'a, I: 'a> {
-    printer: pretty_types::Printer<'a, I>,
+fn is_newline<'a, A>(doc: &DocBuilder<'a, Arena<'a, A>, A>) -> bool {
+    if let Doc::Newline = doc.1 {
+        true
+    } else {
+        false
+    }
+}
+fn is_nil<'a, A>(doc: &DocBuilder<'a, Arena<'a, A>, A>) -> bool {
+    if let Doc::Nil = doc.1 {
+        true
+    } else {
+        false
+    }
 }
 
-impl<'a, I> Printer<'a, I>
+pub(super) struct Printer<'a, I: 'a, A: 'a> {
+    printer: pretty_types::Printer<'a, I, A>,
+}
+
+impl<'a, I, A> Printer<'a, I, A>
 where
     I: AsRef<str>,
 {
-    pub(super) fn new(arena: &'a Arena<'a>, source: &'a source::Source) -> Self {
+    pub(super) fn new(arena: &'a Arena<'a, A>, source: &'a source::Source) -> Self {
         Printer {
             printer: pretty_types::Printer::new(arena, source),
         }
     }
 
-    pub(super) fn format(
-        &self,
-        width: usize,
-        newline: &'a str,
-        expr: &'a SpannedExpr<I>,
-    ) -> String {
+    pub(super) fn format(&self, width: usize, newline: &'a str, expr: &'a SpannedExpr<I>) -> String
+    where
+        A: Clone,
+    {
         self.pretty_expr(expr)
             .1
             .pretty(width)
@@ -63,12 +74,21 @@ where
             .collect()
     }
 
-    fn pretty_expr(&self, expr: &'a SpannedExpr<I>) -> DocBuilder<'a, Arena<'a>> {
+    fn pretty_expr(&self, expr: &'a SpannedExpr<I>) -> DocBuilder<'a, Arena<'a, A>, A>
+    where
+        A: Clone,
+    {
         self.pretty_expr_with_shebang_line(expr)
             .append(self.comments(Span::new(expr.span.end(), self.source.span().end())))
     }
 
-    fn pretty_expr_with_shebang_line(&self, expr: &'a SpannedExpr<I>) -> DocBuilder<'a, Arena<'a>> {
+    fn pretty_expr_with_shebang_line(
+        &self,
+        expr: &'a SpannedExpr<I>,
+    ) -> DocBuilder<'a, Arena<'a, A>, A>
+    where
+        A: Clone,
+    {
         let start = self.source.span().start();
         let arena = self.arena;
         match self.find_shebang_line() {
@@ -93,7 +113,10 @@ where
         &self,
         previous_end: BytePos,
         expr: &'a SpannedExpr<I>,
-    ) -> DocBuilder<'a, Arena<'a>> {
+    ) -> DocBuilder<'a, Arena<'a, A>, A>
+    where
+        A: Clone,
+    {
         let arena = self.arena;
 
         let pretty = |next: &'a SpannedExpr<_>| self.pretty_expr_(next.span.start(), next);
@@ -360,18 +383,18 @@ where
         comments.append(doc)
     }
 
-    fn space(&self, span: Span<BytePos>) -> DocBuilder<'a, Arena<'a>> {
+    fn space(&self, span: Span<BytePos>) -> DocBuilder<'a, Arena<'a, A>, A> {
         self.whitespace(span, self.arena.space())
     }
 
     fn whitespace(
         &self,
         span: Span<BytePos>,
-        default: DocBuilder<'a, Arena<'a>>,
-    ) -> DocBuilder<'a, Arena<'a>> {
+        default: DocBuilder<'a, Arena<'a, A>, A>,
+    ) -> DocBuilder<'a, Arena<'a, A>, A> {
         let arena = self.arena;
         let (doc, count, ends_with_newline) = self.comments_count(span);
-        if doc.1 == arena.nil().1 {
+        if let Doc::Nil = doc.1 {
             default
         } else if count == 0 {
             // No comments, only newlines from the iterator
@@ -385,9 +408,12 @@ where
 
     fn pretty_else_expr(
         &self,
-        space: DocBuilder<'a, Arena<'a>>,
+        space: DocBuilder<'a, Arena<'a, A>, A>,
         if_false: &'a SpannedExpr<I>,
-    ) -> DocBuilder<'a, Arena<'a>> {
+    ) -> DocBuilder<'a, Arena<'a, A>, A>
+    where
+        A: Clone,
+    {
         let pretty = |next: &'a SpannedExpr<_>| self.pretty_expr_(next.span.start(), next);
         let arena = self.arena;
         match if_false.value {
@@ -408,7 +434,13 @@ where
         &self,
         previous_end: BytePos,
         expr: &'a SpannedExpr<I>,
-    ) -> (DocBuilder<'a, Arena<'a>>, DocBuilder<'a, Arena<'a>>) {
+    ) -> (
+        DocBuilder<'a, Arena<'a, A>, A>,
+        DocBuilder<'a, Arena<'a, A>, A>,
+    )
+    where
+        A: Clone,
+    {
         let arena = self.arena;
         match expr.value {
             Expr::Lambda(ref lambda) => {
@@ -421,7 +453,7 @@ where
                 ];
                 let (next_lambda, body) =
                     self.pretty_lambda(lambda.body.span.start(), &lambda.body);
-                if next_lambda.1 == arena.nil().1 {
+                if let Doc::Nil = next_lambda.1 {
                     let decl = decl.append(self.space_before(lambda.body.span.start()));
                     (decl, body)
                 } else {
@@ -461,16 +493,16 @@ where
                 // line
                 let newline_in_fields = newlines
                     .iter()
-                    .any(|&(ref l, ref r)| l.1 != arena.nil().1 || r.1 != arena.nil().1);
+                    .any(|&(ref l, ref r)| !is_nil(l) || !is_nil(r));
                 let newline_from_doc_comment = expr.value.field_iter().any(|either| {
                     either
                         .either(|f| &f.metadata, |f| &f.metadata)
                         .comment
                         .is_some()
                 });
-                let newline_in_base = base.as_ref().map_or(false, |base| {
-                    self.space_before(base.span.start()).1 != arena.nil().1
-                });
+                let newline_in_base = base
+                    .as_ref()
+                    .map_or(false, |base| !is_nil(&self.space_before(base.span.start())));
                 if newline_in_fields || newline_in_base | newline_from_doc_comment {
                     line = arena.newline();
                 }
@@ -509,18 +541,18 @@ where
                         }),
                         |spanned| spanned.value,
                     ))
-                    .append(if (!exprs.is_empty() || !types.is_empty())
-                        && line.1 == arena.newline().1
-                    {
-                        arena.text(",")
-                    } else {
-                        arena.nil()
-                    })
+                    .append(
+                        if (!exprs.is_empty() || !types.is_empty()) && is_newline(&line) {
+                            arena.text(",")
+                        } else {
+                            arena.nil()
+                        },
+                    )
                     .append(match *base {
                         Some(ref base) => {
                             let comments = self.comments_after(last_field_end);
                             chain![arena;
-                                if comments.1 == arena.nil().1 {
+                                if let Doc::Nil = comments.1 {
                                     line.clone()
                                 } else {
                                     comments
@@ -548,9 +580,9 @@ where
         &'e self,
         iter: J,
         f: F,
-    ) -> CommaSeparated<'a, 'e, F, I, J::IntoIter, U>
+    ) -> CommaSeparated<'a, 'e, F, I, J::IntoIter, U, A>
     where
-        F: FnMut(T) -> DocBuilder<'a, Arena<'a>>,
+        F: FnMut(T) -> DocBuilder<'a, Arena<'a, A>, A>,
         J: IntoIterator<Item = T>,
         T: ::std::borrow::Borrow<Spanned<U, BytePos>>,
     {
@@ -564,7 +596,7 @@ where
         }
     }
 
-    fn pretty_attributes<J>(&self, attributes: J) -> DocBuilder<'a, Arena<'a>>
+    fn pretty_attributes<J>(&self, attributes: J) -> DocBuilder<'a, Arena<'a, A>, A>
     where
         J: IntoIterator<Item = &'a Attribute>,
     {
@@ -587,7 +619,7 @@ where
         }))
     }
 
-    fn pretty_pattern(&self, pattern: &'a SpannedPattern<I>) -> DocBuilder<'a, Arena<'a>> {
+    fn pretty_pattern(&self, pattern: &'a SpannedPattern<I>) -> DocBuilder<'a, Arena<'a, A>, A> {
         self.pretty_pattern_(pattern, Prec::Top)
     }
 
@@ -595,7 +627,7 @@ where
         &self,
         pattern: &'a SpannedPattern<I>,
         prec: Prec,
-    ) -> DocBuilder<'a, Arena<'a>> {
+    ) -> DocBuilder<'a, Arena<'a, A>, A> {
         let arena = self.arena;
         match pattern.value {
             Pattern::As(ref ident, ref pat) => prec.enclose(
@@ -684,9 +716,12 @@ where
 
     fn hang(
         &self,
-        from: DocBuilder<'a, Arena<'a>>,
+        from: DocBuilder<'a, Arena<'a, A>, A>,
         expr: &'a SpannedExpr<I>,
-    ) -> DocBuilder<'a, Arena<'a>> {
+    ) -> DocBuilder<'a, Arena<'a, A>, A>
+    where
+        A: Clone,
+    {
         let arena = self.arena;
         let (arguments, body) = self.pretty_lambda(expr.span.start(), expr);
         match expr.value {
@@ -703,7 +738,11 @@ where
                 //     {
                 //         y,
                 //     }
-                let needs_indent = spaces.1 != arena.space().1;
+                let needs_indent = if let Doc::Space = spaces.1 {
+                    false
+                } else {
+                    true
+                };
                 let doc = chain![arena;
                     chain![arena;
                         from,
@@ -735,9 +774,9 @@ where
         &'e self,
         iter: J,
         f: F,
-    ) -> CommaSeparated<'a, 'e, F, I, J::IntoIter, U>
+    ) -> CommaSeparated<'a, 'e, F, I, J::IntoIter, U, A>
     where
-        F: FnMut(T) -> DocBuilder<'a, Arena<'a>>,
+        F: FnMut(T) -> DocBuilder<'a, Arena<'a, A>, A>,
         J: IntoIterator<Item = T>,
         T: ::std::borrow::Borrow<Spanned<U, BytePos>>,
     {
@@ -751,11 +790,11 @@ where
         }
     }
 
-    fn comments(&self, span: Span<BytePos>) -> DocBuilder<'a, Arena<'a>> {
+    fn comments(&self, span: Span<BytePos>) -> DocBuilder<'a, Arena<'a, A>, A> {
         self.comments_count(span).0
     }
 
-    fn rev_comments(&self, span: Span<BytePos>) -> DocBuilder<'a, Arena<'a>> {
+    fn rev_comments(&self, span: Span<BytePos>) -> DocBuilder<'a, Arena<'a, A>, A> {
         let arena = self.arena;
         self.source
             .comments_between(span)
@@ -773,20 +812,21 @@ where
     }
 }
 
-impl<'a, I> ops::Deref for Printer<'a, I> {
-    type Target = pretty_types::Printer<'a, I>;
+impl<'a, I, A> ops::Deref for Printer<'a, I, A> {
+    type Target = pretty_types::Printer<'a, I, A>;
 
     fn deref(&self) -> &Self::Target {
         &self.printer
     }
 }
 
-struct CommaSeparated<'a: 'e, 'e, F, I, J, U>
+struct CommaSeparated<'a: 'e, 'e, F, I, J, U, A>
 where
     I: 'a,
+    A: 'a,
     J: Iterator,
 {
-    printer: &'e Printer<'a, I>,
+    printer: &'e Printer<'a, I, A>,
     iter: ::std::iter::Peekable<J>,
     f: F,
     parens: bool,
@@ -794,14 +834,14 @@ where
     _marker: ::std::marker::PhantomData<U>,
 }
 
-impl<'a, 'e, F, I, J, T, U> Iterator for CommaSeparated<'a, 'e, F, I, J, U>
+impl<'a, 'e, F, I, J, T, U, A> Iterator for CommaSeparated<'a, 'e, F, I, J, U, A>
 where
     I: AsRef<str>,
-    F: FnMut(T) -> DocBuilder<'a, Arena<'a>>,
+    F: FnMut(T) -> DocBuilder<'a, Arena<'a, A>, A>,
     J: Iterator<Item = T>,
     T: ::std::borrow::Borrow<Spanned<U, BytePos>>,
 {
-    type Item = DocBuilder<'a, Arena<'a>>;
+    type Item = DocBuilder<'a, Arena<'a, A>, A>;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next().map(|item| {
@@ -828,7 +868,11 @@ where
     }
 }
 
-fn pretty_kind<'a>(arena: &'a Arena<'a>, prec: Prec, kind: &'a Kind) -> DocBuilder<'a, Arena<'a>> {
+fn pretty_kind<'a, A>(
+    arena: &'a Arena<'a, A>,
+    prec: Prec,
+    kind: &'a Kind,
+) -> DocBuilder<'a, Arena<'a, A>, A> {
     match *kind {
         Kind::Type => arena.text("Type"),
         Kind::Row => arena.text("Row"),
@@ -846,7 +890,10 @@ fn pretty_kind<'a>(arena: &'a Arena<'a>, prec: Prec, kind: &'a Kind) -> DocBuild
     }
 }
 
-fn newline<'a, Id>(arena: &'a Arena<'a>, expr: &'a SpannedExpr<Id>) -> DocBuilder<'a, Arena<'a>> {
+fn newline<'a, Id, A>(
+    arena: &'a Arena<'a, A>,
+    expr: &'a SpannedExpr<Id>,
+) -> DocBuilder<'a, Arena<'a, A>, A> {
     if forced_new_line(expr) {
         arena.newline()
     } else {

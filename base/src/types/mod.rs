@@ -5,7 +5,7 @@ use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
-use pretty::{Arena, DocAllocator, DocBuilder};
+use pretty::{Arena, Doc, DocAllocator, DocBuilder};
 
 use smallvec::SmallVec;
 
@@ -1267,14 +1267,15 @@ impl<Id> ArcType<Id> {
         }
     }
 
-    pub fn pretty<'a>(&'a self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>>
+    pub fn pretty<'a, A>(&'a self, arena: &'a Arena<'a, A>) -> DocBuilder<'a, Arena<'a, A>, A>
     where
         Id: AsRef<str>,
+        A: Clone,
     {
         top(self).pretty(&Printer::new(arena, &()))
     }
 
-    pub fn display(&self, width: usize) -> TypeFormatter<Id, Self> {
+    pub fn display<A>(&self, width: usize) -> TypeFormatter<Id, Self, A> {
         TypeFormatter::new(self).width(width)
     }
 }
@@ -1666,12 +1667,12 @@ pub enum Prec {
 }
 
 impl Prec {
-    pub fn enclose<'a>(
+    pub fn enclose<'a, A>(
         &self,
         limit: Prec,
-        arena: &'a Arena<'a>,
-        doc: DocBuilder<'a, Arena<'a>>,
-    ) -> DocBuilder<'a, Arena<'a>> {
+        arena: &'a Arena<'a, A>,
+        doc: DocBuilder<'a, Arena<'a, A>, A>,
+    ) -> DocBuilder<'a, Arena<'a, A>, A> {
         if *self >= limit {
             chain![arena; "(", doc, ")"]
         } else {
@@ -1696,26 +1697,32 @@ pub struct DisplayType<'a, T: 'a> {
     typ: &'a T,
 }
 
-pub trait ToDoc<'a, A, E> {
-    fn to_doc(&'a self, allocator: &'a A, env: E) -> DocBuilder<'a, A>
+pub trait ToDoc<'a, A, B, E> {
+    fn to_doc(&'a self, allocator: &'a A, env: E) -> DocBuilder<'a, A, B>
     where
-        A: DocAllocator<'a>;
+        A: DocAllocator<'a, B>;
 }
 
-impl<'a, I> ToDoc<'a, Arena<'a>, ()> for ArcType<I>
+impl<'a, I, A> ToDoc<'a, Arena<'a, A>, A, ()> for ArcType<I>
 where
     I: AsRef<str>,
+    A: Clone,
 {
-    fn to_doc(&'a self, arena: &'a Arena<'a>, _: ()) -> DocBuilder<'a, Arena<'a>> {
+    fn to_doc(&'a self, arena: &'a Arena<'a, A>, _: ()) -> DocBuilder<'a, Arena<'a, A>, A> {
         self.to_doc(arena, &() as &Source)
     }
 }
 
-impl<'a, I> ToDoc<'a, Arena<'a>, &'a Source> for ArcType<I>
+impl<'a, I, A> ToDoc<'a, Arena<'a, A>, A, &'a Source> for ArcType<I>
 where
     I: AsRef<str>,
+    A: Clone,
 {
-    fn to_doc(&'a self, arena: &'a Arena<'a>, source: &'a Source) -> DocBuilder<'a, Arena<'a>> {
+    fn to_doc(
+        &'a self,
+        arena: &'a Arena<'a, A>,
+        source: &'a Source,
+    ) -> DocBuilder<'a, Arena<'a, A>, A> {
         let printer = Printer::new(arena, source);
         dt(Prec::Top, self).pretty(&printer)
     }
@@ -1755,7 +1762,10 @@ where
     T: Deref<Target = Type<I, T>> + HasSpan + Commented + 'a,
     I: AsRef<str> + 'a,
 {
-    pub fn pretty(&self, printer: &Printer<'a, I>) -> DocBuilder<'a, Arena<'a>> {
+    pub fn pretty<A>(&self, printer: &Printer<'a, I, A>) -> DocBuilder<'a, Arena<'a, A>, A>
+    where
+        A: Clone,
+    {
         let arena = printer.arena;
 
         let p = self.prec;
@@ -1897,8 +1907,8 @@ where
             // This should not be displayed normally as it should only exist in `ExtendRow`
             // which handles `EmptyRow` explicitly
             Type::EmptyRow => arena.text("EmptyRow"),
-            Type::Ident(ref id) => arena.text(id.as_ref()),
-            Type::Alias(ref alias) => arena.text(alias.name.as_ref()),
+            Type::Ident(ref id) => printer.symbol(id),
+            Type::Alias(ref alias) => printer.symbol(&alias.name),
         };
         match **typ {
             Type::App(..) | Type::ExtendRow { .. } | Type::Variant(..) | Type::Function(..) => doc,
@@ -1909,12 +1919,15 @@ where
         }
     }
 
-    fn pretty_row(
+    fn pretty_row<A>(
         &self,
         open: &str,
-        printer: &Printer<'a, I>,
-        pretty_field: &mut FnMut(&'a Field<I, T>) -> DocBuilder<'a, Arena<'a>>,
-    ) -> DocBuilder<'a, Arena<'a>> {
+        printer: &Printer<'a, I, A>,
+        pretty_field: &mut FnMut(&'a Field<I, T>) -> DocBuilder<'a, Arena<'a, A>, A>,
+    ) -> DocBuilder<'a, Arena<'a, A>, A>
+    where
+        A: Clone,
+    {
         let arena = printer.arena;
 
         let mut doc = arena.nil();
@@ -2021,7 +2034,7 @@ where
         }
 
         let doc = if filtered {
-            if doc.1 == arena.nil().1 {
+            if let Doc::Nil = doc.1 {
                 chain![arena;
                     newline.clone(),
                     "..."
@@ -2031,7 +2044,7 @@ where
                     newline.clone(),
                     "...,",
                     doc,
-                    if newline.1 == arena.space().1 {
+                    if let Doc::Space = newline.1 {
                         arena.text(",")
                     } else {
                         arena.nil()
@@ -2052,9 +2065,10 @@ where
         }
     }
 
-    fn pretty_function(&self, printer: &Printer<'a, I>) -> DocBuilder<'a, Arena<'a>>
+    fn pretty_function<A>(&self, printer: &Printer<'a, I, A>) -> DocBuilder<'a, Arena<'a, A>, A>
     where
         I: AsRef<str>,
+        A: Clone,
     {
         let arena = printer.arena;
         let p = self.prec;
@@ -2076,10 +2090,14 @@ where
     }
 }
 
-pub fn pretty_print<'a, I, T>(printer: &Printer<'a, I>, typ: &'a T) -> DocBuilder<'a, Arena<'a>>
+pub fn pretty_print<'a, I, T, A>(
+    printer: &Printer<'a, I, A>,
+    typ: &'a T,
+) -> DocBuilder<'a, Arena<'a, A>, A>
 where
     I: AsRef<str> + 'a,
     T: Deref<Target = Type<I, T>> + HasSpan + Commented,
+    A: Clone,
 {
     dt(Prec::Top, typ).pretty(printer)
 }

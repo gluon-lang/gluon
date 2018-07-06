@@ -17,7 +17,7 @@ pub enum Error<T, E> {
 
 impl<T, E> fmt::Display for Error<T, E>
 where
-    T: fmt::Display + for<'a> ToDoc<'a, Arena<'a>, ()>,
+    T: fmt::Display + for<'a> ToDoc<'a, Arena<'a, ()>, (), ()>,
     E: fmt::Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

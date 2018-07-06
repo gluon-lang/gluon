@@ -3,7 +3,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::ops::Deref;
 
-use pretty::{Arena, DocAllocator, DocBuilder};
+use pretty::{Arena, Doc, DocAllocator, DocBuilder};
 
 use ast::{is_operator_char, Commented};
 use metadata::{Comment, CommentType};
@@ -12,9 +12,9 @@ use source::Source;
 
 use types::{pretty_print, Type};
 
-pub fn ident<'b, S>(arena: &'b Arena<'b>, name: S) -> DocBuilder<'b, Arena<'b>>
+pub fn ident<'a, S, A>(arena: &'a Arena<'a, A>, name: S) -> DocBuilder<'a, Arena<'a, A>, A>
 where
-    S: Into<Cow<'b, str>>,
+    S: Into<Cow<'a, str>>,
 {
     let name = name.into();
     if name.starts_with(is_operator_char) {
@@ -24,10 +24,10 @@ where
     }
 }
 
-pub fn doc_comment<'a>(
-    arena: &'a Arena<'a>,
+pub fn doc_comment<'a, A>(
+    arena: &'a Arena<'a, A>,
     text: Option<&'a Comment>,
-) -> DocBuilder<'a, Arena<'a>> {
+) -> DocBuilder<'a, Arena<'a, A>, A> {
     match text {
         Some(comment) => match comment.typ {
             CommentType::Line => arena.concat(
@@ -76,29 +76,32 @@ impl From<bool> for Filter {
     }
 }
 
-pub struct TypeFormatter<'a, I, T>
+pub struct TypeFormatter<'a, I, T, A>
 where
     I: 'a,
     T: 'a,
+    A: 'a,
 {
     width: usize,
     typ: &'a T,
     filter: &'a Fn(&I) -> Filter,
+    annotate_symbol: &'a Fn(&I) -> Option<A>,
     _marker: PhantomData<I>,
 }
 
-impl<'a, I, T> TypeFormatter<'a, I, T> {
+impl<'a, I, T, A> TypeFormatter<'a, I, T, A> {
     pub fn new(typ: &'a T) -> Self {
         TypeFormatter {
             width: 80,
             typ: typ,
             filter: &|_| Filter::Retain,
+            annotate_symbol: &|_| None,
             _marker: PhantomData,
         }
     }
 }
 
-impl<'a, I, T> TypeFormatter<'a, I, T> {
+impl<'a, I, T, A> TypeFormatter<'a, I, T, A> {
     pub fn width(mut self, width: usize) -> Self {
         self.width = width;
         self
@@ -109,35 +112,43 @@ impl<'a, I, T> TypeFormatter<'a, I, T> {
         self
     }
 
-    pub fn pretty(&self, arena: &'a Arena<'a>) -> DocBuilder<'a, Arena<'a>>
+    pub fn annotate_symbol(mut self, annotate_symbol: &'a Fn(&I) -> Option<A>) -> Self {
+        self.annotate_symbol = annotate_symbol;
+        self
+    }
+
+    pub fn pretty(&self, arena: &'a Arena<'a, A>) -> DocBuilder<'a, Arena<'a, A>, A>
     where
         T: Deref<Target = Type<I, T>> + HasSpan + Commented + 'a,
         I: AsRef<str>,
+        A: Clone,
     {
         use super::top;
         top(self.typ).pretty(&Printer {
             arena,
             source: &(),
             filter: self.filter,
+            annotate_symbol: self.annotate_symbol,
         })
     }
 
-    pub fn build(&self, arena: &'a Arena<'a>, source: &'a Source) -> Printer<'a, I> {
+    pub fn build(&self, arena: &'a Arena<'a, A>, source: &'a Source) -> Printer<'a, I, A> {
         Printer {
             arena,
             source,
             filter: self.filter,
+            annotate_symbol: self.annotate_symbol,
         }
     }
 }
 
-impl<'a, I, T> fmt::Display for TypeFormatter<'a, I, T>
+impl<'a, I, T> fmt::Display for TypeFormatter<'a, I, T, ()>
 where
     T: Deref<Target = Type<I, T>> + HasSpan + Commented + 'a,
     I: AsRef<str>,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let arena = Arena::new();
+        let arena = Arena::<()>::new();
         let source = &();
         let printer = self.build(&arena, source);
         let mut s = Vec::new();
@@ -151,18 +162,20 @@ where
     }
 }
 
-pub struct Printer<'a, I: 'a> {
-    pub arena: &'a Arena<'a>,
+pub struct Printer<'a, I: 'a, A: 'a> {
+    pub arena: &'a Arena<'a, A>,
     pub source: &'a Source,
     filter: &'a Fn(&I) -> Filter,
+    annotate_symbol: &'a Fn(&I) -> Option<A>,
 }
 
-impl<'a, I> Printer<'a, I> {
-    pub fn new(arena: &'a Arena<'a>, source: &'a Source) -> Printer<'a, I> {
+impl<'a, I, A> Printer<'a, I, A> {
+    pub fn new(arena: &'a Arena<'a, A>, source: &'a Source) -> Printer<'a, I, A> {
         Printer {
             arena,
             source,
             filter: &|_| Filter::Retain,
+            annotate_symbol: &|_| None,
         }
     }
 
@@ -170,9 +183,20 @@ impl<'a, I> Printer<'a, I> {
         (self.filter)(field)
     }
 
-    pub fn space_before(&self, pos: BytePos) -> DocBuilder<'a, Arena<'a>> {
+    pub fn symbol(&self, symbol: &'a I) -> DocBuilder<'a, Arena<'a, A>, A>
+    where
+        I: AsRef<str>,
+    {
+        let doc = self.arena.text(symbol.as_ref());
+        match (self.annotate_symbol)(symbol) {
+            Some(ann) => doc.annotate(ann),
+            None => doc,
+        }
+    }
+
+    pub fn space_before(&self, pos: BytePos) -> DocBuilder<'a, Arena<'a, A>, A> {
         let (doc, comments) = self.comments_before_(pos);
-        if doc.1 == self.arena.nil().1 {
+        if let Doc::Nil = doc.1 {
             self.arena.space()
         } else if comments {
             self.arena.space().append(doc).append(self.arena.space())
@@ -181,17 +205,17 @@ impl<'a, I> Printer<'a, I> {
         }
     }
 
-    pub fn space_after(&self, end: BytePos) -> DocBuilder<'a, Arena<'a>> {
+    pub fn space_after(&self, end: BytePos) -> DocBuilder<'a, Arena<'a, A>, A> {
         let arena = self.arena;
         let doc = self.comments_after(end);
-        if doc.1 == arena.nil().1 {
+        if let Doc::Nil = doc.1 {
             arena.space()
         } else {
             arena.space().append(doc)
         }
     }
 
-    pub fn comments_before(&self, pos: BytePos) -> DocBuilder<'a, Arena<'a>> {
+    pub fn comments_before(&self, pos: BytePos) -> DocBuilder<'a, Arena<'a, A>, A> {
         let (doc, comments) = self.comments_before_(pos);
         if comments {
             doc.append(self.arena.space())
@@ -200,7 +224,7 @@ impl<'a, I> Printer<'a, I> {
         }
     }
 
-    fn comments_before_(&self, pos: BytePos) -> (DocBuilder<'a, Arena<'a>>, bool) {
+    fn comments_before_(&self, pos: BytePos) -> (DocBuilder<'a, Arena<'a, A>, A>, bool) {
         let arena = self.arena;
         let mut doc = arena.nil();
         let mut comments = 0;
@@ -222,7 +246,7 @@ impl<'a, I> Printer<'a, I> {
         (doc, comments != 0)
     }
 
-    pub fn comments_after(&self, end: BytePos) -> DocBuilder<'a, Arena<'a>> {
+    pub fn comments_after(&self, end: BytePos) -> DocBuilder<'a, Arena<'a, A>, A> {
         let (doc, block_comments, _) =
             self.comments_count(Span::new(end, self.source.span().end()));
         if block_comments == 0 {
@@ -236,7 +260,10 @@ impl<'a, I> Printer<'a, I> {
         }
     }
 
-    pub fn comments_count(&self, span: Span<BytePos>) -> (DocBuilder<'a, Arena<'a>>, usize, bool) {
+    pub fn comments_count(
+        &self,
+        span: Span<BytePos>,
+    ) -> (DocBuilder<'a, Arena<'a, A>, A>, usize, bool) {
         let arena = self.arena;
         let mut comments = 0;
         let mut ends_with_newline = false;

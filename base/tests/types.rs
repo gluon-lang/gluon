@@ -315,7 +315,7 @@ fn break_record() {
             ),
         ],
     );
-    let arena = Arena::new();
+    let arena = Arena::<()>::new();
     let source = &();
     let printer = pretty_print::Printer::new(&arena, source);
     let typ = arena
