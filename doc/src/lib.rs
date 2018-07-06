@@ -30,7 +30,7 @@ use failure::ResultExt;
 
 use itertools::Itertools;
 
-use handlebars::{Handlebars, Helper, Output, RenderContext, RenderError};
+use handlebars::{Context, Handlebars, Helper, Output, RenderContext, RenderError};
 
 use serde::Deserialize;
 
@@ -243,13 +243,11 @@ fn handlebars() -> Result<Handlebars> {
     fn module_link_helper(
         h: &Helper,
         _: &Handlebars,
+        context: &Context,
         rc: &mut RenderContext,
         out: &mut Output,
     ) -> ::std::result::Result<(), RenderError> {
-        let current_module = &rc.context().data()["name"]
-            .as_str()
-            .expect("name")
-            .to_string();
+        let current_module = &context.data()["name"].as_str().expect("name").to_string();
 
         let param = String::deserialize(h.param(0).unwrap().value())?;
         let index = rc.get_root_template_name().map(|s| &s[..]) == Some(INDEX_TEMPLATE);
@@ -261,6 +259,7 @@ fn handlebars() -> Result<Handlebars> {
     fn breadcrumbs(
         h: &Helper,
         _: &Handlebars,
+        _: &Context,
         _: &mut RenderContext,
         out: &mut Output,
     ) -> ::std::result::Result<(), RenderError> {
@@ -289,13 +288,11 @@ fn handlebars() -> Result<Handlebars> {
     fn style(
         _: &Helper,
         _: &Handlebars,
-        rc: &mut RenderContext,
+        context: &Context,
+        _: &mut RenderContext,
         out: &mut Output,
     ) -> ::std::result::Result<(), RenderError> {
-        let current_module = &rc.context().data()["name"]
-            .as_str()
-            .expect("name")
-            .to_string();
+        let current_module = &context.data()["name"].as_str().expect("name").to_string();
         let relative_path = current_module.split('.').map(|_| "../").format("");
 
         out.write(&format!(r#"
@@ -309,6 +306,7 @@ fn handlebars() -> Result<Handlebars> {
     fn markdown(
         h: &Helper,
         _: &Handlebars,
+        _: &Context,
         _: &mut RenderContext,
         out: &mut Output,
     ) -> ::std::result::Result<(), RenderError> {
@@ -340,6 +338,7 @@ fn handlebars() -> Result<Handlebars> {
     fn markdown_first_paragraph(
         h: &Helper,
         _: &Handlebars,
+        _: &Context,
         _: &mut RenderContext,
         out: &mut Output,
     ) -> ::std::result::Result<(), RenderError> {
