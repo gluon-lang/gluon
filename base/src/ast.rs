@@ -332,6 +332,12 @@ pub enum Expr<Id> {
     ),
 }
 
+impl<Id> Default for Expr<Id> {
+    fn default() -> Self {
+        Expr::Error(None)
+    }
+}
+
 impl<Id> Expr<Id> {
     // TODO Use impl Trait
     pub fn field_iter<'a>(

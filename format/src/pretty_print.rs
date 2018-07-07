@@ -5,7 +5,7 @@ use itertools::{Either, Itertools};
 use pretty::{Arena, Doc, DocAllocator, DocBuilder};
 
 use self::types::pretty_print as pretty_types;
-use base::ast::{Do, Expr, Pattern, SpannedExpr, SpannedPattern, ValueBinding};
+use base::ast::{Do, Expr, Literal, Pattern, SpannedExpr, SpannedPattern, ValueBinding};
 use base::kind::Kind;
 use base::metadata::Attribute;
 use base::pos::{self, BytePos, HasSpan, Span, Spanned};
@@ -39,6 +39,7 @@ fn is_newline<'a, A>(doc: &DocBuilder<'a, Arena<'a, A>, A>) -> bool {
         false
     }
 }
+
 fn is_nil<'a, A>(doc: &DocBuilder<'a, Arena<'a, A>, A>) -> bool {
     if let Doc::Nil = doc.1 {
         true
@@ -49,15 +50,21 @@ fn is_nil<'a, A>(doc: &DocBuilder<'a, Arena<'a, A>, A>) -> bool {
 
 pub(super) struct Printer<'a, I: 'a, A: 'a> {
     printer: pretty_types::Printer<'a, I, A>,
+    formatter: ::Formatter,
 }
 
 impl<'a, I, A> Printer<'a, I, A>
 where
     I: AsRef<str>,
 {
-    pub(super) fn new(arena: &'a Arena<'a, A>, source: &'a source::Source) -> Self {
+    pub(super) fn new(
+        arena: &'a Arena<'a, A>,
+        source: &'a source::Source,
+        formatter: ::Formatter,
+    ) -> Self {
         Printer {
             printer: pretty_types::Printer::new(arena, source),
+            formatter,
         }
     }
 
@@ -117,6 +124,15 @@ where
     where
         A: Clone,
     {
+        let expr = if !self.formatter.expanded && expr.span.start() == 0.into() {
+            match expr.value {
+                Expr::TypeBindings(_, ref expr) | Expr::LetBindings(_, ref expr) => expr,
+                _ => expr,
+            }
+        } else {
+            expr
+        };
+
         let arena = self.arena;
 
         let pretty = |next: &'a SpannedExpr<_>| self.pretty_expr_(next.span.start(), next);
@@ -249,14 +265,47 @@ where
                 };
                 let prefixes = iter::once("let ").chain(iter::repeat("and "));
                 chain![arena;
-                    arena.concat(prefixes.zip(binds).map(|(prefix, bind)| {
-                        binding(prefix, bind)
-                    }).interleave(newlines_iter!(self, binds.iter().map(|bind| bind.span())))),
+                    arena.concat(
+                        prefixes
+                            .zip(binds)
+                            .map(|(prefix, bind)| binding(prefix, bind))
+                            .interleave(newlines_iter!(self, binds.iter().map(|bind| bind.span())))
+                    ),
+                    if self.formatter.expanded {
+                        arena.newline()
+                    } else {
+                        arena.nil()
+                    },
                     self.pretty_expr_(binds.last().unwrap().span().end(), body).group()
                 ]
             }
 
-            Expr::Literal(_) => arena.text(self.source.src_slice(expr.span)),
+            Expr::Literal(ref literal) => {
+                let text = self.source.src_slice(expr.span);
+                let literally = text.starts_with('"')
+                    || text.starts_with('\'')
+                    || text.starts_with(|c: char| c.is_digit(10))
+                    || text.starts_with('-');
+                if literally {
+                    arena.text(text)
+                } else {
+                    match *literal {
+                        Literal::Byte(b) => arena.text(b.to_string()),
+                        Literal::Int(i) => arena.text(i.to_string()),
+                        Literal::Float(f) => arena.text(f.to_string()),
+                        Literal::String(ref s) => chain![arena;
+                                "\"",
+                                arena.text(&s[..]),
+                                "\""
+                            ],
+                        Literal::Char(c) => chain![arena;
+                                "'",
+                                arena.text(c.to_string()),
+                                "'"
+                            ],
+                    }
+                }
+            }
 
             Expr::Match(ref expr, ref alts) => chain![arena;
                     chain![arena;
@@ -355,6 +404,11 @@ where
                             }
                         ].group()
                     }).interleave(newlines_iter!(self, binds.iter().map(|bind| bind.span())))),
+                    if self.formatter.expanded {
+                        arena.newline()
+                    } else {
+                        arena.nil()
+                    },
                     self.pretty_expr_(binds.last().unwrap().alias.span.end(), body)
                 ].group()
             }
@@ -758,11 +812,19 @@ where
                 }
             }
             _ => {
+                let mut spaces = self.space_before(expr.span.start());
+                if let Doc::Space = spaces.1 {
+                    match expr.value {
+                        Expr::Lambda(..) => (),
+                        _ => spaces = newline(arena, expr),
+                    }
+                }
+
                 from.append(
                     chain![arena;
-                            self.space_before(expr.span.start()),
-                            arguments
-                        ].group()
+                        spaces,
+                        arguments
+                    ].group()
                         .append(body)
                         .nest(INDENT),
                 ).group()
@@ -796,6 +858,11 @@ where
 
     fn rev_comments(&self, span: Span<BytePos>) -> DocBuilder<'a, Arena<'a, A>, A> {
         let arena = self.arena;
+
+        if span.start() == 0.into() {
+            return arena.nil();
+        }
+
         self.source
             .comments_between(span)
             .rev()

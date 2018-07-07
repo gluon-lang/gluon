@@ -22,6 +22,7 @@ let { (<|>) } = import! std.applicative
 ///
 /// assert (Cons 1 Nil /= Nil)
 /// ```
+#[derive(Eq, Show)]
 type List a =
     | Nil
     | Cons a (List a)
@@ -59,14 +60,6 @@ let monoid : Monoid (List a) = {
     empty = Nil,
 }
 
-let eq ?eq : [Eq a] -> Eq (List a) =
-    let list_eq l r =
-        match (l, r) with
-        | (Nil, Nil) -> True
-        | (Cons x xs, Cons y ys) -> eq.(==) x y && list_eq xs ys
-        | _ -> False
-    { (==) = list_eq }
-
 let ord ?ord : [Ord a] -> Ord (List a) =
     let list_cmp l r =
         match (l, r) with
@@ -77,7 +70,7 @@ let ord ?ord : [Ord a] -> Ord (List a) =
             | o -> o
         | (Cons _ _, Nil) -> GT
         | (Nil, Cons _ _) -> LT
-    { eq, compare = list_cmp }
+    { eq = eq_List, compare = list_cmp }
 
 let functor : Functor List =
     let map f xs =
@@ -218,7 +211,7 @@ let sort xs : [Ord a] -> List a -> List a =
     filter,
     sort,
 
-    eq,
+    eq = eq_List,
     ord,
 
     semigroup,

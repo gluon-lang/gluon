@@ -12,7 +12,7 @@ type Show a = { show : a -> String }
 ///
 /// assert (show 123 == "123")
 /// assert (show 3.14 == "3.14")
-/// assert (show "abc" == "abc")
+/// assert (show "abc" == "\"abc\"")
 /// assert (show (list.of [1, 2, 3]) == "[1, 2, 3]")
 /// ```
 let show ?s : [Show a] -> a -> String = s.show

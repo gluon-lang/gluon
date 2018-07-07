@@ -23,6 +23,14 @@ fn format_expr(expr: &str) -> gluon::Result<String> {
     format::format_expr(&mut compiler, &thread, "test", expr)
 }
 
+fn format_expr_expanded(expr: &str) -> gluon::Result<String> {
+    let mut compiler = Compiler::new();
+    let thread = VmBuilder::new()
+        .import_paths(Some(vec!["..".into()]))
+        .build();
+    format::Formatter { expanded: true }.format_expr(&mut compiler, &thread, "test", expr)
+}
+
 fn test_format(name: &str) {
     let _ = env_logger::try_init();
 
@@ -415,4 +423,94 @@ let x = "abc
 x
 "#;
     assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+}
+
+#[test]
+fn derive_simple() {
+    let expr = r#"
+#[derive(Show)]
+type Test =
+    | Test
+Test
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+}
+
+#[test]
+fn derive_parameterized() {
+    let expr = r#"
+#[derive(Show)]
+type Test a =
+    | Test a
+Test 1
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+}
+
+#[test]
+fn derive_expanded() {
+    let expr = r#"
+#[derive(Show)]
+type Test =
+    | Test
+Test
+"#;
+    let expected = r#"
+#[derive(Show)]
+type Test =
+    | Test
+let show_Test : Show Test =
+    let show_ x : Test -> String =
+        match x with
+        | Test -> "Test"
+    { show = show_ }
+Test
+"#;
+    assert_diff!(&format_expr_expanded(expr).unwrap(), expected, "\n", 0);
+}
+
+#[test]
+fn derive_eq_recursive_expanded() {
+    let expr = r#"
+#[derive(Eq)]
+type Recursive = | End | Rec Recursive
+End
+"#;
+    let expected = r#"
+#[derive(Eq)]
+type Recursive =
+    | End
+    | Rec Recursive
+let eq_Recursive : Eq Recursive =
+    let eq l r : Recursive -> Recursive -> _ =
+        match (l, r) with
+        | (End, End) -> True
+        | (Rec arg_l, Rec arg_r) -> eq arg_l arg_r
+        | _ -> False
+    { (==) = eq }
+End
+"#;
+    assert_diff!(&format_expr_expanded(expr).unwrap(), expected, "\n", 0);
+}
+
+#[test]
+fn derive_parameterized_expended() {
+    let expr = r#"
+#[derive(Show)]
+type Test a =
+    | Test a
+Test 1
+"#;
+    let expected = r#"
+#[derive(Show)]
+type Test a =
+    | Test a
+let show_Test : [Show a] -> Show (Test a) =
+    let show_ x : Test a -> String =
+        match x with
+        | Test arg_0 -> "Test" ++ " " ++ "(" ++ show arg_0 ++ ")"
+    { show = show_ }
+Test 1
+"#;
+    assert_diff!(&format_expr_expanded(expr).unwrap(), expected, "\n", 0);
 }

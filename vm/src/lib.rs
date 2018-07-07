@@ -63,6 +63,7 @@ pub mod types;
 pub mod vm;
 
 mod array;
+mod derive;
 mod interner;
 mod source_map;
 mod value;

@@ -184,7 +184,7 @@ impl<E: fmt::Display> InFile<E> {
     pub fn source_name(&self) -> &::codespan::FileName {
         self.source
             .find_file(self.error[0].span.start())
-            .unwrap()
+            .expect("Source file does not exist in associated code map")
             .name()
     }
 

@@ -183,3 +183,13 @@ impl<'a> DoubleEndedIterator for CommentIter<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_comment_iter() {
+        assert_eq!(CommentIter { src: "" }.next(), None);
+    }
+}

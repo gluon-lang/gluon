@@ -226,6 +226,11 @@ impl<'a, I, A> Printer<'a, I, A> {
 
     fn comments_before_(&self, pos: BytePos) -> (DocBuilder<'a, Arena<'a, A>, A>, bool) {
         let arena = self.arena;
+
+        if pos == 0.into() {
+            return (arena.nil(), false);
+        }
+
         let mut doc = arena.nil();
         let mut comments = 0;
         for comment in self
@@ -265,6 +270,11 @@ impl<'a, I, A> Printer<'a, I, A> {
         span: Span<BytePos>,
     ) -> (DocBuilder<'a, Arena<'a, A>, A>, usize, bool) {
         let arena = self.arena;
+
+        if span.start() == 0.into() {
+            return (arena.nil(), 0, false);
+        }
+
         let mut comments = 0;
         let mut ends_with_newline = false;
         let doc = arena.concat(self.source.comments_between(span).map(|comment| {

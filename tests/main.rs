@@ -15,6 +15,7 @@ extern crate tokio_core;
 extern crate pulldown_cmark;
 
 use gluon::base::ast::{Expr, Pattern, SpannedExpr};
+use gluon::base::filename_to_module;
 use gluon::base::symbol::Symbol;
 use gluon::base::types::{ArcType, Type};
 
@@ -294,6 +295,9 @@ fn main_() -> Result<(), Box<Error>> {
         None
     };
 
+    let file_filter = filter.as_ref().map_or(false, |f| f.starts_with("@"));
+    let filter = filter.as_ref().map(|f| f.trim_left_matches('@'));
+
     let vm = new_vm();
     Compiler::new()
         .load_file_async(&vm, "std/test.glu")
@@ -303,47 +307,66 @@ fn main_() -> Result<(), Box<Error>> {
 
     let pool = futures_cpupool::CpuPool::new(1);
     let mut core = tokio_core::reactor::Core::new()?;
-    let pass_tests_future = stream::futures_ordered(iter.map(|filename| {
-        let name = filename.to_str().unwrap_or("<unknown>").to_owned();
+    let pass_tests_future = stream::futures_ordered(
+        iter.filter_map(|filename| {
+            let name = filename_to_module(filename.to_str().unwrap_or("<unknown>"));
 
-        let vm = vm.new_thread().unwrap();
+            match filter {
+                Some(ref filter) if file_filter && !name.contains(&filter[..]) => None,
+                _ => Some((filename, name)),
+            }
+        }).map(|(filename, name)| {
+            let vm = vm.new_thread().unwrap();
 
-        let name2 = name.clone();
-        pool.spawn_fn(move || make_test(&vm, &name, &filename))
-            .then(|result| -> Result<_, String> {
-                Ok(match result {
-                    Ok(test) => test.into_tensile_test(),
-                    Err(err) => tensile::test(name2, || Err(err)),
+            let name2 = name.clone();
+            pool.spawn_fn(move || make_test(&vm, &name, &filename))
+                .then(|result| -> Result<_, String> {
+                    Ok(match result {
+                        Ok(test) => test.into_tensile_test(),
+                        Err(err) => tensile::test(name2, || Err(err)),
+                    })
                 })
-            })
-    })).collect();
+        }),
+    ).collect();
     let pass_tests = core.run(pass_tests_future)?;
 
     let iter = test_files("tests/fail")?.into_iter();
 
     let fail_tests =
-        iter.map(|filename| {
-            let name = filename.to_str().unwrap_or("<unknown>").to_owned();
+        iter.filter_map(|filename| {
+            let name = filename_to_module(filename.to_str().unwrap_or("<unknown>"));
 
-            let vm = vm.new_thread().unwrap();
+            match filter {
+                Some(ref filter) if file_filter && !name.contains(&filter[..]) => None,
+                _ => Some((filename, name)),
+            }
+        }).map(|(filename, name)| {
+                let vm = vm.new_thread().unwrap();
 
-            tensile::test(name.clone(), move || -> Result<(), String> {
-                match run_file(&vm, &name, &filename) {
-                    Ok(err) => Err(format!(
-                        "Expected test '{}' to fail\n{:?}",
-                        filename.to_str().unwrap(),
-                        err.0,
-                    )),
-                    Err(_) => Ok(()),
-                }
+                tensile::test(name.clone(), move || -> Result<(), String> {
+                    match run_file(&vm, &name, &filename) {
+                        Ok(err) => Err(format!(
+                            "Expected test '{}' to fail\n{:?}",
+                            filename.to_str().unwrap(),
+                            err.0,
+                        )),
+                        Err(_) => Ok(()),
+                    }
+                })
             })
-        }).collect();
+            .collect();
 
     let doc_tests = test_files("std")?
         .into_iter()
-        .map(|filename| {
-            let name = filename.to_str().unwrap_or("<unknown>").to_owned();
+        .filter_map(|filename| {
+            let name = filename_to_module(filename.to_str().unwrap_or("<unknown>"));
 
+            match filter {
+                Some(ref filter) if file_filter && !name.contains(&filter[..]) => None,
+                _ => Some((filename, name)),
+            }
+        })
+        .map(|(filename, name)| {
             let vm = vm.new_thread().unwrap();
             match run_doc_tests(&vm, &name, &filename) {
                 Ok(tests) => tensile::group(name.clone(), tests),

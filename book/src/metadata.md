@@ -67,3 +67,22 @@ type Eq a = { (==) : a -> a -> Bool }
 // Can be used as an implicit argument
 let eq_Int : Eq Int = ..
 ```
+
+
+### #[derive(..)]
+
+```f#
+#[derive(IDENTIFIER)]
+```
+
+The `#[derive(..)]` attribute can be used on `type` bindings to generate implementations for some traits. Currently only `Eq` and `Show` can be derived and only non-recursive and self-recursive types are supported (mutually recursive types do not work for the moment).
+
+```f#,rust
+#[derive(Eq, Show)]
+type Tree a = | Tip a | Branch (Tree a) (Tree a)
+
+let tree = Branch (Tip 1) (Branch (Tip 2) (Tip 3))
+
+show tree
+tree == Tip 1
+```

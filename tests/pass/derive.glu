@@ -1,0 +1,96 @@
+let prelude @ { Eq, Show } = import! std.prelude
+let { (<|) } = import! std.function
+let { Test, run, assert, assert_eq, assert_neq, test, group, ? } = import! std.test
+let { Applicative, (*>) } = import! std.applicative
+
+#[derive(Eq, Show)]
+type TestVariant =
+    | A Int
+    | B String Bool
+
+#[derive(Eq, Show)]
+type TestRecord = { x : Int, name : String }
+
+
+#[derive(Eq, Show)]
+type Nested = { variant : TestVariant, record : TestRecord }
+
+#[derive(Eq, Show)]
+type Recursive = | End | Rec Recursive
+
+#[derive(Show, Eq)]
+type Parameterized a b = { x : a, y : b }
+
+let eq_tests =
+    let variant =
+        [
+            test "neq" <| \_ ->
+                assert_neq (A 2) (A 1),
+            test "neq" <| \_ ->
+                assert_neq (A 2) (B "" True),
+            test "eq" <| \_ ->
+                assert_eq (A 2) (A 2),
+        ]
+
+    let record =
+        [
+            test "neq" <| \_ ->
+                assert_neq { x = 1, name = "a" } { x = 1, name = "" },
+            test "eq" <| \_ ->
+                assert_eq { x = 1, name = "a" } { x = 1, name = "a" },
+        ]
+
+    let nested =
+        let a = { variant = A 1, record = { x = 1, name = "" } }
+        [
+            test "neq" <| \_ ->
+                assert_neq a { variant = A 2, .. a },
+            test "eq" <| \_ ->
+                assert_eq a a,
+        ]
+
+    let recursive =
+        let a = Rec (Rec End)
+        [
+            test "neq" <| \_ ->
+                assert_neq (Rec End) End,
+            test "eq" <| \_ ->
+                assert_eq a a,
+        ]
+
+    let parameterized =
+        let a = { x = 1, y = "test" }
+        let b = { x = 4.0, y = True }
+        [
+            test "neq" <| \_ ->
+                assert_neq a { x = 2, y = "test" },
+            test "eq" <| \_ ->
+                assert_eq a a,
+            test "neq2" <| \_ ->
+                assert_neq b { x = 4.0, y = False },
+            test "eq2" <| \_ ->
+                assert_eq b b,
+        ]
+
+    [
+        group "variant" variant,
+        group "record" record,
+        group "nested" nested,
+        group "recursive" recursive,
+        group "parameterized" parameterized,
+    ]
+
+let show_tests =
+    let record = { x = 123, name = "abc" }
+    [
+        test "variant_a" <| \_ -> assert_eq (show (A 2)) "A (2)",
+        test "variant_b" <| \_ -> assert_eq (show (B "test" False)) "B (\"test\") (False)",
+        test "record" <| \_ -> assert_eq (show record) "{ x = 123, name = \"abc\" }",
+        test "nested" <| \_ -> assert_eq (show { variant = A 100, record }) "{ variant = A (100), record = { x = 123, name = \"abc\" } }",
+        test "parameterized" <| \_ -> assert_eq (show { x = 1, y = "test" }) "{ x = 1, y = \"test\" }"
+    ]
+
+group "derive" [
+    group "show" show_tests,
+    group "eq" eq_tests,
+]

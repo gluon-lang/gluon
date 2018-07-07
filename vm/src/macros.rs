@@ -11,7 +11,7 @@ use base::error::Errors as BaseErrors;
 use base::fnv::FnvMap;
 use base::pos;
 use base::pos::{BytePos, Spanned};
-use base::symbol::Symbol;
+use base::symbol::{Symbol, Symbols};
 
 use thread::Thread;
 
@@ -72,9 +72,14 @@ impl MacroEnv {
     }
 
     /// Runs the macros in this `MacroEnv` on `expr` using `env` as the context of the expansion
-    pub fn run(&self, vm: &Thread, expr: &mut SpannedExpr<Symbol>) -> Result<(), Errors> {
+    pub fn run(
+        &self,
+        vm: &Thread,
+        symbols: &mut Symbols,
+        expr: &mut SpannedExpr<Symbol>,
+    ) -> Result<(), Errors> {
         let mut expander = MacroExpander::new(vm);
-        expander.run(expr);
+        expander.run(symbols, expr);
         expander.finish()
     }
 }
@@ -88,9 +93,10 @@ pub struct MacroExpander<'a> {
 }
 
 impl<'a> MacroExpander<'a> {
-    pub fn new(vm: &Thread) -> MacroExpander {
+    pub fn new(vm: &'a Thread) -> MacroExpander<'a> {
         MacroExpander {
             vm: vm,
+
             state: FnvMap::default(),
             macros: vm.get_macros(),
             error_in_expr: false,
@@ -106,11 +112,12 @@ impl<'a> MacroExpander<'a> {
         }
     }
 
-    pub fn run(&mut self, expr: &mut SpannedExpr<Symbol>) {
+    pub fn run(&mut self, symbols: &mut Symbols, expr: &mut SpannedExpr<Symbol>) {
         {
             let exprs = {
                 let mut visitor = MacroVisitor {
                     expander: self,
+                    symbols,
                     exprs: Vec::new(),
                 };
                 visitor.visit_expr(expr);
@@ -160,6 +167,7 @@ fn replace_expr(expr: &mut SpannedExpr<Symbol>, new: SpannedExpr<Symbol>) {
 
 struct MacroVisitor<'a: 'b, 'b, 'c> {
     expander: &'b mut MacroExpander<'a>,
+    symbols: &'c mut Symbols,
     exprs: Vec<(&'c mut SpannedExpr<Symbol>, MacroFuture)>,
 }
 
@@ -190,6 +198,31 @@ impl<'a, 'b, 'c> MutVisitor<'c> for MacroVisitor<'a, 'b, 'c> {
                 }
                 _ => None,
             },
+            Expr::TypeBindings(ref binds, ref mut body) => {
+                for bind in binds {
+                    if let Some(derive) = bind
+                        .metadata
+                        .attributes
+                        .iter()
+                        .find(|attr| attr.name == "derive")
+                    {
+                        let generated_bindings =
+                            match ::derive::generate(self.symbols, derive, bind) {
+                                Ok(x) => x,
+                                Err(err) => {
+                                    self.expander.errors.push(pos::spanned(bind.name.span, err));
+                                    continue;
+                                }
+                            };
+                        let next_expr = mem::replace(body, Default::default());
+                        **body = pos::spanned(
+                            Default::default(),
+                            Expr::LetBindings(generated_bindings, next_expr),
+                        );
+                    }
+                }
+                None
+            }
             _ => None,
         };
         if let Some(future) = replacement {

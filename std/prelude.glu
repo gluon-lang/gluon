@@ -14,6 +14,7 @@ let { Show, show } = import! std.show
 let { Category, id, compose } = import! std.category
 let { Num, (+), (-), (*), (/), negate } = import! std.num
 let { Bool, not } = import! std.bool
+let { (++) } = import! std.string
 let { error } = import! std.prim
 
 {
@@ -50,6 +51,8 @@ let { error } = import! std.prim
 
     Option,
     Bool,
+
+    (++),
 
     not,
 

@@ -11,19 +11,19 @@ let function = import! std.function
 
 let semigroup : Semigroup String = { append = string_prim.append }
 
+/// Appends two strings.
+///
+/// Re-export of `semigroup.append`.
+#[infix(left, 4)]
+let (++) : String -> String -> String = (<>)
+
 let monoid : Monoid String = { semigroup, empty = "" }
 
 let eq : Eq String = { (==) = prim.string_eq }
 
 let ord : Ord String = { eq, compare = prim.string_compare }
 
-let show : Show String = { show = function.id }
-
-/// Appends two strings.
-///
-/// Re-export of `semigroup.append`.
-#[infix(left, 4)]
-let (++) : String -> String -> String = (<>)
+let show : Show String = { show = \s -> "\"" ++ s ++ "\"" }
 
 {
     eq,
