@@ -457,3 +457,27 @@ Test
 "#;
     assert_diff!(&format_expr_expanded(expr).unwrap(), expected, "\n", 0);
 }
+
+#[test]
+fn derive_eq_recursive() {
+    let expr = r#"
+#[derive(Eq)]
+type Recursive = | End | Rec Recursive
+End
+"#;
+    let expected = r#"
+#[derive(Eq)]
+type Recursive =
+    | End
+    | Rec Recursive
+let eq : Eq Recursive =
+    let eq l r : Recursive -> Recursive -> _ =
+        match (l, r) with
+        | (End, End) -> True
+        | (Rec arg_l, Rec arg_r) -> eq arg_l arg_r
+        | _ -> False
+    { (==) = eq }
+End
+"#;
+    assert_diff!(&format_expr_expanded(expr).unwrap(), expected, "\n", 0);
+}

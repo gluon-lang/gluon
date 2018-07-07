@@ -282,27 +282,27 @@ fn generate_eq(
     let generate_and_chain =
         |symbols: &mut Symbols,
          iter: &mut Iterator<Item = (&(bool, TypedIdent<Symbol>), &TypedIdent<Symbol>)>| {
-            let true_expr = ident(span, symbols.symbol("True"));
-            iter.fold(true_expr, |acc, (&(self_type, ref l), r)| {
+            iter.fold(None, |acc, (&(self_type, ref l), r)| {
                 let equal_symbol = if self_type {
                     eq.name.clone()
                 } else {
                     symbols.symbol("==")
                 };
-                infix(
+
+                let eq_check = app(
                     span,
-                    acc,
-                    symbols.symbol("&&"),
-                    app(
-                        span,
-                        equal_symbol,
-                        vec![
-                            ident(span, l.name.clone()).into(),
-                            ident(span, r.name.clone()),
-                        ],
-                    ),
-                )
-            })
+                    equal_symbol,
+                    vec![
+                        ident(span, l.name.clone()).into(),
+                        ident(span, r.name.clone()),
+                    ],
+                );
+
+                Some(match acc {
+                    Some(acc) => infix(span, acc, symbols.symbol("&&"), eq_check),
+                    None => eq_check,
+                })
+            }).unwrap_or_else(|| ident(span, symbols.symbol("True")))
         };
 
     let comparison_expr = match **bind.alias.value.unresolved_type() {
