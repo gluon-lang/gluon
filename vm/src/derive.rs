@@ -38,7 +38,7 @@ fn literal(span: Span<BytePos>, s: &str) -> SpannedExpr<Symbol> {
 
 fn app(span: Span<BytePos>, func: Symbol, args: Vec<SpannedExpr<Symbol>>) -> SpannedExpr<Symbol> {
     pos::spanned(
-        Default::default(),
+        span,
         Expr::App {
             func: Box::new(pos::spanned(span, Expr::Ident(TypedIdent::new(func)))),
             implicit_args: Vec::new(),
@@ -54,7 +54,7 @@ fn infix(
     rhs: SpannedExpr<Symbol>,
 ) -> SpannedExpr<Symbol> {
     pos::spanned(
-        Default::default(),
+        span,
         Expr::Infix {
             lhs: lhs.into(),
             op: pos::spanned(span, TypedIdent::new(op)),
