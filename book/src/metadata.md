@@ -75,17 +75,14 @@ let eq_Int : Eq Int = ..
 #[derive(IDENTIFIER)]
 ```
 
-The `#[derive(..)]` can be used on `type` bindings to generate implementations for some .
-to mark value bindings or type bindings as usable for implicit resolution. If specified on a value binding then only that specific binding can be used on implicit resolution. If specified on a type binding then all bindings that has that type can be used in implicit resolution.
+The `#[derive(..)]` attribute can be used on `type` bindings to generate implementations for some traits. Currently only `Eq` and `Show` can be derived and only non-recursive and self-recursive types are supported (mutually recursive types do not work for the moment).
 
-```
-// Can be used as an implicit argument
-#[implicit]
-let binding : MyType = ..
+```f#,rust
+#[derive(Eq, Show)]
+type Tree a = | Tip a | Branch (Tree a) (Tree a)
 
-#[implicit]
-type Eq a = { (==) : a -> a -> Bool }
+let tree = Branch (Tip 1) (Branch (Tip 2) (Tip 3))
 
-// Can be used as an implicit argument
-let eq_Int : Eq Int = ..
+show tree
+tree == Tip 1
 ```
