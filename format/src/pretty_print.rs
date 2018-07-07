@@ -295,7 +295,7 @@ where
                         Literal::Float(f) => arena.text(f.to_string()),
                         Literal::String(ref s) => chain![arena;
                                 "\"",
-                                arena.text(s),
+                                arena.text(&s[..]),
                                 "\""
                             ],
                         Literal::Char(c) => chain![arena;
