@@ -18,6 +18,9 @@ type Nested = { variant : TestVariant, record : TestRecord }
 #[derive(Eq, Show)]
 type Recursive = | End | Rec Recursive
 
+#[derive(Show, Eq)]
+type Parameterized a b = { x : a, y : b }
+
 let eq_tests =
     let variant =
         [
@@ -55,11 +58,26 @@ let eq_tests =
                 assert_eq a a,
         ]
 
+    let parameterized =
+        let a = { x = 1, y = "test" }
+        let b = { x = 4.0, y = True }
+        [
+            test "neq" <| \_ ->
+                assert_neq a { x = 2, y = "test" },
+            test "eq" <| \_ ->
+                assert_eq a a,
+            test "neq2" <| \_ ->
+                assert_neq b { x = 4.0, y = False },
+            test "eq2" <| \_ ->
+                assert_eq b b,
+        ]
+
     [
         group "variant" variant,
         group "record" record,
         group "nested" nested,
         group "recursive" recursive,
+        group "parameterized" parameterized,
     ]
 
 let show_tests =
@@ -69,6 +87,7 @@ let show_tests =
         test "variant_b" <| \_ -> assert_eq (show (B "test" False)) "B (\"test\") (False)",
         test "record" <| \_ -> assert_eq (show record) "{ x = 123, name = \"abc\" }",
         test "nested" <| \_ -> assert_eq (show { variant = A 100, record }) "{ variant = A (100), record = { x = 123, name = \"abc\" } }",
+        test "parameterized" <| \_ -> assert_eq (show { x = 1, y = "test" }) "{ x = 1, y = \"test\" }"
     ]
 
 group "derive" [

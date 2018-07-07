@@ -5,7 +5,7 @@ use base::ast::{
 use base::metadata::Attribute;
 use base::pos::{self, BytePos, Span};
 use base::symbol::{Symbol, Symbols};
-use base::types::{arg_iter, row_iter, Type};
+use base::types::{arg_iter, remove_forall, row_iter, Type};
 
 use macros::Error;
 
@@ -73,6 +73,24 @@ fn is_self_type(self_: &Symbol, typ: &AstType<Symbol>) -> bool {
     }
 }
 
+fn binding_type(
+    symbols: &mut Symbols,
+    derive_type_name: &str,
+    self_type: AstType<Symbol>,
+    bind: &TypeBinding<Symbol>,
+) -> AstType<Symbol> {
+    let derive_type: AstType<_> = Type::ident(symbols.symbol(derive_type_name));
+    Type::function_implicit(
+        bind.alias
+            .value
+            .params()
+            .iter()
+            .cloned()
+            .map(|g| Type::app(derive_type.clone(), collect![Type::generic(g)])),
+        Type::app(derive_type.clone(), collect![self_type]),
+    )
+}
+
 fn generate_show(
     symbols: &mut Symbols,
     bind: &TypeBinding<Symbol>,
@@ -82,7 +100,7 @@ fn generate_show(
     let x = Symbol::from("x");
     let show_fn = TypedIdent::new(symbols.symbol("show_"));
 
-    let show_expr = match **bind.alias.value.unresolved_type() {
+    let show_expr = match **remove_forall(bind.alias.value.unresolved_type()) {
         Type::Variant(ref variants) => {
             let alts = row_iter(variants)
                 .map(|variant| {
@@ -219,6 +237,17 @@ fn generate_show(
         _ => return Err("Unable to derive Show for this type".into()),
     };
 
+    let self_type: AstType<_> = Type::app(
+        Type::ident(bind.alias.value.name.clone()),
+        bind.alias
+            .value
+            .params()
+            .iter()
+            .cloned()
+            .map(Type::generic)
+            .collect(),
+    );
+
     let show_record_expr = Expr::LetBindings(
         vec![ValueBinding {
             name: pos::spanned(span, Pattern::Ident(show_fn.clone())),
@@ -228,10 +257,7 @@ fn generate_show(
             ))],
             expr: pos::spanned(span, show_expr),
             metadata: Default::default(),
-            typ: Some(Type::function(
-                vec![Type::ident(bind.alias.value.name.clone())],
-                Type::string(),
-            )),
+            typ: Some(Type::function(vec![self_type.clone()], Type::string())),
             resolved_type: Type::hole(),
         }],
         Box::new(pos::spanned(
@@ -248,15 +274,13 @@ fn generate_show(
             },
         )),
     );
+
     Ok(ValueBinding {
         name: pos::spanned(span, Pattern::Ident(TypedIdent::new(Symbol::from("show")))),
         args: Vec::new(),
         expr: pos::spanned(span, show_record_expr),
         metadata: Default::default(),
-        typ: Some(Type::app(
-            Type::ident(symbols.symbol("Show")),
-            collect![Type::ident(bind.alias.value.name.clone())],
-        )),
+        typ: Some(binding_type(symbols, "Show", self_type, bind)),
         resolved_type: Type::hole(),
     })
 }
@@ -305,7 +329,7 @@ fn generate_eq(
             }).unwrap_or_else(|| ident(span, symbols.symbol("True")))
         };
 
-    let comparison_expr = match **bind.alias.value.unresolved_type() {
+    let comparison_expr = match **remove_forall(bind.alias.value.unresolved_type()) {
         Type::Variant(ref variants) => {
             let catch_all_alternative = Alternative {
                 pattern: pos::spanned(span, Pattern::Ident(TypedIdent::new(symbols.symbol("_")))),
@@ -415,6 +439,18 @@ fn generate_eq(
         }
         _ => return Err("Unable to derive eq for this type".into()),
     };
+
+    let self_type: AstType<_> = Type::app(
+        Type::ident(bind.alias.value.name.clone()),
+        bind.alias
+            .value
+            .params()
+            .iter()
+            .cloned()
+            .map(Type::generic)
+            .collect(),
+    );
+
     let eq_record_expr = Expr::LetBindings(
         vec![ValueBinding {
             name: pos::spanned(span, Pattern::Ident(eq.clone())),
@@ -425,10 +461,7 @@ fn generate_eq(
             expr: pos::spanned(span, comparison_expr),
             metadata: Default::default(),
             typ: Some(Type::function(
-                vec![
-                    Type::ident(bind.alias.value.name.clone()),
-                    Type::ident(bind.alias.value.name.clone()),
-                ],
+                vec![self_type.clone(), self_type.clone()],
                 Type::hole(),
             )),
             resolved_type: Type::hole(),
@@ -447,15 +480,13 @@ fn generate_eq(
             },
         )),
     );
+
     Ok(ValueBinding {
         name: pos::spanned(span, Pattern::Ident(TypedIdent::new(Symbol::from("eq")))),
         args: Vec::new(),
         expr: pos::spanned(span, eq_record_expr),
         metadata: Default::default(),
-        typ: Some(Type::app(
-            Type::ident(symbols.symbol("Eq")),
-            collect![Type::ident(bind.alias.value.name.clone())],
-        )),
+        typ: Some(binding_type(symbols, "Eq", self_type, bind)),
         resolved_type: Type::hole(),
     })
 }

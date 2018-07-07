@@ -217,7 +217,7 @@ impl<'a, 'b, 'c> MutVisitor<'c> for MacroVisitor<'a, 'b, 'c> {
                         let next_expr = mem::replace(body, Default::default());
 
                         **body = pos::spanned(
-                            Default::default(),
+                            bind.name.span,
                             Expr::LetBindings(generated_bindings, next_expr),
                         );
                     }

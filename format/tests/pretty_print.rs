@@ -481,3 +481,25 @@ End
 "#;
     assert_diff!(&format_expr_expanded(expr).unwrap(), expected, "\n", 0);
 }
+
+#[test]
+fn derive_parameterized() {
+    let expr = r#"
+#[derive(Show)]
+type Test a =
+    | Test a
+Test 1
+"#;
+    let expected = r#"
+#[derive(Show)]
+type Test a =
+    | Test a
+let show : [Show a] -> Show (Test a) =
+    let show_ x : Test a -> String =
+        match x with
+        | Test arg_0 -> "Test" ++ " " ++ "(" ++ show arg_0 ++ ")"
+    { show = show_ }
+Test 1
+"#;
+    assert_diff!(&format_expr_expanded(expr).unwrap(), expected, "\n", 0);
+}

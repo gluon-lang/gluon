@@ -67,3 +67,25 @@ type Eq a = { (==) : a -> a -> Bool }
 // Can be used as an implicit argument
 let eq_Int : Eq Int = ..
 ```
+
+
+### #[derive(..)]
+
+```f#
+#[derive(IDENTIFIER)]
+```
+
+The `#[derive(..)]` can be used on `type` bindings to generate implementations for some .
+to mark value bindings or type bindings as usable for implicit resolution. If specified on a value binding then only that specific binding can be used on implicit resolution. If specified on a type binding then all bindings that has that type can be used in implicit resolution.
+
+```
+// Can be used as an implicit argument
+#[implicit]
+let binding : MyType = ..
+
+#[implicit]
+type Eq a = { (==) : a -> a -> Bool }
+
+// Can be used as an implicit argument
+let eq_Int : Eq Int = ..
+```
