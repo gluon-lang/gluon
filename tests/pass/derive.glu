@@ -15,7 +15,7 @@ type TestRecord = { x : Int, name : String }
 #[derive(Eq, Show)]
 type Nested = { variant : TestVariant, record : TestRecord }
 
-#[derive(Eq)]
+#[derive(Eq, Show)]
 type Recursive = | End | Rec Recursive
 
 let eq_tests =
