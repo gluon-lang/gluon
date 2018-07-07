@@ -437,6 +437,17 @@ Test
 }
 
 #[test]
+fn derive_parameterized() {
+    let expr = r#"
+#[derive(Show)]
+type Test a =
+    | Test a
+Test 1
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+}
+
+#[test]
 fn derive_expanded() {
     let expr = r#"
 #[derive(Show)]
@@ -448,7 +459,7 @@ Test
 #[derive(Show)]
 type Test =
     | Test
-let show : Show Test =
+let show_Test : Show Test =
     let show_ x : Test -> String =
         match x with
         | Test -> "Test"
@@ -459,7 +470,7 @@ Test
 }
 
 #[test]
-fn derive_eq_recursive() {
+fn derive_eq_recursive_expanded() {
     let expr = r#"
 #[derive(Eq)]
 type Recursive = | End | Rec Recursive
@@ -470,7 +481,7 @@ End
 type Recursive =
     | End
     | Rec Recursive
-let eq : Eq Recursive =
+let eq_Recursive : Eq Recursive =
     let eq l r : Recursive -> Recursive -> _ =
         match (l, r) with
         | (End, End) -> True
@@ -483,7 +494,7 @@ End
 }
 
 #[test]
-fn derive_parameterized() {
+fn derive_parameterized_expended() {
     let expr = r#"
 #[derive(Show)]
 type Test a =
@@ -494,7 +505,7 @@ Test 1
 #[derive(Show)]
 type Test a =
     | Test a
-let show : [Show a] -> Show (Test a) =
+let show_Test : [Show a] -> Show (Test a) =
     let show_ x : Test a -> String =
         match x with
         | Test arg_0 -> "Test" ++ " " ++ "(" ++ show arg_0 ++ ")"
