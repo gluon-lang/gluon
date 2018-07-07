@@ -10,6 +10,7 @@ let list @ { List } = import! std.list
 let { Option } = import! std.option
 let { compare } = import! std.cmp
 
+#[derive(Eq, Show)]
 type Map k a =
     | Bin k a (Map k a) (Map k a)
     | Tip
@@ -124,6 +125,9 @@ let values : [Ord k] -> Map k a -> List a = foldr Cons Nil
 
 {
     Map,
+
+    eq = eq_Map,
+    show = show_Map,
 
     semigroup,
     monoid,

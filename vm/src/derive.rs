@@ -276,7 +276,12 @@ fn generate_show(
     );
 
     Ok(ValueBinding {
-        name: pos::spanned(span, Pattern::Ident(TypedIdent::new(Symbol::from("show")))),
+        name: pos::spanned(
+            span,
+            Pattern::Ident(TypedIdent::new(
+                symbols.symbol(format!("show_{}", bind.alias.value.name.declared_name())),
+            )),
+        ),
         args: Vec::new(),
         expr: pos::spanned(span, show_record_expr),
         metadata: Default::default(),
@@ -482,7 +487,12 @@ fn generate_eq(
     );
 
     Ok(ValueBinding {
-        name: pos::spanned(span, Pattern::Ident(TypedIdent::new(Symbol::from("eq")))),
+        name: pos::spanned(
+            span,
+            Pattern::Ident(TypedIdent::new(
+                symbols.symbol(format!("eq_{}", bind.alias.value.name.declared_name())),
+            )),
+        ),
         args: Vec::new(),
         expr: pos::spanned(span, eq_record_expr),
         metadata: Default::default(),
