@@ -1,0 +1,144 @@
+let { Value } = import! std.serialization_types
+let prim = import! std.serialization.prim
+
+let { Result, ? } = import! std.result
+let map@{ Map, ? } = import! std.map
+let { id } = import! std.function
+
+let { (*>), (<*), wrap } = import! std.applicative
+let { Alternative, (<|>) } = import! std.applicative
+let { flat_map } = import! std.monad
+let { for } = import! std.traversable
+let { ? } = import! std.array
+
+
+type Error = String
+type Deserializer i a = i -> Result Error { value : a, input : i }
+
+type ValueDeserializer a = Deserializer Value a
+
+
+let error_msg = id
+
+let deserializer : Deserializer i a -> Deserializer i a = id
+
+let functor : Functor (Deserializer i) = {
+    map = \f m -> deserializer (\input ->
+            do a = deserializer m input
+            Ok { value = f a.value, input = a.input })
+}
+
+let applicative : Applicative (Deserializer i) = {
+    functor,
+
+    apply = \f m -> deserializer (\input ->
+            do g = deserializer f input
+            do a = deserializer m g.input
+            Ok { value = g.value a.value, input = a.input }),
+
+    wrap = \value -> deserializer (\input -> Ok { value, input }),
+}
+
+let alternative : Alternative (Deserializer i) = {
+    applicative,
+
+    or = \l r -> deserializer (\stream ->
+            match deserializer l stream with
+            | Ok a -> Ok a
+            | Err _ -> deserializer r stream),
+    empty = deserializer (\stream -> Err (error_msg "empty")),
+}
+
+let monad : Monad (Deserializer i) = {
+    applicative,
+
+    flat_map = \f m ->
+        deserializer (\input ->
+                do a = deserializer m input
+                deserializer (f a.value) a.input
+            ),
+}
+
+///
+/// ```
+/// let { Value, int, deserialize } = import! std.serialization
+/// let { Result, ? } = import! std.result
+/// let { assert } = import! std.test
+///
+/// assert (deserialize int "123" == Ok 123)
+/// assert (deserialize int "true" == Err "Expected integer")
+/// ```
+let int : ValueDeserializer Int = \input ->
+    match input with
+    | Int i -> Ok { value = i, input }
+    | _ -> Err (error_msg "Expected integer")
+
+let string : ValueDeserializer String = \input ->
+    match input with
+    | String s -> Ok { value = s, input }
+    | _ -> Err (error_msg "Expected integer")
+
+///
+/// ```
+/// let { Value, array, int, deserialize } = import! std.serialization
+/// let { Result, ? } = import! std.result
+/// let { ? } = import! std.array
+/// let { assert } = import! std.test
+///
+/// assert (deserialize (array int) "[123, 456]" == Ok [123, 456])
+/// assert (deserialize (array int) "[123, \"\"]" == Err "Expected integer")
+/// ```
+let array a : ValueDeserializer a -> ValueDeserializer (Array a) = \input ->
+    match input with
+    | Array xs ->
+        do value = for xs (\v ->
+            do state = a v
+            Ok state.value)
+        Ok { value, input }
+    | _ -> Err (error_msg "Expected array")
+
+///
+/// ```
+/// let { Value, field, int, deserialize } = import! std.serialization
+/// let { Result, ? } = import! std.result
+/// let { ? } = import! std.array
+/// let { assert } = import! std.test
+///
+/// assert (deserialize (field "test" int) "{ \"test\": 123 }" == Ok 123)
+/// assert (deserialize (field "test" int) "{ \"abc\": 123 }" == Err "Expected field `test`")
+/// ```
+let field name a : String -> ValueDeserializer a -> ValueDeserializer a = \input ->
+    match input with
+    | Object o ->
+        match map.find name o with
+        | Some value -> a value
+        | None -> Err (error_msg ("Expected field `" ++ name ++ "`"))
+    | _ -> Err (error_msg "Expected map")
+
+let deserialize de input : ValueDeserializer a -> String -> Result Error a =
+    do value = prim.deserialize input
+    (import! std.debug).trace "a"
+    do state = de value
+    Ok state.value
+
+let run de value : ValueDeserializer a -> Value -> Result Error a =
+    do state = de value
+    Ok state.value
+
+let insert_string : String -> a -> Map String a -> Map String a = map.insert
+
+{
+    Value,
+    Error,
+    Deserializer,
+
+    int,
+    string,
+    array,
+    field,
+
+    deserialize,
+    run,
+
+    insert_string
+}

@@ -147,7 +147,7 @@ pub fn getable(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 }
 
 #[doc(hidden)]
-#[proc_macro_derive(Pushable)]
+#[proc_macro_derive(Pushable, attributes(gluon))]
 pub fn pushable(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     pushable::derive(input.into()).into()
 }

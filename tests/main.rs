@@ -385,6 +385,6 @@ fn main_() -> Result<(), Box<Error>> {
             ],
         ),
         &tensile::Options::default().filter(filter.map_or("", |s| &s[..])),
-    ).unwrap();
+    )?;
     Ok(())
 }

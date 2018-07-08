@@ -17,6 +17,7 @@ use {forget_lifetime, Error, Result, Variants};
 use std::any::Any;
 use std::cell::Ref;
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::Deref;
@@ -921,6 +922,47 @@ impl<'vm, 'value, T: vm::Userdata> Getable<'vm, 'value> for *const T {
     }
 }
 
+impl<K, V> VmType for BTreeMap<K, V>
+where
+    K: VmType,
+    K::Type: Sized,
+    V: VmType,
+    V::Type: Sized,
+{
+    type Type = BTreeMap<K::Type, V::Type>;
+
+    fn make_type(vm: &Thread) -> ArcType {
+        let map_alias = vm
+            .find_type_info("std.map.Map")
+            .unwrap()
+            .clone()
+            .into_type();
+        Type::app(map_alias, collect![K::make_type(vm), V::make_type(vm)])
+    }
+}
+
+impl<'vm, K, V> Pushable<'vm> for BTreeMap<K, V>
+where
+    K: AsRef<str> + VmType<Type = String>,
+    K::Type: Sized,
+    V: for<'vm2> Pushable<'vm2> + VmType,
+    V::Type: Sized,
+{
+    fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
+        type Map<V2> = OpaqueValue<RootedThread, BTreeMap<String, V2>>;
+        let mut map: Map<V> = thread.get_global("std.map.empty")?;
+        let mut insert: OwnedFunction<fn(String, V, Map<V>) -> Map<V>> =
+            thread.get_global("std.serialization.insert_string")?;
+
+        for (key, value) in self {
+            // unimplemented!();
+            map = insert.call(key.as_ref().to_string(), value, map)?;
+        }
+
+        map.push(thread, context)
+    }
+}
+
 impl<T: VmType> VmType for Option<T>
 where
     T::Type: Sized,
@@ -935,6 +977,7 @@ where
         Type::app(option_alias, collect![T::make_type(vm)])
     }
 }
+
 impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T> {
     fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
         match self {
@@ -1233,6 +1276,21 @@ where
     }
 }
 
+impl<'vm, T> Pushable<'vm> for RootedValue<T>
+where
+    T: Deref<Target = Thread>,
+{
+    fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
+        let full_clone = !thread.can_share_values_with(&mut context.gc, self.vm());
+        let mut cloner = Cloner::new(thread, &mut context.gc);
+        if full_clone {
+            cloner.force_full_clone();
+        }
+        context.stack.push(cloner.deep_clone(&self.get_value())?);
+        Ok(())
+    }
+}
+
 impl<T, V> VmType for OpaqueValue<T, V>
 where
     T: Deref<Target = Thread>,
@@ -1256,13 +1314,7 @@ where
     V::Type: Sized,
 {
     fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
-        let full_clone = !thread.can_share_values_with(&mut context.gc, self.0.vm());
-        let mut cloner = Cloner::new(thread, &mut context.gc);
-        if full_clone {
-            cloner.force_full_clone();
-        }
-        context.stack.push(cloner.deep_clone(&self.0.get_value())?);
-        Ok(())
+        self.0.push(thread, context)
     }
 }
 
