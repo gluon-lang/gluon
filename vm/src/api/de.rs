@@ -1,5 +1,5 @@
 //! Gluon -> Rust value conversion via the `serde::Deserialize` trait
-//! 
+//!
 //! _This module requires Gluon to be built with the `serde` feature._
 
 use std::cell::RefCell;
@@ -173,12 +173,12 @@ where
     }
 }
 
-impl<'vm, T> Getable<'vm> for De<T>
+impl<'vm, 'value, T> Getable<'vm, 'value> for De<T>
 where
     T: VmType,
     T: DeserializeOwned,
 {
-    fn from_value(thread: &'vm Thread, value: Variants) -> Self {
+    fn from_value(thread: &'vm Thread, value: Variants<'value>) -> Self {
         let typ = T::make_type(thread);
         match from_value(thread, value, &typ).map(De) {
             Ok(v) => v,
@@ -230,7 +230,7 @@ impl<'de, 't> Deserializer<'de, 't> {
     fn deserialize_builtin<T, F, R>(&self, expected: BuiltinType, visit: F) -> Result<R>
     where
         F: FnOnce(T) -> Result<R>,
-        T: Getable<'de>,
+        T: for<'value> Getable<'de, 'value>,
     {
         self.deserialize_leaf(|t| *t == Type::Builtin(expected), visit)
     }
@@ -239,7 +239,7 @@ impl<'de, 't> Deserializer<'de, 't> {
     where
         E: FnOnce(&Type<Symbol, ArcType>) -> bool,
         F: FnOnce(T) -> Result<R>,
-        T: Getable<'de>,
+        T: for<'value> Getable<'de, 'value>,
     {
         let typ = resolve::remove_aliases_cow(self.state.env, self.typ);
         if expected(&typ) {

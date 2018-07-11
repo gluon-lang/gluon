@@ -519,7 +519,7 @@ impl Compiler {
         expr_str: &str,
     ) -> Result<(T, ArcType)>
     where
-        T: Getable<'vm> + VmType + Send + 'vm,
+        T: for<'value> Getable<'vm, 'value> + VmType + Send + 'vm,
     {
         let expected = T::make_type(vm);
         expr_str
@@ -564,7 +564,7 @@ impl Compiler {
         expr_str: &str,
     ) -> BoxFutureValue<'static, (T, ArcType), Error>
     where
-        T: for<'vm> Getable<'vm> + VmType + Send + 'static,
+        T: for<'vm, 'value> Getable<'vm, 'value> + VmType + Send + 'static,
     {
         let expected = T::make_type(&vm);
         let vm = vm.root_thread();

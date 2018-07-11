@@ -371,8 +371,8 @@ impl<'vm> Pushable<'vm> for RootedThread {
     }
 }
 
-impl<'vm> Getable<'vm> for RootedThread {
-    fn from_value(_: &'vm Thread, value: Variants) -> Self {
+impl<'vm, 'value> Getable<'vm, 'value> for RootedThread {
+    fn from_value(_: &'vm Thread, value: Variants<'value>) -> Self {
         match value.as_ref() {
             ValueRef::Thread(thread) => thread.root_thread(),
             _ => ice!("ValueRef is not a Thread"),
@@ -601,7 +601,7 @@ impl Thread {
     ///
     pub fn get_global<'vm, T>(&'vm self, name: &str) -> Result<T>
     where
-        T: Getable<'vm> + VmType,
+        T: for<'value> Getable<'vm, 'value> + VmType,
     {
         use check::check_signature;
 
@@ -612,7 +612,7 @@ impl Thread {
 
         // Finally check that type of the returned value is correct
         if check_signature(&*env, &expected, &actual) {
-            unsafe { Ok(T::from_value(self, Variants::new(&value))) }
+            Ok(T::from_value(self, value))
         } else {
             Err(Error::WrongType(expected, actual.into_owned()))
         }
@@ -1988,37 +1988,37 @@ impl<'b> ExecuteContext<'b> {
 }
 
 #[inline]
-fn binop_int<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
+fn binop_int<'b, 'c, F, T>(vm: &'b Thread, stack: &'b mut StackFrame<'c>, f: F)
 where
     F: FnOnce(T, T) -> VmInt,
-    T: Getable<'b> + fmt::Debug,
+    T: for<'d, 'e> Getable<'d, 'e> + fmt::Debug,
 {
     binop(vm, stack, |l, r| ValueRepr::Int(f(l, r)))
 }
 
 #[inline]
-fn binop_f64<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
+fn binop_f64<'b, 'c, F, T>(vm: &'b Thread, stack: &'b mut StackFrame<'c>, f: F)
 where
     F: FnOnce(T, T) -> f64,
-    T: Getable<'b> + fmt::Debug,
+    T: for<'d, 'e> Getable<'d, 'e> + fmt::Debug,
 {
     binop(vm, stack, |l, r| ValueRepr::Float(f(l, r)))
 }
 
 #[inline]
-fn binop_byte<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
+fn binop_byte<'b, 'c, F, T>(vm: &'b Thread, stack: &'b mut StackFrame<'c>, f: F)
 where
     F: FnOnce(T, T) -> u8,
-    T: Getable<'b> + fmt::Debug,
+    T: for<'d, 'e> Getable<'d, 'e> + fmt::Debug,
 {
     binop(vm, stack, |l, r| ValueRepr::Byte(f(l, r)))
 }
 
 #[inline]
-fn binop_bool<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
+fn binop_bool<'b, 'c, F, T>(vm: &'b Thread, stack: &'b mut StackFrame<'c>, f: F)
 where
     F: FnOnce(T, T) -> bool,
-    T: Getable<'b> + fmt::Debug,
+    T: for<'d, 'e> Getable<'d, 'e> + fmt::Debug,
 {
     binop(vm, stack, |l, r| {
         ValueRepr::Tag(if f(l, r) { 1 } else { 0 })
@@ -2026,10 +2026,10 @@ where
 }
 
 #[inline]
-fn binop<'b, F, T>(vm: &'b Thread, stack: &mut StackFrame<'b>, f: F)
+fn binop<'b, 'c, F, T>(vm: &'b Thread, stack: &'b mut StackFrame<'c>, f: F)
 where
     F: FnOnce(T, T) -> ValueRepr,
-    T: Getable<'b> + fmt::Debug,
+    T: for<'d, 'e> Getable<'d, 'e> + fmt::Debug,
 {
     let (l, r) = {
         let r = stack.get_variant(stack.len() - 1).unwrap();
