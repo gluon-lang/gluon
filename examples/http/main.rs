@@ -208,8 +208,8 @@ struct StatusCodeContainer(#[serde(with = "RemoteStatusCode")] StatusCode);
 
 define_vmtype! { StatusCode, StatusCodeContainer }
 
-impl<'vm> Getable<'vm> for Wrap<StatusCode> {
-    fn from_value(vm: &'vm Thread, value: Variants) -> Self {
+impl<'vm, 'value> Getable<'vm, 'value> for Wrap<StatusCode> {
+    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
         use gluon::vm::api::de::De;
         Wrap((De::<StatusCodeContainer>::from_value(vm, value).0).0)
     }

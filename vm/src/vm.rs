@@ -290,7 +290,7 @@ impl VmEnv {
         Some((remaining_fields, global))
     }
 
-    pub fn get_binding(&self, name: &str) -> Result<(Value, Cow<ArcType>)> {
+    pub fn get_binding(&self, name: &str) -> Result<(Variants, Cow<ArcType>)> {
         use base::resolve;
 
         let (remaining_fields, global) = self
@@ -299,7 +299,10 @@ impl VmEnv {
 
         if remaining_fields.as_str().is_empty() {
             // No fields left
-            return Ok((global.value.clone(), Cow::Borrowed(&global.typ)));
+            return Ok((
+                unsafe { Variants::new(&global.value) },
+                Cow::Borrowed(&global.typ),
+            ));
         }
 
         let mut typ = Cow::Borrowed(&global.typ);
@@ -337,7 +340,7 @@ impl VmEnv {
             typ = next_type
                 .ok_or_else(move || Error::UndefinedField(typ.into_owned(), field_name.into()))?;
         }
-        Ok((value.get_value(), typ))
+        Ok((value, typ))
     }
 
     pub fn get_metadata(&self, name_str: &str) -> Result<&Metadata> {

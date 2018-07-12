@@ -240,7 +240,7 @@ pub extern "C" fn glu_get_light_userdata(
 
 fn get_value<T>(vm: &Thread, index: VmIndex, out: &mut T) -> Error
 where
-    T: for<'vm> Getable<'vm>,
+    T: for<'vm, 'value> Getable<'vm, 'value>,
 {
     let mut context = vm.context();
     let stack = context.stack.current_frame();

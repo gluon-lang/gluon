@@ -39,14 +39,14 @@ impl api::VmType for Enum {
     }
 }
 
-impl<'vm> api::Pushable<'vm> for Enum {
+impl<'vm, 'value> api::Pushable<'vm> for Enum {
     fn push(self, thread: &'vm Thread, context: &mut Context) -> vm::Result<()> {
         api::ser::Ser(self).push(thread, context)
     }
 }
 
-impl<'vm> api::Getable<'vm> for Enum {
-    fn from_value(thread: &'vm Thread, value: vm::Variants) -> Self {
+impl<'vm, 'value> api::Getable<'vm, 'value> for Enum {
+    fn from_value(thread: &'vm Thread, value: vm::Variants<'value>) -> Self {
         api::de::De::from_value(thread, value).0
     }
 }
@@ -241,7 +241,8 @@ where
 
     fn make_type(vm: &Thread) -> ArcType {
         // get the type defined in Gluon
-        let ty = vm.find_type_info("examples.wrapper.User")
+        let ty = vm
+            .find_type_info("examples.wrapper.User")
             .expect("Could not find type")
             .into_type();
 
@@ -275,11 +276,11 @@ where
     }
 }
 
-impl<'vm, T> Getable<'vm> for GluonUser<T>
+impl<'vm, 'value, T> Getable<'vm, 'value> for GluonUser<T>
 where
-    T: Getable<'vm>,
+    T: Getable<'vm, 'value>,
 {
-    fn from_value(vm: &'vm Thread, data: Variants) -> GluonUser<T> {
+    fn from_value(vm: &'vm Thread, data: Variants<'value>) -> GluonUser<T> {
         // get the data, it must be a complex type
         let data = match data.as_ref() {
             ValueRef::Data(data) => data,

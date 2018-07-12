@@ -719,7 +719,7 @@ impl<'de> DeserializeState<'de, DeSeed> for ExternFunction {
         }
         let function = seed
             .thread
-            .get_global::<OpaqueValue<&Thread, Hole>>(&escaped_id)
+            .get_global::<OpaqueValue<RootedThread, Hole>>(&escaped_id)
             .map_err(|err| D::Error::custom(err))?;
         unsafe {
             match function.get_value().get_repr() {
