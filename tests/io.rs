@@ -193,6 +193,73 @@ fn spawn_on_runexpr() {
 }
 
 #[test]
+fn spawn_on_do_action_twice() {
+    let _ = ::env_logger::try_init();
+
+    let text = r#"
+        let { ? } = import! std.io
+        let { ref, (<-), load } = import! std.reference
+        let thread = import! std.thread
+        let { wrap } = import! std.applicative
+        let { join } = import! std.monad
+
+        let counter = ref 0 
+
+        do child = thread.new_thread ()
+        let action = thread.spawn_on child (\_ ->
+                counter <- (load counter + 1)
+                wrap ())
+        do _ = join action
+        do _ = join action
+        wrap (load counter)
+    "#;
+
+    let mut runtime = self::tokio::runtime::Runtime::new().unwrap();
+    let vm = make_vm();
+    let (result, _) = runtime
+        .block_on(
+            Compiler::new()
+                .run_io(true)
+                .run_expr_async::<IO<i32>>(&vm, "<top>", text),
+        )
+        .unwrap_or_else(|err| panic!("{}", err));
+    assert_eq!(result, IO::Value(2));
+}
+
+#[test]
+fn spawn_on_force_action_twice() {
+    let _ = ::env_logger::try_init();
+
+    let text = r#"
+        let { ? } = import! std.io
+        let { ref, (<-), load } = import! std.reference
+        let thread = import! std.thread
+        let { wrap } = import! std.applicative
+
+        let counter = ref 0 
+
+        do child = thread.new_thread ()
+        do action = thread.spawn_on child (\_ ->
+                counter <- (load counter + 1)
+                wrap ())
+        do _ = action
+        do _ = action
+        wrap (load counter)
+    "#;
+
+    let mut runtime = self::tokio::runtime::Runtime::new().unwrap();
+    let vm = make_vm();
+    let (result, _) = runtime
+        .block_on(
+            Compiler::new()
+                .run_io(true)
+                .run_expr_async::<IO<i32>>(&vm, "<top>", text),
+        )
+        .unwrap_or_else(|err| panic!("{}", err));
+    assert_eq!(result, IO::Value(1));
+}
+
+#[test]
 fn spawn_on_runexpr_in_catch() {
     let _ = ::env_logger::try_init();
 

@@ -222,21 +222,32 @@ fn spawn_on<'vm>(
     thread: RootedThread,
     action: WithVM<'vm, FunctionRef<Action>>,
 ) -> IO<OpaqueValue<&'vm Thread, IO<Generic<A>>>> {
-    struct SpawnFuture<F>(Mutex<Option<F>>);
+    struct SpawnFuture<F>(future::Shared<F>)
+    where
+        F: Future;
 
-    impl<F> fmt::Debug for SpawnFuture<F> {
+    impl<F> fmt::Debug for SpawnFuture<F>
+    where
+        F: Future,
+    {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             write!(f, "Future")
         }
     }
 
-    impl<F> Userdata for SpawnFuture<F> where F: Send + 'static {}
+    impl<F> Userdata for SpawnFuture<F> where F: Future + Send + 'static {}
 
-    impl<F> Traverseable for SpawnFuture<F> {
+    impl<F> Traverseable for SpawnFuture<F>
+    where
+        F: Future,
+    {
         fn traverse(&self, _: &mut Gc) {}
     }
 
-    impl<F> VmType for SpawnFuture<F> {
+    impl<F> VmType for SpawnFuture<F>
+    where
+        F: Future,
+    {
         type Type = Generic<A>;
     }
 
@@ -256,10 +267,12 @@ fn spawn_on<'vm>(
             match value {
                 ValueRepr::Userdata(data) => {
                     let data = data.downcast_ref::<SpawnFuture<F>>().unwrap();
-                    let future = data.0.lock().unwrap().take().unwrap();
+                    let future = data.0.clone();
                     let lock = StackFrame::current(&mut context.stack).insert_lock();
                     AsyncPushable::async_status_push(
-                        FutureResult::new(future),
+                        FutureResult::new(
+                            future.map(|v| (*v).clone()).map_err(|err| (*err).clone()),
+                        ),
                         vm,
                         &mut context,
                         lock,
@@ -290,9 +303,7 @@ fn spawn_on<'vm>(
         _ => unreachable!(),
     };
 
-    SpawnFuture(Mutex::new(Some(future)))
-        .push(vm, &mut context)
-        .unwrap();
+    SpawnFuture(future.shared()).push(vm, &mut context).unwrap();
     let fields = [context.stack.get_values().last().unwrap().clone()];
     let def = PartialApplicationDataDef(callable, &fields);
     let value = ValueRepr::PartialApplication(context.alloc_with(vm, def).unwrap()).into();

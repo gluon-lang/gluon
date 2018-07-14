@@ -113,7 +113,7 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 
 quick_error! {
     /// Representation of all possible errors that can occur when interacting with the `vm` crate
-    #[derive(Debug, PartialEq)]
+    #[derive(Debug, PartialEq, Clone)]
     pub enum Error {
         Dead {
         }
