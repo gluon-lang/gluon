@@ -18,8 +18,6 @@ extern crate itertools;
 extern crate log;
 #[macro_use]
 extern crate quick_error;
-#[cfg(not(target_arch = "wasm32"))]
-extern crate tokio_core;
 
 #[cfg(feature = "serde_derive_state")]
 #[macro_use]
@@ -649,8 +647,6 @@ in ()
 
 #[derive(Default)]
 pub struct VmBuilder {
-    #[cfg(not(target_arch = "wasm32"))]
-    event_loop: Option<::tokio_core::reactor::Remote>,
     import_paths: Option<Vec<PathBuf>>,
 }
 
@@ -659,29 +655,14 @@ impl VmBuilder {
         VmBuilder::default()
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
     option!{
-        /// Sets then event loop which threads are run on
-        /// (default: None)
-        event_loop set_event_loop: Option<::tokio_core::reactor::Remote>
-    }
-
-    option!{
-        /// Sets then event loop which threads are run on
+        /// Defines the paths used to lookup gluon files
         /// (default: ["."])
         import_paths set_import_paths: Option<Vec<PathBuf>>
     }
 
     pub fn build(self) -> RootedThread {
-        #[cfg(target_arch = "wasm32")]
-        let vm = RootedThread::new();
-
-        #[cfg(not(target_arch = "wasm32"))]
-        let vm = RootedThread::with_global_state(
-            ::vm::vm::GlobalVmStateBuilder::new()
-                .event_loop(self.event_loop)
-                .build(),
-        );
+        let vm = RootedThread::with_global_state(::vm::vm::GlobalVmStateBuilder::new().build());
 
         let import = Import::new(DefaultImporter);
         if let Some(import_paths) = self.import_paths {

@@ -3,8 +3,7 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use futures::sync::oneshot;
-use futures::Future;
+use futures::{future, Future};
 
 use base::types::{ArcType, Type};
 
@@ -215,7 +214,7 @@ fn spawn_on<'vm>(
     _thread: RootedThread,
     _action: WithVM<'vm, FunctionRef<Action>>,
 ) -> IO<OpaqueValue<&'vm Thread, IO<Generic<A>>>> {
-    IO::Exception("spawn_on requires the `tokio_core` crate".to_string())
+    IO::Exception("spawn_on requires the `tokio` crate".to_string())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -280,10 +279,7 @@ fn spawn_on<'vm>(
     let WithVM { vm, value: action } = action;
     let mut action = OwnedFunction::<Action>::from_value(&thread, action.get_variant());
 
-    let future = oneshot::spawn_fn(
-        move || action.call_async(()),
-        &vm.global_env().get_event_loop().expect("event loop"),
-    );
+    let future = future::lazy(move || action.call_async(()));
 
     let mut context = vm.context();
 

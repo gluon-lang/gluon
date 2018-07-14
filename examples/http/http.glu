@@ -19,6 +19,23 @@ let {
     HttpState } = import! examples.http.types
 let http_prim = import! http.prim
 
+let status =
+    let code : Int -> StatusCode = id 
+    {
+        ok = code 200,
+        bad_request = code 400,
+        not_found = code 404,
+        internal_server_error = code 500,
+    }
+
+let method =
+    let method : String -> Method = id 
+    {
+        get = method "GET",
+        post = method "POST",
+        put = method "PUT",
+    }
+
 /// Force the value to be a Handler. Necessary to make the the type inference work for
 /// higher-kinded types
 let make : Handler a -> Handler a = id
@@ -73,17 +90,11 @@ let test predicate : (Request -> Bool) -> Handler () =
 
 /// Handles `Get` requests
 let get : Handler () =
-    test (\request ->
-        match request.method with
-        | Get -> True
-        | _ -> False)
+    test (\request -> request.method == method.get)
 
 /// Handles `Post` requests
 let post : Handler () =
-    test (\request ->
-        match request.method with
-        | Post -> True
-        | _ -> False)
+    test (\request -> request.method == method.post)
 
 /// Processes this handler if `uri` matches the request's uri
 let path uri : String -> Handler () =
@@ -98,7 +109,7 @@ let get_response_body : Handler ResponseBody =
     make (\success failure state -> success state.response state)
 
 /// Returns `OK` with an empty body
-let empty_response = { status = Ok }
+let empty_response = { status = status.ok }
 
 /// Converts an `IO` into a `Handler`
 let io_handler action : IO a -> Handler a =
@@ -125,7 +136,7 @@ let catch_error action catch : Handler a -> (String -> Handler a) -> Handler a =
 /// Takes a `Handler` and a `Request` tries to process the request
 let handle handler state : Handler Response -> HttpState -> IO Response =
     let not_found _ state : _ -> _ -> IO Response =
-        http_prim.write_response state.response  (string.as_bytes "Page not found") *> wrap { status = NotFound }
+        http_prim.write_response state.response  (string.as_bytes "Page not found") *> wrap { status = status.not_found }
     handler (\response _ -> wrap response) not_found state
 
 {
@@ -140,6 +151,9 @@ let handle handler state : Handler Response -> HttpState -> IO Response =
     applicative,
     alternative,
     monad,
+
+    status,
+    method,
 
     empty_response,
     get_request,

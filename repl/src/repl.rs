@@ -39,6 +39,15 @@ use codespan_reporting::termcolor;
 
 use Color;
 
+macro_rules! try_future {
+    ($e:expr, $f:expr) => {
+        match $e {
+            Ok(ok) => ok,
+            Err(err) => return $f(futures::future::err(err.into())),
+        }
+    };
+}
+
 fn type_of_expr(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     let WithVM { vm, value: args } = args;
     let mut compiler = Compiler::new();
@@ -541,21 +550,20 @@ fn compile_repl(compiler: &mut Compiler, vm: &Thread) -> Result<(), GluonError> 
 }
 
 #[allow(dead_code)]
-pub fn run(color: Color) -> Result<(), Box<StdError + Send + Sync>> {
-    let mut core = ::tokio_core::reactor::Core::new()?;
-
-    let vm = ::gluon::VmBuilder::new()
-        .event_loop(Some(core.remote()))
-        .build();
+pub fn run(color: Color) -> impl Future<Item = (), Error = Box<StdError + Send + Sync>> {
+    let vm = ::gluon::VmBuilder::new().build();
 
     let mut compiler = Compiler::new();
-    compile_repl(&mut compiler, &vm).map_err(|err| err.emit_string(compiler.code_map()).unwrap())?;
+    try_future!(
+        compile_repl(&mut compiler, &vm)
+            .map_err(|err| err.emit_string(compiler.code_map()).unwrap()),
+        Either::A
+    );
 
-    let mut repl: OwnedFunction<fn(Ser<Color>) -> IO<()>> = vm.get_global("repl")?;
+    let mut repl: OwnedFunction<fn(Ser<Color>) -> IO<()>> =
+        try_future!(vm.get_global("repl"), Either::A);
     debug!("Starting repl");
-    core.run(repl.call_async(Ser(color)))?;
-
-    Ok(())
+    Either::B(repl.call_async(Ser(color)))
 }
 
 #[cfg(test)]

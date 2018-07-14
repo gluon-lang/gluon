@@ -20,12 +20,16 @@ let {
     write_response,
     fail,
     catch_error,
+
+    status,
+    method,
+
     ?
 } = import! examples.http.http
 
 let hello_world : Handler Response =
     write_response (string.as_bytes "Hello World")
-        *> (wrap { status = Ok })
+        *> (wrap { status = status.ok })
 
 let echo_body request : Request -> Handler () =
     do chunk = io_handler (read_chunk request.body)
@@ -35,11 +39,11 @@ let echo_body request : Request -> Handler () =
 
 let echo : Handler Response =
     (get_request >>= echo_body)
-        *> wrap { status = Ok }
+        *> wrap { status = status.ok }
 
 let handler =
     (get *> path "/" *> hello_world) <|> (post *> path "/echo" *> echo)
-        <|> (get *> path "/error" *> (wrap { status = InternalServerError }))
+        <|> (get *> path "/error" *> (wrap { status = status.internal_server_error }))
 
 let print_error h = catch_error h (\msg -> io_handler (io.println msg))
 

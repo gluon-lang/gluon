@@ -14,32 +14,30 @@ extern crate gluon_vm as vm;
 extern crate collect_mac;
 extern crate env_logger;
 extern crate futures;
+extern crate http;
 extern crate hyper;
-extern crate tokio_core;
+extern crate tokio;
 #[macro_use]
 extern crate log;
-#[macro_use]
-extern crate serde_derive;
 
 use std::env;
 use std::error::Error as StdError;
 use std::fmt;
 use std::fs::File;
-use std::io::{stderr, Read, Write};
+use std::io::Read;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 
-use hyper::server::Service;
-use hyper::{Chunk, Method, StatusCode};
+use hyper::service::Service;
+use hyper::Chunk;
+use hyper::Server;
+
+use http::StatusCode;
 
 use futures::future::Either;
-use futures::sink::Sink;
 use futures::stream::Stream;
-use futures::sync::mpsc::Sender;
 use futures::sync::oneshot;
 use futures::{future, Async, Future};
-
-use tokio_core::reactor::Core;
 
 use base::types::{ArcType, Type};
 
@@ -47,15 +45,13 @@ use vm::{Error as VmError, ExternModule, Result as VmResult};
 
 use gluon::import::add_extern_module;
 use vm::api::{
-    Function, FutureResult, Getable, OpaqueValue, OwnedFunction, PushAsRef, Pushable, Userdata,
-    VmType, WithVM, IO,
+    Function, FutureResult, OpaqueValue, OwnedFunction, PushAsRef, Userdata, VmType, WithVM, IO,
 };
 use vm::future::FutureValue;
 use vm::gc::{Gc, Traverseable};
-use vm::thread::{Context, RootedThread, Thread};
-use vm::Variants;
+use vm::thread::{RootedThread, Thread};
 
-use gluon::{Compiler, VmBuilder};
+use gluon::{new_vm, Compiler};
 
 // `Handler` is a type defined in http.glu but since we need to refer to it in the signature of
 // listen we define a phantom type which we can use with `OpaqueValue` to store a `Handler` in Rust
@@ -69,149 +65,6 @@ impl<T: VmType + 'static> VmType for Handler<T> {
             .unwrap_or_else(|err| panic!("{}", err))
             .into_type();
         Type::app(typ, collect![T::make_type(vm)])
-    }
-}
-
-// Rust does not let us define traits on types defined in a different crate such as `hyper`. We can
-// however work around this by defining a wrapper type which we are then able to define the traits
-// on.
-struct Wrap<T>(T);
-
-macro_rules! define_vmtype {
-    ($name:ident, $wrapper:ident) => {
-        impl VmType for Wrap<$name> {
-            type Type = $name;
-            fn make_type(vm: &Thread) -> ArcType {
-                $wrapper::make_type(vm)
-            }
-        }
-
-        impl VmType for $wrapper {
-            type Type = $name;
-            fn make_type(vm: &Thread) -> ArcType {
-                use gluon::base::types::Alias;
-
-                // If we have already created $name then return it immediately
-                if let Some(typ) = vm.get_type::<$name>() {
-                    return typ;
-                }
-
-                // Otherwise construct the type using the `Deserialize` impl for the type
-                let (name, typ) = gluon::vm::api::typ::from_rust::<Self>(vm).unwrap();
-                vm.register_type_as(
-                    name.clone(),
-                    Alias::new(name, typ),
-                    ::std::any::TypeId::of::<$name>(),
-                ).unwrap()
-            }
-        }
-    };
-}
-
-// This type, and the `StatusCode` type below are defined in hyper so we can't implement any traits
-// on them. Instead we use serde's remote derive support to workaround it.
-#[derive(Serialize, Deserialize)]
-#[serde(remote = "Method")]
-#[serde(rename = "Method")]
-pub enum RemoteMethod {
-    Options,
-    Get,
-    Post,
-    Put,
-    Delete,
-    Head,
-    Trace,
-    Connect,
-    Patch,
-    Extension(String),
-}
-#[derive(Serialize, Deserialize)]
-struct RemoteMethodContainer(#[serde(with = "RemoteMethod")] Method);
-
-define_vmtype! { Method, RemoteMethodContainer }
-
-impl<'vm> Pushable<'vm> for Wrap<Method> {
-    fn push(self, vm: &'vm Thread, context: &mut Context) -> VmResult<()> {
-        use gluon::vm::api::ser::Ser;
-        Ser(RemoteMethodContainer(self.0)).push(vm, context)
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(remote = "StatusCode")]
-#[serde(rename = "StatusCode")]
-pub enum RemoteStatusCode {
-    Continue,
-    SwitchingProtocols,
-    Processing,
-    Ok,
-    Created,
-    Accepted,
-    NonAuthoritativeInformation,
-    NoContent,
-    ResetContent,
-    PartialContent,
-    MultiStatus,
-    AlreadyReported,
-    ImUsed,
-    MultipleChoices,
-    MovedPermanently,
-    Found,
-    SeeOther,
-    NotModified,
-    UseProxy,
-    TemporaryRedirect,
-    PermanentRedirect,
-    BadRequest,
-    Unauthorized,
-    PaymentRequired,
-    Forbidden,
-    NotFound,
-    MethodNotAllowed,
-    NotAcceptable,
-    ProxyAuthenticationRequired,
-    RequestTimeout,
-    Conflict,
-    Gone,
-    LengthRequired,
-    PreconditionFailed,
-    PayloadTooLarge,
-    UriTooLong,
-    UnsupportedMediaType,
-    RangeNotSatisfiable,
-    ExpectationFailed,
-    ImATeapot,
-    MisdirectedRequest,
-    UnprocessableEntity,
-    Locked,
-    FailedDependency,
-    UpgradeRequired,
-    PreconditionRequired,
-    TooManyRequests,
-    RequestHeaderFieldsTooLarge,
-    UnavailableForLegalReasons,
-    InternalServerError,
-    NotImplemented,
-    BadGateway,
-    ServiceUnavailable,
-    GatewayTimeout,
-    HttpVersionNotSupported,
-    VariantAlsoNegotiates,
-    InsufficientStorage,
-    LoopDetected,
-    NotExtended,
-    NetworkAuthenticationRequired,
-    Unregistered(u16),
-}
-#[derive(Serialize, Deserialize)]
-struct StatusCodeContainer(#[serde(with = "RemoteStatusCode")] StatusCode);
-
-define_vmtype! { StatusCode, StatusCodeContainer }
-
-impl<'vm, 'value> Getable<'vm, 'value> for Wrap<StatusCode> {
-    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
-        use gluon::vm::api::de::De;
-        Wrap((De::<StatusCodeContainer>::from_value(vm, value).0).0)
     }
 }
 
@@ -264,7 +117,7 @@ fn read_chunk(
 }
 
 // A http body that is being written
-pub struct ResponseBody(Arc<Mutex<Option<Sender<Result<Chunk, hyper::Error>>>>>);
+pub struct ResponseBody(Arc<Mutex<Option<hyper::body::Sender>>>);
 
 impl fmt::Debug for ResponseBody {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -287,10 +140,9 @@ fn write_response(
     bytes: &[u8],
 ) -> FutureResult<Box<Future<Item = IO<()>, Error = VmError> + Send + 'static>> {
     use futures::future::poll_fn;
-    use futures::AsyncSink;
 
     // Turn `bytes´ into a `Chunk` which can be sent to the http body
-    let mut unsent_chunk = Some(Ok(bytes.to_owned().into()));
+    let mut unsent_chunk = Some(bytes.to_owned().into());
     let response = response.0.clone();
     FutureResult(Box::new(poll_fn(move || {
         info!("Starting response send");
@@ -298,24 +150,26 @@ fn write_response(
         let sender = sender
             .as_mut()
             .expect("Sender has been dropped while still in use");
-        if let Some(chunk) = unsent_chunk.take() {
-            match sender.start_send(chunk) {
-                Ok(AsyncSink::NotReady(chunk)) => {
-                    unsent_chunk = Some(chunk);
-                    return Ok(Async::NotReady);
-                }
-                Ok(AsyncSink::Ready) => (),
-                Err(_) => {
-                    info!("Could not send http response");
-                    return Ok(Async::Ready(IO::Value(())));
-                }
+        let chunk = unsent_chunk
+            .take()
+            .expect("Attempt to poll after chunk is sent");
+        match sender.poll_ready() {
+            Ok(Async::NotReady) => {
+                unsent_chunk = Some(chunk);
+                return Ok(Async::NotReady);
             }
-        }
-        match sender.poll_complete() {
-            Ok(async) => Ok(async.map(IO::Value)),
+            Ok(Async::Ready(_)) => (),
             Err(_) => {
                 info!("Could not send http response");
-                Ok(Async::Ready(IO::Value(())))
+                return Ok(Async::Ready(IO::Value(())));
+            }
+        }
+        match sender.send_data(chunk) {
+            Ok(()) => Ok(Async::Ready(IO::Value(()))),
+            Err(chunk) => {
+                info!("Could not send http response");
+                unsent_chunk = Some(chunk);
+                Ok(Async::NotReady)
             }
         }
     })))
@@ -326,13 +180,13 @@ fn write_response(
 field_decl! { method, uri, status, body, request, response }
 
 type Request = record_type!{
-    method => Wrap<Method>,
+    method => String,
     uri => String,
     body => Body
 };
 
 type Response = record_type!{
-    status => Wrap<StatusCode>
+    status => u16
 };
 
 type HttpState = record_type!{
@@ -348,8 +202,6 @@ fn listen(
         value: handler,
         vm: thread,
     } = value;
-
-    use hyper::server::{Http, Request as HyperRequest, Response as HyperResponse};
 
     let thread = match thread.new_thread() {
         Ok(thread) => thread,
@@ -369,25 +221,24 @@ fn listen(
     }
 
     impl Service for Listen {
-        type Request = HyperRequest;
-        type Response = HyperResponse;
+        type ReqBody = hyper::Body;
+        type ResBody = hyper::Body;
         type Error = hyper::Error;
-        type Future = Box<Future<Item = HyperResponse, Error = hyper::Error> + Send + 'static>;
+        type Future =
+            Box<Future<Item = http::Response<hyper::Body>, Error = hyper::Error> + Send + 'static>;
 
-        fn call(&self, request: HyperRequest) -> Self::Future {
+        fn call(&mut self, request: http::Request<hyper::Body>) -> Self::Future {
             let gluon_request = record_no_decl! {
-                // Here we use to `Wrap` type to make `hyper::Request` into a type that can be
-                // pushed to gluon
-                method => Wrap(request.method().clone()),
+                method => request.method().as_str().to_owned(),
                 uri => request.uri().to_string(),
                 // Since `Body` implements `Userdata` it can be directly pushed to gluon
-                body => Body(Arc::new(Mutex::new(Box::new(request.body()
+                body => Body(Arc::new(Mutex::new(Box::new(request.into_body()
                     .map_err(|err| VmError::Message(format!("{}", err)))
                     // `PushAsRef` makes the `body` parameter act as a `&[u8]` which means it is
                     // marshalled to `Array Byte` in gluon
                     .map(PushAsRef::<_, [u8]>::new)))))
             };
-            let (response_sender, response_body) = hyper::Body::pair();
+            let (response_sender, response_body) = hyper::Body::channel();
             let response_sender = Arc::new(Mutex::new(Some(response_sender)));
             let http_state = record_no_decl!{
                 request => gluon_request,
@@ -405,24 +256,29 @@ fn listen(
                                     // Drop the sender to so that it the receiver stops waiting for
                                     // more chunks
                                     *response_sender.lock().unwrap() = None;
+
+                                    let status = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
                                     Ok(
-                                        HyperResponse::new()
-                                            .with_status(status.0)
-                                            .with_body(response_body),
+                                        http::Response::builder()
+                                            .status(status)
+                                            .body(response_body).unwrap(),
                                     )
                                 }
                                 IO::Exception(err) => {
-                                    let _ = stderr().write(err.as_bytes());
+                                    eprintln!("{}", err);
                                     Ok(
-                                        HyperResponse::new()
-                                            .with_status(StatusCode::InternalServerError),
+                                        http::Response::builder()
+                                            .status(StatusCode::INTERNAL_SERVER_ERROR).body("".into()).unwrap()
                                     )
                                 }
                             }
                         }
                         Err(err) => {
-                            let _ = stderr().write(format!("{}", err).as_bytes());
-                            Ok(HyperResponse::new().with_status(StatusCode::InternalServerError))
+                            eprintln!("{}", err);
+                            Ok(http::Response::builder()
+                                .status(StatusCode::INTERNAL_SERVER_ERROR)
+                                .body("".into())
+                                .unwrap())
                         }
                     }),
             )
@@ -432,26 +288,19 @@ fn listen(
     let addr = format!("127.0.0.1:{}", port).parse().unwrap();
 
     let (sender, receiver) = oneshot::channel();
-    thread
-        .get_event_loop()
-        .expect("event loop")
-        .spawn(move |h| {
-            let h = h.clone();
-            future::result(Http::new().serve_addr_handle(&addr, &h, move || {
+    tokio::spawn(
+        Server::bind(&addr)
+            .serve(move || -> Result<_, hyper::Error> {
                 Ok(Listen {
                     handle: handle.clone(),
                     handler: handler.clone(),
                 })
-            })).flatten_stream()
-                .for_each(move |con| {
-                    h.spawn(con.map(|_| ()).map_err(|err| error!("{}", err)));
-                    Ok(())
-                })
-                .map_err(|err| {
-                    error!("{}", err);
-                })
-                .and_then(|_| sender.send(IO::Value(())).map_err(|_| ()))
-        });
+            })
+            .map_err(|err| {
+                error!("{}", err);
+            })
+            .and_then(|_| sender.send(IO::Value(())).map_err(|_| ())),
+    );
     FutureResult(Either::B(
         receiver.map_err(|err| vm::Error::from(format!("Server error: {}", err))),
     ))
@@ -469,8 +318,8 @@ pub fn load_types(vm: &Thread) -> VmResult<ExternModule> {
             // Define the types so that they can be used from gluon
             type Body => Body,
             type ResponseBody => ResponseBody,
-            type Method => Wrap<Method>,
-            type StatusCode => Wrap<StatusCode>,
+            type Method => String,
+            type StatusCode => u16,
             type Request => Request,
             type Response => Response,
             type HttpState => HttpState
@@ -497,21 +346,19 @@ fn main() {
         .map(|port| port.parse::<u16>().expect("port"))
         .unwrap_or(80);
 
-    let mut core = Core::new().unwrap();
-
-    let thread = VmBuilder::new().event_loop(Some(core.remote())).build();
-    let result = core.run(start(&thread, port));
-    if let Err(err) = result {
-        panic!("{}", err)
-    }
+    let thread = new_vm();
+    tokio::run(start(&thread, port).map_err(|err| panic!("{}", err)));
 }
 
-fn start(thread: &Thread, port: u16) -> impl Future<Item = (), Error = Box<StdError + 'static>> {
+fn start(
+    thread: &Thread,
+    port: u16,
+) -> impl Future<Item = (), Error = Box<StdError + Send + Sync + 'static>> {
     add_extern_module(&thread, "http.prim_types", load_types);
     add_extern_module(&thread, "http.prim", load);
 
     let thread = thread.root_thread();
-    future::lazy(|| -> Result<_, Box<StdError>> {
+    future::lazy(|| -> Result<_, Box<StdError + Send + Sync>> {
         // Last we run our `http_server.glu` module which returns a function which starts listening
         // on the port we passed from the command line
         let mut expr = String::new();
@@ -540,51 +387,69 @@ fn start(thread: &Thread, port: u16) -> impl Future<Item = (), Error = Box<StdEr
 mod tests {
     use super::*;
 
+    extern crate tokio_retry;
+
     use std::str;
 
     use hyper::Client;
 
+    use tokio::runtime::Runtime;
+
     #[test]
     fn hello_world() {
-        let mut core = Core::new().unwrap();
+        let mut runtime = Runtime::new().unwrap();
 
         let port = 1222;
-        let thread = VmBuilder::new().event_loop(Some(core.remote())).build();
-        core.handle()
-            .spawn(start(&thread, port).map_err(|err| panic!("{}", err)));
+        let thread = new_vm();
 
-        let handle = core.handle();
-        core.run(
-            Client::new(&handle)
-                .get(format!("http://localhost:{}", port).parse().unwrap())
-                .and_then(|response| {
-                    response.body().concat2().map(|body| {
-                        assert_eq!(str::from_utf8(&body).unwrap(), "Hello World");
-                    })
-                }),
-        ).unwrap();
+        runtime.spawn(start(&thread, port).map_err(|err| panic!("{}", err)));
+
+        let future =
+            move || Client::new().get(format!("http://localhost:{}", port).parse().unwrap());
+
+        let retry_strategy = tokio_retry::strategy::FixedInterval::from_millis(400).take(10);
+
+        runtime
+            .block_on(
+                tokio_retry::Retry::spawn(retry_strategy, future)
+                    .map_err(|err| panic!("{}", err))
+                    .and_then(|response| {
+                        response.into_body().concat2().map(|body| {
+                            assert_eq!(str::from_utf8(&body).unwrap(), "Hello World");
+                        })
+                    }),
+            )
+            .unwrap();
     }
 
     #[test]
     fn echo() {
-        let mut core = Core::new().unwrap();
+        let mut runtime = Runtime::new().unwrap();
 
         let port = 1223;
-        let thread = VmBuilder::new().event_loop(Some(core.remote())).build();
-        core.handle()
-            .spawn(start(&thread, port).map_err(|err| panic!("{}", err)));
+        let thread = new_vm();
+        runtime.spawn(start(&thread, port).map_err(|err| panic!("{}", err)));
 
-        let handle = core.handle();
+        let future = move || {
+            let request = hyper::Request::post(format!("http://localhost:{}/echo", port))
+                .body(hyper::Body::from("test"))
+                .unwrap();
 
-        let mut request = hyper::Request::new(
-            Method::Post,
-            format!("http://localhost:{}/echo", port).parse().unwrap(),
-        );
-        request.set_body(hyper::Body::from("test"));
-        core.run(Client::new(&handle).request(request).and_then(|response| {
-            response.body().concat2().map(|body| {
-                assert_eq!(str::from_utf8(&body).unwrap(), "test");
-            })
-        })).unwrap();
+            Client::new().request(request)
+        };
+
+        let retry_strategy = tokio_retry::strategy::FixedInterval::from_millis(400).take(10);
+
+        runtime
+            .block_on(
+                tokio_retry::Retry::spawn(retry_strategy, future)
+                    .map_err(|err| panic!("{}", err))
+                    .and_then(|response| {
+                        response.into_body().concat2().map(|body| {
+                            assert_eq!(str::from_utf8(&body).unwrap(), "test");
+                        })
+                    }),
+            )
+            .unwrap();
     }
 }
