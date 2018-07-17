@@ -655,7 +655,7 @@ mod test {
 
     fn tokenizer<'input>(
         input: &'input str,
-    ) -> Box<Iterator<Item = Result<SpannedToken<'input>, SpError>> + 'input> where {
+    ) -> impl Iterator<Item = Result<SpannedToken<'input>, SpError>> + 'input {
         Box::new(Tokenizer::new(input).take_while(|token| match *token {
             Ok(Spanned {
                 value: Token::EOF, ..

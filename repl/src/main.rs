@@ -35,6 +35,9 @@ use codespan_reporting::termcolor;
 use structopt::StructOpt;
 use walkdir::WalkDir;
 
+use futures::future;
+use tokio::runtime::Runtime;
+
 use gluon::base;
 use gluon::parser;
 use gluon::vm;
@@ -266,7 +269,8 @@ fn run(
                 .map_err(|err| format!("{}\n{}", err, err.backtrace()))?;
         }
         None => if opt.interactive {
-            repl::run(color)?;
+            let mut runtime = Runtime::new()?;
+            runtime.block_on(future::lazy(move || repl::run(color)))?;
         } else if !opt.input.is_empty() {
             run_files(compiler, &vm, &opt.input)?;
         } else {

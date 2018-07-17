@@ -101,19 +101,17 @@ impl VmType for Body {
 // into `&Body` argument
 fn read_chunk(
     body: &Body,
-) -> FutureResult<
-    Box<Future<Item = IO<Option<PushAsRef<Chunk, [u8]>>>, Error = VmError> + Send + 'static>,
-> {
+) -> FutureResult<impl Future<Item = IO<Option<PushAsRef<Chunk, [u8]>>>, Error = VmError>> {
     use futures::future::poll_fn;
 
     let body = body.0.clone();
     // `FutureResult` is a wrapper type around `Future` which when returned to the interpreter is
     // polled until completion. After `poll` returns `Ready` the value is then returned to the
     // gluon function which called `read_chunk`
-    FutureResult(Box::new(poll_fn(move || {
+    FutureResult(poll_fn(move || {
         let mut stream = body.lock().unwrap();
         stream.poll().map(|async| async.map(IO::Value))
-    })))
+    }))
 }
 
 // A http body that is being written
@@ -138,13 +136,13 @@ impl VmType for ResponseBody {
 fn write_response(
     response: &ResponseBody,
     bytes: &[u8],
-) -> FutureResult<Box<Future<Item = IO<()>, Error = VmError> + Send + 'static>> {
+) -> FutureResult<impl Future<Item = IO<()>, Error = VmError>> {
     use futures::future::poll_fn;
 
     // Turn `bytes´ into a `Chunk` which can be sent to the http body
     let mut unsent_chunk = Some(bytes.to_owned().into());
     let response = response.0.clone();
-    FutureResult(Box::new(poll_fn(move || {
+    FutureResult(poll_fn(move || {
         info!("Starting response send");
         let mut sender = response.lock().unwrap();
         let sender = sender
@@ -172,7 +170,7 @@ fn write_response(
                 Ok(Async::NotReady)
             }
         }
-    })))
+    }))
 }
 
 // Next we define some record types which are marshalled to and from gluon. These have equivalent

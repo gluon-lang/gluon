@@ -268,7 +268,7 @@ impl<I> Import<I> {
         macros: &mut MacroExpander,
         module_id: &Symbol,
         span: Span<BytePos>,
-    ) -> Result<Option<Box<Future<Item = (), Error = ()> + Send>>, (Option<ArcType>, MacroError)>
+    ) -> Result<Option<impl Future<Item = (), Error = ()>>, (Option<ArcType>, MacroError)>
     where
         I: Importer,
     {
@@ -299,9 +299,7 @@ impl<I> Import<I> {
             match loading.entry(module_id.to_string()) {
                 Entry::Occupied(entry) => {
                     get_state(macros).visited.pop();
-                    return Ok(Some(Box::new(
-                        entry.get().clone().map(|_| ()).map_err(|_| ()),
-                    )));
+                    return Ok(Some(entry.get().clone().map(|_| ()).map_err(|_| ())));
                 }
                 Entry::Vacant(entry) => {
                     let (sender, receiver) = oneshot::channel();

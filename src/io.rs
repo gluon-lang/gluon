@@ -115,7 +115,7 @@ fn read_line() -> IO<String> {
 fn catch<'vm>(
     action: OpaqueValue<&'vm Thread, IO<A>>,
     mut catch: OwnedFunction<fn(String) -> IO<Generic<A>>>,
-) -> FutureResult<Box<Future<Item = IO<Generic<A>>, Error = vm::Error> + Send>> {
+) -> FutureResult<impl Future<Item = IO<Generic<A>>, Error = vm::Error>> {
     let vm = action.vm().root_thread();
     let frame_level = vm.context().stack.get_frames().len();
     let mut action: OwnedFunction<fn(()) -> Generic<A>> =
@@ -142,7 +142,7 @@ fn catch<'vm>(
         }
     });
 
-    FutureResult(Box::new(future))
+    FutureResult(future)
 }
 
 fn clear_frames<T>(err: Error, stack: StackFrame) -> IO<T> {
