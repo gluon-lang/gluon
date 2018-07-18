@@ -117,7 +117,6 @@ let field name a : String -> ValueDeserializer a -> ValueDeserializer a = \input
 
 let deserialize de input : ValueDeserializer a -> String -> Result Error a =
     do value = prim.deserialize input
-    (import! std.debug).trace "a"
     do state = de value
     Ok state.value
 

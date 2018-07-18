@@ -138,7 +138,7 @@ fn gen_impl(
             impl #impl_generics _gluon_api::Pushable<'__vm> for #ident #ty_generics
             #where_clause #(#pushable_bounds),*
             {
-                fn push(self, vm: &'__vm _gluon_thread::Thread, ctx: &mut _gluon_thread::Context) -> _GluonResult<()> {
+                fn push(self, ctx: &mut _gluon_thread::ActiveThread<'__vm>) -> _GluonResult<()> {
                     #push_impl
                     Ok(())
                 }
@@ -162,24 +162,24 @@ fn gen_push_impl(
         .zip(field_types)
         .map(|(ident, ty)| {
             quote! {
-                <#ty as _gluon_api::Pushable<'__vm>>::push(#ident, vm, ctx)?;
+                <#ty as _gluon_api::Pushable<'__vm>>::push(#ident, ctx)?;
             }
         })
         .rev();
 
     // since the number of fields is statically known, we can allocate an array
     // by popping the stack for each field
-    let array_init = iter::repeat(quote! { ctx.stack.pop() }).take(field_idents.len());
+    let array_init = iter::repeat(quote! { ctx.stack().pop() }).take(field_idents.len());
 
     let new_data = match tag {
         Some(tag) => quote!{
-            ctx.new_data(vm, #tag as ::gluon::vm::types::VmTag, &fields)?
+            ctx.context().new_data(vm, #tag as _gluon_types::VmTag, &fields)?
         },
         None => {
             let field_ident_strs = field_idents.iter().map(|i| i.to_string());
             quote! { {
                 let field_names = [#(vm.global_env().intern(#field_ident_strs)?),*];
-                ctx.new_record(vm, &fields, &field_names)?
+                ctx.context().new_record(vm, &fields, &field_names)?
             } }
         }
     };
@@ -187,8 +187,9 @@ fn gen_push_impl(
     quote! {
         #(#stack_pushes)*
         let fields = [ #(#array_init),* ];
+        let vm = ctx.thread();
         let val = #new_data;
-        ctx.stack.push(val);
+        ctx.stack().push(val);
     }
 }
 

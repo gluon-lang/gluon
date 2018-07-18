@@ -2,6 +2,8 @@
 //!
 //! _This module requires Gluon to be built with the `serde` feature._
 
+extern crate serde_json;
+
 use std::cell::RefCell;
 use std::fmt;
 use std::marker::PhantomData;
@@ -12,12 +14,12 @@ use base::symbol::Symbol;
 use base::types::{arg_iter, ArcType, BuiltinType, Type, TypeEnv};
 
 use api::{Getable, ValueRef, VmType};
-use thread::{RootedThread, RootedValue, Thread, ThreadInternal};
-use {Error as VmError, Result, Variants};
+use thread::{ActiveThread, RootedThread, RootedValue, Thread, ThreadInternal};
+use {Error as VmError, ExternModule, Result, Variants};
 
 use serde::de::{
-    self, DeserializeOwned, DeserializeSeed, EnumAccess, Error, IntoDeserializer, MapAccess,
-    SeqAccess, VariantAccess, Visitor,
+    self, DeserializeOwned, DeserializeSeed, DeserializeState, EnumAccess, Error, IntoDeserializer,
+    MapAccess, SeqAccess, VariantAccess, Visitor,
 };
 
 impl de::Error for VmError {
@@ -195,6 +197,176 @@ where
     let env = thread.global_env().get_env();
     let mut deserializer = Deserializer::from_value(thread, &*env, value, typ);
     T::deserialize(&mut deserializer)
+}
+
+pub fn load(vm: &Thread) -> Result<ExternModule> {
+    fn deserialize(value: ::api::WithVM<&str>) -> StdResult<JsonValue, String> {
+        let ::api::WithVM { vm, value: input } = value;
+        let mut context = vm.current_context();
+        JsonValue::deserialize_state(&mut context, &mut serde_json::Deserializer::from_str(input))
+            .map_err(|err| err.to_string())
+    }
+    ExternModule::new(
+        vm,
+        record! {
+            deserialize => named_primitive!(
+                1,
+                "std.serialization.prim.deserialize",
+                deserialize
+            ),
+        },
+    )
+}
+
+#[derive(Pushable)]
+#[gluon(gluon_vm)]
+pub enum Value {
+    Null,
+    Bool(bool),
+    Int(i64),
+    Float(f64),
+    String(String),
+    Array(Vec<JsonValue>),
+    Object(::std::collections::BTreeMap<String, JsonValue>),
+}
+
+impl VmType for Value {
+    type Type = Self;
+    fn make_type(vm: &Thread) -> ArcType {
+        JsonValue::make_type(vm)
+    }
+}
+
+pub struct JsonValue(::vm::RootedValue<RootedThread>);
+
+impl VmType for JsonValue {
+    type Type = <Value as VmType>::Type;
+    fn make_type(vm: &Thread) -> ArcType {
+        vm.find_type_info("std.serialization_types.Value")
+            .unwrap()
+            .clone()
+            .into_type()
+    }
+}
+
+impl<'vm> ::api::Pushable<'vm> for JsonValue {
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        ::api::Pushable::push(self.0, context)
+    }
+}
+
+impl<'de> de::DeserializeState<'de, ActiveThread<'de>> for JsonValue {
+    fn deserialize_state<D>(
+        thread: &mut ActiveThread<'de>,
+        deserializer: D,
+    ) -> StdResult<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct ValueVisitor<'a, 'vm: 'a>(&'a mut ActiveThread<'vm>);
+
+        impl<'a, 'vm> ValueVisitor<'a, 'vm> {
+            fn marshal<T>(&mut self, value: T) -> JsonValue
+            where
+                T: ::api::Pushable<'vm>,
+            {
+                let context = &mut *self.0;
+                value.push(context).unwrap_or_else(|err| panic!("{}", err));
+                let value = context.pop();
+                JsonValue(context.thread().root_value(value))
+            }
+        }
+
+        impl<'a, 'de> Visitor<'de> for ValueVisitor<'a, 'de> {
+            type Value = JsonValue;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("any valid JSON value")
+            }
+
+            #[inline]
+            fn visit_bool<E>(mut self, value: bool) -> StdResult<Self::Value, E> {
+                Ok(self.marshal(Value::Bool(value)))
+            }
+
+            #[inline]
+            fn visit_i64<E>(mut self, value: i64) -> StdResult<Self::Value, E> {
+                Ok(self.marshal(Value::Int(value.into())))
+            }
+
+            #[inline]
+            fn visit_u64<E>(mut self, value: u64) -> StdResult<Self::Value, E> {
+                Ok(self.marshal(Value::Int(value as i64)))
+            }
+
+            #[inline]
+            fn visit_f64<E>(mut self, value: f64) -> StdResult<Self::Value, E> {
+                Ok(self.marshal(Value::Float(value)))
+            }
+
+            #[inline]
+            fn visit_str<E>(self, value: &str) -> StdResult<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_string(String::from(value))
+            }
+
+            #[inline]
+            fn visit_string<E>(mut self, value: String) -> StdResult<Self::Value, E> {
+                Ok(self.marshal(Value::String(value)))
+            }
+
+            #[inline]
+            fn visit_none<E>(mut self) -> StdResult<Self::Value, E> {
+                Ok(self.marshal(Value::Null))
+            }
+
+            #[inline]
+            fn visit_some<D>(self, deserializer: D) -> StdResult<Self::Value, D::Error>
+            where
+                D: de::Deserializer<'de>,
+            {
+                de::DeserializeState::deserialize_state(&mut *self.0, deserializer)
+            }
+
+            #[inline]
+            fn visit_unit<E>(mut self) -> StdResult<Self::Value, E> {
+                Ok(self.marshal(Value::Null))
+            }
+
+            #[inline]
+            fn visit_seq<V>(mut self, mut visitor: V) -> StdResult<Self::Value, V::Error>
+            where
+                V: SeqAccess<'de>,
+            {
+                let mut vec = Vec::new();
+
+                while let Some(elem) = visitor.next_element_seed(de::Seed::new(&mut *self.0))? {
+                    vec.push(elem);
+                }
+
+                Ok(self.marshal(Value::Array(vec)))
+            }
+
+            fn visit_map<V>(mut self, mut visitor: V) -> StdResult<Self::Value, V::Error>
+            where
+                V: MapAccess<'de>,
+            {
+                let mut values = ::std::collections::BTreeMap::new();
+
+                while let Some((key, value)) = visitor
+                    .next_entry_seed(::std::marker::PhantomData, de::Seed::new(&mut *self.0))?
+                {
+                    values.insert(key, value);
+                }
+
+                Ok(self.marshal(Value::Object(values)))
+            }
+        }
+
+        deserializer.deserialize_any(ValueVisitor(thread))
+    }
 }
 
 #[derive(Clone)]

@@ -15,9 +15,8 @@ use gluon::base::types::ArcType;
 use gluon::base::types::{AppVec, Type};
 use gluon::vm::api::generic::{A, L, R};
 use gluon::vm::api::{
-    self, FunctionRef, Generic, Getable, OpaqueValue, Pushable, ValueRef, VmType, IO,
+    self, ActiveThread, FunctionRef, Generic, Getable, OpaqueValue, Pushable, ValueRef, VmType, IO,
 };
-use gluon::vm::thread::Context;
 use gluon::vm::{self, ExternModule, Variants};
 use gluon::{import, new_vm, Compiler, Result, RootedThread, Thread};
 
@@ -40,8 +39,8 @@ impl api::VmType for Enum {
 }
 
 impl<'vm, 'value> api::Pushable<'vm> for Enum {
-    fn push(self, thread: &'vm Thread, context: &mut Context) -> vm::Result<()> {
-        api::ser::Ser(self).push(thread, context)
+    fn push(self, context: &mut ActiveThread<'vm>) -> vm::Result<()> {
+        api::ser::Ser(self).push(context)
     }
 }
 
@@ -257,22 +256,12 @@ impl<'vm, T> Pushable<'vm> for GluonUser<T>
 where
     T: Pushable<'vm>,
 {
-    fn push(self, vm: &'vm Thread, ctx: &mut Context) -> vm::Result<()> {
-        // push the fields to the stack in reverse order
-        self.inner.data.push(vm, ctx)?;
-        self.inner.age.push(vm, ctx)?;
-        self.inner.name.push(vm, ctx)?;
-
-        // Pop the values and create a complex type from them,
-        // then push it onto the stack
-        let fields = [ctx.stack.pop(), ctx.stack.pop(), ctx.stack.pop()];
-
-        // the second arg in this case doesn't matter, if this were an enum
-        // it would be the tag of the current variant
-        let val = ctx.new_data(vm, 0, &fields)?;
-        ctx.stack.push(val);
-
-        Ok(())
+    fn push(self, ctx: &mut ActiveThread<'vm>) -> vm::Result<()> {
+        (record!{
+            name => self.inner.name,
+            age => self.inner.age,
+            data => self.inner.data,
+        }).push(ctx)
     }
 }
 

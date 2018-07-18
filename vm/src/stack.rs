@@ -267,6 +267,13 @@ impl Index<RangeTo<VmIndex>> for Stack {
     }
 }
 
+impl Index<RangeFull> for Stack {
+    type Output = [Value];
+    fn index(&self, range: RangeFull) -> &[Value] {
+        &self.values[range]
+    }
+}
+
 pub struct StackFrame<'b> {
     pub stack: &'b mut Stack,
     pub frame: Frame,

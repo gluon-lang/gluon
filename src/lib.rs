@@ -655,6 +655,7 @@ impl VmBuilder {
         VmBuilder::default()
     }
 
+    option!{
         /// (default: ["."])
         import_paths set_import_paths: Option<Vec<PathBuf>>
     }
