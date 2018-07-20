@@ -1422,11 +1422,12 @@ impl ArcType {
                     })
                     .count();
 
-                if params.len() - args.len() <= allowed_missing_args {
+                if params.len() <= allowed_missing_args + args.len() {
                     // Remove the args at the end of the aliased type
                     let arg_types: AppVec<_> = arg_types
                         .iter()
                         .take(arg_types.len() - (params.len() - args.len()))
+                        .take(arg_types.len() + args.len() - params.len())
                         .cloned()
                         .collect();
                     typ = Type::app(d.clone(), arg_types);
