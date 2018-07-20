@@ -1400,7 +1400,7 @@ impl ArcType {
     /// ```
     pub fn apply_args(&self, args: &[ArcType]) -> Option<ArcType> {
         let params = self.params();
-        let mut typ = self.remove_forall().clone();
+        let typ = self.remove_forall().clone();
 
         // It is ok to take the type only if it is fully applied or if it
         // the missing argument only appears in order at the end, i.e:
@@ -1410,35 +1410,31 @@ impl ArcType {
         // Test a b == Type (a Int) b
         // Test a == Type (a Int)
         // Test == ??? (Impossible to do a sane substitution)
-        match *typ.clone() {
-            Type::App(ref d, ref arg_types) => {
-                let allowed_missing_args = arg_types
-                    .iter()
-                    .rev()
-                    .zip(params.iter().rev())
-                    .take_while(|&(l, r)| match **l {
-                        Type::Generic(ref g) => g == r,
-                        _ => false,
-                    })
-                    .count();
+        let (d, arg_types) = split_app(&typ);
+        let allowed_missing_args = arg_types
+            .iter()
+            .rev()
+            .zip(params.iter().rev())
+            .take_while(|&(l, r)| match **l {
+                Type::Generic(ref g) => g == r,
+                _ => false,
+            })
+            .count();
 
-                if params.len() <= allowed_missing_args + args.len() {
-                    // Remove the args at the end of the aliased type
-                    let arg_types: AppVec<_> = arg_types
-                        .iter()
-                        .take(arg_types.len() - (params.len() - args.len()))
-                        .take(arg_types.len() + args.len() - params.len())
-                        .cloned()
-                        .collect();
-                    typ = Type::app(d.clone(), arg_types);
-                } else {
-                    return None;
-                }
-            }
-            _ => if args.len() != params.len() {
-                return None;
-            },
-        }
+        let typ = if params.len() <= allowed_missing_args + args.len() {
+            // Remove the args at the end of the aliased type
+            let arg_types: AppVec<_> = arg_types
+                .iter()
+                .take(arg_types.len() + args.len() - params.len())
+                .cloned()
+                .collect();
+            Type::app(
+                d.cloned().unwrap_or_else(|| Type::function_builtin()),
+                arg_types,
+            )
+        } else {
+            return None;
+        };
 
         Some(walk_move_type(typ.remove_forall().clone(), &mut |typ| {
             match **typ {
@@ -1604,6 +1600,55 @@ where
                 }
             }
         }
+    }
+}
+
+fn split_top<'a, Id, T>(self_: &'a T) -> Option<(Option<&'a T>, Cow<[T]>)>
+where
+    T: Deref<Target = Type<Id, T>> + Clone,
+    Id: 'a,
+{
+    Some(match **self_ {
+        Type::App(ref f, ref args) => (Some(f), Cow::Borrowed(args)),
+        Type::Function(_, ref a, ref r) => (None, Cow::Owned(vec![a.clone(), r.clone()])),
+        _ => return None,
+    })
+}
+
+fn clone_cow<'a, T>(cow: Cow<'a, [T]>) -> impl DoubleEndedIterator<Item = T> + 'a
+where
+    T: ToOwned + Clone,
+{
+    use itertools::Either;
+
+    match cow {
+        Cow::Borrowed(ts) => Either::Left(ts.iter().cloned()),
+        Cow::Owned(ts) => Either::Right(ts.into_iter()),
+    }
+}
+
+pub fn split_app<'a, Id, T>(self_: &'a T) -> (Option<&'a T>, Cow<[T]>)
+where
+    T: Deref<Target = Type<Id, T>> + Clone,
+    Id: 'a,
+{
+    match split_top(self_) {
+        Some((f, args)) => {
+            let mut f = f;
+            let mut extra_args = Vec::new();
+            while let Some((f2, args2)) = f.and_then(split_top) {
+                f = f2;
+                extra_args.extend(clone_cow(args2).rev());
+            }
+            if extra_args.is_empty() {
+                (f, args)
+            } else {
+                extra_args.reverse();
+                extra_args.extend(clone_cow(args));
+                (f, Cow::Owned(extra_args))
+            }
+        }
+        None => (Some(self_), Cow::Borrowed(&[][..])),
     }
 }
 

@@ -933,7 +933,7 @@ fn array_expr_gets_type_assigned_without_expected_type_issue_555() {
 }
 
 #[test]
-fn resolve_through_aliased_function_type() {
+fn dont_panic_on_partially_applied_aliased_function() {
     let _ = env_logger::try_init();
 
     let text = r#"
@@ -943,6 +943,28 @@ type Function2 b = Function Int b
 let f : Function2 (Int -> Int) = \x -> \y -> y
 
 f 1 2
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn resolve_through_aliased_function_type() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+
+let any x = any x
+let map : (a -> b) -> f a -> f b = any ()
+
+type Wrap a = | Wrap a
+type Deserializer i a = i -> a
+
+let option a : Deserializer Int a -> Deserializer Int (Wrap a) = \input ->
+    (map Wrap a) input
+
+()
 "#;
     let result = support::typecheck(text);
 

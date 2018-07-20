@@ -2,9 +2,11 @@ let { Value } = import! std.serialization_types
 let prim = import! std.serialization.prim
 
 let { Result, ? } = import! std.result
-let map@{ Map, ? } = import! std.map
+let std_map@{ Map, ? } = import! std.map
 let { id } = import! std.function
+let float = import! std.float
 
+let { map } = import! std.functor
 let { (*>), (<*), wrap } = import! std.applicative
 let { Alternative, (<|>) } = import! std.applicative
 let { flat_map } = import! std.monad
@@ -61,6 +63,36 @@ let monad : Monad (Deserializer i) = {
 
 ///
 /// ```
+/// let { Value, bool, deserialize } = import! std.serialization
+/// let { Result, ? } = import! std.result
+/// let { assert } = import! std.test
+///
+/// assert (deserialize bool "true" == Ok True)
+/// assert (deserialize bool "123" == Err "Expected bool")
+/// ```
+let bool : ValueDeserializer Bool = \input ->
+    match input with
+    | Bool i -> Ok { value = i, input }
+    | _ -> Err (error_msg "Expected bool")
+
+///
+/// ```
+/// let { Value, float, deserialize } = import! std.serialization
+/// let { Result, ? } = import! std.result
+/// let { assert } = import! std.test
+///
+/// assert (deserialize float "123.45" == Ok 123.45)
+/// assert (deserialize float "123" == Ok 123.0)
+/// assert (deserialize float "true" == Err "Expected float")
+/// ```
+let float : ValueDeserializer Float = \input ->
+    match input with
+    | Int i -> Ok { value = float.from_int i, input }
+    | Float f -> Ok { value = f, input }
+    | _ -> Err (error_msg "Expected float")
+
+///
+/// ```
 /// let { Value, int, deserialize } = import! std.serialization
 /// let { Result, ? } = import! std.result
 /// let { assert } = import! std.test
@@ -73,10 +105,19 @@ let int : ValueDeserializer Int = \input ->
     | Int i -> Ok { value = i, input }
     | _ -> Err (error_msg "Expected integer")
 
+///
+/// ```
+/// let { Value, string, deserialize } = import! std.serialization
+/// let { Result, ? } = import! std.result
+/// let { assert } = import! std.test
+///
+/// assert (deserialize string "\"abc\"" == Ok "abc")
+/// assert (deserialize string "true" == Err "Expected string")
+/// ```
 let string : ValueDeserializer String = \input ->
     match input with
     | String s -> Ok { value = s, input }
-    | _ -> Err (error_msg "Expected integer")
+    | _ -> Err (error_msg "Expected string")
 
 ///
 /// ```
@@ -99,6 +140,22 @@ let array a : ValueDeserializer a -> ValueDeserializer (Array a) = \input ->
 
 ///
 /// ```
+/// let { Value, option, int, deserialize } = import! std.serialization
+/// let { Result, ? } = import! std.result
+/// let { ? } = import! std.array
+/// let { assert } = import! std.test
+///
+/// assert (deserialize (option int) "123" == Ok (Some 123))
+/// assert (deserialize (option int) "null" == Ok None)
+/// assert (deserialize (option int) "\"\"" == Err "Expected integer")
+/// ```
+let option a : ValueDeserializer a -> ValueDeserializer (Option a) = \input ->
+    match input with
+    | Null -> Ok { value = None, input }
+    | _ -> (map Some a) input
+
+///
+/// ```
 /// let { Value, field, int, deserialize } = import! std.serialization
 /// let { Result, ? } = import! std.result
 /// let { ? } = import! std.array
@@ -110,7 +167,7 @@ let array a : ValueDeserializer a -> ValueDeserializer (Array a) = \input ->
 let field name a : String -> ValueDeserializer a -> ValueDeserializer a = \input ->
     match input with
     | Object o ->
-        match map.find name o with
+        match std_map.find name o with
         | Some value -> a value
         | None -> Err (error_msg ("Expected field `" ++ name ++ "`"))
     | _ -> Err (error_msg "Expected map")
@@ -124,17 +181,20 @@ let run de value : ValueDeserializer a -> Value -> Result Error a =
     do state = de value
     Ok state.value
 
-let insert_string : String -> a -> Map String a -> Map String a = map.insert
+let insert_string : String -> a -> Map String a -> Map String a = std_map.insert
 
 {
     Value,
     Error,
     Deserializer,
 
+    bool,
     int,
+    float,
     string,
     array,
     field,
+    option,
 
     deserialize,
     run,
