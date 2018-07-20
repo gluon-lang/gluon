@@ -405,7 +405,7 @@ mod tests {
         let future =
             move || Client::new().get(format!("http://localhost:{}", port).parse().unwrap());
 
-        let retry_strategy = tokio_retry::strategy::FixedInterval::from_millis(400).take(10);
+        let retry_strategy = tokio_retry::strategy::FixedInterval::from_millis(400).take(40);
 
         runtime
             .block_on(
@@ -436,7 +436,7 @@ mod tests {
             Client::new().request(request)
         };
 
-        let retry_strategy = tokio_retry::strategy::FixedInterval::from_millis(400).take(10);
+        let retry_strategy = tokio_retry::strategy::FixedInterval::from_millis(400).take(40);
 
         runtime
             .block_on(
