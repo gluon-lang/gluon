@@ -400,7 +400,9 @@ mod tests {
         let port = 1222;
         let thread = new_vm();
 
-        runtime.spawn(start(&thread, port).map_err(|err| panic!("{}", err)));
+        runtime.spawn(future::lazy(move || {
+            start(&thread, port).map_err(|err| panic!("{}", err))
+        }));
 
         let future =
             move || Client::new().get(format!("http://localhost:{}", port).parse().unwrap());
@@ -426,7 +428,9 @@ mod tests {
 
         let port = 1223;
         let thread = new_vm();
-        runtime.spawn(start(&thread, port).map_err(|err| panic!("{}", err)));
+        runtime.spawn(future::lazy(move || {
+            start(&thread, port).map_err(|err| panic!("{}", err))
+        }));
 
         let future = move || {
             let request = hyper::Request::post(format!("http://localhost:{}/echo", port))
