@@ -401,7 +401,7 @@ mod tests {
         let thread = new_vm();
 
         runtime.spawn(future::lazy(move || {
-            start(&thread, port).map_err(|err| panic!("{}", err))
+            start(&thread, port).map_err(|err| error!("{}", err))
         }));
 
         let future =
@@ -429,7 +429,7 @@ mod tests {
         let port = 1223;
         let thread = new_vm();
         runtime.spawn(future::lazy(move || {
-            start(&thread, port).map_err(|err| panic!("{}", err))
+            start(&thread, port).map_err(|err| error!("{}", err))
         }));
 
         let future = move || {
