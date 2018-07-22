@@ -397,7 +397,7 @@ mod tests {
     fn hello_world() {
         let mut runtime = Runtime::new().unwrap();
 
-        let port = 1222;
+        let port = 12235;
         let thread = new_vm();
 
         runtime.spawn(future::lazy(move || {
@@ -426,7 +426,7 @@ mod tests {
     fn echo() {
         let mut runtime = Runtime::new().unwrap();
 
-        let port = 1223;
+        let port = 12234;
         let thread = new_vm();
         runtime.spawn(future::lazy(move || {
             start(&thread, port).map_err(|err| error!("{}", err))
