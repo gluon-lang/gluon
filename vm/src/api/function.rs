@@ -1,7 +1,6 @@
 use std::any::Any;
 use std::marker::PhantomData;
 use std::ops::Deref;
-use std::result::Result as StdResult;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Deserializer};
@@ -177,7 +176,7 @@ where
 
 #[cfg(feature = "serde")]
 impl<'de, V> Deserialize<'de> for Function<RootedThread, V> {
-    fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> ::std::result::Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -422,15 +421,13 @@ impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
             0.push(&vm, &mut context).unwrap();
         }
         let args = count!($($args),*) + R::extra_args();
-        vm.call_function(context, args).and_then(|async|{
-            match async {
-                Async::Ready(context) => {
-                    let value = context.unwrap().stack.pop();
-                    Self::return_value(vm, value).map(Async::Ready)
-                }
-                Async::NotReady => Ok(Async::NotReady),
+        match vm.call_function(context, args)? {
+            Async::Ready(context) => {
+                let value = context.unwrap().stack.pop();
+                Self::return_value(vm, value).map(Async::Ready)
             }
-        })
+            Async::NotReady => Ok(Async::NotReady),
+        }
     }
 
     fn return_value(vm: &Thread, value: Value) -> Result<R> {

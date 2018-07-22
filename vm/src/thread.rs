@@ -882,8 +882,7 @@ impl ThreadInternal for Thread {
         let mut context = self.current_context();
         context.stack.push(Closure(closure));
         context.borrow_mut().enter_scope(0, State::Closure(closure));
-        let async = try_future!(context.execute(false));
-        match async {
+        match try_future!(context.execute(false)) {
             Async::Ready(context) => FutureValue::Value(Ok((self, context.unwrap().stack.pop()))),
             Async::NotReady => FutureValue::Future(Execute::new(self)),
         }
