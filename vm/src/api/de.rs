@@ -242,7 +242,7 @@ pub struct JsonValue(::vm::RootedValue<RootedThread>);
 impl VmType for JsonValue {
     type Type = <Value as VmType>::Type;
     fn make_type(vm: &Thread) -> ArcType {
-        vm.find_type_info("std.serialization_types.Value")
+        vm.find_type_info("std.serialization.types.Value")
             .unwrap()
             .clone()
             .into_type()

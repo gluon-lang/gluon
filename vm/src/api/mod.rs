@@ -966,7 +966,7 @@ where
         type Map<V2> = OpaqueValue<RootedThread, BTreeMap<String, V2>>;
         let mut map: Map<V> = thread.get_global("std.map.empty")?;
         let mut insert: OwnedFunction<fn(String, V, Map<V>) -> Map<V>> =
-            thread.get_global("std.serialization.insert_string")?;
+            thread.get_global("std.serialization.de.insert_string")?;
 
         context.drop();
         for (key, value) in self {

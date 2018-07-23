@@ -1,4 +1,4 @@
-let { Value } = import! std.serialization_types
+let { Value } = import! std.serialization.types
 let prim = import! std.serialization.prim
 
 let { Result, ? } = import! std.result
@@ -63,7 +63,7 @@ let monad : Monad (Deserializer i) = {
 
 ///
 /// ```
-/// let { Value, bool, deserialize } = import! std.serialization
+/// let { Value, bool, deserialize } = import! std.serialization.de
 /// let { Result, ? } = import! std.result
 /// let { assert } = import! std.test
 ///
@@ -77,7 +77,7 @@ let bool : ValueDeserializer Bool = \input ->
 
 ///
 /// ```
-/// let { Value, float, deserialize } = import! std.serialization
+/// let { Value, float, deserialize } = import! std.serialization.de
 /// let { Result, ? } = import! std.result
 /// let { assert } = import! std.test
 ///
@@ -93,7 +93,7 @@ let float : ValueDeserializer Float = \input ->
 
 ///
 /// ```
-/// let { Value, int, deserialize } = import! std.serialization
+/// let { Value, int, deserialize } = import! std.serialization.de
 /// let { Result, ? } = import! std.result
 /// let { assert } = import! std.test
 ///
@@ -107,7 +107,7 @@ let int : ValueDeserializer Int = \input ->
 
 ///
 /// ```
-/// let { Value, string, deserialize } = import! std.serialization
+/// let { Value, string, deserialize } = import! std.serialization.de
 /// let { Result, ? } = import! std.result
 /// let { assert } = import! std.test
 ///
@@ -121,7 +121,7 @@ let string : ValueDeserializer String = \input ->
 
 ///
 /// ```
-/// let { Value, array, int, deserialize } = import! std.serialization
+/// let { Value, array, int, deserialize } = import! std.serialization.de
 /// let { Result, ? } = import! std.result
 /// let { ? } = import! std.array
 /// let { assert } = import! std.test
@@ -140,7 +140,7 @@ let array a : ValueDeserializer a -> ValueDeserializer (Array a) = \input ->
 
 ///
 /// ```
-/// let { Value, option, int, deserialize } = import! std.serialization
+/// let { Value, option, int, deserialize } = import! std.serialization.de
 /// let { Result, ? } = import! std.result
 /// let { ? } = import! std.array
 /// let { assert } = import! std.test
@@ -156,7 +156,7 @@ let option a : ValueDeserializer a -> ValueDeserializer (Option a) = \input ->
 
 ///
 /// ```
-/// let { Value, field, int, deserialize } = import! std.serialization
+/// let { Value, field, int, deserialize } = import! std.serialization.de
 /// let { Result, ? } = import! std.result
 /// let { ? } = import! std.array
 /// let { assert } = import! std.test
