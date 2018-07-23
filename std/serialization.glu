@@ -181,6 +181,7 @@ let run de value : ValueDeserializer a -> Value -> Result Error a =
     do state = de value
     Ok state.value
 
+#[doc(hidden)]
 let insert_string : String -> a -> Map String a -> Map String a = std_map.insert
 
 {

@@ -86,3 +86,11 @@ let tree = Branch (Tip 1) (Branch (Tip 2) (Tip 3))
 show tree
 tree == Tip 1
 ```
+
+### #[doc(hidden)]
+
+```f#
+#[doc(hidden)]
+```
+
+The `#[doc(hidden)]` attribute hides the binding, omitting it from generated documentation.

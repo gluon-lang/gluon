@@ -138,10 +138,19 @@ fn print_type(current_module: &str, typ: &ArcType) -> String {
     renderer.finish()
 }
 
+fn hidden(meta: &Metadata, field: &str) -> bool {
+    meta.module.get(field).map_or(false, |meta| {
+        meta.attributes().any(|attr| {
+            attr.name == "doc" && attr.arguments.as_ref().map_or(false, |arg| arg == "hidden")
+        })
+    })
+}
+
 pub fn record(current_module: &str, typ: &ArcType, meta: &Metadata) -> Record {
     Record {
         types: typ
             .type_field_iter()
+            .filter(|field| !hidden(meta, field.name.as_ref()))
             .map(|field| Field {
                 name: field.name.definition_name().to_string(),
                 args: field
@@ -165,6 +174,7 @@ pub fn record(current_module: &str, typ: &ArcType, meta: &Metadata) -> Record {
 
         values: typ
             .row_iter()
+            .filter(|field| !hidden(meta, field.name.as_ref()))
             .map(|field| {
                 let meta_opt = meta.module.get(AsRef::<str>::as_ref(&field.name));
                 Field {
