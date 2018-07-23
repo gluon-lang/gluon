@@ -959,9 +959,10 @@ let any x = any x
 let map : (a -> b) -> f a -> f b = any ()
 
 type Wrap a = | Wrap a
-type Deserializer i a = i -> a
+type Deserializer i a = i -> { value : a, input : i }
+type ValueDeserializer a = Deserializer Int a
 
-let option a : Deserializer Int a -> Deserializer Int (Wrap a) = \input ->
+let option a : ValueDeserializer a -> ValueDeserializer (Wrap a) = \input ->
     (map Wrap a) input
 
 ()
