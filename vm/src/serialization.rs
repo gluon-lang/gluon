@@ -597,7 +597,10 @@ pub mod closure {
 }
 
 #[derive(DeserializeState)]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "DeSeed"))]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(deserialize_state = "DeSeed")
+)]
 struct PartialApplicationModel {
     #[cfg_attr(feature = "serde_derive", serde(deserialize_state))]
     function: Callable,

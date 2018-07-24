@@ -789,13 +789,23 @@ where
 #[cfg(feature = "serde")]
 pub struct Precompiled<D>(pub D);
 
-#[cfg_attr(feature = "serde_derive_state", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
-    feature = "serde_derive_state", serde(deserialize_state = "::vm::serialization::DeSeed")
+    feature = "serde_derive_state",
+    derive(DeserializeState, SerializeState)
 )]
-#[cfg_attr(feature = "serde_derive_state", serde(serialize_state = "::vm::serialization::SeSeed"))]
+#[cfg_attr(
+    feature = "serde_derive_state",
+    serde(deserialize_state = "::vm::serialization::DeSeed")
+)]
+#[cfg_attr(
+    feature = "serde_derive_state",
+    serde(serialize_state = "::vm::serialization::SeSeed")
+)]
 pub struct Module {
-    #[cfg_attr(feature = "serde_derive_state", serde(state_with = "::vm::serialization::borrow"))]
+    #[cfg_attr(
+        feature = "serde_derive_state",
+        serde(state_with = "::vm::serialization::borrow")
+    )]
     pub typ: ArcType,
 
     pub metadata: Metadata,

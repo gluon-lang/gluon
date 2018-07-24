@@ -163,7 +163,8 @@ let eq_string l r : String -> String -> Bool = True
             _ => match expr.value {
                 ast::Expr::Infix {
                     ref implicit_args, ..
-                } if implicit_args.len() == 1 =>
+                }
+                    if implicit_args.len() == 1 =>
                 {
                     let env = MockEnv::new();
                     assert_eq!(

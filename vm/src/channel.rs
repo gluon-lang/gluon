@@ -28,11 +28,7 @@ pub struct Sender<T> {
     queue: Arc<Mutex<VecDeque<T>>>,
 }
 
-impl<T> Userdata for Sender<T>
-where
-    T: Any + Send + Sync + fmt::Debug + Traverseable,
-{
-}
+impl<T> Userdata for Sender<T> where T: Any + Send + Sync + fmt::Debug + Traverseable {}
 
 impl<T> fmt::Debug for Sender<T>
 where
@@ -65,11 +61,7 @@ pub struct Receiver<T> {
     queue: Arc<Mutex<VecDeque<T>>>,
 }
 
-impl<T> Userdata for Receiver<T>
-where
-    T: Any + Send + Sync + fmt::Debug + Traverseable,
-{
-}
+impl<T> Userdata for Receiver<T> where T: Any + Send + Sync + fmt::Debug + Traverseable {}
 
 impl<T> fmt::Debug for Receiver<T>
 where
@@ -239,11 +231,7 @@ fn spawn_on<'vm>(
         }
     }
 
-    impl<F> Userdata for SpawnFuture<F>
-    where
-        F: Send + 'static,
-    {
-    }
+    impl<F> Userdata for SpawnFuture<F> where F: Send + 'static {}
 
     impl<F> Traverseable for SpawnFuture<F> {
         fn traverse(&self, _: &mut Gc) {}

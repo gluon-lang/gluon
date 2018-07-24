@@ -85,17 +85,17 @@ macro_rules! define_vmtype {
                 $wrapper::make_type(vm)
             }
         }
-        
+
         impl VmType for $wrapper {
             type Type = $name;
             fn make_type(vm: &Thread) -> ArcType {
                 use gluon::base::types::Alias;
-        
+
                 // If we have already created $name then return it immediately
                 if let Some(typ) = vm.get_type::<$name>() {
                     return typ;
                 }
-        
+
                 // Otherwise construct the type using the `Deserialize` impl for the type
                 let (name, typ) = gluon::vm::api::typ::from_rust::<Self>(vm).unwrap();
                 vm.register_type_as(
