@@ -655,8 +655,6 @@ impl VmBuilder {
         VmBuilder::default()
     }
 
-    option!{
-        /// Defines the paths used to lookup gluon files
         /// (default: ["."])
         import_paths set_import_paths: Option<Vec<PathBuf>>
     }
