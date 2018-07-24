@@ -283,7 +283,7 @@ fn listen(
         }
     }
 
-    let addr = format!("127.0.0.1:{}", port).parse().unwrap();
+    let addr = format!("0.0.0.0:{}", port).parse().unwrap();
 
     let (sender, receiver) = oneshot::channel();
     tokio::spawn(
