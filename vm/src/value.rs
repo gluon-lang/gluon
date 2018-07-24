@@ -189,8 +189,6 @@ impl DataStruct {
 
 impl GcPtr<DataStruct> {
     pub(crate) fn get(&self, vm: &Thread, field: &str) -> Result<Option<Variants>> {
-        use thread::ThreadInternal;
-
         let field = vm.global_env().intern(field)?;
         Ok(self.get_field(field))
     }

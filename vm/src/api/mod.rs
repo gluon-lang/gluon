@@ -295,7 +295,6 @@ impl<T> Traverseable for Generic<T> {
 pub mod generic {
     use super::VmType;
     use base::types::ArcType;
-    use thread::ThreadInternal;
     use vm::Thread;
 
     macro_rules! make_generics {

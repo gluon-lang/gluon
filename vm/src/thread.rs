@@ -22,6 +22,7 @@ use base::types::{self, Alias, ArcType};
 use api::{Getable, Pushable, ValueRef, VmType};
 use compiler::UpvarInfo;
 use gc::{DataDef, Gc, GcPtr, Generation, Move};
+use interner::InternedStr;
 use macros::MacroEnv;
 use source_map::LocalIter;
 use stack::{Frame, Lock, Stack, StackFrame, State};
@@ -716,6 +717,11 @@ impl Thread {
         self.interrupt.load(atomic::Ordering::Relaxed)
     }
 
+    #[doc(hidden)]
+    pub fn global_env(&self) -> &Arc<GlobalVmState> {
+        &self.global_state
+    }
+
     fn current_context(&self) -> OwnedContext {
         self.context()
     }
@@ -820,8 +826,6 @@ where
     ) -> Result<Async<Option<OwnedContext<'b>>>>;
 
     fn resume(&self) -> Result<Async<OwnedContext>>;
-
-    fn global_env(&self) -> &Arc<GlobalVmState>;
 
     fn set_global(
         &self,
@@ -936,10 +940,6 @@ impl ThreadInternal for Thread {
         }
         context = try_ready!(context.execute(true)).unwrap();
         Ok(Async::Ready(context))
-    }
-
-    fn global_env(&self) -> &Arc<GlobalVmState> {
-        &self.global_state
     }
 
     fn set_global(
@@ -1171,6 +1171,21 @@ impl Context {
             },
         ).map(ValueRepr::Data)
             .map(Value::from)
+    }
+
+    pub fn new_record(
+        &mut self,
+        thread: &Thread,
+        fields: &[Value],
+        field_names: &[InternedStr],
+    ) -> Result<Value> {
+        Ok(Data(self.alloc_with(
+            thread,
+            RecordDef {
+                elems: fields,
+                fields: field_names,
+            },
+        )?).into())
     }
 
     pub fn alloc_with<D>(&mut self, thread: &Thread, data: D) -> Result<GcPtr<D::Value>>

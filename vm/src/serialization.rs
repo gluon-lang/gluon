@@ -356,7 +356,6 @@ pub mod symbol {
 pub mod intern {
     use super::*;
     use interner::InternedStr;
-    use thread::ThreadInternal;
 
     use serde::ser::{Serialize, SerializeState, Serializer};
     use serde::{Deserialize, Deserializer};
