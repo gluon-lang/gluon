@@ -21,6 +21,13 @@
 
         <table class="table-sm">
         <tbody>
+        {{#each directories}}
+            <tr>
+                <td>
+                    <a href="{{module_link this true}}">{{this}}</a>
+                </td>
+            </tr>
+        {{/each}}
         {{#each modules}}
             <tr>
                 <td>

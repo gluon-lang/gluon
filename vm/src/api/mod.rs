@@ -211,6 +211,16 @@ impl<'a> Data<'a> {
             },
         }
     }
+
+    #[doc(hidden)]
+    pub fn field_names(&self) -> Vec<::interner::InternedStr> {
+        match self.0 {
+            DataInner::Tag(_) => Vec::new(),
+            DataInner::Data(data) => unsafe {
+                GcPtr::from_raw(data).field_map().keys().cloned().collect()
+            },
+        }
+    }
 }
 
 /// Marker type representing a hole

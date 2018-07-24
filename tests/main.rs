@@ -6,11 +6,10 @@ extern crate collect_mac;
 extern crate futures;
 extern crate futures_cpupool;
 extern crate gluon;
+extern crate pulldown_cmark;
 extern crate tensile;
 extern crate tokio;
 extern crate walkdir;
-
-extern crate pulldown_cmark;
 
 use gluon::base::ast::{Expr, Pattern, SpannedExpr};
 use gluon::base::filename_to_module;

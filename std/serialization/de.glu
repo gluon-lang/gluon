@@ -1,3 +1,4 @@
+//! JSON deserialzation
 let { Value } = import! std.serialization.types
 let prim = import! std.serialization.prim
 
@@ -17,6 +18,7 @@ let { ? } = import! std.array
 type Error = String
 type Deserializer i a = i -> Result Error { value : a, input : i }
 
+/// Deserializer which extracts the data from the `Value` type 
 type ValueDeserializer a = Deserializer Value a
 
 let error_msg = id
@@ -60,6 +62,7 @@ let monad : Monad (Deserializer i) = {
             ),
 }
 
+/// Deserializes a `Bool`
 ///
 /// ```
 /// let { Value, bool, deserialize } = import! std.serialization.de
@@ -74,6 +77,9 @@ let bool : ValueDeserializer Bool = \input ->
     | Bool i -> Ok { value = i, input }
     | _ -> Err (error_msg "Expected bool")
 
+/// Deserializes a `Float`
+///
+/// Note that the deserializer will "integers" such as 123 as floats
 ///
 /// ```
 /// let { Value, float, deserialize } = import! std.serialization.de
@@ -90,6 +96,7 @@ let float : ValueDeserializer Float = \input ->
     | Float f -> Ok { value = f, input }
     | _ -> Err (error_msg "Expected float")
 
+/// Deserializes an `Int`
 ///
 /// ```
 /// let { Value, int, deserialize } = import! std.serialization.de
@@ -104,6 +111,7 @@ let int : ValueDeserializer Int = \input ->
     | Int i -> Ok { value = i, input }
     | _ -> Err (error_msg "Expected integer")
 
+/// Deserializes a `String`
 ///
 /// ```
 /// let { Value, string, deserialize } = import! std.serialization.de
@@ -118,6 +126,7 @@ let string : ValueDeserializer String = \input ->
     | String s -> Ok { value = s, input }
     | _ -> Err (error_msg "Expected string")
 
+/// Deserializes an `Array` of `a`
 ///
 /// ```
 /// let { Value, array, int, deserialize } = import! std.serialization.de
@@ -137,6 +146,9 @@ let array a : ValueDeserializer a -> ValueDeserializer (Array a) = \input ->
         Ok { value, input }
     | _ -> Err (error_msg "Expected array")
 
+/// Deserializes an `Option` of `a`.
+///
+/// `null` maps to `None` and all other values to `a`
 ///
 /// ```
 /// let { Value, option, int, deserialize } = import! std.serialization.de
@@ -153,6 +165,7 @@ let option a : ValueDeserializer a -> ValueDeserializer (Option a) = \input ->
     | Null -> Ok { value = None, input }
     | _ -> (map Some a) input
 
+/// Deserializes the field `name` of an object using `a`
 ///
 /// ```
 /// let { Value, field, int, deserialize } = import! std.serialization.de
@@ -172,6 +185,9 @@ let field name a : String -> ValueDeserializer a -> ValueDeserializer a = \input
             Ok { value = state.value, input }
         | None -> Err (error_msg ("Expected field `" ++ name ++ "`"))
     | _ -> Err (error_msg "Expected map") 
+
+/// Runs the deserializer `de` on `input`
+/// Produces a value of type `a` if deserialization was successful
 let deserialize de input : ValueDeserializer a -> String -> Result Error a =
     do value = prim.deserialize input
     do state = de value
