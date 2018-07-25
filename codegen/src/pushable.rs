@@ -35,7 +35,7 @@ fn derive_struct(ast: DataStruct, ident: Ident, generics: Generics) -> TokenStre
         Fields::Unit => quote!{},
     };
 
-    let push_impl = gen_push_impl(0, &field_idents, &field_types);
+    let push_impl = gen_push_impl(None, &field_idents, &field_types);
 
     gen_impl(&ident, generics, quote! { #destructured #push_impl })
 }
@@ -54,7 +54,7 @@ fn derive_enum(ast: DataEnum, ident: Ident, generics: Generics) -> TokenStream {
             Fields::Unit => quote! { #ident::#variant_ident },
         };
 
-        let push_impl = gen_push_impl(tag, &field_idents, &field_types);
+        let push_impl = gen_push_impl(Some(tag), &field_idents, &field_types);
 
         quote! {
             #pattern => {
@@ -91,7 +91,11 @@ fn gen_impl(ident: &Ident, generics: Generics, push_impl: TokenStream) -> TokenS
     }
 }
 
-fn gen_push_impl(tag: usize, field_idents: &[Cow<Ident>], field_types: &[&Type]) -> TokenStream {
+fn gen_push_impl(
+    tag: Option<usize>,
+    field_idents: &[Cow<Ident>],
+    field_types: &[&Type],
+) -> TokenStream {
     debug_assert!(field_idents.len() == field_types.len());
 
     // push each field onto the stack
@@ -111,10 +115,23 @@ fn gen_push_impl(tag: usize, field_idents: &[Cow<Ident>], field_types: &[&Type])
     // by popping the stack for each field
     let array_init = iter::repeat(quote! { ctx.stack.pop() }).take(field_idents.len());
 
+    let new_data = match tag {
+        Some(tag) => quote!{
+            ctx.new_data(vm, #tag as ::gluon::vm::types::VmTag, &fields)?
+        },
+        None => {
+            let field_ident_strs = field_idents.iter().map(|i| i.to_string());
+            quote! { {
+                let field_names = [#(vm.global_env().intern(#field_ident_strs)?),*];
+                ctx.new_record(vm, &fields, &field_names)?
+            } }
+        }
+    };
+
     quote! {
         #(#stack_pushes)*
         let fields = [ #(#array_init),* ];
-        let val = ctx.new_data(vm, #tag as ::gluon::vm::types::VmTag, &fields)?;
+        let val = #new_data;
         ctx.stack.push(val);
     }
 }

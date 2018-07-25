@@ -1,7 +1,7 @@
 //! Various macros for integrating with the `gluon` vm.
 //!
 //! ## Derive Macros
-//! 
+//!
 //! Custom derives for the following `gluon`-Traits are available:
 //!
 //! ### Getable
@@ -10,25 +10,25 @@
 //! `Getable` (generic type parameters included). If the type is generic over a
 //! lifetime, the lifetime will be constrained to that of the `'vm` lifetime in the
 //! trait definition.
-//! 
+//!
 //! #### Examples
-//! 
+//!
 //! Marhalling this gluon type:
-//! 
+//!
 //! ```gluon
-//! type Comment = 
+//! type Comment =
 //!     | Normal String
 //!     | Multiline String
 //!     | Doc String
 //! ```
-//! 
+//!
 //! To this rust enum:
-//! 
+//!
 //! ```rust
 //! #[macro_use]
 //! extern crate gluon_codegen;
 //! extern crate gluon;
-//! 
+//!
 //! enum Comment {
 //!     Normal(String),
 //!     Multiline(String),
@@ -41,16 +41,16 @@
 //!
 //! Derives `Pushable` for any enum or struct as long as all fields also implement
 //! `Pushable` (generic type parameters included).
-//! 
+//!
 //! #### Examples
-//! 
+//!
 //! Allowing the `User` struct to be marshalled to gluon code:
-//! 
+//!
 //! ```rust
 //! #[macro_use]
 //! extern crate gluon_codegen;
 //! extern crate gluon;
-//! 
+//!
 //! #[derive(Pushable)]
 //! struct User {
 //!     name: String,
@@ -58,9 +58,9 @@
 //! }
 //! # fn main() {}
 //! ```
-//! 
+//!
 //! As this compatible Record:
-//! 
+//!
 //! ```gluon
 //! type User = { name: String, age: Int }
 //! ```
@@ -74,22 +74,22 @@
 //!
 //! If the rust type has type parameters, they have to implement `VmType` as well.
 //! All lifetimes have to be `'static`.
-//! 
+//!
 //! #### Examples
-//! 
+//!
 //! Assuming the following gluon type in the module `types`:
-//! 
+//!
 //! ```gluon
 //! type Either l r = | Left l | Right r
 //! ```
-//! 
+//!
 //! This will map the correct rust type to it:
-//! 
+//!
 //! ```rust
 //! #[macro_use]
 //! extern crate gluon_codegen;
 //! extern crate gluon;
-//! 
+//!
 //! #[derive(VmType)]
 //! #[gluon(vm_type = "types.Either")]
 //! enum Either<L, R> {
@@ -104,18 +104,18 @@
 //! Derives `Userdata` and the required `Traverseable` and `VmType` for a rust type.
 //! Note that you will still have to use `Thread::register_type` to register the
 //! rust type with the vm before it is used.
-//! 
+//!
 //! #### Examples
-//! 
+//!
 //! Deriving `Userdata` for a type that will be opaque for the gluon code:
-//! 
+//!
 //! ```rust
 //! #[macro_use]
 //! extern crate gluon_codegen;
 //! extern crate gluon;
-//! 
+//!
 //! use std::sync::Arc;
-//! 
+//!
 //! // Userdata requires Debug + Send + Sync
 //! #[derive(Userdata, Debug)]
 //! struct Ident {

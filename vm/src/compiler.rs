@@ -31,19 +31,40 @@ enum FieldAccess {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
+#[cfg_attr(
+    feature = "serde_derive",
+    derive(DeserializeState, SerializeState)
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(deserialize_state = "::serialization::DeSeed")
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(serialize_state = "::serialization::SeSeed")
+)]
 pub struct UpvarInfo {
     pub name: String,
-    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
+    #[cfg_attr(
+        feature = "serde_derive",
+        serde(state_with = "::serialization::borrow")
+    )]
     pub typ: ArcType,
 }
 
 #[derive(Debug, Default, PartialEq)]
-#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
+#[cfg_attr(
+    feature = "serde_derive",
+    derive(DeserializeState, SerializeState)
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(deserialize_state = "::serialization::DeSeed")
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(serialize_state = "::serialization::SeSeed")
+)]
 pub struct DebugInfo {
     /// Maps instruction indexes to the line that spawned them
     pub source_map: SourceMap,
@@ -55,30 +76,60 @@ pub struct DebugInfo {
 }
 
 #[derive(Debug)]
-#[cfg_attr(feature = "serde_derive_state", derive(SerializeState, DeserializeState))]
-#[cfg_attr(feature = "serde_derive_state", serde(deserialize_state = "::serialization::DeSeed"))]
-#[cfg_attr(feature = "serde_derive_state", serde(serialize_state = "::serialization::SeSeed"))]
+#[cfg_attr(
+    feature = "serde_derive_state",
+    derive(SerializeState, DeserializeState)
+)]
+#[cfg_attr(
+    feature = "serde_derive_state",
+    serde(deserialize_state = "::serialization::DeSeed")
+)]
+#[cfg_attr(
+    feature = "serde_derive_state",
+    serde(serialize_state = "::serialization::SeSeed")
+)]
 pub struct CompiledModule {
     /// Storage for globals which are needed by the module which is currently being compiled
-    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
+    #[cfg_attr(
+        feature = "serde_derive",
+        serde(state_with = "::serialization::borrow")
+    )]
     pub module_globals: Vec<Symbol>,
-    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
+    #[cfg_attr(
+        feature = "serde_derive",
+        serde(state_with = "::serialization::borrow")
+    )]
     pub function: CompiledFunction,
 }
 
 #[derive(Debug)]
-#[cfg_attr(feature = "serde_derive_state", derive(SerializeState, DeserializeState))]
-#[cfg_attr(feature = "serde_derive_state", serde(deserialize_state = "::serialization::DeSeed"))]
-#[cfg_attr(feature = "serde_derive_state", serde(serialize_state = "::serialization::SeSeed"))]
+#[cfg_attr(
+    feature = "serde_derive_state",
+    derive(SerializeState, DeserializeState)
+)]
+#[cfg_attr(
+    feature = "serde_derive_state",
+    serde(deserialize_state = "::serialization::DeSeed")
+)]
+#[cfg_attr(
+    feature = "serde_derive_state",
+    serde(serialize_state = "::serialization::SeSeed")
+)]
 pub struct CompiledFunction {
     pub args: VmIndex,
     /// The maximum possible number of stack slots needed for this function
     pub max_stack_size: VmIndex,
 
-    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
+    #[cfg_attr(
+        feature = "serde_derive",
+        serde(state_with = "::serialization::borrow")
+    )]
     pub id: Symbol,
 
-    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
+    #[cfg_attr(
+        feature = "serde_derive",
+        serde(state_with = "::serialization::borrow")
+    )]
     pub typ: ArcType,
     pub instructions: Vec<Instruction>,
 
@@ -88,7 +139,10 @@ pub struct CompiledFunction {
     #[cfg_attr(feature = "serde_derive_state", serde(state))]
     pub strings: Vec<InternedStr>,
 
-    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
+    #[cfg_attr(
+        feature = "serde_derive",
+        serde(state_with = "::serialization::borrow")
+    )]
     pub records: Vec<Vec<Symbol>>,
 
     #[cfg_attr(feature = "serde_derive_state", serde(state))]

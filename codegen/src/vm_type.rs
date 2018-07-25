@@ -32,7 +32,8 @@ fn parse_attrs(attrs: &[Attribute]) -> String {
                         ref ident,
                         ref nested,
                         ..
-                    }) if ident == "gluon" =>
+                    })
+                        if ident == "gluon" =>
                     {
                         Some(nested)
                     }

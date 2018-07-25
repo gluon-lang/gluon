@@ -117,11 +117,23 @@ unsafe impl DataDef for ClosureInitDef {
 }
 
 #[derive(Debug, PartialEq)]
-#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
+#[cfg_attr(
+    feature = "serde_derive",
+    derive(DeserializeState, SerializeState)
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(deserialize_state = "::serialization::DeSeed")
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(serialize_state = "::serialization::SeSeed")
+)]
 pub struct BytecodeFunction {
-    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::symbol"))]
+    #[cfg_attr(
+        feature = "serde_derive",
+        serde(state_with = "::serialization::symbol")
+    )]
     pub name: Symbol,
     pub args: VmIndex,
     pub max_stack_size: VmIndex,
@@ -177,8 +189,6 @@ impl DataStruct {
 
 impl GcPtr<DataStruct> {
     pub(crate) fn get(&self, vm: &Thread, field: &str) -> Result<Option<Variants>> {
-        use thread::ThreadInternal;
-
         let field = vm.global_env().intern(field)?;
         Ok(self.get_field(field))
     }
@@ -308,9 +318,18 @@ mod gc_str {
 pub use self::gc_str::GcStr;
 
 #[derive(Copy, Clone, PartialEq)]
-#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
+#[cfg_attr(
+    feature = "serde_derive",
+    derive(DeserializeState, SerializeState)
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(deserialize_state = "::serialization::DeSeed")
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(serialize_state = "::serialization::SeSeed")
+)]
 pub(crate) enum ValueRepr {
     Byte(u8),
     Int(VmInt),
@@ -335,7 +354,10 @@ pub(crate) enum ValueRepr {
     ),
     Function(#[cfg_attr(feature = "serde_derive", serde(state))] GcPtr<ExternFunction>),
     Closure(
-        #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::closure"))]
+        #[cfg_attr(
+            feature = "serde_derive",
+            serde(state_with = "::serialization::closure")
+        )]
         GcPtr<ClosureData>,
     ),
     PartialApplication(
@@ -350,7 +372,8 @@ pub(crate) enum ValueRepr {
     #[cfg_attr(feature = "serde_derive", serde(skip_deserializing))]
     Userdata(
         #[cfg_attr(
-            feature = "serde_derive", serde(serialize_with = "::serialization::serialize_userdata")
+            feature = "serde_derive",
+            serde(serialize_with = "::serialization::serialize_userdata")
         )]
         GcPtr<Box<Userdata>>,
     ),
@@ -361,9 +384,18 @@ pub(crate) enum ValueRepr {
 
 // FIXME Remove Clone to make it harder to create unrooted values
 #[derive(PartialEq, Clone)]
-#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
+#[cfg_attr(
+    feature = "serde_derive",
+    derive(DeserializeState, SerializeState)
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(deserialize_state = "::serialization::DeSeed")
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(serialize_state = "::serialization::SeSeed")
+)]
 pub struct Value(#[cfg_attr(feature = "serde_derive", serde(state))] ValueRepr);
 
 impl From<ValueRepr> for Value {
@@ -640,12 +672,24 @@ impl<'a, 't> InternalPrinter<'a, 't> {
 }
 
 #[derive(Copy, Clone, Debug)]
-#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
+#[cfg_attr(
+    feature = "serde_derive",
+    derive(DeserializeState, SerializeState)
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(deserialize_state = "::serialization::DeSeed")
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(serialize_state = "::serialization::SeSeed")
+)]
 pub enum Callable {
     Closure(
-        #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::closure"))]
+        #[cfg_attr(
+            feature = "serde_derive",
+            serde(state_with = "::serialization::closure")
+        )]
         GcPtr<ClosureData>,
     ),
     Extern(#[cfg_attr(feature = "serde_derive", serde(state))] GcPtr<ExternFunction>),
@@ -678,7 +722,10 @@ impl Traverseable for Callable {
 #[derive(Debug)]
 #[repr(C)]
 #[cfg_attr(feature = "serde_derive", derive(SerializeState))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(serialize_state = "::serialization::SeSeed")
+)]
 pub struct PartialApplicationData {
     #[cfg_attr(feature = "serde_derive", serde(serialize_state))]
     pub(crate) function: Callable,
@@ -832,10 +879,14 @@ impl fmt::Debug for ValueRepr {
 }
 
 #[cfg_attr(feature = "serde_derive", derive(SerializeState))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(serialize_state = "::serialization::SeSeed")
+)]
 pub struct ExternFunction {
     #[cfg_attr(
-        feature = "serde_derive", serde(serialize_state_with = "::serialization::symbol::serialize")
+        feature = "serde_derive",
+        serde(serialize_state_with = "::serialization::symbol::serialize")
     )]
     pub id: Symbol,
     pub args: VmIndex,

@@ -6,7 +6,7 @@ use base::symbol::Symbol;
 use base::types::{self, Alias, AliasData, ArcType, Generic, Type};
 
 use super::{Getable, Pushable, ValueRef, VmType};
-use thread::{self, Context, ThreadInternal};
+use thread::{self, Context};
 use types::VmIndex;
 use value::{Def, Value, ValueRepr};
 use vm::Thread;

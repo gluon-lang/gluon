@@ -22,6 +22,7 @@ use base::types::{self, Alias, ArcType};
 use api::{Getable, Pushable, ValueRef, VmType};
 use compiler::UpvarInfo;
 use gc::{DataDef, Gc, GcPtr, Generation, Move};
+use interner::InternedStr;
 use macros::MacroEnv;
 use source_map::LocalIter;
 use stack::{Frame, Lock, Stack, StackFrame, State};
@@ -310,11 +311,23 @@ impl<'b> Roots<'b> {
 // knowing wheter it is or not. So the only way of allowing it to mark itself is to disallow it to
 // be allocated anywhere else.
 /// Representation of the virtual machine
-#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
+#[cfg_attr(
+    feature = "serde_derive",
+    derive(DeserializeState, SerializeState)
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(deserialize_state = "::serialization::DeSeed")
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(serialize_state = "::serialization::SeSeed")
+)]
 pub struct Thread {
-    #[cfg_attr(feature = "serde_derive", serde(state_with = "::base::serialization::shared"))]
+    #[cfg_attr(
+        feature = "serde_derive",
+        serde(state_with = "::base::serialization::shared")
+    )]
     global_state: Arc<GlobalVmState>,
     // The parent of this thread, if it exists must live at least as long as this thread as this
     // thread can refer to any value in the parent thread
@@ -383,9 +396,18 @@ impl<'vm, 'value> Getable<'vm, 'value> for RootedThread {
 /// An instance of `Thread` which is rooted. See the `Thread` type for documentation on interacting
 /// with the type.
 #[derive(Debug)]
-#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
+#[cfg_attr(
+    feature = "serde_derive",
+    derive(DeserializeState, SerializeState)
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(deserialize_state = "::serialization::DeSeed")
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(serialize_state = "::serialization::SeSeed")
+)]
 pub struct RootedThread(#[cfg_attr(feature = "serde_derive", serde(state))] GcPtr<Thread>);
 
 impl Drop for RootedThread {
@@ -547,7 +569,10 @@ impl Thread {
     /// # }
     /// ```
     ///
-    #[deprecated(since = "0.7.0", note = "Use `gluon::import::add_extern_module` instead")]
+    #[deprecated(
+        since = "0.7.0",
+        note = "Use `gluon::import::add_extern_module` instead"
+    )]
     pub fn define_global<'vm, T>(&'vm self, name: &str, value: T) -> Result<()>
     where
         T: Pushable<'vm> + VmType,
@@ -692,6 +717,11 @@ impl Thread {
         self.interrupt.load(atomic::Ordering::Relaxed)
     }
 
+    #[doc(hidden)]
+    pub fn global_env(&self) -> &Arc<GlobalVmState> {
+        &self.global_state
+    }
+
     fn current_context(&self) -> OwnedContext {
         self.context()
     }
@@ -796,8 +826,6 @@ where
     ) -> Result<Async<Option<OwnedContext<'b>>>>;
 
     fn resume(&self) -> Result<Async<OwnedContext>>;
-
-    fn global_env(&self) -> &Arc<GlobalVmState>;
 
     fn set_global(
         &self,
@@ -912,10 +940,6 @@ impl ThreadInternal for Thread {
         }
         context = try_ready!(context.execute(true)).unwrap();
         Ok(Async::Ready(context))
-    }
-
-    fn global_env(&self) -> &Arc<GlobalVmState> {
-        &self.global_state
     }
 
     fn set_global(
@@ -1093,9 +1117,18 @@ struct Hook {
     previous_instruction_index: usize,
 }
 
-#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
+#[cfg_attr(
+    feature = "serde_derive",
+    derive(DeserializeState, SerializeState)
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(deserialize_state = "::serialization::DeSeed")
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(serialize_state = "::serialization::SeSeed")
+)]
 pub struct Context {
     // FIXME It is dangerous to write to gc and stack
     #[cfg_attr(feature = "serde_derive", serde(state))]
@@ -1138,6 +1171,21 @@ impl Context {
             },
         ).map(ValueRepr::Data)
             .map(Value::from)
+    }
+
+    pub fn new_record(
+        &mut self,
+        thread: &Thread,
+        fields: &[Value],
+        field_names: &[InternedStr],
+    ) -> Result<Value> {
+        Ok(Data(self.alloc_with(
+            thread,
+            RecordDef {
+                elems: fields,
+                fields: field_names,
+            },
+        )?).into())
     }
 
     pub fn alloc_with<D>(&mut self, thread: &Thread, data: D) -> Result<GcPtr<D::Value>>

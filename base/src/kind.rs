@@ -34,12 +34,19 @@ impl KindEnv for EmptyEnv<Symbol> {
 /// These types include `Option` and `(->)` which both have the kind `Type -> Type -> Type`
 /// as well as `Functor` which has the kind `Type -> Type -> Type`.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
+#[cfg_attr(
+    feature = "serde_derive",
+    derive(DeserializeState, SerializeState)
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(serialize_state = "::serialization::SeSeed")
+)]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "S"))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "S"))]
 #[cfg_attr(
-    feature = "serde_derive", serde(bound(deserialize = "S: AsMut<::serialization::NodeMap>"))
+    feature = "serde_derive",
+    serde(bound(deserialize = "S: AsMut<::serialization::NodeMap>"))
 )]
 pub enum Kind {
     Hole,

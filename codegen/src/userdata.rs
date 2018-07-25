@@ -38,7 +38,7 @@ fn gen_impl(ident: Ident, generics: Generics) -> TokenStream {
         #[automatically_derived]
         #[allow(unused_attributes, unused_variables)]
         impl #impl_generics ::gluon::vm::gc::Traverseable for #ident #ty_generics {}
-        
+
         #[automatically_derived]
         #[allow(unused_attributes, unused_variables)]
         impl #impl_generics ::gluon::vm::api::VmType for #ident #ty_generics

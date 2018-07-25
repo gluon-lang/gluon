@@ -94,13 +94,28 @@ fn new_bytecode_function(
 }
 
 #[derive(Debug)]
-#[cfg_attr(feature = "serde_derive_state", derive(SerializeState, DeserializeState))]
-#[cfg_attr(feature = "serde_derive_state", serde(deserialize_state = "::serialization::DeSeed"))]
-#[cfg_attr(feature = "serde_derive_state", serde(serialize_state = "::serialization::SeSeed"))]
+#[cfg_attr(
+    feature = "serde_derive_state",
+    derive(SerializeState, DeserializeState)
+)]
+#[cfg_attr(
+    feature = "serde_derive_state",
+    serde(deserialize_state = "::serialization::DeSeed")
+)]
+#[cfg_attr(
+    feature = "serde_derive_state",
+    serde(serialize_state = "::serialization::SeSeed")
+)]
 pub struct Global {
-    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::symbol"))]
+    #[cfg_attr(
+        feature = "serde_derive",
+        serde(state_with = "::serialization::symbol")
+    )]
     pub id: Symbol,
-    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
+    #[cfg_attr(
+        feature = "serde_derive",
+        serde(state_with = "::serialization::borrow")
+    )]
     pub typ: ArcType,
     pub metadata: Metadata,
     #[cfg_attr(feature = "serde_derive_state", serde(state))]
@@ -113,14 +128,26 @@ impl Traverseable for Global {
     }
 }
 
-#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
+#[cfg_attr(
+    feature = "serde_derive",
+    derive(DeserializeState, SerializeState)
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(deserialize_state = "::serialization::DeSeed")
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(serialize_state = "::serialization::SeSeed")
+)]
 pub struct GlobalVmState {
     #[cfg_attr(feature = "serde_derive", serde(state))]
     env: RwLock<VmEnv>,
 
-    #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::borrow"))]
+    #[cfg_attr(
+        feature = "serde_derive",
+        serde(state_with = "::serialization::borrow")
+    )]
     generics: RwLock<FnvMap<StdString, ArcType>>,
 
     #[cfg_attr(feature = "serde_derive", serde(skip))]
@@ -164,9 +191,18 @@ impl Traverseable for GlobalVmState {
 /// A borrowed structure which implements `CompilerEnv`, `TypeEnv` and `KindEnv` allowing the
 /// typechecker and compiler to lookup things in the virtual machine.
 #[derive(Debug)]
-#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
-#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "::serialization::DeSeed"))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
+#[cfg_attr(
+    feature = "serde_derive",
+    derive(DeserializeState, SerializeState)
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(deserialize_state = "::serialization::DeSeed")
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(serialize_state = "::serialization::SeSeed")
+)]
 pub struct VmEnv {
     #[cfg_attr(feature = "serde_derive", serde(state))]
     pub type_infos: TypeInfos,

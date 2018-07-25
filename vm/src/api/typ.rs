@@ -6,7 +6,7 @@ use base::symbol::{Symbol, Symbols};
 use base::types::{ArcType, Field, Type, TypeCache};
 
 use api::VmType;
-use thread::{Thread, ThreadInternal};
+use thread::Thread;
 use {Error as VmError, Result};
 
 use serde::de::{

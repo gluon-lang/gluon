@@ -4,7 +4,7 @@ use std::ops::Deref;
 use base::resolve;
 use base::types::{ArcType, Type};
 
-use thread::{RootedValue, Thread, ThreadInternal, VmRoot};
+use thread::{RootedValue, Thread, VmRoot};
 
 #[derive(Debug)]
 pub struct FieldIter<'a, T>

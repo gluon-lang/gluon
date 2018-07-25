@@ -295,7 +295,6 @@ impl<T> Traverseable for Generic<T> {
 pub mod generic {
     use super::VmType;
     use base::types::ArcType;
-    use thread::ThreadInternal;
     use vm::Thread;
 
     macro_rules! make_generics {
@@ -894,6 +893,15 @@ where
     }
 }
 
+impl<'vm, 'value, T: Getable<'vm, 'value>> Getable<'vm, 'value> for Vec<T> {
+    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Vec<T> {
+        match value.as_ref() {
+            ValueRef::Array(data) => data.iter().map(|v| T::from_value(vm, v)).collect(),
+            _ => panic!("Expected array"),
+        }
+    }
+}
+
 impl<'s, T: VmType> VmType for *const T {
     type Type = T::Type;
     fn make_type(vm: &Thread) -> ArcType {
@@ -1319,12 +1327,12 @@ impl<'vm, T> Array<'vm, T> {
     }
 }
 
-impl<'vm, T: for<'vm2, 'value> Getable<'vm2, 'value>> Array<'vm, T> {
+impl<'vm, T: for<'value> Getable<'vm, 'value>> Array<'vm, T> {
     pub fn get(&self, index: VmInt) -> Option<T> {
         match self.0.get_variant().as_ref() {
             ValueRef::Array(data) => {
                 let v = data.get(index as usize).unwrap();
-                Some(T::from_value(self.0.vm(), v))
+                Some(T::from_value(self.0.vm_(), v))
             }
             _ => None,
         }

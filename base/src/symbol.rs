@@ -138,7 +138,10 @@ where
 
 #[derive(Eq)]
 #[cfg_attr(feature = "serde_derive", derive(SerializeState))]
-#[cfg_attr(feature = "serde_derive", serde(serialize_state = "::serialization::SeSeed"))]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(serialize_state = "::serialization::SeSeed")
+)]
 pub struct SymbolRef(str);
 
 impl fmt::Debug for SymbolRef {

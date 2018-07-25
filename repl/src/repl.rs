@@ -15,9 +15,9 @@ use base::ast::{Expr, Pattern, SpannedPattern, Typed, TypedIdent};
 use base::error::InFile;
 use base::kind::Kind;
 use base::pos;
+use base::resolve;
 use base::symbol::{Symbol, SymbolModule};
 use base::types::ArcType;
-use base::resolve;
 use parser::{parse_partial_repl_line, ReplLine};
 use vm::api::de::De;
 use vm::api::generic::A;
@@ -157,17 +157,17 @@ impl rustyline::completion::Completer for Completer {
 macro_rules! impl_userdata {
     ($name:ident) => {
         impl ::gluon::vm::api::Userdata for $name {}
-        
+
         impl ::std::fmt::Debug for $name {
             fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
                 write!(f, concat!(stringify!($name), "(..)"))
             }
         }
-        
+
         impl ::gluon::vm::api::VmType for $name {
             type Type = Self;
         }
-        
+
         impl ::gluon::vm::gc::Traverseable for $name {
             fn traverse(&self, _: &mut ::gluon::vm::gc::Gc) {}
         }
@@ -307,12 +307,13 @@ fn eval_line_(
             // so rewrite `let f x y = <expr>` into `let f x y = <expr> in f`
             // and `let { x } = <expr>` into `let repl_temp @ { x } = <expr> in repl_temp`
             let id = match unpack_pattern.value {
-                Pattern::Ident(ref id) if !let_binding.args.is_empty() => {
-                    id.clone()
-                }
+                Pattern::Ident(ref id) if !let_binding.args.is_empty() => id.clone(),
                 _ => {
                     let id = Symbol::from("repl_temp");
-                    let_binding.name = pos::spanned(let_binding.name.span, Pattern::As(id.clone(), Box::new(let_binding.name)));
+                    let_binding.name = pos::spanned(
+                        let_binding.name.span,
+                        Pattern::As(id.clone(), Box::new(let_binding.name)),
+                    );
                     TypedIdent::new(id)
                 }
             };
@@ -325,7 +326,8 @@ fn eval_line_(
                     FutureValue::sync({
                         // Hack to get around borrow-checker. Method-chaining didn't work,
                         // even with #[feature(nll)]. Seems like a bug
-                        let temp = set_globals(&vm, &unpack_pattern, &value.typ, &value.value.as_ref());
+                        let temp =
+                            set_globals(&vm, &unpack_pattern, &value.typ, &value.value.as_ref());
                         temp.and(Ok(value))
                     })
                 })
@@ -377,16 +379,22 @@ fn set_globals(
                 let field_name: &Symbol = &pattern_field.name.value;
                 // if the record didn't have a field with this name,
                 // there should have already been a type error. So we can just panic here
-                let field_value: RootedValue<&Thread> =
-                    value.get_field(field_name.declared_name())
-                    .unwrap_or_else(|| panic!(
-                        "record doesn't have field `{}`", field_name.declared_name()
-                    ));
-                let field_type = resolved_type.row_iter()
+                let field_value: RootedValue<&Thread> = value
+                    .get_field(field_name.declared_name())
+                    .unwrap_or_else(|| {
+                        panic!("record doesn't have field `{}`", field_name.declared_name())
+                    });
+                let field_type = resolved_type
+                    .row_iter()
                     .find(|f| f.name == *field_name)
-                    .unwrap_or_else(|| panic!(
-                        "record type doesn't have field `{}`", field_name.declared_name()
-                    )).typ.clone();
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "record type doesn't have field `{}`",
+                            field_name.declared_name()
+                        )
+                    })
+                    .typ
+                    .clone();
                 match pattern_field.value {
                     Some(ref sub_pattern) => {
                         set_globals(vm, sub_pattern, &field_type, &field_value)?
@@ -592,11 +600,9 @@ mod tests {
             .wait()
             .map_err(|(_, err)| err)
             .expect("Error evaluating let binding");
-        let x: String = vm.get_global("x")
-            .expect("Error getting x");
+        let x: String = vm.get_global("x").expect("Error getting x");
         assert_eq!(x, "x");
-        let y: String = vm.get_global("y")
-            .expect("Error getting y");
+        let y: String = vm.get_global("y").expect("Error getting y");
         assert_eq!(y, "y");
 
         // pattern with field names out of order and different field types
@@ -604,8 +610,7 @@ mod tests {
             .wait()
             .map_err(|(_, err)| err)
             .expect("Error evaluating let binding 2");
-        let () = vm.get_global("y")
-            .expect("Error getting y");
+        let () = vm.get_global("y").expect("Error getting y");
     }
 
     type QueryFn = fn(&'static str) -> IO<Result<String, String>>;

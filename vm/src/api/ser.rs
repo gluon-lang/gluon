@@ -1,5 +1,5 @@
 //! Rust -> Gluon value conversion via the `serde::Serialize` trait
-//! 
+//!
 //! _This module requires Gluon to be built with the `serde` feature._
 
 use std::fmt;
@@ -9,7 +9,7 @@ use api::{Pushable, VmType};
 use base::types::ArcType;
 use interner::InternedStr;
 use serde::ser::{self, Serialize};
-use thread::{Context, Thread, ThreadInternal};
+use thread::{Context, Thread};
 use types::{VmIndex, VmTag};
 use value::{Def, RecordDef, ValueRepr};
 use {Error, Result};

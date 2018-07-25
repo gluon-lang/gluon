@@ -509,7 +509,10 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
 
 const LONG_VERSION: &str = concat!(crate_version!(), "\n", "commit: ", env!("GIT_HASH"));
 #[derive(StructOpt)]
-#[structopt(about = "Documents gluon source code", raw(long_version = "LONG_VERSION"))]
+#[structopt(
+    about = "Documents gluon source code",
+    raw(long_version = "LONG_VERSION")
+)]
 pub struct Opt {
     #[structopt(help = "Documents the file or directory")]
     pub input: String,

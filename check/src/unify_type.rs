@@ -328,7 +328,8 @@ where
         (
             &Type::Function(l_arg_type, ref l_arg, ref l_ret),
             &Type::Function(r_arg_type, ref r_arg, ref r_ret),
-        ) if l_arg_type == r_arg_type =>
+        )
+            if l_arg_type == r_arg_type =>
         {
             let arg = unifier.try_match(l_arg, r_arg);
             let ret = unifier.try_match(l_ret, r_ret);

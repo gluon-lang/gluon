@@ -200,8 +200,14 @@ impl<'seed, T, S> AsMut<S> for SharedSeed<'seed, T, S> {
 #[derive(DeserializeState, SerializeState)]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "S"))]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "S"))]
-#[cfg_attr(feature = "serde_derive", serde(bound(deserialize = "T: DeserializeState<'de, S>")))]
-#[cfg_attr(feature = "serde_derive", serde(bound(serialize = "T: SerializeState<S>")))]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(bound(deserialize = "T: DeserializeState<'de, S>"))
+)]
+#[cfg_attr(
+    feature = "serde_derive",
+    serde(bound(serialize = "T: SerializeState<S>"))
+)]
 #[cfg_attr(feature = "serde_derive", serde(ser_parameters = "S"))]
 #[cfg_attr(feature = "serde_derive", serde(serialize_state = "S"))]
 pub enum Variant<T> {

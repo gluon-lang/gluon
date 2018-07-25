@@ -753,29 +753,28 @@ mod tests {
 
     macro_rules! assert_eq_expr {
         ($actual:expr, $expected:expr) => {
-
             assert_eq_expr!($actual, $expected, |_: &Symbol| None)
         };
         ($actual:expr, $expected:expr, $globals:expr) => {{
             let mut symbols = Symbols::new();
             let globals = $globals;
-        
+
             let allocator = Allocator::new();
-        
+
             let actual_expr = ExprParser::new()
                 .parse(&mut symbols, &allocator, $actual)
                 .unwrap();
-        
+
             let actual_expr = {
                 Compiler::new(&allocator, &globals)
                     .compile_expr(allocator.arena.alloc(actual_expr))
                     .unwrap()
             };
-        
+
             let expected_expr = ExprParser::new()
                 .parse(&mut symbols, &allocator, $expected)
                 .unwrap();
-        
+
             assert_deq!(*actual_expr, expected_expr);
         }};
     }

@@ -128,7 +128,8 @@ impl<'a> Expr<'a> {
                         pattern: Pattern::Record(..),
                         ..
                     },
-                ) if alts.len() == 1 =>
+                )
+                    if alts.len() == 1 =>
                 {
                     let doc = chain![arena;
                         "match ",

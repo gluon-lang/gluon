@@ -36,8 +36,8 @@ where
 
 /// Processes `generics` for use in a trait implementation. Returns a tuple of type params
 /// after the `impl` keyword, params after the type identifier and a where clause with all
-/// necessary bounds. 
-/// 
+/// necessary bounds.
+///
 /// The where bound always contains a `where`, even if it empty and always
 /// includes a trailing comma after the last bound (if any).
 /// `extra_lifetimes` allows to define lifetimes that are only part of the generic parameter
