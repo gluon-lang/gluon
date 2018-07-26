@@ -19,7 +19,6 @@ type Deserializer i a = i -> Result Error { value : a, input : i }
 
 type ValueDeserializer a = Deserializer Value a
 
-
 let error_msg = id
 
 let deserializer : Deserializer i a -> Deserializer i a = id
@@ -170,8 +169,7 @@ let field name a : String -> ValueDeserializer a -> ValueDeserializer a = \input
         match std_map.find name o with
         | Some value -> a value
         | None -> Err (error_msg ("Expected field `" ++ name ++ "`"))
-    | _ -> Err (error_msg "Expected map")
-
+    | _ -> Err (error_msg "Expected map") 
 let deserialize de input : ValueDeserializer a -> String -> Result Error a =
     do value = prim.deserialize input
     do state = de value
@@ -184,10 +182,25 @@ let run de value : ValueDeserializer a -> Value -> Result Error a =
 #[doc(hidden)]
 let insert_string : String -> a -> Map String a -> Map String a = std_map.insert
 
+#[implicit]
+type Deserialize a = { deserializer : ValueDeserializer a  }
+
+let deserializer ?d : [Deserialize a] -> ValueDeserializer a = d.deserializer
+
+let int_deserializer : Deserialize Int = { deserializer = int }
+let float_deserializer : Deserialize Float = { deserializer = float }
+let string_deserializer : Deserialize String = { deserializer = string }
+
 {
     Value,
     Error,
     Deserializer,
+    ValueDeserializer,
+    Deserialize,
+
+    functor,
+    applicative,
+    monad,
 
     bool,
     int,
@@ -199,6 +212,12 @@ let insert_string : String -> a -> Map String a -> Map String a = std_map.insert
 
     deserialize,
     run,
+
+    deserializer,
+
+    int_deserializer,
+    string_deserializer,
+    float_deserializer,
 
     insert_string
 }

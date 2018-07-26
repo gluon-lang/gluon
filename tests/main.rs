@@ -20,7 +20,6 @@ use gluon::base::types::{ArcType, Type};
 use gluon::vm::api::de::De;
 use gluon::vm::api::{Getable, Hole, OpaqueValue, OwnedFunction, VmType};
 use gluon::vm::future::FutureValue;
-use gluon::vm::thread::ThreadInternal;
 
 use gluon::{new_vm, Compiler, RootedThread, Thread};
 

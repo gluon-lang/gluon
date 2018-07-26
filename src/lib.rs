@@ -67,7 +67,6 @@ use vm::api::{Getable, Hole, OpaqueValue, VmType};
 use vm::compiler::CompiledModule;
 use vm::future::{BoxFutureValue, FutureValue};
 use vm::macros;
-use vm::thread::ThreadInternal;
 use vm::Variants;
 
 quick_error! {

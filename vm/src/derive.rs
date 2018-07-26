@@ -1,6 +1,6 @@
 use base::ast::{
-    Alternative, Argument, AstType, Expr, ExprField, Literal, Pattern, PatternField, SpannedExpr,
-    TypeBinding, TypedIdent, ValueBinding,
+    Alternative, Argument, AstType, Expr, ExprField, Lambda, Literal, Pattern, PatternField,
+    SpannedExpr, SpannedPattern, TypeBinding, TypedIdent, ValueBinding,
 };
 use base::metadata::Attribute;
 use base::pos::{self, BytePos, Span};
@@ -18,14 +18,56 @@ pub fn generate(
         Some(ref args) => args
             .split(',')
             .map(|s| s.trim())
-            .map(|arg| match arg {
-                "Eq" => generate_eq(symbols, bind),
-                "Show" => generate_show(symbols, bind),
-                _ => panic!(),
+            .map(|arg| {
+                Ok(match arg {
+                    "Eq" => generate_eq(symbols, bind),
+                    "Show" => generate_show(symbols, bind),
+                    "Deserialize" => generate_deserialize(symbols, bind),
+                    _ => return Err(format!("`{}` is not a type that can be derived", arg)),
+                })
             })
-            .collect(),
+            .collect::<Result<_, _>>()?,
         _ => Err("Invalid `derive` attribute".into()),
     }
+}
+
+fn generate_record_pattern<I>(
+    span: Span<BytePos>,
+    row: &AstType<Symbol>,
+    symbols: I,
+) -> SpannedPattern<Symbol>
+where
+    I: IntoIterator<Item = TypedIdent<Symbol>>,
+{
+    pos::spanned(
+        span,
+        Pattern::Record {
+            implicit_import: None,
+            typ: Type::hole(),
+            types: Vec::new(),
+            fields: row_iter(row)
+                .zip(symbols)
+                .map(|(field, bind)| PatternField {
+                    name: pos::spanned(span, field.name.clone()),
+                    value: Some(pos::spanned(span, Pattern::Ident(bind))),
+                })
+                .collect(),
+        },
+    )
+}
+
+fn project(span: Span<BytePos>, symbols: &mut Symbols, p: &str) -> SpannedExpr<Symbol> {
+    p.split('.')
+        .fold(None, |acc, name| {
+            let symbol = symbols.symbol(name);
+            Some(match acc {
+                Some(expr) => {
+                    pos::spanned(span, Expr::Projection(Box::new(expr), symbol, Type::hole()))
+                }
+                None => ident(span, symbol),
+            })
+        })
+        .unwrap()
 }
 
 fn ident(span: Span<BytePos>, s: Symbol) -> SpannedExpr<Symbol> {
@@ -34,6 +76,15 @@ fn ident(span: Span<BytePos>, s: Symbol) -> SpannedExpr<Symbol> {
 
 fn literal(span: Span<BytePos>, s: &str) -> SpannedExpr<Symbol> {
     pos::spanned(span, Expr::Literal(Literal::String(s.to_string())))
+}
+fn paren(span: Span<BytePos>, expr: SpannedExpr<Symbol>) -> SpannedExpr<Symbol> {
+    pos::spanned(
+        span,
+        Expr::Tuple {
+            elems: vec![expr],
+            typ: Type::hole(),
+        },
+    )
 }
 
 fn app(span: Span<BytePos>, func: Symbol, args: Vec<SpannedExpr<Symbol>>) -> SpannedExpr<Symbol> {
@@ -209,27 +260,10 @@ fn generate_show(
 
                 infix(span, show_expr, symbols.symbol("++"), literal(span, "}"))
             };
-            let generate_record_pattern = |symbols| {
-                pos::spanned(
-                    span,
-                    Pattern::Record {
-                        implicit_import: None,
-                        typ: Type::hole(),
-                        types: Vec::new(),
-                        fields: row_iter(row)
-                            .zip(symbols)
-                            .map(|(field, bind)| PatternField {
-                                name: pos::spanned(span, field.name.clone()),
-                                value: Some(pos::spanned(span, Pattern::Ident(bind))),
-                            })
-                            .collect(),
-                    },
-                )
-            };
             Expr::Match(
                 Box::new(ident(span, x.clone())),
                 vec![Alternative {
-                    pattern: generate_record_pattern(field_symbols),
+                    pattern: generate_record_pattern(span, row, field_symbols),
                     expr,
                 }],
             )
@@ -497,6 +531,164 @@ fn generate_eq(
         expr: pos::spanned(span, eq_record_expr),
         metadata: Default::default(),
         typ: Some(binding_type(symbols, "Eq", self_type, bind)),
+        resolved_type: Type::hole(),
+    })
+}
+
+fn generate_deserialize(
+    symbols: &mut Symbols,
+    bind: &TypeBinding<Symbol>,
+) -> Result<ValueBinding<Symbol>, Error> {
+    let span = bind.name.span;
+
+    let deserializer_fn = TypedIdent::new(symbols.symbol("deserializer"));
+
+    let field_deserialize = symbols.symbol("field");
+    let deserializer_ident = ident(span, symbols.symbol("deserializer"));
+
+    let self_type: AstType<_> = Type::app(
+        Type::ident(bind.alias.value.name.clone()),
+        bind.alias
+            .value
+            .params()
+            .iter()
+            .cloned()
+            .map(Type::generic)
+            .collect(),
+    );
+
+    let deserializer_expr = match **remove_forall(bind.alias.value.unresolved_type()) {
+        Type::Record(ref row) => {
+            let field_symbols: Vec<_> = row_iter(row)
+                .map(|field| {
+                    TypedIdent::new(Symbol::from(format!("{}", field.name.declared_name())))
+                })
+                .collect();
+
+            let expr = {
+                field_symbols.iter().fold(None, |acc, symbol| {
+                    let deserialize_field = app(
+                        span,
+                        field_deserialize.clone(),
+                        vec![
+                            literal(span, symbol.name.declared_name()),
+                            deserializer_ident.clone(),
+                        ],
+                    );
+                    Some(match acc {
+                        Some(prev) => infix(span, prev, symbols.symbol("<*>"), deserialize_field),
+                        None => deserialize_field,
+                    })
+                })
+            }.expect("FIXME");
+
+            let pack_record = pos::spanned(
+                span,
+                Expr::Lambda(Lambda {
+                    args: field_symbols
+                        .iter()
+                        .cloned()
+                        .map(|id| Argument::explicit(pos::spanned(span, id)))
+                        .collect(),
+                    body: Box::new(pos::spanned(
+                        span,
+                        Expr::Record {
+                            exprs: field_symbols
+                                .iter()
+                                .map(|id| ExprField {
+                                    name: pos::spanned(span, id.name.clone()),
+                                    value: None,
+                                    metadata: Default::default(),
+                                })
+                                .collect(),
+                            types: Vec::new(),
+                            typ: Type::hole(),
+                            base: None,
+                        },
+                    )),
+                    id: TypedIdent::new(symbols.symbol("pack_record")),
+                }),
+            );
+            app(
+                span,
+                symbols.symbol("map"),
+                vec![paren(span, pack_record), paren(span, expr)],
+            )
+        }
+        _ => return Err("Unable to derive Show for this type".into()),
+    };
+
+    let let_import = ValueBinding {
+        name: pos::spanned(
+            span,
+            Pattern::Record {
+                implicit_import: None,
+                typ: Type::hole(),
+                types: vec![PatternField {
+                    name: pos::spanned(span, symbols.symbol("ValueDeserializer")),
+                    value: None,
+                }],
+                fields: vec![],
+            },
+        ),
+        args: Vec::new(),
+        expr: app(
+            span,
+            symbols.symbol("import!"),
+            vec![project(span, symbols, "std.serialization.de")],
+        ),
+        metadata: Default::default(),
+        typ: None,
+        resolved_type: Type::hole(),
+    };
+
+    let deserializer_binding = ValueBinding {
+        name: pos::spanned(span, Pattern::Ident(deserializer_fn.clone())),
+        args: Vec::new(),
+        expr: deserializer_expr,
+        metadata: Default::default(),
+        typ: Some(Type::app(
+            Type::ident(symbols.symbol("ValueDeserializer")),
+            collect![self_type.clone()],
+        )),
+        resolved_type: Type::hole(),
+    };
+
+    let deserializer_record_expr = Expr::LetBindings(
+        vec![let_import],
+        Box::new(pos::spanned(
+            span,
+            Expr::LetBindings(
+                vec![deserializer_binding],
+                Box::new(pos::spanned(
+                    span,
+                    Expr::Record {
+                        typ: Type::hole(),
+                        types: Vec::new(),
+                        exprs: vec![ExprField {
+                            metadata: Default::default(),
+                            name: pos::spanned(span, symbols.symbol("deserializer")),
+                            value: Some(ident(span, deserializer_fn.name.clone())),
+                        }],
+                        base: None,
+                    },
+                )),
+            ),
+        )),
+    );
+
+    Ok(ValueBinding {
+        name: pos::spanned(
+            span,
+            Pattern::Ident(TypedIdent::new(symbols.symbol(format!(
+                "deserialize_{}",
+                bind.alias.value.name.declared_name()
+            )))),
+        ),
+        args: Vec::new(),
+        expr: pos::spanned(span, deserializer_record_expr),
+        metadata: Default::default(),
+        typ: Some(binding_type(symbols, "Deserialize", self_type, bind)),
         resolved_type: Type::hole(),
     })
 }

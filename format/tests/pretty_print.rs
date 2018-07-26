@@ -514,3 +514,22 @@ Test 1
 "#;
     assert_diff!(&format_expr_expanded(expr).unwrap(), expected, "\n", 0);
 }
+
+#[test]
+fn derive_deserialize() {
+    let expr = r#"
+#[derive(Deserialize)]
+type Record = { x : Int }
+()
+"#;
+    let expected = r#"
+#[derive(Deserialize)]
+type Record = { x : Int }
+let deserialize_Record : Deserialize Record =
+    let { ValueDeserializer } = import! std.serialization.de
+    let deserializer : ValueDeserializer Record = map (\x -> { x }) (field "x" deserializer)
+    { deserializer = deserializer }
+()
+"#;
+    assert_diff!(&format_expr_expanded(expr).unwrap(), expected, "\n", 0);
+}

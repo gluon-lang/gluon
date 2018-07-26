@@ -1,0 +1,15 @@
+let { Result, ? } = import! std.result
+let de @ { Deserializer, Deserialize, field, deserializer, ? } = import! std.serialization.de
+let { Test, run, assert, assert_eq, test, group, ? }  = import! std.test
+let { Applicative, (*>) } = import! std.applicative
+let { (<|) } = import! std.function
+
+let { map } = import! std.functor
+
+#[derive(Show, Eq, Deserialize)]
+type Record = { x : Int }
+
+group "de" [
+    test "derive_record" <|
+        \_ -> assert_eq (de.deserialize deserializer "{ \"x\" : 1 }") (Ok { x = 1 })
+]
