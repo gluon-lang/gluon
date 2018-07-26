@@ -235,7 +235,12 @@ fn spawn_on<'vm>(
         }
     }
 
-    impl<F> Userdata for SpawnFuture<F> where F: Future + Send + 'static {}
+    impl<F> Userdata for SpawnFuture<F>
+    where
+        F: Future + Send + 'static,
+        F::Item: Send + Sync,
+        F::Error: Send + Sync,
+    {}
 
     impl<F> Traverseable for SpawnFuture<F>
     where
