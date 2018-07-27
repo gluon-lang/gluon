@@ -7,7 +7,7 @@ let std_map@{ Map, ? } = import! std.map
 let { id } = import! std.function
 let float = import! std.float
 
-let { map } = import! std.functor
+let functor = import! std.functor
 let { (*>), (<*), wrap } = import! std.applicative
 let { Alternative, (<|>) } = import! std.alternative
 let { flat_map } = import! std.monad
@@ -163,7 +163,7 @@ let array a : ValueDeserializer a -> ValueDeserializer (Array a) = \input ->
 let option a : ValueDeserializer a -> ValueDeserializer (Option a) = \input ->
     match input with
     | Null -> Ok { value = None, input }
-    | _ -> (map Some a) input
+    | _ -> (functor.map Some a) input
 
 /// Deserializes the field `name` of an object using `a`
 ///
@@ -186,6 +186,30 @@ let field name a : String -> ValueDeserializer a -> ValueDeserializer a = \input
         | None -> Err (error_msg ("Expected field `" ++ name ++ "`"))
     | _ -> Err (error_msg "Expected map") 
 
+/// Deserializes the a `Map String a`
+///
+/// ```
+/// let { Value, map, int, deserialize } = import! std.serialization.de
+/// let { Result, ? } = import! std.result
+/// let { singleton, ? } = import! std.map
+/// let { (<>) } = import! std.semigroup
+/// let { assert } = import! std.test
+///
+/// assert (
+///     deserialize (map int) r#"{ "test": 123, "test2": 0 }"#
+///         == Ok (singleton "test" 123 <> singleton "test2" 0)
+/// )
+/// assert (deserialize (map int) r#"{ "abc": "" }"# == Err "Expected integer")
+/// ```
+let map a : ValueDeserializer a -> ValueDeserializer (Map String a) = \input ->
+    match input with
+    | Object xs ->
+        let f = \key value ->
+            do state = a value
+            Ok state.value
+        do value = std_map.traverse_with_key f xs
+        Ok { value, input }
+    | _ -> Err (error_msg "Expected map") 
 
 /// Deserializes a `Value`
 let value : ValueDeserializer Value = \input ->
@@ -223,10 +247,14 @@ let option_deserializer : [Deserialize a] -> Deserialize (Option a) =
 
 let list @ { List } = import! std.list
 let list_deserializer : [Deserialize a] -> Deserialize (List a) =
-    { deserializer = map list.of (array deserializer) }
+    { deserializer = functor.map list.of (array deserializer) }
 
 let array_deserializer : [Deserialize a] -> Deserialize (Array a) =
     { deserializer = array deserializer }
+
+let { Map } = import! std.map
+let map_deserializer : [Deserialize a] -> Deserialize (Map String a) =
+    { deserializer = map deserializer }
 
 {
     Value,
@@ -246,6 +274,7 @@ let array_deserializer : [Deserialize a] -> Deserialize (Array a) =
     string,
     array,
     field,
+    map,
     option,
     value,
 
@@ -261,6 +290,7 @@ let array_deserializer : [Deserialize a] -> Deserialize (Array a) =
     option_deserializer,
     list_deserializer,
     array_deserializer,
+    map_deserializer,
 
     insert_string
 }

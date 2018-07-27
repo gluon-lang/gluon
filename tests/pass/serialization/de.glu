@@ -7,6 +7,7 @@ let { (<|) } = import! std.function
 let int = import! std.int
 let list @ { List, ? } = import! std.list
 let { ? } = import! std.array
+let { (<>) } = import! std.semigroup
 
 #[derive(Show, Eq, Deserialize)]
 type Record = { x : Int }
@@ -77,5 +78,17 @@ group "de" [
                 let actual = de.deserialize d r#" [{ "x": 1 }, { "x": 2 }] "#
                 assert_eq actual (Ok ([{ x = 1 }, { x = 2 }])),
         ]
-    )
+    ),
+
+    group "array" (
+        let map @ { Map, ? } = import! std.map
+        let d : ValueDeserializer (Map String Int) = deserializer
+        [
+            test "empty" <| \_ ->
+                assert_eq (de.deserialize d r#" {} "#) (Ok map.empty),
+            test "some" <| \_ ->
+                let actual = de.deserialize d r#" { "x": 1, "y": 2 } "#
+                assert_eq actual (Ok (map.singleton "x" 1 <> map.singleton "y" 2))
+        ]
+    ),
 ]

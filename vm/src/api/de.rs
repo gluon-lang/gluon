@@ -206,6 +206,7 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
         JsonValue::deserialize_state(&mut context, &mut serde_json::Deserializer::from_str(input))
             .map_err(|err| err.to_string())
     }
+
     ExternModule::new(
         vm,
         record! {
