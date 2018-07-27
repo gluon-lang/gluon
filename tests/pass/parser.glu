@@ -5,7 +5,7 @@ let { Test, run, writer, assert_eq, test, group } = import! std.test
 let { ? } = import! std.char
 let { Parser, applicative, functor, alternative, monad, any, parse } = import! std.parser
 let { Applicative, (*>), ? } = import! std.applicative
-let { (<|>) } = import! std.applicative
+let { (<|>) } = import! std.alternative
 
 group "parser" [
     test "any" <| \_ -> (assert_eq (parse any "abc") (Ok 'a'))

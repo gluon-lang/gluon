@@ -61,7 +61,7 @@ let alternative : Alternative Parser = {
     empty = parser (\stream -> Err { position = stream.start, message = "empty" }),
 }
 
-let { (<|>) } = import! std.applicative
+let { (<|>) } = import! std.alternative
 
 let monad : Monad Parser = {
     applicative,

@@ -8,7 +8,7 @@ let float = import! std.float
 
 let { map } = import! std.functor
 let { (*>), (<*), wrap } = import! std.applicative
-let { Alternative, (<|>) } = import! std.applicative
+let { Alternative, (<|>) } = import! std.alternative
 let { flat_map } = import! std.monad
 let { for } = import! std.traversable
 let { ? } = import! std.array

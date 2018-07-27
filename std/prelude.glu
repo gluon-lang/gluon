@@ -3,7 +3,8 @@
 
 let { Option } = import! std.types
 let { Functor } = import! std.functor
-let { Applicative, Alternative, (*>), wrap } = import! std.applicative
+let { Applicative, (*>), wrap } = import! std.applicative
+let { Alternative } = import! std.alternative
 let { Foldable } = import! std.foldable
 let { Monad } = import! std.monad
 let { Semigroup, append, (<>) } = import! std.semigroup

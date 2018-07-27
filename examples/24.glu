@@ -62,7 +62,7 @@ let parse : String -> Result String Expr =
         chainl1,
         (<?>),
         ? } = import! std.parser
-    let { (<|>) } = import! std.applicative
+    let { (<|>) } = import! std.alternative
 
     let lex x = x <* spaces
 

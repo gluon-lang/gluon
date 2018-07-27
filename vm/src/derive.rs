@@ -638,16 +638,19 @@ fn generate_deserialize(
                 symbols.symbol("map"),
                 vec![
                     paren(span, pack_record),
-                    app(
+                    paren(
                         span,
-                        field_deserialize.clone(),
-                        vec![
-                            literal(
-                                span,
-                                field_symbols.first().expect("FIXME").name.declared_name(),
-                            ),
-                            deserializer_ident.clone(),
-                        ],
+                        app(
+                            span,
+                            field_deserialize.clone(),
+                            vec![
+                                literal(
+                                    span,
+                                    field_symbols.first().expect("FIXME").name.declared_name(),
+                                ),
+                                deserializer_ident.clone(),
+                            ],
+                        ),
                     ),
                 ],
             );

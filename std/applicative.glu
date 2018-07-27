@@ -81,23 +81,6 @@ let map9 fn a b c d e f g h i : [Applicative f] -> _ =
 let map10 fn a b c d e f g h i j : [Applicative f] -> _ =
     map9 fn a b c d e f g h i <*> j
 
-/// A monoid on applicative functors.
-#[implicit]
-type Alternative f = {
-    applicative : Applicative f,
-    or : forall a . f a -> f a -> f a,
-    empty : forall a . f a
-}
-
-let empty ?alt : [Alternative f] -> f a = alt.empty
-
-let or ?alt : [Alternative f] -> f a -> f a -> f a = alt.or
-
-/// Alias of `or`
-#[infix(left, 3)]
-let (<|>) : [Alternative f] -> f a -> f a -> f a = or
-
-
 {
     Applicative,
     apply, wrap, (<*>), (<*), (*>),
@@ -111,7 +94,4 @@ let (<|>) : [Alternative f] -> f a -> f a -> f a = or
     map8,
     map9,
     map10,
-
-    Alternative,
-    empty, or, (<|>),
 }

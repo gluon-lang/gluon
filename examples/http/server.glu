@@ -3,7 +3,8 @@ let io @ { ? } = import! std.io
 let string = import! std.string
 let { (<>) } = import! std.prelude
 let { map } = import! std.functor
-let { (*>), wrap, (<|>) } = import! std.applicative
+let { (*>), wrap } = import! std.applicative
+let { (<|>) } = import! std.alternative
 let { flat_map, (>>=) } = import! std.monad
 
 let {

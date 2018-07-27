@@ -7,7 +7,8 @@ let { Bool } = import! std.bool
 let { Functor, Applicative, Alternative, Monad } = prelude
 let { id } = import! std.prelude
 let { flat_map } = import! std.monad
-let { wrap, or, empty, (<|>), (*>) } = import! std.applicative
+let { wrap, (*>) } = import! std.applicative
+let { or, empty, (<|>) } = import! std.alternative
 
 let {
     Method,

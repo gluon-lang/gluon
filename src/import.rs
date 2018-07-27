@@ -88,6 +88,7 @@ static STD_LIBS: &[(&str, &str)] = &std_libs!(
     "array",
     "functor",
     "applicative",
+    "alternative",
     "cmp",
     "foldable",
     "monad",
