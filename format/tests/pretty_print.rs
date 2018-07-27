@@ -377,6 +377,22 @@ else 0
 }
 
 #[test]
+fn fully_break_function_type() {
+    let expr = r#"
+let traverse_with_key f m x : [Ord k]
+        -> Applicative t
+        -> (k -> a -> t b)
+        -> Map k a
+        -> ()
+        -> ()
+    =
+    ()
+()
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+}
+
+#[test]
 fn comments_in_block_exprs() {
     let expr = r#"
 // test

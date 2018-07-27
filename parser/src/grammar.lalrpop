@@ -379,7 +379,8 @@ Type : AstType<Id> = {
 
 ArgType: (ArgType, AstType<Id>) = {
     <AppType> => (ArgType::Explicit, <>),
-    "[" <Type> "]" => (ArgType::Implicit, <>),
+    <l: @L> "[" <typ: Type_> "]" <r: @R> =>
+        (ArgType::Implicit, AstType::from(pos::spanned2(l, r, typ))),
 };
 
 // Patterns

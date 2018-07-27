@@ -2179,22 +2179,25 @@ where
         A: Clone,
     {
         let arena = printer.arena;
-        let p = self.prec;
-        match self.typ.as_function_with_type() {
-            Some((arg_type, arg, ret)) => {
-                let doc = chain![arena;
-                    chain![arena;
-                        if arg_type == ArgType::Implicit { "[" } else { "" },
-                        dt(Prec::Function, arg).pretty(printer),
-                        if arg_type == ArgType::Implicit { "]" } else { "" },
-                        printer.space_after(arg.span().end())
-                    ].group(),
-                    "-> ",
-                    top(ret).pretty_function(printer)
-                ];
+        let doc = self.pretty_function_(printer);
+        self.prec.enclose(Prec::Function, arena, doc).group()
+    }
 
-                p.enclose(Prec::Function, arena, doc)
-            }
+    fn pretty_function_<A>(&self, printer: &Printer<'a, I, A>) -> DocBuilder<'a, Arena<'a, A>, A>
+    where
+        I: AsRef<str>,
+        A: Clone,
+    {
+        let arena = printer.arena;
+        match self.typ.as_function_with_type() {
+            Some((arg_type, arg, ret)) => chain![arena;
+                    if arg_type == ArgType::Implicit { "[" } else { "" },
+                    dt(Prec::Function, arg).pretty(printer),
+                    if arg_type == ArgType::Implicit { "]" } else { "" },
+                    printer.space_after(arg.span().end()),
+                    "-> ",
+                    top(ret).pretty_function_(printer)
+                ],
             None => self.pretty(printer),
         }
     }
