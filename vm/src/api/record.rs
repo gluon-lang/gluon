@@ -6,9 +6,10 @@ use base::symbol::Symbol;
 use base::types::{self, Alias, AliasData, ArcType, Generic, Type};
 
 use super::{ActiveThread, Getable, Pushable, ValueRef, VmType};
+use interner::InternedStr;
 use thread;
 use types::VmIndex;
-use value::{Def, Value, ValueRepr};
+use value::{RecordDef, Value, ValueRepr};
 use vm::Thread;
 use {Result, Variants};
 
@@ -38,7 +39,11 @@ pub trait FieldValues: HList {
 }
 
 pub trait PushableFieldList<'vm>: HList {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()>;
+    fn push(
+        self,
+        context: &mut ActiveThread<'vm>,
+        field_names: &mut Vec<InternedStr>,
+    ) -> Result<()>;
 }
 
 pub trait GetableFieldList<'vm, 'value>: HList + Sized {
@@ -46,7 +51,7 @@ pub trait GetableFieldList<'vm, 'value>: HList + Sized {
 }
 
 impl<'vm> PushableFieldList<'vm> for HNil {
-    fn push(self, _: &mut ActiveThread) -> Result<()> {
+    fn push(self, _: &mut ActiveThread, _: &mut Vec<InternedStr>) -> Result<()> {
         Ok(())
     }
 }
@@ -137,10 +142,15 @@ impl<'vm, F: Field, H: Pushable<'vm>, T> PushableFieldList<'vm> for HCons<(F, H)
 where
     T: PushableFieldList<'vm>,
 {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+    fn push(
+        self,
+        context: &mut ActiveThread<'vm>,
+        field_names: &mut Vec<InternedStr>,
+    ) -> Result<()> {
         let ((_, head), tail) = self.pluck();
+        field_names.push(context.thread().global_env().intern(F::name())?);
         head.push(context)?;
-        tail.push(context)
+        tail.push(context, field_names)
     }
 }
 
@@ -172,17 +182,20 @@ where
     U: PushableFieldList<'vm>,
 {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        let mut field_names = Vec::new();
+        self.fields.push(context, &mut field_names)?;
+
         let thread = context.thread();
-        self.fields.push(context)?;
         let context = context.context();
         let len = U::LEN as VmIndex;
         let offset = context.stack.len() - len;
+
         let value = thread::alloc(
             &mut context.gc,
             thread,
             &context.stack,
-            Def {
-                tag: 0,
+            RecordDef {
+                fields: &field_names,
                 elems: &context.stack[offset..],
             },
         )?;
