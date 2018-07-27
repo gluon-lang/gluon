@@ -277,10 +277,18 @@ fn handlebars() -> Result<Handlebars> {
     fn breadcrumbs(
         h: &Helper,
         _: &Handlebars,
-        _: &Context,
-        _: &mut RenderContext,
+        context: &Context,
+        rc: &mut RenderContext,
         out: &mut Output,
     ) -> ::std::result::Result<(), RenderError> {
+        let current_module_level = &context.data()["name"]
+            .as_str()
+            .expect("name")
+            .split('.')
+            .count();
+        let index = rc.get_root_template_name().map(|s| &s[..]) == Some(INDEX_TEMPLATE);
+        let index_offset = if index { 1 } else { 2 };
+
         let param = String::deserialize(h.param(0).unwrap().value())?;
         let parts: Vec<_> = param.split(".").collect();
         for (i, part) in parts.iter().enumerate() {
@@ -290,7 +298,9 @@ fn handlebars() -> Result<Handlebars> {
                 if i + 1 == parts.len() {
                     handlebars::html_escape(&part)
                 } else {
-                    let path = (0..(parts.len() - i - 2)).map(|_| "../").format("");
+                    let path = (0..(current_module_level - i - index_offset))
+                        .map(|_| "../")
+                        .format("");
                     format!(
                         r##"<a href="{}index.html">{}</a>"##,
                         path,
