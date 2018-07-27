@@ -466,6 +466,46 @@ where
                     };
                     opt_type.map(|typ| Field::new(l.name.clone(), typ))
                 });
+
+                {
+                    use std::cmp::Ordering::*;
+                    match l_args.len().cmp(&r_args.len()) {
+                        Equal => (),
+                        Less => {
+                            let context = unifier
+                                .state
+                                .record_context
+                                .as_ref()
+                                .map_or(actual, |p| &p.1)
+                                .clone();
+                            let err = TypeError::MissingFields(
+                                context,
+                                r_args[l_args.len()..]
+                                    .iter()
+                                    .map(|field| field.name.clone())
+                                    .collect(),
+                            );
+                            unifier.report_error(UnifyError::Other(err));
+                        }
+                        Greater => {
+                            let context = unifier
+                                .state
+                                .record_context
+                                .as_ref()
+                                .map_or(expected, |p| &p.0)
+                                .clone();
+                            let err = TypeError::MissingFields(
+                                context,
+                                l_args[r_args.len()..]
+                                    .iter()
+                                    .map(|field| field.name.clone())
+                                    .collect(),
+                            );
+                            unifier.report_error(UnifyError::Other(err));
+                        }
+                    }
+                }
+
                 let new_rest = unifier.try_match(l_rest, r_rest);
                 Ok(merge::merge(
                     l_args,
