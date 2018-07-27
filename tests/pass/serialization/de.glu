@@ -5,6 +5,7 @@ let { Applicative, (*>) } = import! std.applicative
 let { map } = import! std.functor
 let { (<|) } = import! std.function
 let int = import! std.int
+let list @ { List, ? } = import! std.list
 
 #[derive(Show, Eq, Deserialize)]
 type Record = { x : Int }
@@ -51,7 +52,18 @@ group "de" [
             test "none" <| \_ ->
                 assert_eq (de.deserialize d r#" null "#) (Ok None),
             test "some" <| \_ ->
-                assert_eq (de.deserialize d r#" { "x": 1 } "#) (Ok (Some { x  = 1 })),
+                assert_eq (de.deserialize d r#" { "x": 1 } "#) (Ok (Some { x = 1 })),
+        ]
+    ),
+
+    group "list" (
+        let d : ValueDeserializer (List Record) = deserializer
+        [
+            test "empty" <| \_ ->
+                assert_eq (de.deserialize d r#" [] "#) (Ok Nil),
+            test "some" <| \_ ->
+                let actual = de.deserialize d r#" [{ "x": 1 }, { "x": 2 }] "#
+                assert_eq actual (Ok (list.of [{ x = 1 }, { x = 2 }])),
         ]
     )
 ]

@@ -211,11 +211,19 @@ type Deserialize a = { deserializer : ValueDeserializer a  }
 let deserializer ?d : [Deserialize a] -> ValueDeserializer a = d.deserializer
 
 let int_deserializer : Deserialize Int = { deserializer = int }
+
 let float_deserializer : Deserialize Float = { deserializer = float }
+
 let string_deserializer : Deserialize String = { deserializer = string }
+
 let value_deserializer : Deserialize Value = { deserializer = value }
+
 let option_deserializer : [Deserialize a] -> Deserialize (Option a) =
     { deserializer = option deserializer }
+
+let list @ { List } = import! std.list
+let list_deserializer : [Deserialize a] -> Deserialize (List a) =
+    { deserializer = map list.of (array deserializer) }
 
 {
     Value,
@@ -248,6 +256,7 @@ let option_deserializer : [Deserialize a] -> Deserialize (Option a) =
     float_deserializer,
     value_deserializer,
     option_deserializer,
+    list_deserializer,
 
     insert_string
 }
