@@ -6,6 +6,9 @@ let { map } = import! std.functor
 let { (*>), wrap } = import! std.applicative
 let { (<|>) } = import! std.alternative
 let { flat_map, (>>=) } = import! std.monad
+let { ? } = import! std.array
+let { Result } = import! std.result
+let { foldl } = import! std.foldable
 
 let {
     Request, Response, Handler, StatusCode,
@@ -42,8 +45,37 @@ let echo : Handler Response =
     (get_request >>= echo_body)
         *> wrap { status = status.ok }
 
+let array_body request : Request -> Handler (Array Byte) =
+    do chunk = io_handler (read_chunk request.body)
+    match chunk with
+    | Some chunk ->
+        do rest = array_body request
+        wrap (chunk <> rest)
+    | None -> wrap []
+
+let sum : Handler Response =
+    let de @ { ? } = import! std.serialization.de
+    do body = get_request >>= array_body
+    match string.from_utf8 body with
+    | Err _ ->
+        do _ = write_response (string.as_bytes "Request contained invalid UTF-8")
+        wrap { status = status.bad_request }
+    | Ok string_body ->
+        match de.deserialize de.deserializer string_body with
+        | Ok int_array ->
+            let int_array : Array Int = int_array
+            let s = foldl (+) 0 int_array 
+            do _ = write_response (string.as_bytes (show s))
+            wrap { status = status.ok }
+        | Err err ->
+            do _ = write_response (string.as_bytes err)
+            wrap { status = status.bad_request }
+
+
 let handler =
-    (get *> path "/" *> hello_world) <|> (post *> path "/echo" *> echo)
+    (get *> path "/" *> hello_world)
+        <|> (post *> path "/echo" *> echo)
+        <|> (post *> path "/sum" *> sum)
         <|> (get *> path "/error" *> (wrap { status = status.internal_server_error }))
 
 let print_error h = catch_error h (\msg -> io_handler (io.println msg))
