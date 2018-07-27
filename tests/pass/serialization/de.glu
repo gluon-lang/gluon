@@ -44,4 +44,14 @@ group "de" [
         test "derive_variant" <| \_ ->
             assert_eq (de.deserialize deserializer r#" 123 "#) (Ok (Int 123)),
     ],
+
+    group "option" (
+        let d : ValueDeserializer (Option Record) = deserializer
+        [
+            test "none" <| \_ ->
+                assert_eq (de.deserialize d r#" null "#) (Ok None),
+            test "some" <| \_ ->
+                assert_eq (de.deserialize d r#" { "x": 1 } "#) (Ok (Some { x  = 1 })),
+        ]
+    )
 ]

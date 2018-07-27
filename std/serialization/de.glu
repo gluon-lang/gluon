@@ -214,6 +214,8 @@ let int_deserializer : Deserialize Int = { deserializer = int }
 let float_deserializer : Deserialize Float = { deserializer = float }
 let string_deserializer : Deserialize String = { deserializer = string }
 let value_deserializer : Deserialize Value = { deserializer = value }
+let option_deserializer : [Deserialize a] -> Deserialize (Option a) =
+    { deserializer = option deserializer }
 
 {
     Value,
@@ -245,6 +247,7 @@ let value_deserializer : Deserialize Value = { deserializer = value }
     string_deserializer,
     float_deserializer,
     value_deserializer,
+    option_deserializer,
 
     insert_string
 }
