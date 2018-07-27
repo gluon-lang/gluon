@@ -147,11 +147,8 @@ fn array() {
 fn return_finished_future() {
     let _ = ::env_logger::try_init();
 
-    fn add(
-        x: i32,
-        y: i32,
-    ) -> FutureResult<Box<Future<Item = i32, Error = Error> + Send + 'static>> {
-        FutureResult(Box::new(Ok(x + y).into_future()))
+    fn add(x: i32, y: i32) -> FutureResult<impl Future<Item = i32, Error = Error>> {
+        FutureResult(Ok(x + y).into_future())
     }
 
     let expr = r#"
@@ -172,9 +169,7 @@ fn return_finished_future() {
     assert_eq!(result, expected);
 }
 
-fn poll_n(
-    s: String,
-) -> FutureResult<Box<Future<Item = IO<String>, Error = Error> + Send + 'static>> {
+fn poll_n(s: String) -> FutureResult<impl Future<Item = IO<String>, Error = Error>> {
     use futures::sync::oneshot::channel;
     use std::thread::spawn;
 
@@ -184,7 +179,7 @@ fn poll_n(
         ping_p.wait().expect("wait");
         pong_c.send(s).expect("send");
     });
-    FutureResult(Box::new(
+    FutureResult(
         lazy(move || {
             ping_c.send(()).unwrap();
             Ok(())
@@ -193,7 +188,7 @@ fn poll_n(
                 .map(IO::Value)
                 .map_err(|err| Error::Message(format!("{}", err)))
         }),
-    ))
+    )
 }
 
 #[test]
@@ -249,8 +244,8 @@ fn io_future() {
 
     let _ = ::env_logger::try_init();
 
-    fn test(_: ()) -> FutureResult<Box<Future<Item = IO<i32>, Error = Error> + Send + 'static>> {
-        FutureResult(Box::new(Ok(IO::Value(123)).into_future()))
+    fn test(_: ()) -> FutureResult<impl Future<Item = IO<i32>, Error = Error>> {
+        FutureResult(Ok(IO::Value(123)).into_future())
     }
 
     let expr = r#"

@@ -16,6 +16,7 @@ let { Num, (+), (-), (*), (/), negate } = import! std.num
 let { Bool, not } = import! std.bool
 let { (++) } = import! std.string
 let { error } = import! std.prim
+let { flat_map } = import! std.monad
 
 {
     Ordering,
@@ -57,4 +58,6 @@ let { error } = import! std.prim
     not,
 
     error,
+
+    flat_map,
 }

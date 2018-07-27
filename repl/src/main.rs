@@ -15,7 +15,7 @@ extern crate log;
 extern crate serde_derive;
 #[macro_use]
 extern crate structopt;
-extern crate tokio_core;
+extern crate tokio;
 extern crate tokio_signal;
 extern crate walkdir;
 
@@ -34,6 +34,9 @@ use std::sync::Arc;
 use codespan_reporting::termcolor;
 use structopt::StructOpt;
 use walkdir::WalkDir;
+
+use futures::future;
+use tokio::runtime::Runtime;
 
 use gluon::base;
 use gluon::parser;
@@ -266,7 +269,8 @@ fn run(
                 .map_err(|err| format!("{}\n{}", err, err.backtrace()))?;
         }
         None => if opt.interactive {
-            repl::run(color)?;
+            let mut runtime = Runtime::new()?;
+            runtime.block_on(future::lazy(move || repl::run(color)))?;
         } else if !opt.input.is_empty() {
             run_files(compiler, &vm, &opt.input)?;
         } else {

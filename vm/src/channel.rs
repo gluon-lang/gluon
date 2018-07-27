@@ -3,8 +3,7 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use futures::sync::oneshot;
-use futures::Future;
+use futures::{future, Future};
 
 use base::types::{ArcType, Type};
 
@@ -215,7 +214,7 @@ fn spawn_on<'vm>(
     _thread: RootedThread,
     _action: WithVM<'vm, FunctionRef<Action>>,
 ) -> IO<OpaqueValue<&'vm Thread, IO<Generic<A>>>> {
-    IO::Exception("spawn_on requires the `tokio_core` crate".to_string())
+    IO::Exception("spawn_on requires the `tokio` crate".to_string())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -223,21 +222,37 @@ fn spawn_on<'vm>(
     thread: RootedThread,
     action: WithVM<'vm, FunctionRef<Action>>,
 ) -> IO<OpaqueValue<&'vm Thread, IO<Generic<A>>>> {
-    struct SpawnFuture<F>(Mutex<Option<F>>);
+    struct SpawnFuture<F>(future::Shared<F>)
+    where
+        F: Future;
 
-    impl<F> fmt::Debug for SpawnFuture<F> {
+    impl<F> fmt::Debug for SpawnFuture<F>
+    where
+        F: Future,
+    {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             write!(f, "Future")
         }
     }
 
-    impl<F> Userdata for SpawnFuture<F> where F: Send + 'static {}
+    impl<F> Userdata for SpawnFuture<F>
+    where
+        F: Future + Send + 'static,
+        F::Item: Send + Sync,
+        F::Error: Send + Sync,
+    {}
 
-    impl<F> Traverseable for SpawnFuture<F> {
+    impl<F> Traverseable for SpawnFuture<F>
+    where
+        F: Future,
+    {
         fn traverse(&self, _: &mut Gc) {}
     }
 
-    impl<F> VmType for SpawnFuture<F> {
+    impl<F> VmType for SpawnFuture<F>
+    where
+        F: Future,
+    {
         type Type = Generic<A>;
     }
 
@@ -257,10 +272,12 @@ fn spawn_on<'vm>(
             match value {
                 ValueRepr::Userdata(data) => {
                     let data = data.downcast_ref::<SpawnFuture<F>>().unwrap();
-                    let future = data.0.lock().unwrap().take().unwrap();
+                    let future = data.0.clone();
                     let lock = StackFrame::current(&mut context.stack).insert_lock();
                     AsyncPushable::async_status_push(
-                        FutureResult::new(future),
+                        FutureResult::new(
+                            future.map(|v| (*v).clone()).map_err(|err| (*err).clone()),
+                        ),
                         vm,
                         &mut context,
                         lock,
@@ -280,10 +297,7 @@ fn spawn_on<'vm>(
     let WithVM { vm, value: action } = action;
     let mut action = OwnedFunction::<Action>::from_value(&thread, action.get_variant());
 
-    let future = oneshot::spawn_fn(
-        move || action.call_async(()),
-        &vm.global_env().get_event_loop().expect("event loop"),
-    );
+    let future = future::lazy(move || action.call_async(()));
 
     let mut context = vm.context();
 
@@ -294,9 +308,7 @@ fn spawn_on<'vm>(
         _ => unreachable!(),
     };
 
-    SpawnFuture(Mutex::new(Some(future)))
-        .push(vm, &mut context)
-        .unwrap();
+    SpawnFuture(future.shared()).push(vm, &mut context).unwrap();
     let fields = [context.stack.get_values().last().unwrap().clone()];
     let def = PartialApplicationDataDef(callable, &fields);
     let value = ValueRepr::PartialApplication(context.alloc_with(vm, def).unwrap()).into();

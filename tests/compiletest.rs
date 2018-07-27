@@ -2,7 +2,6 @@
 extern crate compiletest_rs as compiletest;
 extern crate env_logger;
 
-use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 

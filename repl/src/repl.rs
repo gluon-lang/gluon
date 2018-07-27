@@ -8,6 +8,7 @@ use std::error::Error as StdError;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
+use futures::future::Either;
 use futures::sync::mpsc;
 use futures::{Future, Sink, Stream};
 
@@ -38,6 +39,15 @@ use gluon::{Compiler, Error as GluonError, Result as GluonResult, RootedThread};
 use codespan_reporting::termcolor;
 
 use Color;
+
+macro_rules! try_future {
+    ($e:expr, $f:expr) => {
+        match $e {
+            Ok(ok) => ok,
+            Err(err) => return $f(::futures::future::err(err.into())),
+        }
+    };
+}
 
 fn type_of_expr(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     let WithVM { vm, value: args } = args;
@@ -278,7 +288,7 @@ fn eval_line(
 fn eval_line_(
     vm: RootedThread,
     line: &str,
-) -> FutureValue<Box<Future<Item = (), Error = (Compiler, GluonError)> + Send>> {
+) -> FutureValue<impl Future<Item = (), Error = (Compiler, GluonError)>> {
     let mut compiler = Compiler::new();
     let repl_line = {
         let result = {
@@ -428,13 +438,11 @@ fn finish_or_interrupt(
     cpu_pool: &CpuPool,
     thread: RootedThread,
     action: OpaqueValue<&Thread, IO<Generic<A>>>,
-) -> FutureResult<Box<Future<Item = IO<Generic<A>>, Error = VMError> + Send>> {
-    let remote = thread.global_env().get_event_loop().expect("event_loop");
-
+) -> FutureResult<impl Future<Item = IO<Generic<A>>, Error = VMError>> {
     let (sender, receiver) = mpsc::channel(1);
 
-    remote.spawn(|handle| {
-        ::tokio_signal::ctrl_c(handle)
+    ::tokio::spawn(
+        ::tokio_signal::ctrl_c()
             .map(|x| {
                 info!("Installed Ctrl-C handler");
                 x
@@ -444,8 +452,8 @@ fn finish_or_interrupt(
                 panic!("Error installing signal handler: {}", err);
             })
             .forward(sender.sink_map_err(|_| ()))
-            .map(|_| ())
-    });
+            .map(|_| ()),
+    );
 
     let mut action =
         OwnedFunction::<fn() -> IO<Generic<A>>>::from_value(&thread, action.get_variant());
@@ -460,12 +468,12 @@ fn finish_or_interrupt(
         })
         .map_err(|_| panic!("Error in Ctrl-C handling"));
 
-    FutureResult(Box::new(
+    FutureResult(
         ctrl_c_future
             .select(action_future)
             .map(|(value, _)| value)
             .map_err(|(err, _)| err),
-    ))
+    )
 }
 
 fn save_history(editor: &Editor) -> IO<()> {
@@ -541,21 +549,24 @@ fn compile_repl(compiler: &mut Compiler, vm: &Thread) -> Result<(), GluonError> 
 }
 
 #[allow(dead_code)]
-pub fn run(color: Color) -> Result<(), Box<StdError + Send + Sync>> {
-    let mut core = ::tokio_core::reactor::Core::new()?;
-
-    let vm = ::gluon::VmBuilder::new()
-        .event_loop(Some(core.remote()))
-        .build();
+pub fn run(color: Color) -> impl Future<Item = (), Error = Box<StdError + Send + Sync + 'static>> {
+    let vm = ::gluon::VmBuilder::new().build();
 
     let mut compiler = Compiler::new();
-    compile_repl(&mut compiler, &vm).map_err(|err| err.emit_string(compiler.code_map()).unwrap())?;
+    try_future!(
+        compile_repl(&mut compiler, &vm)
+            .map_err(|err| err.emit_string(compiler.code_map()).unwrap()),
+        Either::A
+    );
 
-    let mut repl: OwnedFunction<fn(Ser<Color>) -> IO<()>> = vm.get_global("repl")?;
+    let mut repl: OwnedFunction<fn(Ser<Color>) -> IO<()>> =
+        try_future!(vm.get_global("repl"), Either::A);
     debug!("Starting repl");
-    core.run(repl.call_async(Ser(color)))?;
-
-    Ok(())
+    Either::B(
+        repl.call_async(Ser(color))
+            .map(|_| ())
+            .map_err(|err| err.into()),
+    )
 }
 
 #[cfg(test)]

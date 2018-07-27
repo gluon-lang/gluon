@@ -678,11 +678,6 @@ impl Thread {
         self.global_env().get_macros()
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn get_event_loop(&self) -> Option<::tokio_core::reactor::Remote> {
-        self.global_env().get_event_loop()
-    }
-
     /// Runs a garbage collection.
     pub fn collect(&self) {
         let mut context = self.current_context();
@@ -887,8 +882,7 @@ impl ThreadInternal for Thread {
         let mut context = self.current_context();
         context.stack.push(Closure(closure));
         context.borrow_mut().enter_scope(0, State::Closure(closure));
-        let async = try_future!(context.execute(false));
-        match async {
+        match try_future!(context.execute(false)) {
             Async::Ready(context) => FutureValue::Value(Ok((self, context.unwrap().stack.pop()))),
             Async::NotReady => FutureValue::Future(Execute::new(self)),
         }

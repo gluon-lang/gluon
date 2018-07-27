@@ -84,8 +84,7 @@ impl Metadata {
             .map(|t| t.arguments.as_ref().map_or("", |s| s))
     }
 
-    // TODO Use impl Iterator
-    pub fn attributes<'a>(&'a self) -> Box<Iterator<Item = &'a Attribute> + 'a> {
-        Box::new(self.attributes.iter())
+    pub fn attributes<'a>(&'a self) -> impl Iterator<Item = &'a Attribute> + 'a {
+        self.attributes.iter()
     }
 }

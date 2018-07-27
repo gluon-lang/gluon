@@ -22,8 +22,6 @@ extern crate mopa;
 extern crate pretty;
 #[macro_use]
 extern crate quick_error;
-#[cfg(not(target_arch = "wasm32"))]
-extern crate tokio_core;
 
 #[cfg(feature = "serde_derive")]
 #[macro_use]
@@ -115,7 +113,7 @@ pub type Result<T> = ::std::result::Result<T, Error>;
 
 quick_error! {
     /// Representation of all possible errors that can occur when interacting with the `vm` crate
-    #[derive(Debug, PartialEq)]
+    #[derive(Debug, PartialEq, Clone)]
     pub enum Error {
         Dead {
         }

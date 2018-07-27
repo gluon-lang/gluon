@@ -512,13 +512,13 @@ impl<'b> IndexMut<RangeFrom<VmIndex>> for StackFrame<'b> {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct StacktraceFrame {
     pub name: Symbol,
     pub line: Line,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Stacktrace {
     pub frames: Vec<Option<StacktraceFrame>>,
 }

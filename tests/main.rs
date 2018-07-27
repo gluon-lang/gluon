@@ -10,7 +10,7 @@ extern crate futures;
 extern crate futures_cpupool;
 extern crate gluon;
 extern crate tensile;
-extern crate tokio_core;
+extern crate tokio;
 
 extern crate pulldown_cmark;
 
@@ -306,7 +306,7 @@ fn main_() -> Result<(), Box<Error>> {
     let iter = test_files("tests/pass")?.into_iter();
 
     let pool = futures_cpupool::CpuPool::new(1);
-    let mut core = tokio_core::reactor::Core::new()?;
+    let mut runtime = tokio::runtime::Runtime::new()?;
     let pass_tests_future = stream::futures_ordered(
         iter.filter_map(|filename| {
             let name = filename_to_module(filename.to_str().unwrap_or("<unknown>"));
@@ -328,7 +328,7 @@ fn main_() -> Result<(), Box<Error>> {
                 })
         }),
     ).collect();
-    let pass_tests = core.run(pass_tests_future)?;
+    let pass_tests = runtime.block_on(pass_tests_future)?;
 
     let iter = test_files("tests/fail")?.into_iter();
 
