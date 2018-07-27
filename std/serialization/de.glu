@@ -186,6 +186,11 @@ let field name a : String -> ValueDeserializer a -> ValueDeserializer a = \input
         | None -> Err (error_msg ("Expected field `" ++ name ++ "`"))
     | _ -> Err (error_msg "Expected map") 
 
+
+/// Deserializes a `Value`
+let value : ValueDeserializer Value = \input ->
+    Ok { value = input, input }
+
 /// Runs the deserializer `de` on `input`
 /// Produces a value of type `a` if deserialization was successful
 let deserialize de input : ValueDeserializer a -> String -> Result Error a =
@@ -208,6 +213,7 @@ let deserializer ?d : [Deserialize a] -> ValueDeserializer a = d.deserializer
 let int_deserializer : Deserialize Int = { deserializer = int }
 let float_deserializer : Deserialize Float = { deserializer = float }
 let string_deserializer : Deserialize String = { deserializer = string }
+let value_deserializer : Deserialize Value = { deserializer = value }
 
 {
     Value,
@@ -228,6 +234,7 @@ let string_deserializer : Deserialize String = { deserializer = string }
     array,
     field,
     option,
+    value,
 
     deserialize,
     run,
@@ -237,6 +244,7 @@ let string_deserializer : Deserialize String = { deserializer = string }
     int_deserializer,
     string_deserializer,
     float_deserializer,
+    value_deserializer,
 
     insert_string
 }
