@@ -695,6 +695,7 @@ fn generate_deserialize(
     );
     let functor_import = generate_import(span, symbols, &[], &["map"], "std.functor");
     let applicative_import = generate_import(span, symbols, &[], &["<*>"], "std.applicative");
+    let alternative_import = generate_import(span, symbols, &[], &["<|>"], "std.alternative");
 
     let deserializer_binding = ValueBinding {
         name: pos::spanned(span, Pattern::Ident(deserializer_fn.clone())),
@@ -726,6 +727,7 @@ fn generate_deserialize(
         serialization_import,
         functor_import,
         applicative_import,
+        alternative_import,
         deserializer_binding,
     ].into_iter()
         .rev()

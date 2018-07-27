@@ -2,7 +2,6 @@ let result @ { Result, ? } = import! std.result
 let de @ { Deserializer, ValueDeserializer, Deserialize, field, deserializer, ? } = import! std.serialization.de
 let { Test, run, assert, assert_eq, test, group, ? }  = import! std.test
 let { Applicative, (*>) } = import! std.applicative
-let { (<|>) } = import! std.alternative
 let { map } = import! std.functor
 let { (<|) } = import! std.function
 let int = import! std.int
@@ -30,6 +29,7 @@ group "de" [
         assert_eq (de.deserialize deserializer r#"{ "record" : { "y" : "abc", "x" : 1 }, "y" : 1 } "#) (Ok { record = { x = 1 }, y = 1.0 }),
 
     group "alternative" (
+        let { (<|>) } = import! std.alternative
         let d : ValueDeserializer _ =
             de.int <|> map (\s -> result.unwrap_ok (int.parse s)) de.string
         [
