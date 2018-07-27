@@ -225,6 +225,9 @@ let list @ { List } = import! std.list
 let list_deserializer : [Deserialize a] -> Deserialize (List a) =
     { deserializer = map list.of (array deserializer) }
 
+let array_deserializer : [Deserialize a] -> Deserialize (Array a) =
+    { deserializer = array deserializer }
+
 {
     Value,
     Error,
@@ -257,6 +260,7 @@ let list_deserializer : [Deserialize a] -> Deserialize (List a) =
     value_deserializer,
     option_deserializer,
     list_deserializer,
+    array_deserializer,
 
     insert_string
 }
