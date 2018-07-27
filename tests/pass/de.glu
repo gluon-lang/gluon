@@ -9,7 +9,12 @@ let { map } = import! std.functor
 #[derive(Show, Eq, Deserialize)]
 type Record = { x : Int }
 
+#[derive(Show, Eq, Deserialize)]
+type Record2 = { x : Int, y : String }
+
 group "de" [
     test "derive_record" <|
-        \_ -> assert_eq (de.deserialize deserializer "{ \"x\" : 1 }") (Ok { x = 1 })
+        \_ -> assert_eq (de.deserialize deserializer "{ \"x\" : 1 }") (Ok { x = 1 }),
+    test "derive_record" <|
+    \_ -> assert_eq (de.deserialize deserializer r#"{ "y": "abc", "x" : 1 }"#) (Ok { x = 1, y = "abc" }),
 ]

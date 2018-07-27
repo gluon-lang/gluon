@@ -152,6 +152,9 @@ quick_error! {
         UnterminatedStringLiteral {
             description("unterminated string literal")
         }
+        InvalidRawStringDelimiter {
+            description("raw strings can only use `#` as a delimter")
+        }
         NonParseableInt {
             description("cannot parse integer, probable overflow")
         }
@@ -419,6 +422,46 @@ impl<'input> Tokenizer<'input> {
         self.error(start, UnterminatedStringLiteral)
     }
 
+    fn raw_string_literal(&mut self, start: Location) -> Result<SpannedToken<'input>, SpError> {
+        let mut string = String::new();
+
+        let mut delimiters = 0;
+        while let Some((_, ch)) = self.bump() {
+            match ch {
+                '#' => delimiters += 1,
+                '"' => break,
+                _ => return self.error(start, InvalidRawStringDelimiter),
+            }
+        }
+
+        while let Some((_, ch)) = self.bump() {
+            match ch {
+                '"' => {
+                    string.push(ch);
+                    let mut found_delimiters = 0;
+                    while let Some((_, ch)) = self.bump() {
+                        string.push(ch);
+                        match ch {
+                            '#' => found_delimiters += 1,
+                            '"' => found_delimiters = 0,
+                            _ => break,
+                        }
+                        if found_delimiters == delimiters {
+                            let real_string_len = string.len() - 1 - delimiters;
+                            string.truncate(real_string_len);
+                            let end = self.next_loc();
+                            let token = Token::StringLiteral(string);
+                            return Ok(pos::spanned2(start, end, token));
+                        }
+                    }
+                }
+                ch => string.push(ch),
+            }
+        }
+
+        self.error(start, UnterminatedStringLiteral)
+    }
+
     fn shebang_line(&mut self, start: Location) -> Option<SpannedToken<'input>> {
         let (end, line) = self.take_until(start, |ch| ch == '\n');
 
@@ -560,6 +603,9 @@ impl<'input> Iterator for Tokenizer<'input> {
                 ')' => Some(Ok(pos::spanned2(start, self.next_loc(), Token::RParen))),
                 '?' => Some(Ok(pos::spanned2(start, self.next_loc(), Token::Question))),
 
+                'r' if self.test_lookahead(|ch| ch == '"' || ch == '#') => {
+                    Some(self.raw_string_literal(start))
+                }
                 '"' => Some(self.string_literal(start)),
                 '\'' => Some(self.char_literal(start)),
 
@@ -589,7 +635,6 @@ impl<'input> Iterator for Tokenizer<'input> {
                         Token::AttributeOpen,
                     )))
                 }
-
                 ch if is_ident_start(ch) => Some(Ok(self.identifier(start))),
                 ch if is_digit(ch) || (ch == '-' && self.test_lookahead(is_digit)) => {
                     Some(self.numeric_literal(start))
@@ -789,6 +834,25 @@ mod test {
                 (
                     r#"                     ~~~~"#,
                     StringLiteral("\t".to_string()),
+                ),
+            ],
+        );
+    }
+
+    #[test]
+    fn raw_string_literals() {
+        test(
+            r#########"foo r#"bar" "# baz r##""## "#########,
+            vec![
+                (r####"~~~                      "####, Identifier("foo")),
+                (
+                    r#"    ~~~~~~~~~~            "#,
+                    StringLiteral("bar\" ".to_string()),
+                ),
+                (r####"               ~~~        "####, Identifier("baz")),
+                (
+                    r#"                   ~~~~~~~     "#,
+                    StringLiteral("".to_string()),
                 ),
             ],
         );

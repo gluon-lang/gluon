@@ -172,6 +172,15 @@ fn dont_lose_information_in_literals() {
 }
 
 #[test]
+fn raw_string_literal() {
+    let expr = r####"
+r##"abc
+    "  "##
+"####;
+    assert_eq!(&format_expr(expr).unwrap(), expr);
+}
+
+#[test]
 fn implicit_arg() {
     let expr = r#"
 f ?32 ""
