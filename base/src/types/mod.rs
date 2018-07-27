@@ -2183,10 +2183,12 @@ where
         match self.typ.as_function_with_type() {
             Some((arg_type, arg, ret)) => {
                 let doc = chain![arena;
-                    if arg_type == ArgType::Implicit { "[" } else { "" },
-                    dt(Prec::Function, arg).pretty(printer).group(),
-                    if arg_type == ArgType::Implicit { "]" } else { "" },
-                    printer.space_after(arg.span().end()),
+                    chain![arena;
+                        if arg_type == ArgType::Implicit { "[" } else { "" },
+                        dt(Prec::Function, arg).pretty(printer),
+                        if arg_type == ArgType::Implicit { "]" } else { "" },
+                        printer.space_after(arg.span().end())
+                    ].group(),
                     "-> ",
                     top(ret).pretty_function(printer)
                 ];

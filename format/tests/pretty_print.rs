@@ -538,6 +538,7 @@ let deserialize_Record : Deserialize Record =
     let { ValueDeserializer } = import! std.serialization.de
     let { map } = import! std.functor
     let { (<*>) } = import! std.applicative
+    let { (<|>) } = import! std.alternative
     let deserializer : ValueDeserializer Record = map (\x -> { x }) (field "x" deserializer)
     { deserializer = deserializer }
 ()
@@ -559,6 +560,7 @@ let deserialize_Record : Deserialize Record =
     let { ValueDeserializer } = import! std.serialization.de
     let { map } = import! std.functor
     let { (<*>) } = import! std.applicative
+    let { (<|>) } = import! std.alternative
     let deserializer : ValueDeserializer Record
         = map (\x y -> { x, y }) (field "x" deserializer)
             <*> field "y" deserializer

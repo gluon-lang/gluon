@@ -86,8 +86,7 @@ let foldl_with_key f z m : [Ord k] -> (a -> k -> b -> a) -> a -> Map k b -> a =
     | Bin k x l r -> foldl_with_key f (f (foldl_with_key f z l) k x) r
 
 /// Performs a traverse over the `Map` where the key gets passed to the function in addition to the value.
-let traverse_with_key f m : [Ord k] -> [Applicative t]
-        -> (k -> a -> t b)
+let traverse_with_key f m : [Ord k] -> [Applicative t] -> (k -> a -> t b)
         -> Map k a
         -> t (Map k b)
     =
