@@ -1,8 +1,11 @@
-let { Result, ? } = import! std.result
-let de @ { Deserializer, Deserialize, field, deserializer, ? } = import! std.serialization.de
+let result @ { Result, ? } = import! std.result
+let de @ { Deserializer, ValueDeserializer, Deserialize, field, deserializer, ? } = import! std.serialization.de
 let { Test, run, assert, assert_eq, test, group, ? }  = import! std.test
 let { Applicative, (*>) } = import! std.applicative
+let { (<|>) } = import! std.applicative
+let { map } = import! std.functor
 let { (<|) } = import! std.function
+let int = import! std.int
 
 #[derive(Show, Eq, Deserialize)]
 type Record = { x : Int }
@@ -13,11 +16,32 @@ type Record2 = { x : Int, y : String }
 #[derive(Show, Eq, Deserialize)]
 type Recursive = { record : Record, y : Float }
 
+#[derive(Show, Eq, Deserialize)]
+type Variant = | Int Int | String String
+
 group "de" [
-    test "derive_record_1_field" <|
-        \_ -> assert_eq (de.deserialize deserializer r#"{ "x" : 1 }"#) (Ok { x = 1 }),
-    test "derive_record_2_fields" <|
-    \_ -> assert_eq (de.deserialize deserializer r#"{ "y" : "abc", "x" : 1 }"#) (Ok { x = 1, y = "abc" }),
-    test "derive_record_recursive" <|
-    \_ -> assert_eq (de.deserialize deserializer r#"{ "record" : { "y" : "abc", "x" : 1 }, "y" : 1 } "#) (Ok { record = { x = 1 }, y = 1.0 }),
+    test "derive_record_1_field" <| \_ ->
+        assert_eq (de.deserialize deserializer r#"{ "x" : 1 }"#) (Ok { x = 1 }),
+
+    test "derive_record_2_fields" <| \_ ->
+        assert_eq (de.deserialize deserializer r#"{ "y" : "abc", "x" : 1 }"#) (Ok { x = 1, y = "abc" }),
+
+    test "derive_record_recursive" <| \_ ->
+        assert_eq (de.deserialize deserializer r#"{ "record" : { "y" : "abc", "x" : 1 }, "y" : 1 } "#) (Ok { record = { x = 1 }, y = 1.0 }),
+
+    group "alternative" (
+        let d : ValueDeserializer _ =
+            de.int <|> map (\s -> result.unwrap_ok (int.parse s)) de.string
+        [
+            test "or_first" <| \_ ->
+                assert_eq (de.deserialize d r#" 123 "#) (Ok 123),
+            test "or_second" <| \_ ->
+                assert_eq (de.deserialize d r#" "456" "#) (Ok 456),
+        ]
+    ),
+
+    group "variant" [
+        test "derive_variant" <| \_ ->
+            assert_eq (de.deserialize deserializer r#" 123 "#) (Ok (Int 123)),
+    ],
 ]

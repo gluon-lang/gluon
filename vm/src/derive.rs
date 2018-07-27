@@ -664,7 +664,23 @@ fn generate_deserialize(
                 infix(span, prev, symbols.symbol("<*>"), deserialize_field)
             })
         }
-        _ => return Err("Unable to derive Show for this type".into()),
+        Type::Variant(ref row) => row_iter(row)
+            .fold(None, |acc, variant| {
+                let deserialize_variant = app(
+                    span,
+                    symbols.symbol("map"),
+                    vec![
+                        ident(span, variant.name.clone()),
+                        deserializer_ident.clone(),
+                    ],
+                );
+                Some(match acc {
+                    Some(prev) => infix(span, prev, symbols.symbol("<|>"), deserialize_variant),
+                    None => deserialize_variant,
+                })
+            })
+            .unwrap(),
+        _ => return Err("Unable to derive Deserialize for this type".into()),
     };
 
     let serialization_import = generate_import(
