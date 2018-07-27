@@ -4,17 +4,20 @@ let { Test, run, assert, assert_eq, test, group, ? }  = import! std.test
 let { Applicative, (*>) } = import! std.applicative
 let { (<|) } = import! std.function
 
-let { map } = import! std.functor
-
 #[derive(Show, Eq, Deserialize)]
 type Record = { x : Int }
 
 #[derive(Show, Eq, Deserialize)]
 type Record2 = { x : Int, y : String }
 
+#[derive(Show, Eq, Deserialize)]
+type Recursive = { record : Record, y : Float }
+
 group "de" [
-    test "derive_record" <|
-        \_ -> assert_eq (de.deserialize deserializer "{ \"x\" : 1 }") (Ok { x = 1 }),
-    test "derive_record" <|
-    \_ -> assert_eq (de.deserialize deserializer r#"{ "y": "abc", "x" : 1 }"#) (Ok { x = 1, y = "abc" }),
+    test "derive_record_1_field" <|
+        \_ -> assert_eq (de.deserialize deserializer r#"{ "x" : 1 }"#) (Ok { x = 1 }),
+    test "derive_record_2_fields" <|
+    \_ -> assert_eq (de.deserialize deserializer r#"{ "y" : "abc", "x" : 1 }"#) (Ok { x = 1, y = "abc" }),
+    test "derive_record_recursive" <|
+    \_ -> assert_eq (de.deserialize deserializer r#"{ "record" : { "y" : "abc", "x" : 1 }, "y" : 1 } "#) (Ok { record = { x = 1 }, y = 1.0 }),
 ]

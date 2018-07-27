@@ -167,7 +167,9 @@ let field name a : String -> ValueDeserializer a -> ValueDeserializer a = \input
     match input with
     | Object o ->
         match std_map.find name o with
-        | Some value -> a value
+        | Some value ->
+            do state = a value
+            Ok { value = state.value, input }
         | None -> Err (error_msg ("Expected field `" ++ name ++ "`"))
     | _ -> Err (error_msg "Expected map") 
 let deserialize de input : ValueDeserializer a -> String -> Result Error a =

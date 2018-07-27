@@ -56,6 +56,47 @@ where
     )
 }
 
+fn generate_import(
+    span: Span<BytePos>,
+    symbols: &mut Symbols,
+    type_fields: &[&str],
+    fields: &[&str],
+    import: &str,
+) -> ValueBinding<Symbol> {
+    ValueBinding {
+        name: pos::spanned(
+            span,
+            Pattern::Record {
+                implicit_import: None,
+                typ: Type::hole(),
+                types: type_fields
+                    .iter()
+                    .map(|f| PatternField {
+                        name: pos::spanned(span, symbols.symbol(*f)),
+                        value: None,
+                    })
+                    .collect(),
+                fields: fields
+                    .iter()
+                    .map(|f| PatternField {
+                        name: pos::spanned(span, symbols.symbol(*f)),
+                        value: None,
+                    })
+                    .collect(),
+            },
+        ),
+        args: Vec::new(),
+        expr: app(
+            span,
+            symbols.symbol("import!"),
+            vec![project(span, symbols, import)],
+        ),
+        metadata: Default::default(),
+        typ: None,
+        resolved_type: Type::hole(),
+    }
+}
+
 fn project(span: Span<BytePos>, symbols: &mut Symbols, p: &str) -> SpannedExpr<Symbol> {
     p.split('.')
         .fold(None, |acc, name| {
@@ -565,23 +606,6 @@ fn generate_deserialize(
                 })
                 .collect();
 
-            let expr = {
-                field_symbols.iter().fold(None, |acc, symbol| {
-                    let deserialize_field = app(
-                        span,
-                        field_deserialize.clone(),
-                        vec![
-                            literal(span, symbol.name.declared_name()),
-                            deserializer_ident.clone(),
-                        ],
-                    );
-                    Some(match acc {
-                        Some(prev) => infix(span, prev, symbols.symbol("<*>"), deserialize_field),
-                        None => deserialize_field,
-                    })
-                })
-            }.expect("FIXME");
-
             let pack_record = pos::spanned(
                 span,
                 Expr::Lambda(Lambda {
@@ -609,38 +633,49 @@ fn generate_deserialize(
                     id: TypedIdent::new(symbols.symbol("pack_record")),
                 }),
             );
-            app(
+            let map_expr = app(
                 span,
                 symbols.symbol("map"),
-                vec![paren(span, pack_record), paren(span, expr)],
-            )
+                vec![
+                    paren(span, pack_record),
+                    app(
+                        span,
+                        field_deserialize.clone(),
+                        vec![
+                            literal(
+                                span,
+                                field_symbols.first().expect("FIXME").name.declared_name(),
+                            ),
+                            deserializer_ident.clone(),
+                        ],
+                    ),
+                ],
+            );
+
+            field_symbols.iter().skip(1).fold(map_expr, |prev, symbol| {
+                let deserialize_field = app(
+                    span,
+                    field_deserialize.clone(),
+                    vec![
+                        literal(span, symbol.name.declared_name()),
+                        deserializer_ident.clone(),
+                    ],
+                );
+                infix(span, prev, symbols.symbol("<*>"), deserialize_field)
+            })
         }
         _ => return Err("Unable to derive Show for this type".into()),
     };
 
-    let let_import = ValueBinding {
-        name: pos::spanned(
-            span,
-            Pattern::Record {
-                implicit_import: None,
-                typ: Type::hole(),
-                types: vec![PatternField {
-                    name: pos::spanned(span, symbols.symbol("ValueDeserializer")),
-                    value: None,
-                }],
-                fields: vec![],
-            },
-        ),
-        args: Vec::new(),
-        expr: app(
-            span,
-            symbols.symbol("import!"),
-            vec![project(span, symbols, "std.serialization.de")],
-        ),
-        metadata: Default::default(),
-        typ: None,
-        resolved_type: Type::hole(),
-    };
+    let serialization_import = generate_import(
+        span,
+        symbols,
+        &["ValueDeserializer"],
+        &[],
+        "std.serialization.de",
+    );
+    let functor_import = generate_import(span, symbols, &[], &["map"], "std.functor");
+    let applicative_import = generate_import(span, symbols, &[], &["<*>"], "std.applicative");
 
     let deserializer_binding = ValueBinding {
         name: pos::spanned(span, Pattern::Ident(deserializer_fn.clone())),
@@ -654,28 +689,30 @@ fn generate_deserialize(
         resolved_type: Type::hole(),
     };
 
-    let deserializer_record_expr = Expr::LetBindings(
-        vec![let_import],
-        Box::new(pos::spanned(
-            span,
-            Expr::LetBindings(
-                vec![deserializer_binding],
-                Box::new(pos::spanned(
-                    span,
-                    Expr::Record {
-                        typ: Type::hole(),
-                        types: Vec::new(),
-                        exprs: vec![ExprField {
-                            metadata: Default::default(),
-                            name: pos::spanned(span, symbols.symbol("deserializer")),
-                            value: Some(ident(span, deserializer_fn.name.clone())),
-                        }],
-                        base: None,
-                    },
-                )),
-            ),
-        )),
+    let export_record_expr = pos::spanned(
+        span,
+        Expr::Record {
+            typ: Type::hole(),
+            types: Vec::new(),
+            exprs: vec![ExprField {
+                metadata: Default::default(),
+                name: pos::spanned(span, symbols.symbol("deserializer")),
+                value: Some(ident(span, deserializer_fn.name.clone())),
+            }],
+            base: None,
+        },
     );
+
+    let deserializer_record_expr = vec![
+        serialization_import,
+        functor_import,
+        applicative_import,
+        deserializer_binding,
+    ].into_iter()
+        .rev()
+        .fold(export_record_expr, |expr, bind| {
+            pos::spanned(span, Expr::LetBindings(vec![bind], Box::new(expr)))
+        });
 
     Ok(ValueBinding {
         name: pos::spanned(
@@ -686,7 +723,7 @@ fn generate_deserialize(
             )))),
         ),
         args: Vec::new(),
-        expr: pos::spanned(span, deserializer_record_expr),
+        expr: deserializer_record_expr,
         metadata: Default::default(),
         typ: Some(binding_type(symbols, "Deserialize", self_type, bind)),
         resolved_type: Type::hole(),
