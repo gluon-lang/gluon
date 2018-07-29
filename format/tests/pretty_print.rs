@@ -13,21 +13,23 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
 
-use gluon::{Compiler, VmBuilder};
+use gluon::{Compiler, RootedThread, VmBuilder};
+
+fn new_vm() -> RootedThread {
+    VmBuilder::new()
+        .import_paths(Some(vec![".".into(), "..".into()]))
+        .build()
+}
 
 fn format_expr(expr: &str) -> gluon::Result<String> {
     let mut compiler = Compiler::new();
-    let thread = VmBuilder::new()
-        .import_paths(Some(vec!["..".into()]))
-        .build();
+    let thread = new_vm();
     format::format_expr(&mut compiler, &thread, "test", expr)
 }
 
 fn format_expr_expanded(expr: &str) -> gluon::Result<String> {
     let mut compiler = Compiler::new();
-    let thread = VmBuilder::new()
-        .import_paths(Some(vec!["..".into()]))
-        .build();
+    let thread = new_vm();
     format::Formatter { expanded: true }.format_expr(&mut compiler, &thread, "test", expr)
 }
 
@@ -36,14 +38,13 @@ fn test_format(name: &str) {
 
     let mut contents = String::new();
     File::open(Path::new("../").join(name))
+        .or_else(|_| File::open(name))
         .unwrap()
         .read_to_string(&mut contents)
         .unwrap();
 
     let mut compiler = Compiler::new();
-    let thread = VmBuilder::new()
-        .import_paths(Some(vec!["..".into()]))
-        .build();
+    let thread = new_vm();
     let out_str = format::format_expr(&mut compiler, &thread, name, &contents)
         .unwrap_or_else(|err| panic!("{}", err));
 
