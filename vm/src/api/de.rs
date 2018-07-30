@@ -268,7 +268,7 @@ impl VmType for JsonString {
     type Type = String;
 }
 
-impl Deref for JsonString {
+impl ::std::ops::Deref for JsonString {
     type Target = str;
 
     fn deref(&self) -> &str {
@@ -292,18 +292,6 @@ impl<'de> de::DeserializeState<'de, ActiveThread<'de>> for JsonString {
     {
         struct StringVisitor<'a, 'vm: 'a>(&'a mut ActiveThread<'vm>);
 
-        impl<'a, 'vm> StringVisitor<'a, 'vm> {
-            fn marshal<T>(&mut self, value: T) -> JsonString
-            where
-                T: ::api::Pushable<'vm>,
-            {
-                let context = &mut *self.0;
-                value.push(context).unwrap_or_else(|err| panic!("{}", err));
-                let value = context.pop();
-                JsonString(OpaqueValue::from_value(context.thread().root_value(value)))
-            }
-        }
-
         impl<'a, 'de> Visitor<'de> for StringVisitor<'a, 'de> {
             type Value = JsonString;
 
@@ -312,12 +300,11 @@ impl<'de> de::DeserializeState<'de, ActiveThread<'de>> for JsonString {
             }
 
             #[inline]
-            fn visit_str<E>(mut self, value: &str) -> StdResult<Self::Value, E>
+            fn visit_str<E>(self, value: &str) -> StdResult<Self::Value, E>
             where
                 E: de::Error,
             {
-                let value = ::api::convert_with_active_thread(self.0, value).map_err(E::custom)?;
-                Ok(self.marshal(Value::String(value)))
+                ::api::convert_with_active_thread(self.0, value).map_err(E::custom)
             }
         }
 
@@ -471,10 +458,8 @@ impl<'de> de::DeserializeState<'de, ActiveThread<'de>> for JsonValue {
             {
                 let mut values = ::std::collections::BTreeMap::new();
 
-                while let (Some(key), Some(value)) = (
-                    visitor.next_key_seed(de::Seed::new(&mut *self.0))?,
-                    visitor.next_value_seed(de::Seed::new(&mut *self.0))?,
-                ) {
+                while let Some(key) = visitor.next_key_seed(de::Seed::new(&mut *self.0))? {
+                    let value = visitor.next_value_seed(de::Seed::new(&mut *self.0))?;
                     values.insert(key, value);
                 }
 
