@@ -1,6 +1,6 @@
 /// JSON serialization
-let { Value } = import! std.serialization.types
-let prim = import! std.serialization.prim
+let { Value } = import! std.json.value
+let prim = import! std.json.prim
 let { Result, ? } = import! std.result
 let { for } = import! std.traversable
 let { map } = import! std.functor
@@ -18,7 +18,7 @@ let serialize ?ser : [Serialize a] -> a -> Result Error Value = ser
 /// Serializes `a` to a JSON without whitespace string
 ///
 /// ```
-/// let { Value, to_string, ? } = import! std.serialization.ser
+/// let { Value, to_string, ? } = import! std.json.ser
 /// let { Result, ? } = import! std.result
 /// let { singleton, ? } = import! std.map
 /// let { (<>) } = import! std.semigroup
@@ -46,7 +46,7 @@ let to_string v : [Serialize a] -> a -> Result Error String =
 /// Serializes `a` to a JSON string
 ///
 /// ```
-/// let { Value, to_string_pretty, ? } = import! std.serialization.ser
+/// let { Value, to_string_pretty, ? } = import! std.json.ser
 /// let { Result, ? } = import! std.result
 /// let { singleton, ? } = import! std.map
 /// let { (<>) } = import! std.semigroup

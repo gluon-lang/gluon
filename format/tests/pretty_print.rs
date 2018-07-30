@@ -552,7 +552,7 @@ type Record = { x : Int }
 #[derive(Deserialize)]
 type Record = { x : Int }
 let deserialize_Record : Deserialize Record =
-    let { ValueDeserializer } = import! std.serialization.de
+    let { ValueDeserializer } = import! std.json.de
     let { map } = import! std.functor
     let { (<*>) } = import! std.applicative
     let { (<|>) } = import! std.alternative
@@ -574,7 +574,7 @@ type Record = { x : Int, y : Float }
 #[derive(Deserialize)]
 type Record = { x : Int, y : Float }
 let deserialize_Record : Deserialize Record =
-    let { ValueDeserializer } = import! std.serialization.de
+    let { ValueDeserializer } = import! std.json.de
     let { map } = import! std.functor
     let { (<*>) } = import! std.applicative
     let { (<|>) } = import! std.alternative

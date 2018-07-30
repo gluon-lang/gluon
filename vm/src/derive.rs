@@ -686,13 +686,8 @@ fn generate_deserialize(
         _ => return Err("Unable to derive Deserialize for this type".into()),
     };
 
-    let serialization_import = generate_import(
-        span,
-        symbols,
-        &["ValueDeserializer"],
-        &[],
-        "std.serialization.de",
-    );
+    let serialization_import =
+        generate_import(span, symbols, &["ValueDeserializer"], &[], "std.json.de");
     let functor_import = generate_import(span, symbols, &[], &["map"], "std.functor");
     let applicative_import = generate_import(span, symbols, &[], &["<*>"], "std.applicative");
     let alternative_import = generate_import(span, symbols, &[], &["<|>"], "std.alternative");

@@ -1,5 +1,5 @@
 let result @ { Result, ? } = import! std.result
-let de @ { Deserializer, ValueDeserializer, Deserialize, field, deserializer, ? } = import! std.serialization.de
+let de @ { Deserializer, ValueDeserializer, Deserialize, field, deserializer, ? } = import! std.json.de
 let { Test, run, assert, assert_eq, test, group, ? }  = import! std.test
 let { Applicative, (*>) } = import! std.applicative
 let { map } = import! std.functor

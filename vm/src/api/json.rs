@@ -42,17 +42,17 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
         record! {
             deserialize => named_primitive!(
                 1,
-                "std.serialization.prim.deserialize",
+                "std.json.prim.deserialize",
                 deserialize
             ),
             serialize => named_primitive!(
                 1,
-                "std.serialization.prim.serialize",
+                "std.json.prim.serialize",
                 |v| serialize(v, serde_json::ser::CompactFormatter)
             ),
             serialize_pretty => named_primitive!(
                 1,
-                "std.serialization.prim.serialize_pretty",
+                "std.json.prim.serialize_pretty",
                 |v| serialize(v, serde_json::ser::PrettyFormatter::new())
             ),
         },
@@ -138,7 +138,7 @@ pub struct JsonValue(::vm::RootedValue<RootedThread>);
 impl VmType for JsonValue {
     type Type = <Value as VmType>::Type;
     fn make_type(vm: &Thread) -> ArcType {
-        vm.find_type_info("std.serialization.types.Value")
+        vm.find_type_info("std.json.value.Value")
             .unwrap()
             .clone()
             .into_type()
