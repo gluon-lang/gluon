@@ -47,6 +47,8 @@ pub mod mac;
 #[cfg(feature = "serde")]
 pub mod de;
 pub mod function;
+#[cfg(feature = "serde")]
+pub mod json;
 pub mod record;
 #[cfg(feature = "serde")]
 pub mod ser;

@@ -694,7 +694,7 @@ impl VmBuilder {
         add_extern_module(&vm, "std.io.prim", ::io::load);
 
         #[cfg(feature = "serialization")]
-        add_extern_module(&vm, "std.serialization.prim", ::vm::api::de::load);
+        add_extern_module(&vm, "std.serialization.prim", ::vm::api::json::load);
 
         load_regex(&vm);
         load_random(&vm);
