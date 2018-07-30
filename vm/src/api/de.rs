@@ -1,5 +1,3 @@
-//! Gluon -> Rust value conversion via the `serde::Deserialize` trait
-//!
 //! _This module requires Gluon to be built with the `serde` feature._
 
 extern crate serde_json;
@@ -207,6 +205,23 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
             .map_err(|err| err.to_string())
     }
 
+    fn serialize<F>(value: ::api::WithVM<Value>, formatter: F) -> StdResult<String, String>
+    where
+        F: serde_json::ser::Formatter,
+    {
+        let ::api::WithVM { vm, value: input } = value;
+
+        let mut output = Vec::new();
+        SerializeState::serialize_state(
+            &input,
+            &mut serde_json::Serializer::with_formatter(&mut output, formatter),
+            vm,
+        ).map_err(|err| err.to_string())?;
+
+        // serde_json outputs valid UTF-8
+        unsafe { Ok(String::from_utf8_unchecked(output)) }
+    }
+
     ExternModule::new(
         vm,
         record! {
@@ -215,20 +230,32 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
                 "std.serialization.prim.deserialize",
                 deserialize
             ),
+            serialize => named_primitive!(
+                1,
+                "std.serialization.prim.serialize",
+                |v| serialize(v, serde_json::ser::CompactFormatter)
+            ),
+            serialize_pretty => named_primitive!(
+                1,
+                "std.serialization.prim.serialize_pretty",
+                |v| serialize(v, serde_json::ser::PrettyFormatter::new())
+            ),
         },
     )
 }
 
-#[derive(Pushable)]
+#[derive(Pushable, Getable, SerializeState)]
+#[serde(serialize_state = "Thread")]
 #[gluon(gluon_vm)]
+#[serde(untagged)]
 pub enum Value {
     Null,
     Bool(bool),
     Int(i64),
     Float(f64),
     String(String),
-    Array(Vec<JsonValue>),
-    Object(::std::collections::BTreeMap<String, JsonValue>),
+    Array(#[serde(state)] Vec<JsonValue>),
+    Object(#[serde(state)] ::std::collections::BTreeMap<String, JsonValue>),
 }
 
 impl VmType for Value {
@@ -253,6 +280,22 @@ impl VmType for JsonValue {
 impl<'vm> ::api::Pushable<'vm> for JsonValue {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         ::api::Pushable::push(self.0, context)
+    }
+}
+
+impl<'vm, 'value> ::api::Getable<'vm, 'value> for JsonValue {
+    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
+        JsonValue(::api::Getable::from_value(vm, value))
+    }
+}
+
+use serde::ser::{SerializeState, Serializer};
+impl SerializeState<Thread> for JsonValue {
+    fn serialize_state<S>(&self, serializer: S, vm: &Thread) -> StdResult<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        Value::from_value(vm, self.0.get_variant()).serialize_state(serializer, vm)
     }
 }
 

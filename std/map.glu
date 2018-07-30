@@ -12,8 +12,8 @@ let { compare } = import! std.cmp
 
 #[derive(Eq, Show)]
 type Map k a =
-    | Bin k a (Map k a) (Map k a)
     | Tip
+    | Bin k a (Map k a) (Map k a)
 
 /// The empty map.
 let empty = Tip

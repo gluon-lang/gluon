@@ -988,6 +988,40 @@ where
     }
 }
 
+impl<'vm, 'value, T> Getable<'vm, 'value> for BTreeMap<String, T>
+where
+    T: Getable<'vm, 'value>,
+{
+    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
+        fn build_map<'vm2, 'value2, U>(
+            map: &mut BTreeMap<String, U>,
+            vm: &'vm2 Thread,
+            value: Variants<'value2>,
+        ) where
+            U: Getable<'vm2, 'value2>,
+        {
+            match value.as_ref() {
+                ValueRef::Data(data) => if data.tag() == 1 {
+                    let key = String::from_value(vm, data.get_variant(0).expect("key"));
+                    let value = U::from_value(vm, data.get_variant(1).expect("value"));
+                    map.insert(key, value);
+
+                    let left = data.get_variant(2).expect("left");
+                    build_map(map, vm, left);
+
+                    let right = data.get_variant(3).expect("right");
+                    build_map(map, vm, right);
+                },
+                _ => ice!("ValueRef is not a Map"),
+            }
+        }
+
+        let mut map = BTreeMap::new();
+        build_map(&mut map, vm, value);
+        map
+    }
+}
+
 impl<T: VmType> VmType for Option<T>
 where
     T::Type: Sized,
@@ -1247,6 +1281,15 @@ where
         };
         context.push(value);
         Ok(())
+    }
+}
+
+impl<'vm, 'value, T> Getable<'vm, 'value> for RootedValue<T>
+where
+    T: Deref<Target = Thread> + VmRoot<'vm>,
+{
+    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
+        vm.root_value(value.get_value())
     }
 }
 
