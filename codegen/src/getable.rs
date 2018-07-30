@@ -1,35 +1,46 @@
-use proc_macro2::TokenStream;
+use proc_macro2::{Span, TokenStream};
 use shared::{map_lifetimes, map_type_params, split_for_impl};
 use syn::{
     self, Data, DataEnum, DataStruct, DeriveInput, Field, Fields, FieldsNamed, FieldsUnnamed,
     Generics, Ident, Variant,
 };
 
+use attr;
+
 pub fn derive(input: TokenStream) -> TokenStream {
+    let derive_input = syn::parse2(input).expect("Input is checked by rustc");
+
+    let container = attr::Container::from_ast(&derive_input);
+
     let DeriveInput {
         ident,
         data,
         generics,
         ..
-    } = syn::parse2(input).expect("Input is checked by rustc");
+    } = derive_input;
 
     let tokens = match data {
-        Data::Struct(ast) => derive_struct(ast, ident, generics),
-        Data::Enum(ast) => derive_enum(ast, ident, generics),
+        Data::Struct(ast) => derive_struct(&container, ast, ident, generics),
+        Data::Enum(ast) => derive_enum(&container, ast, ident, generics),
         Data::Union(_) => panic!("Unions are not supported"),
     };
 
     tokens.into()
 }
 
-fn derive_struct(ast: DataStruct, ident: Ident, generics: Generics) -> TokenStream {
+fn derive_struct(
+    container: &attr::Container,
+    ast: DataStruct,
+    ident: Ident,
+    generics: Generics,
+) -> TokenStream {
     let cons = match ast.fields {
         Fields::Named(FieldsNamed { named, .. }) => gen_struct_cons(&ident, named),
         Fields::Unnamed(FieldsUnnamed { unnamed, .. }) => gen_tuple_struct_cons(&ident, unnamed),
         Fields::Unit => quote! { #ident },
     };
 
-    gen_impl(ident, generics, cons)
+    gen_impl(container, ident, generics, cons)
 }
 
 fn gen_struct_cons<I>(ident: &Ident, fields: I) -> TokenStream
@@ -48,7 +59,7 @@ where
 
         quote! {
             #ident: if let Some(val) = data.lookup_field(vm, #quoted_ident) {
-                <#field_ty as ::gluon::vm::api::Getable<'__vm, '__value>>::from_value(vm, val)
+                <#field_ty as _gluon_api::Getable<'__vm, '__value>>::from_value(vm, val)
             } else {
                 panic!("Cannot find the field '{}'. Do the type definitions match?", #quoted_ident);
             }
@@ -72,7 +83,7 @@ where
 
         quote! {
             if let Some(val) = data.get_variant(#tag) {
-                <#field_ty as ::gluon::vm::api::Getable<'__vm, '__value>>::from_value(vm, val)
+                <#field_ty as _gluon_api::Getable<'__vm, '__value>>::from_value(vm, val)
             } else {
                 panic!("Cannot find the field with tag '{}'. Do the type definitions match?", #tag);
             }
@@ -86,7 +97,12 @@ where
     }
 }
 
-fn derive_enum(ast: DataEnum, ident: Ident, generics: Generics) -> TokenStream {
+fn derive_enum(
+    container: &attr::Container,
+    ast: DataEnum,
+    ident: Ident,
+    generics: Generics,
+) -> TokenStream {
     let cons;
     {
         let variants = ast
@@ -105,10 +121,15 @@ fn derive_enum(ast: DataEnum, ident: Ident, generics: Generics) -> TokenStream {
         };
     }
 
-    gen_impl(ident, generics, cons)
+    gen_impl(container, ident, generics, cons)
 }
 
-fn gen_impl(ident: Ident, generics: Generics, cons_expr: TokenStream) -> TokenStream {
+fn gen_impl(
+    container: &attr::Container,
+    ident: Ident,
+    generics: Generics,
+    cons_expr: TokenStream,
+) -> TokenStream {
     // lifetime bounds like '__vm: 'a, 'a: '__vm (which implies => 'a == '__vm)
     // writing bounds like this is a lot easier than actually replacing all lifetimes
     // with '__vm
@@ -120,21 +141,46 @@ fn gen_impl(ident: Ident, generics: Generics, cons_expr: TokenStream) -> TokenSt
     let (impl_generics, ty_generics, where_clause) =
         split_for_impl(&generics, &["'__vm", "'__value"]);
 
-    quote! {
-        #[automatically_derived]
-        #[allow(unused_attributes, unused_variables)]
-        impl #impl_generics ::gluon::vm::api::Getable<'__vm, '__value> for #ident #ty_generics
-        #where_clause #(#getable_bounds,)* #(#lifetime_bounds),*
-        {
-            fn from_value(vm: &'__vm ::gluon::vm::thread::Thread, variants: ::gluon::vm::Variants<'__value>) -> Self {
-                let data = match variants.as_ref() {
-                    ::gluon::vm::api::ValueRef::Data(data) => data,
-                    val => panic!("Unexpected value: '{:?}'. Do the type definitions match?", val),
-                };
+    let dummy_const = Ident::new(&format!("_IMPL_GETABLE_FOR_{}", ident), Span::call_site());
 
-                #cons_expr
+    let gluon = match container.crate_name {
+        attr::CrateName::Some(ref ident) => quote!{
+            use #ident::api as _gluon_api;
+            use #ident::thread as _gluon_thread;
+            use #ident::Variants as _GluonVariants;
+        },
+        attr::CrateName::GluonVm => quote!{
+            use api as _gluon_api;
+            use thread as _gluon_thread;
+            use Variants as _GluonVariants;
+        },
+        attr::CrateName::None => quote!{
+            use gluon::vm::api as _gluon_api;
+            use gluon::vm::thread as _gluon_thread;
+            use gluon::vm::Variants as _GluonVariants;
+        },
+    };
+
+    quote! {
+        #[allow(non_upper_case_globals)]
+        const #dummy_const: () = {
+            #gluon
+
+            #[automatically_derived]
+            #[allow(unused_attributes, unused_variables)]
+            impl #impl_generics _gluon_api::Getable<'__vm, '__value> for #ident #ty_generics
+            #where_clause #(#getable_bounds,)* #(#lifetime_bounds),*
+            {
+                fn from_value(vm: &'__vm _gluon_thread::Thread, variants: _GluonVariants<'__value>) -> Self {
+                    let data = match variants.as_ref() {
+                        _gluon_api::ValueRef::Data(data) => data,
+                        val => panic!("Unexpected value: '{:?}'. Do the type definitions match?", val),
+                    };
+
+                    #cons_expr
+                }
             }
-        }
+        };
     }
 }
 
@@ -176,7 +222,7 @@ where
 
         quote! {
             if let Some(val) = data.get_variant(#idx) {
-                <#field_ty as ::gluon::vm::api::Getable<'__vm, '__value>>::from_value(vm, val)
+                <#field_ty as _gluon_api::Getable<'__vm, '__value>>::from_value(vm, val)
             } else {
                 panic!("Enum does not contain data at index '{}'. Do the type definitions match?", #idx)
             }
@@ -201,7 +247,7 @@ where
 
         quote! {
             #field_ident: if let Some(val) = data.get_variant(#idx) {
-                <#field_ty as ::gluon::vm::api::Getable<'__vm, '__value>>::from_value(vm, val)
+                <#field_ty as _gluon_api::Getable<'__vm, '__value>>::from_value(vm, val)
             } else {
                 panic!("Enum does not contain data at index '{}'. Do the type definitions match?", #idx)
             }
@@ -216,7 +262,7 @@ where
 fn create_getable_bounds(generics: &Generics) -> Vec<TokenStream> {
     map_type_params(generics, |ty| {
         quote! {
-            #ty: ::gluon::vm::api::Getable<'__vm, '__value>
+            #ty: _gluon_api::Getable<'__vm, '__value>
         }
     })
 }
