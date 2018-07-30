@@ -2,7 +2,7 @@ use base::ast::{
     self, DisplayEnv, Do, Expr, MutVisitor, Pattern, SpannedAlias, SpannedAstType, SpannedExpr,
     TypedIdent,
 };
-use base::pos::{self, BytePos, Span};
+use base::pos::{self, ByteOffset, BytePos, Span};
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolModule};
 use base::types::{self, Type};
@@ -213,7 +213,7 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
                 }) => {
                     let flat_map = self.symbols.symbol("flat_map");
                     *flat_map_id = Some(Box::new(pos::spanned(
-                        id.span,
+                        Span::new(expr.span.end(), expr.span.start() + ByteOffset::from(2)),
                         Expr::Ident(TypedIdent {
                             name: flat_map,
                             typ: Type::hole(),
@@ -229,7 +229,9 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
 
                     self.env.stack.enter_scope();
 
-                    id.value.name = self.stack_var(id.value.name.clone(), id.span);
+                    if let Some(ref mut id) = *id {
+                        id.value.name = self.stack_var(id.value.name.clone(), id.span);
+                    }
 
                     return TailCall::TailCall;
                 }

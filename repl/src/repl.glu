@@ -146,7 +146,7 @@ let cmd_parser : Parser { cmd : String, arg : String } =
     let word = recognize (skip_many1 letter)
     let arg_parser = recognize (skip_many1 any)
 
-    do _ = token ':'
+    do token ':'
     do cmd = word
     do arg = (spaces *> arg_parser) <|> wrap ""
     wrap { cmd, arg }
@@ -194,11 +194,11 @@ let loop repl : Repl -> IO () =
         match continue with
         | Continue -> loop repl
         | Quit ->
-            do _ = rustyline.save_history repl.editor
+            do rustyline.save_history repl.editor
             wrap ()
 
 let run color : Color -> IO () =
-    do _ = io.println "gluon (:h for help, :q to quit)"
+    do io.println "gluon (:h for help, :q to quit)"
     do editor = rustyline.new_editor ()
     do cpu_pool = repl_prim.new_cpu_pool 1
     let commands = make_commands cpu_pool

@@ -171,7 +171,7 @@ fn spawn_on_runexpr() {
         do child = thread.new_thread ()
         do action = thread.spawn_on child (\_ -> io.run_expr "123")
         do x = action
-        do _ = io.println x.value
+        do io.println x.value
         wrap x.value
     "#;
 
@@ -209,8 +209,8 @@ fn spawn_on_do_action_twice() {
         let action = thread.spawn_on child (\_ ->
                 counter <- (load counter + 1)
                 wrap ())
-        do _ = join action
-        do _ = join action
+        do join action
+        do join action
         wrap (load counter)
     "#;
 
@@ -242,8 +242,8 @@ fn spawn_on_force_action_twice() {
         do action = thread.spawn_on child (\_ ->
                 counter <- (load counter + 1)
                 wrap ())
-        do _ = action
-        do _ = action
+        do action
+        do action
         wrap (load counter)
     "#;
 

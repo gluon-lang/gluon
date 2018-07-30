@@ -535,10 +535,13 @@ impl<'a, 'e> Translator<'a, 'e> {
                 let bound_ident =
                     binder.bind(self.translate_alloc(bound), bound.env_type_of(&self.env));
 
+                let do_id = id
+                    .as_ref()
+                    .map_or_else(|| self.dummy_symbol.clone(), |id| id.value.clone());
                 let lambda = self.new_lambda(
                     expr.span.start(),
-                    id.value.clone(),
-                    vec![id.value.clone()],
+                    do_id.clone(),
+                    vec![do_id],
                     self.translate_alloc(body),
                     body.span,
                 );

@@ -694,8 +694,8 @@ Expr: Expr<Id> = {
         Expr::TypeBindings(bindings, Box::new(body))
     },
 
-    "do" <id: SpannedIdent> "=" <bound: SpExpr> "in" <body: SpExpr> => {
-        Expr::Do(Do { id, bound: Box::new(bound), body: Box::new(body), flat_map_id: None })
+    "do" <bind: DoBinding>  "in" <body: SpExpr> => {
+        Expr::Do(Do { id: bind.0, bound: Box::new(bind.1), body: Box::new(body), flat_map_id: None })
     },
 
     BlockExpr,
@@ -704,6 +704,11 @@ Expr: Expr<Id> = {
         errors.push(<>.error);
         Expr::Error(None)
     }
+};
+
+DoBinding: (Option<SpannedIdent<Id>>, SpannedExpr<Id>) = {
+    <id: SpannedIdent> "=" <bound: SpExpr> => (Some(id), bound),
+    <bound: SpExpr> => (None, bound)
 };
 
 BlockExpr: Expr<Id> = {

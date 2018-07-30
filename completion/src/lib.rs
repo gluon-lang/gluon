@@ -670,7 +670,11 @@ where
                 self.visit_one(exprs)
             },
             Expr::Do(ref do_expr) => {
-                let iter = once(Either::Left(&do_expr.id))
+                let iter = do_expr
+                    .id
+                    .as_ref()
+                    .map(Either::Left)
+                    .into_iter()
                     .chain(once(Either::Right(&do_expr.bound)))
                     .chain(once(Either::Right(&do_expr.body)));
                 match self.select_spanned(iter, |x| x.either(|i| i.span, |e| e.span)) {

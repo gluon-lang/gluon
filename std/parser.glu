@@ -206,7 +206,7 @@ let skip_many p : Parser a -> Parser () =
     skip_many1 p <|> wrap ()
 /// Parses with `p` one or more times, ignoring the result of the parser
 and skip_many1 p : Parser a -> Parser () =
-    do _ = p
+    do p
     skip_many p
 
 /// Parses one of the characters of `s`

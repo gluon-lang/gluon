@@ -98,7 +98,7 @@ let modify_state f : (LispState -> LispState) -> Lisp () =
 let scope_state run : Lisp a -> Lisp a =
     do original = get_state
     do x = run
-    do _ = set_state original
+    do set_state original
     wrap x
 
 let fail msg : String -> Lisp a = lisp (\_ -> Err msg)
@@ -139,7 +139,7 @@ let define xs =
     | Cons (Atom name) (Cons value Nil) ->
         do state = get_state
         let new_state = map.insert name value state
-        do _ = set_state new_state
+        do set_state new_state
         wrap value
     | Cons (List (Cons (Atom name) params)) body ->
         do closure = get_state
@@ -152,7 +152,7 @@ let define xs =
                 }
         let new_state = map.insert name function closure
 
-        do _ = set_state new_state
+        do set_state new_state
 
         wrap function
     | _ -> fail "Unexpected parameters to define `define`"
@@ -167,7 +167,7 @@ let apply f xs : Expr -> List Expr -> Lisp Expr =
     let add_args names values =
         match (names, values) with
         | (Cons name names, Cons value values) ->
-            do _ = modify_state (\state -> map.insert name value state)
+            do modify_state (\state -> map.insert name value state)
             add_args names values
         | (Nil, _) -> wrap ()
         | _ -> fail "Not enough arguments to function"
@@ -176,7 +176,7 @@ let apply f xs : Expr -> List Expr -> Lisp Expr =
     | Primitive primitive -> primitive xs
     | Function function ->
         scope_state (
-            do _ = add_args function.params xs
+            do add_args function.params xs
             eval_exprs function.body)
     | _ -> fail ("Can\'t call value: " <> show f)
 
