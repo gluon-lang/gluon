@@ -76,6 +76,8 @@ let to_string_pretty v : [Serialize a] -> a -> Result Error String =
     do value = serialize v
     prim.serialize_pretty value
 
+let serialize_unit : Serialize () = \_ -> Ok Null
+
 let serialize_int : Serialize Int = \i -> Ok (Int i)
 
 let serialize_bool : Serialize Bool = \i -> Ok (Bool i)
@@ -107,6 +109,7 @@ let serialize_value : Serialize Value = Ok
     to_string,
     to_string_pretty,
 
+    serialize_unit,
     serialize_int,
     serialize_bool,
     serialize_float,

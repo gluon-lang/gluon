@@ -586,3 +586,56 @@ let deserialize_Record : Deserialize Record =
 "#;
     assert_diff!(&format_expr_expanded(expr).unwrap(), expected, "\n", 0);
 }
+
+#[test]
+fn derive_serialize1() {
+    let expr = r#"
+#[derive(Serialize)]
+type Record = { x : Int }
+()
+"#;
+    let expected = r#"
+#[derive(Serialize)]
+type Record = { x : Int }
+let serialize_Record : Serialize Record =
+    let { ValueSerializer, Value, serialize } = import! std.json.ser
+    let { map } = import! std.functor
+    let { (<*>) } = import! std.applicative
+    let { singleton, empty, ? } = import! std.map
+    let { (<>) } = import! std.semigroup
+    let serialize_ x : ValueSerializer Record =
+        match x with
+        | { x = x } -> map (\x -> Object (singleton "x" x)) (serialize x)
+    serialize_
+()
+"#;
+    assert_diff!(&format_expr_expanded(expr).unwrap(), expected, "\n", 0);
+}
+
+#[test]
+fn derive_serialize2() {
+    let expr = r#"
+#[derive(Serialize)]
+type Variant = | Int Int | String String
+()
+"#;
+    let expected = r#"
+#[derive(Serialize)]
+type Variant =
+    | Int Int
+    | String String
+let serialize_Variant : Serialize Variant =
+    let { ValueSerializer, Value, serialize } = import! std.json.ser
+    let { map } = import! std.functor
+    let { (<*>) } = import! std.applicative
+    let { singleton, empty, ? } = import! std.map
+    let { (<>) } = import! std.semigroup
+    let serialize_ x : ValueSerializer Variant =
+        match x with
+        | Int arg_0 -> serialize arg_0
+        | String arg_0 -> serialize arg_0
+    serialize_
+()
+"#;
+    assert_diff!(&format_expr_expanded(expr).unwrap(), expected, "\n", 0);
+}
