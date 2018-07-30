@@ -376,8 +376,15 @@ fn marshal_userdata() -> Result<()> {
         hwnd
     "#;
 
+    // `UserdataValue` lets us extract a `Clone` of its inner userdata value
     let (UserdataValue(handle), _) =
         compiler.run_expr::<UserdataValue<WindowHandle>>(&vm, "test", script)?;
+    assert_eq!(*handle.id, 0);
+    assert_eq!(&*handle.metadata, "Window1");
+
+    // If cloning would be expansive we can instate use `OpaqueValue` to get a smart pointer to the
+    // userdata which implements `Deref` for easy access
+    let (handle, _) = compiler.run_expr::<OpaqueValue<&Thread, WindowHandle>>(&vm, "test", script)?;
     assert_eq!(*handle.id, 0);
     assert_eq!(&*handle.metadata, "Window1");
     Ok(())

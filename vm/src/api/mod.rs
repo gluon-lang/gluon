@@ -552,11 +552,17 @@ where
     T: ?Sized + VmType,
 {
     type Type = T::Type;
+
     fn make_type(vm: &Thread) -> ArcType {
         T::make_type(vm)
     }
+
     fn make_forall_type(vm: &Thread) -> ArcType {
         T::make_forall_type(vm)
+    }
+
+    fn extra_args() -> VmIndex {
+        T::extra_args()
     }
 }
 
@@ -1332,13 +1338,42 @@ where
     }
 }
 
-/// Type which represents an array in gluon
-/// Type implementing both `Pushable` and `Getable` of values of `V`.
-/// The actual value, `V` is not accessible directly but is only intended to be transferred between
-/// two different threads.
+/// Type implementing both `Pushable` and `Getable` of values of `V` regardless of wheter `V`
+/// implements the traits.
+/// The actual value, `V` is only accessible directly either by `Deref` if it is `Userdata` or a
+/// string or by the `to_value` method if it implements `Getable`.
+///
+/// When the value is not accessible the value can only be transferred back into gluon again
+/// without inspecting the value itself two different threads.
 pub struct OpaqueValue<T, V>(RootedValue<T>, PhantomData<V>)
 where
-    T: Deref<Target = Thread>;
+    T: Deref<Target = Thread>,
+    V: ?Sized;
+
+impl<T, V> Deref for OpaqueValue<T, V>
+where
+    T: Deref<Target = Thread>,
+    V: vm::Userdata,
+{
+    type Target = V;
+
+    fn deref(&self) -> &V {
+        // The value is rooted by self
+        unsafe { <&V>::from_value_unsafe(self.vm(), self.get_variant()) }
+    }
+}
+
+impl<T> Deref for OpaqueValue<T, str>
+where
+    T: Deref<Target = Thread>,
+{
+    type Target = str;
+
+    fn deref(&self) -> &str {
+        // The value is rooted by self
+        unsafe { <&str>::from_value_unsafe(self.vm(), self.get_variant()) }
+    }
+}
 
 #[cfg(feature = "serde")]
 impl<'de, V> Deserialize<'de> for OpaqueValue<RootedThread, V> {
@@ -1372,6 +1407,7 @@ where
 impl<T, V> OpaqueValue<T, V>
 where
     T: Deref<Target = Thread>,
+    V: ?Sized,
 {
     pub fn from_value(value: RootedValue<T>) -> Self {
         OpaqueValue(value, PhantomData)
@@ -1379,6 +1415,14 @@ where
 
     pub fn vm(&self) -> &Thread {
         self.0.vm()
+    }
+
+    /// Converts the value into its Rust representation
+    pub fn to_value<'vm>(&'vm self) -> V
+    where
+        V: Getable<'vm, 'vm>,
+    {
+        V::from_value(self.vm(), self.get_variant())
     }
 
     pub fn into_inner(self) -> RootedValue<T> {
