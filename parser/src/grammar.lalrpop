@@ -2,7 +2,7 @@ use crate::itertools::{Either, Itertools};
 
 use crate::base::{
     ast::{Alternative, Argument, Array, AstType, Do, Expr, ExprField, Lambda, Literal, Pattern,
-    PatternField, SpannedExpr, SpannedIdent, TypeBinding, TypedIdent, ValueBinding, ValueBindings},
+    PatternField, SpannedExpr, SpannedIdent, SpannedPattern, TypeBinding, TypedIdent, ValueBinding, ValueBindings},
     kind::{ArcKind, Kind},
     pos::{self, BytePos, Spanned},
     types::{Alias, AliasData, ArcType, ArgType, BuiltinType, Field, Generic, Type, TypeCache},
@@ -42,6 +42,7 @@ extern {
         "in" => Token::In,
         "let" => Token::Let,
         "do" => Token::Do,
+        "seq" => Token::Seq,
         "match" => Token::Match,
         "then" => Token::Then,
         "type" => Token::Type,
@@ -753,8 +754,12 @@ Expr: Expr<Id> = {
         Expr::TypeBindings(bindings, Box::new(body))
     },
 
-    "do" <id: SpannedIdent> "=" <bound: SpExpr> <body: InExpr> => {
-        Expr::Do(Do { id, bound: Box::new(bound), body: Box::new(body), flat_map_id: None })
+    "do" <bind: DoBinding> <body: InExpr> => {
+        Expr::Do(Do { id: Some(bind.0), bound: Box::new(bind.1), body: Box::new(body), flat_map_id: None })
+    },
+
+    "seq" <bound: SpExpr> <body: InExpr> => {
+        Expr::Do(Do { id: None, bound: Box::new(bound), body: Box::new(body), flat_map_id: None })
     },
 
     BlockExpr,
@@ -763,6 +768,10 @@ Expr: Expr<Id> = {
         errors.push(<>.error);
         Expr::Error(None)
     }
+};
+
+DoBinding: (SpannedPattern<Id>, SpannedExpr<Id>) = {
+    <id: Sp<Pattern>> "=" <bound: SpExpr> => (id, bound),
 };
 
 BlockExpr: Expr<Id> = {

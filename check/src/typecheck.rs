@@ -31,11 +31,13 @@ use crate::base::{
     },
 };
 
-use crate::implicits;
-use crate::kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
-use crate::substitution::{self, Substitution};
-use crate::unify::{self, Error as UnifyError};
-use crate::unify_type::{self, new_skolem_scope, Error as UnifyTypeError};
+use crate::{
+    implicits,
+    kindcheck::{self, Error as KindCheckError, KindCheck, KindError},
+    substitution::{self, Substitution},
+    unify::{self, Error as UnifyError},
+    unify_type::{self, new_skolem_scope, Error as UnifyTypeError},
+};
 
 /// Type representing a single error when checking a type
 #[derive(Debug, PartialEq)]
@@ -1307,6 +1309,7 @@ impl<'a> Typecheck<'a> {
                 ref mut body,
                 ref mut flat_map_id,
             }) => {
+                let do_span = expr.span.subspan(0.into(), 2.into());
                 let flat_map_type = match flat_map_id
                     .as_mut()
                     .expect("flat_map inserted during renaming")
@@ -1316,7 +1319,7 @@ impl<'a> Typecheck<'a> {
                         Ok(x) => x,
                         Err(error) => {
                             self.error(
-                                id.span,
+                                do_span,
                                 crate::base::error::Help {
                                     error,
                                     help: Some(Help::UndefinedFlatMapInDo),
@@ -1334,11 +1337,11 @@ impl<'a> Typecheck<'a> {
                     Type::Function(ArgType::Implicit, ref arg_type, ref r) => {
                         let name = self.implicit_resolver.make_implicit_ident(arg_type);
                         *flat_map_id = Some(Box::new(pos::spanned(
-                            id.span,
+                            do_span,
                             Expr::App {
                                 func: flat_map_id.take().unwrap(),
                                 args: vec![pos::spanned(
-                                    id.span,
+                                    do_span,
                                     Expr::Ident(TypedIdent {
                                         name,
                                         typ: arg_type.clone(),
@@ -1352,12 +1355,12 @@ impl<'a> Typecheck<'a> {
                     _ => flat_map_type.clone(),
                 };
 
-                id.value.typ = self.subs.new_var();
+                let id_var = self.subs.new_var();
                 let arg1 = self
                     .type_cache
-                    .function(Some(id.value.typ.clone()), self.subs.new_var());
-
+                    .function(Some(id_var.clone()), self.subs.new_var());
                 let arg2 = self.subs.new_var();
+
                 let ret = expected_type
                     .cloned()
                     .unwrap_or_else(|| self.subs.new_var());
@@ -1365,18 +1368,13 @@ impl<'a> Typecheck<'a> {
                     .type_cache
                     .function(vec![arg1.clone(), arg2.clone()], ret.clone());
 
-                self.unify_span(expr.span, &flat_map_type, func_type);
+                self.unify_span(do_span, &flat_map_type, func_type);
 
-                let bound_type = self.typecheck(bound, &arg2);
+                self.typecheck(bound, &arg2);
 
-                self.unify_span(
-                    // Point to the `do` token
-                    expr.span.subspan(0.into(), 2.into()),
-                    &arg2,
-                    bound_type,
-                );
-
-                self.stack_var(id.value.name.clone(), id.value.typ.clone());
+                if let Some(ref mut id) = *id {
+                    self.typecheck_pattern(id, id_var);
+                }
 
                 let body_type = self.typecheck(body, &ret);
 

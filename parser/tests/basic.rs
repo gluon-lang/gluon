@@ -821,7 +821,7 @@ fn do_in_parens() {
     let _ = ::env_logger::try_init();
     let text = r"
         scope_state (
-            do _ = add_args
+            seq add_args
             eval_exprs
         )
     ";

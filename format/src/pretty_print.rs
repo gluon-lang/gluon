@@ -473,11 +473,16 @@ where
                 ..
             }) => chain![arena;
                 chain![arena;
-                    "do",
-                    self.space_before(id.span.start()),
-                    id.value.name.as_ref(),
-                    self.space_after(id.span.end()),
-                    "=",
+                    match id {
+                        Some(pattern) => chain![arena;
+                            "do",
+                            self.space_before(pattern.span.start()),
+                            self.pretty_pattern(pattern),
+                            self.space_after(pattern.span.end()),
+                            "="
+                        ],
+                        None => arena.text("seq"),
+                    },
                     self.hang(arena.nil(), bound).group()
                 ].group(),
                 self.pretty_expr_(bound.span.end(), body)

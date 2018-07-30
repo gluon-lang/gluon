@@ -28,6 +28,7 @@ pub enum Token<'input> {
     In,
     Let,
     Do,
+    Seq,
     Match,
     Then,
     Type,
@@ -82,6 +83,7 @@ impl<'input> fmt::Display for Token<'input> {
             In => "In",
             Let => "Let",
             Do => "Do",
+            Seq => "Seq",
             Match => "Match",
             Then => "Then",
             Type => "Type",
@@ -497,7 +499,7 @@ impl<'input> Tokenizer<'input> {
                 let (end, float) = self.take_while(start, is_digit);
                 match self.lookahead {
                     Some((_, ch)) if is_ident_start(ch) => {
-                        return self.error(end, UnexpectedChar(ch))
+                        return self.error(end, UnexpectedChar(ch));
                     }
                     _ => (start, end, Token::FloatLiteral(float.parse().unwrap())),
                 }
@@ -509,7 +511,7 @@ impl<'input> Tokenizer<'input> {
                 match int {
                     "0" | "-0" => match self.lookahead {
                         Some((_, ch)) if is_ident_start(ch) => {
-                            return self.error(end, UnexpectedChar(ch))
+                            return self.error(end, UnexpectedChar(ch));
                         }
                         _ => {
                             if hex.is_empty() {
@@ -530,7 +532,7 @@ impl<'input> Tokenizer<'input> {
                 let end = self.next_loc();
                 match self.lookahead {
                     Some((pos, ch)) if is_ident_start(ch) => {
-                        return self.error(pos, UnexpectedChar(ch))
+                        return self.error(pos, UnexpectedChar(ch));
                     }
                     _ => {
                         if let Ok(val) = int.parse() {
@@ -574,6 +576,7 @@ impl<'input> Tokenizer<'input> {
             "in" => Token::In,
             "let" => Token::Let,
             "do" => Token::Do,
+            "seq" => Token::Seq,
             "match" => Token::Match,
             "then" => Token::Then,
             "type" => Token::Type,

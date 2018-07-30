@@ -79,7 +79,7 @@ fn write_and_flush_file() {
     assert_eq!(content, vec![1, 2, 3, 4]);
 }
 
-test_expr!{ no_io_eval,
+test_expr! { no_io_eval,
 r#"
 let { error } = import! std.prim
 let io = import! std.io
@@ -171,7 +171,8 @@ fn spawn_on_twice() {
             Compiler::new()
                 .run_io(true)
                 .run_expr_async::<IO<String>>(&vm, "<top>", text),
-        ).unwrap_or_else(|err| panic!("{}", err));
+        )
+        .unwrap_or_else(|err| panic!("{}", err));
     match result {
         IO::Value(result) => {
             assert_eq!(result, "abc");
@@ -184,7 +185,8 @@ fn spawn_on_twice() {
             Compiler::new()
                 .run_io(true)
                 .run_expr_async::<IO<String>>(&vm, "<top>", text),
-        ).unwrap_or_else(|err| panic!("{}", err));
+        )
+        .unwrap_or_else(|err| panic!("{}", err));
     match result {
         IO::Value(result) => {
             assert_eq!(result, "abc");
@@ -204,7 +206,7 @@ fn spawn_on_runexpr() {
         do child = thread.new_thread ()
         do action = thread.spawn_on child (\_ -> io.run_expr "123")
         do x = action
-        do _ = io.println x.value
+        seq io.println x.value
         wrap x.value
     "#;
 
@@ -215,7 +217,8 @@ fn spawn_on_runexpr() {
             Compiler::new()
                 .run_io(true)
                 .run_expr_async::<IO<String>>(&vm, "<top>", text),
-        ).unwrap_or_else(|err| panic!("{}", err));
+        )
+        .unwrap_or_else(|err| panic!("{}", err));
     match result {
         IO::Value(result) => {
             assert_eq!(result, "123");
@@ -241,8 +244,8 @@ fn spawn_on_do_action_twice() {
         let action = thread.spawn_on child (\_ ->
                 counter <- (load counter + 1)
                 wrap ())
-        do _ = join action
-        do _ = join action
+        seq join action
+        seq join action
         wrap (load counter)
     "#;
 
@@ -253,7 +256,8 @@ fn spawn_on_do_action_twice() {
             Compiler::new()
                 .run_io(true)
                 .run_expr_async::<IO<i32>>(&vm, "<top>", text),
-        ).unwrap_or_else(|err| panic!("{}", err));
+        )
+        .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(result, IO::Value(2));
 }
 
@@ -273,8 +277,8 @@ fn spawn_on_force_action_twice() {
         do action = thread.spawn_on child (\_ ->
                 counter <- (load counter + 1)
                 wrap ())
-        do _ = action
-        do _ = action
+        seq action
+        seq action
         wrap (load counter)
     "#;
 
@@ -285,7 +289,8 @@ fn spawn_on_force_action_twice() {
             Compiler::new()
                 .run_io(true)
                 .run_expr_async::<IO<i32>>(&vm, "<top>", text),
-        ).unwrap_or_else(|err| panic!("{}", err));
+        )
+        .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(result, IO::Value(1));
 }
 
@@ -316,7 +321,8 @@ fn spawn_on_runexpr_in_catch() {
             Compiler::new()
                 .run_io(true)
                 .run_expr_async::<IO<String>>(&vm, "<top>", text),
-        ).unwrap_or_else(|err| panic!("{}", err));
+        )
+        .unwrap_or_else(|err| panic!("{}", err));
     match result {
         IO::Value(result) => {
             assert_eq!(result, "123");
@@ -329,7 +335,8 @@ fn spawn_on_runexpr_in_catch() {
             Compiler::new()
                 .run_io(true)
                 .run_expr_async::<IO<String>>(&vm, "<top>", text),
-        ).unwrap_or_else(|err| panic!("{}", err));
+        )
+        .unwrap_or_else(|err| panic!("{}", err));
     match result {
         IO::Value(result) => {
             assert_eq!(result, "123");

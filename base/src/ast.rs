@@ -274,7 +274,7 @@ pub struct ExprField<Id, E> {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Do<Id> {
-    pub id: SpannedIdent<Id>,
+    pub id: Option<SpannedPattern<Id>>,
     pub bound: Box<SpannedExpr<Id>>,
     pub body: Box<SpannedExpr<Id>>,
     pub flat_map_id: Option<Box<SpannedExpr<Id>>>,
@@ -685,7 +685,9 @@ pub fn walk_expr<'a, V: ?Sized + $trait_name<'a>>(v: &mut V, e: &'a $($mut)* Spa
             ref $($mut)* body,
             ref $($mut)* flat_map_id,
         }) => {
-            v.visit_spanned_typed_ident(id);
+            if let Some(id) = id {
+                v.visit_pattern(id);
+            }
             v.visit_expr(bound);
             v.visit_expr(body);
             if let Some(ref $($mut)* flat_map_id) = *flat_map_id {

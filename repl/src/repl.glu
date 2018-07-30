@@ -209,7 +209,7 @@ let cmd_parser : Parser { cmd : String, arg : String } =
     let word = recognize (skip_many1 letter)
     let arg_parser = recognize (skip_many1 any)
 
-    do _ = token ':'
+    seq token ':'
     do cmd = word
     do arg = (spaces *> arg_parser) <|> wrap ""
     wrap { cmd, arg }
@@ -251,11 +251,11 @@ let loop _ : () -> Eff (ReplEffect r) () =
         match continue with
         | Continue -> loop ()
         | Quit ->
-            do _ = lift <| rustyline.save_history repl.editor
+            seq lift <| rustyline.save_history repl.editor
             wrap ()
 
 let run settings : Settings -> IO () =
-    do _ = io.println "gluon (:h for help, :q to quit)"
+    seq io.println "gluon (:h for help, :q to quit)"
     do editor = rustyline.new_editor ()
     do cpu_pool = repl_prim.new_cpu_pool 1
     let repl = { commands, editor, cpu_pool }

@@ -3,7 +3,7 @@ use crate::base::{
         self, DisplayEnv, Do, Expr, MutVisitor, Pattern, SpannedAlias, SpannedAstType, SpannedExpr,
         TypedIdent,
     },
-    pos::{self, BytePos, Span},
+    pos::{self, ByteOffset, BytePos, Span},
     scoped_map::ScopedMap,
     symbol::{Symbol, SymbolModule},
     types::Type,
@@ -229,7 +229,7 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
                 }) => {
                     let flat_map = self.symbols.symbol("flat_map");
                     *flat_map_id = Some(Box::new(pos::spanned(
-                        id.span,
+                        Span::new(expr.span.end(), expr.span.start() + ByteOffset::from(2)),
                         Expr::Ident(TypedIdent {
                             name: flat_map,
                             typ: Type::hole(),
@@ -245,7 +245,9 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
 
                     self.env.stack.enter_scope();
 
-                    id.value.name = self.stack_var(id.value.name.clone(), id.span);
+                    if let Some(ref mut id) = *id {
+                        self.visit_pattern(id);
+                    }
 
                     return TailCall::TailCall;
                 }
@@ -258,6 +260,10 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
 
     impl<'a, 'b, 'c> MutVisitor<'c> for RenameVisitor<'a, 'b> {
         type Ident = Symbol;
+
+        fn visit_pattern(&mut self, pattern: &mut ast::SpannedPattern<Symbol>) {
+            self.new_pattern(pattern);
+        }
 
         fn visit_expr(&mut self, mut expr: &mut SpannedExpr<Self::Ident>) {
             let mut i = 0;

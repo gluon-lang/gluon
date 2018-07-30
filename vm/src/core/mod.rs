@@ -38,24 +38,20 @@ pub mod optimize;
 #[cfg(feature = "test")]
 mod pretty;
 
-use std::borrow::Cow;
-use std::collections::HashMap;
-use std::fmt;
-use std::iter::once;
-use std::mem;
+use std::{borrow::Cow, collections::HashMap, fmt, iter::once, mem};
 
 use itertools::Itertools;
 
-use self::typed_arena::Arena;
+use self::{smallvec::SmallVec, typed_arena::Arena};
 
-use self::smallvec::SmallVec;
-
-use crate::base::ast::{self, Literal, SpannedExpr, SpannedPattern, Typed, TypedIdent};
-use crate::base::fnv::{FnvMap, FnvSet};
-use crate::base::pos::{spanned, BytePos, Span};
-use crate::base::resolve::remove_aliases_cow;
-use crate::base::symbol::Symbol;
-use crate::base::types::{arg_iter, ArcType, PrimitiveEnv, Type, TypeEnv};
+use crate::base::{
+    ast::{self, Literal, SpannedExpr, SpannedPattern, Typed, TypedIdent},
+    fnv::{FnvMap, FnvSet},
+    pos::{spanned, BytePos, Span, Spanned},
+    resolve::remove_aliases_cow,
+    symbol::Symbol,
+    types::{arg_iter, ArcType, PrimitiveEnv, Type, TypeEnv},
+};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Closure<'a> {
@@ -567,11 +563,42 @@ impl<'a, 'e> Translator<'a, 'e> {
                 let bound_ident =
                     binder.bind(self.translate_alloc(bound), bound.env_type_of(&self.env));
 
+                let do_id = id.as_ref().map_or_else(
+                    || self.dummy_symbol.clone(),
+                    |pat| match pat.value {
+                        ast::Pattern::Ident(ref id) => id.clone(),
+                        _ => self.dummy_symbol.clone(),
+                    },
+                );
+
+                let core_body = self.translate_alloc(body);
+                let core_body = match id.as_ref() {
+                    Some(Spanned {
+                        value: ast::Pattern::Ident(_),
+                        ..
+                    })
+                    | None => core_body,
+                    Some(pat) => {
+                        let id_expr = self
+                            .allocator
+                            .arena
+                            .alloc(Expr::Ident(do_id.clone(), pat.span));
+                        let e = PatternTranslator(self).translate_top(
+                            id_expr,
+                            &[Equation {
+                                patterns: vec![&pat],
+                                result: core_body,
+                            }],
+                        );
+                        self.allocator.arena.alloc(e)
+                    }
+                };
+
                 let lambda = self.new_lambda(
                     expr.span.start(),
-                    id.value.clone(),
-                    vec![id.value.clone()],
-                    self.translate_alloc(body),
+                    do_id.clone(),
+                    vec![do_id],
+                    core_body,
                     body.span,
                 );
 
