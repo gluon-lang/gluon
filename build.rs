@@ -1,5 +1,17 @@
+extern crate gluon_base;
+extern crate itertools;
+extern crate walkdir;
+
+use std::env;
 use std::fs::File;
 use std::io::{Read, Write};
+use std::path::Path;
+
+use itertools::Itertools;
+
+use walkdir::WalkDir;
+
+use gluon_base::filename_to_module;
 
 #[cfg(feature = "test")]
 mod gen_skeptic {
@@ -160,6 +172,42 @@ fn example_24_up_to_date() {
     readme_file.write_all(readme.as_bytes()).unwrap();
 }
 
+fn generate_std_include() {
+    let tuples = WalkDir::new("std")
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| {
+            entry.file_type().is_file()
+                && entry.path().extension() == Some(::std::ffi::OsStr::new("glu"))
+        })
+        .map(|entry| {
+            let module_name = filename_to_module(entry.path().to_str().expect("Invalid path"));
+            format!(
+                r#"("{}", include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/{}"))),"#,
+                module_name,
+                entry.path().display().to_string().replace('\\', "/")
+            )
+        })
+        .format("\n");
+
+    let out_file_name = Path::new(&env::var("OUT_DIR").unwrap()).join("std_modules.rs");
+    let mut file = File::create(&out_file_name).unwrap();
+
+    writeln!(
+        file,
+        r#"
+#[cfg(feature = "test")]
+static STD_LIBS: &[(&str, &str)] = &[];"#
+    ).unwrap();
+    write!(
+        file,
+        r#"
+#[cfg(not(feature = "test"))]
+static STD_LIBS: &[(&str, &str)] = "#
+    ).unwrap();
+    writeln!(file, "&[{}];", tuples).unwrap();
+}
+
 fn main() {
     gen_skeptic::generate();
 
@@ -167,4 +215,7 @@ fn main() {
 
     example_24_up_to_date();
     println!("cargo:rerun-if-changed=examples/24.glu");
+
+    generate_std_include();
+    println!("cargo:rerun-if-changed=std/");
 }

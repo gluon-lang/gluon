@@ -56,59 +56,7 @@ quick_error! {
     }
 }
 
-macro_rules! std_libs {
-    ($($file: expr,)*) => {
-        [$((concat!("std.", $file), include_str!(concat!("../std/", $file, ".glu")))),*]
-    }
-}
-// Include the standard library distribution in the binary
-#[cfg(not(feature = "test"))]
-static STD_LIBS: &[(&str, &str)] = &std_libs!(
-    "prelude",
-    "types",
-    "function",
-    "bool",
-    "float",
-    "int",
-    "byte",
-    "char",
-    "io",
-    "list",
-    "map",
-    "option",
-    "parser",
-    "result",
-    "state",
-    "stream",
-    "string",
-    "thread",
-    "test",
-    "unit",
-    "writer",
-    "array",
-    "functor",
-    "applicative",
-    "alternative",
-    "cmp",
-    "foldable",
-    "monad",
-    "monoid",
-    "semigroup",
-    "reference",
-    "show",
-    "traversable",
-    "group",
-    "category",
-    "num",
-    "lazy",
-    "channel",
-    "debug",
-);
-
-// When testing we use the files as-is in the repository to avoid recompiling after they are
-// changed
-#[cfg(feature = "test")]
-static STD_LIBS: &[(&str, &str)] = &std_libs!();
+include!(concat!(env!("OUT_DIR"), "/std_modules.rs"));
 
 pub trait Importer: Any + Clone + Sync + Send {
     fn import(
