@@ -543,6 +543,45 @@ impl<'vm, T: ?Sized + VmType> VmType for PhantomData<T> {
     }
 }
 
+/// Wrapper which extracts a `Userdata` value from gluon
+#[derive(Debug)]
+pub struct UserdataValue<T: ?Sized>(pub T);
+
+impl<T> VmType for UserdataValue<T>
+where
+    T: ?Sized + VmType,
+{
+    type Type = T::Type;
+    fn make_type(vm: &Thread) -> ArcType {
+        T::make_type(vm)
+    }
+    fn make_forall_type(vm: &Thread) -> ArcType {
+        T::make_forall_type(vm)
+    }
+}
+
+impl<'vm, 'value, T> Getable<'vm, 'value> for UserdataValue<T>
+where
+    T: vm::Userdata + Clone,
+{
+    unsafe fn from_value_unsafe(vm: &'vm Thread, value: Variants<'value>) -> Self {
+        UserdataValue(<&'vm T as Getable<'vm, 'value>>::from_value_unsafe(vm, value).clone())
+    }
+    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
+        // Cloning ensures that the data is not bound to the 'vm lifetime
+        unsafe { Self::from_value_unsafe(vm, value) }
+    }
+}
+
+impl<'vm, T> Pushable<'vm> for UserdataValue<T>
+where
+    T: vm::Userdata,
+{
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        self.0.push(context)
+    }
+}
+
 impl<'vm, T: ?Sized + VmType> VmType for &'vm T {
     type Type = T::Type;
     fn make_type(vm: &Thread) -> ArcType {

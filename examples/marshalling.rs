@@ -9,13 +9,15 @@ extern crate env_logger;
 extern crate serde_derive;
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use gluon::base::types::ArcType;
 
 use gluon::base::types::{AppVec, Type};
 use gluon::vm::api::generic::{A, L, R};
 use gluon::vm::api::{
-    self, ActiveThread, FunctionRef, Generic, Getable, OpaqueValue, Pushable, ValueRef, VmType, IO,
+    self, ActiveThread, FunctionRef, Generic, Getable, Hole, OpaqueValue, Pushable, UserdataValue,
+    ValueRef, VmType, IO,
 };
 use gluon::vm::{self, ExternModule, Variants};
 use gluon::{import, new_vm, Compiler, Result, RootedThread, Thread};
@@ -112,15 +114,12 @@ where
 
     let config_example = r#"
         let array = import! std.array
-        let string = import! std.string
         let map @ { Map } = import! std.map
-
-        let string_map = map.make string.ord
 
         let run config_array =
             let f m entry : Map String String -> (String, String) -> _ =
-                string_map.insert entry._0 entry._1 m
-            array.foldable.foldl f string_map.empty config_array
+                map.insert entry._0 entry._1 m
+            array.foldable.foldl f map.empty config_array
         run
         "#;
     let mut make_map: FunctionRef<
@@ -133,13 +132,10 @@ where
     let map = make_map.call(entries)?;
 
     let config_query_example = r#"
-        let string = import! std.string
         let map = import! std.map
 
-        let string_map = map.make string.ord
-
         let run config_map =
-            (string_map.find "key" config_map, string_map.find "undefined" config_map)
+            (map.find "key" config_map, map.find "undefined" config_map)
         run
         "#;
     let mut query_map: FunctionRef<
@@ -329,6 +325,64 @@ fn marshal_wrapper() -> Result<()> {
     Ok(())
 }
 
+#[derive(Userdata, Debug, Clone)]
+struct WindowHandle {
+    id: Arc<u64>,
+    metadata: Arc<str>,
+}
+
+fn load_mod(vm: &gluon::Thread) -> vm::Result<ExternModule> {
+    vm.register_type::<WindowHandle>("WindowHandle", &[])?;
+
+    let module = record! {
+        create_hwnd => primitive!(2 create_hwnd),
+        id => primitive!(1 id),
+        metadata => primitive!(1 metadata),
+    };
+
+    ExternModule::new(vm, module)
+}
+
+fn create_hwnd(id: u64, metadata: String) -> WindowHandle {
+    WindowHandle {
+        id: Arc::new(id),
+        metadata: Arc::from(metadata),
+    }
+}
+
+fn id(hwnd: &WindowHandle) -> u64 {
+    *hwnd.id
+}
+
+fn metadata(hwnd: &WindowHandle) -> String {
+    String::from(&*hwnd.metadata)
+}
+
+fn marshal_userdata() -> Result<()> {
+    let vm = new_vm();
+    let mut compiler = gluon::Compiler::new();
+
+    gluon::import::add_extern_module(&vm, "hwnd", load_mod);
+
+    // Load the extern module so that the next run_expr call can access the registered type
+    compiler.run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "", "import! hwnd")?;
+
+    let script = r#"
+        let { assert } = import! std.test
+        let { create_hwnd, id, metadata } = import! hwnd
+        let hwnd = create_hwnd 0 "Window1"
+        assert (id hwnd == 0)
+        assert (metadata hwnd == "Window1")
+        hwnd
+    "#;
+
+    let (UserdataValue(handle), _) =
+        compiler.run_expr::<UserdataValue<WindowHandle>>(&vm, "test", script)?;
+    assert_eq!(*handle.id, 0);
+    assert_eq!(&*handle.metadata, "Window1");
+    Ok(())
+}
+
 fn main() {
     env_logger::init();
 
@@ -341,14 +395,22 @@ fn main() {
     map.insert("key2".to_string(), "value2".to_string());
 
     if let Err(err) = marshal_map(map) {
-        eprintln!("{}", err)
+        eprintln!("{}", err);
+        ::std::process::exit(1);
     }
 
     if let Err(err) = marshal_generic() {
-        eprintln!("{}", err)
+        eprintln!("{}", err);
+        ::std::process::exit(1);
     }
 
     if let Err(err) = marshal_wrapper() {
-        eprintln!("{}", err)
+        eprintln!("{}", err);
+        ::std::process::exit(1);
+    }
+
+    if let Err(err) = marshal_userdata() {
+        eprintln!("{}", err);
+        ::std::process::exit(1);
     }
 }
