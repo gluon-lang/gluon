@@ -66,7 +66,10 @@ where
         }
     });
 
+    let unpack_data = unpack_data();
     quote! {
+        #unpack_data
+
         #ident {
             #(#field_initializers,)*
         }
@@ -77,20 +80,43 @@ fn gen_tuple_struct_cons<I>(ident: &Ident, fields: I) -> TokenStream
 where
     I: IntoIterator<Item = Field>,
 {
-    // do the lookup using the tag, because tuple structs don't have field names
-    let field_initializers = fields.into_iter().enumerate().map(|(tag, field)| {
-        let field_ty = &field.ty;
+    let mut fields = fields.into_iter().fuse();
 
-        quote! {
-            if let Some(val) = data.get_variant(#tag) {
-                <#field_ty as _gluon_api::Getable<'__vm, '__value>>::from_value(vm, val)
-            } else {
-                panic!("Cannot find the field with tag '{}'. Do the type definitions match?", #tag);
+    // Treat newtype structs as just their inner type
+    let (first, second) = (fields.next(), fields.next());
+    match (&first, &second) {
+        (Some(field_ty), None) => {
+            return quote! {
+                #ident (
+                <#field_ty as _gluon_api::Getable<'__vm, '__value>>::from_value(vm, variants)
+                )
             }
         }
-    });
+        _ => (),
+    }
 
+    // do the lookup using the tag, because tuple structs don't have field names
+    let field_initializers = first
+        .into_iter()
+        .chain(second)
+        .chain(fields)
+        .enumerate()
+        .map(|(tag, field)| {
+            let field_ty = &field.ty;
+
+            quote! {
+                if let Some(val) = data.get_variant(#tag) {
+                    <#field_ty as _gluon_api::Getable<'__vm, '__value>>::from_value(vm, val)
+                } else {
+                    panic!("Cannot find the field with tag '{}'. Do the type definitions match?", #tag);
+                }
+            }
+        });
+
+    let unpack_data = unpack_data();
     quote! {
+        #unpack_data
+
         #ident (
             #(#field_initializers,)*
         )
@@ -111,9 +137,13 @@ fn derive_enum(
             .enumerate()
             .map(|(tag, variant)| gen_variant_match(&ident, tag, variant));
 
+        let unpack_data = unpack_data();
+
         // data contains the the data for each field of a variant; the variant of the passed value
         // is defined by the tag(), which is defined by order of the variants (the first variant is 0)
         cons = quote! {
+            #unpack_data
+
             match data.tag() as usize {
                 #(#variants,)*
                 tag => panic!("Unexpected tag: '{}'. Do the type definitions match?", tag)
@@ -128,7 +158,7 @@ fn gen_impl(
     container: &attr::Container,
     ident: Ident,
     generics: Generics,
-    cons_expr: TokenStream,
+    push_impl: TokenStream,
 ) -> TokenStream {
     // lifetime bounds like '__vm: 'a, 'a: '__vm (which implies => 'a == '__vm)
     // writing bounds like this is a lot easier than actually replacing all lifetimes
@@ -172,12 +202,7 @@ fn gen_impl(
             #where_clause #(#getable_bounds,)* #(#lifetime_bounds),*
             {
                 fn from_value(vm: &'__vm _gluon_thread::Thread, variants: _GluonVariants<'__value>) -> Self {
-                    let data = match variants.as_ref() {
-                        _gluon_api::ValueRef::Data(data) => data,
-                        val => panic!("Unexpected value: '{:?}'. Do the type definitions match?", val),
-                    };
-
-                    #cons_expr
+                    #push_impl
                 }
             }
         };
@@ -271,4 +296,13 @@ fn create_lifetime_bounds(generics: &Generics) -> Vec<TokenStream> {
     map_lifetimes(generics, |lifetime| {
         quote! { #lifetime: '__vm, '__vm: #lifetime }
     })
+}
+
+fn unpack_data() -> TokenStream {
+    quote! {
+        let data = match variants.as_ref() {
+            _gluon_api::ValueRef::Data(data) => data,
+            val => panic!("Unexpected value: '{:?}'. Do the type definitions match?", val),
+        };
+    }
 }

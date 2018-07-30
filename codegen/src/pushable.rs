@@ -42,6 +42,18 @@ fn derive_struct(
     let (field_idents, field_types) = get_info_from_fields(&ast.fields);
     let field_idents2 = &field_idents;
 
+    // Treat newtype structs as just their inner type
+    match ast.fields {
+        Fields::Unnamed(_) if field_idents.len() == 1 => {
+            let ty = &field_types[0];
+            let push_impl = quote! {
+                <#ty as _gluon_api::Pushable<'__vm>>::push(self.0, ctx)?;
+            };
+            return gen_impl(&container, &ident, generics, push_impl);
+        }
+        _ => (),
+    }
+
     // destructure the struct so the the fields can be accessed by the push implementation
     let destructured = match &ast.fields {
         Fields::Named(_) => quote! { let #ident { #(#field_idents2),* } = self; },
