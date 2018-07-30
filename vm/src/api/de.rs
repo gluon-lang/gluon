@@ -2,6 +2,7 @@
 
 extern crate serde_json;
 
+use std::borrow::Borrow;
 use std::cell::RefCell;
 use std::fmt;
 use std::marker::PhantomData;
@@ -11,7 +12,7 @@ use base::resolve;
 use base::symbol::Symbol;
 use base::types::{arg_iter, ArcType, BuiltinType, Type, TypeEnv};
 
-use api::{Getable, ValueRef, VmType};
+use api::{Getable, OpaqueValue, ValueRef, VmType};
 use thread::{ActiveThread, RootedThread, RootedValue, Thread, ThreadInternal};
 use {Error as VmError, ExternModule, Result, Variants};
 
@@ -253,9 +254,75 @@ pub enum Value {
     Bool(bool),
     Int(i64),
     Float(f64),
-    String(String),
+    String(#[serde(state)] JsonString),
     Array(#[serde(state)] Vec<JsonValue>),
-    Object(#[serde(state)] ::std::collections::BTreeMap<String, JsonValue>),
+    Object(#[serde(state)] ::std::collections::BTreeMap<JsonString, JsonValue>),
+}
+
+#[derive(SerializeState, Ord, Eq, PartialEq, PartialOrd, Getable, Pushable)]
+#[serde(serialize_state = "Thread")]
+#[gluon(gluon_vm)]
+pub struct JsonString(OpaqueValue<RootedThread, str>);
+
+impl VmType for JsonString {
+    type Type = String;
+}
+
+impl Deref for JsonString {
+    type Target = str;
+
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Borrow<str> for JsonString {
+    fn borrow(&self) -> &str {
+        self
+    }
+}
+
+impl<'de> de::DeserializeState<'de, ActiveThread<'de>> for JsonString {
+    fn deserialize_state<D>(
+        thread: &mut ActiveThread<'de>,
+        deserializer: D,
+    ) -> StdResult<Self, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        struct StringVisitor<'a, 'vm: 'a>(&'a mut ActiveThread<'vm>);
+
+        impl<'a, 'vm> StringVisitor<'a, 'vm> {
+            fn marshal<T>(&mut self, value: T) -> JsonString
+            where
+                T: ::api::Pushable<'vm>,
+            {
+                let context = &mut *self.0;
+                value.push(context).unwrap_or_else(|err| panic!("{}", err));
+                let value = context.pop();
+                JsonString(OpaqueValue::from_value(context.thread().root_value(value)))
+            }
+        }
+
+        impl<'a, 'de> Visitor<'de> for StringVisitor<'a, 'de> {
+            type Value = JsonString;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a string")
+            }
+
+            #[inline]
+            fn visit_str<E>(mut self, value: &str) -> StdResult<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let value = ::api::convert_with_active_thread(self.0, value).map_err(E::custom)?;
+                Ok(self.marshal(Value::String(value)))
+            }
+        }
+
+        deserializer.deserialize_string(StringVisitor(thread))
+    }
 }
 
 impl VmType for Value {
@@ -349,15 +416,20 @@ impl<'de> de::DeserializeState<'de, ActiveThread<'de>> for JsonValue {
             }
 
             #[inline]
-            fn visit_str<E>(self, value: &str) -> StdResult<Self::Value, E>
+            fn visit_str<E>(mut self, value: &str) -> StdResult<Self::Value, E>
             where
                 E: de::Error,
             {
-                self.visit_string(String::from(value))
+                let value = ::api::convert_with_active_thread(self.0, value).map_err(E::custom)?;
+                Ok(self.marshal(Value::String(value)))
             }
 
             #[inline]
-            fn visit_string<E>(mut self, value: String) -> StdResult<Self::Value, E> {
+            fn visit_string<E>(mut self, value: String) -> StdResult<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                let value = ::api::convert_with_active_thread(self.0, value).map_err(E::custom)?;
                 Ok(self.marshal(Value::String(value)))
             }
 
@@ -399,9 +471,10 @@ impl<'de> de::DeserializeState<'de, ActiveThread<'de>> for JsonValue {
             {
                 let mut values = ::std::collections::BTreeMap::new();
 
-                while let Some((key, value)) = visitor
-                    .next_entry_seed(::std::marker::PhantomData, de::Seed::new(&mut *self.0))?
-                {
+                while let (Some(key), Some(value)) = (
+                    visitor.next_key_seed(de::Seed::new(&mut *self.0))?,
+                    visitor.next_value_seed(de::Seed::new(&mut *self.0))?,
+                ) {
                     values.insert(key, value);
                 }
 

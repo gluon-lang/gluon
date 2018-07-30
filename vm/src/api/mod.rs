@@ -15,6 +15,7 @@ use vm::{self, Root, RootStr, RootedValue, Status, Thread};
 use {forget_lifetime, Error, Result, Variants};
 
 use std::any::Any;
+use std::borrow::Borrow;
 use std::cell::Ref;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -32,6 +33,8 @@ pub use value::Userdata;
 
 #[cfg(feature = "serde")]
 use serde::de::{Deserialize, Deserializer};
+#[cfg(feature = "serde")]
+use serde::ser::{Serialize, SerializeState, Serializer};
 
 macro_rules! count {
     () => { 0 };
@@ -506,10 +509,18 @@ where
     U: for<'value> Getable<'vm, 'value>,
 {
     let mut context = thread.current_context();
-    t.push(&mut context)?;
+    convert_with_active_thread(&mut context, t)
+}
+
+fn convert_with_active_thread<'vm, T, U>(context: &mut ActiveThread<'vm>, t: T) -> Result<U>
+where
+    T: Pushable<'vm>,
+    U: for<'value> Getable<'vm, 'value>,
+{
+    t.push(context)?;
     unsafe {
         let value = context.pop();
-        Ok(U::from_value(thread, Variants::new(&value)))
+        Ok(U::from_value(context.thread(), Variants::new(&value)))
     }
 }
 
@@ -1011,7 +1022,7 @@ where
 
 impl<'vm, K, V> Pushable<'vm> for BTreeMap<K, V>
 where
-    K: AsRef<str> + VmType<Type = String>,
+    K: Borrow<str> + VmType,
     K::Type: Sized,
     V: for<'vm2> Pushable<'vm2> + VmType,
     V::Type: Sized,
@@ -1025,7 +1036,7 @@ where
 
         context.drop();
         for (key, value) in self {
-            map = insert.call(key.as_ref().to_string(), value, map)?;
+            map = insert.call(key.borrow().to_string(), value, map)?;
         }
         context.restore();
 
@@ -1033,22 +1044,24 @@ where
     }
 }
 
-impl<'vm, 'value, T> Getable<'vm, 'value> for BTreeMap<String, T>
+impl<'vm, 'value, K, V> Getable<'vm, 'value> for BTreeMap<K, V>
 where
-    T: Getable<'vm, 'value>,
+    K: Getable<'vm, 'value> + Ord,
+    V: Getable<'vm, 'value>,
 {
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
-        fn build_map<'vm2, 'value2, U>(
-            map: &mut BTreeMap<String, U>,
+        fn build_map<'vm2, 'value2, K2, V2>(
+            map: &mut BTreeMap<K2, V2>,
             vm: &'vm2 Thread,
             value: Variants<'value2>,
         ) where
-            U: Getable<'vm2, 'value2>,
+            K2: Getable<'vm2, 'value2> + Ord,
+            V2: Getable<'vm2, 'value2>,
         {
             match value.as_ref() {
                 ValueRef::Data(data) => if data.tag() == 1 {
-                    let key = String::from_value(vm, data.get_variant(0).expect("key"));
-                    let value = U::from_value(vm, data.get_variant(1).expect("value"));
+                    let key = K2::from_value(vm, data.get_variant(0).expect("key"));
+                    let value = V2::from_value(vm, data.get_variant(1).expect("value"));
                     map.insert(key, value);
 
                     let left = data.get_variant(2).expect("left");
@@ -1350,6 +1363,45 @@ where
     T: Deref<Target = Thread>,
     V: ?Sized;
 
+impl<T, V> PartialEq for OpaqueValue<T, V>
+where
+    T: Deref<Target = Thread>,
+    Self: Borrow<V>,
+    V: ?Sized + PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.borrow() == other.borrow()
+    }
+}
+impl<T, V> Eq for OpaqueValue<T, V>
+where
+    T: Deref<Target = Thread>,
+    Self: Borrow<V>,
+    V: ?Sized + Eq,
+{}
+
+impl<T, V> PartialOrd for OpaqueValue<T, V>
+where
+    T: Deref<Target = Thread>,
+    Self: Borrow<V>,
+    V: ?Sized + PartialOrd,
+{
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.borrow().partial_cmp(&other.borrow())
+    }
+}
+
+impl<T, V> Ord for OpaqueValue<T, V>
+where
+    T: Deref<Target = Thread>,
+    Self: Borrow<V>,
+    V: ?Sized + Ord,
+{
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.borrow().cmp(&other.borrow())
+    }
+}
+
 impl<T, V> Deref for OpaqueValue<T, V>
 where
     T: Deref<Target = Thread>,
@@ -1375,14 +1427,54 @@ where
     }
 }
 
+impl<T, V> Borrow<V> for OpaqueValue<T, V>
+where
+    T: Deref<Target = Thread>,
+    V: ?Sized,
+    Self: Deref<Target = V>,
+{
+    fn borrow(&self) -> &V {
+        self
+    }
+}
+
 #[cfg(feature = "serde")]
-impl<'de, V> Deserialize<'de> for OpaqueValue<RootedThread, V> {
+impl<'de, V> Deserialize<'de> for OpaqueValue<RootedThread, V>
+where
+    V: ?Sized,
+{
     fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         let value = self::de::deserialize_raw_value(deserializer)?;
         Ok(Self::from_value(value))
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<T> Serialize for OpaqueValue<T, str>
+where
+    T: Deref<Target = Thread>,
+{
+    fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        (**self).serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<T> SerializeState<Thread> for OpaqueValue<T, str>
+where
+    T: Deref<Target = Thread>,
+{
+    fn serialize_state<S>(&self, serializer: S, _thread: &Thread) -> StdResult<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        (**self).serialize(serializer)
     }
 }
 
@@ -1446,7 +1538,7 @@ where
 impl<T, V> VmType for OpaqueValue<T, V>
 where
     T: Deref<Target = Thread>,
-    V: VmType,
+    V: ?Sized + VmType,
     V::Type: Sized,
 {
     type Type = V::Type;
@@ -1462,7 +1554,7 @@ where
 impl<'vm, T, V> Pushable<'vm> for OpaqueValue<T, V>
 where
     T: Deref<Target = Thread>,
-    V: VmType,
+    V: ?Sized + VmType,
     V::Type: Sized,
 {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
@@ -1470,14 +1562,12 @@ where
     }
 }
 
-impl<'vm, 'value, V> Getable<'vm, 'value> for OpaqueValue<&'vm Thread, V> {
-    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> OpaqueValue<&'vm Thread, V> {
-        OpaqueValue::from_value(vm.root_value(value.get_value()))
-    }
-}
-
-impl<'vm, 'value, V> Getable<'vm, 'value> for OpaqueValue<RootedThread, V> {
-    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> OpaqueValue<RootedThread, V> {
+impl<'vm, 'value, T, V> Getable<'vm, 'value> for OpaqueValue<T, V>
+where
+    V: ?Sized,
+    T: VmRoot<'vm>,
+{
+    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
         OpaqueValue::from_value(vm.root_value(value.get_value()))
     }
 }

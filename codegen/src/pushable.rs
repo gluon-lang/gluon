@@ -130,6 +130,7 @@ fn gen_impl(
     };
     quote! {
         #[allow(non_upper_case_globals)]
+        #[allow(unused_imports)]
         const #dummy_const: () = {
             #gluon
 
