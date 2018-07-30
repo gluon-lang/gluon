@@ -23,8 +23,7 @@ Gluon provides several traits for safely marshalling types to and from Gluon cod
 
 - [Userdata][] allows a Rust type to be marshalled as completely opaque type. The Gluon code
   will be able to receive and pass values of this type, but cannot inspect it at all. This is
-  useful for passing handle-like values, that will be mostly used by the Rust code. `Getable`
-  and `Pushable` are automatically implemented for all types that implement `Userdata`.
+  useful for passing handle-like values, that will be mostly used by the Rust code. `Pushable` is automatically implemented for all types that implement `Userdata`. `Getable` is automatically implemented for `&T where T: Userdata` when used as argument to a Rust function, for places `OpaqueValue` can be used as a smart pointer around a `Userdata` value or the `UserdataValue` extractor can be used to clone the value.
 
 Gluon already provides implementations for the primitive and common standard library types.
 
