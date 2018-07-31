@@ -1136,7 +1136,7 @@ impl<'a> StackInfo<'a> {
     /// Returns the name of the function executing at this frame
     pub fn function_name(&self) -> Option<&str> {
         match self.frame().state {
-            State::Unknown | State::Lock | State::Excess => None,
+            State::Unknown | State::Lock => None,
             State::Closure(ref closure) => Some(closure.function.name.declared_name()),
             State::Extern(ref function) => Some(function.id.declared_name()),
         }
@@ -1415,7 +1415,6 @@ impl<'b> OwnedContext<'b> {
 
             maybe_context = match state {
                 State::Lock | State::Unknown => return Ok(Async::Ready(Some(context))),
-                State::Excess => context.exit_scope().ok(),
                 State::Extern(ext) => {
                     let instruction_index = context.borrow_mut().stack.frame.instruction_index;
                     if instruction_index == IN_POLL {
@@ -1828,12 +1827,7 @@ impl<'b> ExecuteContext<'b> {
                         self.stack.frame.state,
                         function.name
                     );
-                    match self.exit_scope() {
-                        Ok(_) => (),
-                        Err(_) => {
-                            self.enter_scope(args + amount + 1, State::Excess);
-                        }
-                    };
+                    self.exit_scope().unwrap();
                     info!(
                         "Clearing {} {} {:?}",
                         self.stack.len(),
@@ -2085,7 +2079,6 @@ impl<'b> ExecuteContext<'b> {
             // the call with the extra arguments
             match self.stack.pop().get_repr() {
                 Data(excess) => {
-                    self.enter_scope(0, State::Excess);
                     debug!("Push excess args {:?}", &excess.fields);
                     self.stack.push(result);
                     for value in &excess.fields {

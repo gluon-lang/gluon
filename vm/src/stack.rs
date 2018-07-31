@@ -58,8 +58,6 @@ pub enum State {
     Unknown,
     /// Locked frame which can only be unlocked by the caller which introduced the lock
     Lock,
-    /// Extra frame introduced to store a call with excess arguments
-    Excess,
     Closure(
         #[cfg_attr(
             feature = "serde_derive",
@@ -220,7 +218,7 @@ impl Stack {
                     line: Line::from(0),
                 })),
                 State::Unknown => Some(None),
-                State::Lock | State::Excess => None,
+                State::Lock => None,
             })
             .collect();
         Stacktrace { frames: frames }
