@@ -396,10 +396,11 @@ fn set_globals(
                     });
                 let field_type = resolved_type
                     .row_iter()
-                    .find(|f| f.name == *field_name)
+                    .find(|f| f.name.name_eq(field_name))
                     .unwrap_or_else(|| {
                         panic!(
-                            "record type doesn't have field `{}`",
+                            "record type `{}` doesn't have field `{}`",
+                            resolved_type,
                             field_name.declared_name()
                         )
                     })
