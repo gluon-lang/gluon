@@ -164,3 +164,11 @@ fn import() {
 
     repl.test("let { assert } = import! std.test", None);
 }
+
+#[test]
+fn assert() {
+    let mut repl = REPL::new();
+
+    repl.test("let { assert } = import! std.test", None);
+    repl.test("assert False", None);
+}
