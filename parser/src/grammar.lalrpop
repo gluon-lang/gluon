@@ -478,8 +478,8 @@ Literal: Literal = {
     "float literal" => Literal::Float(NotNaN::new(<>).unwrap()),
 };
 
-Alternative: Alternative<Id> = {
-    "|" <pat: Sp<Pattern>> "->" <expr: Sp<BlockExpr>> => {
+Alternative<A>: Alternative<Id> = {
+    "|" <pat: Sp<Pattern>> "->" <expr: SpExprRestricted<"">> => {
         Alternative {
             pattern: pat,
             expr: super::shrink_hidden_spans(expr),
@@ -639,17 +639,17 @@ LambdaArgument: Argument<SpannedIdent<Id>> = {
     }
 };
 
-InfixExpr = {
+InfixExpr<A> = {
     AppExpr,
 
-    "\\" <args: LambdaArgument+> "->" <body: SpExpr> =>
+    "\\" <args: LambdaArgument+> "->" <body: SpExprRestricted<A>> =>
         Expr::Lambda(Lambda {
             id: new_ident(type_cache, env.from_str("")),
             args,
             body: Box::new(body),
         }),
 
-    <lhs: Sp<AppExpr>> <op: Sp<Operator>> <rhs: Sp<InfixExpr>> =>
+    <lhs: Sp<AppExpr>> <op: Sp<Operator>> <rhs: Sp<InfixExpr<A>>> =>
         Expr::Infix { lhs: Box::new(lhs), op, rhs: Box::new(super::shrink_hidden_spans(rhs)), implicit_args: Vec::new(), },
 };
 
@@ -667,16 +667,13 @@ AndTypeBinding: TypeBinding<Id> =
         binding
     };
 
-Expr: Expr<Id> = {
-    InfixExpr,
+DoBinding: (Option<SpannedIdent<Id>>, SpannedExpr<Id>) = {
+    <id: SpannedIdent> "=" <bound: SpExpr> => (Some(id), bound),
+    <bound: SpExpr> => (None, bound)
+};
 
-    "if" <pred: SpExpr> "then" <if_true: SpExpr> "else" <if_false: SpExpr> =>
-        Expr::IfElse(Box::new(pred), Box::new(if_true), Box::new(if_false)),
-
-    "match" <body: SpExpr> "with" <arms: Alternative+> =>
-        Expr::Match(Box::new(body), arms),
-
-    <metadata: Metadata?> "let" <first: ValueBinding> <bindings: AndValueBinding*> SkipExtraTokens "in" <body: SpExpr> => {
+Binding<A>: Expr<Id> = {
+    <metadata: Metadata?> "let" <first: ValueBinding> <bindings: AndValueBinding*> <body: BindingEnd<A>> => {
         let mut first = first;
         first.metadata = metadata.unwrap_or_default();
         let mut bindings = bindings;
@@ -685,7 +682,7 @@ Expr: Expr<Id> = {
         Expr::LetBindings(bindings, Box::new(body))
     },
 
-    <metadata: Metadata?> "type" <first: TypeBinding> <bindings: AndTypeBinding*> SkipExtraTokens "in" <body: SpExpr> => {
+    <metadata: Metadata?> "type" <first: TypeBinding> <bindings: AndTypeBinding*> <body: BindingEnd<A>> => {
         let mut first = first;
         first.metadata = metadata.unwrap_or_default();
         let mut bindings = bindings;
@@ -694,11 +691,29 @@ Expr: Expr<Id> = {
         Expr::TypeBindings(bindings, Box::new(body))
     },
 
-    "do" <bind: DoBinding>  "in" <body: SpExpr> => {
+    "do" <bind: DoBinding> <body: BindingEnd<A>> => {
         Expr::Do(Do { id: bind.0, bound: Box::new(bind.1), body: Box::new(body), flat_map_id: None })
     },
+};
 
-    BlockExpr,
+BindingEnd<A>: SpannedExpr<Id> = {
+    <bind: Sp<Binding<A>>> => bind,
+    "in" <body: SpExprRestricted<A>> => body,
+};
+
+Expr: Expr<Id> = {
+    ExprRestricted<"A">
+};
+ExprRestricted<A>: Expr<Id> = {
+    InfixExpr<A>,
+
+    "if" <pred: SpExpr> "then" <if_true: SpExpr> "else" <if_false: SpExprRestricted<A>> =>
+        Expr::IfElse(Box::new(pred), Box::new(if_true), Box::new(if_false)),
+
+    "match" <body: SpExpr> "with" <arms: Alternative<A>+> if A != "" =>
+        Expr::Match(Box::new(body), arms),
+
+    <Binding<A>>,
 
     ! => {
         errors.push(<>.error);
@@ -706,31 +721,20 @@ Expr: Expr<Id> = {
     }
 };
 
-DoBinding: (Option<SpannedIdent<Id>>, SpannedExpr<Id>) = {
-    <id: SpannedIdent> "=" <bound: SpExpr> => (Some(id), bound),
-    <bound: SpExpr> => (None, bound)
-};
-
-BlockExpr: Expr<Id> = {
-    "block open" <exprs: (<SpExpr> "block separator")*> <last: SpExpr> "block close" => {
-        let mut exprs = exprs;
-        exprs.push(last);
-        Expr::Block(exprs)
-    },
-};
-
 SpExpr: SpannedExpr<Id> = {
-    <expr: Sp<Expr>> => super::shrink_hidden_spans(expr),
+    <SpExprRestricted<"A">>,
+};
+
+SpExprRestricted<A>: SpannedExpr<Id> = {
+    <expr: Sp<ExprRestricted<A>>> => super::shrink_hidden_spans(expr),
 };
 
 pub TopExpr: SpannedExpr<Id> = {
-    "shebang line"? <expr: SpExpr> SkipExtraTokens => expr,
+    "shebang line"? <expr: SpExpr> => expr,
 };
 
 pub ReplLine: Option<ReplLine<Id>> = {
     <TopExpr> => Some(ReplLine::Expr(<>)),
-    "block open" "let" <ValueBinding> SkipExtraTokens
-        // Ugh but I just need the parser to be happy for now
-        "in" "block close" "block close" "block open" "block open" => Some(ReplLine::Let(<>)),
+    "let" <ValueBinding> => Some(ReplLine::Let(<>)),
     => None,
 };

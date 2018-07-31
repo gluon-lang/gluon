@@ -24,7 +24,9 @@ use std::cell::RefCell;
 use std::fmt;
 use std::hash::Hash;
 
-use base::ast::{Do, Expr, IdentEnv, SpannedExpr, SpannedPattern, TypedIdent, ValueBinding};
+use base::ast::{
+    Do, Expr, IdentEnv, SpannedExpr, SpannedPattern, TypeBinding, TypedIdent, ValueBinding,
+};
 use base::error::{AsDiagnostic, Errors};
 use base::fnv::FnvMap;
 use base::metadata::Metadata;
@@ -378,27 +380,12 @@ where
     Id: Clone,
     S: ?Sized + ParserSource,
 {
-    let result_ok_iter;
-    let layout = layout!(result_ok_iter, input);
+    let layout = lalrpop_tokenizer(Tokenizer::new(input));
 
     let mut parse_errors = Errors::new();
 
     let result =
         grammar::TopExprParser::new().parse(&input, type_cache, symbols, &mut parse_errors, layout);
-
-    // If there is a tokenizer error it may still exist in the result iterator wrapper.
-    // If that is the case we return that error instead of the unexpected EOF error that lalrpop
-    // emitted
-    if let Err(err) = result_ok_iter.borrow_mut().result(()) {
-        parse_errors.pop(); // Remove the EOF error
-        parse_errors.push(lalrpop_util::ParseError::User {
-            error: pos::spanned2(
-                err.span.start().absolute,
-                err.span.end().absolute,
-                err.value.into(),
-            ),
-        });
-    }
 
     match result {
         Ok(expr) => {
@@ -429,6 +416,21 @@ pub enum ReplLine<Id> {
     Let(ValueBinding<Id>),
 }
 
+fn lalrpop_tokenizer<'input>(
+    tokenizer: Tokenizer<'input>,
+) -> impl Iterator<Item = Result<(BytePos, Token<'input>, BytePos), Spanned<Error, BytePos>>> {
+    tokenizer.scan((), |_, result| {
+        let result = result
+            .map(|t| (t.span.start().absolute, t.value, t.span.end().absolute))
+            .map_err(|err| pos::spanned(err.span.map(|l| l.absolute), err.value.into()));
+        trace!("{:?}", result);
+        if let Ok((_, Token::EOF, _)) = result {
+            return None;
+        }
+        Some(result)
+    })
+}
+
 pub fn parse_partial_repl_line<Id, S>(
     symbols: &mut IdentEnv<Ident = Id>,
     input: &S,
@@ -437,8 +439,7 @@ where
     Id: Clone + Eq + Hash + AsRef<str> + ::std::fmt::Debug,
     S: ?Sized + ParserSource,
 {
-    let result_ok_iter;
-    let layout = layout!(result_ok_iter, input);
+    let layout = lalrpop_tokenizer(Tokenizer::new(input));
 
     let mut parse_errors = Errors::new();
 
@@ -451,20 +452,6 @@ where
         &mut parse_errors,
         layout,
     );
-
-    // If there is a tokenizer error it may still exist in the result iterator wrapper.
-    // If that is the case we return that error instead of the unexpected EOF error that lalrpop
-    // emitted
-    if let Err(err) = result_ok_iter.borrow_mut().result(()) {
-        parse_errors.pop(); // Remove the EOF error
-        parse_errors.push(lalrpop_util::ParseError::User {
-            error: pos::spanned2(
-                err.span.start().absolute,
-                err.span.end().absolute,
-                err.value.into(),
-            ),
-        });
-    }
 
     match result {
         Ok(repl_line) => {
