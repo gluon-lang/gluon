@@ -14,7 +14,7 @@ use api::{ActiveThread, AsyncPushable, Getable, Pushable, RootedValue, VmType};
 use compiler::{CompiledFunction, CompiledModule};
 use future::FutureValue;
 use gc::Move;
-use stack::StackFrame;
+use stack::{ExternState, StackFrame};
 use thread::{RootedThread, Status, Thread, ThreadInternal};
 use types::{Instruction, VmIndex};
 use value::{ExternFunction, Value, ValueRepr};
@@ -316,7 +316,7 @@ where $($args: for<'value> Getable<'vm, 'value> + 'vm,)*
         let lock;
         let r = unsafe {
             let ($($args,)*) = {
-                let stack = StackFrame::current(context.stack());
+                let stack = StackFrame::<ExternState>::current(context.stack());
                 $(let $args = {
                     let x = $args::from_value_unsafe(vm, Variants::new(&stack[i]));
                     i += 1;

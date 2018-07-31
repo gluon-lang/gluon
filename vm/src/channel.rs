@@ -13,7 +13,7 @@ use api::{
     OwnedFunction, Pushable, RuntimeResult, VmType, WithVM, IO,
 };
 use gc::{Gc, GcPtr, Traverseable};
-use stack::{StackFrame, State};
+use stack::{ClosureState, ExternState, StackFrame, State};
 use thread::{ActiveThread, ThreadInternal};
 use types::VmInt;
 use value::{Callable, GcStr, Userdata, ValueRepr};
@@ -146,10 +146,10 @@ fn send(sender: &Sender<Generic<A>>, value: Generic<A>) -> Result<(), ()> {
 
 extern "C" fn resume(vm: &Thread) -> Status {
     let mut context = vm.current_context();
-    let value = StackFrame::current(context.stack())[0].get_repr();
+    let value = StackFrame::<ExternState>::current(context.stack())[0].get_repr();
     match value {
         ValueRepr::Thread(child) => {
-            let lock = StackFrame::current(context.stack()).into_lock();
+            let lock = StackFrame::<ExternState>::current(context.stack()).into_lock();
             drop(context);
             let result = child.resume();
             context = vm.current_context();
@@ -196,13 +196,19 @@ fn spawn_<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> VmResult<Ro
     {
         let mut context = thread.current_context();
         let callable = match value.value.get_variant().0 {
-            ValueRepr::Closure(c) => State::Closure(c),
-            ValueRepr::Function(c) => State::Extern(c),
+            ValueRepr::Closure(closure) => State::Closure(ClosureState {
+                closure,
+                instruction_index: 0,
+            }),
+            ValueRepr::Function(function) => State::Extern(ExternState {
+                function,
+                instruction_index: 0,
+            }),
             _ => State::Unknown,
         };
         value.value.push(&mut context)?;
         context.push(ValueRepr::Int(0));
-        StackFrame::current(&mut context.context().stack).enter_scope(1, callable);
+        StackFrame::<State>::current(&mut context.context().stack).enter_scope(1, callable);
     }
     Ok(thread)
 }
@@ -267,13 +273,13 @@ fn spawn_on<'vm>(
                 + 'static,
         {
             let mut context = vm.current_context();
-            let value = StackFrame::current(context.stack())[0].get_repr();
+            let value = StackFrame::<ExternState>::current(context.stack())[0].get_repr();
 
             match value {
                 ValueRepr::Userdata(data) => {
                     let data = data.downcast_ref::<SpawnFuture<F>>().unwrap();
                     let future = data.0.clone();
-                    let lock = StackFrame::current(context.stack()).insert_lock();
+                    let lock = StackFrame::<ExternState>::current(context.stack()).into_lock();
                     AsyncPushable::async_status_push(
                         FutureResult::new(
                             future.map(|v| (*v).clone()).map_err(|err| (*err).clone()),

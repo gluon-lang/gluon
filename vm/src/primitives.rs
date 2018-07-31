@@ -6,7 +6,7 @@ use std::string::String as StdString;
 use api::generic::A;
 use api::{generic, primitive, Array, Generic, Getable, Pushable, RuntimeResult, ValueRef, WithVM};
 use gc::{DataDef, Gc, Traverseable, WriteOnly};
-use stack::StackFrame;
+use stack::{ExternState, StackFrame};
 use types::VmInt;
 use value::{Def, GcStr, Repr, ValueArray, ValueRepr};
 use vm::{Status, Thread};
@@ -168,7 +168,7 @@ mod string {
 
     pub extern "C" fn from_utf8(thread: &Thread) -> Status {
         let mut context = thread.current_context();
-        let value = StackFrame::current(context.stack())[0].get_repr();
+        let value = StackFrame::<ExternState>::current(context.stack())[0].get_repr();
         match value {
             ValueRepr::Array(array) => match GcStr::from_utf8(array) {
                 Ok(string) => {
@@ -248,7 +248,7 @@ extern "C" fn error(_: &Thread) -> Status {
 extern "C" fn discriminant_value(thread: &Thread) -> Status {
     let mut context = thread.current_context();
     let tag = {
-        let mut stack = StackFrame::current(context.stack());
+        let mut stack = StackFrame::<ExternState>::current(context.stack());
         let value = stack.get_variant(0).unwrap();
         match value.as_ref() {
             ValueRef::Data(data) => data.tag(),

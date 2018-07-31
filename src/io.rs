@@ -13,7 +13,7 @@ use vm::api::{
 use vm::future::FutureValue;
 use vm::gc::{Gc, Traverseable};
 use vm::internal::ValuePrinter;
-use vm::stack::StackFrame;
+use vm::stack::{self, StackFrame};
 use vm::thread::{Thread, ThreadInternal};
 use vm::types::*;
 use vm::{self, ExternModule, Result};
@@ -126,11 +126,14 @@ fn catch<'vm>(
         Err(err) => {
             {
                 let mut context = vm.context();
-                let mut stack = StackFrame::current(&mut context.stack);
+                let mut stack = StackFrame::<stack::State>::current(&mut context.stack);
                 while stack.stack.get_frames().len() > frame_level {
-                    if stack.exit_scope().is_err() {
-                        return FutureValue::Value(Ok(IO::Exception("Unknown error".into())));
-                    }
+                    stack = match stack.exit_scope() {
+                        Ok(s) => s,
+                        Err(_) => {
+                            return FutureValue::Value(Ok(IO::Exception("Unknown error".into())))
+                        }
+                    };
                 }
             }
             catch.call_fast_async(format!("{}", err)).then(|result| {
@@ -167,7 +170,7 @@ fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> PrimitiveFuture<IO<RunE
         .run_expr(&mut Compiler::new().run_io(true), vm1, "<top>", expr, None)
         .then(move |run_result| {
             let mut context = vm.context();
-            let stack = StackFrame::current(&mut context.stack);
+            let stack = StackFrame::<stack::State>::current(&mut context.stack);
             FutureValue::sync(Ok(match run_result {
                 Ok(execute_value) => {
                     let env = vm.global_env().get_env();
@@ -195,7 +198,7 @@ fn load_script(
         .load_script(&mut Compiler::new(), vm1, &name, expr, None)
         .then(move |run_result| {
             let mut context = vm.context();
-            let stack = StackFrame::current(&mut context.stack);
+            let stack = StackFrame::<stack::State>::current(&mut context.stack);
             let io = match run_result {
                 Ok(()) => IO::Value(format!("Loaded {}", name)),
                 Err(err) => clear_frames(err, stack),

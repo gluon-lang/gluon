@@ -9,6 +9,7 @@ use std::slice;
 use std::str;
 
 use gluon::vm::api::{CPrimitive, Getable, Hole, OpaqueValue, Pushable};
+use gluon::vm::stack;
 use gluon::vm::thread::{RootedThread, Status, Thread, ThreadInternal};
 use gluon::vm::types::{VmIndex, VmInt};
 
@@ -94,7 +95,7 @@ pub extern "C" fn glu_call_function(thread: &Thread, args: VmIndex) -> Error {
 #[no_mangle]
 pub extern "C" fn glu_len(vm: &Thread) -> usize {
     let mut context = vm.context();
-    let stack = context.stack.current_frame();
+    let stack = context.stack.current_frame::<stack::State>();
     stack.len() as usize
 }
 
@@ -243,7 +244,7 @@ where
     T: for<'vm, 'value> Getable<'vm, 'value>,
 {
     let mut context = vm.context();
-    let stack = context.stack.current_frame();
+    let stack = context.stack.current_frame::<stack::State>();
     match stack
         .get_variant(index)
         .map(|value| T::from_value(vm, value))
