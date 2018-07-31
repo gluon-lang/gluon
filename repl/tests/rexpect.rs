@@ -157,3 +157,10 @@ fn error_reports_correct_line() {
 
     repl.test("let { x } = {}", Some("let { x } = {}"));
 }
+
+#[test]
+fn import() {
+    let mut repl = REPL::new();
+
+    repl.test("let { assert } = import! std.test", None);
+}
