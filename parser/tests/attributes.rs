@@ -13,6 +13,7 @@ fn any_tokens() {
     let text = r#"
 #[test(ident "string" 42 = 'a' + )]
 let (+) x y = error ""
+in
 { }
 "#;
     parse_clear_span!(text);
@@ -26,7 +27,7 @@ fn bindings() {
 let (+) x y = error ""
 #[implicit]
 type Test = Int
-
+in
 {
     #[abc()]
     Test,

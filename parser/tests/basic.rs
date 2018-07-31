@@ -27,6 +27,7 @@ let x = 1
 in
 
 let y = 2
+in
 y
 "#;
     let e = parse_clear_span!(text);
@@ -155,6 +156,7 @@ fn tuple_type() {
 
     let expr = r#"
         let _: (Int, String, Option Int) = (1, "", None)
+in
         1"#;
     parse_new!(expr);
 }
@@ -459,6 +461,7 @@ fn comment_on_let() {
     let text = r#"
 /// The identity function
 let id x = x
+in
 id
 "#;
     let e = parse_clear_span!(text);
@@ -491,6 +494,7 @@ fn comment_on_and() {
 let id x = x
 /// The identity function
 and id2 y = y
+in
 id
 "#;
     let e = parse_clear_span!(text);
@@ -532,6 +536,7 @@ fn comment_on_type() {
     let text = r#"
 /** Test type */
 type Test = Int
+in
 id
 "#;
     let e = parse_clear_span!(text);
@@ -563,6 +568,7 @@ let x = 1
 
 /** Test type */
 type Test = Int
+in
 id
 "#;
     let e = parse_clear_span!(text);
@@ -599,6 +605,7 @@ fn merge_line_comments() {
 /// consecutive
 /// line comments.
 type Test = Int
+in
 id
 "#;
     let e = parse_clear_span!(text);
@@ -638,34 +645,11 @@ fn partial_field_access_simple() {
 }
 
 #[test]
-fn partial_field_access_in_block() {
-    let _ = ::env_logger::try_init();
-    let text = r#"
-test.
-test
-"#;
-    let e = parse(text);
-    assert!(e.is_err());
-    assert_eq!(
-        clear_span(e.unwrap_err().0.unwrap()),
-        Spanned {
-            span: Span::default(),
-            value: Expr::Block(vec![
-                Spanned {
-                    span: Span::new(BytePos::from(0), BytePos::from(0)),
-                    value: Expr::Projection(Box::new(id("test")), intern(""), Type::hole()),
-                },
-                id("test"),
-            ]),
-        }
-    );
-}
-
-#[test]
 fn function_operator_application() {
     let _ = ::env_logger::try_init();
     let text = r#"
 let x: ((->) Int Int) = x
+in
 x
 "#;
     let e = parse_clear_span!(text);
@@ -699,38 +683,6 @@ fn quote_in_identifier() {
         app(id("f'"), vec![int(1), int(2)]),
     );
     assert_eq!(e, a);
-}
-
-// Test that this is `let x = 1 in {{ a; b }}` and not `{{ (let x = 1 in a) ; b }}`
-#[test]
-fn block_open_after_let_in() {
-    let _ = ::env_logger::try_init();
-    let text = r#"
-        let x = 1
-        a
-        b
-        "#;
-    let e = parse_zero_index!(text);
-    match e.value {
-        Expr::LetBindings(..) => (),
-        _ => panic!("{:?}", e),
-    }
-}
-
-#[test]
-fn block_open_after_explicit_let_in() {
-    let _ = ::env_logger::try_init();
-    let text = r#"
-        let x = 1
-        in
-        a
-        b
-        "#;
-    let e = parse_zero_index!(text);
-    match e.value {
-        Expr::LetBindings(..) => (),
-        _ => panic!("{:?}", e),
-    }
 }
 
 #[test]
@@ -807,7 +759,7 @@ fn do_in_parens() {
     let _ = ::env_logger::try_init();
     let text = r"
         scope_state (
-            do add_args
+            do add_args in
             eval_exprs
         )
     ";
@@ -852,6 +804,7 @@ fn alias_in_record_type() {
 
     let text = r#"
         type Test = { MyInt }
+        in
         1
         "#;
     let e = parse_clear_span!(text);
