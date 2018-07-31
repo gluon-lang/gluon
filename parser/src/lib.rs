@@ -16,6 +16,10 @@ extern crate pretty;
 #[macro_use]
 extern crate quick_error;
 
+#[cfg(test)]
+#[macro_use]
+extern crate pretty_assertions;
+
 use std::cell::RefCell;
 use std::fmt;
 use std::hash::Hash;

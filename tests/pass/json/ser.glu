@@ -1,0 +1,44 @@
+let result @ { Result, ? } = import! std.result
+let ser @ { ValueSerializer, Serialize, ? } = import! std.json.ser
+let { Test, run, assert, assert_eq, test, group, ? }  = import! std.test
+let { Applicative, (*>) } = import! std.applicative
+let { map } = import! std.functor
+let { (<|) } = import! std.function
+let int = import! std.int
+let list @ { List, ? } = import! std.list
+let { ? } = import! std.array
+let { (<>) } = import! std.semigroup
+
+#[derive(Show, Eq, Serialize)]
+type Record = { x : Int }
+
+#[derive(Show, Eq, Serialize)]
+type Record2 = { x : Int, y : String }
+
+#[derive(Show, Eq, Serialize)]
+type Variant = | MyInt Int | MyString String
+
+#[derive(Show, Eq, Serialize)]
+type MyOption a = | MyNone | MySome a
+
+group "json.ser" [
+    test "derive_record_1_field" <| \_ ->
+        assert_eq (ser.to_string { x = 1 }) (Ok r#"{"x":1}"#),
+
+    test "derive_record_2_fields" <| \_ ->
+        assert_eq (ser.to_string { x = 1, y = "abc" }) (Ok r#"{"x":1,"y":"abc"}"#),
+
+    test "variant_int" <| \_ ->
+        assert_eq (ser.to_string (MyInt 123)) (Ok r#"123"#),
+
+    test "variant_string" <| \_ ->
+        assert_eq (ser.to_string (MyString "abc")) (Ok r#""abc""#),
+
+    test "option_some" <| \_ ->
+        assert_eq (ser.to_string (MySome "abc")) (Ok r#""abc""#),
+
+    test "option_none" <| \_ ->
+        let x: MyOption String = MyNone
+        assert_eq (ser.to_string x) (Ok r#"null"#),
+]
+

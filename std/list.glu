@@ -12,7 +12,7 @@ let { compare } = import! std.cmp
 
 let { map } = import! std.functor
 let { (<*>), wrap } = import! std.applicative
-let { (<|>) } = import! std.applicative
+let { (<|>) } = import! std.alternative
 
 /// A linked list type
 ///

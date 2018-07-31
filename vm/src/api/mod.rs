@@ -15,8 +15,10 @@ use vm::{self, Root, RootStr, RootedValue, Status, Thread};
 use {forget_lifetime, Error, Result, Variants};
 
 use std::any::Any;
+use std::borrow::Borrow;
 use std::cell::Ref;
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::Deref;
@@ -26,10 +28,13 @@ use futures::{Async, Future};
 
 pub use self::function::*;
 pub use self::record::Record;
+pub use thread::ActiveThread;
 pub use value::Userdata;
 
 #[cfg(feature = "serde")]
 use serde::de::{Deserialize, Deserializer};
+#[cfg(feature = "serde")]
+use serde::ser::{Serialize, SerializeState, Serializer};
 
 macro_rules! count {
     () => { 0 };
@@ -42,6 +47,8 @@ pub mod mac;
 #[cfg(feature = "serde")]
 pub mod de;
 pub mod function;
+#[cfg(feature = "serde")]
+pub mod json;
 pub mod record;
 #[cfg(feature = "serde")]
 pub mod ser;
@@ -209,6 +216,16 @@ impl<'a> Data<'a> {
             },
         }
     }
+
+    #[doc(hidden)]
+    pub fn field_names(&self) -> Vec<::interner::InternedStr> {
+        match self.0 {
+            DataInner::Tag(_) => Vec::new(),
+            DataInner::Data(data) => unsafe {
+                GcPtr::from_raw(data).field_map().keys().cloned().collect()
+            },
+        }
+    }
 }
 
 /// Marker type representing a hole
@@ -274,8 +291,8 @@ impl<T: VmType> VmType for Generic<T> {
     }
 }
 impl<'vm, T: VmType> Pushable<'vm> for Generic<T> {
-    fn push(self, _: &'vm Thread, context: &mut Context) -> Result<()> {
-        context.stack.push(self.0);
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        context.push(self.0);
         Ok(())
     }
 }
@@ -397,22 +414,24 @@ pub trait AsyncPushable<'vm> {
     ///
     /// If the value must be computed asynchronously `Async::NotReady` must be returned so that
     /// the virtual machine knows it must do more work before the value is available.
-    fn async_push(self, vm: &'vm Thread, context: &mut Context, lock: Lock) -> Result<Async<()>>;
+    fn async_push(self, context: &mut ActiveThread<'vm>, lock: Lock) -> Result<Async<()>>;
 
-    fn async_status_push(self, vm: &'vm Thread, context: &mut Context, lock: Lock) -> Status
+    fn async_status_push(self, context: &mut ActiveThread<'vm>, lock: Lock) -> Status
     where
         Self: Sized,
     {
-        match self.async_push(vm, context, lock) {
+        match self.async_push(context, lock) {
             Ok(Async::Ready(())) => Status::Ok,
             Ok(Async::NotReady) => Status::Yield,
             Err(err) => {
                 let msg = unsafe {
                     GcStr::from_utf8_unchecked(
-                        context.alloc_ignore_limit(format!("{}", err).as_bytes()),
+                        context
+                            .context()
+                            .alloc_ignore_limit(format!("{}", err).as_bytes()),
                     )
                 };
-                context.stack.push(ValueRepr::String(msg));
+                context.push(ValueRepr::String(msg));
                 Status::Error
             }
         }
@@ -423,9 +442,9 @@ impl<'vm, T> AsyncPushable<'vm> for T
 where
     T: Pushable<'vm>,
 {
-    fn async_push(self, vm: &'vm Thread, context: &mut Context, lock: Lock) -> Result<Async<()>> {
-        context.stack.release_lock(lock);
-        self.push(vm, context).map(Async::Ready)
+    fn async_push(self, context: &mut ActiveThread<'vm>, lock: Lock) -> Result<Async<()>> {
+        context.stack().release_lock(lock);
+        self.push(context).map(Async::Ready)
     }
 }
 
@@ -434,21 +453,23 @@ pub trait Pushable<'vm>: AsyncPushable<'vm> {
     /// Pushes `self` to `stack`. If the call is successful a single element should have been added
     /// to the stack and `Ok(())` should be returned. If the call is unsuccessful `Status:Error`
     /// should be returned and the stack should be left intact
-    fn push(self, vm: &'vm Thread, context: &mut Context) -> Result<()>;
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()>;
 
-    fn status_push(self, vm: &'vm Thread, context: &mut Context) -> Status
+    fn status_push(self, context: &mut ActiveThread<'vm>) -> Status
     where
         Self: Sized,
     {
-        match self.push(vm, context) {
+        match self.push(context) {
             Ok(()) => Status::Ok,
             Err(err) => {
                 let msg = unsafe {
                     GcStr::from_utf8_unchecked(
-                        context.alloc_ignore_limit(format!("{}", err).as_bytes()),
+                        context
+                            .context()
+                            .alloc_ignore_limit(format!("{}", err).as_bytes()),
                     )
                 };
-                context.stack.push(ValueRepr::String(msg));
+                context.push(ValueRepr::String(msg));
                 Status::Error
             }
         }
@@ -458,9 +479,9 @@ pub trait Pushable<'vm>: AsyncPushable<'vm> {
     where
         Self: Sized,
     {
-        let mut context = vm.context();
-        self.push(vm, &mut context)?;
-        Ok(context.stack.pop())
+        let mut context = vm.current_context();
+        self.push(&mut context)?;
+        Ok(context.pop())
     }
 
     fn marshal<T>(self, vm: &'vm Thread) -> Result<RootedValue<T>>
@@ -468,9 +489,9 @@ pub trait Pushable<'vm>: AsyncPushable<'vm> {
         Self: Sized,
         T: VmRoot<'vm>,
     {
-        let mut context = vm.context();
-        self.push(vm, &mut context)?;
-        Ok(vm.root_value(context.stack.pop()))
+        let mut context = vm.current_context();
+        self.push(&mut context)?;
+        Ok(vm.root_value(context.pop()))
     }
 }
 
@@ -489,16 +510,26 @@ where
     T: Pushable<'vm>,
     U: for<'value> Getable<'vm, 'value>,
 {
-    let mut context = thread.context();
-    t.push(thread, &mut context)?;
+    let mut context = thread.current_context();
+    convert_with_active_thread(&mut context, t)
+}
+
+fn convert_with_active_thread<'vm, T, U>(context: &mut ActiveThread<'vm>, t: T) -> Result<U>
+where
+    T: Pushable<'vm>,
+    U: for<'value> Getable<'vm, 'value>,
+{
+    t.push(context)?;
     unsafe {
-        let value = context.stack.pop();
-        Ok(U::from_value(thread, Variants::new(&value)))
+        let value = context.pop();
+        Ok(U::from_value(context.thread(), Variants::new(&value)))
     }
 }
 
 impl<'vm, T: vm::Userdata> Pushable<'vm> for T {
-    fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        let thread = context.thread();
+        let context = context.context();
         let data: Box<vm::Userdata> = Box::new(self);
         let userdata = context.alloc_with(thread, Move(data))?;
         context.stack.push(ValueRepr::Userdata(userdata));
@@ -522,6 +553,51 @@ impl<'vm, T: ?Sized + VmType> VmType for PhantomData<T> {
     }
     fn extra_args() -> VmIndex {
         T::extra_args()
+    }
+}
+
+/// Wrapper which extracts a `Userdata` value from gluon
+#[derive(Debug)]
+pub struct UserdataValue<T: ?Sized>(pub T);
+
+impl<T> VmType for UserdataValue<T>
+where
+    T: ?Sized + VmType,
+{
+    type Type = T::Type;
+
+    fn make_type(vm: &Thread) -> ArcType {
+        T::make_type(vm)
+    }
+
+    fn make_forall_type(vm: &Thread) -> ArcType {
+        T::make_forall_type(vm)
+    }
+
+    fn extra_args() -> VmIndex {
+        T::extra_args()
+    }
+}
+
+impl<'vm, 'value, T> Getable<'vm, 'value> for UserdataValue<T>
+where
+    T: vm::Userdata + Clone,
+{
+    unsafe fn from_value_unsafe(vm: &'vm Thread, value: Variants<'value>) -> Self {
+        UserdataValue(<&'vm T as Getable<'vm, 'value>>::from_value_unsafe(vm, value).clone())
+    }
+    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
+        // Cloning ensures that the data is not bound to the 'vm lifetime
+        unsafe { Self::from_value_unsafe(vm, value) }
+    }
+}
+
+impl<'vm, T> Pushable<'vm> for UserdataValue<T>
+where
+    T: vm::Userdata,
+{
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        self.0.push(context)
     }
 }
 
@@ -585,8 +661,8 @@ impl<'vm, T> Pushable<'vm> for WithVM<'vm, T>
 where
     T: Pushable<'vm>,
 {
-    fn push(self, vm: &'vm Thread, context: &mut Context) -> Result<()> {
-        self.value.push(vm, context)
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        self.value.push(context)
     }
 }
 
@@ -609,8 +685,8 @@ impl VmType for () {
     type Type = Self;
 }
 impl<'vm> Pushable<'vm> for () {
-    fn push(self, _: &'vm Thread, context: &mut Context) -> Result<()> {
-        context.stack.push(ValueRepr::Int(0));
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        context.push(ValueRepr::Int(0));
         Ok(())
     }
 }
@@ -624,8 +700,8 @@ impl VmType for u8 {
     type Type = Self;
 }
 impl<'vm> Pushable<'vm> for u8 {
-    fn push(self, _: &'vm Thread, context: &mut Context) -> Result<()> {
-        context.stack.push(ValueRepr::Byte(self));
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        context.push(ValueRepr::Byte(self));
         Ok(())
     }
 }
@@ -645,8 +721,8 @@ macro_rules! int_impls {
             type Type = VmInt;
         }
         impl<'vm> Pushable<'vm> for $id {
-            fn push(self, _: &'vm Thread, context: &mut Context) -> Result<()> {
-                context.stack.push(ValueRepr::Int(self as VmInt));
+            fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+                context.push(ValueRepr::Int(self as VmInt));
                 Ok(())
             }
         }
@@ -668,8 +744,8 @@ impl VmType for f64 {
     type Type = Self;
 }
 impl<'vm> Pushable<'vm> for f64 {
-    fn push(self, _: &'vm Thread, context: &mut Context) -> Result<()> {
-        context.stack.push(ValueRepr::Float(self));
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        context.push(ValueRepr::Float(self));
         Ok(())
     }
 }
@@ -693,8 +769,8 @@ impl VmType for bool {
     }
 }
 impl<'vm> Pushable<'vm> for bool {
-    fn push(self, _: &'vm Thread, context: &mut Context) -> Result<()> {
-        context.stack.push(ValueRepr::Tag(if self { 1 } else { 0 }));
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        context.push(ValueRepr::Tag(if self { 1 } else { 0 }));
         Ok(())
     }
 }
@@ -717,13 +793,13 @@ impl VmType for Ordering {
     }
 }
 impl<'vm> Pushable<'vm> for Ordering {
-    fn push(self, _vm: &'vm Thread, context: &mut Context) -> Result<()> {
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         let tag = match self {
             Ordering::Less => 0,
             Ordering::Equal => 1,
             Ordering::Greater => 2,
         };
-        context.stack.push(ValueRepr::Tag(tag));
+        context.push(ValueRepr::Tag(tag));
         Ok(())
     }
 }
@@ -749,14 +825,18 @@ impl VmType for String {
     type Type = String;
 }
 impl<'vm, 's> Pushable<'vm> for &'s String {
-    fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
-        <&str as Pushable>::push(self, thread, context)
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        <&str as Pushable>::push(self, context)
     }
 }
+
 impl<'vm, 's> Pushable<'vm> for &'s str {
-    fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
-        let s = unsafe { GcStr::from_utf8_unchecked(context.alloc_with(thread, self.as_bytes())?) };
-        context.stack.push(ValueRepr::String(s));
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        let thread = context.thread();
+        let s = unsafe {
+            GcStr::from_utf8_unchecked(context.context().alloc_with(thread, self.as_bytes())?)
+        };
+        context.push(ValueRepr::String(s));
         Ok(())
     }
 }
@@ -769,8 +849,8 @@ impl<'vm, 'value> Getable<'vm, 'value> for String {
     }
 }
 impl<'vm> Pushable<'vm> for String {
-    fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
-        <&str as Pushable>::push(&self, thread, context)
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        <&str as Pushable>::push(&self, context)
     }
 }
 
@@ -778,8 +858,8 @@ impl VmType for char {
     type Type = Self;
 }
 impl<'vm> Pushable<'vm> for char {
-    fn push(self, _: &'vm Thread, context: &mut Context) -> Result<()> {
-        context.stack.push(ValueRepr::Int(self as VmInt));
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        context.push(ValueRepr::Int(self as VmInt));
         Ok(())
     }
 }
@@ -810,8 +890,8 @@ where
     for<'t> &'t T: Pushable<'vm>,
     T: VmType,
 {
-    fn push(self, vm: &'vm Thread, context: &mut Context) -> Result<()> {
-        <&T as Pushable>::push(&*self, vm, context)
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        <&T as Pushable>::push(&*self, context)
     }
 }
 
@@ -831,9 +911,10 @@ where
     T: Traverseable + Pushable<'vm> + 's,
     &'s [T]: DataDef<Value = ValueArray>,
 {
-    fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
-        let result = context.alloc_with(thread, self)?;
-        context.stack.push(ValueRepr::Array(result));
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        let thread = context.thread();
+        let result = context.context().alloc_with(thread, self)?;
+        context.push(ValueRepr::Array(result));
         Ok(())
     }
 }
@@ -869,26 +950,27 @@ impl<'vm, T> Pushable<'vm> for Vec<T>
 where
     T: Pushable<'vm>,
 {
-    fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         let len = self.len() as VmIndex;
         for v in self {
-            if v.push(thread, context) == Err(Error::Message("Push error".into())) {
+            if v.push(context) == Err(Error::Message("Push error".into())) {
                 return Err(Error::Message("Push error".into()));
             }
         }
+        let thread = context.thread();
         let result = {
             let Context {
                 ref mut gc,
                 ref stack,
                 ..
-            } = *context;
+            } = *context.context();
             let values = &stack[stack.len() - len..];
             thread::alloc(gc, thread, stack, ArrayDef(values))?
         };
         for _ in 0..len {
-            context.stack.pop();
+            context.pop();
         }
-        context.stack.push(ValueRepr::Array(result));
+        context.push(ValueRepr::Array(result));
         Ok(())
     }
 }
@@ -921,6 +1003,85 @@ impl<'vm, 'value, T: vm::Userdata> Getable<'vm, 'value> for *const T {
     }
 }
 
+impl<K, V> VmType for BTreeMap<K, V>
+where
+    K: VmType,
+    K::Type: Sized,
+    V: VmType,
+    V::Type: Sized,
+{
+    type Type = BTreeMap<K::Type, V::Type>;
+
+    fn make_type(vm: &Thread) -> ArcType {
+        let map_alias = vm
+            .find_type_info("std.map.Map")
+            .unwrap()
+            .clone()
+            .into_type();
+        Type::app(map_alias, collect![K::make_type(vm), V::make_type(vm)])
+    }
+}
+
+impl<'vm, K, V> Pushable<'vm> for BTreeMap<K, V>
+where
+    K: Borrow<str> + VmType,
+    K::Type: Sized,
+    V: for<'vm2> Pushable<'vm2> + VmType,
+    V::Type: Sized,
+{
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        let thread = context.thread();
+        type Map<V2> = OpaqueValue<RootedThread, BTreeMap<String, V2>>;
+        let mut map: Map<V> = thread.get_global("std.map.empty")?;
+        let mut insert: OwnedFunction<fn(String, V, Map<V>) -> Map<V>> =
+            thread.get_global("std.json.de.insert_string")?;
+
+        context.drop();
+        for (key, value) in self {
+            map = insert.call(key.borrow().to_string(), value, map)?;
+        }
+        context.restore();
+
+        map.push(context)
+    }
+}
+
+impl<'vm, 'value, K, V> Getable<'vm, 'value> for BTreeMap<K, V>
+where
+    K: Getable<'vm, 'value> + Ord,
+    V: Getable<'vm, 'value>,
+{
+    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
+        fn build_map<'vm2, 'value2, K2, V2>(
+            map: &mut BTreeMap<K2, V2>,
+            vm: &'vm2 Thread,
+            value: Variants<'value2>,
+        ) where
+            K2: Getable<'vm2, 'value2> + Ord,
+            V2: Getable<'vm2, 'value2>,
+        {
+            match value.as_ref() {
+                ValueRef::Data(data) => if data.tag() == 1 {
+                    let key = K2::from_value(vm, data.get_variant(0).expect("key"));
+                    let value = V2::from_value(vm, data.get_variant(1).expect("value"));
+                    map.insert(key, value);
+
+                    let left = data.get_variant(2).expect("left");
+                    build_map(map, vm, left);
+
+                    let right = data.get_variant(3).expect("right");
+                    build_map(map, vm, right);
+                },
+                _ => ice!("ValueRef is not a Map"),
+            }
+        }
+
+        let mut map = BTreeMap::new();
+        build_map(&mut map, vm, value);
+        map
+    }
+}
+
 impl<T: VmType> VmType for Option<T>
 where
     T::Type: Sized,
@@ -935,18 +1096,20 @@ where
         Type::app(option_alias, collect![T::make_type(vm)])
     }
 }
+
 impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T> {
-    fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         match self {
             Some(value) => {
-                let len = context.stack.len();
-                value.push(thread, context)?;
-                let arg = [context.stack.pop()];
-                let value = context.new_data(thread, 1, &arg)?;
-                assert!(context.stack.len() == len);
-                context.stack.push(value);
+                let len = context.stack().len();
+                value.push(context)?;
+                let arg = [context.pop()];
+                let thread = context.thread();
+                let value = context.context().new_data(thread, 1, &arg)?;
+                assert!(context.stack().len() == len);
+                context.push(value);
             }
-            None => context.stack.push(ValueRepr::Tag(0)),
+            None => context.push(ValueRepr::Tag(0)),
         }
         Ok(())
     }
@@ -981,26 +1144,27 @@ where
 }
 
 impl<'vm, T: Pushable<'vm>, E: Pushable<'vm>> Pushable<'vm> for StdResult<T, E> {
-    fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         let tag = match self {
             Ok(ok) => {
-                ok.push(thread, context)?;
+                ok.push(context)?;
                 1
             }
             Err(err) => {
-                err.push(thread, context)?;
+                err.push(context)?;
                 0
             }
         };
-        let value = context.stack.pop();
-        let data = context.alloc_with(
+        let value = context.pop();
+        let thread = context.thread();
+        let data = context.context().alloc_with(
             thread,
             Def {
                 tag: tag,
                 elems: &[value],
             },
         )?;
-        context.stack.push(ValueRepr::Data(data));
+        context.push(ValueRepr::Data(data));
         Ok(())
     }
 }
@@ -1054,9 +1218,9 @@ where
     F: Future<Error = Error> + Send + 'static,
     F::Item: Pushable<'vm>,
 {
-    fn async_push(self, _: &'vm Thread, context: &mut Context, lock: Lock) -> Result<Async<()>> {
+    fn async_push(self, context: &mut ActiveThread<'vm>, lock: Lock) -> Result<Async<()>> {
         unsafe {
-            context.return_future(self.0, lock);
+            context.context().return_future(self.0, lock);
         }
         Ok(Async::Ready(()))
     }
@@ -1083,21 +1247,16 @@ where
     F: Future<Error = Error> + Send + 'static,
     F::Item: Pushable<'vm>,
 {
-    fn async_push(
-        self,
-        thread: &'vm Thread,
-        context: &mut Context,
-        lock: Lock,
-    ) -> Result<Async<()>> {
+    fn async_push(self, context: &mut ActiveThread<'vm>, lock: Lock) -> Result<Async<()>> {
         match self {
             FutureValue::Value(result) => {
-                context.stack.release_lock(lock);
+                context.stack().release_lock(lock);
                 let value = result?;
-                value.push(thread, context).map(Async::Ready)
+                value.push(context).map(Async::Ready)
             }
             FutureValue::Future(future) => {
                 unsafe {
-                    context.return_future(future, lock);
+                    context.context().return_future(future, lock);
                 }
                 Ok(Async::Ready(()))
             }
@@ -1127,9 +1286,9 @@ impl<T: VmType, E> VmType for RuntimeResult<T, E> {
     }
 }
 impl<'vm, T: Pushable<'vm>, E: fmt::Display> Pushable<'vm> for RuntimeResult<T, E> {
-    fn push(self, vm: &'vm Thread, context: &mut Context) -> Result<()> {
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         match self {
-            RuntimeResult::Return(value) => value.push(vm, context),
+            RuntimeResult::Return(value) => value.push(context),
             RuntimeResult::Panic(err) => Err(Error::Message(format!("{}", err))),
         }
     }
@@ -1158,30 +1317,166 @@ impl<'vm, 'value, T: Getable<'vm, 'value>> Getable<'vm, 'value> for IO<T> {
 }
 
 impl<'vm, T: Pushable<'vm>> Pushable<'vm> for IO<T> {
-    fn push(self, vm: &'vm Thread, context: &mut Context) -> Result<()> {
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         match self {
-            IO::Value(value) => value.push(vm, context),
+            IO::Value(value) => value.push(context),
             IO::Exception(exc) => Err(Error::Message(exc)),
         }
     }
 }
 
-/// Type which represents an array in gluon
-/// Type implementing both `Pushable` and `Getable` of values of `V`.
-/// The actual value, `V` is not accessible directly but is only intended to be transferred between
-/// two different threads.
+impl<'vm, T> Pushable<'vm> for RootedValue<T>
+where
+    T: Deref<Target = Thread>,
+{
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        let value = {
+            let thread = context.thread();
+            let full_clone = !thread.can_share_values_with(context.gc(), self.vm());
+            let mut cloner = Cloner::new(thread, context.gc());
+            if full_clone {
+                cloner.force_full_clone();
+            }
+            cloner.deep_clone(&self.get_value())?
+        };
+        context.push(value);
+        Ok(())
+    }
+}
+
+impl<'vm, 'value, T> Getable<'vm, 'value> for RootedValue<T>
+where
+    T: Deref<Target = Thread> + VmRoot<'vm>,
+{
+    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
+        vm.root_value(value.get_value())
+    }
+}
+
+/// Type implementing both `Pushable` and `Getable` of values of `V` regardless of wheter `V`
+/// implements the traits.
+/// The actual value, `V` is only accessible directly either by `Deref` if it is `Userdata` or a
+/// string or by the `to_value` method if it implements `Getable`.
+///
+/// When the value is not accessible the value can only be transferred back into gluon again
+/// without inspecting the value itself two different threads.
 pub struct OpaqueValue<T, V>(RootedValue<T>, PhantomData<V>)
 where
-    T: Deref<Target = Thread>;
+    T: Deref<Target = Thread>,
+    V: ?Sized;
+
+impl<T, V> PartialEq for OpaqueValue<T, V>
+where
+    T: Deref<Target = Thread>,
+    Self: Borrow<V>,
+    V: ?Sized + PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.borrow() == other.borrow()
+    }
+}
+impl<T, V> Eq for OpaqueValue<T, V>
+where
+    T: Deref<Target = Thread>,
+    Self: Borrow<V>,
+    V: ?Sized + Eq,
+{}
+
+impl<T, V> PartialOrd for OpaqueValue<T, V>
+where
+    T: Deref<Target = Thread>,
+    Self: Borrow<V>,
+    V: ?Sized + PartialOrd,
+{
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.borrow().partial_cmp(&other.borrow())
+    }
+}
+
+impl<T, V> Ord for OpaqueValue<T, V>
+where
+    T: Deref<Target = Thread>,
+    Self: Borrow<V>,
+    V: ?Sized + Ord,
+{
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.borrow().cmp(&other.borrow())
+    }
+}
+
+impl<T, V> Deref for OpaqueValue<T, V>
+where
+    T: Deref<Target = Thread>,
+    V: vm::Userdata,
+{
+    type Target = V;
+
+    fn deref(&self) -> &V {
+        // The value is rooted by self
+        unsafe { <&V>::from_value_unsafe(self.vm(), self.get_variant()) }
+    }
+}
+
+impl<T> Deref for OpaqueValue<T, str>
+where
+    T: Deref<Target = Thread>,
+{
+    type Target = str;
+
+    fn deref(&self) -> &str {
+        // The value is rooted by self
+        unsafe { <&str>::from_value_unsafe(self.vm(), self.get_variant()) }
+    }
+}
+
+impl<T, V> Borrow<V> for OpaqueValue<T, V>
+where
+    T: Deref<Target = Thread>,
+    V: ?Sized,
+    Self: Deref<Target = V>,
+{
+    fn borrow(&self) -> &V {
+        self
+    }
+}
 
 #[cfg(feature = "serde")]
-impl<'de, V> Deserialize<'de> for OpaqueValue<RootedThread, V> {
+impl<'de, V> Deserialize<'de> for OpaqueValue<RootedThread, V>
+where
+    V: ?Sized,
+{
     fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         let value = self::de::deserialize_raw_value(deserializer)?;
         Ok(Self::from_value(value))
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<T> Serialize for OpaqueValue<T, str>
+where
+    T: Deref<Target = Thread>,
+{
+    fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        (**self).serialize(serializer)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<T> SerializeState<Thread> for OpaqueValue<T, str>
+where
+    T: Deref<Target = Thread>,
+{
+    fn serialize_state<S>(&self, serializer: S, _thread: &Thread) -> StdResult<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        (**self).serialize(serializer)
     }
 }
 
@@ -1206,6 +1501,7 @@ where
 impl<T, V> OpaqueValue<T, V>
 where
     T: Deref<Target = Thread>,
+    V: ?Sized,
 {
     pub fn from_value(value: RootedValue<T>) -> Self {
         OpaqueValue(value, PhantomData)
@@ -1213,6 +1509,14 @@ where
 
     pub fn vm(&self) -> &Thread {
         self.0.vm()
+    }
+
+    /// Converts the value into its Rust representation
+    pub fn to_value<'vm>(&'vm self) -> V
+    where
+        V: Getable<'vm, 'vm>,
+    {
+        V::from_value(self.vm(), self.get_variant())
     }
 
     pub fn into_inner(self) -> RootedValue<T> {
@@ -1236,7 +1540,7 @@ where
 impl<T, V> VmType for OpaqueValue<T, V>
 where
     T: Deref<Target = Thread>,
-    V: VmType,
+    V: ?Sized + VmType,
     V::Type: Sized,
 {
     type Type = V::Type;
@@ -1252,28 +1556,20 @@ where
 impl<'vm, T, V> Pushable<'vm> for OpaqueValue<T, V>
 where
     T: Deref<Target = Thread>,
-    V: VmType,
+    V: ?Sized + VmType,
     V::Type: Sized,
 {
-    fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
-        let full_clone = !thread.can_share_values_with(&mut context.gc, self.0.vm());
-        let mut cloner = Cloner::new(thread, &mut context.gc);
-        if full_clone {
-            cloner.force_full_clone();
-        }
-        context.stack.push(cloner.deep_clone(&self.0.get_value())?);
-        Ok(())
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        self.0.push(context)
     }
 }
 
-impl<'vm, 'value, V> Getable<'vm, 'value> for OpaqueValue<&'vm Thread, V> {
-    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> OpaqueValue<&'vm Thread, V> {
-        OpaqueValue::from_value(vm.root_value(value.get_value()))
-    }
-}
-
-impl<'vm, 'value, V> Getable<'vm, 'value> for OpaqueValue<RootedThread, V> {
-    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> OpaqueValue<RootedThread, V> {
+impl<'vm, 'value, T, V> Getable<'vm, 'value> for OpaqueValue<T, V>
+where
+    V: ?Sized,
+    T: VmRoot<'vm>,
+{
+    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
         OpaqueValue::from_value(vm.root_value(value.get_value()))
     }
 }
@@ -1353,8 +1649,8 @@ impl<'vm, T: VmType> Pushable<'vm> for Array<'vm, T>
 where
     T::Type: Sized,
 {
-    fn push(self, _: &'vm Thread, context: &mut Context) -> Result<()> {
-        context.stack.push(self.0.get_variant());
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        context.push(self.0.get_variant());
         Ok(())
     }
 }
@@ -1417,8 +1713,8 @@ where
     T: AsRef<R>,
     for<'a> &'a R: Pushable<'vm>,
 {
-    fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
-        self.0.as_ref().push(thread, context)
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        self.0.as_ref().push(context)
     }
 }
 
@@ -1460,12 +1756,14 @@ macro_rules! define_tuple {
         impl<'vm, $($id),+> Pushable<'vm> for ($($id),+)
         where $($id: Pushable<'vm>),+
         {
-            fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
+            fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
                 let ( $($id),+ ) = self;
                 $(
-                    $id.push(thread, context)?;
+                    $id.push(context)?;
                 )+
                 let len = count!($($id),+);
+                let thread = context.thread();
+                let context = context.context();
                 let offset = context.stack.len() - len;
                 let value = thread::alloc(&mut context.gc,
                                           thread,
@@ -1477,7 +1775,7 @@ macro_rules! define_tuple {
                 for _ in 0..len {
                     context.stack.pop();
                 }
-                context.stack.push(ValueRepr::Data(value)) ;
+                context.stack.push(ValueRepr::Data(value));
                 Ok(())
             }
         }

@@ -1,0 +1,13 @@
+let { Map, ? } = import! std.map
+let { ? } = import! std.array
+
+type Value =
+    | Null
+    | Bool Bool
+    | Int Int
+    | Float Float
+    | String String
+    | Array (Array Value)
+    | Object (Map String Value)
+
+{ Value }

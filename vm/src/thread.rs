@@ -378,8 +378,8 @@ impl VmType for RootedThread {
 }
 
 impl<'vm> Pushable<'vm> for RootedThread {
-    fn push(self, _vm: &'vm Thread, context: &mut Context) -> Result<()> {
-        context.stack.push(ValueRepr::Thread(self.0));
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        context.push(ValueRepr::Thread(self.0));
         Ok(())
     }
 }
@@ -508,7 +508,7 @@ impl Thread {
         let vm = Thread {
             global_state: self.global_state.clone(),
             parent: Some(self.root_thread()),
-            context: Mutex::new(Context::new(self.current_context().gc.new_child_gc())),
+            context: Mutex::new(Context::new(self.owned_context().gc.new_child_gc())),
             roots: RwLock::new(Vec::new()),
             rooted_values: RwLock::new(Vec::new()),
             child_threads: RwLock::new(Vec::new()),
@@ -516,7 +516,7 @@ impl Thread {
         };
         // Enter the top level scope
         {
-            let mut context = vm.current_context();
+            let mut context = vm.owned_context();
             StackFrame::frame(&mut context.stack, 0, State::Unknown);
         }
         let ptr = self.context().gc.alloc(Move(vm))?;
@@ -577,17 +577,16 @@ impl Thread {
     where
         T: Pushable<'vm> + VmType,
     {
-        let value = {
-            let mut context = self.context();
-            value.push(self, &mut context)?;
-            context.stack.pop()
-        };
-        self.set_global(
-            Symbol::from(format!("@{}", name)),
-            T::make_forall_type(self),
-            Metadata::default(),
-            value,
-        )
+        // Value gets rooted by set_global
+        unsafe {
+            let value = value.marshal_unrooted(self)?;
+            self.set_global(
+                Symbol::from(format!("@{}", name)),
+                T::make_forall_type(self),
+                Metadata::default(),
+                value,
+            )
+        }
     }
 
     /// Retrieves the global called `name`.
@@ -680,7 +679,7 @@ impl Thread {
 
     /// Runs a garbage collection.
     pub fn collect(&self) {
-        let mut context = self.current_context();
+        let mut context = self.owned_context();
         self.with_roots(&mut context, |gc, roots| unsafe {
             gc.collect(roots);
         })
@@ -692,16 +691,16 @@ impl Thread {
         T: Pushable<'vm>,
     {
         let mut context = self.current_context();
-        v.push(self, &mut context)
+        v.push(&mut context)
     }
 
     /// Removes the top value from the stack
     pub fn pop(&self) {
-        self.current_context().stack.pop();
+        self.owned_context().stack.pop();
     }
 
     pub fn set_memory_limit(&self, memory_limit: usize) {
-        self.current_context().gc.set_memory_limit(memory_limit)
+        self.owned_context().gc.set_memory_limit(memory_limit)
     }
 
     pub fn interrupt(&self) {
@@ -717,7 +716,14 @@ impl Thread {
         &self.global_state
     }
 
-    fn current_context(&self) -> OwnedContext {
+    pub fn current_context(&self) -> ActiveThread {
+        ActiveThread {
+            thread: self,
+            context: Some(self.context().context),
+        }
+    }
+
+    fn owned_context(&self) -> OwnedContext {
         self.context()
     }
 
@@ -879,7 +885,7 @@ impl ThreadInternal for Thread {
     }
 
     fn call_thunk(&self, closure: GcPtr<ClosureData>) -> FutureValue<Execute<&Thread>> {
-        let mut context = self.current_context();
+        let mut context = self.owned_context();
         context.stack.push(Closure(closure));
         context.borrow_mut().enter_scope(0, State::Closure(closure));
         match try_future!(context.execute(false)) {
@@ -927,7 +933,7 @@ impl ThreadInternal for Thread {
     }
 
     fn resume(&self) -> Result<Async<OwnedContext>> {
-        let mut context = self.current_context();
+        let mut context = self.owned_context();
         if context.stack.get_frames().len() == 1 {
             // Only the top level frame left means that the thread has finished
             return Err(Error::Dead);
@@ -949,7 +955,7 @@ impl ThreadInternal for Thread {
     }
 
     fn deep_clone_value(&self, owner: &Thread, value: Value) -> Result<Value> {
-        let mut context = self.current_context();
+        let mut context = self.owned_context();
         let full_clone = !self.can_share_values_with(&mut context.gc, owner);
         let mut cloner = ::value::Cloner::new(self, &mut context.gc);
         if full_clone {
@@ -1222,8 +1228,6 @@ impl Context {
         F: Future<Error = Error> + Send + 'static,
         F::Item: Pushable<'vm>,
     {
-        use std::mem::transmute;
-
         let lock = if self.poll_fns.is_empty() {
             self.stack.release_lock(lock);
             None
@@ -1237,8 +1241,12 @@ impl Context {
                 let value = try_ready!(future.poll());
 
                 let mut context = vm.current_context();
-                let vm = transmute::<&Thread, &'vm Thread>(vm);
-                value.push(vm, &mut context).map(|()| Async::Ready(context))
+                let result = {
+                    let context =
+                        mem::transmute::<&mut ActiveThread, &mut ActiveThread<'vm>>(&mut context);
+                    value.push(context)
+                };
+                result.map(|()| Async::Ready(context.into_owned()))
             }),
         ));
     }
@@ -1435,7 +1443,7 @@ impl<'b> OwnedContext<'b> {
                 return Ok(Async::NotReady);
             }
 
-            self = thread.current_context();
+            self = thread.owned_context();
 
             if status == Status::Error {
                 return match self.stack.pop().get_repr() {
@@ -1477,7 +1485,7 @@ impl<'b> OwnedContext<'b> {
                     return Ok(Async::Ready(self));
                 }
                 Async::NotReady => {
-                    self = thread.current_context();
+                    self = thread.owned_context();
                     self.stack.get_frames_mut()[frame_offset].instruction_index = POLL_CALL;
                     // Restore `poll_fn` so it can be polled again
                     self.poll_fns.push((lock, poll_fn));
@@ -2102,6 +2110,60 @@ fn debug_instruction(stack: &StackFrame, index: usize, instr: Instruction) {
             _ => None,
         }
     );
+}
+
+pub struct ActiveThread<'vm> {
+    thread: &'vm Thread,
+    context: Option<MutexGuard<'vm, Context>>,
+}
+
+impl<'vm> ActiveThread<'vm> {
+    pub fn drop(&mut self) {
+        self.context = None;
+    }
+
+    pub fn restore(&mut self) {
+        *self = self.thread.current_context();
+    }
+
+    pub fn thread(&self) -> &'vm Thread {
+        self.thread
+    }
+
+    pub(crate) fn push<'a, T>(&mut self, v: T)
+    where
+        T: ::stack::StackPrimitive,
+    {
+        self.context.as_mut().unwrap().stack.push(v);
+    }
+
+    pub(crate) fn into_owned(self) -> OwnedContext<'vm> {
+        OwnedContext {
+            thread: self.thread,
+            context: self.context.expect("context"),
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn pop<'a>(&mut self) -> Value {
+        self.context.as_mut().unwrap().stack.pop()
+    }
+
+    // For gluon_codegen
+    #[doc(hidden)]
+    pub fn context(&mut self) -> &mut Context {
+        self.context.as_mut().unwrap()
+    }
+
+    // For gluon_codegen
+    #[doc(hidden)]
+    pub fn stack(&mut self) -> &mut Stack {
+        &mut self.context.as_mut().unwrap().stack
+    }
+
+    pub(crate) fn gc(&mut self) -> &mut Gc {
+        &mut self.context.as_mut().unwrap().gc
+    }
 }
 
 #[cfg(test)]

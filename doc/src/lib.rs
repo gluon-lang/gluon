@@ -21,6 +21,7 @@ extern crate log;
 
 extern crate gluon;
 
+use std::collections::BTreeMap;
 use std::fs::{create_dir_all, File};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -46,14 +47,14 @@ use gluon::{Compiler, Thread};
 pub type Error = failure::Error;
 pub type Result<T> = ::std::result::Result<T, Error>;
 
-#[derive(Serialize, PartialEq, Debug)]
+#[derive(Serialize, PartialEq, Debug, Default)]
 pub struct Module {
     pub name: String,
     pub comment: String,
     pub record: Record,
 }
 
-#[derive(Serialize, PartialEq, Debug)]
+#[derive(Serialize, PartialEq, Debug, Default)]
 pub struct Record {
     pub types: Vec<Field>,
     pub values: Vec<Field>,
@@ -138,10 +139,19 @@ fn print_type(current_module: &str, typ: &ArcType) -> String {
     renderer.finish()
 }
 
+fn hidden(meta: &Metadata, field: &str) -> bool {
+    meta.module.get(field).map_or(false, |meta| {
+        meta.attributes().any(|attr| {
+            attr.name == "doc" && attr.arguments.as_ref().map_or(false, |arg| arg == "hidden")
+        })
+    })
+}
+
 pub fn record(current_module: &str, typ: &ArcType, meta: &Metadata) -> Record {
     Record {
         types: typ
             .type_field_iter()
+            .filter(|field| !hidden(meta, field.name.as_ref()))
             .map(|field| Field {
                 name: field.name.definition_name().to_string(),
                 args: field
@@ -165,6 +175,7 @@ pub fn record(current_module: &str, typ: &ArcType, meta: &Metadata) -> Record {
 
         values: typ
             .row_iter()
+            .filter(|field| !hidden(meta, field.name.as_ref()))
             .map(|field| {
                 let meta_opt = meta.module.get(AsRef::<str>::as_ref(&field.name));
                 Field {
@@ -221,16 +232,17 @@ fn symbol_link(index: bool, current_module: &str, param: &str) -> String {
     )
 }
 
-fn module_link(index: bool, current_module: &str, param: &str) -> String {
+fn module_link(index: bool, directory_module: bool, current_module: &str, param: &str) -> String {
     let skipped = if index { 0 } else { 1 };
     format!(
-        "{}{}.html",
+        "{}{}{}.html",
         current_module
             .split('.')
             .skip(skipped)
             .map(|_| "../")
             .format(""),
-        param.replace(".", "/")
+        param.replace(".", "/"),
+        if directory_module { "/index" } else { "" }
     )
 }
 
@@ -251,7 +263,13 @@ fn handlebars() -> Result<Handlebars> {
 
         let param = String::deserialize(h.param(0).unwrap().value())?;
         let index = rc.get_root_template_name().map(|s| &s[..]) == Some(INDEX_TEMPLATE);
-        out.write(&module_link(index, current_module, &param))?;
+        let directory_module = h.param(1).is_some();
+        out.write(&module_link(
+            index,
+            directory_module,
+            current_module,
+            &param,
+        ))?;
         Ok(())
     }
     reg.register_helper("module_link", Box::new(module_link_helper));
@@ -259,10 +277,18 @@ fn handlebars() -> Result<Handlebars> {
     fn breadcrumbs(
         h: &Helper,
         _: &Handlebars,
-        _: &Context,
-        _: &mut RenderContext,
+        context: &Context,
+        rc: &mut RenderContext,
         out: &mut Output,
     ) -> ::std::result::Result<(), RenderError> {
+        let current_module_level = &context.data()["name"]
+            .as_str()
+            .expect("name")
+            .split('.')
+            .count();
+        let index = rc.get_root_template_name().map(|s| &s[..]) == Some(INDEX_TEMPLATE);
+        let index_offset = if index { 1 } else { 2 };
+
         let param = String::deserialize(h.param(0).unwrap().value())?;
         let parts: Vec<_> = param.split(".").collect();
         for (i, part) in parts.iter().enumerate() {
@@ -272,7 +298,9 @@ fn handlebars() -> Result<Handlebars> {
                 if i + 1 == parts.len() {
                     handlebars::html_escape(&part)
                 } else {
-                    let path = (0..(parts.len() - i - 2)).map(|_| "../").format("");
+                    let path = (0..(current_module_level - i - index_offset))
+                        .map(|_| "../")
+                        .format("");
                     format!(
                         r##"<a href="{}index.html">{}</a>"##,
                         path,
@@ -385,17 +413,18 @@ where
 }
 
 pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Result<()> {
-    let mut directories = Vec::new();
+    let mut directories = BTreeMap::new();
     for entry in walkdir::WalkDir::new(path) {
         let entry = entry?;
         if !entry.file_type().is_file()
             || entry.path().extension().and_then(|ext| ext.to_str()) != Some("glu")
         {
             if entry.file_type().is_dir() {
-                directories.push((entry.path().to_owned(), Vec::new()));
+                directories.insert(entry.path().to_owned(), Vec::new());
             }
             continue;
         }
+
         let mut input = File::open(&*entry.path()).with_context(|err| {
             format!(
                 "Unable to open gluon file `{}`: {}",
@@ -436,22 +465,22 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
         };
 
         directories
-            .last_mut()
+            .get_mut(entry.path().parent().expect("Parent path"))
             .expect("Directory before this file")
-            .1
             .push(module);
     }
 
     #[derive(Serialize)]
     struct Index<'a> {
         name: String,
+        directories: &'a [String],
         modules: &'a [Module],
     }
 
     let reg = handlebars()?;
 
-    for (path, modules) in directories {
-        for module in &modules {
+    for (path, modules) in &directories {
+        for module in modules {
             let out_path =
                 out_path.join(PathBuf::from(module.name.replace(".", "/")).with_extension("html"));
             let mut doc_file = File::create(&*out_path).with_context(|err| {
@@ -489,10 +518,17 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
                 .ok_or_else(|| failure::err_msg("Non-UTF-8 filename"))?,
         );
 
+        let directory_modules: Vec<_> = directories
+            .keys()
+            .filter(|dir_path| Some(&**path) == dir_path.parent())
+            .map(|dir_path| filename_to_module(dir_path.to_str().unwrap()))
+            .collect();
+
         reg.render_to_write(
             INDEX_TEMPLATE,
             &Index {
                 name,
+                directories: &directory_modules,
                 modules: &modules,
             },
             &mut doc_file,

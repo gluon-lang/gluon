@@ -466,6 +466,46 @@ where
                     };
                     opt_type.map(|typ| Field::new(l.name.clone(), typ))
                 });
+
+                {
+                    use std::cmp::Ordering::*;
+                    match l_args.len().cmp(&r_args.len()) {
+                        Equal => (),
+                        Less => {
+                            let context = unifier
+                                .state
+                                .record_context
+                                .as_ref()
+                                .map_or(actual, |p| &p.1)
+                                .clone();
+                            let err = TypeError::MissingFields(
+                                context,
+                                r_args[l_args.len()..]
+                                    .iter()
+                                    .map(|field| field.name.clone())
+                                    .collect(),
+                            );
+                            unifier.report_error(UnifyError::Other(err));
+                        }
+                        Greater => {
+                            let context = unifier
+                                .state
+                                .record_context
+                                .as_ref()
+                                .map_or(expected, |p| &p.0)
+                                .clone();
+                            let err = TypeError::MissingFields(
+                                context,
+                                l_args[r_args.len()..]
+                                    .iter()
+                                    .map(|field| field.name.clone())
+                                    .collect(),
+                            );
+                            unifier.report_error(UnifyError::Other(err));
+                        }
+                    }
+                }
+
                 let new_rest = unifier.try_match(l_rest, r_rest);
                 Ok(merge::merge(
                     l_args,
@@ -858,8 +898,32 @@ fn find_alias_<'a, U>(
 where
     UnifierState<'a, U>: Unifier<State<'a>, ArcType>,
 {
+    fn resolve_application<'t>(
+        typ: &'t ArcType,
+        subs: &'t Substitution<ArcType>,
+    ) -> Option<ArcType> {
+        match **typ {
+            Type::App(ref f, ref a) => {
+                resolve_application(f, subs).map(|f| Type::app(f, a.clone()))
+            }
+            Type::Variable(_) => {
+                let typ = subs.real(typ);
+                match **typ {
+                    Type::Variable(_) => None,
+                    _ => Some(resolve_application(typ, subs).unwrap_or_else(|| typ.clone())),
+                }
+            }
+            _ => None,
+        }
+    }
+
     let mut did_alias = false;
     loop {
+        // If the spine of the application consists of type variables we must first resolve those
+        // before trying the alias as the resolve module does not know about type varaibles
+        if let Some(new_l) = resolve_application(&l, &unifier.state.subs) {
+            l = new_l;
+        }
         l = match l.name() {
             Some(l_id) => {
                 if let Some(l_id) = l.alias_ident() {

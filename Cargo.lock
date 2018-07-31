@@ -663,6 +663,7 @@ dependencies = [
  "gluon 0.8.1",
  "gluon_base 0.8.1",
  "gluon_check 0.8.1",
+ "gluon_codegen 0.8.1",
  "gluon_parser 0.8.1",
  "itertools 0.7.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "lalrpop 0.15.2 (registry+https://github.com/rust-lang/crates.io-index)",

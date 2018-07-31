@@ -6,7 +6,7 @@ let { Option } = import! std.option
 let { Result } = import! std.result
 let string = import! std.string
 let thread = import! std.thread
-let array = import! std.array
+let array @ { ? } = import! std.array
 let { ref, load, (<-) } = import! std.reference
 let rustyline = import! rustyline
 let { ReadlineError } = import! rustyline_types
@@ -16,6 +16,7 @@ let { (<<) } = import! std.function
 
 let { Applicative, wrap, (*>) } = import! std.applicative
 let { flat_map, (>>=) } = import! std.monad
+let { foldl } = import! std.foldable
 
 let { (<>) } = import! std.prelude
 let (++) = (<>)
@@ -121,7 +122,7 @@ let make_commands cpu_pool : CpuPool -> Commands =
                     *> wrap Continue,
         }]
     commands <- cmds
-    array.foldable.foldl
+    foldl
         (\map cmd -> singleton cmd.name cmd <> singleton cmd.alias cmd <> map)
         empty
         cmds
@@ -140,7 +141,7 @@ let cmd_parser : Parser { cmd : String, arg : String } =
         monad = { flat_map },
         alternative,
         applicative } = import! std.parser
-    let { (<|>) } = import! std.applicative
+    let { (<|>) } = import! std.alternative
 
     let word = recognize (skip_many1 letter)
     let arg_parser = recognize (skip_many1 any)

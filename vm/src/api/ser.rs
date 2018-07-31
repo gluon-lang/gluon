@@ -9,7 +9,7 @@ use api::{Pushable, VmType};
 use base::types::ArcType;
 use interner::InternedStr;
 use serde::ser::{self, Serialize};
-use thread::{Context, Thread};
+use thread::{ActiveThread, Thread};
 use types::{VmIndex, VmTag};
 use value::{Def, RecordDef, ValueRepr};
 use {Error, Result};
@@ -150,8 +150,8 @@ impl<'vm, T> Pushable<'vm> for Ser<T>
 where
     T: Serialize,
 {
-    fn push(self, thread: &'vm Thread, context: &mut Context) -> Result<()> {
-        let mut serializer = Serializer::new(thread, context);
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        let mut serializer = Serializer::new(context);
         self.0.serialize(&mut serializer)
     }
 }
@@ -165,71 +165,76 @@ impl ser::Error for Error {
     }
 }
 
-pub struct Serializer<'t> {
+pub struct Serializer<'a, 't: 'a> {
     thread: &'t Thread,
-    context: &'t mut Context,
+    context: &'a mut ActiveThread<'t>,
 }
 
-impl<'t> Serializer<'t> {
-    pub fn new(thread: &'t Thread, context: &'t mut Context) -> Self {
-        Serializer { thread, context }
+impl<'a, 't> Serializer<'a, 't> {
+    pub fn new(context: &'a mut ActiveThread<'t>) -> Self {
+        Serializer {
+            thread: context.thread(),
+            context,
+        }
     }
 
     fn to_value<T>(&mut self, value: T) -> Result<()>
     where
         T: Pushable<'t>,
     {
-        value.push(self.thread, self.context)
+        value.push(self.context)
     }
 
     fn alloc(&mut self, tag: VmTag, values: VmIndex) -> Result<()> {
-        let value = self.context.gc.alloc(Def {
+        let context = self.context.context();
+        let value = context.gc.alloc(Def {
             tag: tag,
-            elems: &self.context.stack[self.context.stack.len() - values..],
+            elems: &context.stack[context.stack.len() - values..],
         })?;
         for _ in 0..values {
-            self.context.stack.pop();
+            context.stack.pop();
         }
-        self.context.stack.push(ValueRepr::Data(value));
+        context.stack.push(ValueRepr::Data(value));
         Ok(())
     }
 
     fn alloc_record(&mut self, fields: &[InternedStr], values: VmIndex) -> Result<()> {
-        let value = self.context.gc.alloc(RecordDef {
-            elems: &self.context.stack[self.context.stack.len() - values..],
+        let context = self.context.context();
+        let value = context.gc.alloc(RecordDef {
+            elems: &context.stack[context.stack.len() - values..],
             fields,
         })?;
         for _ in 0..values {
-            self.context.stack.pop();
+            context.stack.pop();
         }
-        self.context.stack.push(ValueRepr::Data(value));
+        context.stack.push(ValueRepr::Data(value));
         Ok(())
     }
 }
 
 #[doc(hidden)]
-pub struct RecordSerializer<'s, 'vm: 's> {
-    serializer: &'s mut Serializer<'vm>,
+pub struct RecordSerializer<'s, 'a: 's, 'vm: 'a> {
+    serializer: &'s mut Serializer<'a, 'vm>,
     variant_index: VmTag,
     values: VmIndex,
     fields: Vec<InternedStr>,
 }
 
-impl<'s, 'vm> Deref for RecordSerializer<'s, 'vm> {
-    type Target = Serializer<'vm>;
+impl<'s, 'a, 'vm> Deref for RecordSerializer<'s, 'a, 'vm> {
+    type Target = Serializer<'a, 'vm>;
     fn deref(&self) -> &Self::Target {
         self.serializer
     }
 }
 
-impl<'s, 'vm> DerefMut for RecordSerializer<'s, 'vm> {
+impl<'s, 'a, 'vm> DerefMut for RecordSerializer<'s, 'a, 'vm> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.serializer
     }
 }
 
-impl<'s, 'vm> RecordSerializer<'s, 'vm> {
-    fn new(serializer: &'s mut Serializer<'vm>, variant_index: u32) -> Self {
+impl<'s, 'a, 'vm> RecordSerializer<'s, 'a, 'vm> {
+    fn new(serializer: &'s mut Serializer<'a, 'vm>, variant_index: u32) -> Self {
         RecordSerializer {
             serializer: serializer,
             variant_index: variant_index,
@@ -239,7 +244,7 @@ impl<'s, 'vm> RecordSerializer<'s, 'vm> {
     }
 }
 
-impl<'a, 'vm> ser::Serializer for &'a mut Serializer<'vm> {
+impl<'s, 'a, 'vm> ser::Serializer for &'s mut Serializer<'a, 'vm> {
     type Ok = ();
 
     // The error type when some error occurs during serialization.
@@ -249,13 +254,13 @@ impl<'a, 'vm> ser::Serializer for &'a mut Serializer<'vm> {
     // compound data structures like sequences and maps. In this case no
     // additional state is required beyond what is already stored in the
     // Serializer struct.
-    type SerializeSeq = RecordSerializer<'a, 'vm>;
-    type SerializeTuple = RecordSerializer<'a, 'vm>;
-    type SerializeTupleStruct = RecordSerializer<'a, 'vm>;
-    type SerializeTupleVariant = RecordSerializer<'a, 'vm>;
-    type SerializeMap = RecordSerializer<'a, 'vm>;
-    type SerializeStruct = RecordSerializer<'a, 'vm>;
-    type SerializeStructVariant = RecordSerializer<'a, 'vm>;
+    type SerializeSeq = RecordSerializer<'s, 'a, 'vm>;
+    type SerializeTuple = RecordSerializer<'s, 'a, 'vm>;
+    type SerializeTupleStruct = RecordSerializer<'s, 'a, 'vm>;
+    type SerializeTupleVariant = RecordSerializer<'s, 'a, 'vm>;
+    type SerializeMap = RecordSerializer<'s, 'a, 'vm>;
+    type SerializeStruct = RecordSerializer<'s, 'a, 'vm>;
+    type SerializeStructVariant = RecordSerializer<'s, 'a, 'vm>;
 
     // Here we go with the simple methods. The following 12 methods receive one
     // of the primitive types of the data model and map it to JSON by appending
@@ -340,7 +345,7 @@ impl<'a, 'vm> ser::Serializer for &'a mut Serializer<'vm> {
     }
 
     fn serialize_unit(self) -> Result<Self::Ok> {
-        self.context.stack.push(ValueRepr::Tag(0));
+        self.context.push(ValueRepr::Tag(0));
         Ok(())
     }
 
@@ -354,7 +359,7 @@ impl<'a, 'vm> ser::Serializer for &'a mut Serializer<'vm> {
         variant_index: u32,
         _variant: &'static str,
     ) -> Result<Self::Ok> {
-        self.context.stack.push(ValueRepr::Tag(variant_index));
+        self.context.push(ValueRepr::Tag(variant_index));
         Ok(())
     }
 
@@ -431,7 +436,7 @@ impl<'a, 'vm> ser::Serializer for &'a mut Serializer<'vm> {
     }
 }
 
-impl<'a, 'vm> ser::SerializeSeq for RecordSerializer<'a, 'vm> {
+impl<'s, 'a, 'vm> ser::SerializeSeq for RecordSerializer<'s, 'a, 'vm> {
     type Ok = ();
     type Error = Error;
 
@@ -449,7 +454,7 @@ impl<'a, 'vm> ser::SerializeSeq for RecordSerializer<'a, 'vm> {
     }
 }
 
-impl<'a, 'vm> ser::SerializeTuple for RecordSerializer<'a, 'vm> {
+impl<'s, 'a, 'vm> ser::SerializeTuple for RecordSerializer<'s, 'a, 'vm> {
     type Ok = ();
     type Error = Error;
 
@@ -467,7 +472,7 @@ impl<'a, 'vm> ser::SerializeTuple for RecordSerializer<'a, 'vm> {
     }
 }
 
-impl<'a, 'vm> ser::SerializeTupleStruct for RecordSerializer<'a, 'vm> {
+impl<'s, 'a, 'vm> ser::SerializeTupleStruct for RecordSerializer<'s, 'a, 'vm> {
     type Ok = ();
     type Error = Error;
 
@@ -485,7 +490,7 @@ impl<'a, 'vm> ser::SerializeTupleStruct for RecordSerializer<'a, 'vm> {
     }
 }
 
-impl<'a, 'vm> ser::SerializeTupleVariant for RecordSerializer<'a, 'vm> {
+impl<'s, 'a, 'vm> ser::SerializeTupleVariant for RecordSerializer<'s, 'a, 'vm> {
     type Ok = ();
     type Error = Error;
 
@@ -503,7 +508,7 @@ impl<'a, 'vm> ser::SerializeTupleVariant for RecordSerializer<'a, 'vm> {
     }
 }
 
-impl<'a, 'vm> ser::SerializeMap for RecordSerializer<'a, 'vm> {
+impl<'s, 'a, 'vm> ser::SerializeMap for RecordSerializer<'s, 'a, 'vm> {
     type Ok = ();
     type Error = Error;
 
@@ -528,7 +533,7 @@ impl<'a, 'vm> ser::SerializeMap for RecordSerializer<'a, 'vm> {
     }
 }
 
-impl<'a, 'vm> ser::SerializeStruct for RecordSerializer<'a, 'vm> {
+impl<'s, 'a, 'vm> ser::SerializeStruct for RecordSerializer<'s, 'a, 'vm> {
     type Ok = ();
     type Error = Error;
 
@@ -550,7 +555,7 @@ impl<'a, 'vm> ser::SerializeStruct for RecordSerializer<'a, 'vm> {
 
 // Similar to `SerializeTupleVariant`, here the `end` method is responsible for
 // closing both of the curly braces opened by `serialize_struct_variant`.
-impl<'a, 'vm> ser::SerializeStructVariant for RecordSerializer<'a, 'vm> {
+impl<'s, 'a, 'vm> ser::SerializeStructVariant for RecordSerializer<'s, 'a, 'vm> {
     type Ok = ();
     type Error = Error;
 
@@ -571,16 +576,16 @@ impl<'a, 'vm> ser::SerializeStructVariant for RecordSerializer<'a, 'vm> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use thread::{RootedThread, ThreadInternal};
+    use thread::RootedThread;
     use value::Value;
 
     fn to_value<T>(thread: &Thread, value: &T) -> Result<Value>
     where
         T: ?Sized + Serialize,
     {
-        let mut context = thread.context();
-        Ser(value).push(thread, &mut context)?;
-        Ok(context.stack.pop())
+        let mut context = thread.current_context();
+        Ser(value).push(&mut context)?;
+        Ok(context.pop())
     }
 
     #[test]

@@ -15,12 +15,22 @@ Identifiers are a sequence of alphanumeric characters including underscore ("\_"
 ```f#
 // An identifier
 abc123_
+
 // An integer literal
+
 42
 // A float literal
 3.14
+
 // A string literal
 "Hello world"
+
+// A raw string literal
+r"Can contain newlines
+world"
+r#"With # as delimiters raw strings can also contain quotes without escaping `"` "#
+r###" "## "###
+
 // A character literal
 'e'
 ```

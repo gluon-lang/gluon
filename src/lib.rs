@@ -67,54 +67,53 @@ use vm::api::{Getable, Hole, OpaqueValue, VmType};
 use vm::compiler::CompiledModule;
 use vm::future::{BoxFutureValue, FutureValue};
 use vm::macros;
-use vm::thread::ThreadInternal;
 use vm::Variants;
 
 quick_error! {
-    /// Error type wrapping all possible errors that can be generated from gluon
-    #[derive(Debug)]
-    pub enum Error {
-        /// Error found when parsing gluon code
-        Parse(err: InFile<parser::Error>) {
-            description(err.description())
-            display("{}", err)
-            from()
-        }
-        /// Error found when typechecking gluon code
-        Typecheck(err: InFile<check::typecheck::HelpError<Symbol>>) {
-            description(err.description())
-            display("{}", err)
-            from()
-        }
-        /// Error found when performing an IO action such as loading a file
-        IO(err: ::std::io::Error) {
-            description(err.description())
-            display("{}", err)
-            from()
-        }
-        /// Error found when executing code in the virtual machine
-        VM(err: ::vm::Error) {
-            description(err.description())
-            display("{}", err)
-            from()
-        }
-        /// Error found when expanding macros
-        Macro(err: InFile<macros::Error>) {
-            description(err.description())
-            display("{}", err)
-            from()
-        }
-        Other(err: Box<StdError + Send + Sync>) {
-            description(err.description())
-            display("{}", err)
-            from()
-        }
-        /// Multiple errors where found
-        Multiple(err: Errors<Error>) {
-            description(err.description())
-            display("{}", err)
-        }
+/// Error type wrapping all possible errors that can be generated from gluon
+#[derive(Debug)]
+pub enum Error {
+    /// Error found when parsing gluon code
+    Parse(err: InFile<parser::Error>) {
+        description(err.description())
+        display("{}", err)
+        from()
     }
+    /// Error found when typechecking gluon code
+    Typecheck(err: InFile<check::typecheck::HelpError<Symbol>>) {
+        description(err.description())
+        display("{}", err)
+        from()
+    }
+    /// Error found when performing an IO action such as loading a file
+    IO(err: ::std::io::Error) {
+        description(err.description())
+        display("{}", err)
+        from()
+    }
+    /// Error found when executing code in the virtual machine
+    VM(err: ::vm::Error) {
+        description(err.description())
+        display("{}", err)
+        from()
+    }
+    /// Error found when expanding macros
+    Macro(err: InFile<macros::Error>) {
+        description(err.description())
+        display("{}", err)
+        from()
+    }
+    Other(err: Box<StdError + Send + Sync>) {
+        description(err.description())
+        display("{}", err)
+        from()
+    }
+    /// Multiple errors where found
+    Multiple(err: Errors<Error>) {
+        description(err.description())
+        display("{}", err)
+    }
+}
 }
 
 impl From<String> for Error {
@@ -215,17 +214,17 @@ impl Default for Compiler {
 }
 
 macro_rules! option {
-    ($(#[$attr:meta])* $name: ident $set_name: ident : $typ: ty) => {
-        $(#[$attr])*
-        pub fn $name(mut self, $name: $typ) -> Self {
-            self.$name = $name;
-            self
-        }
+($(#[$attr:meta])* $name: ident $set_name: ident : $typ: ty) => {
+    $(#[$attr])*
+    pub fn $name(mut self, $name: $typ) -> Self {
+        self.$name = $name;
+        self
+    }
 
-        pub fn $set_name(&mut self, $name: $typ) {
-            self.$name = $name;
-        }
-    };
+    pub fn $set_name(&mut self, $name: $typ) {
+        self.$name = $name;
+    }
+};
 }
 
 impl Compiler {
@@ -656,7 +655,6 @@ impl VmBuilder {
     }
 
     option!{
-        /// Defines the paths used to lookup gluon files
         /// (default: ["."])
         import_paths set_import_paths: Option<Vec<PathBuf>>
     }
@@ -694,6 +692,9 @@ impl VmBuilder {
         add_extern_module(&vm, "std.thread.prim", ::vm::channel::load_thread);
         add_extern_module(&vm, "std.debug.prim", ::vm::debug::load);
         add_extern_module(&vm, "std.io.prim", ::io::load);
+
+        #[cfg(feature = "serialization")]
+        add_extern_module(&vm, "std.json.prim", ::vm::api::json::load);
 
         load_regex(&vm);
         load_random(&vm);

@@ -151,7 +151,7 @@ pub unsafe extern "C" fn glu_push_string(vm: &Thread, s: &u8, len: usize) -> Err
         Ok(s) => s,
         Err(_) => return Error::Unknown,
     };
-    match s.push(vm, &mut vm.context()) {
+    match s.push(&mut vm.current_context()) {
         Ok(()) => Error::Ok,
         Err(_) => Error::Unknown,
     }
@@ -162,7 +162,7 @@ pub unsafe extern "C" fn glu_push_string(vm: &Thread, s: &u8, len: usize) -> Err
 #[no_mangle]
 pub unsafe extern "C" fn glu_push_string_unchecked(vm: &Thread, s: &u8, len: usize) -> Error {
     let s = str::from_utf8_unchecked(slice::from_raw_parts(s, len));
-    match s.push(vm, &mut vm.context()) {
+    match s.push(&mut vm.current_context()) {
         Ok(()) => Error::Ok,
         Err(_) => Error::Unknown,
     }

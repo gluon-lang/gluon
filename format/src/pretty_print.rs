@@ -285,7 +285,9 @@ where
                 let literally = text.starts_with('"')
                     || text.starts_with('\'')
                     || text.starts_with(|c: char| c.is_digit(10))
-                    || text.starts_with('-');
+                    || text.starts_with('-')
+                    || text.starts_with("r\"")
+                    || text.starts_with("r#");
                 if literally {
                     arena.text(text)
                 } else {

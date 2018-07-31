@@ -111,7 +111,7 @@ let parse : String -> Result String Expr =
         chainl1,
         (<?>),
         ? } = import! std.parser
-    let { (<|>) } = import! std.applicative
+    let { (<|>) } = import! std.alternative
 
     let lex x = x <* spaces
 
@@ -184,7 +184,7 @@ do digits =
     do d = gen_digit
     wrap [a, b, c, d]
 
-let print_digits = for io.applicative digits (\d ->
+let print_digits = for digits (\d ->
         do _ = io.print " "
         io.print (show d))
 do _ = io.print "Four digits:" *> print_digits *> io.println ""

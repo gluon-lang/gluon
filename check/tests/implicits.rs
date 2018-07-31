@@ -785,3 +785,24 @@ let (<) l r : [Ord a] -> a -> a -> Bool =
     visitor.visit_expr(&expr);
     assert!(visitor.done);
 }
+
+#[test]
+fn disambiguate_distinct_records() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+#[implicit]
+type Implicit a = { f : a -> String } 
+
+type Test1 = { x : Int }
+let t1_test : Implicit Test1 = { f = \x -> "" }
+
+type Test2 = { x : Int, y : Int }
+let t2_test : Implicit Test2 = { f = \x -> "" }
+
+let f ?x y: [Implicit a] -> a -> String = ""
+f { x = 1 }
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}

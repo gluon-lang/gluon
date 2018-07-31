@@ -13,21 +13,23 @@ use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
 
-use gluon::{Compiler, VmBuilder};
+use gluon::{Compiler, RootedThread, VmBuilder};
+
+fn new_vm() -> RootedThread {
+    VmBuilder::new()
+        .import_paths(Some(vec![".".into(), "..".into()]))
+        .build()
+}
 
 fn format_expr(expr: &str) -> gluon::Result<String> {
     let mut compiler = Compiler::new();
-    let thread = VmBuilder::new()
-        .import_paths(Some(vec!["..".into()]))
-        .build();
+    let thread = new_vm();
     format::format_expr(&mut compiler, &thread, "test", expr)
 }
 
 fn format_expr_expanded(expr: &str) -> gluon::Result<String> {
     let mut compiler = Compiler::new();
-    let thread = VmBuilder::new()
-        .import_paths(Some(vec!["..".into()]))
-        .build();
+    let thread = new_vm();
     format::Formatter { expanded: true }.format_expr(&mut compiler, &thread, "test", expr)
 }
 
@@ -36,14 +38,13 @@ fn test_format(name: &str) {
 
     let mut contents = String::new();
     File::open(Path::new("../").join(name))
+        .or_else(|_| File::open(name))
         .unwrap()
         .read_to_string(&mut contents)
         .unwrap();
 
     let mut compiler = Compiler::new();
-    let thread = VmBuilder::new()
-        .import_paths(Some(vec!["..".into()]))
-        .build();
+    let thread = new_vm();
     let out_str = format::format_expr(&mut compiler, &thread, name, &contents)
         .unwrap_or_else(|err| panic!("{}", err));
 
@@ -168,6 +169,15 @@ fn dont_lose_information_in_literals() {
     let expr = r#"
 3.14 "\t\n\r\""
 "#;
+    assert_eq!(&format_expr(expr).unwrap(), expr);
+}
+
+#[test]
+fn raw_string_literal() {
+    let expr = r####"
+r##"abc
+    "  "##
+"####;
     assert_eq!(&format_expr(expr).unwrap(), expr);
 }
 
@@ -368,6 +378,22 @@ else 0
 }
 
 #[test]
+fn fully_break_function_type() {
+    let expr = r#"
+let traverse_with_key f m x : [Ord k]
+        -> Applicative t
+        -> (k -> a -> t b)
+        -> Map k a
+        -> ()
+        -> ()
+    =
+    ()
+()
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+}
+
+#[test]
 fn comments_in_block_exprs() {
     let expr = r#"
 // test
@@ -511,6 +537,105 @@ let show_Test : [Show a] -> Show (Test a) =
         | Test arg_0 -> "Test" ++ " " ++ "(" ++ show arg_0 ++ ")"
     { show = show_ }
 Test 1
+"#;
+    assert_diff!(&format_expr_expanded(expr).unwrap(), expected, "\n", 0);
+}
+
+#[test]
+fn derive_deserialize1() {
+    let expr = r#"
+#[derive(Deserialize)]
+type Record = { x : Int }
+()
+"#;
+    let expected = r#"
+#[derive(Deserialize)]
+type Record = { x : Int }
+let deserialize_Record : Deserialize Record =
+    let { ValueDeserializer } = import! std.json.de
+    let { map } = import! std.functor
+    let { (<*>) } = import! std.applicative
+    let { (<|>) } = import! std.alternative
+    let deserializer : ValueDeserializer Record = map (\x -> { x }) (field "x" deserializer)
+    { deserializer = deserializer }
+()
+"#;
+    assert_diff!(&format_expr_expanded(expr).unwrap(), expected, "\n", 0);
+}
+
+#[test]
+fn derive_deserialize2() {
+    let expr = r#"
+#[derive(Deserialize)]
+type Record = { x : Int, y : Float }
+()
+"#;
+    let expected = r#"
+#[derive(Deserialize)]
+type Record = { x : Int, y : Float }
+let deserialize_Record : Deserialize Record =
+    let { ValueDeserializer } = import! std.json.de
+    let { map } = import! std.functor
+    let { (<*>) } = import! std.applicative
+    let { (<|>) } = import! std.alternative
+    let deserializer : ValueDeserializer Record
+        = map (\x y -> { x, y }) (field "x" deserializer)
+            <*> field "y" deserializer
+    { deserializer = deserializer }
+()
+"#;
+    assert_diff!(&format_expr_expanded(expr).unwrap(), expected, "\n", 0);
+}
+
+#[test]
+fn derive_serialize1() {
+    let expr = r#"
+#[derive(Serialize)]
+type Record = { x : Int }
+()
+"#;
+    let expected = r#"
+#[derive(Serialize)]
+type Record = { x : Int }
+let serialize_Record : Serialize Record =
+    let { ValueSerializer, Value, serialize } = import! std.json.ser
+    let { map } = import! std.functor
+    let { (<*>) } = import! std.applicative
+    let { singleton, empty, ? } = import! std.map
+    let { (<>) } = import! std.semigroup
+    let serialize_ x : ValueSerializer Record =
+        match x with
+        | { x = x } -> map (\x -> Object (singleton "x" x)) (serialize x)
+    serialize_
+()
+"#;
+    assert_diff!(&format_expr_expanded(expr).unwrap(), expected, "\n", 0);
+}
+
+#[test]
+fn derive_serialize2() {
+    let expr = r#"
+#[derive(Serialize)]
+type Variant = | Int Int | String String
+()
+"#;
+    let expected = r#"
+#[derive(Serialize)]
+type Variant =
+    | Int Int
+    | String String
+let serialize_Variant : Serialize Variant =
+    let { ValueSerializer, Value, serialize } = import! std.json.ser
+    let { map } = import! std.functor
+    let { (<*>) } = import! std.applicative
+    let { singleton, empty, ? } = import! std.map
+    let { (<>) } = import! std.semigroup
+    let serialize_ x : ValueSerializer Variant =
+        match x with
+        | Int arg_0 -> serialize arg_0
+        | String arg_0 -> serialize arg_0
+    serialize_
+()
 "#;
     assert_diff!(&format_expr_expanded(expr).unwrap(), expected, "\n", 0);
 }

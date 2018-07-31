@@ -29,7 +29,7 @@ use vm::api::{
 };
 use vm::future::FutureValue;
 use vm::internal::ValuePrinter;
-use vm::thread::{Context, RootStr, RootedValue, Thread, ThreadInternal};
+use vm::thread::{ActiveThread, RootStr, RootedValue, Thread, ThreadInternal};
 use vm::{self, Error as VMError, Result as VMResult};
 
 use gluon::compiler_pipeline::{Executable, ExecuteValue};
@@ -217,8 +217,8 @@ macro_rules! define_vmtype {
 define_vmtype! { ReadlineError }
 
 impl<'vm> Pushable<'vm> for ReadlineError {
-    fn push(self, thread: &'vm Thread, context: &mut Context) -> VMResult<()> {
-        ::gluon::vm::api::ser::Ser(self).push(thread, context)
+    fn push(self, context: &mut ActiveThread<'vm>) -> VMResult<()> {
+        ::gluon::vm::api::ser::Ser(self).push(context)
     }
 }
 

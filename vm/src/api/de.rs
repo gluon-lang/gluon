@@ -1,5 +1,3 @@
-//! Gluon -> Rust value conversion via the `serde::Deserialize` trait
-//!
 //! _This module requires Gluon to be built with the `serde` feature._
 
 use std::cell::RefCell;

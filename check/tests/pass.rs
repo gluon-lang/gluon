@@ -931,3 +931,43 @@ fn array_expr_gets_type_assigned_without_expected_type_issue_555() {
     assert!(result.is_ok(), "{}", result.unwrap_err());
     assert_eq!(expr.env_type_of(&MockEnv::new()).to_string(), "Array Int");
 }
+
+#[test]
+fn dont_panic_on_partially_applied_aliased_function() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+type Function a b = a -> b
+type Function2 b = Function Int b
+
+let f : Function2 (Int -> Int) = \x -> \y -> y
+
+f 1 2
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn resolve_through_aliased_function_type() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+
+let any x = any x
+let map : (a -> b) -> f a -> f b = any ()
+
+type Wrap a = | Wrap a
+type Deserializer i a = i -> { value : a, input : i }
+type ValueDeserializer a = Deserializer Int a
+
+let option a : ValueDeserializer a -> ValueDeserializer (Wrap a) = \input ->
+    (map Wrap a) input
+
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}

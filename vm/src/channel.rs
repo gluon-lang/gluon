@@ -14,7 +14,7 @@ use api::{
 };
 use gc::{Gc, GcPtr, Traverseable};
 use stack::{StackFrame, State};
-use thread::{OwnedContext, ThreadInternal};
+use thread::{ActiveThread, ThreadInternal};
 use types::VmInt;
 use value::{Callable, GcStr, Userdata, ValueRepr};
 use vm::{RootedThread, Status, Thread};
@@ -145,35 +145,35 @@ fn send(sender: &Sender<Generic<A>>, value: Generic<A>) -> Result<(), ()> {
 }
 
 extern "C" fn resume(vm: &Thread) -> Status {
-    let mut context = vm.context();
-    let value = StackFrame::current(&mut context.stack)[0].get_repr();
+    let mut context = vm.current_context();
+    let value = StackFrame::current(context.stack())[0].get_repr();
     match value {
         ValueRepr::Thread(child) => {
-            let lock = StackFrame::current(&mut context.stack).into_lock();
+            let lock = StackFrame::current(context.stack()).into_lock();
             drop(context);
             let result = child.resume();
-            context = vm.context();
-            context.stack.release_lock(lock);
+            context = vm.current_context();
+            context.stack().release_lock(lock);
             match result {
                 Ok(child_context) => {
                     // Prevent dead lock if the following status_push call allocates
                     drop(child_context);
 
                     let value: Result<(), &str> = Ok(());
-                    value.status_push(vm, &mut context)
+                    value.status_push(&mut context)
                 }
                 Err(Error::Dead) => {
                     let value: Result<(), &str> = Err("Attempted to resume a dead thread");
-                    value.status_push(vm, &mut context)
+                    value.status_push(&mut context)
                 }
                 Err(err) => {
                     let fmt = format!("{}", err);
                     let result = unsafe {
                         ValueRepr::String(GcStr::from_utf8_unchecked(
-                            context.alloc_ignore_limit(fmt.as_bytes()),
+                            context.context().alloc_ignore_limit(fmt.as_bytes()),
                         ))
                     };
-                    context.stack.push(result);
+                    context.push(result);
                     Status::Error
                 }
             }
@@ -194,15 +194,15 @@ fn spawn<'vm>(
 fn spawn_<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> VmResult<RootedThread> {
     let thread = value.vm.new_thread()?;
     {
-        let mut context = thread.context();
+        let mut context = thread.current_context();
         let callable = match value.value.get_variant().0 {
             ValueRepr::Closure(c) => State::Closure(c),
             ValueRepr::Function(c) => State::Extern(c),
             _ => State::Unknown,
         };
-        value.value.push(value.vm, &mut context)?;
-        context.stack.push(ValueRepr::Int(0));
-        StackFrame::current(&mut context.stack).enter_scope(1, callable);
+        value.value.push(&mut context)?;
+        context.push(ValueRepr::Int(0));
+        StackFrame::current(&mut context.context().stack).enter_scope(1, callable);
     }
     Ok(thread)
 }
@@ -256,7 +256,7 @@ fn spawn_on<'vm>(
         type Type = Generic<A>;
     }
 
-    fn push_future_wrapper<G>(vm: &Thread, context: &mut OwnedContext, _: &G)
+    fn push_future_wrapper<G>(context: &mut ActiveThread, _: &G)
     where
         G: Future<Item = OpaqueValue<RootedThread, IO<Generic<A>>>, Error = Error> + Send + 'static,
     {
@@ -266,19 +266,18 @@ fn spawn_on<'vm>(
                 + Send
                 + 'static,
         {
-            let mut context = vm.context();
-            let value = StackFrame::current(&mut context.stack)[0].get_repr();
+            let mut context = vm.current_context();
+            let value = StackFrame::current(context.stack())[0].get_repr();
 
             match value {
                 ValueRepr::Userdata(data) => {
                     let data = data.downcast_ref::<SpawnFuture<F>>().unwrap();
                     let future = data.0.clone();
-                    let lock = StackFrame::current(&mut context.stack).insert_lock();
+                    let lock = StackFrame::current(context.stack()).insert_lock();
                     AsyncPushable::async_status_push(
                         FutureResult::new(
                             future.map(|v| (*v).clone()).map_err(|err| (*err).clone()),
                         ),
-                        vm,
                         &mut context,
                         lock,
                     )
@@ -289,7 +288,7 @@ fn spawn_on<'vm>(
 
         type FutureArg = ();
         primitive::<fn(FutureArg) -> IO<Generic<A>>>("unknown", future_wrapper::<G>)
-            .push(vm, context)
+            .push(context)
             .unwrap();
     }
     use value::PartialApplicationDataDef;
@@ -299,17 +298,18 @@ fn spawn_on<'vm>(
 
     let future = future::lazy(move || action.call_async(()));
 
-    let mut context = vm.context();
+    let mut context = vm.current_context();
 
-    push_future_wrapper(vm, &mut context, &future);
+    push_future_wrapper(&mut context, &future);
 
-    let callable = match context.stack[context.stack.len() - 1].get_repr() {
+    let callable = match context.stack()[..].last().unwrap().get_repr() {
         ValueRepr::Function(ext) => Callable::Extern(ext),
         _ => unreachable!(),
     };
 
-    SpawnFuture(future.shared()).push(vm, &mut context).unwrap();
-    let fields = [context.stack.get_values().last().unwrap().clone()];
+    SpawnFuture(future.shared()).push(&mut context).unwrap();
+    let context = context.context();
+    let fields = [context.stack.get_values()[..].last().unwrap().clone()];
     let def = PartialApplicationDataDef(callable, &fields);
     let value = ValueRepr::PartialApplication(context.alloc_with(vm, def).unwrap()).into();
 

@@ -1,18 +1,15 @@
 extern crate env_logger;
-
 #[macro_use]
 extern crate serde_derive;
-
 #[macro_use]
 extern crate collect_mac;
-
 extern crate futures;
 extern crate futures_cpupool;
 extern crate gluon;
+extern crate pulldown_cmark;
 extern crate tensile;
 extern crate tokio;
-
-extern crate pulldown_cmark;
+extern crate walkdir;
 
 use gluon::base::ast::{Expr, Pattern, SpannedExpr};
 use gluon::base::filename_to_module;
@@ -22,13 +19,12 @@ use gluon::base::types::{ArcType, Type};
 use gluon::vm::api::de::De;
 use gluon::vm::api::{Getable, Hole, OpaqueValue, OwnedFunction, VmType};
 use gluon::vm::future::FutureValue;
-use gluon::vm::thread::ThreadInternal;
 
 use gluon::{new_vm, Compiler, RootedThread, Thread};
 
 use std::error::Error;
 use std::fmt;
-use std::fs::{read_dir, File};
+use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
@@ -56,18 +52,19 @@ fn main() {
 }
 
 fn test_files(path: &str) -> Result<Vec<PathBuf>, Box<Error>> {
-    let dir = read_dir(path)?;
-    let paths: Vec<_> =
-        dir.filter_map(|f| {
+    let paths: Vec<_> = walkdir::WalkDir::new(path)
+        .into_iter()
+        .filter_map(|f| {
             f.ok().and_then(|f| {
                 let path = f.path();
                 if path.extension().and_then(|e| e.to_str()) == Some("glu") {
-                    Some(path)
+                    Some(path.to_owned())
                 } else {
                     None
                 }
             })
-        }).collect();
+        })
+        .collect();
     assert!(!paths.is_empty(), "Expected test files");
     Ok(paths)
 }
@@ -330,7 +327,9 @@ fn main_() -> Result<(), Box<Error>> {
     ).collect();
     let pass_tests = runtime.block_on(pass_tests_future)?;
 
-    let iter = test_files("tests/fail")?.into_iter();
+    let iter = test_files("tests/fail")?
+        .into_iter()
+        .filter(|filename| !filename.to_string_lossy().contains("deps"));
 
     let fail_tests =
         iter.filter_map(|filename| {
@@ -385,6 +384,6 @@ fn main_() -> Result<(), Box<Error>> {
             ],
         ),
         &tensile::Options::default().filter(filter.map_or("", |s| &s[..])),
-    ).unwrap();
+    )?;
     Ok(())
 }

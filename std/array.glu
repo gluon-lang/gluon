@@ -8,6 +8,8 @@ let prelude @ { Num, Eq, Ord, Show, Functor, (<), (==), (/=), (-), (+) } = impor
 let { Bool, Ordering, compare, min } = import! std.cmp
 let { Foldable } = import! std.foldable
 let { Traversable } = import! std.traversable
+let { Semigroup } = import! std.semigroup
+let { Monoid } = import! std.monoid
 
 // FIXME Implement the functions using this in Rust so we don't have quadratic complexity for `map` etc
 let cons l r = prim.append [l] r
@@ -106,6 +108,8 @@ let traversable : Traversable Array =
                 (app.wrap []),
     }
 
+let semigroup : Semigroup (Array a) = { append = prim.append }
+let monoid : Monoid (Array a) = { semigroup, empty = [] }
 
 {
     eq,
@@ -114,6 +118,7 @@ let traversable : Traversable Array =
     functor,
     foldable,
     traversable,
+    semigroup,
     ..
     prim
 }

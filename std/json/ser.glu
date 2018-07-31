@@ -1,0 +1,121 @@
+/// JSON serialization
+let { Value } = import! std.json.value
+let prim = import! std.json.prim
+let { Result, ? } = import! std.result
+let { for } = import! std.traversable
+let { map } = import! std.functor
+let { ? } = import! std.array
+let { Map, ? } = import! std.map
+
+type Error = String
+type ValueSerializer a = a -> Result Error Value
+
+#[implicit]
+type Serialize a = ValueSerializer a
+
+let serialize ?ser : [Serialize a] -> a -> Result Error Value = ser
+
+/// Serializes `a` to a JSON without whitespace string
+///
+/// ```
+/// let { Value, to_string, ? } = import! std.json.ser
+/// let { Result, ? } = import! std.result
+/// let { singleton, ? } = import! std.map
+/// let { (<>) } = import! std.semigroup
+/// let { assert } = import! std.test
+///
+/// assert (
+///     to_string "string" == Ok r#""string""#
+/// )
+///
+/// let expected = r#"[1,2,3]"#
+/// assert (
+///     to_string [1, 2, 3] == Ok expected
+/// )
+///
+/// let expected = r#"{"field":1}"#
+/// assert (
+///     to_string (singleton "field" 1) == Ok expected 
+/// )
+/// ```
+let to_string v : [Serialize a] -> a -> Result Error String =
+    do value = serialize v
+    prim.serialize value
+
+
+/// Serializes `a` to a JSON string
+///
+/// ```
+/// let { Value, to_string_pretty, ? } = import! std.json.ser
+/// let { Result, ? } = import! std.result
+/// let { singleton, ? } = import! std.map
+/// let { (<>) } = import! std.semigroup
+/// let { assert } = import! std.test
+///
+/// assert (
+///     to_string_pretty "string" == Ok r#""string""#
+/// )
+///
+/// let expected = r#"[
+///   1,
+///   2,
+///   3
+/// ]"#
+/// assert (
+///     to_string_pretty [1, 2, 3] == Ok expected
+/// )
+///
+/// let expected = r#"{
+///   "field": 1
+/// }"#
+/// assert (
+///     to_string_pretty (singleton "field" 1) == Ok expected 
+/// )
+/// ```
+let to_string_pretty v : [Serialize a] -> a -> Result Error String =
+    do value = serialize v
+    prim.serialize_pretty value
+
+let serialize_unit : Serialize () = \_ -> Ok Null
+
+let serialize_int : Serialize Int = \i -> Ok (Int i)
+
+let serialize_bool : Serialize Bool = \i -> Ok (Bool i)
+
+let serialize_float : Serialize Float = \i -> Ok (Float i)
+
+let serialize_string : Serialize String = \i -> Ok (String i)
+
+let serialize_option : [Serialize a] -> Serialize (Option a) = \i ->
+    match i with
+    | Some x -> serialize x
+    | None -> Ok Null
+
+let serialize_array : [Serialize a] -> Serialize (Array a) = \i ->
+    map Array (for i serialize)
+
+let serialize_map : [Serialize a] -> Serialize (Map String a) = \i ->
+    map Object (for i serialize)
+
+let serialize_value : Serialize Value = Ok 
+
+{
+    Value,
+    ValueSerializer,
+    Serialize,
+
+    serialize,
+
+    to_string,
+    to_string_pretty,
+
+    serialize_unit,
+    serialize_int,
+    serialize_bool,
+    serialize_float,
+    serialize_string,
+    serialize_option,
+    serialize_array,
+    serialize_map,
+    serialize_value,
+}

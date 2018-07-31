@@ -32,7 +32,7 @@ let {
 let { (<>) } =import! std.prelude
 
 let { Applicative, (<*), (*>), map2, wrap } = import! std.applicative
-let { (<|>) } = import! std.applicative
+let { (<|>) } = import! std.alternative
 let { flat_map } = import! std.monad
 
 let atom : Parser Expr =

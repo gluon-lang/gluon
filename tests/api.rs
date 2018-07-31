@@ -336,3 +336,20 @@ fn use_type_from_type_field() {
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(actual, Test::B("abc".to_string()));
 }
+
+#[test]
+fn use_rust_created_record_as_polymorphic() {
+    let _ = ::env_logger::try_init();
+    let test = r"\x -> x.x";
+    let mut vm = make_vm();
+    load_script(&mut vm, "test", test).unwrap_or_else(|err| panic!("{}", err));
+
+    field_decl! { x }
+    type Test = record_type!{
+        x => i32
+    };
+
+    let mut f: FunctionRef<fn(Test) -> VmInt> = vm.get_global("test").unwrap();
+    let result = f.call(record_no_decl!{ x => 1 }).unwrap();
+    assert_eq!(result, 1);
+}
