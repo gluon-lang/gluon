@@ -37,20 +37,20 @@ let singleton k v = Bin k v empty empty
 let find k m : [Ord k] -> k -> Map k a -> Option a =
     match m with
     | Bin k2 v l r ->
-        match compare k k2 with
+        (match compare k k2 with
         | LT -> find k l
         | EQ -> Some v
-        | GT -> find k r
+        | GT -> find k r)
     | Tip -> None
 
 /// Inserts the value `v` at the key `k` in the map `m`. If the key already exists in the map the current value gets replaced.
 let insert k v m : [Ord k] -> k -> a -> Map k a -> Map k a =
     match m with
     | Bin k2 v2 l r ->
-        match compare k k2 with
+        (match compare k k2 with
         | LT -> Bin k2 v2 (insert k v l) r
         | EQ -> Bin k v l r
-        | GT -> Bin k2 v2 l (insert k v r)
+        | GT -> Bin k2 v2 l (insert k v r))
     | Tip -> Bin k v empty empty
 
 let map f m : [Ord k] -> (a -> b) -> Map k a -> Map k b =
@@ -97,7 +97,7 @@ let traverse_with_key f m : [Ord k] -> [Applicative t] -> (k -> a -> t b)
         | Tip -> wrap Tip
         | Bin k v l r ->
             map3 (flip (Bin k)) (go l) (f k v) (go r)
-
+    in
     go m
 
 let traverse ?ord app f : [Ord k] -> Applicative t -> (a -> t b) -> Map k a -> t (Map k b) =
@@ -122,6 +122,7 @@ let keys : [Ord k] -> Map k a -> List k = foldr_with_key (\k _ acc -> Cons k acc
 /// Returns a list of all values in the map.
 let values : [Ord k] -> Map k a -> List a = foldr Cons Nil
 
+in
 {
     Map,
 

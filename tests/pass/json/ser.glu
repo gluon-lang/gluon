@@ -21,6 +21,7 @@ type Variant = | MyInt Int | MyString String
 #[derive(Show, Eq, Serialize)]
 type MyOption a = | MyNone | MySome a
 
+in
 group "json.ser" [
     test "derive_record_1_field" <| \_ ->
         assert_eq (ser.to_string { x = 1 }) (Ok r#"{"x":1}"#),

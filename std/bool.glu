@@ -25,6 +25,7 @@ let conjunctive =
         empty = True,
     }
 
+    in
     { semigroup, monoid }
 
 let disjunctive =
@@ -37,6 +38,8 @@ let disjunctive =
         empty = False,
     }
 
+
+    in
     { semigroup, monoid }
 
 let exclusive =
@@ -52,6 +55,7 @@ let exclusive =
         inverse = id,
     }
 
+    in
     { semigroup, monoid, group }
 
 let eq : Eq Bool = {
@@ -66,6 +70,7 @@ let show : Show Bool = {
     show = \x -> if x then "True" else "False"
 }
 
+in
 {
     Bool,
     not,

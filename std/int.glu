@@ -18,6 +18,7 @@ let additive =
         inverse = \x -> 0 #Int- x,
     }
 
+    in
     { semigroup, monoid, group }
 
 let multiplicative =
@@ -30,6 +31,7 @@ let multiplicative =
         empty = 1,
     }
 
+    in
     { semigroup, monoid }
 
 let eq : Eq Int = {
@@ -54,6 +56,7 @@ let show : Show Int = {
     show = (import! std.prim).show_int
 }
 
+in
 {
     additive,
     multiplicative,

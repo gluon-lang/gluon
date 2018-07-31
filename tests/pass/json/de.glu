@@ -21,6 +21,7 @@ type Recursive = { record : Record, y : Float }
 #[derive(Show, Eq, Deserialize)]
 type Variant = | Int Int | String String
 
+in
 group "json.de" [
     test "derive_record_1_field" <| \_ ->
         assert_eq (de.deserialize deserializer r#"{ "x" : 1 }"#) (Ok { x = 1 }),

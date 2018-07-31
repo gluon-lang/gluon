@@ -18,6 +18,7 @@ let (<<) : forall a b c . [Category cat] -> cat b c -> cat a b -> cat a c = comp
 #[infix(left, 9)]
 let (>>) f g : forall a b c . [Category cat] -> cat a b -> cat b c -> cat a c = compose g f
 
+in
 {
     Category,
     id, compose,

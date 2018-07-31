@@ -24,10 +24,13 @@ let eq ?eq : [Eq a] -> Eq (Array a) =
                 if i < len then
                     let x = prim.index l i
                     let y = prim.index r i
+                    in
                     eq.(==) x y && array_eq_ (i + 1)
                 else
                     True
+            in
             array_eq_ 0
+    in
     { (==) = array_eq }
 
 let ord ?ord : [Ord a] -> Ord (Array a) =
@@ -37,30 +40,37 @@ let ord ?ord : [Ord a] -> Ord (Array a) =
             if i < min_len then
                 let x = prim.index l i
                 let y = prim.index r i
+                in
                 match ord.compare x y with
                 | EQ -> array_cmp_ (i + 1)
                 | o -> o
             else
                 compare (prim.len l) (prim.len r)
 
+        in
         array_cmp_ 0
+    in
     { eq, compare = array_cmp }
 
 let show ?d : [Show a] -> Show (Array a) =
 
     let show xs =
         let len = prim.len xs
+        in
         if len == 0 then
             "[]"
         else
             let show_elems i =
                 if i < len then
                     let x = prim.index xs i
+                    in
                     ", " ++ d.show x ++ show_elems (i + 1)
                 else
                     ""
 
+            in
             "[" ++ d.show (prim.index xs 0) ++ show_elems 1 ++ "]"
+    in
     { show }
 
 let functor : Functor Array =
@@ -68,10 +78,13 @@ let functor : Functor Array =
         let map_ i =
             if i < prim.len xs then
                 let y = prim.index xs i
+                in
                 cons (f y) (map_ (i + 1))
             else
                 []
+        in
         map_ 0
+    in
     { map }
 
 let foldable : Foldable Array =
@@ -82,7 +95,9 @@ let foldable : Foldable Array =
                 y
             else
                 let x = prim.index xs (i - 1)
+                in
                 foldr_ (i - 1) (f x y)
+        in
         foldr_ len y
 
     let foldl f y xs =
@@ -90,12 +105,15 @@ let foldable : Foldable Array =
         let foldl_ i y =
             if i < len then
                 let x = prim.index xs i
+                in
                 foldl_ (i + 1) (f y x)
             else
                 y
 
+        in
         foldl_ 0 y
 
+    in
     { foldr, foldl }
 
 let traversable : Traversable Array =
@@ -111,6 +129,7 @@ let traversable : Traversable Array =
 let semigroup : Semigroup (Array a) = { append = prim.append }
 let monoid : Monoid (Array a) = { semigroup, empty = [] }
 
+in
 {
     eq,
     ord,

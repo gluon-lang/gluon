@@ -16,6 +16,7 @@ let additive =
         inverse = \x -> 0.0 #Float- x,
     }
 
+    in
     { semigroup, monoid, group }
 
 let multiplicative =
@@ -31,6 +32,7 @@ let multiplicative =
         inverse = \x -> 1.0 #Float/ x,
     }
 
+    in
     { semigroup, monoid, group }
 
 let eq : Eq Float = {
@@ -55,6 +57,7 @@ let show : Show Float = {
     show = (import! std.prim).show_float
 }
 
+in
 {
     additive,
     multiplicative,

@@ -217,5 +217,6 @@ fn main() {
     println!("cargo:rerun-if-changed=examples/24.glu");
 
     generate_std_include();
+    #[cfg(not(feature = "test"))]
     println!("cargo:rerun-if-changed=std/");
 }

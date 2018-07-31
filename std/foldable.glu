@@ -32,7 +32,7 @@ let find ?fold pred : [Foldable t] -> (a -> Bool) -> t a -> Option a =
         match acc with
         | None -> if pred next then Some next else None
         | Some _ -> acc
-
+    in
     fold.foldl go None
 
 let find_map ?fold pred : [Foldable t] -> (a -> Option b) -> t a -> Option b =
@@ -40,7 +40,7 @@ let find_map ?fold pred : [Foldable t] -> (a -> Option b) -> t a -> Option b =
         match acc with
         | None -> pred next
         | Some _ -> acc
-
+    in
     fold.foldl go None
 
 let all pred : [Foldable t] -> (a -> Bool) -> t a -> Bool =
@@ -55,6 +55,7 @@ let elem eq x : [Foldable t] -> Eq a -> a -> t a -> Bool =
 let count : [Foldable t] -> t a -> Int =
     foldl (\acc _ -> acc #Int+ 1) 0
 
+in
 {
     Foldable,
     foldr,

@@ -19,6 +19,7 @@ type Monoid a = {
 
 let empty ?m : [Monoid a] -> a = m.empty
 
+in
 {
     Monoid,
     empty,

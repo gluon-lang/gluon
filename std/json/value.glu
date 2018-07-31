@@ -10,4 +10,5 @@ type Value =
     | Array (Array Value)
     | Object (Map String Value)
 
+in
 { Value }

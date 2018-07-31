@@ -38,7 +38,7 @@ let run test : Test a -> () =
     match test.writer with
     | Cons _ _ -> error (foldl (\acc err -> acc <> "\n" <> err) "" test.writer)
     | Nil -> ()
-
+in
 {
     Test,
     TestCase,

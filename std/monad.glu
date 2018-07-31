@@ -46,6 +46,7 @@ let (>>=) x f : [Monad m] -> m a -> (a -> m b) -> m b = flat_map f x
 
 let join mm : [Monad m] -> m (m a) -> m a = mm >>= (\x -> x)
 
+in
 {
     Monad,
     flat_map, (>>=), (=<<), join,

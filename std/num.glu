@@ -31,6 +31,7 @@ let (/) ?num : [Num a] -> a -> a -> a = num.(/)
 
 let negate ?num : [Num a] -> a -> a = num.negate
 
+in
 {
     Num,
 

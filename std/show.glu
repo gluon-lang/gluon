@@ -17,6 +17,7 @@ type Show a = { show : a -> String }
 /// ```
 let show ?s : [Show a] -> a -> String = s.show
 
+in
 {
     Show,
     show,

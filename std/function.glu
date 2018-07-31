@@ -59,6 +59,7 @@ let (<<) : (b -> c) -> (a -> b) -> a -> c = category.compose
 #[infix(left, 9)]
 let (>>) : (a -> b) -> (b -> c) -> a -> c = flip category.compose
 
+in
 {
     semigroup,
     monoid,

@@ -24,7 +24,7 @@ let sequence : [Traversable t] -> [Applicative m] -> t (m a) -> m (t a) =
 let for x f : [Traversable t] -> [Applicative m] -> t a -> (a -> m b) -> m (t b) =
     traverse f x
 
-
+in
 {
     Traversable,
 

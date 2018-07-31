@@ -14,6 +14,7 @@ type Group a = {
     inverse : a -> a
 }
 
+in
 {
     Group
 }

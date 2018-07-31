@@ -94,8 +94,10 @@ let show ?e ?t : [Show e] -> [Show t] -> Show (Result e t) =
         | Ok x -> "Ok (" <> t.show x <> ")"
         | Err x -> "Err (" <> e.show x <> ")"
 
+    in
     { show }
 
+in
 {
     Result,
     unwrap_ok,

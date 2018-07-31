@@ -18,7 +18,7 @@ let { Bool, not } = import! std.bool
 let { (++) } = import! std.string
 let { error } = import! std.prim
 let { flat_map } = import! std.monad
-
+in
 {
     Ordering,
 

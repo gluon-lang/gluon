@@ -44,7 +44,9 @@ let of xs : Array a -> List a =
             ys
         else
             let x = array.index xs (i - 1)
+            in
             of_ (i - 1) (Cons x ys)
+    in
     of_ len Nil
 
 let semigroup : Semigroup (List a) =
@@ -52,7 +54,7 @@ let semigroup : Semigroup (List a) =
         match xs with
         | Cons x zs -> Cons x (append zs ys)
         | Nil -> ys
-
+    in
     { append }
 
 let monoid : Monoid (List a) = {
@@ -65,11 +67,12 @@ let ord ?ord : [Ord a] -> Ord (List a) =
         match (l, r) with
         | (Nil, Nil) -> EQ
         | (Cons x xs, Cons y ys) ->
-            match ord.compare x y with
+            (match ord.compare x y with
             | EQ -> list_cmp xs ys
-            | o -> o
+            | o -> o)
         | (Cons _ _, Nil) -> GT
         | (Nil, Cons _ _) -> LT
+    in
     { eq = eq_List, compare = list_cmp }
 
 let functor : Functor List =
@@ -77,6 +80,7 @@ let functor : Functor List =
         match xs with
         | Cons y ys -> Cons (f y) (map f ys)
         | Nil -> Nil
+    in
     { map }
 
 let applicative : Applicative List =
@@ -87,6 +91,7 @@ let applicative : Applicative List =
         | Nil -> Nil
     let wrap x = Cons x Nil
 
+    in
     { functor = functor, apply, wrap }
 
 let many ?alt x : [Alternative f] -> f a -> f (List a) =
@@ -95,7 +100,9 @@ let many ?alt x : [Alternative f] -> f a -> f (List a) =
         some_v () <|> wrap Nil
     and some_v _ =
         let { ? } = alt.applicative
+        in
         map (\h l -> Cons h l) x <*> many_v ()
+    in
     many_v ()
 
 let some ?alt x : [Alternative f] -> f a -> f (List a) =
@@ -104,7 +111,9 @@ let some ?alt x : [Alternative f] -> f a -> f (List a) =
         some_v () <|> wrap Nil
     and some_v _ =
         let { ? } = alt.applicative
+        in
         map (\h l -> Cons h l) x <*> many_v ()
+    in
     some_v ()
 
 let alternative : Alternative List = {
@@ -119,6 +128,7 @@ let monad : Monad List =
         | Cons x ys -> (f x) <> (flat_map f ys)
         | Nil -> Nil
 
+    in
     { applicative = applicative, flat_map }
 
 let show ?d : [Show a] -> Show (List a) =
@@ -127,12 +137,10 @@ let show ?d : [Show a] -> Show (List a) =
         show = \xs ->
             let show_elems ys =
                 match ys with
-                | Cons y ys2 ->
-                    match ys2 with
-                    | Cons z zs -> d.show y <> ", " <> show_elems ys2
-                    | Nil -> d.show y
+                | Cons y ys2@(Cons _ _) -> d.show y <> ", " <> show_elems ys2
+                | Cons y Nil -> d.show y
                 | Nil -> ""
-
+            in
             "[" <> show_elems xs <> "]",
     }
 
@@ -146,7 +154,7 @@ let foldable : Foldable List =
         match xs with
         | Cons y ys -> foldl f (f x y) ys
         | Nil -> x
-
+    in
     { foldr, foldl }
 
 let traversable : Traversable List = {
@@ -172,6 +180,7 @@ let filter predicate xs : (a -> Bool) -> List a -> List a =
     | Nil -> Nil
     | Cons y ys ->
         let rest = filter predicate ys
+        in
         if predicate y then Cons y rest else rest
 
 let scan compare xs less equal greater : (a -> Ordering)
@@ -182,11 +191,11 @@ let scan compare xs less equal greater : (a -> Ordering)
         -> (List a, List a, List a) =
     match xs with
     | Nil -> (less, equal, greater)
-    | Cons y ys ->
+    | Cons y ys -> (
         match compare y with
         | LT -> scan compare ys (Cons y less) equal greater
         | EQ -> scan compare ys less (Cons y equal) greater
-        | GT -> scan compare ys less equal (Cons y greater)
+        | GT -> scan compare ys less equal (Cons y greater))
 
 /// Sorts the list using `ord`.
 ///
@@ -200,9 +209,10 @@ let sort xs : [Ord a] -> List a -> List a =
     | Nil -> Nil
     | Cons pivot ys ->
         let (less, equal, greater) = scan (\a -> compare a pivot) ys Nil (Cons pivot Nil) Nil
+        in
         sort less <> equal <> sort greater
 
-
+in
 {
     List,
     of,

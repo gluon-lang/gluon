@@ -81,6 +81,7 @@ let map9 fn a b c d e f g h i : [Applicative f] -> _ =
 let map10 fn a b c d e f g h i j : [Applicative f] -> _ =
     map9 fn a b c d e f g h i <*> j
 
+in
 {
     Applicative,
     apply, wrap, (<*>), (<*), (*>),

@@ -79,6 +79,7 @@ let monoid : Monoid Ordering = {
     empty = EQ,
 }
 
+in
 {
     Eq,
     (==), (/=),

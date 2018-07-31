@@ -36,6 +36,7 @@ let former =
         empty = None,
     }
 
+    in
     { semigroup, monoid }
 
 let latter =
@@ -51,6 +52,7 @@ let latter =
         empty = None,
     }
 
+    in
     { semigroup, monoid }
 
 let semigroup a : Semigroup a -> Semigroup (Option a) = {
@@ -124,7 +126,7 @@ let show ?d : [Show a] -> Show (Option a) =
         match o with
         | Some x -> "Some (" <> d.show x <> ")"
         | None -> "None"
-
+    in
     { show }
 
 let foldable : Foldable Option = {
@@ -147,6 +149,7 @@ let traversable : Traversable Option = {
         | Some x -> app.functor.map Some (f x),
 }
 
+in
 {
     Option,
     unwrap,

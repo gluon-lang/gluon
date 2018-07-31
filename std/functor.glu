@@ -27,4 +27,5 @@ type Functor f = {
 
 let map ?functor : [Functor f] -> (a -> b) -> f a -> f b = functor.map
 
+in
 { Functor, map }

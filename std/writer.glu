@@ -29,11 +29,14 @@ let make monoid : Monoid w -> Impl w =
         applicative,
         flat_map = \f m ->
             let { value, writer } = f m.value
+            in
             { value, writer = m.writer <> writer },
     }
-
+    
+    in
     { functor, applicative, monad }
 
 let tell w : w -> Writer w () = { value = (), writer = w }
 
+in
 { Writer, Impl, make, tell }

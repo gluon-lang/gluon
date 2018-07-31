@@ -17,6 +17,7 @@ let or ?alt : [Alternative f] -> f a -> f a -> f a = alt.or
 #[infix(left, 3)]
 let (<|>) : [Alternative f] -> f a -> f a -> f a = or
 
+in
 {
     Alternative,
     empty, or, (<|>),

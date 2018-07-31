@@ -17,6 +17,7 @@ let append ?s : [Semigroup a] -> a -> a -> a = s.append
 #[infix(left, 4)]
 let (<>) : [Semigroup a] -> a -> a -> a = append
 
+in
 {
     Semigroup,
     append,
