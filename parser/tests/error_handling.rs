@@ -74,26 +74,6 @@ fn missing_match_expr() {
 }
 
 #[test]
-fn wrong_indent_expression() {
-    let _ = ::env_logger::try_init();
-
-    let result = parse(
-        r#"
-let y =
-    let x = 1
-    x
-   2
-y
-"#,
-    );
-    let error = Error::UnexpectedToken("IntLiteral".into(), vec![]);
-    let span = pos::span(BytePos::from(0), BytePos::from(0));
-    let errors = ParseErrors::from(vec![pos::spanned(span, error)]);
-
-    assert_eq!(remove_expected(result.unwrap_err().1), errors);
-}
-
-#[test]
 fn unclosed_string() {
     let _ = ::env_logger::try_init();
 
@@ -195,7 +175,7 @@ fn incomplete_alternative() {
         case(int(1), vec![(Pattern::Error, error())])
     );
 
-    let error = Error::UnexpectedToken("CloseBlock".into(), vec![]);
+    let error = Error::UnexpectedEof(vec![]);
     let span = pos::span(BytePos::from(0), BytePos::from(0));
     assert_eq!(
         remove_expected(err),
@@ -266,7 +246,7 @@ fn incomplete_alternative_with_partial_pattern() {
 
     let errors = vec![
         no_loc(Error::UnexpectedToken("RBrace".into(), vec![])),
-        no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![])),
+        no_loc(Error::UnexpectedEof(vec![])),
     ];
     assert_eq!(remove_expected(err), ParseErrors::from(errors));
 }
@@ -277,6 +257,7 @@ fn incomplete_let_binding() {
 
     let expr = r#"
     let test =
+    in
     1
     "#;
     let result = parse(expr);
@@ -287,7 +268,7 @@ fn incomplete_let_binding() {
         let_("test", no_loc(Expr::Error(None)), int(1),)
     );
 
-    let errors = vec![no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![]))];
+    let errors = vec![no_loc(Error::UnexpectedToken("In".into(), vec![]))];
     assert_eq!(remove_expected(err), ParseErrors::from(errors));
 }
 
@@ -306,10 +287,7 @@ fn incomplete_let_binding_2() {
         let_("test", id("io"), no_loc(Expr::Error(None)))
     );
 
-    let errors = vec![
-        no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![])),
-        no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![])),
-    ];
+    let errors = vec![no_loc(Error::UnexpectedEof(vec![]))];
     assert_eq!(remove_expected(err), ParseErrors::from(errors));
 }
 

@@ -699,6 +699,10 @@ Binding<A>: Expr<Id> = {
 BindingEnd<A>: SpannedExpr<Id> = {
     <bind: Sp<Binding<A>>> => bind,
     "in" <body: SpExprRestricted<A>> => body,
+    Sp<!> => {
+        errors.push(<>.value.error);
+        pos::spanned(<>.span, Expr::Error(None))
+    }
 };
 
 Expr: Expr<Id> = {
