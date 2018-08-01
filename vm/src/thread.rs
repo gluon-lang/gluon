@@ -25,7 +25,9 @@ use gc::{DataDef, Gc, GcPtr, Generation, Move};
 use interner::InternedStr;
 use macros::MacroEnv;
 use source_map::LocalIter;
-use stack::{ClosureState, ExternState, Frame, Lock, Stack, StackFrame, StackState, State};
+use stack::{
+    ClosureState, ExternCallState, ExternState, Frame, Lock, Stack, StackFrame, StackState, State,
+};
 use types::*;
 use value::{
     BytecodeFunction, Callable, ClosureData, ClosureDataDef, ClosureInitDef, Def, ExternFunction,
@@ -1388,10 +1390,6 @@ impl<'b> DerefMut for OwnedContext<'b> {
     }
 }
 
-const INITIAL_CALL: usize = 0;
-const POLL_CALL: usize = 1;
-const IN_POLL: usize = 2;
-
 impl<'b> OwnedContext<'b> {
     fn exit_scope(mut self) -> StdResult<OwnedContext<'b>, ()> {
         let exists = StackFrame::<State>::current(&mut self.stack)
@@ -1416,7 +1414,7 @@ impl<'b> OwnedContext<'b> {
             if context.hook.flags.contains(HookFlags::CALL_FLAG) {
                 match state {
                     State::Extern(ExternState {
-                        instruction_index: 0,
+                        call_state: ExternCallState::Start,
                         ..
                     })
                     | State::Closure(ClosureState {
@@ -1440,17 +1438,17 @@ impl<'b> OwnedContext<'b> {
             maybe_context = match state {
                 State::Lock | State::Unknown => return Ok(Async::Ready(Some(context))),
                 State::Extern(ext) => {
-                    let instruction_index = ext.instruction_index;
-
-                    if instruction_index == IN_POLL {
+                    // We are currently in the poll call of this extern function.
+                    // Return control to the caller.
+                    if ext.call_state == ExternCallState::InPoll {
                         return Ok(Async::Ready(Some(context)));
                     }
                     StackFrame::<ExternState>::current(&mut context.stack)
                         .frame
                         .state
-                        .instruction_index = POLL_CALL;
+                        .call_state = ExternCallState::Poll;
                     Some(try_ready!(context.execute_function(
-                        instruction_index == INITIAL_CALL,
+                        ext.call_state,
                         &ext.function,
                         polled,
                     )))
@@ -1515,7 +1513,7 @@ impl<'b> OwnedContext<'b> {
 
     fn execute_function(
         mut self,
-        initial_call: bool,
+        call_state: ExternCallState,
         function: &ExternFunction,
         polled: bool,
     ) -> Result<Async<OwnedContext<'b>>> {
@@ -1526,82 +1524,91 @@ impl<'b> OwnedContext<'b> {
         );
 
         let mut status = Status::Ok;
-        if initial_call {
-            // Make sure that the stack is not borrowed during the external function call
-            // Necessary since we do not know what will happen during the function call
-            let thread = self.thread;
-            drop(self);
-            status = (function.function)(thread);
+        match call_state {
+            ExternCallState::Start => {
+                // Make sure that the stack is not borrowed during the external function call
+                // Necessary since we do not know what will happen during the function call
+                let thread = self.thread;
+                drop(self);
+                status = (function.function)(thread);
 
-            if status == Status::Yield {
-                return Ok(Async::NotReady);
-            }
-
-            self = thread.owned_context();
-
-            if status == Status::Error {
-                return match self.stack.pop().get_repr() {
-                    String(s) => Err(Error::Panic(s.to_string(), Some(self.stack.stacktrace(0)))),
-                    _ => Err(Error::Message(format!(
-                        "Unexpected error calling function `{}`",
-                        function.id
-                    ))),
-                };
-            }
-
-            // The `poll_fn` at the top may be for a stack frame at a lower level, return to the
-            // state loop to ensure that we are executing the frame at the top of the stack
-            if !self.poll_fns.is_empty() {
-                return Ok(Async::Ready(self));
-            }
-        }
-        while let Some((lock, mut poll_fn)) = self.poll_fns.pop() {
-            // We can only poll the future if the code is currently executing in a future
-            if !polled {
-                self.poll_fns.push((lock, poll_fn));
-                return Ok(Async::NotReady);
-            }
-
-            let frame_offset = self.stack.get_frames().len() - 1;
-            if self.poll_fns.is_empty() {
-                match self.stack.get_frames_mut()[frame_offset].state {
-                    State::Extern(ref mut e) => e.instruction_index = IN_POLL,
-                    _ => unreachable!(),
-                }
-            }
-            let thread = self.thread;
-            drop(self);
-            // Poll the future that was returned from the initial call to this extern function
-            match poll_fn(thread) {
-                Ok(Async::Ready(context)) => {
-                    self = context;
-                    if let Some(lock) = lock {
-                        self.stack.release_lock(lock);
-                    }
-                    StackFrame::<ExternState>::current(&mut self.stack)
-                        .frame
-                        .state
-                        .instruction_index = POLL_CALL;
-                    return Ok(Async::Ready(self));
-                }
-                Ok(Async::NotReady) => {
-                    self = thread.owned_context();
-                    match self.stack.get_frames_mut()[frame_offset].state {
-                        State::Extern(ref mut e) => e.instruction_index = POLL_CALL,
-                        _ => unreachable!(),
-                    }
-                    // Restore `poll_fn` so it can be polled again
-                    self.poll_fns.push((lock, poll_fn));
+                if status == Status::Yield {
                     return Ok(Async::NotReady);
                 }
-                Err(err) => {
-                    self = thread.owned_context();
-                    if let Some(lock) = lock {
-                        self.stack.release_lock(lock);
-                    }
-                    return Err(err);
+
+                self = thread.owned_context();
+
+                if status == Status::Error {
+                    return match self.stack.pop().get_repr() {
+                        String(s) => {
+                            Err(Error::Panic(s.to_string(), Some(self.stack.stacktrace(0))))
+                        }
+                        _ => Err(Error::Message(format!(
+                            "Unexpected error calling function `{}`",
+                            function.id
+                        ))),
+                    };
+                }
+
+                // The `poll_fn` at the top may be for a stack frame at a lower level, return to the
+                // state loop to ensure that we are executing the frame at the top of the stack
+                if !self.poll_fns.is_empty() {
+                    return Ok(Async::Ready(self));
                 }
             }
+
+            ExternCallState::Poll => {
+                while let Some((lock, mut poll_fn)) = self.poll_fns.pop() {
+                    // We can only poll the future if the code is currently executing in a future
+                    if !polled {
+                        self.poll_fns.push((lock, poll_fn));
+                        return Ok(Async::NotReady);
+                    }
+
+                    let frame_offset = self.stack.get_frames().len() - 1;
+                    if self.poll_fns.is_empty() {
+                        match self.stack.get_frames_mut()[frame_offset].state {
+                            State::Extern(ref mut e) => e.call_state = ExternCallState::InPoll,
+                            _ => unreachable!(),
+                        }
+                    }
+                    let thread = self.thread;
+                    drop(self);
+                    // Poll the future that was returned from the initial call to this extern function
+                    match poll_fn(thread) {
+                        Ok(Async::Ready(context)) => {
+                            self = context;
+                            if let Some(lock) = lock {
+                                self.stack.release_lock(lock);
+                            }
+                            StackFrame::<ExternState>::current(&mut self.stack)
+                                .frame
+                                .state
+                                .call_state = ExternCallState::Poll;
+                            return Ok(Async::Ready(self));
+                        }
+                        Ok(Async::NotReady) => {
+                            self = thread.owned_context();
+                            match self.stack.get_frames_mut()[frame_offset].state {
+                                State::Extern(ref mut e) => e.call_state = ExternCallState::Poll,
+                                _ => unreachable!(),
+                            }
+                            // Restore `poll_fn` so it can be polled again
+                            self.poll_fns.push((lock, poll_fn));
+                            return Ok(Async::NotReady);
+                        }
+                        Err(err) => {
+                            self = thread.owned_context();
+                            if let Some(lock) = lock {
+                                self.stack.release_lock(lock);
+                            }
+                            return Err(err);
+                        }
+                    }
+                }
+            }
+            // Handled outside of this function
+            ExternCallState::InPoll => unreachable!(),
         }
 
         // The function call is done at this point so remove any extra values from the frame and
@@ -2093,13 +2100,7 @@ where
                 assert!(self.stack.len() >= ext.args + 1);
                 let function_index = self.stack.len() - ext.args - 1;
                 debug!("------- {} {:?}", function_index, &self.stack[..]);
-                self.enter_scope(
-                    ext.args,
-                    ExternState {
-                        function: *ext,
-                        instruction_index: 0,
-                    },
-                );
+                self.enter_scope(ext.args, ExternState::new(*ext));
                 Ok(())
             }
         }

@@ -200,10 +200,7 @@ fn spawn_<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> VmResult<Ro
                 closure,
                 instruction_index: 0,
             }),
-            ValueRepr::Function(function) => State::Extern(ExternState {
-                function,
-                instruction_index: 0,
-            }),
+            ValueRepr::Function(function) => State::Extern(ExternState::new(function)),
             _ => State::Unknown,
         };
         value.value.push(&mut context)?;

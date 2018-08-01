@@ -64,6 +64,14 @@ pub struct ClosureState {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
+pub(crate) enum ExternCallState {
+    Start,
+    InPoll,
+    Poll,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
 #[cfg_attr(
     feature = "serde_derive",
     derive(DeserializeState, SerializeState)
@@ -79,7 +87,16 @@ pub struct ClosureState {
 pub struct ExternState {
     #[cfg_attr(feature = "serde_derive", serde(state))]
     pub(crate) function: GcPtr<ExternFunction>,
-    pub(crate) instruction_index: usize,
+    pub(crate) call_state: ExternCallState,
+}
+
+impl ExternState {
+    pub fn new(function: GcPtr<ExternFunction>) -> Self {
+        ExternState {
+            function,
+            call_state: ExternCallState::Start,
+        }
+    }
 }
 
 pub trait StackState: Copy {
