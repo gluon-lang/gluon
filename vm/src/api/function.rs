@@ -301,26 +301,10 @@ where
     }
 }
 
-macro_rules! make_vm_function {
-    ($($args:ident),*) => (
-impl <$($args: VmType,)* R: VmType> VmType for fn ($($args),*) -> R {
-    #[allow(non_snake_case)]
-    type Type = fn ($($args::Type),*) -> R::Type;
+macro_rules! vm_function_impl {
+    ($f:tt, $($args:ident),*) => {
 
-    #[allow(non_snake_case)]
-    fn make_type(vm: &Thread) -> ArcType {
-        let args = vec![$(make_type::<$args>(vm)),*];
-        vm.global_env().type_cache().function(args, make_type::<R>(vm))
-    }
-}
-
-impl <'vm, $($args,)* R: VmType> FunctionType for fn ($($args),*) -> R {
-    fn arguments() -> VmIndex {
-        count!($($args),*) + R::extra_args()
-    }
-}
-
-impl <'vm, $($args,)* R> VmFunction<'vm> for fn ($($args),*) -> R
+impl <'vm, $($args,)* R> VmFunction<'vm> for $f ($($args),*) -> R
 where $($args: for<'value> Getable<'vm, 'value> + 'vm,)*
       R: AsyncPushable<'vm> + VmType + 'vm
 {
@@ -349,6 +333,31 @@ where $($args: for<'value> Getable<'vm, 'value> + 'vm,)*
             r
         };
         r.async_status_push(&mut context, lock)
+    }
+}
+
+    }
+}
+
+macro_rules! make_vm_function {
+    ($($args:ident),*) => (
+impl <$($args: VmType,)* R: VmType> VmType for fn ($($args),*) -> R {
+    #[allow(non_snake_case)]
+    type Type = fn ($($args::Type),*) -> R::Type;
+
+    #[allow(non_snake_case)]
+    fn make_type(vm: &Thread) -> ArcType {
+        let args = vec![$(make_type::<$args>(vm)),*];
+        vm.global_env().type_cache().function(args, make_type::<R>(vm))
+    }
+}
+
+vm_function_impl!(fn, $($args),*);
+vm_function_impl!(Fn, $($args),*);
+
+impl <'vm, $($args,)* R: VmType> FunctionType for fn ($($args),*) -> R {
+    fn arguments() -> VmIndex {
+        count!($($args),*) + R::extra_args()
     }
 }
 
@@ -364,38 +373,6 @@ impl <'s, $($args: VmType,)* R: VmType> VmType for Fn($($args),*) -> R + 's {
     #[allow(non_snake_case)]
     fn make_type(vm: &Thread) -> ArcType {
         <fn ($($args),*) -> R>::make_type(vm)
-    }
-}
-
-impl <'vm, $($args,)* R> VmFunction<'vm> for Fn($($args),*) -> R + 'vm
-where $($args: for<'value> Getable<'vm, 'value> + 'vm,)*
-      R: AsyncPushable<'vm> + VmType + 'vm
-{
-    #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables, unused_unsafe)]
-    fn unpack_and_call(&self, vm: &'vm Thread) -> Status {
-        let n_args = Self::arguments();
-        let mut context = vm.current_context();
-        let mut i = 0;
-        let lock;
-        let r = unsafe {
-            let ($($args,)*) = {
-                let stack = StackFrame::current(context.stack());
-                $(let $args = {
-                    let x = $args::from_value_unsafe(vm, Variants::new(&stack[i]));
-                    i += 1;
-                    x
-                });*;
-// Lock the frame to ensure that any reference from_value_unsafe may have returned stay
-// rooted
-                lock = stack.into_lock();
-                ($($args,)*)
-            };
-            drop(context);
-            let r = (*self)($($args),*);
-            context = vm.current_context();
-            r
-        };
-        r.async_status_push(&mut context, lock)
     }
 }
 

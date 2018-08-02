@@ -17,7 +17,7 @@ use gluon::vm::api::{FunctionRef, Hole, OpaqueValue, ValueRef};
 use gluon::vm::channel::Sender;
 use gluon::vm::internal::Value;
 use gluon::vm::thread::{RootedThread, Thread, ThreadInternal};
-use gluon::{Compiler, Error};
+use gluon::{vm, Compiler, Error};
 
 test_expr!{ pass_function_value,
 r"
@@ -723,15 +723,15 @@ g 10
         .run_expr_async::<i32>(&mut vm, "<top>", text)
         .sync_or_error();
     match result {
-        Err(Error::VM(..)) => {
-            let stacktrace = vm.context().stack.stacktrace(1);
-            let g = stacktrace.frames[0].as_ref().unwrap().name.clone();
-            let f = stacktrace.frames[1].as_ref().unwrap().name.clone();
-            let end = stacktrace.frames[6].as_ref().unwrap().name.clone();
-            let error = stacktrace.frames[7].as_ref().unwrap().name.clone();
+        Err(Error::VM(vm::Error::Panic(_, Some(stacktrace)))) => {
+            let g = stacktrace.frames[1].as_ref().unwrap().name.clone();
+            let f = stacktrace.frames[2].as_ref().unwrap().name.clone();
+            let end = stacktrace.frames[7].as_ref().unwrap().name.clone();
+            let error = stacktrace.frames[8].as_ref().unwrap().name.clone();
             assert_eq!(
                 stacktrace.frames,
                 vec![
+                    None,
                     // Removed due to being a tail call
                     // Some(StacktraceFrame { name: f.clone(), line: 9 }),
                     Some(StacktraceFrame {

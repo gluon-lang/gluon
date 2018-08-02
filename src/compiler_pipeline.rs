@@ -30,14 +30,14 @@ use vm::compiler::CompiledModule;
 use vm::core;
 use vm::future::{BoxFutureValue, FutureValue};
 use vm::macros::MacroExpander;
-use vm::thread::{Execute, RootedValue, Thread, ThreadInternal, VmRoot};
+use vm::thread::{Execute, ExecuteTop, RootedValue, Thread, ThreadInternal, VmRoot};
 
 use {Compiler, Error, Result};
 
-fn execute<T, F>(vm: T, f: F) -> FutureValue<Execute<T>>
+fn execute<T, F>(vm: T, f: F) -> FutureValue<ExecuteTop<T>>
 where
-    T: Deref<Target = Thread>,
-    F: for<'vm> FnOnce(&'vm Thread) -> FutureValue<Execute<&'vm Thread>>,
+    T: Deref<Target = Thread> + Clone,
+    F: for<'vm> FnOnce(&'vm Thread) -> FutureValue<ExecuteTop<&'vm Thread>>,
 {
     let opt = match f(&vm) {
         FutureValue::Value(result) => Some(result.map(|v| v.1)),
@@ -46,7 +46,7 @@ where
     };
     match opt {
         Some(result) => FutureValue::Value(result.map(|v| (vm, v))),
-        None => FutureValue::Future(Execute::new(vm)),
+        None => FutureValue::Future(ExecuteTop(Execute::new(vm))),
     }
 }
 
@@ -730,7 +730,7 @@ where
         let closure = try_future!(vm.global_env().new_global_thunk(module));
 
         let vm1 = vm.clone();
-        execute(vm1, |vm| vm.call_thunk(closure))
+        execute(vm1, |vm| vm.call_thunk_top(closure))
             .map(|(vm, value)| ExecuteValue {
                 id: module_id,
                 expr: expr,
@@ -851,7 +851,7 @@ where
         let metadata = module.metadata;
         let vm1 = vm.clone();
         let closure = try_future!(vm.global_env().new_global_thunk(module.module));
-        execute(vm1, |vm| vm.call_thunk(closure))
+        execute(vm1, |vm| vm.call_thunk_top(closure))
             .map(|(vm, value)| ExecuteValue {
                 id: module_id,
                 expr: (),
@@ -951,7 +951,7 @@ where
         } = v;
 
         let vm1 = vm.clone();
-        execute(vm1, |vm| vm.execute_io(value.get_value()))
+        execute(vm1, |vm| vm.execute_io_top(value.get_value()))
             .map(move |(_, value)| {
                 // The type of the new value will be `a` instead of `IO a`
                 let actual = resolve::remove_aliases_cow(&*vm.get_env(), &typ);

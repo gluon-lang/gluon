@@ -13,7 +13,7 @@ use vm::api::{
 use vm::future::FutureValue;
 use vm::gc::{Gc, Traverseable};
 use vm::internal::ValuePrinter;
-use vm::stack::{StackFrame, State};
+use vm::stack::StackFrame;
 use vm::thread::{Thread, ThreadInternal};
 use vm::types::*;
 use vm::{self, ExternModule, Result};
@@ -145,27 +145,14 @@ fn catch<'vm>(
     FutureResult(future)
 }
 
-fn clear_frames<T>(err: Error, stack: StackFrame) -> IO<T> {
-    fn clear_frames_(err: Error, mut stack: StackFrame) -> String {
-        let frame_level = stack
-            .stack
-            .get_frames()
-            .iter()
-            .rposition(|frame| frame.state == State::Lock)
-            .unwrap_or(0);
-
-        let fmt = match err {
-            // Ignore the stacktrace as we take a more specific range of the stack here
-            Error::VM(vm::Error::Panic(ref err, _)) => {
-                let trace = stack.stack.stacktrace(frame_level);
-                format!("{}\n{}", err, trace)
-            }
-            _ => format!("{}", err),
-        };
-        while let Ok(_) = stack.exit_scope() {}
-        fmt
+fn clear_frames<T>(mut err: Error, stack: StackFrame) -> IO<T> {
+    let new_trace = ::vm::thread::reset_stack(stack);
+    match err {
+        // Ignore the stacktrace as we take a more specific range of the stack here
+        Error::VM(vm::Error::Panic(_, ref mut trace)) => *trace = Some(new_trace),
+        _ => (),
     }
-    IO::Exception(clear_frames_(err, stack))
+    IO::Exception(err.to_string())
 }
 
 field_decl! { value, typ }

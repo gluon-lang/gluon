@@ -75,6 +75,39 @@ where
     }
 }
 
+pub struct ExecuteTop<T>(pub Execute<T>);
+
+impl<T> Future for ExecuteTop<T>
+where
+    T: Deref<Target = Thread> + Clone,
+{
+    type Item = (T, Value);
+    type Error = Error;
+
+    // Returns `T` so that it can be reused by the caller
+    fn poll(&mut self) -> Poll<(T, Value), Error> {
+        let thread = self
+            .0
+            .thread
+            .as_ref()
+            .expect("cannot poll Execute future after it has succeded")
+            .clone();
+        match self.0.poll() {
+            Ok(Async::Ready(x)) => Ok(Async::Ready(x)),
+            Ok(Async::NotReady) => Ok(Async::NotReady),
+            Err(mut err) => {
+                let mut context = thread.context();
+                let stack = StackFrame::current(&mut context.stack);
+                let new_trace = reset_stack(stack);
+                if let Error::Panic(_, ref mut trace) = err {
+                    *trace = Some(new_trace);
+                }
+                Err(err)
+            }
+        }
+    }
+}
+
 /// Enum signaling a successful or unsuccess ful call to an extern function.
 /// If an error occured the error message is expected to be on the top of the stack.
 #[derive(Eq, PartialEq)]
@@ -814,8 +847,40 @@ where
     /// Evaluates a zero argument function (a thunk)
     fn call_thunk(&self, closure: GcPtr<ClosureData>) -> FutureValue<Execute<&Self>>;
 
+    fn call_thunk_top(&self, closure: GcPtr<ClosureData>) -> FutureValue<ExecuteTop<&Self>> {
+        match self.call_thunk(closure) {
+            FutureValue::Value(v) => FutureValue::Value(v.map_err(|mut err| {
+                let mut context = self.context();
+                let stack = StackFrame::current(&mut context.stack);
+                let new_trace = reset_stack(stack);
+                if let Error::Panic(_, ref mut trace) = err {
+                    *trace = Some(new_trace);
+                }
+                err
+            })),
+            FutureValue::Future(f) => FutureValue::Future(ExecuteTop(f)),
+            FutureValue::Polled => FutureValue::Polled,
+        }
+    }
+
     /// Executes an `IO` action
     fn execute_io(&self, value: Value) -> FutureValue<Execute<&Self>>;
+
+    fn execute_io_top(&self, value: Value) -> FutureValue<ExecuteTop<&Self>> {
+        match self.execute_io(value) {
+            FutureValue::Value(v) => FutureValue::Value(v.map_err(|mut err| {
+                let mut context = self.context();
+                let stack = StackFrame::current(&mut context.stack);
+                let new_trace = reset_stack(stack);
+                if let Error::Panic(_, ref mut trace) = err {
+                    *trace = Some(new_trace);
+                }
+                err
+            })),
+            FutureValue::Future(f) => FutureValue::Future(ExecuteTop(f)),
+            FutureValue::Polled => FutureValue::Polled,
+        }
+    }
 
     /// Calls a function on the stack.
     /// When this function is called it is expected that the function exists at
@@ -1071,7 +1136,7 @@ impl<'a> StackInfo<'a> {
     /// Returns the name of the function executing at this frame
     pub fn function_name(&self) -> Option<&str> {
         match self.frame().state {
-            State::Unknown | State::Lock | State::Excess => None,
+            State::Unknown | State::Lock => None,
             State::Closure(ref closure) => Some(closure.function.name.declared_name()),
             State::Extern(ref function) => Some(function.id.declared_name()),
         }
@@ -1350,7 +1415,6 @@ impl<'b> OwnedContext<'b> {
 
             maybe_context = match state {
                 State::Lock | State::Unknown => return Ok(Async::Ready(Some(context))),
-                State::Excess => context.exit_scope().ok(),
                 State::Extern(ext) => {
                     let instruction_index = context.borrow_mut().stack.frame.instruction_index;
                     if instruction_index == IN_POLL {
@@ -1475,8 +1539,8 @@ impl<'b> OwnedContext<'b> {
             let thread = self.thread;
             drop(self);
             // Poll the future that was returned from the initial call to this extern function
-            match poll_fn(thread)? {
-                Async::Ready(context) => {
+            match poll_fn(thread) {
+                Ok(Async::Ready(context)) => {
                     self = context;
                     if let Some(lock) = lock {
                         self.stack.release_lock(lock);
@@ -1484,12 +1548,19 @@ impl<'b> OwnedContext<'b> {
                     self.borrow_mut().stack.frame.instruction_index = POLL_CALL;
                     return Ok(Async::Ready(self));
                 }
-                Async::NotReady => {
+                Ok(Async::NotReady) => {
                     self = thread.owned_context();
                     self.stack.get_frames_mut()[frame_offset].instruction_index = POLL_CALL;
                     // Restore `poll_fn` so it can be polled again
                     self.poll_fns.push((lock, poll_fn));
                     return Ok(Async::NotReady);
+                }
+                Err(err) => {
+                    self = thread.owned_context();
+                    if let Some(lock) = lock {
+                        self.stack.release_lock(lock);
+                    }
+                    return Err(err);
                 }
             }
         }
@@ -1502,12 +1573,6 @@ impl<'b> OwnedContext<'b> {
             while stack.len() > 0 {
                 debug!("{} {:?}", stack.len(), &*stack);
                 stack.pop();
-            }
-            if !(match stack.frame.state {
-                State::Extern(ref e) => e.id == function.id,
-                _ => false,
-            }) {
-                "asd".to_string();
             }
             debug_assert!(
                 match stack.frame.state {
@@ -1762,12 +1827,7 @@ impl<'b> ExecuteContext<'b> {
                         self.stack.frame.state,
                         function.name
                     );
-                    match self.exit_scope() {
-                        Ok(_) => (),
-                        Err(_) => {
-                            self.enter_scope(args + amount + 1, State::Excess);
-                        }
-                    };
+                    self.exit_scope().unwrap();
                     info!(
                         "Clearing {} {} {:?}",
                         self.stack.len(),
@@ -2019,7 +2079,6 @@ impl<'b> ExecuteContext<'b> {
             // the call with the extra arguments
             match self.stack.pop().get_repr() {
                 Data(excess) => {
-                    self.enter_scope(0, State::Excess);
                     debug!("Push excess args {:?}", &excess.fields);
                     self.stack.push(result);
                     for value in &excess.fields {
@@ -2164,6 +2223,23 @@ impl<'vm> ActiveThread<'vm> {
     pub(crate) fn gc(&mut self) -> &mut Gc {
         &mut self.context.as_mut().unwrap().gc
     }
+}
+#[doc(hidden)]
+pub fn reset_stack(mut stack: StackFrame) -> ::stack::Stacktrace {
+    let frame_level = stack
+        .stack
+        .get_frames()
+        .iter()
+        .rposition(|frame| frame.state == State::Lock)
+        .unwrap_or(0);
+
+    let trace = stack.stack.stacktrace(frame_level);
+    while stack.stack.get_frames().len() > 1 {
+        if let Err(_) = stack.exit_scope() {
+            break;
+        }
+    }
+    trace
 }
 
 #[cfg(test)]

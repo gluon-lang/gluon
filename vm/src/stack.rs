@@ -58,8 +58,6 @@ pub enum State {
     Unknown,
     /// Locked frame which can only be unlocked by the caller which introduced the lock
     Lock,
-    /// Extra frame introduced to store a call with excess arguments
-    Excess,
     Closure(
         #[cfg_attr(
             feature = "serde_derive",
@@ -161,20 +159,7 @@ impl Stack {
     }
 
     pub fn remove_range(&mut self, from: VmIndex, to: VmIndex) {
-        let from = from as usize;
-        let to = to as usize;
-        let len = to - from;
-        let mid = from + ::std::cmp::min(self.values.len() - to, len);
-        for i in from..mid {
-            self.values[i] = self.values[i + len].clone();
-        }
-        for i in mid..(self.values.len() - len) {
-            self.values[i] = self.values[i + len].clone();
-        }
-        unsafe {
-            let current_len = self.values.len();
-            self.values.set_len(current_len - len as usize);
-        }
+        self.values.drain(from as usize..to as usize);
     }
 
     pub fn len(&self) -> VmIndex {
@@ -233,7 +218,7 @@ impl Stack {
                     line: Line::from(0),
                 })),
                 State::Unknown => Some(None),
-                State::Lock | State::Excess => None,
+                State::Lock => None,
             })
             .collect();
         Stacktrace { frames: frames }
