@@ -8,13 +8,14 @@ use futures::sync::oneshot;
 use futures::Future;
 
 use api::generic::A;
-use api::Generic;
-use api::{FunctionRef, Getable, OpaqueValue, PrimitiveFuture, Userdata, VmType, WithVM};
+use api::{
+    FunctionRef, Getable, OpaqueValue, PrimitiveFuture, Pushable, Pushed, Userdata, VmType, WithVM,
+};
 use base::types;
 use base::types::{ArcType, Type};
 use future::FutureValue;
 use gc::{Gc, GcPtr, Move, Traverseable};
-use thread::ThreadInternal;
+use thread::{RootedThread, ThreadInternal};
 use value::{Cloner, Value};
 use vm::Thread;
 use {Error, ExternModule, Result, Variants};
@@ -88,7 +89,7 @@ where
     }
 }
 
-fn force(WithVM { vm, value: lazy }: WithVM<&Lazy<A>>) -> PrimitiveFuture<Generic<A>> {
+fn force(WithVM { vm, value: lazy }: WithVM<&Lazy<A>>) -> PrimitiveFuture<Pushed<A>> {
     let mut lazy_lock = lazy.value.lock().unwrap();
     let lazy: GcPtr<Lazy<A>> = unsafe { GcPtr::from_raw(lazy) };
     let thunk = match *lazy_lock {
@@ -99,7 +100,10 @@ fn force(WithVM { vm, value: lazy }: WithVM<&Lazy<A>>) -> PrimitiveFuture<Generi
         Some(value) => {
             *lazy_lock = Lazy_::Blackhole(vm as *const Thread as usize, None);
             let mut function = unsafe {
-                FunctionRef::<fn(()) -> Generic<A>>::from_value(vm, Variants::new(&value))
+                FunctionRef::<fn(()) -> OpaqueValue<RootedThread, A>>::from_value(
+                    vm,
+                    Variants::new(&value),
+                )
             };
             drop(lazy_lock);
             let vm = vm.root_thread();
@@ -107,8 +111,9 @@ fn force(WithVM { vm, value: lazy }: WithVM<&Lazy<A>>) -> PrimitiveFuture<Generi
                 .call_fast_async(())
                 .then(move |result| match result {
                     Ok(value) => {
-                        unsafe {
-                            let value = match lazy.thread.deep_clone_value(&vm, value.get_value()) {
+                        {
+                            let value = match lazy.thread.deep_clone_value(&vm, value.get_variant())
+                            {
                                 Ok(value) => value,
                                 Err(err) => return FutureValue::sync(Err(err.to_string().into())),
                             };
@@ -123,7 +128,8 @@ fn force(WithVM { vm, value: lazy }: WithVM<&Lazy<A>>) -> PrimitiveFuture<Generi
                             }
                             *lazy_lock = Lazy_::Value(value);
                         }
-                        FutureValue::sync(Ok(value))
+                        value.push(&mut vm.current_context()).unwrap();
+                        FutureValue::sync(Ok(Pushed::default()))
                     }
                     Err(err) => FutureValue::sync(Err(format!("{}", err).into())),
                 })
@@ -158,7 +164,10 @@ fn force(WithVM { vm, value: lazy }: WithVM<&Lazy<A>>) -> PrimitiveFuture<Generi
                         }),
                 ))
             }
-            Lazy_::Value(ref value) => FutureValue::Value(Ok(Generic::from(value.clone()))),
+            Lazy_::Value(ref value) => {
+                vm.current_context().push(value.clone());
+                FutureValue::Value(Ok(Pushed::default()))
+            }
             _ => unreachable!(),
         },
     }

@@ -585,7 +585,8 @@ mod tests {
     {
         let mut context = thread.current_context();
         Ser(value).push(&mut context)?;
-        Ok(context.pop())
+        let variants = context.pop();
+        Ok(variants.get_value())
     }
 
     #[test]

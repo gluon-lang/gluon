@@ -15,7 +15,6 @@ use gluon::base::pos::BytePos;
 use gluon::base::types::Type;
 use gluon::vm::api::{FunctionRef, Hole, OpaqueValue, ValueRef};
 use gluon::vm::channel::Sender;
-use gluon::vm::internal::Value;
 use gluon::vm::thread::{RootedThread, Thread, ThreadInternal};
 use gluon::{vm, Compiler, Error};
 
@@ -300,7 +299,7 @@ r#"
 type Test = | A Int | B
 B
 "#,
-Value::tag(1)
+ValueRef::tag(1)
 }
 
 test_expr!{ any marshalled_option_none_is_int,
@@ -308,7 +307,7 @@ r#"
 let string_prim = import! std.string.prim
 string_prim.find "a" "b"
 "#,
-Value::tag(0)
+ValueRef::tag(0)
 }
 
 test_expr!{ any marshalled_ordering_is_int,
@@ -316,7 +315,7 @@ r#"
 let { string_compare } = import! std.prim
 string_compare "a" "b"
 "#,
-Value::tag(0)
+ValueRef::tag(0)
 }
 
 test_expr!{ discriminant_value,
@@ -871,11 +870,6 @@ fn dont_use_the_implicit_prelude_span_in_the_top_expr() {
 }
 
 #[test]
-fn value_size() {
-    assert!(::std::mem::size_of::<Value>() <= 16);
-}
-
-#[test]
 fn deep_clone_partial_application() {
     use gluon::base::metadata::Metadata;
     use gluon::base::symbol::Symbol;
@@ -883,11 +877,11 @@ fn deep_clone_partial_application() {
     let _ = ::env_logger::try_init();
     let vm = RootedThread::new();
 
-    assert_eq!(vm.context().gc.allocated_memory(), 0);
+    assert_eq!(vm.allocated_memory(), 0);
 
     let child = vm.new_thread().unwrap();
 
-    assert_eq!(child.context().gc.allocated_memory(), 0);
+    assert_eq!(child.allocated_memory(), 0);
 
     let result = Compiler::new()
         .implicit_prelude(false)
@@ -902,7 +896,7 @@ fn deep_clone_partial_application() {
     assert!(result.is_ok(), "{}", result.err().unwrap());
 
     let global_memory_without_closures = vm.global_env().gc.lock().unwrap().allocated_memory();
-    let memory_for_closures = child.context().gc.allocated_memory();
+    let memory_for_closures = child.allocated_memory();
 
     vm.set_global(
         Symbol::from("@test"),

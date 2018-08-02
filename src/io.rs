@@ -7,14 +7,14 @@ use futures::Future;
 
 use vm::api::generic::{A, B};
 use vm::api::{
-    self, Array, FutureResult, Generic, Getable, OpaqueValue, OwnedFunction, PrimitiveFuture,
-    TypedBytecode, Userdata, VmType, WithVM, IO,
+    self, Array, FutureResult, Getable, OpaqueValue, OwnedFunction, PrimitiveFuture, TypedBytecode,
+    Userdata, VmType, WithVM, IO,
 };
 use vm::future::FutureValue;
 use vm::gc::{Gc, Traverseable};
 use vm::internal::ValuePrinter;
 use vm::stack::{self, StackFrame};
-use vm::thread::{Thread, ThreadInternal};
+use vm::thread::{RootedThread, Thread, ThreadInternal};
 use vm::types::*;
 use vm::{self, ExternModule, Result};
 
@@ -114,11 +114,11 @@ fn read_line() -> IO<String> {
 /// IO a -> (String -> IO a) -> IO a
 fn catch<'vm>(
     action: OpaqueValue<&'vm Thread, IO<A>>,
-    mut catch: OwnedFunction<fn(String) -> IO<Generic<A>>>,
-) -> FutureResult<impl Future<Item = IO<Generic<A>>, Error = vm::Error>> {
+    mut catch: OwnedFunction<fn(String) -> IO<OpaqueValue<RootedThread, A>>>,
+) -> FutureResult<impl Future<Item = IO<OpaqueValue<RootedThread, A>>, Error = vm::Error>> {
     let vm = action.vm().root_thread();
-    let frame_level = vm.context().stack.get_frames().len();
-    let mut action: OwnedFunction<fn(()) -> Generic<A>> =
+    let frame_level = vm.context().frame_level();
+    let mut action: OwnedFunction<fn(()) -> OpaqueValue<RootedThread, A>> =
         Getable::from_value(&vm, action.get_variant());
 
     let future = action.call_fast_async(()).then(move |result| match result {
@@ -126,14 +126,10 @@ fn catch<'vm>(
         Err(err) => {
             {
                 let mut context = vm.context();
-                let mut stack = StackFrame::<stack::State>::current(&mut context.stack);
-                while stack.stack.get_frames().len() > frame_level {
-                    stack = match stack.exit_scope() {
-                        Ok(s) => s,
-                        Err(_) => {
-                            return FutureValue::Value(Ok(IO::Exception("Unknown error".into())))
-                        }
-                    };
+                let mut stack = context.stack_frame::<stack::State>();
+
+                if let Err(err) = ::vm::thread::reset_stack(stack, frame_level) {
+                    return FutureValue::Value(Ok(IO::Exception(err.to_string().into())));
                 }
             }
             catch.call_fast_async(format!("{}", err)).then(|result| {
@@ -149,7 +145,10 @@ fn catch<'vm>(
 }
 
 fn clear_frames<T>(mut err: Error, stack: StackFrame) -> IO<T> {
-    let new_trace = ::vm::thread::reset_stack(stack);
+    let new_trace = match ::vm::thread::reset_stack(stack, 1) {
+        Ok(x) => x,
+        Err(err) => return IO::Exception(err.to_string()),
+    };
     match err {
         // Ignore the stacktrace as we take a more specific range of the stack here
         Error::VM(vm::Error::Panic(_, ref mut trace)) => *trace = Some(new_trace),
@@ -170,7 +169,7 @@ fn run_expr(WithVM { vm, value: expr }: WithVM<&str>) -> PrimitiveFuture<IO<RunE
         .run_expr(&mut Compiler::new().run_io(true), vm1, "<top>", expr, None)
         .then(move |run_result| {
             let mut context = vm.context();
-            let stack = StackFrame::<stack::State>::current(&mut context.stack);
+            let stack = context.stack_frame::<stack::State>();
             FutureValue::sync(Ok(match run_result {
                 Ok(execute_value) => {
                     let env = vm.global_env().get_env();
@@ -198,7 +197,7 @@ fn load_script(
         .load_script(&mut Compiler::new(), vm1, &name, expr, None)
         .then(move |run_result| {
             let mut context = vm.context();
-            let stack = StackFrame::<stack::State>::current(&mut context.stack);
+            let stack = context.stack_frame::<stack::State>();
             let io = match run_result {
                 Ok(()) => IO::Value(format!("Loaded {}", name)),
                 Err(err) => clear_frames(err, stack),

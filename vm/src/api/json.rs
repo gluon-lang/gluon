@@ -184,8 +184,9 @@ impl<'de> de::DeserializeState<'de, ActiveThread<'de>> for JsonValue {
             {
                 let context = &mut *self.0;
                 value.push(context).unwrap_or_else(|err| panic!("{}", err));
+                let thread = context.thread();
                 let value = context.pop();
-                JsonValue(context.thread().root_value(value))
+                JsonValue(thread.root_value(*value))
             }
         }
 

@@ -274,6 +274,20 @@ impl Stack {
         v.push_to(self)
     }
 
+    pub fn last(&self) -> Option<Variants> {
+        self.get_variant(self.len() - 1)
+    }
+
+    pub fn get_variant(&self, index: VmIndex) -> Option<Variants> {
+        unsafe {
+            if index < self.len() {
+                Some(Variants::new(&self.values[index as usize]))
+            } else {
+                None
+            }
+        }
+    }
+
     pub fn remove_range(&mut self, from: VmIndex, to: VmIndex) {
         self.values.drain(from as usize..to as usize);
     }
@@ -390,7 +404,7 @@ pub struct StackFrame<'b, S = State>
 where
     S: StackState,
 {
-    pub stack: &'b mut Stack,
+    pub(crate) stack: &'b mut Stack,
     pub frame: Frame<S>,
 }
 
@@ -471,13 +485,7 @@ where
     }
 
     pub fn get_variant(&self, index: VmIndex) -> Option<Variants> {
-        unsafe {
-            if index < self.len() {
-                Some(Variants::new(&self[index]))
-            } else {
-                None
-            }
-        }
+        self.stack.get_variant(self.frame.offset + index)
     }
 
     pub fn insert_slice(&mut self, index: VmIndex, values: &[Value]) {
@@ -508,7 +516,7 @@ where
         }
     }
 
-    pub fn enter_scope<T>(self, args: VmIndex, state: T) -> StackFrame<'b, T>
+    pub(crate) fn enter_scope<T>(self, args: VmIndex, state: T) -> StackFrame<'b, T>
     where
         T: StackState,
         S: Copy,
@@ -522,7 +530,7 @@ where
         }
     }
 
-    pub fn exit_scope(self) -> Result<StackFrame<'b, State>, &'b mut Stack>
+    pub(crate) fn exit_scope(self) -> Result<StackFrame<'b, State>, &'b mut Stack>
     where
         S: StackState + Copy,
     {
@@ -552,7 +560,7 @@ where
         }
     }
 
-    pub fn current(stack: &mut Stack) -> StackFrame<S>
+    pub(crate) fn current(stack: &mut Stack) -> StackFrame<S>
     where
         S: StackState,
     {
@@ -774,14 +782,14 @@ mod tests {
         frame.push(Int(5));
         frame.push(Int(6));
 
-        frame.exit_scope().unwrap();
+        frame = frame.exit_scope().unwrap();
         frame.remove_range(2, 5);
         assert_eq!(
             frame.stack.values,
             vec![Int(0).into(), Int(1).into(), Int(5).into(), Int(6).into()]
         );
 
-        frame.exit_scope().unwrap();
+        frame = frame.exit_scope().unwrap();
         frame.remove_range(1, 3);
         assert_eq!(frame.stack.values, vec![Int(0).into(), Int(6).into()]);
     }
@@ -834,11 +842,11 @@ mod tests {
         {
             let mut frame = StackFrame::frame(&mut stack, 0, State::Unknown);
             frame.push(Int(2));
-            frame.exit_scope().unwrap();
+            frame = frame.exit_scope().unwrap();
             frame.exit_scope().unwrap_err();
         }
         stack.release_lock(lock);
-        let mut frame = StackFrame::current(&mut stack);
+        let mut frame = StackFrame::<State>::current(&mut stack);
         assert_eq!(frame.pop(), Value::from(Int(2)));
     }
 
@@ -848,11 +856,11 @@ mod tests {
 
         let mut stack = Stack::new();
         StackFrame::frame(&mut stack, 0, State::Unknown);
-        let mut stack = StackFrame::current(&mut stack);
+        let mut stack = StackFrame::<State>::current(&mut stack);
         stack.push(Int(0));
         stack.insert_slice(0, &[Int(2).into(), Int(1).into()]);
         assert_eq!(&stack[..], [Int(2).into(), Int(1).into(), Int(0).into()]);
-        stack.enter_scope(2, State::Unknown);
+        stack = stack.enter_scope(2, State::Unknown);
         stack.insert_slice(1, &[Int(10).into()]);
         assert_eq!(&stack[..], [Int(1).into(), Int(10).into(), Int(0).into()]);
         stack.insert_slice(1, &[]);

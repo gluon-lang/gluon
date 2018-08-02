@@ -17,7 +17,7 @@ use gc::Move;
 use stack::{ExternState, StackFrame};
 use thread::{RootedThread, Status, Thread, ThreadInternal};
 use types::{Instruction, VmIndex};
-use value::{ExternFunction, Value, ValueRepr};
+use value::{ExternFunction, ValueRepr};
 use {Error, Result, Variants};
 
 pub type GluonFunction = extern "C" fn(&Thread) -> Status;
@@ -38,7 +38,9 @@ pub struct RefPrimitive<'vm, F> {
 pub fn primitive<F>(
     name: &'static str,
     function: extern "C" fn(&Thread) -> Status,
-) -> Primitive<F> {
+) -> Primitive<F>
+where
+{
     Primitive {
         name: name,
         function: function,
@@ -53,7 +55,7 @@ pub unsafe fn primitive_f<'vm, F>(
     _: F,
 ) -> RefPrimitive<'vm, F>
 where
-    F: VmFunction<'vm>,
+    F: VmFunction<'vm> + VmType,
 {
     RefPrimitive {
         name: name,
@@ -241,7 +243,7 @@ where
 impl<'vm, 'value, F> Getable<'vm, 'value> for Function<&'vm Thread, F> {
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Function<&'vm Thread, F> {
         Function {
-            value: vm.root_value(value.get_value()),
+            value: vm.root_value(value),
             _marker: PhantomData,
         } //TODO not type safe
     }
@@ -250,7 +252,7 @@ impl<'vm, 'value, F> Getable<'vm, 'value> for Function<&'vm Thread, F> {
 impl<'vm, 'value, F> Getable<'vm, 'value> for Function<RootedThread, F> {
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
         Function {
-            value: vm.root_value(value.get_value()),
+            value: vm.root_value(value),
             _marker: PhantomData,
         } //TODO not type safe
     }
@@ -403,17 +405,20 @@ impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
         let args = count!($($args),*) + R::extra_args();
         match vm.call_function(context.into_owned(), args)? {
             Async::Ready(context) => {
-                let value = context.unwrap().stack.pop();
-                Self::return_value(vm, value).map(Async::Ready)
+                let mut context = context.unwrap();
+                let result = {
+                    let value = context.stack.last().unwrap();
+                    Self::return_value(vm, value).map(Async::Ready)
+                };
+                context.stack.pop();
+                result
             }
             Async::NotReady => Ok(Async::NotReady),
         }
     }
 
-    fn return_value(vm: &Thread, value: Value) -> Result<R> {
-        unsafe {
-            Ok(R::from_value(vm, Variants::new(&value)))
-        }
+    fn return_value(vm: &Thread, value: Variants) -> Result<R> {
+            Ok(R::from_value(vm, value))
     }
 }
 
@@ -438,7 +443,7 @@ impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
                     Async::NotReady => {
                         Box::new(
                             Execute::new(self.value.vm().root_thread())
-                                .and_then(|(vm, value)| Self::return_value(&vm, value))
+                                .and_then(|value| Self::return_value(value.vm(), value.get_variant()))
                         )
                     }
                 }
@@ -464,7 +469,7 @@ impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
                     Async::NotReady => {
                         FutureValue::Future(Box::new(
                             Execute::new(self.value.vm().root_thread())
-                                .and_then(|(vm, value)| Self::return_value(&vm, value))
+                                .and_then(|value| Self::return_value(value.vm(), value.get_variant()))
                         ))
                     }
                 }

@@ -9,9 +9,9 @@ extern crate gluon_vm;
 
 mod init;
 
-use gluon::vm::api::{self, generic::A, Generic};
+use gluon::vm::api::{self, generic::A, OpaqueValue};
 use gluon::vm::{self, ExternModule};
-use gluon::{import, Compiler, Thread};
+use gluon::{import, Compiler, RootedThread, Thread};
 use init::new_vm;
 
 #[derive(Pushable, VmType, Serialize, Deserialize)]
@@ -88,7 +88,9 @@ fn load_generic_struct_mod(vm: &Thread) -> vm::Result<ExternModule> {
     ExternModule::new(vm, module)
 }
 
-fn new_generic_struct(arg: Generic<A>) -> GenericStruct<Generic<A>> {
+fn new_generic_struct(
+    arg: OpaqueValue<RootedThread, A>,
+) -> GenericStruct<OpaqueValue<RootedThread, A>> {
     GenericStruct {
         generic: arg,
         other: 2012,

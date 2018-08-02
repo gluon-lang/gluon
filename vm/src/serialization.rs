@@ -300,8 +300,8 @@ pub mod gc {
         where
             D: Deserializer<'de>,
         {
-            Cow::<str>::deserialize(deserializer).map(|s| unsafe {
-                GcStr::from_utf8_unchecked(seed.thread.context().alloc(s.as_bytes()).unwrap())
+            Cow::<str>::deserialize(deserializer).and_then(|s| {
+                GcStr::alloc(&mut seed.thread.context().gc, &s).map_err(D::Error::custom)
             })
         }
     }

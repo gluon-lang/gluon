@@ -95,15 +95,16 @@ pub extern "C" fn glu_call_function(thread: &Thread, args: VmIndex) -> Error {
 #[no_mangle]
 pub extern "C" fn glu_len(vm: &Thread) -> usize {
     let mut context = vm.context();
-    let stack = context.stack.current_frame::<stack::State>();
+    let stack = context.stack_frame::<stack::State>();
     stack.len() as usize
 }
 
 #[no_mangle]
 pub extern "C" fn glu_pop(vm: &Thread, n: usize) {
     let mut context = vm.context();
+    let mut stack = context.stack_frame::<stack::State>();
     for _ in 0..n {
-        context.stack.pop();
+        stack.pop();
     }
 }
 
@@ -210,7 +211,7 @@ pub unsafe extern "C" fn glu_get_string(
     out_len: &mut usize,
 ) -> Error {
     let mut context = vm.context();
-    let stack = context.stack.current_frame();
+    let stack = context.stack_frame::<stack::State>();
     match stack
         .get_variant(index)
         .map(|value| <&str>::from_value_unsafe(vm, value))
@@ -244,7 +245,7 @@ where
     T: for<'vm, 'value> Getable<'vm, 'value>,
 {
     let mut context = vm.context();
-    let stack = context.stack.current_frame::<stack::State>();
+    let stack = context.stack_frame::<stack::State>();
     match stack
         .get_variant(index)
         .map(|value| T::from_value(vm, value))

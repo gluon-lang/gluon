@@ -439,7 +439,7 @@ fn finish_or_interrupt(
     cpu_pool: &CpuPool,
     thread: RootedThread,
     action: OpaqueValue<&Thread, IO<Generic<A>>>,
-) -> FutureResult<impl Future<Item = IO<Generic<A>>, Error = VMError>> {
+) -> FutureResult<impl Future<Item = IO<OpaqueValue<RootedThread, A>>, Error = VMError>> {
     let (sender, receiver) = mpsc::channel(1);
 
     ::tokio::spawn(
@@ -456,8 +456,10 @@ fn finish_or_interrupt(
             .map(|_| ()),
     );
 
-    let mut action =
-        OwnedFunction::<fn() -> IO<Generic<A>>>::from_value(&thread, action.get_variant());
+    let mut action = OwnedFunction::<fn() -> IO<OpaqueValue<RootedThread, A>>>::from_value(
+        &thread,
+        action.get_variant(),
+    );
     let action_future = cpu_pool.0.spawn_fn(move || action.call_async());
 
     let ctrl_c_future = receiver

@@ -538,7 +538,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
             VALUE_TRANSFER.with(|t| {
                 let mut store = t.borrow_mut();
                 assert!(store.is_none());
-                *store = Some(self.state.thread.root_value(self.input.get_value()));
+                *store = Some(self.state.thread.root_value(self.input));
             });
             visitor.visit_unit()
         } else {

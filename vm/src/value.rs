@@ -36,10 +36,7 @@ impl PartialEq for Userdata {
     }
 }
 
-pub(crate) type VariantIter<'a> =
-    ::std::iter::Map<::std::slice::Iter<'a, Value>, fn(&'a Value) -> Variants<'a>>;
-
-pub(crate) fn variant_iter<'a>(xs: &'a [Value]) -> VariantIter<'a> {
+pub(crate) fn variant_iter<'a>(xs: &'a [Value]) -> impl Iterator<Item = Variants<'a>> + Clone {
     xs.iter().map(|v| unsafe { Variants::new(v) })
 }
 
@@ -258,6 +255,7 @@ impl<'b> Traverseable for RecordDef<'b> {
 mod gc_str {
     use super::ValueArray;
     use gc::{Gc, GcPtr, Generation, Traverseable};
+    use Error;
 
     use std::fmt;
     use std::ops::Deref;
@@ -275,6 +273,10 @@ mod gc_str {
     impl Eq for GcStr {}
 
     impl GcStr {
+        pub fn alloc(gc: &mut Gc, data: &str) -> Result<GcStr, Error> {
+            unsafe { Ok(GcStr::from_utf8_unchecked(gc.alloc(data)?)) }
+        }
+
         pub fn from_utf8(array: GcPtr<ValueArray>) -> Result<GcStr, ()> {
             unsafe {
                 if array
@@ -288,6 +290,7 @@ mod gc_str {
                 }
             }
         }
+
         pub unsafe fn from_utf8_unchecked(array: GcPtr<ValueArray>) -> GcStr {
             GcStr(array)
         }
@@ -396,6 +399,7 @@ pub(crate) enum ValueRepr {
     feature = "serde_derive",
     serde(serialize_state = "::serialization::SeSeed")
 )]
+#[repr(transparent)]
 pub struct Value(#[cfg_attr(feature = "serde_derive", serde(state))] ValueRepr);
 
 impl From<ValueRepr> for Value {
@@ -998,6 +1002,16 @@ impl_repr! {
     GcPtr<Thread>, Repr::Thread
 }
 
+unsafe impl<'a> DataDef for &'a str {
+    type Value = ValueArray;
+    fn size(&self) -> usize {
+        self.as_bytes().size()
+    }
+    fn initialize<'w>(self, result: WriteOnly<'w, ValueArray>) -> &'w mut ValueArray {
+        self.as_bytes().initialize(result)
+    }
+}
+
 impl Repr {
     fn from_value(value: &Value) -> Repr {
         match value.get_repr() {
@@ -1098,7 +1112,7 @@ impl ValueArray {
                 Repr::Userdata => ValueRepr::Userdata(self.unsafe_get(index)),
                 Repr::Thread => ValueRepr::Thread(self.unsafe_get(index)),
             };
-            Variants::with_root(value, self)
+            Variants::with_root(value.into(), self)
         }
     }
 
@@ -1318,15 +1332,14 @@ impl<'t> Cloner<'t> {
     }
 
     fn deep_clone_str(&mut self, data: GcStr) -> Result<ValueRepr> {
-        unsafe {
-            Ok(self
-                .deep_clone_ptr(data.into_inner(), |gc, data| {
-                    let ptr = GcStr::from_utf8_unchecked(gc.alloc(data)?);
-                    Ok((String(ptr), ptr))
-                })?
-                .unwrap_or_else(String))
-        }
+        Ok(self
+            .deep_clone_ptr(data.into_inner(), |gc, _| {
+                let ptr = GcStr::alloc(gc, &data[..])?;
+                Ok((String(ptr), ptr))
+            })?
+            .unwrap_or_else(String))
     }
+
     fn deep_clone_data(&mut self, data_ptr: GcPtr<DataStruct>) -> Result<GcPtr<DataStruct>> {
         let result = self.deep_clone_ptr(data_ptr, |gc, data| {
             let ptr = if data.is_record() {
@@ -1568,4 +1581,10 @@ mod tests {
             assert!((p as *const u8).offset(mem::size_of::<*const ()>() as isize) != ptr::null());
         }
     }
+
+    #[test]
+    fn value_size() {
+        assert!(::std::mem::size_of::<Value>() <= 16);
+    }
+
 }
