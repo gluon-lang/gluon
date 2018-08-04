@@ -53,7 +53,7 @@ where
                 let ret_new = walk_move_kind2(ret, f);
                 merge::merge(arg, arg_new, ret, ret_new, Kind::function)
             }
-            Kind::Hole | Kind::Type | Kind::Variable(_) | Kind::Row => None,
+            Kind::Hole | Kind::Error | Kind::Type | Kind::Variable(_) | Kind::Row => None,
         }
     };
     new2.or(new)
@@ -115,7 +115,7 @@ impl<'a> KindCheck<'a> {
                 self.instantiate_kinds(rhs);
                 return;
             }
-            Kind::Row | Kind::Type => return,
+            Kind::Row | Kind::Error | Kind::Type => return,
         }
         *kind = self.subs.new_var();
     }
@@ -191,6 +191,7 @@ impl<'a> KindCheck<'a> {
     fn kindcheck(&mut self, typ: &mut AstType<Symbol>) -> Result<ArcKind> {
         let span = typ.span();
         match **typ {
+            Type::Error => Ok(self.kind_cache.error()),
             Type::Hole | Type::Opaque | Type::Variable(_) => Ok(self.subs.new_var()),
             Type::Skolem(ref mut skolem) => {
                 skolem.kind = self.find(span, &skolem.name)?;
@@ -297,7 +298,7 @@ impl<'a> KindCheck<'a> {
         mut actual: ArcKind,
     ) -> Result<ArcKind> {
         debug!("Unify {:?} <=> {:?}", expected, actual);
-        let result = unify::unify(&self.subs, (), expected, &actual);
+        let result = unify::unify(&self.subs, &self.kind_cache, expected, &actual);
         match result {
             Ok(k) => Ok(k),
             Err(_errors) => {
@@ -423,18 +424,20 @@ impl Substitutable for ArcKind {
     }
 }
 
-impl<S> Unifiable<S> for ArcKind {
+impl<'a> Unifiable<&'a KindCache> for ArcKind {
     type Error = KindError<Symbol>;
 
     fn zip_match<U>(
         &self,
         other: &Self,
-        unifier: &mut UnifierState<S, U>,
+        unifier: &mut UnifierState<&'a KindCache, U>,
     ) -> StdResult<Option<Self>, Error<Symbol>>
     where
-        UnifierState<S, U>: Unifier<S, Self>,
+        UnifierState<&'a KindCache, U>: Unifier<&'a KindCache, Self>,
     {
         match (&**self, &**other) {
+            (_, &Kind::Error) => Ok(None),
+            (&Kind::Error, _) => Ok(Some(other.clone())),
             (&Kind::Function(ref l1, ref l2), &Kind::Function(ref r1, ref r2)) => {
                 let a = unifier.try_match(l1, r1);
                 let r = unifier.try_match(l2, r2);
@@ -446,5 +449,9 @@ impl<S> Unifiable<S> for ArcKind {
                 Err(UnifyError::TypeMismatch(self.clone(), other.clone()))
             },
         }
+    }
+
+    fn error_type(state: &&'a KindCache) -> Self {
+        state.error()
     }
 }

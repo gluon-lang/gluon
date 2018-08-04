@@ -634,7 +634,7 @@ pub fn walk_mut_ast_type<'a, V: ?Sized + MutVisitor<'a>>(
     s: &'a mut SpannedAstType<V::Ident>,
 ) {
     match s.value {
-        Type::Hole | Type::Opaque | Type::Builtin(_) => (),
+        Type::Hole | Type::Opaque | Type::Error | Type::Builtin(_) => (),
         Type::Forall(_, ref mut ast_type, ref mut ast_types) => {
             v.visit_ast_type(&mut ast_type._typ.1);
             if let &mut Some(ref mut ast_types) = ast_types {

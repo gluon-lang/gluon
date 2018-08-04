@@ -75,7 +75,7 @@ type_cache! {
     TypeCache(Id, T)
     (kind_cache: ::kind::KindCache)
     { T, Type }
-    hole opaque int byte float string char
+    hole opaque error int byte float string char
     function_builtin array_builtin unit empty_row
 }
 
@@ -694,6 +694,8 @@ pub enum Type<Id, T = ArcType<Id>> {
     Hole,
     /// An opaque type
     Opaque,
+    /// A type used to mark type errors
+    Error,
     /// A builtin type
     Builtin(BuiltinType),
     /// Universally quantified types
@@ -772,6 +774,10 @@ where
 
     pub fn opaque() -> T {
         T::from(Type::Opaque)
+    }
+
+    pub fn error() -> T {
+        T::from(Type::Error)
     }
 
     pub fn builtin(typ: BuiltinType) -> T {
@@ -1036,6 +1042,7 @@ where
         let mut immediate_kind = match *self {
             Type::Function(_, _, _) => Cow::Owned(Kind::typ()),
             Type::App(ref t, ref args) => t.kind_(args.len()),
+            Type::Error => Cow::Owned(Kind::error()),
             Type::Hole | Type::Opaque | Type::Builtin(_) | Type::Record(_) | Type::Variant(_) => {
                 Cow::Owned(Kind::typ())
             }
@@ -1881,6 +1888,7 @@ where
 
         let doc = match **typ {
             Type::Hole => arena.text("_"),
+            Type::Error => arena.text("!"),
             Type::Opaque => arena.text("<opaque>"),
             Type::Forall(ref args, ref typ, _) => {
                 let doc = chain![arena;
@@ -2258,6 +2266,7 @@ where
         }
         Type::Hole
         | Type::Opaque
+        | Type::Error
         | Type::Builtin(_)
         | Type::Variable(_)
         | Type::Generic(_)
@@ -2304,6 +2313,7 @@ where
         }
         Type::Hole
         | Type::Opaque
+        | Type::Error
         | Type::Builtin(_)
         | Type::Variable(_)
         | Type::Generic(_)
@@ -2467,6 +2477,7 @@ where
         }
         Type::Hole
         | Type::Opaque
+        | Type::Error
         | Type::Builtin(_)
         | Type::Variable(_)
         | Type::Skolem(_)
@@ -2584,6 +2595,7 @@ where
         ),
         Type::Hole => cache.hole(),
         Type::Opaque => cache.opaque(),
+        Type::Error => cache.error(),
         Type::Builtin(ref builtin) => cache.builtin_type(builtin.clone()),
         Type::Variable(ref var) => Type::variable(var.clone()),
         Type::Generic(ref gen) => Type::generic(gen.clone()),

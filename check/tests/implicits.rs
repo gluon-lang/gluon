@@ -539,7 +539,7 @@ wrap
     let result = support::typecheck(text);
     assert_req!(
         result.map(|typ| typ.to_string()),
-        Ok("forall a f . [test.Applicative f] -> a -> f a")
+        Ok("forall a a0 . [test.Applicative a] -> a0 -> a a0")
     );
 }
 
