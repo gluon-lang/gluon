@@ -326,7 +326,7 @@ pub struct Typecheck<'a> {
     pub(crate) errors: Errors<SpannedTypeError<Symbol>>,
     /// Type variables `let test: a -> b` (`a` and `b`)
     type_variables: ScopedMap<Symbol, ArcType>,
-    type_cache: TypeCache<Symbol, ArcType>,
+    pub(crate) type_cache: TypeCache<Symbol, ArcType>,
     kind_cache: KindCache,
 
     pub(crate) implicit_resolver: ::implicits::ImplicitResolver<'a>,
@@ -374,7 +374,7 @@ impl<'a> Typecheck<'a> {
             span: span,
             value: error.into(),
         });
-        self.subs.new_var()
+        self.type_cache.error()
     }
 
     fn bool(&self) -> ArcType {
@@ -393,6 +393,7 @@ impl<'a> Typecheck<'a> {
             Some(typ) => {
                 self.named_variables.clear();
                 let typ = new_skolem_scope(&self.subs, &typ);
+                let typ = self.instantiate_generics(&typ);
                 debug!("Find {} : {}", self.symbols.string(id), typ);
                 Ok(typ)
             }
@@ -739,7 +740,7 @@ impl<'a> Typecheck<'a> {
                     }
                 }
                 Err(err) => {
-                    returned_type = self.subs.new_var();
+                    returned_type = self.type_cache.error();
                     self.errors.push(Spanned {
                         span: expr_check_span(expr),
                         value: err.into(),
@@ -906,7 +907,10 @@ impl<'a> Typecheck<'a> {
                             .find(|field| field.name.name_eq(field_id))
                             .map(|field| field.typ.clone());
                         *ast_field_typ = match field_type {
-                            Some(typ) => self.new_skolem_scope(&typ),
+                            Some(mut typ) => {
+                                typ = self.new_skolem_scope(&typ);
+                                self.instantiate_generics(&typ)
+                            }
                             None => {
                                 // FIXME As the polymorphic `record_type` do not have the type
                                 // fields which `typ` this unification is only done after we
@@ -968,23 +972,11 @@ impl<'a> Typecheck<'a> {
                 exprs: ref mut fields,
                 ref mut base,
             } => {
-                let maybe_expected_record_type = expected_type.map(|expected_type| {
+                let expected_type = expected_type.map(|expected_type| {
                     let expected_type = self.subs.real(expected_type).clone();
                     let typ = resolve::remove_aliases_cow(&self.environment, &expected_type);
                     self.new_skolem_scope(&typ)
                 });
-                let expected_type = match maybe_expected_record_type {
-                    Some(t) => match *t {
-                        Type::Record(_) => {
-                            // We will check `expected_type` here so avoid unifying a second time
-                            // later
-                            expected_type.take();
-                            Some(t)
-                        }
-                        _ => None,
-                    },
-                    _ => None,
-                };
 
                 let expected_type = expected_type.as_ref();
 
@@ -1017,19 +1009,14 @@ impl<'a> Typecheck<'a> {
                         })
                         .map(|field| &field.typ);
 
-                    let typ = match field.value {
-                        Some(ref mut expr) => {
-                            let mut typ = self.typecheck_opt(expr, expected_field_type);
-
-                            self.generalize_type(level, &mut typ);
-                            new_skolem_scope(&self.subs, &typ)
-                        }
+                    let mut typ = match field.value {
+                        Some(ref mut expr) => self.typecheck_opt(expr, expected_field_type),
                         None => {
                             let typ = self.find_at(field.name.span, &field.name.value);
                             match expected_field_type {
                                 Some(expected_field_type) => {
                                     let mut implicit_args = Vec::new();
-                                    let typ = self.subsumes_implicit(
+                                    let mut typ = self.subsumes_implicit(
                                         field.name.span,
                                         level,
                                         &expected_field_type,
@@ -1063,6 +1050,9 @@ impl<'a> Typecheck<'a> {
                             }
                         }
                     };
+                    self.generalize_type(level, &mut typ);
+                    typ = new_skolem_scope(&self.subs, &typ);
+
                     if self.error_on_duplicated_field(&mut duplicated_fields, field.name.clone()) {
                         new_fields.push(Field::new(field.name.value.clone(), typ));
                     }
@@ -1122,7 +1112,7 @@ impl<'a> Typecheck<'a> {
                                     help: Some(Help::UndefinedFlatMapInDo),
                                 },
                             );
-                            self.subs.new_var()
+                            self.type_cache.error()
                         }
                     },
                     _ => ice!("flat_map_id not inserted during renaming"),
@@ -1233,6 +1223,7 @@ impl<'a> Typecheck<'a> {
         let args_len = args.len() as u32;
 
         func_type = self.new_skolem_scope(&func_type);
+        func_type = self.instantiate_generics(&func_type);
 
         for arg in &mut **implicit_args {
             let arg_ty = self.subs.new_var();
@@ -2350,7 +2341,7 @@ impl<'a> Typecheck<'a> {
     ) -> ArcType {
         debug!("Merge {} : {}", expected, actual);
         let expected = self.skolemize(&expected);
-        let state = unify_type::State::new(&self.environment, &self.subs);
+        let state = unify_type::State::new(&self.environment, &self.subs, &self.type_cache);
         match unify_type::subsumes(
             &self.subs,
             &mut self.type_variables,
@@ -2385,14 +2376,14 @@ impl<'a> Typecheck<'a> {
                     // TODO Help what caused this unification failure
                     value: err.into(),
                 });
-                self.subs.new_var()
+                self.type_cache.error()
             }
         }
     }
 
     fn unify(&self, expected: &ArcType, actual: ArcType) -> TcResult<ArcType> {
         debug!("Unify start {} <=> {}", expected, actual);
-        let state = unify_type::State::new(&self.environment, &self.subs);
+        let state = unify_type::State::new(&self.environment, &self.subs, &self.type_cache);
         match unify::unify(&self.subs, state, expected, &actual) {
             Ok(typ) => Ok(typ),
             Err(errors) => {
@@ -2567,9 +2558,7 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
     fn next(&mut self) -> Option<Self::Item> {
         let mut last_alias = None;
         loop {
-            if let Type::Forall(_, _, None) = *self.typ {
-                panic!("Found forall without scope in function argument iterator")
-            }
+            self.typ = self.tc.new_skolem_scope(&self.typ);
             self.typ = self.tc.skolemize(&self.typ);
             let (arg, new) = match self.typ.as_function_with_type() {
                 Some((arg_type, arg, ret)) => (Some((arg_type, arg.clone())), ret.clone()),

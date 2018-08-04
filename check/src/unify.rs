@@ -69,7 +69,7 @@ where
             Ok(typ) => typ,
             Err(err) => {
                 Self::report_error(self, err);
-                Self::error_type(self)
+                Some(Self::error_type(self))
             }
         }
     }
@@ -79,12 +79,12 @@ where
         r: &Type,
     ) -> Result<Option<Type>, Error<Type, Type::Error>>;
 
-    fn error_type(&mut self) -> Option<Type>;
-
     /// `true` if the returned type can be replaced by the caller
     fn allow_returned_type_replacement(&self) -> bool {
         true
     }
+
+    fn error_type(&self) -> Type;
 }
 
 /// A type which can be unified by checking for equivalence between the top level of
@@ -106,6 +106,8 @@ pub trait Unifiable<S>: Substitutable + Sized {
     ) -> Result<Option<Self>, Error<Self, Self::Error>>
     where
         UnifierState<S, U>: Unifier<S, Self>;
+
+    fn error_type(state: &S) -> Self;
 }
 
 /// Unify `l` and `r` taking into account and updating the substitution `subs` using the
@@ -187,8 +189,8 @@ where
         }
     }
 
-    fn error_type(&mut self) -> Option<T> {
-        Some(self.unifier.subs.new_var())
+    fn error_type(&self) -> T {
+        T::error_type(&self.state)
     }
 }
 
@@ -286,6 +288,9 @@ mod test {
                 }
                 _ => Err(Error::TypeMismatch(self.clone(), other.clone())),
             }
+        }
+        fn error_type(_: &()) -> Self {
+            TType(Box::new(Type::Variable(0)))
         }
     }
 

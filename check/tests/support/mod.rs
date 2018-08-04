@@ -1,8 +1,10 @@
 #![allow(unused_macros)]
+#![allow(dead_code)]
 
 extern crate codespan;
 
-use base::ast::{DisplayEnv, IdentEnv, SpannedExpr};
+use base;
+use base::ast::{DisplayEnv, Expr, IdentEnv, SpannedExpr};
 use base::error::InFile;
 use base::kind::{ArcKind, Kind, KindEnv};
 use base::metadata::{Metadata, MetadataEnv};
@@ -328,6 +330,17 @@ macro_rules! assert_req {
     };
 }
 
+#[macro_export]
+macro_rules! assert_eq2 {
+    ($lhs:expr, $rhs:expr) => {{
+        let ref lhs = $lhs;
+        let ref rhs = $rhs;
+        if lhs != rhs {
+            assert_failed!($lhs, $rhs, lhs, rhs)
+        }
+    }};
+}
+
 macro_rules! test_check {
     ($name:ident, $source:expr, $typ:expr) => {
         #[test]
@@ -454,4 +467,21 @@ macro_rules! assert_multi_unify_err {
             }
         }
     }}
+}
+
+pub fn print_ident_types(expr: &SpannedExpr<Symbol>) {
+    struct Visitor;
+    impl<'a> base::ast::Visitor<'a> for Visitor {
+        type Ident = Symbol;
+
+        fn visit_expr(&mut self, expr: &'a SpannedExpr<Symbol>) {
+            match expr.value {
+                Expr::Ident(ref id) => {
+                    println!("{} : {}", id.name, id.typ);
+                }
+                _ => base::ast::walk_expr(self, expr),
+            }
+        }
+    }
+    base::ast::Visitor::visit_expr(&mut Visitor, &expr)
 }

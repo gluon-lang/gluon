@@ -9,10 +9,9 @@ extern crate gluon_check as check;
 extern crate gluon_parser as parser;
 
 use base::ast::{Expr, Pattern, SpannedExpr};
-use base::kind::Kind;
 use base::pos::{BytePos, Span};
 use base::symbol::Symbol;
-use base::types::{Field, Generic, Type};
+use base::types::{Field, Type};
 
 use support::{alias, intern, typ, MockEnv};
 
@@ -111,12 +110,9 @@ a.id
         },
         _ => panic!(),
     };
-    let expected = Type::forall(
-        vec![Generic::new(intern("a"), Kind::typ())],
-        Type::function(vec![typ("a")], typ("a")),
-    );
+    let expected = Type::function(vec![typ("a")], typ("a"));
 
-    assert_eq!(*t, expected);
+    assert_eq2!(*t, expected);
 }
 
 #[test]
@@ -698,7 +694,7 @@ make
 
     assert_req!(
         result.map(|x| x.to_string()),
-        Ok("forall b . b -> { f : b -> b }".to_string())
+        Ok("forall a . a -> { f : a -> a }".to_string())
     );
 }
 
@@ -1031,4 +1027,21 @@ append (Cons "" Nil) Nil
     let result = support::typecheck(text);
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn dont_let_forall_escape() {
+    let _ = ::env_logger::try_init();
+
+    let text = r#"
+let foo f: forall b. (forall a. a -> b) -> b = f ()
+let id x: forall a. a -> a = x
+let false: forall a. a = foo id // Oops
+let some_int: Int = false
+some_int // Undefined behaviour
+"#;
+    let (expr, result) = support::typecheck_expr(text);
+
+    support::print_ident_types(&expr);
+    assert!(result.is_err(), "{}", result.unwrap());
 }
