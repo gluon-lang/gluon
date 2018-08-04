@@ -1092,7 +1092,7 @@ pub fn subsumes(
     state: State,
     l: &ArcType,
     r: &ArcType,
-) -> Result<ArcType, Errors<Error<Symbol>>> {
+) -> Result<ArcType, (ArcType, Errors<Error<Symbol>>)> {
     debug!("Subsume {} <=> {}", l, r);
     let mut unifier = UnifierState {
         state: state,
@@ -1106,7 +1106,7 @@ pub fn subsumes(
 
     let typ = unifier.try_match(l, r);
     if unifier.unifier.errors.has_errors() {
-        Err(unifier.unifier.errors)
+        Err((typ.unwrap_or_else(|| l.clone()), unifier.unifier.errors))
     } else {
         Ok(typ.unwrap_or_else(|| l.clone()))
     }
