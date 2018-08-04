@@ -912,11 +912,3 @@ fn deep_clone_partial_application() {
         global_memory_with_closures
     );
 }
-
-#[test]
-#[should_panic]
-fn run_expr_to_string_reference_is_ice() {
-    let vm = make_vm();
-
-    let _ = Compiler::new().run_expr::<&str>(&vm, "", r#" "test" "#);
-}
