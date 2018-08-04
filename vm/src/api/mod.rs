@@ -339,13 +339,9 @@ impl<'vm, T: ?Sized + VmType> Pushable<'vm> for Generic<'vm, T> {
         Ok(())
     }
 }
-impl<'vm, 'value, T: ?Sized> Getable<'vm, 'value> for Generic<'vm, T> {
-    fn from_value(_: &'vm Thread, _value: Variants<'value>) -> Generic<'vm, T> {
-        ice!()
-    }
-
-    unsafe fn from_value_unsafe(vm: &'vm Thread, value: Variants<'value>) -> Generic<'vm, T> {
-        Generic::from(Variants::with_root(value.get_value(), vm))
+impl<'vm, 'value, T: ?Sized> Getable<'vm, 'value> for Generic<'value, T> {
+    fn from_value(_: &'vm Thread, value: Variants<'value>) -> Generic<'value, T> {
+        Generic::from(value)
     }
 }
 
@@ -546,11 +542,6 @@ pub trait Pushable<'vm>: AsyncPushable<'vm> {
 
 /// Trait which allows rust values to be retrieved from the virtual machine
 pub trait Getable<'vm, 'value>: Sized {
-    /// unsafe version of from_value which allows references to the internal of GcPtr's to be
-    /// extracted if `value` is rooted
-    unsafe fn from_value_unsafe(vm: &'vm Thread, value: Variants<'value>) -> Self {
-        Self::from_value(vm, value)
-    }
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self;
 }
 
@@ -637,12 +628,8 @@ impl<'vm, 'value, T> Getable<'vm, 'value> for UserdataValue<T>
 where
     T: vm::Userdata + Clone,
 {
-    unsafe fn from_value_unsafe(vm: &'vm Thread, value: Variants<'value>) -> Self {
-        UserdataValue(<&'vm T as Getable<'vm, 'value>>::from_value_unsafe(vm, value).clone())
-    }
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
-        // Cloning ensures that the data is not bound to the 'vm lifetime
-        unsafe { Self::from_value_unsafe(vm, value) }
+        UserdataValue(<&'value T as Getable<'vm, 'value>>::from_value(vm, value).clone())
     }
 }
 
@@ -662,31 +649,25 @@ impl<'vm, T: ?Sized + VmType> VmType for &'vm T {
     }
 }
 
-impl<'vm, 'value, T> Getable<'vm, 'value> for &'vm T
+impl<'vm, 'value, T> Getable<'vm, 'value> for &'value T
 where
     T: vm::Userdata,
 {
-    unsafe fn from_value_unsafe(vm: &'vm Thread, value: Variants<'value>) -> Self {
-        let v = <*const T as Getable<'vm, 'value>>::from_value(vm, value);
-        &*v
-    }
     // Only allow the unsafe version to be used
-    fn from_value(_vm: &'vm Thread, _value: Variants<'value>) -> Self {
-        panic!("Getable::from_value on references is only allowed in unsafe contexts")
+    fn from_value(_vm: &'vm Thread, value: Variants<'value>) -> Self {
+        match value.as_ref() {
+            ValueRef::Userdata(data) => data.downcast_ref::<T>().unwrap(),
+            _ => ice!("ValueRef is not an Userdata"),
+        }
     }
 }
 
-impl<'vm, 'value> Getable<'vm, 'value> for &'vm str {
-    unsafe fn from_value_unsafe(_vm: &'vm Thread, value: Variants<'value>) -> Self {
+impl<'vm, 'value> Getable<'vm, 'value> for &'value str {
+    fn from_value(_vm: &'vm Thread, value: Variants<'value>) -> Self {
         match value.as_ref() {
-            ValueRef::String(ref s) => forget_lifetime(s),
+            ValueRef::String(ref s) => s,
             _ => ice!("ValueRef is not a String"),
         }
-    }
-
-    // Only allow the unsafe version to be used
-    fn from_value(_vm: &'vm Thread, _value: Variants<'value>) -> Self {
-        panic!("Getable::from_value on references is only allowed in unsafe contexts")
     }
 }
 
@@ -724,11 +705,6 @@ impl<'vm, 'value, T> Getable<'vm, 'value> for WithVM<'vm, T>
 where
     T: Getable<'vm, 'value>,
 {
-    unsafe fn from_value_unsafe(vm: &'vm Thread, value: Variants<'value>) -> WithVM<'vm, T> {
-        let t = T::from_value_unsafe(vm, value);
-        WithVM { vm, value: t }
-    }
-
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> WithVM<'vm, T> {
         let t = T::from_value(vm, value);
         WithVM { vm, value: t }
@@ -972,19 +948,12 @@ where
         Ok(())
     }
 }
-impl<'s, 'vm, 'value, T: Copy + ArrayRepr> Getable<'vm, 'value> for &'s [T] {
-    unsafe fn from_value_unsafe(_: &'vm Thread, value: Variants<'value>) -> Self {
+impl<'vm, 'value, T: Copy + ArrayRepr> Getable<'vm, 'value> for &'value [T] {
+    fn from_value(_vm: &'vm Thread, value: Variants<'value>) -> Self {
         match value.as_ref() {
-            ValueRef::Array(ptr) => {
-                let s = ptr.0.as_slice().unwrap();
-                &*(s as *const _)
-            }
+            ValueRef::Array(ptr) => ptr.as_slice().unwrap(),
             _ => ice!("ValueRef is not an Array"),
         }
-    }
-    // Only allow the unsafe version to be used
-    fn from_value(_vm: &'vm Thread, _value: Variants<'value>) -> Self {
-        ice!("Getable::from_value usage")
     }
 }
 
@@ -1468,8 +1437,7 @@ where
     type Target = V;
 
     fn deref(&self) -> &V {
-        // The value is rooted by self
-        unsafe { <&V>::from_value_unsafe(self.vm(), self.get_variant()) }
+        <&V>::from_value(self.vm(), self.get_variant())
     }
 }
 
@@ -1480,8 +1448,7 @@ where
     type Target = str;
 
     fn deref(&self) -> &str {
-        // The value is rooted by self
-        unsafe { <&str>::from_value_unsafe(self.vm(), self.get_variant()) }
+        <&str>::from_value(self.vm(), self.get_variant())
     }
 }
 
@@ -1646,7 +1613,7 @@ impl<'vm> ArrayRef<'vm> {
         self.0.len()
     }
 
-    pub fn as_slice<T>(&self) -> Option<&[T]>
+    pub fn as_slice<T>(&self) -> Option<&'vm [T]>
     where
         T: ArrayRepr + Copy,
     {

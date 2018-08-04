@@ -307,7 +307,7 @@ macro_rules! vm_function_impl {
     ($f:tt, $($args:ident),*) => {
 
 impl <'vm, $($args,)* R> VmFunction<'vm> for $f ($($args),*) -> R
-where $($args: for<'value> Getable<'vm, 'value> + 'vm,)*
+where $($args: Getable<'vm, 'vm> + 'vm,)*
       R: AsyncPushable<'vm> + VmType + 'vm
 {
     #[allow(non_snake_case, unused_mut, unused_assignments, unused_variables, unused_unsafe)]
@@ -320,12 +320,11 @@ where $($args: for<'value> Getable<'vm, 'value> + 'vm,)*
             let ($($args,)*) = {
                 let stack = StackFrame::<ExternState>::current(context.stack());
                 $(let $args = {
-                    let x = $args::from_value_unsafe(vm, Variants::new(&stack[i]));
+                    let x = $args::from_value(vm, Variants::with_root(stack[i].clone(), vm));
                     i += 1;
                     x
                 });*;
-// Lock the frame to ensure that any reference from_value_unsafe may have returned stay
-// rooted
+// Lock the frame to ensure that any references to the stack stay rooted
                 lock = stack.into_lock();
                 ($($args,)*)
             };
