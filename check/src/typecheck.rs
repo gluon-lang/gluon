@@ -968,10 +968,24 @@ impl<'a> Typecheck<'a> {
                 exprs: ref mut fields,
                 ref mut base,
             } => {
-                let expected_type = expected_type.map(|expected_type| {
-                    let typ = resolve::remove_aliases_cow(&self.environment, expected_type);
+                let maybe_expected_record_type = expected_type.map(|expected_type| {
+                    let expected_type = self.subs.real(expected_type).clone();
+                    let typ = resolve::remove_aliases_cow(&self.environment, &expected_type);
                     self.new_skolem_scope(&typ)
                 });
+                let expected_type = match maybe_expected_record_type {
+                    Some(t) => match *t {
+                        Type::Record(_) => {
+                            // We will check `expected_type` here so avoid unifying a second time
+                            // later
+                            expected_type.take();
+                            Some(t)
+                        }
+                        _ => None,
+                    },
+                    _ => None,
+                };
+
                 let expected_type = expected_type.as_ref();
 
                 let mut new_types: Vec<Field<_, _>> = Vec::with_capacity(types.len());
@@ -2346,7 +2360,7 @@ impl<'a> Typecheck<'a> {
             &actual,
         ) {
             Ok(typ) => typ,
-            Err(errors) => {
+            Err((typ, errors)) => {
                 debug!(
                     "Error '{:?}' between:\n>> {}\n>> {}",
                     errors, expected, actual
@@ -2357,7 +2371,7 @@ impl<'a> Typecheck<'a> {
                     // TODO Help what caused this unification failure
                     value: err.into(),
                 });
-                self.subs.new_var()
+                typ
             }
         }
     }
