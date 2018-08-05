@@ -402,9 +402,12 @@ f (==) 1 2
                     assert_eq!(args.len(), 3);
                     match args[0].value {
                         ast::Expr::App {
-                            args: ref args_eq, ..
+                            args: ref args_eq,
+                            implicit_args: ref implicit_args_eq,
+                            ..
                         } => {
-                            assert_eq!(args_eq.len(), 1);
+                            assert_eq!(args_eq.len(), 0);
+                            assert_eq!(implicit_args_eq.len(), 1);
                         }
                         _ => panic!(),
                     }

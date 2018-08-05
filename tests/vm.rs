@@ -912,3 +912,33 @@ fn deep_clone_partial_application() {
         global_memory_with_closures
     );
 }
+
+test_expr!{ prelude issue_601,
+r"
+let { wrap } = import! std.applicative
+let { flat_map } = import! std.monad
+
+type Id a = a
+let id_functor: Functor Id = {
+    map = \f x -> f x,
+}
+let id_applicative: Applicative Id = {
+    functor = id_functor,
+    apply = \f x -> f x,
+    wrap = \x -> x,
+}
+let id_monad: Monad Id = {
+    applicative = id_applicative,
+    flat_map = \f x -> f x,
+}
+
+let foo: [Functor f] -> Id () = ()
+
+let bar: Id () =
+    do _ = foo
+    wrap ()
+
+in ()
+",
+()
+}
