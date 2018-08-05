@@ -112,8 +112,7 @@ impl<I: fmt::Display + AsRef<str> + Clone> fmt::Display for TypeError<I> {
                     .filter_map(|err| match *err {
                         UnifyError::Other(ref err) => Some(err.make_filter()),
                         _ => None,
-                    })
-                    .collect::<Vec<_>>();
+                    }).collect::<Vec<_>>();
                 let filter = move |field: &I| {
                     if filters.is_empty() {
                         Filter::Retain
@@ -272,8 +271,7 @@ impl<'a> KindEnv for Environment<'a> {
                     kind = Kind::function(arg.kind.clone(), kind);
                 }
                 kind
-            })
-            .or_else(|| self.environment.find_kind(type_name))
+            }).or_else(|| self.environment.find_kind(type_name))
     }
 }
 
@@ -614,8 +612,7 @@ impl<'a> Typecheck<'a> {
                             let mut typ = typ.clone();
                             self.generalize_type(0, &mut typ);
                             typ
-                        })
-                        .collect();
+                        }).collect();
                 }
                 Unification(ref mut expected, ref mut actual, ref mut errors) => {
                     self.generalize_type_without_forall(0, expected);
@@ -857,8 +854,7 @@ impl<'a> Typecheck<'a> {
                                     name: self.symbols.symbol(format!("_{}", i)),
                                     typ: typ,
                                 }
-                            })
-                            .collect();
+                            }).collect();
                         Type::record(vec![], fields)
                     }
                 };
@@ -959,6 +955,7 @@ impl<'a> Typecheck<'a> {
                 );
 
                 self.generalize_type(level, &mut typ);
+                typ = self.new_skolem_scope(&typ);
                 lambda.id.typ = typ.clone();
                 Ok(TailCall::Type(typ))
             }
@@ -1006,8 +1003,7 @@ impl<'a> Typecheck<'a> {
                             expected_type
                                 .row_iter()
                                 .find(|expected_field| expected_field.name.name_eq(&name))
-                        })
-                        .map(|field| &field.typ);
+                        }).map(|field| &field.typ);
 
                     let mut typ = match field.value {
                         Some(ref mut expr) => self.typecheck_opt(expr, expected_field_type),
@@ -1279,8 +1275,7 @@ impl<'a> Typecheck<'a> {
                 .map(|arg| {
                     span_end = arg.span.end();
                     self.infer_expr(arg.borrow_mut())
-                })
-                .collect::<Vec<_>>();
+                }).collect::<Vec<_>>();
             let actual = self.type_cache.function(arg_types, self.subs.new_var());
 
             let span = Span::new(span_start, span_end);
@@ -1484,8 +1479,7 @@ impl<'a> Typecheck<'a> {
                             associated_types
                                 .iter()
                                 .any(|other| other.name.value.name_eq(&field.name))
-                        })
-                        .cloned()
+                        }).cloned()
                         .collect();
 
                     let fields = fields
@@ -1650,15 +1644,13 @@ impl<'a> Typecheck<'a> {
                                 self.translate_ast_type(type_cache, typ)
                             }))
                         },
-                    })
-                    .collect(),
+                    }).collect(),
                 fields
                     .iter()
                     .map(|field| Field {
                         name: field.name.clone(),
                         typ: self.translate_ast_type(type_cache, &field.typ),
-                    })
-                    .collect(),
+                    }).collect(),
                 self.translate_ast_type(type_cache, rest),
             ),
             Type::Ident(ref id) if id.name().module().as_str() != "" => {
@@ -2134,8 +2126,7 @@ impl<'a> Typecheck<'a> {
             .map(|(id, var)| {
                 let kind = var.kind().into_owned();
                 Generic::new(id, kind)
-            })
-            .collect::<Vec<_>>();
+            }).collect::<Vec<_>>();
 
         if params.is_empty() {
             result_type
@@ -2186,8 +2177,7 @@ impl<'a> Typecheck<'a> {
                                 .map(|(new, old)| match new {
                                     Some(new) => Field::new(new.clone(), old.typ.clone()),
                                     None => old.clone(),
-                                })
-                                .collect(),
+                                }).collect(),
                         ),
                     )
                 } else {
@@ -2472,15 +2462,13 @@ pub fn translate_projected_type(
                             } else {
                                 None
                             }
-                        })
-                        .chain(aliased_type.row_iter().filter_map(|field| {
+                        }).chain(aliased_type.row_iter().filter_map(|field| {
                             if field.name.name_eq(&symbol) {
                                 Some(field.typ.clone())
                             } else {
                                 None
                             }
-                        }))
-                        .next()
+                        })).next()
                         .ok_or_else(|| TypeError::UndefinedField(typ, symbol))?,
                 )
             }
@@ -2490,8 +2478,7 @@ pub fn translate_projected_type(
                     .or_else(|| {
                         env.find_type_info(&symbol)
                             .map(|alias| alias.typ().into_owned())
-                    })
-                    .ok_or_else(|| TypeError::UndefinedVariable(symbol.clone()))?,
+                    }).ok_or_else(|| TypeError::UndefinedVariable(symbol.clone()))?,
             ),
         };
     }
@@ -2528,8 +2515,7 @@ pub fn extract_generics(args: &[ArcType]) -> Vec<Generic<Symbol>> {
         .map(|arg| match **arg {
             Type::Generic(ref gen) => gen.clone(),
             _ => ice!("The type on the lhs of a type binding did not have all generic arguments"),
-        })
-        .collect()
+        }).collect()
 }
 
 fn get_alias_app<'a>(

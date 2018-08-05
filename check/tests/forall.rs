@@ -1045,3 +1045,20 @@ some_int // Undefined behaviour
     support::print_ident_types(&expr);
     assert!(result.is_err(), "{}", result.unwrap());
 }
+
+#[test]
+fn unify_with_inferred_forall_in_record() {
+    let _ = ::env_logger::try_init();
+
+    let text = r#"
+type Option a = | None | Some a
+type Record b = { x : Option b }
+
+let f = \_ ->
+    { x = None }
+f
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}

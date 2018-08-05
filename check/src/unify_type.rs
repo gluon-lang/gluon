@@ -155,12 +155,10 @@ where
                 .iter()
                 .map(|missing_field| {
                     ::strsim::jaro_winkler(missing_field.as_ref(), field_in_type.as_ref())
-                })
-                .max_by(|l, r| l.partial_cmp(&r).unwrap())
+                }).max_by(|l, r| l.partial_cmp(&r).unwrap())
                 .expect("At least one missing field");
             (field_in_type, (similarity * 1000000.) as i32)
-        })
-        .collect::<Vec<_>>();
+        }).collect::<Vec<_>>();
     field_similarity.sort_by_key(|t| ::std::cmp::Reverse(t.1));
 
     Box::new(move |field: &I| {
@@ -395,7 +393,8 @@ where
                 && l_row
                     .iter()
                     .zip(r_row)
-                    .all(|(l, r)| l.name.name_eq(&r.name)) && l_rest == r_rest
+                    .all(|(l, r)| l.name.name_eq(&r.name))
+                && l_rest == r_rest
             {
                 let iter = l_row.iter().zip(r_row);
                 let new_fields = merge::merge_tuple_iter(iter, |l, r| {
@@ -439,7 +438,8 @@ where
                 && l_args
                     .iter()
                     .zip(r_args)
-                    .all(|(l, r)| l.name.name_eq(&r.name)) && l_types == r_types
+                    .all(|(l, r)| l.name.name_eq(&r.name))
+                && l_types == r_types
             {
                 let new_args = merge::merge_tuple_iter(l_args.iter().zip(r_args), |l, r| {
                     unifier
