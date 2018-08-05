@@ -1,16 +1,16 @@
 extern crate gluon;
 use gluon::new_vm;
-use gluon::vm::Variants;
-use gluon::vm::internal::Value;
 use gluon::vm::api::Getable;
+use gluon::vm::internal::Value;
+use gluon::vm::Variants;
 
 #[cfg_attr(rustfmt, rustfmt_skip)]
 fn main() {
     unsafe {
         let vm = new_vm();
-        let v = Value::int(0);
-        let v = Variants::new(&v);
-        let _: &'static str = <&'static str>::from_value(&vm, v);
-        //~^ Error `vm` does not live long enough
+        let value = Value::int(0);
+        let value = Variants::new(&value);
+        //~^ Error `value` does not live long enough
+        let _: &'static str = <&'static str>::from_value(&vm, value);
     }
 }

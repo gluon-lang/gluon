@@ -215,6 +215,6 @@ impl ExternModule {
 
 /// Internal types and functions exposed to the main `gluon` crate
 pub mod internal {
-    pub use value::ValuePrinter;
+    pub use value::{Value, ValuePrinter};
     pub use vm::Global;
 }
