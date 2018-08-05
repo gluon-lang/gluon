@@ -1171,7 +1171,12 @@ impl<'a> Typecheck<'a> {
 
                 let bound_type = self.typecheck(bound, &arg2);
 
-                self.unify_span(bound.span, &arg2, bound_type);
+                self.unify_span(
+                    // Point to the `do` token
+                    expr.span.subspan(0.into(), 2.into()),
+                    &arg2,
+                    bound_type,
+                );
 
                 self.stack_var(id.value.name.clone(), id.value.typ.clone());
 
@@ -2297,7 +2302,10 @@ impl<'a> Typecheck<'a> {
             }
 
             match expr.value {
-                Expr::App { ref mut args, .. } => args.push(pos::spanned(expr.span, arg)),
+                Expr::App {
+                    ref mut implicit_args,
+                    ..
+                } => implicit_args.push(pos::spanned(expr.span, arg)),
                 _ => (),
             }
         })
