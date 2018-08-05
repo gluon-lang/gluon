@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::iter;
 
 use proc_macro2::{Span, TokenStream};
 
@@ -168,41 +167,30 @@ fn gen_push_impl(
     debug_assert!(field_idents.len() == field_types.len());
 
     // push each field onto the stack
-    // this has to be done in reverse order so the fields come out in the correct
-    // order when popping the stack
-    let stack_pushes = field_idents
-        .iter()
-        .zip(field_types)
-        .map(|(ident, ty)| {
-            quote! {
-                <#ty as _gluon_api::Pushable<'__vm>>::push(#ident, ctx)?;
-            }
-        })
-        .rev();
+    let stack_pushes = field_idents.iter().zip(field_types).map(|(ident, ty)| {
+        quote! {
+            <#ty as _gluon_api::Pushable<'__vm>>::push(#ident, ctx)?;
+        }
+    });
 
-    // since the number of fields is statically known, we can allocate an array
-    // by popping the stack for each field
-    let array_init = iter::repeat(quote! { ctx.stack().pop() }).take(field_idents.len());
-
+    let fields_len = field_idents.len();
     let new_data = match tag {
         Some(tag) => quote!{
-            ctx.context().new_data(vm, #tag as _gluon_types::VmTag, &fields)?
+            ctx.context().push_new_data(vm, #tag as _gluon_types::VmTag, #fields_len)?
         },
         None => {
             let field_ident_strs = field_idents.iter().map(|i| i.to_string());
             quote! { {
                 let field_names = [#(vm.global_env().intern(#field_ident_strs)?),*];
-                ctx.context().new_record(vm, &fields, &field_names)?
+                ctx.context().push_new_record(vm, #fields_len, &field_names)?;
             } }
         }
     };
 
     quote! {
         #(#stack_pushes)*
-        let fields = [ #(#array_init),* ];
         let vm = ctx.thread();
-        let val = #new_data;
-        ctx.stack().push(val);
+        #new_data;
     }
 }
 

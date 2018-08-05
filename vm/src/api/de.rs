@@ -228,7 +228,7 @@ impl<'de, 't> Deserializer<'de, 't> {
     fn deserialize_builtin<T, F, R>(&self, expected: BuiltinType, visit: F) -> Result<R>
     where
         F: FnOnce(T) -> Result<R>,
-        T: for<'value> Getable<'de, 'value>,
+        T: Getable<'de, 'de>,
     {
         self.deserialize_leaf(|t| *t == Type::Builtin(expected), visit)
     }
@@ -237,12 +237,11 @@ impl<'de, 't> Deserializer<'de, 't> {
     where
         E: FnOnce(&Type<Symbol, ArcType>) -> bool,
         F: FnOnce(T) -> Result<R>,
-        T: for<'value> Getable<'de, 'value>,
+        T: Getable<'de, 'de>,
     {
         let typ = resolve::remove_aliases_cow(self.state.env, self.typ);
         if expected(&typ) {
-            // We can rely on `self.input` being rooted for `de` letting us use `from_value_unsafe`
-            unsafe { visit(T::from_value_unsafe(self.state.thread, self.input)) }
+            visit(T::from_value(self.state.thread, self.input))
         } else {
             Err(VmError::Message(format!(
                 "Unable to deserialize `{}`",
@@ -538,7 +537,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de, 't> {
             VALUE_TRANSFER.with(|t| {
                 let mut store = t.borrow_mut();
                 assert!(store.is_none());
-                *store = Some(self.state.thread.root_value(self.input.get_value()));
+                *store = Some(self.state.thread.root_value(self.input));
             });
             visitor.visit_unit()
         } else {

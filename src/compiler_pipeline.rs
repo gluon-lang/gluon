@@ -34,19 +34,19 @@ use vm::thread::{Execute, ExecuteTop, RootedValue, Thread, ThreadInternal, VmRoo
 
 use {Compiler, Error, Result};
 
-fn execute<T, F>(vm: T, f: F) -> FutureValue<ExecuteTop<T>>
+fn execute<'vm, T, F>(vm: T, f: F) -> FutureValue<ExecuteTop<T>>
 where
-    T: Deref<Target = Thread> + Clone,
-    F: for<'vm> FnOnce(&'vm Thread) -> FutureValue<ExecuteTop<&'vm Thread>>,
+    T: VmRoot<'vm>,
+    F: for<'vm2> FnOnce(&'vm2 Thread) -> FutureValue<ExecuteTop<&'vm2 Thread>>,
 {
     let opt = match f(&vm) {
-        FutureValue::Value(result) => Some(result.map(|v| v.1)),
+        FutureValue::Value(result) => Some(result),
         FutureValue::Future(_) => None,
         FutureValue::Polled => return FutureValue::Polled,
     };
     match opt {
-        Some(result) => FutureValue::Value(result.map(|v| (vm, v))),
-        None => FutureValue::Future(ExecuteTop(Execute::new(vm))),
+        Some(result) => FutureValue::Value(result.map(|v| v.re_root(vm.clone()))),
+        None => FutureValue::Future(ExecuteTop(Execute::new(vm.clone()))),
     }
 }
 
@@ -731,11 +731,11 @@ where
 
         let vm1 = vm.clone();
         execute(vm1, |vm| vm.call_thunk_top(closure))
-            .map(|(vm, value)| ExecuteValue {
+            .map(|value| ExecuteValue {
                 id: module_id,
-                expr: expr,
-                typ: typ,
-                value: vm.root_value_with_self(value),
+                expr,
+                typ,
+                value,
                 metadata,
             })
             .map_err(Error::from)
@@ -852,12 +852,12 @@ where
         let vm1 = vm.clone();
         let closure = try_future!(vm.global_env().new_global_thunk(module.module));
         execute(vm1, |vm| vm.call_thunk_top(closure))
-            .map(|(vm, value)| ExecuteValue {
+            .map(|value| ExecuteValue {
                 id: module_id,
                 expr: (),
                 typ: typ,
                 metadata,
-                value: vm.root_value_with_self(value),
+                value,
             })
             .map_err(Error::from)
             .boxed()
@@ -951,8 +951,8 @@ where
         } = v;
 
         let vm1 = vm.clone();
-        execute(vm1, |vm| vm.execute_io_top(value.get_value()))
-            .map(move |(_, value)| {
+        execute(vm1, |vm| vm.execute_io_top(value.get_variant()))
+            .map(move |value| {
                 // The type of the new value will be `a` instead of `IO a`
                 let actual = resolve::remove_aliases_cow(&*vm.get_env(), &typ);
                 let actual = match **actual {
@@ -962,7 +962,7 @@ where
                 ExecuteValue {
                     id,
                     expr,
-                    value: vm.root_value_with_self(value),
+                    value,
                     metadata,
                     typ: actual,
                 }

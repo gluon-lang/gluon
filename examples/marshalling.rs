@@ -16,8 +16,8 @@ use gluon::base::types::ArcType;
 use gluon::base::types::{AppVec, Type};
 use gluon::vm::api::generic::{A, L, R};
 use gluon::vm::api::{
-    self, ActiveThread, FunctionRef, Generic, Getable, Hole, OpaqueValue, Pushable, UserdataValue,
-    ValueRef, VmType, IO,
+    self, ActiveThread, FunctionRef, Getable, Hole, OpaqueValue, Pushable, UserdataValue, ValueRef,
+    VmType, IO,
 };
 use gluon::vm::{self, ExternModule, Variants};
 use gluon::{import, new_vm, Compiler, Result, RootedThread, Thread};
@@ -153,7 +153,9 @@ where
 
 // the function takes an Either instantiated with the `Generic` struct,
 // which will handle the generic Gluon values for us
-fn flip(either: Either<Generic<L>, Generic<R>>) -> Either<Generic<R>, Generic<L>> {
+fn flip(
+    either: Either<OpaqueValue<RootedThread, L>, OpaqueValue<RootedThread, R>>,
+) -> Either<OpaqueValue<RootedThread, R>, OpaqueValue<RootedThread, L>> {
     match either {
         Either::Left(val) => Either::Right(val),
         Either::Right(val) => Either::Left(val),
@@ -295,7 +297,7 @@ fn marshal_wrapper() -> Result<()> {
 
     fn load_mod(vm: &Thread) -> vm::Result<ExternModule> {
         let module = record! {
-            roundtrip => primitive!(1 |user: GluonUser<Generic<A>>| {
+            roundtrip => primitive!(1 |user: GluonUser<OpaqueValue<RootedThread, A>>| {
                 println!("name: {}, age: {}", user.inner.name, user.inner.age);
                 user
             }),

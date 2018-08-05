@@ -9,9 +9,9 @@ extern crate gluon_vm;
 
 mod init;
 
-use gluon::vm::api::{self, generic, Generic};
+use gluon::vm::api::{self, generic, OpaqueValue};
 use gluon::vm::{self, ExternModule};
-use gluon::{import, Compiler, Thread};
+use gluon::{import, Compiler, RootedThread, Thread};
 use init::new_vm;
 
 #[derive(Getable, VmType, Debug, Serialize, Deserialize)]
@@ -118,8 +118,8 @@ fn load_either_mod(vm: &Thread) -> vm::Result<ExternModule> {
     ExternModule::new(vm, module)
 }
 
-type GenericL = Generic<generic::L>;
-type GenericR = Generic<generic::R>;
+type GenericL = OpaqueValue<RootedThread, generic::L>;
+type GenericR = OpaqueValue<RootedThread, generic::R>;
 
 fn left(either: Either<GenericL, GenericR>) -> Option<GenericL> {
     match either {

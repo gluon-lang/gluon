@@ -22,7 +22,6 @@ extern crate mopa;
 extern crate pretty;
 #[macro_use]
 extern crate quick_error;
-
 #[cfg(feature = "serde_derive")]
 #[macro_use]
 extern crate serde_derive;
@@ -88,20 +87,20 @@ unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
+#[repr(transparent)]
 pub struct Variants<'a>(ValueRepr, PhantomData<&'a Value>);
 
 impl<'a> Variants<'a> {
     /// Creates a new `Variants` value which assumes that `value` is rooted for the lifetime of the
     /// value
     pub unsafe fn new(value: &Value) -> Variants {
-        Variants::with_root(value.get_repr(), value)
+        Variants::with_root(value.clone(), value)
     }
 
-    pub(crate) unsafe fn with_root<T: ?Sized>(value: ValueRepr, _root: &T) -> Variants {
-        Variants(value, PhantomData)
+    pub(crate) unsafe fn with_root<T: ?Sized>(value: Value, _root: &T) -> Variants {
+        Variants(value.get_repr(), PhantomData)
     }
 
-    #[doc(hidden)]
     pub fn get_value(&self) -> Value {
         self.0.into()
     }
@@ -110,6 +109,12 @@ impl<'a> Variants<'a> {
     /// value
     pub fn as_ref(&self) -> ValueRef<'a> {
         unsafe { ValueRef::rooted_new(self.0) }
+    }
+}
+
+impl<'a> gc::Traverseable for Variants<'a> {
+    fn traverse(&self, gc: &mut gc::Gc) {
+        self.0.traverse(gc);
     }
 }
 

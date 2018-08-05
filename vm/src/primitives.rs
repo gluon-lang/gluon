@@ -4,9 +4,12 @@ use std::str::FromStr;
 use std::string::String as StdString;
 
 use api::generic::A;
-use api::{generic, primitive, Array, Generic, Getable, Pushable, RuntimeResult, ValueRef, WithVM};
+use api::{
+    generic, primitive, Array, Generic, Getable, Pushable, Pushed, RuntimeResult, Unrooted,
+    ValueRef, WithVM,
+};
 use gc::{DataDef, Gc, Traverseable, WriteOnly};
-use stack::StackFrame;
+use stack::{ExternState, StackFrame};
 use types::VmInt;
 use value::{Def, GcStr, Repr, ValueArray, ValueRepr};
 use vm::{Status, Thread};
@@ -22,12 +25,12 @@ pub mod array {
         array.len() as VmInt
     }
 
-    pub fn index<'vm>(
+    pub(crate) fn index<'vm>(
         array: Array<'vm, Generic<generic::A>>,
         index: VmInt,
-    ) -> RuntimeResult<Generic<generic::A>, String> {
+    ) -> RuntimeResult<Unrooted<generic::A>, String> {
         match array.get(index) {
-            Some(value) => RuntimeResult::Return(value),
+            Some(value) => RuntimeResult::Return(Unrooted::from(value.get_variant().get_value())),
             None => RuntimeResult::Panic(format!("Index {} is out of range", index)),
         }
     }
@@ -35,7 +38,7 @@ pub mod array {
     pub fn append<'vm>(
         lhs: Array<'vm, Generic<generic::A>>,
         rhs: Array<'vm, Generic<generic::A>>,
-    ) -> RuntimeResult<Array<'vm, Generic<generic::A>>, Error> {
+    ) -> RuntimeResult<Array<'vm, Generic<'vm, generic::A>>, Error> {
         struct Append<'b> {
             lhs: &'b ValueArray,
             rhs: &'b ValueArray,
@@ -168,7 +171,7 @@ mod string {
 
     pub extern "C" fn from_utf8(thread: &Thread) -> Status {
         let mut context = thread.current_context();
-        let value = StackFrame::current(context.stack())[0].get_repr();
+        let value = StackFrame::<ExternState>::current(context.stack())[0].get_repr();
         match value {
             ValueRepr::Array(array) => match GcStr::from_utf8(array) {
                 Ok(string) => {
@@ -248,7 +251,7 @@ extern "C" fn error(_: &Thread) -> Status {
 extern "C" fn discriminant_value(thread: &Thread) -> Status {
     let mut context = thread.current_context();
     let tag = {
-        let mut stack = StackFrame::current(context.stack());
+        let mut stack = StackFrame::<ExternState>::current(context.stack());
         let value = stack.get_variant(0).unwrap();
         match value.as_ref() {
             ValueRef::Data(data) => data.tag(),
@@ -495,12 +498,12 @@ pub fn load_char(vm: &Thread) -> Result<ExternModule> {
 }
 
 #[allow(non_camel_case_types, deprecated)]
-pub fn load(vm: &Thread) -> Result<ExternModule> {
+pub fn load<'vm>(vm: &'vm Thread) -> Result<ExternModule> {
     use self::std;
 
     vm.define_global(
         "@error",
-        primitive::<fn(StdString) -> Generic<A>>("@error", std::prim::error),
+        primitive::<fn(StdString) -> Pushed<A>>("@error", std::prim::error),
     )?;
 
     vm.define_global(
@@ -517,8 +520,8 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
             show_char => primitive!(1 std::prim::show_char),
             string_compare => named_primitive!(2, "std.prim.string_compare", str::cmp),
             string_eq => named_primitive!(2, "std.prim.string_eq", <str as PartialEq>::eq),
-            error => primitive::<fn(StdString) -> Generic<A>>("std.prim.error", std::prim::error),
-            discriminant_value => primitive::<fn(Generic<A>) -> VmInt>(
+            error => primitive::<fn(StdString) -> Pushed<A>>("std.prim.error", std::prim::error),
+            discriminant_value => primitive::<fn(Generic<'vm, A>) -> VmInt>(
                 "std.prim.discriminant_value",
                 std::prim::discriminant_value
             ),

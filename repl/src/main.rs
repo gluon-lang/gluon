@@ -291,9 +291,7 @@ fn main() {
 
     if let Err(err) = run(&opt, &mut compiler, opt.color, &vm) {
         match err {
-            Error::VM(VMError::Message(_)) => {
-                eprintln!("{}\n{}", err, vm.context().stack.stacktrace(0))
-            }
+            Error::VM(VMError::Message(_)) => eprintln!("{}\n{}", err, vm.context().stacktrace(0)),
             _ => {
                 let mut stderr = termcolor::StandardStream::stderr(opt.color.into());
                 if let Err(err) = err.emit(&mut stderr, compiler.code_map()) {

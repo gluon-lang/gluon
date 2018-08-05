@@ -16,12 +16,12 @@ use futures::Future;
 use serde::ser::SerializeState;
 
 use gluon::vm::api::{Hole, OpaqueValue};
-use gluon::vm::internal::Value;
 use gluon::vm::serialization::{DeSeed, SeSeed};
 use gluon::vm::thread::{RootedThread, RootedValue, Thread, ThreadInternal};
+use gluon::vm::Variants;
 use gluon::{new_vm, Compiler};
 
-fn serialize_value(value: &Value) {
+fn serialize_value(value: Variants) {
     let mut buffer = Vec::new();
     {
         let mut ser = serde_json::Serializer::pretty(&mut buffer);
@@ -37,7 +37,7 @@ fn roundtrip<'t>(
 ) -> RootedValue<&'t Thread> {
     use std::str::from_utf8;
 
-    let value = unsafe { value.get_value() };
+    let value = value.get_variant();
 
     let mut buffer = Vec::new();
     {
@@ -52,7 +52,7 @@ fn roundtrip<'t>(
     let deserialize_value = DeSeed::new(thread)
         .deserialize(&mut de)
         .unwrap_or_else(|err| panic!("{}\n{}", err, buffer));
-    let deserialize_value = thread.root_value(deserialize_value);
+    let deserialize_value = thread.root_value(unsafe { Variants::new(&deserialize_value) });
 
     // We can't compare functions for equality so serialize again and check that for equality with
     // the first serialization
@@ -161,13 +161,13 @@ fn precompile() {
     let thread2 = new_vm();
     assert_eq!(
         serialize_value(
-            &text
-                .run_expr(&mut Compiler::new(), &*thread2, "test", &text, None)
+            text.run_expr(&mut Compiler::new(), &*thread2, "test", &text, None)
                 .wait()
                 .unwrap()
                 .value
+                .get_variant()
         ),
-        serialize_value(&precompiled_result.value)
+        serialize_value(precompiled_result.value.get_variant())
     );
 }
 

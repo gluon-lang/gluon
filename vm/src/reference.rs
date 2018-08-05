@@ -4,7 +4,7 @@ use std::marker::PhantomData;
 use std::sync::Mutex;
 
 use api::generic::A;
-use api::{Generic, RuntimeResult, Userdata, VmType, WithVM};
+use api::{Generic, RuntimeResult, Unrooted, Userdata, VmType, WithVM};
 use base::types::{ArcType, Type};
 use gc::{Gc, GcPtr, Move, Traverseable};
 use thread::ThreadInternal;
@@ -62,25 +62,23 @@ where
 }
 
 fn set(r: &Reference<A>, a: Generic<A>) -> RuntimeResult<(), String> {
-    unsafe {
-        match r.thread.deep_clone_value(&r.thread, a.get_value()) {
-            Ok(a) => {
-                *r.value.lock().unwrap() = a;
-                RuntimeResult::Return(())
-            }
-            Err(err) => RuntimeResult::Panic(format!("{}", err)),
+    match r.thread.deep_clone_value(&r.thread, a.get_variant()) {
+        Ok(a) => {
+            *r.value.lock().unwrap() = a;
+            RuntimeResult::Return(())
         }
+        Err(err) => RuntimeResult::Panic(format!("{}", err)),
     }
 }
 
-fn get(r: &Reference<A>) -> Generic<A> {
-    Generic::from(r.value.lock().unwrap().clone())
+fn get(r: &Reference<A>) -> Unrooted<A> {
+    Unrooted::from(r.value.lock().unwrap().clone())
 }
 
 fn make_ref(a: WithVM<Generic<A>>) -> Reference<A> {
     unsafe {
         Reference {
-            value: Mutex::new(a.value.get_value()),
+            value: Mutex::new(a.value.get_variant().get_value()),
             thread: GcPtr::from_raw(a.vm),
             _marker: PhantomData,
         }

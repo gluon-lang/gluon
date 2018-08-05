@@ -67,7 +67,6 @@ use vm::api::{Getable, Hole, OpaqueValue, VmType};
 use vm::compiler::CompiledModule;
 use vm::future::{BoxFutureValue, FutureValue};
 use vm::macros;
-use vm::Variants;
 
 quick_error! {
 /// Error type wrapping all possible errors that can be generated from gluon
@@ -521,9 +520,9 @@ impl Compiler {
         let expected = T::make_type(vm);
         expr_str
             .run_expr(self, vm, name, expr_str, Some(&expected))
-            .and_then(move |execute_value| unsafe {
+            .and_then(move |execute_value| {
                 FutureValue::sync(Ok((
-                    T::from_value(vm, Variants::new(&execute_value.value.get_value())),
+                    T::from_value(vm, execute_value.value.get_variant()),
                     execute_value.typ,
                 )))
             })
@@ -567,9 +566,9 @@ impl Compiler {
         let vm = vm.root_thread();
         expr_str
             .run_expr(self, vm.clone(), name, expr_str, Some(&expected))
-            .and_then(move |execute_value| unsafe {
+            .and_then(move |execute_value| {
                 FutureValue::sync(Ok((
-                    T::from_value(&vm, Variants::new(&execute_value.value.get_value())),
+                    T::from_value(&vm, execute_value.value.get_variant()),
                     execute_value.typ,
                 )))
             })

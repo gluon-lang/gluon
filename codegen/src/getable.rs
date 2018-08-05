@@ -294,7 +294,7 @@ fn create_getable_bounds(generics: &Generics) -> Vec<TokenStream> {
 
 fn create_lifetime_bounds(generics: &Generics) -> Vec<TokenStream> {
     map_lifetimes(generics, |lifetime| {
-        quote! { #lifetime: '__vm, '__vm: #lifetime }
+        quote! { #lifetime: '__value, '__value: #lifetime }
     })
 }
 
