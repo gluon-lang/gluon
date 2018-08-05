@@ -259,6 +259,14 @@ impl Substitutable for ArcType<Symbol> {
         }
     }
 
+    fn get_id(&self) -> Option<u32> {
+        match **self {
+            Type::Variable(ref var) => Some(var.id),
+            Type::Skolem(ref skolem) => Some(skolem.id),
+            _ => None,
+        }
+    }
+
     fn traverse<'a, F>(&'a self, f: &mut F)
     where
         F: types::Walker<'a, Self>,
@@ -1151,12 +1159,16 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for UnifierState<'a, Subsume<'e>> {
         match (&**l, &**r) {
             (&Type::Hole, _) => Ok(Some(r.clone())),
             (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => Ok(None),
-            (&Type::Skolem(ref skolem), &Type::Variable(ref r_var))
-                if subs.get_level(skolem.id) > r_var.id =>
-            {
-                return Err(UnifyError::Other(TypeError::UnableToGeneralize(
-                    skolem.name.clone(),
-                )));
+            (&Type::Variable(ref l_var), &Type::Skolem(ref skolem)) => {
+                let skolem_level = subs.get_level(skolem.id);
+                if skolem_level > l_var.id {
+                    Err(UnifyError::Other(TypeError::UnableToGeneralize(
+                        skolem.name.clone(),
+                    )))
+                } else {
+                    subs.union(l_var, r)?;
+                    Ok(None)
+                }
             }
             (&Type::Generic(ref l_gen), &Type::Variable(ref r_var)) => {
                 let left = match self.unifier.variables.get(&l_gen.id) {

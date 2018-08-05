@@ -1052,11 +1052,46 @@ fn unify_with_inferred_forall_in_record() {
 
     let text = r#"
 type Option a = | None | Some a
-type Record b = { x : Option b }
 
-let f = \_ ->
-    { x = None }
+let f : forall a . () -> Option { x : Option a } = \x ->
+    match () with
+    | _ -> Some { x = None }
 f
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn unify_with_inferred_forall_in_nested_call() {
+    let _ = ::env_logger::try_init();
+
+    let text = r#"
+type Option a = | None | Some a
+
+type Deserializer i a = i -> Option { value : a, input : i }
+
+/// Deserializer which extracts the data from the `Value` type 
+type ValueDeserializer a = Deserializer String a
+
+let any x = any x
+
+let deserializer : Deserializer i a -> Deserializer i a = any ()
+
+type Functor f = {
+    map : forall a b . (a -> b) -> f a -> f b
+}
+
+let functor : Functor (Deserializer i) = {
+    map = \f m -> any ()
+}
+
+let option a : ValueDeserializer a -> ValueDeserializer (Option a) = \input ->
+    match input with
+    | "null" -> Some { value = None, input }
+    | _ -> (functor.map Some a) input
+()
 "#;
     let result = support::typecheck(text);
 

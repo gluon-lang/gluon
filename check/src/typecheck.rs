@@ -379,6 +379,15 @@ impl<'a> Typecheck<'a> {
         self.environment.get_bool().clone()
     }
 
+    fn is_variable_in_scope(&self, symbol: &Symbol, id: u32) -> bool {
+        self.type_variables
+            .get(symbol)
+            .map(|typ| match **typ {
+                Type::Variable(ref var) => var.id == id,
+                _ => false,
+            }).unwrap_or(false)
+    }
+
     fn find_at(&mut self, span: Span<BytePos>, id: &Symbol) -> ArcType {
         match self.find(id) {
             Ok(typ) => typ,
@@ -728,7 +737,13 @@ impl<'a> Typecheck<'a> {
                             returned_type = match expected_type {
                                 Some(expected_type) => {
                                     let level = self.subs.var_id();
-                                    self.subsumes_expr(expr.span, level, &expected_type, typ, expr)
+                                    self.subsumes_expr(
+                                        expr.span,
+                                        level,
+                                        &typ,
+                                        expected_type.clone(),
+                                        expr,
+                                    )
                                 }
                                 None => typ,
                             };
@@ -862,25 +877,25 @@ impl<'a> Typecheck<'a> {
             }
             Expr::Match(ref mut expr, ref mut alts) => {
                 let typ = self.infer_expr(&mut **expr);
-                let mut expected_alt_type = expected_type.cloned();
+                let expected_type = expected_type.take().cloned();
 
-                let expected_type = expected_type.take();
+                let mut expr_type = None;
 
                 for alt in alts.iter_mut() {
                     self.enter_scope();
                     self.typecheck_pattern(&mut alt.pattern, typ.clone());
-                    let mut alt_type = self.typecheck_opt(&mut alt.expr, expected_type);
+                    let mut alt_type = self.typecheck_opt(&mut alt.expr, expected_type.as_ref());
                     alt_type = self.instantiate_generics(&alt_type);
-                    self.exit_scope();
-                    // All alternatives must unify to the same type
-                    if let Some(ref expected) = expected_alt_type {
-                        alt_type = self.unify(expected, alt_type)?;
+                    match expr_type {
+                        Some(ref expr_type) if expected_type.is_none() => {
+                            alt_type = self.unify_span(alt.expr.span, expr_type, alt_type);
+                        }
+                        _ => (),
                     }
-                    expected_alt_type = Some(alt_type);
+                    self.exit_scope();
+                    expr_type = Some(alt_type);
                 }
-                expected_alt_type
-                    .ok_or(TypeError::EmptyCase)
-                    .map(TailCall::Type)
+                expr_type.ok_or(TypeError::EmptyCase).map(TailCall::Type)
             }
             Expr::LetBindings(ref mut bindings, _) => {
                 self.typecheck_bindings(bindings)?;
@@ -944,6 +959,7 @@ impl<'a> Typecheck<'a> {
                 lambda.id.name = self.symbols.symbol(loc);
                 let level = self.subs.var_id();
                 let function_type = expected_type
+                    .take()
                     .cloned()
                     .unwrap_or_else(|| self.subs.new_var());
 
@@ -969,6 +985,8 @@ impl<'a> Typecheck<'a> {
                 exprs: ref mut fields,
                 ref mut base,
             } => {
+                let level = self.subs.var_id();
+
                 let expected_type = expected_type.map(|expected_type| {
                     let expected_type = self.subs.real(expected_type).clone();
                     let typ = resolve::remove_aliases_cow(&self.environment, &expected_type);
@@ -995,8 +1013,6 @@ impl<'a> Typecheck<'a> {
 
                 let mut new_fields: Vec<Field<_, _>> = Vec::with_capacity(fields.len());
                 for field in fields {
-                    let level = self.subs.var_id();
-
                     let name = &field.name.value;
                     let expected_field_type = expected_type
                         .and_then(|expected_type| {
@@ -1047,7 +1063,7 @@ impl<'a> Typecheck<'a> {
                         }
                     };
                     self.generalize_type(level, &mut typ);
-                    typ = new_skolem_scope(&self.subs, &typ);
+                    typ = self.new_skolem_scope(&typ);
 
                     if self.error_on_duplicated_field(&mut duplicated_fields, field.name.clone()) {
                         new_fields.push(Field::new(field.name.value.clone(), typ));
@@ -2045,7 +2061,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn generalize_type(&mut self, level: u32, typ: &mut ArcType) {
-        debug!("Start generalize {}", typ);
+        debug!("Start generalize {} >> {}", level, typ);
         self.type_variables.enter_scope();
 
         let mut generalizer = TypeGeneralizer::new(level, self, typ);
@@ -2319,7 +2335,29 @@ impl<'a> Typecheck<'a> {
                 _ => break,
             };
         }
-        self.subsumes(span, level, expected, actual)
+        let mut expected = expected.clone();
+        loop {
+            let temp = self.instantiate_generics(&expected);
+            expected = match *temp {
+                Type::Function(ArgType::Implicit, ref arg_type, ref r_ret) => {
+                    match **self.subs.real(&actual) {
+                        Type::Variable(_) | Type::Function(ArgType::Implicit, _, _) => break,
+                        _ => {
+                            let name = self.implicit_resolver.make_implicit_ident(arg_type);
+
+                            receiver(Expr::Ident(TypedIdent {
+                                name,
+                                typ: arg_type.clone(),
+                            }));
+
+                            r_ret.clone()
+                        }
+                    }
+                }
+                _ => break,
+            };
+        }
+        self.subsumes(span, level, &expected, actual)
     }
 
     fn subsumes(
@@ -2799,13 +2837,13 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                 ))
             }
 
-            Type::Skolem(ref skolem) if skolem.id >= self.level => {
+            Type::Skolem(ref skolem) if self.subs.get_level(skolem.id) >= self.level => {
                 let generic = Generic {
                     id: skolem.name.clone(),
                     kind: skolem.kind.clone(),
                 };
 
-                if self.type_variables.get(&generic.id).is_none() {
+                if !self.is_variable_in_scope(&generic.id, skolem.id) {
                     self.unbound_variables
                         .insert(generic.id.clone(), generic.clone());
                 }

@@ -29,6 +29,34 @@ match { x = 1 } with
 }
 
 #[test]
+fn match_different_alt_types() {
+    let _ = env_logger::try_init();
+    let text = r#"
+match () with
+| () -> 1
+| () -> ""
+"#;
+    let result = support::typecheck(text);
+
+    assert_unify_err!(result, TypeMismatch(..));
+}
+
+#[test]
+fn match_different_alt_types_expected() {
+    let _ = env_logger::try_init();
+    let text = r#"
+let x : _ =
+    match () with
+    | () -> 1
+    | () -> ""
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert_unify_err!(result, TypeMismatch(..));
+}
+
+#[test]
 fn undefined_type_not_in_scope() {
     let _ = env_logger::try_init();
     let text = r#"
@@ -393,12 +421,12 @@ eq (A 0) (B 0.0)
     assert_eq!(
         &*format!("{}", result.unwrap_err()).replace("\t", "        "),
         r#"error: Expected the following types to be equal
-Expected: test.A
-Found: test.B
+Expected: test.B
+Found: test.A
 1 errors were found during unification:
 Types do not match:
-    Expected: test.A
-    Found: test.B
+    Expected: test.B
+    Found: test.A
 - <test>:5:11
 5 | eq (A 0) (B 0.0)
   |           ^^^^^
@@ -420,8 +448,8 @@ f { } { x = 1 }
     assert_eq!(
         &*format!("{}", result.unwrap_err()).replace("\t", "        "),
         r#"error: Expected the following types to be equal
-Expected: ()
-Found: { x : Int }
+Expected: { x : Int }
+Found: ()
 1 errors were found during unification:
 The type `()` lacks the following fields: x
 - <test>:4:7

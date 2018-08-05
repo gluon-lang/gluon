@@ -806,3 +806,35 @@ f { x = 1 }
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn type_hole_applicative() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+#[implicit]
+type Functor f = {
+    map : forall a b . (a -> b) -> f a -> f b
+}
+
+#[implicit]
+type Applicative (f : Type -> Type) = {
+    functor : Functor f,
+    apply : forall a b . f (a -> b) -> f a -> f b,
+}
+
+let map ?f : [Functor f] -> (a -> b) -> f a -> f b = f.map
+
+let apply ?app : [Applicative f] -> f (a -> b) -> f a -> f b = app.apply
+
+#[infix(left, 4)]
+let (<*>) : [Applicative f] -> f (a -> b) -> f a -> f b = apply
+
+let map2 fn a b : [Applicative f] -> _
+    = map fn a <*> b
+
+{}
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}

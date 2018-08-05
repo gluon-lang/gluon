@@ -405,7 +405,7 @@ macro_rules! assert_multi_unify_err {
         #[allow(unused_imports)]
         use check::substitution::Error::Occurs;
         #[allow(unused_imports)]
-        use check::unify_type::TypeError::{FieldMismatch, SelfRecursiveAlias, MissingFields};
+        use check::unify_type::TypeError::{FieldMismatch, UnableToGeneralize, SelfRecursiveAlias, MissingFields};
 
         match $e {
             Ok(x) => assert!(false, "Expected error, got {}", x),
