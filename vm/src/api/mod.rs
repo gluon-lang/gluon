@@ -1331,6 +1331,24 @@ where
     }
 }
 
+pub trait AsValueRef {
+    fn as_value_ref(&self) -> ValueRef;
+}
+
+impl<'value> AsValueRef for Variants<'value> {
+    fn as_value_ref(&self) -> ValueRef {
+        self.as_ref()
+    }
+}
+impl<T> AsValueRef for RootedValue<T>
+where
+    T: Deref<Target = Thread>,
+{
+    fn as_value_ref(&self) -> ValueRef {
+        self.get_variant().as_ref()
+    }
+}
+
 /// Abstraction over `Variants` which allows functions to be polymorphic over
 /// `fn foo(&'s self) -> Value<'value>` where `'value` can either be the same as `'s` (when the
 /// root does not have a lifetime and needs to *produce* a `Variants` value bound to `&self` or
@@ -1430,27 +1448,28 @@ where
 
 impl<T, V> Deref for Opaque<T, V>
 where
-    T: for<'value> AsVariant<'value, 'value, Variant = Variants<'value>>,
+    T: AsValueRef,
     V: vm::Userdata,
 {
     type Target = V;
 
     fn deref(&self) -> &V {
-        match self.get_variant().as_ref() {
+        match self.0.as_value_ref() {
             ValueRef::Userdata(data) => data.downcast_ref::<V>().unwrap(),
             _ => ice!("ValueRef is not an Userdata"),
         }
     }
 }
 
-impl<T> Deref for Opaque<T, [T]>
+impl<T, V> Deref for Opaque<T, [V]>
 where
-    T: for<'value> AsVariant<'value, 'value, Variant = Variants<'value>> + ArrayRepr + Copy,
+    T: AsValueRef,
+    V: ArrayRepr + Copy,
 {
-    type Target = [T];
+    type Target = [V];
 
-    fn deref(&self) -> &[T] {
-        match self.get_variant().as_ref() {
+    fn deref(&self) -> &[V] {
+        match self.0.as_value_ref() {
             ValueRef::Array(data) => data.as_slice().expect("array is not of the correct type"),
             _ => ice!("ValueRef is not an array"),
         }
@@ -1459,12 +1478,12 @@ where
 
 impl<T> Deref for Opaque<T, str>
 where
-    T: for<'value> AsVariant<'value, 'value, Variant = Variants<'value>>,
+    T: AsValueRef,
 {
     type Target = str;
 
     fn deref(&self) -> &str {
-        match self.get_variant().as_ref() {
+        match self.0.as_value_ref() {
             ValueRef::String(data) => data,
             _ => ice!("ValueRef is not an Userdata"),
         }

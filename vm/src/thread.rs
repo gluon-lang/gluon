@@ -684,6 +684,12 @@ impl Thread {
         }
     }
 
+    pub fn get_global_type(&self, name: &str) -> Result<ArcType> {
+        let env = self.get_env();
+        let (_value, actual) = env.get_binding(name)?;
+        Ok(actual.into_owned())
+    }
+
     /// Retrieves type information about the type `name`. Types inside records can be accessed
     /// using dot notation (std.prelude.Option)
     pub fn find_type_info(&self, name: &str) -> Result<types::Alias<Symbol, ArcType>> {
@@ -1293,7 +1299,7 @@ impl Context {
                 elems: fields,
             },
         ).map(ValueRepr::Data)
-            .map(Value::from)
+        .map(Value::from)
     }
 
     pub fn push_new_data(
@@ -1313,7 +1319,7 @@ impl Context {
                     elems: fields,
                 },
             ).map(ValueRepr::Data)
-                .map(Value::from)?
+            .map(Value::from)?
         };
         self.stack.push(value);
         Ok(self.stack.last().unwrap())
