@@ -582,12 +582,6 @@ impl<'vm, 'value> Getable<'vm, 'value> for ValueRef<'value> {
     }
 }
 
-impl<'vm, 'value> Getable<'vm, 'value> for Value {
-    fn from_value(_vm: &'vm Thread, value: Variants<'value>) -> Self {
-        value.get_value()
-    }
-}
-
 impl<'vm, T: ?Sized + VmType> VmType for PhantomData<T> {
     type Type = T::Type;
     fn make_forall_type(vm: &Thread) -> ArcType {
@@ -793,9 +787,8 @@ impl VmType for bool {
         (*vm.global_env()
             .get_env()
             .find_type_info("std.types.Bool")
-            .unwrap())
-            .clone()
-            .into_type()
+            .unwrap()).clone()
+        .into_type()
     }
 }
 impl<'vm> Pushable<'vm> for bool {
@@ -1378,6 +1371,30 @@ where
     }
 }
 
+pub trait AsVariant<'value> {
+    fn get_variant(self) -> Variants<'value>;
+}
+
+impl<'value> AsVariant<'value> for Variants<'value> {
+    fn get_variant(self) -> Variants<'value> {
+        self
+    }
+}
+
+impl<'a, 'value> AsVariant<'value> for &'a Variants<'value> {
+    fn get_variant(self) -> Variants<'value> {
+        *self
+    }
+}
+impl<'value, T> AsVariant<'value> for &'value RootedValue<T>
+where
+    T: Deref<Target = Thread>,
+{
+    fn get_variant(self) -> Variants<'value> {
+        self.get_variant()
+    }
+}
+
 /// Type implementing both `Pushable` and `Getable` of values of `V` regardless of wheter `V`
 /// implements the traits.
 /// The actual value, `V` is only accessible directly either by `Deref` if it is `Userdata` or a
@@ -1385,14 +1402,15 @@ where
 ///
 /// When the value is not accessible the value can only be transferred back into gluon again
 /// without inspecting the value itself two different threads.
-pub struct OpaqueValue<T, V>(RootedValue<T>, PhantomData<V>)
+pub struct Opaque<T, V>(T, PhantomData<V>)
 where
-    T: Deref<Target = Thread>,
     V: ?Sized;
 
-impl<T, V> PartialEq for OpaqueValue<T, V>
+pub type OpaqueValue<T, V> = Opaque<RootedValue<T>, V>;
+
+impl<T, V> PartialEq for Opaque<T, V>
 where
-    T: Deref<Target = Thread>,
+    for<'value> &'value T: AsVariant<'value>,
     Self: Borrow<V>,
     V: ?Sized + PartialEq,
 {
@@ -1400,16 +1418,16 @@ where
         self.borrow() == other.borrow()
     }
 }
-impl<T, V> Eq for OpaqueValue<T, V>
+impl<T, V> Eq for Opaque<T, V>
 where
-    T: Deref<Target = Thread>,
+    for<'value> &'value T: AsVariant<'value>,
     Self: Borrow<V>,
     V: ?Sized + Eq,
 {}
 
-impl<T, V> PartialOrd for OpaqueValue<T, V>
+impl<T, V> PartialOrd for Opaque<T, V>
 where
-    T: Deref<Target = Thread>,
+    for<'value> &'value T: AsVariant<'value>,
     Self: Borrow<V>,
     V: ?Sized + PartialOrd,
 {
@@ -1418,9 +1436,9 @@ where
     }
 }
 
-impl<T, V> Ord for OpaqueValue<T, V>
+impl<T, V> Ord for Opaque<T, V>
 where
-    T: Deref<Target = Thread>,
+    for<'value> &'value T: AsVariant<'value>,
     Self: Borrow<V>,
     V: ?Sized + Ord,
 {
@@ -1429,32 +1447,38 @@ where
     }
 }
 
-impl<T, V> Deref for OpaqueValue<T, V>
+impl<T, V> Deref for Opaque<T, V>
 where
-    T: Deref<Target = Thread>,
+    for<'value> &'value T: AsVariant<'value>,
     V: vm::Userdata,
 {
     type Target = V;
 
     fn deref(&self) -> &V {
-        <&V>::from_value(self.vm(), self.get_variant())
+        match self.get_variant().as_ref() {
+            ValueRef::Userdata(data) => data.downcast_ref::<V>().unwrap(),
+            _ => ice!("ValueRef is not an Userdata"),
+        }
     }
 }
 
-impl<T> Deref for OpaqueValue<T, str>
+impl<T> Deref for Opaque<T, str>
 where
-    T: Deref<Target = Thread>,
+    for<'value> &'value T: AsVariant<'value>,
 {
     type Target = str;
 
     fn deref(&self) -> &str {
-        <&str>::from_value(self.vm(), self.get_variant())
+        match self.get_variant().as_ref() {
+            ValueRef::String(data) => data,
+            _ => ice!("ValueRef is not an Userdata"),
+        }
     }
 }
 
-impl<T, V> Borrow<V> for OpaqueValue<T, V>
+impl<T, V> Borrow<V> for Opaque<T, V>
 where
-    T: Deref<Target = Thread>,
+    for<'value> &'value T: AsVariant<'value>,
     V: ?Sized,
     Self: Deref<Target = V>,
 {
@@ -1478,9 +1502,9 @@ where
 }
 
 #[cfg(feature = "serde")]
-impl<T> Serialize for OpaqueValue<T, str>
+impl<T> Serialize for Opaque<T, str>
 where
-    T: Deref<Target = Thread>,
+    for<'value> &'value T: AsVariant<'value>,
 {
     fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
     where
@@ -1491,9 +1515,9 @@ where
 }
 
 #[cfg(feature = "serde")]
-impl<T> SerializeState<Thread> for OpaqueValue<T, str>
+impl<T> SerializeState<Thread> for Opaque<T, str>
 where
-    T: Deref<Target = Thread>,
+    for<'value> &'value T: AsVariant<'value>,
 {
     fn serialize_state<S>(&self, serializer: S, _thread: &Thread) -> StdResult<S::Ok, S::Error>
     where
@@ -1503,21 +1527,21 @@ where
     }
 }
 
-impl<T, V> fmt::Debug for OpaqueValue<T, V>
+impl<T, V> fmt::Debug for Opaque<T, V>
 where
-    T: Deref<Target = Thread>,
+    T: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self.0)
     }
 }
 
-impl<T, V> Clone for OpaqueValue<T, V>
+impl<T, V> Clone for Opaque<T, V>
 where
-    T: Deref<Target = Thread> + Clone,
+    T: Clone,
 {
     fn clone(&self) -> Self {
-        OpaqueValue(self.0.clone(), self.1.clone())
+        Opaque(self.0.clone(), self.1.clone())
     }
 }
 
@@ -1526,10 +1550,6 @@ where
     T: Deref<Target = Thread>,
     V: ?Sized,
 {
-    pub fn from_value(value: RootedValue<T>) -> Self {
-        OpaqueValue(value, PhantomData)
-    }
-
     pub fn vm(&self) -> &Thread {
         self.0.vm()
     }
@@ -1541,14 +1561,29 @@ where
     {
         V::from_value(self.vm(), self.get_variant())
     }
+}
 
-    pub fn into_inner(self) -> RootedValue<T> {
+impl<T, V> Opaque<T, V>
+where
+    V: ?Sized,
+{
+    pub fn from_value(value: T) -> Self {
+        Opaque(value, PhantomData)
+    }
+}
+
+impl<T, V> Opaque<T, V>
+where
+    for<'value> &'value T: AsVariant<'value>,
+    V: ?Sized,
+{
+    pub fn into_inner(self) -> T {
         self.0
     }
 
     /// Unsafe as `Value` are not rooted
     pub unsafe fn get_value(&self) -> Value {
-        self.0.get_value()
+        self.0.get_variant().get_value()
     }
 
     pub fn get_variant(&self) -> Variants {
@@ -1560,9 +1595,9 @@ where
     }
 }
 
-impl<T, V> VmType for OpaqueValue<T, V>
+impl<T, V> VmType for Opaque<T, V>
 where
-    T: Deref<Target = Thread>,
+    for<'value> &'value T: AsVariant<'value>,
     V: ?Sized + VmType,
     V::Type: Sized,
 {
@@ -1576,14 +1611,24 @@ where
     }
 }
 
-impl<'vm, T, V> Pushable<'vm> for OpaqueValue<T, V>
+impl<'vm, T, V> Pushable<'vm> for Opaque<T, V>
 where
-    T: Deref<Target = Thread>,
+    for<'value> &'value T: AsVariant<'value>,
     V: ?Sized + VmType,
     V::Type: Sized,
 {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        self.0.push(context)
+        context.push(self.get_variant());
+        Ok(())
+    }
+}
+
+impl<'vm, 'value, V> Getable<'vm, 'value> for Opaque<Variants<'value>, V>
+where
+    V: ?Sized,
+{
+    fn from_value(_vm: &'vm Thread, value: Variants<'value>) -> Self {
+        Opaque::from_value(value)
     }
 }
 
