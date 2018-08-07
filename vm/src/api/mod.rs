@@ -870,17 +870,6 @@ where
     }
 }
 
-impl<'s, T> VmType for &'s [T]
-where
-    T: VmType + ArrayRepr + 's,
-    T::Type: Sized,
-{
-    type Type = &'static [T::Type];
-
-    fn make_type(vm: &Thread) -> ArcType {
-        vm.global_env().type_cache().array(T::make_type(vm))
-    }
-}
 impl<'vm, 's, T> Pushable<'vm> for &'s [T]
 where
     T: Traverseable + Pushable<'vm> + 's,
@@ -902,6 +891,18 @@ impl<'vm, 'value, T: Copy + ArrayRepr> Getable<'vm, 'value> for &'value [T] {
     }
 }
 
+impl<T> VmType for [T]
+where
+    T: VmType,
+    T::Type: Sized,
+{
+    type Type = Vec<T::Type>;
+
+    fn make_type(thread: &Thread) -> ArcType {
+        <Vec<T> as VmType>::make_type(thread)
+    }
+}
+
 impl<T> VmType for Vec<T>
 where
     T: VmType,
@@ -910,7 +911,7 @@ where
     type Type = Vec<T::Type>;
 
     fn make_type(thread: &Thread) -> ArcType {
-        Array::<T>::make_type(thread)
+        thread.global_env().type_cache().array(T::make_type(thread))
     }
 }
 
@@ -1648,55 +1649,43 @@ impl<'vm> ArrayRef<'vm> {
     }
 }
 
-/// Type which represents an array
-pub type Array<'vm, T> = Opaque<RootedValue<&'vm Thread>, [T]>;
+pub type Array<'vm, T> = OpaqueValue<&'vm Thread, [T]>;
 
-impl<'vm, T> Array<'vm, T> {
+impl<T, V> Opaque<T, [V]>
+where
+    T: AsVariant,
+{
     pub fn len(&self) -> usize {
         self.get_value_array().len()
     }
 
-    #[doc(hidden)]
-    pub fn get_value_array(&self) -> &ValueArray {
+    fn get_array(&self) -> ArrayRef {
         match self.0.get_variant().as_ref() {
-            ValueRef::Array(ref array) => &array.0,
-            _ => ice!("Expected an array found {:?}", self.0),
+            ValueRef::Array(array) => array,
+            _ => ice!("Expected an array"),
         }
+    }
+
+    pub(crate) fn get_value_array(&self) -> &ValueArray {
+        self.get_array().0
+    }
+
+    pub fn get(&self, index: VmInt) -> Option<OpaqueRef<V>> {
+        self.get_array().get(index as usize).map(Opaque::from_value)
     }
 }
 
-impl<'vm, T> Array<'vm, T> {
-    pub fn get<'value>(&'value self, index: VmInt) -> Option<T>
+impl<T, V> OpaqueValue<T, [V]>
+where
+    T: Deref<Target = Thread>,
+{
+    pub fn get2<'value>(&'value self, index: VmInt) -> Option<V>
     where
-        T: Getable<'vm, 'value>,
+        V: for<'vm> Getable<'vm, 'value>,
     {
-        match self.0.get_variant().as_ref() {
-            ValueRef::Array(data) => {
-                let v = data.get(index as usize).unwrap();
-                Some(T::from_value(self.0.vm_(), v))
-            }
-            _ => None,
-        }
-    }
-}
-
-impl<'vm, T: VmType> VmType for Array<'vm, T>
-where
-    T::Type: Sized,
-{
-    type Type = Array<'static, T::Type>;
-    fn make_type(vm: &Thread) -> ArcType {
-        vm.global_env().type_cache().array(T::make_type(vm))
-    }
-}
-
-impl<'vm, T: VmType> Pushable<'vm> for Array<'vm, T>
-where
-    T::Type: Sized,
-{
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        context.push(self.0.get_variant());
-        Ok(())
+        self.get_array()
+            .get(index as usize)
+            .map(|v| V::from_value(self.0.vm(), v))
     }
 }
 

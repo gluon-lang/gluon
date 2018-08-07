@@ -5,7 +5,7 @@ use std::string::String as StdString;
 
 use api::generic::A;
 use api::{
-    generic, primitive, Array, Getable, OpaqueRef, Pushable, Pushed, RuntimeResult, Unrooted,
+    generic, primitive, Getable, OpaqueRef, OpaqueValue, Pushable, Pushed, RuntimeResult, Unrooted,
     ValueRef, WithVM,
 };
 use gc::{DataDef, Gc, Traverseable, WriteOnly};
@@ -24,6 +24,8 @@ pub mod array {
     pub fn len(array: Array<generic::A>) -> VmInt {
         array.len() as VmInt
     }
+
+    type Array<'vm, T> = OpaqueValue<&'vm Thread, [T]>;
 
     pub(crate) fn index<'vm>(
         array: Array<'vm, OpaqueRef<'vm, generic::A>>,
