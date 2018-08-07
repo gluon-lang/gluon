@@ -5,8 +5,8 @@ use std::string::String as StdString;
 
 use api::generic::A;
 use api::{
-    generic, primitive, Getable, OpaqueRef, OpaqueValue, Pushable, Pushed, RuntimeResult, Unrooted,
-    ValueRef, WithVM,
+    generic, primitive, Array, Getable, OpaqueRef, Pushable, Pushed, RuntimeResult, ValueRef,
+    WithVM,
 };
 use gc::{DataDef, Gc, Traverseable, WriteOnly};
 use stack::{ExternState, StackFrame};
@@ -25,22 +25,20 @@ pub mod array {
         array.len() as VmInt
     }
 
-    type Array<'vm, T> = OpaqueValue<&'vm Thread, [T]>;
-
     pub(crate) fn index<'vm>(
-        array: Array<'vm, OpaqueRef<'vm, generic::A>>,
+        array: OpaqueRef<'vm, [generic::A]>,
         index: VmInt,
-    ) -> RuntimeResult<Unrooted<generic::A>, String> {
+    ) -> RuntimeResult<OpaqueRef<'vm, generic::A>, String> {
         match array.get(index) {
-            Some(value) => RuntimeResult::Return(Unrooted::from(value.get_variant().get_value())),
+            Some(value) => RuntimeResult::Return(value),
             None => RuntimeResult::Panic(format!("Index {} is out of range", index)),
         }
     }
 
     pub(crate) fn append<'vm>(
-        lhs: Array<'vm, OpaqueRef<'vm, generic::A>>,
-        rhs: Array<'vm, OpaqueRef<'vm, generic::A>>,
-    ) -> RuntimeResult<Array<'vm, Unrooted<generic::A>>, Error> {
+        lhs: Array<'vm, generic::A>,
+        rhs: Array<'vm, generic::A>,
+    ) -> RuntimeResult<Array<'vm, generic::A>, Error> {
         struct Append<'b> {
             lhs: &'b ValueArray,
             rhs: &'b ValueArray,
