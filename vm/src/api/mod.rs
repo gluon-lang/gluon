@@ -1296,6 +1296,13 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for IO<T> {
     }
 }
 
+impl<'vm> Pushable<'vm> for Variants<'vm> {
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        context.push(self);
+        Ok(())
+    }
+}
+
 impl<'vm, T> Pushable<'vm> for RootedValue<T>
 where
     T: Deref<Target = Thread>,
@@ -1609,13 +1616,12 @@ where
 
 impl<'s, 'value, 'vm, T, V> Pushable<'vm> for Opaque<T, V>
 where
-    T: AsVariant<'s, 'value, Variant = Variants<'value>> + 's,
-    V: ?Sized + VmType + 's,
+    T: Pushable<'vm>,
+    V: ?Sized + VmType,
     V::Type: Sized,
 {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        context.push(self.0.get_value());
-        Ok(())
+        self.0.push(context)
     }
 }
 
