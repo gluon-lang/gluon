@@ -5,8 +5,8 @@ use std::string::String as StdString;
 
 use api::generic::A;
 use api::{
-    generic, primitive, Array, Generic, Getable, Pushable, Pushed, RuntimeResult, Unrooted,
-    ValueRef, WithVM,
+    generic, primitive, Array, Getable, OpaqueRef, Pushable, Pushed, RuntimeResult, ValueRef,
+    WithVM,
 };
 use gc::{DataDef, Gc, Traverseable, WriteOnly};
 use stack::{ExternState, StackFrame};
@@ -26,19 +26,19 @@ pub mod array {
     }
 
     pub(crate) fn index<'vm>(
-        array: Array<'vm, Generic<generic::A>>,
+        array: OpaqueRef<'vm, [generic::A]>,
         index: VmInt,
-    ) -> RuntimeResult<Unrooted<generic::A>, String> {
+    ) -> RuntimeResult<OpaqueRef<'vm, generic::A>, String> {
         match array.get(index) {
-            Some(value) => RuntimeResult::Return(Unrooted::from(value.get_variant().get_value())),
+            Some(value) => RuntimeResult::Return(value),
             None => RuntimeResult::Panic(format!("Index {} is out of range", index)),
         }
     }
 
-    pub fn append<'vm>(
-        lhs: Array<'vm, Generic<generic::A>>,
-        rhs: Array<'vm, Generic<generic::A>>,
-    ) -> RuntimeResult<Array<'vm, Generic<'vm, generic::A>>, Error> {
+    pub(crate) fn append<'vm>(
+        lhs: Array<'vm, generic::A>,
+        rhs: Array<'vm, generic::A>,
+    ) -> RuntimeResult<Array<'vm, generic::A>, Error> {
         struct Append<'b> {
             lhs: &'b ValueArray,
             rhs: &'b ValueArray,
@@ -91,7 +91,7 @@ pub mod array {
         };
         unsafe {
             RuntimeResult::Return(Getable::from_value(
-                lhs.vm(),
+                lhs.vm_(),
                 Variants::new(&ValueRepr::Array(value).into()),
             ))
         }
@@ -521,7 +521,7 @@ pub fn load<'vm>(vm: &'vm Thread) -> Result<ExternModule> {
             string_compare => named_primitive!(2, "std.prim.string_compare", str::cmp),
             string_eq => named_primitive!(2, "std.prim.string_eq", <str as PartialEq>::eq),
             error => primitive::<fn(StdString) -> Pushed<A>>("std.prim.error", std::prim::error),
-            discriminant_value => primitive::<fn(Generic<'vm, A>) -> VmInt>(
+            discriminant_value => primitive::<fn(OpaqueRef<'vm, A>) -> VmInt>(
                 "std.prim.discriminant_value",
                 std::prim::discriminant_value
             ),

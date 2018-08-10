@@ -301,55 +301,7 @@ impl<T> Traverseable for Unrooted<T> {
     }
 }
 
-#[derive(PartialEq)]
-pub struct Generic<'a, T: ?Sized>(Variants<'a>, PhantomData<T>);
-
-impl<'a, T: ?Sized> From<Variants<'a>> for Generic<'a, T> {
-    fn from(value: Variants<'a>) -> Self {
-        Generic(value, PhantomData)
-    }
-}
-
-impl<'a, T> Generic<'a, T> {
-    pub fn get_variant(&self) -> Variants<'a> {
-        self.0.clone()
-    }
-}
-
-impl<'a, T> fmt::Debug for Generic<'a, T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl<'a, T: ?Sized + VmType> VmType for Generic<'a, T> {
-    type Type = T::Type;
-
-    fn make_type(vm: &Thread) -> ArcType {
-        T::make_type(vm)
-    }
-
-    fn extra_args() -> VmIndex {
-        T::extra_args()
-    }
-}
-impl<'vm, T: ?Sized + VmType> Pushable<'vm> for Generic<'vm, T> {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        context.push(self.0);
-        Ok(())
-    }
-}
-impl<'vm, 'value, T: ?Sized> Getable<'vm, 'value> for Generic<'value, T> {
-    fn from_value(_: &'vm Thread, value: Variants<'value>) -> Generic<'value, T> {
-        Generic::from(value)
-    }
-}
-
-impl<'a, T> Traverseable for Generic<'a, T> {
-    fn traverse(&self, gc: &mut Gc) {
-        self.0.traverse(gc);
-    }
-}
+pub type Generic<T> = OpaqueValue<RootedThread, T>;
 
 /// Module containing types which represent generic variables in gluon's type system
 pub mod generic {
@@ -582,12 +534,6 @@ impl<'vm, 'value> Getable<'vm, 'value> for ValueRef<'value> {
     }
 }
 
-impl<'vm, 'value> Getable<'vm, 'value> for Value {
-    fn from_value(_vm: &'vm Thread, value: Variants<'value>) -> Self {
-        value.get_value()
-    }
-}
-
 impl<'vm, T: ?Sized + VmType> VmType for PhantomData<T> {
     type Type = T::Type;
     fn make_forall_type(vm: &Thread) -> ArcType {
@@ -793,9 +739,8 @@ impl VmType for bool {
         (*vm.global_env()
             .get_env()
             .find_type_info("std.types.Bool")
-            .unwrap())
-            .clone()
-            .into_type()
+            .unwrap()).clone()
+        .into_type()
     }
 }
 impl<'vm> Pushable<'vm> for bool {
@@ -925,17 +870,6 @@ where
     }
 }
 
-impl<'s, T> VmType for &'s [T]
-where
-    T: VmType + ArrayRepr + 's,
-    T::Type: Sized,
-{
-    type Type = &'static [T::Type];
-
-    fn make_type(vm: &Thread) -> ArcType {
-        vm.global_env().type_cache().array(T::make_type(vm))
-    }
-}
 impl<'vm, 's, T> Pushable<'vm> for &'s [T]
 where
     T: Traverseable + Pushable<'vm> + 's,
@@ -957,6 +891,18 @@ impl<'vm, 'value, T: Copy + ArrayRepr> Getable<'vm, 'value> for &'value [T] {
     }
 }
 
+impl<T> VmType for [T]
+where
+    T: VmType,
+    T::Type: Sized,
+{
+    type Type = Vec<T::Type>;
+
+    fn make_type(thread: &Thread) -> ArcType {
+        <Vec<T> as VmType>::make_type(thread)
+    }
+}
+
 impl<T> VmType for Vec<T>
 where
     T: VmType,
@@ -965,7 +911,7 @@ where
     type Type = Vec<T::Type>;
 
     fn make_type(thread: &Thread) -> ArcType {
-        Array::<T>::make_type(thread)
+        thread.global_env().type_cache().array(T::make_type(thread))
     }
 }
 
@@ -1350,6 +1296,13 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for IO<T> {
     }
 }
 
+impl<'vm> Pushable<'vm> for Variants<'vm> {
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        context.push(self);
+        Ok(())
+    }
+}
+
 impl<'vm, T> Pushable<'vm> for RootedValue<T>
 where
     T: Deref<Target = Thread>,
@@ -1378,6 +1331,49 @@ where
     }
 }
 
+/// Abstraction over `Variants` which allows functions to be polymorphic over
+/// `fn foo(&'s self) -> Value<'value>` where `'value` can either be the same as `'s` (when the
+/// root does not have a lifetime and needs to *produce* a `Variants` value bound to `&self` or
+/// `'value` can be disjoint from `'s` as is the case if a `Variants` struct is stored directly in
+/// self (and as such as its own lifetime already)
+pub trait AsVariant<'s, 'value> {
+    type Variant;
+    fn get_variant(&'s self) -> Self::Variant;
+    fn get_value(self) -> Value;
+}
+
+impl<'v, 'value> AsVariant<'v, 'value> for Variants<'value> {
+    type Variant = Variants<'value>;
+    fn get_variant(&'v self) -> Self {
+        *self
+    }
+    fn get_value(self) -> Value {
+        Value::from(self.0)
+    }
+}
+
+impl<'v, 'value> AsVariant<'v, 'value> for &'v Variants<'value> {
+    type Variant = Variants<'value>;
+    fn get_variant(&'v self) -> Variants<'value> {
+        **self
+    }
+    fn get_value(self) -> Value {
+        Value::from(self.0)
+    }
+}
+impl<'value, T> AsVariant<'value, 'value> for RootedValue<T>
+where
+    T: Deref<Target = Thread>,
+{
+    type Variant = Variants<'value>;
+    fn get_variant(&'value self) -> Variants<'value> {
+        self.get_variant()
+    }
+    fn get_value(self) -> Value {
+        RootedValue::get_value(&self)
+    }
+}
+
 /// Type implementing both `Pushable` and `Getable` of values of `V` regardless of wheter `V`
 /// implements the traits.
 /// The actual value, `V` is only accessible directly either by `Deref` if it is `Userdata` or a
@@ -1385,14 +1381,17 @@ where
 ///
 /// When the value is not accessible the value can only be transferred back into gluon again
 /// without inspecting the value itself two different threads.
-pub struct OpaqueValue<T, V>(RootedValue<T>, PhantomData<V>)
+pub struct Opaque<T, V>(T, PhantomData<V>)
 where
-    T: Deref<Target = Thread>,
     V: ?Sized;
 
-impl<T, V> PartialEq for OpaqueValue<T, V>
+pub type OpaqueRef<'a, V> = Opaque<Variants<'a>, V>;
+
+pub type OpaqueValue<T, V> = Opaque<RootedValue<T>, V>;
+
+impl<T, V> PartialEq for Opaque<T, V>
 where
-    T: Deref<Target = Thread>,
+    T: for<'value> AsVariant<'value, 'value, Variant = Variants<'value>>,
     Self: Borrow<V>,
     V: ?Sized + PartialEq,
 {
@@ -1400,16 +1399,16 @@ where
         self.borrow() == other.borrow()
     }
 }
-impl<T, V> Eq for OpaqueValue<T, V>
+impl<T, V> Eq for Opaque<T, V>
 where
-    T: Deref<Target = Thread>,
+    T: for<'value> AsVariant<'value, 'value, Variant = Variants<'value>>,
     Self: Borrow<V>,
     V: ?Sized + Eq,
 {}
 
-impl<T, V> PartialOrd for OpaqueValue<T, V>
+impl<T, V> PartialOrd for Opaque<T, V>
 where
-    T: Deref<Target = Thread>,
+    T: for<'value> AsVariant<'value, 'value, Variant = Variants<'value>>,
     Self: Borrow<V>,
     V: ?Sized + PartialOrd,
 {
@@ -1418,9 +1417,9 @@ where
     }
 }
 
-impl<T, V> Ord for OpaqueValue<T, V>
+impl<T, V> Ord for Opaque<T, V>
 where
-    T: Deref<Target = Thread>,
+    T: for<'value> AsVariant<'value, 'value, Variant = Variants<'value>>,
     Self: Borrow<V>,
     V: ?Sized + Ord,
 {
@@ -1429,32 +1428,52 @@ where
     }
 }
 
-impl<T, V> Deref for OpaqueValue<T, V>
+impl<T, V> Deref for Opaque<T, V>
 where
-    T: Deref<Target = Thread>,
+    T: for<'value> AsVariant<'value, 'value, Variant = Variants<'value>>,
     V: vm::Userdata,
 {
     type Target = V;
 
     fn deref(&self) -> &V {
-        <&V>::from_value(self.vm(), self.get_variant())
+        match self.get_variant().as_ref() {
+            ValueRef::Userdata(data) => data.downcast_ref::<V>().unwrap(),
+            _ => ice!("ValueRef is not an Userdata"),
+        }
     }
 }
 
-impl<T> Deref for OpaqueValue<T, str>
+impl<T> Deref for Opaque<T, [T]>
 where
-    T: Deref<Target = Thread>,
+    T: for<'value> AsVariant<'value, 'value, Variant = Variants<'value>> + ArrayRepr + Copy,
+{
+    type Target = [T];
+
+    fn deref(&self) -> &[T] {
+        match self.get_variant().as_ref() {
+            ValueRef::Array(data) => data.as_slice().expect("array is not of the correct type"),
+            _ => ice!("ValueRef is not an array"),
+        }
+    }
+}
+
+impl<T> Deref for Opaque<T, str>
+where
+    T: for<'value> AsVariant<'value, 'value, Variant = Variants<'value>>,
 {
     type Target = str;
 
     fn deref(&self) -> &str {
-        <&str>::from_value(self.vm(), self.get_variant())
+        match self.get_variant().as_ref() {
+            ValueRef::String(data) => data,
+            _ => ice!("ValueRef is not an Userdata"),
+        }
     }
 }
 
-impl<T, V> Borrow<V> for OpaqueValue<T, V>
+impl<T, V> Borrow<V> for Opaque<T, V>
 where
-    T: Deref<Target = Thread>,
+    T: for<'value> AsVariant<'value, 'value, Variant = Variants<'value>>,
     V: ?Sized,
     Self: Deref<Target = V>,
 {
@@ -1478,9 +1497,9 @@ where
 }
 
 #[cfg(feature = "serde")]
-impl<T> Serialize for OpaqueValue<T, str>
+impl<T> Serialize for Opaque<T, str>
 where
-    T: Deref<Target = Thread>,
+    T: for<'value> AsVariant<'value, 'value, Variant = Variants<'value>>,
 {
     fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
     where
@@ -1491,9 +1510,9 @@ where
 }
 
 #[cfg(feature = "serde")]
-impl<T> SerializeState<Thread> for OpaqueValue<T, str>
+impl<T> SerializeState<Thread> for Opaque<T, str>
 where
-    T: Deref<Target = Thread>,
+    T: for<'value> AsVariant<'value, 'value, Variant = Variants<'value>>,
 {
     fn serialize_state<S>(&self, serializer: S, _thread: &Thread) -> StdResult<S::Ok, S::Error>
     where
@@ -1503,21 +1522,30 @@ where
     }
 }
 
-impl<T, V> fmt::Debug for OpaqueValue<T, V>
+impl<T, V> fmt::Debug for Opaque<T, V>
 where
-    T: Deref<Target = Thread>,
+    T: fmt::Debug,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self.0)
     }
 }
 
-impl<T, V> Clone for OpaqueValue<T, V>
+impl<T, V> Clone for Opaque<T, V>
 where
-    T: Deref<Target = Thread> + Clone,
+    T: Clone,
 {
     fn clone(&self) -> Self {
-        OpaqueValue(self.0.clone(), self.1.clone())
+        Opaque(self.0.clone(), self.1.clone())
+    }
+}
+
+impl<'vm, V> OpaqueValue<&'vm Thread, V>
+where
+    V: ?Sized,
+{
+    pub fn vm_(&self) -> &'vm Thread {
+        self.0.vm_()
     }
 }
 
@@ -1526,10 +1554,6 @@ where
     T: Deref<Target = Thread>,
     V: ?Sized,
 {
-    pub fn from_value(value: RootedValue<T>) -> Self {
-        OpaqueValue(value, PhantomData)
-    }
-
     pub fn vm(&self) -> &Thread {
         self.0.vm()
     }
@@ -1541,28 +1565,42 @@ where
     {
         V::from_value(self.vm(), self.get_variant())
     }
+}
 
-    pub fn into_inner(self) -> RootedValue<T> {
+impl<T, V> Opaque<T, V>
+where
+    V: ?Sized,
+{
+    pub fn from_value(value: T) -> Self {
+        Opaque(value, PhantomData)
+    }
+}
+
+impl<'s, 'value, T, V> Opaque<T, V>
+where
+    T: AsVariant<'s, 'value, Variant = Variants<'value>>,
+    V: ?Sized,
+{
+    pub fn into_inner(self) -> T {
         self.0
     }
 
     /// Unsafe as `Value` are not rooted
-    pub unsafe fn get_value(&self) -> Value {
-        self.0.get_value()
+    pub unsafe fn get_value(&'s self) -> Value {
+        self.0.get_variant().get_value()
     }
 
-    pub fn get_variant(&self) -> Variants {
+    pub fn get_variant(&'s self) -> Variants<'value> {
         self.0.get_variant()
     }
 
-    pub fn get_ref(&self) -> ValueRef {
+    pub fn get_ref(&'s self) -> ValueRef<'value> {
         self.0.get_variant().as_ref()
     }
 }
 
-impl<T, V> VmType for OpaqueValue<T, V>
+impl<T, V> VmType for Opaque<T, V>
 where
-    T: Deref<Target = Thread>,
     V: ?Sized + VmType,
     V::Type: Sized,
 {
@@ -1576,14 +1614,23 @@ where
     }
 }
 
-impl<'vm, T, V> Pushable<'vm> for OpaqueValue<T, V>
+impl<'s, 'value, 'vm, T, V> Pushable<'vm> for Opaque<T, V>
 where
-    T: Deref<Target = Thread>,
+    T: Pushable<'vm>,
     V: ?Sized + VmType,
     V::Type: Sized,
 {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         self.0.push(context)
+    }
+}
+
+impl<'vm, 'value, V> Getable<'vm, 'value> for Opaque<Variants<'value>, V>
+where
+    V: ?Sized,
+{
+    fn from_value(_vm: &'vm Thread, value: Variants<'value>) -> Self {
+        Opaque::from_value(value)
     }
 }
 
@@ -1625,65 +1672,43 @@ impl<'vm> ArrayRef<'vm> {
     }
 }
 
-/// Type which represents an array
-pub struct Array<'vm, T>(RootedValue<&'vm Thread>, PhantomData<T>);
+pub type Array<'vm, T> = OpaqueValue<&'vm Thread, [T]>;
 
-impl<'vm, T> Array<'vm, T> {
-    pub fn vm(&self) -> &'vm Thread {
-        self.0.vm_()
-    }
-
-    pub fn len(&self) -> usize {
+impl<'s, 'value, T, V> Opaque<T, [V]>
+where
+    T: AsVariant<'s, 'value, Variant = Variants<'value>>,
+{
+    pub fn len(&'s self) -> usize {
         self.get_value_array().len()
     }
 
-    #[doc(hidden)]
-    pub fn get_value_array(&self) -> &ValueArray {
+    fn get_array(&'s self) -> ArrayRef<'value> {
         match self.0.get_variant().as_ref() {
-            ValueRef::Array(ref array) => &array.0,
-            _ => ice!("Expected an array found {:?}", self.0),
+            ValueRef::Array(array) => array,
+            _ => ice!("Expected an array"),
         }
+    }
+
+    pub(crate) fn get_value_array(&'s self) -> &'value ValueArray {
+        self.get_array().0
+    }
+
+    pub fn get(&'s self, index: VmInt) -> Option<OpaqueRef<'value, V>> {
+        self.get_array().get(index as usize).map(Opaque::from_value)
     }
 }
 
-impl<'vm, T> Array<'vm, T> {
-    pub fn get<'value>(&'value self, index: VmInt) -> Option<T>
+impl<T, V> OpaqueValue<T, [V]>
+where
+    T: Deref<Target = Thread>,
+{
+    pub fn get2<'value>(&'value self, index: VmInt) -> Option<V>
     where
-        T: Getable<'vm, 'value>,
+        V: for<'vm> Getable<'vm, 'value>,
     {
-        match self.0.get_variant().as_ref() {
-            ValueRef::Array(data) => {
-                let v = data.get(index as usize).unwrap();
-                Some(T::from_value(self.0.vm_(), v))
-            }
-            _ => None,
-        }
-    }
-}
-
-impl<'vm, T: VmType> VmType for Array<'vm, T>
-where
-    T::Type: Sized,
-{
-    type Type = Array<'static, T::Type>;
-    fn make_type(vm: &Thread) -> ArcType {
-        vm.global_env().type_cache().array(T::make_type(vm))
-    }
-}
-
-impl<'vm, T: VmType> Pushable<'vm> for Array<'vm, T>
-where
-    T::Type: Sized,
-{
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        context.push(self.0.get_variant());
-        Ok(())
-    }
-}
-
-impl<'vm, 'value, T> Getable<'vm, 'value> for Array<'vm, T> {
-    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Array<'vm, T> {
-        Array(vm.root_value(value), PhantomData)
+        self.get_array()
+            .get(index as usize)
+            .map(|v| V::from_value(self.0.vm(), v))
     }
 }
 

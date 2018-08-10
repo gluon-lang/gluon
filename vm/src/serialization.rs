@@ -275,8 +275,7 @@ pub mod gc {
                         .alloc(RecordDef {
                             elems: &def.fields,
                             fields: &fields[..],
-                        })
-                        .map_err(D::Error::custom),
+                        }).map_err(D::Error::custom),
                     DataTag::Data(tag) => seed
                         .thread
                         .context()
@@ -284,8 +283,7 @@ pub mod gc {
                         .alloc(Def {
                             tag: tag,
                             elems: &def.fields,
-                        })
-                        .map_err(D::Error::custom),
+                        }).map_err(D::Error::custom),
                 }
             }
         }
@@ -549,16 +547,16 @@ pub mod closure {
                                         .alloc(ClosureDataModel {
                                             function: function,
                                             upvars: upvars,
-                                        })
-                                        .map_err(V::Error::custom)?;
+                                        }).map_err(V::Error::custom)?;
                                     self.state.gc_map.insert(id, closure);
 
                                     for i in 0..upvars {
                                         let value = seq
                                             .next_element_seed(::serde::de::Seed::new(
                                                 &mut self.state,
-                                            ))?
-                                            .ok_or_else(|| V::Error::invalid_length(i + 2, &self))?;
+                                            ))?.ok_or_else(|| {
+                                                V::Error::invalid_length(i + 2, &self)
+                                            })?;
                                         closure.as_mut().upvars[i] = value;
                                     }
                                     Ok(closure)
@@ -714,8 +712,7 @@ impl<'de> DeserializeState<'de, DeSeed> for ExternFunction {
                 } else {
                     Cow::Borrowed(s)
                 }
-            })
-            .intersperse(Cow::Borrowed("."));
+            }).intersperse(Cow::Borrowed("."));
         for s in iter {
             escaped_id += s;
         }
