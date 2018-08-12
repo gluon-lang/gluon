@@ -1331,7 +1331,17 @@ where
     }
 }
 
-pub trait AsValueRef {
+mod private {
+    use super::*;
+
+    pub trait Sealed {}
+
+    impl<'value> Sealed for Variants<'value> {}
+    impl<'s, 'value> Sealed for &'s Variants<'value> {}
+    impl<T> Sealed for RootedValue<T> where T: Deref<Target = Thread> {}
+}
+
+pub trait AsValueRef: private::Sealed {
     fn as_value_ref(&self) -> ValueRef;
 }
 
@@ -1354,14 +1364,12 @@ where
 /// root does not have a lifetime and needs to *produce* a `Variants` value bound to `&self` or
 /// `'value` can be disjoint from `'s` as is the case if a `Variants` struct is stored directly in
 /// self (and as such as its own lifetime already)
-pub trait AsVariant<'s, 'value> {
-    type Variant;
-    fn get_variant(&'s self) -> Self::Variant;
+pub trait AsVariant<'s, 'value>: private::Sealed {
+    fn get_variant(&'s self) -> Variants<'value>;
     fn get_value(self) -> Value;
 }
 
 impl<'v, 'value> AsVariant<'v, 'value> for Variants<'value> {
-    type Variant = Variants<'value>;
     fn get_variant(&'v self) -> Self {
         *self
     }
@@ -1371,7 +1379,6 @@ impl<'v, 'value> AsVariant<'v, 'value> for Variants<'value> {
 }
 
 impl<'v, 'value> AsVariant<'v, 'value> for &'v Variants<'value> {
-    type Variant = Variants<'value>;
     fn get_variant(&'v self) -> Variants<'value> {
         **self
     }
@@ -1383,7 +1390,6 @@ impl<'value, T> AsVariant<'value, 'value> for RootedValue<T>
 where
     T: Deref<Target = Thread>,
 {
-    type Variant = Variants<'value>;
     fn get_variant(&'value self) -> Variants<'value> {
         self.get_variant()
     }
@@ -1409,7 +1415,7 @@ pub type OpaqueValue<T, V> = Opaque<RootedValue<T>, V>;
 
 impl<T, V> PartialEq for Opaque<T, V>
 where
-    T: for<'value> AsVariant<'value, 'value, Variant = Variants<'value>>,
+    T: AsValueRef,
     Self: Borrow<V>,
     V: ?Sized + PartialEq,
 {
@@ -1419,14 +1425,15 @@ where
 }
 impl<T, V> Eq for Opaque<T, V>
 where
-    T: for<'value> AsVariant<'value, 'value, Variant = Variants<'value>>,
+    T: AsValueRef,
     Self: Borrow<V>,
     V: ?Sized + Eq,
-{}
+{
+}
 
 impl<T, V> PartialOrd for Opaque<T, V>
 where
-    T: for<'value> AsVariant<'value, 'value, Variant = Variants<'value>>,
+    T: AsValueRef,
     Self: Borrow<V>,
     V: ?Sized + PartialOrd,
 {
@@ -1437,7 +1444,7 @@ where
 
 impl<T, V> Ord for Opaque<T, V>
 where
-    T: for<'value> AsVariant<'value, 'value, Variant = Variants<'value>>,
+    T: AsValueRef,
     Self: Borrow<V>,
     V: ?Sized + Ord,
 {
@@ -1492,7 +1499,7 @@ where
 
 impl<T, V> Borrow<V> for Opaque<T, V>
 where
-    T: for<'value> AsVariant<'value, 'value, Variant = Variants<'value>>,
+    T: AsValueRef,
     V: ?Sized,
     Self: Deref<Target = V>,
 {
@@ -1518,7 +1525,7 @@ where
 #[cfg(feature = "serde")]
 impl<T> Serialize for Opaque<T, str>
 where
-    T: for<'value> AsVariant<'value, 'value, Variant = Variants<'value>>,
+    T: AsValueRef,
 {
     fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
     where
@@ -1531,7 +1538,7 @@ where
 #[cfg(feature = "serde")]
 impl<T> SerializeState<Thread> for Opaque<T, str>
 where
-    T: for<'value> AsVariant<'value, 'value, Variant = Variants<'value>>,
+    T: AsValueRef,
 {
     fn serialize_state<S>(&self, serializer: S, _thread: &Thread) -> StdResult<S::Ok, S::Error>
     where
@@ -1593,17 +1600,17 @@ where
     pub fn from_value(value: T) -> Self {
         Opaque(value, PhantomData)
     }
+
+    pub fn into_inner(self) -> T {
+        self.0
+    }
 }
 
 impl<'s, 'value, T, V> Opaque<T, V>
 where
-    T: AsVariant<'s, 'value, Variant = Variants<'value>>,
+    T: AsVariant<'s, 'value>,
     V: ?Sized,
 {
-    pub fn into_inner(self) -> T {
-        self.0
-    }
-
     /// Unsafe as `Value` are not rooted
     pub unsafe fn get_value(&'s self) -> Value {
         self.0.get_variant().get_value()
@@ -1695,7 +1702,7 @@ pub type Array<'vm, T> = OpaqueValue<&'vm Thread, [T]>;
 
 impl<'s, 'value, T, V> Opaque<T, [V]>
 where
-    T: AsVariant<'s, 'value, Variant = Variants<'value>>,
+    T: AsVariant<'s, 'value>,
 {
     pub fn len(&'s self) -> usize {
         self.get_value_array().len()
