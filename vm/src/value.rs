@@ -1,5 +1,6 @@
 use std::collections::hash_map::Entry;
 use std::fmt;
+use std::mem;
 use std::mem::size_of;
 use std::result::Result as StdResult;
 
@@ -302,6 +303,10 @@ mod gc_str {
         pub fn generation(&self) -> Generation {
             self.0.generation()
         }
+
+        pub fn ptr_eq(self, other: Self) -> bool {
+            self.into_inner().ptr_eq(other.into_inner())
+        }
     }
 
     impl Deref for GcStr {
@@ -442,6 +447,29 @@ impl Value {
             ValueRepr::Tag(_) | ValueRepr::Byte(_) | Int(_) | Float(_) => Generation::default(),
         }
     }
+
+    pub fn obj_eq(&self, other: &Self) -> bool {
+        let (self_, other) = (self.get_repr(), other.get_repr());
+        if mem::discriminant(&self_) != mem::discriminant(&other) {
+            return false;
+        }
+        use self::ValueRepr::*;
+        match (self_, other) {
+            (String(l), String(r)) => l.ptr_eq(r),
+            (Data(l), Data(r)) => l.ptr_eq(r),
+            (Function(l), Function(r)) => l.ptr_eq(r),
+            (Closure(l), Closure(r)) => l.ptr_eq(r),
+            (Array(l), Array(r)) => l.ptr_eq(r),
+            (PartialApplication(l), PartialApplication(r)) => l.ptr_eq(r),
+            (Userdata(l), Userdata(r)) => l.ptr_eq(r),
+            (Thread(l), Thread(r)) => l.ptr_eq(r),
+            (Tag(l), Tag(r)) => l == r,
+            (Byte(l), Byte(r)) => l == r,
+            (Int(l), Int(r)) => l == r,
+            (Float(l), Float(r)) => l == r,
+            _ => unreachable!(),
+        }
+    }
 }
 
 #[derive(PartialEq, Copy, Clone, PartialOrd)]
@@ -502,10 +530,10 @@ impl<'a> fmt::Display for ValuePrinter<'a> {
             prec: Top,
             level: self.max_level,
         }.pretty(self.value)
-            .group()
-            .1
-            .render(self.width, &mut s)
-            .map_err(|_| fmt::Error)?;
+        .group()
+        .1
+        .render(self.width, &mut s)
+        .map_err(|_| fmt::Error)?;
         write!(f, "{}", ::std::str::from_utf8(&s).expect("utf-8"))
     }
 }
@@ -614,8 +642,7 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                                     arena.text(",")
                                 ].nest(INDENT)
                             ].group()
-                        })
-                        .intersperse(arena.space()),
+                        }).intersperse(arena.space()),
                 );
                 chain![arena;
                             "{",
@@ -1336,8 +1363,7 @@ impl<'t> Cloner<'t> {
             .deep_clone_ptr(data.into_inner(), |gc, _| {
                 let ptr = GcStr::alloc(gc, &data[..])?;
                 Ok((String(ptr), ptr))
-            })?
-            .unwrap_or_else(String))
+            })?.unwrap_or_else(String))
     }
 
     fn deep_clone_data(&mut self, data_ptr: GcPtr<DataStruct>) -> Result<GcPtr<DataStruct>> {

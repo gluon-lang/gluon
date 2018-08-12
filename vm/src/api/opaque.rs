@@ -3,16 +3,20 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::Deref;
-use std::result::Result as StdResult;
 
 use base::types::ArcType;
 
 use api::{ArrayRef, Getable, Pushable, ValueRef, VmType};
-use thread::{ActiveThread, RootedThread, RootedValue, Thread, ThreadInternal, VmRoot};
+use thread::{ActiveThread, RootedValue, Thread, ThreadInternal, VmRoot};
 use types::{VmIndex, VmInt};
 use value::{ArrayRepr, Value, ValueArray};
 use vm;
 use {Result, Variants};
+
+#[cfg(feature = "serde")]
+use std::result::Result as StdResult;
+#[cfg(feature = "serde")]
+use thread::RootedThread;
 
 #[cfg(feature = "serde")]
 use serde::de::{Deserialize, Deserializer};

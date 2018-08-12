@@ -130,13 +130,29 @@ pub enum Status {
 }
 
 /// A rooted value
-#[derive(Clone)]
 pub struct RootedValue<T>
 where
     T: Deref<Target = Thread>,
 {
     vm: T,
     value: Value,
+}
+
+impl<T> Clone for RootedValue<T>
+where
+    T: Deref<Target = Thread> + Clone,
+{
+    fn clone(&self) -> Self {
+        self.vm
+            .rooted_values
+            .write()
+            .unwrap()
+            .push(self.value.clone());
+        RootedValue {
+            vm: self.vm.clone(),
+            value: self.value.clone(),
+        }
+    }
 }
 
 impl<T, U> PartialEq<RootedValue<U>> for RootedValue<T>
@@ -154,8 +170,12 @@ where
     T: Deref<Target = Thread>,
 {
     fn drop(&mut self) {
-        // TODO not safe if the root changes order of being dropped with another root
-        self.vm.rooted_values.write().unwrap().pop();
+        let mut rooted_values = self.vm.rooted_values.write().unwrap();
+        let i = rooted_values
+            .iter()
+            .position(|p| p.obj_eq(&self.value))
+            .unwrap_or_else(|| ice!("Rooted value has already been dropped"));
+        rooted_values.swap_remove(i);
     }
 }
 
@@ -176,6 +196,7 @@ where
     where
         U: VmRoot<'vm>,
     {
+        vm.rooted_values.write().unwrap().push(self.value.clone());
         RootedValue {
             vm,
             value: self.value.clone(),
