@@ -29,7 +29,7 @@ use vm::api::{
 };
 use vm::future::FutureValue;
 use vm::internal::ValuePrinter;
-use vm::thread::{ActiveThread, RootStr, RootedValue, Thread, ThreadInternal};
+use vm::thread::{ActiveThread, RootedValue, Thread, ThreadInternal};
 use vm::{self, Error as VMError, Result as VMResult};
 
 use gluon::compiler_pipeline::{Executable, ExecuteValue};
@@ -49,7 +49,7 @@ macro_rules! try_future {
     };
 }
 
-fn type_of_expr(args: WithVM<RootStr>) -> IO<Result<String, String>> {
+fn type_of_expr(args: WithVM<&str>) -> IO<Result<String, String>> {
     let WithVM { vm, value: args } = args;
     let mut compiler = Compiler::new();
     IO::Value(match compiler.typecheck_str(vm, "<repl>", &args, None) {
@@ -61,7 +61,7 @@ fn type_of_expr(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     })
 }
 
-fn find_kind(args: WithVM<RootStr>) -> IO<Result<String, String>> {
+fn find_kind(args: WithVM<&str>) -> IO<Result<String, String>> {
     let vm = args.vm;
     let args = args.value.trim();
     IO::Value(match vm.find_type_info(args) {
@@ -75,7 +75,7 @@ fn find_kind(args: WithVM<RootStr>) -> IO<Result<String, String>> {
     })
 }
 
-fn find_info(args: WithVM<RootStr>) -> IO<Result<String, String>> {
+fn find_info(args: WithVM<&str>) -> IO<Result<String, String>> {
     use std::fmt::Write;
     let vm = args.vm;
     let args = args.value.trim();

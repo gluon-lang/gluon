@@ -11,7 +11,7 @@ use types::{VmIndex, VmInt, VmTag};
 use value::{
     ArrayDef, ArrayRepr, Cloner, ClosureData, DataStruct, Def, GcStr, Value, ValueArray, ValueRepr,
 };
-use vm::{self, Root, RootStr, RootedValue, Status, Thread};
+use vm::{self, RootedValue, Status, Thread};
 use {forget_lifetime, Error, Result, Variants};
 
 use std::any::Any;
@@ -1738,31 +1738,6 @@ where
     }
 }
 
-impl<'vm, T: Any> VmType for Root<'vm, T> {
-    type Type = T;
-}
-impl<'vm, 'value, T: vm::Userdata> Getable<'vm, 'value> for Root<'vm, T> {
-    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Root<'vm, T> {
-        match value.0 {
-            ValueRepr::Userdata(data) => From::from(vm.root::<T>(data).unwrap()),
-            _ => ice!("Value is not a Root"),
-        }
-    }
-}
-
-impl<'vm> VmType for RootStr<'vm> {
-    type Type = <str as VmType>::Type;
-}
-impl<'vm, 'value> Getable<'vm, 'value> for RootStr<'vm> {
-    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> RootStr<'vm> {
-        match value.0 {
-            ValueRepr::String(v) => vm.root_string(v),
-            _ => ice!("Value is not a String"),
-        }
-    }
-}
-
-/// NewType which can be used to push types implementating `AsRef`
 /// Newtype which can be used to push types implementating `AsRef`
 pub struct PushAsRef<T, R: ?Sized>(T, PhantomData<R>);
 

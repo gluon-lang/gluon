@@ -31,7 +31,7 @@ use stack::{
 use types::*;
 use value::{
     BytecodeFunction, Callable, ClosureData, ClosureDataDef, ClosureInitDef, Def, ExternFunction,
-    GcStr, PartialApplicationDataDef, RecordDef, Userdata, Value, ValueRepr,
+    PartialApplicationDataDef, RecordDef, Userdata, Value, ValueRepr,
 };
 use vm::{GlobalVmState, GlobalVmStateBuilder, VmEnv};
 use {Error, Result, Variants};
@@ -233,36 +233,6 @@ where
 impl<'vm> RootedValue<&'vm Thread> {
     pub fn vm_(&self) -> &'vm Thread {
         self.vm
-    }
-}
-
-/// A rooted userdata value
-pub struct Root<'vm, T: ?Sized + 'vm> {
-    roots: &'vm RwLock<Vec<GcPtr<Traverseable + Send + Sync>>>,
-    ptr: *const T,
-}
-
-impl<'vm, T: ?Sized> Drop for Root<'vm, T> {
-    fn drop(&mut self) {
-        // TODO not safe if the root changes order of being dropped with another root
-        self.roots.write().unwrap().pop();
-    }
-}
-
-impl<'vm, T: ?Sized> Deref for Root<'vm, T> {
-    type Target = T;
-    fn deref(&self) -> &T {
-        unsafe { &*self.ptr }
-    }
-}
-
-/// A rooted string
-pub struct RootStr<'vm>(Root<'vm, str>);
-
-impl<'vm> Deref for RootStr<'vm> {
-    type Target = str;
-    fn deref(&self) -> &str {
-        &self.0
     }
 }
 
@@ -853,12 +823,6 @@ where
     /// Locks and retrives this threads stack
     fn context(&self) -> OwnedContext;
 
-    /// Roots a userdata
-    fn root<'vm, T: Userdata>(&'vm self, v: GcPtr<Box<Userdata>>) -> Option<Root<'vm, T>>;
-
-    /// Roots a string
-    fn root_string<'vm>(&'vm self, ptr: GcStr) -> RootStr<'vm>;
-
     /// Roots a value
     fn root_value<'vm, T>(&'vm self, value: Variants) -> RootedValue<T>
     where
@@ -943,28 +907,6 @@ impl ThreadInternal for Thread {
             thread: self,
             context: self.context.lock().unwrap(),
         }
-    }
-    /// Roots a userdata
-    fn root<'vm, T: Userdata>(&'vm self, v: GcPtr<Box<Userdata>>) -> Option<Root<'vm, T>> {
-        v.downcast_ref::<T>().map(|ptr| {
-            self.roots.write().unwrap().push(v.as_traverseable());
-            Root {
-                roots: &self.roots,
-                ptr: ptr,
-            }
-        })
-    }
-
-    /// Roots a string
-    fn root_string<'vm>(&'vm self, ptr: GcStr) -> RootStr<'vm> {
-        self.roots
-            .write()
-            .unwrap()
-            .push(ptr.into_inner().as_traverseable());
-        RootStr(Root {
-            roots: &self.roots,
-            ptr: &*ptr,
-        })
     }
 
     /// Roots a value
