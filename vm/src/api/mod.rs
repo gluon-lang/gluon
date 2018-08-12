@@ -1497,9 +1497,18 @@ where
     }
 }
 
+impl<T, V> AsRef<V> for Opaque<T, V>
+where
+    V: ?Sized,
+    Self: Deref<Target = V>,
+{
+    fn as_ref(&self) -> &V {
+        self
+    }
+}
+
 impl<T, V> Borrow<V> for Opaque<T, V>
 where
-    T: AsValueRef,
     V: ?Sized,
     Self: Deref<Target = V>,
 {
