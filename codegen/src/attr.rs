@@ -23,6 +23,7 @@ pub enum CrateName {
 
 pub struct Container {
     pub crate_name: CrateName,
+    pub vm_type: Option<String>,
 }
 
 impl Container {
@@ -30,6 +31,7 @@ impl Container {
         use syn::NestedMeta::*;
 
         let mut crate_name = CrateName::None;
+        let mut vm_type = None;
 
         for meta_items in item.attrs.iter().filter_map(get_gluon_meta_items) {
             for meta_item in meta_items {
@@ -46,28 +48,31 @@ impl Container {
                         crate_name = CrateName::GluonVm;
                     }
 
-                    Meta(NameValue(ref m)) if m.ident == "vm_type" => {}
-
-                    _ => {
-                        panic!("unexpected gluon container attribute");
+                    Meta(NameValue(ref m)) if m.ident == "vm_type" => {
+                        vm_type = Some(get_lit_str(&m.ident, &m.ident, &m.lit).unwrap().value())
                     }
+
+                    _ => panic!("unexpected gluon container attribute"),
                 }
             }
         }
 
-        Container { crate_name }
+        Container {
+            crate_name,
+            vm_type,
+        }
     }
 }
 
 fn get_lit_str<'a>(
-    _attr_name: &Ident,
+    attr_name: &Ident,
     _meta_item_name: &Ident,
     lit: &'a syn::Lit,
 ) -> Result<&'a syn::LitStr, ()> {
     if let syn::Lit::Str(ref lit) = *lit {
         Ok(lit)
     } else {
-        panic!("Expected attribute to be a string")
+        panic!("Expected attribute `{}` to be a string", attr_name)
     }
 }
 

@@ -1,74 +1,30 @@
 use proc_macro2::{Ident, TokenStream};
 use shared::{map_lifetimes, map_type_params, split_for_impl};
-use syn::{
-    self, Attribute, Data, DeriveInput, Generics, Lit, Meta, MetaList, MetaNameValue, NestedMeta,
-};
+use syn::{self, Data, DeriveInput, Generics};
+
+use attr::Container;
 
 pub fn derive(input: TokenStream) -> TokenStream {
+    let derive_input = syn::parse2(input).expect("Input is checked by rustc");
+
+    let container = Container::from_ast(&derive_input);
+
     let DeriveInput {
         ident,
-        attrs,
         data,
         generics,
         ..
-    } = syn::parse2(input).expect("Input is checked by rustc");
+    } = derive_input;
 
     let tokens = match data {
-        Data::Struct(_) | Data::Enum(_) => gen_impl(ident, generics, &parse_attrs(&attrs)),
+        Data::Struct(_) | Data::Enum(_) => gen_impl(&container, ident, generics),
         Data::Union(_) => panic!("Unions are not supported"),
     };
 
     tokens.into()
 }
 
-fn parse_attrs(attrs: &[Attribute]) -> String {
-    let ty = attrs
-        .iter()
-        .filter_map(|attr| {
-            attr.interpret_meta().and_then(|meta| {
-                // all attrs are namespaced under the gluon attr
-                let nested = match meta {
-                    Meta::List(MetaList {
-                        ref ident,
-                        ref nested,
-                        ..
-                    })
-                        if ident == "gluon" =>
-                    {
-                        Some(nested)
-                    }
-                    _ => None,
-                }?;
-
-                // find a literal for the vm_type key, ignore other values as they may be required
-                // by other macros
-                let lit = nested
-                    .iter()
-                    .filter_map(|meta| match meta {
-                        NestedMeta::Meta(Meta::NameValue(MetaNameValue { ident, lit, .. }))
-                            if ident == "vm_type" =>
-                        {
-                            Some(lit)
-                        }
-                        _ => None,
-                    })
-                    .next()?;
-
-                match lit {
-                    Lit::Str(ty) => Some(ty.value()),
-                    _ => panic!("The gluon type name must be a string literal"),
-                }
-            })
-        })
-        .next();
-
-    match ty {
-        Some(ty) => ty,
-        None => panic!("Did not find the gluon type this type will be mapped to. Specify it with #[gluon(vm_type = \"<gluon_type>\")]"),
-    }
-}
-
-fn gen_impl(ident: Ident, generics: Generics, gluon_type: &str) -> TokenStream {
+fn gen_impl(container: &Container, ident: Ident, generics: Generics) -> TokenStream {
     let trait_bounds = &map_type_params(&generics, |ty| {
         quote! { #ty: 'static + ::gluon::vm::api::VmType }
     });
@@ -77,6 +33,10 @@ fn gen_impl(ident: Ident, generics: Generics, gluon_type: &str) -> TokenStream {
 
     let type_application = gen_type_application(&generics);
     let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[]);
+
+    let gluon_type = container.vm_type.as_ref().unwrap_or_else(|| {
+        panic!("Did not find the gluon type this type will be mapped to. Specify it with #[gluon(vm_type = \"<gluon_type>\")]")
+    });
 
     quote! {
         #[automatically_derived]
