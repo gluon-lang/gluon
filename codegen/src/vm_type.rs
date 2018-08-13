@@ -1,6 +1,6 @@
 use proc_macro2::{Ident, TokenStream};
 use shared::{map_lifetimes, map_type_params, split_for_impl};
-use syn::{self, Data, DeriveInput, Generics};
+use syn::{self, Data, DeriveInput, Fields, Generics};
 
 use attr::Container;
 
@@ -17,26 +17,74 @@ pub fn derive(input: TokenStream) -> TokenStream {
     } = derive_input;
 
     let tokens = match data {
-        Data::Struct(_) | Data::Enum(_) => gen_impl(&container, ident, generics),
+        Data::Struct(_) | Data::Enum(_) => gen_impl(&container, ident, generics, &data),
         Data::Union(_) => panic!("Unions are not supported"),
     };
 
     tokens.into()
 }
 
-fn gen_impl(container: &Container, ident: Ident, generics: Generics) -> TokenStream {
+fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data) -> TokenStream {
     let trait_bounds = &map_type_params(&generics, |ty| {
         quote! { #ty: 'static + ::gluon::vm::api::VmType }
     });
 
     let lifetime_bounds = &map_lifetimes(&generics, |lifetime| quote! { #lifetime: 'static });
 
-    let type_application = gen_type_application(&generics);
     let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[]);
 
-    let gluon_type = container.vm_type.as_ref().unwrap_or_else(|| {
-        panic!("Did not find the gluon type this type will be mapped to. Specify it with #[gluon(vm_type = \"<gluon_type>\")]")
-    });
+    let make_type_impl = match container.vm_type {
+        Some(ref gluon_type) => {
+            let type_application = gen_type_application(&generics);
+            quote!{
+                let ty = match vm.find_type_info(#gluon_type) {
+                    Ok(info) => info.into_type(),
+                    Err(_) => panic!("Could not find type '{}'. Is the module defining the type loaded?", #gluon_type),
+                };
+
+                #type_application
+            }
+        }
+        None => match *data {
+            Data::Struct(ref struct_) => match struct_.fields {
+                Fields::Named(ref fields) => {
+                    let fields = fields.named.iter().map(|field| {
+                        let ident = field.ident.as_ref().unwrap().to_string();
+                        let typ = &field.ty;
+                        quote! {
+                            ::gluon::base::types::Field {
+                                name: ::gluon::base::symbol::Symbol::from(#ident),
+                                typ: <#typ as ::gluon::vm::api::VmType>::make_type(vm),
+                            }
+                        }
+                    });
+                    quote!{
+                        ::gluon::base::types::Type::record(
+                            vec![],
+                            vec![#(#fields),*],
+                        )
+                    }
+                }
+                Fields::Unnamed(ref fields) => {
+                    if fields.unnamed.len() == 1 {
+                        let typ = &fields.unnamed[0].ty;
+                        quote!{
+                            <#typ as ::gluon::vm::api::VmType>::make_type(vm)
+                        }
+                    } else {
+                        let fields = fields.unnamed.iter().map(|field| &field.ty);
+                        quote!{
+                            ::gluon::base::types::Type::tuple(vec![#(
+                                <#fields as ::gluon::vm::api::VmType>::make_type(vm)
+                            ),*])
+                        }
+                    }
+                }
+                Fields::Unit => quote!(::gluon::base::types::Type::unit()),
+            },
+            _ => panic!("Only structs can derive `VmType` without using the `vm_type` attribute"),
+        },
+    };
 
     quote! {
         #[automatically_derived]
@@ -47,12 +95,7 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics) -> TokenStr
             type Type = Self;
 
             fn make_type(vm: &::gluon::vm::thread::Thread) -> ::gluon::base::types::ArcType {
-                let ty = match vm.find_type_info(#gluon_type) {
-                    Ok(info) => info.into_type(),
-                    Err(_) => panic!("Could not find type '{}'. Is the module defining the type loaded?", #gluon_type),
-                };
-
-                #type_application
+                #make_type_impl
             }
         }
     }
