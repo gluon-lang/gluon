@@ -1,82 +1,90 @@
 use proc_macro2::{Ident, TokenStream};
 use shared::{map_lifetimes, map_type_params, split_for_impl};
-use syn::{
-    self, Attribute, Data, DeriveInput, Generics, Lit, Meta, MetaList, MetaNameValue, NestedMeta,
-};
+use syn::{self, Data, DeriveInput, Fields, Generics};
+
+use attr::Container;
 
 pub fn derive(input: TokenStream) -> TokenStream {
+    let derive_input = syn::parse2(input).expect("Input is checked by rustc");
+
+    let container = Container::from_ast(&derive_input);
+
     let DeriveInput {
         ident,
-        attrs,
         data,
         generics,
         ..
-    } = syn::parse2(input).expect("Input is checked by rustc");
+    } = derive_input;
 
     let tokens = match data {
-        Data::Struct(_) | Data::Enum(_) => gen_impl(ident, generics, &parse_attrs(&attrs)),
+        Data::Struct(_) | Data::Enum(_) => gen_impl(&container, ident, generics, &data),
         Data::Union(_) => panic!("Unions are not supported"),
     };
 
     tokens.into()
 }
 
-fn parse_attrs(attrs: &[Attribute]) -> String {
-    let ty = attrs
-        .iter()
-        .filter_map(|attr| {
-            attr.interpret_meta().and_then(|meta| {
-                // all attrs are namespaced under the gluon attr
-                let nested = match meta {
-                    Meta::List(MetaList {
-                        ref ident,
-                        ref nested,
-                        ..
-                    })
-                        if ident == "gluon" =>
-                    {
-                        Some(nested)
-                    }
-                    _ => None,
-                }?;
-
-                // find a literal for the vm_type key, ignore other values as they may be required
-                // by other macros
-                let lit = nested
-                    .iter()
-                    .filter_map(|meta| match meta {
-                        NestedMeta::Meta(Meta::NameValue(MetaNameValue { ident, lit, .. }))
-                            if ident == "vm_type" =>
-                        {
-                            Some(lit)
-                        }
-                        _ => None,
-                    })
-                    .next()?;
-
-                match lit {
-                    Lit::Str(ty) => Some(ty.value()),
-                    _ => panic!("The gluon type name must be a string literal"),
-                }
-            })
-        })
-        .next();
-
-    match ty {
-        Some(ty) => ty,
-        None => panic!("Did not find the gluon type this type will be mapped to. Specify it with #[gluon(vm_type = \"<gluon_type>\")]"),
-    }
-}
-
-fn gen_impl(ident: Ident, generics: Generics, gluon_type: &str) -> TokenStream {
+fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data) -> TokenStream {
     let trait_bounds = &map_type_params(&generics, |ty| {
         quote! { #ty: 'static + ::gluon::vm::api::VmType }
     });
 
     let lifetime_bounds = &map_lifetimes(&generics, |lifetime| quote! { #lifetime: 'static });
 
-    let type_application = gen_type_application(&generics);
     let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[]);
+
+    let make_type_impl = match container.vm_type {
+        Some(ref gluon_type) => {
+            let type_application = gen_type_application(&generics);
+            quote!{
+                let ty = match vm.find_type_info(#gluon_type) {
+                    Ok(info) => info.into_type(),
+                    Err(_) => panic!("Could not find type '{}'. Is the module defining the type loaded?", #gluon_type),
+                };
+
+                #type_application
+            }
+        }
+        None => match *data {
+            Data::Struct(ref struct_) => match struct_.fields {
+                Fields::Named(ref fields) => {
+                    let fields = fields.named.iter().map(|field| {
+                        let ident = field.ident.as_ref().unwrap().to_string();
+                        let typ = &field.ty;
+                        quote! {
+                            ::gluon::base::types::Field {
+                                name: ::gluon::base::symbol::Symbol::from(#ident),
+                                typ: <#typ as ::gluon::vm::api::VmType>::make_type(vm),
+                            }
+                        }
+                    });
+                    quote!{
+                        ::gluon::base::types::Type::record(
+                            vec![],
+                            vec![#(#fields),*],
+                        )
+                    }
+                }
+                Fields::Unnamed(ref fields) => {
+                    if fields.unnamed.len() == 1 {
+                        let typ = &fields.unnamed[0].ty;
+                        quote!{
+                            <#typ as ::gluon::vm::api::VmType>::make_type(vm)
+                        }
+                    } else {
+                        let fields = fields.unnamed.iter().map(|field| &field.ty);
+                        quote!{
+                            ::gluon::base::types::Type::tuple(vec![#(
+                                <#fields as ::gluon::vm::api::VmType>::make_type(vm)
+                            ),*])
+                        }
+                    }
+                }
+                Fields::Unit => quote!(::gluon::base::types::Type::unit()),
+            },
+            _ => panic!("Only structs can derive `VmType` without using the `vm_type` attribute"),
+        },
+    };
 
     quote! {
         #[automatically_derived]
@@ -87,12 +95,7 @@ fn gen_impl(ident: Ident, generics: Generics, gluon_type: &str) -> TokenStream {
             type Type = Self;
 
             fn make_type(vm: &::gluon::vm::thread::Thread) -> ::gluon::base::types::ArcType {
-                let ty = match vm.find_type_info(#gluon_type) {
-                    Ok(info) => info.into_type(),
-                    Err(_) => panic!("Could not find type '{}'. Is the module defining the type loaded?", #gluon_type),
-                };
-
-                #type_application
+                #make_type_impl
             }
         }
     }

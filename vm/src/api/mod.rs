@@ -11,7 +11,7 @@ use types::{VmIndex, VmInt, VmTag};
 use value::{
     ArrayDef, ArrayRepr, Cloner, ClosureData, DataStruct, Def, GcStr, Value, ValueArray, ValueRepr,
 };
-use vm::{self, Root, RootStr, RootedValue, Status, Thread};
+use vm::{self, RootedValue, Status, Thread};
 use {forget_lifetime, Error, Result, Variants};
 
 use std::any::Any;
@@ -27,14 +27,10 @@ use std::result::Result as StdResult;
 use futures::{Async, Future};
 
 pub use self::function::*;
+pub use self::opaque::{Opaque, OpaqueRef, OpaqueValue};
 pub use self::record::Record;
 pub use thread::ActiveThread;
 pub use value::Userdata;
-
-#[cfg(feature = "serde")]
-use serde::de::{Deserialize, Deserializer};
-#[cfg(feature = "serde")]
-use serde::ser::{Serialize, SerializeState, Serializer};
 
 macro_rules! count {
     () => { 0 };
@@ -44,12 +40,14 @@ macro_rules! count {
 
 #[macro_use]
 pub mod mac;
+pub mod function;
+mod opaque;
+pub mod record;
+
 #[cfg(feature = "serde")]
 pub mod de;
-pub mod function;
 #[cfg(feature = "serde")]
 pub mod json;
-pub mod record;
 #[cfg(feature = "serde")]
 pub mod ser;
 #[cfg(feature = "serde")]
@@ -301,55 +299,7 @@ impl<T> Traverseable for Unrooted<T> {
     }
 }
 
-#[derive(PartialEq)]
-pub struct Generic<'a, T: ?Sized>(Variants<'a>, PhantomData<T>);
-
-impl<'a, T: ?Sized> From<Variants<'a>> for Generic<'a, T> {
-    fn from(value: Variants<'a>) -> Self {
-        Generic(value, PhantomData)
-    }
-}
-
-impl<'a, T> Generic<'a, T> {
-    pub fn get_variant(&self) -> Variants<'a> {
-        self.0.clone()
-    }
-}
-
-impl<'a, T> fmt::Debug for Generic<'a, T> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-impl<'a, T: ?Sized + VmType> VmType for Generic<'a, T> {
-    type Type = T::Type;
-
-    fn make_type(vm: &Thread) -> ArcType {
-        T::make_type(vm)
-    }
-
-    fn extra_args() -> VmIndex {
-        T::extra_args()
-    }
-}
-impl<'vm, T: ?Sized + VmType> Pushable<'vm> for Generic<'vm, T> {
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        context.push(self.0);
-        Ok(())
-    }
-}
-impl<'vm, 'value, T: ?Sized> Getable<'vm, 'value> for Generic<'value, T> {
-    fn from_value(_: &'vm Thread, value: Variants<'value>) -> Generic<'value, T> {
-        Generic::from(value)
-    }
-}
-
-impl<'a, T> Traverseable for Generic<'a, T> {
-    fn traverse(&self, gc: &mut Gc) {
-        self.0.traverse(gc);
-    }
-}
+pub type Generic<T> = OpaqueValue<RootedThread, T>;
 
 /// Module containing types which represent generic variables in gluon's type system
 pub mod generic {
@@ -582,12 +532,6 @@ impl<'vm, 'value> Getable<'vm, 'value> for ValueRef<'value> {
     }
 }
 
-impl<'vm, 'value> Getable<'vm, 'value> for Value {
-    fn from_value(_vm: &'vm Thread, value: Variants<'value>) -> Self {
-        value.get_value()
-    }
-}
-
 impl<'vm, T: ?Sized + VmType> VmType for PhantomData<T> {
     type Type = T::Type;
     fn make_forall_type(vm: &Thread) -> ArcType {
@@ -793,9 +737,8 @@ impl VmType for bool {
         (*vm.global_env()
             .get_env()
             .find_type_info("std.types.Bool")
-            .unwrap())
-            .clone()
-            .into_type()
+            .unwrap()).clone()
+        .into_type()
     }
 }
 impl<'vm> Pushable<'vm> for bool {
@@ -925,17 +868,6 @@ where
     }
 }
 
-impl<'s, T> VmType for &'s [T]
-where
-    T: VmType + ArrayRepr + 's,
-    T::Type: Sized,
-{
-    type Type = &'static [T::Type];
-
-    fn make_type(vm: &Thread) -> ArcType {
-        vm.global_env().type_cache().array(T::make_type(vm))
-    }
-}
 impl<'vm, 's, T> Pushable<'vm> for &'s [T]
 where
     T: Traverseable + Pushable<'vm> + 's,
@@ -957,6 +889,18 @@ impl<'vm, 'value, T: Copy + ArrayRepr> Getable<'vm, 'value> for &'value [T] {
     }
 }
 
+impl<T> VmType for [T]
+where
+    T: VmType,
+    T::Type: Sized,
+{
+    type Type = Vec<T::Type>;
+
+    fn make_type(thread: &Thread) -> ArcType {
+        <Vec<T> as VmType>::make_type(thread)
+    }
+}
+
 impl<T> VmType for Vec<T>
 where
     T: VmType,
@@ -965,7 +909,7 @@ where
     type Type = Vec<T::Type>;
 
     fn make_type(thread: &Thread) -> ArcType {
-        Array::<T>::make_type(thread)
+        thread.global_env().type_cache().array(T::make_type(thread))
     }
 }
 
@@ -1350,6 +1294,13 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for IO<T> {
     }
 }
 
+impl<'vm> Pushable<'vm> for Variants<'vm> {
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        context.push(self);
+        Ok(())
+    }
+}
+
 impl<'vm, T> Pushable<'vm> for RootedValue<T>
 where
     T: Deref<Target = Thread>,
@@ -1375,225 +1326,6 @@ where
 {
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
         vm.root_value(value)
-    }
-}
-
-/// Type implementing both `Pushable` and `Getable` of values of `V` regardless of wheter `V`
-/// implements the traits.
-/// The actual value, `V` is only accessible directly either by `Deref` if it is `Userdata` or a
-/// string or by the `to_value` method if it implements `Getable`.
-///
-/// When the value is not accessible the value can only be transferred back into gluon again
-/// without inspecting the value itself two different threads.
-pub struct OpaqueValue<T, V>(RootedValue<T>, PhantomData<V>)
-where
-    T: Deref<Target = Thread>,
-    V: ?Sized;
-
-impl<T, V> PartialEq for OpaqueValue<T, V>
-where
-    T: Deref<Target = Thread>,
-    Self: Borrow<V>,
-    V: ?Sized + PartialEq,
-{
-    fn eq(&self, other: &Self) -> bool {
-        self.borrow() == other.borrow()
-    }
-}
-impl<T, V> Eq for OpaqueValue<T, V>
-where
-    T: Deref<Target = Thread>,
-    Self: Borrow<V>,
-    V: ?Sized + Eq,
-{}
-
-impl<T, V> PartialOrd for OpaqueValue<T, V>
-where
-    T: Deref<Target = Thread>,
-    Self: Borrow<V>,
-    V: ?Sized + PartialOrd,
-{
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.borrow().partial_cmp(&other.borrow())
-    }
-}
-
-impl<T, V> Ord for OpaqueValue<T, V>
-where
-    T: Deref<Target = Thread>,
-    Self: Borrow<V>,
-    V: ?Sized + Ord,
-{
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.borrow().cmp(&other.borrow())
-    }
-}
-
-impl<T, V> Deref for OpaqueValue<T, V>
-where
-    T: Deref<Target = Thread>,
-    V: vm::Userdata,
-{
-    type Target = V;
-
-    fn deref(&self) -> &V {
-        <&V>::from_value(self.vm(), self.get_variant())
-    }
-}
-
-impl<T> Deref for OpaqueValue<T, str>
-where
-    T: Deref<Target = Thread>,
-{
-    type Target = str;
-
-    fn deref(&self) -> &str {
-        <&str>::from_value(self.vm(), self.get_variant())
-    }
-}
-
-impl<T, V> Borrow<V> for OpaqueValue<T, V>
-where
-    T: Deref<Target = Thread>,
-    V: ?Sized,
-    Self: Deref<Target = V>,
-{
-    fn borrow(&self) -> &V {
-        self
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<'de, V> Deserialize<'de> for OpaqueValue<RootedThread, V>
-where
-    V: ?Sized,
-{
-    fn deserialize<D>(deserializer: D) -> StdResult<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = self::de::deserialize_raw_value(deserializer)?;
-        Ok(Self::from_value(value))
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<T> Serialize for OpaqueValue<T, str>
-where
-    T: Deref<Target = Thread>,
-{
-    fn serialize<S>(&self, serializer: S) -> StdResult<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        (**self).serialize(serializer)
-    }
-}
-
-#[cfg(feature = "serde")]
-impl<T> SerializeState<Thread> for OpaqueValue<T, str>
-where
-    T: Deref<Target = Thread>,
-{
-    fn serialize_state<S>(&self, serializer: S, _thread: &Thread) -> StdResult<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        (**self).serialize(serializer)
-    }
-}
-
-impl<T, V> fmt::Debug for OpaqueValue<T, V>
-where
-    T: Deref<Target = Thread>,
-{
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", self.0)
-    }
-}
-
-impl<T, V> Clone for OpaqueValue<T, V>
-where
-    T: Deref<Target = Thread> + Clone,
-{
-    fn clone(&self) -> Self {
-        OpaqueValue(self.0.clone(), self.1.clone())
-    }
-}
-
-impl<T, V> OpaqueValue<T, V>
-where
-    T: Deref<Target = Thread>,
-    V: ?Sized,
-{
-    pub fn from_value(value: RootedValue<T>) -> Self {
-        OpaqueValue(value, PhantomData)
-    }
-
-    pub fn vm(&self) -> &Thread {
-        self.0.vm()
-    }
-
-    /// Converts the value into its Rust representation
-    pub fn to_value<'vm>(&'vm self) -> V
-    where
-        V: Getable<'vm, 'vm>,
-    {
-        V::from_value(self.vm(), self.get_variant())
-    }
-
-    pub fn into_inner(self) -> RootedValue<T> {
-        self.0
-    }
-
-    /// Unsafe as `Value` are not rooted
-    pub unsafe fn get_value(&self) -> Value {
-        self.0.get_value()
-    }
-
-    pub fn get_variant(&self) -> Variants {
-        self.0.get_variant()
-    }
-
-    pub fn get_ref(&self) -> ValueRef {
-        self.0.get_variant().as_ref()
-    }
-}
-
-impl<T, V> VmType for OpaqueValue<T, V>
-where
-    T: Deref<Target = Thread>,
-    V: ?Sized + VmType,
-    V::Type: Sized,
-{
-    type Type = V::Type;
-    fn make_type(vm: &Thread) -> ArcType {
-        V::make_type(vm)
-    }
-
-    fn extra_args() -> VmIndex {
-        V::extra_args()
-    }
-}
-
-impl<'vm, T, V> Pushable<'vm> for OpaqueValue<T, V>
-where
-    T: Deref<Target = Thread>,
-    V: ?Sized + VmType,
-    V::Type: Sized,
-{
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        self.0.push(context)
-    }
-}
-
-impl<'vm, 'value, T, V> Getable<'vm, 'value> for OpaqueValue<T, V>
-where
-    V: ?Sized,
-    T: VmRoot<'vm>,
-{
-    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
-        OpaqueValue::from_value(vm.root_value(value))
     }
 }
 
@@ -1625,93 +1357,8 @@ impl<'vm> ArrayRef<'vm> {
     }
 }
 
-/// Type which represents an array
-pub struct Array<'vm, T>(RootedValue<&'vm Thread>, PhantomData<T>);
+pub type Array<'vm, T> = OpaqueValue<&'vm Thread, [T]>;
 
-impl<'vm, T> Array<'vm, T> {
-    pub fn vm(&self) -> &'vm Thread {
-        self.0.vm_()
-    }
-
-    pub fn len(&self) -> usize {
-        self.get_value_array().len()
-    }
-
-    #[doc(hidden)]
-    pub fn get_value_array(&self) -> &ValueArray {
-        match self.0.get_variant().as_ref() {
-            ValueRef::Array(ref array) => &array.0,
-            _ => ice!("Expected an array found {:?}", self.0),
-        }
-    }
-}
-
-impl<'vm, T> Array<'vm, T> {
-    pub fn get<'value>(&'value self, index: VmInt) -> Option<T>
-    where
-        T: Getable<'vm, 'value>,
-    {
-        match self.0.get_variant().as_ref() {
-            ValueRef::Array(data) => {
-                let v = data.get(index as usize).unwrap();
-                Some(T::from_value(self.0.vm_(), v))
-            }
-            _ => None,
-        }
-    }
-}
-
-impl<'vm, T: VmType> VmType for Array<'vm, T>
-where
-    T::Type: Sized,
-{
-    type Type = Array<'static, T::Type>;
-    fn make_type(vm: &Thread) -> ArcType {
-        vm.global_env().type_cache().array(T::make_type(vm))
-    }
-}
-
-impl<'vm, T: VmType> Pushable<'vm> for Array<'vm, T>
-where
-    T::Type: Sized,
-{
-    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        context.push(self.0.get_variant());
-        Ok(())
-    }
-}
-
-impl<'vm, 'value, T> Getable<'vm, 'value> for Array<'vm, T> {
-    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Array<'vm, T> {
-        Array(vm.root_value(value), PhantomData)
-    }
-}
-
-impl<'vm, T: Any> VmType for Root<'vm, T> {
-    type Type = T;
-}
-impl<'vm, 'value, T: vm::Userdata> Getable<'vm, 'value> for Root<'vm, T> {
-    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Root<'vm, T> {
-        match value.0 {
-            ValueRepr::Userdata(data) => From::from(vm.root::<T>(data).unwrap()),
-            _ => ice!("Value is not a Root"),
-        }
-    }
-}
-
-impl<'vm> VmType for RootStr<'vm> {
-    type Type = <str as VmType>::Type;
-}
-impl<'vm, 'value> Getable<'vm, 'value> for RootStr<'vm> {
-    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> RootStr<'vm> {
-        match value.0 {
-            ValueRepr::String(v) => vm.root_string(v),
-            _ => ice!("Value is not a String"),
-        }
-    }
-}
-
-/// NewType which can be used to push types implementating `AsRef`
 /// Newtype which can be used to push types implementating `AsRef`
 pub struct PushAsRef<T, R: ?Sized>(T, PhantomData<R>);
 

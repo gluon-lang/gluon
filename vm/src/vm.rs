@@ -25,7 +25,7 @@ use {Error, Result, Variants};
 
 use value::{BytecodeFunction, ClosureData, ClosureDataDef, Value};
 
-pub use thread::{Root, RootStr, RootedThread, RootedValue, Status, Thread};
+pub use thread::{RootedThread, RootedValue, Status, Thread};
 pub use value::Userdata;
 
 fn new_bytecode(
@@ -78,8 +78,7 @@ fn new_bytecode_function(
             vec.into_iter()
                 .map(|field| Ok(interner.intern(gc, field.as_ref())?))
                 .collect::<Result<_>>()
-        })
-        .collect();
+        }).collect();
 
     gc.alloc(Move(BytecodeFunction {
         name: id,
@@ -235,8 +234,7 @@ impl TypeEnv for VmEnv {
                             .find(|field| *field.name == *id)
                             .map(|field| &field.typ),
                         _ => None,
-                    })
-                    .next()
+                    }).next()
                     .map(|ctor| ctor)
             })
     }
@@ -252,8 +250,7 @@ impl PrimitiveEnv for VmEnv {
             .map(|alias| match alias {
                 Cow::Borrowed(alias) => alias.as_type(),
                 Cow::Owned(_) => ice!("Expected to be able to retrieve a borrowed bool type"),
-            })
-            .expect("std.types.Bool")
+            }).expect("std.types.Bool")
     }
 }
 
@@ -539,8 +536,7 @@ impl GlobalVmState {
             .map(|g| match **g {
                 Type::Generic(ref g) => g.clone(),
                 _ => unreachable!(),
-            })
-            .collect();
+            }).collect();
         let n = Symbol::from(name);
         let alias = Alias::from(AliasData::new(n.clone(), args, self.type_cache.opaque()));
         self.register_type_as(n, alias, id)

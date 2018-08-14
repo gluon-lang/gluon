@@ -13,8 +13,8 @@ use futures::{Future, IntoFuture};
 use gluon::base::types::{Alias, ArcType, Type};
 use gluon::import::{add_extern_module, Import};
 use gluon::vm::api::de::De;
-use gluon::vm::api::{FunctionRef, FutureResult, Userdata, VmType, IO};
-use gluon::vm::thread::{Root, RootStr, RootedThread, Thread, Traverseable};
+use gluon::vm::api::{FunctionRef, FutureResult, OpaqueValue, Userdata, VmType, IO};
+use gluon::vm::thread::{RootedThread, Thread, Traverseable};
 use gluon::vm::types::VmInt;
 use gluon::vm::{Error, ExternModule};
 use gluon::Compiler;
@@ -75,7 +75,7 @@ fn root_data() {
         \x -> test x 1
     "#;
     let vm = make_vm();
-    fn test(r: Root<Test>, i: VmInt) -> VmInt {
+    fn test(r: OpaqueValue<RootedThread, Test>, i: VmInt) -> VmInt {
         r.0 + i
     }
     vm.register_type::<Test>("Test", &[])
@@ -99,7 +99,7 @@ fn root_string() {
         let test = import! test
         test "hello"
     "#;
-    fn test(s: RootStr) -> String {
+    fn test(s: OpaqueValue<&Thread, str>) -> String {
         let mut result = String::from(&s[..]);
         result.push_str(" world");
         result

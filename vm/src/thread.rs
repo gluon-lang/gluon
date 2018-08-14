@@ -31,7 +31,7 @@ use stack::{
 use types::*;
 use value::{
     BytecodeFunction, Callable, ClosureData, ClosureDataDef, ClosureInitDef, Def, ExternFunction,
-    GcStr, PartialApplicationDataDef, RecordDef, Userdata, Value, ValueRepr,
+    PartialApplicationDataDef, RecordDef, Userdata, Value, ValueRepr,
 };
 use vm::{GlobalVmState, GlobalVmStateBuilder, VmEnv};
 use {Error, Result, Variants};
@@ -130,13 +130,29 @@ pub enum Status {
 }
 
 /// A rooted value
-#[derive(Clone)]
 pub struct RootedValue<T>
 where
     T: Deref<Target = Thread>,
 {
     vm: T,
     value: Value,
+}
+
+impl<T> Clone for RootedValue<T>
+where
+    T: Deref<Target = Thread> + Clone,
+{
+    fn clone(&self) -> Self {
+        self.vm
+            .rooted_values
+            .write()
+            .unwrap()
+            .push(self.value.clone());
+        RootedValue {
+            vm: self.vm.clone(),
+            value: self.value.clone(),
+        }
+    }
 }
 
 impl<T, U> PartialEq<RootedValue<U>> for RootedValue<T>
@@ -154,8 +170,12 @@ where
     T: Deref<Target = Thread>,
 {
     fn drop(&mut self) {
-        // TODO not safe if the root changes order of being dropped with another root
-        self.vm.rooted_values.write().unwrap().pop();
+        let mut rooted_values = self.vm.rooted_values.write().unwrap();
+        let i = rooted_values
+            .iter()
+            .position(|p| p.obj_eq(&self.value))
+            .unwrap_or_else(|| ice!("Rooted value has already been dropped"));
+        rooted_values.swap_remove(i);
     }
 }
 
@@ -176,6 +196,7 @@ where
     where
         U: VmRoot<'vm>,
     {
+        vm.rooted_values.write().unwrap().push(self.value.clone());
         RootedValue {
             vm,
             value: self.value.clone(),
@@ -233,36 +254,6 @@ where
 impl<'vm> RootedValue<&'vm Thread> {
     pub fn vm_(&self) -> &'vm Thread {
         self.vm
-    }
-}
-
-/// A rooted userdata value
-pub struct Root<'vm, T: ?Sized + 'vm> {
-    roots: &'vm RwLock<Vec<GcPtr<Traverseable + Send + Sync>>>,
-    ptr: *const T,
-}
-
-impl<'vm, T: ?Sized> Drop for Root<'vm, T> {
-    fn drop(&mut self) {
-        // TODO not safe if the root changes order of being dropped with another root
-        self.roots.write().unwrap().pop();
-    }
-}
-
-impl<'vm, T: ?Sized> Deref for Root<'vm, T> {
-    type Target = T;
-    fn deref(&self) -> &T {
-        unsafe { &*self.ptr }
-    }
-}
-
-/// A rooted string
-pub struct RootStr<'vm>(Root<'vm, str>);
-
-impl<'vm> Deref for RootStr<'vm> {
-    type Target = str;
-    fn deref(&self) -> &str {
-        &self.0
     }
 }
 
@@ -684,6 +675,12 @@ impl Thread {
         }
     }
 
+    pub fn get_global_type(&self, name: &str) -> Result<ArcType> {
+        let env = self.get_env();
+        let (_value, actual) = env.get_binding(name)?;
+        Ok(actual.into_owned())
+    }
+
     /// Retrieves type information about the type `name`. Types inside records can be accessed
     /// using dot notation (std.prelude.Option)
     pub fn find_type_info(&self, name: &str) -> Result<types::Alias<Symbol, ArcType>> {
@@ -847,12 +844,6 @@ where
     /// Locks and retrives this threads stack
     fn context(&self) -> OwnedContext;
 
-    /// Roots a userdata
-    fn root<'vm, T: Userdata>(&'vm self, v: GcPtr<Box<Userdata>>) -> Option<Root<'vm, T>>;
-
-    /// Roots a string
-    fn root_string<'vm>(&'vm self, ptr: GcStr) -> RootStr<'vm>;
-
     /// Roots a value
     fn root_value<'vm, T>(&'vm self, value: Variants) -> RootedValue<T>
     where
@@ -937,28 +928,6 @@ impl ThreadInternal for Thread {
             thread: self,
             context: self.context.lock().unwrap(),
         }
-    }
-    /// Roots a userdata
-    fn root<'vm, T: Userdata>(&'vm self, v: GcPtr<Box<Userdata>>) -> Option<Root<'vm, T>> {
-        v.downcast_ref::<T>().map(|ptr| {
-            self.roots.write().unwrap().push(v.as_traverseable());
-            Root {
-                roots: &self.roots,
-                ptr: ptr,
-            }
-        })
-    }
-
-    /// Roots a string
-    fn root_string<'vm>(&'vm self, ptr: GcStr) -> RootStr<'vm> {
-        self.roots
-            .write()
-            .unwrap()
-            .push(ptr.into_inner().as_traverseable());
-        RootStr(Root {
-            roots: &self.roots,
-            ptr: &*ptr,
-        })
     }
 
     /// Roots a value
@@ -1293,7 +1262,7 @@ impl Context {
                 elems: fields,
             },
         ).map(ValueRepr::Data)
-            .map(Value::from)
+        .map(Value::from)
     }
 
     pub fn push_new_data(
@@ -1313,7 +1282,7 @@ impl Context {
                     elems: fields,
                 },
             ).map(ValueRepr::Data)
-                .map(Value::from)?
+            .map(Value::from)?
         };
         self.stack.push(value);
         Ok(self.stack.last().unwrap())

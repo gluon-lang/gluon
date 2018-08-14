@@ -19,11 +19,12 @@ use {Error, Result};
 #[inline]
 unsafe fn allocate(size: usize) -> *mut u8 {
     // Allocate an extra element if it does not fit exactly
-    let cap = size / mem::size_of::<f64>() + (if size % mem::size_of::<f64>() != 0 {
-        1
-    } else {
-        0
-    });
+    let cap = size / mem::size_of::<f64>()
+        + (if size % mem::size_of::<f64>() != 0 {
+            1
+        } else {
+            0
+        });
     ptr_from_vec(Vec::<f64>::with_capacity(cap))
 }
 
@@ -37,11 +38,12 @@ fn ptr_from_vec(mut buf: Vec<f64>) -> *mut u8 {
 
 #[inline]
 unsafe fn deallocate(ptr: *mut u8, old_size: usize) {
-    let cap = old_size / mem::size_of::<f64>() + (if old_size % mem::size_of::<f64>() != 0 {
-        1
-    } else {
-        0
-    });
+    let cap = old_size / mem::size_of::<f64>()
+        + (if old_size % mem::size_of::<f64>() != 0 {
+            1
+        } else {
+            0
+        });
     Vec::<f64>::from_raw_parts(ptr as *mut f64, 0, cap);
 }
 
@@ -423,6 +425,10 @@ impl<T: ?Sized> GcPtr<T> {
 
     pub fn field_names(&self) -> &Arc<Vec<InternedStr>> {
         unsafe { &(*self.header().type_info).fields_key }
+    }
+
+    pub fn ptr_eq(self, other: GcPtr<T>) -> bool {
+        ptr::eq(&*self, &*other)
     }
 
     fn header(&self) -> &GcHeader {
@@ -1001,8 +1007,8 @@ mod tests {
         let dropped = Rc::new(Cell::new(false));
         let mut gc = Gc::new(Generation::default(), usize::MAX);
         {
-            let ptr =
-                gc.alloc(Move(Dropable {
+            let ptr = gc
+                .alloc(Move(Dropable {
                     dropped: dropped.clone(),
                 })).unwrap();
             assert_eq!(false, ptr.dropped.get());
