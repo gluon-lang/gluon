@@ -171,6 +171,7 @@ pub type FunctionRef<'vm, F> = Function<&'vm Thread, F>;
 pub type OwnedFunction<F> = Function<RootedThread, F>;
 
 /// Type which represents an function in gluon
+#[derive(Clone, Debug)]
 pub struct Function<T, F>
 where
     T: Deref<Target = Thread>,
@@ -203,18 +204,6 @@ where
 
     pub fn vm(&self) -> &Thread {
         self.value.vm()
-    }
-}
-
-impl<T, F> Clone for Function<T, F>
-where
-    T: Deref<Target = Thread> + Clone,
-{
-    fn clone(&self) -> Self {
-        Function {
-            value: self.value.clone(),
-            _marker: self._marker.clone(),
-        }
     }
 }
 
