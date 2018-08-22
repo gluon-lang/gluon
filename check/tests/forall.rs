@@ -1097,3 +1097,18 @@ let option a : ValueDeserializer a -> ValueDeserializer (Option a) = \input ->
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn forall_scope() {
+    let _ = ::env_logger::try_init();
+
+    let text = r#"
+type Proxy h = | Proxy
+let foo : (forall i . Proxy i -> ()) -> Proxy i -> () =
+    \m p -> m p
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
