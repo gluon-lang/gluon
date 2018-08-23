@@ -4,6 +4,7 @@ services: docker
 cache:
     directories:
     - $HOME/.cargo
+    - $HOME/.cache/sccache
 
 # bors setup
 branches:
@@ -62,12 +63,14 @@ install:
   - sh scripts/install_cross.sh
   - source ~/.cargo/env || true
   - ./scripts/install_mdbook.sh
+  - cargo install sccache
 
 env:
   global:
     - CRATE_NAME=gluon
     - RUST_BACKTRACE=1
 script:
+- export RUSTC_WRAPPER sccache
 - >
     if [ ! -z $TRAVIS_TAG ]; then
         echo "Disabling tests for tagged builds as they timeout otherwise"
