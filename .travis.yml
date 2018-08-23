@@ -60,17 +60,17 @@ before_install:
   - set -e
   - rustup self update
 install:
+  - sh scripts/cargo_install.sh sccache 0.2.7
   - sh scripts/install_cross.sh
   - source ~/.cargo/env || true
-  - ./scripts/install_mdbook.sh
-  - cargo install sccache
+  - sh scripts/cargo_install.sh mdbook 0.1.2
 
 env:
   global:
     - CRATE_NAME=gluon
     - RUST_BACKTRACE=1
+    - RUSTC_WRAPPER=sccache
 script:
-- export RUSTC_WRAPPER sccache
 - >
     if [ ! -z $TRAVIS_TAG ]; then
         echo "Disabling tests for tagged builds as they timeout otherwise"
@@ -83,7 +83,7 @@ script:
         cargo check --target wasm32-unknown-unknown -p gluon_c-api
     fi
 - mdbook build book
-- scache -s
+- sccache -s
 
 notifications:
   webhooks:
