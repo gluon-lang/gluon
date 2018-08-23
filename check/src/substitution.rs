@@ -86,11 +86,18 @@ pub trait Substitutable: Sized {
     type Factory: VariableFactory<Variable = Self::Variable>;
     /// Constructs a new object from its variable type
     fn from_variable(x: Self::Variable) -> Self;
+
     /// Retrieves the variable if `self` is a variable otherwise returns `None`
     fn get_var(&self) -> Option<&Self::Variable>;
+
+    fn get_id(&self) -> Option<u32> {
+        self.get_var().map(|var| var.get_id())
+    }
+
     fn traverse<'a, F>(&'a self, f: &mut F)
     where
         F: Walker<'a, Self>;
+
     fn instantiate(&self, subs: &Substitution<Self>) -> Self;
 
     fn on_union(&self) -> Option<&Self> {
@@ -339,6 +346,7 @@ impl<T: Substitutable + Clone> Substitution<T> {
         *typ = self.real(typ).clone();
     }
 }
+
 impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
     /// Takes `id` and updates the substitution to say that it should have the same type as `typ`
     pub fn union(&self, id: &T::Variable, typ: &T) -> Result<Option<T>, Error<T>>
@@ -379,6 +387,10 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
                     self.update_level(other_id, id.get_id());
                 }
                 _ => {
+                    if let Some(other_id) = typ.get_id() {
+                        self.update_level(id.get_id(), other_id);
+                    }
+
                     self.insert(id.get_id(), typ.clone());
                 }
             }

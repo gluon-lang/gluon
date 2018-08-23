@@ -9,8 +9,8 @@ use base::resolve::{self, Error as ResolveError};
 use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolRef};
 use base::types::{
-    self, AppVec, ArcType, ArgType, BuiltinType, Field, Filter, Generic, Skolem, Type, TypeEnv,
-    TypeFormatter, TypeVariable,
+    self, AppVec, ArcType, ArgType, BuiltinType, Field, Filter, Generic, Skolem, Type, TypeCache,
+    TypeEnv, TypeFormatter, TypeVariable,
 };
 
 use substitution::{Substitutable, Substitution, Variable, VariableFactory};
@@ -46,15 +46,21 @@ pub struct State<'a> {
     reduced_aliases: Vec<Symbol>,
     subs: &'a Substitution<ArcType>,
     record_context: Option<(ArcType, ArcType)>,
+    type_cache: &'a TypeCache<Symbol, ArcType>,
     pub in_alias: bool,
 }
 
 impl<'a> State<'a> {
-    pub fn new(env: &'a (TypeEnv + 'a), subs: &'a Substitution<ArcType>) -> State<'a> {
+    pub fn new(
+        env: &'a (TypeEnv + 'a),
+        subs: &'a Substitution<ArcType>,
+        type_cache: &'a TypeCache<Symbol, ArcType>,
+    ) -> State<'a> {
         State {
-            env: env,
+            env,
             reduced_aliases: Vec::new(),
-            subs: subs,
+            subs,
+            type_cache,
             record_context: None,
             in_alias: false,
         }
@@ -149,12 +155,10 @@ where
                 .iter()
                 .map(|missing_field| {
                     ::strsim::jaro_winkler(missing_field.as_ref(), field_in_type.as_ref())
-                })
-                .max_by(|l, r| l.partial_cmp(&r).unwrap())
+                }).max_by(|l, r| l.partial_cmp(&r).unwrap())
                 .expect("At least one missing field");
             (field_in_type, (similarity * 1000000.) as i32)
-        })
-        .collect::<Vec<_>>();
+        }).collect::<Vec<_>>();
     field_similarity.sort_by_key(|t| ::std::cmp::Reverse(t.1));
 
     Box::new(move |field: &I| {
@@ -255,6 +259,14 @@ impl Substitutable for ArcType<Symbol> {
         }
     }
 
+    fn get_id(&self) -> Option<u32> {
+        match **self {
+            Type::Variable(ref var) => Some(var.id),
+            Type::Skolem(ref skolem) => Some(skolem.id),
+            _ => None,
+        }
+    }
+
     fn traverse<'a, F>(&'a self, f: &mut F)
     where
         F: types::Walker<'a, Self>,
@@ -313,6 +325,10 @@ impl<'a> Unifiable<State<'a>> for ArcType {
         unifier.state.reduced_aliases.truncate(reduced_aliases);
         result
     }
+
+    fn error_type(state: &State<'a>) -> Self {
+        state.type_cache.error()
+    }
 }
 
 fn do_zip_match<'a, U>(
@@ -325,6 +341,8 @@ where
 {
     debug!("Unifying:\n{} <=> {}", expected, actual);
     match (&**expected, &**actual) {
+        (&Type::Error, _) => Ok(Some(actual.clone())),
+        (_, &Type::Error) => Ok(None),
         (
             &Type::Function(l_arg_type, ref l_arg, ref l_ret),
             &Type::Function(r_arg_type, ref r_arg, ref r_ret),
@@ -383,7 +401,8 @@ where
                 && l_row
                     .iter()
                     .zip(r_row)
-                    .all(|(l, r)| l.name.name_eq(&r.name)) && l_rest == r_rest
+                    .all(|(l, r)| l.name.name_eq(&r.name))
+                && l_rest == r_rest
             {
                 let iter = l_row.iter().zip(r_row);
                 let new_fields = merge::merge_tuple_iter(iter, |l, r| {
@@ -427,7 +446,8 @@ where
                 && l_args
                     .iter()
                     .zip(r_args)
-                    .all(|(l, r)| l.name.name_eq(&r.name)) && l_types == r_types
+                    .all(|(l, r)| l.name.name_eq(&r.name))
+                && l_types == r_types
             {
                 let new_args = merge::merge_tuple_iter(l_args.iter().zip(r_args), |l, r| {
                     unifier
@@ -1092,7 +1112,7 @@ pub fn subsumes(
     state: State,
     l: &ArcType,
     r: &ArcType,
-) -> Result<ArcType, Errors<Error<Symbol>>> {
+) -> Result<ArcType, (ArcType, Errors<Error<Symbol>>)> {
     debug!("Subsume {} <=> {}", l, r);
     let mut unifier = UnifierState {
         state: state,
@@ -1106,7 +1126,7 @@ pub fn subsumes(
 
     let typ = unifier.try_match(l, r);
     if unifier.unifier.errors.has_errors() {
-        Err(unifier.unifier.errors)
+        Err((typ.unwrap_or_else(|| l.clone()), unifier.unifier.errors))
     } else {
         Ok(typ.unwrap_or_else(|| l.clone()))
     }
@@ -1139,12 +1159,16 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for UnifierState<'a, Subsume<'e>> {
         match (&**l, &**r) {
             (&Type::Hole, _) => Ok(Some(r.clone())),
             (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => Ok(None),
-            (&Type::Skolem(ref skolem), &Type::Variable(ref r_var))
-                if subs.get_level(skolem.id) > r_var.id =>
-            {
-                return Err(UnifyError::Other(TypeError::UnableToGeneralize(
-                    skolem.name.clone(),
-                )));
+            (&Type::Variable(ref l_var), &Type::Skolem(ref skolem)) => {
+                let skolem_level = subs.get_level(skolem.id);
+                if skolem_level > l_var.id {
+                    Err(UnifyError::Other(TypeError::UnableToGeneralize(
+                        skolem.name.clone(),
+                    )))
+                } else {
+                    subs.union(l_var, r)?;
+                    Ok(None)
+                }
             }
             (&Type::Generic(ref l_gen), &Type::Variable(ref r_var)) => {
                 let left = match self.unifier.variables.get(&l_gen.id) {
@@ -1177,7 +1201,7 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for UnifierState<'a, Subsume<'e>> {
             }
 
             (_, &Type::Forall(_, _, Some(_))) => {
-                let r = r.instantiate_generics(&mut FnvMap::default());
+                let r = r.skolemize(&mut FnvMap::default());
                 Ok(self.try_match_res(l, &r)?)
             }
 
@@ -1224,8 +1248,8 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for UnifierState<'a, Subsume<'e>> {
         }
     }
 
-    fn error_type(&mut self) -> Option<ArcType> {
-        Some(self.unifier.subs.new_var())
+    fn error_type(&self) -> ArcType {
+        ArcType::error_type(&self.state)
     }
 }
 
@@ -1280,9 +1304,10 @@ mod tests {
                 Field::new(y.clone(), Type::int()),
             ],
         );
-        let subs = Substitution::new(Kind::typ());
         let env = MockEnv;
-        let state = State::new(&env, &subs);
+        let type_cache = TypeCache::new();
+        let subs = Substitution::new(Kind::typ());
+        let state = State::new(&env, &subs, &type_cache);
         let result = unify(&subs, state, &l, &r);
         assert_eq!(
             result,
@@ -1298,8 +1323,9 @@ mod tests {
         let _ = ::env_logger::try_init();
 
         let env = MockEnv;
+        let type_cache = TypeCache::new();
         let subs = Substitution::new(Kind::typ());
-        let state = State::new(&env, &subs);
+        let state = State::new(&env, &subs, &type_cache);
 
         let x = Field::new(intern("x"), Type::int());
         let y = Field::new(intern("y"), Type::int());

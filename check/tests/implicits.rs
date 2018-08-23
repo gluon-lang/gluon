@@ -402,9 +402,12 @@ f (==) 1 2
                     assert_eq!(args.len(), 3);
                     match args[0].value {
                         ast::Expr::App {
-                            args: ref args_eq, ..
+                            args: ref args_eq,
+                            implicit_args: ref implicit_args_eq,
+                            ..
                         } => {
-                            assert_eq!(args_eq.len(), 1);
+                            assert_eq!(args_eq.len(), 0);
+                            assert_eq!(implicit_args_eq.len(), 1);
                         }
                         _ => panic!(),
                     }
@@ -539,7 +542,7 @@ wrap
     let result = support::typecheck(text);
     assert_req!(
         result.map(|typ| typ.to_string()),
-        Ok("forall a f . [test.Applicative f] -> a -> f a")
+        Ok("forall a a0 . [test.Applicative a] -> a0 -> a a0")
     );
 }
 
@@ -801,6 +804,38 @@ let t2_test : Implicit Test2 = { f = \x -> "" }
 
 let f ?x y: [Implicit a] -> a -> String = ""
 f { x = 1 }
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn type_hole_applicative() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+#[implicit]
+type Functor f = {
+    map : forall a b . (a -> b) -> f a -> f b
+}
+
+#[implicit]
+type Applicative (f : Type -> Type) = {
+    functor : Functor f,
+    apply : forall a b . f (a -> b) -> f a -> f b,
+}
+
+let map ?f : [Functor f] -> (a -> b) -> f a -> f b = f.map
+
+let apply ?app : [Applicative f] -> f (a -> b) -> f a -> f b = app.apply
+
+#[infix(left, 4)]
+let (<*>) : [Applicative f] -> f (a -> b) -> f a -> f b = apply
+
+let map2 fn a b : [Applicative f] -> _
+    = map fn a <*> b
+
+{}
 "#;
     let result = support::typecheck(text);
 

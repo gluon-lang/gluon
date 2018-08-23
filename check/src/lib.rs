@@ -33,7 +33,7 @@ pub mod unify_type;
 
 mod implicits;
 
-use base::types::{ArcType, TypeEnv};
+use base::types::{ArcType, TypeCache, TypeEnv};
 
 /// Checks if `actual` can be assigned to a binding with the type signature `signature`
 pub fn check_signature(env: &TypeEnv, signature: &ArcType, actual: &ArcType) -> bool {
@@ -44,11 +44,12 @@ pub fn check_signature(env: &TypeEnv, signature: &ArcType, actual: &ArcType) -> 
     use substitution::Substitution;
 
     let subs = Substitution::new(Kind::typ());
-    let state = unify_type::State::new(env, &subs);
+    let type_cache = TypeCache::new();
+    let state = unify_type::State::new(env, &subs, &type_cache);
     let actual = unify_type::new_skolem_scope(&subs, actual);
     let actual = actual.instantiate_generics(&mut FnvMap::default());
     let result = unify_type::subsumes(&subs, &mut ScopedMap::new(), 0, state, signature, &actual);
-    if let Err(ref err) = result {
+    if let Err((_, ref err)) = result {
         warn!("Check signature error: {}", err);
     }
     result.is_ok()

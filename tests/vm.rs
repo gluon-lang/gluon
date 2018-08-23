@@ -453,6 +453,14 @@ let _ = import! std.option
 ()
 }
 
+test_expr!{ load_applicative,
+r#"
+let _ = import! std.applicative
+()
+"#,
+()
+}
+
 test_expr!{ prelude do_expression_option_some,
 r#"
 let { monad = { flat_map } } = import! std.option
@@ -911,4 +919,34 @@ fn deep_clone_partial_application() {
         global_memory_without_closures + memory_for_closures,
         global_memory_with_closures
     );
+}
+
+test_expr!{ prelude issue_601,
+r"
+let { wrap } = import! std.applicative
+let { flat_map } = import! std.monad
+
+type Id a = a
+let id_functor: Functor Id = {
+    map = \f x -> f x,
+}
+let id_applicative: Applicative Id = {
+    functor = id_functor,
+    apply = \f x -> f x,
+    wrap = \x -> x,
+}
+let id_monad: Monad Id = {
+    applicative = id_applicative,
+    flat_map = \f x -> f x,
+}
+
+let foo: [Functor f] -> Id () = ()
+
+let bar: Id () =
+    do _ = foo
+    wrap ()
+
+in ()
+",
+()
 }

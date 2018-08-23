@@ -944,6 +944,7 @@ fn pretty_kind<'a, A>(
 ) -> DocBuilder<'a, Arena<'a, A>, A> {
     match *kind {
         Kind::Type => arena.text("Type"),
+        Kind::Error => arena.text("!"),
         Kind::Row => arena.text("Row"),
         Kind::Hole => arena.text("_"),
         Kind::Variable(ref id) => arena.text(id.to_string()),
