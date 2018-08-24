@@ -60,7 +60,7 @@ before_install:
   - set -e
   - rustup self update
 install:
-  - sh scripts/cargo_install.sh sccache 0.2.7
+  - (unset RUSTC_WRAPPER && sh scripts/cargo_install.sh sccache 0.2.7)
   - sh scripts/install_cross.sh
   - source ~/.cargo/env || true
   - sh scripts/cargo_install.sh mdbook 0.1.2
