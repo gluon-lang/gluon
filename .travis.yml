@@ -4,6 +4,7 @@ services: docker
 cache:
     directories:
     - $HOME/.cargo
+    - $HOME/.cache/sccache
 
 # bors setup
 branches:
@@ -59,14 +60,16 @@ before_install:
   - set -e
   - rustup self update
 install:
+  - (unset RUSTC_WRAPPER && sh scripts/cargo_install.sh sccache 0.2.7)
   - sh scripts/install_cross.sh
   - source ~/.cargo/env || true
-  - ./scripts/install_mdbook.sh
+  - sh scripts/cargo_install.sh mdbook 0.1.2
 
 env:
   global:
     - CRATE_NAME=gluon
     - RUST_BACKTRACE=1
+    - RUSTC_WRAPPER=sccache
 script:
 - >
     if [ ! -z $TRAVIS_TAG ]; then
@@ -80,6 +83,7 @@ script:
         cargo check --target wasm32-unknown-unknown -p gluon_c-api
     fi
 - mdbook build book
+- sccache -s
 
 notifications:
   webhooks:
