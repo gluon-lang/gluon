@@ -117,7 +117,7 @@ impl<'a> Visitor<'a> for Checker {
                 self.visit_expr(expr);
             }
             Expr::TypeBindings(_, ref expr) => self.visit_expr(expr),
-            Expr::App { .. } => {
+            Expr::App { .. } | Expr::Infix { .. } => {
                 let context = self.context.replace(Context::Eval);
                 ast::walk_expr(self, expr);
                 self.context = context;

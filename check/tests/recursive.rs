@@ -63,10 +63,10 @@ fn cant_call_recursive_value_infix() {
     let _ = env_logger::try_init();
 
     let text = r"
-let f =
-    let z = g 1
-    { g }
-and g = \y -> f.g y
+#[infix(left, 0)]
+let (+++) x y = ()
+let g = f +++ ()
+and f = {}
 f
 ";
     let result = support::typecheck(text);
