@@ -473,6 +473,10 @@ impl<Id, T> AliasRef<Id, T> {
         let index = self.index;
         Arc::get_mut(&mut self.group).map(|group| &mut group[index])
     }
+    pub(crate) fn try_get_alias(&self) -> Option<&AliasData<Id, T>> {
+        let index = self.index;
+        Some(&self.group[index])
+    }
 }
 
 impl<Id, T> AliasRef<Id, T>
