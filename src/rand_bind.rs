@@ -42,14 +42,10 @@ type RngNext<G> = record_type!{
     gen => G
 };
 
-fn xor_shift_new(seed: &[VmInt]) -> RuntimeResult<XorShiftRng, String> {
-    if seed.len() == 4 {
-        RuntimeResult::Return(XorShiftRng(self::rand::XorShiftRng::from_seed([
-            seed[0] as u32,
-            seed[1] as u32,
-            seed[2] as u32,
-            seed[3] as u32,
-        ])))
+fn xor_shift_new(seed: &[u8]) -> RuntimeResult<XorShiftRng, String> {
+    if seed.len() == 16 {
+        let seed = unsafe { *(seed.as_ptr() as *const [u8; 16]) };
+        RuntimeResult::Return(XorShiftRng(self::rand::XorShiftRng::from_seed(seed)))
     } else {
         RuntimeResult::Panic("Expected xorshift seed to have 4 elements".to_string())
     }
