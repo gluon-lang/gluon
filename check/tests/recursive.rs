@@ -114,3 +114,18 @@ f
 ",
     "{ x : forall a . a -> () }"
 );
+
+#[test]
+fn impossible_to_use_self_in_match() {
+    let _ = env_logger::try_init();
+
+    let text = r"
+let f =
+    match { f } with
+    | { f } -> ()
+f
+";
+    let result = support::typecheck(text);
+
+    assert_err!(result, RecursionCheck(..));
+}

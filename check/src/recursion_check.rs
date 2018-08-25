@@ -1,3 +1,4 @@
+use std::fmt;
 use std::mem;
 
 use base::{
@@ -8,18 +9,36 @@ use base::{
     symbol::Symbol,
 };
 
-#[derive(Debug, PartialEq, Fail)]
-#[fail(display = "`{}` may not be used recursively here", symbol)]
+#[derive(Debug, PartialEq)]
 pub struct Error {
     symbol: Symbol,
 }
 
-#[derive(Debug, PartialEq)]
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "`{}` may not be used recursively here",
+            self.symbol.declared_name()
+        )
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 enum Context {
-    Application,
-    Record,
-    Lambda,
+    Eval,
+    Lazy,
     Top,
+}
+
+impl Context {
+    fn replace(&mut self, new_context: Context) -> Context {
+        let old = *self;
+        if new_context < *self {
+            *self = new_context;
+        }
+        old
+    }
 }
 
 #[derive(Debug)]
@@ -48,7 +67,7 @@ pub fn check_expr(expr: &SpannedExpr<Symbol>) -> Result<(), RecursionErrors> {
 impl Checker {
     fn check_ident(&mut self, span: Span<BytePos>, id: &Symbol) {
         match self.context {
-            Context::Application | Context::Top if self.uninitialized_values.contains_key(id) => {
+            Context::Eval | Context::Top if self.uninitialized_values.contains_key(id) => {
                 self.errors.push(Spanned {
                     value: Error { symbol: id.clone() },
                     span,
@@ -99,22 +118,31 @@ impl<'a> Visitor<'a> for Checker {
             }
             Expr::TypeBindings(_, ref expr) => self.visit_expr(expr),
             Expr::App { .. } => {
-                let context = mem::replace(&mut self.context, Context::Application);
+                let context = self.context.replace(Context::Eval);
                 ast::walk_expr(self, expr);
                 self.context = context;
             }
             Expr::Lambda(ref lambda) => {
                 let uninitialized_values =
                     mem::replace(&mut self.uninitialized_values, Default::default());
-                let context = mem::replace(&mut self.context, Context::Lambda);
+                let context = self.context.replace(Context::Lazy);
                 self.visit_expr(&lambda.body);
                 self.uninitialized_values = uninitialized_values;
                 self.context = context;
             }
             Expr::Record { .. } => {
-                let context = mem::replace(&mut self.context, Context::Record);
+                let context = self.context.replace(Context::Lazy);
                 ast::walk_expr(self, expr);
                 self.context = context;
+            }
+            Expr::Match(ref expr, ref alts) => {
+                let context = self.context.replace(Context::Eval);
+                self.visit_expr(expr);
+                self.context = context;
+
+                for alt in alts {
+                    self.visit_expr(&alt.expr);
+                }
             }
             _ => ast::walk_expr(self, expr),
         }

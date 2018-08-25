@@ -14,9 +14,6 @@ extern crate env_logger;
 extern crate itertools;
 #[macro_use]
 extern crate log;
-extern crate failure;
-#[macro_use]
-extern crate failure_derive;
 extern crate pretty;
 extern crate rpds;
 extern crate smallvec;
