@@ -14,6 +14,9 @@ extern crate env_logger;
 extern crate itertools;
 #[macro_use]
 extern crate log;
+extern crate failure;
+#[macro_use]
+extern crate failure_derive;
 extern crate pretty;
 extern crate rpds;
 extern crate smallvec;
@@ -26,6 +29,7 @@ extern crate gluon_base as base;
 
 pub mod kindcheck;
 pub mod metadata;
+mod recursion_check;
 pub mod rename;
 pub mod substitution;
 pub mod typecheck;

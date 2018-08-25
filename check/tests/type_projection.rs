@@ -10,7 +10,7 @@ extern crate gluon_parser as parser;
 mod support;
 
 test_check! {
-    project_type,
+    project_type_simple,
     r#"
     type Test = Int
     let module = { Test }

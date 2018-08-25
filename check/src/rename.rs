@@ -161,7 +161,10 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
                 }
                 Expr::LetBindings(ref mut bindings, _) => {
                     self.env.stack.enter_scope();
-                    let is_recursive = bindings.iter().all(|bind| !bind.args.is_empty());
+                    let is_recursive = bindings.iter().all(|bind| match bind.name.value {
+                        Pattern::Ident(_) | Pattern::Constructor(..) => true,
+                        _ => false,
+                    });
                     for bind in bindings.iter_mut() {
                         if !is_recursive {
                             self.visit_expr(&mut bind.expr);

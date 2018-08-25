@@ -20,6 +20,15 @@ pub struct ScopedMap<K: Eq + Hash, V> {
     scopes: Vec<Option<K>>,
 }
 
+impl<K: Eq + Hash, V> Default for ScopedMap<K, V> {
+    fn default() -> Self {
+        ScopedMap {
+            map: FnvMap::default(),
+            scopes: Vec::default(),
+        }
+    }
+}
+
 impl<K, V> fmt::Debug for ScopedMap<K, V>
 where
     K: Eq + Hash + fmt::Debug + Clone,
@@ -33,10 +42,7 @@ where
 #[allow(dead_code)]
 impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
     pub fn new() -> ScopedMap<K, V> {
-        ScopedMap {
-            map: FnvMap::default(),
-            scopes: Vec::new(),
-        }
+        ScopedMap::default()
     }
 
     /// Introduces a new scope
@@ -98,6 +104,14 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
         Q: Eq + Hash,
     {
         self.map.get(k).map(|x| &x[..])
+    }
+
+    pub fn contains_key<'a, Q: ?Sized>(&'a self, k: &Q) -> bool
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash,
+    {
+        self.get(k).is_some()
     }
 
     /// Returns the number of elements in the container.

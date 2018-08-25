@@ -379,7 +379,7 @@ let Test = 1
 1
 "#;
     let result = support::typecheck(text);
-    assert_err!(result, UndefinedVariable(..));
+    assert_err!(result, Message(..));
 }
 
 #[test]

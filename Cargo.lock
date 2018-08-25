@@ -687,6 +687,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "gluon_vm"
+version = "0.8.1"
+dependencies = [
+ "bitflags 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "codespan 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "collect-mac 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "env_logger 0.5.12 (registry+https://github.com/rust-lang/crates.io-index)",
+ "frunk_core 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "futures 0.1.23 (registry+https://github.com/rust-lang/crates.io-index)",
+ "gluon 0.8.1",
+ "gluon_base 0.8.1",
+ "gluon_check 0.8.1",
+ "gluon_codegen 0.8.1",
+ "gluon_parser 0.8.1",
+ "itertools 0.7.8 (registry+https://github.com/rust-lang/crates.io-index)",
+ "lalrpop 0.15.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "lalrpop-util 0.15.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "log 0.4.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "mopa 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "pretty 0.5.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "quick-error 1.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "regex 1.0.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde 1.0.75 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_derive 1.0.75 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_derive_state 0.4.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_json 1.0.26 (registry+https://github.com/rust-lang/crates.io-index)",
+ "serde_state 0.4.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "smallvec 0.6.5 (registry+https://github.com/rust-lang/crates.io-index)",
+ "typed-arena 1.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "h2"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"

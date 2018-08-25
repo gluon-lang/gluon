@@ -49,6 +49,8 @@ pub enum TypeError<I> {
     Unification(ArcType<I>, ArcType<I>, Vec<UnifyTypeError<I>>),
     /// Error were found when trying to unify the kinds of two types
     KindError(KindCheckError<I>),
+    /// Error were found when checking value recursion
+    RecursionCheck(::recursion_check::Error),
     /// Multiple types were declared with the same name in the same expression
     DuplicateTypeDefinition(I),
     /// A field was defined more than once in a record constructor or pattern match
@@ -76,9 +78,16 @@ impl<I> From<KindCheckError<I>> for TypeError<I> {
         }
     }
 }
+
 impl<I> From<implicits::Error<I>> for TypeError<I> {
     fn from(e: implicits::Error<I>) -> Self {
         TypeError::UnableToResolveImplicit(e)
+    }
+}
+
+impl<I> From<::recursion_check::Error> for TypeError<I> {
+    fn from(e: ::recursion_check::Error) -> Self {
+        TypeError::RecursionCheck(e)
     }
 }
 
@@ -171,6 +180,7 @@ impl<I: fmt::Display + AsRef<str> + Clone> fmt::Display for TypeError<I> {
                 write!(f, "Type {} has {} to few arguments", typ, expected_len)
             }
             KindError(ref err) => kindcheck::fmt_kind_error(err, f),
+            RecursionCheck(ref err) => write!(f, "{}", err),
             DuplicateTypeDefinition(ref id) => write!(
                 f,
                 "Type '{}' has been already been defined in this module",
@@ -436,9 +446,17 @@ impl<'a> Typecheck<'a> {
     }
 
     fn stack_var(&mut self, id: Symbol, typ: ArcType) {
+        self.tentative_stack_var(id, typ, false);
+    }
+
+    fn tentative_stack_var(&mut self, id: Symbol, typ: ArcType, tentative: bool) {
         debug!("Insert {} : {}", id, typ);
 
-        self.implicit_resolver.on_stack_var(&id, &typ);
+        // Recursive definitions will not have their full type set until after the full group has been
+        // checked so we delay adding it to the implicit scope until after
+        if !tentative {
+            self.implicit_resolver.on_stack_var(&id, &typ);
+        }
 
         // HACK
         // Insert the non_renamed symbol so that type projections in types can be translated (see
@@ -598,6 +616,7 @@ impl<'a> Typecheck<'a> {
                 | UndefinedRecord { .. }
                 | EmptyCase
                 | KindError(_)
+                | RecursionCheck(_)
                 | Message(_) => (),
                 NotAFunction(ref mut typ)
                 | UndefinedField(ref mut typ, _)
@@ -671,6 +690,13 @@ impl<'a> Typecheck<'a> {
         info!("Typechecking {}", self.symbols.module());
         self.subs.clear();
         self.environment.stack.clear();
+
+        if let Err(err) = ::recursion_check::check_expr(expr) {
+            self.errors.extend(
+                err.into_iter()
+                    .map(|err| pos::spanned(err.span, TypeError::from(err.value).into())),
+            );
+        }
 
         let temp = expected_type.and_then(|expected| self.create_unifiable_signature(expected));
         let expected_type = temp.as_ref().or(expected_type);
@@ -883,7 +909,7 @@ impl<'a> Typecheck<'a> {
 
                 for alt in alts.iter_mut() {
                     self.enter_scope();
-                    self.typecheck_pattern(&mut alt.pattern, typ.clone());
+                    self.typecheck_pattern(&mut alt.pattern, typ.clone(), false);
                     let mut alt_type = self.typecheck_opt(&mut alt.expr, expected_type.as_ref());
                     alt_type = self.instantiate_generics(&alt_type);
                     match expr_type {
@@ -1433,16 +1459,35 @@ impl<'a> Typecheck<'a> {
         self.type_cache.function(arg_types, body_type)
     }
 
+    fn typecheck_let_pattern(
+        &mut self,
+        pattern: &mut SpannedPattern<Symbol>,
+        match_type: ArcType,
+    ) -> ArcType {
+        match pattern.value {
+            Pattern::Constructor(ref id, _) | Pattern::Ident(ref id)
+                if id.name.declared_name().starts_with(char::is_uppercase) =>
+            {
+                self.error(
+                    pattern.span,
+                    TypeError::Message(format!("Unexpected type constructor `{}`", id.name)),
+                )
+            }
+            _ => self.typecheck_pattern(pattern, match_type, true),
+        }
+    }
+
     fn typecheck_pattern(
         &mut self,
         pattern: &mut SpannedPattern<Symbol>,
         mut match_type: ArcType,
+        tentative: bool,
     ) -> ArcType {
         let span = pattern.span;
         match pattern.value {
             Pattern::As(ref id, ref mut pat) => {
-                self.stack_var(id.clone(), match_type.clone());
-                self.typecheck_pattern(pat, match_type.clone());
+                self.tentative_stack_var(id.clone(), match_type.clone(), tentative);
+                self.typecheck_pattern(pat, match_type.clone(), tentative);
                 match_type
             }
             Pattern::Constructor(ref mut id, ref mut args) => {
@@ -1455,7 +1500,7 @@ impl<'a> Typecheck<'a> {
                 // Find the enum constructor and return the types for its arguments
                 let ctor_type = self.find_at(span, &id.name);
                 id.typ = ctor_type.clone();
-                let return_type = match self.typecheck_pattern_rec(args, ctor_type) {
+                let return_type = match self.typecheck_pattern_rec(args, ctor_type, tentative) {
                     Ok(return_type) => return_type,
                     Err(err) => self.error(span, err),
                 };
@@ -1523,10 +1568,10 @@ impl<'a> Typecheck<'a> {
                         .clone();
                     match field.value {
                         Some(ref mut pattern) => {
-                            self.typecheck_pattern(pattern, field_type);
+                            self.typecheck_pattern(pattern, field_type, tentative);
                         }
                         None => {
-                            self.stack_var(name.clone(), field_type);
+                            self.tentative_stack_var(name.clone(), field_type, tentative);
                         }
                     }
                 }
@@ -1592,12 +1637,12 @@ impl<'a> Typecheck<'a> {
                 };
                 *typ = self.unify_span(span, &tuple_type, match_type);
                 for (elem, field) in elems.iter_mut().zip(tuple_type.row_iter()) {
-                    self.typecheck_pattern(elem, field.typ.clone());
+                    self.typecheck_pattern(elem, field.typ.clone(), tentative);
                 }
                 tuple_type
             }
             Pattern::Ident(ref mut id) => {
-                self.stack_var(id.name.clone(), match_type.clone());
+                self.tentative_stack_var(id.name.clone(), match_type.clone(), tentative);
                 id.typ = match_type.clone();
                 match_type
             }
@@ -1614,6 +1659,7 @@ impl<'a> Typecheck<'a> {
         &mut self,
         args: &mut [SpannedPattern<Symbol>],
         typ: ArcType,
+        tentative: bool,
     ) -> TcResult<ArcType> {
         let len = args.len();
         match args.split_first_mut() {
@@ -1621,8 +1667,8 @@ impl<'a> Typecheck<'a> {
                 let typ = self.instantiate_generics(&typ);
                 match typ.as_function() {
                     Some((arg, ret)) => {
-                        self.typecheck_pattern(head, arg.clone());
-                        self.typecheck_pattern_rec(tail, ret.clone())
+                        self.typecheck_pattern(head, arg.clone(), tentative);
+                        self.typecheck_pattern_rec(tail, ret.clone(), tentative)
                     }
                     None => Err(TypeError::PatternError(typ.clone(), len)),
                 }
@@ -1691,26 +1737,15 @@ impl<'a> Typecheck<'a> {
         self.type_variables.enter_scope();
         let level = self.subs.var_id();
 
-        let is_recursive = bindings.iter().all(|bind| !bind.args.is_empty());
+        let is_recursive = bindings.iter().all(|bind| match bind.name.value {
+            Pattern::Ident(_) | Pattern::Constructor(..) => true,
+            _ => false,
+        });
         // When the definitions are allowed to be mutually recursive
         if is_recursive {
             for bind in bindings.iter_mut() {
                 self.type_variables.enter_scope();
 
-                match bind.name.value {
-                    Pattern::Constructor(ref id, _) | Pattern::Ident(ref id)
-                        if id.name.declared_name().starts_with(char::is_uppercase) =>
-                    {
-                        self.error(
-                            bind.name.span,
-                            TypeError::Message(format!(
-                                "Unexpected type constructor `{}`",
-                                id.name
-                            )),
-                        );
-                    }
-                    _ => (),
-                }
                 let typ = {
                     if let Some(ref mut typ) = bind.typ {
                         self.kindcheck(typ);
@@ -1726,7 +1761,7 @@ impl<'a> Typecheck<'a> {
 
                     self.new_skolem_scope_signature(&bind.resolved_type)
                 };
-                self.typecheck_pattern(&mut bind.name, typ);
+                self.typecheck_let_pattern(&mut bind.name, typ);
                 if let Expr::Lambda(ref mut lambda) = bind.expr.value {
                     if let Pattern::Ident(ref name) = bind.name.value {
                         lambda.id.name = name.name.clone();
@@ -1743,7 +1778,7 @@ impl<'a> Typecheck<'a> {
 
             // Functions which are declared as `let f x = ...` are allowed to be self
             // recursive
-            let mut typ = if bind.args.is_empty() {
+            let mut typ = if !is_recursive {
                 if let Some(ref mut typ) = bind.typ {
                     self.kindcheck(typ);
 
@@ -1776,7 +1811,7 @@ impl<'a> Typecheck<'a> {
                 // Merge the type declaration and the actual type
                 debug!("Generalize at {} = {}", level, bind.resolved_type);
                 self.generalize_binding(level, bind);
-                self.typecheck_pattern(&mut bind.name, bind.resolved_type.clone());
+                self.typecheck_let_pattern(&mut bind.name, bind.resolved_type.clone());
                 debug!("Generalized to {}", bind.resolved_type);
                 self.finish_pattern(level, &mut bind.name, &bind.resolved_type);
             } else {
@@ -1801,6 +1836,11 @@ impl<'a> Typecheck<'a> {
 
             let stack = &self.environment.stack;
             bindings.update(|name| Some(stack.get(name).unwrap().typ.clone()));
+        }
+
+        let s = self.symbols.symbol("module");
+        if let Some(t) = self.environment.find_type(&s) {
+            eprintln!("{}", t);
         }
 
         debug!("Typecheck `in`");
@@ -1978,6 +2018,19 @@ impl<'a> Typecheck<'a> {
         }
     }
 
+    fn update_var(&mut self, id: &Symbol, typ: &ArcType) {
+        if let Some(bind) = self.environment.stack.get_mut(id) {
+            bind.typ = typ.clone();
+            self.implicit_resolver.on_stack_var(&id, &typ);
+        }
+        // HACK
+        // For type projections
+        let id = self.symbols.symbol(id.declared_name());
+        if let Some(bind) = self.environment.stack.get_mut(&id) {
+            bind.typ = typ.clone();
+        }
+    }
+
     fn finish_pattern(
         &mut self,
         level: u32,
@@ -1988,22 +2041,14 @@ impl<'a> Typecheck<'a> {
             Pattern::As(ref mut id, ref mut pat) => {
                 self.finish_pattern(level, pat, &final_type);
 
-                self.environment
-                    .stack
-                    .get_mut(id)
-                    .expect("ICE: Variable no inserted")
-                    .typ = final_type.clone();
+                self.update_var(&id, &final_type);
+
                 debug!("{}: {}", self.symbols.string(&id), final_type);
             }
             Pattern::Ident(ref mut id) => {
                 id.typ = final_type.clone();
-                self.environment
-                    .stack
-                    .get_mut(&id.name)
-                    .expect("ICE: Variable no inserted")
-                    .typ = id.typ.clone();
+                self.update_var(&id.name, &id.typ);
                 debug!("{}: {}", self.symbols.string(&id.name), id.typ);
-                debug!("{}: {:?}", self.symbols.string(&id.name), id.typ);
             }
             Pattern::Record {
                 ref mut typ,
@@ -2024,11 +2069,7 @@ impl<'a> Typecheck<'a> {
                             self.finish_pattern(level, pat, &field_type);
                         }
                         None => {
-                            self.environment
-                                .stack
-                                .get_mut(field_name)
-                                .expect("ICE: Variable no inserted")
-                                .typ = field_type.clone();
+                            self.update_var(&field_name, &field_type);
                             debug!("{}: {}", field_name, field_type);
                         }
                     }
