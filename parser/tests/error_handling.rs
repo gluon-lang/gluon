@@ -86,9 +86,11 @@ let y =
 y
 "#,
     );
-    let error = Error::UnexpectedToken("IntLiteral".into(), vec![]);
     let span = pos::span(BytePos::from(0), BytePos::from(0));
-    let errors = ParseErrors::from(vec![pos::spanned(span, error)]);
+    let errors = ParseErrors::from(vec![
+        pos::spanned(span, Error::UnexpectedToken("IntLiteral".into(), vec![])),
+        pos::spanned(span, Error::UnexpectedToken("CloseBlock".into(), vec![])),
+    ]);
 
     assert_eq!(remove_expected(result.unwrap_err().1), errors);
 }
@@ -301,16 +303,14 @@ fn incomplete_let_binding_2() {
     let result = parse(expr);
     assert!(result.is_err());
     let (expr, err) = result.unwrap_err();
+
+    let errors = vec![no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![]))];
+    assert_eq!(remove_expected(err), ParseErrors::from(errors));
+
     assert_eq!(
         clear_span(expr.unwrap()),
         let_("test", id("io"), no_loc(Expr::Error(None)))
     );
-
-    let errors = vec![
-        no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![])),
-        no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![])),
-    ];
-    assert_eq!(remove_expected(err), ParseErrors::from(errors));
 }
 
 #[test]

@@ -40,6 +40,8 @@ enum Context {
     Expr,
     /// In a let expression
     Let,
+    /// In a rec bloc
+    Rec,
     /// In a type expression
     Type,
     /// In an if expression
@@ -98,7 +100,11 @@ impl Contexts {
                 Context::Block { .. } if skip_block => continue,
                 Context::Brace | Context::Bracket | Context::Paren => return Ok(()),
                 // New context should not be unindented past the closest enclosing block context
-                Context::MatchClause | Context::Type | Context::Let | Context::Block { .. }
+                Context::MatchClause
+                | Context::Type
+                | Context::Rec
+                | Context::Let
+                | Context::Block { .. }
                     if offside.location.column < other_offside.location.column =>
                 {
                     ()
@@ -185,8 +191,7 @@ where
                 .find(|last_offside| match last_offside.context {
                     Context::Block { .. } => true,
                     _ => false,
-                })
-                .map(|last_offside| last_offside.location.column)
+                }).map(|last_offside| last_offside.location.column)
             {
                 Some(last_column) if span.start().column <= last_column => {
                     debug!(
@@ -286,7 +291,7 @@ where
                                 }
                                 return Ok(token);
                             }
-                            Context::Let | Context::Type => {
+                            Context::Rec | Context::Let | Context::Type => {
                                 let location = {
                                     let offside = self
                                         .indent_levels
@@ -302,6 +307,12 @@ where
                                     }
                                     offside.location
                                 };
+
+                                if let Some(Context::Rec) =
+                                    self.indent_levels.last().map(|offside| offside.context)
+                                {
+                                    self.indent_levels.pop();
+                                }
 
                                 // Inject a block to ensure that a sequence of expressions end up in the `let` body
                                 // ```
@@ -330,8 +341,8 @@ where
                 (_, _) => (),
             }
 
-            let doc_comment_followed_by_and =
-                token.value.is_doc_comment() && self.peek_token().value == Token::And;
+            let doc_comment_followed_by_let =
+                token.value.is_doc_comment() && self.peek_token().value == Token::Let;
 
             // Next we check offside rules for each of the contexts
             let ordering = token.span.start().column.cmp(&offside.location.column);
@@ -386,15 +397,21 @@ where
                 }
                 // `and` and `}` are allowed to be on the same line as the `let` or `type`
                 (Context::Let, Ordering::Equal)
-                | (Context::Type, Ordering::Equal)
                 | (Context::Let, Ordering::Less)
+                | (Context::Type, Ordering::Equal)
                 | (Context::Type, Ordering::Less)
-                    if token.value != Token::And
-                        && token.value != Token::RBrace
-                        && !doc_comment_followed_by_and =>
+                    if token.value != Token::RBrace && !doc_comment_followed_by_let && !(self
+                        .indent_levels
+                        .stack[self.indent_levels.stack.len() - 2]
+                        .context
+                        == Context::Rec
+                        && (token.value == Token::Let || token.value == Token::Type)) =>
                 {
+                    if token.value == Token::EOF {
+                        self.indent_levels.pop();
+                        continue;
+                    }
                     // Insert an `in` token
-
                     let let_location = self.indent_levels.pop().unwrap().location;
                     {
                         let offside = self
@@ -409,6 +426,11 @@ where
                         {
                             *emit_semi = false;
                         }
+                    }
+                    if let Some(Context::Rec) =
+                        self.indent_levels.last().map(|offside| offside.context)
+                    {
+                        self.indent_levels.pop();
                     }
 
                     let span = token.span;
@@ -433,9 +455,11 @@ where
 
             // Some tokens directly insert a new context when emitted
             let push_context = match token.value {
-                Token::Let | Token::Do => Some(Context::Let),
-                Token::If => Some(Context::If),
+                Token::Rec => Some(Context::Rec),
                 Token::Type => Some(Context::Type),
+                Token::Let => Some(Context::Let),
+                Token::Do => Some(Context::Let),
+                Token::If => Some(Context::If),
                 Token::Match => Some(Context::Expr),
                 Token::Lambda => Some(Context::Lambda),
                 Token::LBrace => Some(Context::Brace),
@@ -445,6 +469,15 @@ where
                 _ => None,
             };
             if let Some(context) = push_context {
+                if offside.context == context
+                    && (offside.context == Context::Type || offside.context == Context::Let)
+                    && (self.indent_levels.stack.len() >= 2
+                        && self.indent_levels.stack[self.indent_levels.stack.len() - 2].context
+                            == Context::Rec)
+                {
+                    self.indent_levels.pop();
+                }
+
                 let offside = Offside::new(token.span.start(), context);
                 return self.indent_levels.push(offside).map(move |()| token);
             }
@@ -512,6 +545,7 @@ fn token_closes_context(token: &Token, context: Context) -> bool {
         | (&Token::RBracket, Context::Bracket)
         | (&Token::RParen, Context::Paren)
         | (&Token::CloseBlock, Context::Block { .. })
+        | (&Token::In, Context::Rec)
         | (&Token::In, Context::Let)
         | (&Token::In, Context::Type)
         | (&Token::RBracket, Context::Attribute)

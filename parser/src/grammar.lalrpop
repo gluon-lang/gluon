@@ -33,7 +33,7 @@ extern {
         "float literal" => Token::FloatLiteral(<f64>),
         "documentation comment" => Token::DocComment(<Comment>),
 
-        "and" => Token::And,
+        "rec" => Token::Rec,
         "else" => Token::Else,
         "forall" => Token::Forall,
         "if" => Token::If,
@@ -245,7 +245,7 @@ VariantField: (Id, Vec<AstType<Id>>) =
     "|" <Ident> <AtomicType*> => (<>);
 
 TypeBinding: TypeBinding<Id> = {
-    <id: Sp<Ident>> <params: TypeParam*> "=" <row: Sp<VariantField+>> => {
+    <metadata: Metadata?> "type" <id: Sp<Ident>> <params: TypeParam*> "=" <row: Sp<VariantField+>> => {
         if !env.string(&id.value).starts_with(char::is_uppercase) {
             errors.push(::lalrpop_util::ParseError::User {
                 error: pos::spanned(id.span, format!("A type must start with an uppercase letter").into()),
@@ -261,7 +261,7 @@ TypeBinding: TypeBinding<Id> = {
             .collect();
 
         TypeBinding {
-            metadata: Metadata::default(),
+            metadata: metadata.unwrap_or_default(),
             name: id.clone(),
             alias: pos::spanned(
                 row_span,
@@ -278,7 +278,7 @@ TypeBinding: TypeBinding<Id> = {
         }
     },
 
-    <id: Sp<Ident>> <params: TypeParam*> "=" <body: Sp<Type>> => {
+    <metadata: Metadata?> "type" <id: Sp<Ident>> <params: TypeParam*> "=" <body: Sp<Type>> => {
         if !env.string(&id.value).starts_with(char::is_uppercase) {
             errors.push(::lalrpop_util::ParseError::User {
                 error: pos::spanned(id.span, format!("A type must start with an uppercase letter").into()),
@@ -286,7 +286,7 @@ TypeBinding: TypeBinding<Id> = {
         }
 
         TypeBinding {
-            metadata: Metadata::default(),
+            metadata: metadata.unwrap_or_default(),
             name: id.clone(),
             alias: pos::spanned(body.span, AliasData::new(id.value.clone(), params, body.value)),
             finalized_alias: None,
@@ -533,7 +533,15 @@ ValueArgument: Argument<SpannedIdent<Id>> = {
 };
 
 ValueBinding: ValueBinding<Id> = {
-    <name: Sp<AtomicPattern>> <typ: (":" <Type>)?> "=" <body: SpExpr> =>
+    <metadata: Metadata?> <bind: PlainValueBinding> => {
+        let mut bind = bind;
+        bind.metadata = metadata.unwrap_or_default();
+        bind
+    }
+};
+
+PlainValueBinding: ValueBinding<Id> = {
+    "let" <name: Sp<AtomicPattern>> <typ: (":" <Type>)?> "=" <body: SpExpr> => {
         ValueBinding {
             metadata: Metadata::default(),
             name: name,
@@ -541,9 +549,10 @@ ValueBinding: ValueBinding<Id> = {
             resolved_type: type_cache.hole(),
             args: vec![],
             expr: body,
-        },
+        }
+    },
 
-    <name: Sp<Ident>> <args: ValueArgument+> <typ: (":" <Type>)?> "=" <body: SpExpr> =>
+    "let" <name: Sp<Ident>> <args: ValueArgument+> <typ: (":" <Type>)?> "=" <body: SpExpr> =>
         ValueBinding {
             metadata: Metadata::default(),
             name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
@@ -653,19 +662,14 @@ InfixExpr = {
         Expr::Infix { lhs: Box::new(lhs), op, rhs: Box::new(super::shrink_hidden_spans(rhs)), implicit_args: Vec::new(), },
 };
 
-AndValueBinding: ValueBinding<Id> =
-    <metadata: Metadata?> "and" <binding: ValueBinding> => {
-        let mut binding = binding;
-        binding.metadata = metadata.unwrap_or_default();
-        binding
-    };
 
-AndTypeBinding: TypeBinding<Id> =
-    <metadata: Metadata?> "and" <binding: TypeBinding> => {
-        let mut binding = binding;
-        binding.metadata = metadata.unwrap_or_default();
-        binding
-    };
+InExpr: SpannedExpr<Id> = {
+    "in" <SpExpr>,
+    <err: Sp<!>> => {
+        errors.push(err.value.error);
+        pos::spanned(err.span, Expr::Error(None))
+    }
+};
 
 Expr: Expr<Id> = {
     InfixExpr,
@@ -676,25 +680,23 @@ Expr: Expr<Id> = {
     "match" <body: SpExpr> "with" <arms: Alternative+> =>
         Expr::Match(Box::new(body), arms),
 
-    <metadata: Metadata?> "let" <first: ValueBinding> <bindings: AndValueBinding*> SkipExtraTokens "in" <body: SpExpr> => {
-        let mut first = first;
-        first.metadata = metadata.unwrap_or_default();
-        let mut bindings = bindings;
-        bindings.insert(0, first);
+    <binding: ValueBinding> <body: InExpr> => {
+        Expr::LetBindings(vec![binding], Box::new(body))
+    },
 
+    <binding: TypeBinding> <body: InExpr> => {
+        Expr::TypeBindings(vec![binding], Box::new(body))
+    },
+
+    "rec" <bindings: ValueBinding+> <body: InExpr> => {
         Expr::LetBindings(bindings, Box::new(body))
     },
 
-    <metadata: Metadata?> "type" <first: TypeBinding> <bindings: AndTypeBinding*> SkipExtraTokens "in" <body: SpExpr> => {
-        let mut first = first;
-        first.metadata = metadata.unwrap_or_default();
-        let mut bindings = bindings;
-        bindings.insert(0, first);
-
+    "rec" <bindings: TypeBinding+> <body: InExpr> => {
         Expr::TypeBindings(bindings, Box::new(body))
     },
 
-    "do" <id: SpannedIdent> "=" <bound: SpExpr> "in" <body: SpExpr> => {
+    "do" <id: SpannedIdent> "=" <bound: SpExpr> <body: InExpr> => {
         Expr::Do(Do { id, bound: Box::new(bound), body: Box::new(body), flat_map_id: None })
     },
 
@@ -724,8 +726,6 @@ pub TopExpr: SpannedExpr<Id> = {
 
 pub ReplLine: Option<ReplLine<Id>> = {
     <TopExpr> => Some(ReplLine::Expr(<>)),
-    "block open" "let" <ValueBinding> SkipExtraTokens
-        // Ugh but I just need the parser to be happy for now
-        "in" "block close" "block close" "block open" "block open" => Some(ReplLine::Let(<>)),
+    "block open" <PlainValueBinding> "block close" => Some(ReplLine::Let(<>)),
     => None,
 };

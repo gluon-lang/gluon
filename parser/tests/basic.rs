@@ -112,7 +112,13 @@ fn type_decl_record() {
 #[test]
 fn type_mutually_recursive() {
     let _ = ::env_logger::try_init();
-    let e = parse_clear_span!("type Test = | Test Int and Test2 = { x: Int, y: {} } in 1");
+    let e = parse_clear_span!(
+        r#"
+        rec
+        type Test = | Test Int
+        type Test2 = { x: Int, y: {} }
+        in 1"#
+    );
     let test = Type::variant(vec![Field::new(
         intern("Test"),
         Type::function(vec![typ("Int")], typ("Test")),
@@ -485,12 +491,13 @@ id
 }
 
 #[test]
-fn comment_on_and() {
+fn comment_on_rec_let() {
     let _ = ::env_logger::try_init();
     let text = r#"
+rec
 let id x = x
 /// The identity function
-and id2 y = y
+let id2 y = y
 id
 "#;
     let e = parse_clear_span!(text);
@@ -701,7 +708,7 @@ fn quote_in_identifier() {
     assert_eq!(e, a);
 }
 
-// Test that this is `let x = 1 in {{ a; b }}` and not `{{ (let x = 1 in a) ; b }}`
+// Test that this is `rec let x = 1 in {{ a; b }}` let not `{{ (let x = 1 in a) ; b }}`
 #[test]
 fn block_open_after_let_in() {
     let _ = ::env_logger::try_init();
