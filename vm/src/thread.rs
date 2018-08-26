@@ -31,7 +31,7 @@ use stack::{
 use types::*;
 use value::{
     BytecodeFunction, Callable, ClosureData, ClosureDataDef, ClosureInitDef, Def, ExternFunction,
-    PartialApplicationDataDef, RecordDef, Userdata, Value, ValueRepr,
+    PartialApplicationDataDef, RecordDef, UninitializedRecord, Userdata, Value, ValueRepr,
 };
 use vm::{GlobalVmState, GlobalVmStateBuilder, VmEnv};
 use {BoxFuture, Error, Result, Variants};
@@ -1874,6 +1874,46 @@ impl<'b> ExecuteContext<'b> {
                         self.stack.pop();
                     }
                     self.stack.push(d);
+                }
+                NewRecord { record, args } => {
+                    let d = {
+                        if args == 0 {
+                            ValueRepr::Tag(0)
+                        } else {
+                            unsafe {
+                                let roots = Roots {
+                                    vm: GcPtr::from_raw(self.thread),
+                                    stack: &self.stack.stack,
+                                };
+                                let field_names = &function.records[record as usize];
+                                Data(self.gc.alloc_and_collect(
+                                    roots,
+                                    UninitializedRecord {
+                                        elems: args as usize,
+                                        fields: field_names,
+                                    },
+                                )?)
+                            }
+                        }
+                    };
+                    self.stack.push(d);
+                }
+                CloseRecord(n) => {
+                    let i = self.stack.len() - n - 1;
+                    match self.stack[i].get_repr() {
+                        Data(mut data) => {
+                            // Unique access is safe as the record is only reachable from this
+                            // thread and none of those places will use it until after we have
+                            // closed it
+                            unsafe {
+                                for var in data.as_mut().fields.iter_mut().rev() {
+                                    *var = self.stack.pop();
+                                }
+                            }
+                            self.stack.pop(); //Remove the record
+                        }
+                        x => ice!("Expected closure, got {:?}", x),
+                    }
                 }
                 ConstructArray(args) => {
                     let d = {

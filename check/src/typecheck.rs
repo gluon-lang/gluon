@@ -446,17 +446,9 @@ impl<'a> Typecheck<'a> {
     }
 
     fn stack_var(&mut self, id: Symbol, typ: ArcType) {
-        self.tentative_stack_var(id, typ, false);
-    }
-
-    fn tentative_stack_var(&mut self, id: Symbol, typ: ArcType, tentative: bool) {
         debug!("Insert {} : {}", id, typ);
 
-        // Recursive definitions will not have their full type set until after the full group has been
-        // checked so we delay adding it to the implicit scope until after
-        if !tentative {
-            self.implicit_resolver.on_stack_var(&id, &typ);
-        }
+        self.implicit_resolver.on_stack_var(&id, &typ);
 
         // HACK
         // Insert the non_renamed symbol so that type projections in types can be translated (see
@@ -909,7 +901,7 @@ impl<'a> Typecheck<'a> {
 
                 for alt in alts.iter_mut() {
                     self.enter_scope();
-                    self.typecheck_pattern(&mut alt.pattern, typ.clone(), false);
+                    self.typecheck_pattern(&mut alt.pattern, typ.clone());
                     let mut alt_type = self.typecheck_opt(&mut alt.expr, expected_type.as_ref());
                     alt_type = self.instantiate_generics(&alt_type);
                     match expr_type {
@@ -1473,7 +1465,7 @@ impl<'a> Typecheck<'a> {
                     TypeError::Message(format!("Unexpected type constructor `{}`", id.name)),
                 )
             }
-            _ => self.typecheck_pattern(pattern, match_type, true),
+            _ => self.typecheck_pattern(pattern, match_type),
         }
     }
 
@@ -1481,13 +1473,12 @@ impl<'a> Typecheck<'a> {
         &mut self,
         pattern: &mut SpannedPattern<Symbol>,
         mut match_type: ArcType,
-        tentative: bool,
     ) -> ArcType {
         let span = pattern.span;
         match pattern.value {
             Pattern::As(ref id, ref mut pat) => {
-                self.tentative_stack_var(id.clone(), match_type.clone(), tentative);
-                self.typecheck_pattern(pat, match_type.clone(), tentative);
+                self.stack_var(id.clone(), match_type.clone());
+                self.typecheck_pattern(pat, match_type.clone());
                 match_type
             }
             Pattern::Constructor(ref mut id, ref mut args) => {
@@ -1500,7 +1491,7 @@ impl<'a> Typecheck<'a> {
                 // Find the enum constructor and return the types for its arguments
                 let ctor_type = self.find_at(span, &id.name);
                 id.typ = ctor_type.clone();
-                let return_type = match self.typecheck_pattern_rec(args, ctor_type, tentative) {
+                let return_type = match self.typecheck_pattern_rec(args, ctor_type) {
                     Ok(return_type) => return_type,
                     Err(err) => self.error(span, err),
                 };
@@ -1568,10 +1559,10 @@ impl<'a> Typecheck<'a> {
                         .clone();
                     match field.value {
                         Some(ref mut pattern) => {
-                            self.typecheck_pattern(pattern, field_type, tentative);
+                            self.typecheck_pattern(pattern, field_type);
                         }
                         None => {
-                            self.tentative_stack_var(name.clone(), field_type, tentative);
+                            self.stack_var(name.clone(), field_type);
                         }
                     }
                 }
@@ -1637,12 +1628,12 @@ impl<'a> Typecheck<'a> {
                 };
                 *typ = self.unify_span(span, &tuple_type, match_type);
                 for (elem, field) in elems.iter_mut().zip(tuple_type.row_iter()) {
-                    self.typecheck_pattern(elem, field.typ.clone(), tentative);
+                    self.typecheck_pattern(elem, field.typ.clone());
                 }
                 tuple_type
             }
             Pattern::Ident(ref mut id) => {
-                self.tentative_stack_var(id.name.clone(), match_type.clone(), tentative);
+                self.stack_var(id.name.clone(), match_type.clone());
                 id.typ = match_type.clone();
                 match_type
             }
@@ -1659,7 +1650,6 @@ impl<'a> Typecheck<'a> {
         &mut self,
         args: &mut [SpannedPattern<Symbol>],
         typ: ArcType,
-        tentative: bool,
     ) -> TcResult<ArcType> {
         let len = args.len();
         match args.split_first_mut() {
@@ -1667,8 +1657,8 @@ impl<'a> Typecheck<'a> {
                 let typ = self.instantiate_generics(&typ);
                 match typ.as_function() {
                     Some((arg, ret)) => {
-                        self.typecheck_pattern(head, arg.clone(), tentative);
-                        self.typecheck_pattern_rec(tail, ret.clone(), tentative)
+                        self.typecheck_pattern(head, arg.clone());
+                        self.typecheck_pattern_rec(tail, ret.clone())
                     }
                     None => Err(TypeError::PatternError(typ.clone(), len)),
                 }
@@ -2020,8 +2010,10 @@ impl<'a> Typecheck<'a> {
 
     fn update_var(&mut self, id: &Symbol, typ: &ArcType) {
         if let Some(bind) = self.environment.stack.get_mut(id) {
+            if let Type::Variable(_) = *bind.typ {
+                self.implicit_resolver.on_stack_var(id, typ);
+            }
             bind.typ = typ.clone();
-            self.implicit_resolver.on_stack_var(&id, &typ);
         }
         // HACK
         // For type projections

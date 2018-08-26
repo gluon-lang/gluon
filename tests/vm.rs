@@ -330,7 +330,7 @@ prim.discriminant_value (C "")
 test_expr!{ unit_expr,
 r#"
 let x = ()
-and y = 1
+let y = 1
 in y
 "#,
 1i32
@@ -945,4 +945,40 @@ let bar: Id () =
 in ()
 ",
 ()
+}
+
+test_expr!{ recursive_record,
+r#"
+let x = { y }
+and y = { z = 2 }
+x.y.z
+"#,
+2
+}
+
+test_expr!{ recursive_implicit,
+r#"
+type Test = | Test Test2 | Nil
+and Test2 = | Test2 Test
+
+#[implicit]
+type Size a = { size : a -> Int }
+
+let size ?s : [Size a] -> a -> Int = s.size
+
+let size_test : Size Test =
+    let size_ x =
+        match x with
+        | Test t -> 1 #Int+ size t
+        | Nil -> 0
+    { size = size_ }
+and size_test2 : Size Test2 =
+    let size_ x =
+        match x with
+        | Test2 t -> 1 #Int+ size t
+    { size = size_ }
+
+size (Test (Test2 (Test (Test2 Nil))))
+"#,
+4
 }

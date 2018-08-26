@@ -59,6 +59,22 @@ f
 }
 
 #[test]
+fn cant_call_function_with_uninitialized_value() {
+    let _ = env_logger::try_init();
+
+    let text = r"
+let g =
+    let h x = f
+    h ()
+and f = {}
+f
+";
+    let result = support::typecheck(text);
+
+    assert_err!(result, RecursionCheck(..));
+}
+
+#[test]
 fn cant_call_recursive_value_infix() {
     let _ = env_logger::try_init();
 
@@ -129,3 +145,15 @@ f
 
     assert_err!(result, RecursionCheck(..));
 }
+
+test_check!(
+    can_use_uninitialized_value_in_let_lambda,
+    r"
+let g =
+    let h x = f
+    h
+and f = {}
+g
+",
+    "forall a . a -> ()"
+);

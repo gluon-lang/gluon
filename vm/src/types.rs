@@ -43,6 +43,13 @@ pub enum Instruction {
         /// How many arguments that is taken from the stack to construct the data.
         args: VmIndex,
     },
+    NewRecord {
+        /// Index to the specification describing which fields this record contains
+        record: VmIndex,
+        /// How large the record is
+        args: VmIndex,
+    },
+    CloseRecord(VmIndex),
     ConstructRecord {
         /// Index to the specification describing which fields this record contains
         record: VmIndex,
@@ -135,6 +142,8 @@ impl Instruction {
             CJump(_) => -1,
             Pop(n) => -(n as i32),
             Slide(n) => -(n as i32),
+            NewRecord { .. } => 1,
+            CloseRecord { .. } => -1,
             MakeClosure { .. } => 1,
             NewClosure { .. } => 1,
             CloseClosure(_) => -1,
@@ -186,8 +195,7 @@ impl TypeEnv for TypeInfos {
             .filter_map(|(_, ref alias)| match **alias.unresolved_type() {
                 Type::Variant(ref row) => row.row_iter().find(|field| field.name.as_ref() == id),
                 _ => None,
-            })
-            .next()
+            }).next()
             .map(|field| &field.typ)
     }
 

@@ -428,8 +428,7 @@ impl CompilerEnv for TypeInfos {
                     .enumerate()
                     .find(|&(_, field)| field.name == *id),
                 _ => None,
-            })
-            .next()
+            }).next()
             .map(|(tag, field)| {
                 (
                     Variable::Constructor(tag as VmTag, count_function_args(&field.typ)),
@@ -508,15 +507,13 @@ impl<'a> Compiler<'a> {
                     .enumerate()
                     .find(|&(_, field)| field.name == *id),
                 _ => None,
-            })
-            .next()
+            }).next()
             .map(|(tag, field)| {
                 Constructor(
                     tag as VmIndex,
                     types::arg_iter(&field.typ).count() as VmIndex,
                 )
-            })
-            .or_else(|| {
+            }).or_else(|| {
                 current
                     .stack
                     .get(id)
@@ -530,11 +527,9 @@ impl<'a> Compiler<'a> {
                                 env.stack
                                     .get(id)
                                     .map(|&(_, ref typ)| UpVar(current[0].upvar(id, typ)))
-                            })
-                            .next()
+                            }).next()
                     })
-            })
-            .or_else(|| {
+            }).or_else(|| {
                 self.globals
                     .find_var(&id)
                     .map(|(variable, typ)| match variable {
@@ -679,12 +674,16 @@ impl<'a> Compiler<'a> {
                     }
                     core::Named::Recursive(ref closures) => {
                         for closure in closures.iter() {
-                            // Add the NewClosure instruction before hand
+                            // Add the NewClosure/NewRecord instruction before hand
                             // it will be fixed later
-                            function.emit(NewClosure {
-                                function_index: 0,
-                                upvars: 0,
-                            });
+                            if closure.args.is_empty() {
+                                function.emit(NewRecord { args: 0, record: 0 });
+                            } else {
+                                function.emit(NewClosure {
+                                    function_index: 0,
+                                    upvars: 0,
+                                });
+                            }
                             function.new_stack_var(
                                 self,
                                 closure.name.name.clone(),
@@ -698,21 +697,49 @@ impl<'a> Compiler<'a> {
                             }
                             function.stack.enter_scope();
 
-                            function.emit(Push(stack_start + i as VmIndex));
-                            let (function_index, vars, cf) = self.compile_lambda(
-                                &closure.name,
-                                &closure.args,
-                                &closure.expr,
-                                function,
-                            )?;
                             let offset = first_index + i;
-                            function.function.instructions[offset] = NewClosure {
-                                function_index: function_index,
-                                upvars: vars,
-                            };
-                            function.emit(CloseClosure(vars));
-                            function.stack_size -= vars;
-                            function.function.inner_functions.push(cf);
+
+                            function.emit(Push(stack_start + i as VmIndex));
+
+                            if closure.args.is_empty() {
+                                self.compile(closure.expr, function, false)?;
+
+                                let construct_index = function
+                                    .function
+                                    .instructions
+                                    .iter()
+                                    .rposition(|inst| match inst {
+                                        Slide(_) => false,
+                                        _ => true,
+                                    }).unwrap_or_else(|| {
+                                        ice!("Expected record as last expression of recursive binding")
+                                    });
+                                match function.function.instructions.remove(construct_index) {
+                                    ConstructRecord { record, args } => {
+                                        function.stack_size -= 1;
+                                        function.function.instructions[offset] =
+                                            NewRecord { record, args };
+                                        function.emit(CloseRecord(args));
+                                    }
+                                    x => ice!(
+                                        "Expected record as last expression of recursive binding: {:?}", x
+                                    ),
+                                }
+                            } else {
+                                let (function_index, vars, cf) = self.compile_lambda(
+                                    &closure.name,
+                                    &closure.args,
+                                    &closure.expr,
+                                    function,
+                                )?;
+                                function.function.instructions[offset] = NewClosure {
+                                    function_index: function_index,
+                                    upvars: vars,
+                                };
+                                function.emit(CloseClosure(vars));
+                                function.stack_size -= vars;
+                                function.function.inner_functions.push(cf);
+                            }
 
                             function.exit_scope(self);
                         }
@@ -722,7 +749,8 @@ impl<'a> Compiler<'a> {
             }
             Expr::Call(func, args) => {
                 if let Expr::Ident(ref id, _) = *func {
-                    if id.name.as_ref() == "&&" || id.name.as_ref() == "||"
+                    if id.name.as_ref() == "&&"
+                        || id.name.as_ref() == "||"
                         || (id.name.as_ref().starts_with('#')
                             && id.name.declared_name() != "#error")
                     {
@@ -757,17 +785,17 @@ impl<'a> Compiler<'a> {
                 for alt in alts.iter() {
                     match alt.pattern {
                         Pattern::Constructor(ref id, _) => {
-                            let tag = self.find_tag(typ.remove_forall(), &id.name).unwrap_or_else(
-                                || {
-                                    eprintln!("{}", expr);
-                                    ice!(
-                                        "ICE: Could not find tag for {}::{} when matching on \
-                                         expression",
-                                        typ,
-                                        self.symbols.string(&id.name),
-                                    )
-                                },
-                            );
+                            let tag =
+                                self.find_tag(typ.remove_forall(), &id.name)
+                                    .unwrap_or_else(|| {
+                                        eprintln!("{}", expr);
+                                        ice!(
+                                            "ICE: Could not find tag for {}::{} when matching on \
+                                             expression",
+                                            typ,
+                                            self.symbols.string(&id.name),
+                                        )
+                                    });
                             function.emit(TestTag(tag));
                             start_jumps.push(function.function.instructions.len());
                             function.emit(CJump(0));
