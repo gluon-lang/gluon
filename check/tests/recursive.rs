@@ -118,6 +118,23 @@ f
     assert_err!(result, RecursionCheck(..));
 }
 
+#[test]
+fn impossible_to_refer_to_self_through_let_binding_nested() {
+    let _ = env_logger::try_init();
+
+    let text = r"
+let g y =
+    let f =
+        let x = f
+        x
+    f
+g
+";
+    let result = support::typecheck(text);
+
+    assert_err!(result, RecursionCheck(..));
+}
+
 test_check!(
     can_refer_to_self_through_lambda,
     r"
@@ -156,4 +173,15 @@ and f = {}
 g
 ",
     "forall a . a -> ()"
+);
+
+test_check!(
+    can_use_uninitialized_value_in_lambda,
+    r"
+let g = \x ->
+    let z = g x
+    1
+g
+",
+    "forall a . a -> Int"
 );

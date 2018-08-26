@@ -264,7 +264,7 @@ fn spawn_on_runexpr_in_catch() {
 
     let text = r#"
         let prelude = import! std.prelude
-        let io@{ applicative, monad, ? } = import! std.io
+        let io @ { ? } = import! std.io
         let { Applicative, (*>), wrap } = import! std.applicative
         let { flat_map, (>>=) } = import! std.monad
         let thread = import! std.thread

@@ -28,7 +28,7 @@ pub fn metadata(
             match bind.name.value {
                 Pattern::As(ref id, _) => {
                     let metadata = bind.metadata.clone().merge(metadata);
-                    self.stack_var(id.clone(), metadata.clone());
+                    self.stack_var(id.value.clone(), metadata.clone());
                     self.new_pattern(metadata, &bind.name);
                 }
                 Pattern::Ident(ref id) => {
@@ -108,7 +108,7 @@ pub fn metadata(
                 }
                 Pattern::Ident(ref id) => self.stack_var(id.name.clone(), metadata),
                 Pattern::As(ref id, ref pat) => {
-                    self.stack_var(id.clone(), metadata.clone());
+                    self.stack_var(id.value.clone(), metadata.clone());
                     self.new_pattern(metadata, pat);
                 }
                 Pattern::Tuple { .. }
@@ -273,8 +273,7 @@ pub fn metadata(
                         None => field_metadata,
                     };
                     field_metadata.map(|m| (field.name.to_string(), m))
-                })
-                .collect();
+                }).collect();
 
             if module.is_empty() {
                 None

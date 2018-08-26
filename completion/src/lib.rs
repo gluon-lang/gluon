@@ -145,7 +145,7 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
         match pattern.value {
             Pattern::As(ref id, ref pat) => {
                 self.stack.insert(
-                    id.clone(),
+                    id.value.clone(),
                     pat.try_type_of(&self.env).unwrap_or_else(|_| Type::hole()),
                 );
                 self.on_pattern(pat);
@@ -362,9 +362,9 @@ where
                             &::base::ast::EmptyEnv::default(),
                             record_type.clone(),
                         ).row_iter()
-                            .find(|field| field.name.name_eq(&ident.value))
-                            .map(|field| field.typ.clone())
-                            .unwrap_or_else(|| Type::hole());
+                        .find(|field| field.name.name_eq(&ident.value))
+                        .map(|field| field.typ.clone())
+                        .unwrap_or_else(|| Type::hole());
 
                         self.found = MatchState::Found(Match::Ident(ident.span, &ident.value, typ));
                     } else {
@@ -449,25 +449,26 @@ where
                                 self.found = MatchState::Empty;
                             }
                         }
-                        Either::Right(field) => match (
-                            field.name.span.containment(self.pos),
-                            &field.value,
-                        ) {
-                            (Ordering::Equal, _) => {
-                                let field_type = typ
-                                    .row_iter()
-                                    .find(|it| it.name.name_eq(&field.name.value))
-                                    .map(|it| &it.typ)
-                                    .unwrap_or(typ);
-                                self.found = MatchState::Found(Match::Ident(
-                                    field.name.span,
-                                    &field.name.value,
-                                    field_type.clone(),
-                                ));
+                        Either::Right(field) => {
+                            match (field.name.span.containment(self.pos), &field.value) {
+                                (Ordering::Equal, _) => {
+                                    let field_type = typ
+                                        .row_iter()
+                                        .find(|it| it.name.name_eq(&field.name.value))
+                                        .map(|it| &it.typ)
+                                        .unwrap_or(typ);
+                                    self.found = MatchState::Found(Match::Ident(
+                                        field.name.span,
+                                        &field.name.value,
+                                        field_type.clone(),
+                                    ));
+                                }
+                                (Ordering::Greater, &Some(ref pattern)) => {
+                                    self.visit_pattern(pattern)
+                                }
+                                _ => self.found = MatchState::Empty,
                             }
-                            (Ordering::Greater, &Some(ref pattern)) => self.visit_pattern(pattern),
-                            _ => self.found = MatchState::Empty,
-                        },
+                        }
                     }
                 } else {
                     self.found = MatchState::Empty;
@@ -640,8 +641,7 @@ where
                                 once(Variant::FieldIdent(&field.name, record_type))
                                     .chain(field.value.as_ref().map(Variant::Expr))
                             })
-                    })
-                    .chain(base.as_ref().map(|base| Variant::Expr(base)));
+                    }).chain(base.as_ref().map(|base| Variant::Expr(base)));
                 self.visit_any(iter)
             }
             Expr::Lambda(ref lambda) => {
@@ -837,7 +837,7 @@ impl Extract for IdentAt {
             Match::Pattern(&Spanned {
                 value: Pattern::As(ref id, _),
                 ..
-            }) => id.clone(),
+            }) => id.value.clone(),
             _ => return Err(()),
         })
     }
@@ -938,7 +938,7 @@ pub fn find_all_symbols(
 
             fn visit_pattern(&mut self, p: &'a SpannedPattern<Self::Ident>) {
                 match p.value {
-                    Pattern::As(ref id, ref pat) if id == &self.symbol => {
+                    Pattern::As(ref id, ref pat) if id.value == self.symbol => {
                         self.result.push(p.span);
                         walk_pattern(self, &pat.value);
                     }
@@ -996,19 +996,20 @@ pub fn all_symbols(
                             )
                         }));
                     }
-                    Expr::LetBindings(ref binds, _) => self.result.extend(binds.iter().flat_map(
-                        |bind| match bind.name.value {
-                            Pattern::Ident(ref id) => Some(pos::spanned(
-                                bind.name.span,
-                                CompletionSymbol::Value {
-                                    name: &id.name,
-                                    typ: &id.typ,
-                                    expr: &bind.expr,
-                                },
-                            )),
-                            _ => None,
-                        },
-                    )),
+                    Expr::LetBindings(ref binds, _) => {
+                        self.result
+                            .extend(binds.iter().flat_map(|bind| match bind.name.value {
+                                Pattern::Ident(ref id) => Some(pos::spanned(
+                                    bind.name.span,
+                                    CompletionSymbol::Value {
+                                        name: &id.name,
+                                        typ: &id.typ,
+                                        expr: &bind.expr,
+                                    },
+                                )),
+                                _ => None,
+                            }))
+                    }
                     _ => (),
                 }
             }
@@ -1319,8 +1320,7 @@ impl SuggestionQuery {
                         .chain(types.iter().map(|field| &field.name))
                         .all(|already_used_field| already_used_field.value != *k),
                     _ => true,
-                })
-                .map(|(k, typ)| Suggestion {
+                }).map(|(k, typ)| Suggestion {
                     name: k.declared_name().into(),
                     typ: Either::Right(typ.clone()),
                 }),
@@ -1357,8 +1357,7 @@ impl SuggestionQuery {
                         .chain(types.iter().map(|field| &field.name))
                         .all(|already_used_field| already_used_field.value != *k),
                     _ => true,
-                })
-                .map(|(name, kind)| Suggestion {
+                }).map(|(name, kind)| Suggestion {
                     name: name.declared_name().into(),
                     typ: Either::Left(kind.clone()),
                 }),
@@ -1395,8 +1394,7 @@ impl SuggestionQuery {
                             None
                         }
                     })
-            })
-            .collect::<Vec<String>>();
+            }).collect::<Vec<String>>();
 
         suggestions.extend(
             modules
@@ -1577,8 +1575,7 @@ pub fn get_metadata<'a>(
         .and_then(|found| {
             let e = found.enclosing_match().clone();
             found.match_.map(|m| (m, e))
-        })
-        .and_then(|(match_, enclosing_match)| match match_ {
+        }).and_then(|(match_, enclosing_match)| match match_ {
             Match::Expr(expr) => if let Expr::Ident(ref id) = expr.value {
                 env.get(&id.name)
             } else {

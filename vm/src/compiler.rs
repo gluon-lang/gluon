@@ -708,21 +708,22 @@ impl<'a> Compiler<'a> {
                                     .function
                                     .instructions
                                     .iter()
-                                    .rposition(|inst| match inst {
-                                        Slide(_) => false,
+                                    .rposition(|inst| { eprintln!("{:?}", inst); match inst {
+                                        Slide(_) |
+                                        Jump(_) => false,
                                         _ => true,
-                                    }).unwrap_or_else(|| {
+                                    }}).unwrap_or_else(|| {
                                         ice!("Expected record as last expression of recursive binding")
                                     });
-                                match function.function.instructions.remove(construct_index) {
+                                match function.function.instructions[construct_index] {
                                     ConstructRecord { record, args } => {
-                                        function.stack_size -= 1;
+                                        function.stack_size -= 2;
                                         function.function.instructions[offset] =
                                             NewRecord { record, args };
-                                        function.emit(CloseRecord(args));
+                                        function.function.instructions[construct_index] = CloseRecord { record_index: stack_start + i as VmIndex };
                                     }
                                     x => ice!(
-                                        "Expected record as last expression of recursive binding: {:?}", x
+                                        "Expected record as last expression of recursive binding `{}`: {:?}\n{}", closure.name.name, x, closure.expr
                                     ),
                                 }
                             } else {

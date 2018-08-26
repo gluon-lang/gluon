@@ -203,7 +203,7 @@ pub struct PatternField<Id, P> {
 #[derive(Clone, PartialEq, Debug)]
 pub enum Pattern<Id> {
     /// An as-pattern, eg. `option @ { monoid, functor }`
-    As(Id, Box<SpannedPattern<Id>>),
+    As(Spanned<Id, BytePos>, Box<SpannedPattern<Id>>),
     /// Constructor pattern, eg. `Cons x xs`
     Constructor(TypedIdent<Id>, Vec<SpannedPattern<Id>>),
     /// Ident pattern, eg: `x`
@@ -596,7 +596,8 @@ pub fn walk_expr<'a, V: ?Sized + $trait_name<'a>>(v: &mut V, e: &'a $($mut)* Spa
 /// Walks a pattern, calling `visit_*` on all relevant elements
 pub fn walk_pattern<'a, V: ?Sized + $trait_name<'a>>(v: &mut V, p: &'a $($mut)* Pattern<V::Ident>) {
     match *p {
-        Pattern::As(_, ref $($mut)* pat) => {
+        Pattern::As(ref $($mut)* id, ref $($mut)* pat) => {
+            v.visit_spanned_ident(id);
             v.visit_pattern(pat);
         }
         Pattern::Constructor(ref $($mut)* id, ref $($mut)* args) => {

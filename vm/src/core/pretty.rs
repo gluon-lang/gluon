@@ -131,19 +131,30 @@ impl<'a> Expr<'a> {
                 )
                     if alts.len() == 1 =>
                 {
-                    let doc = chain![arena;
-                        "match ",
-                        expr.pretty(arena, Prec::Top),
-                        " with",
-                        arena.newline(),
-                        chain![arena;
-                            alt.pattern.pretty(arena),
-                            arena.space(),
-                            "->"
-                        ].group(),
-                        arena.newline(),
-                        alt.expr.pretty(arena, Prec::Top).group()
-                    ].group();
+                    let doc = match (&alt.pattern, &alt.expr) {
+                        (Pattern::Record(binds), Expr::Ident(id, ..))
+                            if binds.len() == 1 && *id == binds[0].0 =>
+                        {
+                            chain![arena;
+                                expr.pretty(arena, Prec::Arg),
+                                ".",
+                                binds[0].0.name.declared_name()
+                            ]
+                        }
+                        _ => chain![arena;
+                                "match ",
+                                expr.pretty(arena, Prec::Top),
+                                " with",
+                                arena.newline(),
+                                chain![arena;
+                                    alt.pattern.pretty(arena),
+                                    arena.space(),
+                                    "->"
+                                ].group(),
+                                arena.newline(),
+                                alt.expr.pretty(arena, Prec::Top).group()
+                            ].group(),
+                    };
                     prec.enclose(arena, doc)
                 }
                 _ => {

@@ -50,8 +50,8 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
                     id.name = new_name;
                 }
                 Pattern::As(ref mut id, ref mut pat) => {
-                    let new_name = self.stack_var(id.clone(), pattern.span);
-                    *id = new_name;
+                    let new_name = self.stack_var(id.value.clone(), pattern.span);
+                    id.value = new_name;
                     self.new_pattern(pat)
                 }
                 Pattern::Tuple { ref mut elems, .. } => for elem in elems {

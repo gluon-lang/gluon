@@ -144,8 +144,7 @@ impl<'a> MacroExpander<'a> {
                     self.errors.push(err);
                 }
                 Ok(())
-            })
-                .wait();
+            }).wait();
         }
         if self.errors.has_errors() {
             info!("Macro errors: {}", self.errors);
@@ -215,9 +214,14 @@ impl<'a, 'b, 'c> MutVisitor<'c> for MacroVisitor<'a, 'b, 'c> {
                                 }
                             };
                         let next_expr = mem::replace(body, Default::default());
-                        **body = pos::spanned(
-                            Default::default(),
-                            Expr::LetBindings(generated_bindings, next_expr),
+                        *body = generated_bindings.into_iter().rev().fold(
+                            next_expr,
+                            |next_expr, bind| {
+                                Box::new(pos::spanned(
+                                    Default::default(),
+                                    Expr::LetBindings(vec![bind], next_expr),
+                                ))
+                            },
                         );
                     }
                 }

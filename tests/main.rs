@@ -28,6 +28,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use futures::{future, stream, Future, Stream};
+use tokio::runtime::current_thread::Runtime;
 
 #[derive(Debug)]
 pub struct StringError(String);
@@ -62,8 +63,7 @@ fn test_files(path: &str) -> Result<Vec<PathBuf>, Box<Error>> {
                     None
                 }
             })
-        })
-        .collect();
+        }).collect();
     assert!(!paths.is_empty(), "Expected test files");
     Ok(paths)
 }
@@ -131,8 +131,7 @@ impl TestCase {
                                     action.call_async(test)
                                 },
                             )
-                        })
-                        .map_err(|err| err.to_string());
+                        }).map_err(|err| err.to_string());
                     GluonTestable(::std::panic::AssertUnwindSafe(future))
                 })
             }
@@ -276,8 +275,7 @@ fn run_doc_tests<'t>(
                     .map_err(|err| err.to_string())?;
                 Ok(())
             })
-        })
-        .collect())
+        }).collect())
 }
 
 fn main_() -> Result<(), Box<Error>> {
@@ -326,8 +324,8 @@ fn main_() -> Result<(), Box<Error>> {
         .into_iter()
         .filter(|filename| !filename.to_string_lossy().contains("deps"));
 
-    let fail_tests =
-        iter.filter_map(|filename| {
+    let fail_tests = iter
+        .filter_map(|filename| {
             let name = filename_to_module(filename.to_str().unwrap_or("<unknown>"));
 
             match filter {
@@ -335,20 +333,19 @@ fn main_() -> Result<(), Box<Error>> {
                 _ => Some((filename, name)),
             }
         }).map(|(filename, name)| {
-                let vm = vm.new_thread().unwrap();
+            let vm = vm.new_thread().unwrap();
 
-                tensile::test(name.clone(), move || -> Result<(), String> {
-                    match run_file(&vm, &name, &filename) {
-                        Ok(err) => Err(format!(
-                            "Expected test '{}' to fail\n{:?}",
-                            filename.to_str().unwrap(),
-                            err.0,
-                        )),
-                        Err(_) => Ok(()),
-                    }
-                })
+            tensile::test(name.clone(), move || -> Result<(), String> {
+                match run_file(&vm, &name, &filename) {
+                    Ok(err) => Err(format!(
+                        "Expected test '{}' to fail\n{:?}",
+                        filename.to_str().unwrap(),
+                        err.0,
+                    )),
+                    Err(_) => Ok(()),
+                }
             })
-            .collect();
+        }).collect();
 
     let doc_tests = test_files("std")?
         .into_iter()
@@ -359,17 +356,16 @@ fn main_() -> Result<(), Box<Error>> {
                 Some(ref filter) if file_filter && !name.contains(&filter[..]) => None,
                 _ => Some((filename, name)),
             }
-        })
-        .map(|(filename, name)| {
+        }).map(|(filename, name)| {
             let vm = vm.new_thread().unwrap();
             match run_doc_tests(&vm, &name, &filename) {
                 Ok(tests) => tensile::group(name.clone(), tests),
                 Err(err) => tensile::test(name.clone(), || Err(err)),
             }
-        })
-        .collect();
+        }).collect();
 
-    tensile::console_runner(
+    let mut runtime = Runtime::new()?;
+    runtime.block_on(tensile::console_runner(
         tensile::group(
             "main",
             vec![
@@ -379,6 +375,6 @@ fn main_() -> Result<(), Box<Error>> {
             ],
         ),
         &tensile::Options::default().filter(filter.map_or("", |s| &s[..])),
-    )?;
+    ))?;
     Ok(())
 }

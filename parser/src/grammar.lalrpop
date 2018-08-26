@@ -400,8 +400,8 @@ FieldPattern : FieldPattern<Id> = {
 };
 
 AtomicPattern: Pattern<Id> = {
-    <id: Ident> "@" <pat: Sp<AtomicPattern>> =>
-        Pattern::As(id, Box::new(pat)),
+    <l: @L> <id: Ident> <r: @R> "@" <pat: Sp<AtomicPattern>> =>
+        Pattern::As(pos::spanned2(l, r, id), Box::new(pat)),
 
     <id: Ident> =>
         if env.string(&id).starts_with(char::is_uppercase) {

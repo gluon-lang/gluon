@@ -315,7 +315,7 @@ fn eval_line_(
                     let id = Symbol::from("repl_temp");
                     let_binding.name = pos::spanned(
                         let_binding.name.span,
-                        Pattern::As(id.clone(), Box::new(let_binding.name)),
+                        Pattern::As(pos::spanned(let_binding.name.span, id.clone()), Box::new(let_binding.name)),
                     );
                     TypedIdent::new(id)
                 }
@@ -415,7 +415,7 @@ fn set_globals(
         }
         Pattern::As(ref id, ref pattern) => {
             vm.set_global(
-                Symbol::from(format!("@{}", id.declared_name())),
+                Symbol::from(format!("@{}", id.value.declared_name())),
                 typ.clone(),
                 Default::default(),
                 value.get_value(),

@@ -49,7 +49,9 @@ pub enum Instruction {
         /// How large the record is
         args: VmIndex,
     },
-    CloseRecord(VmIndex),
+    CloseRecord {
+        record_index: VmIndex,
+    },
     ConstructRecord {
         /// Index to the specification describing which fields this record contains
         record: VmIndex,

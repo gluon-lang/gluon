@@ -154,8 +154,7 @@ where
                                 arena.text("?")
                             } else {
                                 arena.nil()
-                            })
-                            .append(pretty(arg))
+                            }).append(pretty(arg))
                     });
                 pretty(func)
                     .append(arena.concat(arg_iter).nest(INDENT))
@@ -172,8 +171,7 @@ where
                             .map(|elem| pretty(elem))
                             .intersperse(arena.text(",").append(arena.space())),
                     ),
-                )
-                .append("]")
+                ).append("]")
                 .group(),
 
             Expr::Block(ref elems) => if elems.len() == 1 {
@@ -596,15 +594,13 @@ where
                             }
                         }),
                         |spanned| spanned.value,
-                    ))
-                    .append(
+                    )).append(
                         if (!exprs.is_empty() || !types.is_empty()) && is_newline(&line) {
                             arena.text(",")
                         } else {
                             arena.nil()
                         },
-                    )
-                    .append(match *base {
+                    ).append(match *base {
                         Some(ref base) => {
                             let comments = self.comments_after(last_field_end);
                             chain![arena;
@@ -619,12 +615,10 @@ where
                             ]
                         }
                         None => arena.nil(),
-                    })
-                    .nest(INDENT)
+                    }).nest(INDENT)
                     .append(
                         self.whitespace(Span::new(last_element_end, expr.span.end()), line.clone()),
-                    )
-                    .group()
+                    ).group()
                     .append("}");
                 (arena.text("{"), record)
             }
@@ -690,7 +684,7 @@ where
                 Prec::Constructor,
                 arena,
                 chain![arena;
-                        ident.as_ref(),
+                        ident.value.as_ref(),
                         " @ ",
                         self.pretty_pattern_(pat, Prec::Constructor)
                     ],
@@ -720,8 +714,7 @@ where
                         .iter()
                         .map(|field| {
                             pos::spanned(field.name.span, arena.text(field.name.value.as_ref()))
-                        })
-                        .chain(fields.iter().map(|field| {
+                        }).chain(fields.iter().map(|field| {
                             let doc = chain![arena;
                                 pretty_types::ident(arena, field.name.value.as_ref()),
                                 match field.value {
@@ -735,8 +728,7 @@ where
                                 }
                             ];
                             pos::spanned(field.name.span, doc)
-                        }))
-                        .chain(
+                        })).chain(
                             implicit_import
                                 .as_ref()
                                 .map(|spanned| pos::spanned(spanned.span, arena.text("?"))),
@@ -827,8 +819,8 @@ where
                         spaces,
                         arguments
                     ].group()
-                        .append(body)
-                        .nest(INDENT),
+                    .append(body)
+                    .nest(INDENT),
                 ).group()
             }
         }
@@ -876,8 +868,7 @@ where
                 } else {
                     arena.text(comment)
                 }
-            })
-            .fold(arena.nil(), |acc, doc| doc.append(acc))
+            }).fold(arena.nil(), |acc, doc| doc.append(acc))
     }
 }
 

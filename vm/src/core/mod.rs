@@ -1312,7 +1312,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                         ast::Pattern::As(ref id, ref pat) => {
                             binder.bind_id(
                                 TypedIdent {
-                                    name: id.clone(),
+                                    name: id.value.clone(),
                                     typ: pat.env_type_of(&env),
                                 },
                                 variable,

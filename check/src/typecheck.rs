@@ -1477,7 +1477,7 @@ impl<'a> Typecheck<'a> {
         let span = pattern.span;
         match pattern.value {
             Pattern::As(ref id, ref mut pat) => {
-                self.stack_var(id.clone(), match_type.clone());
+                self.stack_var(id.value.clone(), match_type.clone());
                 self.typecheck_pattern(pat, match_type.clone());
                 match_type
             }
@@ -2033,9 +2033,9 @@ impl<'a> Typecheck<'a> {
             Pattern::As(ref mut id, ref mut pat) => {
                 self.finish_pattern(level, pat, &final_type);
 
-                self.update_var(&id, &final_type);
+                self.update_var(&id.value, &final_type);
 
-                debug!("{}: {}", self.symbols.string(&id), final_type);
+                debug!("{}: {}", self.symbols.string(&id.value), final_type);
             }
             Pattern::Ident(ref mut id) => {
                 id.typ = final_type.clone();

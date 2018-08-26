@@ -1898,9 +1898,8 @@ impl<'b> ExecuteContext<'b> {
                     };
                     self.stack.push(d);
                 }
-                CloseRecord(n) => {
-                    let i = self.stack.len() - n - 1;
-                    match self.stack[i].get_repr() {
+                CloseRecord { record_index } => {
+                    match self.stack[record_index].get_repr() {
                         Data(mut data) => {
                             // Unique access is safe as the record is only reachable from this
                             // thread and none of those places will use it until after we have
