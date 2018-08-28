@@ -885,3 +885,16 @@ fn alias_in_record_type() {
         ),)
     )
 }
+
+#[test]
+fn let_then_doc_comment() {
+    let _ = ::env_logger::try_init();
+    let text = r"
+let map2 = 1
+
+/// Maps over three actions
+let map3 = 2
+()
+    ";
+    parse_clear_span!(text);
+}

@@ -341,8 +341,11 @@ where
                 (_, _) => (),
             }
 
+            let in_rec = self.indent_levels.stack.len() >= 2
+                && self.indent_levels.stack[self.indent_levels.stack.len() - 2].context
+                    == Context::Rec;
             let doc_comment_followed_by_let =
-                token.value.is_doc_comment() && self.peek_token().value == Token::Let;
+                token.value.is_doc_comment() && self.peek_token().value == Token::Let && in_rec;
 
             // Next we check offside rules for each of the contexts
             let ordering = token.span.start().column.cmp(&offside.location.column);
@@ -400,11 +403,7 @@ where
                 | (Context::Let, Ordering::Less)
                 | (Context::Type, Ordering::Equal)
                 | (Context::Type, Ordering::Less)
-                    if token.value != Token::RBrace && !doc_comment_followed_by_let && !(self
-                        .indent_levels
-                        .stack[self.indent_levels.stack.len() - 2]
-                        .context
-                        == Context::Rec
+                    if token.value != Token::RBrace && !doc_comment_followed_by_let && !(in_rec
                         && (token.value == Token::Let || token.value == Token::Type)) =>
                 {
                     if token.value == Token::EOF {
