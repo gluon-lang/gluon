@@ -1,7 +1,7 @@
 use itertools::{Either, Itertools};
 
 use base::ast::{Alternative, Argument, Array, AstType, Do, Expr, ExprField, Lambda, Literal, Pattern,
-    PatternField, SpannedExpr, SpannedIdent, TypeBinding, TypedIdent, ValueBinding};
+    PatternField, SpannedExpr, SpannedIdent, TypeBinding, TypedIdent, ValueBinding, ValueBindings};
 use base::kind::{ArcKind, Kind};
 use base::pos::{self, BytePos, Spanned};
 use base::types::{Alias, AliasData, ArcType, ArgType, BuiltinType, Field, Generic, Type, TypeCache};
@@ -541,25 +541,25 @@ ValueBinding: ValueBinding<Id> = {
 };
 
 PlainValueBinding: ValueBinding<Id> = {
-    "let" <name: Sp<AtomicPattern>> <typ: (":" <Type>)?> "=" <body: SpExpr> => {
+    "let" <name: Sp<AtomicPattern>> <typ: (":" <Type>)?> "=" <expr: SpExpr> => {
         ValueBinding {
             metadata: Metadata::default(),
-            name: name,
-            typ: typ,
+            name,
+            typ,
             resolved_type: type_cache.hole(),
             args: vec![],
-            expr: body,
+            expr,
         }
     },
 
-    "let" <name: Sp<Ident>> <args: ValueArgument+> <typ: (":" <Type>)?> "=" <body: SpExpr> =>
+    "let" <name: Sp<Ident>> <args: ValueArgument+> <typ: (":" <Type>)?> "=" <expr: SpExpr> =>
         ValueBinding {
             metadata: Metadata::default(),
             name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
-            typ: typ,
+            typ,
             resolved_type: type_cache.hole(),
             args,
-            expr: body,
+            expr,
         },
 };
 
@@ -681,7 +681,7 @@ Expr: Expr<Id> = {
         Expr::Match(Box::new(body), arms),
 
     <binding: ValueBinding> <body: InExpr> => {
-        Expr::LetBindings(vec![binding], Box::new(body))
+        Expr::LetBindings(ValueBindings::Plain(Box::new(binding)), Box::new(body))
     },
 
     <binding: TypeBinding> <body: InExpr> => {
@@ -689,7 +689,7 @@ Expr: Expr<Id> = {
     },
 
     "rec" <bindings: ValueBinding+> <body: InExpr> => {
-        Expr::LetBindings(bindings, Box::new(body))
+        Expr::LetBindings(ValueBindings::Recursive(bindings), Box::new(body))
     },
 
     "rec" <bindings: TypeBinding+> <body: InExpr> => {

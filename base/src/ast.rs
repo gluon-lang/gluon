@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
+use std::slice;
 
 use either::Either;
 
@@ -315,7 +316,7 @@ pub enum Expr<Id> {
         elems: Vec<SpannedExpr<Id>>,
     },
     /// Declare a series of value bindings
-    LetBindings(Vec<ValueBinding<Id>>, Box<SpannedExpr<Id>>),
+    LetBindings(ValueBindings<Id>, Box<SpannedExpr<Id>>),
     /// Declare a series of type aliases
     TypeBindings(Vec<TypeBinding<Id>>, Box<SpannedExpr<Id>>),
     /// A group of sequenced expressions
@@ -330,6 +331,12 @@ pub enum Expr<Id> {
         /// Provides a hint of what type the expression would have, if any
         Option<ArcType<Id>>,
     ),
+}
+
+impl<Id> Expr<Id> {
+    pub fn let_binding(bind: ValueBinding<Id>, expr: impl Into<Box<SpannedExpr<Id>>>) -> Self {
+        Expr::LetBindings(ValueBindings::Plain(Box::new(bind)), expr.into())
+    }
 }
 
 impl<Id> Default for Expr<Id> {
@@ -397,6 +404,49 @@ impl<Id> Argument<Id> {
             arg_type: ArgType::Implicit,
             name,
         }
+    }
+}
+
+#[derive(Clone, PartialEq, Debug)]
+pub enum ValueBindings<Id> {
+    Plain(Box<ValueBinding<Id>>),
+    Recursive(Vec<ValueBinding<Id>>),
+}
+
+impl<Id> Deref for ValueBindings<Id> {
+    type Target = [ValueBinding<Id>];
+    fn deref(&self) -> &Self::Target {
+        match self {
+            ValueBindings::Plain(bind) => slice::from_ref(&**bind),
+            ValueBindings::Recursive(binds) => binds,
+        }
+    }
+}
+
+impl<Id> DerefMut for ValueBindings<Id> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        match self {
+            ValueBindings::Plain(bind) => slice::from_mut(&mut **bind),
+            ValueBindings::Recursive(binds) => binds,
+        }
+    }
+}
+
+impl<'a, Id> IntoIterator for &'a ValueBindings<Id> {
+    type IntoIter = slice::Iter<'a, ValueBinding<Id>>;
+    type Item = &'a ValueBinding<Id>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a, Id> IntoIterator for &'a mut ValueBindings<Id> {
+    type IntoIter = slice::IterMut<'a, ValueBinding<Id>>;
+    type Item = &'a mut ValueBinding<Id>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
     }
 }
 

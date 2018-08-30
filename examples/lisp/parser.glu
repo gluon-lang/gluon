@@ -58,10 +58,12 @@ let float_parser : Parser Expr =
     let number = skip_many1 (satisfy char.is_numeric)
     functor.map (\f -> Float f) (parse_parser (number *> token '.' *> number) float.parse "float")
 
+rec
 let list _ : () -> Parser Expr =
     let e = expr ()
     between (token '(') (token ')') (spaces *> functor.map (\x -> List x) (many e))
-and expr _ : () -> Parser Expr = (atom <|> float_parser <|> int_parser <|> lazy_parser list) <* spaces
+let expr _ : () -> Parser Expr = (atom <|> float_parser <|> int_parser <|> lazy_parser list) <* spaces
+in
 
 {
     expr = spaces *> lazy_parser expr,

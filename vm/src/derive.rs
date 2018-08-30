@@ -26,8 +26,7 @@ pub fn generate(
                     "Serialize" => generate_serialize(symbols, bind),
                     _ => return Err(format!("`{}` is not a type that can be derived", arg)),
                 })
-            })
-            .collect::<Result<_, _>>()?,
+            }).collect::<Result<_, _>>()?,
         _ => Err("Invalid `derive` attribute".into()),
     }
 }
@@ -85,8 +84,7 @@ where
                 .map(|(field, bind)| PatternField {
                     name: pos::spanned(span, field.name.clone()),
                     value: Some(pos::spanned(span, Pattern::Ident(bind))),
-                })
-                .collect(),
+                }).collect(),
         },
     )
 }
@@ -124,15 +122,13 @@ fn generate_import_(
                     .map(|f| PatternField {
                         name: pos::spanned(span, symbols.symbol(*f)),
                         value: None,
-                    })
-                    .collect(),
+                    }).collect(),
                 fields: fields
                     .iter()
                     .map(|f| PatternField {
                         name: pos::spanned(span, symbols.symbol(*f)),
                         value: None,
-                    })
-                    .collect(),
+                    }).collect(),
             },
         ),
         args: Vec::new(),
@@ -157,8 +153,7 @@ fn project(span: Span<BytePos>, symbols: &mut Symbols, p: &str) -> SpannedExpr<S
                 }
                 None => ident(span, symbol),
             })
-        })
-        .unwrap()
+        }).unwrap()
 }
 
 fn ident(span: Span<BytePos>, s: Symbol) -> SpannedExpr<Symbol> {
@@ -253,8 +248,7 @@ fn generate_show(
                                 is_self_type(&bind.alias.value.name, typ),
                                 TypedIdent::new(Symbol::from(format!("arg_{}", i))),
                             )
-                        })
-                        .collect();
+                        }).collect();
 
                     let expr = {
                         let open_brace = literal(span, variant.name.declared_name());
@@ -303,16 +297,14 @@ fn generate_show(
                         pattern: ctor_pattern(pattern_args.into_iter().map(|t| t.1).collect()),
                         expr,
                     }
-                })
-                .collect();
+                }).collect();
             Expr::Match(Box::new(ident(span, x.clone())), alts)
         }
         Type::Record(ref row) => {
             let field_symbols: Vec<_> = row_iter(row)
                 .map(|field| {
                     TypedIdent::new(Symbol::from(format!("{}", field.name.declared_name())))
-                })
-                .collect();
+                }).collect();
 
             let expr = {
                 let open_brace = literal(span, "{ ");
@@ -373,8 +365,8 @@ fn generate_show(
             .collect(),
     );
 
-    let show_record_expr = Expr::LetBindings(
-        vec![ValueBinding {
+    let show_record_expr = Expr::let_binding(
+        ValueBinding {
             name: pos::spanned(span, Pattern::Ident(show_fn.clone())),
             args: vec![Argument::explicit(pos::spanned(
                 span,
@@ -384,8 +376,8 @@ fn generate_show(
             metadata: Default::default(),
             typ: Some(Type::function(vec![self_type.clone()], Type::string())),
             resolved_type: Type::hole(),
-        }],
-        Box::new(pos::spanned(
+        },
+        pos::spanned(
             span,
             Expr::Record {
                 typ: Type::hole(),
@@ -397,7 +389,7 @@ fn generate_show(
                 }],
                 base: None,
             },
-        )),
+        ),
     );
 
     Ok(ValueBinding {
@@ -474,8 +466,7 @@ fn generate_eq(
                                 is_self_type(&bind.alias.value.name, typ),
                                 TypedIdent::new(Symbol::from("arg_l")),
                             )
-                        })
-                        .collect();
+                        }).collect();
                     let r_pattern_args: Vec<_> = arg_iter(&variant.typ)
                         .map(|_| TypedIdent::new(Symbol::from("arg_r")))
                         .collect();
@@ -510,8 +501,7 @@ fn generate_eq(
                         ),
                         expr,
                     }
-                })
-                .chain(Some(catch_all_alternative))
+                }).chain(Some(catch_all_alternative))
                 .collect();
             Expr::Match(matcher, alts)
         }
@@ -522,13 +512,11 @@ fn generate_eq(
                         is_self_type(&bind.alias.value.name, &field.typ),
                         TypedIdent::new(Symbol::from(format!("{}_l", field.name.declared_name()))),
                     )
-                })
-                .collect();
+                }).collect();
             let r_symbols: Vec<_> = row_iter(row)
                 .map(|field| {
                     TypedIdent::new(Symbol::from(format!("{}_r", field.name.declared_name())))
-                })
-                .collect();
+                }).collect();
 
             let expr = generate_and_chain(symbols, &mut l_symbols.iter().zip(&r_symbols));
             let generate_record_pattern = |symbols| {
@@ -543,8 +531,7 @@ fn generate_eq(
                             .map(|(field, bind)| PatternField {
                                 name: pos::spanned(span, field.name.clone()),
                                 value: Some(pos::spanned(span, Pattern::Ident(bind))),
-                            })
-                            .collect(),
+                            }).collect(),
                     },
                 )
             };
@@ -581,8 +568,8 @@ fn generate_eq(
             .collect(),
     );
 
-    let eq_record_expr = Expr::LetBindings(
-        vec![ValueBinding {
+    let eq_record_expr = Expr::let_binding(
+        ValueBinding {
             name: pos::spanned(span, Pattern::Ident(eq.clone())),
             args: [l, r]
                 .iter()
@@ -595,8 +582,8 @@ fn generate_eq(
                 Type::hole(),
             )),
             resolved_type: Type::hole(),
-        }],
-        Box::new(pos::spanned(
+        },
+        pos::spanned(
             span,
             Expr::Record {
                 typ: Type::hole(),
@@ -608,7 +595,7 @@ fn generate_eq(
                 }],
                 base: None,
             },
-        )),
+        ),
     );
 
     Ok(ValueBinding {
@@ -653,8 +640,7 @@ fn generate_deserialize(
             let field_symbols: Vec<_> = row_iter(row)
                 .map(|field| {
                     TypedIdent::new(Symbol::from(format!("{}", field.name.declared_name())))
-                })
-                .collect();
+                }).collect();
 
             sequence_actions(
                 symbols,
@@ -669,8 +655,7 @@ fn generate_deserialize(
                                 name: pos::spanned(span, id.name.clone()),
                                 value: None,
                                 metadata: Default::default(),
-                            })
-                            .collect(),
+                            }).collect(),
                         types: Vec::new(),
                         typ: Type::hole(),
                         base: None,
@@ -702,8 +687,7 @@ fn generate_deserialize(
                     Some(prev) => infix(span, prev, symbols.symbol("<|>"), deserialize_variant),
                     None => deserialize_variant,
                 })
-            })
-            .unwrap(),
+            }).unwrap(),
         _ => return Err("Unable to derive Deserialize for this type".into()),
     };
 
@@ -746,10 +730,10 @@ fn generate_deserialize(
         alternative_import,
         deserializer_binding,
     ].into_iter()
-        .rev()
-        .fold(export_record_expr, |expr, bind| {
-            pos::spanned(span, Expr::LetBindings(vec![bind], Box::new(expr)))
-        });
+    .rev()
+    .fold(export_record_expr, |expr, bind| {
+        pos::spanned(span, Expr::let_binding(bind, expr))
+    });
 
     Ok(ValueBinding {
         name: pos::spanned(
@@ -793,8 +777,7 @@ fn generate_serialize(
             let field_symbols: Vec<_> = row_iter(row)
                 .map(|field| {
                     TypedIdent::new(Symbol::from(format!("{}", field.name.declared_name())))
-                })
-                .collect();
+                }).collect();
 
             let construct_map_expr = field_symbols
                 .iter()
@@ -811,8 +794,7 @@ fn generate_serialize(
                         Some(prev) => infix(span, prev, symbols.symbol("<>"), map),
                         None => map,
                     })
-                })
-                .unwrap_or_else(|| ident(span, symbols.symbol("empty")));
+                }).unwrap_or_else(|| ident(span, symbols.symbol("empty")));
 
             let construct_object_expr = app(
                 span,
@@ -898,8 +880,7 @@ fn generate_serialize(
                         pattern: ctor_pattern(pattern_args),
                         expr,
                     })
-                })
-                .collect::<Result<_, Error>>()?;
+                }).collect::<Result<_, Error>>()?;
 
             pos::spanned(span, Expr::Match(Box::new(ident(span, x.clone())), alts))
         }
@@ -945,10 +926,10 @@ fn generate_serialize(
         semigroup_import,
         serializer_binding,
     ].into_iter()
-        .rev()
-        .fold(export_expr, |expr, bind| {
-            pos::spanned(span, Expr::LetBindings(vec![bind], Box::new(expr)))
-        });
+    .rev()
+    .fold(export_expr, |expr, bind| {
+        pos::spanned(span, Expr::let_binding(bind, expr))
+    });
 
     Ok(ValueBinding {
         name: pos::spanned(

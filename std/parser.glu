@@ -192,22 +192,26 @@ let lazy_parser f : (() -> Parser a) -> Parser a =
 let between l r x : Parser a -> Parser b -> Parser c -> Parser c =
     l *> x <* r
 
+rec
 /// Parses with `p` zero or more times
 let many p : Parser a -> Parser (List a) =
     many1 p <|> wrap Nil
 
 /// Parses with `p` one or more times
-and many1 p : Parser a -> Parser (List a) =
+let many1 p : Parser a -> Parser (List a) =
     do h = p
     map (\t -> Cons h t) (many p)
+in
 
+rec
 /// Parses with `p` zero or more times, ignoring the result of the parser
 let skip_many p : Parser a -> Parser () =
     skip_many1 p <|> wrap ()
 /// Parses with `p` one or more times, ignoring the result of the parser
-and skip_many1 p : Parser a -> Parser () =
+let skip_many1 p : Parser a -> Parser () =
     do _ = p
     skip_many p
+in
 
 /// Parses one of the characters of `s`
 let one_of s : String -> Parser Char =

@@ -149,7 +149,10 @@ impl<'a> KindCheck<'a> {
             debug!("Find kind: {} => {}", self.idents.string(&id), kind);
         }
 
-        kind.map_err(|err| pos::spanned(span, err))
+        kind.map(|kind| match *kind {
+            Kind::Hole => self.subs.new_var(),
+            _ => kind,
+        }).map_err(|err| pos::spanned(span, err))
     }
 
     fn translate_projected_type(&mut self, id: &Symbol) -> Option<ArcKind> {
@@ -226,9 +229,12 @@ impl<'a> KindCheck<'a> {
             }
             Type::App(ref mut ctor, ref mut args) => {
                 let mut kind = self.kindcheck(ctor)?;
+
+                let mut prev_span = ctor.span();
+
                 for arg in args {
                     let f = Kind::function(self.subs.new_var(), self.subs.new_var());
-                    kind = self.unify(arg.span(), &f, kind)?;
+                    kind = self.unify(prev_span, &f, kind)?;
                     kind = match *kind {
                         Kind::Function(ref arg_kind, ref ret) => {
                             let actual = self.kindcheck(arg)?;
@@ -242,6 +248,7 @@ impl<'a> KindCheck<'a> {
                             ))
                         }
                     };
+                    prev_span = arg.span();
                 }
                 Ok(kind)
             }

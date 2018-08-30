@@ -22,8 +22,10 @@ let applicative : Applicative (State s) =
 
 let monad : Monad (State s) =
     let flat_map f m : (a -> State s b) -> State s a -> State s b = \state ->
+        rec
         let { value, state } = m state
-        and m2 = f value
+        let m2 = f value
+        in
         m2 state
 
     { applicative, flat_map }

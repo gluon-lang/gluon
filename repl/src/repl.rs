@@ -321,7 +321,7 @@ fn eval_line_(
                 }
             };
             let id = pos::spanned2(0.into(), 0.into(), Expr::Ident(id.clone()));
-            let expr = Expr::LetBindings(vec![let_binding], Box::new(id));
+            let expr = Expr::let_binding(let_binding, id);
             let eval_expr = pos::spanned2(0.into(), 0.into(), expr);
             Either::B(eval_expr
                 .run_expr(&mut compiler, vm.clone(), "line", line, None)

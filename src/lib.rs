@@ -136,8 +136,7 @@ impl From<Errors<Spanned<macros::Error, BytePos>>> for Error {
                     .map(|err| match err.value.downcast::<Error>() {
                         Ok(err) => *err,
                         Err(err) => Error::Other(err),
-                    })
-                    .collect(),
+                    }).collect(),
             )
         }
     }
@@ -153,8 +152,7 @@ impl From<Errors<Error>> for Error {
                 .flat_map(|err| match err {
                     Error::Multiple(errors) => Either::Left(errors.into_iter()),
                     err => Either::Right(Some(err).into_iter()),
-                })
-                .collect();
+                }).collect();
 
             Error::Multiple(errors)
         }
@@ -380,7 +378,7 @@ impl Compiler {
             metadata: Default::default(),
             metadata_map: Default::default(),
         }.compile(self, vm, filename, expr_str, ())
-            .map(|result| result.module)
+        .map(|result| result.module)
     }
 
     /// Compiles the source code `expr_str` into bytecode serialized using `serializer`
@@ -622,7 +620,7 @@ impl Compiler {
 
 pub const PRELUDE: &'static str = r#"
 let __implicit_prelude = import! std.prelude
-and { Num, Eq, Ord, Show, Functor, Applicative, Monad, Option, Bool, ? } = __implicit_prelude
+let { Num, Eq, Ord, Show, Functor, Applicative, Monad, Option, Bool, ? } = __implicit_prelude
 
 let { (+), (-), (*), (/), (==), (/=), (<), (<=), (>=), (>), (++), show, not, flat_map } = __implicit_prelude
 

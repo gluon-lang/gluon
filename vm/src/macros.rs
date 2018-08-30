@@ -219,7 +219,7 @@ impl<'a, 'b, 'c> MutVisitor<'c> for MacroVisitor<'a, 'b, 'c> {
                             |next_expr, bind| {
                                 Box::new(pos::spanned(
                                     Default::default(),
-                                    Expr::LetBindings(vec![bind], next_expr),
+                                    Expr::let_binding(bind, next_expr),
                                 ))
                             },
                         );

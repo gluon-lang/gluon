@@ -275,13 +275,8 @@ impl<'a> KindEnv for Environment<'a> {
     fn find_kind(&self, type_name: &SymbolRef) -> Option<ArcKind> {
         self.stack_types
             .get(type_name)
-            .map(|&(_, ref alias)| {
-                let mut kind = Kind::typ();
-                for arg in alias.params().iter().rev() {
-                    kind = Kind::function(arg.kind.clone(), kind);
-                }
-                kind
-            }).or_else(|| self.environment.find_kind(type_name))
+            .map(|&(_, ref alias)| alias.kind().into_owned())
+            .or_else(|| self.environment.find_kind(type_name))
     }
 }
 

@@ -355,3 +355,23 @@ fn invalid_case() {
     assert!(parse(r#"type x = { } in ()"#).is_err());
     assert!(parse(r#"type x = | Test in ()"#).is_err());
 }
+
+#[test]
+fn old_expression() {
+    let _ = ::env_logger::try_init();
+
+    let result = parse(
+        r#"
+let f x = x
+and g y = f
+1
+"#,
+    );
+    let span = pos::span(BytePos::from(0), BytePos::from(0));
+    let errors = ParseErrors::from(vec![pos::spanned(
+        span,
+        Error::UnexpectedToken("Equal".into(), vec![]),
+    )]);
+
+    assert_eq!(remove_expected(result.unwrap_err().1), errors);
+}

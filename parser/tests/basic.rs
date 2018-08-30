@@ -316,8 +316,8 @@ fn let_pattern() {
     let e = parse_clear_span!("let {x, y} = test in x");
     assert_eq!(
         e,
-        no_loc(Expr::LetBindings(
-            vec![ValueBinding {
+        no_loc(Expr::let_binding(
+            ValueBinding {
                 metadata: Metadata::default(),
                 name: no_loc(Pattern::Record {
                     typ: Type::hole(),
@@ -338,9 +338,9 @@ fn let_pattern() {
                 resolved_type: Type::hole(),
                 args: vec![],
                 expr: id("test"),
-            }],
-            Box::new(id("x")),
-        ),)
+            },
+            id("x"),
+        ))
     );
 }
 
@@ -471,7 +471,7 @@ id
     assert_eq!(
         e,
         no_loc(Expr::LetBindings(
-            vec![ValueBinding {
+            ValueBindings::Plain(Box::new(ValueBinding {
                 metadata: Metadata {
                     comment: Some(Comment {
                         typ: CommentType::Line,
@@ -484,7 +484,7 @@ id
                 resolved_type: Type::hole(),
                 args: vec![Argument::explicit(no_loc(TypedIdent::new(intern("x"))))],
                 expr: id("x"),
-            }],
+            })),
             Box::new(id("id")),
         ),)
     );
@@ -504,7 +504,7 @@ id
     assert_eq!(
         e,
         no_loc(Expr::LetBindings(
-            vec![
+            ValueBindings::Recursive(vec![
                 ValueBinding {
                     metadata: Metadata::default(),
                     name: no_loc(Pattern::Ident(TypedIdent::new(intern("id")))),
@@ -527,9 +527,9 @@ id
                     args: vec![Argument::explicit(no_loc(TypedIdent::new(intern("y"))))],
                     expr: id("y"),
                 },
-            ],
+            ]),
             Box::new(id("id")),
-        ),)
+        ))
     );
 }
 
@@ -679,14 +679,14 @@ x
     assert_eq!(
         e,
         no_loc(Expr::LetBindings(
-            vec![ValueBinding {
+            ValueBindings::Plain(Box::new(ValueBinding {
                 metadata: Metadata::default(),
                 name: no_loc(Pattern::Ident(TypedIdent::new(intern("x")))),
                 typ: Some(Type::app(typ("->"), collect![typ("Int"), typ("Int")])),
                 resolved_type: Type::hole(),
                 args: vec![],
                 expr: id("x"),
-            }],
+            })),
             Box::new(id("x")),
         ),)
     );

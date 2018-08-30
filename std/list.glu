@@ -91,20 +91,24 @@ let applicative : Applicative List =
 
 let many ?alt x : [Alternative f] -> f a -> f (List a) =
 
+    rec
     let many_v _ =
         some_v () <|> wrap Nil
-    and some_v _ =
+    let some_v _ =
         let { ? } = alt.applicative
         map (\h l -> Cons h l) x <*> many_v ()
+    in
     many_v ()
 
 let some ?alt x : [Alternative f] -> f a -> f (List a) =
 
+    rec
     let many_v _ =
         some_v () <|> wrap Nil
-    and some_v _ =
+    let some_v _ =
         let { ? } = alt.applicative
         map (\h l -> Cons h l) x <*> many_v ()
+    in
     some_v ()
 
 let alternative : Alternative List = {

@@ -41,11 +41,11 @@ let apply ?app : [Applicative f] -> f (a -> b) -> f a -> f b = app.apply
 #[infix(left, 4)]
 let (<*>) : [Applicative f] -> f (a -> b) -> f a -> f b = apply
 
-/// Sequence actions, discargin the value of the second argument
+/// Sequence actions, discarding the value of the second argument
 #[infix(left, 4)]
 let (<*) l r : [Applicative f] -> f a -> f b -> f a = map (\x _ -> x) l <*> r
 
-/// Sequence actions, discargin the value of the first argument
+/// Sequence actions, discarding the value of the first argument
 #[infix(left, 4)]
 let (*>) l r : [Applicative f] -> f a -> f b -> f b = map (\_ x -> x) l <*> r
 
