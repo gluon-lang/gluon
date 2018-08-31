@@ -2,7 +2,7 @@
 //!
 //! Gluon is a programming language suitable for embedding in an existing application to extend its
 //! behaviour. For information about how to use this library the best resource currently is the
-//! [tutorial](https://github.com/gluon-lang/gluon/blob/master/TUTORIAL.md) which contains examples
+//! [tutorial](http://gluon-lang.org/book/index.html) which contains examples
 //! on how to write gluon programs as well as how to run them using this library.
 #![doc(html_root_url = "https://docs.rs/gluon/0.8.1")] // # GLUON
 
