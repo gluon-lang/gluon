@@ -14,6 +14,6 @@
 
 - [Embedding API](./embedding-api.md)
 
-    - [Marshalling values](./marshalling-types.md)
+    - [Marshalling types](./marshalling-types.md)
 
 - [Standard types and functions](./standard-types-and-functions.md)
