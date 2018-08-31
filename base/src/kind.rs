@@ -4,6 +4,8 @@ use std::sync::Arc;
 
 use pretty::{Doc, DocAllocator, DocBuilder};
 
+use stable_deref_trait::StableDeref;
+
 use ast::EmptyEnv;
 use symbol::{Symbol, SymbolRef};
 use types::{ToDoc, Walker};
@@ -165,6 +167,8 @@ impl ArcKind {
         Arc::strong_count(&kind.0)
     }
 }
+
+unsafe impl StableDeref for ArcKind {}
 
 impl Deref for ArcKind {
     type Target = Kind;

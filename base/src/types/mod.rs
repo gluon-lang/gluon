@@ -9,6 +9,8 @@ use pretty::{Arena, Doc, DocAllocator, DocBuilder};
 
 use smallvec::SmallVec;
 
+use stable_deref_trait::StableDeref;
+
 use ast::{Commented, EmptyEnv, IdentEnv};
 use fnv::FnvMap;
 use kind::{ArcKind, Kind, KindEnv};
@@ -1149,6 +1151,9 @@ impl<Id: AsRef<str>> fmt::Display for ArcType<Id> {
         write!(f, "{}", TypeFormatter::new(self))
     }
 }
+
+// Safe since `Arc` implements it
+unsafe impl<Id> StableDeref for ArcType<Id> {}
 
 impl<Id> Deref for ArcType<Id> {
     type Target = Type<Id, ArcType<Id>>;
