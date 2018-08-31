@@ -274,7 +274,7 @@ fn run(
         } else if !opt.input.is_empty() {
             run_files(compiler, &vm, &opt.input)?;
         } else {
-            write!(io::stderr(), "{}", Opt::clap().get_matches().usage())
+            writeln!(io::stderr(), "{}", Opt::clap().get_matches().usage())
                 .expect("Error writing help to stderr");
         },
     }
