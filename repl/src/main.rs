@@ -296,6 +296,8 @@ fn main() {
                 let mut stderr = termcolor::StandardStream::stderr(opt.color.into());
                 if let Err(err) = err.emit(&mut stderr, compiler.code_map()) {
                     eprintln!("{}", err);
+                } else {
+                    eprintln!("");
                 }
             }
         }
