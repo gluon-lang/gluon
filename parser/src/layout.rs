@@ -468,6 +468,15 @@ where
                 _ => None,
             };
             if let Some(context) = push_context {
+                // When seeing `rec let` directly after each other (on the same line), use the
+                // indentation level of the `rec`
+                let pos = if offside.context == Context::Rec
+                    && offside.location.line == token.span.start().line
+                {
+                    offside.location
+                } else {
+                    token.span.start()
+                };
                 if offside.context == context
                     && (offside.context == Context::Type || offside.context == Context::Let)
                     && (self.indent_levels.stack.len() >= 2
@@ -477,7 +486,7 @@ where
                     self.indent_levels.pop();
                 }
 
-                let offside = Offside::new(token.span.start(), context);
+                let offside = Offside::new(pos, context);
                 return self.indent_levels.push(offside).map(move |()| token);
             }
 

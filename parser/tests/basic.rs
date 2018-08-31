@@ -898,3 +898,15 @@ let map3 = 2
     ";
     parse_clear_span!(text);
 }
+
+#[test]
+fn rec_let_indentation() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+rec let id x =
+    let y = x
+    y
+id
+"#;
+    parse_clear_span!(text);
+}
