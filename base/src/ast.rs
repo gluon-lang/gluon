@@ -334,6 +334,10 @@ pub enum Expr<Id> {
 }
 
 impl<Id> Expr<Id> {
+    pub fn rec_let_binding(bind: ValueBinding<Id>, expr: impl Into<Box<SpannedExpr<Id>>>) -> Self {
+        Expr::LetBindings(ValueBindings::Recursive(vec![bind]), expr.into())
+    }
+
     pub fn let_binding(bind: ValueBinding<Id>, expr: impl Into<Box<SpannedExpr<Id>>>) -> Self {
         Expr::LetBindings(ValueBindings::Plain(Box::new(bind)), expr.into())
     }
@@ -411,6 +415,15 @@ impl<Id> Argument<Id> {
 pub enum ValueBindings<Id> {
     Plain(Box<ValueBinding<Id>>),
     Recursive(Vec<ValueBinding<Id>>),
+}
+
+impl<Id> ValueBindings<Id> {
+    pub fn is_recursive(&self) -> bool {
+        match self {
+            ValueBindings::Plain(ref bind) => !bind.args.is_empty(),
+            ValueBindings::Recursive(_) => true,
+        }
+    }
 }
 
 impl<Id> Deref for ValueBindings<Id> {

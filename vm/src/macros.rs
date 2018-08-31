@@ -6,7 +6,7 @@ use std::sync::{Arc, RwLock};
 
 use futures::{stream, Future, Stream};
 
-use base::ast::{self, Expr, MutVisitor, SpannedExpr};
+use base::ast::{self, Expr, MutVisitor, SpannedExpr, ValueBindings};
 use base::error::Errors as BaseErrors;
 use base::fnv::FnvMap;
 use base::pos;
@@ -219,7 +219,10 @@ impl<'a, 'b, 'c> MutVisitor<'c> for MacroVisitor<'a, 'b, 'c> {
                             |next_expr, bind| {
                                 Box::new(pos::spanned(
                                     Default::default(),
-                                    Expr::let_binding(bind, next_expr),
+                                    Expr::LetBindings(
+                                        ValueBindings::Recursive(vec![bind]),
+                                        next_expr,
+                                    ),
                                 ))
                             },
                         );

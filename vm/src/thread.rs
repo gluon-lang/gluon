@@ -1909,7 +1909,6 @@ impl<'b> ExecuteContext<'b> {
                                     *var = self.stack.pop();
                                 }
                             }
-                            self.stack.pop(); //Remove the record
                         }
                         x => ice!("Expected closure, got {:?}", x),
                     }
@@ -2354,6 +2353,7 @@ fn debug_instruction(stack: &StackFrame<ClosureState>, index: usize, instr: Inst
                 }
                 x
             }
+            PushUpVar(i) => Some(stack.get_upvar(i).clone()),
             NewClosure { .. } | MakeClosure { .. } => Some(Value::from(Int(stack.len() as isize))),
             _ => None,
         }

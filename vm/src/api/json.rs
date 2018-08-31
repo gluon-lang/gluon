@@ -4,7 +4,7 @@ use std::borrow::Borrow;
 use std::fmt;
 use std::result::Result as StdResult;
 
-use base::types::ArcType;
+use base::types::{ArcType, Type};
 
 use api::{Getable, OpaqueValue, VmType};
 use thread::{ActiveThread, RootedThread, Thread, ThreadInternal};
@@ -139,9 +139,9 @@ impl VmType for JsonValue {
     type Type = <Value as VmType>::Type;
     fn make_type(vm: &Thread) -> ArcType {
         vm.find_type_info("std.json.value.Value")
-            .unwrap()
-            .clone()
-            .into_type()
+            .map(|t| t.clone().into_type())
+            .ok()
+            .unwrap_or_else(Type::error)
     }
 }
 

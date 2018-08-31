@@ -563,6 +563,18 @@ PlainValueBinding: ValueBinding<Id> = {
         },
 };
 
+RecursiveValueBinding: ValueBinding<Id> = {
+    <metadata: Metadata?> "let" <name: Sp<Ident>> <args: ValueArgument*> <typ: (":" <Type>)?> "=" <expr: SpExpr> =>
+        ValueBinding {
+            metadata: metadata.unwrap_or_default(),
+            name: name.map(|name| new_ident(type_cache, name)).map(Pattern::Ident),
+            typ,
+            resolved_type: type_cache.hole(),
+            args,
+            expr,
+        },
+};
+
 RecordExprBase: Option<SpannedExpr<Id>> = {
     ".." <SpExpr> => Some(<>),
     => None
@@ -688,7 +700,7 @@ Expr: Expr<Id> = {
         Expr::TypeBindings(vec![binding], Box::new(body))
     },
 
-    <metadata: Metadata?> "rec" <bindings: ValueBinding+> <body: InExpr> => {
+    <metadata: Metadata?> "rec" <bindings: RecursiveValueBinding+> <body: InExpr> => {
         let mut bindings = bindings;
         if let Some(metadata) = metadata {
             bindings[0].metadata = metadata;

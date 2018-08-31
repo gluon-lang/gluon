@@ -145,7 +145,7 @@ impl Instruction {
             Pop(n) => -(n as i32),
             Slide(n) => -(n as i32),
             NewRecord { .. } => 1,
-            CloseRecord { .. } => -1,
+            CloseRecord { .. } => 0,
             MakeClosure { .. } => 1,
             NewClosure { .. } => 1,
             CloseClosure(_) => -1,

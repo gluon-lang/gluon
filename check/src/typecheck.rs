@@ -11,6 +11,7 @@ use codespan_reporting::Diagnostic;
 use base::ast::{
     Argument, AstType, DisplayEnv, Do, Expr, IdentEnv, Literal, MutVisitor, Pattern, PatternField,
     SpannedExpr, SpannedIdent, SpannedPattern, TypeBinding, Typed, TypedIdent, ValueBinding,
+    ValueBindings,
 };
 use base::error::{AsDiagnostic, Errors};
 use base::fnv::{FnvMap, FnvSet};
@@ -1717,15 +1718,12 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn typecheck_bindings(&mut self, bindings: &mut [ValueBinding<Symbol>]) -> TcResult<()> {
+    fn typecheck_bindings(&mut self, bindings: &mut ValueBindings<Symbol>) -> TcResult<()> {
         self.enter_scope();
         self.type_variables.enter_scope();
         let level = self.subs.var_id();
 
-        let is_recursive = bindings.iter().all(|bind| match bind.name.value {
-            Pattern::Ident(_) | Pattern::Constructor(..) => true,
-            _ => false,
-        });
+        let is_recursive = bindings.is_recursive();
         // When the definitions are allowed to be mutually recursive
         if is_recursive {
             for bind in bindings.iter_mut() {

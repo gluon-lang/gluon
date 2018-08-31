@@ -5,7 +5,9 @@ use itertools::{Either, Itertools};
 use pretty::{Arena, Doc, DocAllocator, DocBuilder};
 
 use self::types::pretty_print as pretty_types;
-use base::ast::{Do, Expr, Literal, Pattern, SpannedExpr, SpannedPattern, ValueBinding};
+use base::ast::{
+    Do, Expr, Literal, Pattern, SpannedExpr, SpannedPattern, ValueBinding, ValueBindings,
+};
 use base::kind::Kind;
 use base::metadata::Attribute;
 use base::pos::{self, BytePos, HasSpan, Span, Spanned};
@@ -119,19 +121,19 @@ where
     fn pretty_expr_(
         &self,
         previous_end: BytePos,
-        expr: &'a SpannedExpr<I>,
+        mut expr: &'a SpannedExpr<I>,
     ) -> DocBuilder<'a, Arena<'a, A>, A>
     where
         A: Clone,
     {
-        let expr = if !self.formatter.expanded && expr.span.start() == 0.into() {
-            match expr.value {
-                Expr::TypeBindings(_, ref expr) | Expr::LetBindings(_, ref expr) => expr,
-                _ => expr,
+        if !self.formatter.expanded {
+            while expr.span.start() == 0.into() {
+                expr = match expr.value {
+                    Expr::TypeBindings(_, ref expr) | Expr::LetBindings(_, ref expr) => expr,
+                    _ => expr,
+                };
             }
-        } else {
-            expr
-        };
+        }
 
         let arena = self.arena;
 
@@ -228,9 +230,9 @@ where
             }
 
             Expr::LetBindings(ref binds, ref body) => {
-                let binding = |prefix: &'a str, bind: &'a ValueBinding<I>| {
+                let binding = |bind: &'a ValueBinding<I>| {
                     let decl = chain![arena;
-                        prefix,
+                        "let ",
                         chain![arena;
                             self.pretty_pattern(&bind.name),
                             " ",
@@ -261,16 +263,31 @@ where
                         self.hang(decl, &bind.expr).group()
                     ]
                 };
-                let prefixes = iter::once("let ").chain(iter::repeat("and "));
+                let is_recursive = match binds {
+                    ValueBindings::Recursive(_) => true,
+                    ValueBindings::Plain(_) => false,
+                };
                 chain![arena;
+                    if is_recursive {
+                        arena.text("rec").append(if binds.len() == 1 { arena.space() } else { arena.newline() })
+                    } else {
+                        arena.nil()
+                    },
                     arena.concat(
-                        prefixes
-                            .zip(binds)
-                            .map(|(prefix, bind)| binding(prefix, bind))
+                        binds.iter()
+                            .map(|bind| binding(bind))
                             .interleave(newlines_iter!(self, binds.iter().map(|bind| bind.span())))
                     ),
                     if self.formatter.expanded {
                         arena.newline()
+                    } else {
+                        arena.nil()
+                    },
+                    if is_recursive {
+                        match body.value {
+                            Expr::LetBindings(..) => arena.newline().append(arena.text("in")),
+                            _ => arena.nil()
+                        }
                     } else {
                         arena.nil()
                     },
@@ -349,11 +366,19 @@ where
                 ].group(),
 
             Expr::TypeBindings(ref binds, ref body) => {
-                let prefixes = iter::once("type").chain(iter::repeat("and"));
+                let is_recursive = binds.len() > 1;
+
                 chain![arena;
                     pretty_types::doc_comment(arena, binds.first().unwrap().metadata.comment.as_ref()),
                     self.pretty_attributes(&binds.first().unwrap().metadata.attributes),
-                    arena.concat(binds.iter().zip(prefixes).map(|(bind, prefix)| {
+
+                    if is_recursive {
+                        arena.text("rec").append(if binds.len() == 1 { arena.space() } else { arena.newline() })
+                    } else {
+                        arena.nil()
+                    },
+
+                    arena.concat(binds.iter().map(|bind| {
                         let typ = bind.alias.value.unresolved_type();
                         let typ = match **typ {
                             // Remove the "parameters"
@@ -366,7 +391,7 @@ where
                             _ => type_doc = type_doc.nest(INDENT),
                         }
                         chain![arena;
-                            prefix,
+                            "type",
                             " ",
                             bind.name.value.as_ref(),
                             " ",
@@ -406,6 +431,11 @@ where
                     }).interleave(newlines_iter!(self, binds.iter().map(|bind| bind.span())))),
                     if self.formatter.expanded {
                         arena.newline()
+                    } else {
+                        arena.nil()
+                    },
+                    if is_recursive {
+                        arena.newline().append(arena.text("in"))
                     } else {
                         arena.nil()
                     },

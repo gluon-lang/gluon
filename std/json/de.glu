@@ -6,7 +6,7 @@ let { Value } = import! std.json.value
 let prim = import! std.json.prim
 
 let { Result, ? } = import! std.result
-let std_map@{ Map, ? } = import! std.map
+let std_map @ { Map, ? } = import! std.map
 let { id } = import! std.function
 let float = import! std.float
 
@@ -21,7 +21,7 @@ let { ? } = import! std.array
 type Error = String
 type Deserializer i a = i -> Result Error { value : a, input : i }
 
-/// Deserializer which extracts the data from the `Value` type 
+/// Deserializer which extracts the data from the `Value` type
 type ValueDeserializer a = Deserializer Value a
 
 let error_msg = id
@@ -60,9 +60,8 @@ let monad : Monad (Deserializer i) = {
 
     flat_map = \f m ->
         deserializer (\input ->
-                do a = deserializer m input
-                deserializer (f a.value) a.input
-            ),
+            do a = deserializer m input
+            deserializer (f a.value) a.input),
 }
 
 /// Deserializes a `Bool`
@@ -144,8 +143,8 @@ let array a : ValueDeserializer a -> ValueDeserializer (Array a) = \input ->
     match input with
     | Array xs ->
         do value = for xs (\v ->
-            do state = a v
-            Ok state.value)
+                do state = a v
+                Ok state.value)
         Ok { value, input }
     | _ -> Err (error_msg "Expected array")
 
@@ -187,7 +186,7 @@ let field name a : String -> ValueDeserializer a -> ValueDeserializer a = \input
             do state = a value
             Ok { value = state.value, input }
         | None -> Err (error_msg ("Expected field `" ++ name ++ "`"))
-    | _ -> Err (error_msg "Expected map") 
+    | _ -> Err (error_msg "Expected map")
 
 /// Deserializes the a `Map String a`
 ///
@@ -212,7 +211,7 @@ let map a : ValueDeserializer a -> ValueDeserializer (Map String a) = \input ->
             Ok state.value
         do value = std_map.traverse_with_key f xs
         Ok { value, input }
-    | _ -> Err (error_msg "Expected map") 
+    | _ -> Err (error_msg "Expected map")
 
 /// Deserializes a `Value`
 let value : ValueDeserializer Value = \input ->
@@ -233,7 +232,7 @@ let run de value : ValueDeserializer a -> Value -> Result Error a =
 let insert_string : String -> a -> Map String a -> Map String a = std_map.insert
 
 #[implicit]
-type Deserialize a = { deserializer : ValueDeserializer a  }
+type Deserialize a = { deserializer : ValueDeserializer a }
 
 let deserializer ?d : [Deserialize a] -> ValueDeserializer a = d.deserializer
 
@@ -295,5 +294,5 @@ let map_deserializer : [Deserialize a] -> Deserialize (Map String a) =
     array_deserializer,
     map_deserializer,
 
-    insert_string
+    insert_string,
 }

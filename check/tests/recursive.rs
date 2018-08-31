@@ -15,8 +15,9 @@ fn recursive_lambda() {
     let _ = env_logger::try_init();
 
     let text = r"
+rec
 let f = \x -> g x
-and g = \y -> f y
+let g = \y -> f y
 f
 ";
     let result = support::typecheck(text);
@@ -29,9 +30,10 @@ fn use_recursive_function_in_record() {
     let _ = env_logger::try_init();
 
     let text = r"
+rec
 let f =
     { g }
-and g = \y -> f.g y
+let g = \y -> f.g y
 f
 ";
     let result = support::typecheck(text);
@@ -47,10 +49,11 @@ fn cant_call_recursive_value_app() {
     let _ = env_logger::try_init();
 
     let text = r"
+rec
 let f =
     let z = g 1
     { g }
-and g = \y -> f.g y
+let g = \y -> f.g y
 f
 ";
     let result = support::typecheck(text);
@@ -63,10 +66,11 @@ fn cant_call_function_with_uninitialized_value() {
     let _ = env_logger::try_init();
 
     let text = r"
+rec
 let g =
     let h x = f
     h ()
-and f = {}
+let f = {}
 f
 ";
     let result = support::typecheck(text);
@@ -81,8 +85,10 @@ fn cant_call_recursive_value_infix() {
     let text = r"
 #[infix(left, 0)]
 let (+++) x y = ()
+
+rec
 let g = f +++ ()
-and f = {}
+let f = {}
 f
 ";
     let result = support::typecheck(text);
@@ -95,7 +101,7 @@ fn impossible_to_refer_directly_to_self() {
     let _ = env_logger::try_init();
 
     let text = r"
-let f = f
+rec let f = f
 f
 ";
     let result = support::typecheck(text);
@@ -108,7 +114,7 @@ fn impossible_to_refer_to_self_through_let_binding() {
     let _ = env_logger::try_init();
 
     let text = r"
-let f =
+rec let f =
     let x = f
     x
 f
@@ -124,7 +130,7 @@ fn impossible_to_refer_to_self_through_let_binding_nested() {
 
     let text = r"
 let g y =
-    let f =
+    rec let f =
         let x = f
         x
     f
@@ -138,7 +144,7 @@ g
 test_check!(
     can_refer_to_self_through_lambda,
     r"
-let f =
+rec let f =
     let x = \_ ->
         let y = f
         ()
@@ -153,7 +159,7 @@ fn impossible_to_use_self_in_match() {
     let _ = env_logger::try_init();
 
     let text = r"
-let f =
+rec let f =
     match { f } with
     | { f } -> ()
 f
@@ -166,10 +172,12 @@ f
 test_check!(
     can_use_uninitialized_value_in_let_lambda,
     r"
+rec
 let g =
     let h x = f
     h
-and f = {}
+let f = {}
+in
 g
 ",
     "forall a . a -> ()"
@@ -178,7 +186,7 @@ g
 test_check!(
     can_use_uninitialized_value_in_lambda,
     r"
-let g = \x ->
+rec let g = \x ->
     let z = g x
     1
 g

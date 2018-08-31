@@ -197,8 +197,7 @@ pub fn metadata(
                     }
                 }
                 Expr::LetBindings(ref bindings, ref expr) => {
-                    let is_recursive = bindings.iter().all(|bind| !bind.args.is_empty());
-                    if is_recursive {
+                    if bindings.is_recursive() {
                         for bind in bindings {
                             self.new_binding(Metadata::default(), bind);
                         }

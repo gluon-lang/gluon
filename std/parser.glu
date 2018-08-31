@@ -202,7 +202,6 @@ let many1 p : Parser a -> Parser (List a) =
     do h = p
     map (\t -> Cons h t) (many p)
 in
-
 rec
 /// Parses with `p` zero or more times, ignoring the result of the parser
 let skip_many p : Parser a -> Parser () =
@@ -212,7 +211,6 @@ let skip_many1 p : Parser a -> Parser () =
     do _ = p
     skip_many p
 in
-
 /// Parses one of the characters of `s`
 let one_of s : String -> Parser Char =
     satisfy (\first ->

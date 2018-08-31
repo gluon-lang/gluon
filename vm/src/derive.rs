@@ -365,7 +365,7 @@ fn generate_show(
             .collect(),
     );
 
-    let show_record_expr = Expr::let_binding(
+    let show_record_expr = Expr::rec_let_binding(
         ValueBinding {
             name: pos::spanned(span, Pattern::Ident(show_fn.clone())),
             args: vec![Argument::explicit(pos::spanned(
@@ -568,7 +568,7 @@ fn generate_eq(
             .collect(),
     );
 
-    let eq_record_expr = Expr::let_binding(
+    let eq_record_expr = Expr::rec_let_binding(
         ValueBinding {
             name: pos::spanned(span, Pattern::Ident(eq.clone())),
             args: [l, r]
@@ -909,14 +909,23 @@ fn generate_serialize(
         ))],
         expr: serializer_expr,
         metadata: Default::default(),
-        typ: Some(Type::app(
-            Type::ident(symbols.symbol("ValueSerializer")),
-            collect![self_type.clone()],
-        )),
+        typ: Some(Type::function(collect![self_type.clone()], Type::hole())),
         resolved_type: Type::hole(),
     };
 
-    let export_expr = ident(span, serialize_.name.clone());
+    let export_expr = pos::spanned(
+        span,
+        Expr::Record {
+            typ: Type::hole(),
+            types: Vec::new(),
+            exprs: vec![ExprField {
+                metadata: Default::default(),
+                name: pos::spanned(span, symbols.symbol("serialize")),
+                value: Some(ident(span, serialize_.name.clone())),
+            }],
+            base: None,
+        },
+    );
 
     let serializer_record_expr = vec![
         serialization_import,

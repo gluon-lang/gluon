@@ -58,14 +58,17 @@ walkdir = "2"
 
 [dev-dependencies]
 bencher = "0.1.2"
-tensile = "0.3.0"
+tensile = "0.2.0"
 collect-mac = "0.1.0"
 env_logger = "0.5.0"
 pretty_assertions = "0.5"
 futures-cpupool = "0.1.8"
 tokio = "0.1.7"
+tokio-core = "=0.1.17"
 tokio-retry = "0.2"
 walkdir = "2"
+failure = "0.1"
+failure_derive = "0.1"
 
 hyper = "0.12.0"
 http = "0.1.0"

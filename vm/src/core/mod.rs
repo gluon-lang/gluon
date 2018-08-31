@@ -29,7 +29,7 @@ macro_rules! assert_deq {
 
 #[cfg(test)]
 #[cfg_attr(rustfmt, rustfmt_skip)]
-mod grammar;
+pub(crate) mod grammar;
 pub mod interpreter;
 pub mod optimize;
 #[cfg(feature = "test")]
@@ -590,19 +590,13 @@ impl<'a, 'e> Translator<'a, 'e> {
 
     fn translate_let(
         &'a self,
-        binds: &[ast::ValueBinding<Symbol>],
+        binds: &ast::ValueBindings<Symbol>,
         tail: Expr<'a>,
         span_start: BytePos,
     ) -> Expr<'a> {
         let arena = &self.allocator.arena;
 
-        let is_recursive = (binds.iter().all(|bind| match bind.name.value {
-            ast::Pattern::Ident(_) => true,
-            _ => false,
-        }) && binds.len() > 1)
-            || binds.iter().all(|bind| !bind.args.is_empty());
-
-        if is_recursive {
+        if binds.is_recursive() {
             let closures = binds
                 .iter()
                 .map(|bind| Closure {

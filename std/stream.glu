@@ -17,7 +17,6 @@ type Stream_ a =
     | Empty
 type Stream a = Lazy (Stream_ a)
 in
-
 let empty : Stream a = lazy (\_ -> Empty)
 
 let from f : (Int -> Option a) -> Stream a =

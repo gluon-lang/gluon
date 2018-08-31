@@ -593,6 +593,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn load_identifier(&self, id: &Symbol, function: &mut FunctionEnvs) -> Result<()> {
+        debug!("Load {}", id);
         match self.find(id, function).unwrap_or_else(|| {
             ice!(
                 "Undefined variable `{}` in {}",
@@ -690,6 +691,7 @@ impl<'a> Compiler<'a> {
                                 closure.name.typ.clone(),
                             );
                         }
+
                         for (i, closure) in closures.iter().enumerate() {
                             if let Some(current_line) = self.source.line_number_at_byte(closure.pos)
                             {
@@ -708,16 +710,16 @@ impl<'a> Compiler<'a> {
                                     .function
                                     .instructions
                                     .iter()
-                                    .rposition(|inst| { eprintln!("{:?}", inst); match inst {
+                                    .rposition(|inst| match inst {
                                         Slide(_) |
                                         Jump(_) => false,
                                         _ => true,
-                                    }}).unwrap_or_else(|| {
+                                    }).unwrap_or_else(|| {
                                         ice!("Expected record as last expression of recursive binding")
                                     });
                                 match function.function.instructions[construct_index] {
                                     ConstructRecord { record, args } => {
-                                        function.stack_size -= 2;
+                                        function.stack_size -= 1;
                                         function.function.instructions[offset] =
                                             NewRecord { record, args };
                                         function.function.instructions[construct_index] = CloseRecord { record_index: stack_start + i as VmIndex };
@@ -1069,6 +1071,7 @@ impl<'a> Compiler<'a> {
         body: CExpr,
         function: &mut FunctionEnvs,
     ) -> Result<(VmIndex, VmIndex, CompiledFunction)> {
+        debug!("Compile function {}", id.name);
         function.start_function(self, args.len() as VmIndex, id.name.clone(), id.typ.clone());
 
         function.stack.enter_scope();
@@ -1085,14 +1088,140 @@ impl<'a> Compiler<'a> {
         let f = function.end_function(self, current_line);
         for &(ref var, _) in f.free_vars.iter() {
             match self.find(var, function).expect("free_vars: find") {
-                Stack(index) => function.emit(Push(index)),
-                UpVar(index) => function.emit(PushUpVar(index)),
+                Stack(index) => {
+                    debug!("Load stack {}", var);
+                    function.emit(Push(index))
+                }
+                UpVar(index) => {
+                    debug!("Load upvar {}", var);
+                    function.emit(PushUpVar(index))
+                }
                 _ => ice!("Free variables can only be on the stack or another upvar"),
             }
         }
         let function_index = function.function.inner_functions.len() as VmIndex;
         let free_vars = f.free_vars.len() as VmIndex;
         let FunctionEnv { function, .. } = f;
+        debug!("End compile function {}", id.name);
         Ok((function_index, free_vars, function))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use base::symbol::Symbols;
+
+    use core::{grammar::ExprParser, Allocator};
+    use vm::GlobalVmState;
+
+    fn verify_instructions<'a>(
+        compiled_function: &CompiledFunction,
+        instructions: &mut impl Iterator<Item = &'a [Instruction]>,
+    ) {
+        assert_eq!(
+            compiled_function.instructions,
+            instructions.next().expect("Instructions")
+        );
+        for func in &compiled_function.inner_functions {
+            verify_instructions(func, instructions);
+        }
+    }
+
+    fn assert_instructions(source: &str, instructions: &[&[Instruction]]) {
+        let mut symbols = Symbols::new();
+        let global_allocator = Allocator::new();
+        let global = ExprParser::new()
+            .parse(&mut symbols, &global_allocator, source)
+            .unwrap();
+
+        let globals = TypeInfos::new();
+        let vm_state = GlobalVmState::new();
+        let source = ::codespan::FileMap::new("".to_string().into(), "".to_string());
+        let mut compiler = Compiler::new(
+            &globals,
+            &vm_state,
+            SymbolModule::new("test".into(), &mut symbols),
+            &source,
+            "test".into(),
+            false,
+        );
+        let module = compiler.compile_expr(&global).unwrap();
+
+        verify_instructions(&module.function, &mut instructions.iter().cloned());
+    }
+
+    #[test]
+    fn recursive_record() {
+        let _ = ::env_logger::try_init();
+
+        assert_instructions(
+            "rec let a = { b }
+             rec let b = { a }
+             in b",
+            &[&[
+                NewRecord { args: 1, record: 0 },
+                NewRecord { args: 1, record: 1 },
+                Push(0),
+                Push(1),
+                CloseRecord { record_index: 0 },
+                Push(1),
+                Push(0),
+                CloseRecord { record_index: 1 },
+                Push(1),
+                Slide(2),
+            ]],
+        )
+    }
+
+    #[test]
+    fn recursive_record_with_functions() {
+        let _ = ::env_logger::try_init();
+
+        assert_instructions(
+            "rec let a =
+                rec let f x = b
+                in { f }
+             rec let b =
+                rec let f y = a
+                in { f }
+             in b",
+            &[
+                &[
+                    NewRecord { args: 1, record: 0 },
+                    NewRecord { args: 1, record: 0 },
+                    // a
+                    Push(0),
+                    NewClosure {
+                        function_index: 0,
+                        upvars: 1,
+                    },
+                    Push(3),
+                    Push(1),
+                    CloseClosure(1),
+                    Push(3),
+                    CloseRecord { record_index: 0 },
+                    Slide(1), // Remove closure
+                    // b
+                    Push(1),
+                    NewClosure {
+                        function_index: 1,
+                        upvars: 1,
+                    },
+                    Push(4),
+                    Push(0),
+                    CloseClosure(1),
+                    Push(4),
+                    CloseRecord { record_index: 1 },
+                    Slide(1), // Remove closure
+                    // body
+                    Push(1),
+                    Slide(2),
+                ],
+                &[PushUpVar(0)],
+                &[PushUpVar(0)],
+            ],
+        )
     }
 }
