@@ -688,11 +688,19 @@ Expr: Expr<Id> = {
         Expr::TypeBindings(vec![binding], Box::new(body))
     },
 
-    "rec" <bindings: ValueBinding+> <body: InExpr> => {
+    <metadata: Metadata?> "rec" <bindings: ValueBinding+> <body: InExpr> => {
+        let mut bindings = bindings;
+        if let Some(metadata) = metadata {
+            bindings[0].metadata = metadata;
+        }
         Expr::LetBindings(ValueBindings::Recursive(bindings), Box::new(body))
     },
 
-    "rec" <bindings: TypeBinding+> <body: InExpr> => {
+    <metadata: Metadata?> "rec" <bindings: TypeBinding+> <body: InExpr> => {
+        let mut bindings = bindings;
+        if let Some(metadata) = metadata {
+            bindings[0].metadata = metadata;
+        }
         Expr::TypeBindings(bindings, Box::new(body))
     },
 

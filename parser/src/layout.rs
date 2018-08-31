@@ -344,6 +344,7 @@ where
             let in_rec = self.indent_levels.stack.len() >= 2
                 && self.indent_levels.stack[self.indent_levels.stack.len() - 2].context
                     == Context::Rec;
+
             let doc_comment_followed_by_let =
                 token.value.is_doc_comment() && self.peek_token().value == Token::Let && in_rec;
 

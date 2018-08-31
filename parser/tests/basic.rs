@@ -910,3 +910,31 @@ id
 "#;
     parse_clear_span!(text);
 }
+
+#[test]
+fn rec_let_with_doc_comment() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+let x = { }
+
+/// a
+rec let id x =
+    let y = x
+    y
+id
+"#;
+    parse_clear_span!(text);
+}
+
+#[test]
+fn rec_let_rec_let() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+rec let x = 0
+
+rec let y = 2
+
+1
+"#;
+    parse_clear_span!(text);
+}
