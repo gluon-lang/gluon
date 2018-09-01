@@ -23,6 +23,7 @@ ordered-float = "0.5.0"
 codespan = "0.1.1"
 codespan-reporting = "0.1.1"
 either = "1"
+stable_deref_trait = "1"
 
 serde = { version = "1.0.0", features = ["rc"], optional = true }
 serde_state = { version = "0.4.0", features = ["rc"], optional = true }

@@ -18,6 +18,7 @@ union-find = "0.3.1"
 pretty = "0.5"
 smallvec = "0.6"
 rpds = "0.5"
+stable_deref_trait = "1"
 
 codespan = "0.1"
 codespan-reporting = "0.1"

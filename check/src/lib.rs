@@ -17,6 +17,7 @@ extern crate log;
 extern crate pretty;
 extern crate rpds;
 extern crate smallvec;
+extern crate stable_deref_trait;
 extern crate strsim;
 extern crate union_find;
 

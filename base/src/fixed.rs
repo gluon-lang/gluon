@@ -1,11 +1,14 @@
 //! Collection types which allows insertion of new values while shared references to its contents
 //! are alive. This is done by storing each value in a stable memory location and preventing an
 //! earlier inserted value to be overwritten.
-use std::cell::{Ref, RefCell};
+use std::borrow::Borrow;
+use std::cell::RefCell;
 use std::fmt;
 use std::hash::Hash;
 use std::iter::{FromIterator, IntoIterator};
-use std::ops::{Index, IndexMut};
+use std::ops::{DerefMut, Index, IndexMut};
+
+use stable_deref_trait::StableDeref;
 
 use fnv::FnvMap;
 // NOTE: transmute is used to circumvent the borrow checker in this module
@@ -26,7 +29,7 @@ unsafe fn forget_lifetime_mut<'a, 'b, T: ?Sized>(x: &'a mut T) -> &'b mut T {
 // Through this and the fact the all values are stored as pointers it is possible to safely
 // insert new values without invalidating pointers retrieved from it
 pub struct FixedMap<K, V> {
-    map: RefCell<FnvMap<K, Box<V>>>,
+    map: RefCell<FnvMap<K, V>>,
 }
 
 impl<K: Eq + Hash, V> Default for FixedMap<K, V> {
@@ -52,15 +55,6 @@ impl<K: Eq + Hash, V> FixedMap<K, V> {
         self.map.borrow_mut().clear();
     }
 
-    pub fn try_insert(&self, key: K, value: V) -> Result<(), (K, V)> {
-        if self.get(&key).is_some() {
-            Err((key, value))
-        } else {
-            self.map.borrow_mut().insert(key, Box::new(value));
-            Ok(())
-        }
-    }
-
     pub fn len(&self) -> usize {
         self.map.borrow().len()
     }
@@ -68,8 +62,23 @@ impl<K: Eq + Hash, V> FixedMap<K, V> {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+}
 
-    pub fn get(&self, k: &K) -> Option<&V> {
+impl<K: Eq + Hash, V: StableDeref> FixedMap<K, V> {
+    pub fn try_insert(&self, key: K, value: V) -> Result<(), (K, V)> {
+        if self.get(&key).is_some() {
+            Err((key, value))
+        } else {
+            self.map.borrow_mut().insert(key, value);
+            Ok(())
+        }
+    }
+
+    pub fn get<Q>(&self, k: &Q) -> Option<&V::Target>
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash,
+    {
         self.map
             .borrow()
             .get(k)
@@ -77,9 +86,29 @@ impl<K: Eq + Hash, V> FixedMap<K, V> {
     }
 }
 
+impl<'a, Q, K, V> Index<&'a Q> for FixedMap<K, V>
+where
+    K: Eq + Hash + Borrow<Q>,
+    Q: Eq + Hash,
+    V: StableDeref,
+{
+    type Output = V::Target;
+    fn index(&self, index: &'a Q) -> &Self::Output {
+        let map = self.map.borrow();
+        let result = &*map[index];
+        unsafe { forget_lifetime(result) }
+    }
+}
+
 #[derive(Debug)]
 pub struct FixedVec<T> {
-    vec: RefCell<Vec<Box<T>>>,
+    vec: RefCell<Vec<T>>,
+}
+
+impl<T> Default for FixedVec<T> {
+    fn default() -> Self {
+        FixedVec::new()
+    }
 }
 
 impl<T> FixedVec<T> {
@@ -94,36 +123,12 @@ impl<T> FixedVec<T> {
     }
 
     pub fn push(&self, value: T) {
-        self.vec.borrow_mut().push(Box::new(value))
+        self.vec.borrow_mut().push(value)
     }
 
     #[allow(dead_code)]
-    pub fn extend<I: Iterator<Item = T>>(&self, iter: I) {
-        self.vec.borrow_mut().extend(iter.map(Box::new))
-    }
-
-    pub fn borrow(&self) -> Ref<Vec<Box<T>>> {
-        self.vec.borrow()
-    }
-
-    pub fn find<F>(&self, mut test: F) -> Option<(usize, &T)>
-    where
-        F: FnMut(&T) -> bool,
-    {
-        self.vec
-            .borrow()
-            .iter()
-            .enumerate()
-            .find(|&(_, boxed)| test(&**boxed))
-            .map(|(i, boxed)| (i, unsafe { forget_lifetime(&**boxed) }))
-    }
-
-    pub fn get(&self, index: usize) -> Option<&T> {
-        if index < self.len() {
-            Some(&self[index])
-        } else {
-            None
-        }
+    pub fn extend<I: IntoIterator<Item = T>>(&self, iter: I) {
+        self.vec.borrow_mut().extend(iter)
     }
 
     pub fn len(&self) -> usize {
@@ -135,17 +140,40 @@ impl<T> FixedVec<T> {
     }
 }
 
-impl<T> Index<usize> for FixedVec<T> {
-    type Output = T;
-    fn index(&self, index: usize) -> &T {
+impl<T> FixedVec<T>
+where
+    T: StableDeref,
+{
+    pub fn iter(&self) -> impl Iterator<Item = &T::Target> {
+        (0..).scan((), move |_, i| self.get(i))
+    }
+
+    pub fn get(&self, index: usize) -> Option<&T::Target> {
+        if index < self.len() {
+            Some(&self[index])
+        } else {
+            None
+        }
+    }
+}
+
+impl<T> Index<usize> for FixedVec<T>
+where
+    T: StableDeref,
+{
+    type Output = T::Target;
+    fn index(&self, index: usize) -> &T::Target {
         let vec = self.vec.borrow();
         let result = &*vec[index];
         unsafe { forget_lifetime(result) }
     }
 }
 
-impl<T> IndexMut<usize> for FixedVec<T> {
-    fn index_mut(&mut self, index: usize) -> &mut T {
+impl<T> IndexMut<usize> for FixedVec<T>
+where
+    T: StableDeref + DerefMut,
+{
+    fn index_mut(&mut self, index: usize) -> &mut T::Target {
         let mut vec = self.vec.borrow_mut();
         let result = &mut *vec[index];
         unsafe { forget_lifetime_mut(result) }
@@ -154,7 +182,7 @@ impl<T> IndexMut<usize> for FixedVec<T> {
 
 impl<A> FromIterator<A> for FixedVec<A> {
     fn from_iter<T: IntoIterator<Item = A>>(iterator: T) -> FixedVec<A> {
-        let vec: Vec<_> = iterator.into_iter().map(Box::new).collect();
+        let vec: Vec<_> = iterator.into_iter().collect();
         FixedVec {
             vec: RefCell::new(vec),
         }

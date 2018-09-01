@@ -36,11 +36,11 @@ where
     union: RefCell<QuickFindUf<UnionByLevel>>,
     /// Vector containing all created variables for this substitution. Needed for the `real` method
     /// which needs to always be able to return a `&T` reference
-    variables: FixedVec<T>,
+    variables: FixedVec<Box<T>>,
     /// For variables which have been infered to have a real type (not a variable) their types are
     /// stored here. As the type stored will never changed we use a `FixedMap` lets `real` return
     /// `&T` from this map safely.
-    types: FixedMap<u32, T>,
+    types: FixedMap<u32, Box<T>>,
     factory: T::Factory,
 }
 
@@ -223,7 +223,7 @@ impl<T: Substitutable> Substitution<T> {
     }
 
     pub fn var_id(&self) -> u32 {
-        self.variables.borrow().len() as u32
+        self.variables.len() as u32
     }
 
     pub fn clear(&mut self) {
@@ -237,7 +237,7 @@ impl<T: Substitutable> Substitution<T> {
                 "Tried to insert variable which is not allowed as that would cause memory \
                  unsafety"
             ),
-            None => match self.types.try_insert(var, t) {
+            None => match self.types.try_insert(var, t.into()) {
                 Ok(()) => (),
                 Err(_) => ice!("Expected variable to not have a type associated with it"),
             },
@@ -265,7 +265,7 @@ impl<T: Substitutable> Substitution<T> {
         debug!("New var {}", self.variables.len());
 
         let var = f(var_id);
-        self.variables.push(var.clone());
+        self.variables.push(var.clone().into());
         var
     }
 

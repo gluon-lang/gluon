@@ -12,6 +12,7 @@ extern crate pretty;
 extern crate quick_error;
 extern crate either;
 extern crate smallvec;
+extern crate stable_deref_trait;
 
 extern crate codespan;
 extern crate codespan_reporting;
