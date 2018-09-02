@@ -375,3 +375,12 @@ and g y = f
 
     assert_eq!(remove_expected(result.unwrap_err().1), errors);
 }
+
+#[test]
+fn only_identifiers_are_allowed_on_recursive_patterns() {
+    let _ = env_logger::try_init();
+
+    assert!(parse(r#"rec let { } = { } in 1"#).is_err());
+    assert!(parse(r#"rec let () = { } in 1"#).is_err());
+    assert!(parse(r#"rec let x @ { }  = { x } in 1"#).is_err());
+}
