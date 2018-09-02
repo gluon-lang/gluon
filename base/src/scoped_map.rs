@@ -60,12 +60,21 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
     }
 
     /// Removes a previously inserted value from the map.
-    pub fn remove(&mut self, k: &K) -> bool {
+    pub fn remove<Q>(&mut self, k: &Q) -> bool
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash,
+        K: ::std::fmt::Debug,
+        V: ::std::fmt::Debug,
+    {
         match self.map.get_mut(k).map(|x| x.pop()) {
             Some(..) => {
                 let mut i = self.scopes.len() as isize - 1;
                 while i >= 0 {
-                    if self.scopes[i as usize].as_ref().map_or(false, |x| x == k) {
+                    if self.scopes[i as usize]
+                        .as_ref()
+                        .map_or(false, |x| x.borrow() == k)
+                    {
                         self.scopes.remove(i as usize);
                     }
                     i -= 1;
@@ -77,10 +86,14 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
     }
 
     /// Returns true if the key has a value declared in the last declared scope
-    pub fn in_current_scope(&self, k: &K) -> bool {
+    pub fn in_current_scope<Q>(&self, k: &Q) -> bool
+    where
+        K: Borrow<Q>,
+        Q: Eq + Hash,
+    {
         for n in self.scopes.iter().rev() {
             match *n {
-                Some(ref name) if name == k => return true,
+                Some(ref name) if name.borrow() == k => return true,
                 None => break,
                 _ => (),
             }

@@ -193,3 +193,24 @@ g
 ",
     "forall a . a -> Int"
 );
+
+test_check!(
+    recursive_variant,
+    r"
+type List a = | Nil | Cons a (List a)
+rec let ones = Cons 1 ones
+ones
+",
+    "test.List Int"
+);
+
+test_check!(
+    dont_leak_recursive_nature_of_binding,
+    r"
+type List a = | Nil | Cons a (List a)
+rec let ones = Cons 1 ones
+match ones with
+| _ -> 1
+",
+    "Int"
+);

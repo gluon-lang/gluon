@@ -963,6 +963,18 @@ x.y.z
 2
 }
 
+test_expr!{ recursive_variant,
+r#"
+type List a = | Nil | Cons a (List a)
+rec let ones = Cons 1 ones
+in
+match ones with
+| Cons x xs -> x
+| Nil -> 2
+"#,
+1
+}
+
 test_expr!{ recursive_implicit,
 r#"
 rec

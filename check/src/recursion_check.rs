@@ -4,15 +4,15 @@ use std::mem;
 use base::{
     ast::{self, Expr, Pattern, SpannedExpr, SpannedIdent, SpannedPattern, TypedIdent, Visitor},
     error::Errors,
+    fnv::FnvMap,
     pos::{self, BytePos, Span, Spanned},
-    scoped_map::ScopedMap,
     symbol::Symbol,
 };
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
     InvalidRecursion { symbol: Symbol },
-    LastExprMustBeRecord,
+    LastExprMustBeConstructor,
 }
 
 impl fmt::Display for Error {
@@ -23,9 +23,9 @@ impl fmt::Display for Error {
                 "`{}` may not be used recursively here",
                 symbol.declared_name()
             ),
-            Error::LastExprMustBeRecord => write!(
+            Error::LastExprMustBeConstructor => write!(
                 f,
-                "The last expression must be a record in recursive values"
+                "The last expression a recursive binding must construct a record, a tuple, a variant or a lambda"
             ),
         }
     }
@@ -47,7 +47,7 @@ impl Context {
 
 #[derive(Debug)]
 struct Checker {
-    uninitialized_values: ScopedMap<Symbol, usize>,
+    uninitialized_values: FnvMap<Symbol, usize>,
     level: usize,
     uninitialized_free_variables: Vec<Spanned<Symbol, BytePos>>,
     context: Context,
@@ -58,7 +58,7 @@ pub type RecursionErrors = Errors<Spanned<Error, BytePos>>;
 
 pub fn check_expr(expr: &SpannedExpr<Symbol>) -> Result<(), RecursionErrors> {
     let mut checker = Checker {
-        uninitialized_values: ScopedMap::new(),
+        uninitialized_values: FnvMap::default(),
         level: 0,
         uninitialized_free_variables: Vec::new(),
         context: Context::Top(0),
@@ -69,6 +69,20 @@ pub fn check_expr(expr: &SpannedExpr<Symbol>) -> Result<(), RecursionErrors> {
         Err(checker.errors)
     } else {
         Ok(())
+    }
+}
+
+fn is_constructor_expr(expr: &SpannedExpr<Symbol>) -> bool {
+    match expr.value {
+        Expr::App { ref func, .. } => is_constructor_ident(func),
+        _ => false,
+    }
+}
+
+fn is_constructor_ident(expr: &SpannedExpr<Symbol>) -> bool {
+    match expr.value {
+        Expr::Ident(ref id) => id.name.declared_name().starts_with(char::is_uppercase),
+        _ => false,
     }
 }
 
@@ -95,9 +109,13 @@ impl Checker {
                 self.check_tail(&alt.expr);
             },
             Expr::Record { .. } | Expr::Tuple { .. } => (),
+            Expr::App { ref func, .. } => if !is_constructor_ident(func) {
+                self.errors
+                    .push(pos::spanned(expr.span, Error::LastExprMustBeConstructor))
+            },
             _ => self
                 .errors
-                .push(pos::spanned(expr.span, Error::LastExprMustBeRecord)),
+                .push(pos::spanned(expr.span, Error::LastExprMustBeConstructor)),
         }
     }
 }
@@ -136,7 +154,6 @@ impl<'a> Visitor<'a> for Checker {
         match expr.value {
             Expr::Ident(ref id) => self.check_ident(expr.span, &id.name),
             Expr::LetBindings(ref bindings, ref expr) => {
-                self.uninitialized_values.enter_scope();
                 self.level += 1;
                 let context = self.context.replace(Context::Top(self.level));
 
@@ -175,8 +192,14 @@ impl<'a> Visitor<'a> for Checker {
                         }
 
                         self.visit_pattern(&bind.name);
-                    } else if let Pattern::Ident(ref id) = bind.name.value {
-                        self.uninitialized_values.remove(&id.name);
+                    }
+                    if let Pattern::Ident(ref id) = bind.name.value {
+                        if self.uninitialized_free_variables[start..]
+                            .iter()
+                            .all(|var| var.value == id.name)
+                        {
+                            self.uninitialized_values.remove(&id.name);
+                        }
                     }
                 }
 
@@ -199,7 +222,7 @@ impl<'a> Visitor<'a> for Checker {
 
                 ast::walk_expr(self, expr);
 
-                {
+                if !is_constructor_expr(expr) {
                     let used_uninitialized_variables = &self.uninitialized_free_variables[start..];
                     self.errors
                         .extend(used_uninitialized_variables.iter().map(|id| Spanned {
