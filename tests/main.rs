@@ -12,7 +12,6 @@ extern crate gluon;
 extern crate pulldown_cmark;
 extern crate tensile;
 extern crate tokio;
-extern crate tokio_core;
 extern crate walkdir;
 
 use gluon::base::ast::{Expr, Pattern, SpannedExpr};
@@ -393,17 +392,19 @@ fn main_() -> Result<(), Error> {
             }
         }).collect();
 
-    let mut runtime = tokio_core::reactor::Core::new()?;
-    tensile::console_runner(
-        tensile::group(
-            "main",
-            vec![
-                tensile::group("pass", pass_tests),
-                tensile::group("fail", fail_tests),
-                tensile::group("doc", doc_tests),
-            ],
-        ),
-        &tensile::Options::default().filter(filter.map_or("", |s| &s[..])),
-    ).unwrap();
+    let mut runtime = Runtime::new()?;
+    runtime.block_on(future::lazy(|| {
+        tensile::console_runner(
+            tensile::group(
+                "main",
+                vec![
+                    tensile::group("pass", pass_tests),
+                    tensile::group("fail", fail_tests),
+                    tensile::group("doc", doc_tests),
+                ],
+            ),
+            &tensile::Options::default().filter(filter.map_or("", |s| &s[..])),
+        )
+    }))?;
     Ok(())
 }
