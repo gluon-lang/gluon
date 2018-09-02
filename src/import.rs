@@ -406,6 +406,28 @@ pub fn add_extern_module(thread: &Thread, name: &str, loader: ExternLoader) {
     import.add_loader(name, loader);
 }
 
+macro_rules! add_extern_module_if {
+    (
+        #[cfg($($features: tt)*)], 
+        available_if = $msg: expr,
+        args($vm: expr, $mod_name: expr, $loader: path)
+    ) => {{
+        #[cfg($($features)*)]
+        $crate::import::add_extern_module($vm, $mod_name, $loader);
+
+        #[cfg(not($($features)*))]
+        $crate::import::add_extern_module($vm, $mod_name, |_: &::vm::thread::Thread| -> ::vm::Result<::vm::ExternModule> {
+            Err(::vm::Error::Message(
+                format!(
+                    "{} is only available if {}",
+                    $mod_name,
+                    $msg
+                )
+            ))
+        });
+    }};
+}
+
 fn get_state<'m>(macros: &'m mut MacroExpander) -> &'m mut State {
     macros
         .state
