@@ -124,15 +124,12 @@ let parse : String -> Result String Expr =
 
     let operator =
         satisfy_map (\c ->
-            if c == '*'
-            then Some Mul
-            else if c == '+'
-            then Some Add
-            else if c == '-'
-            then Some Sub
-            else if c == '/'
-            then Some Div
-            else None)
+            match c with
+            | '*' -> Some Mul
+            | '+' -> Some Add
+            | '-' -> Some Sub
+            | '/' -> Some Div
+            | _ -> None)
             <?> "operator"
 
     rec
