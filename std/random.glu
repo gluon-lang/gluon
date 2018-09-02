@@ -1,4 +1,6 @@
 //! Basic random number generation
+//!
+//! _This module is only available if gluon is compiled with the `rand` feature._
 
 let prim = import! std.random.prim
 
