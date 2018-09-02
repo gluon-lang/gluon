@@ -33,6 +33,7 @@ pub extern crate gluon_parser as parser;
 pub extern crate gluon_vm as vm;
 
 pub mod compiler_pipeline;
+#[macro_use]
 pub mod import;
 pub mod io;
 #[cfg(all(feature = "rand", not(target_arch = "wasm32")))]
@@ -692,11 +693,23 @@ impl VmBuilder {
         add_extern_module(&vm, "std.debug.prim", ::vm::debug::load);
         add_extern_module(&vm, "std.io.prim", ::io::load);
 
-        #[cfg(feature = "serialization")]
-        add_extern_module(&vm, "std.json.prim", ::vm::api::json::load);
+        add_extern_module_if!(
+            #[cfg(feature = "serialization")],
+            available_if = "gluon is compiled with the 'serialization' feature",
+            args(&vm, "std.json.prim", ::vm::api::json::load)
+        );
 
-        load_regex(&vm);
-        load_random(&vm);
+        add_extern_module_if!(
+            #[cfg(feature = "regex")], 
+            available_if = "gluon is compiled with the 'regex' feature",
+            args(&vm, "std.regex", ::regex_bind::load)
+        );
+
+        add_extern_module_if!(
+            #[cfg(all(feature = "rand", not(target_arch = "wasm32")))],
+            available_if = "gluon is compiled with the 'rand' feature and is not targeting WASM",
+            args(&vm, "std.random.prim", ::rand_bind::load)
+        );
 
         vm
     }
@@ -707,20 +720,6 @@ impl VmBuilder {
 pub fn new_vm() -> RootedThread {
     VmBuilder::default().build()
 }
-
-#[cfg(feature = "regex")]
-fn load_regex(vm: &Thread) {
-    add_extern_module(&vm, "std.regex", ::regex_bind::load);
-}
-#[cfg(not(feature = "regex"))]
-fn load_regex(_: &Thread) {}
-
-#[cfg(all(feature = "rand", not(target_arch = "wasm32")))]
-fn load_random(vm: &Thread) {
-    add_extern_module(&vm, "std.random.prim", ::rand_bind::load);
-}
-#[cfg(any(not(feature = "rand"), target_arch = "wasm32"))]
-fn load_random(_: &Thread) {}
 
 #[cfg(test)]
 mod tests {

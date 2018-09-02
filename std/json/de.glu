@@ -1,4 +1,7 @@
-//! JSON deserialzation
+//! JSON deserialization
+//!
+//! _This module is only available if gluon is compiled with the `serialization` feature._
+
 let { Value } = import! std.json.value
 let prim = import! std.json.prim
 
