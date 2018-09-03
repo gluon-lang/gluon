@@ -118,15 +118,6 @@ impl<'input> fmt::Display for Token<'input> {
     }
 }
 
-impl<'input> Token<'input> {
-    pub fn is_doc_comment(&self) -> bool {
-        match *self {
-            Token::DocComment(_) => true,
-            _ => false,
-        }
-    }
-}
-
 pub type SpannedToken<'input> = Spanned<Token<'input>, Location>;
 
 pub type SpError = Spanned<Error, Location>;

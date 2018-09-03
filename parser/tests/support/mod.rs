@@ -10,7 +10,7 @@ use base::ast::{
 };
 use base::error::Errors;
 use base::kind::Kind;
-use base::metadata::Metadata;
+use base::metadata::{Comment, CommentType, Metadata};
 use base::pos::{self, BytePos, Span, Spanned};
 use base::types::{Alias, AliasData, ArcType, Field, Generic, Type};
 use parser::infix::{Fixity, OpMeta, OpTable, Reparser};
@@ -346,4 +346,14 @@ pub fn alias<Id>(
     typ: AstType<Id>,
 ) -> Spanned<AliasData<Id, AstType<Id>>, BytePos> {
     no_loc(AliasData::new(name, args, typ))
+}
+
+pub fn line_comment(s: &str) -> Metadata {
+    Metadata {
+        comment: Some(Comment {
+            typ: CommentType::Line,
+            content: s.into(),
+        }),
+        ..Metadata::default()
+    }
 }

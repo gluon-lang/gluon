@@ -115,7 +115,9 @@ fn type_mutually_recursive() {
     let e = parse_clear_span!(
         r#"
         rec
+        /// Test
         type Test = | Test Int
+        #[a]
         type Test2 = { x: Int, y: {} }
         in 1"#
     );
@@ -132,13 +134,19 @@ fn type_mutually_recursive() {
     );
     let binds = vec![
         TypeBinding {
-            metadata: Metadata::default(),
+            metadata: line_comment("Test"),
             name: no_loc(intern("Test")),
             alias: alias(intern("Test"), Vec::new(), test),
             finalized_alias: None,
         },
         TypeBinding {
-            metadata: Metadata::default(),
+            metadata: Metadata {
+                attributes: vec![Attribute {
+                    name: "a".into(),
+                    arguments: None,
+                }],
+                ..Metadata::default()
+            },
             name: no_loc(intern("Test2")),
             alias: alias(intern("Test2"), Vec::new(), test2),
             finalized_alias: None,
@@ -932,6 +940,20 @@ fn rec_let_rec_let() {
     let text = r#"
 rec let x = 0
 
+rec let y = 2
+
+1
+"#;
+    parse_clear_span!(text);
+}
+
+#[test]
+fn rec_let_doc_rec_let() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+rec let x = 0
+
+/// y
 rec let y = 2
 
 1

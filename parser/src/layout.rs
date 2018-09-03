@@ -140,10 +140,54 @@ where
         }
     }
 
-    fn peek_token(&mut self) -> &SpannedToken<'input> {
-        let token = self.next_token();
-        self.unprocessed_tokens.push(token);
-        self.unprocessed_tokens.last().unwrap()
+    fn continue_block(&mut self, context: Context, token: &Token) -> bool {
+        let in_rec = self.indent_levels.stack.len() >= 2
+            && self.indent_levels.stack[self.indent_levels.stack.len() - 2].context == Context::Rec;
+
+        in_rec
+            && (context == Context::Attribute
+                || (*token != Token::Rec && self.scan_continue_block(context, token)))
+    }
+
+    fn scan_continue_block(&mut self, context: Context, first_token: &Token) -> bool {
+        let expected_token = match context {
+            Context::Let => Token::Let,
+            Context::Type => Token::Type,
+            _ => return false,
+        };
+        let mut in_attribute = false;
+        for i in 0.. {
+            let peek_token = if i == 0 {
+                Some(first_token)
+            } else {
+                self.peek_token(i - 1).map(|t| &t.value)
+            };
+            if peek_token == Some(&expected_token) {
+                return true;
+            }
+            match peek_token {
+                Some(peek_token) => match peek_token {
+                    Token::AttributeOpen => in_attribute = true,
+                    Token::DocComment(..) => (),
+                    Token::RBracket => in_attribute = false,
+                    _ if !in_attribute => return false,
+                    _ => (),
+                },
+                None => return false,
+            }
+        }
+        false
+    }
+
+    fn peek_token(&mut self, n: usize) -> Option<&SpannedToken<'input>> {
+        for _ in self.unprocessed_tokens.len()..=n {
+            let token = match self.tokens.next() {
+                Some(token) => token,
+                None => return None,
+            };
+            self.unprocessed_tokens.insert(0, token);
+        }
+        self.unprocessed_tokens.first()
     }
 
     fn next_token(&mut self) -> SpannedToken<'input> {
@@ -341,13 +385,6 @@ where
                 (_, _) => (),
             }
 
-            let in_rec = self.indent_levels.stack.len() >= 2
-                && self.indent_levels.stack[self.indent_levels.stack.len() - 2].context
-                    == Context::Rec;
-
-            let doc_comment_followed_by_let =
-                token.value.is_doc_comment() && self.peek_token().value == Token::Let && in_rec;
-
             // Next we check offside rules for each of the contexts
             let ordering = token.span.start().column.cmp(&offside.location.column);
             match (offside.context, ordering) {
@@ -404,51 +441,53 @@ where
                 | (Context::Let, Ordering::Less)
                 | (Context::Type, Ordering::Equal)
                 | (Context::Type, Ordering::Less)
-                    if token.value != Token::RBrace && !doc_comment_followed_by_let && !(in_rec
-                        && (token.value == Token::Let || token.value == Token::Type)) =>
+                    if token.value != Token::RBrace =>
                 {
-                    if token.value == Token::EOF {
-                        self.indent_levels.pop();
-                        continue;
-                    }
-                    // Insert an `in` token
-                    let let_location = self.indent_levels.pop().unwrap().location;
-                    {
-                        let offside = self
-                            .indent_levels
-                            .last_mut()
-                            .expect("No top level block found");
-                        // The enclosing block should not emit a block separator for the next
-                        // expression
-                        if let Context::Block {
-                            ref mut emit_semi, ..
-                        } = offside.context
-                        {
-                            *emit_semi = false;
+                    if !self.continue_block(offside.context, &token.value) {
+                        if token.value == Token::EOF {
+                            self.indent_levels.pop();
+                            continue;
                         }
+                        // Insert an `in` token
+                        let let_location = self.indent_levels.pop().unwrap().location;
+                        {
+                            let offside = self
+                                .indent_levels
+                                .last_mut()
+                                .expect("No top level block found");
+                            // The enclosing block should not emit a block separator for the next
+                            // expression
+                            if let Context::Block {
+                                ref mut emit_semi, ..
+                            } = offside.context
+                            {
+                                *emit_semi = false;
+                            }
+                        }
+                        if let Some(Context::Rec) =
+                            self.indent_levels.last().map(|offside| offside.context)
+                        {
+                            self.indent_levels.pop();
+                        }
+
+                        let span = token.span;
+                        let result = Ok(self.layout_token(token, Token::In));
+
+                        // Inject a block to ensure that a sequence of expressions end up in the `let` body
+                        // ```
+                        // let x = 1
+                        // a
+                        // b
+                        // ```
+                        // `let x = 1 in {{ a; b }}` and not `{{ (let x = 1 in a) ; b }}`
+                        let offside =
+                            Offside::new(let_location, Context::Block { emit_semi: false });
+                        self.indent_levels.push(offside)?;
+                        self.unprocessed_tokens
+                            .push(pos::spanned(span, Token::OpenBlock));
+
+                        return result;
                     }
-                    if let Some(Context::Rec) =
-                        self.indent_levels.last().map(|offside| offside.context)
-                    {
-                        self.indent_levels.pop();
-                    }
-
-                    let span = token.span;
-                    let result = Ok(self.layout_token(token, Token::In));
-
-                    // Inject a block to ensure that a sequence of expressions end up in the `let` body
-                    // ```
-                    // let x = 1
-                    // a
-                    // b
-                    // ```
-                    // `let x = 1 in {{ a; b }}` and not `{{ (let x = 1 in a) ; b }}`
-                    let offside = Offside::new(let_location, Context::Block { emit_semi: false });
-                    self.indent_levels.push(offside)?;
-                    self.unprocessed_tokens
-                        .push(pos::spanned(span, Token::OpenBlock));
-
-                    return result;
                 }
                 _ => (),
             }
