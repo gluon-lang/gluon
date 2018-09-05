@@ -70,6 +70,8 @@ env:
     - CRATE_NAME=gluon
     - RUST_BACKTRACE=1
     - RUSTC_WRAPPER=sccache
+    # A clean build seems to create ~300M 
+    - SCCACHE_CACHE_SIZE=500M
 script:
 - >
     if [ ! -z $TRAVIS_TAG ]; then
