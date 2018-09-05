@@ -334,8 +334,11 @@ pub enum Expr<Id> {
 }
 
 impl<Id> Expr<Id> {
-    pub fn rec_let_binding(bind: ValueBinding<Id>, expr: impl Into<Box<SpannedExpr<Id>>>) -> Self {
-        Expr::LetBindings(ValueBindings::Recursive(vec![bind]), expr.into())
+    pub fn rec_let_bindings(
+        binds: Vec<ValueBinding<Id>>,
+        expr: impl Into<Box<SpannedExpr<Id>>>,
+    ) -> Self {
+        Expr::LetBindings(ValueBindings::Recursive(binds), expr.into())
     }
 
     pub fn let_binding(bind: ValueBinding<Id>, expr: impl Into<Box<SpannedExpr<Id>>>) -> Self {

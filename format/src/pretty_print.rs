@@ -260,7 +260,12 @@ where
                     chain![arena;
                         pretty_types::doc_comment(arena, bind.metadata.comment.as_ref()),
                         self.pretty_attributes(&bind.metadata.attributes),
-                        self.hang(decl, &bind.expr).group()
+                        self.hang(decl, &bind.expr).group(),
+                        if self.formatter.expanded {
+                            arena.newline()
+                        } else {
+                            arena.nil()
+                        }
                     ]
                 };
                 let is_recursive = match binds {
@@ -278,11 +283,6 @@ where
                             .map(|bind| binding(bind))
                             .interleave(newlines_iter!(self, binds.iter().map(|bind| bind.span())))
                     ),
-                    if self.formatter.expanded {
-                        arena.newline()
-                    } else {
-                        arena.nil()
-                    },
                     if is_recursive {
                         match body.value {
                             Expr::LetBindings(..) => arena.newline().append(arena.text("in")),
@@ -369,16 +369,22 @@ where
                 let is_recursive = binds.len() > 1;
 
                 chain![arena;
-                    pretty_types::doc_comment(arena, binds.first().unwrap().metadata.comment.as_ref()),
-                    self.pretty_attributes(&binds.first().unwrap().metadata.attributes),
-
-                    if is_recursive {
-                        arena.text("rec").append(if binds.len() == 1 { arena.space() } else { arena.newline() })
+                    if is_recursive && binds.len() != 1 {
+                        arena.text("rec").append(arena.newline())
                     } else {
                         arena.nil()
                     },
 
-                    arena.concat(binds.iter().map(|bind| {
+                    pretty_types::doc_comment(arena, binds.first().unwrap().metadata.comment.as_ref()),
+                    self.pretty_attributes(&binds.first().unwrap().metadata.attributes),
+
+                    if is_recursive && binds.len() == 1 {
+                        arena.text("rec").append(arena.space())
+                    } else {
+                        arena.nil()
+                    },
+
+                    arena.concat(binds.iter().enumerate().map(|(i, bind)| {
                         let typ = bind.alias.value.unresolved_type();
                         let typ = match **typ {
                             // Remove the "parameters"
@@ -391,6 +397,15 @@ where
                             _ => type_doc = type_doc.nest(INDENT),
                         }
                         chain![arena;
+                            if i != 0 {
+                                chain![arena;
+                                    pretty_types::doc_comment(arena, bind.metadata.comment.as_ref()),
+                                    self.pretty_attributes(&bind.metadata.attributes)
+                                ]
+                            } else {
+                                arena.nil()
+                            },
+
                             "type",
                             " ",
                             bind.name.value.as_ref(),
@@ -429,13 +444,13 @@ where
                             }
                         ].group()
                     }).interleave(newlines_iter!(self, binds.iter().map(|bind| bind.span())))),
-                    if self.formatter.expanded {
-                        arena.newline()
+                    if is_recursive {
+                        arena.newline().append(arena.text("in"))
                     } else {
                         arena.nil()
                     },
-                    if is_recursive {
-                        arena.newline().append(arena.text("in"))
+                    if self.formatter.expanded {
+                        arena.newline()
                     } else {
                         arena.nil()
                     },

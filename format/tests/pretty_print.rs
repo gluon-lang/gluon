@@ -525,7 +525,7 @@ End
 }
 
 #[test]
-fn derive_parameterized_expended() {
+fn derive_parameterized_expanded() {
     let expr = r#"
 #[derive(Show)]
 type Test a =
@@ -540,6 +540,47 @@ rec let show_Test : [Show a] -> Show (Test a) =
     rec let show_ x : Test a -> String =
         match x with
         | Test arg_0 -> "Test" ++ " " ++ "(" ++ show arg_0 ++ ")"
+    { show = show_ }
+Test 1
+"#;
+    assert_diff!(&format_expr_expanded(expr).unwrap(), expected, "\n", 0);
+}
+
+#[test]
+fn derive_show_recursive_expanded() {
+    let expr = r#"
+rec
+#[derive(Show)]
+type Test a =
+    | Test (Test2 a)
+#[derive(Show)]
+type Test2 a =
+    | Test2 (Test a)
+    | Nil
+in
+Test 1
+"#;
+    let expected = r#"
+rec
+#[derive(Show)]
+type Test a =
+    | Test (Test2 a)
+#[derive(Show)]
+type Test2 a =
+    | Test2 (Test a)
+    | Nil
+in
+rec
+let show_Test : [Show a] -> Show (Test a) =
+    rec let show_ x : Test a -> String =
+        match x with
+        | Test arg_0 -> "Test" ++ " " ++ "(" ++ show arg_0 ++ ")"
+    { show = show_ }
+let show_Test2 : [Show a] -> Show (Test2 a) =
+    rec let show_ x : Test2 a -> String =
+        match x with
+        | Test2 arg_0 -> "Test2" ++ " " ++ "(" ++ show arg_0 ++ ")"
+        | Nil -> "Nil"
     { show = show_ }
 Test 1
 "#;
