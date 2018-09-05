@@ -80,7 +80,7 @@ let eq_tests =
         ]
 
     let mutual =
-        let a = Value 123
+        let a = Value "abc"
         let b = { x = 1, mutual = a }
         let c = Mutual2 b
         [

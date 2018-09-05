@@ -365,8 +365,8 @@ fn generate_show(
             .collect(),
     );
 
-    let show_record_expr = Expr::rec_let_binding(
-        ValueBinding {
+    let show_record_expr = Expr::rec_let_bindings(
+        vec![ValueBinding {
             name: pos::spanned(span, Pattern::Ident(show_fn.clone())),
             args: vec![Argument::explicit(pos::spanned(
                 span,
@@ -376,7 +376,7 @@ fn generate_show(
             metadata: Default::default(),
             typ: Some(Type::function(vec![self_type.clone()], Type::string())),
             resolved_type: Type::hole(),
-        },
+        }],
         pos::spanned(
             span,
             Expr::Record {
@@ -568,8 +568,8 @@ fn generate_eq(
             .collect(),
     );
 
-    let eq_record_expr = Expr::rec_let_binding(
-        ValueBinding {
+    let eq_record_expr = Expr::rec_let_bindings(
+        vec![ValueBinding {
             name: pos::spanned(span, Pattern::Ident(eq.clone())),
             args: [l, r]
                 .iter()
@@ -582,7 +582,7 @@ fn generate_eq(
                 Type::hole(),
             )),
             resolved_type: Type::hole(),
-        },
+        }],
         pos::spanned(
             span,
             Expr::Record {

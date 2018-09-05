@@ -219,6 +219,30 @@ unsafe impl<'b> DataDef for Def<'b> {
     }
 }
 
+pub(crate) struct UninitializedVariantDef {
+    pub tag: VmTag,
+    pub elems: usize,
+}
+unsafe impl DataDef for UninitializedVariantDef {
+    type Value = DataStruct;
+    fn size(&self) -> usize {
+        size_of::<DataStruct>() + size_of::<Value>() * self.elems
+    }
+    fn initialize<'w>(self, mut result: WriteOnly<'w, DataStruct>) -> &'w mut DataStruct {
+        unsafe {
+            let result = &mut *result.as_mut_ptr();
+            result.tag = self.tag;
+            result
+                .fields
+                .initialize((0..self.elems).map(|_| Value::int(0)));
+            result
+        }
+    }
+}
+impl Traverseable for UninitializedVariantDef {
+    fn traverse(&self, _gc: &mut Gc) {}
+}
+
 impl<'b> Traverseable for Def<'b> {
     fn traverse(&self, gc: &mut Gc) {
         self.elems.traverse(gc);

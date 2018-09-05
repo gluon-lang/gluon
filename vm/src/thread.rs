@@ -31,7 +31,8 @@ use stack::{
 use types::*;
 use value::{
     BytecodeFunction, Callable, ClosureData, ClosureDataDef, ClosureInitDef, Def, ExternFunction,
-    PartialApplicationDataDef, RecordDef, UninitializedRecord, Userdata, Value, ValueRepr,
+    PartialApplicationDataDef, RecordDef, UninitializedRecord, UninitializedVariantDef, Userdata,
+    Value, ValueRepr,
 };
 use vm::{GlobalVmState, GlobalVmStateBuilder, VmEnv};
 use {BoxFuture, Error, Result, Variants};
@@ -1826,7 +1827,7 @@ impl<'b> ExecuteContext<'b> {
                     debug!("{:?}", &context.stack[..]);
                     return context.do_call(args).map(|x| Async::Ready(Some(x)));
                 }
-                Construct { tag, args } => {
+                ConstructVariant { tag, args } => {
                     let d = {
                         if args == 0 {
                             ValueRepr::Tag(tag)
@@ -1875,6 +1876,24 @@ impl<'b> ExecuteContext<'b> {
                     }
                     self.stack.push(d);
                 }
+                NewVariant { tag, args } => {
+                    let d = {
+                        if args == 0 {
+                            ValueRepr::Tag(tag)
+                        } else {
+                            Data(alloc(
+                                &mut self.gc,
+                                self.thread,
+                                &self.stack.stack,
+                                UninitializedVariantDef {
+                                    tag: tag,
+                                    elems: args as usize,
+                                },
+                            )?)
+                        }
+                    };
+                    self.stack.push(d);
+                }
                 NewRecord { record, args } => {
                     let d = {
                         if args == 0 {
@@ -1898,8 +1917,8 @@ impl<'b> ExecuteContext<'b> {
                     };
                     self.stack.push(d);
                 }
-                CloseRecord { record_index } => {
-                    match self.stack[record_index].get_repr() {
+                CloseData { index } => {
+                    match self.stack[index].get_repr() {
                         Data(mut data) => {
                             // Unique access is safe as the record is only reachable from this
                             // thread and none of those places will use it until after we have

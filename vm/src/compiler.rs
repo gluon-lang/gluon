@@ -604,7 +604,7 @@ impl<'a> Compiler<'a> {
             Stack(index) => function.emit(Push(index)),
             UpVar(index) => function.emit(PushUpVar(index)),
             // Zero argument constructors can be compiled as integers
-            Constructor(tag, 0) => function.emit(Construct { tag: tag, args: 0 }),
+            Constructor(tag, 0) => function.emit(ConstructVariant { tag: tag, args: 0 }),
             Constructor(..) => {
                 return Err(Error::Message(format!(
                     "Constructor `{}` is not fully applied",
@@ -722,7 +722,13 @@ impl<'a> Compiler<'a> {
                                         function.stack_size -= 1;
                                         function.function.instructions[offset] =
                                             NewRecord { record, args };
-                                        function.function.instructions[construct_index] = CloseRecord { record_index: stack_start + i as VmIndex };
+                                        function.function.instructions[construct_index] = CloseData { index: stack_start + i as VmIndex };
+                                    }
+                                    ConstructVariant { tag, args } => {
+                                        function.stack_size -= 1;
+                                        function.function.instructions[offset] =
+                                            NewVariant { tag, args };
+                                        function.function.instructions[construct_index] = CloseData { index: stack_start + i as VmIndex };
                                     }
                                     x => ice!(
                                         "Expected record as last expression of recursive binding `{}`: {:?}\n{}", closure.name.name, x, closure.expr
@@ -765,7 +771,7 @@ impl<'a> Compiler<'a> {
                         for arg in args {
                             self.compile(arg, function, false)?;
                         }
-                        function.emit(Construct {
+                        function.emit(ConstructVariant {
                             tag: tag,
                             args: num_args,
                         });
@@ -908,7 +914,7 @@ impl<'a> Compiler<'a> {
                         function.emit(ConstructArray(exprs.len() as VmIndex));
                     }
                     Type::Variant(ref variants) => {
-                        function.emit(Construct {
+                        function.emit(ConstructVariant {
                             tag: variants
                                 .row_iter()
                                 .position(|field| field.name == id.name)
@@ -937,7 +943,7 @@ impl<'a> Compiler<'a> {
             self.compile(lhs, function, false)?;
             let lhs_end = function.function.instructions.len();
             function.emit(CJump(lhs_end as VmIndex + 3)); //Jump to rhs evaluation
-            function.emit(Construct { tag: 0, args: 0 });
+            function.emit(ConstructVariant { tag: 0, args: 0 });
             function.emit(Jump(0)); //lhs false, jump to after rhs
                                     // Dont count the integer added added above as the next part of the code never
                                     // pushed it
@@ -954,7 +960,7 @@ impl<'a> Compiler<'a> {
             function.emit(Jump(0));
             function.function.instructions[lhs_end] =
                 CJump(function.function.instructions.len() as VmIndex);
-            function.emit(Construct { tag: 1, args: 0 });
+            function.emit(ConstructVariant { tag: 1, args: 0 });
             // Dont count the integer above
             function.stack_size -= 1;
             let end = function.function.instructions.len();
@@ -1165,10 +1171,10 @@ mod tests {
                 NewRecord { args: 1, record: 1 },
                 Push(0),
                 Push(1),
-                CloseRecord { record_index: 0 },
+                CloseData { index: 0 },
                 Push(1),
                 Push(0),
-                CloseRecord { record_index: 1 },
+                CloseData { index: 1 },
                 Push(1),
                 Slide(2),
             ]],
@@ -1201,7 +1207,7 @@ mod tests {
                     Push(1),
                     CloseClosure(1),
                     Push(3),
-                    CloseRecord { record_index: 0 },
+                    CloseData { index: 0 },
                     Slide(1), // Remove closure
                     // b
                     Push(1),
@@ -1213,7 +1219,7 @@ mod tests {
                     Push(0),
                     CloseClosure(1),
                     Push(4),
-                    CloseRecord { record_index: 1 },
+                    CloseData { index: 1 },
                     Slide(1), // Remove closure
                     // body
                     Push(1),

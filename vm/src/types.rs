@@ -37,7 +37,13 @@ pub enum Instruction {
     /// See `Call`.
     TailCall(VmIndex),
     /// Constructs a data value tagged by `tag` by taking the top `args` values of the stack.
-    Construct {
+    ConstructVariant {
+        /// The tag of the data
+        tag: VmIndex,
+        /// How many arguments that is taken from the stack to construct the data.
+        args: VmIndex,
+    },
+    NewVariant {
         /// The tag of the data
         tag: VmIndex,
         /// How many arguments that is taken from the stack to construct the data.
@@ -49,8 +55,9 @@ pub enum Instruction {
         /// How large the record is
         args: VmIndex,
     },
-    CloseRecord {
-        record_index: VmIndex,
+    CloseData {
+        /// Where the record is located
+        index: VmIndex,
     },
     ConstructRecord {
         /// Index to the specification describing which fields this record contains
@@ -132,7 +139,7 @@ impl Instruction {
             PushInt(_) | PushByte(_) | PushFloat(_) | PushString(_) | Push(_) => 1,
             Call(n) => -(n as i32),
             TailCall(n) => -(n as i32),
-            Construct { args, .. } | ConstructRecord { args, .. } | ConstructArray(args) => {
+            ConstructVariant { args, .. } | ConstructRecord { args, .. } | ConstructArray(args) => {
                 1 - args as i32
             }
             GetField(_) | GetOffset(_) => 0,
@@ -144,8 +151,9 @@ impl Instruction {
             CJump(_) => -1,
             Pop(n) => -(n as i32),
             Slide(n) => -(n as i32),
+            NewVariant { .. } => 1,
             NewRecord { .. } => 1,
-            CloseRecord { .. } => 0,
+            CloseData { .. } => 0,
             MakeClosure { .. } => 1,
             NewClosure { .. } => 1,
             CloseClosure(_) => -1,
