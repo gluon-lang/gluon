@@ -103,6 +103,9 @@ before_deploy:
         export GIT_HASH=$(git rev-parse HEAD)
         sh scripts/before_deploy.sh
     fi
+
+before_cache:
+    - rm -rf /home/travis/.cargo/registry
 deploy:
   - provider: pages
     skip-cleanup: true
