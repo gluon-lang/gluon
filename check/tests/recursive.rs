@@ -11,6 +11,20 @@ extern crate gluon_parser as parser;
 mod support;
 
 #[test]
+fn non_recursive() {
+    let _ = env_logger::try_init();
+
+    let text = r"
+let x = 1
+let x = x
+x
+";
+    let result = support::typecheck(text);
+
+    assert_req!(result.map(|t| t.to_string()), Ok("Int"));
+}
+
+#[test]
 fn recursive_lambda() {
     let _ = env_logger::try_init();
 

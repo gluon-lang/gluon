@@ -1,3 +1,4 @@
+//! Checks that the expression do not contain any invalid recursive bindings.
 use std::fmt;
 use std::mem;
 
@@ -95,6 +96,8 @@ impl Checker {
         }
     }
 
+    // A recursive bindings is only allowed if it ends in constructing a value, if it doesn't it is
+    // not possible to pre-allocate storage for the value and compile the binding.
     fn check_tail(&mut self, expr: &SpannedExpr<Symbol>) {
         match expr.value {
             Expr::Block(ref bs) => self.check_tail(bs.last().unwrap()),
