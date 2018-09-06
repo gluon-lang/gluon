@@ -585,26 +585,6 @@ impl Compiler {
         let prelude_expr = self.parse_expr(type_cache, "", PRELUDE).unwrap();
         let original_expr = mem::replace(expr, prelude_expr);
 
-        // Set all spans in the prelude expression to -1 so that completion requests always
-        // skips searching the implicit prelude
-        use base::ast::{walk_mut_expr, walk_mut_pattern, MutVisitor, SpannedPattern};
-        struct ExpandedSpans;
-
-        impl<'a> MutVisitor<'a> for ExpandedSpans {
-            type Ident = Symbol;
-
-            fn visit_expr(&mut self, e: &mut SpannedExpr<Self::Ident>) {
-                e.span = Span::new(u32::max_value().into(), u32::max_value().into());
-                walk_mut_expr(self, e);
-            }
-
-            fn visit_pattern(&mut self, p: &mut SpannedPattern<Self::Ident>) {
-                p.span = Span::new(u32::max_value().into(), u32::max_value().into());
-                walk_mut_pattern(self, &mut p.value);
-            }
-        }
-        ExpandedSpans.visit_expr(expr);
-
         // Replace the 0 in the prelude with the actual expression
         fn assign_last_body(l: &mut SpannedExpr<Symbol>, original_expr: SpannedExpr<Symbol>) {
             match l.value {
