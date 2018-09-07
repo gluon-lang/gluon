@@ -27,6 +27,35 @@ macro_rules! primitive_cast {
     };
 }
 
+#[doc(hidden)]
+#[macro_export]
+macro_rules! closure_wrapper {
+    (0, $name:expr) => {
+        || $crate::api::FutureResult::new($name())
+    };
+    (1, $name:expr) => {
+        |a| $crate::api::FutureResult::new($name(a))
+    };
+    (2, $name:expr) => {
+        |a, b| $crate::api::FutureResult::new($name(a, b))
+    };
+    (3, $name:expr) => {
+        |a, b, c| $crate::api::FutureResult::new($name(a, b, c))
+    };
+    (4, $name:expr) => {
+        |a, b, c, d| $crate::api::FutureResult::new($name(a, b, c, d))
+    };
+    (5, $name:expr) => {
+        |a, b, c, d, e| $crate::api::FutureResult::new($name(a, b, c, d, e))
+    };
+    (6, $name:expr) => {
+        |a, b, c, d, e, f| $crate::api::FutureResult::new($name(a, b, c, d, e, f))
+    };
+    (7, $name:expr) => {
+        |a, b, c, d, e, f, g| $crate::api::FutureResult::new($name(a, b, c, d, e, f, g))
+    };
+}
+
 /// Creates a `GluonFunction` from a function implementing `VMFunction`
 ///
 /// ```rust
@@ -37,49 +66,31 @@ macro_rules! primitive_cast {
 /// }
 ///
 /// fn main() {
-///     primitive!(2 test);
+///     primitive!(2, test);
 /// }
 /// ```
 #[macro_export]
 macro_rules! primitive {
-    (0 $name:expr) => {
-        named_primitive!(0, stringify!($name), $name)
+    ($arg_count:tt,async fn $name:expr) => {
+        primitive!($arg_count, stringify!($name), async fn $name)
     };
-    (1 $name:expr) => {
-        named_primitive!(1, stringify!($name), $name)
-    };
-    (2 $name:expr) => {
-        named_primitive!(2, stringify!($name), $name)
-    };
-    (3 $name:expr) => {
-        named_primitive!(3, stringify!($name), $name)
-    };
-    (4 $name:expr) => {
-        named_primitive!(4, stringify!($name), $name)
-    };
-    (5 $name:expr) => {
-        named_primitive!(5, stringify!($name), $name)
-    };
-    (6 $name:expr) => {
-        named_primitive!(6, stringify!($name), $name)
-    };
-    (7 $name:expr) => {
-        named_primitive!(7, stringify!($name), $name)
-    };
-}
 
-#[macro_export]
-macro_rules! named_primitive {
-    ($count:tt, $name:expr, $func:expr) => {
+    ($arg_count:tt, $name:expr) => {
+        primitive!($arg_count, stringify!($name), $name)
+    };
+    ($arg_count:tt, $name:expr, $func:expr) => {
         unsafe {
             extern "C" fn wrapper(thread: &$crate::thread::Thread) -> $crate::thread::Status {
                 $crate::api::VmFunction::unpack_and_call(
-                    &primitive_cast!($count, $func),
+                    &primitive_cast!($arg_count, $func),
                     thread,
                 )
             }
-            $crate::api::primitive_f($name, wrapper, primitive_cast!($count, $func))
+            $crate::api::primitive_f($name, wrapper, primitive_cast!($arg_count, $func))
         }
+    };
+    ($arg_count:tt, $name:expr,async fn $func:expr) => {
+        primitive!($arg_count, $name, closure_wrapper!($arg_count, $func))
     };
 }
 

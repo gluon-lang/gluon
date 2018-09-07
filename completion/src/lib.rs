@@ -1105,15 +1105,15 @@ impl SuggestionQuery {
         &'e self,
         stack: &'e ScopedMap<Symbol, ArcType>,
         expr: &'e SpannedExpr<Symbol>,
-    ) -> Box<Iterator<Item = (&'e Symbol, &'e ArcType)> + 'e> {
+    ) -> impl Iterator<Item = (&'e Symbol, &'e ArcType)> {
         if let Expr::Ident(ref ident) = expr.value {
-            Box::new(
+            Either::Left(
                 stack.iter().filter(move |&(k, _)| {
                     self.filter(k.declared_name(), ident.name.declared_name())
                 }),
             )
         } else {
-            Box::new(None.into_iter())
+            Either::Right(None.into_iter())
         }
     }
 

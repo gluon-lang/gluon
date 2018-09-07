@@ -19,7 +19,7 @@ struct Struct {
 
 fn load_struct_mod(vm: &Thread) -> vm::Result<ExternModule> {
     let module = record! {
-        new_struct => primitive!(1 new_struct),
+        new_struct => primitive!(1, new_struct),
     };
 
     ExternModule::new(vm, module)
@@ -64,7 +64,7 @@ struct Newtype(Struct);
 
 fn load_newtype_mod(vm: &Thread) -> vm::Result<ExternModule> {
     let module = record! {
-        newtype_id => primitive!(1 newtype_id),
+        newtype_id => primitive!(1, newtype_id),
     };
 
     ExternModule::new(vm, module)

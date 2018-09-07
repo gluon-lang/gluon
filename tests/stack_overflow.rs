@@ -731,8 +731,5 @@ let _ = 1
 in 1
 "#;
     let vm = new_vm();
-    Compiler::new()
-        .load_script_async(&vm, "", text)
-        .sync_or_error()
-        .unwrap();
+    Compiler::new().load_script(&vm, "", text).unwrap();
 }

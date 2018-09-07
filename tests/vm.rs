@@ -540,8 +540,7 @@ in Cons 1 Nil == Nil
 "#;
     let mut vm = make_vm();
     let (result, _) = Compiler::new()
-        .run_expr_async::<bool>(&mut vm, "<top>", text)
-        .sync_or_error()
+        .run_expr::<bool>(&mut vm, "<top>", text)
         .unwrap_or_else(|err| panic!("{}", err));
     let expected = false;
 
@@ -659,8 +658,7 @@ fn opaque_value_type_mismatch() {
 
     Compiler::new()
         .implicit_prelude(false)
-        .run_expr_async::<()>(&vm, "<top>", "let _ = import! std.channel in ()")
-        .sync_or_error()
+        .run_expr::<()>(&vm, "<top>", "let _ = import! std.channel in ()")
         .unwrap();
 
     let expr = r#"
@@ -688,8 +686,7 @@ string.slice s 1 (string.len s)
 "#;
     let mut vm = make_vm();
     let result = Compiler::new()
-        .run_expr_async::<String>(&mut vm, "<top>", text)
-        .sync_or_error();
+        .run_expr::<String>(&mut vm, "<top>", text);
     match result {
         Err(Error::VM(..)) => (),
         Err(err) => panic!("Unexpected error `{}`", err),
@@ -727,8 +724,7 @@ g 10
 "#;
     let mut vm = make_vm();
     let result = Compiler::new()
-        .run_expr_async::<i32>(&mut vm, "<top>", text)
-        .sync_or_error();
+        .run_expr::<i32>(&mut vm, "<top>", text);
     match result {
         Err(Error::VM(vm::Error::Panic(_, Some(stacktrace)))) => {
             let g = stacktrace.frames[1].as_ref().unwrap().name.clone();

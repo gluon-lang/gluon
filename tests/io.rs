@@ -72,8 +72,7 @@ fn run_expr_int() {
     let mut vm = make_vm();
     let (result, _) = Compiler::new()
         .run_io(true)
-        .run_expr_async::<IO<String>>(&mut vm, "<top>", text)
-        .sync_or_error()
+        .run_expr::<IO<String>>(&mut vm, "<top>", text)
         .unwrap();
     match result {
         IO::Value(result) => {

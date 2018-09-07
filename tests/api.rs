@@ -20,9 +20,7 @@ use gluon::vm::{Error, ExternModule};
 use gluon::Compiler;
 
 fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<()> {
-    Compiler::new()
-        .load_script_async(vm, filename, input)
-        .sync_or_error()
+    Compiler::new().load_script(vm, filename, input)
 }
 
 fn make_vm() -> RootedThread {
@@ -82,7 +80,7 @@ fn root_data() {
         .unwrap_or_else(|_| panic!("Could not add type"));
 
     add_extern_module(&vm, "test", |thread| {
-        ExternModule::new(thread, primitive!(2 test))
+        ExternModule::new(thread, primitive!(2, test))
     });
 
     load_script(&vm, "script_fn", expr).unwrap_or_else(|err| panic!("{}", err));
@@ -107,7 +105,7 @@ fn root_string() {
 
     let vm = make_vm();
     add_extern_module(&vm, "test", |thread| {
-        ExternModule::new(thread, primitive!(1 test))
+        ExternModule::new(thread, primitive!(1, test))
     });
 
     let result = Compiler::new()
@@ -132,7 +130,7 @@ fn array() {
 
     let vm = make_vm();
     add_extern_module(&vm, "sum_bytes", |thread| {
-        ExternModule::new(thread, primitive!(1 sum_bytes))
+        ExternModule::new(thread, primitive!(1, sum_bytes))
     });
 
     let result = Compiler::new()
@@ -158,7 +156,7 @@ fn return_finished_future() {
 
     let vm = make_vm();
     add_extern_module(&vm, "add", |thread| {
-        ExternModule::new(thread, primitive!(2 add))
+        ExternModule::new(thread, primitive!(2, add))
     });
 
     let result = Compiler::new()
@@ -202,7 +200,7 @@ fn return_delayed_future_simple() {
 
     let vm = make_vm();
     add_extern_module(&vm, "poll_n", |thread| {
-        ExternModule::new(thread, primitive!(1 poll_n))
+        ExternModule::new(thread, primitive!(1, poll_n))
     });
 
     let (result, _) = Compiler::new()
@@ -226,7 +224,7 @@ fn return_delayed_future_in_catch() {
 
     let vm = make_vm();
     add_extern_module(&vm, "poll_n", |thread| {
-        ExternModule::new(thread, primitive!(1 poll_n))
+        ExternModule::new(thread, primitive!(1, poll_n))
     });
 
     let (result, _) = Compiler::new()
@@ -256,7 +254,7 @@ fn io_future() {
 
     let vm = make_vm();
     add_extern_module(&vm, "test", |thread| {
-        ExternModule::new(thread, primitive!(1 test))
+        ExternModule::new(thread, primitive!(1, test))
     });
 
     let result = Compiler::new()
@@ -279,7 +277,7 @@ fn generic_record_type() {
     fn test(_: Generic<A>) {}
 
     let record = record! {
-        test => primitive!(1 test)
+        test => primitive!(1, test)
     };
     assert_eq!(
         type_of(&make_vm(), &record).to_string(),

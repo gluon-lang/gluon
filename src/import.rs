@@ -99,7 +99,7 @@ impl Importer for DefaultImporter {
             result.and_then(|value| {
                 value
                     .load_script(compiler, vm, modulename, input, ())
-                    .sync_or_error()
+                    .wait()
             })
         };
 
@@ -370,7 +370,7 @@ impl<I> Import<I> {
 ///         thread,
 ///         record!{
 ///             message => "Hello World!",
-///             yell => primitive!(1 yell)
+///             yell => primitive!(1, yell)
 ///         }
 ///     )
 /// }

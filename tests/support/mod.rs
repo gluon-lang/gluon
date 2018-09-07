@@ -13,8 +13,7 @@ use gluon::Compiler;
 pub fn load_script(vm: &Thread, filename: &str, input: &str) -> ::gluon::Result<()> {
     Compiler::new()
         .implicit_prelude(false)
-        .load_script_async(vm, filename, input)
-        .sync_or_error()
+        .load_script(vm, filename, input)
 }
 
 #[allow(dead_code)]

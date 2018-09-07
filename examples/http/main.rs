@@ -47,7 +47,6 @@ use gluon::import::add_extern_module;
 use vm::api::{
     Function, FutureResult, OpaqueValue, OwnedFunction, PushAsRef, Userdata, VmType, WithVM, IO,
 };
-use vm::future::FutureValue;
 use vm::gc::{Gc, Traverseable};
 use vm::thread::{RootedThread, Thread};
 
@@ -329,9 +328,9 @@ pub fn load(vm: &Thread) -> VmResult<ExternModule> {
     ExternModule::new(
         vm,
         record! {
-            listen => primitive!(2 listen),
-            read_chunk => primitive!(1 read_chunk),
-            write_response => primitive!(2 write_response)
+            listen => primitive!(2, listen),
+            read_chunk => primitive!(1, read_chunk),
+            write_response => primitive!(2, write_response)
         },
     )
 }
@@ -374,7 +373,7 @@ fn start(
             )
             .from_err()
             .and_then(move |(mut listen, _)| {
-                FutureValue::Future(listen.call_async(port))
+                listen.call_async(port)
                     .from_err()
                     .map(|_| ())
             })

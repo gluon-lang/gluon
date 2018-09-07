@@ -21,17 +21,13 @@ fn parallel_() -> Result<(), Error> {
     let vm = new_vm();
     let mut compiler = Compiler::new();
 
-    compiler
-        .run_expr_async::<()>(&vm, "<top>", " let _ = import! std.channel in () ")
-        .sync_or_error()?;
+    compiler.run_expr::<()>(&vm, "<top>", " let _ = import! std.channel in () ")?;
 
-    let (value, _) = compiler
-        .run_expr_async(
-            &vm,
-            "<top>",
-            " let { channel } = import! std.channel in channel 0 ",
-        )
-        .sync_or_error()?;
+    let (value, _) = compiler.run_expr(
+        &vm,
+        "<top>",
+        " let { channel } = import! std.channel in channel 0 ",
+    )?;
     let record_p!{ sender, receiver }: ChannelRecord<
         OpaqueValue<RootedThread, Sender<i32>>,
         OpaqueValue<RootedThread, Receiver<i32>>,

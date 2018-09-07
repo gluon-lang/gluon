@@ -25,8 +25,7 @@ let { List, of }  = import! std.list
 { List, of }
 "#;
     Compiler::new()
-        .load_script_async(&vm, "test", text)
-        .sync_or_error()
+        .load_script(&vm, "test", text)
         .unwrap_or_else(|err| panic!("{}", err));
 
     let env = vm.get_env();

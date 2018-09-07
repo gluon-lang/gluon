@@ -21,8 +21,8 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
     ExternModule::new(
         vm,
         record!{
-            trace => primitive!(1 std::debug::trace),
-            show => primitive!(1 std::debug::show)
+            trace => primitive!(1, std::debug::trace),
+            show => primitive!(1, std::debug::show)
         },
     )
 }

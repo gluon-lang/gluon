@@ -68,7 +68,7 @@ fn factorial(x: i32) -> i32 {
 }
 
 fn load_factorial(vm: &Thread) -> vm::Result<vm::ExternModule> {
-    vm::ExternModule::new(vm, primitive!(1 factorial))
+    vm::ExternModule::new(vm, primitive!(1, factorial))
 }
 
 let vm = new_vm();
@@ -82,8 +82,7 @@ let expr = r#"
 "#;
 
 let (result, _) = Compiler::new()
-    .run_expr_async::<i32>(&vm, "factorial", expr)
-    .sync_or_error()
+    .run_expr::<i32>(&vm, "factorial", expr)
     .unwrap();
 
 assert_eq!(result, 120);

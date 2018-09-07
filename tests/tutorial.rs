@@ -46,7 +46,7 @@ fn call_rust_from_gluon() {
     }
 
     fn load_factorial(vm: &Thread) -> vm::Result<vm::ExternModule> {
-        vm::ExternModule::new(vm, primitive!(1 factorial))
+        vm::ExternModule::new(vm, primitive!(1, factorial))
     }
 
     let vm = new_vm();

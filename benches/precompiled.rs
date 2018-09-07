@@ -4,6 +4,7 @@ extern crate bencher;
 extern crate gluon;
 
 extern crate bincode;
+extern crate futures;
 extern crate serde_json;
 extern crate serde_state;
 
@@ -12,8 +13,9 @@ use std::io::Read;
 
 use bencher::{black_box, Bencher};
 
+use futures::Future;
 use gluon::compiler_pipeline::compile_to;
-use gluon::{new_vm, Compiler, Future};
+use gluon::{new_vm, Compiler};
 
 fn precompiled_prelude(b: &mut Bencher) {
     let thread = new_vm();
@@ -67,8 +69,7 @@ fn source_prelude(b: &mut Bencher) {
                 "std.prelude",
                 &prelude_source,
                 None,
-            )
-            .wait()
+            ).wait()
             .unwrap();
         black_box(result)
     })
