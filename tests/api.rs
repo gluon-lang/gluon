@@ -351,3 +351,24 @@ fn use_rust_created_record_as_polymorphic() {
     let result = f.call(record_no_decl!{ x => 1 }).unwrap();
     assert_eq!(result, 1);
 }
+
+#[test]
+fn get_value_boxed_or_unboxed() {
+    let _ = ::env_logger::try_init();
+    let vm = make_vm();
+
+    let text = r#"
+        27
+    "#;
+
+    // The user should be able to decide whether or not any gluon value should
+    // be boxed on the rust side.
+    let (unboxed, _) = Compiler::new()
+        .run_expr::<i32>(&vm, "test", text)
+        .unwrap_or_else(|err| panic!("{}", err));
+    assert_eq!(unboxed, 27);
+    let (boxed, _) = Compiler::new()
+        .run_expr::<Box<i32>>(&vm, "test", text)
+        .unwrap_or_else(|err| panic!("{}", err));
+    assert_eq!(boxed, Box::new(27));
+}
