@@ -969,6 +969,19 @@ impl<'vm, 'value, T: vm::Userdata> Getable<'vm, 'value> for *const T {
     }
 }
 
+impl<'s, T: VmType> VmType for Box<T> {
+    type Type = T::Type;
+    fn make_type(vm: &Thread) -> ArcType {
+        T::make_type(vm)
+    }
+}
+
+impl<'vm, 'value, T: Getable<'vm, 'value>> Getable<'vm, 'value> for Box<T> {
+    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Box<T> {
+        Box::new(T::from_value(vm, value))
+    }
+}
+
 impl<K, V> VmType for BTreeMap<K, V>
 where
     K: VmType,
