@@ -152,6 +152,7 @@ impl Checker {
     fn visit_function_body(&mut self, body: &SpannedExpr<Symbol>) {
         let uninitialized_values = mem::replace(&mut self.uninitialized_values, Default::default());
         self.visit_expr(body);
+        let context = self.replace(Context::Lazy);
 
         self.uninitialized_free_variables.extend(
             self.free_variables
@@ -159,6 +160,7 @@ impl Checker {
                 .filter(|id| uninitialized_values.contains_key(&id.value)),
         );
         self.uninitialized_values = uninitialized_values;
+        self.context = context;
     }
 }
 
