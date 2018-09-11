@@ -48,9 +48,14 @@ impl Context {
 
 #[derive(Debug)]
 struct Checker {
+    /// Symbols that are uninitialized at this point in the program
     uninitialized_values: FnvMap<Symbol, usize>,
     level: usize,
+    /// Uninitialized symbols that are used in the current expression
     uninitialized_free_variables: Vec<Spanned<Symbol, BytePos>>,
+    /// Initialized symbols that are used in the current expression (as long as the function that
+    /// contains them do not get called before the symbols are initialized).
+    free_variables: Vec<Spanned<Symbol, BytePos>>,
     context: Context,
     errors: RecursionErrors,
 }
@@ -62,6 +67,7 @@ pub fn check_expr(expr: &SpannedExpr<Symbol>) -> Result<(), RecursionErrors> {
         uninitialized_values: FnvMap::default(),
         level: 0,
         uninitialized_free_variables: Vec::new(),
+        free_variables: Vec::new(),
         context: Context::Top(0),
         errors: Errors::new(),
     };
@@ -93,6 +99,8 @@ impl Checker {
         if uninitialized_status.is_some() {
             self.uninitialized_free_variables
                 .push(pos::spanned(span, id.clone()));
+        } else {
+            self.free_variables.push(pos::spanned(span, id.clone()));
         }
     }
 
@@ -111,7 +119,7 @@ impl Checker {
             Expr::Match(_, ref alts) => for alt in alts {
                 self.check_tail(&alt.expr);
             },
-            Expr::Record { .. } | Expr::Tuple { .. } => (),
+            Expr::Record { .. } | Expr::Tuple { .. } | Expr::Lambda { .. } => (),
             Expr::App { ref func, .. } => if !is_constructor_ident(func) {
                 self.errors
                     .push(pos::spanned(expr.span, Error::LastExprMustBeConstructor))
@@ -121,20 +129,8 @@ impl Checker {
                 .push(pos::spanned(expr.span, Error::LastExprMustBeConstructor)),
         }
     }
-}
 
-impl<'a> Visitor<'a> for Checker {
-    type Ident = Symbol;
-
-    fn visit_spanned_typed_ident(&mut self, id: &SpannedIdent<Symbol>) {
-        self.check_ident(id.span, &id.value.name);
-    }
-
-    fn visit_spanned_ident(&mut self, id: &Spanned<Symbol, BytePos>) {
-        self.check_ident(id.span, &id.value);
-    }
-
-    fn visit_pattern(&mut self, pattern: &SpannedPattern<Symbol>) {
+    fn taint_pattern(&mut self, pattern: &SpannedPattern<Symbol>) {
         struct TaintPattern<'a>(&'a mut Checker);
         impl<'a, 'b> Visitor<'a> for TaintPattern<'b> {
             type Ident = Symbol;
@@ -153,9 +149,34 @@ impl<'a> Visitor<'a> for Checker {
         TaintPattern(self).visit_pattern(pattern)
     }
 
+    fn visit_function_body(&mut self, body: &SpannedExpr<Symbol>) {
+        let uninitialized_values = mem::replace(&mut self.uninitialized_values, Default::default());
+        self.visit_expr(body);
+
+        self.uninitialized_free_variables.extend(
+            self.free_variables
+                .drain(..)
+                .filter(|id| uninitialized_values.contains_key(&id.value)),
+        );
+        self.uninitialized_values = uninitialized_values;
+    }
+}
+
+impl<'a> Visitor<'a> for Checker {
+    type Ident = Symbol;
+
+    fn visit_spanned_typed_ident(&mut self, id: &SpannedIdent<Symbol>) {
+        self.check_ident(id.span, &id.value.name);
+    }
+
+    fn visit_spanned_ident(&mut self, id: &Spanned<Symbol, BytePos>) {
+        self.check_ident(id.span, &id.value);
+    }
+
     fn visit_expr(&mut self, expr: &SpannedExpr<Symbol>) {
         match expr.value {
             Expr::Ident(ref id) => self.check_ident(expr.span, &id.name),
+
             Expr::LetBindings(ref bindings, ref expr) => {
                 self.level += 1;
                 let context = self.context.replace(Context::Top(self.level));
@@ -179,7 +200,11 @@ impl<'a> Visitor<'a> for Checker {
                         self.context
                     };
 
-                    self.visit_expr(&bind.expr);
+                    if bind.args.is_empty() {
+                        self.visit_expr(&bind.expr);
+                    } else {
+                        self.visit_function_body(&bind.expr);
+                    }
 
                     self.context = context;
 
@@ -189,18 +214,23 @@ impl<'a> Visitor<'a> for Checker {
                                 .iter()
                                 .any(|used| used.value == id.name)
                             {
+                                // Since the binding itself appeared in this binding we must must
+                                // make sure that the binding can be recursively initialized. This
+                                // is only true if the vm can allocate the binding immediately and
+                                // fill in the values later.
                                 self.check_tail(&bind.expr);
                             },
                             _ => (),
                         }
 
-                        self.visit_pattern(&bind.name);
+                        self.taint_pattern(&bind.name);
                     }
                     if let Pattern::Ident(ref id) = bind.name.value {
                         if self.uninitialized_free_variables[start..]
                             .iter()
                             .all(|var| var.value == id.name)
                         {
+                            // The binding is now initialized
                             self.uninitialized_values.remove(&id.name);
                         }
                     }
@@ -211,20 +241,18 @@ impl<'a> Visitor<'a> for Checker {
 
                 self.visit_expr(expr);
             }
+
             Expr::TypeBindings(_, ref expr) => self.visit_expr(expr),
-            Expr::Lambda(ref lambda) => {
-                let uninitialized_values =
-                    mem::replace(&mut self.uninitialized_values, Default::default());
-                let context = self.context.replace(Context::Lazy);
-                self.visit_expr(&lambda.body);
-                self.uninitialized_values = uninitialized_values;
-                self.context = context;
-            }
+
+            Expr::Lambda(ref lambda) => self.visit_function_body(&lambda.body),
+
             Expr::App { .. } | Expr::Infix { .. } => {
                 let start = self.uninitialized_free_variables.len();
 
                 ast::walk_expr(self, expr);
 
+                // Functions may do arbitrary things so don't allow function calls that refer to
+                // uninitialized variables
                 if !is_constructor_expr(expr) {
                     let used_uninitialized_variables = &self.uninitialized_free_variables[start..];
                     self.errors
@@ -236,10 +264,13 @@ impl<'a> Visitor<'a> for Checker {
                         }));
                 }
             }
+
             Expr::Match(ref expr, ref alts) => {
                 let start = self.uninitialized_free_variables.len();
                 self.visit_expr(expr);
 
+                // Match expressions may not be done on uninitialized values as they could then
+                // view the uninitialized contents
                 {
                     let used_uninitialized_variables = &self.uninitialized_free_variables[start..];
                     self.errors

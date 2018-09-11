@@ -228,3 +228,32 @@ match ones with
 ",
     "Int"
 );
+
+test_check!(
+    function_can_use_later_binding,
+    r"
+rec
+let f x =
+    f y
+let y = { }
+f
+",
+    "forall a . () -> a"
+);
+
+#[test]
+fn lambda_with_uninitialized_value_cant_be_called() {
+    let _ = env_logger::try_init();
+
+    let text = r"
+rec
+let x =
+    let f = \y -> x
+    let z = f ()
+    { }
+x
+";
+    let result = support::typecheck(text);
+
+    assert_err!(result, RecursionCheck(..));
+}
