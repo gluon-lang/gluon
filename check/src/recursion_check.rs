@@ -162,20 +162,8 @@ impl Checker {
         self.uninitialized_values = uninitialized_values;
         self.context = context;
     }
-}
 
-impl<'a> Visitor<'a> for Checker {
-    type Ident = Symbol;
-
-    fn visit_spanned_typed_ident(&mut self, id: &SpannedIdent<Symbol>) {
-        self.check_ident(id.span, &id.value.name);
-    }
-
-    fn visit_spanned_ident(&mut self, id: &Spanned<Symbol, BytePos>) {
-        self.check_ident(id.span, &id.value);
-    }
-
-    fn visit_expr(&mut self, expr: &SpannedExpr<Symbol>) {
+    fn check_expr<'a>(&mut self, expr: &'a SpannedExpr<Symbol>) -> Option<&'a SpannedExpr<Symbol>> {
         match expr.value {
             Expr::Ident(ref id) => self.check_ident(expr.span, &id.name),
 
@@ -240,11 +228,10 @@ impl<'a> Visitor<'a> for Checker {
 
                 self.context = context;
                 self.level -= 1;
-
-                self.visit_expr(expr);
+                return Some(expr);
             }
 
-            Expr::TypeBindings(_, ref expr) => self.visit_expr(expr),
+            Expr::TypeBindings(_, ref expr) => return Some(expr),
 
             Expr::Lambda(ref lambda) => self.visit_function_body(&lambda.body),
 
@@ -289,6 +276,25 @@ impl<'a> Visitor<'a> for Checker {
                 }
             }
             _ => ast::walk_expr(self, expr),
+        }
+        None
+    }
+}
+
+impl<'a> Visitor<'a> for Checker {
+    type Ident = Symbol;
+
+    fn visit_spanned_typed_ident(&mut self, id: &SpannedIdent<Symbol>) {
+        self.check_ident(id.span, &id.value.name);
+    }
+
+    fn visit_spanned_ident(&mut self, id: &Spanned<Symbol, BytePos>) {
+        self.check_ident(id.span, &id.value);
+    }
+
+    fn visit_expr(&mut self, mut expr: &SpannedExpr<Symbol>) {
+        while let Some(next) = self.check_expr(expr) {
+            expr = next;
         }
     }
 }
