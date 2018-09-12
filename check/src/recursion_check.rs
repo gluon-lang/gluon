@@ -1,6 +1,5 @@
 //! Checks that the expression do not contain any invalid recursive bindings.
 use std::fmt;
-use std::mem;
 
 use base::{
     ast::{self, Expr, Pattern, SpannedExpr, SpannedIdent, SpannedPattern, TypedIdent, Visitor},
@@ -32,31 +31,20 @@ impl fmt::Display for Error {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
-enum Context {
-    Lazy,
-    Top(usize),
-}
-
-impl Context {
-    fn replace(&mut self, new_context: Context) -> Context {
-        let old = *self;
-        *self = new_context;
-        old
-    }
-}
+type Level = u32;
 
 #[derive(Debug)]
 struct Checker {
-    /// Symbols that are uninitialized at this point in the program
-    uninitialized_values: FnvMap<Symbol, usize>,
-    level: usize,
+    /// Symbols that are uninitialized at this point in the program and the level at which they are
+    /// defined.
+    uninitialized_values: FnvMap<Symbol, Level>,
+    /// The current level we are checking.
+    level: Level,
     /// Uninitialized symbols that are used in the current expression
     uninitialized_free_variables: Vec<Spanned<Symbol, BytePos>>,
     /// Initialized symbols that are used in the current expression (as long as the function that
     /// contains them do not get called before the symbols are initialized).
     free_variables: Vec<Spanned<Symbol, BytePos>>,
-    context: Context,
     errors: RecursionErrors,
 }
 
@@ -68,7 +56,6 @@ pub fn check_expr(expr: &SpannedExpr<Symbol>) -> Result<(), RecursionErrors> {
         level: 0,
         uninitialized_free_variables: Vec::new(),
         free_variables: Vec::new(),
-        context: Context::Top(0),
         errors: Errors::new(),
     };
     checker.visit_expr(expr);
@@ -96,11 +83,16 @@ fn is_constructor_ident(expr: &SpannedExpr<Symbol>) -> bool {
 impl Checker {
     fn check_ident(&mut self, span: Span<BytePos>, id: &Symbol) {
         let uninitialized_status = self.uninitialized_values.get(id);
-        if uninitialized_status.is_some() {
-            self.uninitialized_free_variables
-                .push(pos::spanned(span, id.clone()));
-        } else {
-            self.free_variables.push(pos::spanned(span, id.clone()));
+        if let Some(&id_level) = uninitialized_status {
+            if id_level == self.level {
+                self.uninitialized_free_variables
+                    .push(pos::spanned(span, id.clone()));
+            } else {
+                // The variable will be initialized when we execute the function at this level
+                // however we still need to store the variable so that we know not to call this
+                // function before `id`  has been initialized
+                self.free_variables.push(pos::spanned(span, id.clone()));
+            }
         }
     }
 
@@ -150,17 +142,24 @@ impl Checker {
     }
 
     fn visit_function_body(&mut self, body: &SpannedExpr<Symbol>) {
-        let uninitialized_values = mem::replace(&mut self.uninitialized_values, Default::default());
-        self.visit_expr(body);
-        let context = self.context.replace(Context::Lazy);
+        self.level += 1;
 
-        self.uninitialized_free_variables.extend(
-            self.free_variables
-                .drain(..)
-                .filter(|id| uninitialized_values.contains_key(&id.value)),
-        );
-        self.uninitialized_values = uninitialized_values;
-        self.context = context;
+        self.visit_expr(body);
+
+        self.level -= 1;
+
+        let uninitialized_free_variables = &mut self.uninitialized_free_variables;
+        let uninitialized_values = &self.uninitialized_values;
+        let level = self.level;
+
+        self.free_variables.retain(|id| {
+            if uninitialized_values.get(&id.value) == Some(&level) {
+                uninitialized_free_variables.push(id.clone());
+                false
+            } else {
+                true
+            }
+        })
     }
 }
 
@@ -180,9 +179,6 @@ impl<'a> Visitor<'a> for Checker {
             Expr::Ident(ref id) => self.check_ident(expr.span, &id.name),
 
             Expr::LetBindings(ref bindings, ref expr) => {
-                self.level += 1;
-                let context = self.context.replace(Context::Top(self.level));
-
                 let level = self.level;
                 self.uninitialized_values.extend(
                     bindings
@@ -196,19 +192,12 @@ impl<'a> Visitor<'a> for Checker {
 
                 for bind in bindings {
                     let start = self.uninitialized_free_variables.len();
-                    let context = if !bind.args.is_empty() {
-                        self.context.replace(Context::Lazy)
-                    } else {
-                        self.context
-                    };
 
                     if bind.args.is_empty() {
                         self.visit_expr(&bind.expr);
                     } else {
                         self.visit_function_body(&bind.expr);
                     }
-
-                    self.context = context;
 
                     if !self.uninitialized_free_variables[start..].is_empty() {
                         match bind.name.value {
@@ -237,9 +226,6 @@ impl<'a> Visitor<'a> for Checker {
                         }
                     }
                 }
-
-                self.context = context;
-                self.level -= 1;
 
                 self.visit_expr(expr);
             }

@@ -257,3 +257,20 @@ x
 
     assert_err!(result, RecursionCheck(..));
 }
+
+#[test]
+fn nested_lambda_with_uninitialized_value_cant_be_called() {
+    let _ = env_logger::try_init();
+
+    let text = r"
+rec
+let x =
+    let f = \z -> \y -> x
+    let z = f ()
+    { }
+x
+";
+    let result = support::typecheck(text);
+
+    assert_err!(result, RecursionCheck(..));
+}
