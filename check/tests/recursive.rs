@@ -274,3 +274,18 @@ x
 
     assert_err!(result, RecursionCheck(..));
 }
+
+test_check!(
+    example,
+    r"
+rec
+let value1 =
+    let f x = value2.f x #Int+ 1
+    { f }
+let value2 =
+    let f x = value1.f x #Int+ 2
+    { f }
+in value1
+",
+    "forall a . { f : a -> Int }"
+);

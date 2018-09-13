@@ -84,13 +84,31 @@ Let bindings also allow functions to be defined which is done by listing the arg
 let id x = x in id 1 // Returns 1
 ```
 
-Mutually recursive functions can be defined using `rec ... in` to enclose the `let` bindings.
+Mutually recursive values can be defined using `rec ... in` to enclose the `let` bindings.
 
 ```f#
 rec
 let f x = g x
 let g x = f x
 in f 1 // Never returns
+```
+
+This is not limited to functions but works with any value that is capable of recursion (records, variants and functions).
+
+```f#
+/// An infinite list of `1`
+rec let ones = Cons 1 ones
+in
+
+/// A recursive set of records
+rec
+let value1 =
+    let f x = value2.f x + 1
+    { f }
+let value2 =
+    let f x = value1.f x + 2
+    { f }
+in ()
 ```
 
 ### If expressions
