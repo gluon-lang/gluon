@@ -370,7 +370,7 @@ and g y = f
     let span = pos::span(BytePos::from(0), BytePos::from(0));
     let errors = ParseErrors::from(vec![pos::spanned(
         span,
-        Error::UnexpectedToken("Equal".into(), vec![]),
+        Error::Token(TokenizeError::UnexpectedAnd),
     )]);
 
     assert_eq!(remove_expected(result.unwrap_err().1), errors);

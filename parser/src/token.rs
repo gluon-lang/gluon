@@ -161,6 +161,9 @@ quick_error! {
         HexLiteralIncomplete {
             description("cannot parse hex literal, incomplete")
         }
+        UnexpectedAnd {
+            description("`and` has been removed, recursive bindings are now written with `rec (let BIND = EXPR)+ in ...`")
+        }
     }
 }
 
@@ -547,7 +550,7 @@ impl<'input> Tokenizer<'input> {
         Ok(pos::spanned2(start, end, token))
     }
 
-    fn identifier(&mut self, start: Location) -> SpannedToken<'input> {
+    fn identifier(&mut self, start: Location) -> Result<SpannedToken<'input>, SpError> {
         let (mut end, mut ident) = self.take_while(start, is_ident_continue);
         match self.lookahead {
             Some((_, c)) if c == '!' => {
@@ -571,10 +574,11 @@ impl<'input> Tokenizer<'input> {
             "then" => Token::Then,
             "type" => Token::Type,
             "with" => Token::With,
+            "and" => return Err(pos::spanned2(start, end, Error::UnexpectedAnd)),
             src => Token::Identifier(src),
         };
 
-        pos::spanned2(start, end, token)
+        Ok(pos::spanned2(start, end, token))
     }
 }
 
@@ -626,7 +630,7 @@ impl<'input> Iterator for Tokenizer<'input> {
                         Token::AttributeOpen,
                     )))
                 }
-                ch if is_ident_start(ch) => Some(Ok(self.identifier(start))),
+                ch if is_ident_start(ch) => Some(self.identifier(start)),
                 ch if is_digit(ch) || (ch == '-' && self.test_lookahead(is_digit)) => {
                     Some(self.numeric_literal(start))
                 }
