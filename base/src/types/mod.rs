@@ -115,7 +115,7 @@ where
             .enumerate()
             .map(|(i, typ)| Field {
                 name: symbols.from_str(&format!("_{}", i)),
-                typ: typ,
+                typ,
             }).collect();
         if fields.is_empty() {
             self.unit()
@@ -171,7 +171,7 @@ pub enum BuiltinType {
 
 impl BuiltinType {
     pub fn symbol(self) -> &'static SymbolRef {
-        unsafe { ::std::mem::transmute::<&'static str, &'static SymbolRef>(self.to_str()) }
+        unsafe { &*(self.to_str() as *const str as *const SymbolRef) }
     }
 }
 
@@ -288,7 +288,7 @@ pub struct Generic<Id> {
 
 impl<Id> Generic<Id> {
     pub fn new(id: Id, kind: ArcKind) -> Generic<Id> {
-        Generic { id: id, kind: kind }
+        Generic { id, kind }
     }
 }
 
@@ -385,7 +385,7 @@ where
         (0..group.len())
             .map(|index| Alias {
                 _typ: T::from(Type::Alias(AliasRef {
-                    index: index,
+                    index,
                     group: group.clone(),
                 })),
                 _marker: PhantomData,
@@ -496,7 +496,7 @@ where
                             .position(|alias| alias.name == *id)
                             .map(|index| {
                                 T::from(Type::Alias(AliasRef {
-                                    index: index,
+                                    index,
                                     group: self.group.clone(),
                                 }))
                             });
@@ -565,7 +565,7 @@ where
 {
     pub fn new(name: Id, args: Vec<Generic<Id>>, typ: T) -> AliasData<Id, T> {
         AliasData {
-            name: name,
+            name,
             typ: Type::forall(args, typ),
         }
     }
@@ -649,10 +649,7 @@ pub type AppVec<T> = SmallVec<[T; 2]>;
 
 impl<Id, T> Field<Id, T> {
     pub fn new(name: Id, typ: T) -> Field<Id, T> {
-        Field {
-            name: name,
-            typ: typ,
-        }
+        Field { name, typ }
     }
 }
 
@@ -849,7 +846,7 @@ where
                 .enumerate()
                 .map(|(i, typ)| Field {
                     name: symbols.from_str(&format!("_{}", i)),
-                    typ: typ,
+                    typ,
                 }).collect(),
             Type::empty_row(),
         ))
@@ -876,9 +873,9 @@ where
             rest
         } else {
             T::from(Type::ExtendRow {
-                types: types,
-                fields: fields,
-                rest: rest,
+                types,
+                fields,
+                rest,
             })
         }
     }
@@ -921,10 +918,7 @@ where
     pub fn alias(name: Id, typ: T) -> T {
         T::from(Type::Alias(AliasRef {
             index: 0,
-            group: Arc::new(vec![AliasData {
-                name: name,
-                typ: typ,
-            }]),
+            group: Arc::new(vec![AliasData { name, typ }]),
         }))
     }
 
@@ -1052,7 +1046,7 @@ where
             Type::Opaque | Type::Builtin(_) | Type::Record(_) | Type::Variant(_) => {
                 Cow::Owned(Kind::typ())
             }
-            Type::EmptyRow | Type::ExtendRow { .. } => Cow::Owned(Kind::row().into()),
+            Type::EmptyRow | Type::ExtendRow { .. } => Cow::Owned(Kind::row()),
             Type::Forall(_, ref typ, _) => typ.kind_(applied_args),
             Type::Variable(ref var) => Cow::Borrowed(&var.kind),
             Type::Skolem(ref skolem) => Cow::Borrowed(&skolem.kind),
@@ -1132,8 +1126,7 @@ where
     {
         use serialization::SharedSeed;
         let seed = SharedSeed::new(seed);
-        ::serde::de::DeserializeSeed::deserialize(seed, deserializer)
-            .map(|typ| ArcType { typ: typ })
+        ::serde::de::DeserializeSeed::deserialize(seed, deserializer).map(|typ| ArcType { typ })
     }
 }
 
@@ -1342,7 +1335,7 @@ impl<Id> ArcType<Id> {
                     named_variables.remove(&param.id);
                 }
 
-                typ.instantiate_generics_(&mut named_variables)
+                typ.instantiate_generics_(&named_variables)
                     .map(|typ| Type::Forall(params.clone(), typ, vars.clone()).into())
             }
             _ => walk_move_type_opt(
@@ -1457,10 +1450,7 @@ impl ArcType {
                 .take(arg_types.len() + args.len() - params.len())
                 .cloned()
                 .collect();
-            Type::app(
-                d.cloned().unwrap_or_else(|| Type::function_builtin()),
-                arg_types,
-            )
+            Type::app(d.cloned().unwrap_or_else(Type::function_builtin), arg_types)
         } else {
             return None;
         };
@@ -1692,7 +1682,7 @@ pub fn arg_iter<Id, T>(typ: &T) -> ArgIterator<T>
 where
     T: Deref<Target = Type<Id, T>>,
 {
-    ArgIterator { typ: typ }
+    ArgIterator { typ }
 }
 
 impl<'a, Id, T> Iterator for ArgIterator<'a, T>
@@ -1720,7 +1710,7 @@ pub fn implicit_arg_iter<Id, T>(typ: &T) -> ImplicitArgIterator<T>
 where
     T: Deref<Target = Type<Id, T>>,
 {
-    ImplicitArgIterator { typ: typ }
+    ImplicitArgIterator { typ }
 }
 
 impl<'a, Id, T> Iterator for ImplicitArgIterator<'a, T>
@@ -1818,14 +1808,11 @@ impl Prec {
     }
 }
 
-fn dt<'a, T>(prec: Prec, typ: &'a T) -> DisplayType<'a, T> {
-    DisplayType {
-        prec: prec,
-        typ: typ,
-    }
+fn dt<T>(prec: Prec, typ: &T) -> DisplayType<T> {
+    DisplayType { prec, typ }
 }
 
-fn top<'a, T>(typ: &'a T) -> DisplayType<'a, T> {
+fn top<T>(typ: &T) -> DisplayType<T> {
     dt(Prec::Top, typ)
 }
 

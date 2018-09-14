@@ -51,7 +51,7 @@ pub fn merge_fn<'a, 'b, F, G, H, A: ?Sized, B: ?Sized, A1, B1, R>(
     b_original: &'b B,
     h: H,
     b: Option<B1>,
-    f: F,
+    merger: F,
 ) -> Option<R>
 where
     F: FnOnce(A1, B1) -> R,
@@ -59,9 +59,9 @@ where
     H: FnOnce(&'b B) -> B1,
 {
     match (a, b) {
-        (Some(a), Some(b)) => Some(f(a, b)),
-        (Some(a), None) => Some(f(a, h(b_original))),
-        (None, Some(b)) => Some(f(g(a_original), b)),
+        (Some(a), Some(b)) => Some(merger(a, b)),
+        (Some(a), None) => Some(merger(a, h(b_original))),
+        (None, Some(b)) => Some(merger(g(a_original), b)),
         (None, None) => None,
     }
 }
@@ -76,7 +76,7 @@ where
     merge_iter(types, |(l, r)| f(l, r), |(l, _)| l.clone())
 }
 
-pub fn merge_iter<'a, I, F, G, U, R>(types: I, mut action: F, mut converter: G) -> Option<R>
+pub fn merge_iter<I, F, G, U, R>(types: I, mut action: F, mut converter: G) -> Option<R>
 where
     I: IntoIterator,
     F: FnMut(I::Item) -> Option<U>,
@@ -100,7 +100,7 @@ where
     }
 }
 
-fn merge_iter_<'a, I, F, G, U, R>(
+fn merge_iter_<I, F, G, U, R>(
     mut types: I,
     replaced: bool,
     output: &mut R,

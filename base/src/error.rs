@@ -83,7 +83,7 @@ impl<T> Extend<T> for Errors<T> {
 
 impl<T> From<Vec<T>> for Errors<T> {
     fn from(errors: Vec<T>) -> Errors<T> {
-        Errors { errors: errors }
+        Errors { errors }
     }
 }
 
@@ -189,8 +189,7 @@ impl<E: fmt::Display> InFile<E> {
                     "Source file does not exist in associated code map. Error: {}",
                     self.error
                 )
-            })
-            .name()
+            }).name()
     }
 
     pub fn errors(self) -> Errors<Spanned<E, BytePos>> {

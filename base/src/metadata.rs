@@ -84,7 +84,7 @@ impl Metadata {
             .map(|t| t.arguments.as_ref().map_or("", |s| s))
     }
 
-    pub fn attributes<'a>(&'a self) -> impl Iterator<Item = &'a Attribute> {
+    pub fn attributes(&self) -> impl Iterator<Item = &Attribute> {
         self.attributes.iter()
     }
 }
