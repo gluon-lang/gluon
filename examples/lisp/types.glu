@@ -3,6 +3,7 @@ let { Map } = import! std.map
 let { Option } = import! std.option
 let { Result } = import! std.result
 
+rec
 type Expr =
     | Atom String
     | Int Int
@@ -10,13 +11,14 @@ type Expr =
     | List (List Expr)
     | Function Function
     | Primitive (List Expr -> Lisp Expr)
-and Function = {
+type Function = {
     params : List String,
     vararg : Option String,
     body : List Expr,
     closure : Map String Expr
 }
-and LispState = Map String Expr
-and Lisp a = LispState -> Result String { value : a, state : LispState }
+type LispState = Map String Expr
+type Lisp a = LispState -> Result String { value : a, state : LispState }
+in
 
 { Expr, Function, LispState, Lisp }

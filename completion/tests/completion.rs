@@ -116,11 +116,12 @@ fn literal_string() {
 fn in_let() {
     let result = find_type(
         r#"
+rec
 let f x = 1
-and g x = "asd"
+let g x = "asd"
 1
 "#,
-        BytePos::from(25),
+        BytePos::from(29),
     );
     let expected = Ok(typ("String"));
 

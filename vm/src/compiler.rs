@@ -428,8 +428,7 @@ impl CompilerEnv for TypeInfos {
                     .enumerate()
                     .find(|&(_, field)| field.name == *id),
                 _ => None,
-            })
-            .next()
+            }).next()
             .map(|(tag, field)| {
                 (
                     Variable::Constructor(tag as VmTag, count_function_args(&field.typ)),
@@ -508,15 +507,13 @@ impl<'a> Compiler<'a> {
                     .enumerate()
                     .find(|&(_, field)| field.name == *id),
                 _ => None,
-            })
-            .next()
+            }).next()
             .map(|(tag, field)| {
                 Constructor(
                     tag as VmIndex,
                     types::arg_iter(&field.typ).count() as VmIndex,
                 )
-            })
-            .or_else(|| {
+            }).or_else(|| {
                 current
                     .stack
                     .get(id)
@@ -530,11 +527,9 @@ impl<'a> Compiler<'a> {
                                 env.stack
                                     .get(id)
                                     .map(|&(_, ref typ)| UpVar(current[0].upvar(id, typ)))
-                            })
-                            .next()
+                            }).next()
                     })
-            })
-            .or_else(|| {
+            }).or_else(|| {
                 self.globals
                     .find_var(&id)
                     .map(|(variable, typ)| match variable {
@@ -598,6 +593,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn load_identifier(&self, id: &Symbol, function: &mut FunctionEnvs) -> Result<()> {
+        debug!("Load {}", id);
         match self.find(id, function).unwrap_or_else(|| {
             ice!(
                 "Undefined variable `{}` in {}",
@@ -608,7 +604,7 @@ impl<'a> Compiler<'a> {
             Stack(index) => function.emit(Push(index)),
             UpVar(index) => function.emit(PushUpVar(index)),
             // Zero argument constructors can be compiled as integers
-            Constructor(tag, 0) => function.emit(Construct { tag: tag, args: 0 }),
+            Constructor(tag, 0) => function.emit(ConstructVariant { tag: tag, args: 0 }),
             Constructor(..) => {
                 return Err(Error::Message(format!(
                     "Constructor `{}` is not fully applied",
@@ -679,18 +675,23 @@ impl<'a> Compiler<'a> {
                     }
                     core::Named::Recursive(ref closures) => {
                         for closure in closures.iter() {
-                            // Add the NewClosure instruction before hand
+                            // Add the NewClosure/NewRecord instruction before hand
                             // it will be fixed later
-                            function.emit(NewClosure {
-                                function_index: 0,
-                                upvars: 0,
-                            });
+                            if closure.args.is_empty() {
+                                function.emit(NewRecord { args: 0, record: 0 });
+                            } else {
+                                function.emit(NewClosure {
+                                    function_index: 0,
+                                    upvars: 0,
+                                });
+                            }
                             function.new_stack_var(
                                 self,
                                 closure.name.name.clone(),
                                 closure.name.typ.clone(),
                             );
                         }
+
                         for (i, closure) in closures.iter().enumerate() {
                             if let Some(current_line) = self.source.line_number_at_byte(closure.pos)
                             {
@@ -698,21 +699,56 @@ impl<'a> Compiler<'a> {
                             }
                             function.stack.enter_scope();
 
-                            function.emit(Push(stack_start + i as VmIndex));
-                            let (function_index, vars, cf) = self.compile_lambda(
-                                &closure.name,
-                                &closure.args,
-                                &closure.expr,
-                                function,
-                            )?;
                             let offset = first_index + i;
-                            function.function.instructions[offset] = NewClosure {
-                                function_index: function_index,
-                                upvars: vars,
-                            };
-                            function.emit(CloseClosure(vars));
-                            function.stack_size -= vars;
-                            function.function.inner_functions.push(cf);
+
+                            function.emit(Push(stack_start + i as VmIndex));
+
+                            if closure.args.is_empty() {
+                                self.compile(closure.expr, function, false)?;
+
+                                let construct_index = function
+                                    .function
+                                    .instructions
+                                    .iter()
+                                    .rposition(|inst| match inst {
+                                        Slide(_) |
+                                        Jump(_) => false,
+                                        _ => true,
+                                    }).unwrap_or_else(|| {
+                                        ice!("Expected record as last expression of recursive binding")
+                                    });
+                                match function.function.instructions[construct_index] {
+                                    ConstructRecord { record, args } => {
+                                        function.stack_size -= 1;
+                                        function.function.instructions[offset] =
+                                            NewRecord { record, args };
+                                        function.function.instructions[construct_index] = CloseData { index: stack_start + i as VmIndex };
+                                    }
+                                    ConstructVariant { tag, args } => {
+                                        function.stack_size -= 1;
+                                        function.function.instructions[offset] =
+                                            NewVariant { tag, args };
+                                        function.function.instructions[construct_index] = CloseData { index: stack_start + i as VmIndex };
+                                    }
+                                    x => ice!(
+                                        "Expected record as last expression of recursive binding `{}`: {:?}\n{}", closure.name.name, x, closure.expr
+                                    ),
+                                }
+                            } else {
+                                let (function_index, vars, cf) = self.compile_lambda(
+                                    &closure.name,
+                                    &closure.args,
+                                    &closure.expr,
+                                    function,
+                                )?;
+                                function.function.instructions[offset] = NewClosure {
+                                    function_index: function_index,
+                                    upvars: vars,
+                                };
+                                function.emit(CloseClosure(vars));
+                                function.stack_size -= vars;
+                                function.function.inner_functions.push(cf);
+                            }
 
                             function.exit_scope(self);
                         }
@@ -722,7 +758,8 @@ impl<'a> Compiler<'a> {
             }
             Expr::Call(func, args) => {
                 if let Expr::Ident(ref id, _) = *func {
-                    if id.name.as_ref() == "&&" || id.name.as_ref() == "||"
+                    if id.name.as_ref() == "&&"
+                        || id.name.as_ref() == "||"
                         || (id.name.as_ref().starts_with('#')
                             && id.name.declared_name() != "#error")
                     {
@@ -734,7 +771,7 @@ impl<'a> Compiler<'a> {
                         for arg in args {
                             self.compile(arg, function, false)?;
                         }
-                        function.emit(Construct {
+                        function.emit(ConstructVariant {
                             tag: tag,
                             args: num_args,
                         });
@@ -757,17 +794,17 @@ impl<'a> Compiler<'a> {
                 for alt in alts.iter() {
                     match alt.pattern {
                         Pattern::Constructor(ref id, _) => {
-                            let tag = self.find_tag(typ.remove_forall(), &id.name).unwrap_or_else(
-                                || {
-                                    eprintln!("{}", expr);
-                                    ice!(
-                                        "ICE: Could not find tag for {}::{} when matching on \
-                                         expression",
-                                        typ,
-                                        self.symbols.string(&id.name),
-                                    )
-                                },
-                            );
+                            let tag =
+                                self.find_tag(typ.remove_forall(), &id.name)
+                                    .unwrap_or_else(|| {
+                                        eprintln!("{}", expr);
+                                        ice!(
+                                            "ICE: Could not find tag for {}::{} when matching on \
+                                             expression",
+                                            typ,
+                                            self.symbols.string(&id.name),
+                                        )
+                                    });
                             function.emit(TestTag(tag));
                             start_jumps.push(function.function.instructions.len());
                             function.emit(CJump(0));
@@ -877,7 +914,7 @@ impl<'a> Compiler<'a> {
                         function.emit(ConstructArray(exprs.len() as VmIndex));
                     }
                     Type::Variant(ref variants) => {
-                        function.emit(Construct {
+                        function.emit(ConstructVariant {
                             tag: variants
                                 .row_iter()
                                 .position(|field| field.name == id.name)
@@ -906,7 +943,7 @@ impl<'a> Compiler<'a> {
             self.compile(lhs, function, false)?;
             let lhs_end = function.function.instructions.len();
             function.emit(CJump(lhs_end as VmIndex + 3)); //Jump to rhs evaluation
-            function.emit(Construct { tag: 0, args: 0 });
+            function.emit(ConstructVariant { tag: 0, args: 0 });
             function.emit(Jump(0)); //lhs false, jump to after rhs
                                     // Dont count the integer added added above as the next part of the code never
                                     // pushed it
@@ -923,7 +960,7 @@ impl<'a> Compiler<'a> {
             function.emit(Jump(0));
             function.function.instructions[lhs_end] =
                 CJump(function.function.instructions.len() as VmIndex);
-            function.emit(Construct { tag: 1, args: 0 });
+            function.emit(ConstructVariant { tag: 1, args: 0 });
             // Dont count the integer above
             function.stack_size -= 1;
             let end = function.function.instructions.len();
@@ -1040,6 +1077,7 @@ impl<'a> Compiler<'a> {
         body: CExpr,
         function: &mut FunctionEnvs,
     ) -> Result<(VmIndex, VmIndex, CompiledFunction)> {
+        debug!("Compile function {}", id.name);
         function.start_function(self, args.len() as VmIndex, id.name.clone(), id.typ.clone());
 
         function.stack.enter_scope();
@@ -1056,14 +1094,140 @@ impl<'a> Compiler<'a> {
         let f = function.end_function(self, current_line);
         for &(ref var, _) in f.free_vars.iter() {
             match self.find(var, function).expect("free_vars: find") {
-                Stack(index) => function.emit(Push(index)),
-                UpVar(index) => function.emit(PushUpVar(index)),
+                Stack(index) => {
+                    debug!("Load stack {}", var);
+                    function.emit(Push(index))
+                }
+                UpVar(index) => {
+                    debug!("Load upvar {}", var);
+                    function.emit(PushUpVar(index))
+                }
                 _ => ice!("Free variables can only be on the stack or another upvar"),
             }
         }
         let function_index = function.function.inner_functions.len() as VmIndex;
         let free_vars = f.free_vars.len() as VmIndex;
         let FunctionEnv { function, .. } = f;
+        debug!("End compile function {}", id.name);
         Ok((function_index, free_vars, function))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use base::symbol::Symbols;
+
+    use core::{grammar::ExprParser, Allocator};
+    use vm::GlobalVmState;
+
+    fn verify_instructions<'a>(
+        compiled_function: &CompiledFunction,
+        instructions: &mut impl Iterator<Item = &'a [Instruction]>,
+    ) {
+        assert_eq!(
+            compiled_function.instructions,
+            instructions.next().expect("Instructions")
+        );
+        for func in &compiled_function.inner_functions {
+            verify_instructions(func, instructions);
+        }
+    }
+
+    fn assert_instructions(source: &str, instructions: &[&[Instruction]]) {
+        let mut symbols = Symbols::new();
+        let global_allocator = Allocator::new();
+        let global = ExprParser::new()
+            .parse(&mut symbols, &global_allocator, source)
+            .unwrap();
+
+        let globals = TypeInfos::new();
+        let vm_state = GlobalVmState::new();
+        let source = ::codespan::FileMap::new("".to_string().into(), "".to_string());
+        let mut compiler = Compiler::new(
+            &globals,
+            &vm_state,
+            SymbolModule::new("test".into(), &mut symbols),
+            &source,
+            "test".into(),
+            false,
+        );
+        let module = compiler.compile_expr(&global).unwrap();
+
+        verify_instructions(&module.function, &mut instructions.iter().cloned());
+    }
+
+    #[test]
+    fn recursive_record() {
+        let _ = ::env_logger::try_init();
+
+        assert_instructions(
+            "rec let a = { b }
+             rec let b = { a }
+             in b",
+            &[&[
+                NewRecord { args: 1, record: 0 },
+                NewRecord { args: 1, record: 1 },
+                Push(0),
+                Push(1),
+                CloseData { index: 0 },
+                Push(1),
+                Push(0),
+                CloseData { index: 1 },
+                Push(1),
+                Slide(2),
+            ]],
+        )
+    }
+
+    #[test]
+    fn recursive_record_with_functions() {
+        let _ = ::env_logger::try_init();
+
+        assert_instructions(
+            "rec let a =
+                rec let f x = b
+                in { f }
+             rec let b =
+                rec let f y = a
+                in { f }
+             in b",
+            &[
+                &[
+                    NewRecord { args: 1, record: 0 },
+                    NewRecord { args: 1, record: 0 },
+                    // a
+                    Push(0),
+                    NewClosure {
+                        function_index: 0,
+                        upvars: 1,
+                    },
+                    Push(3),
+                    Push(1),
+                    CloseClosure(1),
+                    Push(3),
+                    CloseData { index: 0 },
+                    Slide(1), // Remove closure
+                    // b
+                    Push(1),
+                    NewClosure {
+                        function_index: 1,
+                        upvars: 1,
+                    },
+                    Push(4),
+                    Push(0),
+                    CloseClosure(1),
+                    Push(4),
+                    CloseData { index: 1 },
+                    Slide(1), // Remove closure
+                    // body
+                    Push(1),
+                    Slide(2),
+                ],
+                &[PushUpVar(0)],
+                &[PushUpVar(0)],
+            ],
+        )
     }
 }

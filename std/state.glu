@@ -5,25 +5,25 @@ let { Applicative, Functor, Monad } = import! std.prelude
 type State s a = s -> { value : a, state : s }
 
 let functor : Functor (State s) =
-    let map f m : (a -> b) -> State s a -> State s b = \state ->
+    rec let map f m : (a -> b) -> State s a -> State s b = \state ->
         let { value, state } = m state
         { value = f value, state = state }
 
     { map }
 
 let applicative : Applicative (State s) =
-    let apply mf n : State s (a -> b) -> State s a -> State s b = \state ->
+    rec let apply mf n : State s (a -> b) -> State s a -> State s b = \state ->
         let { value, state } = mf state
         functor.map value n state
-
+    in
     let wrap value : a -> State s a = \state -> { value, state }
 
     { functor, apply, wrap }
 
 let monad : Monad (State s) =
-    let flat_map f m : (a -> State s b) -> State s a -> State s b = \state ->
+    rec let flat_map f m : (a -> State s b) -> State s a -> State s b = \state ->
         let { value, state } = m state
-        and m2 = f value
+        let m2 = f value
         m2 state
 
     { applicative, flat_map }

@@ -31,7 +31,8 @@ use stack::{
 use types::*;
 use value::{
     BytecodeFunction, Callable, ClosureData, ClosureDataDef, ClosureInitDef, Def, ExternFunction,
-    PartialApplicationDataDef, RecordDef, Userdata, Value, ValueRepr,
+    PartialApplicationDataDef, RecordDef, UninitializedRecord, UninitializedVariantDef, Userdata,
+    Value, ValueRepr,
 };
 use vm::{GlobalVmState, GlobalVmStateBuilder, VmEnv};
 use {BoxFuture, Error, Result, Variants};
@@ -1826,7 +1827,7 @@ impl<'b> ExecuteContext<'b> {
                     debug!("{:?}", &context.stack[..]);
                     return context.do_call(args).map(|x| Async::Ready(Some(x)));
                 }
-                Construct { tag, args } => {
+                ConstructVariant { tag, args } => {
                     let d = {
                         if args == 0 {
                             ValueRepr::Tag(tag)
@@ -1874,6 +1875,62 @@ impl<'b> ExecuteContext<'b> {
                         self.stack.pop();
                     }
                     self.stack.push(d);
+                }
+                NewVariant { tag, args } => {
+                    let d = {
+                        if args == 0 {
+                            ValueRepr::Tag(tag)
+                        } else {
+                            Data(alloc(
+                                &mut self.gc,
+                                self.thread,
+                                &self.stack.stack,
+                                UninitializedVariantDef {
+                                    tag: tag,
+                                    elems: args as usize,
+                                },
+                            )?)
+                        }
+                    };
+                    self.stack.push(d);
+                }
+                NewRecord { record, args } => {
+                    let d = {
+                        if args == 0 {
+                            ValueRepr::Tag(0)
+                        } else {
+                            unsafe {
+                                let roots = Roots {
+                                    vm: GcPtr::from_raw(self.thread),
+                                    stack: &self.stack.stack,
+                                };
+                                let field_names = &function.records[record as usize];
+                                Data(self.gc.alloc_and_collect(
+                                    roots,
+                                    UninitializedRecord {
+                                        elems: args as usize,
+                                        fields: field_names,
+                                    },
+                                )?)
+                            }
+                        }
+                    };
+                    self.stack.push(d);
+                }
+                CloseData { index } => {
+                    match self.stack[index].get_repr() {
+                        Data(mut data) => {
+                            // Unique access is safe as the record is only reachable from this
+                            // thread and none of those places will use it until after we have
+                            // closed it
+                            unsafe {
+                                for var in data.as_mut().fields.iter_mut().rev() {
+                                    *var = self.stack.pop();
+                                }
+                            }
+                        }
+                        x => ice!("Expected closure, got {:?}", x),
+                    }
                 }
                 ConstructArray(args) => {
                     let d = {
@@ -2315,6 +2372,7 @@ fn debug_instruction(stack: &StackFrame<ClosureState>, index: usize, instr: Inst
                 }
                 x
             }
+            PushUpVar(i) => Some(stack.get_upvar(i).clone()),
             NewClosure { .. } | MakeClosure { .. } => Some(Value::from(Int(stack.len() as isize))),
             _ => None,
         }

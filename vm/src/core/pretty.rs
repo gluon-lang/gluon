@@ -86,10 +86,10 @@ impl<'a> Expr<'a> {
             Expr::Ident(ref id, _) => arena.text(id.as_ref()),
             Expr::Let(ref bind, ref expr) => {
                 let doc = chain![arena;
-                    "let ",
                     match bind.expr {
                         Named::Expr(ref expr) => {
                             chain![arena;
+                                "let ",
                                 bind.name.as_ref(),
                                 arena.space(),
                                 "=",
@@ -97,12 +97,14 @@ impl<'a> Expr<'a> {
                                 chain![arena;
                                     expr.pretty(arena, Prec::Top),
                                     arena.space()
-                                ].group()
+                                ].group(),
+                                arena.newline()
                             ].group().nest(INDENT)
                         }
                         Named::Recursive(ref closures) => {
                             arena.concat(closures.iter().map(|closure| {
                                 chain![arena;
+                                    "rec let ",
                                     closure.name.as_ref(),
                                     arena.concat(closure.args.iter()
                                         .map(|arg| arena.space().append(arena.text(arg.as_ref())))),
@@ -112,12 +114,12 @@ impl<'a> Expr<'a> {
                                     chain![arena;
                                         closure.expr.pretty(arena, Prec::Top),
                                         arena.space()
-                                    ].nest(INDENT).group()
+                                    ].nest(INDENT).group(),
+                                    arena.newline()
                                 ].group()
                             }))
                         }
                     },
-                    arena.newline(),
                     expr.pretty(arena, Prec::Top)
                 ];
                 prec.enclose(arena, doc)
@@ -131,19 +133,30 @@ impl<'a> Expr<'a> {
                 )
                     if alts.len() == 1 =>
                 {
-                    let doc = chain![arena;
-                        "match ",
-                        expr.pretty(arena, Prec::Top),
-                        " with",
-                        arena.newline(),
-                        chain![arena;
-                            alt.pattern.pretty(arena),
-                            arena.space(),
-                            "->"
-                        ].group(),
-                        arena.newline(),
-                        alt.expr.pretty(arena, Prec::Top).group()
-                    ].group();
+                    let doc = match (&alt.pattern, &alt.expr) {
+                        (Pattern::Record(binds), Expr::Ident(id, ..))
+                            if binds.len() == 1 && *id == binds[0].0 =>
+                        {
+                            chain![arena;
+                                expr.pretty(arena, Prec::Arg),
+                                ".",
+                                binds[0].0.name.declared_name()
+                            ]
+                        }
+                        _ => chain![arena;
+                                "match ",
+                                expr.pretty(arena, Prec::Top),
+                                " with",
+                                arena.newline(),
+                                chain![arena;
+                                    alt.pattern.pretty(arena),
+                                    arena.space(),
+                                    "->"
+                                ].group(),
+                                arena.newline(),
+                                alt.expr.pretty(arena, Prec::Top).group()
+                            ].group(),
+                    };
                     prec.enclose(arena, doc)
                 }
                 _ => {

@@ -11,12 +11,12 @@ let { ? } = import! std.array
 let { Map, ? } = import! std.map
 
 type Error = String
-type ValueSerializer a = a -> Result Error Value
+type ValueSerializer a = { serialize : a -> Result Error Value }
 
 #[implicit]
 type Serialize a = ValueSerializer a
 
-let serialize ?ser : [Serialize a] -> a -> Result Error Value = ser
+let serialize ?ser : [Serialize a] -> a -> Result Error Value = ser.serialize
 
 /// Serializes `a` to a JSON without whitespace string
 ///
@@ -79,28 +79,34 @@ let to_string_pretty v : [Serialize a] -> a -> Result Error String =
     do value = serialize v
     prim.serialize_pretty value
 
-let serialize_unit : Serialize () = \_ -> Ok Null
+let serialize_unit : Serialize () = { serialize = \_ -> Ok Null }
 
-let serialize_int : Serialize Int = \i -> Ok (Int i)
+let serialize_int : Serialize Int = { serialize = \i -> Ok (Int i) }
 
-let serialize_bool : Serialize Bool = \i -> Ok (Bool i)
+let serialize_bool : Serialize Bool = { serialize = \i -> Ok (Bool i) }
 
-let serialize_float : Serialize Float = \i -> Ok (Float i)
+let serialize_float : Serialize Float = { serialize = \i -> Ok (Float i) }
 
-let serialize_string : Serialize String = \i -> Ok (String i)
+let serialize_string : Serialize String = { serialize = \i -> Ok (String i) }
 
-let serialize_option : [Serialize a] -> Serialize (Option a) = \i ->
-    match i with
-    | Some x -> serialize x
-    | None -> Ok Null
+let serialize_option : [Serialize a] -> Serialize (Option a) =
+    let serialize = \i ->
+        match i with
+        | Some x -> serialize x
+        | None -> Ok Null
+    { serialize }
 
-let serialize_array : [Serialize a] -> Serialize (Array a) = \i ->
-    map Array (for i serialize)
+let serialize_array : [Serialize a] -> Serialize (Array a) =
+    let serialize = \i ->
+        map Array (for i serialize)
+    { serialize }
 
-let serialize_map : [Serialize a] -> Serialize (Map String a) = \i ->
-    map Object (for i serialize)
+let serialize_map : [Serialize a] -> Serialize (Map String a) =
+    let serialize = \i ->
+        map Object (for i serialize)
+    { serialize }
 
-let serialize_value : Serialize Value = Ok 
+let serialize_value : Serialize Value = { serialize = Ok }
 
 {
     Value,

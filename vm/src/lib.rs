@@ -40,6 +40,10 @@ extern crate gluon_check as check;
 #[cfg(feature = "serde_state")]
 extern crate gluon_codegen;
 
+#[cfg(test)]
+#[macro_use]
+extern crate pretty_assertions;
+
 macro_rules! try_future {
     ($e:expr) => {
         try_future!($e, Box::new)

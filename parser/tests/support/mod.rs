@@ -10,7 +10,7 @@ use base::ast::{
 };
 use base::error::Errors;
 use base::kind::Kind;
-use base::metadata::Metadata;
+use base::metadata::{Comment, CommentType, Metadata};
 use base::pos::{self, BytePos, Span, Spanned};
 use base::types::{Alias, AliasData, ArcType, Field, Generic, Type};
 use parser::infix::{Fixity, OpMeta, OpTable, Reparser};
@@ -111,7 +111,7 @@ pub fn parse(
             ("<|", OpMeta::new(0, Fixity::Right)),
             ("|>", OpMeta::new(0, Fixity::Left)),
         ].into_iter()
-            .map(|(s, op)| (s.to_string(), op)),
+        .map(|(s, op)| (s.to_string(), op)),
     );
 
     let mut reparser = Reparser::new(op_table, &mut symbols);
@@ -197,8 +197,8 @@ pub fn let_(s: &str, e: SpExpr, b: SpExpr) -> SpExpr {
 }
 
 pub fn let_a(s: &str, args: &[&str], e: SpExpr, b: SpExpr) -> SpExpr {
-    no_loc(Expr::LetBindings(
-        vec![ValueBinding {
+    no_loc(Expr::let_binding(
+        ValueBinding {
             metadata: Metadata::default(),
             name: no_loc(Pattern::Ident(TypedIdent::new(intern(s)))),
             typ: None,
@@ -208,8 +208,8 @@ pub fn let_a(s: &str, args: &[&str], e: SpExpr, b: SpExpr) -> SpExpr {
                 .map(|i| Argument::explicit(no_loc(TypedIdent::new(intern(i)))))
                 .collect(),
             expr: e,
-        }],
-        Box::new(b),
+        },
+        b,
     ))
 }
 
@@ -257,8 +257,7 @@ pub fn case(e: SpExpr, alts: Vec<(Pattern<String>, SpExpr)>) -> SpExpr {
             .map(|(p, e)| Alternative {
                 pattern: no_loc(p),
                 expr: e,
-            })
-            .collect(),
+            }).collect(),
     ))
 }
 
@@ -310,16 +309,14 @@ pub fn record_a(
                 metadata: Metadata::default(),
                 name: no_loc(name),
                 value: value,
-            })
-            .collect(),
+            }).collect(),
         exprs: fields
             .into_iter()
             .map(|(name, value)| ExprField {
                 metadata: Metadata::default(),
                 name: no_loc(name),
                 value: value,
-            })
-            .collect(),
+            }).collect(),
         base: None,
     })
 }
@@ -349,4 +346,14 @@ pub fn alias<Id>(
     typ: AstType<Id>,
 ) -> Spanned<AliasData<Id, AstType<Id>>, BytePos> {
     no_loc(AliasData::new(name, args, typ))
+}
+
+pub fn line_comment(s: &str) -> Metadata {
+    Metadata {
+        comment: Some(Comment {
+            typ: CommentType::Line,
+            content: s.into(),
+        }),
+        ..Metadata::default()
+    }
 }

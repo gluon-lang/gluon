@@ -320,8 +320,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
                     .rev()
                     .filter_map(|env| env.stack.get(id).cloned())
                     .next()
-            })
-            .or_else(|| {
+            }).or_else(|| {
                 (self.globals)(id).map(|global| match global {
                     Binding::Expr(expr) => Binding::Expr(Reduced::Global(expr)),
                     Binding::Closure(c) => Binding::Closure(Reduced::Global(c)),
@@ -839,7 +838,7 @@ mod tests {
         let _ = ::env_logger::try_init();
 
         let expr = r#"
-            let f x y = (#Int+) x y
+            rec let f x y = (#Int+) x y
             in f 1 2
         "#;
         assert_eq_expr!(expr, "3");
@@ -850,14 +849,14 @@ mod tests {
         let _ = ::env_logger::try_init();
 
         let expr = r#"
-            let f x y = (#Int+) x y in
-            let g y = f 2 y in
+            rec let f x y = (#Int+) x y in
+            rec let g y = f 2 y in
             g
         "#;
         assert_eq_expr!(
             expr,
             r#"
-            let g y = (#Int+) 2 y in
+            rec let g y = (#Int+) 2 y in
             g
         "#
         );
@@ -875,8 +874,7 @@ mod tests {
                 &mut symbols,
                 &global_allocator,
                 "let f x y = (#Int+) x y in { f }",
-            )
-            .unwrap();
+            ).unwrap();
         let global: CExpr = global_allocator.arena.alloc(global);
 
         let expr = r#"

@@ -21,6 +21,13 @@ type Recursive = | End | Rec Recursive
 #[derive(Show, Eq)]
 type Parameterized a b = { x : a, y : b }
 
+rec
+#[derive(Show, Eq)]
+type Mutual1 a = | Value a | Mutual2 Mutual2
+#[derive(Show, Eq)]
+type Mutual2 = { x : Int, mutual : Mutual1 String }
+in
+
 let eq_tests =
     let variant =
         [
@@ -72,12 +79,28 @@ let eq_tests =
                 assert_eq b b,
         ]
 
+    let mutual =
+        let a = Value "abc"
+        let b = { x = 1, mutual = a }
+        let c = Mutual2 b
+        [
+            test "neq" <| \_ ->
+                assert_neq a c,
+            test "eq" <| \_ ->
+                assert_eq a a,
+            test "neq2" <| \_ ->
+                assert_neq b { x = 1, mutual = c },
+            test "eq2" <| \_ ->
+                assert_eq b b,
+        ]
+
     [
         group "variant" variant,
         group "record" record,
         group "nested" nested,
         group "recursive" recursive,
         group "parameterized" parameterized,
+        group "mutual" mutual,
     ]
 
 let show_tests =

@@ -50,8 +50,8 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
                     id.name = new_name;
                 }
                 Pattern::As(ref mut id, ref mut pat) => {
-                    let new_name = self.stack_var(id.clone(), pattern.span);
-                    *id = new_name;
+                    let new_name = self.stack_var(id.value.clone(), pattern.span);
+                    id.value = new_name;
                     self.new_pattern(pat)
                 }
                 Pattern::Tuple { ref mut elems, .. } => for elem in elems {
@@ -161,7 +161,9 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
                 }
                 Expr::LetBindings(ref mut bindings, _) => {
                     self.env.stack.enter_scope();
-                    let is_recursive = bindings.iter().all(|bind| !bind.args.is_empty());
+
+                    let is_recursive = bindings.is_recursive();
+
                     for bind in bindings.iter_mut() {
                         if !is_recursive {
                             self.visit_expr(&mut bind.expr);
@@ -171,6 +173,7 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
                         }
                         self.new_pattern(&mut bind.name);
                     }
+
                     if is_recursive {
                         for bind in bindings {
                             self.env.stack.enter_scope();
@@ -182,6 +185,7 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
                             self.env.stack.exit_scope();
                         }
                     }
+
                     return TailCall::TailCall;
                 }
                 Expr::Lambda(ref mut lambda) => {

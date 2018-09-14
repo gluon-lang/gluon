@@ -1,5 +1,6 @@
 use std::collections::hash_map::Entry;
 use std::fmt;
+use std::iter;
 use std::mem;
 use std::mem::size_of;
 use std::result::Result as StdResult;
@@ -218,6 +219,30 @@ unsafe impl<'b> DataDef for Def<'b> {
     }
 }
 
+pub(crate) struct UninitializedVariantDef {
+    pub tag: VmTag,
+    pub elems: usize,
+}
+unsafe impl DataDef for UninitializedVariantDef {
+    type Value = DataStruct;
+    fn size(&self) -> usize {
+        size_of::<DataStruct>() + size_of::<Value>() * self.elems
+    }
+    fn initialize<'w>(self, mut result: WriteOnly<'w, DataStruct>) -> &'w mut DataStruct {
+        unsafe {
+            let result = &mut *result.as_mut_ptr();
+            result.tag = self.tag;
+            result
+                .fields
+                .initialize((0..self.elems).map(|_| Value::int(0)));
+            result
+        }
+    }
+}
+impl Traverseable for UninitializedVariantDef {
+    fn traverse(&self, _gc: &mut Gc) {}
+}
+
 impl<'b> Traverseable for Def<'b> {
     fn traverse(&self, gc: &mut Gc) {
         self.elems.traverse(gc);
@@ -251,6 +276,35 @@ impl<'b> Traverseable for RecordDef<'b> {
     fn traverse(&self, gc: &mut Gc) {
         self.elems.traverse(gc);
     }
+}
+
+pub(crate) struct UninitializedRecord<'b> {
+    pub elems: usize,
+    pub fields: &'b [InternedStr],
+}
+
+unsafe impl<'b> DataDef for UninitializedRecord<'b> {
+    type Value = DataStruct;
+    fn size(&self) -> usize {
+        size_of::<DataStruct>() + size_of::<Value>() * self.elems
+    }
+    fn initialize<'w>(self, mut result: WriteOnly<'w, DataStruct>) -> &'w mut DataStruct {
+        unsafe {
+            let result = &mut *result.as_mut_ptr();
+            result.tag = 1 << ((size_of::<VmTag>() * 8) - 1);
+            result
+                .fields
+                .initialize(iter::repeat(Value::int(0)).take(self.elems));
+            result
+        }
+    }
+    fn fields(&self) -> Option<&[InternedStr]> {
+        Some(self.fields)
+    }
+}
+
+impl<'b> Traverseable for UninitializedRecord<'b> {
+    fn traverse(&self, _gc: &mut Gc) {}
 }
 
 mod gc_str {

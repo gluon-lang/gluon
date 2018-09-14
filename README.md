@@ -124,28 +124,27 @@ let parse : String -> Result String Expr =
 
     let operator =
         satisfy_map (\c ->
-            if c == '*'
-            then Some Mul
-            else if c == '+'
-            then Some Add
-            else if c == '-'
-            then Some Sub
-            else if c == '/'
-            then Some Div
-            else None)
+            match c with
+            | '*' -> Some Mul
+            | '+' -> Some Add
+            | '-' -> Some Sub
+            | '/' -> Some Div
+            | _ -> None)
             <?> "operator"
 
+    rec
     let atom _ =
         parser.functor.map Int integer
             <|> between (lex (token '(')) (lex (token ')')) (lazy_parser expr)
 
-    and binop _ =
+    let binop _ =
         let op_parser =
             do op = lex operator
             wrap (\l r -> Binop l op r)
         chainl1 (atom ()) op_parser
 
-    and expr _ = binop ()
+    let expr _ = binop ()
+    in
 
     // Gluon makes it possible to partially apply functions which we use here to scope all parser functions
     // inside the `let parse` binding above.

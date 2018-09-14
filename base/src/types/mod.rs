@@ -473,6 +473,10 @@ impl<Id, T> AliasRef<Id, T> {
         let index = self.index;
         Arc::get_mut(&mut self.group).map(|group| &mut group[index])
     }
+    pub(crate) fn try_get_alias(&self) -> Option<&AliasData<Id, T>> {
+        let index = self.index;
+        Some(&self.group[index])
+    }
 }
 
 impl<Id, T> AliasRef<Id, T>
@@ -1044,7 +1048,8 @@ where
             Type::Function(_, _, _) => Cow::Owned(Kind::typ()),
             Type::App(ref t, ref args) => t.kind_(args.len()),
             Type::Error => Cow::Owned(Kind::error()),
-            Type::Hole | Type::Opaque | Type::Builtin(_) | Type::Record(_) | Type::Variant(_) => {
+            Type::Hole => Cow::Owned(Kind::hole()),
+            Type::Opaque | Type::Builtin(_) | Type::Record(_) | Type::Variant(_) => {
                 Cow::Owned(Kind::typ())
             }
             Type::EmptyRow | Type::ExtendRow { .. } => Cow::Owned(Kind::row().into()),

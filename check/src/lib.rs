@@ -26,6 +26,7 @@ extern crate gluon_base as base;
 
 pub mod kindcheck;
 pub mod metadata;
+mod recursion_check;
 pub mod rename;
 pub mod substitution;
 pub mod typecheck;

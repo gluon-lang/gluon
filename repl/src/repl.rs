@@ -315,13 +315,13 @@ fn eval_line_(
                     let id = Symbol::from("repl_temp");
                     let_binding.name = pos::spanned(
                         let_binding.name.span,
-                        Pattern::As(id.clone(), Box::new(let_binding.name)),
+                        Pattern::As(pos::spanned(let_binding.name.span, id.clone()), Box::new(let_binding.name)),
                     );
                     TypedIdent::new(id)
                 }
             };
             let id = pos::spanned2(0.into(), 0.into(), Expr::Ident(id.clone()));
-            let expr = Expr::LetBindings(vec![let_binding], Box::new(id));
+            let expr = Expr::let_binding(let_binding, id);
             let eval_expr = pos::spanned2(0.into(), 0.into(), expr);
             Either::B(eval_expr
                 .run_expr(&mut compiler, vm.clone(), "line", line, None)
@@ -415,7 +415,7 @@ fn set_globals(
         }
         Pattern::As(ref id, ref pattern) => {
             vm.set_global(
-                Symbol::from(format!("@{}", id.declared_name())),
+                Symbol::from(format!("@{}", id.value.declared_name())),
                 typ.clone(),
                 Default::default(),
                 value.get_value(),

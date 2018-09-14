@@ -33,14 +33,17 @@ let eq : Eq Expr =
     { (==) = eq_expr }
 
 let show_expr : Show Expr =
+    rec
     let spaced show_ xs =
         match xs with
         | Cons y ys -> show_ y <> spaced1 show_ ys
         | Nil -> ""
-    and spaced1 show_ xs =
+    let spaced1 show_ xs =
         match xs with
         | Cons y ys -> " " <> show_ y <> spaced1 show_ ys
         | Nil -> ""
+    in
+
     let show expr =
         match expr with
         | Atom s -> s
@@ -163,6 +166,7 @@ let primitives : LispState =
         ++ primitive_binop "/" (/) (/)
         ++ primitive "define" define
 
+rec
 let apply f xs : Expr -> List Expr -> Lisp Expr =
     let add_args names values =
         match (names, values) with
@@ -180,7 +184,7 @@ let apply f xs : Expr -> List Expr -> Lisp Expr =
             eval_exprs function.body)
     | _ -> fail ("Can\'t call value: " <> show f)
 
-and eval_lisp expr : Expr -> Lisp Expr =
+let eval_lisp expr : Expr -> Lisp Expr =
     match expr with
     | Atom name ->
         do state = get_state
@@ -207,7 +211,8 @@ and eval_lisp expr : Expr -> Lisp Expr =
             | _ -> fail ("Cant apply " <> show x)
         | Nil -> wrap expr
 
-and eval_exprs exprs = fold_m (\_result expr -> eval_lisp expr) (List Nil) exprs
+let eval_exprs exprs = fold_m (\_result expr -> eval_lisp expr) (List Nil) exprs
+in
 
 let eval_env expr env : Lisp a -> Map String Expr -> Result String a =
     result.functor.map (\r -> r.value) (lisp expr env)

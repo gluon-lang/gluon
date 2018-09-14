@@ -112,7 +112,15 @@ fn type_decl_record() {
 #[test]
 fn type_mutually_recursive() {
     let _ = ::env_logger::try_init();
-    let e = parse_clear_span!("type Test = | Test Int and Test2 = { x: Int, y: {} } in 1");
+    let e = parse_clear_span!(
+        r#"
+        rec
+        /// Test
+        type Test = | Test Int
+        #[a]
+        type Test2 = { x: Int, y: {} }
+        in 1"#
+    );
     let test = Type::variant(vec![Field::new(
         intern("Test"),
         Type::function(vec![typ("Int")], typ("Test")),
@@ -126,13 +134,19 @@ fn type_mutually_recursive() {
     );
     let binds = vec![
         TypeBinding {
-            metadata: Metadata::default(),
+            metadata: line_comment("Test"),
             name: no_loc(intern("Test")),
             alias: alias(intern("Test"), Vec::new(), test),
             finalized_alias: None,
         },
         TypeBinding {
-            metadata: Metadata::default(),
+            metadata: Metadata {
+                attributes: vec![Attribute {
+                    name: "a".into(),
+                    arguments: None,
+                }],
+                ..Metadata::default()
+            },
             name: no_loc(intern("Test2")),
             alias: alias(intern("Test2"), Vec::new(), test2),
             finalized_alias: None,
@@ -310,8 +324,8 @@ fn let_pattern() {
     let e = parse_clear_span!("let {x, y} = test in x");
     assert_eq!(
         e,
-        no_loc(Expr::LetBindings(
-            vec![ValueBinding {
+        no_loc(Expr::let_binding(
+            ValueBinding {
                 metadata: Metadata::default(),
                 name: no_loc(Pattern::Record {
                     typ: Type::hole(),
@@ -332,9 +346,9 @@ fn let_pattern() {
                 resolved_type: Type::hole(),
                 args: vec![],
                 expr: id("test"),
-            }],
-            Box::new(id("x")),
-        ),)
+            },
+            id("x"),
+        ))
     );
 }
 
@@ -465,7 +479,7 @@ id
     assert_eq!(
         e,
         no_loc(Expr::LetBindings(
-            vec![ValueBinding {
+            ValueBindings::Plain(Box::new(ValueBinding {
                 metadata: Metadata {
                     comment: Some(Comment {
                         typ: CommentType::Line,
@@ -478,26 +492,27 @@ id
                 resolved_type: Type::hole(),
                 args: vec![Argument::explicit(no_loc(TypedIdent::new(intern("x"))))],
                 expr: id("x"),
-            }],
+            })),
             Box::new(id("id")),
         ),)
     );
 }
 
 #[test]
-fn comment_on_and() {
+fn comment_on_rec_let() {
     let _ = ::env_logger::try_init();
     let text = r#"
+rec
 let id x = x
 /// The identity function
-and id2 y = y
+let id2 y = y
 id
 "#;
     let e = parse_clear_span!(text);
     assert_eq!(
         e,
         no_loc(Expr::LetBindings(
-            vec![
+            ValueBindings::Recursive(vec![
                 ValueBinding {
                     metadata: Metadata::default(),
                     name: no_loc(Pattern::Ident(TypedIdent::new(intern("id")))),
@@ -520,9 +535,9 @@ id
                     args: vec![Argument::explicit(no_loc(TypedIdent::new(intern("y"))))],
                     expr: id("y"),
                 },
-            ],
+            ]),
             Box::new(id("id")),
-        ),)
+        ))
     );
 }
 
@@ -672,14 +687,14 @@ x
     assert_eq!(
         e,
         no_loc(Expr::LetBindings(
-            vec![ValueBinding {
+            ValueBindings::Plain(Box::new(ValueBinding {
                 metadata: Metadata::default(),
                 name: no_loc(Pattern::Ident(TypedIdent::new(intern("x")))),
                 typ: Some(Type::app(typ("->"), collect![typ("Int"), typ("Int")])),
                 resolved_type: Type::hole(),
                 args: vec![],
                 expr: id("x"),
-            }],
+            })),
             Box::new(id("x")),
         ),)
     );
@@ -701,7 +716,7 @@ fn quote_in_identifier() {
     assert_eq!(e, a);
 }
 
-// Test that this is `let x = 1 in {{ a; b }}` and not `{{ (let x = 1 in a) ; b }}`
+// Test that this is `rec let x = 1 in {{ a; b }}` let not `{{ (let x = 1 in a) ; b }}`
 #[test]
 fn block_open_after_let_in() {
     let _ = ::env_logger::try_init();
@@ -877,4 +892,71 @@ fn alias_in_record_type() {
             Box::new(int(1))
         ),)
     )
+}
+
+#[test]
+fn let_then_doc_comment() {
+    let _ = ::env_logger::try_init();
+    let text = r"
+let map2 = 1
+
+/// Maps over three actions
+let map3 = 2
+()
+    ";
+    parse_clear_span!(text);
+}
+
+#[test]
+fn rec_let_indentation() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+rec let id x =
+    let y = x
+    y
+id
+"#;
+    parse_clear_span!(text);
+}
+
+#[test]
+fn rec_let_with_doc_comment() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+let x = { }
+
+/// a
+rec let id x =
+    let y = x
+    y
+id
+"#;
+    parse_clear_span!(text);
+}
+
+#[test]
+fn rec_let_rec_let() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+rec let x = 0
+
+rec let y = 2
+
+1
+"#;
+    parse_clear_span!(text);
+}
+
+#[test]
+fn rec_let_doc_rec_let() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+rec let x = 0
+
+/// y
+rec let y = 2
+
+1
+"#;
+    parse_clear_span!(text);
 }

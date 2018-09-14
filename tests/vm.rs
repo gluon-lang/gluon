@@ -147,9 +147,10 @@ in Some 1
 
 test_expr!{ recursive_function,
 r"
-let fib x = if x #Int< 3
-        then 1
-        else fib (x #Int- 1) #Int+ fib (x #Int- 2)
+rec let fib x =
+    if x #Int< 3
+    then 1
+    else fib (x #Int- 1) #Int+ fib (x #Int- 2)
 in fib 7
 ",
 13i32
@@ -157,10 +158,11 @@ in fib 7
 
 test_expr!{ mutually_recursive_function,
 r"
+rec
 let f x = if x #Int< 0
       then x
       else g x
-and g x = f (x #Int- 1)
+let g x = f (x #Int- 1)
 in g 3
 ",
 -1
@@ -330,7 +332,7 @@ prim.discriminant_value (C "")
 test_expr!{ unit_expr,
 r#"
 let x = ()
-and y = 1
+let y = 1
 in y
 "#,
 1i32
@@ -533,9 +535,9 @@ fn rename_types_after_binding() {
 
     let text = r#"
 let list = import! std.list
-in
 let { List } = list
-and eq_list: Eq (List Int) = list.eq
+
+let eq_list: Eq (List Int) = list.eq
 in Cons 1 Nil == Nil
 "#;
     let mut vm = make_vm();
@@ -714,12 +716,14 @@ fn stacktrace() {
     let _ = ::env_logger::try_init();
     let text = r#"
 let end _ = 1 + error "test"
+rec
 let f x =
     if x == 0 then
         3 + end ()
     else
         1 + g (x - 1)
-and g x = 1 + f (x / 2)
+let g x = 1 + f (x / 2)
+in
 g 10
 "#;
     let mut vm = make_vm();
@@ -739,27 +743,27 @@ g 10
                     // Some(StacktraceFrame { name: f.clone(), line: 9 }),
                     Some(StacktraceFrame {
                         name: g.clone(),
-                        line: 7.into(),
+                        line: 8.into(),
                     }),
                     Some(StacktraceFrame {
                         name: f.clone(),
-                        line: 6.into(),
+                        line: 7.into(),
                     }),
                     Some(StacktraceFrame {
                         name: g.clone(),
-                        line: 7.into(),
+                        line: 8.into(),
                     }),
                     Some(StacktraceFrame {
                         name: f.clone(),
-                        line: 6.into(),
+                        line: 7.into(),
                     }),
                     Some(StacktraceFrame {
                         name: g.clone(),
-                        line: 7.into(),
+                        line: 8.into(),
                     }),
                     Some(StacktraceFrame {
                         name: f.clone(),
-                        line: 4.into(),
+                        line: 5.into(),
                     }),
                     Some(StacktraceFrame {
                         name: end.clone(),
@@ -783,17 +787,19 @@ fn completion_with_prelude() {
 
     let source = r#"
 let prelude  = import! std.prelude
-and { Option } = import! std.option
-and { Num } = prelude
+let { Option } = import! std.option
+let { Num } = prelude
 let { lazy } = import! std.lazy
 
+rec
 type Stream_ a =
     | Value a (Stream a)
     | Empty
-and Stream a = Lazy (Stream_ a)
+type Stream a = Lazy (Stream_ a)
+in
 
 let from f : (Int -> Option a) -> Stream a =
-        let from_ i =
+        rec let from_ i =
                 lazy (\_ ->
                     match f i with
                         | Some x -> Value x (from_ (i + 1))
@@ -814,7 +820,7 @@ let from f : (Int -> Option a) -> Stream a =
         &*vm.get_env(),
         lines.span(),
         &expr,
-        lines.byte_index(14.into(), 29.into()).unwrap(),
+        lines.byte_index(16.into(), 29.into()).unwrap(),
     ).map(|either| either.right().unwrap());
     assert_eq!(result, Ok(Type::int()));
 }
@@ -945,4 +951,57 @@ let bar: Id () =
 in ()
 ",
 ()
+}
+
+test_expr!{ recursive_record,
+r#"
+rec
+let x = { y }
+let y = { z = 2 }
+x.y.z
+"#,
+2
+}
+
+test_expr!{ recursive_variant,
+r#"
+type List a = | Nil | Cons a (List a)
+rec let ones = Cons 1 ones
+in
+match ones with
+| Cons x xs -> x
+| Nil -> 2
+"#,
+1
+}
+
+test_expr!{ recursive_implicit,
+r#"
+rec
+type Test = | Test Test2 | Nil
+type Test2 = | Test2 Test
+in
+
+#[implicit]
+type Size a = { size : a -> Int }
+
+let size ?s : [Size a] -> a -> Int = s.size
+
+rec
+let size_test : Size Test =
+    let size_ x =
+        match x with
+        | Test t -> 1 #Int+ size t
+        | Nil -> 0
+    { size = size_ }
+let size_test2 : Size Test2 =
+    let size_ x =
+        match x with
+        | Test2 t -> 1 #Int+ size t
+    { size = size_ }
+in
+
+size (Test (Test2 (Test (Test2 Nil))))
+"#,
+4
 }

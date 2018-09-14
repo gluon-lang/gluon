@@ -81,8 +81,9 @@ fn roundtrip_module() {
 fn roundtrip_recursive_closure() {
     let thread = new_vm();
     let expr = r#"
+        rec
         let f x = g x
-        and g x = f x
+        let g x = f x
         { f, g }
         "#;
     let (value, _) = Compiler::new()

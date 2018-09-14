@@ -29,7 +29,7 @@ macro_rules! assert_deq {
 
 #[cfg(test)]
 #[cfg_attr(rustfmt, rustfmt_skip)]
-mod grammar;
+pub(crate) mod grammar;
 pub mod interpreter;
 pub mod optimize;
 #[cfg(feature = "test")]
@@ -417,8 +417,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                     .map(|alt| Equation {
                         patterns: vec![&alt.pattern],
                         result: self.translate_alloc(&alt.expr),
-                    })
-                    .collect();
+                    }).collect();
                 PatternTranslator(self).translate_top(expr, &alts).clone()
             }
             // expr.projection
@@ -591,13 +590,13 @@ impl<'a, 'e> Translator<'a, 'e> {
 
     fn translate_let(
         &'a self,
-        binds: &[ast::ValueBinding<Symbol>],
+        binds: &ast::ValueBindings<Symbol>,
         tail: Expr<'a>,
         span_start: BytePos,
     ) -> Expr<'a> {
         let arena = &self.allocator.arena;
-        let is_recursive = binds.iter().all(|bind| bind.args.len() > 0);
-        if is_recursive {
+
+        if binds.is_recursive() {
             let closures = binds
                 .iter()
                 .map(|bind| Closure {
@@ -608,8 +607,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                     },
                     args: bind.args.iter().map(|arg| arg.name.value.clone()).collect(),
                     expr: self.translate_alloc(&bind.expr),
-                })
-                .collect();
+                }).collect();
             Expr::Let(
                 LetBinding {
                     // TODO
@@ -698,8 +696,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                 .map(|(i, arg)| TypedIdent {
                     name: Symbol::from(format!("#{}", i)),
                     typ: arg.clone(),
-                })
-                .collect();
+                }).collect();
             data_type = args.typ.clone();
         }
         new_args.extend(
@@ -859,7 +856,7 @@ fn replace_variables<'a, 'b>(
             replacements,
             allocator,
         }.visit_expr(expr)
-            .unwrap_or(expr)
+        .unwrap_or(expr)
     }
 }
 
@@ -943,15 +940,13 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                                         }),
                                     ))
                                 })
-                            })
-                            .collect::<Vec<_>>()
+                            }).collect::<Vec<_>>()
                     }
                     ast::Pattern::Tuple { ref elems, .. } => {
                         elems.iter().map(Cow::Borrowed).collect::<Vec<_>>()
                     }
                     _ => unreachable!(),
-                })
-                .collect::<Vec<_>>();
+                }).collect::<Vec<_>>();
 
             // The first pattern of each equation has been processed, prepend the inner patterns
             // (since those need to be solved first) and then the remaining_patterns
@@ -966,8 +961,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                         .chain(remaining_equations.iter().cloned())
                         .collect(),
                     result,
-                })
-                .collect::<Vec<_>>();
+                }).collect::<Vec<_>>();
 
             let new_variables = self.insert_new_variables(&pattern, variables);
 
@@ -1006,8 +1000,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                         .or_insert_with(|| {
                             group_order.push(&id.name);
                             Vec::new()
-                        })
-                        .push(equation);
+                        }).push(equation);
                 }
                 ast::Pattern::As(_, _)
                 | ast::Pattern::Tuple { .. }
@@ -1019,8 +1012,8 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         }
 
         // Check if all the constructors of the variant are matched on
-        let complete = groups.len()
-            == remove_aliases_cow(&self.0.env, &variables[0].env_type_of(&self.0.env))
+        let complete =
+            groups.len() == remove_aliases_cow(&self.0.env, &variables[0].env_type_of(&self.0.env))
                 .row_iter()
                 .count();
 
@@ -1049,8 +1042,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                                 .collect(),
                             result: equation.result,
                         }
-                    })
-                    .collect::<Vec<_>>();
+                    }).collect::<Vec<_>>();
 
                 let new_variables = self.insert_new_variables(&pattern, variables);
 
@@ -1061,8 +1053,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     pattern: pattern,
                     expr: expr,
                 }
-            })
-            .chain(if complete {
+            }).chain(if complete {
                 None
             } else {
                 Some(match *default {
@@ -1086,8 +1077,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                         expr: default,
                     },
                 })
-            })
-            .collect::<Vec<_>>();
+            }).collect::<Vec<_>>();
         let expr = Expr::Match(
             variables[0],
             self.0
@@ -1112,8 +1102,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                 .map(|equation| Equation {
                     patterns: equation.patterns[1..].to_owned(),
                     result: equation.result,
-                })
-                .collect::<Vec<_>>(),
+                }).collect::<Vec<_>>(),
         );
         let (pattern, replacements) = self.pattern_identifiers(
             equations
@@ -1169,8 +1158,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                         .or_insert_with(|| {
                             group_order.push(literal);
                             Vec::new()
-                        })
-                        .push(equation.clone());
+                        }).push(equation.clone());
                 }
                 ast::Pattern::Constructor(_, _)
                 | ast::Pattern::As(_, _)
@@ -1192,8 +1180,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     .map(|equation| Equation {
                         patterns: equation.patterns.iter().cloned().skip(1).collect(),
                         result: equation.result,
-                    })
-                    .collect::<Vec<_>>();
+                    }).collect::<Vec<_>>();
 
                 let new_variables = self.insert_new_variables(&pattern, variables);
                 let expr = self.translate(default, &new_variables, &new_equations);
@@ -1201,12 +1188,10 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     pattern: pattern,
                     expr: expr,
                 }
-            })
-            .chain(Some(Alternative {
+            }).chain(Some(Alternative {
                 pattern: Pattern::Ident(TypedIdent::new(Symbol::from("_"))),
                 expr: default,
-            }))
-            .collect::<Vec<_>>();
+            })).collect::<Vec<_>>();
 
         let expr = Expr::Match(
             variables[0],
@@ -1232,8 +1217,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                     .allocator
                     .arena
                     .alloc(Expr::Ident(id, Span::default()))
-            })
-            .chain(variables[1..].iter().cloned())
+            }).chain(variables[1..].iter().cloned())
             .collect::<Vec<_>>()
     }
 
@@ -1322,7 +1306,7 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
                         ast::Pattern::As(ref id, ref pat) => {
                             binder.bind_id(
                                 TypedIdent {
-                                    name: id.clone(),
+                                    name: id.value.clone(),
                                     typ: pat.env_type_of(&env),
                                 },
                                 variable,
@@ -1579,8 +1563,7 @@ impl<'a> Iterator for PatternIdentifiers<'a> {
                         .map(|name| TypedIdent {
                             name: name.clone(),
                             typ: field.0.typ.clone(),
-                        })
-                        .unwrap_or_else(|| field.0.clone()),
+                        }).unwrap_or_else(|| field.0.clone()),
                 )
             } else {
                 None
@@ -1609,8 +1592,7 @@ impl<'a> DoubleEndedIterator for PatternIdentifiers<'a> {
                         .map(|name| TypedIdent {
                             name: name.clone(),
                             typ: field.0.typ.clone(),
-                        })
-                        .unwrap_or_else(|| field.0.clone()),
+                        }).unwrap_or_else(|| field.0.clone()),
                 )
             } else {
                 None
@@ -1679,11 +1661,10 @@ mod tests {
                             &Pattern::Constructor(ref l, ref l_ids),
                             &Pattern::Constructor(ref r, ref r_ids),
                         ) => {
-                            check(map, &l.name, &r.name)
-                                && l_ids
-                                    .iter()
-                                    .zip(r_ids)
-                                    .all(|(l, r)| check(map, &l.name, &r.name))
+                            check(map, &l.name, &r.name) && l_ids
+                                .iter()
+                                .zip(r_ids)
+                                .all(|(l, r)| check(map, &l.name, &r.name))
                         }
                         (&Pattern::Ident(ref l), &Pattern::Ident(ref r)) => {
                             check(map, &l.name, &r.name)

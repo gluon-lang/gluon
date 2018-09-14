@@ -109,8 +109,9 @@ fn type_decl_multiple() {
     let _ = env_logger::try_init();
 
     let text = r"
+rec
 type Test = Int -> Int
-and Test2 = | Test2 Test
+type Test2 = | Test2 Test
 in Test2 (\x -> x #Int+ 2)
 ";
     let result = support::typecheck(text);
@@ -191,10 +192,11 @@ fn let_binding_mutually_recursive() {
     let _ = env_logger::try_init();
 
     let text = r"
+rec
 let f x = if x #Int< 0
       then x
       else g x
-and g x = f (x #Int- 1)
+let g x = f (x #Int- 1)
 in g 5
 ";
     let (_, result) = support::typecheck_expr(text);
@@ -217,8 +219,9 @@ fn let_binding_general_mutually_recursive() {
     let _ = env_logger::try_init();
 
     let text = r"
+rec
 let test x = (1 #Int+ 2) #Int+ test2 x
-and test2 x = 2 #Int+ test x
+let test2 x = 2 #Int+ test x
 in test2 1";
     let (expr, result) = support::typecheck_expr(text);
     let expected = Ok(typ("Int"));
@@ -461,8 +464,10 @@ fn infer_mutually_recursive() {
     let _ = env_logger::try_init();
 
     let text = r"
+rec
 let id x = x
-and const x = \_ -> x
+let const x = \_ -> x
+in
 
 let c: a -> b -> a = const
 c
@@ -477,8 +482,9 @@ fn error_mutually_recursive() {
     let _ = env_logger::try_init();
 
     let text = r"
+rec
 let id x = x
-and const x = \_ -> x
+let const x = \_ -> x
 in const #Int+ 1
 ";
     let result = support::typecheck(text);
@@ -500,7 +506,7 @@ in
 let (>>=) m f: State s a -> (a -> State s b) -> State s b =
     \state ->
         let { value, state } = m state
-        and m2 = f value
+        let m2 = f value
         in m2 state
 in
 let return value: a -> State s a = \state -> { value, state }
@@ -631,8 +637,9 @@ fn mutually_recursive_types() {
     let _ = env_logger::try_init();
 
     let text = r#"
+rec
 type Tree a = | Empty | Node (Data a) (Data a)
-and Data a = { value: a, tree: Tree a }
+type Data a = { value: a, tree: Tree a }
 in
 let rhs : Data Int = {
     value = 123,
@@ -651,8 +658,10 @@ fn field_access_through_multiple_aliases() {
     let _ = env_logger::try_init();
 
     let text = r#"
+rec
 type Test1 = { x: Int }
-and Test2 = Test1
+type Test2 = Test1
+in
 
 let t: Test2 = { x = 1 }
 
@@ -670,12 +679,12 @@ fn unify_equal_hkt_aliases() {
 
     let text = r#"
 type M a = | M a
-and M2 a = M a
-and HKT m = { x: m Int }
+type M2 a = M a
+type HKT m = { x: m Int }
 in
 let eq: a -> a -> Int = \x y -> 1
-and t: HKT M = { x = M 1 }
-and u: HKT M2 = t
+let t: HKT M = { x = M 1 }
+let u: HKT M2 = t
 in eq t u
 "#;
     let result = support::typecheck(text);

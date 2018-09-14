@@ -84,12 +84,31 @@ Let bindings also allow functions to be defined which is done by listing the arg
 let id x = x in id 1 // Returns 1
 ```
 
-Mutually recursive functions can be defined using `let` by writing `and` before each successive binding.
+Mutually recursive values can be defined using `rec ... in` to enclose the `let` bindings.
 
 ```f#
+rec
 let f x = g x
-and g x = f x
+let g x = f x
 in f 1 // Never returns
+```
+
+This is not limited to functions but works with any value that is capable of recursion (records, variants and functions).
+
+```f#
+/// An infinite list of `1`
+rec let ones = Cons 1 ones
+in
+
+/// A recursive set of records
+rec
+let value1 =
+    let f x = value2.f x + 1
+    { f }
+let value2 =
+    let f x = value1.f x + 2
+    { f }
+in ()
 ```
 
 ### If expressions
@@ -282,11 +301,12 @@ let r3 : Type3 = r2
 in r1
 ```
 
-Mutually recursive types can be defined by writing `and` between each definition.
+Mutually recursive types can be defined by writing a `rec` block.
 
 ```f#,rust
+rec
 type SExpr_ = | Atom String | Cons SExpr SExpr
-and SExpr = { location: Int, expr: SExpr_ }
+type SExpr = { location: Int, expr: SExpr_ }
 in Atom "name"
 ```
 

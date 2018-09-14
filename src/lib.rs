@@ -136,8 +136,7 @@ impl From<Errors<Spanned<macros::Error, BytePos>>> for Error {
                     .map(|err| match err.value.downcast::<Error>() {
                         Ok(err) => *err,
                         Err(err) => Error::Other(err),
-                    })
-                    .collect(),
+                    }).collect(),
             )
         }
     }
@@ -153,8 +152,7 @@ impl From<Errors<Error>> for Error {
                 .flat_map(|err| match err {
                     Error::Multiple(errors) => Either::Left(errors.into_iter()),
                     err => Either::Right(Some(err).into_iter()),
-                })
-                .collect();
+                }).collect();
 
             Error::Multiple(errors)
         }
@@ -380,7 +378,7 @@ impl Compiler {
             metadata: Default::default(),
             metadata_map: Default::default(),
         }.compile(self, vm, filename, expr_str, ())
-            .map(|result| result.module)
+        .map(|result| result.module)
     }
 
     /// Compiles the source code `expr_str` into bytecode serialized using `serializer`
@@ -587,26 +585,6 @@ impl Compiler {
         let prelude_expr = self.parse_expr(type_cache, "", PRELUDE).unwrap();
         let original_expr = mem::replace(expr, prelude_expr);
 
-        // Set all spans in the prelude expression to -1 so that completion requests always
-        // skips searching the implicit prelude
-        use base::ast::{walk_mut_expr, walk_mut_pattern, MutVisitor, SpannedPattern};
-        struct ExpandedSpans;
-
-        impl<'a> MutVisitor<'a> for ExpandedSpans {
-            type Ident = Symbol;
-
-            fn visit_expr(&mut self, e: &mut SpannedExpr<Self::Ident>) {
-                e.span = Span::new(u32::max_value().into(), u32::max_value().into());
-                walk_mut_expr(self, e);
-            }
-
-            fn visit_pattern(&mut self, p: &mut SpannedPattern<Self::Ident>) {
-                p.span = Span::new(u32::max_value().into(), u32::max_value().into());
-                walk_mut_pattern(self, &mut p.value);
-            }
-        }
-        ExpandedSpans.visit_expr(expr);
-
         // Replace the 0 in the prelude with the actual expression
         fn assign_last_body(l: &mut SpannedExpr<Symbol>, original_expr: SpannedExpr<Symbol>) {
             match l.value {
@@ -622,7 +600,7 @@ impl Compiler {
 
 pub const PRELUDE: &'static str = r#"
 let __implicit_prelude = import! std.prelude
-and { Num, Eq, Ord, Show, Functor, Applicative, Monad, Option, Bool, ? } = __implicit_prelude
+let { Num, Eq, Ord, Show, Functor, Applicative, Monad, Option, Bool, ? } = __implicit_prelude
 
 let { (+), (-), (*), (/), (==), (/=), (<), (<=), (>=), (>), (++), show, not, flat_map } = __implicit_prelude
 

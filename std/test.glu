@@ -34,7 +34,7 @@ let assert_neq l r : [Show a] -> [Eq a] -> a -> a -> Test () =
     then testWriter.applicative.wrap ()
     else writer.tell (Cons ("Assertion failed: " <> show l <> " == " <> show r) Nil)
 
-let run test : Test a -> () =
+rec let run test : Test a -> () =
     match test.writer with
     | Cons _ _ -> error (foldl (\acc err -> acc <> "\n" <> err) "" test.writer)
     | Nil -> ()

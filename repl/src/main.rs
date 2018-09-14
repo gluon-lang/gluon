@@ -13,8 +13,9 @@ extern crate futures;
 extern crate log;
 #[macro_use]
 extern crate serde_derive;
-#[macro_use]
 extern crate structopt;
+#[macro_use]
+extern crate structopt_derive;
 extern crate tokio;
 extern crate tokio_signal;
 extern crate walkdir;
@@ -250,8 +251,7 @@ fn run(
                                 }
                             })
                         })
-                    })
-                    .collect::<Vec<_>>();
+                    }).collect::<Vec<_>>();
                 gluon_files.sort();
                 gluon_files.dedup();
 

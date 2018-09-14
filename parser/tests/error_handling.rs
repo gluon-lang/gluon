@@ -86,9 +86,11 @@ let y =
 y
 "#,
     );
-    let error = Error::UnexpectedToken("IntLiteral".into(), vec![]);
     let span = pos::span(BytePos::from(0), BytePos::from(0));
-    let errors = ParseErrors::from(vec![pos::spanned(span, error)]);
+    let errors = ParseErrors::from(vec![
+        pos::spanned(span, Error::UnexpectedToken("IntLiteral".into(), vec![])),
+        pos::spanned(span, Error::UnexpectedToken("CloseBlock".into(), vec![])),
+    ]);
 
     assert_eq!(remove_expected(result.unwrap_err().1), errors);
 }
@@ -301,16 +303,14 @@ fn incomplete_let_binding_2() {
     let result = parse(expr);
     assert!(result.is_err());
     let (expr, err) = result.unwrap_err();
+
+    let errors = vec![no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![]))];
+    assert_eq!(remove_expected(err), ParseErrors::from(errors));
+
     assert_eq!(
         clear_span(expr.unwrap()),
         let_("test", id("io"), no_loc(Expr::Error(None)))
     );
-
-    let errors = vec![
-        no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![])),
-        no_loc(Error::UnexpectedToken("CloseBlock".into(), vec![])),
-    ];
-    assert_eq!(remove_expected(err), ParseErrors::from(errors));
 }
 
 #[test]
@@ -354,4 +354,33 @@ fn invalid_case() {
     assert!(parse(r#"type X = { Test : Type } in ()"#).is_err());
     assert!(parse(r#"type x = { } in ()"#).is_err());
     assert!(parse(r#"type x = | Test in ()"#).is_err());
+}
+
+#[test]
+fn old_expression() {
+    let _ = ::env_logger::try_init();
+
+    let result = parse(
+        r#"
+let f x = x
+and g y = f
+1
+"#,
+    );
+    let span = pos::span(BytePos::from(0), BytePos::from(0));
+    let errors = ParseErrors::from(vec![pos::spanned(
+        span,
+        Error::Token(TokenizeError::UnexpectedAnd),
+    )]);
+
+    assert_eq!(remove_expected(result.unwrap_err().1), errors);
+}
+
+#[test]
+fn only_identifiers_are_allowed_on_recursive_patterns() {
+    let _ = env_logger::try_init();
+
+    assert!(parse(r#"rec let { } = { } in 1"#).is_err());
+    assert!(parse(r#"rec let () = { } in 1"#).is_err());
+    assert!(parse(r#"rec let x @ { }  = { x } in 1"#).is_err());
 }

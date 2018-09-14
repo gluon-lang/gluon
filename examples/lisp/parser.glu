@@ -9,10 +9,6 @@ let int = import! std.int
 
 let {
     Parser,
-    functor,
-    alternative,
-    applicative,
-    monad,
     fail,
     between,
     lazy_parser,
@@ -29,9 +25,10 @@ let {
 } =
     import! std.parser
 
-let { (<>) } =import! std.prelude
+let { (<>) } = import! std.prelude
 
 let { Applicative, (<*), (*>), map2, wrap } = import! std.applicative
+let { map } = import! std.functor
 let { (<|>) } = import! std.alternative
 let { flat_map } = import! std.monad
 
@@ -39,9 +36,7 @@ let atom : Parser Expr =
     let symbol = one_of "!#$%&|*+-/:<=>?@^_~"
     let alpha = satisfy char.is_alphabetic
     let alpha_num = satisfy char.is_alphanumeric
-    functor.map
-        (\x -> Atom x)
-        (recognize ((alpha <|> symbol) *> skip_many (alpha_num <|> symbol)))
+    map (\x -> Atom x) (recognize ((alpha <|> symbol) *> skip_many (alpha_num <|> symbol)))
 
 let parse_parser p f msg : Parser a -> (String -> Result () b) -> String -> Parser b =
     do s = recognize p
@@ -50,18 +45,20 @@ let parse_parser p f msg : Parser a -> (String -> Result () b) -> String -> Pars
     | Err _ -> fail ("Expected " <> msg)
 
 let int_parser : Parser Expr =
-    functor.map
+    map
         (\i -> Int i)
         (parse_parser (skip_many1 (satisfy char.is_numeric)) int.parse "integer")
 
 let float_parser : Parser Expr =
     let number = skip_many1 (satisfy char.is_numeric)
-    functor.map (\f -> Float f) (parse_parser (number *> token '.' *> number) float.parse "float")
+    map (\f -> Float f) (parse_parser (number *> token '.' *> number) float.parse "float")
 
+rec
 let list _ : () -> Parser Expr =
     let e = expr ()
-    between (token '(') (token ')') (spaces *> functor.map (\x -> List x) (many e))
-and expr _ : () -> Parser Expr = (atom <|> float_parser <|> int_parser <|> lazy_parser list) <* spaces
+    between (token '(') (token ')') (spaces *> map (\x -> List x) (many e))
+let expr _ : () -> Parser Expr = (atom <|> float_parser <|> int_parser <|> lazy_parser list) <* spaces
+in
 
 {
     expr = spaces *> lazy_parser expr,
