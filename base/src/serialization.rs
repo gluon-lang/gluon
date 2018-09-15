@@ -22,9 +22,7 @@ pub struct SeSeed {
 
 impl SeSeed {
     pub fn new(node_to_id: NodeToId) -> Self {
-        SeSeed {
-            node_to_id: node_to_id,
-        }
+        SeSeed { node_to_id }
     }
 }
 
@@ -60,7 +58,7 @@ impl<Id, T> AsMut<::serialization::NodeMap> for Seed<Id, T> {
 impl<Id, T> Seed<Id, T> {
     pub fn new(nodes: ::serialization::NodeMap) -> Self {
         Seed {
-            nodes: nodes,
+            nodes,
             _marker: PhantomData,
         }
     }
@@ -172,14 +170,14 @@ impl NodeMap {
             .insert(id, value);
     }
 
-    pub fn get<T>(&self, id: &Id) -> Option<T>
+    pub fn get<T>(&self, id: Id) -> Option<T>
     where
         T: Any + Clone,
     {
         self.0
             .borrow()
             .get::<IdToShared<T>>()
-            .and_then(|map| map.get(id).cloned())
+            .and_then(|map| map.get(&id).cloned())
     }
 }
 
@@ -234,7 +232,7 @@ where
                 Ok(node)
             }
             Variant::Plain(value) => Ok(value),
-            Variant::Reference(id) => match self.0.as_mut().get(&id) {
+            Variant::Reference(id) => match self.0.as_mut().get(id) {
                 Some(rc) => Ok(rc),
                 None => Err(D::Error::custom(format_args!("missing id {}", id))),
             },

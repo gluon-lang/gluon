@@ -562,7 +562,7 @@ pub mod closure {
                                     Ok(closure)
                                 }
                                 GraphVariant::Reference(id) => {
-                                    match self.state.gc_map.get::<GcPtr<ClosureData>>(&id) {
+                                    match self.state.gc_map.get::<GcPtr<ClosureData>>(id) {
                                         Some(rc) => Ok(rc),
                                         None => {
                                             Err(V::Error::custom(format_args!("missing id {}", id)))

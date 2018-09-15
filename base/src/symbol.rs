@@ -75,7 +75,7 @@ mod serialization {
 impl Deref for Symbol {
     type Target = SymbolRef;
     fn deref(&self) -> &SymbolRef {
-        unsafe { ::std::mem::transmute::<&str, &SymbolRef>(&(self.0).0) }
+        unsafe { &*(&*(self.0).0 as *const str as *const SymbolRef) }
     }
 }
 
@@ -105,7 +105,7 @@ impl fmt::Display for Symbol {
 
 impl PartialEq for Symbol {
     fn eq(&self, other: &Symbol) -> bool {
-        &**self == &**other
+        **self == **other
     }
 }
 
@@ -189,7 +189,7 @@ impl Symbol {
 impl SymbolRef {
     #[inline]
     pub fn new<N: ?Sized + AsRef<str>>(n: &N) -> &SymbolRef {
-        unsafe { ::std::mem::transmute::<&Name, &SymbolRef>(Name::new(n)) }
+        unsafe { &*(Name::new(n) as *const Name as *const SymbolRef) }
     }
 
     /// Checks whether the names of two symbols are equal
@@ -212,7 +212,7 @@ impl SymbolRef {
     }
 
     pub fn is_global(&self) -> bool {
-        self.0.chars().next() == Some('@')
+        self.0.starts_with('@')
     }
 
     fn ptr(&self) -> *const () {
@@ -226,6 +226,7 @@ impl SymbolRef {
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "S"))]
 pub struct NameBuf(String);
 
+#[allow(derive_hash_xor_eq)]
 #[derive(Debug, Eq, Hash)]
 pub struct Name(str);
 
@@ -263,7 +264,7 @@ impl<'a> Iterator for Components<'a> {
 impl Name {
     #[inline]
     pub fn new<N: ?Sized + AsRef<str>>(n: &N) -> &Name {
-        unsafe { ::std::mem::transmute::<&str, &Name>(n.as_ref()) }
+        unsafe { &*(n.as_ref() as *const str as *const Name) }
     }
 
     pub fn as_str(&self) -> &str {
@@ -395,7 +396,7 @@ impl Symbols {
 
     fn make_symbol(&mut self, name: NameBuf) -> Symbol {
         // `name` is fixed in memory and the key lives as long as `s` this is safe
-        let key = unsafe { ::std::mem::transmute::<&Name, &Name>(&name) };
+        let key = unsafe { &*(&*name as *const Name) };
         let s = Symbol(Arc::new(name));
         self.indexes.insert(key, s.clone());
         s
@@ -422,6 +423,10 @@ impl Symbols {
     pub fn len(&self) -> usize {
         self.indexes.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.indexes.is_empty()
+    }
 }
 
 /// `SymbolModule` wraps a `Symbols` struct and adds a prefix to all symbols created by the
@@ -437,7 +442,7 @@ pub struct SymbolModule<'a> {
 impl<'a> SymbolModule<'a> {
     pub fn new(module: String, symbols: &'a mut Symbols) -> SymbolModule<'a> {
         SymbolModule {
-            symbols: symbols,
+            symbols,
             module: NameBuf(module),
         }
     }
@@ -481,6 +486,10 @@ impl<'a> SymbolModule<'a> {
 
     pub fn len(&self) -> usize {
         self.symbols.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.symbols.is_empty()
     }
 
     pub fn symbols(&mut self) -> &mut Symbols {

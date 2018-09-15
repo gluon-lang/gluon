@@ -64,21 +64,27 @@ impl<'a, T: ?Sized + IdentEnv> IdentEnv for &'a mut T {
 }
 
 #[derive(Clone, Eq, PartialEq, Debug)]
+struct InnerAstType<Id> {
+    comment: Option<Comment>,
+    typ: Spanned<Type<Id, AstType<Id>>, BytePos>,
+}
+
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub struct AstType<Id> {
-    _typ: Box<(Option<Comment>, Spanned<Type<Id, AstType<Id>>, BytePos>)>,
+    _typ: Box<InnerAstType<Id>>,
 }
 
 impl<Id> Deref for AstType<Id> {
     type Target = Type<Id, AstType<Id>>;
 
     fn deref(&self) -> &Self::Target {
-        &self._typ.1.value
+        &self._typ.typ.value
     }
 }
 
 impl<Id> DerefMut for AstType<Id> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self._typ.1.value
+        &mut self._typ.typ.value
     }
 }
 
@@ -91,7 +97,7 @@ impl<Id: AsRef<str>> fmt::Display for AstType<Id> {
 impl<Id> From<Spanned<Type<Id, AstType<Id>>, BytePos>> for AstType<Id> {
     fn from(typ: Spanned<Type<Id, AstType<Id>>, BytePos>) -> Self {
         AstType {
-            _typ: Box::new((None, typ)),
+            _typ: Box::new(InnerAstType { comment: None, typ }),
         }
     }
 }
@@ -104,7 +110,7 @@ impl<Id> From<Type<Id, AstType<Id>>> for AstType<Id> {
 
 impl<Id> HasSpan for AstType<Id> {
     fn span(&self) -> Span<BytePos> {
-        self._typ.1.span
+        self._typ.typ.span
     }
 }
 
@@ -114,7 +120,7 @@ pub trait Commented {
 
 impl<Id> Commented for AstType<Id> {
     fn comment(&self) -> Option<&Comment> {
-        self._typ.0.as_ref()
+        self._typ.comment.as_ref()
     }
 }
 
@@ -124,7 +130,10 @@ impl<Id> AstType<Id> {
         T: Into<Option<Comment>>,
     {
         AstType {
-            _typ: Box::new((comment.into(), typ)),
+            _typ: Box::new(InnerAstType {
+                comment: comment.into(),
+                typ,
+            }),
         }
     }
 
@@ -132,19 +141,15 @@ impl<Id> AstType<Id> {
     where
         T: Into<Option<Comment>>,
     {
-        self._typ.0 = comment.into();
+        self._typ.comment = comment.into();
     }
 
     pub fn into_inner(self) -> Type<Id, Self> {
-        self._typ.1.value
-    }
-
-    pub fn as_mut(&mut self) -> &mut SpannedAstType<Id> {
-        &mut self._typ.1
+        self._typ.typ.value
     }
 
     pub fn params_mut(&mut self) -> &mut [Generic<Id>] {
-        match self._typ.1.value {
+        match self._typ.typ.value {
             Type::Forall(ref mut params, _, _) => params,
             Type::App(ref mut id, _) => id.params_mut(),
             _ => &mut [],
@@ -152,10 +157,16 @@ impl<Id> AstType<Id> {
     }
 
     pub fn remove_single_forall(&mut self) -> &mut AstType<Id> {
-        match self._typ.1.value {
-            Type::Forall(_, ref mut typ, _) => return typ,
+        match self._typ.typ.value {
+            Type::Forall(_, ref mut typ, _) => typ,
             _ => self,
         }
+    }
+}
+
+impl<Id> AsMut<SpannedAstType<Id>> for AstType<Id> {
+    fn as_mut(&mut self) -> &mut SpannedAstType<Id> {
+        &mut self._typ.typ
     }
 }
 
@@ -169,7 +180,7 @@ impl<Id> TypedIdent<Id> {
     pub fn new(name: Id) -> TypedIdent<Id> {
         TypedIdent {
             typ: Type::hole(),
-            name: name,
+            name,
         }
     }
 }
@@ -356,24 +367,24 @@ impl<Id> Expr<Id> {
     // TODO Use impl Trait
     pub fn field_iter<'a>(
         &'a self,
-    ) -> Box<
-        Iterator<Item = Either<&'a ExprField<Id, ArcType<Id>>, &'a ExprField<Id, SpannedExpr<Id>>>>
-            + 'a,
-    > {
-        match *self {
+    ) -> impl Iterator<
+        Item = Either<&'a ExprField<Id, ArcType<Id>>, &'a ExprField<Id, SpannedExpr<Id>>>,
+    > + 'a {
+        let (types, exprs) = match *self {
             Expr::Record {
                 ref types,
                 ref exprs,
                 ..
-            } => Box::new(types.iter().map(Either::Left).merge_by(
-                exprs.iter().map(Either::Right),
-                |x, y| {
-                    x.either(|l| l.name.span.start(), |r| r.name.span.start())
-                        < y.either(|l| l.name.span.start(), |r| r.name.span.start())
-                },
-            )),
-            _ => Box::new(None.into_iter()),
-        }
+            } => (&types[..], &exprs[..]),
+            _ => (&[][..], &[][..]),
+        };
+        types
+            .iter()
+            .map(Either::Left)
+            .merge_by(exprs.iter().map(Either::Right), |x, y| {
+                x.either(|l| l.name.span.start(), |r| r.name.span.start())
+                    < y.either(|l| l.name.span.start(), |r| r.name.span.start())
+            })
     }
 }
 
@@ -521,7 +532,7 @@ pub fn walk_alias<'a, V: ?Sized + $trait_name<'a>>(
     v: &mut V,
     alias: &'a $($mut)* SpannedAlias<V::Ident>,
 ) {
-    v.visit_ast_type(&$($mut)* alias.value.$unresolved_type()._typ.1);
+    v.visit_ast_type(&$($mut)* alias.value.$unresolved_type()._typ.typ);
 }
 
 pub fn walk_expr<'a, V: ?Sized + $trait_name<'a>>(v: &mut V, e: &'a $($mut)* SpannedExpr<V::Ident>) {
@@ -553,7 +564,7 @@ pub fn walk_expr<'a, V: ?Sized + $trait_name<'a>>(v: &mut V, e: &'a $($mut)* Spa
                 v.visit_typ(&$($mut)* bind.resolved_type);
                 v.visit_expr(&$($mut)* bind.expr);
                 if let Some(ref $($mut)* ast_type) = bind.typ {
-                    v.visit_ast_type(&$($mut)* ast_type._typ.1)
+                    v.visit_ast_type(&$($mut)* ast_type._typ.typ)
                 }
             }
             v.visit_expr(body);
@@ -706,25 +717,25 @@ pub fn walk_ast_type<'a, V: ?Sized + $trait_name<'a>>(
     match s.value {
         Type::Hole | Type::Opaque | Type::Error | Type::Builtin(_) => (),
         Type::Forall(_, ref $($mut)* ast_type, ref $($mut)* ast_types) => {
-            v.visit_ast_type(&$($mut)* ast_type._typ.1);
-            if let &$($mut)* Some(ref $($mut)* ast_types) = ast_types {
+            v.visit_ast_type(&$($mut)* ast_type._typ.typ);
+            if let Some(ref $($mut)* ast_types) = *ast_types {
                 for ast_type in ast_types {
-                    v.visit_ast_type(&$($mut)* ast_type._typ.1);
+                    v.visit_ast_type(&$($mut)* ast_type._typ.typ);
                 }
             }
         }
         Type::Function(_, ref $($mut)* arg, ref $($mut)* ret) => {
-            v.visit_ast_type(&$($mut)* arg._typ.1);
-            v.visit_ast_type(&$($mut)* ret._typ.1);
+            v.visit_ast_type(&$($mut)* arg._typ.typ);
+            v.visit_ast_type(&$($mut)* ret._typ.typ);
         }
         Type::App(ref $($mut)* ast_type, ref $($mut)* ast_types) => {
             for ast_type in ast_types {
-                v.visit_ast_type(&$($mut)* ast_type._typ.1);
+                v.visit_ast_type(&$($mut)* ast_type._typ.typ);
             }
-            v.visit_ast_type(&$($mut)* ast_type._typ.1)
+            v.visit_ast_type(&$($mut)* ast_type._typ.typ)
         }
-        Type::Record(ref $($mut)* ast_type) => v.visit_ast_type(&$($mut)* ast_type._typ.1),
-        Type::Variant(ref $($mut)* ast_type) => v.visit_ast_type(&$($mut)* ast_type._typ.1),
+        Type::Record(ref $($mut)* ast_type) => v.visit_ast_type(&$($mut)* ast_type._typ.typ),
+        Type::Variant(ref $($mut)* ast_type) => v.visit_ast_type(&$($mut)* ast_type._typ.typ),
         Type::EmptyRow => (),
         Type::ExtendRow {
             ref $($mut)* types,
@@ -733,17 +744,17 @@ pub fn walk_ast_type<'a, V: ?Sized + $trait_name<'a>>(
         } => {
             for field in types {
                 if let Some(alias) = field.typ.$try_get_alias() {
-                    v.visit_ast_type(&$($mut)* alias.$unresolved_type()._typ.1);
+                    v.visit_ast_type(&$($mut)* alias.$unresolved_type()._typ.typ);
                 }
             }
             for field in fields {
-                v.visit_ast_type(&$($mut)* field.typ._typ.1);
+                v.visit_ast_type(&$($mut)* field.typ._typ.typ);
             }
-            v.visit_ast_type(&$($mut)* rest._typ.1);
+            v.visit_ast_type(&$($mut)* rest._typ.typ);
         }
         Type::Alias(ref $($mut)* alias) => {
             if let Some(alias) = alias.$try_get_alias() {
-                v.visit_ast_type(&$($mut)* alias.$unresolved_type()._typ.1);
+                v.visit_ast_type(&$($mut)* alias.$unresolved_type()._typ.typ);
             }
         }
         Type::Ident(_) | Type::Variable(_) | Type::Generic(_) | Type::Skolem(_) => (),
@@ -825,7 +836,7 @@ impl Typed for Expr<Symbol> {
             Expr::MacroExpansion {
                 ref replacement, ..
             } => replacement.try_type_of(env),
-            Expr::Error(ref typ) => Ok(typ.clone().unwrap_or_else(|| Type::hole())),
+            Expr::Error(ref typ) => Ok(typ.clone().unwrap_or_else(Type::hole)),
         }
     }
 }
@@ -925,6 +936,6 @@ pub fn expr_to_path(expr: &SpannedExpr<Symbol>, path: &mut String) -> Result<(),
             path.push_str(id.declared_name());
             Ok(())
         }
-        _ => return Err("Expected a string literal or path to import"),
+        _ => Err("Expected a string literal or path to import"),
     }
 }

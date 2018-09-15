@@ -32,6 +32,10 @@ impl AliasRemover {
         self.reduced_aliases.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.reduced_aliases.is_empty()
+    }
+
     pub fn reset(&mut self, to: usize) {
         self.reduced_aliases.truncate(to)
     }
@@ -93,7 +97,7 @@ where
                 .typ()
                 .apply_args(&typ.unapplied_args())
                 .map(|typ| Cow::Owned(canonical_alias(env, &typ, canonical).into_owned()))
-                .unwrap_or(Cow::Borrowed(typ))
+                .unwrap_or_else(|| Cow::Borrowed(typ))
         },
         _ => Cow::Borrowed(typ),
     }

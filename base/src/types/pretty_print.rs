@@ -93,7 +93,7 @@ impl<'a, I, T, A> TypeFormatter<'a, I, T, A> {
     pub fn new(typ: &'a T) -> Self {
         TypeFormatter {
             width: 80,
-            typ: typ,
+            typ,
             filter: &|_| Filter::Retain,
             annotate_symbol: &|_| None,
             _marker: PhantomData,
