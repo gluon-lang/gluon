@@ -1,3 +1,81 @@
+<a name="v0.9.0"></a>
+## v0.9.0 (2018-09-16)
+
+
+#### Performance
+
+*   Avoid allocating Strings in JSON [de]serialization ([694dd14f](https://github.com/gluon-lang/gluon/commit/694dd14fc1b02a0eef5c2e1f6a42369be20bba9f))
+* **recursion:**  No need to keep state between top level bindings ([208d8b74](https://github.com/gluon-lang/gluon/commit/208d8b748ed974ccce97cd34b66ff6501cf09101))
+
+#### Bug Fixes
+
+*   Handle multiple doc comments and attributes between recursive let bindings ([1767019c](https://github.com/gluon-lang/gluon/commit/1767019c3fa8e88e0fc5395964901f14846cddb6))
+*   Break function types with implicit arguments correctly ([2f537e66](https://github.com/gluon-lang/gluon/commit/2f537e6601626fd93b4f4ac2835098ebe56a77e6))
+*   Resolve aliases that are hidden behind type variables ([b61ea5e9](https://github.com/gluon-lang/gluon/commit/b61ea5e9f51996c6cef40b8c837c27d11ff19f0c))
+*   Resolve types through function aliases ([be5374ef](https://github.com/gluon-lang/gluon/commit/be5374efe466b60ad8dc0da09e11711448e5ad99))
+* **check:**
+  *  Always inserted implicit arguments to implicit_args ([f7ffc701](https://github.com/gluon-lang/gluon/commit/f7ffc701c1076c8044c120e1ed5dc3673fed17d9), closes [#601](https://github.com/gluon-lang/gluon/issues/601))
+  *  Plug soundness holes with higher ranked types ([731a9ecd](https://github.com/gluon-lang/gluon/commit/731a9ecd609ffedf22f9b35dac139493ee233e93))
+  *  Don't return non-skolemized types from lambda ([b0f283f2](https://github.com/gluon-lang/gluon/commit/b0f283f2e045a70e4ec40c04268e8b82a2f36fd6))
+  *  Non-polymorphic records which are a prefix of another do not unify ([cc85aae2](https://github.com/gluon-lang/gluon/commit/cc85aae2b1b5c88d1eb3647610bcb606d9dcb221))
+  *  Don't panic on partially applied aliases ([cc1e613e](https://github.com/gluon-lang/gluon/commit/cc1e613ea3bbad563fe23034a38b3a00831e48c0))
+* **doc:**
+  *  Correct the breadcrumbs link of nested modules ([81c17c22](https://github.com/gluon-lang/gluon/commit/81c17c22eabce7c5ce8bca7029f8bfc2d3c59a84))
+  *  Don't rebuild gluon_doc when used outside of the gluon repo ([3da6c639](https://github.com/gluon-lang/gluon/commit/3da6c6393efb1fc8449cbf836570492b4e883f64))
+* **format:**  Keep the brackets around implicit arguments on the same line ([03a1d9f6](https://github.com/gluon-lang/gluon/commit/03a1d9f67debdd74fd31237f544d4aadcfd462f9))
+* **repl:**  Extract record fields using name_eq instead of Symbol::eq ([160c1c9c](https://github.com/gluon-lang/gluon/commit/160c1c9c0139d3302b3cae737a0554124acd4afc))
+* **std:**  Don't panic if an error is found compiling a std module ([b02fa812](https://github.com/gluon-lang/gluon/commit/b02fa81224249b7b56725ea7e53311acf42ebfdd))
+* **vm:**
+  *  Handle out of order drops with RootedValue ([2fdc16b6](https://github.com/gluon-lang/gluon/commit/2fdc16b64571404d6fa508b191a02fb99daa9001))
+  *  Restore the vm to a valid state after error has occured ([d4f4ec5e](https://github.com/gluon-lang/gluon/commit/d4f4ec5e77f383c92fa2eb2cee38034f9f494888))
+  *  Set the field names of record! created records ([8e58159e](https://github.com/gluon-lang/gluon/commit/8e58159e3239c58b5bdc5d21186ae790ced9e928))
+  *  Allow spawned actions to be forced multiple times ([8b27d649](https://github.com/gluon-lang/gluon/commit/8b27d649366232b3ccff5ca90e233e59d38ea171))
+  *  Correctly assign record field names derive(Pushable) ([4a36d825](https://github.com/gluon-lang/gluon/commit/4a36d825fc166730a408d50cc74d086e89e3c385), closes [#591](https://github.com/gluon-lang/gluon/issues/591))
+
+#### Breaking Changes
+
+*   Allow Pushable to to call back into the vm ([8d100dd2](https://github.com/gluon-lang/gluon/commit/8d100dd2a5084412e01ed26d1f6a7b504d1ef074), breaks [#](https://github.com/gluon-lang/gluon/issues/))
+*   Migrate tokio_core uses to tokio ([18aa1f0f](https://github.com/gluon-lang/gluon/commit/18aa1f0f08f072b3f49f097ade43a6c216e1f415), closes [#462](https://github.com/gluon-lang/gluon/issues/462), breaks [#](https://github.com/gluon-lang/gluon/issues/))
+* **parser:**  Define recursive bindings with `rec` ([552c8f21](https://github.com/gluon-lang/gluon/commit/552c8f2173a385804b8dc896d7568e803d0179a5), breaks [#](https://github.com/gluon-lang/gluon/issues/))
+* **vm:**
+  *  Remove the unused Root and RootStr types ([996fedc1](https://github.com/gluon-lang/gluon/commit/996fedc1ecb5cc6494529d3097e8ceb76eb0f42f), breaks [#](https://github.com/gluon-lang/gluon/issues/))
+  *  Move Alternative to std.alternative ([e961cc24](https://github.com/gluon-lang/gluon/commit/e961cc24f7d13296772a609c073b75576ddfc144), breaks [#](https://github.com/gluon-lang/gluon/issues/))
+
+#### Features
+
+*   Hint towards rec let if old 'and' bindings are used ([a879194c](https://github.com/gluon-lang/gluon/commit/a879194cc772f1f74979aa3115ab4254c9dba22e))
+*   Print a hint/warning towards necessary feature gates when importing modules ([9b96e511](https://github.com/gluon-lang/gluon/commit/9b96e51162e8ae7b11dee29fbc13c3445bf589a0))
+*   Prevent type errors from creating cascading errors ([7976bcd5](https://github.com/gluon-lang/gluon/commit/7976bcd5d33ee92cc72281ef13e859498c4423ed))
+*   Bound derive(Getable) by 'value byte default ([597b6963](https://github.com/gluon-lang/gluon/commit/597b6963b1c032af12f18849b25e757c6b5640ac))
+*   Add derive(Serialize) ([31799a94](https://github.com/gluon-lang/gluon/commit/31799a944710f78b8a0fae9472f91dd48b89ca0e))
+*   Treat Pushable/Getable derives on newtypes as their inner type ([62ad61d9](https://github.com/gluon-lang/gluon/commit/62ad61d9ca85370cdd4482a0dd7d0069c62ea745))
+*   Allow OpaqueValue to be converted into its inner value ([1147ab59](https://github.com/gluon-lang/gluon/commit/1147ab593f278718f950215ae82ff4d7f65949d8))
+*   Add JSON serialization ([b028ab2d](https://github.com/gluon-lang/gluon/commit/b028ab2df839b6b064d129ea5fc6abd12f644b49))
+*   Support the crate_name attribute in getable ([81ba45f5](https://github.com/gluon-lang/gluon/commit/81ba45f5d5193a52c31678053760257bd36b0ce1))
+*   Allow Pushable to to call back into the vm ([8d100dd2](https://github.com/gluon-lang/gluon/commit/8d100dd2a5084412e01ed26d1f6a7b504d1ef074), breaks [#](https://github.com/gluon-lang/gluon/issues/))
+*   Migrate tokio_core uses to tokio ([18aa1f0f](https://github.com/gluon-lang/gluon/commit/18aa1f0f08f072b3f49f097ade43a6c216e1f415), closes [#462](https://github.com/gluon-lang/gluon/issues/462), breaks [#](https://github.com/gluon-lang/gluon/issues/))
+*   Implement Getable for Vec<T> ([727e279b](https://github.com/gluon-lang/gluon/commit/727e279b42079197a68cd6feb7a01feb5bb16e84))
+*   Allow displaying the post-macro expansion AST ([53f5cbf9](https://github.com/gluon-lang/gluon/commit/53f5cbf96492d67ca6c62ee055889435cc797479))
+*   Add derive(Show) ([d8689a73](https://github.com/gluon-lang/gluon/commit/d8689a7307a83eea383478c267d3899bd85dfd6c))
+*   Add derive(Eq) ([c6da284d](https://github.com/gluon-lang/gluon/commit/c6da284d12d43a2e34c38f0027c56b1988c010f1))
+* **check:**  Let non-function values be used recursively in some contexts ([c2027add](https://github.com/gluon-lang/gluon/commit/c2027add10c7b5d11f0d9444ed87ced877b98d2d))
+* **codegen:**  Allow structs to generate record types using derive(VmType) ([7a9fb16c](https://github.com/gluon-lang/gluon/commit/7a9fb16ce2ed252244a56eb36692ced64881c76d))
+* **doc:**
+  *  Provide links to sub-directories of modules ([3ef34989](https://github.com/gluon-lang/gluon/commit/3ef34989f5cf064324bb0ec673df3afbafa0b615))
+  *  Add `#[doc(hidden)]` to hide bindings in docs ([92c8bec6](https://github.com/gluon-lang/gluon/commit/92c8bec64ada939ff85bb738288d64e97ad85bf1))
+  *  Update to handlebars 1.0.0-beta.4 ([78880ebf](https://github.com/gluon-lang/gluon/commit/78880ebfbeb8221fb9509dab78fed2839cf11efa), closes [#582](https://github.com/gluon-lang/gluon/issues/582))
+  *  Make all types link to their definition ([34fff8d1](https://github.com/gluon-lang/gluon/commit/34fff8d1e757bcf6efa425ee436530258c622997), closes [#552](https://github.com/gluon-lang/gluon/issues/552))
+* **parser:**
+  *  Define recursive bindings with `rec` ([552c8f21](https://github.com/gluon-lang/gluon/commit/552c8f2173a385804b8dc896d7568e803d0179a5), breaks [#](https://github.com/gluon-lang/gluon/issues/))
+  *  Add raw string literals ([9bda2804](https://github.com/gluon-lang/gluon/commit/9bda2804df2c7b7713bd871e92055b5aaaa5c7a2), closes [#276](https://github.com/gluon-lang/gluon/issues/276))
+* **vm:**
+  *  Remove the unused Root and RootStr types ([996fedc1](https://github.com/gluon-lang/gluon/commit/996fedc1ecb5cc6494529d3097e8ceb76eb0f42f), breaks [#](https://github.com/gluon-lang/gluon/issues/))
+  *  Let Userdata be returned to Rust ([1ea24284](https://github.com/gluon-lang/gluon/commit/1ea242849de3a9689e1e79c356598a34621c0e80))
+  *  Move Alternative to std.alternative ([e961cc24](https://github.com/gluon-lang/gluon/commit/e961cc24f7d13296772a609c073b75576ddfc144), breaks [#](https://github.com/gluon-lang/gluon/issues/))
+  *  Let Getable return types bound to the lifetime of Variants (#587) ([010a7f71](https://github.com/gluon-lang/gluon/commit/010a7f71fe162265e64bc43f8db3832fcfbda3d1))
+
+
+
 <a name="v0.8.1"></a>
 ### v0.8.1 (2018-07-01)
 
