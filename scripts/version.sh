@@ -36,5 +36,5 @@ perl -p -i -e 's/[0-9][0-9.]+([^#]+)# GLUON/'$1'$1# GLUON/' \
      $(ls **/src/lib.rs src/lib.rs)
 
 git add .
-git commit -m "Version 0.8.1"
+git commit -m "Version ${1}"
 git tag "v${1}"
