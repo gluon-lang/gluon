@@ -65,7 +65,7 @@ return;
             .and_then(|mut raw_file| raw_file.read_to_end(&mut contents))
             .unwrap();
         File::create(&out_file_name)
-            .and_then(|mut out_file| out_file.write(&contents))
+            .and_then(|mut out_file| out_file.write_all(&contents))
             .unwrap();
         out_file_name.to_str().expect("UTF-8 string").into()
     }
@@ -80,8 +80,7 @@ return;
                 } else {
                     None
                 }
-            })
-            .chain(Some(PathBuf::from("README.md")))
+            }).chain(Some(PathBuf::from("README.md")))
             .chain(Some(PathBuf::from("tests/skeptic-template.md")))
             .map(|p| generate_skeptic_tests(&p))
             .collect();
@@ -179,16 +178,14 @@ fn generate_std_include() {
         .filter(|entry| {
             entry.file_type().is_file()
                 && entry.path().extension() == Some(::std::ffi::OsStr::new("glu"))
-        })
-        .map(|entry| {
+        }).map(|entry| {
             let module_name = filename_to_module(entry.path().to_str().expect("Invalid path"));
             format!(
                 r#"("{}", include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/{}"))),"#,
                 module_name,
                 entry.path().display().to_string().replace('\\', "/")
             )
-        })
-        .format("\n");
+        }).format("\n");
 
     let out_file_name = Path::new(&env::var("OUT_DIR").unwrap()).join("std_modules.rs");
     let mut file = File::create(&out_file_name).unwrap();
