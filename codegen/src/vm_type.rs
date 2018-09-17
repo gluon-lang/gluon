@@ -1,6 +1,6 @@
 use proc_macro2::{Ident, TokenStream};
 use shared::{map_lifetimes, map_type_params, split_for_impl};
-use syn::{self, Data, DeriveInput, Fields, Generics};
+use syn::{self, Data, DeriveInput, Fields, GenericParam, Generics};
 
 use attr::Container;
 
@@ -26,7 +26,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
 fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data) -> TokenStream {
     let trait_bounds = &map_type_params(&generics, |ty| {
-        quote! { #ty: 'static + ::gluon::vm::api::VmType }
+        quote! { #ty: ::gluon::vm::api::VmType, #ty::Type: Sized }
     });
 
     let lifetime_bounds = &map_lifetimes(&generics, |lifetime| quote! { #lifetime: 'static });
@@ -86,13 +86,21 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
         },
     };
 
+    let associated_type_generics = generics.params.iter().map(|param| match param {
+        GenericParam::Type(ty) => quote!( #ty :: Type ),
+        GenericParam::Lifetime(lt) => quote!( #lt ),
+        GenericParam::Const(c) => quote!( #c ),
+    });
+
     quote! {
         #[automatically_derived]
         #[allow(unused_attributes, unused_variables)]
         impl #impl_generics ::gluon::vm::api::VmType for #ident #ty_generics
         #where_clause #(#trait_bounds,)* #(#lifetime_bounds),*
         {
-            type Type = Self;
+            type Type = #ident<
+                    #(#associated_type_generics),*
+                >;
 
             fn make_type(vm: &::gluon::vm::thread::Thread) -> ::gluon::base::types::ArcType {
                 #make_type_impl

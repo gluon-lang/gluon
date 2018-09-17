@@ -16,7 +16,7 @@ use gluon::base::types::ArcType;
 use gluon::base::types::{AppVec, Type};
 use gluon::vm::api::generic::{A, L, R};
 use gluon::vm::api::{
-    self, ActiveThread, FunctionRef, Getable, Hole, OpaqueValue, Pushable,
+    self, ActiveThread, FunctionRef, Getable, Hole, OpaqueRef, OpaqueValue, Pushable,
     UserdataValue, ValueRef, VmType, IO,
 };
 use gluon::vm::{self, ExternModule, Variants};
@@ -153,9 +153,12 @@ where
 
 // the function takes an Either instantiated with the `Opaque*` struct,
 // which will handle the generic Gluon values for us.
-fn flip(
-    either: Either<OpaqueValue<RootedThread, L>, OpaqueValue<RootedThread, R>>,
-) -> Either<OpaqueValue<RootedThread, R>, OpaqueValue<RootedThread, L>> {
+//
+// We use the `OpaqueRef` alias here since we only need temporary (borrowed) access and it avoids
+// the cost of reference counted rooting.
+fn flip<'a>(
+    either: Either<OpaqueRef<'a, L>, OpaqueRef<'a, R>>,
+) -> Either<OpaqueRef<'a, R>, OpaqueRef<'a, L>> {
     match either {
         Either::Left(val) => Either::Right(val),
         Either::Right(val) => Either::Left(val),
