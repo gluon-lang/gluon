@@ -16,8 +16,8 @@ use gluon::base::types::ArcType;
 use gluon::base::types::{AppVec, Type};
 use gluon::vm::api::generic::{A, L, R};
 use gluon::vm::api::{
-    self, ActiveThread, FunctionRef, Getable, Hole, OpaqueValue, Pushable, UserdataValue, ValueRef,
-    VmType, IO,
+    self, ActiveThread, FunctionRef, Getable, Hole, OpaqueValue, Pushable,
+    UserdataValue, ValueRef, VmType, IO,
 };
 use gluon::vm::{self, ExternModule, Variants};
 use gluon::{import, new_vm, Compiler, Result, RootedThread, Thread};
@@ -151,8 +151,8 @@ where
     Ok(())
 }
 
-// the function takes an Either instantiated with the `Generic` struct,
-// which will handle the generic Gluon values for us
+// the function takes an Either instantiated with the `Opaque*` struct,
+// which will handle the generic Gluon values for us.
 fn flip(
     either: Either<OpaqueValue<RootedThread, L>, OpaqueValue<RootedThread, R>>,
 ) -> Either<OpaqueValue<RootedThread, R>, OpaqueValue<RootedThread, L>> {

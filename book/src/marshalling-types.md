@@ -197,7 +197,7 @@ Once your type implements the [required traits](#required-traits), you can simpl
 any function you want to expose to Gluon.
 
 If you want to receive or return types with generic type parameters that are instantiated on
-the Gluon side, you can use the [Generic][] type together with the enums in the
+the Gluon side, you can use the [Opaque][] type together with the marker types in the
 [generic][generic_mod] module:
 
 ```rust,ignore
@@ -209,12 +209,15 @@ enum Either<L, R> {
     Right(R),
 }
 
-// the function takes an Either instantiated with the `Generic` struct,
+// the function takes an Either instantiated with the `Opaque` struct,
 // which will handle the generic Gluon values for us
+use gluon::vm::api::OpaqueValue;
+// The `generic` sub-module provides marker types which mimic generic parameters
 use gluon::vm::api::generic::{L, R};
-use gluon::vm::api::Generic;
 
-fn flip(either: Either<Generic<L>, Generic<R>>) -> Either<Generic<R>, Generic<L>> {
+fn flip(
+    either: Either<OpaqueValue<RootedThread, L>, OpaqueValue<RootedThread, R>>,
+) -> Either<OpaqueValue<RootedThread, R>, OpaqueValue<RootedThread, L>> {
     match either {
         Either::Left(val) => Either::Right(val),
         Either::Right(val) => Either::Left(val),
@@ -248,7 +251,7 @@ match flip either with
 [Pushable]: https://docs.rs/gluon_vm/*/gluon_vm/api/trait.Pushable.html
 [VmType]: https://docs.rs/gluon_vm/*/gluon_vm/api/trait.VmType.html
 [Userdata]: https://docs.rs/gluon_vm/*/gluon_vm/api/trait.Userdata.html
-[Generic]: https://docs.rs/gluon_vm/*/gluon_vm/api/struct.Generic.html
+[Opaque]: https://docs.rs/gluon_vm/*/gluon_vm/api/struct.Opaque.html
 [generic_mod]: https://docs.rs/gluon_vm/*/gluon_vm/api/generic/index.html
 [gluon_codegen]: https://docs.rs/gluon_codegen/0.7.1/gluon_codegen/
 [marshalling example]: https://github.com/gluon-lang/gluon/blob/master/examples/marshalling.rs

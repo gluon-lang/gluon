@@ -666,4 +666,3 @@ In addition to the user visible changes listed here the internals have seen a lo
   *  Avoid traversing the entire stack when generalizing ([29352bc3](https://github.com/gluon-lang/gluon/commit/29352bc38f211cb6427c6107f1b178310b0db84b))
   *  Avoid recreating new App instances in unroll_app unnecessarily ([ba4db236](https://github.com/gluon-lang/gluon/commit/ba4db236d793bb5e23ae2463512cef191827f7c9))
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                  
