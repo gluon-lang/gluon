@@ -1,6 +1,6 @@
 [package]
 name = "gluon_vm"
-version = "0.8.1" # GLUON
+version = "0.9.0" # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 
 license = "MIT"
@@ -32,9 +32,9 @@ serde_state = { version = "0.4.0", optional = true }
 serde_derive = { version = "1.0.0", optional = true }
 serde_derive_state = { version = "0.4.0", optional = true }
 
-gluon_base = { path = "../base", version = "0.8.1" } # GLUON
-gluon_check = { path = "../check", version = "0.8.1" } # GLUON
-gluon_codegen = { path = "../codegen", version = "0.8.1" } # GLUON
+gluon_base = { path = "../base", version = "0.9.0" } # GLUON
+gluon_check = { path = "../check", version = "0.9.0" } # GLUON
+gluon_codegen = { path = "../codegen", version = "0.9.0" } # GLUON
 
 [build-dependencies]
 lalrpop = { version = "0.15.1", optional = true }
@@ -45,13 +45,13 @@ pretty_assertions = "0.5"
 
 # HACK Trick crates.io into letting letting this be published with a dependency on gluon
 # (which requires gluon_vm to be published)
-gluon = { path = "..", version = "<0.9.0, >=0.7.0" }
+gluon = { path = "..", version = "*" }
 
 lalrpop-util = "0.15.1"
 regex = "1"
 serde_json = "1.0.0"
 
-gluon_parser = { path = "../parser", version = "0.8.1" } # GLUON
+gluon_parser = { path = "../parser", version = "0.9.0" } # GLUON
 
 [features]
 serialization = ["serde", "serde_state", "serde_derive", "serde_derive_state", "serde_json", "gluon_base/serialization", "codespan/serialization"]
