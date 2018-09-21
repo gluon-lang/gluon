@@ -691,8 +691,14 @@ fn generate_deserialize(
         _ => return Err("Unable to derive Deserialize for this type".into()),
     };
 
-    let serialization_import =
-        generate_import(span, symbols, &["ValueDeserializer"], &[], "std.json.de");
+    let serialization_import = generate_import_(
+        span,
+        symbols,
+        &["ValueDeserializer"],
+        &["deserializer", "field"],
+        true,
+        "std.json.de",
+    );
     let functor_import = generate_import(span, symbols, &[], &["map"], "std.functor");
     let applicative_import = generate_import(span, symbols, &[], &["<*>"], "std.applicative");
     let alternative_import = generate_import(span, symbols, &[], &["<|>"], "std.alternative");
@@ -888,17 +894,19 @@ fn generate_serialize(
         _ => return Err("Unable to derive Deserialize for this type".into()),
     };
 
-    let serialization_import = generate_import(
+    let serialization_import = generate_import_(
         span,
         symbols,
         &["ValueSerializer", "Value"],
         &["serialize"],
+        true,
         "std.json.ser",
     );
     let functor_import = generate_import(span, symbols, &[], &["map"], "std.functor");
     let applicative_import = generate_import(span, symbols, &[], &["<*>"], "std.applicative");
     let map_import = generate_import_(span, symbols, &[], &["singleton", "empty"], true, "std.map");
     let semigroup_import = generate_import(span, symbols, &[], &["<>"], "std.semigroup");
+    let result_import = generate_import_(span, symbols, &[], &[], true, "std.result");
 
     let serialize_ = TypedIdent::new(symbols.symbol("serialize_"));
     let serializer_binding = ValueBinding {
@@ -928,6 +936,7 @@ fn generate_serialize(
     );
 
     let serializer_record_expr = vec![
+        result_import,
         serialization_import,
         functor_import,
         applicative_import,

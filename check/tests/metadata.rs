@@ -50,6 +50,7 @@ id
     assert_eq!(
         metadata,
         Metadata {
+            definition: metadata.definition.clone(),
             comment: Some(line_comment("The identity function")),
             args: vec![Argument::explicit(intern("x:35"))],
             ..Metadata::default()
@@ -74,6 +75,7 @@ let id x = x
     assert_eq!(
         metadata.module.get("id"),
         Some(&Metadata {
+            definition: metadata.module.get("id").and_then(|m| m.definition.clone()),
             comment: Some(line_comment("The identity function")),
             args: vec![Argument::explicit(intern("x:35"))],
             ..Metadata::default()
@@ -98,6 +100,10 @@ type Test = Int
     assert_eq!(
         metadata.module.get("Test"),
         Some(&Metadata {
+            definition: metadata
+                .module
+                .get("Test")
+                .and_then(|m| m.definition.clone()),
             comment: Some(line_comment("A test type")),
             ..Metadata::default()
         })
@@ -122,6 +128,7 @@ fn propagate_metadata_record_field_comment() {
     assert_eq!(
         metadata.module.get("id"),
         Some(&Metadata {
+            definition: metadata.module.get("id").and_then(|m| m.definition.clone()),
             comment: Some(line_comment("The identity function")),
             ..Metadata::default()
         })
@@ -147,6 +154,7 @@ x.id
     assert_eq!(
         metadata,
         Metadata {
+            definition: metadata.definition.clone(),
             comment: Some(line_comment("The identity function")),
             ..Metadata::default()
         }
@@ -257,7 +265,9 @@ let x ?test : [Test a] -> a = test.x
     assert_eq!(
         metadata.module.get("x"),
         Some(&Metadata {
+            definition: metadata.module.get("x").and_then(|m| m.definition.clone()),
             comment: Some(line_comment("A field")),
+            args: vec![Argument::implicit(intern("test:55"))],
             ..Metadata::default()
         })
     );
@@ -284,7 +294,9 @@ let x ?test : [Test a] -> a = test.x
     assert_eq!(
         metadata.module.get("x"),
         Some(&Metadata {
+            definition: metadata.module.get("x").and_then(|m| m.definition.clone()),
             comment: Some(line_comment("A field")),
+            args: vec![Argument::implicit(intern("test:55"))],
             ..Metadata::default()
         })
     );
@@ -313,6 +325,7 @@ let x ?test : [Test a] -> Test (Wrap a) = { x = Wrap test.x }
     assert_eq!(
         metadata.module.get("x"),
         Some(&Metadata {
+            definition: metadata.module.get("x").and_then(|m| m.definition.clone()),
             attributes: vec![Attribute {
                 name: "attribute".into(),
                 arguments: None,

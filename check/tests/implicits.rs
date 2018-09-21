@@ -841,3 +841,26 @@ let map2 fn a b : [Applicative f] -> _
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn allow_importing_same_record_twice() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+#[implicit]
+type Test a = | Test a
+
+let mod =
+    let int : Test Int = Test 0
+    let string : Test String = Test ""
+    { int, string }
+
+let { ? } = mod
+let { ? } = mod
+
+let f x : [Test a] -> a -> a = x
+f 1
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}

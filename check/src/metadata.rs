@@ -27,7 +27,7 @@ pub fn metadata(
         fn new_binding(&mut self, metadata: Metadata, bind: &ValueBinding<Symbol>) {
             match bind.name.value {
                 Pattern::As(ref id, _) => {
-                    let metadata = bind.metadata.clone().merge(metadata);
+                    let mut metadata = bind.metadata.clone().merge(metadata);
                     self.stack_var(id.value.clone(), metadata.clone());
                     self.new_pattern(metadata, &bind.name);
                 }
@@ -50,7 +50,11 @@ pub fn metadata(
                         .alias_ident()
                         .and_then(|id| self.metadata(id))
                     {
-                        metadata.merge_with(type_metadata.clone());
+                        let mut type_metadata = type_metadata.clone();
+                        // We want the first definition of this value and not the definition of the
+                        // type
+                        type_metadata.definition = None;
+                        metadata.merge_with(type_metadata);
                     }
 
                     self.stack_var(id.name.clone(), metadata);
@@ -118,11 +122,20 @@ pub fn metadata(
             }
         }
 
-        fn stack_var(&mut self, id: Symbol, metadata: Metadata) {
-            if metadata.has_data() {
-                debug!("Insert {}", id);
-                self.env.stack.insert(id, metadata);
+        fn stack_var(&mut self, id: Symbol, mut metadata: Metadata) {
+            if metadata
+                .definition
+                .as_ref()
+                .map(|definition| {
+                    id.declared_name().starts_with(char::is_lowercase)
+                        && definition.declared_name().starts_with(char::is_uppercase)
+                }).unwrap_or(true)
+            {
+                metadata.definition = Some(id.clone());
             }
+
+            debug!("Insert {}", id,);
+            self.env.stack.insert(id, metadata);
         }
 
         fn metadata(&self, id: &Symbol) -> Option<&Metadata> {
@@ -135,7 +148,7 @@ pub fn metadata(
 
         fn metadata_binding(&mut self, bind: &ValueBinding<Symbol>) -> Metadata {
             for arg in &bind.args {
-                if let Some(type_metadata) = arg
+                if let Some(mut type_metadata) = arg
                     .name
                     .value
                     .typ
@@ -143,6 +156,9 @@ pub fn metadata(
                     .and_then(|id| self.metadata(id))
                     .cloned()
                 {
+                    // We want the first definition of this value and not the definition of the
+                    // type
+                    type_metadata.definition = None;
                     self.stack_var(arg.name.value.name.clone(), type_metadata);
                 }
             }

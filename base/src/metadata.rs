@@ -43,6 +43,7 @@ pub struct Attribute {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 #[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub struct Metadata {
+    pub definition: Option<Symbol>,
     pub comment: Option<Comment>,
     pub attributes: Vec<Attribute>,
     pub args: Vec<Argument<Symbol>>,
@@ -51,7 +52,10 @@ pub struct Metadata {
 
 impl Metadata {
     pub fn has_data(&self) -> bool {
-        self.comment.is_some() || !self.module.is_empty() || !self.attributes.is_empty()
+        self.definition.is_some()
+            || self.comment.is_some()
+            || !self.module.is_empty()
+            || !self.attributes.is_empty()
     }
 
     pub fn merge(mut self, other: Metadata) -> Metadata {
@@ -60,6 +64,9 @@ impl Metadata {
     }
 
     pub fn merge_with(&mut self, other: Metadata) {
+        if other.definition.is_some() {
+            self.definition = other.definition;
+        }
         if self.comment.is_none() {
             self.comment = other.comment;
         }

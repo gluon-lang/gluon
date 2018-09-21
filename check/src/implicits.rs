@@ -90,6 +90,7 @@ type ImplicitVector = ::rpds::Vector<ImplicitBinding>;
 pub(crate) struct ImplicitBindings {
     partioned: ::rpds::RedBlackTreeMap<SymbolKey, ImplicitVector>,
     rest: ImplicitVector,
+    definitions: ::rpds::RedBlackTreeSet<Symbol>,
 }
 
 impl ImplicitBindings {
@@ -97,7 +98,11 @@ impl ImplicitBindings {
         ImplicitBindings::default()
     }
 
-    fn insert(&mut self, path: Vec<TypedIdent<Symbol>>, typ: ArcType) {
+    fn insert(&mut self, definition: Option<&Symbol>, path: Vec<TypedIdent<Symbol>>, typ: ArcType) {
+        if let Some(definition) = definition {
+            self.definitions.insert_mut(definition.clone());
+        }
+
         match SymbolKey::new(&typ) {
             Some(symbol) => {
                 let mut vec = self.partioned.get(&symbol).cloned().unwrap_or_default();
@@ -212,9 +217,10 @@ impl<I: fmt::Display + AsRef<str> + Clone> fmt::Display for ErrorKind<I> {
                 "Unable to resolve implicit. Multiple candidates were found: {}",
                 candidates
                     .iter()
-                    .format_with(", ", |&(ref path, ref typ), fmt| {
-                        fmt(&format_args!("{}: {}", path, typ))
-                    })
+                    .format_with(", ", |&(ref path, ref typ), fmt| fmt(&format_args!(
+                        "{}: {}",
+                        path, typ
+                    )))
             ),
         }
     }
@@ -300,8 +306,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
                         Ok(opt) => opt.map(Ok),
                         Err(err) => Some(Err(err)),
                     }
-                })
-                .collect::<Result<Vec<_>>>()?;
+                }).collect::<Result<Vec<_>>>()?;
             if resolved_arguments.len() == to_resolve.len() {
                 Some(pos::spanned(
                     span,
@@ -363,16 +368,15 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
             .find(|&&(ref path, ref typ)| self.try_implicit(path, to_resolve, demand, typ));
         match found_candidate {
             Some(candidate) => {
-                let mut additional_candidates: Vec<_> =
-                    iter.filter(|&&(ref path, ref typ)| {
+                let mut additional_candidates: Vec<_> = iter
+                    .filter(|&&(ref path, ref typ)| {
                         self.try_implicit(path, &mut Vec::new(), demand, typ)
                     }).map(|bind| {
-                            (
-                                bind.0.iter().map(|id| &id.name).format(".").to_string(),
-                                bind.1.clone(),
-                            )
-                        })
-                        .collect();
+                        (
+                            bind.0.iter().map(|id| &id.name).format(".").to_string(),
+                            bind.1.clone(),
+                        )
+                    }).collect();
                 if additional_candidates.is_empty() {
                     Ok(&candidate.0)
                 } else {
@@ -524,8 +528,8 @@ impl<'a> ImplicitResolver<'a> {
             metadata,
             &typ,
             &mut Vec::new(),
-            &mut |path, implicit_type| {
-                bindings.insert(path, implicit_type.clone());
+            &mut |definition, path, implicit_type| {
+                bindings.insert(definition, path, implicit_type.clone());
             },
         );
         *self.implicit_bindings.last_mut().unwrap() = bindings;
@@ -544,7 +548,10 @@ impl<'a> ImplicitResolver<'a> {
         }
         let mut bindings = self.implicit_bindings.last().unwrap().clone();
 
-        let mut path = Vec::new();
+        let mut path = vec![TypedIdent {
+            name: id.clone(),
+            typ: typ.clone(),
+        }];
         let metadata = self.metadata.get(id);
         let mut alias_resolver = resolve::AliasRemover::new();
 
@@ -561,20 +568,15 @@ impl<'a> ImplicitResolver<'a> {
                     .as_ref()
                     .and_then(|metadata| metadata.module.get(field.name.declared_name()));
 
-                path.push(TypedIdent {
-                    name: id.clone(),
-                    typ: typ.clone(),
-                });
                 self.try_add_implicit(
                     &field.name,
                     field_metadata,
                     &field.typ,
                     &mut path,
-                    &mut |path, implicit_type| {
-                        bindings.insert(path, implicit_type.clone());
+                    &mut |definition, path, implicit_type| {
+                        bindings.insert(definition, path, implicit_type.clone());
                     },
                 );
-                path.pop();
             },
             _ => (),
         }
@@ -587,7 +589,7 @@ impl<'a> ImplicitResolver<'a> {
         metadata: Option<&Metadata>,
         typ: &ArcType,
         path: &mut Vec<TypedIdent<Symbol>>,
-        consumer: &mut FnMut(Vec<TypedIdent<Symbol>>, &ArcType),
+        consumer: &mut FnMut(Option<&Symbol>, Vec<TypedIdent<Symbol>>, &ArcType),
     ) {
         let has_implicit_attribute =
             |metadata: &Metadata| metadata.get_attribute("implicit").is_some();
@@ -606,17 +608,32 @@ impl<'a> ImplicitResolver<'a> {
                         .get(typename)
                         .or_else(|| self.environment.get_metadata(typename))
                         .map(has_implicit_attribute)
-                })
-                .unwrap_or(false);
+                }).unwrap_or(false);
         }
 
         if is_implicit {
+            // If we know what originally defined this value, and that has already been added don't
+            // add it again to prevent ambiguities
+            if let Some(metadata) = metadata {
+                if let Some(ref definition) = metadata.definition {
+                    if self
+                        .implicit_bindings
+                        .last()
+                        .unwrap()
+                        .definitions
+                        .contains(definition)
+                    {
+                        return;
+                    }
+                }
+            }
+
             let mut path = path.clone();
             path.push(TypedIdent {
                 name: id.clone(),
                 typ: typ.clone(),
             });
-            consumer(path, typ);
+            consumer(metadata.and_then(|m| m.definition.as_ref()), path, typ);
         }
     }
 

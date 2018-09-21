@@ -68,7 +68,12 @@ fn get_metadata(s: &str, pos: BytePos) -> Option<Metadata> {
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
     let (_, metadata_map) = check::metadata::metadata(&env, &expr);
-    completion::get_metadata(&metadata_map, expr.span, &expr, pos).cloned()
+    completion::get_metadata(&metadata_map, expr.span, &expr, pos)
+        .cloned()
+        .map(|mut meta| {
+            meta.definition.take();
+            meta
+        })
 }
 
 fn suggest_metadata(s: &str, pos: BytePos, name: &str) -> Option<Metadata> {
@@ -77,7 +82,12 @@ fn suggest_metadata(s: &str, pos: BytePos, name: &str) -> Option<Metadata> {
     let (expr, _result) = support::typecheck_expr(s);
 
     let (_, metadata_map) = check::metadata::metadata(&env, &expr);
-    completion::suggest_metadata(&metadata_map, &env, expr.span, &expr, pos, name).cloned()
+    completion::suggest_metadata(&metadata_map, &env, expr.span, &expr, pos, name)
+        .cloned()
+        .map(|mut meta| {
+            meta.definition.take();
+            meta
+        })
 }
 
 #[test]
@@ -373,7 +383,9 @@ abc
 "#;
     let result = get_metadata(text, BytePos::from(37));
 
-    let expected = None;
+    let expected = Some(Metadata {
+        ..Metadata::default()
+    });
     assert_eq!(result, expected);
 
     let result = get_metadata(text, BytePos::from(41));

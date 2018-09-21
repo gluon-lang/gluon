@@ -598,7 +598,7 @@ type Record = { x : Int }
 #[derive(Deserialize)]
 type Record = { x : Int }
 rec let deserialize_Record : Deserialize Record =
-    let { ValueDeserializer } = import! std.json.de
+    let { ValueDeserializer, deserializer, field, ? } = import! std.json.de
     let { map } = import! std.functor
     let { (<*>) } = import! std.applicative
     let { (<|>) } = import! std.alternative
@@ -620,7 +620,7 @@ type Record = { x : Int, y : Float }
 #[derive(Deserialize)]
 type Record = { x : Int, y : Float }
 rec let deserialize_Record : Deserialize Record =
-    let { ValueDeserializer } = import! std.json.de
+    let { ValueDeserializer, deserializer, field, ? } = import! std.json.de
     let { map } = import! std.functor
     let { (<*>) } = import! std.applicative
     let { (<|>) } = import! std.alternative
@@ -644,7 +644,8 @@ type Record = { x : Int }
 #[derive(Serialize)]
 type Record = { x : Int }
 rec let serialize_Record : Serialize Record =
-    let { ValueSerializer, Value, serialize } = import! std.json.ser
+    let { ? } = import! std.result
+    let { ValueSerializer, Value, serialize, ? } = import! std.json.ser
     let { map } = import! std.functor
     let { (<*>) } = import! std.applicative
     let { singleton, empty, ? } = import! std.map
@@ -671,7 +672,8 @@ type Variant =
     | Int Int
     | String String
 rec let serialize_Variant : Serialize Variant =
-    let { ValueSerializer, Value, serialize } = import! std.json.ser
+    let { ? } = import! std.result
+    let { ValueSerializer, Value, serialize, ? } = import! std.json.ser
     let { map } = import! std.functor
     let { (<*>) } = import! std.applicative
     let { singleton, empty, ? } = import! std.map

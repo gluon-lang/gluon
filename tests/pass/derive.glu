@@ -1,7 +1,4 @@
-let prelude @ { Eq, Show } = import! std.prelude
-let { (<|) } = import! std.function
-let { Test, run, assert, assert_eq, assert_neq, test, group, ? } = import! std.test
-let { Applicative, (*>) } = import! std.applicative
+// Put these first to check that they don't depend on any imports used for the actual tests
 
 #[derive(Eq, Show)]
 type TestVariant =
@@ -27,6 +24,11 @@ type Mutual1 a = | Value a | Mutual2 Mutual2
 #[derive(Show, Eq)]
 type Mutual2 = { x : Int, mutual : Mutual1 String }
 in
+
+let prelude @ { Eq, Show } = import! std.prelude
+let { (<|) } = import! std.function
+let { Test, run, assert, assert_eq, assert_neq, test, group, ? } = import! std.test
+let { Applicative, (*>) } = import! std.applicative
 
 let eq_tests =
     let variant =
