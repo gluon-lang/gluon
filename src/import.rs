@@ -23,9 +23,12 @@ use base::pos::{self, BytePos, Span};
 use base::symbol::Symbol;
 use base::types::ArcType;
 
-use vm::macros::{Error as MacroError, Macro, MacroExpander, MacroFuture};
-use vm::thread::{Thread, ThreadInternal};
-use vm::{ExternLoader, ExternModule};
+use vm::{
+    self,
+    macros::{Error as MacroError, Macro, MacroExpander, MacroFuture},
+    thread::{Thread, ThreadInternal},
+    ExternLoader, ExternModule,
+};
 
 use super::Compiler;
 
@@ -177,8 +180,8 @@ impl<I> Import<I> {
             Some(tup) => UnloadedModule::Source(Cow::Borrowed(tup.1)),
             None => {
                 {
-                    let loaders = self.loaders.read().unwrap();
-                    if let Some(loader) = loaders.get(module) {
+                    let mut loaders = self.loaders.write().unwrap();
+                    if let Some(loader) = loaders.get_mut(module) {
                         let value = loader(vm)?;
                         return Ok(UnloadedModule::Extern(value));
                     }
@@ -192,8 +195,7 @@ impl<I> Import<I> {
                             Ok(file) => Some(file),
                             Err(_) => None,
                         }
-                    })
-                    .next();
+                    }).next();
                 let mut file = file.ok_or_else(|| {
                     Error::String(format!(
                         "Could not find module '{}'. Searched {}.",
@@ -392,7 +394,14 @@ impl<I> Import<I> {
 ///     }
 /// }
 /// ```
-pub fn add_extern_module(thread: &Thread, name: &str, loader: ExternLoader) {
+pub fn add_extern_module<F>(thread: &Thread, name: &str, loader: F)
+where
+    F: FnMut(&Thread) -> vm::Result<ExternModule> + Send + Sync + 'static,
+{
+    add_extern_module_(thread, name, Box::new(loader))
+}
+
+fn add_extern_module_(thread: &Thread, name: &str, loader: ExternLoader) {
     let opt_macro = thread.get_macros().get("import");
     let import = opt_macro
         .as_ref()
@@ -408,7 +417,7 @@ pub fn add_extern_module(thread: &Thread, name: &str, loader: ExternLoader) {
 
 macro_rules! add_extern_module_if {
     (
-        #[cfg($($features: tt)*)], 
+        #[cfg($($features: tt)*)],
         available_if = $msg: expr,
         args($vm: expr, $mod_name: expr, $loader: path)
     ) => {{
@@ -437,8 +446,7 @@ fn get_state<'m>(macros: &'m mut MacroExpander) -> &'m mut State {
                 visited: Vec::new(),
                 modules_with_errors: FnvMap::default(),
             })
-        })
-        .downcast_mut::<State>()
+        }).downcast_mut::<State>()
         .unwrap()
 }
 
