@@ -537,7 +537,7 @@ fn compile_repl(compiler: &mut Compiler, vm: &Thread) -> Result<(), GluonError> 
 }
 
 #[allow(dead_code)]
-pub fn run(color: Color) -> impl Future<Item = (), Error = Box<StdError + Send + Sync + 'static>> {
+pub fn run(color: Color, prompt: &str) -> impl Future<Item = (), Error = Box<StdError + Send + Sync + 'static>> {
     let vm = ::gluon::VmBuilder::new().build();
 
     let mut compiler = Compiler::new();
@@ -547,12 +547,12 @@ pub fn run(color: Color) -> impl Future<Item = (), Error = Box<StdError + Send +
         Either::A
     );
 
-    let mut repl: OwnedFunction<fn(Ser<Color>) -> IO<()>> =
+    let mut repl: OwnedFunction<fn(_, _) -> _> =
         try_future!(vm.get_global("repl"), Either::A);
     debug!("Starting repl");
     Either::B(
-        repl.call_async(Ser(color))
-            .map(|_| ())
+        repl.call_async(Ser(color), prompt)
+            .map(|_: IO<()>| ())
             .map_err(|err| err.into()),
     )
 }
@@ -584,7 +584,7 @@ mod tests {
         let _ = ::env_logger::try_init();
         let vm = new_vm();
         compile_repl(&mut Compiler::new(), &vm).unwrap_or_else(|err| panic!("{}", err));
-        let repl: Result<FunctionRef<fn(Color) -> IO<()>>, _> = vm.get_global("repl");
+        let repl: Result<FunctionRef<fn(Color, String) -> IO<()>>, _> = vm.get_global("repl");
         assert!(repl.is_ok(), "{}", repl.err().unwrap());
     }
 
