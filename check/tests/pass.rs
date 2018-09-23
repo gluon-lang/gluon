@@ -980,3 +980,19 @@ let option a : ValueDeserializer a -> ValueDeserializer (Wrap a) = \input ->
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn consider_the_type_of_the_splat_record() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+{
+    y = 3,
+    ..
+    { x = 1, y = 2 }
+}
+"#;
+    let result = support::typecheck(text);
+
+    assert_req!(result.map(|t| t.to_string()), Ok("{ x : Int, y : Int }"));
+}

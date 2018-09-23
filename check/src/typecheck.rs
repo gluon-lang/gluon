@@ -1014,9 +1014,39 @@ impl<'a> Typecheck<'a> {
 
                 let expected_type = expected_type.as_ref();
 
-                let mut new_types: Vec<Field<_, _>> = Vec::with_capacity(types.len());
+                let mut base_record_types = FnvMap::default();
+                let mut base_record_fields = FnvMap::default();
+                let mut base_types: Vec<Field<_, _>> = Vec::new();
+                let mut base_fields: Vec<Field<_, _>> = Vec::new();
+                if let Some(ref mut base) = *base {
+                    let base_type = self.infer_expr(base);
+                    let base_type = self.remove_aliases(base_type);
+
+                    let record_type = Type::poly_record(vec![], vec![], self.subs.new_var());
+                    let base_type = self.unify_span(base.span, &record_type, base_type);
+
+                    base_types.extend(base_type.type_field_iter().cloned());
+                    base_fields.extend(base_type.row_iter().cloned());
+
+                    base_record_types.extend(
+                        base_types
+                            .iter()
+                            .map(|field| field.name.declared_name().to_string())
+                            .enumerate()
+                            .map(|(i, n)| (n, i)),
+                    );
+                    base_record_fields.extend(
+                        base_fields
+                            .iter()
+                            .map(|field| field.name.declared_name().to_string())
+                            .enumerate()
+                            .map(|(i, n)| (n, i)),
+                    );
+                }
 
                 let mut duplicated_fields = FnvSet::default();
+
+                let mut new_types: Vec<Field<_, _>> = Vec::with_capacity(types.len());
                 for field in types {
                     if let Some(ref mut typ) = field.value {
                         *typ = self
@@ -1026,7 +1056,10 @@ impl<'a> Typecheck<'a> {
 
                     let alias = self.find_type_info_at(field.name.span, &field.name.value);
                     if self.error_on_duplicated_field(&mut duplicated_fields, field.name.clone()) {
-                        new_types.push(Field::new(field.name.value.clone(), alias));
+                        match base_record_types.get(field.name.value.declared_name()) {
+                            Some(&i) => base_types[i].typ = alias,
+                            None => new_types.push(Field::new(field.name.value.clone(), alias)),
+                        }
                     }
                 }
 
@@ -1086,32 +1119,17 @@ impl<'a> Typecheck<'a> {
                     typ = self.new_skolem_scope(&typ);
 
                     if self.error_on_duplicated_field(&mut duplicated_fields, field.name.clone()) {
-                        new_fields.push(Field::new(field.name.value.clone(), typ));
+                        match base_record_fields.get(field.name.value.declared_name()) {
+                            Some(&i) => base_fields[i].typ = typ,
+                            None => new_fields.push(Field::new(field.name.value.clone(), typ)),
+                        }
                     }
                 }
 
-                if let Some(ref mut base) = *base {
-                    let base_type = self.infer_expr(base);
-                    let base_type = self.remove_aliases(base_type);
-
-                    let record_type = Type::poly_record(vec![], vec![], self.subs.new_var());
-                    let base_type = self.unify_span(base.span, &record_type, base_type);
-
-                    new_types.extend(
-                        base_type
-                            .type_field_iter()
-                            .filter(|field| !duplicated_fields.contains(field.name.declared_name()))
-                            .cloned(),
-                    );
-                    new_fields.extend(
-                        base_type
-                            .row_iter()
-                            .filter(|field| !duplicated_fields.contains(field.name.declared_name()))
-                            .cloned(),
-                    );
-                }
-
+                new_types.extend(base_types);
+                new_fields.extend(base_fields);
                 *typ = self.type_cache.record(new_types, new_fields);
+
                 Ok(TailCall::Type(typ.clone()))
             }
             Expr::Block(ref mut exprs) => {

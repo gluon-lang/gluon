@@ -447,6 +447,13 @@ r#"
 2
 }
 
+test_expr!{ record_base_duplicate_fields_different_order,
+r#"
+{ z = 3.0, y = "y", x = "x" ..  { x = 1, y = 2 } }.x
+"#,
+String::from("x")
+}
+
 test_expr!{ load_option,
 r#"
 let _ = import! std.option
@@ -687,8 +694,7 @@ let s = "åäö"
 string.slice s 1 (string.len s)
 "#;
     let mut vm = make_vm();
-    let result = Compiler::new()
-        .run_expr::<String>(&mut vm, "<top>", text);
+    let result = Compiler::new().run_expr::<String>(&mut vm, "<top>", text);
     match result {
         Err(Error::VM(..)) => (),
         Err(err) => panic!("Unexpected error `{}`", err),
@@ -727,8 +733,7 @@ in
 g 10
 "#;
     let mut vm = make_vm();
-    let result = Compiler::new()
-        .run_expr::<i32>(&mut vm, "<top>", text);
+    let result = Compiler::new().run_expr::<i32>(&mut vm, "<top>", text);
     match result {
         Err(Error::VM(vm::Error::Panic(_, Some(stacktrace)))) => {
             let g = stacktrace.frames[1].as_ref().unwrap().name.clone();

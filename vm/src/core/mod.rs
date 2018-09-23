@@ -48,7 +48,7 @@ use self::typed_arena::Arena;
 use self::smallvec::SmallVec;
 
 use base::ast::{self, Literal, SpannedExpr, SpannedPattern, Typed, TypedIdent};
-use base::fnv::FnvSet;
+use base::fnv::{FnvMap, FnvSet};
 use base::pos::{spanned, BytePos, Span};
 use base::resolve::remove_aliases_cow;
 use base::symbol::Symbol;
@@ -325,6 +325,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                     ),
                 }
             }
+
             ast::Expr::Array(ref array) => {
                 let exprs: SmallVec<[_; 16]> = array
                     .exprs
@@ -340,6 +341,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                     expr.span.start(),
                 )
             }
+
             ast::Expr::Block(ref exprs) => {
                 let (last, prefix) = exprs.split_last().unwrap();
                 let result = self.translate(last);
@@ -354,11 +356,13 @@ impl<'a, 'e> Translator<'a, 'e> {
                     )
                 })
             }
+
             ast::Expr::Ident(ref id) => if is_constructor(&id.name) {
                 self.new_data_constructor(id.typ.clone(), id, SmallVec::new(), expr.span)
             } else {
                 Expr::Ident(id.clone(), expr.span)
             },
+
             ast::Expr::IfElse(ref pred, ref if_true, ref if_false) => {
                 let alts: SmallVec<[_; 2]> = collect![
                     Alternative {
@@ -377,6 +381,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                         .alloc_extend(alts.into_iter()),
                 )
             }
+
             ast::Expr::Infix {
                 ref lhs,
                 ref op,
@@ -395,6 +400,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                     arena.alloc_extend(args.into_iter()),
                 )
             }
+
             ast::Expr::Lambda(ref lambda) => self.new_lambda(
                 expr.span.start(),
                 lambda.id.clone(),
@@ -406,10 +412,13 @@ impl<'a, 'e> Translator<'a, 'e> {
                 self.translate_alloc(&lambda.body),
                 expr.span,
             ),
+
             ast::Expr::LetBindings(ref binds, ref tail) => {
                 self.translate_let(binds, self.translate(tail), expr.span.start())
             }
+
             ast::Expr::Literal(ref literal) => Expr::Const(literal.clone(), expr.span),
+
             ast::Expr::Match(ref expr, ref alts) => {
                 let expr = self.translate_alloc(expr);
                 let alts: Vec<_> = alts
@@ -428,6 +437,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                 let projected_expr = self.translate_alloc(projected_expr);
                 self.project_expr(expr.span, projected_expr, projection, projected_type)
             }
+
             ast::Expr::Record {
                 ref typ,
                 ref exprs,
@@ -474,26 +484,38 @@ impl<'a, 'e> Translator<'a, 'e> {
                     (core_base, typ)
                 });
 
-                let defined_fields: FnvSet<&str> = exprs
-                    .iter()
-                    .map(|field| field.name.value.declared_name())
-                    .collect();
-                args.extend(base_binding.as_ref().into_iter().flat_map(
-                    |&(base_ident_expr, ref base_type)| {
-                        base_type
-                            .row_iter()
-                            // Only load fields that aren't named in this record constructor
-                            .filter(|field| !defined_fields.contains(field.name.declared_name()))
-                            .map(move |field| {
-                                self.project_expr(
-                                    base_ident_expr.span(),
-                                    base_ident_expr,
-                                    &field.name,
-                                    &field.typ
-                                )
-                            })
-                    },
-                ));
+                if let Some((ref base_ident_expr, ref base_type)) = base_binding {
+                    let base_fields: FnvSet<&str> = base_type
+                        .row_iter()
+                        .map(|field| field.name.declared_name())
+                        .collect();
+
+                    let mut reordered_args = SmallVec::<[_; 16]>::new();
+
+                    let mut overridden_fields = FnvMap::default();
+                    for (field, arg) in exprs.iter().zip(args.drain()) {
+                        let field_name = field.name.value.declared_name();
+                        if base_fields.contains(field_name) {
+                            overridden_fields.insert(field_name, arg);
+                        } else {
+                            reordered_args.push(arg);
+                        }
+                    }
+
+                    args.extend(reordered_args);
+
+                    args.extend(base_type.row_iter().map(move |field| {
+                        match overridden_fields.remove(field.name.declared_name()) {
+                            Some(e) => e,
+                            None => self.project_expr(
+                                base_ident_expr.span(),
+                                base_ident_expr,
+                                &field.name,
+                                &field.typ,
+                            ),
+                        }
+                    }));
+                }
 
                 let record_constructor = Expr::Data(
                     TypedIdent {
@@ -505,6 +527,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                 );
                 binder.into_expr(arena, record_constructor)
             }
+
             ast::Expr::Tuple { ref elems, .. } => if elems.len() == 1 {
                 self.translate(&elems[0])
             } else {
@@ -519,7 +542,9 @@ impl<'a, 'e> Translator<'a, 'e> {
                     expr.span.start(),
                 )
             },
+
             ast::Expr::TypeBindings(_, ref expr) => self.translate(expr),
+
             ast::Expr::Do(ast::Do {
                 ref id,
                 ref bound,
@@ -551,9 +576,11 @@ impl<'a, 'e> Translator<'a, 'e> {
                     ),
                 )
             }
+
             ast::Expr::MacroExpansion {
                 ref replacement, ..
             } => self.translate_(replacement),
+
             ast::Expr::Error(_) => ice!("ICE: Error expression found in the compiler"),
         }
     }
