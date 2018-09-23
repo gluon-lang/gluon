@@ -360,8 +360,7 @@ impl Stack {
                 })),
                 State::Unknown => Some(None),
                 State::Lock => None,
-            })
-            .collect();
+            }).collect();
         Stacktrace { frames: frames }
     }
 }
