@@ -295,7 +295,7 @@ Gluon requires a recent Rust compiler to build (1.9.0 or later) and is available
 
 ```toml
 [dependencies]
-gluon = "0.9.0"
+gluon = "0.9.1"
 ```
 
 ### Other languages
