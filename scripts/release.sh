@@ -6,8 +6,8 @@ declare -a PROJECTS=(
     parser
     check
     completion
-    vm
     codegen
+    vm
     .
     format
     c-api
