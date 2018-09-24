@@ -35,6 +35,9 @@ perl -p -i -e 's/^gluon *= *"[0-9.]+"/gluon = "'$1'"/' \
 perl -p -i -e 's/[0-9][0-9.]+([^#]+)# GLUON/'$1'$1# GLUON/' \
      $(ls **/src/lib.rs src/lib.rs)
 
+# Update Cargo.lock
+cargo fetch
+
 git add .
 git commit -m "Version ${1}"
 git tag "v${1}"

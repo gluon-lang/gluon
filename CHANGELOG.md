@@ -1,3 +1,21 @@
+<a name="v0.9.1"></a>
+### v0.9.1 (2018-09-24)
+
+
+#### Features
+
+*   Allow implicit resolution if the same binding is included twice ([e62a0523](https://github.com/gluon-lang/gluon/commit/e62a052326ce5537aa155f566df85b3ef24f9f34))
+*   Support non-static type parameters in VMType derive ([bdc7ecaf](https://github.com/gluon-lang/gluon/commit/bdc7ecaf22815a67fbc23a59a9c24655ca5c6258))
+* **vm:**  Allow module loaders to contain state ([bee61dd8](https://github.com/gluon-lang/gluon/commit/bee61dd8882af6a0c3f471d9b883299f4e88ffa0), closes [#634](https://github.com/gluon-lang/gluon/issues/634))
+
+#### Bug Fixes
+
+*   Use the field order of the base record in record updates ([b60c3e12](https://github.com/gluon-lang/gluon/commit/b60c3e127b3e329d6030c6c9e4d60fba55266c50), closes [#509](https://github.com/gluon-lang/gluon/issues/509))
+*   Don't error on Serialize/Deserialize derives because of missing imports ([a598fe23](https://github.com/gluon-lang/gluon/commit/a598fe23b3f4d1cc35fca27eff8795f9cb3ac264))
+* **check:**  Correct the order of expected and actual hints ([beb30ae4](https://github.com/gluon-lang/gluon/commit/beb30ae4f53273b8b5fb670dd2ea52281be06a1f), closes [#627](https://github.com/gluon-lang/gluon/issues/627))
+* **vm:**  Don't remove parent frames in when calling into the vm ([4a4fd3b6](https://github.com/gluon-lang/gluon/commit/4a4fd3b61af38d4ea28ebb6da3b3f51460422cf4))
+
+
 <a name="v0.9.0"></a>
 ## v0.9.0 (2018-09-16)
 

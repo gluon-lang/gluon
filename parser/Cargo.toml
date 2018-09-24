@@ -1,6 +1,6 @@
 [package]
 name = "gluon_parser"
-version = "0.9.0" # GLUON
+version = "0.9.1" # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 
 license = "MIT"
@@ -19,7 +19,7 @@ quick-error = "1.0.0"
 lalrpop-util = "0.15.1"
 log = "0.4"
 pretty = "0.5"
-gluon_base = { path = "../base", version = "0.9.0" } # GLUON
+gluon_base = { path = "../base", version = "0.9.1" } # GLUON
 ordered-float = "0.5.0" # gluon_base
 codespan = "0.1.1"
 codespan-reporting = "0.1.1"
