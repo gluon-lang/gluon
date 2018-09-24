@@ -31,7 +31,7 @@ gluon_parser = { path = "../parser", version = "0.9.1", optional = true } # GLUO
 [dev-dependencies]
 env_logger = "0.5"
 
-gluon_format = { path = "../format", version = "*" }
+gluon_format = { path = "../format", version = ">=0.9" }
 
 collect-mac = "0.1.0"
 pretty_assertions = "0.5"
