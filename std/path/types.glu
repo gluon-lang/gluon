@@ -1,0 +1,9 @@
+
+#[derive(Show, Eq)]
+type Component =
+    | Prefix
+    | RootDir
+    | CurDir
+    | ParentDir
+    | Normal String
+{ Component, eq_Component, show_Component }

@@ -15,7 +15,7 @@ use base::types::{ArcType, Type};
 
 use vm::{
     self,
-    api::{Function, FutureResult, OpaqueValue, PushAsRef, Userdata, VmType, WithVM, IO},
+    api::{Function, OpaqueValue, PushAsRef, Userdata, VmType, WithVM, IO},
     gc::{Gc, Traverseable},
     thread::{RootedThread, Thread},
     ExternModule,
@@ -71,17 +71,14 @@ impl VmType for Body {
 // into `&Body` argument
 fn read_chunk(
     body: &Body,
-) -> FutureResult<impl Future<Item = IO<Option<PushAsRef<Chunk, [u8]>>>, Error = vm::Error>> {
+) -> impl Future<Item = IO<Option<PushAsRef<Chunk, [u8]>>>, Error = vm::Error> {
     use futures::future::poll_fn;
 
     let body = body.0.clone();
-    // `FutureResult` is a wrapper type around `Future` which when returned to the interpreter is
-    // polled until completion. After `poll` returns `Ready` the value is then returned to the
-    // gluon function which called `read_chunk`
-    FutureResult(poll_fn(move || {
+    poll_fn(move || {
         let mut stream = body.lock().unwrap();
         stream.poll().map(|async| async.map(IO::Value))
-    }))
+    })
 }
 
 // A http body that is being written
@@ -106,13 +103,13 @@ impl VmType for ResponseBody {
 fn write_response(
     response: &ResponseBody,
     bytes: &[u8],
-) -> FutureResult<impl Future<Item = IO<()>, Error = vm::Error>> {
+) -> impl Future<Item = IO<()>, Error = vm::Error> {
     use futures::future::poll_fn;
 
     // Turn `bytes´ into a `Chunk` which can be sent to the http body
     let mut unsent_chunk = Some(bytes.to_owned().into());
     let response = response.0.clone();
-    FutureResult(poll_fn(move || {
+    poll_fn(move || {
         info!("Starting response send");
         let mut sender = response.lock().unwrap();
         let sender = sender
@@ -140,7 +137,7 @@ fn write_response(
                 Ok(Async::NotReady)
             }
         }
-    }))
+    })
 }
 
 // Next we define some record types which are marshalled to and from gluon. These have equivalent
@@ -165,7 +162,7 @@ type HttpState = record_type!{
 fn listen(
     port: i32,
     value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>,
-) -> FutureResult<impl Future<Item = IO<()>, Error = vm::Error> + Send + 'static> {
+) -> impl Future<Item = IO<()>, Error = vm::Error> + Send + 'static {
     let WithVM {
         value: handler,
         vm: thread,
@@ -173,7 +170,7 @@ fn listen(
 
     let thread = match thread.new_thread() {
         Ok(thread) => thread,
-        Err(err) => return FutureResult(Either::A(future::err(err))),
+        Err(err) => return Either::A(future::err(err)),
     };
 
     // Retrieve the `handle` function from the http module which we use to evaluate values of type
@@ -233,7 +230,7 @@ fn listen(
                                     )
                                 }
                                 IO::Exception(err) => {
-                                    eprintln!("{}", err);
+                                    error!("{}", err);
                                     Ok(
                                         http::Response::builder()
                                             .status(StatusCode::INTERNAL_SERVER_ERROR).body("".into()).unwrap()
@@ -242,7 +239,7 @@ fn listen(
                             }
                         }
                         Err(err) => {
-                            eprintln!("{}", err);
+                            error!("{}", err);
                             Ok(http::Response::builder()
                                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                                 .body("".into())
@@ -255,7 +252,7 @@ fn listen(
 
     let addr = format!("0.0.0.0:{}", port).parse().unwrap();
 
-    FutureResult(Either::B(
+    Either::B(
         Server::bind(&addr)
             .serve(move || -> Result<_, hyper::Error> {
                 Ok(Listen {
@@ -264,7 +261,7 @@ fn listen(
                 })
             }).map_err(|err| vm::Error::from(format!("Server error: {}", err)))
             .and_then(|_| Ok(IO::Value(()))),
-    ))
+    )
 }
 
 // To let the `http_types` module refer to `Body` and `ResponseBody` we register these types in a
@@ -292,9 +289,9 @@ pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
     ExternModule::new(
         vm,
         record! {
-            listen => primitive!(2, listen),
-            read_chunk => primitive!(1, read_chunk),
-            write_response => primitive!(2, write_response)
+            listen => primitive!(2, async fn listen),
+            read_chunk => primitive!(1, async fn read_chunk),
+            write_response => primitive!(2, async fn write_response)
         },
     )
 }

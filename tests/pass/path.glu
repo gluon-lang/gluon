@@ -1,0 +1,10 @@
+let { (<|) } = import! std.function
+let { Test, run, assert, assert_eq, test, group, ? }  = import! std.test
+let { ? } = import! std.array
+
+let path @ { Component, ? } = import! std.path
+
+group "path" [
+    test "components" <| \_ -> assert_eq (path.components "../abc/.") [ParentDir, Normal "abc"],
+]
+

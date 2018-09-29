@@ -1271,6 +1271,9 @@ impl Context {
         ).map(ValueRepr::Data)
         .map(Value::from)
     }
+    pub fn slide(&mut self, fields: VmIndex) {
+        self.stack.slide(fields);
+    }
 
     pub fn push_new_data(
         &mut self,
@@ -2010,16 +2013,10 @@ impl<'b> ExecuteContext<'b> {
                         continue;
                     }
                 },
-                Pop(n) => for _ in 0..n {
-                    self.stack.pop();
-                },
+                Pop(n) => self.stack.pop_many(n),
                 Slide(n) => {
                     debug!("{:?}", &self.stack[..]);
-                    let v = self.stack.pop();
-                    for _ in 0..n {
-                        self.stack.pop();
-                    }
-                    self.stack.push(v);
+                    self.stack.slide(n);
                 }
                 MakeClosure {
                     function_index,
@@ -2035,9 +2032,7 @@ impl<'b> ExecuteContext<'b> {
                             ClosureDataDef(func, args),
                         )?)
                     };
-                    for _ in 0..upvars {
-                        self.stack.pop();
-                    }
+                    self.stack.pop_many(upvars);
                     self.stack.push(closure);
                 }
                 NewClosure {

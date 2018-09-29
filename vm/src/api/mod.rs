@@ -18,9 +18,11 @@ use std::borrow::Borrow;
 use std::cell::Ref;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
+use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::Deref;
+use std::path::{Path, PathBuf};
 use std::result::Result as StdResult;
 
 use futures::{Async, Future};
@@ -614,6 +616,15 @@ impl<'vm, 'value> Getable<'vm, 'value> for &'value str {
     }
 }
 
+impl<'vm, 'value> Getable<'vm, 'value> for &'value Path {
+    fn from_value(_vm: &'vm Thread, value: Variants<'value>) -> Self {
+        match value.as_ref() {
+            ValueRef::String(ref s) => Path::new(&s[..]),
+            _ => ice!("ValueRef is not a String"),
+        }
+    }
+}
+
 /// Wrapper type which passes acts as the type `T` but also passes the `VM` to the called function
 pub struct WithVM<'vm, T> {
     pub vm: &'vm Thread,
@@ -847,6 +858,76 @@ impl<'vm, 'value> Getable<'vm, 'value> for char {
                 value.as_ref()
             ),
         }
+    }
+}
+
+impl VmType for Path {
+    type Type = <PathBuf as VmType>::Type;
+}
+
+impl VmType for PathBuf {
+    type Type = String;
+}
+
+impl<'vm, 's> Pushable<'vm> for &'s PathBuf {
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        <&Path as Pushable>::push(self, context)
+    }
+}
+
+impl<'vm, 's> Pushable<'vm> for &'s Path {
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        self.to_str()
+            .ok_or_else(|| Error::Message("Path's must be valid UTF-8".into()))?
+            .push(context)
+    }
+}
+impl<'vm, 'value> Getable<'vm, 'value> for PathBuf {
+    fn from_value(_: &'vm Thread, value: Variants<'value>) -> Self {
+        match value.as_ref() {
+            ValueRef::String(i) => PathBuf::from(&i[..]),
+            _ => ice!("ValueRef is not a String"),
+        }
+    }
+}
+impl<'vm> Pushable<'vm> for PathBuf {
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        <&Path as Pushable>::push(&self, context)
+    }
+}
+
+impl VmType for OsStr {
+    type Type = <OsString as VmType>::Type;
+}
+
+impl VmType for OsString {
+    type Type = String;
+}
+
+impl<'vm, 's> Pushable<'vm> for &'s OsString {
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        <&OsStr as Pushable>::push(self, context)
+    }
+}
+
+impl<'vm, 's> Pushable<'vm> for &'s OsStr {
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        self.to_str()
+            .ok_or_else(|| Error::Message("OsStr's must be valid UTF-8".into()))?
+            .push(context)
+    }
+}
+impl<'vm, 'value> Getable<'vm, 'value> for OsString {
+    fn from_value(_: &'vm Thread, value: Variants<'value>) -> Self {
+        match value.as_ref() {
+            ValueRef::String(i) => OsString::from(&i[..]),
+            _ => ice!("ValueRef is not a String"),
+        }
+    }
+}
+impl<'vm> Pushable<'vm> for OsString {
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        <&OsStr as Pushable>::push(&self, context)
     }
 }
 

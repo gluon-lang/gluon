@@ -267,6 +267,12 @@ impl Stack {
         }
     }
 
+    pub fn slide(&mut self, count: VmIndex) {
+        let i = self.len() - 1 - count;
+        self[i] = self.last().unwrap().get_value();
+        self.pop_many(count);
+    }
+
     pub fn push<T>(&mut self, v: T)
     where
         T: StackPrimitive,
@@ -481,6 +487,10 @@ where
 
     pub fn pop_many(&mut self, count: VmIndex) {
         self.stack.pop_many(count);
+    }
+
+    pub fn slide(&mut self, count: VmIndex) {
+        self.stack.slide(count);
     }
 
     pub fn get_variant(&self, index: VmIndex) -> Option<Variants> {

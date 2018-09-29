@@ -660,6 +660,7 @@ impl VmBuilder {
         add_extern_module(&vm, "std.int.prim", ::vm::primitives::load_int);
         add_extern_module(&vm, "std.float.prim", ::vm::primitives::load_float);
         add_extern_module(&vm, "std.string.prim", ::vm::primitives::load_string);
+        add_extern_module(&vm, "std.path.prim", ::vm::primitives::load_path);
         add_extern_module(&vm, "std.char.prim", ::vm::primitives::load_char);
         add_extern_module(&vm, "std.array.prim", ::vm::primitives::load_array);
 
