@@ -11,7 +11,7 @@ use std::str::FromStr;
 
 use ::{ReplLine, new_ident};
 use token::Token;
-use ordered_float::NotNaN;
+use ordered_float::NotNan;
 
 use {Error, ErrorEnv, FieldExpr, FieldPattern, MutIdentEnv};
 
@@ -475,7 +475,7 @@ Literal: Literal = {
     "char literal" => Literal::Char(<>),
     "int literal" => Literal::Int(<>),
     "byte literal" => Literal::Byte(<>),
-    "float literal" => Literal::Float(NotNaN::new(<>).unwrap()),
+    "float literal" => Literal::Float(NotNan::new(<>).unwrap()),
 };
 
 Alternative: Alternative<Id> = {

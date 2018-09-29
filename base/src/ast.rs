@@ -10,7 +10,7 @@ use either::Either;
 use itertools::Itertools;
 
 use metadata::{Comment, Metadata};
-use ordered_float::NotNaN;
+use ordered_float::NotNan;
 use pos::{self, BytePos, HasSpan, Span, Spanned};
 use resolve::remove_aliases_cow;
 use symbol::Symbol;
@@ -198,7 +198,7 @@ where
 pub enum Literal {
     Byte(u8),
     Int(i64),
-    Float(NotNaN<f64>),
+    Float(NotNan<f64>),
     String(String),
     Char(char),
 }

@@ -8,6 +8,7 @@ extern crate codespan_reporting;
 extern crate collect_mac;
 extern crate gluon_base as base;
 extern crate itertools;
+#[macro_use]
 extern crate lalrpop_util;
 #[macro_use]
 extern crate log;
@@ -40,8 +41,11 @@ pub use infix::Error as InfixError;
 pub use layout::Error as LayoutError;
 pub use token::Error as TokenizeError;
 
-#[cfg_attr(rustfmt, rustfmt_skip)]
-mod grammar;
+lalrpop_mod!(
+    #[cfg_attr(rustfmt, rustfmt_skip)]
+    grammar
+);
+
 pub mod infix;
 mod layout;
 mod token;

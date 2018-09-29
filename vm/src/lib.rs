@@ -7,8 +7,6 @@ extern crate bitflags;
 extern crate codespan;
 #[macro_use]
 extern crate collect_mac;
-#[cfg(test)]
-extern crate env_logger;
 #[doc(hidden)]
 pub extern crate frunk_core;
 #[macro_use]
@@ -32,6 +30,12 @@ extern crate serde_derive_state;
 extern crate serde_state as serde;
 #[cfg(feature = "serde_state")]
 extern crate serde_json;
+
+#[cfg(test)]
+extern crate env_logger;
+#[cfg(test)]
+#[macro_use]
+extern crate lalrpop_util;
 
 #[macro_use]
 extern crate gluon_base as base;
