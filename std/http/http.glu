@@ -17,8 +17,8 @@ let {
     StatusCode,
     Response,
     Handler,
-    HttpState } = import! examples.http.types
-let http_prim = import! http.prim
+    HttpState } = import! std.http.types
+let http_prim = import! std.http.prim
 
 let status =
     let code : Int -> StatusCode = id 

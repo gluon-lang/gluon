@@ -1,4 +1,4 @@
-let { Body, ResponseBody, StatusCode, Method, Request, Response, HttpState } = import! http.prim_types
+let { Body, ResponseBody, StatusCode, Method, Request, Response, HttpState } = import! std.http.prim_types
 
 /// Type used by handlers to indicate why they could not process a request
 type Failure = | DontProcess | Error String

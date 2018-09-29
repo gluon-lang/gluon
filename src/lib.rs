@@ -10,6 +10,8 @@
 extern crate env_logger;
 
 extern crate codespan;
+#[macro_use]
+extern crate collect_mac;
 extern crate codespan_reporting;
 pub extern crate either;
 extern crate futures;
@@ -33,6 +35,8 @@ pub extern crate gluon_parser as parser;
 pub extern crate gluon_vm as vm;
 
 pub mod compiler_pipeline;
+#[cfg(feature = "http")]
+pub mod http;
 #[macro_use]
 pub mod import;
 pub mod io;
@@ -523,8 +527,7 @@ impl Compiler {
                     T::from_value(vm, execute_value.value.get_variant()),
                     execute_value.typ,
                 ))
-            })
-            .wait()
+            }).wait()
     }
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
@@ -678,6 +681,18 @@ impl VmBuilder {
             #[cfg(feature = "regex")], 
             available_if = "gluon is compiled with the 'regex' feature",
             args(&vm, "std.regex", ::regex_bind::load)
+        );
+
+        add_extern_module_if!(
+            #[cfg(feature = "web")], 
+            available_if = "gluon is compiled with the 'web' feature",
+            args(&vm, "std.http.prim_types", ::http::load_types)
+        );
+
+        add_extern_module_if!(
+            #[cfg(feature = "web")], 
+            available_if = "gluon is compiled with the 'web' feature",
+            args(&vm, "std.http.prim", ::http::load)
         );
 
         add_extern_module_if!(

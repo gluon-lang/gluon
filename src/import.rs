@@ -489,6 +489,8 @@ where
             Err(err) => return Box::new(future::err(err)),
         };
 
+        info!("import! {}", modulename);
+
         let vm = macros.vm;
         // Prefix globals with @ so they don't shadow any local variables
         let name = Symbol::from(if modulename.starts_with('@') {
