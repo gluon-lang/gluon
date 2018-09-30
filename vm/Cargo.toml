@@ -37,7 +37,7 @@ gluon_check = { path = "../check", version = "0.9.1" } # GLUON
 gluon_codegen = { path = "../codegen", version = "0.9.1" } # GLUON
 
 [build-dependencies]
-lalrpop = { version = "0.15.1", optional = true }
+lalrpop = { version = "0.16", optional = true }
 
 [dev-dependencies]
 env_logger = "0.5"
@@ -47,7 +47,7 @@ pretty_assertions = "0.5"
 # (which requires gluon_vm to be published)
 gluon = { path = "..", version = ">=0.9" }
 
-lalrpop-util = "0.15.1"
+lalrpop-util = "0.16"
 regex = "1"
 serde_json = "1.0.0"
 

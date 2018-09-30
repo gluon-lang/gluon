@@ -1,8 +1,6 @@
 use proc_macro2::{Group, Span, TokenStream, TokenTree};
 
-use syn::synom::{ParseError, Synom};
-use syn::Meta::*;
-use syn::{self, Ident};
+use syn::{Meta::*, self, Ident, parse::{self, Parse}};
 
 fn get_gluon_meta_items(attr: &syn::Attribute) -> Option<Vec<syn::NestedMeta>> {
     if attr.path.segments.len() == 1 && attr.path.segments[0].ident == "gluon" {
@@ -81,15 +79,15 @@ fn parse_lit_into_path(attr_name: &Ident, lit: &syn::Lit) -> Result<syn::Path, (
     parse_lit_str(string).map_err(|_| panic!("failed to parse path: {:?}", string.value()))
 }
 
-fn parse_lit_str<T>(s: &syn::LitStr) -> Result<T, ParseError>
+fn parse_lit_str<T>(s: &syn::LitStr) -> Result<T, parse::Error>
 where
-    T: Synom,
+    T: Parse,
 {
     let tokens = spanned_tokens(s)?;
     syn::parse2(tokens)
 }
 
-fn spanned_tokens(s: &syn::LitStr) -> Result<TokenStream, ParseError> {
+fn spanned_tokens(s: &syn::LitStr) -> Result<TokenStream, parse::Error> {
     let stream = syn::parse_str(&s.value())?;
     Ok(respan_token_stream(stream, s.span()))
 }

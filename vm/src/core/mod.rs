@@ -28,8 +28,11 @@ macro_rules! assert_deq {
 }
 
 #[cfg(test)]
-#[cfg_attr(rustfmt, rustfmt_skip)]
-pub(crate) mod grammar;
+lalrpop_mod!(
+    #[cfg_attr(rustfmt, rustfmt_skip)]
+    pub grammar,
+    "/core/grammar.rs"
+);
 pub mod interpreter;
 pub mod optimize;
 #[cfg(feature = "test")]
