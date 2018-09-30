@@ -427,7 +427,7 @@ import! std.p
         ..SuggestionQuery::default()
     };
     let result = suggest_query_loc(&query, text, 1, 12);
-    let expected = Ok(vec!["parser".into(), "prelude".into()]);
+    let expected = Ok(vec!["parser".into(), "path".into(), "prelude".into()]);
 
     assert_eq!(result, expected);
 }

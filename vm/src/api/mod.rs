@@ -3,7 +3,6 @@ use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, Symbols};
 use base::types::{self, ArcType, Type};
 use gc::{DataDef, Gc, GcPtr, Move, Traverseable};
-use stack::Lock;
 use thread::ThreadInternal;
 use thread::{self, Context, RootedThread, VmRoot};
 use types::{VmIndex, VmInt, VmTag};
@@ -408,13 +407,14 @@ pub trait AsyncPushable<'vm> {
     ///
     /// If the value must be computed asynchronously `Async::NotReady` must be returned so that
     /// the virtual machine knows it must do more work before the value is available.
-    fn async_push(self, context: &mut ActiveThread<'vm>, lock: Lock) -> Result<Async<()>>;
+    fn async_push(self, context: &mut ActiveThread<'vm>, frame_index: VmIndex)
+        -> Result<Async<()>>;
 
-    fn async_status_push(self, context: &mut ActiveThread<'vm>, lock: Lock) -> Status
+    fn async_status_push(self, context: &mut ActiveThread<'vm>, frame_index: VmIndex) -> Status
     where
         Self: Sized,
     {
-        match self.async_push(context, lock) {
+        match self.async_push(context, frame_index) {
             Ok(Async::Ready(())) => Status::Ok,
             Ok(Async::NotReady) => Status::Yield,
             Err(err) => {
@@ -436,8 +436,7 @@ impl<'vm, T> AsyncPushable<'vm> for T
 where
     T: Pushable<'vm>,
 {
-    fn async_push(self, context: &mut ActiveThread<'vm>, lock: Lock) -> Result<Async<()>> {
-        context.stack().release_lock(lock);
+    fn async_push(self, context: &mut ActiveThread<'vm>, _: VmIndex) -> Result<Async<()>> {
         self.push(context).map(Async::Ready)
     }
 }
@@ -1280,9 +1279,13 @@ where
     F: Future<Error = Error> + Send + 'static,
     F::Item: Pushable<'vm>,
 {
-    fn async_push(self, context: &mut ActiveThread<'vm>, lock: Lock) -> Result<Async<()>> {
+    fn async_push(
+        self,
+        context: &mut ActiveThread<'vm>,
+        frame_index: VmIndex,
+    ) -> Result<Async<()>> {
         unsafe {
-            context.context().return_future(self.0, lock);
+            context.context().return_future(self.0, frame_index);
         }
         Ok(Async::Ready(()))
     }

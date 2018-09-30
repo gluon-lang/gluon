@@ -88,6 +88,8 @@ pub struct ExternState {
     #[cfg_attr(feature = "serde_derive", serde(state))]
     pub(crate) function: GcPtr<ExternFunction>,
     pub(crate) call_state: ExternCallState,
+    /// The number of arguments that are locked in this frame
+    locked: Option<VmIndex>,
 }
 
 impl ExternState {
@@ -95,7 +97,12 @@ impl ExternState {
         ExternState {
             function,
             call_state: ExternCallState::Start,
+            locked: None,
         }
+    }
+
+    pub fn is_locked(&self) -> bool {
+        self.locked.is_some()
     }
 }
 
@@ -117,7 +124,7 @@ impl StackState for ClosureState {
     fn from_state(state: State) -> Self {
         match state {
             State::Closure(state) => state,
-            _ => ice!("Expected closure"),
+            _ => ice!("Expected closure: {:?}", state),
         }
     }
     fn to_state(self) -> State {
@@ -129,7 +136,7 @@ impl StackState for ExternState {
     fn from_state(state: State) -> Self {
         match state {
             State::Extern(state) => state,
-            _ => ice!("Expected extern"),
+            _ => ice!("Expected extern: {:?}", state),
         }
     }
     fn to_state(self) -> State {
@@ -152,8 +159,6 @@ impl StackState for ExternState {
 )]
 pub enum State {
     Unknown,
-    /// Locked frame which can only be unlocked by the caller which introduced the lock
-    Lock,
     Closure(#[cfg_attr(feature = "serde_derive", serde(state))] ClosureState),
     Extern(#[cfg_attr(feature = "serde_derive", serde(state))] ExternState),
 }
@@ -214,7 +219,8 @@ impl Frame<State> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[must_use = "Unused locks will prevent the stack from unwinding"]
 pub struct Lock(VmIndex);
 
 #[derive(Debug)]
@@ -257,6 +263,15 @@ impl Stack {
                 self.len() > frame.offset,
                 "Attempted to pop value which did not belong to the current frame"
             );
+            if let State::Extern(ExternState {
+                locked: Some(args), ..
+            }) = frame.state.to_state()
+            {
+                assert!(
+                    self.len() > frame.offset + args,
+                    "Attempt to pop locked value"
+                );
+            }
         }
         self.values.pop().expect("pop on empty stack")
     }
@@ -336,9 +351,21 @@ impl Stack {
         let i = self
             .frames
             .iter()
-            .rposition(|frame| frame.state == State::Lock)
-            .unwrap();
-        assert!(self.frames.remove(i).offset == lock.0);
+            .rposition(|frame| {
+                if let State::Extern(ExternState {
+                    locked: Some(_), ..
+                }) = frame.state
+                {
+                    true
+                } else {
+                    false
+                }
+            }).unwrap();
+        let frame = &mut self.frames[i];
+        assert_eq!(frame.offset, lock.0);
+        if let State::Extern(ref mut ext) = frame.state {
+            ext.locked = None;
+        }
     }
 
     /// Creates a stackrace starting from `frame_level`
@@ -355,17 +382,16 @@ impl Stack {
                         .debug_info
                         .source_map
                         .line(instruction_index);
-                    Some(line.map(|line| StacktraceFrame {
+                    Some(Some(StacktraceFrame {
                         name: closure.function.name.clone(),
-                        line: line,
+                        line,
                     }))
                 }
                 State::Extern(ref ext) => Some(Some(StacktraceFrame {
                     name: ext.function.id.clone(),
-                    line: Line::from(0),
+                    line: None,
                 })),
                 State::Unknown => Some(None),
-                State::Lock => None,
             }).collect();
         Stacktrace { frames: frames }
     }
@@ -409,7 +435,7 @@ pub struct StackFrame<'b, S = State>
 where
     S: StackState,
 {
-    pub(crate) stack: &'b mut Stack,
+    pub stack: &'b mut Stack,
     pub frame: Frame<S>,
 }
 
@@ -451,6 +477,16 @@ impl<'a: 'b, 'b> StackFrame<'b, State> {
             stack: stack,
             frame: frame,
         }
+    }
+}
+
+impl<'a: 'b, 'b> StackFrame<'b, ExternState> {
+    /// Lock the stack below the current offset
+    pub fn into_lock(mut self) -> Lock {
+        self.frame.state.locked = Some(self.len());
+        let lock = Lock(self.frame.offset);
+        self.take_stack();
+        lock
     }
 }
 
@@ -543,8 +579,10 @@ where
     where
         S: StackState + Copy,
     {
-        if self.frame.state.to_state() == State::Lock {
-            return Err(self.stack);
+        if let State::Extern(ref ext) = self.frame.state.to_state() {
+            if ext.is_locked() {
+                return Err(self.stack);
+            }
         }
         let frame = self.frame;
         let stack = self.take_stack();
@@ -576,14 +614,6 @@ where
         stack.current_frame()
     }
 
-    /// Lock the stack below the current offset
-    pub fn into_lock(self) -> Lock {
-        let stack = self.take_stack();
-        let offset = stack.len();
-        Self::add_new_frame(stack, 0, State::Lock);
-        Lock(offset)
-    }
-
     fn add_new_frame(stack: &mut Stack, args: VmIndex, state: State) -> Frame {
         assert!(stack.len() >= args);
         let prev = stack.frames.last().cloned();
@@ -596,6 +626,16 @@ where
         // Panic if the frame attempts to take ownership past the current frame
         if let Some(frame) = stack.frames.last() {
             assert!(frame.offset <= offset);
+            if let State::Extern(ExternState {
+                locked: Some(locked_args),
+                ..
+            }) = frame.state.to_state()
+            {
+                assert!(
+                    frame.offset + locked_args <= offset,
+                    "Attempt to add new frame that covers a locked frame"
+                );
+            }
         }
         stack.frames.push(frame);
         debug!(
@@ -616,7 +656,6 @@ where
         use self::State::*;
         debug_assert!(match (&last_frame.state, &frame.state) {
             (Unknown, Unknown) => true,
-            (Lock, Lock) => true,
             (Closure(_), Closure(_)) => true,
             (Extern(_), Extern(_)) => true,
             _ => false,
@@ -741,7 +780,7 @@ where
 #[derive(Debug, PartialEq, Clone)]
 pub struct StacktraceFrame {
     pub name: Symbol,
-    pub line: Line,
+    pub line: Option<Line>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -754,13 +793,13 @@ impl fmt::Display for Stacktrace {
         writeln!(f, "Stacktrace:\n")?;
         for (i, frame) in self.frames.iter().enumerate() {
             match *frame {
-                Some(ref frame) => writeln!(
-                    f,
-                    "{}: {}:Line {}",
-                    i,
-                    frame.name.declared_name(),
-                    frame.line.number()
-                ),
+                Some(ref frame) => {
+                    write!(f, "{}: {}", i, frame.name.declared_name())?;
+                    if let Some(line) = frame.line {
+                        write!(f, ":Line {}", line.number())?;
+                    }
+                    writeln!(f)
+                }
                 None => writeln!(f, "{}: <unknown>", i),
             }?
         }
@@ -771,7 +810,22 @@ impl fmt::Display for Stacktrace {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use base::symbol::Symbol;
+    use gc::{Gc, Move};
+    use thread::{Status, Thread};
     use value::ValueRepr::*;
+
+    fn dummy_extern() -> ExternFunction {
+        extern "C" fn function(_: &Thread) -> Status {
+            unreachable!()
+        }
+        ExternFunction {
+            id: Symbol::from(""),
+            args: 0,
+            function,
+        }
+    }
 
     #[test]
     fn remove_range() {
@@ -808,12 +862,15 @@ mod tests {
     fn attempt_take_locked_range() {
         let _ = ::env_logger::try_init();
 
+        let mut gc = Gc::new(Default::default(), 1024);
+        let ext = gc.alloc_ignore_limit(Move(dummy_extern()));
+
         let mut stack = Stack::new();
         {
             let mut frame = StackFrame::frame(&mut stack, 0, State::Unknown);
             frame.push(Int(0));
             frame.push(Int(1));
-            frame = frame.enter_scope(2, State::Unknown);
+            let frame = frame.enter_scope(2, ExternState::new(ext));
             let _lock = frame.into_lock();
         }
         // Panic as it attempts to access past the lock
@@ -825,11 +882,14 @@ mod tests {
     fn attempt_pop_locked() {
         let _ = ::env_logger::try_init();
 
+        let mut gc = Gc::new(Default::default(), 1024);
+        let ext = gc.alloc_ignore_limit(Move(dummy_extern()));
+
         let mut stack = Stack::new();
         {
             let mut frame = StackFrame::frame(&mut stack, 0, State::Unknown);
             frame.push(Int(0));
-            frame = frame.enter_scope(1, State::Unknown);
+            let frame = frame.enter_scope(1, ExternState::new(ext));
             let _lock = frame.into_lock();
         }
         // Panic as it attempts to pop a locked value
@@ -840,12 +900,15 @@ mod tests {
     fn lock_unlock() {
         let _ = ::env_logger::try_init();
 
+        let mut gc = Gc::new(Default::default(), 1024);
+        let ext = gc.alloc_ignore_limit(Move(dummy_extern()));
+
         let mut stack = Stack::new();
         let lock = {
             let mut frame = StackFrame::frame(&mut stack, 0, State::Unknown);
             frame.push(Int(0));
             frame.push(Int(1));
-            frame = frame.enter_scope(2, State::Unknown);
+            let frame = frame.enter_scope(2, ExternState::new(ext));
             frame.into_lock()
         };
         {

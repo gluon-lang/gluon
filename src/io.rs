@@ -10,8 +10,7 @@ use futures::{
 
 use vm::api::generic::{A, B};
 use vm::api::{
-    self, Array, Getable, OpaqueValue, OwnedFunction, TypedBytecode, Userdata, VmType,
-    WithVM, IO,
+    self, Array, Getable, OpaqueValue, OwnedFunction, TypedBytecode, Userdata, VmType, WithVM, IO,
 };
 use vm::gc::{Gc, Traverseable};
 use vm::internal::ValuePrinter;
@@ -128,11 +127,17 @@ fn catch<'vm>(
         Err(err) => {
             {
                 let mut context = vm.context();
-                let mut stack = context.stack_frame::<stack::State>();
+                {
+                    let mut stack = context.stack_frame::<stack::State>();
 
-                if let Err(err) = ::vm::thread::reset_stack(stack, frame_level) {
-                    return Either::A(future::ok(IO::Exception(err.to_string().into())));
+                    if let Err(err) = ::vm::thread::reset_stack(stack, frame_level) {
+                        return Either::A(future::ok(IO::Exception(err.to_string().into())));
+                    }
                 }
+
+                let mut stack = context.stack_frame::<stack::State>();
+                let n = stack.len();
+                stack.pop_many(n - 3);
             }
             Either::B(catch.call_fast_async(format!("{}", err)).then(|result| {
                 Ok(match result {

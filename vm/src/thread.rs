@@ -1,6 +1,7 @@
 //! The thread/vm type
 use std::any::{Any, TypeId};
 use std::cmp::Ordering;
+use std::collections::VecDeque;
 use std::fmt;
 use std::mem;
 use std::ops::{Add, Deref, DerefMut, Div, Mul, Sub};
@@ -26,7 +27,7 @@ use interner::InternedStr;
 use macros::MacroEnv;
 use source_map::LocalIter;
 use stack::{
-    ClosureState, ExternCallState, ExternState, Frame, Lock, Stack, StackFrame, StackState, State,
+    ClosureState, ExternCallState, ExternState, Frame, Stack, StackFrame, StackState, State,
 };
 use types::*;
 use value::{
@@ -966,7 +967,7 @@ impl ThreadInternal for Thread {
                 instruction_index: 0,
             },
         );
-        match try_future!(context.execute(false), Either::A) {
+        match try_future!(context.execute(), Either::A) {
             Async::Ready(context) => {
                 let mut context = context.unwrap();
                 let value = self.root_value(context.stack.last().unwrap());
@@ -1013,7 +1014,7 @@ impl ThreadInternal for Thread {
         args: VmIndex,
     ) -> Result<Async<Option<OwnedContext<'b>>>> {
         context.borrow_mut().do_call(args)?;
-        context.execute(false)
+        context.execute()
     }
 
     fn resume(&self) -> Result<Async<OwnedContext>> {
@@ -1022,7 +1023,7 @@ impl ThreadInternal for Thread {
             // Only the top level frame left means that the thread has finished
             return Err(Error::Dead);
         }
-        context = try_ready!(context.execute(true)).unwrap();
+        context = try_ready!(context.execute()).unwrap();
         Ok(Async::Ready(context))
     }
 
@@ -1160,7 +1161,7 @@ impl<'a> StackInfo<'a> {
     /// Returns the name of the function executing at this frame
     pub fn function_name(&self) -> Option<&str> {
         match self.frame().state {
-            State::Unknown | State::Lock => None,
+            State::Unknown => None,
             State::Closure(ClosureState { ref closure, .. }) => {
                 Some(closure.function.name.declared_name())
             }
@@ -1211,6 +1212,11 @@ struct Hook {
     previous_instruction_index: usize,
 }
 
+struct PollFn {
+    poll_fn: Box<for<'vm> FnMut(&'vm Thread) -> super::Result<Async<OwnedContext<'vm>>> + Send>,
+    frame_index: VmIndex,
+}
+
 #[cfg_attr(
     feature = "serde_derive",
     derive(DeserializeState, SerializeState)
@@ -1235,10 +1241,7 @@ pub struct Context {
 
     /// Stack of polling functions used for extern functions returning futures
     #[cfg_attr(feature = "serde_derive", serde(skip))]
-    poll_fns: Vec<(
-        Option<Lock>,
-        Box<for<'vm> FnMut(&'vm Thread) -> Result<Async<OwnedContext<'vm>>> + Send>,
-    )>,
+    poll_fns: VecDeque<PollFn>,
 }
 
 impl Context {
@@ -1252,7 +1255,7 @@ impl Context {
                 previous_instruction_index: usize::max_value(),
             },
             max_stack_size: VmIndex::max_value(),
-            poll_fns: Vec::new(),
+            poll_fns: VecDeque::new(),
         }
     }
 
@@ -1359,21 +1362,14 @@ impl Context {
     ///
     /// This function is unsafe because the `vm` lifetime must not outlive the lifetime of the
     /// `Thread`
-    pub unsafe fn return_future<'vm, F>(&mut self, mut future: F, lock: Lock)
+    pub unsafe fn return_future<'vm, F>(&mut self, mut future: F, frame_index: VmIndex)
     where
         F: Future<Error = Error> + Send + 'static,
         F::Item: Pushable<'vm>,
     {
-        let lock = if self.poll_fns.is_empty() {
-            self.stack.release_lock(lock);
-            None
-        } else {
-            Some(lock)
-        };
-
-        self.poll_fns.push((
-            lock,
-            Box::new(move |vm| {
+        self.poll_fns.push_back(PollFn {
+            frame_index,
+            poll_fn: Box::new(move |vm| {
                 let value = try_ready!(future.poll());
 
                 let mut context = vm.current_context();
@@ -1384,7 +1380,7 @@ impl Context {
                 };
                 result.map(|()| Async::Ready(context.into_owned()))
             }),
-        ));
+        });
     }
 }
 
@@ -1471,7 +1467,7 @@ impl<'b> OwnedContext<'b> {
         }
     }
 
-    fn execute(self, polled: bool) -> Result<Async<Option<OwnedContext<'b>>>> {
+    fn execute(self) -> Result<Async<Option<OwnedContext<'b>>>> {
         let mut maybe_context = Some(self);
         while let Some(mut context) = maybe_context {
             if context.thread.interrupted() {
@@ -1505,23 +1501,31 @@ impl<'b> OwnedContext<'b> {
             }
 
             maybe_context = match state {
-                State::Lock | State::Unknown => return Ok(Async::Ready(Some(context))),
-                State::Extern(ext) => {
+                State::Unknown => return Ok(Async::Ready(Some(context))),
+                State::Extern(ref ext) if ext.is_locked() => return Ok(Async::Ready(Some(context))),
+
+                State::Extern(mut ext) => {
                     // We are currently in the poll call of this extern function.
                     // Return control to the caller.
                     if ext.call_state == ExternCallState::InPoll {
                         return Ok(Async::Ready(Some(context)));
                     }
+                    if ext.call_state == ExternCallState::Poll {
+                        if let Some(frame_index) = context.poll_fns.front().map(|f| f.frame_index) {
+                            ext = ExternState::from_state(
+                                context.stack.get_frames()[frame_index as usize].state,
+                            );
+                        }
+                    }
                     StackFrame::<ExternState>::current(&mut context.stack)
                         .frame
                         .state
                         .call_state = ExternCallState::Poll;
-                    Some(try_ready!(context.execute_function(
-                        ext.call_state,
-                        &ext.function,
-                        polled,
-                    )))
+                    Some(try_ready!(
+                        context.execute_function(ext.call_state, &ext.function,)
+                    ))
                 }
+
                 State::Closure(ClosureState {
                     closure,
                     instruction_index,
@@ -1584,11 +1588,12 @@ impl<'b> OwnedContext<'b> {
         mut self,
         call_state: ExternCallState,
         function: &ExternFunction,
-        polled: bool,
     ) -> Result<Async<OwnedContext<'b>>> {
         info!(
-            "CALL EXTERN {} {:?}",
+            "CALL EXTERN {} {:?} {} {:?}",
             function.id,
+            call_state,
+            self.poll_fns.len(),
             &self.stack.current_frame::<ExternState>()[..],
         );
 
@@ -1627,52 +1632,34 @@ impl<'b> OwnedContext<'b> {
             }
 
             ExternCallState::Poll => {
-                while let Some((lock, mut poll_fn)) = self.poll_fns.pop() {
-                    // We can only poll the future if the code is currently executing in a future
-                    if !polled {
-                        self.poll_fns.push((lock, poll_fn));
-                        return Ok(Async::NotReady);
-                    }
+                if let Some(mut poll_fn) = self.poll_fns.pop_front() {
+                    let frame_offset = poll_fn.frame_index as usize;
 
-                    let frame_offset = self.stack.get_frames().len() - 1;
-                    if self.poll_fns.is_empty() {
-                        match self.stack.get_frames_mut()[frame_offset].state {
-                            State::Extern(ref mut e) => e.call_state = ExternCallState::InPoll,
-                            _ => unreachable!(),
-                        }
+                    match self.stack.get_frames_mut()[frame_offset].state {
+                        State::Extern(ref mut e) => e.call_state = ExternCallState::InPoll,
+                        _ => unreachable!(),
                     }
                     let thread = self.thread;
                     drop(self);
                     // Poll the future that was returned from the initial call to this extern function
-                    match poll_fn(thread) {
+                    info!("POLL EXTERN {}", function.id);
+                    match (poll_fn.poll_fn)(thread) {
                         Ok(Async::Ready(context)) => {
+                            info!("READY EXTERN {}", function.id);
                             self = context;
-                            if let Some(lock) = lock {
-                                self.stack.release_lock(lock);
-                            }
-                            StackFrame::<ExternState>::current(&mut self.stack)
-                                .frame
-                                .state
-                                .call_state = ExternCallState::Poll;
-                            return Ok(Async::Ready(self));
                         }
                         Ok(Async::NotReady) => {
+                            info!("NOT READY EXTERN {}", function.id);
                             self = thread.owned_context();
                             match self.stack.get_frames_mut()[frame_offset].state {
                                 State::Extern(ref mut e) => e.call_state = ExternCallState::Poll,
                                 _ => unreachable!(),
                             }
                             // Restore `poll_fn` so it can be polled again
-                            self.poll_fns.push((lock, poll_fn));
+                            self.poll_fns.push_front(poll_fn);
                             return Ok(Async::NotReady);
                         }
-                        Err(err) => {
-                            self = thread.owned_context();
-                            if let Some(lock) = lock {
-                                self.stack.release_lock(lock);
-                            }
-                            return Err(err);
-                        }
+                        Err(err) => return Err(err),
                     }
                 }
             }
@@ -2096,7 +2083,7 @@ impl<'b> ExecuteContext<'b> {
             index += 1;
         }
         let result = self.stack.top().clone();
-        debug!("Return {:?}", result);
+        debug!("Return {} {:?}", function.name, result);
         let len = self.stack.len();
         let frame_has_excess = self.stack.frame.excess;
 
@@ -2141,6 +2128,7 @@ impl<'b> ExecuteContext<'b> {
         }
     }
 }
+
 impl<'b> ExecuteContext<'b, State> {
     fn from_state<T>(self) -> ExecuteContext<'b, T>
     where
@@ -2451,14 +2439,7 @@ impl<'vm> ActiveThread<'vm> {
 }
 #[doc(hidden)]
 pub fn reset_stack(mut stack: StackFrame<State>, level: usize) -> Result<::stack::Stacktrace> {
-    let frame_level = stack
-        .stack
-        .get_frames()
-        .iter()
-        .rposition(|frame| frame.state == State::Lock)
-        .unwrap_or(0);
-
-    let trace = stack.stack.stacktrace(frame_level);
+    let trace = stack.stack.stacktrace(level);
     while stack.stack.get_frames().len() > level {
         stack = match stack.exit_scope() {
             Ok(s) => s,

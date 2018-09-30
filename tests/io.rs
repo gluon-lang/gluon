@@ -308,3 +308,47 @@ fn spawn_on_runexpr_in_catch() {
         IO::Exception(err) => panic!("{}", err),
     }
 }
+
+#[test]
+fn io_error_in_catch1() {
+    let _ = ::env_logger::try_init();
+
+    let expr = r#"
+        let io = import! std.io
+        io.catch (io.read_file_to_string "doesnotexist") (\_ -> io.applicative.wrap "error")
+    "#;
+
+    let vm = make_vm();
+
+    let (result, _) = Compiler::new()
+        .run_io(true)
+        .implicit_prelude(false)
+        .run_expr::<IO<String>>(&vm, "<top>", expr)
+        .unwrap_or_else(|err| panic!("{}", err));
+    let expected = IO::Value("error".to_string());
+
+    assert_eq!(result, expected);
+}
+
+#[test]
+fn io_error_in_catch2() {
+    let _ = ::env_logger::try_init();
+
+    let expr = r#"
+        let { (*>) } = import! std.applicative
+        let io @ { ? } = import! std.io
+        io.catch (io.println "asd" *> io.read_file_to_string "doesnotexist") (\_ -> io.applicative.wrap "error")
+    "#;
+
+    let vm = make_vm();
+
+    let (result, _) = Compiler::new()
+        .run_io(true)
+        .implicit_prelude(false)
+        .run_expr::<IO<String>>(&vm, "<top>", expr)
+        .unwrap_or_else(|err| panic!("{}", err));
+    let expected = IO::Value("error".to_string());
+
+    assert_eq!(result, expected);
+}
+

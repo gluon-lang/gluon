@@ -302,6 +302,7 @@ where $($args: Getable<'vm, 'vm> + 'vm,)*
     fn unpack_and_call(&self, vm: &'vm Thread) -> Status {
         let n_args = Self::arguments();
         let mut context = vm.current_context();
+        let frame_index = context.stack().get_frames().len() as VmIndex - 1;
         let mut i = 0;
         let lock;
         let r = unsafe {
@@ -321,7 +322,10 @@ where $($args: Getable<'vm, 'vm> + 'vm,)*
             context = vm.current_context();
             r
         };
-        r.async_status_push(&mut context, lock)
+
+        context.stack().release_lock(lock);
+
+        r.async_status_push(&mut context, frame_index)
     }
 }
 
@@ -405,7 +409,7 @@ impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
     }
 
     fn return_value(vm: &Thread, value: Variants) -> Result<R> {
-            Ok(R::from_value(vm, value))
+        Ok(R::from_value(vm, value))
     }
 }
 
