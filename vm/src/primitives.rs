@@ -470,7 +470,9 @@ pub fn load_string(vm: &Thread) -> Result<ExternModule> {
             rfind => primitive!(2, "std.string.prim.rfind", std::string::prim::rfind::<&str>),
             trim => primitive!(1, std::string::prim::trim),
             trim_left => primitive!(1, std::string::prim::trim_left),
+            trim_left_matches => primitive!(2, "std.string.prim.trim_left_matches", std::string::prim::trim_left_matches::<&str>),
             trim_right => primitive!(1, std::string::prim::trim_right),
+            trim_right_matches => primitive!(2, "std.string.prim.trim_right_matches", std::string::prim::trim_right_matches::<&str>),
             append => primitive!(2, "std.string.prim.append", string::append),
             slice => primitive!(3, "std.string.prim.slice", string::slice),
             from_utf8 => primitive::<fn(Vec<u8>) -> StdResult<String, ()>>(
