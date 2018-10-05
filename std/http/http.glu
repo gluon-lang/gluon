@@ -9,6 +9,8 @@ let { id } = import! std.prelude
 let { flat_map } = import! std.monad
 let { wrap, (*>) } = import! std.applicative
 let { or, empty, (<|>) } = import! std.alternative
+let regex = import! std.regex
+let result = import! std.result
 
 let {
     Method,
@@ -99,7 +101,8 @@ let post : Handler () =
 
 /// Processes this handler if `uri` matches the request's uri
 let path uri : String -> Handler () =
-    test (\request -> request.uri == uri)
+    let re = result.unwrap_ok (regex.new uri)
+    test (\request -> regex.is_match re request.uri)
 
 /// Retrieves the HTTP request
 let get_request : Handler Request =
