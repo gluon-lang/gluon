@@ -1,7 +1,10 @@
+//@NO-IMPLICIT-PRELUDE
 //! Functions for working with I/O
 
 let io_prim = import! std.io.prim
-let { Functor, Applicative, Monad } = import! std.prelude
+let { Functor } = import! std.functor
+let { Applicative } = import! std.applicative
+let { Monad } = import! std.monad
 
 let functor : Functor IO = {
     map = \f -> io_prim.flat_map (\x -> io_prim.wrap (f x))

@@ -1,6 +1,6 @@
 use std::fmt;
 use std::fs::File;
-use std::io::{stdin, Read};
+use std::io::{self, Read, Write};
 use std::sync::Mutex;
 
 use futures::{
@@ -30,6 +30,23 @@ fn print(s: &str) -> IO<()> {
 
 fn println(s: &str) -> IO<()> {
     println!("{}", s);
+    IO::Value(())
+}
+
+fn flush_stdout() -> IO<()> {
+    match io::stdout().flush() {
+        Ok(_) => IO::Value(()),
+        Err(err) => IO::Exception(err.to_string()),
+    }
+}
+
+fn eprint(s: &str) -> IO<()> {
+    eprint!("{}", s);
+    IO::Value(())
+}
+
+fn eprintln(s: &str) -> IO<()> {
+    eprintln!("{}", s);
     IO::Value(())
 }
 
@@ -88,7 +105,7 @@ fn read_file_to_string(s: &str) -> IO<String> {
 }
 
 fn read_char() -> IO<char> {
-    match stdin().bytes().next() {
+    match io::stdin().bytes().next() {
         Some(result) => match result {
             Ok(b) => ::std::char::from_u32(b as u32)
                 .map(IO::Value)
@@ -101,7 +118,7 @@ fn read_char() -> IO<char> {
 
 fn read_line() -> IO<String> {
     let mut buffer = String::new();
-    match stdin().read_line(&mut buffer) {
+    match io::stdin().read_line(&mut buffer) {
         Ok(_) => IO::Value(buffer),
         Err(err) => {
             use std::fmt::Write;
@@ -136,8 +153,8 @@ fn catch<'vm>(
                 }
 
                 let mut stack = context.stack_frame::<stack::State>();
-                let n = stack.len();
-                stack.pop_many(n - 3);
+                let len = stack.len();
+                stack.pop_many(len - 2);
             }
             Either::B(catch.call_fast_async(format!("{}", err)).then(|result| {
                 Ok(match result {
@@ -250,6 +267,9 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
             read_line => primitive!(0, std::io::prim::read_line),
             print => primitive!(1, std::io::prim::print),
             println => primitive!(1, std::io::prim::println),
+            flush_stdout => primitive!(0, std::io::prim::flush_stdout),
+            eprint => primitive!(1, std::io::prim::eprint),
+            eprintln => primitive!(1, std::io::prim::eprintln),
             catch => primitive!(2, async fn std::io::prim::catch),
             run_expr => primitive!(1, async fn std::io::prim::run_expr),
             load_script => primitive!(2, async fn std::io::prim::load_script),
