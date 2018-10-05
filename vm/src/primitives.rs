@@ -451,28 +451,16 @@ pub fn load_string(vm: &Thread) -> Result<ExternModule> {
             is_char_boundary => primitive!(2, std::string::prim::is_char_boundary),
             as_bytes => primitive!(1, std::string::prim::as_bytes),
             split_at => primitive!(2, std::string::prim::split_at),
-            contains => primitive!(
-                2,
-                "std.string.prim.contains",
-                std::string::prim::contains::<&str>
-            ),
-            starts_with => primitive!(
-                2,
-                "std.string.prim.starts_with",
-                std::string::prim::starts_with::<&str>
-            ),
-            ends_with => primitive!(
-                2,
-                "std.string.prim.ends_with",
-                std::string::prim::ends_with::<&str>
-            ),
-            find => primitive!(2, "std.string.prim.find", std::string::prim::find::<&str>),
-            rfind => primitive!(2, "std.string.prim.rfind", std::string::prim::rfind::<&str>),
+            contains => primitive!(2, std::string::prim::contains::<&str>),
+            starts_with => primitive!(2, std::string::prim::starts_with::<&str>),
+            ends_with => primitive!(2, std::string::prim::ends_with::<&str>),
+            find => primitive!(2, std::string::prim::find::<&str>),
+            rfind => primitive!(2, std::string::prim::rfind::<&str>),
             trim => primitive!(1, std::string::prim::trim),
             trim_left => primitive!(1, std::string::prim::trim_left),
-            trim_left_matches => primitive!(2, "std.string.prim.trim_left_matches", std::string::prim::trim_left_matches::<&str>),
+            trim_left_matches => primitive!(2, std::string::prim::trim_left_matches::<&str>),
             trim_right => primitive!(1, std::string::prim::trim_right),
-            trim_right_matches => primitive!(2, "std.string.prim.trim_right_matches", std::string::prim::trim_right_matches::<&str>),
+            trim_right_matches => primitive!(2, std::string::prim::trim_right_matches::<&str>),
             append => primitive!(2, "std.string.prim.append", string::append),
             slice => primitive!(3, "std.string.prim.slice", string::slice),
             from_utf8 => primitive::<fn(Vec<u8>) -> StdResult<String, ()>>(
@@ -518,8 +506,8 @@ pub fn load_path(vm: &Thread) -> Result<ExternModule> {
             file_stem => primitive!(1, std::path::prim::file_stem),
             extension => primitive!(1, std::path::prim::extension),
             join => primitive!(2, "std.path.prim.join", std::path::prim::join::<&Path>),
-            with_file_name => primitive!(2, "std.path.prim.with_file_name", std::path::prim::with_file_name::<&Path>),
-            with_extension => primitive!(2, "std.path.prim.with_extension", std::path::prim::with_extension::<&Path>),
+            with_file_name => primitive!(2, std::path::prim::with_file_name::<&Path>),
+            with_extension => primitive!(2, std::path::prim::with_extension::<&Path>),
             components => primitive!(1, "std.path.prim.components", |p: &Path| {
                 p.components()
                     .map(|c| match c {

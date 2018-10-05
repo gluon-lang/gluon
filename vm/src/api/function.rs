@@ -77,7 +77,12 @@ where
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         let thread = context.thread();
         // Map rust modules into gluon modules
-        let id = Symbol::from(self.name.replace("::", "."));
+        let name = if let Some(i) = self.name.rfind("::<") {
+            &self.name[..i]
+        } else {
+            self.name
+        };
+        let id = Symbol::from(name.replace("::", "."));
         let value = ValueRepr::Function(context.context().alloc_with(
             thread,
             Move(ExternFunction {
