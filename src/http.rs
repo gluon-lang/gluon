@@ -21,6 +21,18 @@ use vm::{
     ExternModule,
 };
 
+macro_rules! try_future {
+    ($e:expr) => {
+        try_future!($e, Box::new)
+    };
+    ($e:expr, $f:expr) => {
+        match $e {
+            Ok(x) => x,
+            Err(err) => return $f(::futures::future::err(err.into())),
+        }
+    };
+}
+
 mod std {
     pub use http;
 }
@@ -188,9 +200,9 @@ fn listen(
     impl Service for Listen {
         type ReqBody = hyper::Body;
         type ResBody = hyper::Body;
-        type Error = hyper::Error;
+        type Error = vm::Error;
         type Future =
-            Box<Future<Item = http::Response<hyper::Body>, Error = hyper::Error> + Send + 'static>;
+            Box<Future<Item = http::Response<hyper::Body>, Error = Self::Error> + Send + 'static>;
 
         fn call(&mut self, request: http::Request<hyper::Body>) -> Self::Future {
             let gluon_request = record_no_decl! {
@@ -210,9 +222,11 @@ fn listen(
                 response => ResponseBody(response_sender.clone())
             };
 
+            let child_thread = try_future!(self.handle.vm().new_thread());
+            let mut handle = try_future!(self.handle.re_root(child_thread));
+
             Box::new(
-                self.handle
-                    .clone()
+                handle
                     .call_async(self.handler.clone(), http_state)
                     .then(move |result| match result {
                         Ok(value) => {
