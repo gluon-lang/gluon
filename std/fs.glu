@@ -1,0 +1,10 @@
+//@NO-IMPLICIT-PRELUDE
+//! Functions for working with the file system
+
+let fs_prim = import! std.fs.prim
+
+{
+    ..
+    fs_prim
+}
+

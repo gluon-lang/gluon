@@ -1,5 +1,6 @@
 //! Module containing functions for interacting with gluon's primitive types.
 use std::ffi::OsStr;
+use std::fs;
 use std::path::{self, Path};
 use std::result::Result as StdResult;
 use std::str::FromStr;
@@ -490,6 +491,27 @@ pub enum Component<'a> {
     Normal(&'a OsStr),
 }
 
+#[derive(Userdata, Debug)]
+#[gluon(gluon_vm)]
+pub struct Metadata(fs::Metadata);
+
+pub fn load_fs(vm: &Thread) -> Result<ExternModule> {
+    vm.register_type::<Metadata>("Metadata", &[])?;
+
+    ExternModule::new(
+        vm,
+        record! {
+            type Metadata => Metadata,
+
+            metadata => record! {
+                is_dir => primitive!(1, "std.fs.prim.metadata.is_dir", |m: &Metadata| m.0.is_dir()),
+                is_file => primitive!(1, "std.fs.prim.metadata.is_file", |m: &Metadata| m.0.is_file()),
+                len => primitive!(1, "std.fs.prim.metadata.len", |m: &Metadata| m.0.len())
+            }
+        },
+    )
+}
+
 pub fn load_path(vm: &Thread) -> Result<ExternModule> {
     ExternModule::new(
         vm,
@@ -519,9 +541,8 @@ pub fn load_path(vm: &Thread) -> Result<ExternModule> {
                     })
                     .collect::<Vec<_>>()
             }),
-            // TODO
-            // metadata => primitive!(1, "std.path.prim.metadata", |p: &Path| IO::from(p.metadata())),
-            // symlink_metadata => primitive!(1, "std.path.prim.symlink_metadata", |p: &Path| IO::from(p.symlink_metadata())),
+            metadata => primitive!(1, "std.path.prim.metadata", |p: &Path| IO::from(p.metadata().map(Metadata))),
+            symlink_metadata => primitive!(1, "std.path.prim.symlink_metadata", |p: &Path| IO::from(p.symlink_metadata().map(Metadata))),
             canonicalize => primitive!(1, "std.path.prim.canonicalize", |p: &Path| IO::from(p.canonicalize())),
             read_link => primitive!(1, "std.path.prim.read_link", |p: &Path| IO::from(p.read_link())),
             read_dir => primitive!(
