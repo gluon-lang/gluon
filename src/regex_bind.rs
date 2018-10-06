@@ -53,7 +53,9 @@ fn error_to_string(err: &Error) -> &str {
 }
 
 mod std {
-    pub use regex_bind as regex;
+    pub mod regex {
+        pub use regex_bind as prim;
+    }
 }
 
 pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
@@ -67,9 +69,9 @@ pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
         record!{
             type Error => Error,
             type Regex => Regex,
-            new => primitive!(1, std::regex::new),
-            is_match => primitive!(2, std::regex::is_match),
-            error_to_string => primitive!(1, std::regex::error_to_string)
+            new => primitive!(1, std::regex::prim::new),
+            is_match => primitive!(2, std::regex::prim::is_match),
+            error_to_string => primitive!(1, std::regex::prim::error_to_string)
         },
     )
 }

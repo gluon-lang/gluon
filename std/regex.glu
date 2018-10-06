@@ -1,0 +1,11 @@
+//@NO-IMPLICIT-PRELUDE
+//! Bindings for rust-lang/regex
+
+let regex_prim = import! std.regex.prim
+
+{
+    ..
+    regex_prim
+}
+
+
