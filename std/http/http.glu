@@ -101,6 +101,9 @@ let post : Handler () =
 
 /// Processes this handler if `uri` matches the request's uri
 let path uri : String -> Handler () =
+    test (\request -> request.uri == uri)
+
+let is_match uri : String -> Handler () =
     let re = result.unwrap_ok (regex.new uri)
     test (\request -> regex.is_match re request.uri)
 
@@ -165,6 +168,7 @@ let handle handler state : Handler Response -> HttpState -> IO Response =
     get,
     post,
     path,
+    is_match,
     listen = http_prim.listen,
     read_chunk = http_prim.read_chunk,
     write_response,
