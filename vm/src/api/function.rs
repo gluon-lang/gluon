@@ -14,7 +14,7 @@ use api::{ActiveThread, AsyncPushable, Getable, Pushable, RootedValue, VmType};
 use compiler::{CompiledFunction, CompiledModule};
 use gc::Move;
 use stack::{ExternState, StackFrame};
-use thread::{RootedThread, Status, Thread, ThreadInternal};
+use thread::{RootedThread, Status, Thread, ThreadInternal, VmRoot};
 use types::{Instruction, VmIndex};
 use value::{ExternFunction, ValueRepr};
 use {Error, Result, Variants};
@@ -208,6 +208,16 @@ where
 
     pub fn vm(&self) -> &Thread {
         self.value.vm()
+    }
+
+    pub fn re_root<'vm, U>(&self, vm: U) -> Result<Function<U, F>>
+    where
+        U: VmRoot<'vm>,
+    {
+        Ok(Function {
+            value: self.value.re_root(vm)?,
+            _marker: self._marker,
+        })
     }
 }
 

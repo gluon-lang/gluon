@@ -202,15 +202,13 @@ impl<T> RootedValue<T>
 where
     T: Deref<Target = Thread>,
 {
-    pub fn re_root<'vm, U>(self, vm: U) -> RootedValue<U>
+    pub fn re_root<'vm, U>(&self, vm: U) -> Result<RootedValue<U>>
     where
         U: VmRoot<'vm>,
     {
-        vm.rooted_values.write().unwrap().push(self.value.clone());
-        RootedValue {
-            vm,
-            value: self.value.clone(),
-        }
+        let value = vm.deep_clone_value(&self.vm, self.value.get_variants())?;
+        vm.rooted_values.write().unwrap().push(value.clone());
+        Ok(RootedValue { vm, value })
     }
 
     pub fn get_variant(&self) -> Variants {
