@@ -91,6 +91,14 @@ fn read_file<'vm>(file: WithVM<'vm, &GluonFile>, count: usize) -> IO<Array<'vm, 
     }
 }
 
+fn read_file_to_array(s: &str) -> IO<Vec<u8>> {
+    let mut buffer = Vec::new();
+    match File::open(s).and_then(|mut file| file.read_to_end(&mut buffer)) {
+        Ok(_) => IO::Value(buffer),
+        Err(err) => IO::Exception(err.to_string()),
+    }
+}
+
 fn read_file_to_string(s: &str) -> IO<String> {
     let mut buffer = String::new();
     match File::open(s).and_then(|mut file| file.read_to_string(&mut buffer)) {
@@ -263,6 +271,7 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
             open_file => primitive!(1, std::io::prim::open_file),
             read_file => primitive!(2, std::io::prim::read_file),
             read_file_to_string => primitive!(1, std::io::prim::read_file_to_string),
+            read_file_to_array => primitive!(1, std::io::prim::read_file_to_array),
             read_char => primitive!(0, std::io::prim::read_char),
             read_line => primitive!(0, std::io::prim::read_line),
             print => primitive!(1, std::io::prim::print),
