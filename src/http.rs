@@ -128,13 +128,17 @@ fn write_response(
     })
 }
 
+#[derive(Debug, Userdata)]
+#[gluon(crate_name = "::vm")]
+struct Uri(http::Uri);
+
 // Next we define some record types which are marshalled to and from gluon. These have equivalent
 // definitions in http_types.glu
 field_decl! { method, uri, status, body, request, response }
 
 type Request = record_type!{
     method => String,
-    uri => String,
+    uri => Uri,
     body => Body
 };
 
@@ -181,11 +185,12 @@ fn listen(
             Box<Future<Item = http::Response<hyper::Body>, Error = Self::Error> + Send + 'static>;
 
         fn call(&mut self, request: http::Request<hyper::Body>) -> Self::Future {
+            let (parts, body) = request.into_parts();
             let gluon_request = record_no_decl! {
-                method => request.method().as_str().to_owned(),
-                uri => request.uri().to_string(),
+                method => parts.method.as_str().to_owned(),
+                uri => Uri(parts.uri),
                 // Since `Body` implements `Userdata` it can be directly pushed to gluon
-                body => Body(Arc::new(Mutex::new(Box::new(request.into_body()
+                body => Body(Arc::new(Mutex::new(Box::new(body
                     .map_err(|err| vm::Error::Message(format!("{}", err)))
                     // `PushAsRef` makes the `body` parameter act as a `&[u8]` which means it is
                     // marshalled to `Array Byte` in gluon
@@ -260,6 +265,7 @@ fn listen(
 pub fn load_types(vm: &Thread) -> vm::Result<ExternModule> {
     vm.register_type::<Body>("Body", &[])?;
     vm.register_type::<ResponseBody>("ResponseBody", &[])?;
+    vm.register_type::<Uri>("Uri", &[])?;
 
     ExternModule::new(
         vm,
@@ -267,6 +273,7 @@ pub fn load_types(vm: &Thread) -> vm::Result<ExternModule> {
             // Define the types so that they can be used from gluon
             type Body => Body,
             type ResponseBody => ResponseBody,
+            type Uri => Uri,
             type Method => String,
             type StatusCode => u16,
             type Request => Request,
@@ -276,13 +283,24 @@ pub fn load_types(vm: &Thread) -> vm::Result<ExternModule> {
     )
 }
 
+macro_rules! uri_binds {
+    ($($id: ident)*) => {
+        record!{
+            $(
+                $id => primitive!(1, concat!("std.http.prim.uri.", stringify!($id)), |u: &Uri| (u.0).$id())
+            ),*
+        }
+    }
+}
+
 pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
     ExternModule::new(
         vm,
         record! {
             listen => primitive!(2, async fn listen),
             read_chunk => primitive!(1, async fn read_chunk),
-            write_response => primitive!(2, async fn write_response)
+            write_response => primitive!(2, async fn write_response),
+            uri => uri_binds!(path host port query to_string)
         },
     )
 }

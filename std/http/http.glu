@@ -100,12 +100,12 @@ let post : Handler () =
     test (\request -> request.method == method.post)
 
 /// Processes this handler if `uri` matches the request's uri
-let path uri : String -> Handler () =
-    test (\request -> request.uri == uri)
+let path p : String -> Handler () =
+    test (\request -> http_prim.uri.path request.uri == p)
 
 let is_match uri : String -> Handler () =
     let re = result.unwrap_ok (regex.new uri)
-    test (\request -> regex.is_match re request.uri)
+    test (\request -> regex.is_match re (http_prim.uri.path request.uri))
 
 /// Retrieves the HTTP request
 let get_request : Handler Request =
@@ -146,6 +146,10 @@ let handle handler state : Handler Response -> HttpState -> IO Response =
         http_prim.write_response state.response  (string.as_bytes "Page not found") *> wrap { status = status.not_found }
     handler (\response _ -> wrap response) not_found state
 
+let show_uri: Show Uri = {
+    show = http_prim.uri.to_string
+}
+
 {
     Method,
     Failure,
@@ -169,10 +173,13 @@ let handle handler state : Handler Response -> HttpState -> IO Response =
     post,
     path,
     is_match,
-    listen = http_prim.listen,
-    read_chunk = http_prim.read_chunk,
-    write_response,
     io_handler,
     fail,
     catch_error,
+
+    show_uri,
+
+    write_response,
+    ..
+    http_prim
 }

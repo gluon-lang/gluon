@@ -27,6 +27,7 @@ let {
 
     status,
     method,
+    uri,
 
     ?
 } = import! std.http.http
