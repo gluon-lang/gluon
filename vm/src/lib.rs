@@ -41,7 +41,6 @@ extern crate lalrpop_util;
 extern crate gluon_base as base;
 extern crate gluon_check as check;
 #[macro_use]
-#[cfg(feature = "serde_state")]
 extern crate gluon_codegen;
 
 #[cfg(test)]
