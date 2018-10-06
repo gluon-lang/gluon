@@ -15,8 +15,7 @@ use base::types::{ArcType, Type};
 
 use vm::{
     self,
-    api::{Function, OpaqueValue, PushAsRef, Userdata, VmType, WithVM, IO},
-    gc::{Gc, Traverseable},
+    api::{Function, OpaqueValue, PushAsRef, VmType, WithVM, IO},
     thread::{RootedThread, Thread},
     ExternModule,
 };
@@ -50,33 +49,18 @@ impl<T: VmType + 'static> VmType for Handler<T> {
     }
 }
 
-// Representation of a http body that is in the prograss of being read
-pub struct Body(Arc<Mutex<Box<Stream<Item = PushAsRef<Chunk, [u8]>, Error = vm::Error> + Send>>>);
-
 // By implementing `Userdata` on `Body` it can be automatically pushed and retrieved from gluon
 // threads
-impl Userdata for Body {}
+#[derive(Userdata)]
+#[gluon(crate_name = "::vm")]
+// Representation of a http body that is in the prograss of being read
+pub struct Body(Arc<Mutex<Box<Stream<Item = PushAsRef<Chunk, [u8]>, Error = vm::Error> + Send>>>);
 
 // Types implementing `Userdata` requires a `std::fmt::Debug` implementation so it can be displayed
 impl fmt::Debug for Body {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "hyper::Body")
     }
-}
-
-// `Traverseable` is required by `Userdata` so that the garbage collector knows how to scan the
-// value for garbage collected references. Normally objects do not contain any references so this
-// can be empty
-impl Traverseable for Body {
-    fn traverse(&self, _: &mut Gc) {}
-}
-
-// `VmType` is the last trait required for a type to implement `Userdata` and defines the type used
-// in gluon for this Rust type. For opaque `Userdata` values this minimal implementation is enough
-// as the default implementation of `make_type` will lookup `VmType::Type` from the virtual machine
-// which should have been registered earlier with `Thread::register_type`
-impl VmType for Body {
-    type Type = Self;
 }
 
 // Since `Body` implements `Userdata` gluon will automatically marshal the gluon representation
@@ -94,22 +78,14 @@ fn read_chunk(
 }
 
 // A http body that is being written
+#[derive(Userdata)]
+#[gluon(crate_name = "::vm")]
 pub struct ResponseBody(Arc<Mutex<Option<hyper::body::Sender>>>);
 
 impl fmt::Debug for ResponseBody {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "hyper::Response")
     }
-}
-
-impl Userdata for ResponseBody {}
-
-impl Traverseable for ResponseBody {
-    fn traverse(&self, _: &mut Gc) {}
-}
-
-impl VmType for ResponseBody {
-    type Type = Self;
 }
 
 fn write_response(
@@ -273,7 +249,8 @@ fn listen(
                     handle: handle.clone(),
                     handler: handler.clone(),
                 })
-            }).map_err(|err| vm::Error::from(format!("Server error: {}", err)))
+            })
+            .map_err(|err| vm::Error::from(format!("Server error: {}", err)))
             .and_then(|_| Ok(IO::Value(()))),
     )
 }

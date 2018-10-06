@@ -25,6 +25,7 @@ path = "src/lib.rs"
 gluon_base = { path = "base", version = "0.9.1" } # GLUON
 gluon_check = { path = "check", version = "0.9.1" } # GLUON
 gluon_parser = { path = "parser", version = "0.9.1" } # GLUON
+gluon_codegen = { path = "codegen", version = "0.9.1" } # GLUON
 gluon_vm = { path = "vm", version = "0.9.1", default-features = false } # GLUON
 
 log = "0.4"

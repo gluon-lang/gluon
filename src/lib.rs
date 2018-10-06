@@ -32,6 +32,8 @@ pub extern crate gluon_base as base;
 pub extern crate gluon_check as check;
 pub extern crate gluon_parser as parser;
 #[macro_use]
+extern crate gluon_codegen;
+#[macro_use]
 pub extern crate gluon_vm as vm;
 
 pub mod compiler_pipeline;
@@ -140,7 +142,8 @@ impl From<Errors<Spanned<macros::Error, BytePos>>> for Error {
                     .map(|err| match err.value.downcast::<Error>() {
                         Ok(err) => *err,
                         Err(err) => Error::Other(err),
-                    }).collect(),
+                    })
+                    .collect(),
             )
         }
     }
@@ -156,7 +159,8 @@ impl From<Errors<Error>> for Error {
                 .flat_map(|err| match err {
                     Error::Multiple(errors) => Either::Left(errors.into_iter()),
                     err => Either::Right(Some(err).into_iter()),
-                }).collect();
+                })
+                .collect();
 
             Error::Multiple(errors)
         }
@@ -337,7 +341,8 @@ impl Compiler {
             &mut SymbolModule::new(file.into(), &mut self.symbols),
             type_cache,
             &*map,
-        ).map_err(|(expr, err)| {
+        )
+        .map_err(|(expr, err)| {
             info!("Parse error: {}", err);
             (expr, InFile::new(self.code_map().clone(), err))
         })?)
@@ -381,7 +386,8 @@ impl Compiler {
             typ: vm.global_env().type_cache().hole(),
             metadata: Default::default(),
             metadata_map: Default::default(),
-        }.compile(self, vm, filename, expr_str, ())
+        }
+        .compile(self, vm, filename, expr_str, ())
         .map(|result| result.module)
     }
 
@@ -527,7 +533,8 @@ impl Compiler {
                     T::from_value(vm, execute_value.value.get_variant()),
                     execute_value.typ,
                 ))
-            }).wait()
+            })
+            .wait()
     }
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
