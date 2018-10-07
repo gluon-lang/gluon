@@ -42,6 +42,7 @@ pub mod http;
 #[macro_use]
 pub mod import;
 pub mod io;
+pub mod process;
 #[cfg(all(feature = "rand", not(target_arch = "wasm32")))]
 pub mod rand_bind;
 #[cfg(feature = "regex")]
@@ -679,6 +680,7 @@ impl VmBuilder {
         add_extern_module(&vm, "std.thread.prim", ::vm::channel::load_thread);
         add_extern_module(&vm, "std.debug.prim", ::vm::debug::load);
         add_extern_module(&vm, "std.io.prim", ::io::load);
+        add_extern_module(&vm, "std.process.prim", ::process::load);
 
         add_extern_module_if!(
             #[cfg(feature = "serialization")],

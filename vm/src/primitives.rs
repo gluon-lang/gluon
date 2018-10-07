@@ -1,6 +1,7 @@
 //! Module containing functions for interacting with gluon's primitive types.
 use std::ffi::OsStr;
 use std::fs;
+use std::io;
 use std::path::{self, Path};
 use std::result::Result as StdResult;
 use std::str::FromStr;
@@ -8,18 +9,17 @@ use std::string::String as StdString;
 
 use base::types::ArcType;
 
-use api::generic::A;
 use api::{
-    generic, primitive, Array, Getable, OpaqueRef, Pushable, Pushed, RuntimeResult, ValueRef,
-    VmType, WithVM, IO,
+    generic::{self, A},
+    primitive, Array, Getable, OpaqueRef, Pushable, Pushed, RuntimeResult, ValueRef, VmType,
+    WithVM, IO,
 };
 use gc::{DataDef, Gc, Traverseable, WriteOnly};
 use stack::{ExternState, StackFrame};
 use types::VmInt;
 use value::{Def, GcStr, Repr, ValueArray, ValueRepr};
 use vm::{Status, Thread};
-use Result;
-use {Error, ExternModule, Variants};
+use {Error, ExternModule, Result, Variants};
 
 #[doc(hidden)]
 pub mod array {
@@ -495,13 +495,29 @@ pub enum Component<'a> {
 #[gluon(gluon_vm)]
 pub struct Metadata(fs::Metadata);
 
+#[derive(Userdata, Debug)]
+#[gluon(gluon_vm)]
+pub struct DirEntry(fs::DirEntry);
+
 pub fn load_fs(vm: &Thread) -> Result<ExternModule> {
     vm.register_type::<Metadata>("Metadata", &[])?;
+    vm.register_type::<DirEntry>("DirEntry", &[])?;
 
     ExternModule::new(
         vm,
         record! {
             type Metadata => Metadata,
+            type DirEntry => DirEntry,
+
+            read_dir => primitive!(1, "std.fs.prim.read_dir", |p: &Path| {
+                IO::from(fs::read_dir(p).and_then(|iter| iter.map(|result| result.map(DirEntry)).collect::<io::Result<Vec<_>>>()))
+            }),
+
+            dir_entry => record! {
+                path => primitive!(1, "std.fs.prim.dir_entry.path", |m: &DirEntry| m.0.path()),
+                metadata => primitive!(1, "std.fs.prim.dir_entry.metadata", |m: &DirEntry| IO::from(m.0.metadata().map(Metadata))),
+                file_name => primitive!(1, "std.fs.prim.dir_entry.file_name", |m: &DirEntry| m.0.file_name())
+            },
 
             metadata => record! {
                 is_dir => primitive!(1, "std.fs.prim.metadata.is_dir", |m: &Metadata| m.0.is_dir()),

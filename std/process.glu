@@ -1,0 +1,13 @@
+//@NO-IMPLICIT-PRELUDE
+//! Functions for working with external processes
+
+let process_prim = import! std.process.prim
+let { Option } = import! std.option
+
+let proc command args = { command, args, envs = None, current_dir = None }
+
+{
+    proc,
+    ..
+    process_prim
+}

@@ -393,6 +393,14 @@ where
     pub fn get(&'s self, index: VmInt) -> Option<OpaqueRef<'value, V>> {
         self.get_array().get(index as usize).map(Opaque::from_value)
     }
+
+    pub fn iter(&'s self) -> Iter<'s, 'value, T, V> {
+        Iter {
+            index: 0,
+            array: self,
+            _marker: PhantomData,
+        }
+    }
 }
 
 impl<T, V> OpaqueValue<T, [V]>
@@ -406,5 +414,44 @@ where
         self.get_array()
             .get(index as usize)
             .map(|v| V::from_value(self.0.vm(), v))
+    }
+}
+
+pub struct Iter<'a, 'value, T, V>
+where
+    T: 'a,
+    V: 'a,
+{
+    index: usize,
+    array: &'a Opaque<T, [V]>,
+    _marker: PhantomData<&'value ()>,
+}
+
+impl<'s, 'value, T, V> Iterator for Iter<'s, 'value, T, V>
+where
+    T: AsVariant<'s, 'value>,
+{
+    type Item = OpaqueRef<'value, V>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let i = self.index;
+        if i < self.array.len() {
+            self.index += 1;
+            self.array.get(i as VmInt)
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a, T, V> IntoIterator for &'a Opaque<T, [V]>
+where
+    T: AsVariant<'a, 'a>,
+{
+    type Item = OpaqueRef<'a, V>;
+    type IntoIter = Iter<'a, 'a, T, V>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }
