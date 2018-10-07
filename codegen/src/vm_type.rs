@@ -34,8 +34,8 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
     let gluon = match container.crate_name {
         CrateName::Some(ref ident) => quote!{
             use #ident::base as _gluon_base;
-            use #ident::vm::api as _gluon_api;
-            use #ident::vm::thread as _gluon_thread;
+            use #ident::api as _gluon_api;
+            use #ident::thread as _gluon_thread;
         },
         CrateName::GluonVm => quote!{
             use base as _gluon_base;

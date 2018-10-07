@@ -1,0 +1,31 @@
+let { run, Test, assert_eq, test, group, ? }  = import! std.test
+let { Applicative, (*>) } = import! std.applicative
+let { (<|), (|>) } = import! std.function
+
+let { ? } = import! std.array
+let { unwrap_ok, unwrap_err } = import! std.result
+
+let regex @ { ? } = import! std.regex
+
+let match_a = regex.new "a" |> unwrap_ok
+group "regex" [
+    test "is_match_a" <| \_ ->
+        assert_eq (regex.is_match match_a "a") True,
+    test "is_not_match_a" <| \_ ->
+        assert_eq (regex.is_match match_a "b") False,
+
+    test "is_match2" <| \_ ->
+        let match_hello = regex.new "hello, .*" |> unwrap_ok
+        assert_eq (regex.is_match match_hello "hello, world") True,
+
+    test "compile error" <| \_ -> 
+        let msg = regex.new ")" |> unwrap_err |> regex.error_to_string
+        assert_eq msg "regex parse error:\n    )\n    ^\nerror: unopened group",
+
+    test "captures" <| \_ -> 
+        let re = regex.new r#"[a-z]+(?:([0-9]+)|([A-Z]+))"# |> unwrap_ok
+        assert_eq
+            (regex.captures re "abc123")
+            (Some [Some { start = 0, end = 6, text = "abc123" }, Some { start = 3, end = 6, text = "123" }, None])
+
+]

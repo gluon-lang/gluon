@@ -136,8 +136,6 @@ name = "parallel"
 [[test]]
 name = "pattern_match"
 [[test]]
-name = "regex_bind"
-[[test]]
 name = "row_polymorphism"
 [[test]]
 name = "safety"

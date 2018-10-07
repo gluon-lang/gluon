@@ -360,7 +360,8 @@ fn insert_forall_walker(
             Type::ExtendRow { .. } => types::walk_move_type_opt(
                 typ,
                 &mut types::ControlVisitation(|typ: &ArcType| insert_forall(variables, typ)),
-            ).map(|typ| ArcType::from(Type::Record(typ))),
+            )
+            .map(|typ| ArcType::from(Type::Record(typ))),
             _ => None,
         },
         _ => types::walk_move_type_opt(
@@ -746,7 +747,8 @@ impl VmType for bool {
         (*vm.global_env()
             .get_env()
             .find_type_info("std.types.Bool")
-            .unwrap()).clone()
+            .unwrap())
+        .clone()
         .into_type()
     }
 }
@@ -997,27 +999,7 @@ where
     T: Pushable<'vm>,
 {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        let len = self.len() as VmIndex;
-        for v in self {
-            if v.push(context) == Err(Error::Message("Push error".into())) {
-                return Err(Error::Message("Push error".into()));
-            }
-        }
-        let thread = context.thread();
-        let result = {
-            let Context {
-                ref mut gc,
-                ref stack,
-                ..
-            } = *context.context();
-            let values = &stack[stack.len() - len..];
-            thread::alloc(gc, thread, stack, ArrayDef(values))?
-        };
-        for _ in 0..len {
-            context.pop();
-        }
-        context.push(ValueRepr::Array(result));
-        Ok(())
+        Collect::new(self).push(context)
     }
 }
 
@@ -1120,17 +1102,19 @@ where
             V2: Getable<'vm2, 'value2>,
         {
             match value.as_ref() {
-                ValueRef::Data(data) => if data.tag() == 1 {
-                    let key = K2::from_value(vm, data.get_variant(0).expect("key"));
-                    let value = V2::from_value(vm, data.get_variant(1).expect("value"));
-                    map.insert(key, value);
+                ValueRef::Data(data) => {
+                    if data.tag() == 1 {
+                        let key = K2::from_value(vm, data.get_variant(0).expect("key"));
+                        let value = V2::from_value(vm, data.get_variant(1).expect("value"));
+                        map.insert(key, value);
 
-                    let left = data.get_variant(2).expect("left");
-                    build_map(map, vm, left);
+                        let left = data.get_variant(2).expect("left");
+                        build_map(map, vm, left);
 
-                    let right = data.get_variant(3).expect("right");
-                    build_map(map, vm, right);
-                },
+                        let right = data.get_variant(3).expect("right");
+                        build_map(map, vm, right);
+                    }
+                }
                 _ => ice!("ValueRef is not a Map"),
             }
         }
@@ -1176,11 +1160,13 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T> {
 impl<'vm, 'value, T: Getable<'vm, 'value>> Getable<'vm, 'value> for Option<T> {
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Option<T> {
         match value.as_ref() {
-            ValueRef::Data(data) => if data.tag() == 0 {
-                None
-            } else {
-                Some(T::from_value(vm, data.get_variant(0).unwrap()))
-            },
+            ValueRef::Data(data) => {
+                if data.tag() == 0 {
+                    None
+                } else {
+                    Some(T::from_value(vm, data.get_variant(0).unwrap()))
+                }
+            }
             _ => ice!("ValueRef is not an Option"),
         }
     }
@@ -1567,6 +1553,59 @@ impl<T: VmType> VmType for Pushed<T> {
 
 impl<'vm, T: VmType> Pushable<'vm> for Pushed<T> {
     fn push(self, _context: &mut ActiveThread<'vm>) -> Result<()> {
+        Ok(())
+    }
+}
+
+pub struct Collect<T>(T);
+
+impl<T> Collect<T> {
+    pub fn new(iterable: T) -> Self
+    where
+        T: IntoIterator,
+    {
+        Collect(iterable)
+    }
+}
+
+impl<T> VmType for Collect<T>
+where
+    T: IntoIterator,
+    T::Item: VmType,
+    <T::Item as VmType>::Type: Sized,
+{
+    type Type = Vec<<T::Item as VmType>::Type>;
+
+    fn make_type(vm: &Thread) -> ArcType {
+        Vec::<T::Item>::make_type(vm)
+    }
+}
+
+impl<'vm, T> Pushable<'vm> for Collect<T>
+where
+    T: IntoIterator,
+    T::Item: Pushable<'vm>,
+{
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        let mut len = 0;
+        for v in self.0 {
+            v.push(context)?;
+            len += 1;
+        }
+        let thread = context.thread();
+        let result = {
+            let Context {
+                ref mut gc,
+                ref stack,
+                ..
+            } = *context.context();
+            let values = &stack[stack.len() - len..];
+            thread::alloc(gc, thread, stack, ArrayDef(values))?
+        };
+        for _ in 0..len {
+            context.pop();
+        }
+        context.push(ValueRepr::Array(result));
         Ok(())
     }
 }
