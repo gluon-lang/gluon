@@ -162,30 +162,22 @@ impl rustyline::completion::Completer for Completer {
 
 macro_rules! impl_userdata {
     ($name:ident) => {
-        impl ::gluon::vm::api::Userdata for $name {}
-
         impl ::std::fmt::Debug for $name {
             fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
                 write!(f, concat!(stringify!($name), "(..)"))
             }
         }
-
-        impl ::gluon::vm::api::VmType for $name {
-            type Type = Self;
-        }
-
-        impl ::gluon::vm::gc::Traverseable for $name {
-            fn traverse(&self, _: &mut ::gluon::vm::gc::Gc) {}
-        }
     };
 }
 
+#[derive(Userdata)]
 struct Editor {
     editor: Mutex<rustyline::Editor<Completer>>,
 }
 
 impl_userdata!{ Editor }
 
+#[derive(Userdata)]
 struct CpuPool(self::futures_cpupool::CpuPool);
 
 impl_userdata!{ CpuPool }
@@ -315,7 +307,10 @@ fn eval_line_(
                     let id = Symbol::from("repl_temp");
                     let_binding.name = pos::spanned(
                         let_binding.name.span,
-                        Pattern::As(pos::spanned(let_binding.name.span, id.clone()), Box::new(let_binding.name)),
+                        Pattern::As(
+                            pos::spanned(let_binding.name.span, id.clone()),
+                            Box::new(let_binding.name),
+                        ),
                     );
                     TypedIdent::new(id)
                 }
@@ -323,16 +318,16 @@ fn eval_line_(
             let id = pos::spanned2(0.into(), 0.into(), Expr::Ident(id.clone()));
             let expr = Expr::let_binding(let_binding, id);
             let eval_expr = pos::spanned2(0.into(), 0.into(), expr);
-            Either::B(eval_expr
-                .run_expr(&mut compiler, vm.clone(), "line", line, None)
-                .and_then(move |value| {
-                    
+            Either::B(
+                eval_expr
+                    .run_expr(&mut compiler, vm.clone(), "line", line, None)
+                    .and_then(move |value| {
                         // Hack to get around borrow-checker. Method-chaining didn't work,
                         // even with #[feature(nll)]. Seems like a bug
                         let temp =
                             set_globals(&vm, &unpack_pattern, &value.typ, &value.value.as_ref());
                         temp.and(Ok(value))
-                })
+                    }),
             )
         }
     };
@@ -537,7 +532,10 @@ fn compile_repl(compiler: &mut Compiler, vm: &Thread) -> Result<(), GluonError> 
 }
 
 #[allow(dead_code)]
-pub fn run(color: Color, prompt: &str) -> impl Future<Item = (), Error = Box<StdError + Send + Sync + 'static>> {
+pub fn run(
+    color: Color,
+    prompt: &str,
+) -> impl Future<Item = (), Error = Box<StdError + Send + Sync + 'static>> {
     let vm = ::gluon::VmBuilder::new().build();
 
     let mut compiler = Compiler::new();
@@ -547,8 +545,7 @@ pub fn run(color: Color, prompt: &str) -> impl Future<Item = (), Error = Box<Std
         Either::A
     );
 
-    let mut repl: OwnedFunction<fn(_, _) -> _> =
-        try_future!(vm.get_global("repl"), Either::A);
+    let mut repl: OwnedFunction<fn(_, _) -> _> = try_future!(vm.get_global("repl"), Either::A);
     debug!("Starting repl");
     Either::B(
         repl.call_async(Ser(color), prompt)

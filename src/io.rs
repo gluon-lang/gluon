@@ -9,10 +9,7 @@ use futures::{
 };
 
 use vm::api::generic::{A, B};
-use vm::api::{
-    self, Array, Getable, OpaqueValue, OwnedFunction, TypedBytecode, Userdata, VmType, WithVM, IO,
-};
-use vm::gc::{Gc, Traverseable};
+use vm::api::{self, Array, Getable, OpaqueValue, OwnedFunction, TypedBytecode, WithVM, IO};
 use vm::internal::ValuePrinter;
 use vm::stack::{self, StackFrame};
 use vm::thread::{RootedThread, Thread, ThreadInternal};
@@ -50,22 +47,14 @@ fn eprintln(s: &str) -> IO<()> {
     IO::Value(())
 }
 
+#[derive(Userdata)]
+#[gluon(crate_name = "::vm")]
 struct GluonFile(Mutex<File>);
-
-impl Userdata for GluonFile {}
 
 impl fmt::Debug for GluonFile {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "File")
     }
-}
-
-impl VmType for GluonFile {
-    type Type = GluonFile;
-}
-
-impl Traverseable for GluonFile {
-    fn traverse(&self, _: &mut Gc) {}
 }
 
 fn open_file(s: &str) -> IO<GluonFile> {

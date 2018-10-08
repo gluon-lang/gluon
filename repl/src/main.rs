@@ -26,6 +26,8 @@ extern crate gluon_doc;
 extern crate gluon_format;
 #[macro_use]
 extern crate gluon_vm;
+#[macro_use]
+extern crate gluon_codegen;
 
 use std::ffi::OsStr;
 use std::fs;
@@ -263,7 +265,8 @@ fn run(
                                 }
                             })
                         })
-                    }).collect::<Vec<_>>();
+                    })
+                    .collect::<Vec<_>>();
                 gluon_files.sort();
                 gluon_files.dedup();
 
@@ -280,16 +283,18 @@ fn run(
             gluon_doc::generate_for_path(&new_vm(), input, output)
                 .map_err(|err| format!("{}\n{}", err, err.backtrace()))?;
         }
-        None => if opt.interactive {
-            let mut runtime = Runtime::new()?;
-            let prompt = opt.prompt.clone();
-            runtime.block_on(future::lazy(move || repl::run(color, &prompt)))?;
-        } else if !opt.input.is_empty() {
-            run_files(compiler, &vm, &opt.input)?;
-        } else {
-            writeln!(io::stderr(), "{}", Opt::clap().get_matches().usage())
-                .expect("Error writing help to stderr");
-        },
+        None => {
+            if opt.interactive {
+                let mut runtime = Runtime::new()?;
+                let prompt = opt.prompt.clone();
+                runtime.block_on(future::lazy(move || repl::run(color, &prompt)))?;
+            } else if !opt.input.is_empty() {
+                run_files(compiler, &vm, &opt.input)?;
+            } else {
+                writeln!(io::stderr(), "{}", Opt::clap().get_matches().usage())
+                    .expect("Error writing help to stderr");
+            }
+        }
     }
     Ok(())
 }

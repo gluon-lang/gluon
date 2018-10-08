@@ -19,6 +19,7 @@ doc = false
 gluon = { version = "0.9.1", path = "..", features = ["serialization"] } # GLUON
 gluon_vm = { version = "0.9.1", path = "../vm", features = ["serialization"] } # GLUON
 gluon_completion = { path = "../completion", version = "0.9.1" } # GLUON
+gluon_codegen = { path = "../codegen", version = "0.9.1" } # GLUON
 gluon_format = { version = "0.9.1", path = "../format" } # GLUON
 gluon_doc = { version = "0.9.1", path = "../doc" } # GLUON
 

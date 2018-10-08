@@ -632,6 +632,7 @@ dependencies = [
  "futures 0.1.24 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures-cpupool 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "gluon 0.9.1",
+ "gluon_codegen 0.9.1",
  "gluon_completion 0.9.1",
  "gluon_doc 0.9.1",
  "gluon_format 0.9.1",
