@@ -10,7 +10,7 @@
 //! `Getable` (generic type parameters included). If the type is generic over a
 //! lifetime, the lifetime will be constrained to that of the `'vm` lifetime in the
 //! trait definition.
-//! 
+//!
 //! __Note:__ Newtype structs are expected to be their inner type on the Gluon side.
 //!
 //! #### Examples
@@ -43,7 +43,7 @@
 //!
 //! Derives `Pushable` for any enum or struct as long as all fields also implement
 //! `Pushable` (generic type parameters included).
-//! 
+//!
 //! __Note:__ Newtype structs are pushed as their inner type.
 //!
 //! #### Examples
@@ -72,25 +72,25 @@
 //! ### VmType
 //!
 //! Derives `VmType` for a rust type, mapping it to a gluon type.
-//! 
-//! Alternatively, you can specify the corresponding gluon type with the 
+//!
+//! Alternatively, you can specify the corresponding gluon type with the
 //! `#[gluon(vm_type = "<gluon_type>")]` attribute, where the gluon type is the fully qualified type name.
 //! The gluon type must be registered before a binding using the mapped rust type is first loaded.
 //!
 //! If the rust type has type parameters, they have to implement `VmType` as well.
 //! All lifetimes have to be `'static`.
-//! 
+//!
 //! __Note:__ Newtype structs are mapped to their inner type.
 //!
 //! #### Examples
-//! 
+//!
 //! Deriving `VmType` for a struct:
-//! 
+//!
 //! ```rust
 //! #[macro_use]
 //! extern crate gluon_codegen;
 //! extern crate gluon;
-//! 
+//!
 //! // will map to: `{ string: String, number: Int, vec: Array Float }`
 //! #[derive(VmType)]
 //! struct Struct {
@@ -178,7 +178,7 @@ pub fn pushable(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 }
 
 #[doc(hidden)]
-#[proc_macro_derive(Userdata)]
+#[proc_macro_derive(Userdata, attributes(gluon))]
 pub fn userdata(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     userdata::derive(input.into()).into()
 }

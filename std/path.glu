@@ -1,0 +1,12 @@
+//! Functions operating on paths
+
+let types @ { Component } = import! std.path.types
+let _ = import! std.fs.prim
+let prim = import! std.path.prim
+{
+    Component,
+    eq_Component = types.eq_Component,
+    show_Component = types.show_Component,
+    ..
+    prim
+}

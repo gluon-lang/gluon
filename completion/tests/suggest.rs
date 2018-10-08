@@ -9,7 +9,11 @@ extern crate gluon_check as check;
 extern crate gluon_completion as completion;
 extern crate gluon_parser as parser;
 
-use std::path::PathBuf;
+use std::{
+    collections::BTreeSet,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use either::Either;
 
@@ -427,9 +431,32 @@ import! std.p
         ..SuggestionQuery::default()
     };
     let result = suggest_query_loc(&query, text, 1, 12);
-    let expected = Ok(vec!["parser".into(), "prelude".into()]);
+    let expected = fs::read_dir(Path::new(env!("CARGO_MANIFEST_DIR")).join("../std"))
+        .unwrap()
+        .filter_map(|result| {
+            let file = result.unwrap().file_name();
+            let file_path = Path::new(&file);
+            if file_path.extension().and_then(|ext| ext.to_str()) == Some("glu") {
+                Some(
+                    file_path
+                        .file_stem()
+                        .and_then(|f| f.to_str())
+                        .unwrap()
+                        .to_string(),
+                )
+            } else {
+                None
+            }
+        })
+        .filter(|s| s.starts_with('p'))
+        .collect::<BTreeSet<_>>();
+    assert!(expected.iter().any(|p| *p == "prelude"));
+    let expected = Ok(expected);
 
-    assert_eq!(result, expected);
+    assert_eq!(
+        result.map(|vec| vec.into_iter().collect::<BTreeSet<_>>()),
+        expected
+    );
 }
 
 #[test]

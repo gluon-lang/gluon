@@ -127,7 +127,8 @@ impl<I: fmt::Display + AsRef<str> + Clone> fmt::Display for TypeError<I> {
                     .filter_map(|err| match *err {
                         UnifyError::Other(ref err) => Some(err.make_filter()),
                         _ => None,
-                    }).collect::<Vec<_>>();
+                    })
+                    .collect::<Vec<_>>();
                 let filter = move |field: &I| {
                     if filters.is_empty() {
                         Filter::Retain
@@ -158,7 +159,8 @@ impl<I: fmt::Display + AsRef<str> + Clone> fmt::Display for TypeError<I> {
                         arena.space(),
                         TypeFormatter::new(actual).filter(&filter).pretty(&arena)
                     ].nest(4).group()
-                ].group();
+                ]
+                .group();
                 let doc = chain![&arena;
                     "Expected the following types to be equal",
                     arena.newline(),
@@ -239,17 +241,19 @@ impl fmt::Display for Help {
                 "Try bringing the `flat_map` function found in the `Monad`\
                  instance for your type into scope"
             ),
-            Help::ExtraArgument(expected, actual) => if expected == 0 {
-                write!(f, "Attempted to call a non-function value")
-            } else {
-                write!(
-                    f,
-                    "Attempted to call function with {} argument{} but its type only has {}",
-                    actual,
-                    if actual == 1 { "" } else { "s" },
-                    expected,
-                )
-            },
+            Help::ExtraArgument(expected, actual) => {
+                if expected == 0 {
+                    write!(f, "Attempted to call a non-function value")
+                } else {
+                    write!(
+                        f,
+                        "Attempted to call function with {} argument{} but its type only has {}",
+                        actual,
+                        if actual == 1 { "" } else { "s" },
+                        expected,
+                    )
+                }
+            }
         }
     }
 }
@@ -396,7 +400,8 @@ impl<'a> Typecheck<'a> {
             .map(|typ| match **typ {
                 Type::Variable(ref var) => var.id == id,
                 _ => false,
-            }).unwrap_or(false)
+            })
+            .unwrap_or(false)
     }
 
     fn find_at(&mut self, span: Span<BytePos>, id: &Symbol) -> ArcType {
@@ -621,9 +626,11 @@ impl<'a> Typecheck<'a> {
                         MissingImplicit(ref mut typ) => {
                             self.generalize_type(0, typ);
                         }
-                        AmbiguousImplicit(ref mut xs) => for &mut (_, ref mut typ) in xs {
-                            self.generalize_type(0, typ);
-                        },
+                        AmbiguousImplicit(ref mut xs) => {
+                            for &mut (_, ref mut typ) in xs {
+                                self.generalize_type(0, typ);
+                            }
+                        }
                         LoopInImplicitResolution(..) => (),
                     }
                     err.reason = err
@@ -633,7 +640,8 @@ impl<'a> Typecheck<'a> {
                             let mut typ = typ.clone();
                             self.generalize_type(0, &mut typ);
                             typ
-                        }).collect();
+                        })
+                        .collect();
                 }
                 Unification(ref mut expected, ref mut actual, ref mut errors) => {
                     self.generalize_type_without_forall(0, expected);
@@ -888,7 +896,8 @@ impl<'a> Typecheck<'a> {
                                     name: self.symbols.symbol(format!("_{}", i)),
                                     typ: typ,
                                 }
-                            }).collect();
+                            })
+                            .collect();
                         Type::record(vec![], fields)
                     }
                 };
@@ -956,6 +965,7 @@ impl<'a> Typecheck<'a> {
                         };
                         Ok(TailCall::Type(ast_field_typ.clone()))
                     }
+                    Type::Error => Ok(TailCall::Type(record.clone())),
                     _ => Err(TypeError::InvalidProjection(record)),
                 }
             }
@@ -1071,7 +1081,8 @@ impl<'a> Typecheck<'a> {
                             expected_type
                                 .row_iter()
                                 .find(|expected_field| expected_field.name.name_eq(&name))
-                        }).map(|field| &field.typ);
+                        })
+                        .map(|field| &field.typ);
 
                     let mut typ = match field.value {
                         Some(ref mut expr) => self.typecheck_opt(expr, expected_field_type),
@@ -1347,7 +1358,8 @@ impl<'a> Typecheck<'a> {
                 .map(|arg| {
                     span_end = arg.span.end();
                     self.infer_expr(arg.borrow_mut())
-                }).collect::<Vec<_>>();
+                })
+                .collect::<Vec<_>>();
             let expected = self.type_cache.function(arg_types, self.subs.new_var());
 
             let span = Span::new(span_start, span_end);
@@ -1575,7 +1587,8 @@ impl<'a> Typecheck<'a> {
                             associated_types
                                 .iter()
                                 .any(|other| other.name.value.name_eq(&field.name))
-                        }).cloned()
+                        })
+                        .cloned()
                         .collect();
 
                     let fields = fields
@@ -1740,13 +1753,15 @@ impl<'a> Typecheck<'a> {
                                 self.translate_ast_type(type_cache, typ)
                             }))
                         },
-                    }).collect(),
+                    })
+                    .collect(),
                 fields
                     .iter()
                     .map(|field| Field {
                         name: field.name.clone(),
                         typ: self.translate_ast_type(type_cache, &field.typ),
-                    }).collect(),
+                    })
+                    .collect(),
                 self.translate_ast_type(type_cache, rest),
             ),
             Type::Ident(ref id) if id.name().module().as_str() != "" => {
@@ -2025,9 +2040,11 @@ impl<'a> Typecheck<'a> {
     fn check_undefined_variables(&mut self, args: &[Generic<Symbol>], typ: &AstType<Symbol>) {
         use base::pos::HasSpan;
         match **typ {
-            Type::Generic(ref id) => if args.iter().all(|arg| arg.id != id.id) {
-                self.error(typ.span(), TypeError::UndefinedVariable(id.id.clone()));
-            },
+            Type::Generic(ref id) => {
+                if args.iter().all(|arg| arg.id != id.id) {
+                    self.error(typ.span(), TypeError::UndefinedVariable(id.id.clone()));
+                }
+            }
             Type::Record(_) => {
                 // Inside records variables are bound implicitly to the closest field
                 // so variables are allowed to be undefined/implicit
@@ -2216,7 +2233,8 @@ impl<'a> Typecheck<'a> {
             .map(|(id, var)| {
                 let kind = var.kind().into_owned();
                 Generic::new(id, kind)
-            }).collect::<Vec<_>>();
+            })
+            .collect::<Vec<_>>();
 
         if params.is_empty() {
             result_type
@@ -2267,7 +2285,8 @@ impl<'a> Typecheck<'a> {
                                 .map(|(new, old)| match new {
                                     Some(new) => Field::new(new.clone(), old.typ.clone()),
                                     None => old.clone(),
-                                }).collect(),
+                                })
+                                .collect(),
                         ),
                     )
                 } else {
@@ -2595,13 +2614,15 @@ pub fn translate_projected_type(
                             } else {
                                 None
                             }
-                        }).chain(aliased_type.row_iter().filter_map(|field| {
+                        })
+                        .chain(aliased_type.row_iter().filter_map(|field| {
                             if field.name.name_eq(&symbol) {
                                 Some(field.typ.clone())
                             } else {
                                 None
                             }
-                        })).next()
+                        }))
+                        .next()
                         .ok_or_else(|| TypeError::UndefinedField(typ, symbol))?,
                 )
             }
@@ -2611,7 +2632,8 @@ pub fn translate_projected_type(
                     .or_else(|| {
                         env.find_type_info(&symbol)
                             .map(|alias| alias.typ().into_owned())
-                    }).ok_or_else(|| TypeError::UndefinedVariable(symbol.clone()))?,
+                    })
+                    .ok_or_else(|| TypeError::UndefinedVariable(symbol.clone()))?,
             ),
         };
     }
@@ -2648,7 +2670,8 @@ pub fn extract_generics(args: &[ArcType]) -> Vec<Generic<Symbol>> {
         .map(|arg| match **arg {
             Type::Generic(ref gen) => gen.clone(),
             _ => ice!("The type on the lhs of a type binding did not have all generic arguments"),
-        }).collect()
+        })
+        .collect()
 }
 
 fn get_alias_app<'a>(
@@ -2888,7 +2911,8 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
                 let new_rest = self.generalize_type(rest);
                 merge::merge(fields, new_fields, rest, new_rest, |fields, rest| {
                     Type::extend_row(types.clone(), fields, rest)
-                }).or_else(|| replacement.clone())
+                })
+                .or_else(|| replacement.clone())
             }
 
             Type::Forall(ref params, ref typ, Some(ref vars)) => {

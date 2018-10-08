@@ -27,9 +27,10 @@ let {
 
     status,
     method,
+    uri,
 
     ?
-} = import! examples.http.http
+} = import! std.http.http
 
 let hello_world : Handler Response =
     write_response (string.as_bytes "Hello World")

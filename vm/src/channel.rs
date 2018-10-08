@@ -16,7 +16,7 @@ use api::{
 use gc::{Gc, GcPtr, Traverseable};
 use stack::{ClosureState, ExternState, StackFrame, State};
 use thread::{ActiveThread, ThreadInternal};
-use types::VmInt;
+use types::{VmIndex, VmInt};
 use value::{Callable, GcStr, Userdata, Value, ValueRepr};
 use vm::{RootedThread, Status, Thread};
 use {Error, ExternModule, Result as VmResult};
@@ -278,13 +278,13 @@ fn spawn_on<'vm>(
                 ValueRepr::Userdata(data) => {
                     let data = data.downcast_ref::<SpawnFuture<F>>().unwrap();
                     let future = data.0.clone();
-                    let lock = StackFrame::<ExternState>::current(context.stack()).into_lock();
+                    let frame_index = context.stack().get_frames().len() as VmIndex - 1;
                     AsyncPushable::async_status_push(
                         FutureResult::new(
                             future.map(|v| (*v).clone()).map_err(|err| (*err).clone()),
                         ),
                         &mut context,
-                        lock,
+                        frame_index,
                     )
                 }
                 _ => unreachable!(),

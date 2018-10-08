@@ -14,7 +14,7 @@ use api::{ActiveThread, AsyncPushable, Getable, Pushable, RootedValue, VmType};
 use compiler::{CompiledFunction, CompiledModule};
 use gc::Move;
 use stack::{ExternState, StackFrame};
-use thread::{RootedThread, Status, Thread, ThreadInternal};
+use thread::{RootedThread, Status, Thread, ThreadInternal, VmRoot};
 use types::{Instruction, VmIndex};
 use value::{ExternFunction, ValueRepr};
 use {Error, Result, Variants};
@@ -77,7 +77,12 @@ where
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
         let thread = context.thread();
         // Map rust modules into gluon modules
-        let id = Symbol::from(self.name.replace("::", "."));
+        let name = if let Some(i) = self.name.rfind("::<") {
+            &self.name[..i]
+        } else {
+            self.name
+        };
+        let id = Symbol::from(name.replace("::", "."));
         let value = ValueRepr::Function(context.context().alloc_with(
             thread,
             Move(ExternFunction {
@@ -204,6 +209,16 @@ where
     pub fn vm(&self) -> &Thread {
         self.value.vm()
     }
+
+    pub fn re_root<'vm, U>(&self, vm: U) -> Result<Function<U, F>>
+    where
+        U: VmRoot<'vm>,
+    {
+        Ok(Function {
+            value: self.value.re_root(vm)?,
+            _marker: self._marker,
+        })
+    }
 }
 
 impl<T, F> VmType for Function<T, F>
@@ -302,6 +317,7 @@ where $($args: Getable<'vm, 'vm> + 'vm,)*
     fn unpack_and_call(&self, vm: &'vm Thread) -> Status {
         let n_args = Self::arguments();
         let mut context = vm.current_context();
+        let frame_index = context.stack().get_frames().len() as VmIndex - 1;
         let mut i = 0;
         let lock;
         let r = unsafe {
@@ -321,7 +337,10 @@ where $($args: Getable<'vm, 'vm> + 'vm,)*
             context = vm.current_context();
             r
         };
-        r.async_status_push(&mut context, lock)
+
+        context.stack().release_lock(lock);
+
+        r.async_status_push(&mut context, frame_index)
     }
 }
 
@@ -405,7 +424,7 @@ impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
     }
 
     fn return_value(vm: &Thread, value: Variants) -> Result<R> {
-            Ok(R::from_value(vm, value))
+        Ok(R::from_value(vm, value))
     }
 }
 

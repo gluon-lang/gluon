@@ -1,0 +1,18 @@
+//@NO-IMPLICIT-PRELUDE
+//! Bindings for rust-lang/regex
+
+let { Match, eq_Match, show_Match } = import! std.regex.types
+let regex_prim = import! std.regex.prim
+
+{
+    Match,
+    Regex,
+    Error,
+
+    eq_Match,
+    show_Match,
+    ..
+    regex_prim
+}
+
+

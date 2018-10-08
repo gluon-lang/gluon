@@ -3,7 +3,6 @@ use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, Symbols};
 use base::types::{self, ArcType, Type};
 use gc::{DataDef, Gc, GcPtr, Move, Traverseable};
-use stack::Lock;
 use thread::ThreadInternal;
 use thread::{self, Context, RootedThread, VmRoot};
 use types::{VmIndex, VmInt, VmTag};
@@ -18,9 +17,11 @@ use std::borrow::Borrow;
 use std::cell::Ref;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
+use std::ffi::{OsStr, OsString};
 use std::fmt;
 use std::marker::PhantomData;
 use std::ops::Deref;
+use std::path::{Path, PathBuf};
 use std::result::Result as StdResult;
 
 use futures::{Async, Future};
@@ -359,7 +360,8 @@ fn insert_forall_walker(
             Type::ExtendRow { .. } => types::walk_move_type_opt(
                 typ,
                 &mut types::ControlVisitation(|typ: &ArcType| insert_forall(variables, typ)),
-            ).map(|typ| ArcType::from(Type::Record(typ))),
+            )
+            .map(|typ| ArcType::from(Type::Record(typ))),
             _ => None,
         },
         _ => types::walk_move_type_opt(
@@ -406,13 +408,14 @@ pub trait AsyncPushable<'vm> {
     ///
     /// If the value must be computed asynchronously `Async::NotReady` must be returned so that
     /// the virtual machine knows it must do more work before the value is available.
-    fn async_push(self, context: &mut ActiveThread<'vm>, lock: Lock) -> Result<Async<()>>;
+    fn async_push(self, context: &mut ActiveThread<'vm>, frame_index: VmIndex)
+        -> Result<Async<()>>;
 
-    fn async_status_push(self, context: &mut ActiveThread<'vm>, lock: Lock) -> Status
+    fn async_status_push(self, context: &mut ActiveThread<'vm>, frame_index: VmIndex) -> Status
     where
         Self: Sized,
     {
-        match self.async_push(context, lock) {
+        match self.async_push(context, frame_index) {
             Ok(Async::Ready(())) => Status::Ok,
             Ok(Async::NotReady) => Status::Yield,
             Err(err) => {
@@ -434,8 +437,7 @@ impl<'vm, T> AsyncPushable<'vm> for T
 where
     T: Pushable<'vm>,
 {
-    fn async_push(self, context: &mut ActiveThread<'vm>, lock: Lock) -> Result<Async<()>> {
-        context.stack().release_lock(lock);
+    fn async_push(self, context: &mut ActiveThread<'vm>, _: VmIndex) -> Result<Async<()>> {
         self.push(context).map(Async::Ready)
     }
 }
@@ -614,6 +616,15 @@ impl<'vm, 'value> Getable<'vm, 'value> for &'value str {
     }
 }
 
+impl<'vm, 'value> Getable<'vm, 'value> for &'value Path {
+    fn from_value(_vm: &'vm Thread, value: Variants<'value>) -> Self {
+        match value.as_ref() {
+            ValueRef::String(ref s) => Path::new(&s[..]),
+            _ => ice!("ValueRef is not a String"),
+        }
+    }
+}
+
 /// Wrapper type which passes acts as the type `T` but also passes the `VM` to the called function
 pub struct WithVM<'vm, T> {
     pub vm: &'vm Thread,
@@ -736,7 +747,8 @@ impl VmType for bool {
         (*vm.global_env()
             .get_env()
             .find_type_info("std.types.Bool")
-            .unwrap()).clone()
+            .unwrap())
+        .clone()
         .into_type()
     }
 }
@@ -850,6 +862,76 @@ impl<'vm, 'value> Getable<'vm, 'value> for char {
     }
 }
 
+impl VmType for Path {
+    type Type = <PathBuf as VmType>::Type;
+}
+
+impl VmType for PathBuf {
+    type Type = String;
+}
+
+impl<'vm, 's> Pushable<'vm> for &'s PathBuf {
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        <&Path as Pushable>::push(self, context)
+    }
+}
+
+impl<'vm, 's> Pushable<'vm> for &'s Path {
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        self.to_str()
+            .ok_or_else(|| Error::Message("Path's must be valid UTF-8".into()))?
+            .push(context)
+    }
+}
+impl<'vm, 'value> Getable<'vm, 'value> for PathBuf {
+    fn from_value(_: &'vm Thread, value: Variants<'value>) -> Self {
+        match value.as_ref() {
+            ValueRef::String(i) => PathBuf::from(&i[..]),
+            _ => ice!("ValueRef is not a String"),
+        }
+    }
+}
+impl<'vm> Pushable<'vm> for PathBuf {
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        <&Path as Pushable>::push(&self, context)
+    }
+}
+
+impl VmType for OsStr {
+    type Type = <OsString as VmType>::Type;
+}
+
+impl VmType for OsString {
+    type Type = String;
+}
+
+impl<'vm, 's> Pushable<'vm> for &'s OsString {
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        <&OsStr as Pushable>::push(self, context)
+    }
+}
+
+impl<'vm, 's> Pushable<'vm> for &'s OsStr {
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        self.to_str()
+            .ok_or_else(|| Error::Message("OsStr's must be valid UTF-8".into()))?
+            .push(context)
+    }
+}
+impl<'vm, 'value> Getable<'vm, 'value> for OsString {
+    fn from_value(_: &'vm Thread, value: Variants<'value>) -> Self {
+        match value.as_ref() {
+            ValueRef::String(i) => OsString::from(&i[..]),
+            _ => ice!("ValueRef is not a String"),
+        }
+    }
+}
+impl<'vm> Pushable<'vm> for OsString {
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        <&OsStr as Pushable>::push(&self, context)
+    }
+}
+
 impl<'s, T: VmType> VmType for Ref<'s, T> {
     type Type = T::Type;
     fn make_type(vm: &Thread) -> ArcType {
@@ -917,27 +999,7 @@ where
     T: Pushable<'vm>,
 {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        let len = self.len() as VmIndex;
-        for v in self {
-            if v.push(context) == Err(Error::Message("Push error".into())) {
-                return Err(Error::Message("Push error".into()));
-            }
-        }
-        let thread = context.thread();
-        let result = {
-            let Context {
-                ref mut gc,
-                ref stack,
-                ..
-            } = *context.context();
-            let values = &stack[stack.len() - len..];
-            thread::alloc(gc, thread, stack, ArrayDef(values))?
-        };
-        for _ in 0..len {
-            context.pop();
-        }
-        context.push(ValueRepr::Array(result));
-        Ok(())
+        Collect::new(self).push(context)
     }
 }
 
@@ -1040,17 +1102,19 @@ where
             V2: Getable<'vm2, 'value2>,
         {
             match value.as_ref() {
-                ValueRef::Data(data) => if data.tag() == 1 {
-                    let key = K2::from_value(vm, data.get_variant(0).expect("key"));
-                    let value = V2::from_value(vm, data.get_variant(1).expect("value"));
-                    map.insert(key, value);
+                ValueRef::Data(data) => {
+                    if data.tag() == 1 {
+                        let key = K2::from_value(vm, data.get_variant(0).expect("key"));
+                        let value = V2::from_value(vm, data.get_variant(1).expect("value"));
+                        map.insert(key, value);
 
-                    let left = data.get_variant(2).expect("left");
-                    build_map(map, vm, left);
+                        let left = data.get_variant(2).expect("left");
+                        build_map(map, vm, left);
 
-                    let right = data.get_variant(3).expect("right");
-                    build_map(map, vm, right);
-                },
+                        let right = data.get_variant(3).expect("right");
+                        build_map(map, vm, right);
+                    }
+                }
                 _ => ice!("ValueRef is not a Map"),
             }
         }
@@ -1096,11 +1160,13 @@ impl<'vm, T: Pushable<'vm>> Pushable<'vm> for Option<T> {
 impl<'vm, 'value, T: Getable<'vm, 'value>> Getable<'vm, 'value> for Option<T> {
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Option<T> {
         match value.as_ref() {
-            ValueRef::Data(data) => if data.tag() == 0 {
-                None
-            } else {
-                Some(T::from_value(vm, data.get_variant(0).unwrap()))
-            },
+            ValueRef::Data(data) => {
+                if data.tag() == 0 {
+                    None
+                } else {
+                    Some(T::from_value(vm, data.get_variant(0).unwrap()))
+                }
+            }
             _ => ice!("ValueRef is not an Option"),
         }
     }
@@ -1199,9 +1265,13 @@ where
     F: Future<Error = Error> + Send + 'static,
     F::Item: Pushable<'vm>,
 {
-    fn async_push(self, context: &mut ActiveThread<'vm>, lock: Lock) -> Result<Async<()>> {
+    fn async_push(
+        self,
+        context: &mut ActiveThread<'vm>,
+        frame_index: VmIndex,
+    ) -> Result<Async<()>> {
         unsafe {
-            context.context().return_future(self.0, lock);
+            context.context().return_future(self.0, frame_index);
         }
         Ok(Async::Ready(()))
     }
@@ -1483,6 +1553,59 @@ impl<T: VmType> VmType for Pushed<T> {
 
 impl<'vm, T: VmType> Pushable<'vm> for Pushed<T> {
     fn push(self, _context: &mut ActiveThread<'vm>) -> Result<()> {
+        Ok(())
+    }
+}
+
+pub struct Collect<T>(T);
+
+impl<T> Collect<T> {
+    pub fn new(iterable: T) -> Self
+    where
+        T: IntoIterator,
+    {
+        Collect(iterable)
+    }
+}
+
+impl<T> VmType for Collect<T>
+where
+    T: IntoIterator,
+    T::Item: VmType,
+    <T::Item as VmType>::Type: Sized,
+{
+    type Type = Vec<<T::Item as VmType>::Type>;
+
+    fn make_type(vm: &Thread) -> ArcType {
+        Vec::<T::Item>::make_type(vm)
+    }
+}
+
+impl<'vm, T> Pushable<'vm> for Collect<T>
+where
+    T: IntoIterator,
+    T::Item: Pushable<'vm>,
+{
+    fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
+        let mut len = 0;
+        for v in self.0 {
+            v.push(context)?;
+            len += 1;
+        }
+        let thread = context.thread();
+        let result = {
+            let Context {
+                ref mut gc,
+                ref stack,
+                ..
+            } = *context.context();
+            let values = &stack[stack.len() - len..];
+            thread::alloc(gc, thread, stack, ArrayDef(values))?
+        };
+        for _ in 0..len {
+            context.pop();
+        }
+        context.push(ValueRepr::Array(result));
         Ok(())
     }
 }

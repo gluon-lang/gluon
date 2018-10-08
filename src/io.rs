@@ -1,6 +1,6 @@
 use std::fmt;
 use std::fs::File;
-use std::io::{stdin, Read};
+use std::io::{self, Read, Write};
 use std::sync::Mutex;
 
 use futures::{
@@ -9,11 +9,7 @@ use futures::{
 };
 
 use vm::api::generic::{A, B};
-use vm::api::{
-    self, Array, Getable, OpaqueValue, OwnedFunction, TypedBytecode, Userdata, VmType,
-    WithVM, IO,
-};
-use vm::gc::{Gc, Traverseable};
+use vm::api::{self, Array, Getable, OpaqueValue, OwnedFunction, TypedBytecode, WithVM, IO};
 use vm::internal::ValuePrinter;
 use vm::stack::{self, StackFrame};
 use vm::thread::{RootedThread, Thread, ThreadInternal};
@@ -34,22 +30,31 @@ fn println(s: &str) -> IO<()> {
     IO::Value(())
 }
 
-struct GluonFile(Mutex<File>);
+fn flush_stdout() -> IO<()> {
+    match io::stdout().flush() {
+        Ok(_) => IO::Value(()),
+        Err(err) => IO::Exception(err.to_string()),
+    }
+}
 
-impl Userdata for GluonFile {}
+fn eprint(s: &str) -> IO<()> {
+    eprint!("{}", s);
+    IO::Value(())
+}
+
+fn eprintln(s: &str) -> IO<()> {
+    eprintln!("{}", s);
+    IO::Value(())
+}
+
+#[derive(Userdata)]
+#[gluon(crate_name = "::vm")]
+struct GluonFile(Mutex<File>);
 
 impl fmt::Debug for GluonFile {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "File")
     }
-}
-
-impl VmType for GluonFile {
-    type Type = GluonFile;
-}
-
-impl Traverseable for GluonFile {
-    fn traverse(&self, _: &mut Gc) {}
 }
 
 fn open_file(s: &str) -> IO<GluonFile> {
@@ -75,6 +80,14 @@ fn read_file<'vm>(file: WithVM<'vm, &GluonFile>, count: usize) -> IO<Array<'vm, 
     }
 }
 
+fn read_file_to_array(s: &str) -> IO<Vec<u8>> {
+    let mut buffer = Vec::new();
+    match File::open(s).and_then(|mut file| file.read_to_end(&mut buffer)) {
+        Ok(_) => IO::Value(buffer),
+        Err(err) => IO::Exception(err.to_string()),
+    }
+}
+
 fn read_file_to_string(s: &str) -> IO<String> {
     let mut buffer = String::new();
     match File::open(s).and_then(|mut file| file.read_to_string(&mut buffer)) {
@@ -89,7 +102,7 @@ fn read_file_to_string(s: &str) -> IO<String> {
 }
 
 fn read_char() -> IO<char> {
-    match stdin().bytes().next() {
+    match io::stdin().bytes().next() {
         Some(result) => match result {
             Ok(b) => ::std::char::from_u32(b as u32)
                 .map(IO::Value)
@@ -102,7 +115,7 @@ fn read_char() -> IO<char> {
 
 fn read_line() -> IO<String> {
     let mut buffer = String::new();
-    match stdin().read_line(&mut buffer) {
+    match io::stdin().read_line(&mut buffer) {
         Ok(_) => IO::Value(buffer),
         Err(err) => {
             use std::fmt::Write;
@@ -128,11 +141,17 @@ fn catch<'vm>(
         Err(err) => {
             {
                 let mut context = vm.context();
-                let mut stack = context.stack_frame::<stack::State>();
+                {
+                    let mut stack = context.stack_frame::<stack::State>();
 
-                if let Err(err) = ::vm::thread::reset_stack(stack, frame_level) {
-                    return Either::A(future::ok(IO::Exception(err.to_string().into())));
+                    if let Err(err) = ::vm::thread::reset_stack(stack, frame_level) {
+                        return Either::A(future::ok(IO::Exception(err.to_string().into())));
+                    }
                 }
+
+                let mut stack = context.stack_frame::<stack::State>();
+                let len = stack.len();
+                stack.pop_many(len - 2);
             }
             Either::B(catch.call_fast_async(format!("{}", err)).then(|result| {
                 Ok(match result {
@@ -241,10 +260,14 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
             open_file => primitive!(1, std::io::prim::open_file),
             read_file => primitive!(2, std::io::prim::read_file),
             read_file_to_string => primitive!(1, std::io::prim::read_file_to_string),
+            read_file_to_array => primitive!(1, std::io::prim::read_file_to_array),
             read_char => primitive!(0, std::io::prim::read_char),
             read_line => primitive!(0, std::io::prim::read_line),
             print => primitive!(1, std::io::prim::print),
             println => primitive!(1, std::io::prim::println),
+            flush_stdout => primitive!(0, std::io::prim::flush_stdout),
+            eprint => primitive!(1, std::io::prim::eprint),
+            eprintln => primitive!(1, std::io::prim::eprintln),
             catch => primitive!(2, async fn std::io::prim::catch),
             run_expr => primitive!(1, async fn std::io::prim::run_expr),
             load_script => primitive!(2, async fn std::io::prim::load_script),

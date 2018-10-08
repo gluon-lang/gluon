@@ -1,8 +1,8 @@
-use proc_macro2::{Ident, TokenStream};
-use shared::{map_lifetimes, map_type_params, split_for_impl};
+use proc_macro2::{Ident, Span, TokenStream};
+use shared::{map_type_params, split_for_impl};
 use syn::{self, Data, DeriveInput, Fields, GenericParam, Generics};
 
-use attr::Container;
+use attr::{Container, CrateName};
 
 pub fn derive(input: TokenStream) -> TokenStream {
     let derive_input = syn::parse2(input).expect("Input is checked by rustc");
@@ -26,12 +26,28 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
 fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data) -> TokenStream {
     let trait_bounds = &map_type_params(&generics, |ty| {
-        quote! { #ty: ::gluon::vm::api::VmType, #ty::Type: Sized }
+        quote! { #ty: _gluon_api::VmType, #ty::Type: Sized }
     });
 
-    let lifetime_bounds = &map_lifetimes(&generics, |lifetime| quote! { #lifetime: 'static });
-
     let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[]);
+
+    let gluon = match container.crate_name {
+        CrateName::Some(ref ident) => quote!{
+            use #ident::base as _gluon_base;
+            use #ident::api as _gluon_api;
+            use #ident::thread as _gluon_thread;
+        },
+        CrateName::GluonVm => quote!{
+            use base as _gluon_base;
+            use api as _gluon_api;
+            use thread as _gluon_thread;
+        },
+        CrateName::None => quote!{
+            use gluon::base as _gluon_base;
+            use gluon::vm::api as _gluon_api;
+            use gluon::vm::thread as _gluon_thread;
+        },
+    };
 
     let make_type_impl = match container.vm_type {
         Some(ref gluon_type) => {
@@ -52,14 +68,14 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
                         let ident = field.ident.as_ref().unwrap().to_string();
                         let typ = &field.ty;
                         quote! {
-                            ::gluon::base::types::Field {
-                                name: ::gluon::base::symbol::Symbol::from(#ident),
-                                typ: <#typ as ::gluon::vm::api::VmType>::make_type(vm),
+                            _gluon_base::types::Field {
+                                name: _gluon_base::symbol::Symbol::from(#ident),
+                                typ: <#typ as _gluon_api::VmType>::make_type(vm),
                             }
                         }
                     });
                     quote!{
-                        ::gluon::base::types::Type::record(
+                        _gluon_base::types::Type::record(
                             vec![],
                             vec![#(#fields),*],
                         )
@@ -69,50 +85,84 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
                     if fields.unnamed.len() == 1 {
                         let typ = &fields.unnamed[0].ty;
                         quote!{
-                            <#typ as ::gluon::vm::api::VmType>::make_type(vm)
+                            <#typ as _gluon_api::VmType>::make_type(vm)
                         }
                     } else {
                         let fields = fields.unnamed.iter().map(|field| &field.ty);
                         quote!{
-                            ::gluon::base::types::Type::tuple(vec![#(
-                                <#fields as ::gluon::vm::api::VmType>::make_type(vm)
+                            _gluon_base::types::Type::tuple(vec![#(
+                                <#fields as _gluon_api::VmType>::make_type(vm)
                             ),*])
                         }
                     }
                 }
-                Fields::Unit => quote!(::gluon::base::types::Type::unit()),
+                Fields::Unit => quote!(_gluon_base::types::Type::unit()),
             },
-            _ => panic!("Only structs can derive `VmType` without using the `vm_type` attribute"),
+            Data::Enum(ref enum_) => {
+                let variants = enum_.variants.iter().map(|variant| {
+                    let ident = variant.ident.to_string();
+                    let args = variant.fields.iter().map(|field| {
+                        let typ = &field.ty;
+                        quote!{
+                            <#typ as _gluon_api::VmType>::make_type(vm)
+                        }
+                    });
+                    quote!{{
+                        let name = _gluon_base::symbol::Symbol::from(#ident);
+                        _gluon_base::types::Field {
+                            name: name.clone(),
+                            typ: _gluon_base::types::Type::function(
+                                vec![#(#args),*],
+                                _gluon_base::types::Type::ident(name),
+                            ),
+                        }
+                    }}
+                });
+                quote!{
+                    _gluon_base::types::Type::variants(
+                        vec![#(#variants),*]
+                    )
+                }
+            }
+            _ => panic!(
+                "Only structs and enums can derive `VmType` without using the `vm_type` attribute"
+            ),
         },
     };
 
     let associated_type_generics = generics.params.iter().map(|param| match param {
         GenericParam::Type(ty) => quote!( #ty :: Type ),
-        GenericParam::Lifetime(lt) => quote!( #lt ),
+        GenericParam::Lifetime(_) => quote!( 'static ),
         GenericParam::Const(c) => quote!( #c ),
     });
 
-    quote! {
-        #[automatically_derived]
-        #[allow(unused_attributes, unused_variables)]
-        impl #impl_generics ::gluon::vm::api::VmType for #ident #ty_generics
-        #where_clause #(#trait_bounds,)* #(#lifetime_bounds),*
-        {
-            type Type = #ident<
-                    #(#associated_type_generics),*
-                >;
+    let dummy_const = Ident::new(&format!("_IMPL_VM_TYPE_FOR_{}", ident), Span::call_site());
 
-            fn make_type(vm: &::gluon::vm::thread::Thread) -> ::gluon::base::types::ArcType {
-                #make_type_impl
+    quote! {
+        const #dummy_const: () = {
+            #gluon
+
+            #[automatically_derived]
+            #[allow(unused_attributes, unused_variables)]
+            impl #impl_generics _gluon_api::VmType for #ident #ty_generics
+            #where_clause #(#trait_bounds,)*
+            {
+                type Type = #ident<
+                        #(#associated_type_generics),*
+                    >;
+
+                fn make_type(vm: &_gluon_thread::Thread) -> _gluon_base::types::ArcType {
+                    #make_type_impl
+                }
             }
-        }
+        };
     }
 }
 
 fn gen_type_application(generics: &Generics) -> TokenStream {
     let applications = map_type_params(generics, |param| {
         quote! {
-            vec.push(<#param as ::gluon::vm::api::VmType>::make_type(vm));
+            vec.push(<#param as _gluon_api::VmType>::make_type(vm));
         }
     });
 
@@ -124,9 +174,9 @@ fn gen_type_application(generics: &Generics) -> TokenStream {
         }
     } else {
         quote! {
-            let mut vec = ::gluon::base::types::AppVec::new();
+            let mut vec = _gluon_base::types::AppVec::new();
             #(#applications)*
-            ::gluon::base::types::Type::app(ty, vec)
+            _gluon_base::types::Type::app(ty, vec)
         }
     }
 }

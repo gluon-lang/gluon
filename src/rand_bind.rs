@@ -4,24 +4,14 @@ extern crate rand;
 
 use self::rand::{Rng, SeedableRng};
 
-use vm::api::{RuntimeResult, Userdata, VmType, IO};
-use vm::gc::{Gc, Traverseable};
+use vm::api::{RuntimeResult, IO};
 use vm::thread::Thread;
 use vm::types::VmInt;
 use vm::{self, ExternModule};
 
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug, Userdata)]
+#[gluon(crate_name = "::vm")]
 struct XorShiftRng(self::rand::XorShiftRng);
-
-impl Userdata for XorShiftRng {}
-
-impl VmType for XorShiftRng {
-    type Type = XorShiftRng;
-}
-
-impl Traverseable for XorShiftRng {
-    fn traverse(&self, _: &mut Gc) {}
-}
 
 field_decl! { value, gen }
 

@@ -38,10 +38,9 @@ extern crate env_logger;
 extern crate lalrpop_util;
 
 #[macro_use]
-extern crate gluon_base as base;
+pub extern crate gluon_base as base;
 extern crate gluon_check as check;
 #[macro_use]
-#[cfg(feature = "serde_state")]
 extern crate gluon_codegen;
 
 #[cfg(test)]

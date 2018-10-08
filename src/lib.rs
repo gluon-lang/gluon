@@ -10,6 +10,8 @@
 extern crate env_logger;
 
 extern crate codespan;
+#[macro_use]
+extern crate collect_mac;
 extern crate codespan_reporting;
 pub extern crate either;
 extern crate futures;
@@ -30,12 +32,17 @@ pub extern crate gluon_base as base;
 pub extern crate gluon_check as check;
 pub extern crate gluon_parser as parser;
 #[macro_use]
+extern crate gluon_codegen;
+#[macro_use]
 pub extern crate gluon_vm as vm;
 
 pub mod compiler_pipeline;
+#[cfg(feature = "http")]
+pub mod http;
 #[macro_use]
 pub mod import;
 pub mod io;
+pub mod process;
 #[cfg(all(feature = "rand", not(target_arch = "wasm32")))]
 pub mod rand_bind;
 #[cfg(feature = "regex")]
@@ -136,7 +143,8 @@ impl From<Errors<Spanned<macros::Error, BytePos>>> for Error {
                     .map(|err| match err.value.downcast::<Error>() {
                         Ok(err) => *err,
                         Err(err) => Error::Other(err),
-                    }).collect(),
+                    })
+                    .collect(),
             )
         }
     }
@@ -152,7 +160,8 @@ impl From<Errors<Error>> for Error {
                 .flat_map(|err| match err {
                     Error::Multiple(errors) => Either::Left(errors.into_iter()),
                     err => Either::Right(Some(err).into_iter()),
-                }).collect();
+                })
+                .collect();
 
             Error::Multiple(errors)
         }
@@ -333,7 +342,8 @@ impl Compiler {
             &mut SymbolModule::new(file.into(), &mut self.symbols),
             type_cache,
             &*map,
-        ).map_err(|(expr, err)| {
+        )
+        .map_err(|(expr, err)| {
             info!("Parse error: {}", err);
             (expr, InFile::new(self.code_map().clone(), err))
         })?)
@@ -377,7 +387,8 @@ impl Compiler {
             typ: vm.global_env().type_cache().hole(),
             metadata: Default::default(),
             metadata_map: Default::default(),
-        }.compile(self, vm, filename, expr_str, ())
+        }
+        .compile(self, vm, filename, expr_str, ())
         .map(|result| result.module)
     }
 
@@ -657,6 +668,8 @@ impl VmBuilder {
         add_extern_module(&vm, "std.int.prim", ::vm::primitives::load_int);
         add_extern_module(&vm, "std.float.prim", ::vm::primitives::load_float);
         add_extern_module(&vm, "std.string.prim", ::vm::primitives::load_string);
+        add_extern_module(&vm, "std.fs.prim", ::vm::primitives::load_fs);
+        add_extern_module(&vm, "std.path.prim", ::vm::primitives::load_path);
         add_extern_module(&vm, "std.char.prim", ::vm::primitives::load_char);
         add_extern_module(&vm, "std.array.prim", ::vm::primitives::load_array);
 
@@ -667,6 +680,7 @@ impl VmBuilder {
         add_extern_module(&vm, "std.thread.prim", ::vm::channel::load_thread);
         add_extern_module(&vm, "std.debug.prim", ::vm::debug::load);
         add_extern_module(&vm, "std.io.prim", ::io::load);
+        add_extern_module(&vm, "std.process.prim", ::process::load);
 
         add_extern_module_if!(
             #[cfg(feature = "serialization")],
@@ -677,7 +691,19 @@ impl VmBuilder {
         add_extern_module_if!(
             #[cfg(feature = "regex")], 
             available_if = "gluon is compiled with the 'regex' feature",
-            args(&vm, "std.regex", ::regex_bind::load)
+            args(&vm, "std.regex.prim", ::regex_bind::load)
+        );
+
+        add_extern_module_if!(
+            #[cfg(feature = "web")], 
+            available_if = "gluon is compiled with the 'web' feature",
+            args(&vm, "std.http.prim_types", ::http::load_types)
+        );
+
+        add_extern_module_if!(
+            #[cfg(feature = "web")], 
+            available_if = "gluon is compiled with the 'web' feature",
+            args(&vm, "std.http.prim", ::http::load)
         );
 
         add_extern_module_if!(

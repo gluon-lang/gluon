@@ -1,20 +1,25 @@
 //! Module containing functions for interacting with gluon's primitive types.
+use std::ffi::OsStr;
+use std::fs;
+use std::io;
+use std::path::{self, Path};
 use std::result::Result as StdResult;
 use std::str::FromStr;
 use std::string::String as StdString;
 
-use api::generic::A;
+use base::types::ArcType;
+
 use api::{
-    generic, primitive, Array, Getable, OpaqueRef, Pushable, Pushed, RuntimeResult, ValueRef,
-    WithVM,
+    generic::{self, A},
+    primitive, Array, Getable, OpaqueRef, Pushable, Pushed, RuntimeResult, ValueRef, VmType,
+    WithVM, IO,
 };
 use gc::{DataDef, Gc, Traverseable, WriteOnly};
 use stack::{ExternState, StackFrame};
 use types::VmInt;
 use value::{Def, GcStr, Repr, ValueArray, ValueRepr};
 use vm::{Status, Thread};
-use Result;
-use {Error, ExternModule, Variants};
+use {Error, ExternModule, Result, Variants};
 
 #[doc(hidden)]
 pub mod array {
@@ -284,6 +289,9 @@ mod std {
     pub mod float {
         pub type prim = f64;
     }
+    pub mod path {
+        pub type prim = ::std::path::Path;
+    }
 }
 
 #[allow(non_camel_case_types)]
@@ -444,26 +452,16 @@ pub fn load_string(vm: &Thread) -> Result<ExternModule> {
             is_char_boundary => primitive!(2, std::string::prim::is_char_boundary),
             as_bytes => primitive!(1, std::string::prim::as_bytes),
             split_at => primitive!(2, std::string::prim::split_at),
-            contains => primitive!(
-                2,
-                "std.string.prim.contains",
-                std::string::prim::contains::<&str>
-            ),
-            starts_with => primitive!(
-                2,
-                "std.string.prim.starts_with",
-                std::string::prim::starts_with::<&str>
-            ),
-            ends_with => primitive!(
-                2,
-                "std.string.prim.ends_with",
-                std::string::prim::ends_with::<&str>
-            ),
-            find => primitive!(2, "std.string.prim.find", std::string::prim::find::<&str>),
-            rfind => primitive!(2, "std.string.prim.rfind", std::string::prim::rfind::<&str>),
+            contains => primitive!(2, std::string::prim::contains::<&str>),
+            starts_with => primitive!(2, std::string::prim::starts_with::<&str>),
+            ends_with => primitive!(2, std::string::prim::ends_with::<&str>),
+            find => primitive!(2, std::string::prim::find::<&str>),
+            rfind => primitive!(2, std::string::prim::rfind::<&str>),
             trim => primitive!(1, std::string::prim::trim),
             trim_left => primitive!(1, std::string::prim::trim_left),
+            trim_left_matches => primitive!(2, std::string::prim::trim_left_matches::<&str>),
             trim_right => primitive!(1, std::string::prim::trim_right),
+            trim_right_matches => primitive!(2, std::string::prim::trim_right_matches::<&str>),
             append => primitive!(2, "std.string.prim.append", string::append),
             slice => primitive!(3, "std.string.prim.slice", string::slice),
             from_utf8 => primitive::<fn(Vec<u8>) -> StdResult<String, ()>>(
@@ -471,6 +469,110 @@ pub fn load_string(vm: &Thread) -> Result<ExternModule> {
                 string::from_utf8
             ),
             char_at => primitive!(2, "std.string.prim.char_at", string::char_at)
+        },
+    )
+}
+
+impl<'a> VmType for path::Component<'a> {
+    type Type = Component<'static>;
+    fn make_type(vm: &Thread) -> ArcType {
+        Component::make_type(vm)
+    }
+}
+
+#[derive(Pushable, VmType)]
+#[gluon(vm_type = "std.path.types.Component")]
+#[gluon(gluon_vm)]
+pub enum Component<'a> {
+    Prefix,
+    RootDir,
+    CurDir,
+    ParentDir,
+    Normal(&'a OsStr),
+}
+
+#[derive(Userdata, Debug)]
+#[gluon(gluon_vm)]
+pub struct Metadata(fs::Metadata);
+
+#[derive(Userdata, Debug)]
+#[gluon(gluon_vm)]
+pub struct DirEntry(fs::DirEntry);
+
+pub fn load_fs(vm: &Thread) -> Result<ExternModule> {
+    vm.register_type::<Metadata>("Metadata", &[])?;
+    vm.register_type::<DirEntry>("DirEntry", &[])?;
+
+    ExternModule::new(
+        vm,
+        record! {
+            type Metadata => Metadata,
+            type DirEntry => DirEntry,
+
+            read_dir => primitive!(1, "std.fs.prim.read_dir", |p: &Path| {
+                IO::from(fs::read_dir(p).and_then(|iter| iter.map(|result| result.map(DirEntry)).collect::<io::Result<Vec<_>>>()))
+            }),
+
+            dir_entry => record! {
+                path => primitive!(1, "std.fs.prim.dir_entry.path", |m: &DirEntry| m.0.path()),
+                metadata => primitive!(1, "std.fs.prim.dir_entry.metadata", |m: &DirEntry| IO::from(m.0.metadata().map(Metadata))),
+                file_name => primitive!(1, "std.fs.prim.dir_entry.file_name", |m: &DirEntry| m.0.file_name())
+            },
+
+            metadata => record! {
+                is_dir => primitive!(1, "std.fs.prim.metadata.is_dir", |m: &Metadata| m.0.is_dir()),
+                is_file => primitive!(1, "std.fs.prim.metadata.is_file", |m: &Metadata| m.0.is_file()),
+                len => primitive!(1, "std.fs.prim.metadata.len", |m: &Metadata| m.0.len())
+            }
+        },
+    )
+}
+
+pub fn load_path(vm: &Thread) -> Result<ExternModule> {
+    ExternModule::new(
+        vm,
+        record! {
+            is_absolute => primitive!(1, std::path::prim::is_absolute),
+            is_relative => primitive!(1, std::path::prim::is_relative),
+            has_root => primitive!(1, std::path::prim::has_root),
+            parent => primitive!(1, std::path::prim::parent),
+            ancestors => primitive!(1, "std.path.prim.ancestors", |p: &Path| p.ancestors().collect::<Vec<_>>()),
+            file_name => primitive!(1, std::path::prim::file_name),
+            strip_prefix => primitive!(2, "std.path.prim.strip_prefix", |p: &Path, b: &Path| p.strip_prefix(b).ok()),
+            starts_with => primitive!(2, "std.path.prim.starts_with", |p: &Path, b: &Path| p.starts_with(b)),
+            ends_with => primitive!(2, "std.path.prim.ends_with", |p: &Path, b: &Path| p.ends_with(b)),
+            file_stem => primitive!(1, std::path::prim::file_stem),
+            extension => primitive!(1, std::path::prim::extension),
+            join => primitive!(2, "std.path.prim.join", std::path::prim::join::<&Path>),
+            with_file_name => primitive!(2, std::path::prim::with_file_name::<&Path>),
+            with_extension => primitive!(2, std::path::prim::with_extension::<&Path>),
+            components => primitive!(1, "std.path.prim.components", |p: &Path| {
+                p.components()
+                    .map(|c| match c {
+                        path::Component::Prefix(..) => Component::Prefix,
+                        path::Component::RootDir => Component::RootDir,
+                        path::Component::CurDir => Component::CurDir,
+                        path::Component::ParentDir => Component::ParentDir,
+                        path::Component::Normal(p) => Component::Normal(p),
+                    })
+                    .collect::<Vec<_>>()
+            }),
+            metadata => primitive!(1, "std.path.prim.metadata", |p: &Path| IO::from(p.metadata().map(Metadata))),
+            symlink_metadata => primitive!(1, "std.path.prim.symlink_metadata", |p: &Path| IO::from(p.symlink_metadata().map(Metadata))),
+            canonicalize => primitive!(1, "std.path.prim.canonicalize", |p: &Path| IO::from(p.canonicalize())),
+            read_link => primitive!(1, "std.path.prim.read_link", |p: &Path| IO::from(p.read_link())),
+            read_dir => primitive!(
+                1,
+                "std.path.prim.read_dir",
+                |p: &Path| IO::from(
+                        p.read_dir()
+                            .and_then(|iter| iter.map(|result| Ok(result?.path())).collect::<StdResult<Vec<_>, _>>())
+                            .map_err(|err| Error::Message(err.to_string()))
+                    )
+            ),
+            exists => primitive!(1, "std.path.prim.exists", |p: &Path| IO::Value(p.exists())),
+            is_file => primitive!(1, "std.path.prim.is_file", |p: &Path| IO::Value(p.is_file())),
+            is_dir => primitive!(1, "std.path.prim.is_file", |p: &Path| IO::Value(p.is_dir()))
         },
     )
 }
