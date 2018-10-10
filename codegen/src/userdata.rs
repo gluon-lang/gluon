@@ -57,6 +57,7 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics) -> TokenStr
     let dummy_const = Ident::new(&format!("_IMPL_USERDATA_FOR_{}", ident), Span::call_site());
 
     quote! {
+        #[allow(non_upper_case_globals)]
         const #dummy_const: () = {
             #gluon
 
