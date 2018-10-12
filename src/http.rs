@@ -1,15 +1,22 @@
 extern crate http;
 extern crate hyper;
+extern crate native_tls;
+extern crate tokio_tcp;
+extern crate tokio_tls;
 
-use std::fmt;
-use std::marker::PhantomData;
-use std::sync::{Arc, Mutex};
+use std::{
+    fmt, fs, io,
+    marker::PhantomData,
+    path::Path,
+    sync::{Arc, Mutex},
+};
 
 use self::{http::StatusCode, hyper::service::Service, hyper::Chunk, hyper::Server};
 
-use futures::future::Either;
-use futures::stream::Stream;
-use futures::{future, Async, Future};
+use futures::{
+    future::{self, Either},
+    Async, Future, Stream,
+};
 
 use base::types::{ArcType, Type};
 
@@ -151,8 +158,15 @@ type HttpState = record_type!{
     response => ResponseBody
 };
 
+#[derive(Getable, VmType)]
+#[gluon(crate_name = "::vm")]
+struct Settings<'a> {
+    port: u16,
+    tls_cert: Option<&'a Path>,
+}
+
 fn listen(
-    port: i32,
+    settings: Settings,
     value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>,
 ) -> impl Future<Item = IO<()>, Error = vm::Error> + Send + 'static {
     let WithVM {
@@ -245,9 +259,62 @@ fn listen(
         }
     }
 
-    let addr = format!("0.0.0.0:{}", port).parse().unwrap();
+    let addr = format!("0.0.0.0:{}", settings.port).parse().unwrap();
 
-    Either::B(
+    if let Some(cert_path) = settings.tls_cert {
+        let identity = try_future!(
+            fs::read(cert_path).map_err(|err| vm::Error::Message(format!(
+                "Unable to open certificate `{}`: {}",
+                cert_path.display(),
+                err
+            ))),
+            Either::A
+        );
+
+        let identity = try_future!(
+            native_tls::Identity::from_pkcs12(&identity, "")
+                .map_err(|err| vm::Error::Message(err.to_string())),
+            Either::A
+        );
+        let acceptor = tokio_tls::TlsAcceptor::from(try_future!(
+            native_tls::TlsAcceptor::new(identity)
+                .map_err(|err| vm::Error::Message(err.to_string())),
+            Either::A
+        ));
+
+        let http = hyper::server::conn::Http::new();
+        let listener = try_future!(
+            tokio_tcp::TcpListener::bind(&addr).map_err(|err| vm::Error::Message(err.to_string())),
+            Either::A
+        );
+        let incoming = listener.incoming().and_then(move |stream| {
+            acceptor
+                .accept(stream)
+                .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
+        });
+
+        let future = http
+            .serve_incoming(incoming, move || -> Result<_, hyper::Error> {
+                Ok(Listen {
+                    handle: handle.clone(),
+                    handler: handler.clone(),
+                })
+            })
+            .and_then(|connecting: hyper::server::conn::Connecting<_, _>| {
+                let _: &Future<Item = _, Error = _> = &connecting;
+                connecting
+            })
+            .for_each(|connection: hyper::server::conn::Connection<_, _>| {
+                let _: &Future<Item = _, Error = _> = &connection;
+                hyper::rt::spawn(connection.map_err(|err| error!("{}", err)));
+                Ok(())
+            })
+            .map(|_| IO::Value(()))
+            .map_err(|err| vm::Error::from(format!("Server error: {}", err)));
+        return Either::B(Either::A(future));
+    }
+
+    Either::B(Either::B(
         Server::bind(&addr)
             .serve(move || -> Result<_, hyper::Error> {
                 Ok(Listen {
@@ -256,8 +323,8 @@ fn listen(
                 })
             })
             .map_err(|err| vm::Error::from(format!("Server error: {}", err)))
-            .and_then(|_| Ok(IO::Value(()))),
-    )
+            .map(|_| IO::Value(())),
+    ))
 }
 
 // To let the `http_types` module refer to `Body` and `ResponseBody` we register these types in a

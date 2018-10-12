@@ -43,8 +43,12 @@ serde_derive_state = { version = "0.4.0", optional = true }
 
 # Binding crates
 regex = { version = "1", optional = true }
+# web
 http = { version = "0.1", optional = true }
 hyper = { version = "0.12", optional = true }
+native-tls = { version = "0.2", optional = true }
+tokio-tls = { version = "0.2", optional = true }
+tokio-tcp = { version = "0.1", optional = true }
 
 # Crates used in testing
 compiletest_rs = { version = "0.3", optional = true }
@@ -86,7 +90,7 @@ gluon_codegen = { path = "codegen", version = "0.9.2" } # GLUON
 [features]
 default = ["regex", "rand"]
 serialization = ["serde", "serde_state", "serde_derive_state", "gluon_vm/serialization"]
-web = ["hyper", "http"]
+web = ["hyper", "http", "native-tls", "tokio-tcp", "tokio-tls"]
 
 docs_rs = ["serialization"]
 

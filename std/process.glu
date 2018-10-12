@@ -4,7 +4,7 @@
 let process_prim = import! std.process.prim
 let { Option } = import! std.option
 
-let proc command args = { command, args, envs = None, current_dir = None }
+let proc command args = { command, args, env = None, current_dir = None }
 
 {
     proc,

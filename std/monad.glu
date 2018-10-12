@@ -1,7 +1,8 @@
 //@NO-IMPLICIT-PRELUDE
 //! Implementation of the `Monad` type
 
-let { Applicative } = import! std.applicative
+let { Bool } = import! std.types
+let { Applicative, wrap } = import! std.applicative
 
 /// A generalised interface for imperatively sequencing actions
 #[implicit]
@@ -46,7 +47,13 @@ let (>>=) x f : [Monad m] -> m a -> (a -> m b) -> m b = flat_map f x
 
 let join mm : [Monad m] -> m (m a) -> m a = mm >>= (\x -> x)
 
+let when b m : [Monad m] -> Bool -> m () -> m () =
+    if b then
+        m
+    else
+        wrap ()
+
 {
     Monad,
-    flat_map, (>>=), (=<<), join,
+    flat_map, (>>=), (=<<), join, when
 }

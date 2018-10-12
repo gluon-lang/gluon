@@ -195,7 +195,8 @@ impl<I> Import<I> {
                             Ok(file) => Some(file),
                             Err(_) => None,
                         }
-                    }).next();
+                    })
+                    .next();
                 let mut file = file.ok_or_else(|| {
                     Error::String(format!(
                         "Could not find module '{}'. Searched {}.",
@@ -266,6 +267,10 @@ impl<I> Import<I> {
         }
 
         let result = self.load_module_(compiler, vm, macros, module_id, &filename, span);
+
+        if let Err((_, ref err)) = result {
+            debug!("Import error: {}", err);
+        }
 
         let _ = sender.send(());
 
@@ -446,7 +451,8 @@ fn get_state<'m>(macros: &'m mut MacroExpander) -> &'m mut State {
                 visited: Vec::new(),
                 modules_with_errors: FnvMap::default(),
             })
-        }).downcast_mut::<State>()
+        })
+        .downcast_mut::<State>()
         .unwrap()
 }
 
