@@ -18,13 +18,15 @@ use futures::{
     Async, Future, Stream,
 };
 
+use self::http::header::{HeaderMap, HeaderName, HeaderValue};
+
 use base::types::{ArcType, Type};
 
 use vm::{
     self,
-    api::{Function, OpaqueValue, PushAsRef, VmType, WithVM, IO},
-    thread::{RootedThread, Thread},
-    ExternModule,
+    api::{Collect, Function, Getable, OpaqueValue, PushAsRef, Pushable, VmType, WithVM, IO},
+    thread::{ActiveThread, RootedThread, Thread},
+    ExternModule, Variants,
 };
 
 macro_rules! try_future {
@@ -53,6 +55,43 @@ impl<T: VmType + 'static> VmType for Handler<T> {
         vm.find_type_info("std.http.types.Handler")
             .map(|typ| Type::app(typ.into_type(), collect![T::make_type(vm)]))
             .unwrap_or_else(|_| Type::hole())
+    }
+}
+
+struct Headers(HeaderMap);
+
+impl VmType for Headers {
+    type Type = Vec<(String, Vec<u8>)>;
+
+    fn make_type(vm: &Thread) -> ArcType {
+        Vec::<(String, Vec<u8>)>::make_type(vm)
+    }
+}
+
+impl<'vm> Pushable<'vm> for Headers {
+    fn push(self, context: &mut ActiveThread<'vm>) -> vm::Result<()> {
+        Collect::new(
+            self.0
+                .iter()
+                .map(|(name, value)| (name.as_str(), value.as_bytes())),
+        )
+        .push(context)
+    }
+}
+
+impl<'vm, 'value> Getable<'vm, 'value> for Headers {
+    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
+        Headers(
+            Collect::from_value(vm, value)
+                // TODO Error somehow on invalid headers
+                .filter_map(|(name, value): (&str, &[u8])| {
+                    match (HeaderName::from_bytes(name.as_bytes()), HeaderValue::from_bytes(value)) {
+                        (Ok(name), Ok(value)) => Some((name, value)),
+                        _ => None,
+                    }
+                })
+                .collect(),
+        )
     }
 }
 
@@ -141,7 +180,7 @@ struct Uri(http::Uri);
 
 // Next we define some record types which are marshalled to and from gluon. These have equivalent
 // definitions in http_types.glu
-field_decl! { method, uri, status, body, request, response }
+field_decl! { method, uri, status, body, request, response, headers }
 
 type Request = record_type!{
     method => String,
@@ -150,7 +189,8 @@ type Request = record_type!{
 };
 
 type Response = record_type!{
-    status => u16
+    status => u16,
+    headers => Headers
 };
 
 type HttpState = record_type!{
@@ -226,17 +266,17 @@ fn listen(
                     .then(move |result| match result {
                         Ok(value) => {
                             match value {
-                                IO::Value(record_p!{ status }) => {
+                                IO::Value(record_p!{ status, headers }) => {
                                     // Drop the sender to so that it the receiver stops waiting for
                                     // more chunks
                                     *response_sender.lock().unwrap() = None;
 
                                     let status = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-                                    Ok(
-                                        http::Response::builder()
+                                        let mut response = http::Response::builder()
                                             .status(status)
-                                            .body(response_body).unwrap(),
-                                    )
+                                            .body(response_body).unwrap();
+                                    *response.headers_mut() = headers.0;
+                                    Ok(response)
                                 }
                                 IO::Exception(err) => {
                                     error!("{}", err);
@@ -345,6 +385,7 @@ pub fn load_types(vm: &Thread) -> vm::Result<ExternModule> {
             type StatusCode => u16,
             type Request => Request,
             type Response => Response,
+            type Headers => Headers,
             type HttpState => HttpState
         },
     )

@@ -402,7 +402,7 @@ pub fn load_thread<'vm>(vm: &'vm Thread) -> VmResult<ExternModule> {
             new_thread => primitive!(1, std::thread::prim::new_thread),
             interrupt => primitive!(1, std::thread::prim::interrupt),
             sleep => primitive!(1, std::thread::prim::sleep),
-            join => primitive!(2, std::thread::prim::join),
+            join => primitive!(2, async fn std::thread::prim::join),
         },
     )
 }

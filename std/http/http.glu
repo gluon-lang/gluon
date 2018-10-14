@@ -26,6 +26,10 @@ let status =
     let code : Int -> StatusCode = id 
     {
         ok = code 200,
+        moved_permanently = 301,
+        found = 302,
+        temporary_redirect = 307,
+        permanent_redirect = 308,
         bad_request = code 400,
         not_found = code 404,
         internal_server_error = code 500,
@@ -38,6 +42,8 @@ let method =
         post = method "POST",
         put = method "PUT",
     }
+
+let response : Response = { status = status.ok, headers = [] }
 
 /// Force the value to be a Handler. Necessary to make the the type inference work for
 /// higher-kinded types
@@ -143,7 +149,7 @@ let catch_error action catch : Handler a -> (String -> Handler a) -> Handler a =
 /// Takes a `Handler` and a `Request` tries to process the request
 let handle handler state : Handler Response -> HttpState -> IO Response =
     let not_found _ state : _ -> HttpState -> IO Response =
-        http_prim.write_response state.response  (string.as_bytes "Page not found") *> wrap { status = status.not_found }
+        http_prim.write_response state.response  (string.as_bytes "Page not found") *> wrap { status = status.not_found, .. response }
     handler (\response _ -> wrap response) not_found state
 
 let show_uri: Show Uri = {
@@ -184,6 +190,7 @@ let default_listen_settings = { port = 80, tls_cert = None }
     write_response,
 
     default_listen_settings,
+    response,
     ..
     http_prim
 }
