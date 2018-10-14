@@ -1,7 +1,6 @@
 //! The thread/vm type
 use std::any::{Any, TypeId};
 use std::cmp::Ordering;
-use std::collections::VecDeque;
 use std::fmt;
 use std::mem;
 use std::ops::{Add, Deref, DerefMut, Div, Mul, Sub};
@@ -339,7 +338,8 @@ impl<'b> Roots<'b> {
             Roots {
                 vm: thread_ptr,
                 stack: &context.stack,
-            }.traverse(gc);
+            }
+            .traverse(gc);
 
             Vec::push(&mut locks, (child_threads, context, thread_ptr));
         }
@@ -1239,7 +1239,7 @@ pub struct Context {
 
     /// Stack of polling functions used for extern functions returning futures
     #[cfg_attr(feature = "serde_derive", serde(skip))]
-    poll_fns: VecDeque<PollFn>,
+    poll_fns: Vec<PollFn>,
 }
 
 impl Context {
@@ -1253,7 +1253,7 @@ impl Context {
                 previous_instruction_index: usize::max_value(),
             },
             max_stack_size: VmIndex::max_value(),
-            poll_fns: VecDeque::new(),
+            poll_fns: Vec::new(),
         }
     }
 
@@ -1269,7 +1269,8 @@ impl Context {
                 tag: tag,
                 elems: fields,
             },
-        ).map(ValueRepr::Data)
+        )
+        .map(ValueRepr::Data)
         .map(Value::from)
     }
     pub fn slide(&mut self, fields: VmIndex) {
@@ -1292,7 +1293,8 @@ impl Context {
                     tag: tag,
                     elems: fields,
                 },
-            ).map(ValueRepr::Data)
+            )
+            .map(ValueRepr::Data)
             .map(Value::from)?
         };
         self.stack.push(value);
@@ -1365,7 +1367,7 @@ impl Context {
         F: Future<Error = Error> + Send + 'static,
         F::Item: Pushable<'vm>,
     {
-        self.poll_fns.push_back(PollFn {
+        self.poll_fns.push(PollFn {
             frame_index,
             poll_fn: Box::new(move |vm| {
                 let value = try_ready!(future.poll());
@@ -1509,7 +1511,7 @@ impl<'b> OwnedContext<'b> {
                         return Ok(Async::Ready(Some(context)));
                     }
                     if ext.call_state == ExternCallState::Poll {
-                        if let Some(frame_index) = context.poll_fns.front().map(|f| f.frame_index) {
+                        if let Some(frame_index) = context.poll_fns.last().map(|f| f.frame_index) {
                             ext = ExternState::from_state(
                                 context.stack.get_frames()[frame_index as usize].state,
                             );
@@ -1630,7 +1632,7 @@ impl<'b> OwnedContext<'b> {
             }
 
             ExternCallState::Poll => {
-                if let Some(mut poll_fn) = self.poll_fns.pop_front() {
+                if let Some(mut poll_fn) = self.poll_fns.pop() {
                     let frame_offset = poll_fn.frame_index as usize;
 
                     match self.stack.get_frames_mut()[frame_offset].state {
@@ -1654,7 +1656,7 @@ impl<'b> OwnedContext<'b> {
                                 _ => unreachable!(),
                             }
                             // Restore `poll_fn` so it can be polled again
-                            self.poll_fns.push_front(poll_fn);
+                            self.poll_fns.push(poll_fn);
                             return Ok(Async::NotReady);
                         }
                         Err(err) => return Err(err),
@@ -1975,9 +1977,11 @@ impl<'b> ExecuteContext<'b> {
                 }
                 Split => {
                     match self.stack.pop().get_repr() {
-                        Data(data) => for field in &data.fields {
-                            self.stack.push(field);
-                        },
+                        Data(data) => {
+                            for field in &data.fields {
+                                self.stack.push(field);
+                            }
+                        }
                         // Zero argument variant
                         ValueRepr::Tag(_) => (),
                         _ => {

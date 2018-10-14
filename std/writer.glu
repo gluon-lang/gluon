@@ -9,7 +9,7 @@ let { Identity } = import! std.identity
 type Writer w a = { value : a, writer : w }
 
 let functor : [Monoid w] -> Functor (Writer w) = {
-    map = \f m -> { value = f m.value, writer = m.writer },
+    map = \f m -> { value = f m.value, writer = m.writer }
 }
 
 let applicative : [Monoid w] -> Applicative (Writer w) = {
