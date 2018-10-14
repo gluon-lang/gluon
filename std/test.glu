@@ -1,7 +1,8 @@
 //! A simple test library.
 
 let string = import! std.string
-let writer @ { Writer, ? } = import! std.writer
+let writer @ { Writer, functor, applicative, monad, ? } = import! std.writer
+let { wrap } = import! std.applicative
 let prelude @ { Semigroup } = import! std.prelude
 let float = import! std.float
 let int = import! std.int
@@ -10,14 +11,13 @@ let { Foldable, foldl } = import! std.foldable
 let { Option } = import! std.option
 let { (<>) } = import! std.semigroup
 let { error } = import! std.prim
+let { id } = import! std.function
 
 
 type Test a = Writer (List String) a
 type TestCase a =
     | Test String (() -> Test a)
     | Group String (Array (TestCase a))
-
-let testWriter = writer.make list.monoid
 
 let test = Test
 let group = Group
@@ -26,27 +26,30 @@ let assert x = if x then () else error "Assertion failed"
 
 let assert_eq l r : [Show a] -> [Eq a] -> a -> a -> Test () =
     if l == r
-    then testWriter.applicative.wrap ()
+    then wrap ?applicative ()
     else writer.tell (Cons ("Assertion failed: " <> show l <> " != " <> show r) Nil)
 
 let assert_neq l r : [Show a] -> [Eq a] -> a -> a -> Test () =
     if l /= r
-    then testWriter.applicative.wrap ()
+    then wrap ?applicative ()
     else writer.tell (Cons ("Assertion failed: " <> show l <> " == " <> show r) Nil)
 
 rec let run test : Test a -> () =
     match test.writer with
     | Cons _ _ -> error (foldl (\acc err -> acc <> "\n" <> err) "" test.writer)
     | Nil -> ()
+in
+let functor : Functor Test = functor
+let applicative : Applicative Test = applicative
+let monad : Monad Test = monad
 
 {
     Test,
     TestCase,
 
-    writer = testWriter,
-    functor = testWriter.functor,
-    applicative = testWriter.applicative,
-    monad = testWriter.monad,
+    functor,
+    applicative,
+    monad,
 
     test,
     group,

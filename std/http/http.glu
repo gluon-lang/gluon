@@ -150,6 +150,8 @@ let show_uri: Show Uri = {
     show = http_prim.uri.to_string
 }
 
+let default_listen_settings = { port = 80, tls_cert = None }
+
 {
     Method,
     Failure,
@@ -180,6 +182,8 @@ let show_uri: Show Uri = {
     show_uri,
 
     write_response,
+
+    default_listen_settings,
     ..
     http_prim
 }

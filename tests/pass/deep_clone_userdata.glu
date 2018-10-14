@@ -1,4 +1,4 @@
-let { run, writer, assert, group, ? } = import! std.test
+let { run, assert, group, ? } = import! std.test
 let { (<|) } = import! std.function
 let prelude = import! std.prelude
 let { (*>) } = import! std.applicative

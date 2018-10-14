@@ -5,7 +5,7 @@ extern crate tokio_tcp;
 extern crate tokio_tls;
 
 use std::{
-    fmt, fs, io,
+    fmt, fs,
     marker::PhantomData,
     path::Path,
     sync::{Arc, Mutex},
@@ -287,11 +287,15 @@ fn listen(
             tokio_tcp::TcpListener::bind(&addr).map_err(|err| vm::Error::Message(err.to_string())),
             Either::A
         );
-        let incoming = listener.incoming().and_then(move |stream| {
-            acceptor
-                .accept(stream)
-                .map_err(|err| io::Error::new(io::ErrorKind::Other, err))
-        });
+        let incoming = listener
+            .incoming()
+            .and_then(move |stream| {
+                acceptor.accept(stream).map(Some).or_else(|err| {
+                    info!("Unable to accept TLS connection: {}", err);
+                    Ok(None)
+                })
+            })
+            .filter_map(|opt_tls_stream| opt_tls_stream);
 
         let future = http
             .serve_incoming(incoming, move || -> Result<_, hyper::Error> {
@@ -300,12 +304,8 @@ fn listen(
                     handler: handler.clone(),
                 })
             })
-            .and_then(|connecting: hyper::server::conn::Connecting<_, _>| {
-                let _: &Future<Item = _, Error = _> = &connecting;
-                connecting
-            })
-            .for_each(|connection: hyper::server::conn::Connection<_, _>| {
-                let _: &Future<Item = _, Error = _> = &connection;
+            .and_then(|connecting| connecting)
+            .for_each(|connection| {
                 hyper::rt::spawn(connection.map_err(|err| error!("{}", err)));
                 Ok(())
             })
