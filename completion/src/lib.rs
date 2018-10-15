@@ -1,5 +1,5 @@
 //! Primitive auto completion and type quering on ASTs
-#![doc(html_root_url = "https://docs.rs/gluon_completion/0.9.2")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon_completion/0.9.3")] // # GLUON
 
 extern crate codespan;
 extern crate either;

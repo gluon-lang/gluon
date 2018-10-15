@@ -1,6 +1,6 @@
 [package]
 name = "gluon_format"
-version = "0.9.2" # GLUON
+version = "0.9.3" # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 
 license = "MIT"
@@ -16,8 +16,8 @@ pretty = "0.5"
 itertools = "0.7"
 codespan = "0.1.1"
 
-gluon_base = { path = "../base", version = "0.9.2" } # GLUON
-gluon = { path = "..", version = "0.9.2" } # GLUON
+gluon_base = { path = "../base", version = "0.9.3" } # GLUON
+gluon = { path = "..", version = "0.9.3" } # GLUON
 
 [dev-dependencies]
 env_logger = "0.5.0"

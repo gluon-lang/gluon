@@ -1,7 +1,7 @@
 //! The parser is a bit more complex than it needs to be as it needs to be fully specialized to
 //! avoid a recompilation every time a later part of the compiler is changed. Due to this the
 //! string interner and therefore also garbage collector needs to compiled before the parser.
-#![doc(html_root_url = "https://docs.rs/gluon_parser/0.9.2")] // # GLUON
+#![doc(html_root_url = "https://docs.rs/gluon_parser/0.9.3")] // # GLUON
 
 extern crate codespan;
 extern crate codespan_reporting;
