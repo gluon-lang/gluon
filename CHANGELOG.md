@@ -1,3 +1,20 @@
+<a name="v0.9.3"></a>
+### v0.9.3 (2018-10-15)
+
+
+#### Features
+
+*   Allow headers to be part of the response ([69dba621](https://github.com/gluon-lang/gluon/commit/69dba621b5c8e1d507e3fc5c476422b799a6068c))
+*   Allow std.http to use https ([fb30fda2](https://github.com/gluon-lang/gluon/commit/fb30fda2624328f9893c222556fe89a5ad8c701b))
+* **vm:**  Add thread.join ([514fd3b5](https://github.com/gluon-lang/gluon/commit/514fd3b5501c15f4223fb9afb8fc96c34195c7b3))
+
+#### Bug Fixes
+
+*   Ensure all futures on the stack gets polled ([d5862e14](https://github.com/gluon-lang/gluon/commit/d5862e1407968d3c96dee73682071caf5829acf3))
+*   Don't generate warnings for VmType and Userdata derives ([5979c967](https://github.com/gluon-lang/gluon/commit/5979c9673cf603abf4bb2151960edb0dce9046a1))
+
+
+
 <a name="v0.9.1"></a>
 ### v0.9.1 (2018-09-24)
 
