@@ -1,0 +1,24 @@
+//@NO-IMPLICIT-PRELUDE
+
+let { Functor } = import! std.functor
+let { Applicative } = import! std.applicative
+let { Monad } = import! std.monad
+
+type Identity a = a
+
+let functor : Functor Identity = {
+    map = \f m -> f m,
+}
+
+let applicative : Applicative Identity = {
+    functor,
+    apply = \mf m -> mf m,
+    wrap = \value -> value,
+}
+
+let monad : Monad Identity = {
+    applicative,
+    flat_map = \f m -> f m,
+}
+
+{ Identity, functor, applicative, monad }

@@ -13,7 +13,7 @@ use support::*;
 
 use gluon::base::pos::BytePos;
 use gluon::base::types::Type;
-use gluon::vm::api::{FunctionRef, Hole, OpaqueValue, ValueRef};
+use gluon::vm::api::{FunctionRef, Hole, OpaqueValue, ValueRef, IO};
 use gluon::vm::channel::Sender;
 use gluon::vm::thread::{RootedThread, Thread, ThreadInternal};
 use gluon::{vm, Compiler, Error};
@@ -826,7 +826,8 @@ let from f : (Int -> Option a) -> Stream a =
         lines.span(),
         &expr,
         lines.byte_index(16.into(), 29.into()).unwrap(),
-    ).map(|either| either.right().unwrap());
+    )
+    .map(|either| either.right().unwrap());
     assert_eq!(result, Ok(Type::int()));
 }
 
@@ -918,7 +919,8 @@ fn deep_clone_partial_application() {
         Type::hole(),
         Metadata::default(),
         unsafe { result.unwrap().0.get_value() },
-    ).unwrap();
+    )
+    .unwrap();
 
     let global_memory_with_closures = vm.global_env().gc.lock().unwrap().allocated_memory();
 
@@ -1009,4 +1011,18 @@ in
 size (Test (Test2 (Test (Test2 Nil))))
 "#,
 4
+}
+
+test_expr!{ prelude thread_join,
+r#"
+let thread = import! std.thread
+let io @ { ? } = import! std.io
+let { wrap, (*>) } = import! std.applicative
+let { (>>=) } = import! std.monad
+let { id } = import! std.function
+do t = thread.new_thread ()
+
+thread.join (io.println "test" *> wrap 123) (thread.spawn_on t (\_ -> wrap "abc") >>= id)
+"#,
+IO::Value((123, "abc".to_string()))
 }

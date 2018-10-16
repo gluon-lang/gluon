@@ -1,39 +1,30 @@
 //! Implementation of the `Writer` type
 
-let prelude = import! std.prelude
-let { Applicative, Functor, Monad, Monoid } = prelude
+let { Functor, map } = import! std.functor
+let prelude @ { Applicative, Monad, Monoid, (<>) } = import! std.prelude
+let { empty } = import! std.monoid
+let { Identity } = import! std.identity
 
 /// The writer Monad
 type Writer w a = { value : a, writer : w }
 
-type Impl w = {
-    functor : Functor (Writer w),
-    applicative : Applicative (Writer w),
-    monad : Monad (Writer w)
+let functor : [Monoid w] -> Functor (Writer w) = {
+    map = \f m -> { value = f m.value, writer = m.writer }
 }
 
-let make monoid : Monoid w -> Impl w =
-    let { (<>) } = import! std.prelude
-    // TODO Simpler way to bring semigroup into the implicit resolution
-    let { ? } = { semigroup = monoid.semigroup }
+let applicative : [Monoid w] -> Applicative (Writer w) = {
+    functor,
+    apply = \mf m -> { value = mf.value m.value, writer = mf.writer <> m.writer },
+    wrap = \value -> { value, writer = empty },
+}
 
-    let functor : Functor (Writer w) = { map = \f m -> { value = f m.value, writer = m.writer } }
-
-    let applicative : Applicative (Writer w) = {
-        functor,
-        apply = \mf m -> { value = mf.value m.value, writer = mf.writer <> m.writer },
-        wrap = \value -> { value, writer = monoid.empty },
-    }
-
-    let monad : Monad (Writer w) = {
-        applicative,
-        flat_map = \f m ->
-            let { value, writer } = f m.value
-            { value, writer = m.writer <> writer },
-    }
-
-    { functor, applicative, monad }
+let monad : [Monoid w] -> Monad (Writer w) = {
+    applicative,
+    flat_map = \f m ->
+        let { value, writer } = f m.value
+        { value, writer = m.writer <> writer },
+}
 
 let tell w : w -> Writer w () = { value = (), writer = w }
 
-{ Writer, Impl, make, tell }
+{ Writer, functor, applicative, monad, tell }

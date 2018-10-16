@@ -1,6 +1,6 @@
 let prelude = import! std.prelude
 let { (<|) } = import! std.function
-let { Test, run, writer, assert_eq, test, group, ? } = import! std.test
+let { Test, run, assert_eq, test, group, ? } = import! std.test
 let { Applicative, (*>), ? } = import! std.applicative
 let list @ { List, ? } = import! std.list
 

@@ -4,14 +4,17 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::sync::{Arc, Mutex};
 
-use futures::{future, Future};
+use futures::{
+    future::{self, Either},
+    Future,
+};
 
 use base::types::{ArcType, Type};
 
-use api::generic::A;
+use api::generic::{A, B};
 use api::{
-    primitive, AsyncPushable, Function, FunctionRef, FutureResult, Generic, Getable, OpaqueValue,
-    OwnedFunction, Pushable, Pushed, RuntimeResult, Unrooted, VmType, WithVM, IO,
+    primitive, AsyncPushable, Function, FunctionRef, FutureResult, Generic, Getable, OpaqueRef,
+    OpaqueValue, OwnedFunction, Pushable, Pushed, RuntimeResult, Unrooted, VmType, WithVM, IO,
 };
 use gc::{Gc, GcPtr, Traverseable};
 use stack::{ClosureState, ExternState, StackFrame, State};
@@ -211,12 +214,12 @@ fn spawn_<'vm>(value: WithVM<'vm, Function<&'vm Thread, fn(())>>) -> VmResult<Ro
     Ok(thread)
 }
 
-type Action = fn(()) -> OpaqueValue<RootedThread, IO<Pushed<A>>>;
+type Action<T> = fn(()) -> OpaqueValue<RootedThread, IO<Pushed<T>>>;
 
 #[cfg(target_arch = "wasm32")]
 fn spawn_on<'vm>(
     _thread: RootedThread,
-    _action: WithVM<'vm, FunctionRef<Action>>,
+    _action: WithVM<'vm, FunctionRef<Action<A>>>,
 ) -> IO<OpaqueValue<&'vm Thread, IO<A>>> {
     IO::Exception("spawn_on requires the `tokio` crate".to_string())
 }
@@ -224,7 +227,7 @@ fn spawn_on<'vm>(
 #[cfg(not(target_arch = "wasm32"))]
 fn spawn_on<'vm>(
     thread: RootedThread,
-    action: WithVM<'vm, FunctionRef<Action>>,
+    action: WithVM<'vm, FunctionRef<Action<A>>>,
 ) -> IO<Pushed<IO<A>>> {
     struct SpawnFuture<F>(future::Shared<F>)
     where
@@ -299,7 +302,7 @@ fn spawn_on<'vm>(
     use value::PartialApplicationDataDef;
 
     let WithVM { vm, value: action } = action;
-    let mut action = OwnedFunction::<Action>::from_value(&thread, action.get_variant());
+    let mut action = OwnedFunction::<Action<A>>::from_value(&thread, action.get_variant());
 
     let future = future::lazy(move || action.call_async(()));
 
@@ -322,6 +325,29 @@ fn spawn_on<'vm>(
     context.stack.push(value);
 
     IO::Value(Pushed::default())
+}
+
+fn join(
+    WithVM { vm: vm_a, value: a }: WithVM<OpaqueRef<IO<A>>>,
+    b: OpaqueRef<IO<B>>,
+) -> impl Future<Item = IO<(Generic<A>, Generic<B>)>, Error = Error> {
+    let vm_b = try_future!(vm_a.new_thread(), Either::B);
+
+    let mut action_a: OwnedFunction<fn(()) -> OpaqueValue<RootedThread, A>> =
+        Getable::from_value(&vm_a, a.get_variant());
+    let mut action_b: OwnedFunction<fn(()) -> OpaqueValue<RootedThread, B>> =
+        Getable::from_value(&vm_b, b.get_variant());
+
+    Either::A(
+        action_a
+            .call_fast_async(())
+            .join(action_b.call_fast_async(()))
+            .then(|result| {
+                trace!("join done: {:?}", result);
+                result
+            })
+            .map(IO::Value),
+    )
 }
 
 fn new_thread(WithVM { vm, .. }: WithVM<()>) -> IO<RootedThread> {
@@ -375,7 +401,8 @@ pub fn load_thread<'vm>(vm: &'vm Thread) -> VmResult<ExternModule> {
             spawn_on => primitive!(2, std::thread::prim::spawn_on),
             new_thread => primitive!(1, std::thread::prim::new_thread),
             interrupt => primitive!(1, std::thread::prim::interrupt),
-            sleep => primitive!(1, std::thread::prim::sleep)
+            sleep => primitive!(1, std::thread::prim::sleep),
+            join => primitive!(2, async fn std::thread::prim::join),
         },
     )
 }

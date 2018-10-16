@@ -22,6 +22,7 @@ where
     T: for<'value> Getable<'vm, 'value> + VmType + Send + 'vm,
 {
     Compiler::new()
+        .run_io(true)
         .implicit_prelude(implicit_prelude)
         .run_expr(vm, "<top>", s)
         .unwrap_or_else(|err| panic!("{}", err))

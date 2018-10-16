@@ -11,13 +11,11 @@ extern crate env_logger;
 #[allow(unused_imports)]
 #[macro_use]
 extern crate log;
+extern crate failure;
 extern crate futures;
 extern crate tokio;
 
-use std::env;
-use std::error::Error as StdError;
-use std::fs::File;
-use std::io::Read;
+use std::{env, fs::File, io::Read};
 
 use futures::{future, Future};
 
@@ -42,12 +40,9 @@ fn main() {
     tokio::run(start(&thread, port).map_err(|err| panic!("{}", err)));
 }
 
-fn start(
-    thread: &Thread,
-    port: u16,
-) -> impl Future<Item = (), Error = Box<StdError + Send + Sync + 'static>> {
+fn start(thread: &Thread, port: u16) -> impl Future<Item = (), Error = failure::Error> {
     let thread = thread.root_thread();
-    future::lazy(|| -> Result<_, Box<StdError + Send + Sync>> {
+    future::lazy(|| -> Result<_, failure::Error> {
         // Last we run our `http_server.glu` module which returns a function which starts listening
         // on the port we passed from the command line
         let mut expr = String::new();
@@ -56,13 +51,15 @@ fn start(
             file.read_to_string(&mut expr)?;
         }
         Ok(expr)
-    }).and_then(move |expr| {
+    })
+    .and_then(move |expr| {
         Compiler::new()
             .run_expr_async::<OwnedFunction<fn(u16) -> IO<()>>>(
                 &thread,
                 "examples/http/server.glu",
                 &expr,
-            ).from_err()
+            )
+            .from_err()
             .and_then(move |(mut listen, _)| listen.call_async(port).from_err().map(|_| ()))
     })
 }
@@ -87,9 +84,7 @@ mod tests {
         let port = 12235;
         let thread = new_vm();
 
-        runtime.spawn(future::lazy(move || {
-            start(&thread, port).map_err(|err| error!("{}", err))
-        }));
+        let start_server = future::lazy(move || start(&thread, port));
 
         let future =
             move || Client::new().get(format!("http://localhost:{}", port).parse().unwrap());
@@ -98,14 +93,23 @@ mod tests {
 
         runtime
             .block_on(
-                tokio_retry::Retry::spawn(retry_strategy, future)
-                    .map_err(|err| panic!("{}", err))
-                    .and_then(|response| {
-                        response.into_body().concat2().map(|body| {
-                            assert_eq!(str::from_utf8(&body).unwrap(), "Hello World");
-                        })
-                    }),
-            ).unwrap();
+                start_server
+                    .select(
+                        tokio_retry::Retry::spawn(retry_strategy, future)
+                            .from_err::<failure::Error>()
+                            .and_then(|response| {
+                                response
+                                    .into_body()
+                                    .concat2()
+                                    .map(|body| {
+                                        assert_eq!(str::from_utf8(&body).unwrap(), "Hello World");
+                                    })
+                                    .from_err::<failure::Error>()
+                            }),
+                    )
+                    .map_err(|(err, _)| err),
+            )
+            .unwrap_or_else(|err| panic!("{}", err));
     }
 
     #[test]
@@ -114,9 +118,7 @@ mod tests {
 
         let port = 12234;
         let thread = new_vm();
-        runtime.spawn(future::lazy(move || {
-            start(&thread, port).map_err(|err| error!("{}", err))
-        }));
+        let start_server = future::lazy(move || start(&thread, port));
 
         let future = move || {
             let request = hyper::Request::post(format!("http://localhost:{}/echo", port))
@@ -130,13 +132,22 @@ mod tests {
 
         runtime
             .block_on(
-                tokio_retry::Retry::spawn(retry_strategy, future)
-                    .map_err(|err| panic!("{}", err))
-                    .and_then(|response| {
-                        response.into_body().concat2().map(|body| {
-                            assert_eq!(str::from_utf8(&body).unwrap(), "test");
-                        })
-                    }),
-            ).unwrap();
+                start_server
+                    .select(
+                        tokio_retry::Retry::spawn(retry_strategy, future)
+                            .from_err::<failure::Error>()
+                            .and_then(|response| {
+                                response
+                                    .into_body()
+                                    .concat2()
+                                    .map(|body| {
+                                        assert_eq!(str::from_utf8(&body).unwrap(), "test");
+                                    })
+                                    .from_err::<failure::Error>()
+                            }),
+                    )
+                    .map_err(|(err, _)| err),
+            )
+            .unwrap_or_else(|err| panic!("{}", err));
     }
 }

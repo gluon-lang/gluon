@@ -1003,12 +1003,12 @@ where
     }
 }
 
-impl<'vm, 'value, T: Getable<'vm, 'value>> Getable<'vm, 'value> for Vec<T> {
+impl<'vm, 'value, T> Getable<'vm, 'value> for Vec<T>
+where
+    T: Getable<'vm, 'value>,
+{
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Vec<T> {
-        match value.as_ref() {
-            ValueRef::Array(data) => data.iter().map(|v| T::from_value(vm, v)).collect(),
-            _ => panic!("Expected array"),
-        }
+        Collect::<GetableIter<T>>::from_value(vm, value).collect()
     }
 }
 
@@ -1607,5 +1607,49 @@ where
         }
         context.push(ValueRepr::Array(result));
         Ok(())
+    }
+}
+
+impl<T> Iterator for Collect<T>
+where
+    T: Iterator,
+{
+    type Item = T::Item;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next()
+    }
+}
+
+pub struct GetableIter<'vm, 'value, T> {
+    iter: ::value::Iter<'value>,
+    vm: &'vm Thread,
+    _marker: PhantomData<fn(&'vm ()) -> T>,
+}
+
+impl<'vm, 'value, T> Iterator for GetableIter<'vm, 'value, T>
+where
+    T: Getable<'vm, 'value>,
+{
+    type Item = T;
+
+    fn next(&mut self) -> Option<T> {
+        self.iter.next().map(|value| T::from_value(self.vm, value))
+    }
+}
+
+impl<'vm, 'value, T> Getable<'vm, 'value> for Collect<GetableIter<'vm, 'value, T>>
+where
+    T: Getable<'vm, 'value>,
+{
+    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
+        match value.as_ref() {
+            ValueRef::Array(data) => Collect::new(GetableIter {
+                iter: data.iter(),
+                vm,
+                _marker: PhantomData,
+            }),
+            _ => panic!("Expected array"),
+        }
     }
 }

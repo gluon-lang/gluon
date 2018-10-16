@@ -1,23 +1,32 @@
 extern crate http;
 extern crate hyper;
+extern crate native_tls;
+extern crate tokio_tcp;
+extern crate tokio_tls;
 
-use std::fmt;
-use std::marker::PhantomData;
-use std::sync::{Arc, Mutex};
+use std::{
+    fmt, fs,
+    marker::PhantomData,
+    path::Path,
+    sync::{Arc, Mutex},
+};
 
 use self::{http::StatusCode, hyper::service::Service, hyper::Chunk, hyper::Server};
 
-use futures::future::Either;
-use futures::stream::Stream;
-use futures::{future, Async, Future};
+use futures::{
+    future::{self, Either},
+    Async, Future, Stream,
+};
+
+use self::http::header::{HeaderMap, HeaderName, HeaderValue};
 
 use base::types::{ArcType, Type};
 
 use vm::{
     self,
-    api::{Function, OpaqueValue, PushAsRef, VmType, WithVM, IO},
-    thread::{RootedThread, Thread},
-    ExternModule,
+    api::{Collect, Function, Getable, OpaqueValue, PushAsRef, Pushable, VmType, WithVM, IO},
+    thread::{ActiveThread, RootedThread, Thread},
+    ExternModule, Variants,
 };
 
 macro_rules! try_future {
@@ -46,6 +55,43 @@ impl<T: VmType + 'static> VmType for Handler<T> {
         vm.find_type_info("std.http.types.Handler")
             .map(|typ| Type::app(typ.into_type(), collect![T::make_type(vm)]))
             .unwrap_or_else(|_| Type::hole())
+    }
+}
+
+struct Headers(HeaderMap);
+
+impl VmType for Headers {
+    type Type = Vec<(String, Vec<u8>)>;
+
+    fn make_type(vm: &Thread) -> ArcType {
+        Vec::<(String, Vec<u8>)>::make_type(vm)
+    }
+}
+
+impl<'vm> Pushable<'vm> for Headers {
+    fn push(self, context: &mut ActiveThread<'vm>) -> vm::Result<()> {
+        Collect::new(
+            self.0
+                .iter()
+                .map(|(name, value)| (name.as_str(), value.as_bytes())),
+        )
+        .push(context)
+    }
+}
+
+impl<'vm, 'value> Getable<'vm, 'value> for Headers {
+    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
+        Headers(
+            Collect::from_value(vm, value)
+                // TODO Error somehow on invalid headers
+                .filter_map(|(name, value): (&str, &[u8])| {
+                    match (HeaderName::from_bytes(name.as_bytes()), HeaderValue::from_bytes(value)) {
+                        (Ok(name), Ok(value)) => Some((name, value)),
+                        _ => None,
+                    }
+                })
+                .collect(),
+        )
     }
 }
 
@@ -134,7 +180,7 @@ struct Uri(http::Uri);
 
 // Next we define some record types which are marshalled to and from gluon. These have equivalent
 // definitions in http_types.glu
-field_decl! { method, uri, status, body, request, response }
+field_decl! { method, uri, status, body, request, response, headers }
 
 type Request = record_type!{
     method => String,
@@ -143,7 +189,8 @@ type Request = record_type!{
 };
 
 type Response = record_type!{
-    status => u16
+    status => u16,
+    headers => Headers
 };
 
 type HttpState = record_type!{
@@ -151,8 +198,15 @@ type HttpState = record_type!{
     response => ResponseBody
 };
 
+#[derive(Getable, VmType)]
+#[gluon(crate_name = "::vm")]
+struct Settings<'a> {
+    port: u16,
+    tls_cert: Option<&'a Path>,
+}
+
 fn listen(
-    port: i32,
+    settings: Settings,
     value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>,
 ) -> impl Future<Item = IO<()>, Error = vm::Error> + Send + 'static {
     let WithVM {
@@ -212,17 +266,17 @@ fn listen(
                     .then(move |result| match result {
                         Ok(value) => {
                             match value {
-                                IO::Value(record_p!{ status }) => {
+                                IO::Value(record_p!{ status, headers }) => {
                                     // Drop the sender to so that it the receiver stops waiting for
                                     // more chunks
                                     *response_sender.lock().unwrap() = None;
 
                                     let status = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-                                    Ok(
-                                        http::Response::builder()
+                                        let mut response = http::Response::builder()
                                             .status(status)
-                                            .body(response_body).unwrap(),
-                                    )
+                                            .body(response_body).unwrap();
+                                    *response.headers_mut() = headers.0;
+                                    Ok(response)
                                 }
                                 IO::Exception(err) => {
                                     error!("{}", err);
@@ -245,9 +299,62 @@ fn listen(
         }
     }
 
-    let addr = format!("0.0.0.0:{}", port).parse().unwrap();
+    let addr = format!("0.0.0.0:{}", settings.port).parse().unwrap();
 
-    Either::B(
+    if let Some(cert_path) = settings.tls_cert {
+        let identity = try_future!(
+            fs::read(cert_path).map_err(|err| vm::Error::Message(format!(
+                "Unable to open certificate `{}`: {}",
+                cert_path.display(),
+                err
+            ))),
+            Either::A
+        );
+
+        let identity = try_future!(
+            native_tls::Identity::from_pkcs12(&identity, "")
+                .map_err(|err| vm::Error::Message(err.to_string())),
+            Either::A
+        );
+        let acceptor = tokio_tls::TlsAcceptor::from(try_future!(
+            native_tls::TlsAcceptor::new(identity)
+                .map_err(|err| vm::Error::Message(err.to_string())),
+            Either::A
+        ));
+
+        let http = hyper::server::conn::Http::new();
+        let listener = try_future!(
+            tokio_tcp::TcpListener::bind(&addr).map_err(|err| vm::Error::Message(err.to_string())),
+            Either::A
+        );
+        let incoming = listener
+            .incoming()
+            .and_then(move |stream| {
+                acceptor.accept(stream).map(Some).or_else(|err| {
+                    info!("Unable to accept TLS connection: {}", err);
+                    Ok(None)
+                })
+            })
+            .filter_map(|opt_tls_stream| opt_tls_stream);
+
+        let future = http
+            .serve_incoming(incoming, move || -> Result<_, hyper::Error> {
+                Ok(Listen {
+                    handle: handle.clone(),
+                    handler: handler.clone(),
+                })
+            })
+            .and_then(|connecting| connecting)
+            .for_each(|connection| {
+                hyper::rt::spawn(connection.map_err(|err| error!("{}", err)));
+                Ok(())
+            })
+            .map(|_| IO::Value(()))
+            .map_err(|err| vm::Error::from(format!("Server error: {}", err)));
+        return Either::B(Either::A(future));
+    }
+
+    Either::B(Either::B(
         Server::bind(&addr)
             .serve(move || -> Result<_, hyper::Error> {
                 Ok(Listen {
@@ -256,8 +363,8 @@ fn listen(
                 })
             })
             .map_err(|err| vm::Error::from(format!("Server error: {}", err)))
-            .and_then(|_| Ok(IO::Value(()))),
-    )
+            .map(|_| IO::Value(())),
+    ))
 }
 
 // To let the `http_types` module refer to `Body` and `ResponseBody` we register these types in a
@@ -278,6 +385,7 @@ pub fn load_types(vm: &Thread) -> vm::Result<ExternModule> {
             type StatusCode => u16,
             type Request => Request,
             type Response => Response,
+            type Headers => Headers,
             type HttpState => HttpState
         },
     )
