@@ -216,7 +216,7 @@ guess_loop ()
 
 ### Try online
 
-You can try gluon in your browser at  http://gluon-lang.org/try. ([Github](https://github.com/gluon-lang/try_gluon))
+You can try gluon in your browser at http://gluon-lang.org/try/. ([Github](https://github.com/gluon-lang/try_gluon))
 
 ### REPL
 
