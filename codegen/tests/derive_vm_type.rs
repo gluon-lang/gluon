@@ -27,6 +27,24 @@ fn struct_() {
 
 #[derive(VmType)]
 #[allow(unused)]
+enum Enum {
+    One,
+    Two(u32),
+    Three { id: String },
+}
+
+#[test]
+fn enum_() {
+    let vm = new_vm();
+
+    assert_eq!(
+        Enum::make_type(&vm).to_string(),
+        "| One\n| Two Int\n| Three String"
+    );
+}
+
+#[derive(VmType)]
+#[allow(unused)]
 struct Newtype(Struct);
 
 #[test]

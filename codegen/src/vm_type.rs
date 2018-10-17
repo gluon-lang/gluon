@@ -119,7 +119,7 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
                     }}
                 });
                 quote!{
-                    _gluon_base::types::Type::variants(
+                    _gluon_base::types::Type::variant(
                         vec![#(#variants),*]
                     )
                 }
