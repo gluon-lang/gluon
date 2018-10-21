@@ -161,6 +161,13 @@ pub struct Opt {
     prompt: String,
 
     #[structopt(
+        long = "debug",
+        default_value = "none",
+        help = "Debug Level: none, low, high"
+    )]
+    debug_level: base::DebugLevel,
+
+    #[structopt(
         name = "FILE",
         help = "Executes each file as a gluon program"
     )]
@@ -247,6 +254,7 @@ fn run(
     color: Color,
     vm: &Thread,
 ) -> std::result::Result<(), gluon::Error> {
+    vm.global_env().set_debug_level(opt.debug_level.clone());
     match opt.subcommand_opt {
         Some(SubOpt::Fmt(ref fmt_opt)) => {
             if !fmt_opt.input.is_empty() {
@@ -287,7 +295,8 @@ fn run(
             if opt.interactive {
                 let mut runtime = Runtime::new()?;
                 let prompt = opt.prompt.clone();
-                runtime.block_on(future::lazy(move || repl::run(color, &prompt)))?;
+                let debug_level = opt.debug_level.clone();
+                runtime.block_on(future::lazy(move || repl::run(color, &prompt, debug_level)))?;
             } else if !opt.input.is_empty() {
                 run_files(compiler, &vm, &opt.input)?;
             } else {

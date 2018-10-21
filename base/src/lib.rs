@@ -108,3 +108,29 @@ pub fn filename_to_module(filename: &str) -> String {
 
     name.replace(|c: char| c == '/' || c == '\\', ".")
 }
+
+#[derive(Debug, Clone)]
+pub enum DebugLevel {
+    None,
+    Low,
+    High,
+}
+
+impl Default for DebugLevel {
+    fn default() -> DebugLevel {
+        DebugLevel::None
+    }
+}
+
+impl ::std::str::FromStr for DebugLevel {
+    type Err = &'static str;
+    fn from_str(s: &str) -> ::std::result::Result<Self, Self::Err> {
+        use self::DebugLevel::*;
+        Ok(match s {
+            "none" => None,
+            "low" => Low,
+            "high" => High,
+            _ => return Err("Expected on of none, low, high"),
+        })
+    }
+}

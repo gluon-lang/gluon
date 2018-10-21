@@ -19,6 +19,7 @@ use base::pos;
 use base::resolve;
 use base::symbol::{Symbol, SymbolModule};
 use base::types::ArcType;
+use base::DebugLevel;
 use parser::{parse_partial_repl_line, ReplLine};
 use vm::api::de::De;
 use vm::api::generic::A;
@@ -535,8 +536,10 @@ fn compile_repl(compiler: &mut Compiler, vm: &Thread) -> Result<(), GluonError> 
 pub fn run(
     color: Color,
     prompt: &str,
+    debug_level: DebugLevel,
 ) -> impl Future<Item = (), Error = Box<StdError + Send + Sync + 'static>> {
     let vm = ::gluon::VmBuilder::new().build();
+    vm.global_env().set_debug_level(debug_level);
 
     let mut compiler = Compiler::new();
     try_future!(
