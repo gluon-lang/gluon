@@ -134,3 +134,14 @@ impl ::std::str::FromStr for DebugLevel {
         })
     }
 }
+
+impl ::std::string::ToString for DebugLevel {
+    fn to_string(&self) -> String {
+        use self::DebugLevel::*;
+        match self {
+            &None => "none".to_string(),
+            &Low => "low".to_string(),
+            &High => "high".to_string(),
+        }
+    }
+}

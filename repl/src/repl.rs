@@ -6,6 +6,7 @@ extern crate gluon_completion as completion;
 
 use std::error::Error as StdError;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Mutex;
 
 use futures::future::{self, Either};
@@ -110,6 +111,19 @@ fn find_info(args: WithVM<&str>) -> IO<Result<String, String>> {
         }
     }
     IO::Value(Ok(buffer))
+}
+
+fn switch_debug_level(args: WithVM<&str>) -> IO<Result<String, String>> {
+    let vm = args.vm;
+    let args = args.value.trim();
+    if args != "" {
+        let debug_level = match DebugLevel::from_str(args) {
+            Ok(debug_level) => debug_level,
+            Err(e) => return IO::Value(Err(e.to_string())),
+        };
+        vm.global_env().set_debug_level(debug_level);
+    }
+    IO::Value(Ok(vm.global_env().get_debug_level().to_string()))
 }
 
 fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonResult<Vec<String>> {
@@ -509,6 +523,7 @@ fn load_repl(vm: &Thread) -> vm::Result<vm::ExternModule> {
             type_of_expr => primitive!(1, type_of_expr),
             find_info => primitive!(1, find_info),
             find_kind => primitive!(1, find_kind),
+            switch_debug_level => primitive!(1, switch_debug_level),
             eval_line => primitive!(2, async fn eval_line),
             finish_or_interrupt => primitive!(3, async fn finish_or_interrupt),
             new_cpu_pool => primitive!(1, new_cpu_pool)
