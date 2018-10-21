@@ -1,3 +1,13 @@
+<a name="v0.9.4"></a>
+### v0.9.4 (2018-10-21)
+
+
+#### Bug Fixes
+
+* **codegen:**  Fix Type::variant call for VmType derive ([48e1e11b](https://github.com/gluon-lang/gluon/commit/48e1e11b345db2e69ca98cc78a63836100148b64))
+
+
+
 <a name="v0.9.3"></a>
 ### v0.9.3 (2018-10-15)
 
