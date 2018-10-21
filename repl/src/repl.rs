@@ -338,9 +338,10 @@ fn eval_line_(
             .map(move |ExecuteValue { value, typ, .. }| {
                 let vm = value.vm();
                 let env = vm.global_env().get_env();
+                let debug_level = vm.global_env().get_debug_level();
                 println!(
                     "{}",
-                    ValuePrinter::new(&*env, &typ, value.get_variant())
+                    ValuePrinter::new(&*env, &typ, value.get_variant(), &*debug_level)
                         .width(80)
                         .max_level(5)
                 );
