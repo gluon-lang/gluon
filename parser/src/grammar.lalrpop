@@ -331,12 +331,12 @@ AtomicType_: Type<Id, AstType<Id>> = {
             _ => Type::tuple_(env, elems),
         },
 
-    "{" <row: Comma<RecordField>> "}" => {
+    "{" <row: Comma<RecordField>> <rest: ("|" <Type>)?> "}" => {
         let (types, fields) = row.into_iter().partition_map(|x| x);
         Type::Record(Type::extend_row(
             types,
             fields,
-            Type::empty_row(),
+            rest.unwrap_or_else(Type::empty_row),
         ))
     },
 };
