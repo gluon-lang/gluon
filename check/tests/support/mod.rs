@@ -13,11 +13,26 @@ use base::types::{self, Alias, ArcType, Generic, PrimitiveEnv, Type, TypeCache, 
 
 use check::typecheck::{self, Typecheck};
 use check::{metadata, rename};
-use parser::{parse_partial_expr, reparse_infix, ParseErrors};
+use parser::{self, parse_partial_expr, reparse_infix, ParseErrors};
 
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;
+
+quick_error! {
+    /// Representation of all possible errors that can occur when interacting with the `vm` crate
+    #[derive(Debug, PartialEq)]
+    pub enum Error {
+        Check(err: InFile<typecheck::HelpError<Symbol>>) {
+            display("{}", err)
+            from()
+        }
+        Parser(err: InFile<parser::Error>) {
+            display("{}", err)
+            from()
+        }
+    }
+}
 
 /// Returns a reference to the interner stored in TLD
 pub fn get_local_interner() -> Rc<RefCell<Symbols>> {
@@ -56,7 +71,7 @@ pub fn parse_new(
 }
 
 #[allow(dead_code)]
-pub fn typecheck(text: &str) -> Result<ArcType, InFile<typecheck::HelpError<Symbol>>> {
+pub fn typecheck(text: &str) -> Result<ArcType, Error> {
     let (_, t) = typecheck_expr(text);
     t
 }
@@ -148,9 +163,17 @@ pub fn typecheck_expr_expected(
     expected: Option<&ArcType>,
 ) -> (
     SpannedExpr<Symbol>,
-    Result<ArcType, InFile<typecheck::HelpError<Symbol>>>,
+    Result<ArcType, Error>,
 ) {
-    let mut expr = parse_new(text).unwrap_or_else(|(_, err)| panic!("{}", err));
+    let mut expr = match parse_new(text) {
+        Ok(expr) => expr,
+        Err((expr, err)) => {
+            let mut source = codespan::CodeMap::new();
+            source.add_filemap("test".into(), text.into());
+            let err = InFile::new(source, err);
+            return (expr.unwrap_or_else(|| panic!("{}", err)), Err(err.into()))
+        }
+    };
 
     let env = MockEnv::new();
     let interner = get_local_interner();
@@ -178,7 +201,7 @@ pub fn typecheck_expr_expected(
         result.map_err(|err| {
             let mut source = codespan::CodeMap::new();
             source.add_filemap("test".into(), text.into());
-            InFile::new(source, err)
+            InFile::new(source, err).into()
         }),
     )
 }
@@ -187,7 +210,7 @@ pub fn typecheck_expr(
     text: &str,
 ) -> (
     SpannedExpr<Symbol>,
-    Result<ArcType, InFile<typecheck::HelpError<Symbol>>>,
+    Result<ArcType, Error>,
 ) {
     typecheck_expr_expected(text, None)
 }

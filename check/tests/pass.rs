@@ -3,6 +3,8 @@ extern crate collect_mac;
 extern crate env_logger;
 #[macro_use]
 extern crate pretty_assertions;
+#[macro_use]
+extern crate quick_error;
 
 extern crate gluon_base as base;
 extern crate gluon_check as check;
