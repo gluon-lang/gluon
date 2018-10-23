@@ -1,6 +1,6 @@
 [package]
 name = "gluon_doc"
-version = "0.9.3" # GLUON
+version = "0.9.4" # GLUON
 authors = ["Markus Westerlind <marwes91@gmail.com>"]
 
 license = "MIT"
@@ -28,5 +28,5 @@ serde = "1.0.0"
 serde_derive = "1.0.0"
 serde_json = "1.0.0"
 
-gluon = { version = "0.9.3", path = ".." } # GLUON
+gluon = { version = "0.9.4", path = ".." } # GLUON
 
