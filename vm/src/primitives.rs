@@ -438,7 +438,7 @@ pub fn load_int(vm: &Thread) -> Result<ExternModule> {
             wrapping_mul => primitive!(2, std::int::prim::wrapping_mul),
             wrapping_div => primitive!(2, std::int::prim::wrapping_div),
             wrapping_abs => primitive!(1, std::int::prim::wrapping_abs),
-            wrapping_negate => primitive!(1, "std.int.prim.wrapping_negate", std::int::prim::overflowing_neg),
+            wrapping_negate => primitive!(1, "std.int.prim.wrapping_negate", std::int::prim::wrapping_neg),
             overflowing_add => primitive!(2, std::int::prim::overflowing_add),
             overflowing_sub => primitive!(2, std::int::prim::overflowing_sub),
             overflowing_mul => primitive!(2, std::int::prim::overflowing_mul),
