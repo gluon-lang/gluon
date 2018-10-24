@@ -28,6 +28,8 @@ extern crate serde_derive_state;
 #[cfg(feature = "serde")]
 extern crate serde_state as serde;
 
+use std::fmt;
+
 macro_rules! type_cache {
     ($name: ident ($($args: ident),*) ($($arg: ident : $arg_type: ty),*) { $typ: ty, $inner_type: ident } $( $id: ident )+) => {
 
@@ -135,13 +137,17 @@ impl ::std::str::FromStr for DebugLevel {
     }
 }
 
-impl ::std::string::ToString for DebugLevel {
-    fn to_string(&self) -> String {
+impl fmt::Display for DebugLevel {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         use self::DebugLevel::*;
-        match self {
-            &None => "none".to_string(),
-            &Low => "low".to_string(),
-            &High => "high".to_string(),
-        }
+        write!(
+            f,
+            "{}",
+            match self {
+                &None => "none",
+                &Low => "low",
+                &High => "high",
+            }
+        )
     }
 }
