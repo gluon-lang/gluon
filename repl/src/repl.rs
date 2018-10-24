@@ -6,6 +6,7 @@ extern crate gluon_completion as completion;
 
 use std::error::Error as StdError;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Mutex;
 
 use futures::future::{self, Either};
@@ -19,6 +20,7 @@ use base::pos;
 use base::resolve;
 use base::symbol::{Symbol, SymbolModule};
 use base::types::ArcType;
+use base::DebugLevel;
 use parser::{parse_partial_repl_line, ReplLine};
 use vm::api::de::De;
 use vm::api::generic::A;
@@ -109,6 +111,19 @@ fn find_info(args: WithVM<&str>) -> IO<Result<String, String>> {
         }
     }
     IO::Value(Ok(buffer))
+}
+
+fn switch_debug_level(args: WithVM<&str>) -> IO<Result<String, String>> {
+    let vm = args.vm;
+    let args = args.value.trim();
+    if args != "" {
+        let debug_level = match DebugLevel::from_str(args) {
+            Ok(debug_level) => debug_level,
+            Err(e) => return IO::Value(Err(e.to_string())),
+        };
+        vm.global_env().set_debug_level(debug_level);
+    }
+    IO::Value(Ok(vm.global_env().get_debug_level().to_string()))
 }
 
 fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonResult<Vec<String>> {
@@ -337,9 +352,10 @@ fn eval_line_(
             .map(move |ExecuteValue { value, typ, .. }| {
                 let vm = value.vm();
                 let env = vm.global_env().get_env();
+                let debug_level = vm.global_env().get_debug_level();
                 println!(
                     "{}",
-                    ValuePrinter::new(&*env, &typ, value.get_variant())
+                    ValuePrinter::new(&*env, &typ, value.get_variant(), &debug_level)
                         .width(80)
                         .max_level(5)
                 );
@@ -507,6 +523,7 @@ fn load_repl(vm: &Thread) -> vm::Result<vm::ExternModule> {
             type_of_expr => primitive!(1, type_of_expr),
             find_info => primitive!(1, find_info),
             find_kind => primitive!(1, find_kind),
+            switch_debug_level => primitive!(1, switch_debug_level),
             eval_line => primitive!(2, async fn eval_line),
             finish_or_interrupt => primitive!(3, async fn finish_or_interrupt),
             new_cpu_pool => primitive!(1, new_cpu_pool)
@@ -535,8 +552,10 @@ fn compile_repl(compiler: &mut Compiler, vm: &Thread) -> Result<(), GluonError> 
 pub fn run(
     color: Color,
     prompt: &str,
+    debug_level: DebugLevel,
 ) -> impl Future<Item = (), Error = Box<StdError + Send + Sync + 'static>> {
     let vm = ::gluon::VmBuilder::new().build();
+    vm.global_env().set_debug_level(debug_level);
 
     let mut compiler = Compiler::new();
     try_future!(

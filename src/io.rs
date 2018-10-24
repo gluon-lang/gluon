@@ -196,8 +196,9 @@ fn run_expr(
                 Ok(execute_value) => {
                     let env = vm.global_env().get_env();
                     let typ = execute_value.typ;
+                    let debug_level = vm.global_env().get_debug_level();
                     IO::Value(record_no_decl!{
-                        value => ValuePrinter::new(&*env, &typ, execute_value.value.get_variant()).width(80).to_string(),
+                        value => ValuePrinter::new(&*env, &typ, execute_value.value.get_variant(), &debug_level).width(80).to_string(),
                         typ => typ.to_string()
                     })
                 }

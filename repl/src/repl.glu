@@ -110,6 +110,12 @@ let make_commands cpu_pool : CpuPool -> Commands =
             action = \arg -> run_file cpu_pool arg *> wrap Continue,
         },
         {
+            name = "debug",
+            alias = "d",
+            info = "Switch debug level",
+            action = \arg -> (repl_prim.switch_debug_level arg >>= print_result) *> wrap Continue,
+        },
+        {
             name = "help",
             alias = "h",
             info = "Print this help",
