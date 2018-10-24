@@ -589,8 +589,8 @@ impl GlobalVmState {
         self.env.read().unwrap()
     }
 
-    pub fn get_debug_level<'b>(&'b self) -> RwLockReadGuard<'b, DebugLevel> {
-        self.debug_level.read().unwrap()
+    pub fn get_debug_level(&self) -> DebugLevel {
+        self.debug_level.read().unwrap().clone()
     }
 
     pub fn set_debug_level(&self, debug_level: DebugLevel) {

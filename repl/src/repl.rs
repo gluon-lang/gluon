@@ -355,7 +355,7 @@ fn eval_line_(
                 let debug_level = vm.global_env().get_debug_level();
                 println!(
                     "{}",
-                    ValuePrinter::new(&*env, &typ, value.get_variant(), &*debug_level)
+                    ValuePrinter::new(&*env, &typ, value.get_variant(), &debug_level)
                         .width(80)
                         .max_level(5)
                 );
