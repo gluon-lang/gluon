@@ -1984,6 +1984,13 @@ impl<'a> Typecheck<'a> {
                 self.translate_ast_type(&type_cache, typ)
             });
 
+            if let Type::Variant(ref row) = **alias.unresolved_type().remove_forall() {
+                for field in row.row_iter() {
+                    let symbol = self.symbols.scoped_symbol(field.name.as_ref());
+                    self.original_symbols.insert(field.name.clone(), symbol);
+                }
+            }
+
             // alias.unresolved_type() is a dummy in this context
             self.named_variables.extend(
                 alias
@@ -1993,6 +2000,7 @@ impl<'a> Typecheck<'a> {
             );
 
             let replacement = self.create_unifiable_signature2(alias.unresolved_type());
+
 
             if let Some(typ) = replacement {
                 *alias.unresolved_type_mut() = typ;
