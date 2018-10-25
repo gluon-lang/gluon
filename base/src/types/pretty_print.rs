@@ -37,23 +37,23 @@ pub fn doc_comment<'a, A>(
                     .map(|line| arena.text("/// ").append(line).append(arena.newline())),
             ),
             CommentType::Block => chain![arena;
-                        "/**",
-                        arena.newline(),
-                        arena.concat(comment.content.lines().map(|line| {
-                            let line = line.trim();
-                            if line.is_empty() {
-                                arena.newline()
-                            } else {
-                                chain![arena;
-                                    " ",
-                                    line,
-                                    arena.newline()
-                                ]
-                            }
-                        })),
-                        "*/",
+                "/**",
+                arena.newline(),
+                arena.concat(comment.content.lines().map(|line| {
+                    let line = line.trim();
+                    if line.is_empty() {
                         arena.newline()
-                    ],
+                    } else {
+                        chain![arena;
+                            " ",
+                            line,
+                            arena.newline()
+                        ]
+                    }
+                })),
+                "*/",
+                arena.newline()
+            ],
         },
         None => arena.nil(),
     }

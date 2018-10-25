@@ -126,7 +126,11 @@ where
     }
 
     pub fn variant(&self, fields: Vec<Field<Id, T>>) -> T {
-        Type::poly_variant(fields, self.empty_row())
+        self.poly_variant(fields, self.empty_row())
+    }
+
+    pub fn poly_variant(&self, fields: Vec<Field<Id, T>>, rest: T) -> T {
+        Type::poly_variant(fields, rest)
     }
 
     pub fn record(&self, types: Vec<Field<Id, Alias<Id, T>>>, fields: Vec<Field<Id, T>>) -> T {
@@ -586,6 +590,18 @@ pub type AppVec<T> = SmallVec<[T; 2]>;
 impl<Id, T> Field<Id, T> {
     pub fn new(name: Id, typ: T) -> Field<Id, T> {
         Field { name, typ }
+    }
+
+    pub fn ctor<S, I>(symbols: &mut S, name: Id, elems: I) -> Self
+    where
+        S: ?Sized + IdentEnv<Ident = Id>,
+        I: IntoIterator<Item = T>,
+        T: From<Type<Id, T>>,
+    {
+        Field {
+            name,
+            typ: Type::tuple(symbols, elems),
+        }
     }
 }
 
@@ -1842,11 +1858,11 @@ where
             }
             Type::Variable(ref var) => arena.text(format!("{}", var.id)),
             Type::Skolem(ref skolem) => chain![
-                    arena;
-                    skolem.name.as_ref(),
-                    "@",
-                    skolem.id.to_string()
-                ],
+                arena;
+                skolem.name.as_ref(),
+                "@",
+                skolem.id.to_string()
+            ],
             Type::Generic(ref gen) => arena.text(gen.id.as_ref()),
             Type::Function(..) => self.pretty_function(printer).nest(INDENT),
             Type::App(ref t, ref args) => match self.typ.as_function() {
@@ -1865,31 +1881,57 @@ where
             Type::Variant(ref row) => {
                 let mut first = true;
 
-                let doc = match **row {
-                    Type::EmptyRow => arena.nil(),
-                    Type::ExtendRow { ref fields, .. } => {
-                        arena.concat(fields.iter().map(|field| {
-                            chain![arena;
-                                if first {
-                                    first = false;
-                                    arena.nil()
-                                } else {
-                                    arena.newline()
-                                },
+                let mut doc = arena.nil();
+                let mut row = row;
+                loop {
+                    row = match **row {
+                        Type::EmptyRow => break,
+                        Type::ExtendRow {
+                            ref fields,
+                            ref rest,
+                            ..
+                        } => {
+                            doc = doc.append(arena.concat(fields.iter().map(|field| {
+                                chain![arena;
+                                    if first {
+                                        first = false;
+                                        arena.nil()
+                                    } else {
+                                        arena.space()
+                                    },
+                                    "| ",
+                                    field.name.as_ref(),
+                                    if field.typ.as_function().is_some() {
+                                        arena.concat(arg_iter(&field.typ).map(|arg| {
+                                            chain![arena;
+                                                " ",
+                                                dt(Prec::Constructor, arg).pretty(printer)
+                                            ]
+                                        }))
+                                    } else {
+                                        arena.concat(row_iter(&field.typ).map(|field| {
+                                            chain![arena;
+                                                " ",
+                                                dt(Prec::Constructor, &field.typ).pretty(printer)
+                                            ]
+                                        }))
+                                    }
+                                ]
+                                .group()
+                            })));
+                            rest
+                        }
+                        _ => {
+                            doc = chain![arena;
+                                doc,
+                                arena.space(),
                                 "| ",
-                                field.name.as_ref(),
-                                arena.concat(arg_iter(&field.typ).map(|arg| {
-                                    chain![arena;
-                                        " ",
-                                        dt(Prec::Constructor, arg).pretty(printer)
-                                    ]
-                                }))
-                            ]
-                            .group()
-                        }))
-                    }
-                    _ => ice!("Unexpected type in variant"),
-                };
+                                top(row).pretty(printer)
+                            ];
+                            break;
+                        }
+                    };
+                }
 
                 p.enclose(Prec::Constructor, arena, doc).group()
             }
@@ -2138,13 +2180,13 @@ where
         let arena = printer.arena;
         match self.typ.as_function_with_type() {
             Some((arg_type, arg, ret)) => chain![arena;
-                    if arg_type == ArgType::Implicit { "[" } else { "" },
-                    dt(Prec::Function, arg).pretty(printer),
-                    if arg_type == ArgType::Implicit { "]" } else { "" },
-                    printer.space_after(arg.span().end()),
-                    "-> ",
-                    top(ret).pretty_function_(printer)
-                ],
+                if arg_type == ArgType::Implicit { "[" } else { "" },
+                dt(Prec::Function, arg).pretty(printer),
+                if arg_type == ArgType::Implicit { "]" } else { "" },
+                printer.space_after(arg.span().end()),
+                "-> ",
+                top(ret).pretty_function_(printer)
+            ],
             None => self.pretty(printer),
         }
     }

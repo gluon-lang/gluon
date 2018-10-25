@@ -499,11 +499,24 @@ impl<'a> Typecheck<'a> {
 
         if let Type::Variant(ref variants) = **canonical_alias {
             for field in variants.row_iter().cloned() {
-                let symbol = self.symbols.symbol(field.name.as_ref());
-                self.original_symbols.insert(symbol, field.name.clone());
+                let ctor_type = self.type_cache.function(
+                    field
+                        .typ
+                        .row_iter()
+                        .map(|f| f.typ.clone())
+                        .collect::<Vec<_>>(),
+                    Type::app(
+                        alias.clone().into_type(),
+                        alias
+                            .params()
+                            .iter()
+                            .map(|g| Type::generic(g.clone()))
+                            .collect(),
+                    ),
+                );
                 self.stack_var(
                     field.name,
-                    Type::forall(alias.params().to_owned(), field.typ),
+                    Type::forall(alias.params().to_owned(), ctor_type),
                 );
             }
         }
@@ -1879,11 +1892,6 @@ impl<'a> Typecheck<'a> {
             bindings.update(|name| Some(stack.get(name).unwrap().typ.clone()));
         }
 
-        let s = self.symbols.symbol("module");
-        if let Some(t) = self.environment.find_type(&s) {
-            eprintln!("{}", t);
-        }
-
         debug!("Typecheck `in`");
         self.type_variables.exit_scope();
         Ok(())
@@ -1984,6 +1992,13 @@ impl<'a> Typecheck<'a> {
                 self.translate_ast_type(&type_cache, typ)
             });
 
+            if let Type::Variant(ref row) = **alias.unresolved_type().remove_forall() {
+                for field in row.row_iter() {
+                    let symbol = self.symbols.scoped_symbol(field.name.as_ref());
+                    self.original_symbols.insert(field.name.clone(), symbol);
+                }
+            }
+
             // alias.unresolved_type() is a dummy in this context
             self.named_variables.extend(
                 alias
@@ -1994,6 +2009,7 @@ impl<'a> Typecheck<'a> {
 
             let replacement =
                 self.create_unifiable_signature2(alias.unresolved_type().remove_forall());
+
             if let Some(typ) = replacement {
                 *alias.unresolved_type_mut() = Type::forall(alias.params().to_owned(), typ);
             }
@@ -2278,16 +2294,18 @@ impl<'a> Typecheck<'a> {
                 if iter().any(|opt| opt.is_some()) {
                     // If any of the variants requires a symbol replacement
                     // we create a new type
+                    let mut row_iter = row.row_iter();
+                    let variants = row_iter
+                        .by_ref()
+                        .zip(iter())
+                        .map(|(old, new)| match new {
+                            Some(new) => Field::new(new.clone(), old.typ.clone()),
+                            None => old.clone(),
+                        })
+                        .collect();
                     Some(
-                        self.type_cache.variant(
-                            iter()
-                                .zip(row.row_iter())
-                                .map(|(new, old)| match new {
-                                    Some(new) => Field::new(new.clone(), old.typ.clone()),
-                                    None => old.clone(),
-                                })
-                                .collect(),
-                        ),
+                        self.type_cache
+                            .poly_variant(variants, row_iter.current_type().clone()),
                     )
                 } else {
                     replacement

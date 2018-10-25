@@ -634,7 +634,7 @@ impl<'a, 'e> Compiler<'a, 'e> {
                 function.push_stack_var(self, name.name.clone(), pattern_expr);
             }
             Pattern::Record(ref fields) => {
-                match_reduce!{
+                match_reduce! {
                     pattern_expr, wrap;
 
                     Expr::Data(ref data_id, ref exprs, _) => {

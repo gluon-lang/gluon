@@ -244,21 +244,27 @@ RecordField: Either<Field<Id, Alias<Id, AstType<Id>>>, Field<Id, AstType<Id>>> =
 VariantField: (Id, Vec<AstType<Id>>) =
     "|" <Ident> <AtomicType*> => (<>);
 
+VariantType: Type<Id, AstType<Id>> =
+    <row: Sp<VariantField+>> <rest: (".." <AtomicType>)?> => {
+        let rest = rest.unwrap_or_else(Type::empty_row);
+        let row_span = row.span;
+        let row = row.value.into_iter()
+            .map(|(id, params)| {
+                Field::new(id.clone(), Type::tuple(env, params))
+            })
+            .collect();
+        Type::Variant(Type::extend_row(vec![], row, rest))
+    };
+
 TypeBinding: TypeBinding<Id> = {
-    <metadata: Metadata?> "type" <id: Sp<Ident>> <params: TypeParam*> "=" <row: Sp<VariantField+>> => {
+    <metadata: Metadata?> "type" <id: Sp<Ident>> <params: TypeParam*> "=" <row: Sp<VariantType>> => {
         if !env.string(&id.value).starts_with(char::is_uppercase) {
             errors.push(::lalrpop_util::ParseError::User {
                 error: pos::spanned(id.span, format!("A type must start with an uppercase letter").into()),
             });
         }
 
-        let typ_args = params.iter().cloned().map(Type::generic).collect();
-        let typ: AstType<Id> = Type::app(Type::ident(id.value.clone()), typ_args);
-
         let row_span = row.span;
-        let row = row.value.into_iter()
-            .map(|(id, params)| Field::new(id, Type::function(params, typ.clone())))
-            .collect();
 
         TypeBinding {
             metadata: metadata.unwrap_or_default(),
@@ -268,10 +274,7 @@ TypeBinding: TypeBinding<Id> = {
                 AliasData::new(
                     id.value.clone(),
                     params,
-                    AstType::from(pos::spanned(
-                        row_span,
-                        Type::Variant(Type::extend_row(vec![], row, Type::empty_row()))
-                    )),
+                    AstType::from(row),
                 )
             ),
             finalized_alias: None,
@@ -323,6 +326,9 @@ AtomicType_: Type<Id, AstType<Id>> = {
             Type::Ident(env.from_str(&project_id))
         }
     },
+
+
+    "(" <VariantType> ")",
 
     "(" <elems: Comma<Type>> ")" =>
         match elems.len() {

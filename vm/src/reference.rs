@@ -97,7 +97,7 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
     let _ = vm.register_type::<Reference<A>>("Ref", &["a"]);
     ExternModule::new(
         vm,
-        record!{
+        record! {
             type Reference a => Reference<A>,
             (store "<-") => primitive!(2, "std.reference.prim.(<-)", std::reference::prim::set),
             load => primitive!(1, "std.reference.prim.load", std::reference::prim::get),

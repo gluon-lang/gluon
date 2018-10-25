@@ -8,7 +8,7 @@ mod support;
 use gluon::Compiler;
 use support::*;
 
-test_expr!{ prelude match_on_bool,
+test_expr! { prelude match_on_bool,
 r#"
 let { Bool } = import! std.bool
 match True with
@@ -31,7 +31,7 @@ match A with
     assert!(result.is_err());
 }
 
-test_expr!{ match_record_pattern,
+test_expr! { match_record_pattern,
 r#"
 let string_prim = import! std.string.prim
 match { x = 1, y = "abc" } with
@@ -40,7 +40,7 @@ match { x = 1, y = "abc" } with
 4i32
 }
 
-test_expr!{ match_stack,
+test_expr! { match_stack,
 r#"
 let string_prim = import! std.string.prim
 1 #Int+ (match string_prim with
@@ -49,7 +49,7 @@ let string_prim = import! std.string.prim
 4i32
 }
 
-test_expr!{ let_record_pattern,
+test_expr! { let_record_pattern,
 r#"
 let string_prim = import! std.string.prim
 #[infix(left, 6)]
@@ -63,7 +63,7 @@ in x + string_prim.len z
 13i32
 }
 
-test_expr!{ partial_record_pattern,
+test_expr! { partial_record_pattern,
 r#"
 type A = { x: Int, y: Float } in
 let x = { x = 1, y = 2.0 }
@@ -73,7 +73,7 @@ in match x with
 2.0f64
 }
 
-test_expr!{ record_let_adjust,
+test_expr! { record_let_adjust,
 r#"
 let x = \z -> let { x, y } = { x = 1, y = 2 } in z in
 let a = 3
@@ -82,7 +82,7 @@ in a
 3i32
 }
 
-test_expr!{ match_on_zero_argument_variant,
+test_expr! { match_on_zero_argument_variant,
 r#"
 type Test = | A Int | B
 match B with
@@ -94,7 +94,7 @@ match B with
 
 // Without a slide instruction after the alternatives code this code would try to call `x 1`
 // instead of `id 1`
-test_expr!{ slide_down_case_alternative,
+test_expr! { slide_down_case_alternative,
 r#"
 type Test = | Test Int
 let id x = x
@@ -104,7 +104,7 @@ id (match Test 0 with
 1i32
 }
 
-test_expr!{ nested_pattern1,
+test_expr! { nested_pattern1,
 r#"
 type Option a = | None | Some a
 match Some (Some 123) with
@@ -115,7 +115,7 @@ match Some (Some 123) with
 123i32
 }
 
-test_expr!{ nested_pattern2,
+test_expr! { nested_pattern2,
 r#"
 type Option a = | None | Some a
 match Some None with
@@ -126,7 +126,7 @@ match Some None with
 1i32
 }
 
-test_expr!{ nested_record_pattern,
+test_expr! { nested_record_pattern,
 r#"
 type Test a = | A a | B
 match { x = A 1 } with
@@ -136,7 +136,7 @@ match { x = A 1 } with
 1i32
 }
 
-test_expr!{ nested_record_pattern2,
+test_expr! { nested_record_pattern2,
 r#"
 type Test a = | A a | B
 match { x = B } with
@@ -146,7 +146,7 @@ match { x = B } with
 100i32
 }
 
-test_expr!{ access_only_a_few_fields_from_large_record,
+test_expr! { access_only_a_few_fields_from_large_record,
 r#"
 let record = { a = 0, b = 1, c = 2, d = 3, e = 4, f = 5, g = 6,
                h = 7, i = 8, j = 9, k = 10, l = 11, m = 12 }
@@ -158,7 +158,7 @@ a #Int+ i #Int+ m
 20i32
 }
 
-test_expr!{ match_with_id_binding_in_two_patterns_record,
+test_expr! { match_with_id_binding_in_two_patterns_record,
 r#"
 type Option a = | None | Some a
 match { _0 = 1, _1 = None } with
@@ -168,7 +168,7 @@ match { _0 = 1, _1 = None } with
 1
 }
 
-test_expr!{ match_with_id_binding_in_two_patterns_tuple,
+test_expr! { match_with_id_binding_in_two_patterns_tuple,
 r#"
 type Option a = | None | Some a
 match (1, None) with
@@ -178,7 +178,7 @@ match (1, None) with
 1
 }
 
-test_expr!{ match_with_id_binding_in_two_patterns_variant,
+test_expr! { match_with_id_binding_in_two_patterns_variant,
 r#"
 type Option a = | None | Some a
 match (Some 10, 1) with

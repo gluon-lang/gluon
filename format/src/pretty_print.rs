@@ -219,14 +219,14 @@ where
                 ref rhs,
                 ..
             } => chain![arena;
-                    pretty(lhs).group(),
-                    chain![arena;
-                        newline(arena, rhs),
-                        op.value.name.as_ref(),
-                        " ",
-                        pretty(rhs).group()
-                    ].nest(INDENT)
-                ],
+                pretty(lhs).group(),
+                chain![arena;
+                    newline(arena, rhs),
+                    op.value.name.as_ref(),
+                    " ",
+                    pretty(rhs).group()
+                ].nest(INDENT)
+            ],
 
             Expr::Lambda(_) => {
                 let (arguments, body) = self.pretty_lambda(previous_end, expr);
@@ -315,41 +315,41 @@ where
                         Literal::Int(i) => arena.text(i.to_string()),
                         Literal::Float(f) => arena.text(f.to_string()),
                         Literal::String(ref s) => chain![arena;
-                                "\"",
-                                arena.text(&s[..]),
-                                "\""
-                            ],
+                            "\"",
+                            arena.text(&s[..]),
+                            "\""
+                        ],
                         Literal::Char(c) => chain![arena;
-                                "'",
-                                arena.text(c.to_string()),
-                                "'"
-                            ],
+                            "'",
+                            arena.text(c.to_string()),
+                            "'"
+                        ],
                     }
                 }
             }
 
             Expr::Match(ref expr, ref alts) => chain![arena;
+                chain![arena;
+                    "match ",
+                    pretty(expr),
+                    " with"
+                ].group(),
+                arena.newline(),
+                arena.concat(alts.iter().map(|alt| {
                     chain![arena;
-                        "match ",
-                        pretty(expr),
-                        " with"
-                    ].group(),
-                    arena.newline(),
-                    arena.concat(alts.iter().map(|alt| {
-                        chain![arena;
-                            "| ",
-                            self.pretty_pattern(&alt.pattern),
-                            " ->",
-                            self.hang(arena.nil(), &alt.expr).group()
-                        ]
-                    }).intersperse(arena.newline()))
-                ],
+                        "| ",
+                        self.pretty_pattern(&alt.pattern),
+                        " ->",
+                        self.hang(arena.nil(), &alt.expr).group()
+                    ]
+                }).intersperse(arena.newline()))
+            ],
 
             Expr::Projection(ref expr, ref field, _) => chain![arena;
-                    pretty(expr),
-                    ".",
-                    pretty_types::ident(arena, field.as_ref())
-                ],
+                pretty(expr),
+                ".",
+                pretty_types::ident(arena, field.as_ref())
+            ],
 
             Expr::Record { .. } => {
                 let (x, y) = self.pretty_lambda(previous_end, expr);
@@ -357,17 +357,17 @@ where
             }
 
             Expr::Tuple { ref elems, .. } => chain![arena;
-                    "(",
-                    arena.concat(
-                        self.comma_sep_paren(
-                        elems
-                            .iter()
-                            .map(|elem| pos::spanned(elem.span, pretty(elem))),
-                        |spanned| spanned.value,
-                        ),
+                "(",
+                arena.concat(
+                    self.comma_sep_paren(
+                    elems
+                        .iter()
+                        .map(|elem| pos::spanned(elem.span, pretty(elem))),
+                    |spanned| spanned.value,
                     ),
-                    ")"
-                ]
+                ),
+                ")"
+            ]
             .group(),
 
             Expr::TypeBindings(ref binds, ref body) => {
@@ -469,16 +469,16 @@ where
                 ref body,
                 ..
             }) => chain![arena;
-                        chain![arena;
-                            "do",
-                            self.space_before(id.span.start()),
-                            id.value.name.as_ref(),
-                            self.space_after(id.span.end()),
-                            "=",
-                            self.hang(arena.nil(), bound).group()
-                        ].group(),
-                        self.pretty_expr_(bound.span.end(), body)
-                    ],
+                chain![arena;
+                    "do",
+                    self.space_before(id.span.start()),
+                    id.value.name.as_ref(),
+                    self.space_after(id.span.end()),
+                    "=",
+                    self.hang(arena.nil(), bound).group()
+                ].group(),
+                self.pretty_expr_(bound.span.end(), body)
+            ],
             Expr::MacroExpansion { ref original, .. } => {
                 return self.pretty_expr_(previous_end, original)
             }
@@ -522,14 +522,14 @@ where
         let arena = self.arena;
         match if_false.value {
             Expr::IfElse(ref body, ref if_true, ref if_false) => chain![arena;
-                    arena.text(" if ").append(pretty(body)).group(),
-                    arena.space(),
-                    "then",
-                    space.clone().append(pretty(if_true)).nest(INDENT).group(),
-                    space.clone(),
-                    "else",
-                    self.pretty_else_expr(space, if_false)
-                ],
+                arena.text(" if ").append(pretty(body)).group(),
+                arena.space(),
+                "then",
+                space.clone().append(pretty(if_true)).nest(INDENT).group(),
+                space.clone(),
+                "else",
+                self.pretty_else_expr(space, if_false)
+            ],
             _ => space.append(pretty(if_false)).nest(INDENT).group(),
         }
     }
@@ -738,18 +738,18 @@ where
                 Prec::Constructor,
                 arena,
                 chain![arena;
-                        ident.value.as_ref(),
-                        " @ ",
-                        self.pretty_pattern_(pat, Prec::Constructor)
-                    ],
+                    ident.value.as_ref(),
+                    " @ ",
+                    self.pretty_pattern_(pat, Prec::Constructor)
+                ],
             ),
             Pattern::Constructor(ref ctor, ref args) => {
                 let doc = chain![arena;
-                ctor.as_ref(),
-                arena.concat(args.iter().map(|arg| {
-                    arena.text(" ").append(self.pretty_pattern_(arg, Prec::Constructor))
-                }))
-            ];
+                    ctor.as_ref(),
+                    arena.concat(args.iter().map(|arg| {
+                        arena.text(" ").append(self.pretty_pattern_(arg, Prec::Constructor))
+                    }))
+                ];
                 if args.is_empty() {
                     doc
                 } else {

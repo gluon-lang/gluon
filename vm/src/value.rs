@@ -605,10 +605,10 @@ impl<'a, 't> InternalPrinter<'a, 't> {
             ValueRepr::Data(ref data) => self.pretty_data(data.tag(), variant_iter(&data.fields)),
             ValueRepr::Tag(tag) => self.pretty_data(tag, iter::empty()),
             ValueRepr::Function(ref function) => chain![arena;
-                    "<extern ",
-                    function.id.declared_name().to_string(),
-                    ">"
-                ],
+                "<extern ",
+                function.id.declared_name().to_string(),
+                ">"
+            ],
             ValueRepr::Closure(ref closure) => match self.debug_level {
                 &DebugLevel::None => chain![arena;
                     "<",
@@ -632,16 +632,16 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                 ],
             },
             ValueRepr::Array(ref array) => chain![arena;
-                    "[",
-                    arena.concat(array.iter().map(|field| {
-                        match **self.typ {
-                            Type::App(_, ref args) => self.p(&args[0], Top).pretty(field),
-                            _ => arena.text(format!("{:?}", field)),
-                        }
-                    }).intersperse(arena.text(",").append(arena.space())))
-                        .nest(INDENT),
-                    "]"
-                ],
+                "[",
+                arena.concat(array.iter().map(|field| {
+                    match **self.typ {
+                        Type::App(_, ref args) => self.p(&args[0], Top).pretty(field),
+                        _ => arena.text(format!("{:?}", field)),
+                    }
+                }).intersperse(arena.text(",").append(arena.space())))
+                    .nest(INDENT),
+                "]"
+            ],
             ValueRepr::PartialApplication(p) => arena.text(format!("{:?}", p)),
             ValueRepr::Userdata(ref data) => arena.text(format!("{:?}", data)),
             ValueRepr::Thread(thread) => arena.text(format!("{:?}", thread)),
@@ -710,18 +710,18 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                         .intersperse(arena.space()),
                 );
                 chain![arena;
-                            "{",
-                            chain![arena;
-                                arena.space(),
-                                fields_doc
-                            ].nest(INDENT),
-                            if is_empty {
-                                arena.nil()
-                            } else {
-                                arena.space()
-                            },
-                            "}"
-                        ]
+                    "{",
+                    chain![arena;
+                        arena.space(),
+                        fields_doc
+                    ].nest(INDENT),
+                    if is_empty {
+                        arena.nil()
+                    } else {
+                        arena.space()
+                    },
+                    "}"
+                ]
             }
             Type::Variant(ref row) => {
                 let type_field = row
@@ -730,14 +730,14 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                     .expect("Variant tag is out of bounds");
                 let mut empty = true;
                 let doc = chain![arena;
-                            type_field.name.declared_name().to_string(),
-                            arena.concat(fields.into_iter().zip(arg_iter(&type_field.typ))
-                                .map(|(field, typ)| {
-                                    empty = false;
-                                    arena.space().append(self.p(typ, Constructor).pretty(field))
-                                }))
-                                .nest(INDENT)
-                        ];
+                    type_field.name.declared_name().to_string(),
+                    arena.concat(fields.into_iter().zip(arg_iter(&type_field.typ))
+                        .map(|(field, typ)| {
+                            empty = false;
+                            arena.space().append(self.p(typ, Constructor).pretty(field))
+                        }))
+                        .nest(INDENT)
+                ];
                 if empty {
                     doc
                 } else {
@@ -745,14 +745,14 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                 }
             }
             _ => chain![arena;
-                        "{",
-                        arena.concat(fields.into_iter().map(|field| {
-                            arena.space().append(self.p(&Type::hole(), Top).pretty(field))
-                        }).intersperse(arena.text(",")))
-                            .nest(INDENT),
-                        arena.space(),
-                        "}"
-                    ],
+                "{",
+                arena.concat(fields.into_iter().map(|field| {
+                    arena.space().append(self.p(&Type::hole(), Top).pretty(field))
+                }).intersperse(arena.text(",")))
+                    .nest(INDENT),
+                arena.space(),
+                "}"
+            ],
         }
     }
 

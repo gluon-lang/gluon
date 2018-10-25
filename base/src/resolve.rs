@@ -140,12 +140,10 @@ pub fn peek_alias<'t>(
     match typ.alias_ident() {
         Some(id) => {
             let alias = match maybe_alias {
-                Some(alias) => alias,
-                None => env
-                    .find_type_info(id)
-                    .ok_or_else(|| Error::UndefinedType(id.clone()))?,
+                Some(alias) => Some(alias),
+                None => env.find_type_info(id).map(|a| &**a),
             };
-            Ok(Some(alias))
+            Ok(alias)
         }
         None => Ok(None),
     }

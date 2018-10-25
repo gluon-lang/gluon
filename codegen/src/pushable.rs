@@ -57,7 +57,7 @@ fn derive_struct(
     let destructured = match &ast.fields {
         Fields::Named(_) => quote! { let #ident { #(#field_idents2),* } = self; },
         Fields::Unnamed(_) => quote! { let #ident ( #(#field_idents2),* ) = self; },
-        Fields::Unit => quote!{},
+        Fields::Unit => quote! {},
     };
 
     let push_impl = gen_push_impl(None, &field_idents, &field_types);
@@ -120,19 +120,19 @@ fn gen_impl(
     let dummy_const = Ident::new(&format!("_IMPL_PUSHABLE_FOR_{}", ident), Span::call_site());
 
     let gluon = match container.crate_name {
-        CrateName::Some(ref ident) => quote!{
+        CrateName::Some(ref ident) => quote! {
             use #ident::api as _gluon_api;
             use #ident::thread as _gluon_thread;
             use #ident::types as _gluon_types;
             use #ident::Result as _GluonResult;
         },
-        CrateName::GluonVm => quote!{
+        CrateName::GluonVm => quote! {
             use api as _gluon_api;
             use thread as _gluon_thread;
             use types as _gluon_types;
             use Result as _GluonResult;
         },
-        CrateName::None => quote!{
+        CrateName::None => quote! {
             use gluon::vm::api as _gluon_api;
             use gluon::vm::thread as _gluon_thread;
             use gluon::vm::types as _gluon_types;
@@ -175,7 +175,7 @@ fn gen_push_impl(
 
     let fields_len = field_idents.len();
     let new_data = match tag {
-        Some(tag) => quote!{
+        Some(tag) => quote! {
             ctx.context().push_new_data(vm, #tag as _gluon_types::VmTag, #fields_len)?
         },
         None => {

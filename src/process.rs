@@ -40,7 +40,7 @@ mod std {
 pub fn load(vm: &Thread) -> Result<ExternModule> {
     ExternModule::new(
         vm,
-        record!{
+        record! {
             execute => primitive!(1, std::process::prim::execute)
         },
     )

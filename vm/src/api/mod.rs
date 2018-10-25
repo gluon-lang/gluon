@@ -324,7 +324,7 @@ pub mod generic {
             )+
         }
     }
-    make_generics!{A B C D E F G H I J K L M N O P Q R X Y Z}
+    make_generics! {A B C D E F G H I J K L M N O P Q R X Y Z}
 }
 
 fn insert_forall(
@@ -722,7 +722,7 @@ macro_rules! int_impls {
     };
 }
 
-int_impls!{ i16 i32 i64 u16 u32 u64 usize isize }
+int_impls! { i16 i32 i64 u16 u32 u64 usize isize }
 
 impl VmType for f64 {
     type Type = Self;

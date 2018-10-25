@@ -52,7 +52,7 @@ impl<'vm, 'value> api::Getable<'vm, 'value> for Enum {
     }
 }
 
-field_decl!{ unwrap_b, value, key }
+field_decl! { unwrap_b, value, key }
 
 // we define Either with type parameters, just like in Gluon
 #[derive(Getable, Pushable, VmType)]
@@ -258,7 +258,7 @@ where
     T: Pushable<'vm>,
 {
     fn push(self, ctx: &mut ActiveThread<'vm>) -> vm::Result<()> {
-        (record!{
+        (record! {
             name => self.inner.name,
             age => self.inner.age,
             data => self.inner.data,

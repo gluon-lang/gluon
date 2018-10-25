@@ -117,7 +117,7 @@ where
     }
 }
 
-field_decl!{ sender, receiver }
+field_decl! { sender, receiver }
 
 pub type ChannelRecord<S, R> = record_type!(sender => S, receiver => R);
 
@@ -382,7 +382,7 @@ pub fn load_channel<'vm>(vm: &'vm Thread) -> VmResult<ExternModule> {
 
     ExternModule::new(
         vm,
-        record!{
+        record! {
             type Sender a => Sender<A>,
             type Receiver a => Sender<A>,
             channel => primitive!(1, std::channel::channel),
@@ -395,7 +395,7 @@ pub fn load_channel<'vm>(vm: &'vm Thread) -> VmResult<ExternModule> {
 pub fn load_thread<'vm>(vm: &'vm Thread) -> VmResult<ExternModule> {
     ExternModule::new(
         vm,
-        record!{
+        record! {
             resume => primitive::<fn(&'vm Thread) -> Result<(), String>>("std.thread.prim.resume", resume),
             (yield_ "yield") => primitive::<fn(())>("std.thread.prim.yield", yield_),
             spawn => primitive!(1, std::thread::prim::spawn),

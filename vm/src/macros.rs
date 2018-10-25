@@ -31,8 +31,10 @@ mopafy!(Macro);
 
 impl<F: ::mopa::Any + Clone + Send + Sync> Macro for F
 where
-    F: Fn(&mut MacroExpander, Vec<SpannedExpr<Symbol>>)
-        -> Box<Future<Item = SpannedExpr<Symbol>, Error = Error> + Send>,
+    F: Fn(
+        &mut MacroExpander,
+        Vec<SpannedExpr<Symbol>>,
+    ) -> Box<Future<Item = SpannedExpr<Symbol>, Error = Error> + Send>,
 {
     fn expand(
         &self,

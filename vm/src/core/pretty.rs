@@ -60,28 +60,28 @@ impl<'a> Expr<'a> {
             Expr::Const(ref l, _) => pretty_literal(l, arena),
             Expr::Data(ref ctor, args, ..) => match *ctor.typ {
                 Type::Record(ref record) => chain![arena;
-                            "{",
+                    "{",
+                    arena.space(),
+                    arena.concat(record.row_iter().zip(args).map(|(field, arg)| {
+                        chain![arena;
+                            field.name.as_ref(),
+                            " =",
                             arena.space(),
-                            arena.concat(record.row_iter().zip(args).map(|(field, arg)| {
-                                chain![arena;
-                                    field.name.as_ref(),
-                                    " =",
-                                    arena.space(),
-                                    arg.pretty(arena, Prec::Top),
-                                    ","
-                                ]
-                            })),
-                            arena.space(),
-                            "}"
+                            arg.pretty(arena, Prec::Top),
+                            ","
                         ]
+                    })),
+                    arena.space(),
+                    "}"
+                ]
                 .group(),
                 _ => {
                     let doc = chain![arena;
-                            ctor.as_ref(),
-                            arena.concat(args.iter().map(|arg| {
-                                arena.space().append(arg.pretty(arena, Prec::Arg))
-                            }))
-                        ]
+                        ctor.as_ref(),
+                        arena.concat(args.iter().map(|arg| {
+                            arena.space().append(arg.pretty(arena, Prec::Arg))
+                        }))
+                    ]
                     .group();
                     prec.enclose(arena, doc)
                 }
@@ -145,18 +145,18 @@ impl<'a> Expr<'a> {
                             ]
                         }
                         _ => chain![arena;
-                                "match ",
-                                expr.pretty(arena, Prec::Top),
-                                " with",
-                                arena.newline(),
-                                chain![arena;
-                                    alt.pattern.pretty(arena),
-                                    arena.space(),
-                                    "->"
-                                ].group(),
-                                arena.newline(),
-                                alt.expr.pretty(arena, Prec::Top).group()
-                            ]
+                            "match ",
+                            expr.pretty(arena, Prec::Top),
+                            " with",
+                            arena.newline(),
+                            chain![arena;
+                                alt.pattern.pretty(arena),
+                                arena.space(),
+                                "->"
+                            ].group(),
+                            arena.newline(),
+                            alt.expr.pretty(arena, Prec::Top).group()
+                        ]
                         .group(),
                     };
                     prec.enclose(arena, doc)
@@ -191,34 +191,34 @@ impl Pattern {
     ) -> pretty::DocBuilder<'a, pretty::Arena<'a>> {
         match *self {
             Pattern::Constructor(ref ctor, ref args) => chain![arena;
-                    ctor.as_ref(),
-                    arena.concat(args.iter().map(|arg| {
-                        arena.space().append(arg.as_ref())
-                    }))
-                ]
+                ctor.as_ref(),
+                arena.concat(args.iter().map(|arg| {
+                    arena.space().append(arg.as_ref())
+                }))
+            ]
             .group(),
             Pattern::Ident(ref id) => arena.text(id.as_ref()),
             Pattern::Record(ref fields) => chain![arena;
-                    "{",
-                    arena.concat(fields.iter().map(|&(ref field, ref value)| {
-                        chain![arena;
-                            arena.space(),
-                            arena.text(field.as_ref()),
-                            match *value {
-                                Some(ref value) => {
-                                    chain![arena;
-                                        "=",
-                                        arena.space(),
-                                        value.as_ref()
-                                    ]
-                                }
-                                None => arena.nil(),
+                "{",
+                arena.concat(fields.iter().map(|&(ref field, ref value)| {
+                    chain![arena;
+                        arena.space(),
+                        arena.text(field.as_ref()),
+                        match *value {
+                            Some(ref value) => {
+                                chain![arena;
+                                    "=",
+                                    arena.space(),
+                                    value.as_ref()
+                                ]
                             }
-                        ]
-                    }).intersperse(arena.text(","))).nest(INDENT),
-                    arena.space(),
-                    "}"
-                ]
+                            None => arena.nil(),
+                        }
+                    ]
+                }).intersperse(arena.text(","))).nest(INDENT),
+                arena.space(),
+                "}"
+            ]
             .group(),
             Pattern::Literal(ref l) => pretty_literal(l, arena),
         }

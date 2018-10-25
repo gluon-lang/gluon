@@ -247,26 +247,26 @@ impl Compiler {
         }
     }
 
-    option!{
+    option! {
         /// Sets whether the implicit prelude should be include when compiling a file using this
         /// compiler (default: true)
         implicit_prelude set_implicit_prelude: bool
     }
 
-    option!{
+    option! {
         /// Sets whether the compiler should emit debug information such as source maps and variable
         /// names.
         /// (default: true)
         emit_debug_info set_emit_debug_info: bool
     }
 
-    option!{
+    option! {
         /// Sets whether `IO` expressions are evaluated.
         /// (default: false)
         run_io set_run_io: bool
     }
 
-    option!{
+    option! {
         /// Sets whether full metadata is required
         /// (default: false)
         full_metadata set_full_metadata: bool
@@ -640,7 +640,7 @@ impl VmBuilder {
         VmBuilder::default()
     }
 
-    option!{
+    option! {
         /// (default: ["."])
         import_paths set_import_paths: Option<Vec<PathBuf>>
     }
@@ -689,19 +689,19 @@ impl VmBuilder {
         );
 
         add_extern_module_if!(
-            #[cfg(feature = "regex")], 
+            #[cfg(feature = "regex")],
             available_if = "gluon is compiled with the 'regex' feature",
             args(&vm, "std.regex.prim", ::regex_bind::load)
         );
 
         add_extern_module_if!(
-            #[cfg(feature = "web")], 
+            #[cfg(feature = "web")],
             available_if = "gluon is compiled with the 'web' feature",
             args(&vm, "std.http.prim_types", ::http::load_types)
         );
 
         add_extern_module_if!(
-            #[cfg(feature = "web")], 
+            #[cfg(feature = "web")],
             available_if = "gluon is compiled with the 'web' feature",
             args(&vm, "std.http.prim", ::http::load)
         );
