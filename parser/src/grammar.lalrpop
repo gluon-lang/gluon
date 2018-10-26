@@ -301,7 +301,7 @@ AtomicType_: Type<Id, AstType<Id>> = {
     "(" "->" ")" =>
         Type::Builtin(BuiltinType::Function),
 
-    <ids: (<IdentStr> ".")*> <last: IdentStr> => {
+    <ids: (<Ident> ".")*> <last: IdentStr> => {
         if ids.is_empty() {
             if last == "_" {
                 Type::Hole
@@ -317,13 +317,12 @@ AtomicType_: Type<Id, AstType<Id>> = {
                 }
             }
         } else {
-            let project_id: String = ids
+            let ids = ids
                 .iter()
                 .cloned()
-                .chain(Some(last))
-                .intersperse(".")
+                .chain(Some(env.from_str(last)))
                 .collect();
-            Type::Ident(env.from_str(&project_id))
+            Type::Projection(ids)
         }
     },
 

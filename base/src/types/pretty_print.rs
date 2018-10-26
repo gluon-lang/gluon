@@ -187,7 +187,11 @@ impl<'a, I, A> Printer<'a, I, A> {
     where
         I: AsRef<str>,
     {
-        let doc = self.arena.text(symbol.as_ref());
+        self.symbol_with(symbol, symbol.as_ref())
+    }
+
+    pub fn symbol_with(&self, symbol: &'a I, text: &'a str) -> DocBuilder<'a, Arena<'a, A>, A> {
+        let doc = self.arena.text(text);
         match (self.annotate_symbol)(symbol) {
             Some(ann) => doc.annotate(ann),
             None => doc,

@@ -331,9 +331,6 @@ enum TailCall {
 pub struct Typecheck<'a> {
     pub(crate) environment: Environment<'a>,
     symbols: SymbolModule<'a>,
-    /// Mapping from the fresh symbol generated during typechecking to the symbol that was assigned
-    /// during typechecking
-    original_symbols: ScopedMap<Symbol, Symbol>,
     pub(crate) subs: Substitution<ArcType>,
     named_variables: FnvMap<Symbol, ArcType>,
     pub(crate) errors: Errors<SpannedTypeError<Symbol>>,
@@ -368,7 +365,6 @@ impl<'a> Typecheck<'a> {
                 stack_types: ScopedMap::new(),
             },
             symbols: symbols,
-            original_symbols: ScopedMap::new(),
             subs: Substitution::new(kind_cache.typ()),
             named_variables: FnvMap::default(),
             errors: Errors::new(),
@@ -426,6 +422,7 @@ impl<'a> Typecheck<'a> {
                 if id.is_global() {
                     Ok(self.subs.new_var())
                 } else {
+                    info!("Undefined variable {}", id);
                     Err(TypeError::UndefinedVariable(id.clone()))
                 }
             }
@@ -538,14 +535,12 @@ impl<'a> Typecheck<'a> {
     fn enter_scope(&mut self) {
         self.environment.stack.enter_scope();
         self.environment.stack_types.enter_scope();
-        self.original_symbols.enter_scope();
         self.implicit_resolver.enter_scope();
     }
 
     fn exit_scope(&mut self) {
         self.environment.stack.exit_scope();
         self.environment.stack_types.exit_scope();
-        self.original_symbols.exit_scope();
         self.implicit_resolver.exit_scope();
     }
 
@@ -816,9 +811,6 @@ impl<'a> Typecheck<'a> {
     ) -> Result<TailCall, TypeError<Symbol>> {
         match expr.value {
             Expr::Ident(ref mut id) => {
-                if let Some(new) = self.original_symbols.get(&id.name) {
-                    id.name = new.clone();
-                }
                 id.typ = self.find(&id.name)?;
                 Ok(TailCall::Type(id.typ.clone()))
             }
@@ -1549,9 +1541,6 @@ impl<'a> Typecheck<'a> {
                 match_type = self.new_skolem_scope(&match_type);
                 match_type = self.subs.real(&match_type).clone();
                 match_type = self.instantiate_generics(&match_type);
-                if let Some(new) = self.original_symbols.get(&id.name) {
-                    id.name = new.clone();
-                }
                 // Find the enum constructor and return the types for its arguments
                 let ctor_type = self.find_at(span, &id.name);
                 id.typ = ctor_type.clone();
@@ -1644,11 +1633,6 @@ impl<'a> Typecheck<'a> {
                     let alias;
                     let alias = match field_type {
                         Some(field_type) => {
-                            // This forces refresh_type to remap the name a type was given
-                            // in this module to its actual name
-                            self.original_symbols
-                                .insert(name.clone(), field_type.typ.name.clone());
-
                             if let Some(meta) = self.implicit_resolver.metadata.remove(&name) {
                                 self.implicit_resolver
                                     .metadata
@@ -1732,7 +1716,7 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn translate_projected_type(&mut self, id: &Symbol) -> TcResult<ArcType> {
+    fn translate_projected_type(&mut self, id: &[Symbol]) -> TcResult<ArcType> {
         translate_projected_type(&self.environment, &mut self.symbols, id)
     }
 
@@ -1744,12 +1728,6 @@ impl<'a> Typecheck<'a> {
         use base::pos::HasSpan;
 
         match **ast_type {
-            Type::Alias(ref alias) if alias.name.name().module().as_str() != "" => {
-                match self.translate_projected_type(&alias.name) {
-                    Ok(typ) => typ,
-                    Err(err) => self.error(ast_type.span(), err),
-                }
-            }
             Type::ExtendRow {
                 ref types,
                 ref fields,
@@ -1777,12 +1755,10 @@ impl<'a> Typecheck<'a> {
                     .collect(),
                 self.translate_ast_type(type_cache, rest),
             ),
-            Type::Ident(ref id) if id.name().module().as_str() != "" => {
-                match self.translate_projected_type(id) {
-                    Ok(typ) => typ,
-                    Err(err) => self.error(ast_type.span(), err),
-                }
-            }
+            Type::Projection(ref ids) => match self.translate_projected_type(ids) {
+                Ok(typ) => typ,
+                Err(err) => self.error(ast_type.span(), err),
+            },
             _ => types::translate_type_with(type_cache, ast_type, |typ| {
                 self.translate_ast_type(type_cache, typ)
             }),
@@ -1967,37 +1943,12 @@ impl<'a> Typecheck<'a> {
             }
         }
 
-        for bind in &mut *bindings {
-            let s = String::from(self.symbols.string(&bind.alias.value.name));
-            let new = self.symbols.scoped_symbol(&s);
-            self.original_symbols
-                .insert(bind.alias.value.name.clone(), new.clone());
-
-            if let Some(meta) = self
-                .implicit_resolver
-                .metadata
-                .remove(&bind.alias.value.name)
-            {
-                self.implicit_resolver.metadata.insert(new.clone(), meta);
-            }
-
-            // Rename the aliase's name to its global name
-            bind.alias.value.name = new;
-        }
-
         let mut resolved_aliases = Vec::new();
         for bind in &mut *bindings {
             let mut alias = types::translate_alias(&bind.alias.value, |typ| {
                 let type_cache = self.type_cache.clone();
                 self.translate_ast_type(&type_cache, typ)
             });
-
-            if let Type::Variant(ref row) = **alias.unresolved_type().remove_forall() {
-                for field in row.row_iter() {
-                    let symbol = self.symbols.scoped_symbol(field.name.as_ref());
-                    self.original_symbols.insert(field.name.clone(), symbol);
-                }
-            }
 
             // alias.unresolved_type() is a dummy in this context
             self.named_variables.extend(
@@ -2058,6 +2009,7 @@ impl<'a> Typecheck<'a> {
         match **typ {
             Type::Generic(ref id) => {
                 if args.iter().all(|arg| arg.id != id.id) {
+                    info!("Undefined type variable {}", id.id);
                     self.error(typ.span(), TypeError::UndefinedVariable(id.id.clone()));
                 }
             }
@@ -2118,10 +2070,12 @@ impl<'a> Typecheck<'a> {
             } => {
                 *typ = final_type.clone();
                 debug!("{{ .. }}: {}", final_type);
+
                 self.generalize_type(level, typ);
                 let typ = self.top_skolem_scope(typ);
                 let typ = self.instantiate_generics(&typ);
                 let record_type = self.remove_alias(typ.clone());
+
                 with_pattern_types(fields, &record_type, |field_name, binding, field_type| {
                     let mut field_type = field_type.clone();
                     self.generalize_type(level, &mut field_type);
@@ -2150,7 +2104,7 @@ impl<'a> Typecheck<'a> {
                     self.finish_pattern(level, elem, &field_type);
                 }
             }
-            Pattern::Constructor(ref id, ref mut args) => {
+            Pattern::Constructor(ref mut id, ref mut args) => {
                 debug!("{}: {}", self.symbols.string(&id.name), final_type);
                 let len = args.len();
                 let iter = args.iter_mut().zip(
@@ -2267,17 +2221,9 @@ impl<'a> Typecheck<'a> {
         match **typ {
             Type::Ident(ref id) => {
                 // Substitute the Id by its alias if possible
-                let new_id = self.original_symbols.get(id).unwrap_or(id);
                 self.environment
-                    .find_type_info(new_id)
+                    .find_type_info(id)
                     .map(|alias| alias.clone().into_type())
-                    .or_else(|| {
-                        if id == new_id {
-                            None
-                        } else {
-                            Some(Type::ident(new_id.clone()))
-                        }
-                    })
             }
             Type::Variant(ref row) => {
                 let replacement = types::visit_type_opt(
@@ -2286,32 +2232,9 @@ impl<'a> Typecheck<'a> {
                         self.create_unifiable_signature_(typ)
                     }),
                 );
-                let row = replacement.as_ref().unwrap_or(row);
-                let iter = || {
-                    row.row_iter()
-                        .map(|var| self.original_symbols.get(&var.name))
-                };
-                if iter().any(|opt| opt.is_some()) {
-                    // If any of the variants requires a symbol replacement
-                    // we create a new type
-                    let mut row_iter = row.row_iter();
-                    let variants = row_iter
-                        .by_ref()
-                        .zip(iter())
-                        .map(|(old, new)| match new {
-                            Some(new) => Field::new(new.clone(), old.typ.clone()),
-                            None => old.clone(),
-                        })
-                        .collect();
-                    Some(
-                        self.type_cache
-                            .poly_variant(variants, row_iter.current_type().clone()),
-                    )
-                } else {
-                    replacement
-                        .clone()
-                        .map(|row| ArcType::from(Type::Variant(row)))
-                }
+                replacement
+                    .clone()
+                    .map(|row| ArcType::from(Type::Variant(row)))
             }
             Type::Hole => Some(self.subs.new_var()),
             Type::ExtendRow {
@@ -2323,12 +2246,10 @@ impl<'a> Typecheck<'a> {
                     let typ = self
                         .create_unifiable_signature2(field.typ.unresolved_type())
                         .unwrap_or_else(|| field.typ.unresolved_type().clone());
-                    let alias_name = self
-                        .original_symbols
-                        .get(&field.name)
-                        .unwrap_or(&field.name)
-                        .clone();
-                    Some(Field::new(field.name.clone(), Alias::new(alias_name, typ)))
+                    Some(Field::new(
+                        field.name.clone(),
+                        Alias::new(field.typ.name.clone(), typ),
+                    ))
                 });
                 let new_fields = types::walk_move_types(fields, |field| {
                     self.create_unifiable_signature2(&field.typ)
@@ -2615,11 +2536,10 @@ impl<'a> Typecheck<'a> {
 pub fn translate_projected_type(
     env: &TypeEnv,
     symbols: &mut IdentEnv<Ident = Symbol>,
-    id: &Symbol,
+    ids: &[Symbol],
 ) -> TcResult<ArcType> {
     let mut lookup_type: Option<ArcType> = None;
-    for component in id.name().module().components() {
-        let symbol = symbols.from_str(component);
+    for symbol in &ids[..ids.len() - 1] {
         lookup_type = match lookup_type {
             Some(typ) => {
                 let aliased_type = resolve::remove_aliases(env, typ.clone());
@@ -2641,7 +2561,7 @@ pub fn translate_projected_type(
                             }
                         }))
                         .next()
-                        .ok_or_else(|| TypeError::UndefinedField(typ, symbol))?,
+                        .ok_or_else(|| TypeError::UndefinedField(typ, symbol.clone()))?,
                 )
             }
             None => Some(
@@ -2656,7 +2576,7 @@ pub fn translate_projected_type(
         };
     }
     let typ = lookup_type.unwrap();
-    let type_symbol = symbols.from_str(id.name().name().as_str());
+    let type_symbol = symbols.from_str(ids.last().expect("Non-empty ids").name().name().as_str());
     resolve::remove_aliases(env, typ.clone())
         .type_field_iter()
         .find(|field| field.name.name_eq(&type_symbol))

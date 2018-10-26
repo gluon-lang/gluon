@@ -233,9 +233,9 @@ let make_Ord ord : forall a . Ord a -> _ =
     in {
         (<=) = \l r ->
             match compare l r with
-                | LT -> True
-                | EQ -> True
-                | GT -> False
+            | LT -> True
+            | EQ -> True
+            | GT -> False
     }
 #[infix(left, 4)]
 let (<=) = (make_Ord ord_Int).(<=)
@@ -427,9 +427,9 @@ eq (A 0) (B 0.0)
 Expected: test.A
 Found: test.B
 1 errors were found during unification:
-Types do not match:
-    Expected: test.A
-    Found: test.B
+Row labels do not match.
+    Expected: A
+    Found: B
 - <test>:5:11
 5 | eq (A 0) (B 0.0)
   |           ^^^^^
@@ -554,17 +554,6 @@ fn undefined_type_variable() {
     let _ = ::env_logger::try_init();
     let text = r#"
 type Test = a
-()
-"#;
-    let result = support::typecheck(text);
-    assert_err!(result, UndefinedVariable(..));
-}
-
-#[test]
-fn undefined_type_variable_in_enum() {
-    let _ = ::env_logger::try_init();
-    let text = r#"
-type Test = | Test a
 ()
 "#;
     let result = support::typecheck(text);

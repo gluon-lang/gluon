@@ -757,7 +757,7 @@ pub fn walk_ast_type<'a, V: ?Sized + $trait_name<'a>>(
                 v.visit_ast_type(&$($mut)* alias.$unresolved_type()._typ.typ);
             }
         }
-        Type::Ident(_) | Type::Variable(_) | Type::Generic(_) | Type::Skolem(_) => (),
+        Type::Ident(_) | Type::Projection(_) | Type::Variable(_) | Type::Generic(_) | Type::Skolem(_) => (),
     }
 }
     }

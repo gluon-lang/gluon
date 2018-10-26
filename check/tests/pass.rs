@@ -988,6 +988,6 @@ else
 
     assert_req!(
         result.map(|t| t.to_string()),
-        Ok("forall a . | test.A Int | test.B String | a")
+        Ok("forall a . | A Int\n| B String\n| a")
     );
 }

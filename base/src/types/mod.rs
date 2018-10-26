@@ -1,15 +1,19 @@
-use std::borrow::Cow;
-use std::fmt;
-use std::hash::Hash;
-use std::marker::PhantomData;
-use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
+use std::{
+    borrow::Cow,
+    fmt,
+    hash::Hash,
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+    sync::Arc,
+};
 
 use pretty::{Arena, Doc, DocAllocator, DocBuilder};
 
 use smallvec::SmallVec;
 
 use stable_deref_trait::StableDeref;
+
+use itertools::Itertools;
 
 use ast::{Commented, EmptyEnv, IdentEnv};
 use fnv::FnvMap;
@@ -18,7 +22,7 @@ use merge::merge;
 use metadata::Comment;
 use pos::{BytePos, HasSpan, Span};
 use source::Source;
-use symbol::{Symbol, SymbolRef};
+use symbol::{Name, Symbol, SymbolRef};
 
 #[cfg(feature = "serde")]
 use serde::de::DeserializeState;
@@ -686,6 +690,10 @@ pub enum Type<Id, T = ArcType<Id>> {
     /// in reference counted pointers. This is a bit of a wart at the moment and
     /// _may_ cause spurious unification failures.
     Ident(#[cfg_attr(feature = "serde_derive", serde(state))] Id),
+    Projection(
+        #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::seq"))]
+        AppVec<Id>,
+    ),
     /// An unbound type variable that may be unified with other types. These
     /// will eventually be converted into `Type::Generic`s during generalization.
     Variable(#[cfg_attr(feature = "serde_derive", serde(state))] TypeVariable),
@@ -865,6 +873,10 @@ where
         T::from(Type::Ident(id))
     }
 
+    pub fn projection(id: AppVec<Id>) -> T {
+        T::from(Type::Projection(id))
+    }
+
     pub fn function_builtin() -> T {
         Type::builtin(BuiltinType::Function)
     }
@@ -993,7 +1005,7 @@ where
             Type::Skolem(ref skolem) => Cow::Borrowed(&skolem.kind),
             Type::Generic(ref gen) => Cow::Borrowed(&gen.kind),
             // FIXME can be another kind
-            Type::Ident(_) => Cow::Owned(Kind::typ()),
+            Type::Ident(_) | Type::Projection(_) => Cow::Owned(Kind::typ()),
             Type::Alias(ref alias) => {
                 return if alias.params().len() < applied_args {
                     alias.typ.kind_(applied_args - alias.params().len())
@@ -1137,6 +1149,21 @@ where
     match **typ {
         Type::Forall(_, ref typ, _) => remove_forall(typ),
         _ => typ,
+    }
+}
+
+pub fn remove_forall_mut<'a, Id, T>(typ: &'a mut T) -> &'a mut T
+where
+    T: DerefMut<Target = Type<Id, T>>,
+    Id: 'a,
+{
+    if let Type::Forall(_, _, _) = **typ {
+        match **typ {
+            Type::Forall(_, ref mut typ, _) => remove_forall_mut(typ),
+            _ => unreachable!(),
+        }
+    } else {
+        typ
     }
 }
 
@@ -1897,7 +1924,7 @@ where
                                         first = false;
                                         arena.nil()
                                     } else {
-                                        arena.space()
+                                        arena.newline()
                                     },
                                     "| ",
                                     field.name.as_ref(),
@@ -1924,7 +1951,7 @@ where
                         _ => {
                             doc = chain![arena;
                                 doc,
-                                arena.space(),
+                                arena.newline(),
                                 "| ",
                                 top(row).pretty(printer)
                             ];
@@ -2002,7 +2029,12 @@ where
             // This should not be displayed normally as it should only exist in `ExtendRow`
             // which handles `EmptyRow` explicitly
             Type::EmptyRow => arena.text("EmptyRow"),
-            Type::Ident(ref id) => printer.symbol(id),
+            Type::Ident(ref id) => printer.symbol_with(id, Name::new(id.as_ref()).name().as_str()),
+            Type::Projection(ref ids) => arena.concat(
+                ids.iter()
+                    .map(|id| printer.symbol(id))
+                    .intersperse(arena.text(".")),
+            ),
             Type::Alias(ref alias) => printer.symbol(&alias.name),
         };
         match **typ {
@@ -2253,6 +2285,7 @@ where
         | Type::Generic(_)
         | Type::Skolem(_)
         | Type::Ident(_)
+        | Type::Projection(_)
         | Type::Alias(_)
         | Type::EmptyRow => (),
     }
@@ -2300,6 +2333,7 @@ where
         | Type::Generic(_)
         | Type::Skolem(_)
         | Type::Ident(_)
+        | Type::Projection(_)
         | Type::Alias(_)
         | Type::EmptyRow => (),
     }
@@ -2464,6 +2498,7 @@ where
         | Type::Skolem(_)
         | Type::Generic(_)
         | Type::Ident(_)
+        | Type::Projection(_)
         | Type::Alias(_)
         | Type::EmptyRow => None,
     }
@@ -2581,6 +2616,7 @@ where
         Type::Variable(ref var) => Type::variable(var.clone()),
         Type::Generic(ref gen) => Type::generic(gen.clone()),
         Type::Ident(ref id) => Type::ident(id.clone()),
+        Type::Projection(ref ids) => Type::projection(ids.clone()),
         Type::Alias(ref alias) => Type::ident(alias.name.clone()),
         Type::EmptyRow => cache.empty_row(),
     }

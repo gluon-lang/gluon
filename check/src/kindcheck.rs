@@ -1,12 +1,13 @@
-use std::fmt;
-use std::result::Result as StdResult;
+use std::{fmt, result::Result as StdResult};
 
-use base::ast::{self, AstType};
-use base::kind::{self, ArcKind, Kind, KindCache};
-use base::merge;
-use base::pos::{self, BytePos, HasSpan, Span, Spanned};
-use base::symbol::Symbol;
-use base::types::{self, ArcType, BuiltinType, Generic, Type, TypeEnv, Walker};
+use base::{
+    ast::{self, AstType},
+    kind::{self, ArcKind, Kind, KindCache},
+    merge,
+    pos::{self, BytePos, HasSpan, Span, Spanned},
+    symbol::Symbol,
+    types::{self, ArcType, BuiltinType, Generic, Type, TypeEnv, Walker},
+};
 
 use substitution::{Substitutable, Substitution};
 use unify::{self, Error as UnifyError, Unifiable, Unifier, UnifierState};
@@ -130,11 +131,7 @@ impl<'a> KindCheck<'a> {
             .or_else(|| self.info.find_kind(id))
             .map_or_else(
                 || {
-                    if self.idents.string(id).contains('.') {
-                        Ok(self
-                            .translate_projected_type(id)
-                            .unwrap_or_else(|| self.subs.new_var()))
-                    } else if self.idents.string(id).starts_with(char::is_uppercase) {
+                    if self.idents.string(id).starts_with(char::is_uppercase) {
                         Err(UnifyError::Other(KindError::UndefinedType(id.clone())))
                     } else {
                         // Create a new variable
@@ -156,9 +153,9 @@ impl<'a> KindCheck<'a> {
         .map_err(|err| pos::spanned(span, err))
     }
 
-    fn translate_projected_type(&mut self, id: &Symbol) -> Option<ArcKind> {
+    fn find_projection(&mut self, ids: &[Symbol]) -> Option<ArcKind> {
         // Errors get reported in typecheck as well so ignore them here
-        ::typecheck::translate_projected_type(self.info, self.idents, id)
+        ::typecheck::translate_projected_type(self.info, self.idents, ids)
             .ok()
             .map(|typ| typ.kind().into_owned())
     }
@@ -295,6 +292,9 @@ impl<'a> KindCheck<'a> {
             }
             Type::EmptyRow => Ok(self.row_kind()),
             Type::Ident(ref id) => self.find(span, id),
+            Type::Projection(ref ids) => Ok(self
+                .find_projection(ids)
+                .unwrap_or_else(|| self.subs.new_var())),
             Type::Alias(ref alias) => self.find(span, &alias.name),
         }
     }

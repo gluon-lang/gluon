@@ -123,7 +123,7 @@ fn type_mutually_recursive() {
     );
     let test = Type::variant(vec![Field::new(
         intern("Test"),
-        Type::function(vec![typ("Int")], typ("Test")),
+        Type::tuple(&mut MockEnv::new(), vec![typ("Int")]),
     )]);
     let test2 = Type::record(
         Vec::new(),
@@ -159,7 +159,7 @@ fn type_mutually_recursive() {
 fn type_decl_projection() {
     let _ = ::env_logger::try_init();
     let e = parse_clear_span!("type Test = x.y.Z in 1");
-    let record = Type::ident(intern("x.y.Z"));
+    let record = Type::projection(["x", "y", "Z"].iter().map(|s| intern(s)).collect());
     assert_eq!(e, type_decl(intern("Test"), vec![], record, int(1)));
 }
 
@@ -212,9 +212,8 @@ fn op_identifier() {
 fn variant_type() {
     let _ = ::env_logger::try_init();
     let e = parse_clear_span!("type Option a = | None | Some a in Some 1");
-    let option = Type::app(typ("Option"), collect![typ("a")]);
-    let none = Type::function(vec![], option.clone());
-    let some = Type::function(vec![typ("a")], option.clone());
+    let none = Type::unit();
+    let some = Type::tuple(&mut MockEnv::new(), vec![typ("a")]);
     assert_eq!(
         e,
         type_decl(

@@ -522,10 +522,9 @@ impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
     type Error = VmError;
 
     fn unit_variant(self) -> Result<()> {
-        let enum_type = Type::ident(self.de.state.symbols.symbol(self.enum_name));
         self.de.variant = Some(Field::new(
             self.de.state.symbols.symbol(self.variant),
-            enum_type,
+            Type::unit(),
         ));
         Ok(())
     }
@@ -535,10 +534,12 @@ impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
         T: DeserializeSeed<'de>,
     {
         let value = seed.deserialize(&mut *self.de)?;
-        let enum_type = Type::ident(self.de.state.symbols.symbol(self.enum_name));
         self.de.variant = Some(Field::new(
             self.de.state.symbols.symbol(self.variant),
-            Type::function(collect![self.de.typ.take().expect("typ")], enum_type),
+            Type::tuple(
+                &mut self.de.state.symbols,
+                vec![self.de.typ.take().expect("typ")],
+            ),
         ));
         Ok(value)
     }
@@ -554,10 +555,9 @@ impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
                 seq_deserializer.types,
             )
         };
-        let enum_type = Type::ident(self.de.state.symbols.symbol(self.enum_name));
         self.de.variant = Some(Field::new(
             self.de.state.symbols.symbol(self.variant),
-            Type::function(types, enum_type),
+            Type::tuple(&mut self.de.state.symbols, types),
         ));
         Ok(value)
     }
@@ -618,17 +618,14 @@ mod tests {
         assert_eq!(
             typ,
             Type::variant(vec![
-                Field::new(symbols.symbol("A"), Type::ident(symbols.symbol("Enum"))),
+                Field::new(symbols.symbol("A"), Type::unit()),
                 Field::new(
                     symbols.symbol("B"),
-                    Type::function(vec![Type::int()], Type::ident(symbols.symbol("Enum"))),
+                    Type::tuple(&mut symbols, vec![Type::int()])
                 ),
                 Field::new(
                     symbols.symbol("C"),
-                    Type::function(
-                        vec![Type::string(), Type::float()],
-                        Type::ident(symbols.symbol("Enum")),
-                    ),
+                    Type::tuple(&mut symbols, vec![Type::string(), Type::float()],),
                 ),
             ])
         );

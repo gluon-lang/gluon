@@ -1,11 +1,13 @@
-use base::ast::{
-    self, DisplayEnv, Do, Expr, MutVisitor, Pattern, SpannedAlias, SpannedAstType, SpannedExpr,
-    TypedIdent,
+use base::{
+    ast::{
+        self, DisplayEnv, Do, Expr, MutVisitor, Pattern, SpannedAlias, SpannedAstType, SpannedExpr,
+        TypedIdent,
+    },
+    pos::{self, BytePos, Span},
+    scoped_map::ScopedMap,
+    symbol::{Symbol, SymbolModule},
+    types::Type,
 };
-use base::pos::{self, BytePos, Span};
-use base::scoped_map::ScopedMap;
-use base::symbol::{Symbol, SymbolModule};
-use base::types::{self, Type};
 
 struct Environment {
     stack: ScopedMap<Symbol, (Symbol, Span<BytePos>)>,
@@ -90,16 +92,12 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
             new_id
         }
 
-        fn stack_type(&mut self, span: Span<BytePos>, alias: &SpannedAlias<Symbol>) {
-            // Insert variant constructors into the local scope
-            let aliased_type = alias.value.unresolved_type();
-            if let Type::Variant(ref row) = **types::remove_forall(aliased_type) {
-                for field in types::row_iter(row).cloned() {
-                    self.env
-                        .stack
-                        .insert(field.name.clone(), (field.name, span));
-                }
-            }
+        fn stack_type(&mut self, span: Span<BytePos>, alias: &mut SpannedAlias<Symbol>) {
+            let new = self.symbols.scoped_symbol(alias.value.name.declared_name());
+            self.env
+                .stack
+                .insert(alias.value.name.clone(), (new.clone(), span));
+            alias.value.name = new;
         }
 
         /// Renames `id` to the unique identifier which have the type `expected`
@@ -111,7 +109,11 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
 
         fn rename_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> TailCall {
             match expr.value {
-                Expr::Ident(ref mut id) => {
+                Expr::Ident(ref mut id)
+                    // FIXME Still allow renaming of variants somehow without causing resolution
+                    // problems with types
+                    if !id.name.declared_name().starts_with(char::is_uppercase) =>
+                {
                     if let Some(new_id) = self.rename(&id.name) {
                         debug!("Rename identifier {} = {}", id.name, new_id);
                         id.name = new_id;
@@ -210,8 +212,10 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
                 }
                 Expr::TypeBindings(ref mut bindings, _) => {
                     self.env.stack.enter_scope();
+                    for bind in &mut **bindings {
+                        self.stack_type(expr.span, &mut bind.alias);
+                    }
                     for bind in bindings {
-                        self.stack_type(expr.span, &bind.alias);
                         self.visit_alias(&mut bind.alias);
                     }
 
@@ -281,14 +285,22 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
         }
 
         fn visit_ast_type(&mut self, s: &'c mut SpannedAstType<Self::Ident>) {
-            if let Type::ExtendRow { ref mut types, .. } = s.value {
-                for field in types {
-                    if let Some(alias) = field.typ.try_get_alias_mut() {
-                        if let Some(new_name) = self.rename(&field.name) {
-                            alias.name = new_name;
+            match s.value {
+                Type::ExtendRow { ref mut types, .. } => {
+                    for field in types {
+                        if let Some(alias) = field.typ.try_get_alias_mut() {
+                            if let Some(new_name) = self.rename(&field.name) {
+                                alias.name = new_name;
+                            }
                         }
                     }
                 }
+                Type::Ident(ref mut id) => {
+                    if let Some(new_id) = self.rename(id) {
+                        *id = new_id;
+                    }
+                }
+                _ => (),
             }
             ast::walk_mut_ast_type(self, s)
         }
