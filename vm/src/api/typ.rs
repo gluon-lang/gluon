@@ -385,7 +385,7 @@ impl<'de, 't, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     {
         self.name = name;
         match variants.get(self.variant_index) {
-            Some(variant) => visitor.visit_enum(Enum::new(self, name, variant)),
+            Some(variant) => visitor.visit_enum(Enum::new(self, variant)),
             None => Err(VmError::Message("".to_string())),
         }
     }
@@ -491,17 +491,12 @@ where
 
 struct Enum<'a, 'de: 'a> {
     de: &'a mut Deserializer<'de>,
-    enum_name: &'static str,
     variant: &'static str,
 }
 
 impl<'a, 'de> Enum<'a, 'de> {
-    fn new(de: &'a mut Deserializer<'de>, enum_name: &'static str, variant: &'static str) -> Self {
-        Enum {
-            de,
-            enum_name,
-            variant,
-        }
+    fn new(de: &'a mut Deserializer<'de>, variant: &'static str) -> Self {
+        Enum { de, variant }
     }
 }
 
