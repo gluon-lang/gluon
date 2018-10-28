@@ -1,0 +1,36 @@
+let string = import! std.string
+let array = import! std.array
+let { wrap } = import! std.applicative
+let { ? } = import! std.io
+
+
+#[implicit]
+type Write a = {
+    write : a -> Array Byte -> IO Int,
+    flush : a -> IO (),
+}
+
+let write ?write : [Write a] -> a -> Array Byte -> IO Int = write.write
+
+let write_all writer buf : [Write a] -> a -> Array Byte -> IO () = 
+    if array.len buf == 0 then
+        wrap ()
+    else
+        do bytes_written = write writer buf
+        let buf = array.slice buf bytes_written (array.len buf)
+        write_all writer buf
+
+let write_string writer str : [Write a] -> a -> String -> IO () = 
+    write_all writer (string.as_bytes str)
+
+let flush ?write : [Write a] -> a -> IO () = write.flush
+
+
+{
+    Write,
+
+    write,
+    write_all,
+    write_string,
+    flush,
+}
