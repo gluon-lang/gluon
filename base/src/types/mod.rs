@@ -986,6 +986,20 @@ where
         }
     }
 
+    pub fn applied_alias(&self) -> Option<&AliasRef<Id, T>> {
+        self.applied_alias_(0)
+    }
+
+    fn applied_alias_(&self, given_arguments_count: usize) -> Option<&AliasRef<Id, T>> {
+        match *self {
+            Type::Alias(ref alias) if alias.params().len() == given_arguments_count => Some(alias),
+            Type::App(ref alias, ref args) => {
+                alias.applied_alias_(args.len() + given_arguments_count)
+            }
+            _ => None,
+        }
+    }
+
     pub fn is_non_polymorphic_record(&self) -> bool {
         match *self {
             Type::Record(ref row) | Type::ExtendRow { rest: ref row, .. } => {

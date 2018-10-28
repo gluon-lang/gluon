@@ -160,20 +160,7 @@ pub fn peek_alias<'t>(
     env: &'t TypeEnv,
     typ: &'t ArcType,
 ) -> Result<Option<&'t AliasRef<Symbol, ArcType>>, Error> {
-    fn extract_alias(
-        typ: &ArcType,
-        given_arguments_count: usize,
-    ) -> Option<&AliasRef<Symbol, ArcType>> {
-        match **typ {
-            Type::Alias(ref alias) if alias.params().len() == given_arguments_count => Some(alias),
-            Type::App(ref alias, ref args) => {
-                extract_alias(alias, args.len() + given_arguments_count)
-            }
-            _ => None,
-        }
-    }
-
-    let maybe_alias = extract_alias(typ, 0);
+    let maybe_alias = typ.applied_alias();
 
     match typ.alias_ident() {
         Some(id) => {
