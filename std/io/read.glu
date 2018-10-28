@@ -1,0 +1,46 @@
+let { ? } = import! std.io
+let { wrap } = import! std.applicative
+let { Result } = import! std.result
+let array = import! std.array
+let string = import! std.string
+
+
+#[implicit]
+type Read a = {
+    read : a -> Int -> IO (Option (Array Byte)),
+    read_to_end : a -> IO (Array Byte),
+}
+
+let new read : forall a . (a -> Int -> IO (Option (Array Byte))) -> Read a =
+    let read_to_end_rec buf reader =
+        do result = read reader 16384
+
+        match result with
+        | Some new_buf -> read_to_end_rec (array.append buf new_buf) reader
+        | None -> wrap buf
+    
+    {
+        read,
+        read_to_end = read_to_end_rec [],
+    }
+
+let read ?read : [Read a] -> a -> Int -> IO (Option (Array Byte)) = read.read
+
+let read_to_end ?read : [Read a] -> a -> IO (Array Byte) = read.read_to_end
+
+let read_to_string reader : [Read a] -> a -> IO (Option String) =
+    do bytes = read_to_end reader
+    
+    match string.from_utf8 bytes with
+    | Ok str -> wrap (Some str)
+    | Err _ -> wrap None
+
+
+{
+    Read,
+
+    new,
+    read,
+    read_to_end,
+    read_to_string,
+}
