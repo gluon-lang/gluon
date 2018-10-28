@@ -1,0 +1,20 @@
+let { ? } = import! std.io
+let { (<*) } = import! std.applicative
+
+
+#[implicit]
+type Disposable a = {
+    dispose : a -> IO () 
+}
+
+let dispose ?disposable : [Disposable a] -> a -> IO () = disposable.dispose
+
+let using disposable fn : forall r . [Disposable a] -> a -> (a -> IO r) -> IO r =
+    fn disposable <* dispose disposable
+
+{
+    Disposable,
+
+    dispose,
+    using
+}
