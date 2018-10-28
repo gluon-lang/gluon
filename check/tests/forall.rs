@@ -1134,3 +1134,21 @@ let z io : IO a -> Lift IO _ = Lift io
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn send_signature() {
+    let _ = ::env_logger::try_init();
+
+    let text = r#"
+type VE w r = | Value w | Effect (r (VE w r))
+
+type Eff r a = { run_effect : forall w . (a -> VE w r) -> VE w r }
+
+let send f : forall a . (forall w . (a -> VE w r) -> r (VE w r)) -> Eff r a =
+    { run_effect = \k -> Effect (f k) }
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
