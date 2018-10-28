@@ -79,12 +79,16 @@ SingleComma: () = {
     <!> => errors.push(<>.error)
 };
 
-Comma<Rule>: Vec<Rule> =
-    <rules: (<Rule> SingleComma)*> <last: Rule?> => {
+Sep<Rule, Separator>: Vec<Rule> =
+    <rules: (<Rule> Separator)*> <last: Rule?> => {
         let mut rules = rules;
         rules.extend(last);
         rules
     };
+
+Comma<Rule>: Vec<Rule> = {
+    Sep<Rule, SingleComma>
+};
 
 Sp<Rule>: Spanned<Rule, BytePos> =
     <l: @L> <rule: Rule> <r: @R> =>
@@ -299,6 +303,10 @@ TypeBinding: TypeBinding<Id> = {
     },
 };
 
+Effect: Field<Id, AstType<Id>> = {
+    <name: Ident> ":" <typ: Type> => Field { <> }
+};
+
 AtomicType_: Type<Id, AstType<Id>> = {
     "(" "->" ")" =>
         Type::Builtin(BuiltinType::Function),
@@ -330,6 +338,11 @@ AtomicType_: Type<Id, AstType<Id>> = {
 
 
     "(" <VariantType> ")",
+
+    "[" <fields: Sep<Effect, ",">> <rest: ("|" <Type>)?> "]" => {
+        let rest = rest.unwrap_or_else(Type::empty_row);
+        Type::Effect(Type::extend_row(vec![], fields, rest))
+    },
 
     "(" <elems: Comma<Type>> ")" =>
         match elems.len() {

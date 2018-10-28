@@ -728,6 +728,7 @@ pub fn walk_ast_type<'a, V: ?Sized + $trait_name<'a>>(
         }
         Type::Record(ref $($mut)* ast_type) => v.visit_ast_type(&$($mut)* ast_type._typ.typ),
         Type::Variant(ref $($mut)* ast_type) => v.visit_ast_type(&$($mut)* ast_type._typ.typ),
+        Type::Effect(ref $($mut)* ast_type) => v.visit_ast_type(&$($mut)* ast_type._typ.typ),
         Type::EmptyRow => (),
         Type::ExtendRow {
             ref $($mut)* types,

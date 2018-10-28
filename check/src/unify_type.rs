@@ -346,7 +346,9 @@ where
     debug!("Unifying:\n{} <=> {}", expected, actual);
     match (&**expected, &**actual) {
         (&Type::Error, _) => Ok(Some(actual.clone())),
+
         (_, &Type::Error) => Ok(None),
+
         (
             &Type::Function(l_arg_type, ref l_arg, ref l_ret),
             &Type::Function(r_arg_type, ref r_arg, ref r_ret),
@@ -357,6 +359,7 @@ where
                 ArcType::from(Type::Function(l_arg_type, arg, ret))
             }))
         }
+
         (
             &Type::Function(ArgType::Explicit, ref l_arg, ref l_ret),
             &Type::App(ref r, ref r_args),
@@ -371,6 +374,7 @@ where
             )
             .map_err(|_| UnifyError::TypeMismatch(expected.clone(), actual.clone()))
         }
+
         (
             &Type::App(ref l, ref l_args),
             &Type::Function(ArgType::Explicit, ref r_arg, ref r_ret),
@@ -385,10 +389,12 @@ where
             )
             .map_err(|_| UnifyError::TypeMismatch(expected.clone(), actual.clone()))
         }
+
         (&Type::App(ref l, ref l_args), &Type::App(ref r, ref r_args)) => {
             unify_app(unifier, l, l_args, r, r_args)
                 .map_err(|_| UnifyError::TypeMismatch(expected.clone(), actual.clone()))
         }
+
         (&Type::Variant(ref l_row), &Type::Variant(ref r_row)) => {
             // Store the current variants so that they can be used when displaying field errors
             let previous = mem::replace(
@@ -401,6 +407,7 @@ where
             unifier.state.record_context = previous;
             Ok(result)
         }
+
         (&Type::Record(ref l_row), &Type::Record(ref r_row)) => {
             // Store the current records so that they can be used when displaying field errors
             let previous = mem::replace(
@@ -413,6 +420,20 @@ where
             unifier.state.record_context = previous;
             Ok(result)
         }
+
+        (&Type::Effect(ref l_row), &Type::Effect(ref r_row)) => {
+            // Store the current variants so that they can be used when displaying field errors
+            let previous = mem::replace(
+                &mut unifier.state.record_context,
+                Some((expected.clone(), actual.clone())),
+            );
+            let result = unifier
+                .try_match(l_row, r_row)
+                .map(|row| ArcType::from(Type::Effect(row)));
+            unifier.state.record_context = previous;
+            Ok(result)
+        }
+
         (
             &Type::ExtendRow {
                 types: ref l_types,
@@ -531,6 +552,7 @@ where
         (&Type::Ident(ref id), &Type::Alias(ref alias)) if *id == alias.name => {
             Ok(Some(actual.clone()))
         }
+
         (&Type::Alias(ref alias), &Type::Ident(ref id)) if *id == alias.name => Ok(None),
 
         (&Type::Forall(ref params, _, Some(ref vars)), &Type::Forall(_, _, Some(_))) => {

@@ -141,6 +141,14 @@ where
         Type::poly_record(types, fields, self.empty_row())
     }
 
+    pub fn effect(&self, fields: Vec<Field<Id, T>>) -> T {
+        self.poly_effect(fields, self.empty_row())
+    }
+
+    pub fn poly_effect(&self, fields: Vec<Field<Id, T>>, rest: T) -> T {
+        Type::poly_effect(fields, rest)
+    }
+
     pub fn builtin_type(&self, typ: BuiltinType) -> T {
         match typ {
             BuiltinType::String => self.string(),
@@ -669,6 +677,8 @@ pub enum Type<Id, T = ArcType<Id>> {
     Record(#[cfg_attr(feature = "serde_derive", serde(state))] T),
     /// Variant constructor, of kind `Row -> Type`
     Variant(#[cfg_attr(feature = "serde_derive", serde(state))] T),
+    /// Effect constructor, of kind `Row -> Type -> Type`
+    Effect(#[cfg_attr(feature = "serde_derive", serde(state))] T),
     /// The empty row, of kind `Row`
     EmptyRow,
     /// Row extension, of kind `... -> Row -> Row`
@@ -770,6 +780,14 @@ where
 
     pub fn poly_variant(fields: Vec<Field<Id, T>>, rest: T) -> T {
         T::from(Type::Variant(Type::extend_row(Vec::new(), fields, rest)))
+    }
+
+    pub fn effect(fields: Vec<Field<Id, T>>) -> T {
+        Type::poly_effect(fields, Type::empty_row())
+    }
+
+    pub fn poly_effect(fields: Vec<Field<Id, T>>, rest: T) -> T {
+        T::from(Type::Effect(Type::extend_row(Vec::new(), fields, rest)))
     }
 
     pub fn tuple<S, I>(symbols: &mut S, elems: I) -> T
@@ -1000,6 +1018,10 @@ where
                 Cow::Owned(Kind::typ())
             }
             Type::EmptyRow | Type::ExtendRow { .. } => Cow::Owned(Kind::row()),
+            Type::Effect(_) => {
+                let t = Kind::typ();
+                Cow::Owned(Kind::function(t.clone(), t))
+            }
             Type::Forall(_, ref typ, _) => typ.kind_(applied_args),
             Type::Variable(ref var) => Cow::Borrowed(&var.kind),
             Type::Skolem(ref skolem) => Cow::Borrowed(&skolem.kind),
@@ -1543,6 +1565,12 @@ pub struct RowIteratorMut<'a, Id: 'a, T: 'a> {
     rest: *mut T,
 }
 
+impl<'a, Id, T> RowIteratorMut<'a, Id, T> {
+    pub fn current_type(&mut self) -> &mut T {
+        unsafe { &mut *self.rest }
+    }
+}
+
 impl<'a, Id: 'a, T: 'a> Iterator for RowIteratorMut<'a, Id, T>
 where
     T: DerefMut<Target = Type<Id, T>>,
@@ -1945,6 +1973,41 @@ where
 
                 p.enclose(Prec::Constructor, arena, doc).group()
             }
+
+            Type::Effect(ref row) => {
+                let mut iter = row_iter(row);
+
+                let doc = arena.concat(
+                    iter.by_ref()
+                        .map(|field| {
+                            chain![arena;
+                                printer.symbol(&field.name),
+                                arena.space(),
+                                ":",
+                                arena.space(),
+                                top(&field.typ).pretty(printer)
+                            ]
+                            .group()
+                        })
+                        .intersperse(arena.text(",")),
+                );
+
+                chain![arena;
+                    "[",
+                    doc,
+                    match **iter.current_type() {
+                        Type::EmptyRow => arena.nil(),
+                        _ => chain![arena;
+                            "|",
+                            arena.space(),
+                            top(iter.current_type()).pretty(printer)
+                        ],
+                    },
+                    "]"
+                ]
+                .group()
+            }
+
             Type::Builtin(ref t) => match *t {
                 BuiltinType::Function => chain![arena; "(", t.to_str(), ")"],
                 _ => arena.text(t.to_str()),
@@ -2246,7 +2309,7 @@ where
                 f.walk(a);
             }
         }
-        Type::Record(ref row) | Type::Variant(ref row) => f.walk(row),
+        Type::Record(ref row) | Type::Variant(ref row) | Type::Effect(ref row) => f.walk(row),
         Type::ExtendRow {
             ref types,
             ref fields,
@@ -2291,7 +2354,9 @@ where
                 f.walk_mut(a);
             }
         }
-        Type::Record(ref mut row) | Type::Variant(ref mut row) => f.walk_mut(row),
+        Type::Record(ref mut row) | Type::Variant(ref mut row) | Type::Effect(ref mut row) => {
+            f.walk_mut(row)
+        }
         Type::ExtendRow {
             ref mut types,
             ref mut fields,
@@ -2459,6 +2524,7 @@ where
         }
         Type::Record(ref row) => f.visit(row).map(|row| T::from(Type::Record(row))),
         Type::Variant(ref row) => f.visit(row).map(|row| T::from(Type::Variant(row))),
+        Type::Effect(ref row) => f.visit(row).map(|row| T::from(Type::Effect(row))),
         Type::ExtendRow {
             ref types,
             ref fields,
@@ -2560,6 +2626,7 @@ where
         ),
         Type::Record(ref row) => U::from(Type::Record(translate(row))),
         Type::Variant(ref row) => U::from(Type::Variant(translate(row))),
+        Type::Effect(ref row) => U::from(Type::Effect(translate(row))),
         Type::Forall(ref params, ref typ, ref skolem) => U::from(Type::Forall(
             params.clone(),
             translate(typ),

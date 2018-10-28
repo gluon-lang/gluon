@@ -266,6 +266,18 @@ impl<'a> KindCheck<'a> {
                 self.unify(span, &row_kind, kind)?;
                 Ok(self.type_kind())
             }
+            Type::Effect(ref mut row) => {
+                let mut iter = types::row_iter_mut(row);
+                for field in &mut iter {
+                    let kind = self.kindcheck(&mut field.typ)?;
+                    let function_kind = self.function1_kind();
+                    self.unify(field.typ.span(), &function_kind, kind)?;
+                }
+                let kind = self.kindcheck(iter.current_type())?;
+                let row_kind = self.row_kind();
+                self.unify(span, &row_kind, kind)?;
+                Ok(self.function1_kind())
+            }
             Type::ExtendRow {
                 ref mut types,
                 ref mut fields,
