@@ -1,0 +1,84 @@
+let option = import! std.option
+let io @ { ? } = import! std.io
+
+let { map } = import! std.functor
+let { wrap } = import! std.applicative
+
+let any x = any x
+
+type VE w r = | Value w | Effect (r (VE w r))
+
+type Eff r a = { run_effect : forall w . (a -> VE w r) -> VE w r }
+
+let functor_eff : Functor (Eff r) = {
+    map = error ""
+}
+
+let applicative_eff : Applicative (Eff r) = {
+    functor = functor_eff,
+    apply = error "",
+    wrap = \x -> { run_effect = \k -> k x },
+}
+
+let monad_eff : Monad (Eff r) = {
+    applicative = applicative_eff,
+    flat_map = \f m -> { run_effect = \k -> m.run_effect (\v -> (f v).run_effect k) }
+}
+
+
+type Opt a r = [ option : Option | a ] r
+
+let send f : forall a . (forall w . (a -> VE w r) -> r (VE w r)) -> Eff r a = { run_effect = \k -> Effect (f k) }
+// let send2 t : r a -> Eff r a = { run_effect = \k -> Effect (r t) }
+let admin eff : Eff r a -> VE a r = eff.run_effect Value
+
+let inject : f a -> [f : f | r] (VE a [f : f | r]) = any ()
+let option_eff : Option a -> [option : Option | r] (VE a [option : Option | r]) = any ()
+let io_eff : IO a -> [io : IO | r] (VE a [io : IO | r]) = any ()
+// let row : { option : Monad Option, io : Monad IO } = { option = option.monad, io = io.monad }
+// let applicative_eff : Applicative (Eff _) = applicative_eff row
+// let monad = monad_eff row
+
+type Found f a r = | Found (f a) | NotFound ([| r] a)
+let proj : forall f . [f : f | r] a -> (Found f a r) = any ()
+
+let option_empty : Eff [option : Option | r] Int = send (\x -> option_eff None)
+
+type Lift m v = forall a . { monad  : (m a), cont : (a -> v) }
+let lift_io io : IO a -> Eff [f : Lift IO | r] a = send (\x -> inject (let z : Lift IO a = { monad = io, cont = x } in z))
+
+let io_effect : Eff [f : Lift IO | r] Int = lift_io (wrap 123)
+
+// let handle_relay ret h m : (a -> Eff [| r] w) -> (forall v. [|r ] v -> Eff [| r] w) -> Eff [f : f | r] w -> Eff [| r] w =
+//     let loop x =
+//         match x with
+//         | Value v -> ret v
+//         | Effect e ->
+//             match proj e with
+//             | Found x -> { run_effect = \f -> (h x).run_effect (any ()) }
+//             | NotFound r -> { run_effect = \f -> Effect (f r) }
+//     loop m
+
+let run_option eff : [Functor [| r]] -> Eff [f : Option | r] a -> Eff [| r] (Option a) =
+    let loop ve : VE a [f : Option | r] -> Eff [| r] (Option a) =
+        match ve with
+        | Value v -> wrap (Some v)
+        | Effect e ->
+            match proj e with 
+            | Found x ->
+                match x with
+                | None -> wrap None
+                | Some y -> loop y
+            | NotFound rest ->
+                flat_map loop (send (\k -> map k rest))
+    loop (admin eff)
+
+
+// let run_io eff : Eff [io : IO | r] a -> IO a =
+//     match admin eff with 
+//     | IO x -> x
+//     | _ -> any ()
+
+do x = option_empty
+do y = io_effect
+wrap (x #Int+ y)

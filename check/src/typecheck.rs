@@ -741,7 +741,7 @@ impl<'a> Typecheck<'a> {
     fn typecheck_opt(
         &mut self,
         mut expr: &mut SpannedExpr<Symbol>,
-        expected_type: Option<&ArcType>,
+        mut expected_type: Option<&ArcType>,
     ) -> ArcType {
         fn moving<T>(t: T) -> T {
             t
@@ -750,8 +750,6 @@ impl<'a> Typecheck<'a> {
         let mut scope_count = 0;
         let returned_type;
         loop {
-            let expected_type = expected_type.map(|t| self.skolemize(t));
-            let mut expected_type = expected_type.as_ref();
             match self.typecheck_(expr, &mut expected_type) {
                 Ok(tailcall) => {
                     match tailcall {
@@ -1021,13 +1019,41 @@ impl<'a> Typecheck<'a> {
             } => {
                 let level = self.subs.var_id();
 
-                let expected_type = expected_type.map(|expected_type| {
+                let expected_record_type = expected_type.and_then(|expected_type| {
                     let expected_type = self.subs.real(expected_type).clone();
                     let typ = resolve::remove_aliases_cow(&self.environment, &expected_type);
-                    self.new_skolem_scope(&typ)
+                    let typ = self.new_skolem_scope(&typ);
+                    match *typ {
+                        Type::Record(_) => Some(typ),
+                        _ => None,
+                    }
                 });
 
-                let expected_type = expected_type.as_ref();
+                let expected_type = match &expected_record_type {
+                    Some(expected_record_type) => {
+                        let mut expected_fields: FnvSet<_> = expected_record_type
+                            .row_iter()
+                            .map(|f| &f.name)
+                            .chain(expected_record_type.type_field_iter().map(|f| &f.name))
+                            .collect();
+
+                        let expected_fields_matches = fields
+                            .iter()
+                            .map(|f| &f.name.value)
+                            .chain(types.iter().map(|f| &f.name.value))
+                            .all(|name| expected_fields.remove(&name))
+                            && expected_fields.is_empty();
+
+                        if expected_fields_matches {
+                            // No need to do subsumption checking against the expected type as all the
+                            // fields will be matched against anyway
+                            expected_type.take();
+                        }
+
+                        Some(expected_record_type)
+                    }
+                    None => None,
+                };
 
                 let mut base_record_types = FnvMap::default();
                 let mut base_record_fields = FnvMap::default();
@@ -1321,24 +1347,9 @@ impl<'a> Typecheck<'a> {
 
         let mut prev_arg_end = implicit_args.last().map_or(span, |arg| arg.span).end();
         for arg in args.map(|arg| arg.borrow_mut()) {
-            let arg_ty = self.subs.new_var();
-            let ret_ty = self.subs.new_var();
-            let f = self
-                .type_cache
-                .function(once(arg_ty.clone()), ret_ty.clone());
-
-            let level = self.subs.var_id();
             let errors_before = self.errors.len();
-            self.subsumes_implicit(
-                span,
-                level,
-                ErrorOrder::ExpectedActual,
-                &f,
-                func_type.clone(),
-                &mut |implicit_arg| {
-                    implicit_args.push(pos::spanned2(prev_arg_end, arg.span.start(), implicit_arg));
-                },
-            );
+            let (arg_ty, ret_ty) =
+                self.subsume_function(prev_arg_end, arg.span, func_type.clone(), implicit_args);
 
             if errors_before != self.errors.len() {
                 self.errors.pop();
@@ -1385,15 +1396,14 @@ impl<'a> Typecheck<'a> {
         Ok(TailCall::Type(func_type))
     }
 
-    fn typecheck_lambda<'i>(
+    fn typecheck_lambda(
         &mut self,
-        mut function_type: ArcType,
+        function_type: ArcType,
         before_args_pos: BytePos,
         args: &mut Vec<Argument<SpannedIdent<Symbol>>>,
         body: &mut SpannedExpr<Symbol>,
     ) -> ArcType {
         self.enter_scope();
-        function_type = self.skolemize(&function_type);
         let mut arg_types = Vec::new();
 
         let body_type = {
@@ -1403,15 +1413,7 @@ impl<'a> Typecheck<'a> {
             let mut next_type_arg = iter1.next();
 
             let make_new_arg = |tc: &mut Self, span: Span<BytePos>, typ: &mut ArcType| {
-                let arg = tc.subs.new_var();
-                let ret = tc.subs.new_var();
-                let f = tc.type_cache.function(Some(arg.clone()), ret.clone());
-                if let Err(err) = tc.unify(typ, f) {
-                    tc.errors.push(Spanned {
-                        span,
-                        value: err.into(),
-                    });
-                }
+                let (arg, ret) = tc.unify_function(span, typ.clone());
                 *typ = ret;
                 arg
             };
@@ -2446,6 +2448,52 @@ impl<'a> Typecheck<'a> {
                 typ
             }
         }
+    }
+
+    fn subsume_function(
+        &mut self,
+        prev_arg_end: BytePos,
+        span: Span<BytePos>,
+        actual: ArcType,
+        implicit_args: &mut Vec<SpannedExpr<Symbol>>,
+    ) -> (ArcType, ArcType) {
+        let actual = self.remove_aliases(actual);
+        match actual.as_function_with_type() {
+            Some((ArgType::Explicit, arg, ret)) => return (arg.clone(), ret.clone()),
+            _ => (),
+        }
+
+        let arg_ty = self.subs.new_var();
+        let ret_ty = self.subs.new_var();
+        let f = self
+            .type_cache
+            .function(once(arg_ty.clone()), ret_ty.clone());
+
+        let level = self.subs.var_id();
+        self.subsumes_implicit(
+            span,
+            level,
+            ErrorOrder::ExpectedActual,
+            &f,
+            actual,
+            &mut |implicit_arg| {
+                implicit_args.push(pos::spanned2(prev_arg_end, span.start(), implicit_arg));
+            },
+        );
+        (arg_ty, ret_ty)
+    }
+
+    fn unify_function(&mut self, span: Span<BytePos>, actual: ArcType) -> (ArcType, ArcType) {
+        let actual = self.remove_aliases(actual);
+        match actual.as_function() {
+            Some((arg, ret)) => return (arg.clone(), ret.clone()),
+            None => (),
+        }
+        let arg = self.subs.new_var();
+        let ret = self.subs.new_var();
+        let f = self.type_cache.function(Some(arg.clone()), ret.clone());
+        self.unify_span(span, &f, actual);
+        (arg, ret)
     }
 
     fn unify_span(&mut self, span: Span<BytePos>, expected: &ArcType, actual: ArcType) -> ArcType {
