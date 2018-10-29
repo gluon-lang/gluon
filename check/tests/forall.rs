@@ -1152,3 +1152,27 @@ let send f : forall a . (forall w . (a -> VE w r) -> r (VE w r)) -> Eff r a =
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn call_send_reader() {
+    let _ = ::env_logger::try_init();
+
+    let text = r#"
+type Reader e v = | Reader (e -> v)
+type VE w r = | Value w | Effect (r (VE w r))
+
+type Eff r a = { run_effect : forall w . (a -> VE w r) -> VE w r }
+
+let any x = any x
+
+let send f : forall a . (forall w . (a -> VE w r) -> r (VE w r)) -> Eff r a = any ()
+
+let inj_reader : forall e v . Reader e v -> [io : Reader e | r] v = any ()
+let ask : forall e . Eff [io : Reader e | r] e = send (\x -> inj_reader (Reader x))
+
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
