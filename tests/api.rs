@@ -317,7 +317,7 @@ fn use_type_from_type_field() {
             let (name, typ) = gluon::vm::api::typ::from_rust::<Self>(vm).unwrap();
             vm.register_type_as(
                 name.clone(),
-                Alias::new(name, typ),
+                Alias::new(name, Vec::new(), typ),
                 ::std::any::TypeId::of::<Self>(),
             )
             .unwrap()

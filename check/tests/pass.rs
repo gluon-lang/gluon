@@ -311,6 +311,7 @@ in eq_Int
     let result = support::typecheck(text);
     let bool = Type::alias(
         support::intern_unscoped("Bool"),
+        Vec::new(),
         Type::ident(support::intern_unscoped("Bool")),
     );
     let eq = alias(
@@ -530,7 +531,7 @@ type Test = | Test String Int in { Test, x = 1 }
     let test = Type::variant(vec![support::variant("Test", &[typ("String"), typ("Int")])]);
     let types = vec![Field {
         name: support::intern_unscoped("Test"),
-        typ: Alias::new(intern("Test"), test),
+        typ: Alias::new(intern("Test"), Vec::new(), test),
     }];
     let fields = vec![Field {
         name: intern("x"),
@@ -573,12 +574,10 @@ return 1
     let id = support::alias_variant("Id", &["a"], &[("Id", &[typ("a")])]);
     let id_t = Type::alias(
         intern("IdT"),
-        Type::forall(
-            vec![m.clone(), Generic::new(intern("a"), Kind::typ())],
-            Type::app(
-                Type::generic(m),
-                collect![Type::app(id, collect![typ("a")])],
-            ),
+        vec![m.clone(), Generic::new(intern("a"), Kind::typ())],
+        Type::app(
+            Type::generic(m),
+            collect![Type::app(id, collect![typ("a")])],
         ),
     );
     let expected = Ok(Type::app(id_t, collect![test, typ("Int")]));

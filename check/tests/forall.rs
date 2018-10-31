@@ -655,11 +655,13 @@ make 1
     assert_eq!(
         result.map(|x| x.to_string()),
         Ok("{ x : Int, cons : forall a . a -> test.List a }".to_string())
-    );
+    )
 }
 
 #[test]
 fn resolve_app_app() {
+    let _ = env_logger::try_init();
+
     use base::resolve;
 
     let record = Type::record(
@@ -1115,7 +1117,6 @@ let foo : (forall i . Proxy i -> ()) -> Proxy i -> () =
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
-
 #[test]
 fn forall_in_alias() {
     let _ = ::env_logger::try_init();
@@ -1127,6 +1128,23 @@ type Lift m v = forall a . (| Lift (m a))
 
 let z io : IO a -> Lift IO _ = Lift io
 
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+#[ignore]
+fn forall_in_alias() {
+    let _ = ::env_logger::try_init();
+
+    let text = r#"
+type IO a = | IO a
+
+type Lift m v = forall a . { monad : m a }
+let lift_io io : IO a -> _ = let z : Lift IO _ = { monad = io } in z
 ()
 "#;
     let result = support::typecheck(text);

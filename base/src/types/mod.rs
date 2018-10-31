@@ -330,7 +330,7 @@ where
 {
     fn from(data: AliasData<Id, T>) -> Alias<Id, T> {
         Alias {
-            _typ: Type::alias(data.name, data.typ),
+            _typ: Type::alias(data.name, data.args, data.typ),
             _marker: PhantomData,
         }
     }
@@ -346,9 +346,9 @@ impl<Id, T> Alias<Id, T>
 where
     T: From<Type<Id, T>>,
 {
-    pub fn new(name: Id, typ: T) -> Alias<Id, T> {
+    pub fn new(name: Id, args: Vec<Generic<Id>>, typ: T) -> Alias<Id, T> {
         Alias {
-            _typ: Type::alias(name, typ),
+            _typ: Type::alias(name, args, typ),
             _marker: PhantomData,
         }
     }
@@ -496,6 +496,8 @@ where
 pub struct AliasData<Id, T> {
     #[cfg_attr(feature = "serde_derive", serde(state))]
     pub name: Id,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    args: Vec<Generic<Id>>,
     /// The type that is being aliased
     #[cfg_attr(feature = "serde_derive", serde(state))]
     typ: T,
@@ -518,10 +520,7 @@ where
     T: From<Type<Id, T>>,
 {
     pub fn new(name: Id, args: Vec<Generic<Id>>, typ: T) -> AliasData<Id, T> {
-        AliasData {
-            name,
-            typ: Type::forall(args, typ),
-        }
+        AliasData { name, args, typ }
     }
 }
 
@@ -530,14 +529,15 @@ where
     T: Deref<Target = Type<Id, T>>,
 {
     pub fn params(&self) -> &[Generic<Id>] {
-        self.typ.params()
+        &self.args
+    }
+
+    pub fn params_mut(&mut self) -> &mut [Generic<Id>] {
+        &mut self.args
     }
 
     pub fn aliased_type(&self) -> &T {
-        match *self.typ {
-            Type::Forall(_, ref typ, _) => typ,
-            _ => &self.typ,
-        }
+        &self.typ
     }
 }
 
@@ -862,10 +862,10 @@ where
         T::from(Type::Variable(typ))
     }
 
-    pub fn alias(name: Id, typ: T) -> T {
+    pub fn alias(name: Id, args: Vec<Generic<Id>>, typ: T) -> T {
         T::from(Type::Alias(AliasRef {
             index: 0,
-            group: Arc::new(vec![AliasData { name, typ }]),
+            group: Arc::new(vec![AliasData { name, args, typ }]),
         }))
     }
 
@@ -1363,22 +1363,6 @@ impl<'a, Id> Iterator for ForallScopeIter<'a, Id> {
 }
 
 impl ArcType {
-    pub fn params_mut(&mut self) -> &mut [Generic<Symbol>] {
-        use std::sync::Arc;
-
-        match *Arc::make_mut(&mut self.typ) {
-            /*
-            // TODO
-            Type::Alias(ref mut alias) => {
-                Arc::make_mut(alias.unresolved_type_mut().typ).params_mut()
-            }
-            */
-            Type::Forall(ref mut params, _, _) => params,
-            Type::App(ref mut id, _) => id.params_mut(),
-            _ => &mut [],
-        }
-    }
-
     /// Applies a list of arguments to a parameterised type, returning `Some`
     /// if the substitution was successful.
     ///
@@ -1389,9 +1373,8 @@ impl ArcType {
     /// args = [Error, Option a]
     /// result = | Err Error | Ok (Option a)
     /// ```
-    pub fn apply_args(&self, args: &[ArcType]) -> Option<ArcType> {
-        let params = self.params();
-        let typ = self.remove_forall().clone();
+    pub fn apply_args(&self, params: &[Generic<Symbol>], args: &[ArcType]) -> Option<ArcType> {
+        let typ = self.clone();
 
         // It is ok to take the type only if it is fully applied or if it
         // the missing argument only appears in order at the end, i.e:
@@ -1424,7 +1407,7 @@ impl ArcType {
             return None;
         };
 
-        Some(walk_move_type(typ.remove_forall().clone(), &mut |typ| {
+        Some(walk_move_type(typ.clone(), &mut |typ| {
             match **typ {
                 Type::Generic(ref generic) => {
                     // Replace the generic variable with the type from the list
@@ -2101,7 +2084,7 @@ where
                     if filter == Filter::RetainKey {
                         arena.text("...")
                     } else {
-                         top(remove_forall(&field.typ.typ)).pretty(printer)
+                         top(&field.typ.typ).pretty(printer)
                     },
                     if i + 1 != types.len() || print_any_field {
                         arena.text(",")
@@ -2551,6 +2534,7 @@ where
 {
     AliasData {
         name: alias.name.clone(),
+        args: alias.args.clone(),
         typ: translate(&alias.typ),
     }
 }

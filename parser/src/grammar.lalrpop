@@ -216,6 +216,7 @@ RecordField: Either<Field<Id, Alias<Id, AstType<Id>>>, Field<Id, AstType<Id>>> =
             id.value.clone(),
             Alias::new(
                 id.value,
+                Vec::new(),
                 AstType::with_comment(comment, pos::spanned(span, Type::Hole)),
             ),
         ))
@@ -229,6 +230,7 @@ RecordField: Either<Field<Id, Alias<Id, AstType<Id>>>, Field<Id, AstType<Id>>> =
                 id.clone(),
                 Alias::new(
                     id,
+                    Vec::new(),
                     AstType::with_comment(comment, typ),
                 ),
             ))

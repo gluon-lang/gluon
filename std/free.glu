@@ -8,10 +8,4 @@ type FreeView f a b = | Return a | Bind (f b) (b -> Free f a)
 type ExpF f = Val -> Free f Val
 
 
-let functor : Functor (Free f) = {
-    map = \f xs ->
-        match xs with
-        | Free
-}
-
 { Free }

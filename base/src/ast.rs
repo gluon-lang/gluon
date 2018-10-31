@@ -14,7 +14,7 @@ use ordered_float::NotNan;
 use pos::{self, BytePos, HasSpan, Span, Spanned};
 use resolve::remove_aliases_cow;
 use symbol::Symbol;
-use types::{self, Alias, AliasData, ArcType, ArgType, Generic, Type, TypeEnv};
+use types::{self, Alias, AliasData, ArcType, ArgType, Type, TypeEnv};
 
 pub trait DisplayEnv {
     type Ident;
@@ -146,14 +146,6 @@ impl<Id> AstType<Id> {
 
     pub fn into_inner(self) -> Type<Id, Self> {
         self._typ.typ.value
-    }
-
-    pub fn params_mut(&mut self) -> &mut [Generic<Id>] {
-        match self._typ.typ.value {
-            Type::Forall(ref mut params, _, _) => params,
-            Type::App(ref mut id, _) => id.params_mut(),
-            _ => &mut [],
-        }
     }
 
     pub fn remove_single_forall(&mut self) -> &mut AstType<Id> {

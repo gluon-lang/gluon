@@ -76,10 +76,7 @@ fn show_record_singleton_polymorphic() {
     let typ = Type::record(
         vec![Field::new(
             "Test",
-            Alias::new(
-                "Test",
-                Type::forall(vec![Generic::new("a", Kind::typ())], fun.clone()),
-            ),
+            Alias::new("Test", vec![Generic::new("a", Kind::typ())], fun.clone()),
         )],
         vec![],
     );
@@ -93,10 +90,7 @@ fn show_record_multifield() {
     let typ = Type::record(
         vec![Field::new(
             "Test",
-            Alias::new(
-                "Test",
-                Type::forall(vec![Generic::new("a", Kind::typ())], fun.clone()),
-            ),
+            Alias::new("Test", vec![Generic::new("a", Kind::typ())], fun.clone()),
         )],
         vec![Field::new("x", Type::int())],
     );
@@ -145,7 +139,10 @@ fn show_record_filtered() {
     let data = |s, a| ArcType::from(type_con(s, a));
     let test = data("Test", vec![data("a", vec![])]);
     let record = Type::record(
-        vec![Field::new("Test", Alias::new("Test", Type::int()))],
+        vec![Field::new(
+            "Test",
+            Alias::new("Test", Vec::new(), Type::int()),
+        )],
         vec![
             Field::new("x", Type::int()),
             Field::new("y", Type::int()),
@@ -198,10 +195,7 @@ fn show_record_multi_line_nested() {
     let inner_record = Type::record(
         vec![Field::new(
             "Test",
-            Alias::new(
-                "Test",
-                Type::forall(vec![Generic::new("a", Kind::typ())], fun.clone()),
-            ),
+            Alias::new("Test", vec![Generic::new("a", Kind::typ())], fun.clone()),
         )],
         vec![
             Field::new("x", Type::int()),
@@ -215,10 +209,7 @@ fn show_record_multi_line_nested() {
     let record = Type::record(
         vec![Field::new(
             "Test",
-            Alias::new(
-                "Test",
-                Type::forall(vec![Generic::new("a", Kind::typ())], fun.clone()),
-            ),
+            Alias::new("Test", vec![Generic::new("a", Kind::typ())], fun.clone()),
         )],
         vec![
             Field::new("x", Type::int()),
@@ -292,7 +283,8 @@ fn show_polymorphic_record_associated_type() {
         "Test",
         Alias::new(
             "Test",
-            Type::forall(vec![Generic::new("a", Kind::typ())], Type::ident("a")),
+            vec![Generic::new("a", Kind::typ())],
+            Type::ident("a"),
         ),
     )];
     let typ: ArcType<&str> = Type::poly_record(type_fields, vec![], Type::ident("r"));

@@ -1604,7 +1604,7 @@ mod tests {
             },
         ]);
 
-        let env = MockEnv(Some(Alias::new(list.clone(), typ.clone())));
+        let env = MockEnv(Some(Alias::new(list.clone(), Vec::new(), typ.clone())));
 
         let nil = Value::tag(1);
         assert_eq!(

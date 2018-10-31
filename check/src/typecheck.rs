@@ -437,7 +437,7 @@ impl<'a> Typecheck<'a> {
                     span: span,
                     value: err.into(),
                 });
-                Alias::new(id.clone(), self.type_cache.hole())
+                Alias::new(id.clone(), Vec::new(), self.type_cache.hole())
             }
         }
     }
@@ -478,14 +478,17 @@ impl<'a> Typecheck<'a> {
         // Some ""
         // ```
         let aliased_type = alias.typ();
-        let canonical_alias_type =
-            resolve::canonical_alias(&self.environment, &aliased_type, |alias| {
-                match **alias.unresolved_type().remove_forall() {
+        let canonical_alias_type = resolve::AliasRemover::new()
+            .canonical_alias(&self.environment, &aliased_type, |alias| {
+                match **alias.unresolved_type() {
                     Type::Variant(_) => true,
                     _ => false,
                 }
+            })
+            .unwrap_or_else(|_err| {
+                // The error is reported in unification
+                aliased_type.clone()
             });
-
         fn unpack_canonical_alias<'a>(
             alias: &'a Alias<Symbol, ArcType>,
             canonical_alias_type: &'a ArcType,
@@ -529,8 +532,8 @@ impl<'a> Typecheck<'a> {
                         .map(|f| f.typ.clone())
                         .collect::<Vec<_>>(),
                     Type::app(
-                        alias.clone().into_type(),
-                        alias
+                        Type::Alias(canonical_alias.clone()).into(),
+                        canonical_alias
                             .params()
                             .iter()
                             .map(|g| Type::generic(g.clone()))
@@ -1683,7 +1686,7 @@ impl<'a> Typecheck<'a> {
                             );
                             // We still define the type so that any uses later on in the program
                             // won't error on UndefinedType
-                            alias = Alias::new(name.clone(), self.type_cache.hole());
+                            alias = Alias::new(name.clone(), Vec::new(), self.type_cache.hole());
                             &alias
                         }
                     };
@@ -1940,14 +1943,7 @@ impl<'a> Typecheck<'a> {
                 // and bind the same variables to the arguments of the type binding
                 // ('a' and 'b' in the example)
                 let mut id_kind = check.type_kind();
-                for generic in bind
-                    .alias
-                    .value
-                    .unresolved_type_mut()
-                    .params_mut()
-                    .iter_mut()
-                    .rev()
-                {
+                for generic in bind.alias.value.params_mut().iter_mut().rev() {
                     check.instantiate_kinds(&mut generic.kind);
                     id_kind = Kind::function(generic.kind.clone(), id_kind);
                 }
@@ -1971,9 +1967,11 @@ impl<'a> Typecheck<'a> {
 
             // All kinds are now inferred so replace the kinds store in the AST
             for bind in &mut *bindings {
-                let typ = bind.alias.value.unresolved_type_mut();
-                check.finalize_type(typ);
-                for arg in typ.params_mut() {
+                {
+                    let typ = bind.alias.value.unresolved_type_mut();
+                    check.finalize_type(typ);
+                }
+                for arg in bind.alias.value.params_mut() {
                     *arg = check.finalize_generic(arg);
                 }
             }
@@ -1994,11 +1992,10 @@ impl<'a> Typecheck<'a> {
                     .map(|param| (param.id.clone(), alias.unresolved_type().clone())),
             );
 
-            let replacement =
-                self.create_unifiable_signature2(alias.unresolved_type().remove_forall());
+            let replacement = self.create_unifiable_signature2(alias.unresolved_type());
 
             if let Some(typ) = replacement {
-                *alias.unresolved_type_mut() = Type::forall(alias.params().to_owned(), typ);
+                *alias.unresolved_type_mut() = typ;
             }
             resolved_aliases.push(alias);
         }
@@ -2284,7 +2281,7 @@ impl<'a> Typecheck<'a> {
                         .unwrap_or_else(|| field.typ.unresolved_type().clone());
                     Some(Field::new(
                         field.name.clone(),
-                        Alias::new(field.typ.name.clone(), typ),
+                        Alias::new(field.typ.name.clone(), field.typ.params().to_owned(), typ),
                     ))
                 });
                 let new_fields = types::walk_move_types(fields, |field| {
@@ -2730,7 +2727,7 @@ impl<'a, 'b> Iterator for FunctionArgIter<'a, 'b> {
                             return None;
                         }
                         last_alias = Some(alias.name.clone());
-                        match alias.typ().apply_args(&args) {
+                        match alias.typ().apply_args(alias.params(), &args) {
                             Some(typ) => (None, typ.clone()),
                             None => return None,
                         }

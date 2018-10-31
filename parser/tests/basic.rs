@@ -881,7 +881,7 @@ fn alias_in_record_type() {
                     Type::record(
                         vec![Field {
                             name: intern("MyInt"),
-                            typ: Alias::new(intern("MyInt"), Type::hole()),
+                            typ: Alias::new(intern("MyInt"), Vec::new(), Type::hole()),
                         }],
                         vec![],
                     ),

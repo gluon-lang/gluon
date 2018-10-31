@@ -5,7 +5,7 @@ use symbol::Symbol;
 use types::{AliasRef, ArcType, Type, TypeEnv};
 
 quick_error! {
-    #[derive(Debug)]
+    #[derive(Debug, PartialEq)]
     pub enum Error {
         UndefinedType(id: Symbol) {
             description("undefined type")
@@ -40,6 +40,40 @@ impl AliasRemover {
         self.reduced_aliases.truncate(to)
     }
 
+    pub fn canonical_alias<'t, F>(
+        &mut self,
+        env: &TypeEnv,
+        typ: &'t ArcType,
+        mut canonical: F,
+    ) -> Result<Cow<'t, ArcType>, Error>
+    where
+        F: FnMut(&AliasRef<Symbol, ArcType>) -> bool,
+    {
+        Ok(match peek_alias(env, typ) {
+            Ok(Some(alias)) => {
+                if self.reduced_aliases.contains(&alias.name) {
+                    return Err(Error::SelfRecursiveAlias(alias.name.clone()));
+                }
+                self.reduced_aliases.push(alias.name.clone());
+
+                if canonical(alias) {
+                    Cow::Borrowed(typ)
+                } else {
+                    match alias
+                        .typ()
+                        .apply_args(alias.params(), &typ.unapplied_args())
+                    {
+                        Some(typ) => {
+                            Cow::Owned(self.canonical_alias(env, &typ, canonical)?.into_owned())
+                        }
+                        None => Cow::Borrowed(typ),
+                    }
+                }
+            }
+            _ => Cow::Borrowed(typ),
+        })
+    }
+
     pub fn remove_aliases(&mut self, env: &TypeEnv, mut typ: ArcType) -> Result<ArcType, Error> {
         loop {
             typ = match self.remove_alias(env, &typ)? {
@@ -58,10 +92,12 @@ impl AliasRemover {
                 }
                 self.reduced_aliases.push(alias.name.clone());
                 // Opaque types should only exist as the alias itself
-                if **alias.unresolved_type().remove_forall() == Type::Opaque {
+                if **alias.unresolved_type() == Type::Opaque {
                     return Ok(None);
                 }
-                Ok(alias.typ().apply_args(&typ.unapplied_args()))
+                Ok(alias
+                    .typ()
+                    .apply_args(alias.params(), &typ.unapplied_args()))
             }
             None => Ok(None),
         }
@@ -96,7 +132,7 @@ where
             } else {
                 alias
                     .typ()
-                    .apply_args(&typ.unapplied_args())
+                    .apply_args(alias.params(), &typ.unapplied_args())
                     .map(|typ| Cow::Owned(canonical_alias(env, &typ, canonical).into_owned()))
                     .unwrap_or_else(|| Cow::Borrowed(typ))
             }
@@ -111,10 +147,12 @@ pub fn remove_alias(env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType>, Err
     let typ = typ.skolemize(&mut FnvMap::default());
     Ok(peek_alias(env, &typ)?.and_then(|alias| {
         // Opaque types should only exist as the alias itself
-        if **alias.unresolved_type().remove_forall() == Type::Opaque {
+        if **alias.unresolved_type() == Type::Opaque {
             return None;
         }
-        alias.typ().apply_args(&typ.unapplied_args())
+        alias
+            .typ()
+            .apply_args(alias.params(), &typ.unapplied_args())
     }))
 }
 

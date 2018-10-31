@@ -66,7 +66,7 @@ impl MockEnv {
         let bool_ty = Type::app(Type::ident(bool_sym.clone()), collect![]);
 
         MockEnv {
-            bool: Alias::new(bool_sym, bool_ty),
+            bool: Alias::new(bool_sym, Vec::new(), bool_ty),
             int: Type::int(),
         }
     }
