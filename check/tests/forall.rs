@@ -1176,3 +1176,20 @@ let ask : forall e . Eff [io : Reader e | r] e = send (\x -> inj_reader (Reader 
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+#[ignore]
+fn forall_in_alias() {
+    let _ = ::env_logger::try_init();
+
+    let text = r#"
+type IO a = | IO a
+
+type Lift m v = forall a . { monad : m a }
+let lift_io io : IO a -> _ = let z : Lift IO _ = { monad = io } in z
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
