@@ -1,5 +1,6 @@
-let { ? } = import! std.io
-let { wrap } = import! std.applicative
+//@NO-IMPLICIT-PRELUDE
+let { wrap, flat_map } = import! std.io.prim
+let { Option } = import! std.types
 let { Result } = import! std.result
 let array = import! std.array
 let string = import! std.string

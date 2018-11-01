@@ -1,3 +1,4 @@
+//@NO-IMPLICIT-PRELUDE
 let { ? } = import! std.io
 let { (<*) } = import! std.applicative
 
