@@ -478,23 +478,49 @@ impl<'a> Typecheck<'a> {
         // Some ""
         // ```
         let aliased_type = alias.typ();
-        let canonical_alias = resolve::canonical_alias(&self.environment, &aliased_type, |alias| {
-            match **alias.unresolved_type().remove_forall() {
-                Type::Variant(_) => true,
-                _ => false,
+        let canonical_alias_type =
+            resolve::canonical_alias(&self.environment, &aliased_type, |alias| {
+                match **alias.unresolved_type().remove_forall() {
+                    Type::Variant(_) => true,
+                    _ => false,
+                }
+            });
+
+        fn unpack_canonical_alias<'a>(
+            alias: &'a Alias<Symbol, ArcType>,
+            canonical_alias_type: &'a ArcType,
+        ) -> (
+            Cow<'a, [Generic<Symbol>]>,
+            &'a AliasRef<Symbol, ArcType>,
+            Cow<'a, ArcType>,
+        ) {
+            match **canonical_alias_type {
+                Type::App(ref func, _) => match **func {
+                    Type::Alias(ref alias) => (Cow::Borrowed(&[]), alias, alias.typ()),
+                    _ => (Cow::Borrowed(&[]), &**alias, Cow::Borrowed(func)),
+                },
+                Type::Alias(ref alias) => (Cow::Borrowed(&[]), alias, alias.typ()),
+                Type::Forall(ref params, ref typ, None) => {
+                    let mut params = Cow::Borrowed(&params[..]);
+                    let (more_params, canonical_alias, inner_type) =
+                        unpack_canonical_alias(alias, typ);
+                    if !more_params.is_empty() {
+                        params.to_mut().extend(more_params.iter().cloned());
+                    }
+                    (params, canonical_alias, inner_type)
+                }
+                _ => (
+                    Cow::Borrowed(&[]),
+                    &**alias,
+                    Cow::Borrowed(canonical_alias_type),
+                ),
             }
-        });
+        }
 
-        let canonical_alias = match **canonical_alias.remove_forall() {
-            Type::App(ref func, _) => match **func {
-                Type::Alias(ref alias) => alias.typ(),
-                _ => Cow::Borrowed(func),
-            },
-            Type::Alias(ref alias) => alias.typ(),
-            _ => Cow::Borrowed(canonical_alias.remove_forall()),
-        };
+        let (outer_params, canonical_alias, inner_type) =
+            unpack_canonical_alias(alias, &canonical_alias_type);
 
-        if let Type::Variant(ref variants) = **canonical_alias {
+        if let Type::Variant(ref variants) = **inner_type {
             for field in variants.row_iter().cloned() {
                 let ctor_type = self.type_cache.function(
                     field
@@ -513,7 +539,15 @@ impl<'a> Typecheck<'a> {
                 );
                 self.stack_var(
                     field.name,
-                    Type::forall(alias.params().to_owned(), ctor_type),
+                    Type::forall(
+                        canonical_alias
+                            .params()
+                            .iter()
+                            .chain(outer_params.iter())
+                            .cloned()
+                            .collect(),
+                        ctor_type,
+                    ),
                 );
             }
         }

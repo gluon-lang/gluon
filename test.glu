@@ -10,42 +10,39 @@ type VE w r = | Value w | Effect (r (VE w r))
 
 type Eff r a = { run_effect : forall w . (a -> VE w r) -> VE w r }
 
-let functor_eff : Functor (Eff r) = {
+let functor : Functor (Eff r) = {
     map = error ""
 }
 
-let applicative_eff : Applicative (Eff r) = {
-    functor = functor_eff,
+let applicative : Applicative (Eff r) = {
+    functor,
     apply = error "",
     wrap = \x -> { run_effect = \k -> k x },
 }
 
-let monad_eff : Monad (Eff r) = {
-    applicative = applicative_eff,
+let monad : Monad (Eff r) = {
+    applicative,
     flat_map = \f m -> { run_effect = \k -> m.run_effect (\v -> (f v).run_effect k) }
 }
 
 
-type Opt a r = [ option : Option | a ] r
+type Opt r a = [ option : Option | r ] a
 
 let send f : forall a . (forall w . (a -> VE w r) -> r (VE w r)) -> Eff r a = { run_effect = \k -> Effect (f k) }
 // let send2 t : r a -> Eff r a = { run_effect = \k -> Effect (r t) }
 let admin eff : Eff r a -> VE a r = eff.run_effect Value
 
-let inject : f a -> [f : f | r] (VE a [f : f | r]) = any ()
-let option_eff : Option a -> [option : Option | r] (VE a [option : Option | r]) = any ()
+let inject : f a -> [f : f | r] a = any ()
+let option_eff : Option a -> Opt r (VE a [option : Option | r]) = any ()
 let io_eff : IO a -> [io : IO | r] (VE a [io : IO | r]) = any ()
-// let row : { option : Monad Option, io : Monad IO } = { option = option.monad, io = io.monad }
-// let applicative_eff : Applicative (Eff _) = applicative_eff row
-// let monad = monad_eff row
 
 type Found f a r = | Found (f a) | NotFound ([| r] a)
 let proj : forall f . [f : f | r] a -> (Found f a r) = any ()
 
 let option_empty : Eff [option : Option | r] Int = send (\x -> option_eff None)
 
-type Lift m v = forall a . { monad  : (m a), cont : (a -> v) }
-let lift_io io : IO a -> Eff [f : Lift IO | r] a = send (\x -> inject (let z : Lift IO a = { monad = io, cont = x } in z))
+type Lift m v = forall a . (| Lift (m a) (a -> v))
+let lift_io io : IO a -> Eff [f : Lift IO | r] a = send (\x -> inject (Lift io x))
 
 let io_effect : Eff [f : Lift IO | r] Int = lift_io (wrap 123)
 
@@ -73,12 +70,24 @@ let run_option eff : [Functor [| r]] -> Eff [f : Option | r] a -> Eff [| r] (Opt
                 flat_map loop (send (\k -> map k rest))
     loop (admin eff)
 
+let run_lift eff : [Monad m] -> Eff [f : Lift m] a -> m a =
+    let loop ve : VE a [f : Lift m] -> m a =
+        match ve with
+        | Value v -> wrap v
+        | Effect e ->
+            match proj e with 
+            | Found x ->
+                match x with
+                | Lift m f ->
+                    do a = m
+                    loop (f a) 
+            | NotFound _ -> error "unreachable"
+    loop (admin eff)
 
-// let run_io eff : Eff [io : IO | r] a -> IO a =
-//     match admin eff with 
-//     | IO x -> x
-//     | _ -> any ()
+let effect =
+    do x = option_empty
+    do y = io_effect
+    wrap (x #Int+ y)
 
-do x = option_empty
-do y = io_effect
-wrap (x #Int+ y)
+let final : IO (Option Int) = run_lift (run_option effect)
+final

@@ -1115,3 +1115,21 @@ let foo : (forall i . Proxy i -> ()) -> Proxy i -> () =
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn forall_in_alias() {
+    let _ = ::env_logger::try_init();
+
+    let text = r#"
+type IO a = | IO a
+
+type Lift m v = forall a . (| Lift (m a))
+
+let z io : IO a -> Lift IO _ = Lift io
+
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
