@@ -520,6 +520,37 @@ impl<'a> Typecheck<'a> {
             }
         }
 
+        fn unpack_canonical_alias<'a>(
+            alias: &'a Alias<Symbol, ArcType>,
+            canonical_alias_type: &'a ArcType,
+        ) -> (
+            Cow<'a, [Generic<Symbol>]>,
+            &'a AliasRef<Symbol, ArcType>,
+            Cow<'a, ArcType>,
+        ) {
+            match **canonical_alias_type {
+                Type::App(ref func, _) => match **func {
+                    Type::Alias(ref alias) => (Cow::Borrowed(&[]), alias, alias.typ()),
+                    _ => (Cow::Borrowed(&[]), &**alias, Cow::Borrowed(func)),
+                },
+                Type::Alias(ref alias) => (Cow::Borrowed(&[]), alias, alias.typ()),
+                Type::Forall(ref params, ref typ, None) => {
+                    let mut params = Cow::Borrowed(&params[..]);
+                    let (more_params, canonical_alias, inner_type) =
+                        unpack_canonical_alias(alias, typ);
+                    if !more_params.is_empty() {
+                        params.to_mut().extend(more_params.iter().cloned());
+                    }
+                    (params, canonical_alias, inner_type)
+                }
+                _ => (
+                    Cow::Borrowed(&[]),
+                    &**alias,
+                    Cow::Borrowed(canonical_alias_type),
+                ),
+            }
+        }
+
         let (outer_params, canonical_alias, inner_type) =
             unpack_canonical_alias(alias, &canonical_alias_type);
 
