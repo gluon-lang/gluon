@@ -4,24 +4,32 @@ let array = import! std.array
 let { wrap } = import! std.applicative
 let { flat_map, ? } = import! std.io
 let { ? } = import! std.int
-let { (==) } = import! std.cmp
+let { (>=) } = import! std.cmp
+let { (+) } = import! std.num
 
 
 #[implicit]
 type Write a = {
-    write : a -> Array Byte -> IO Int,
+    write_slice : a -> Array Byte -> Int -> Int -> IO Int,
     flush : a -> IO (),
 }
 
-let write ?write : [Write a] -> a -> Array Byte -> IO Int = write.write
+let write_slice ?write : [Write a] -> a -> Array Byte -> Int -> Int -> IO Int = write.write_slice
+
+let write writer buf : [Write a] -> a -> Array Byte -> IO Int =
+    write_slice writer buf 0 (array.len buf)
 
 let write_all writer buf : [Write a] -> a -> Array Byte -> IO () = 
-    if array.len buf == 0 then
-        wrap ()
-    else
-        do bytes_written = write writer buf
-        let buf = array.slice buf bytes_written (array.len buf)
-        write_all writer buf
+    let write_all_inner writer buf bytes_written =
+        let buf_len = array.len buf
+    
+        if bytes_written >= buf_len then
+            wrap ()
+        else
+            do written = write_slice writer buf bytes_written buf_len
+            write_all_inner writer buf (bytes_written + written)
+    
+    write_all_inner writer buf 0
 
 let write_string writer str : [Write a] -> a -> String -> IO () = 
     write_all writer (string.as_bytes str)
@@ -32,6 +40,7 @@ let flush ?write : [Write a] -> a -> IO () = write.flush
 {
     Write,
 
+    write_slice,
     write,
     write_all,
     write_string,
