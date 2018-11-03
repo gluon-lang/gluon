@@ -970,23 +970,3 @@ fn consider_the_type_of_the_splat_record() {
 
     assert_req!(result.map(|t| t.to_string()), Ok("{ x : Int, y : Int }"));
 }
-
-#[test]
-fn polymorphic_variants() {
-    let _ = env_logger::try_init();
-
-    let text = r#"
-type AA r = (| A Int .. r)
-type BB r = (| B String .. r)
-if True then
-    A 123
-else
-    B "abc"
-"#;
-    let result = support::typecheck(text);
-
-    assert_req!(
-        result.map(|t| t.to_string()),
-        Ok("forall a . | A Int\n| B String\n| a")
-    );
-}

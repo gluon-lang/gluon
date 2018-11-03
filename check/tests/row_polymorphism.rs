@@ -268,8 +268,8 @@ fn polymorphic_variants() {
     let _ = env_logger::try_init();
 
     let text = r#"
-type AA r = | A Int .. r
-type BB r = | B String .. r
+type AA r = (| A Int .. r)
+type BB r = (| B String .. r)
 if True then
     A 123
 else
@@ -279,7 +279,7 @@ else
 
     assert_req!(
         result.map(|t| t.to_string()),
-        Ok("forall a . | A Int\n| B String\n| a")
+        Ok("forall a . | A Int\n| B String\n.. a")
     );
 }
 

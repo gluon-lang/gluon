@@ -1194,3 +1194,75 @@ let z io : IO a -> Lift IO _ = Lift io
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn fe_free() {
+    let _ = ::env_logger::try_init();
+
+    let text = r#"
+type FEFree r a =
+    forall x . (| Pure a | Impure ([| r] x) (x -> FEFree r a))
+
+let any x = any x
+let comp f g : (a -> FEFree r b) -> (b -> FEFree r c) -> (a -> FEFree r c) = \a ->
+    match f a with
+    | Pure b -> g b
+    | Impure r h -> Impure r (comp h g)
+
+let flat_map f m : (a -> FEFree r b) -> FEFree r a -> FEFree r b =
+    match m with
+    | Pure x -> f x
+    | Impure row g -> Impure row (comp g f)
+
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn trim_matched_variants() {
+    let _ = ::env_logger::try_init();
+
+    let text = r#"
+type Error e r a = | Error e | Ok .. r
+
+let any x = any x
+
+match Error "" with
+| Error _ -> any ()
+| x -> x
+"#;
+    let result = support::typecheck(text);
+
+    assert_req!(
+        result.map(|x| x.to_string()),
+        Ok("forall a . | Ok\n.. a".to_string())
+    );
+}
+
+#[test]
+fn trim_matched_variants_alias() {
+    let _ = ::env_logger::try_init();
+
+    let text = r#"
+type Rest r a = .. r
+
+type Error e r a = | Error e .. r
+
+let any x = any x
+
+let z : Rest r a =
+    match Error "" with
+    | Error _ -> any ()
+    | x -> x
+z
+"#;
+    let result = support::typecheck(text);
+
+    assert_req!(
+        result.map(|x| x.to_string()),
+        Ok("forall a a0 . test.Rest a a0".to_string())
+    );
+}

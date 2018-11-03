@@ -252,10 +252,24 @@ impl<'a> KindCheck<'a> {
                 Ok(kind)
             }
             Type::Variant(ref mut row) => {
-                for field in types::row_iter_mut(row) {
-                    let kind = self.kindcheck(&mut field.typ)?;
-                    let type_kind = self.type_kind();
-                    self.unify(field.typ.span(), &type_kind, kind)?;
+                match **row {
+                    Type::ExtendRow { .. } => {
+                        let mut fields = types::row_iter_mut(row);
+                        for field in &mut fields {
+                            let kind = self.kindcheck(&mut field.typ)?;
+                            let type_kind = self.type_kind();
+                            self.unify(field.typ.span(), &type_kind, kind)?;
+                        }
+
+                        let rest_kind = self.kindcheck(fields.current_type())?;
+                        let row_kind = self.row_kind();
+                        self.unify(span, &row_kind, rest_kind)?;
+                    }
+                    _ => {
+                        let rest_kind = self.kindcheck(row)?;
+                        let row_kind = self.row_kind();
+                        self.unify(span, &row_kind, rest_kind)?;
+                    }
                 }
 
                 Ok(self.type_kind())

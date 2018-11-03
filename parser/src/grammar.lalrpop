@@ -250,7 +250,11 @@ RecordField: Either<Field<Id, Alias<Id, AstType<Id>>>, Field<Id, AstType<Id>>> =
 VariantField: (Id, Vec<AstType<Id>>) =
     "|" <Ident> <AtomicType*> => (<>);
 
-VariantType: Type<Id, AstType<Id>> =
+VariantType: Type<Id, AstType<Id>> = {
+    <rest: (".." <AtomicType>)> => {
+        Type::Variant(rest)
+    },
+
     <row: Sp<VariantField+>> <rest: (".." <AtomicType>)?> => {
         let rest = rest.unwrap_or_else(Type::empty_row);
         let row_span = row.span;
@@ -260,7 +264,8 @@ VariantType: Type<Id, AstType<Id>> =
             })
             .collect();
         Type::Variant(Type::extend_row(vec![], row, rest))
-    };
+    }
+};
 
 TypeBinding: TypeBinding<Id> = {
     <metadata: Metadata?> "type" <id: Sp<Ident>> <params: TypeParam*> "=" <row: Sp<VariantType>> => {

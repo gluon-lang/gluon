@@ -975,14 +975,27 @@ impl<'a> Typecheck<'a> {
                 Ok(TailCall::Type(typ.clone()))
             }
             Expr::Match(ref mut expr, ref mut alts) => {
-                let typ = self.infer_expr(&mut **expr);
+                let mut scrutinee_type = self.infer_expr(&mut **expr);
                 let expected_type = expected_type.take().cloned();
+
+                let mut unaliased_scrutinee_type = match alts.first().map(|alt| &alt.pattern.value)
+                {
+                    Some(Pattern::Constructor(ref id, ..)) => {
+                        let variant_type =
+                            self.type_cache.poly_variant(vec![], self.subs.new_var());
+                        let scrutinee_type =
+                            self.unify_span(expr.span, &variant_type, scrutinee_type.clone());
+                        self.remove_aliases(scrutinee_type)
+                    }
+                    _ => scrutinee_type.clone(),
+                };
 
                 let mut expr_type = None;
 
                 for alt in alts.iter_mut() {
                     self.enter_scope();
-                    self.typecheck_pattern(&mut alt.pattern, typ.clone());
+                    self.typecheck_pattern(&mut alt.pattern, scrutinee_type.clone());
+
                     let mut alt_type = self.typecheck_opt(&mut alt.expr, expected_type.as_ref());
                     alt_type = self.instantiate_generics(&alt_type);
                     match expr_type {
@@ -992,6 +1005,34 @@ impl<'a> Typecheck<'a> {
                         _ => (),
                     }
                     self.exit_scope();
+
+                    // The variant we matched on will not appear in any followup bindings so remove
+                    // this variant from the type we are matching on
+                    //
+                    // TODO Make this more general so it can error when not matching on all the
+                    // variants
+                    {
+                        let replaced = match (&alt.pattern.value, &*unaliased_scrutinee_type) {
+                            (Pattern::Constructor(id, _), Type::Variant(row)) => {
+                                let mut variant_iter = row.row_iter();
+                                let variants = variant_iter
+                                    .by_ref()
+                                    .filter(|variant| variant.name != id.name)
+                                    .cloned()
+                                    .collect();
+                                scrutinee_type = Type::poly_variant(
+                                    variants,
+                                    variant_iter.current_type().clone(),
+                                );
+                                true
+                            }
+                            _ => false,
+                        };
+                        if replaced {
+                            unaliased_scrutinee_type = scrutinee_type.clone();
+                        }
+                    }
+
                     expr_type = Some(alt_type);
                 }
                 expr_type.ok_or(TypeError::EmptyCase).map(TailCall::Type)
