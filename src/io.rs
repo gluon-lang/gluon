@@ -272,6 +272,7 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
             catch => primitive!(2, async fn std::io::prim::catch),
             run_expr => primitive!(1, async fn std::io::prim::run_expr),
             load_script => primitive!(2, async fn std::io::prim::load_script),
+            default_buf_len => 8192,
         },
     )
 }

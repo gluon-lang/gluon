@@ -1,7 +1,10 @@
 //@NO-IMPLICIT-PRELUDE
-let { wrap, flat_map } = import! std.io.prim
-let { Option } = import! std.types
+let { wrap, flat_map, default_buf_len } = import! std.io.prim
+let { Option, Bool } = import! std.types
+let { (>), (<=) } = import! std.cmp
+let { ? } = import! std.int
 let { Result } = import! std.result
+let { ref, load, (<-) } = import! std.reference
 let array = import! std.array
 let string = import! std.string
 
@@ -11,19 +14,6 @@ type Read a = {
     read : a -> Int -> IO (Option (Array Byte)),
     read_to_end : a -> IO (Array Byte),
 }
-
-let new read : forall a . (a -> Int -> IO (Option (Array Byte))) -> Read a =
-    let read_to_end_rec buf reader =
-        do result = read reader 16384
-
-        match result with
-        | Some new_buf -> read_to_end_rec (array.append buf new_buf) reader
-        | None -> wrap buf
-    
-    {
-        read,
-        read_to_end = read_to_end_rec [],
-    }
 
 let read ?read : [Read a] -> a -> Int -> IO (Option (Array Byte)) = read.read
 
@@ -36,12 +26,68 @@ let read_to_string reader : [Read a] -> a -> IO (Option String) =
     | Ok str -> wrap (Some str)
     | Err _ -> wrap None
 
+let default_read_to_end read : forall a . (a -> Int -> IO (Option (Array Byte))) -> a -> IO (Array Byte) =
+    let read_to_end_rec buf reader =
+        do result = read reader default_buf_len
+
+        match result with
+        | Some new_buf -> read_to_end_rec (array.append buf new_buf) reader
+        | None -> wrap buf
+    
+    read_to_end_rec []
+
+type Buffered r = {
+    reader : r,
+    buf : Ref (Array Byte)
+}
+
+let buffered reader : [Read a] -> a -> Buffered a =
+    {
+        reader,
+        buf = ref []
+    }
+
+let read_buffered : [Read r] -> Read (Buffered r) =
+    let buffered_read buf_reader num_bytes =
+        let buf = load buf_reader.buf
+
+        if num_bytes <= 0 then
+            wrap (Some [])
+        else if array.is_empty buf then
+            do new_buf = read buf_reader.reader default_buf_len
+
+            match new_buf with
+            | Some new_buf ->
+                let _ = buf_reader.buf <- new_buf
+                buffered_read buf_reader num_bytes
+            | None -> wrap None
+        else
+            let num_bytes = if num_bytes > array.len buf then array.len buf else num_bytes
+            let read_buf = array.slice buf 0 num_bytes
+            let rest_buf = array.slice buf num_bytes (array.len buf)
+
+            let _ = buf_reader.buf <- rest_buf
+            wrap (Some read_buf)
+
+    let buffered_read_to_end buf_reader =
+        do rest = read_to_end buf_reader.reader
+        let buf = load buf_reader.buf
+        let _ = buf_reader.buf <- []
+
+        wrap (array.append buf rest)
+
+    {
+        read = buffered_read,
+        read_to_end = buffered_read_to_end,
+    }
+
 
 {
     Read,
 
-    new,
     read,
     read_to_end,
     read_to_string,
+    default_read_to_end,
+    read_buffered,
 }
