@@ -2,6 +2,8 @@
 //! Functions for working with I/O
 
 let io_prim = import! std.io.prim
+let { Read } = import! std.io.read
+let { Write } = import! std.io.write
 let { Functor } = import! std.functor
 let { Applicative } = import! std.applicative
 let { Monad } = import! std.monad
@@ -21,10 +23,22 @@ let monad : Monad IO = {
     flat_map = io_prim.flat_map,
 }
 
+let read : Read File = {
+    read = io_prim.read_file,
+    read_to_end = io_prim.read_file_to_end,
+}
+
+let write : Write File = {
+    write_slice = io_prim.write_slice_file,
+    flush = io_prim.flush_file
+}
+
 {
     functor,
     applicative,
     monad,
+    read,
+    write,
     ..
     io_prim
 }

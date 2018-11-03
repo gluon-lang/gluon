@@ -9,7 +9,7 @@ use futures::{
 };
 
 use vm::api::generic::{A, B};
-use vm::api::{self, Array, Getable, OpaqueValue, OwnedFunction, TypedBytecode, WithVM, IO};
+use vm::api::{Getable, OpaqueValue, OwnedFunction, RuntimeResult, TypedBytecode, WithVM, IO};
 use vm::internal::ValuePrinter;
 use vm::stack::{self, StackFrame};
 use vm::thread::{RootedThread, Thread, ThreadInternal};
@@ -64,22 +64,6 @@ fn open_file(s: &str) -> IO<GluonFile> {
     }
 }
 
-fn read_file<'vm>(file: WithVM<'vm, &GluonFile>, count: usize) -> IO<Array<'vm, u8>> {
-    let WithVM { vm, value: file } = file;
-    let mut file = file.0.lock().unwrap();
-    let mut buffer = Vec::with_capacity(count);
-    unsafe {
-        buffer.set_len(count);
-        match file.read(&mut *buffer) {
-            Ok(bytes_read) => match api::convert::<_, Array<u8>>(vm, &buffer[..bytes_read]) {
-                Ok(v) => IO::Value(v),
-                Err(err) => IO::Exception(format!("{}", err)),
-            },
-            Err(err) => IO::Exception(format!("{}", err)),
-        }
-    }
-}
-
 fn read_file_to_array(s: &str) -> IO<Vec<u8>> {
     let mut buffer = Vec::new();
     match File::open(s).and_then(|mut file| file.read_to_end(&mut buffer)) {
@@ -99,6 +83,66 @@ fn read_file_to_string(s: &str) -> IO<String> {
             IO::Exception(buffer)
         }
     }
+}
+
+fn read_file(file: &GluonFile, count: usize) -> IO<Option<Vec<u8>>> {
+    if count == 0 {
+        return IO::Value(Some(Vec::new()));
+    }
+
+    let mut file = file.0.lock().unwrap();
+    let mut buffer = Vec::with_capacity(count);
+    unsafe {
+        buffer.set_len(count);
+        match file.read(&mut *buffer) {
+            Ok(bytes_read) if bytes_read == 0 => IO::Value(None),
+            Ok(bytes_read) => IO::Value(Some(buffer[..bytes_read].to_vec())),
+            Err(err) => IO::Exception(format!("{}", err)),
+        }
+    }
+}
+
+fn read_file_to_end(file: &GluonFile) -> IO<Vec<u8>> {
+    let mut file = file.0.lock().unwrap();
+    let mut buf = Vec::new();
+
+    match file.read_to_end(&mut buf) {
+        Ok(_) => IO::Value(buf),
+        Err(err) => IO::Exception(err.to_string()),
+    }
+}
+
+fn write_slice_file(
+    file: &GluonFile,
+    buf: &[u8],
+    start: usize,
+    end: usize,
+) -> RuntimeResult<IO<usize>, String> {
+    if start > end {
+        return RuntimeResult::Panic(format!(
+            "slice index starts at {} but ends at {}",
+            start, end
+        ));
+    }
+
+    if end > buf.len() {
+        return RuntimeResult::Panic(format!(
+            "index {} is out of range for array of length {}",
+            end,
+            buf.len()
+        ));
+    }
+
+    let mut file = file.0.lock().unwrap();
+
+    match file.write(&buf[start..end]) {
+        Ok(bytes_written) => RuntimeResult::Return(IO::Value(bytes_written)),
+        Err(why) => RuntimeResult::Return(IO::Exception(why.to_string())),
+    }
+}
+
+fn flush_file(file: &GluonFile) -> IO<()> {
+    file.0.lock().unwrap().flush().into()
 }
 
 fn read_char() -> IO<char> {
@@ -259,9 +303,12 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
             flat_map => TypedBytecode::<FlatMap>::new("std.io.prim.flat_map", 3, flat_map),
             wrap => TypedBytecode::<Wrap>::new("std.io.prim.wrap", 2, wrap),
             open_file => primitive!(1, std::io::prim::open_file),
-            read_file => primitive!(2, std::io::prim::read_file),
             read_file_to_string => primitive!(1, std::io::prim::read_file_to_string),
             read_file_to_array => primitive!(1, std::io::prim::read_file_to_array),
+            read_file => primitive!(2, std::io::prim::read_file),
+            read_file_to_end => primitive!(1, std::io::prim::read_file_to_end),
+            write_slice_file => primitive!(4, std::io::prim::write_slice_file),
+            flush_file => primitive!(1, std::io::prim::flush_file),
             read_char => primitive!(0, std::io::prim::read_char),
             read_line => primitive!(0, std::io::prim::read_line),
             print => primitive!(1, std::io::prim::print),
