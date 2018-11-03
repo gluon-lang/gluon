@@ -69,11 +69,16 @@ impl TypeEnv for EmptyEnv<Symbol> {
 /// primitive types
 pub trait PrimitiveEnv: TypeEnv {
     fn get_bool(&self) -> &ArcType;
+    fn get_effect(&self) -> &ArcType;
 }
 
 impl<'a, T: ?Sized + PrimitiveEnv> PrimitiveEnv for &'a T {
     fn get_bool(&self) -> &ArcType {
         (**self).get_bool()
+    }
+
+    fn get_effect(&self) -> &ArcType {
+        (**self).get_effect()
     }
 }
 
@@ -188,7 +193,7 @@ pub enum BuiltinType {
 
 impl BuiltinType {
     pub fn symbol(self) -> &'static SymbolRef {
-        unsafe { &*(self.to_str() as *const str as *const SymbolRef) }
+        SymbolRef::new(self.to_str())
     }
 }
 
@@ -1090,6 +1095,7 @@ where
                 _ => None,
             },
             Type::Builtin(b) => Some(b.symbol()),
+            Type::Effect(_) => Some(SymbolRef::new("Effect")),
             _ => None,
         }
     }

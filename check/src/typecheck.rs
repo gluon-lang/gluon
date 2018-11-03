@@ -310,6 +310,10 @@ impl<'a> PrimitiveEnv for Environment<'a> {
     fn get_bool(&self) -> &ArcType {
         self.environment.get_bool()
     }
+
+    fn get_effect(&self) -> &ArcType {
+        self.environment.get_effect()
+    }
 }
 
 impl<'a> MetadataEnv for Environment<'a> {
@@ -980,7 +984,7 @@ impl<'a> Typecheck<'a> {
 
                 let mut unaliased_scrutinee_type = match alts.first().map(|alt| &alt.pattern.value)
                 {
-                    Some(Pattern::Constructor(ref id, ..)) => {
+                    Some(Pattern::Constructor(..)) => {
                         let variant_type =
                             self.type_cache.poly_variant(vec![], self.subs.new_var());
                         let scrutinee_type =

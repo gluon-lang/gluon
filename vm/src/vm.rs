@@ -253,6 +253,15 @@ impl PrimitiveEnv for VmEnv {
             })
             .expect("std.types.Bool")
     }
+
+    fn get_effect(&self) -> &ArcType {
+        self.find_type_info("std.types.Effect")
+            .map(|alias| match alias {
+                Cow::Borrowed(alias) => alias.as_type(),
+                Cow::Owned(_) => ice!("Expected to be able to retrieve a borrowed effect type"),
+            })
+            .expect("std.types.Effect")
+    }
 }
 
 impl MetadataEnv for VmEnv {

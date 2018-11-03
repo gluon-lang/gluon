@@ -214,9 +214,8 @@ impl TypeEnv for TypeInfos {
 
 impl TypeInfos {
     pub fn new() -> TypeInfos {
-        TypeInfos {
-            id_to_type: FnvMap::default(),
-        }
+        let id_to_type = FnvMap::default();
+        TypeInfos { id_to_type }
     }
 
     pub fn extend(&mut self, other: TypeInfos) {
