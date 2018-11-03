@@ -30,6 +30,10 @@ pub mod array {
         array.len() as VmInt
     }
 
+    pub fn is_empty(array: Array<generic::A>) -> bool {
+        array.len() == 0
+    }
+
     pub(crate) fn index<'vm>(
         array: OpaqueRef<'vm, [generic::A]>,
         index: VmInt,
@@ -536,6 +540,7 @@ pub fn load_array(vm: &Thread) -> Result<ExternModule> {
         vm,
         record! {
             len => primitive!(1, std::array::prim::len),
+            is_empty => primitive!(1, std::array::prim::is_empty),
             index => primitive!(2, std::array::prim::index),
             append => primitive!(2, std::array::prim::append),
             slice => primitive!(3, std::array::prim::slice)
