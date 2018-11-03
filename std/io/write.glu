@@ -2,7 +2,7 @@
 let string = import! std.string
 let array = import! std.array
 let { wrap } = import! std.applicative
-let { flat_map, ? } = import! std.io
+let { flat_map, wrap } = import! std.io.prim
 let { ? } = import! std.int
 let { (>=) } = import! std.cmp
 let { (+) } = import! std.num
