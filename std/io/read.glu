@@ -1,6 +1,7 @@
 //@NO-IMPLICIT-PRELUDE
 let { wrap, flat_map, default_buf_len } = import! std.io.prim
 let { Option, Bool } = import! std.types
+let { Disposable, dispose, is_disposed } = import! std.disposable
 let { (>), (<=) } = import! std.cmp
 let { ? } = import! std.int
 let { Result } = import! std.result
@@ -81,6 +82,12 @@ let read_buffered : [Read r] -> Read (Buffered r) =
         read_to_end = buffered_read_to_end,
     }
 
+let disposable_buffered : [Disposable r] -> Disposable (Buffered r) =
+    {
+        dispose = \buf_reader -> dispose buf_reader.reader,
+        is_disposed = \buf_reader -> is_disposed buf_reader.reader,
+    }
+
 
 {
     Read,
@@ -93,4 +100,5 @@ let read_buffered : [Read r] -> Read (Buffered r) =
     buffered,
 
     read_buffered,
+    disposable_buffered,
 }
