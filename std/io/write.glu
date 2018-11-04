@@ -2,10 +2,14 @@
 let string = import! std.string
 let array = import! std.array
 let { wrap } = import! std.applicative
-let { flat_map, wrap } = import! std.io.prim
+let { flat_map, wrap, default_buf_len } = import! std.io.prim
+let { Disposable, dispose, is_disposed } = import! std.disposable
+let { (<-), load, ref } = import! std.reference
 let { ? } = import! std.int
-let { (>=) } = import! std.cmp
-let { (+) } = import! std.num
+let { assert } = import! std.test
+let { (>=), (>), (==) } = import! std.cmp
+let { (+), (-) } = import! std.num
+let { not } = import! std.bool
 
 
 #[implicit]
@@ -19,22 +23,101 @@ let write_slice ?write : [Write a] -> a -> Array Byte -> Int -> Int -> IO Int = 
 let write writer buf : [Write a] -> a -> Array Byte -> IO Int =
     write_slice writer buf 0 (array.len buf)
 
-let write_all writer buf : [Write a] -> a -> Array Byte -> IO () = 
-    let write_all_inner writer buf bytes_written =
-        let buf_len = array.len buf
+type WriteResult = | Success | Eof Int
+
+let try_write_all writer slice start end : [Write w] -> w -> Array Byte -> Int -> Int -> IO WriteResult =
+    let slice_len = end - start
+    assert (slice_len >= 0)
     
-        if bytes_written >= buf_len then
-            wrap ()
+    let inner bytes_written =
+        if bytes_written >= slice_len then
+            wrap Success
         else
-            do written = write_slice writer buf bytes_written buf_len
-            write_all_inner writer buf (bytes_written + written)
+            do written = write_slice writer slice (start + bytes_written) end
+
+            if written == 0 then
+                wrap (Eof bytes_written)
+            else
+                inner (bytes_written + written)
     
-    write_all_inner writer buf 0
+    inner 0
+
+let write_all writer buf : [Write a] -> a -> Array Byte -> IO () = 
+    let buf_len = array.len buf
+
+    let inner bytes_written =
+        do result = try_write_all writer buf bytes_written buf_len
+        match result with
+        | Success -> wrap ()
+        | Eof written -> inner (bytes_written + written)
+
+    inner 0
 
 let write_string writer str : [Write a] -> a -> String -> IO () = 
     write_all writer (string.as_bytes str)
 
 let flush ?write : [Write a] -> a -> IO () = write.flush
+
+type Buffered w = {
+    writer : w,
+    buf : Ref (Array Byte)
+}
+
+let buffered writer : [Write w] -> w -> Buffered w =
+    {
+        writer,
+        buf = ref [],
+    }
+
+let write_buffered : [Write w] -> Write (Buffered w) =
+    let buffered_write_slice buf_writer slice start end =
+        let buf = load buf_writer.buf
+        let slice_len = end - start
+        assert (slice_len >= 0)
+        
+        if slice_len >= default_buf_len then
+            // if there's more new data than space in the buffer, flush the buffer
+            // and then write the data (no point in buffering something that is larger
+            // than the buffer anyway)
+            do _ = write_all buf_writer.writer buf
+            let _ = buf_writer.buf <- []
+            write_slice buf_writer.writer slice start end     
+        else if array.len buf + slice_len > default_buf_len then
+            // the new data spills the buffer but is smaller than the buffer size, so
+            // write a complete buffer and keep the rest in the buffer
+            let bytes_left_in_buf = default_buf_len - array.len buf
+            let slice_split = start + bytes_left_in_buf
+            
+            let write_buf = array.append buf (array.slice slice start slice_split)
+            do _ = write_all buf_writer.writer write_buf
+
+            let _ = buf_writer.buf <- array.slice slice slice_split end
+            wrap slice_len 
+        else
+            // the new data fits into the buffer, so just copy it there
+            let _ = buf_writer.buf <- array.append buf (array.slice slice start end)
+            wrap slice_len
+
+    let buffered_flush buf_writer =
+        let buf = load buf_writer.buf
+
+        if not (array.is_empty buf) then
+            do _ = write_all buf_writer.writer buf
+            let _ = buf_writer.buf <- []
+            flush buf_writer.writer
+        else
+            flush buf_writer.writer
+
+    {
+        write_slice = buffered_write_slice,
+        flush = buffered_flush,
+    }
+
+let disposable_buffered : [Disposable w] -> Disposable (Buffered w) =
+    {
+        dispose = \buf_writer -> dispose buf_writer.writer,
+        is_disposed = \buf_writer -> is_disposed buf_writer.writer,
+    }
 
 
 {
@@ -45,4 +128,7 @@ let flush ?write : [Write a] -> a -> IO () = write.flush
     write_all,
     write_string,
     flush,
+
+    write_buffered,
+    disposable_buffered,
 }
