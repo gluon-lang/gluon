@@ -84,10 +84,13 @@ let read_buffered : [Read r] -> Read (Buffered r) =
 
 {
     Read,
+    Buffered,
 
     read,
     read_to_end,
     read_to_string,
     default_read_to_end,
+    buffered,
+
     read_buffered,
 }
