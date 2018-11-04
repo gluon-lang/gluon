@@ -1,9 +1,6 @@
 //@NO-IMPLICIT-PRELUDE
-let { ? } = import! std.io
-let { (<*), wrap } = import! std.applicative
+let { wrap, flat_map } = import! std.io.prim
 let { Bool } = import! std.types
-let { not } = import! std.bool
-let { ref, load, (<-) } = import! std.reference
 
 
 #[implicit]
@@ -12,34 +9,19 @@ type Disposable a = {
     is_disposed : a -> Bool,
 }
 
-let new dispose : forall a . (a -> IO ()) -> Disposable a =
-    let disposed = ref False
-    let is_disposed _ = load disposed
-
-    let dispose_wrapper disposable =
-        if not (load disposed) then
-            let _ = disposed <- True
-            dispose disposable
-        else
-            wrap ()
-
-    {
-        dispose = dispose_wrapper,
-        is_disposed
-    }
-
 let dispose ?disposable : [Disposable a] -> a -> IO () = disposable.dispose
 
 let is_disposed ?disposable : [Disposable a] -> a -> Bool = disposable.is_disposed
 
 let using disposable action : forall r . [Disposable a] -> a -> (a -> IO r) -> IO r =
-    action disposable <* dispose disposable
+    let result = action disposable
+    do _ = dispose disposable
+    result
 
 
 {
     Disposable,
 
-    new,
     dispose,
     is_disposed,
     using,
