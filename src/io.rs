@@ -207,6 +207,10 @@ fn catch<'vm>(
     })
 }
 
+fn throw(msg: String) -> IO<OpaqueValue<RootedThread, A>> {
+    IO::Exception(msg)
+}
+
 fn clear_frames<T>(mut err: Error, stack: StackFrame) -> IO<T> {
     let new_trace = match ::vm::thread::reset_stack(stack, 1) {
         Ok(x) => x,
@@ -317,6 +321,7 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
             eprint => primitive!(1, std::io::prim::eprint),
             eprintln => primitive!(1, std::io::prim::eprintln),
             catch => primitive!(2, async fn std::io::prim::catch),
+            throw => primitive!(1, std::io::prim::throw),
             run_expr => primitive!(1, async fn std::io::prim::run_expr),
             load_script => primitive!(2, async fn std::io::prim::load_script),
             default_buf_len => 8192,
