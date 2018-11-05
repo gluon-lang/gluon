@@ -2,7 +2,7 @@
 let string = import! std.string
 let array = import! std.array
 let { wrap } = import! std.applicative
-let { flat_map, wrap, default_buf_len } = import! std.io.prim
+let { flat_map, wrap, default_buf_len, throw } = import! std.io.prim
 let { Disposable, dispose, is_disposed } = import! std.disposable
 let { (<-), load, ref } = import! std.reference
 let { ? } = import! std.int
@@ -23,34 +23,18 @@ let write_slice ?write : [Write a] -> a -> Array Byte -> Int -> Int -> IO Int = 
 let write writer buf : [Write a] -> a -> Array Byte -> IO Int =
     write_slice writer buf 0 (array.len buf)
 
-type WriteResult = | Success | Eof Int
-
-let try_write_all writer slice start end : [Write w] -> w -> Array Byte -> Int -> Int -> IO WriteResult =
-    let slice_len = end - start
-    assert (slice_len >= 0)
-    
+let write_all writer buf : [Write a] -> a -> Array Byte -> IO () =   
     let inner bytes_written =
-        if bytes_written >= slice_len then
-            wrap Success
+        if bytes_written >= array.len buf then
+            wrap ()
         else
-            do written = write_slice writer slice (start + bytes_written) end
+            do written = write_slice writer buf bytes_written (array.len buf)
 
             if written == 0 then
-                wrap (Eof bytes_written)
+                throw "cannot write the whole buffer because the writer has reached end of file"
             else
                 inner (bytes_written + written)
     
-    inner 0
-
-let write_all writer buf : [Write a] -> a -> Array Byte -> IO () = 
-    let buf_len = array.len buf
-
-    let inner bytes_written =
-        do result = try_write_all writer buf bytes_written buf_len
-        match result with
-        | Success -> wrap ()
-        | Eof written -> inner (bytes_written + written)
-
     inner 0
 
 let write_string writer str : [Write a] -> a -> String -> IO () = 
@@ -69,44 +53,53 @@ let buffered writer : [Write w] -> w -> Buffered w =
         buf = ref [],
     }
 
+/// Flushes the buffer of `buf_writer`. If an EOF is encountered, the call will fail.
+let flush_buffer buf_writer : [Write w] -> Buffered w -> IO () =
+    let buf = load buf_writer.buf
+
+    if array.is_empty buf then
+        wrap ()
+    else
+        let write_buf bytes_written =
+            if bytes_written >= array.len buf then
+                wrap ()
+            else
+                do written = write_slice buf_writer.writer buf bytes_written (array.len buf)
+
+                if written == 0 then
+                    throw "cannot flush buffer because the writer has reached end of file"
+                else
+                    write_buf (bytes_written + written)
+
+        do _ = write_buf 0
+        let _ = buf_writer.buf <- []
+        wrap ()
+
 let write_buffered : [Write w] -> Write (Buffered w) =
     let buffered_write_slice buf_writer slice start end =
-        let buf = load buf_writer.buf
         let slice_len = end - start
         assert (slice_len >= 0)
         
-        if slice_len >= default_buf_len then
-            // if there's more new data than space in the buffer, flush the buffer
-            // and then write the data (no point in buffering something that is larger
-            // than the buffer anyway)
-            do _ = write_all buf_writer.writer buf
-            let _ = buf_writer.buf <- []
-            write_slice buf_writer.writer slice start end     
-        else if array.len buf + slice_len > default_buf_len then
-            // the new data spills the buffer but is smaller than the buffer size, so
-            // write a complete buffer and keep the rest in the buffer
-            let bytes_left_in_buf = default_buf_len - array.len buf
-            let slice_split = start + bytes_left_in_buf
-            
-            let write_buf = array.append buf (array.slice slice start slice_split)
-            do _ = write_all buf_writer.writer write_buf
+        do _ = 
+            // if the new data would spill the buffer, flush it first
+            if array.len (load buf_writer.buf) + slice_len >= default_buf_len then
+                flush_buffer buf_writer
+            else
+                wrap ()
 
-            let _ = buf_writer.buf <- array.slice slice slice_split end
-            wrap slice_len 
+        // if the slice is larger than the max buffer length write it directly;
+        // otherwise append it to the buffer. Appending can never exceed the buffer,
+        // since the slice is always < buf_len and the buffer has been flushed if
+        // necessary
+        if slice_len >= default_buf_len then
+            write_slice buf_writer.writer slice start end
         else
-            // the new data fits into the buffer, so just copy it there
-            let _ = buf_writer.buf <- array.append buf (array.slice slice start end)
+            let _ = buf_writer.buf <- array.append (load buf_writer.buf) (array.slice slice start end)
             wrap slice_len
 
     let buffered_flush buf_writer =
-        let buf = load buf_writer.buf
-
-        if not (array.is_empty buf) then
-            do _ = write_all buf_writer.writer buf
-            let _ = buf_writer.buf <- []
-            flush buf_writer.writer
-        else
-            flush buf_writer.writer
+        do _ = flush_buffer buf_writer
+        flush buf_writer.writer
 
     {
         write_slice = buffered_write_slice,
@@ -116,7 +109,7 @@ let write_buffered : [Write w] -> Write (Buffered w) =
 let disposable_buffered : [Disposable w] -> [Write w] -> Disposable (Buffered w) =
     {
         dispose = (\buf_writer -> 
-            do _ = flush buf_writer.writer
+            do _ = flush_buffer buf_writer
             dispose buf_writer.writer
         ),
         is_disposed = \buf_writer -> is_disposed buf_writer.writer,
