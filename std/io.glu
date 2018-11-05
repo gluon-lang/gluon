@@ -4,6 +4,7 @@
 let io_prim = import! std.io.prim
 let { Read } = import! std.io.read
 let { Write } = import! std.io.write
+let { Disposable } = import! std.disposable
 let { Functor } = import! std.functor
 let { Applicative } = import! std.applicative
 let { Monad } = import! std.monad
@@ -33,12 +34,18 @@ let write : Write File = {
     flush = io_prim.flush_file
 }
 
+let disposable : Disposable File = {
+    dispose = io_prim.close_file,
+    is_disposed = io_prim.is_file_closed,
+}
+
 {
     functor,
     applicative,
     monad,
     read,
     write,
+    disposable,
     ..
     io_prim
 }

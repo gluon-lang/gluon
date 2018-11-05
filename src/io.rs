@@ -49,7 +49,16 @@ fn eprintln(s: &str) -> IO<()> {
 
 #[derive(Userdata)]
 #[gluon(crate_name = "::vm")]
-struct GluonFile(Mutex<File>);
+struct GluonFile(Mutex<Option<File>>);
+
+macro_rules! unwrap_file {
+    ($file: expr) => {{
+        match *$file {
+            Some(ref mut file) => file,
+            None => return RuntimeResult::Panic("the file has been closed".to_owned()),
+        }
+    }};
+}
 
 impl fmt::Debug for GluonFile {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -59,7 +68,7 @@ impl fmt::Debug for GluonFile {
 
 fn open_file(s: &str) -> IO<GluonFile> {
     match File::open(s) {
-        Ok(f) => IO::Value(GluonFile(Mutex::new(f))),
+        Ok(f) => IO::Value(GluonFile(Mutex::new(Some(f)))),
         Err(err) => IO::Exception(format!("{}", err)),
     }
 }
@@ -85,30 +94,35 @@ fn read_file_to_string(s: &str) -> IO<String> {
     }
 }
 
-fn read_file(file: &GluonFile, count: usize) -> IO<Option<Vec<u8>>> {
+fn read_file(file: &GluonFile, count: usize) -> RuntimeResult<IO<Option<Vec<u8>>>, String> {
     if count == 0 {
-        return IO::Value(Some(Vec::new()));
+        return RuntimeResult::Return(IO::Value(Some(Vec::new())));
     }
 
     let mut file = file.0.lock().unwrap();
+    let file = unwrap_file!(file);
     let mut buffer = Vec::with_capacity(count);
-    unsafe {
+
+    let result = unsafe {
         buffer.set_len(count);
         match file.read(&mut *buffer) {
             Ok(bytes_read) if bytes_read == 0 => IO::Value(None),
             Ok(bytes_read) => IO::Value(Some(buffer[..bytes_read].to_vec())),
             Err(err) => IO::Exception(format!("{}", err)),
         }
-    }
+    };
+
+    RuntimeResult::Return(result)
 }
 
-fn read_file_to_end(file: &GluonFile) -> IO<Vec<u8>> {
+fn read_file_to_end(file: &GluonFile) -> RuntimeResult<IO<Vec<u8>>, String> {
     let mut file = file.0.lock().unwrap();
+    let file = unwrap_file!(file);
     let mut buf = Vec::new();
 
     match file.read_to_end(&mut buf) {
-        Ok(_) => IO::Value(buf),
-        Err(err) => IO::Exception(err.to_string()),
+        Ok(_) => RuntimeResult::Return(IO::Value(buf)),
+        Err(err) => RuntimeResult::Return(IO::Exception(err.to_string())),
     }
 }
 
@@ -134,6 +148,7 @@ fn write_slice_file(
     }
 
     let mut file = file.0.lock().unwrap();
+    let file = unwrap_file!(file);
 
     match file.write(&buf[start..end]) {
         Ok(bytes_written) => RuntimeResult::Return(IO::Value(bytes_written)),
@@ -141,8 +156,22 @@ fn write_slice_file(
     }
 }
 
-fn flush_file(file: &GluonFile) -> IO<()> {
-    file.0.lock().unwrap().flush().into()
+fn flush_file(file: &GluonFile) -> RuntimeResult<IO<()>, String> {
+    let mut file = file.0.lock().unwrap();
+    RuntimeResult::Return(unwrap_file!(file).flush().into())
+}
+
+fn close_file(file: &GluonFile) -> IO<()> {
+    let mut file = file.0.lock().unwrap();
+
+    match file.take() {
+        Some(mut file) => file.flush().into(),
+        None => IO::Value(()),
+    }
+}
+
+fn is_file_closed(file: &GluonFile) -> bool {
+    file.0.lock().unwrap().is_none()
 }
 
 fn read_char() -> IO<char> {
@@ -313,6 +342,8 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
             read_file_to_end => primitive!(1, std::io::prim::read_file_to_end),
             write_slice_file => primitive!(4, std::io::prim::write_slice_file),
             flush_file => primitive!(1, std::io::prim::flush_file),
+            close_file => primitive!(1, std::io::prim::close_file),
+            is_file_closed => primitive!(1, std::io::prim::is_file_closed),
             read_char => primitive!(0, std::io::prim::read_char),
             read_line => primitive!(0, std::io::prim::read_line),
             print => primitive!(1, std::io::prim::print),
