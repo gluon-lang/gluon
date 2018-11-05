@@ -84,7 +84,10 @@ let read_buffered : [Read r] -> Read (Buffered r) =
 
 let disposable_buffered : [Disposable r] -> Disposable (Buffered r) =
     {
-        dispose = \buf_reader -> dispose buf_reader.reader,
+        dispose = (\buf_reader -> 
+            let _ = buf_reader.buf <- []
+            dispose buf_reader.reader
+        ),
         is_disposed = \buf_reader -> is_disposed buf_reader.reader,
     }
 

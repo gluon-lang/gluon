@@ -113,9 +113,12 @@ let write_buffered : [Write w] -> Write (Buffered w) =
         flush = buffered_flush,
     }
 
-let disposable_buffered : [Disposable w] -> Disposable (Buffered w) =
+let disposable_buffered : [Disposable w] -> [Write w] -> Disposable (Buffered w) =
     {
-        dispose = \buf_writer -> dispose buf_writer.writer,
+        dispose = (\buf_writer -> 
+            do _ = flush buf_writer.writer
+            dispose buf_writer.writer
+        ),
         is_disposed = \buf_writer -> is_disposed buf_writer.writer,
     }
 
