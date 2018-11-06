@@ -464,7 +464,7 @@ impl<'a> Typecheck<'a> {
             .stack
             .insert(non_renamed_symbol, StackBinding { typ: typ.clone() });
 
-        self.environment.stack.insert(id, StackBinding { typ: typ });
+        self.environment.stack.insert(id, StackBinding { typ });
     }
 
     fn stack_type(&mut self, id: Symbol, alias: &Alias<Symbol, ArcType>) {
