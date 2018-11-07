@@ -278,7 +278,7 @@ impl<'a, I> Clone for SharedIter<'a, I> {
 
 impl<'a, I> SharedIter<'a, I> {
     fn new(iter: &'a RefCell<I>) -> SharedIter<'a, I> {
-        SharedIter { iter: iter }
+        SharedIter { iter }
     }
 }
 

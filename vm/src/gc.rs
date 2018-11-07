@@ -266,7 +266,7 @@ impl AllocPtr {
                         marked: Cell::new(false),
                     },
                 );
-                AllocPtr { ptr: ptr }
+                AllocPtr { ptr }
             }
         }
         debug_assert!(mem::align_of::<T>() <= mem::align_of::<f64>());
@@ -412,7 +412,7 @@ impl<T: ?Sized> GcPtr<T> {
 
     /// Unsafe as `ptr` must have been allocted by this garbage collector
     pub unsafe fn from_raw(ptr: *const T) -> GcPtr<T> {
-        GcPtr { ptr: ptr }
+        GcPtr { ptr }
     }
 
     pub fn generation(&self) -> Generation {

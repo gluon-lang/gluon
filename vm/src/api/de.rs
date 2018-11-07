@@ -749,7 +749,7 @@ struct Enum<'a, 'de: 'a, 't: 'a> {
 
 impl<'a, 'de, 't> Enum<'a, 'de, 't> {
     fn new(de: &'a mut Deserializer<'de, 't>) -> Self {
-        Enum { de: de }
+        Enum { de }
     }
 }
 

@@ -393,7 +393,7 @@ impl Stack {
                 })),
                 State::Unknown => Some(None),
             }).collect();
-        Stacktrace { frames: frames }
+        Stacktrace { frames }
     }
 }
 
