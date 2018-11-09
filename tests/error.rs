@@ -15,8 +15,7 @@ fn dont_panic_when_error_span_is_at_eof() {
     let _ = ::env_logger::try_init();
     let vm = support::make_vm();
     let text = r#"abc"#;
-    let result = Compiler::new()
-        .load_script(&vm, "test", text);
+    let result = Compiler::new().load_script(&vm, "test", text);
     assert!(result.is_err());
 }
 
@@ -28,9 +27,7 @@ fn dont_miss_errors_in_file_if_import_has_errors() {
         let { f } = import! tests.unrelated_type_error
         f x
     "#;
-    let error = Compiler::new()
-        .load_script(&vm, "test", text)
-        .unwrap_err();
+    let error = Compiler::new().load_script(&vm, "test", text).unwrap_err();
 
     match error {
         Error::Multiple(errors) => {

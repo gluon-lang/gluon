@@ -91,7 +91,8 @@ fn test_files(path: &str) -> Result<Vec<PathBuf>, Error> {
                     None
                 }
             })
-        }).collect();
+        })
+        .collect();
     assert!(!paths.is_empty(), "Expected test files");
     Ok(paths)
 }
@@ -159,7 +160,8 @@ impl TestCase {
                                     action.call_async(test)
                                 },
                             )
-                        }).map_err(gluon::Error::from)
+                        })
+                        .map_err(gluon::Error::from)
                         .map_err(Error::from);
                     GluonTestable(::std::panic::AssertUnwindSafe(future))
                 })
@@ -297,7 +299,8 @@ fn run_doc_tests<'t>(
                 )?;
                 Ok(())
             })
-        }).collect())
+        })
+        .collect())
 }
 
 fn main_() -> Result<(), Error> {
@@ -327,7 +330,8 @@ fn main_() -> Result<(), Error> {
                 Some(ref filter) if file_filter && !name.contains(&filter[..]) => None,
                 _ => Some((filename, name)),
             }
-        }).map(|(filename, name)| {
+        })
+        .map(|(filename, name)| {
             let vm = vm.new_thread().unwrap();
 
             let name2 = name.clone();
@@ -342,7 +346,8 @@ fn main_() -> Result<(), Error> {
                     })
                 })
         }),
-    ).collect();
+    )
+    .collect();
     let pass_tests = runtime.block_on(pass_tests_future)?;
 
     let iter = test_files("tests/fail")?
@@ -357,7 +362,8 @@ fn main_() -> Result<(), Error> {
                 Some(ref filter) if file_filter && !name.contains(&filter[..]) => None,
                 _ => Some((filename, name)),
             }
-        }).map(|(filename, name)| {
+        })
+        .map(|(filename, name)| {
             let vm = vm.new_thread().unwrap();
 
             tensile::test(name.clone(), move || -> Result<(), Error> {
@@ -366,11 +372,13 @@ fn main_() -> Result<(), Error> {
                         "Expected test '{}' to fail\n{:?}",
                         filename.to_str().unwrap(),
                         err.0,
-                    ).into()),
+                    )
+                    .into()),
                     Err(_) => Ok(()),
                 }
             })
-        }).collect();
+        })
+        .collect();
 
     let doc_tests = test_files("std")?
         .into_iter()
@@ -381,7 +389,8 @@ fn main_() -> Result<(), Error> {
                 Some(ref filter) if file_filter && !name.contains(&filter[..]) => None,
                 _ => Some((filename, name)),
             }
-        }).map(|(filename, name)| {
+        })
+        .map(|(filename, name)| {
             let vm = vm.new_thread().unwrap();
             match run_doc_tests(&vm, &name, &filename) {
                 Ok(tests) => tensile::group(name.clone(), tests),
@@ -390,7 +399,8 @@ fn main_() -> Result<(), Error> {
                     tensile::test(name.clone(), || Err(err.0))
                 }
             }
-        }).collect();
+        })
+        .collect();
 
     let mut runtime = Runtime::new()?;
     runtime.block_on(future::lazy(|| {

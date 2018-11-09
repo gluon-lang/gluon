@@ -680,13 +680,13 @@ where
         T: DeserializeSeed<'de>,
     {
         match self.iter.next() {
-            Some((value, typ)) => {
-                seed.deserialize(&mut Deserializer {
+            Some((value, typ)) => seed
+                .deserialize(&mut Deserializer {
                     state: self.state.clone(),
                     input: value,
                     typ: typ,
-                }).map(Some)
-            }
+                })
+                .map(Some),
             None => Ok(None),
         }
     }

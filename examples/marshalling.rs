@@ -262,7 +262,8 @@ where
             name => self.inner.name,
             age => self.inner.age,
             data => self.inner.data,
-        }).push(ctx)
+        })
+        .push(ctx)
     }
 }
 

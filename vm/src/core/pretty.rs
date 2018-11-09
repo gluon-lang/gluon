@@ -53,7 +53,8 @@ impl<'a> Expr<'a> {
                     arena.concat(args.iter().map(|arg| {
                         arena.space().append(arg.pretty(arena, Prec::Arg))
                     }))
-                ].group();
+                ]
+                .group();
                 prec.enclose(arena, doc)
             }
             Expr::Const(ref l, _) => pretty_literal(l, arena),
@@ -72,14 +73,16 @@ impl<'a> Expr<'a> {
                             })),
                             arena.space(),
                             "}"
-                        ].group(),
+                        ]
+                .group(),
                 _ => {
                     let doc = chain![arena;
                             ctor.as_ref(),
                             arena.concat(args.iter().map(|arg| {
                                 arena.space().append(arg.pretty(arena, Prec::Arg))
                             }))
-                        ].group();
+                        ]
+                    .group();
                     prec.enclose(arena, doc)
                 }
             },
@@ -130,9 +133,7 @@ impl<'a> Expr<'a> {
                         pattern: Pattern::Record(..),
                         ..
                     },
-                )
-                    if alts.len() == 1 =>
-                {
+                ) if alts.len() == 1 => {
                     let doc = match (&alt.pattern, &alt.expr) {
                         (Pattern::Record(binds), Expr::Ident(id, ..))
                             if binds.len() == 1 && *id == binds[0].0 =>
@@ -155,7 +156,8 @@ impl<'a> Expr<'a> {
                                 ].group(),
                                 arena.newline(),
                                 alt.expr.pretty(arena, Prec::Top).group()
-                            ].group(),
+                            ]
+                        .group(),
                     };
                     prec.enclose(arena, doc)
                 }
@@ -173,7 +175,8 @@ impl<'a> Expr<'a> {
                                 alt.expr.pretty(arena, Prec::Top).nest(INDENT).group()
                             ].nest(INDENT)
                         }).intersperse(arena.newline()))
-                    ].group();
+                    ]
+                    .group();
                     prec.enclose(arena, doc)
                 }
             },
@@ -192,7 +195,8 @@ impl Pattern {
                     arena.concat(args.iter().map(|arg| {
                         arena.space().append(arg.as_ref())
                     }))
-                ].group(),
+                ]
+            .group(),
             Pattern::Ident(ref id) => arena.text(id.as_ref()),
             Pattern::Record(ref fields) => chain![arena;
                     "{",
@@ -214,7 +218,8 @@ impl Pattern {
                     }).intersperse(arena.text(","))).nest(INDENT),
                     arena.space(),
                     "}"
-                ].group(),
+                ]
+            .group(),
             Pattern::Literal(ref l) => pretty_literal(l, arena),
         }
     }

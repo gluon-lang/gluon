@@ -181,16 +181,16 @@ where
     match *expr {
         Expr::Call(f, args) => {
             let new_f = visitor.visit_expr(f);
-            let new_args =
-                merge_iter(
-                    args,
-                    |expr| visitor.visit_expr_(expr),
-                    |e| {
-                        V::Producer::new(allocator.expect("Allocator"))
-                            .produce(e)
-                            .clone()
-                    },
-                ).map(|exprs: Vec<_>| &*visitor.allocator().arena.alloc_extend(exprs.into_iter()));
+            let new_args = merge_iter(
+                args,
+                |expr| visitor.visit_expr_(expr),
+                |e| {
+                    V::Producer::new(allocator.expect("Allocator"))
+                        .produce(e)
+                        .clone()
+                },
+            )
+            .map(|exprs: Vec<_>| &*visitor.allocator().arena.alloc_extend(exprs.into_iter()));
 
             merge_fn(
                 &f,
@@ -218,7 +218,8 @@ where
                     .produce(e)
                     .clone()
             },
-        ).map(|exprs: Vec<_>| {
+        )
+        .map(|exprs: Vec<_>| {
             Expr::Data(
                 id.clone(),
                 visitor.allocator().arena.alloc_extend(exprs.into_iter()),
@@ -247,7 +248,8 @@ where
                     walk_alt(&mut V::Producer::new(allocator.expect("Allocator")), alt)
                         .expect("alt")
                 },
-            ).map(|alts: Vec<_>| {
+            )
+            .map(|alts: Vec<_>| {
                 &*visitor
                     .allocator()
                     .alternative_arena
@@ -297,7 +299,8 @@ where
                 args: closure.args.clone(),
                 expr: V::Producer::new(allocator.expect("Allocator")).produce(closure.expr),
             },
-        ).map(Named::Recursive),
+        )
+        .map(Named::Recursive),
         Named::Expr(bind_expr) => visitor.visit_expr(bind_expr).map(Named::Expr),
     };
     new_named.map(|named| LetBinding {

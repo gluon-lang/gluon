@@ -31,7 +31,8 @@ pub fn generate(
                     "Serialize" => serialize::generate(symbols, bind),
                     _ => return Err(format!("`{}` is not a type that can be derived", arg)),
                 })
-            }).collect::<Result<_, _>>()?,
+            })
+            .collect::<Result<_, _>>()?,
         _ => Err("Invalid `derive` attribute".into()),
     }
 }
@@ -89,7 +90,8 @@ where
                 .map(|(field, bind)| PatternField {
                     name: pos::spanned(span, field.name.clone()),
                     value: Some(pos::spanned(span, Pattern::Ident(bind))),
-                }).collect(),
+                })
+                .collect(),
         },
     )
 }
@@ -127,13 +129,15 @@ fn generate_import_(
                     .map(|f| PatternField {
                         name: pos::spanned(span, symbols.symbol(*f)),
                         value: None,
-                    }).collect(),
+                    })
+                    .collect(),
                 fields: fields
                     .iter()
                     .map(|f| PatternField {
                         name: pos::spanned(span, symbols.symbol(*f)),
                         value: None,
-                    }).collect(),
+                    })
+                    .collect(),
             },
         ),
         args: Vec::new(),
@@ -158,7 +162,8 @@ fn project(span: Span<BytePos>, symbols: &mut Symbols, p: &str) -> SpannedExpr<S
                 }
                 None => ident(span, symbol),
             })
-        }).unwrap()
+        })
+        .unwrap()
 }
 
 fn ident(span: Span<BytePos>, s: Symbol) -> SpannedExpr<Symbol> {

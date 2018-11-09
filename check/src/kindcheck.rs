@@ -152,7 +152,8 @@ impl<'a> KindCheck<'a> {
         kind.map(|kind| match *kind {
             Kind::Hole => self.subs.new_var(),
             _ => kind,
-        }).map_err(|err| pos::spanned(span, err))
+        })
+        .map_err(|err| pos::spanned(span, err))
     }
 
     fn translate_projected_type(&mut self, id: &Symbol) -> Option<ArcKind> {
@@ -332,7 +333,8 @@ impl<'a> KindCheck<'a> {
                     **typ = Type::<_, AstType<_>>::alias(
                         id.clone(),
                         Type::generic(Generic::new(id, kind)),
-                    ).into_inner();
+                    )
+                    .into_inner();
                 }
                 return;
             }
@@ -343,9 +345,11 @@ impl<'a> KindCheck<'a> {
                     var.kind = update_kind(&self.subs, var.kind.clone(), default);
                 }
                 Type::Generic(ref mut var) => *var = self.finalize_generic(var),
-                Type::Forall(ref mut params, _, _) => for param in params {
-                    *param = self.finalize_generic(&param);
-                },
+                Type::Forall(ref mut params, _, _) => {
+                    for param in params {
+                        *param = self.finalize_generic(&param);
+                    }
+                }
                 _ => (),
             }
         });
@@ -450,11 +454,13 @@ impl<'a> Unifiable<&'a KindCache> for ArcKind {
                 let r = unifier.try_match(l2, r2);
                 Ok(merge::merge(l1, a, l2, r, Kind::function))
             }
-            (l, r) => if l == r {
-                Ok(None)
-            } else {
-                Err(UnifyError::TypeMismatch(self.clone(), other.clone()))
-            },
+            (l, r) => {
+                if l == r {
+                    Ok(None)
+                } else {
+                    Err(UnifyError::TypeMismatch(self.clone(), other.clone()))
+                }
+            }
         }
     }
 

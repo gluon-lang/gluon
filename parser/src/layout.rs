@@ -235,7 +235,8 @@ where
                 .find(|last_offside| match last_offside.context {
                     Context::Block { .. } => true,
                     _ => false,
-                }).map(|last_offside| last_offside.location.column)
+                })
+                .map(|last_offside| last_offside.location.column)
             {
                 Some(last_column) if span.start().column <= last_column => {
                     debug!(
@@ -423,10 +424,12 @@ where
                         }
                     }
                 }
-                (Context::Expr, _) | (Context::Lambda, _) => if ordering != Ordering::Greater {
-                    self.indent_levels.pop();
-                    continue;
-                },
+                (Context::Expr, _) | (Context::Lambda, _) => {
+                    if ordering != Ordering::Greater {
+                        self.indent_levels.pop();
+                        continue;
+                    }
+                }
                 (Context::MatchClause, _) => {
                     // Must allow `|` to be on the same line
                     if ordering == Ordering::Less

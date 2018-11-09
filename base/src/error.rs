@@ -189,7 +189,8 @@ impl<E: fmt::Display> InFile<E> {
                     "Source file does not exist in associated code map. Error: {}",
                     self.error
                 )
-            }).name()
+            })
+            .name()
     }
 
     pub fn errors(self) -> Errors<Spanned<E, BytePos>> {

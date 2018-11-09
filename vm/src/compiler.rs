@@ -31,10 +31,7 @@ enum FieldAccess {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde_derive",
-    derive(DeserializeState, SerializeState)
-)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
     serde(deserialize_state = "::serialization::DeSeed")
@@ -53,10 +50,7 @@ pub struct UpvarInfo {
 }
 
 #[derive(Debug, Default, PartialEq)]
-#[cfg_attr(
-    feature = "serde_derive",
-    derive(DeserializeState, SerializeState)
-)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
     serde(deserialize_state = "::serialization::DeSeed")
@@ -428,7 +422,8 @@ impl CompilerEnv for TypeInfos {
                     .enumerate()
                     .find(|&(_, field)| field.name == *id),
                 _ => None,
-            }).next()
+            })
+            .next()
             .map(|(tag, field)| {
                 (
                     Variable::Constructor(tag as VmTag, count_function_args(&field.typ)),
@@ -507,13 +502,15 @@ impl<'a> Compiler<'a> {
                     .enumerate()
                     .find(|&(_, field)| field.name == *id),
                 _ => None,
-            }).next()
+            })
+            .next()
             .map(|(tag, field)| {
                 Constructor(
                     tag as VmIndex,
                     types::arg_iter(&field.typ).count() as VmIndex,
                 )
-            }).or_else(|| {
+            })
+            .or_else(|| {
                 current
                     .stack
                     .get(id)
@@ -527,9 +524,11 @@ impl<'a> Compiler<'a> {
                                 env.stack
                                     .get(id)
                                     .map(|&(_, ref typ)| UpVar(current[0].upvar(id, typ)))
-                            }).next()
+                            })
+                            .next()
                     })
-            }).or_else(|| {
+            })
+            .or_else(|| {
                 self.globals
                     .find_var(&id)
                     .map(|(variable, typ)| match variable {

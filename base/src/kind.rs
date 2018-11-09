@@ -36,10 +36,7 @@ impl KindEnv for EmptyEnv<Symbol> {
 /// These types include `Option` and `(->)` which both have the kind `Type -> Type -> Type`
 /// as well as `Functor` which has the kind `Type -> Type -> Type`.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-#[cfg_attr(
-    feature = "serde_derive",
-    derive(DeserializeState, SerializeState)
-)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
     serde(serialize_state = "::serialization::SeSeed")

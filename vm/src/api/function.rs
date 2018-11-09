@@ -120,7 +120,8 @@ where
             function: extern_function,
             name: self.name,
             _typ: self._typ,
-        }.push(context)
+        }
+        .push(context)
     }
 }
 

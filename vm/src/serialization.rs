@@ -180,18 +180,16 @@ pub mod gc {
     #[derive(DeserializeState, SerializeState)]
     #[serde(deserialize_state = "::serialization::DeSeed")]
     #[serde(serialize_state = "::serialization::SeSeed")]
-    #[serde(
-        bound(
-            deserialize = "F: DeserializeState<'de, ::serialization::DeSeed>,
+    #[serde(bound(
+        deserialize = "F: DeserializeState<'de, ::serialization::DeSeed>,
                                  S: ::std::ops::Deref + ::std::any::Any + Clone
                                     + ::base::serialization::Shared
                                     + DeserializeState<'de, ::serialization::DeSeed>",
-            serialize = "F: SerializeState<::serialization::SeSeed>,
+        serialize = "F: SerializeState<::serialization::SeSeed>,
                                S: ::std::ops::Deref + ::std::any::Any + Clone
                                     + ::base::serialization::Shared,
                                S::Target: SerializeState<::serialization::SeSeed>"
-        )
-    )]
+    ))]
     struct Data<F, S> {
         #[serde(state)]
         tag: DataTag<S>,
@@ -202,16 +200,14 @@ pub mod gc {
     #[derive(DeserializeState, SerializeState)]
     #[serde(deserialize_state = "::serialization::DeSeed")]
     #[serde(serialize_state = "::serialization::SeSeed")]
-    #[serde(
-        bound(
-            deserialize = "S: ::std::ops::Deref + ::std::any::Any + Clone
+    #[serde(bound(
+        deserialize = "S: ::std::ops::Deref + ::std::any::Any + Clone
                                     + ::base::serialization::Shared
                                     + DeserializeState<'de, ::serialization::DeSeed>",
-            serialize = "S: ::std::ops::Deref + ::std::any::Any + Clone
+        serialize = "S: ::std::ops::Deref + ::std::any::Any + Clone
                                     + ::base::serialization::Shared,
                                S::Target: SerializeState<::serialization::SeSeed>"
-        )
-    )]
+    ))]
     enum DataTag<S> {
         Record(#[serde(state_with = "::base::serialization::shared")] S),
         Data(VmTag),
@@ -231,7 +227,8 @@ pub mod gc {
             Data {
                 tag: tag,
                 fields: &self.fields[..],
-            }.serialize_state(serializer, seed)
+            }
+            .serialize_state(serializer, seed)
         }
     }
 
@@ -275,7 +272,8 @@ pub mod gc {
                         .alloc(RecordDef {
                             elems: &def.fields,
                             fields: &fields[..],
-                        }).map_err(D::Error::custom),
+                        })
+                        .map_err(D::Error::custom),
                     DataTag::Data(tag) => seed
                         .thread
                         .context()
@@ -283,7 +281,8 @@ pub mod gc {
                         .alloc(Def {
                             tag: tag,
                             elems: &def.fields,
-                        }).map_err(D::Error::custom),
+                        })
+                        .map_err(D::Error::custom),
                 }
             }
         }
@@ -547,14 +546,16 @@ pub mod closure {
                                         .alloc(ClosureDataModel {
                                             function: function,
                                             upvars: upvars,
-                                        }).map_err(V::Error::custom)?;
+                                        })
+                                        .map_err(V::Error::custom)?;
                                     self.state.gc_map.insert(id, closure);
 
                                     for i in 0..upvars {
                                         let value = seq
                                             .next_element_seed(::serde::de::Seed::new(
                                                 &mut self.state,
-                                            ))?.ok_or_else(|| {
+                                            ))?
+                                            .ok_or_else(|| {
                                                 V::Error::invalid_length(i + 2, &self)
                                             })?;
                                         closure.as_mut().upvars[i] = value;
@@ -594,10 +595,7 @@ pub mod closure {
 }
 
 #[derive(DeserializeState)]
-#[cfg_attr(
-    feature = "serde_derive",
-    serde(deserialize_state = "DeSeed")
-)]
+#[cfg_attr(feature = "serde_derive", serde(deserialize_state = "DeSeed"))]
 struct PartialApplicationModel {
     #[cfg_attr(feature = "serde_derive", serde(deserialize_state))]
     function: Callable,
@@ -712,7 +710,8 @@ impl<'de> DeserializeState<'de, DeSeed> for ExternFunction {
                 } else {
                     Cow::Borrowed(s)
                 }
-            }).intersperse(Cow::Borrowed("."));
+            })
+            .intersperse(Cow::Borrowed("."));
         for s in iter {
             escaped_id += s;
         }

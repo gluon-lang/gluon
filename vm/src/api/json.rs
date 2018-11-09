@@ -31,7 +31,8 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
             &input,
             &mut serde_json::Serializer::with_formatter(&mut output, formatter),
             vm,
-        ).map_err(|err| err.to_string())?;
+        )
+        .map_err(|err| err.to_string())?;
 
         // serde_json outputs valid UTF-8
         unsafe { Ok(String::from_utf8_unchecked(output)) }

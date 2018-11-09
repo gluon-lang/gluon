@@ -40,11 +40,13 @@ g ""
     );
 
     match result {
-        Ok(expr) => if let Expr::Block(ref exprs) = expr.value {
-            assert_eq!(exprs.len(), 2);
-        } else {
-            assert!(false, "Expected block, found {:?}", expr);
-        },
+        Ok(expr) => {
+            if let Expr::Block(ref exprs) = expr.value {
+                assert_eq!(exprs.len(), 2);
+            } else {
+                assert!(false, "Expected block, found {:?}", expr);
+            }
+        }
         Err(err) => assert!(false, "{}", err),
     }
 }

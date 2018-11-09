@@ -139,12 +139,14 @@ impl<'a> MacroExpander<'a> {
                         }
                     }
                 })
-            })).for_each(|err| -> Result<(), ()> {
+            }))
+            .for_each(|err| -> Result<(), ()> {
                 if let Some(err) = err {
                     self.errors.push(err);
                 }
                 Ok(())
-            }).wait();
+            })
+            .wait();
         }
         if self.errors.has_errors() {
             info!("Macro errors: {}", self.errors);
@@ -217,7 +219,8 @@ impl<'a, 'b, 'c> MutVisitor<'c> for MacroVisitor<'a, 'b, 'c> {
                         } else {
                             Vec::new()
                         }
-                    }).collect::<Vec<_>>();
+                    })
+                    .collect::<Vec<_>>();
                 if !generated_bindings.is_empty() {
                     let next_expr = mem::replace(body, Default::default());
                     body.value =

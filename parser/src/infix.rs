@@ -365,10 +365,7 @@ where
 
                                     arg_stack.push(make_op(lhs, op, rhs));
                                 }
-                                return Err((
-                                    err,
-                                    arg_stack.pop().map(|original| original.value),
-                                ));
+                                return Err((err, arg_stack.pop().map(|original| original.value)));
                             }
                         }
                     };

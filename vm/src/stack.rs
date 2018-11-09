@@ -42,10 +42,7 @@ impl StackPrimitive for Value {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde_derive",
-    derive(DeserializeState, SerializeState)
-)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
     serde(deserialize_state = "::serialization::DeSeed")
@@ -72,10 +69,7 @@ pub(crate) enum ExternCallState {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde_derive",
-    derive(DeserializeState, SerializeState)
-)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
     serde(deserialize_state = "::serialization::DeSeed")
@@ -145,10 +139,7 @@ impl StackState for ExternState {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde_derive",
-    derive(DeserializeState, SerializeState)
-)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
     serde(deserialize_state = "::serialization::DeSeed")
@@ -164,10 +155,7 @@ pub enum State {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde_derive",
-    derive(DeserializeState, SerializeState)
-)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
     serde(deserialize_state = "::serialization::DeSeed")
@@ -224,10 +212,7 @@ impl Frame<State> {
 pub struct Lock(VmIndex);
 
 #[derive(Debug)]
-#[cfg_attr(
-    feature = "serde_derive",
-    derive(DeserializeState, SerializeState)
-)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
     serde(deserialize_state = "::serialization::DeSeed")
@@ -360,7 +345,8 @@ impl Stack {
                 } else {
                     false
                 }
-            }).unwrap();
+            })
+            .unwrap();
         let frame = &mut self.frames[i];
         assert_eq!(frame.offset, lock.0);
         if let State::Extern(ref mut ext) = frame.state {
@@ -392,7 +378,8 @@ impl Stack {
                     line: None,
                 })),
                 State::Unknown => Some(None),
-            }).collect();
+            })
+            .collect();
         Stacktrace { frames }
     }
 }

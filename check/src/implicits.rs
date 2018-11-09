@@ -306,7 +306,8 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
                         Ok(opt) => opt.map(Ok),
                         Err(err) => Some(Err(err)),
                     }
-                }).collect::<Result<Vec<_>>>()?;
+                })
+                .collect::<Result<Vec<_>>>()?;
             if resolved_arguments.len() == to_resolve.len() {
                 Some(pos::spanned(
                     span,
@@ -353,7 +354,8 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
             state,
             &demand.constraint,
             &iter.typ,
-        ).is_ok()
+        )
+        .is_ok()
     }
 
     fn find_implicit<'c>(
@@ -371,12 +373,14 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
                 let mut additional_candidates: Vec<_> = iter
                     .filter(|&&(ref path, ref typ)| {
                         self.try_implicit(path, &mut Vec::new(), demand, typ)
-                    }).map(|bind| {
+                    })
+                    .map(|bind| {
                         (
                             bind.0.iter().map(|id| &id.name).format(".").to_string(),
                             bind.1.clone(),
                         )
-                    }).collect();
+                    })
+                    .collect();
                 if additional_candidates.is_empty() {
                     Ok(&candidate.0)
                 } else {
@@ -472,7 +476,8 @@ impl<'a, 'b, 'c> MutVisitor<'c> for ResolveImplicitsVisitor<'a, 'b> {
                                             .map_or_else(rpds::List::new, |demand| {
                                                 demand.reason.clone()
                                             }),
-                                    }).into(),
+                                    })
+                                    .into(),
                                 });
                                 None
                             }
@@ -563,21 +568,23 @@ impl<'a> ImplicitResolver<'a> {
             Err(_) => return,
         };
         match *raw_type {
-            Type::Record(_) => for field in raw_type.row_iter() {
-                let field_metadata = metadata
-                    .as_ref()
-                    .and_then(|metadata| metadata.module.get(field.name.declared_name()));
+            Type::Record(_) => {
+                for field in raw_type.row_iter() {
+                    let field_metadata = metadata
+                        .as_ref()
+                        .and_then(|metadata| metadata.module.get(field.name.declared_name()));
 
-                self.try_add_implicit(
-                    &field.name,
-                    field_metadata,
-                    &field.typ,
-                    &mut path,
-                    &mut |definition, path, implicit_type| {
-                        bindings.insert(definition, path, implicit_type.clone());
-                    },
-                );
-            },
+                    self.try_add_implicit(
+                        &field.name,
+                        field_metadata,
+                        &field.typ,
+                        &mut path,
+                        &mut |definition, path, implicit_type| {
+                            bindings.insert(definition, path, implicit_type.clone());
+                        },
+                    );
+                }
+            }
             _ => (),
         }
         *self.implicit_bindings.last_mut().unwrap() = bindings;
@@ -608,7 +615,8 @@ impl<'a> ImplicitResolver<'a> {
                         .get(typename)
                         .or_else(|| self.environment.get_metadata(typename))
                         .map(has_implicit_attribute)
-                }).unwrap_or(false);
+                })
+                .unwrap_or(false);
         }
 
         if is_implicit {

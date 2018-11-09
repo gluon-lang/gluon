@@ -224,5 +224,6 @@ fn get_info_from_fields(fields: &Fields) -> (Vec<Cow<Ident>>, Vec<&Type>) {
             };
 
             (ident, &field.ty)
-        }).unzip()
+        })
+        .unzip()
 }

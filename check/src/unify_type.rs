@@ -155,10 +155,12 @@ where
                 .iter()
                 .map(|missing_field| {
                     ::strsim::jaro_winkler(missing_field.as_ref(), field_in_type.as_ref())
-                }).max_by(|l, r| l.partial_cmp(&r).unwrap())
+                })
+                .max_by(|l, r| l.partial_cmp(&r).unwrap())
                 .expect("At least one missing field");
             (field_in_type, (similarity * 1000000.) as i32)
-        }).collect::<Vec<_>>();
+        })
+        .collect::<Vec<_>>();
     field_similarity.sort_by_key(|t| ::std::cmp::Reverse(t.1));
 
     Box::new(move |field: &I| {
@@ -346,9 +348,7 @@ where
         (
             &Type::Function(l_arg_type, ref l_arg, ref l_ret),
             &Type::Function(r_arg_type, ref r_arg, ref r_ret),
-        )
-            if l_arg_type == r_arg_type =>
-        {
+        ) if l_arg_type == r_arg_type => {
             let arg = unifier.try_match(l_arg, r_arg);
             let ret = unifier.try_match(l_ret, r_ret);
             Ok(merge::merge(l_arg, arg, l_ret, ret, |arg, ret| {
@@ -366,7 +366,8 @@ where
                 &l_args,
                 r,
                 r_args,
-            ).map_err(|_| UnifyError::TypeMismatch(expected.clone(), actual.clone()))
+            )
+            .map_err(|_| UnifyError::TypeMismatch(expected.clone(), actual.clone()))
         }
         (
             &Type::App(ref l, ref l_args),
@@ -379,7 +380,8 @@ where
                 l_args,
                 &Type::builtin(BuiltinType::Function),
                 &r_args,
-            ).map_err(|_| UnifyError::TypeMismatch(expected.clone(), actual.clone()))
+            )
+            .map_err(|_| UnifyError::TypeMismatch(expected.clone(), actual.clone()))
         }
         (&Type::App(ref l, ref l_args), &Type::App(ref r, ref r_args)) => {
             unify_app(unifier, l, l_args, r, r_args)
@@ -397,23 +399,25 @@ where
                     rest: ref r_rest,
                     ..
                 },
-            ) => if l_row.len() == r_row.len()
-                && l_row
-                    .iter()
-                    .zip(r_row)
-                    .all(|(l, r)| l.name.name_eq(&r.name))
-                && l_rest == r_rest
-            {
-                let iter = l_row.iter().zip(r_row);
-                let new_fields = merge::merge_tuple_iter(iter, |l, r| {
-                    unifier
-                        .try_match(&l.typ, &r.typ)
-                        .map(|typ| Field::new(l.name.clone(), typ))
-                });
-                Ok(new_fields.map(|fields| Type::poly_variant(fields, l_rest.clone())))
-            } else {
-                Err(UnifyError::TypeMismatch(expected.clone(), actual.clone()))
-            },
+            ) => {
+                if l_row.len() == r_row.len()
+                    && l_row
+                        .iter()
+                        .zip(r_row)
+                        .all(|(l, r)| l.name.name_eq(&r.name))
+                    && l_rest == r_rest
+                {
+                    let iter = l_row.iter().zip(r_row);
+                    let new_fields = merge::merge_tuple_iter(iter, |l, r| {
+                        unifier
+                            .try_match(&l.typ, &r.typ)
+                            .map(|typ| Field::new(l.name.clone(), typ))
+                    });
+                    Ok(new_fields.map(|fields| Type::poly_variant(fields, l_rest.clone())))
+                } else {
+                    Err(UnifyError::TypeMismatch(expected.clone(), actual.clone()))
+                }
+            }
             _ => Err(UnifyError::TypeMismatch(expected.clone(), actual.clone())),
         },
         (&Type::Record(ref l_row), &Type::Record(ref r_row)) => {

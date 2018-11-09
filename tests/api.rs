@@ -181,7 +181,8 @@ fn poll_n(s: String) -> FutureResult<impl Future<Item = IO<String>, Error = Erro
         lazy(move || {
             ping_c.send(()).unwrap();
             Ok(())
-        }).and_then(|_| {
+        })
+        .and_then(|_| {
             pong_p
                 .map(IO::Value)
                 .map_err(|err| Error::Message(format!("{}", err)))
@@ -318,7 +319,8 @@ fn use_type_from_type_field() {
                 name.clone(),
                 Alias::new(name, typ),
                 ::std::any::TypeId::of::<Self>(),
-            ).unwrap()
+            )
+            .unwrap()
         }
     }
 

@@ -35,7 +35,8 @@ pub fn generate(
             let field_symbols: Vec<_> = row_iter(row)
                 .map(|field| {
                     TypedIdent::new(Symbol::from(format!("{}", field.name.declared_name())))
-                }).collect();
+                })
+                .collect();
 
             let construct_map_expr = field_symbols
                 .iter()
@@ -52,7 +53,8 @@ pub fn generate(
                         Some(prev) => infix(span, prev, symbols.symbol("<>"), map),
                         None => map,
                     })
-                }).unwrap_or_else(|| ident(span, symbols.symbol("empty")));
+                })
+                .unwrap_or_else(|| ident(span, symbols.symbol("empty")));
 
             let construct_object_expr = app(
                 span,
@@ -97,7 +99,8 @@ pub fn generate(
                         if pattern_args.len() > 1 {
                             return Err(format!(
                                 "Variants with more than 1 argument is not yet supported"
-                            ).into());
+                            )
+                            .into());
                         }
 
                         if pattern_args.is_empty() {
@@ -138,7 +141,8 @@ pub fn generate(
                         pattern: ctor_pattern(pattern_args),
                         expr,
                     })
-                }).collect::<Result<_, Error>>()?;
+                })
+                .collect::<Result<_, Error>>()?;
 
             pos::spanned(span, Expr::Match(Box::new(ident(span, x.clone())), alts))
         }
@@ -195,7 +199,8 @@ pub fn generate(
         map_import,
         semigroup_import,
         serializer_binding,
-    ].into_iter()
+    ]
+    .into_iter()
     .rev()
     .fold(export_expr, |expr, bind| {
         pos::spanned(span, Expr::let_binding(bind, expr))
