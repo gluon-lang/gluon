@@ -7,7 +7,7 @@ pub use self::Instruction::*;
 
 pub type VmIndex = u32;
 pub type VmTag = u32;
-pub type VmInt = isize;
+pub type VmInt = i64;
 
 /// Enum which represent the instructions executed by the virtual machine.
 ///
@@ -16,7 +16,7 @@ pub type VmInt = isize;
 #[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
 pub enum Instruction {
     /// Push an integer to the stack
-    PushInt(isize),
+    PushInt(VmInt),
     /// Push a byte to the stack
     PushByte(u8),
     /// Push a float to the stack

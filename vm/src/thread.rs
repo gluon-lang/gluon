@@ -2352,7 +2352,7 @@ fn debug_instruction(stack: &StackFrame<ClosureState>, index: usize, instr: Inst
                 x
             }
             PushUpVar(i) => Some(stack.get_upvar(i).clone()),
-            NewClosure { .. } | MakeClosure { .. } => Some(Value::from(Int(stack.len() as isize))),
+            NewClosure { .. } | MakeClosure { .. } => Some(Value::from(Int(stack.len() as VmInt))),
             _ => None,
         }
     );
