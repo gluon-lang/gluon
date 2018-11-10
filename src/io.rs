@@ -55,7 +55,7 @@ macro_rules! unwrap_file {
     ($file: expr) => {{
         match *$file {
             Some(ref mut file) => file,
-            None => return RuntimeResult::Panic("the file has been closed".to_owned()),
+            None => return IO::Value(RuntimeResult::Panic("the file has been closed".to_owned())),
         }
     }};
 }
@@ -94,35 +94,33 @@ fn read_file_to_string(s: &str) -> IO<String> {
     }
 }
 
-fn read_file(file: &GluonFile, count: usize) -> RuntimeResult<IO<Option<Vec<u8>>>, String> {
+fn read_file(file: &GluonFile, count: usize) -> IO<RuntimeResult<Option<Vec<u8>>, String>> {
     if count == 0 {
-        return RuntimeResult::Return(IO::Value(Some(Vec::new())));
+        return IO::Value(RuntimeResult::Return(Some(Vec::new())));
     }
 
     let mut file = file.0.lock().unwrap();
     let file = unwrap_file!(file);
     let mut buffer = Vec::with_capacity(count);
 
-    let result = unsafe {
+    unsafe {
         buffer.set_len(count);
         match file.read(&mut *buffer) {
-            Ok(bytes_read) if bytes_read == 0 => IO::Value(None),
-            Ok(bytes_read) => IO::Value(Some(buffer[..bytes_read].to_vec())),
+            Ok(bytes_read) if bytes_read == 0 => IO::Value(RuntimeResult::Return(None)),
+            Ok(bytes_read) => IO::Value(RuntimeResult::Return(Some(buffer[..bytes_read].to_vec()))),
             Err(err) => IO::Exception(format!("{}", err)),
         }
-    };
-
-    RuntimeResult::Return(result)
+    }
 }
 
-fn read_file_to_end(file: &GluonFile) -> RuntimeResult<IO<Vec<u8>>, String> {
+fn read_file_to_end(file: &GluonFile) -> IO<RuntimeResult<Vec<u8>, String>> {
     let mut file = file.0.lock().unwrap();
     let file = unwrap_file!(file);
     let mut buf = Vec::new();
 
     match file.read_to_end(&mut buf) {
-        Ok(_) => RuntimeResult::Return(IO::Value(buf)),
-        Err(err) => RuntimeResult::Return(IO::Exception(err.to_string())),
+        Ok(_) => IO::Value(RuntimeResult::Return(buf)),
+        Err(err) => IO::Exception(err.to_string()),
     }
 }
 
@@ -131,34 +129,38 @@ fn write_slice_file(
     buf: &[u8],
     start: usize,
     end: usize,
-) -> RuntimeResult<IO<usize>, String> {
+) -> IO<RuntimeResult<usize, String>> {
     if start > end {
-        return RuntimeResult::Panic(format!(
+        return IO::Value(RuntimeResult::Panic(format!(
             "slice index starts at {} but ends at {}",
             start, end
-        ));
+        )));
     }
 
     if end > buf.len() {
-        return RuntimeResult::Panic(format!(
+        return IO::Value(RuntimeResult::Panic(format!(
             "index {} is out of range for array of length {}",
             end,
             buf.len()
-        ));
+        )));
     }
 
     let mut file = file.0.lock().unwrap();
     let file = unwrap_file!(file);
 
     match file.write(&buf[start..end]) {
-        Ok(bytes_written) => RuntimeResult::Return(IO::Value(bytes_written)),
-        Err(why) => RuntimeResult::Return(IO::Exception(why.to_string())),
+        Ok(bytes_written) => IO::Value(RuntimeResult::Return(bytes_written)),
+        Err(why) => IO::Exception(why.to_string()),
     }
 }
 
-fn flush_file(file: &GluonFile) -> RuntimeResult<IO<()>, String> {
+fn flush_file(file: &GluonFile) -> IO<RuntimeResult<(), String>> {
     let mut file = file.0.lock().unwrap();
-    RuntimeResult::Return(unwrap_file!(file).flush().into())
+
+    match unwrap_file!(file).flush() {
+        Ok(_) => IO::Value(RuntimeResult::Return(())),
+        Err(why) => IO::Exception(why.to_string()),
+    }
 }
 
 fn close_file(file: &GluonFile) -> IO<()> {
