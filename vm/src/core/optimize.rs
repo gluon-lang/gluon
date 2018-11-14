@@ -5,7 +5,7 @@ use crate::base::{
     merge::{merge_fn, merge_iter},
     pos,
     symbol::Symbol,
-    types::{ArcType, Field, TypeExt},
+    types::{ArcType, Field, TypeEnv, TypeExt},
 };
 
 use crate::core::{Allocator, Alternative, CExpr, Closure, Expr, LetBinding, Named, Pattern};
@@ -161,10 +161,23 @@ impl<'a> Visitor<'a, 'a> for RecognizeUnnecessaryAllocation<'a> {
     }
 }
 
-pub fn optimize<'a>(allocator: &'a Allocator<'a>, expr: &'a Expr<'a>) -> &'a Expr<'a> {
-    let mut optimizer = RecognizeUnnecessaryAllocation {
-        allocator: allocator,
-    };
+fn optimize_unnecessary_allocation<'a>(
+    allocator: &'a Allocator<'a>,
+    expr: &'a Expr<'a>,
+) -> &'a Expr<'a> {
+    let mut optimizer = RecognizeUnnecessaryAllocation { allocator };
+    optimizer.visit_expr(expr).unwrap_or(expr)
+}
+
+pub fn optimize<'a>(
+    allocator: &'a Allocator<'a>,
+    env: &'a TypeEnv<Type = ArcType>,
+    expr: &'a Expr<'a>,
+) -> &'a Expr<'a> {
+    let expr = optimize_unnecessary_allocation(allocator, expr);
+
+    let costs = crate::core::inline::analyze_costs(expr);
+    let mut optimizer = crate::core::inline::Inline::new(allocator, env, costs);
     optimizer.visit_expr(expr).unwrap_or(expr)
 }
 
@@ -210,8 +223,7 @@ where
                 Expr::Call,
             )
         }
-        Expr::Const(_, _) => None,
-        Expr::Ident(_, _) => None,
+        Expr::Const(_, _) | Expr::Ident(_, _) => None,
         Expr::Data(ref id, exprs, pos) => merge_iter(
             exprs,
             |expr| visitor.visit_expr_(expr),
@@ -350,7 +362,7 @@ pub(crate) mod tests {
                 .unwrap(),
         );
 
-        let optimized_expr = optimize(&allocator, initial_expr);
+        let optimized_expr = optimize_unnecessary_allocation(&allocator, initial_expr);
 
         let expected_expr = ExprParser::new()
             .parse(&mut symbols, &allocator, expected_str)

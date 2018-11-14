@@ -12,7 +12,7 @@ use crate::base::{
 };
 
 use crate::{
-    core::{self, CExpr, Expr, Literal, Pattern},
+    core::{self, is_primitive, CExpr, Expr, Literal, Pattern},
     interner::InternedStr,
     source_map::{LocalMap, SourceMap},
     types::*,
@@ -759,11 +759,7 @@ impl<'a> Compiler<'a> {
             }
             Expr::Call(func, args) => {
                 if let Expr::Ident(ref id, _) = *func {
-                    if id.name.as_ref() == "&&"
-                        || id.name.as_ref() == "||"
-                        || (id.name.as_ref().starts_with('#')
-                            && id.name.declared_name() != "#error")
-                    {
+                    if is_primitive(&id.name) && id.name.declared_name() != "#error" {
                         self.compile_primitive(&id.name, args, function, tail_position)?;
                         return Ok(None);
                     }

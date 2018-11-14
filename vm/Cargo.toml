@@ -49,6 +49,7 @@ gluon_codegen = { path = "../codegen", version = "0.12.0" } # GLUON
 lalrpop = { version = "0.17", optional = true }
 
 [dev-dependencies]
+difference = "2"
 env_logger = "0.6"
 pretty_assertions = "0.6"
 

@@ -716,7 +716,7 @@ where
 
                 debug!("Translation returned: {}", expr);
 
-                core::optimize::optimize(&translator.allocator, expr)
+                core::optimize::optimize(&translator.allocator, &*env, expr)
             };
 
             let source = compiler
