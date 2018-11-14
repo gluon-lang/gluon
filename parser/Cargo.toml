@@ -25,7 +25,7 @@ codespan = "0.1.1"
 codespan-reporting = "0.1.1"
 
 [dev-dependencies]
-env_logger = "0.5"
+env_logger = "0.6"
 difference = "2"
 pretty_assertions = "0.5"
 

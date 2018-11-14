@@ -40,7 +40,7 @@ gluon_codegen = { path = "../codegen", version = "0.9.4" } # GLUON
 lalrpop = { version = "0.16", optional = true }
 
 [dev-dependencies]
-env_logger = "0.5"
+env_logger = "0.6"
 pretty_assertions = "0.5"
 
 # HACK Trick crates.io into letting letting this be published with a dependency on gluon
