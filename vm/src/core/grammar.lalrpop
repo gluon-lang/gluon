@@ -2,7 +2,8 @@ use crate::base::{
     ast::{TypedIdent},
     pos::{BytePos, Span},
     symbol::{Symbol, Symbols},
-    types::{Field, Type}};
+    types::{Field, Type},
+};
 
 use crate::core::{Allocator, Alternative, Closure, Expr, LetBinding, Literal, Named, Pattern};
 

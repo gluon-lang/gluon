@@ -1,30 +1,20 @@
-extern crate smallvec;
-extern crate typed_arena;
-
 #[macro_export]
 #[cfg(test)]
 macro_rules! assert_deq {
-    ($left:expr, $right:expr) => ({
+    ($left:expr, $right:expr) => {{
         match (&$left, &$right) {
             (left_val, right_val) => {
                 if !(*left_val == *right_val) {
-                    panic!("assertion failed: `(left == right)` \
-                        (left: `{}`, right: `{}`)", left_val, right_val)
+                    difference::assert_diff!(
+                        &left_val.to_string(),
+                        &right_val.to_string(),
+                        "\n",
+                        0
+                    );
                 }
             }
         }
-    });
-    ($left:expr, $right:expr, $($arg:tt)+) => ({
-        match (&($left), &($right)) {
-            (left_val, right_val) => {
-                if !(*left_val == *right_val) {
-                    panic!("assertion failed: `(left == right)` \
-                        (left: `{}`, right: `{}`): {}", left_val, right_val,
-                        format_args!($($arg)+))
-                }
-            }
-        }
-    });
+    }};
 }
 
 #[cfg(all(test, feature = "test"))]
@@ -33,6 +23,7 @@ lalrpop_mod!(
     pub grammar,
     "/core/grammar.rs"
 );
+mod inline;
 pub mod interpreter;
 pub mod optimize;
 #[cfg(feature = "test")]
@@ -40,12 +31,9 @@ mod pretty;
 
 use std::{borrow::Cow, cell::RefCell, collections::HashMap, fmt, iter::once, mem};
 
-use {itertools::Itertools, ordered_float::NotNan, smallvec::SmallVec};
+use {itertools::Itertools, ordered_float::NotNan, smallvec::SmallVec, typed_arena::Arena};
 
-use self::{
-    optimize::{walk_expr_alloc, SameLifetime, Visitor},
-    typed_arena::Arena,
-};
+use self::optimize::{walk_expr_alloc, SameLifetime, Visitor};
 
 use crate::base::{
     ast::{self, SpannedExpr, SpannedPattern, Typed, TypedIdent},
@@ -411,6 +399,7 @@ pub struct Translator<'a, 'e> {
     ident_replacements: RefCell<FnvMap<Symbol, Symbol>>,
     env: &'e PrimitiveEnv<Type = ArcType>,
     dummy_symbol: TypedIdent<Symbol>,
+    dummy_record_symbol: TypedIdent<Symbol>,
 }
 
 impl<'a, 'e> Translator<'a, 'e> {
@@ -420,6 +409,7 @@ impl<'a, 'e> Translator<'a, 'e> {
             ident_replacements: Default::default(),
             env,
             dummy_symbol: TypedIdent::new(Symbol::from("")),
+            dummy_record_symbol: TypedIdent::new(Symbol::from("<record>")),
         }
     }
 
@@ -730,7 +720,7 @@ impl<'a, 'e> Translator<'a, 'e> {
 
                 let record_constructor = Expr::Data(
                     TypedIdent {
-                        name: self.dummy_symbol.name.clone(),
+                        name: self.dummy_record_symbol.name.clone(),
                         typ: typ.clone(),
                     },
                     arena.alloc_fixed(args),
@@ -746,7 +736,7 @@ impl<'a, 'e> Translator<'a, 'e> {
                     let args = arena.alloc_fixed(elems.iter().map(|expr| self.translate(expr)));
                     Expr::Data(
                         TypedIdent {
-                            name: self.dummy_symbol.name.clone(),
+                            name: self.dummy_record_symbol.name.clone(),
                             typ: expr.env_type_of(&self.env),
                         },
                         args,
@@ -1865,6 +1855,10 @@ impl<'a> ExactSizeIterator for PatternIdentifiers<'a> {
     }
 }
 
+pub(crate) fn is_primitive(name: &Symbol) -> bool {
+    name.as_ref() == "&&" || name.as_ref() == "||" || name.as_ref().starts_with('#')
+}
+
 #[cfg(all(test, feature = "test"))]
 mod tests {
     extern crate gluon_parser as parser;
@@ -1890,8 +1884,13 @@ mod tests {
         .unwrap()
     }
 
-    #[derive(Debug)]
     struct PatternEq<'a>(&'a Expr<'a>);
+
+    impl<'a> fmt::Debug for PatternEq<'a> {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            self.0.fmt(f)
+        }
+    }
 
     impl<'a> fmt::Display for PatternEq<'a> {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -1907,10 +1906,22 @@ mod tests {
     }
 
     fn check(map: &mut HashMap<Symbol, Symbol>, l: &Symbol, r: &Symbol) -> bool {
-        map.entry(l.clone()).or_insert_with(|| r.clone()) == r
+        let l = map.entry(l.clone()).or_insert_with(|| r.clone());
+        if l != r {
+            error!("{:#?} == {:#?}", l, r);
+        }
+        l == r
     }
 
     fn expr_eq(map: &mut HashMap<Symbol, Symbol>, l: &Expr, r: &Expr) -> bool {
+        let b = expr_eq_(map, l, r);
+        if !b {
+            error!("{:#?}\n\n{:#?}", l, r);
+        }
+        b
+    }
+
+    fn expr_eq_(map: &mut HashMap<Symbol, Symbol>, l: &Expr, r: &Expr) -> bool {
         match (l, r) {
             (&Expr::Match(_, l_alts), &Expr::Match(_, r_alts)) => {
                 for (l, r) in l_alts.iter().zip(r_alts) {
@@ -1953,7 +1964,20 @@ mod tests {
             (&Expr::Ident(ref l, _), &Expr::Ident(ref r, _)) => check(map, &l.name, &r.name),
             (&Expr::Let(ref lb, l), &Expr::Let(ref rb, r)) => {
                 let b = match (&lb.expr, &rb.expr) {
-                    (&Named::Expr(le), &Named::Expr(re)) => expr_eq(map, le, re),
+                    (Named::Expr(le), Named::Expr(re)) => expr_eq(map, le, re),
+                    (Named::Recursive(lcs), Named::Recursive(rcs)) => {
+                        lcs.len() == rcs.len()
+                            && lcs.iter().zip(rcs).all(|(lc, rc)| {
+                                check(map, &lc.name.name, &rc.name.name)
+                                    && lc.args.len() == rc.args.len()
+                                    && lc
+                                        .args
+                                        .iter()
+                                        .zip(&rc.args)
+                                        .all(|(l, r)| check(map, &l.name, &r.name))
+                                    && expr_eq(map, &lc.expr, &rc.expr)
+                            })
+                    }
                     _ => false,
                 };
                 check(map, &lb.name.name, &rb.name.name) && b && expr_eq(map, l, r)
@@ -1972,7 +1996,15 @@ mod tests {
         }
     }
 
-    fn check_translation(expr_str: &str, expected_str: &str) {
+    pub(crate) fn check_translation(expr_str: &str, expected_str: &str) {
+        check_translation_with(expr_str, expected_str, |_, e| e)
+    }
+
+    pub(crate) fn check_translation_with(
+        expr_str: &str,
+        expected_str: &str,
+        post: impl for<'a> FnOnce(&'a Allocator<'a>, CExpr<'a>) -> CExpr<'a>,
+    ) {
         let _ = ::env_logger::try_init();
 
         let mut symbols = Symbols::new();
@@ -1983,10 +2015,29 @@ mod tests {
 
         let expr = parse_expr(&mut symbols, expr_str);
         let core_expr = translator.translate_expr(&expr);
+        let core_expr = post(&translator.allocator, core_expr);
 
         let expected_expr = ExprParser::new()
             .parse(&mut symbols, &translator.allocator, expected_str)
-            .unwrap();
+            .unwrap_or_else(|err| {
+                let filemap = codespan::FileMap::new("test".into(), expected_str);
+                panic!(
+                    "{}",
+                    err.map_location(|i| {
+                        let (line, column) = filemap
+                            .location(codespan::ByteIndex::from(i as u32))
+                            .unwrap();
+                        let line_span = filemap.line_span(line).unwrap();
+                        format!(
+                            "line {}, column {}\n{}{}^",
+                            line.number(),
+                            column.number(),
+                            filemap.src_slice(line_span).unwrap(),
+                            " ".repeat(column.0 as usize)
+                        )
+                    })
+                )
+            });
         assert_deq!(PatternEq(&core_expr), expected_expr);
     }
 

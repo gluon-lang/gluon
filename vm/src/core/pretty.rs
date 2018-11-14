@@ -150,6 +150,7 @@ impl<'a> Expr<'a> {
                             " with",
                             arena.newline(),
                             chain![arena;
+                                "| ",
                                 alt.pattern.pretty(arena),
                                 arena.space(),
                                 "->"
