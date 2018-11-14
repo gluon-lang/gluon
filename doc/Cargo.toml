@@ -20,7 +20,7 @@ clap = "2.22.0"
 itertools = "0.7"
 structopt = "0.2"
 pretty = "0.5"
-pulldown-cmark = "0.1"
+pulldown-cmark = "0.2"
 regex = "1"
 lazy_static = "1"
 
