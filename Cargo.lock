@@ -232,7 +232,7 @@ dependencies = [
 
 [[package]]
 name = "codespan"
-version = "0.1.3"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "failure 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -243,11 +243,11 @@ dependencies = [
 
 [[package]]
 name = "codespan-reporting"
-version = "0.1.4"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
- "codespan 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "termcolor 0.3.6 (registry+https://github.com/rust-lang/crates.io-index)",
+ "codespan 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "termcolor 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -527,8 +527,8 @@ version = "0.9.4"
 dependencies = [
  "bencher 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "bincode 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "codespan 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "codespan-reporting 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "codespan 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "codespan-reporting 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "collect-mac 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "compiletest_rs 0.3.17 (registry+https://github.com/rust-lang/crates.io-index)",
  "either 1.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -572,8 +572,8 @@ name = "gluon_base"
 version = "0.9.4"
 dependencies = [
  "anymap 0.12.1 (registry+https://github.com/rust-lang/crates.io-index)",
- "codespan 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "codespan-reporting 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "codespan 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "codespan-reporting 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "collect-mac 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "either 1.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "fnv 1.0.6 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -603,8 +603,8 @@ dependencies = [
 name = "gluon_check"
 version = "0.9.4"
 dependencies = [
- "codespan 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "codespan-reporting 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "codespan 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "codespan-reporting 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "collect-mac 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "gluon_base 0.9.4",
@@ -638,7 +638,7 @@ dependencies = [
 name = "gluon_completion"
 version = "0.9.4"
 dependencies = [
- "codespan 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "codespan 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "collect-mac 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "either 1.5.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -675,7 +675,7 @@ dependencies = [
 name = "gluon_format"
 version = "0.9.4"
 dependencies = [
- "codespan 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "codespan 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "difference 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "gluon 0.9.4",
@@ -690,8 +690,8 @@ dependencies = [
 name = "gluon_parser"
 version = "0.9.4"
 dependencies = [
- "codespan 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "codespan-reporting 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "codespan 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "codespan-reporting 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "collect-mac 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "difference 2.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -712,8 +712,8 @@ version = "0.9.4"
 dependencies = [
  "app_dirs 1.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "clap 2.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "codespan 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
- "codespan-reporting 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)",
+ "codespan 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "codespan-reporting 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures 0.1.25 (registry+https://github.com/rust-lang/crates.io-index)",
  "futures-cpupool 0.1.8 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -742,7 +742,7 @@ name = "gluon_vm"
 version = "0.9.4"
 dependencies = [
  "bitflags 1.0.4 (registry+https://github.com/rust-lang/crates.io-index)",
- "codespan 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "codespan 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "collect-mac 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "env_logger 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "frunk_core 0.2.2 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -2278,8 +2278,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 "checksum cfg-if 0.1.6 (registry+https://github.com/rust-lang/crates.io-index)" = "082bb9b28e00d3c9d39cc03e64ce4cea0f1bb9b3fde493f0cbc008472d22bdf4"
 "checksum clap 2.32.0 (registry+https://github.com/rust-lang/crates.io-index)" = "b957d88f4b6a63b9d70d5f454ac8011819c6efa7727858f458ab71c756ce2d3e"
 "checksum cloudabi 0.0.3 (registry+https://github.com/rust-lang/crates.io-index)" = "ddfc5b9aa5d4507acaf872de71051dfd0e309860e88966e1051e462a077aac4f"
-"checksum codespan 0.1.3 (registry+https://github.com/rust-lang/crates.io-index)" = "d7b2747200fb557b5d4aaaf873378298c310923c16dd359c046750b5f1423a34"
-"checksum codespan-reporting 0.1.4 (registry+https://github.com/rust-lang/crates.io-index)" = "fc374b90853c7431e73ebe8b89f60fa9f677719f6a662f1aa843af22c356da71"
+"checksum codespan 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "172b4fa8eec616659e19bdd41d33a3c29cd6913b9b747054c0429865c1f210ec"
+"checksum codespan-reporting 0.2.0 (registry+https://github.com/rust-lang/crates.io-index)" = "b5b329932b380f719f861e2844dcafea53e31821a53b76a1218364d3433cb472"
 "checksum collect-mac 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)" = "f168712e49987bd2f51cb855c4585999e12b1a0abdff60fea4b81b41f2010264"
 "checksum compiletest_rs 0.3.17 (registry+https://github.com/rust-lang/crates.io-index)" = "89747fe073b7838343bd2c2445e7a7c2e0d415598f8925f0fa9205b9cdfc48cb"
 "checksum core-foundation 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)" = "286e0b41c3a20da26536c6000a280585d519fd07b3956b43aed8a79e9edce980"

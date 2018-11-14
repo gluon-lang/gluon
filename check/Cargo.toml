@@ -20,8 +20,8 @@ smallvec = "0.6"
 rpds = "0.5"
 stable_deref_trait = "1"
 
-codespan = "0.1"
-codespan-reporting = "0.1"
+codespan = "0.2"
+codespan-reporting = "0.2"
 
 strsim = "0.8.0"
 
