@@ -112,6 +112,8 @@ let traversable : Traversable Array =
 let semigroup : Semigroup (Array a) = { append = prim.append }
 let monoid : Monoid (Array a) = { semigroup, empty = [] }
 
+let is_empty array = prim.len array == 0
+
 {
     eq,
     ord,
@@ -120,6 +122,7 @@ let monoid : Monoid (Array a) = { semigroup, empty = [] }
     foldable,
     traversable,
     semigroup,
+    is_empty,
     ..
     prim
 }

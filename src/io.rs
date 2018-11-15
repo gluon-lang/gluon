@@ -107,7 +107,10 @@ fn read_file(file: &GluonFile, count: usize) -> IO<RuntimeResult<Option<Vec<u8>>
         buffer.set_len(count);
         match file.read(&mut *buffer) {
             Ok(bytes_read) if bytes_read == 0 => IO::Value(RuntimeResult::Return(None)),
-            Ok(bytes_read) => IO::Value(RuntimeResult::Return(Some(buffer[..bytes_read].to_vec()))),
+            Ok(bytes_read) => {
+                buffer.truncate(bytes_read);
+                IO::Value(RuntimeResult::Return(Some(buffer)))
+            }
             Err(err) => IO::Exception(format!("{}", err)),
         }
     }

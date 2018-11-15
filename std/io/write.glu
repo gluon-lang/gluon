@@ -24,11 +24,13 @@ let write writer buf : [Write a] -> a -> Array Byte -> IO Int =
     write_slice writer buf 0 (array.len buf)
 
 let write_all writer buf : [Write a] -> a -> Array Byte -> IO () =   
+    let buf_len = array.len buf
+
     let inner bytes_written =
-        if bytes_written >= array.len buf then
+        if bytes_written >= buf_len then
             wrap ()
         else
-            do written = write_slice writer buf bytes_written (array.len buf)
+            do written = write_slice writer buf bytes_written buf_len
 
             if written == 0 then
                 throw "cannot write the whole buffer because the writer has reached end of file"
