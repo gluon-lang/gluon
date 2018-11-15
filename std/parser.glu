@@ -273,6 +273,7 @@ let parse p input : Parser a -> String -> Result String a =
     satisfy_map,
     spaces,
     take1,
+    take,
     lazy_parser,
     fail,
     recognize,

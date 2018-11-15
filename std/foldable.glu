@@ -49,8 +49,8 @@ let all pred : [Foldable t] -> (a -> Bool) -> t a -> Bool =
 let any pred : [Foldable t] -> (a -> Bool) -> t a -> Bool =
     foldl (\acc x -> acc || pred x) False
 
-let elem eq x : [Foldable t] -> Eq a -> a -> t a -> Bool =
-    any (eq.(==) x)
+let elem x : [Foldable t] -> [Eq a] -> a -> t a -> Bool =
+    any ((==) x)
 
 let count : [Foldable t] -> t a -> Int =
     foldl (\acc _ -> acc #Int+ 1) 0
