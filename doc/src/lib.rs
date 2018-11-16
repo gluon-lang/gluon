@@ -532,9 +532,8 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
                 modules: &modules,
             },
             &mut doc_file,
-        ).with_context(|err| {
-            format!("Unable to render index {}: {}", index_path.display(), err)
-        })?;
+        )
+        .with_context(|err| format!("Unable to render index {}: {}", index_path.display(), err))?;
     }
 
     let mut style_sheet = File::create(out_path.join("style.css"))?;

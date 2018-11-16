@@ -108,14 +108,18 @@ impl Checker {
                 self.check_tail(if_true);
                 self.check_tail(if_false);
             }
-            Expr::Match(_, ref alts) => for alt in alts {
-                self.check_tail(&alt.expr);
-            },
+            Expr::Match(_, ref alts) => {
+                for alt in alts {
+                    self.check_tail(&alt.expr);
+                }
+            }
             Expr::Record { .. } | Expr::Tuple { .. } | Expr::Lambda { .. } => (),
-            Expr::App { ref func, .. } => if !is_constructor_ident(func) {
-                self.errors
-                    .push(pos::spanned(expr.span, Error::LastExprMustBeConstructor))
-            },
+            Expr::App { ref func, .. } => {
+                if !is_constructor_ident(func) {
+                    self.errors
+                        .push(pos::spanned(expr.span, Error::LastExprMustBeConstructor))
+                }
+            }
             _ => self
                 .errors
                 .push(pos::spanned(expr.span, Error::LastExprMustBeConstructor)),
@@ -201,16 +205,18 @@ impl<'a> Visitor<'a> for Checker {
 
                     if !self.uninitialized_free_variables[start..].is_empty() {
                         match bind.name.value {
-                            Pattern::Ident(ref id) => if self.uninitialized_free_variables[start..]
-                                .iter()
-                                .any(|used| used.value == id.name)
-                            {
-                                // Since the binding itself appeared in this binding we must must
-                                // make sure that the binding can be recursively initialized. This
-                                // is only true if the vm can allocate the binding immediately and
-                                // fill in the values later.
-                                self.check_tail(&bind.expr);
-                            },
+                            Pattern::Ident(ref id) => {
+                                if self.uninitialized_free_variables[start..]
+                                    .iter()
+                                    .any(|used| used.value == id.name)
+                                {
+                                    // Since the binding itself appeared in this binding we must must
+                                    // make sure that the binding can be recursively initialized. This
+                                    // is only true if the vm can allocate the binding immediately and
+                                    // fill in the values later.
+                                    self.check_tail(&bind.expr);
+                                }
+                            }
                             _ => (),
                         }
 

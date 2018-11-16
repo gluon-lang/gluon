@@ -237,9 +237,11 @@ where
     fn next(&mut self) -> Option<(&'a K, &'a V)> {
         loop {
             match self.iter.next() {
-                Some((k, vs)) => if let Some(v) = vs.last() {
-                    return Some((k, v));
-                },
+                Some((k, vs)) => {
+                    if let Some(v) = vs.last() {
+                        return Some((k, v));
+                    }
+                }
                 None => return None,
             }
         }

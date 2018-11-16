@@ -20,8 +20,8 @@ smallvec = "0.6"
 rpds = "0.5"
 stable_deref_trait = "1"
 
-codespan = "0.1"
-codespan-reporting = "0.1"
+codespan = "0.2"
+codespan-reporting = "0.2"
 
 strsim = "0.8.0"
 
@@ -29,7 +29,7 @@ gluon_base = { path = "../base", version = "0.9.4" } # GLUON
 gluon_parser = { path = "../parser", version = "0.9.4", optional = true } # GLUON
 
 [dev-dependencies]
-env_logger = "0.5"
+env_logger = "0.6"
 
 gluon_format = { path = "../format", version = ">=0.9" }
 

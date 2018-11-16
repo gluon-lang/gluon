@@ -90,15 +90,17 @@ where
     F: FnMut(&AliasRef<Symbol, ArcType>) -> bool,
 {
     match peek_alias(env, typ) {
-        Ok(Some(alias)) => if canonical(alias) {
-            Cow::Borrowed(typ)
-        } else {
-            alias
-                .typ()
-                .apply_args(&typ.unapplied_args())
-                .map(|typ| Cow::Owned(canonical_alias(env, &typ, canonical).into_owned()))
-                .unwrap_or_else(|| Cow::Borrowed(typ))
-        },
+        Ok(Some(alias)) => {
+            if canonical(alias) {
+                Cow::Borrowed(typ)
+            } else {
+                alias
+                    .typ()
+                    .apply_args(&typ.unapplied_args())
+                    .map(|typ| Cow::Owned(canonical_alias(env, &typ, canonical).into_owned()))
+                    .unwrap_or_else(|| Cow::Borrowed(typ))
+            }
+        }
         _ => Cow::Borrowed(typ),
     }
 }

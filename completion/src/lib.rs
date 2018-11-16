@@ -187,9 +187,11 @@ impl<E: TypeEnv> OnFound for Suggest<E> {
             Pattern::Tuple {
                 elems: ref args, ..
             }
-            | Pattern::Constructor(_, ref args) => for arg in args {
-                self.on_pattern(arg);
-            },
+            | Pattern::Constructor(_, ref args) => {
+                for arg in args {
+                    self.on_pattern(arg);
+                }
+            }
             Pattern::Literal(_) | Pattern::Error => (),
         }
     }
@@ -361,7 +363,8 @@ where
                         let typ = resolve::remove_aliases(
                             &::base::ast::EmptyEnv::default(),
                             record_type.clone(),
-                        ).row_iter()
+                        )
+                        .row_iter()
                         .find(|field| field.name.name_eq(&ident.value))
                         .map(|field| field.typ.clone())
                         .unwrap_or_else(|| Type::hole());
@@ -641,7 +644,8 @@ where
                                 once(Variant::FieldIdent(&field.name, record_type))
                                     .chain(field.value.as_ref().map(Variant::Expr))
                             })
-                    }).chain(base.as_ref().map(|base| Variant::Expr(base)));
+                    })
+                    .chain(base.as_ref().map(|base| Variant::Expr(base)));
                 self.visit_any(iter)
             }
             Expr::Lambda(ref lambda) => {
@@ -664,11 +668,13 @@ where
             Expr::Tuple {
                 elems: ref exprs, ..
             }
-            | Expr::Block(ref exprs) => if exprs.is_empty() {
-                self.found = MatchState::Found(Match::Expr(current));
-            } else {
-                self.visit_one(exprs)
-            },
+            | Expr::Block(ref exprs) => {
+                if exprs.is_empty() {
+                    self.found = MatchState::Found(Match::Expr(current));
+                } else {
+                    self.visit_one(exprs)
+                }
+            }
             Expr::Do(ref do_expr) => {
                 let iter = once(Either::Left(&do_expr.id))
                     .chain(once(Either::Right(&do_expr.bound)))
@@ -1320,7 +1326,8 @@ impl SuggestionQuery {
                         .chain(types.iter().map(|field| &field.name))
                         .all(|already_used_field| already_used_field.value != *k),
                     _ => true,
-                }).map(|(k, typ)| Suggestion {
+                })
+                .map(|(k, typ)| Suggestion {
                     name: k.declared_name().into(),
                     typ: Either::Right(typ.clone()),
                 }),
@@ -1357,7 +1364,8 @@ impl SuggestionQuery {
                         .chain(types.iter().map(|field| &field.name))
                         .all(|already_used_field| already_used_field.value != *k),
                     _ => true,
-                }).map(|(name, kind)| Suggestion {
+                })
+                .map(|(name, kind)| Suggestion {
                     name: name.declared_name().into(),
                     typ: Either::Left(kind.clone()),
                 }),
@@ -1394,7 +1402,8 @@ impl SuggestionQuery {
                             None
                         }
                     })
-            }).collect::<Vec<String>>();
+            })
+            .collect::<Vec<String>>();
 
         suggestions.extend(
             modules
@@ -1458,12 +1467,14 @@ impl SuggestionQuery {
                             Match::Expr(&Spanned {
                                 value: Expr::Projection(ref expr, _, _),
                                 ..
-                            }) => if let Expr::Ident(ref expr_ident) = expr.value {
-                                env.get(&expr_ident.name)
-                                    .and_then(|metadata| metadata.module.get(name))
-                            } else {
-                                None
-                            },
+                            }) => {
+                                if let Expr::Ident(ref expr_ident) = expr.value {
+                                    env.get(&expr_ident.name)
+                                        .and_then(|metadata| metadata.module.get(name))
+                                } else {
+                                    None
+                                }
+                            }
                             _ => None,
                         },
                         _ => None,
@@ -1575,22 +1586,27 @@ pub fn get_metadata<'a>(
         .and_then(|found| {
             let e = found.enclosing_match().clone();
             found.match_.map(|m| (m, e))
-        }).and_then(|(match_, enclosing_match)| match match_ {
-            Match::Expr(expr) => if let Expr::Ident(ref id) = expr.value {
-                env.get(&id.name)
-            } else {
-                None
-            },
+        })
+        .and_then(|(match_, enclosing_match)| match match_ {
+            Match::Expr(expr) => {
+                if let Expr::Ident(ref id) = expr.value {
+                    env.get(&id.name)
+                } else {
+                    None
+                }
+            }
             Match::Ident(_, id, _typ) => match enclosing_match {
                 Match::Expr(&Spanned {
                     value: Expr::Projection(ref expr, _, _),
                     ..
-                }) => if let Expr::Ident(ref expr_id) = expr.value {
-                    env.get(&expr_id.name)
-                        .and_then(|metadata| metadata.module.get(id.as_ref()))
-                } else {
-                    None
-                },
+                }) => {
+                    if let Expr::Ident(ref expr_id) = expr.value {
+                        env.get(&expr_id.name)
+                            .and_then(|metadata| metadata.module.get(id.as_ref()))
+                    } else {
+                        None
+                    }
+                }
                 Match::Expr(&Spanned {
                     value: Expr::Infix { .. },
                     ..

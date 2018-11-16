@@ -117,10 +117,7 @@ unsafe impl DataDef for ClosureInitDef {
 }
 
 #[derive(Debug, PartialEq)]
-#[cfg_attr(
-    feature = "serde_derive",
-    derive(DeserializeState, SerializeState)
-)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
     serde(deserialize_state = "::serialization::DeSeed")
@@ -381,10 +378,7 @@ mod gc_str {
 pub use self::gc_str::GcStr;
 
 #[derive(Copy, Clone, PartialEq)]
-#[cfg_attr(
-    feature = "serde_derive",
-    derive(DeserializeState, SerializeState)
-)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
     serde(deserialize_state = "::serialization::DeSeed")
@@ -447,10 +441,7 @@ pub(crate) enum ValueRepr {
 
 // FIXME Remove Clone to make it harder to create unrooted values
 #[derive(PartialEq, Clone)]
-#[cfg_attr(
-    feature = "serde_derive",
-    derive(DeserializeState, SerializeState)
-)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
     serde(deserialize_state = "::serialization::DeSeed")
@@ -593,7 +584,8 @@ impl<'a> fmt::Display for ValuePrinter<'a> {
             prec: Top,
             level: self.max_level,
             debug_level: self.debug_level,
-        }.pretty(self.value)
+        }
+        .pretty(self.value)
         .group()
         .1
         .render(self.width, &mut s)
@@ -712,8 +704,10 @@ impl<'a, 't> InternalPrinter<'a, 't> {
                                     self.p(&type_field.typ, Top).pretty(field),
                                     arena.text(",")
                                 ].nest(INDENT)
-                            ].group()
-                        }).intersperse(arena.space()),
+                            ]
+                            .group()
+                        })
+                        .intersperse(arena.space()),
                 );
                 chain![arena;
                             "{",
@@ -775,10 +769,7 @@ impl<'a, 't> InternalPrinter<'a, 't> {
 }
 
 #[derive(Copy, Clone, Debug)]
-#[cfg_attr(
-    feature = "serde_derive",
-    derive(DeserializeState, SerializeState)
-)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
     serde(deserialize_state = "::serialization::DeSeed")
@@ -1435,7 +1426,8 @@ impl<'t> Cloner<'t> {
             .deep_clone_ptr(data.into_inner(), |gc, _| {
                 let ptr = GcStr::alloc(gc, &data[..])?;
                 Ok((String(ptr), ptr))
-            })?.unwrap_or_else(String))
+            })?
+            .unwrap_or_else(String))
     }
 
     fn deep_clone_data(&mut self, data_ptr: GcPtr<DataStruct>) -> Result<GcPtr<DataStruct>> {
@@ -1618,7 +1610,12 @@ mod tests {
         assert_eq!(
             format!(
                 "{}",
-                ValuePrinter::new(&env, &typ, unsafe { Variants::new(&nil) }, &DebugLevel::None)
+                ValuePrinter::new(
+                    &env,
+                    &typ,
+                    unsafe { Variants::new(&nil) },
+                    &DebugLevel::None
+                )
             ),
             "Nil"
         );
@@ -1626,12 +1623,18 @@ mod tests {
             gc.alloc(Def {
                 tag: 0,
                 elems: &[Value::from(ValueRepr::Int(123)), nil],
-            }).unwrap(),
+            })
+            .unwrap(),
         ));
         assert_eq!(
             format!(
                 "{}",
-                ValuePrinter::new(&env, &typ, unsafe { Variants::new(&list1) }, &DebugLevel::None)
+                ValuePrinter::new(
+                    &env,
+                    &typ,
+                    unsafe { Variants::new(&list1) },
+                    &DebugLevel::None
+                )
             ),
             "Cons 123 Nil"
         );
@@ -1639,12 +1642,18 @@ mod tests {
             gc.alloc(Def {
                 tag: 0,
                 elems: &[ValueRepr::Int(0).into(), list1],
-            }).unwrap(),
+            })
+            .unwrap(),
         ));
         assert_eq!(
             format!(
                 "{}",
-                ValuePrinter::new(&env, &typ, unsafe { Variants::new(&list2) }, &DebugLevel::None)
+                ValuePrinter::new(
+                    &env,
+                    &typ,
+                    unsafe { Variants::new(&list2) },
+                    &DebugLevel::None
+                )
             ),
             "Cons 0 (Cons 123 Nil)"
         );
@@ -1662,7 +1671,12 @@ mod tests {
         assert_eq!(
             format!(
                 "{}",
-                ValuePrinter::new(&env, &typ, unsafe { Variants::new(&nil) }, &DebugLevel::None)
+                ValuePrinter::new(
+                    &env,
+                    &typ,
+                    unsafe { Variants::new(&nil) },
+                    &DebugLevel::None
+                )
             ),
             "[1, 2, 3]"
         );

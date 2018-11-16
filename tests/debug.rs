@@ -464,10 +464,9 @@ fn implicit_prelude_variable_names() {
     let f = functions.lock().unwrap();
     match *f[0] {
         Type::Record(ref row) => {
-            assert!(
-                row.row_iter()
-                    .any(|field| field.name.declared_name() == "+")
-            );
+            assert!(row
+                .row_iter()
+                .any(|field| field.name.declared_name() == "+"));
         }
         _ => panic!(),
     }

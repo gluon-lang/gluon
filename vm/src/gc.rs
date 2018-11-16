@@ -133,10 +133,7 @@ impl Generation {
 
 /// A mark and sweep garbage collector.
 #[derive(Debug)]
-#[cfg_attr(
-    feature = "serde_derive",
-    derive(DeserializeState, SerializeState)
-)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
     serde(deserialize_state = "::serialization::DeSeed")
@@ -1010,7 +1007,8 @@ mod tests {
             let ptr = gc
                 .alloc(Move(Dropable {
                     dropped: dropped.clone(),
-                })).unwrap();
+                }))
+                .unwrap();
             assert_eq!(false, ptr.dropped.get());
         }
         assert_eq!(false, dropped.get());

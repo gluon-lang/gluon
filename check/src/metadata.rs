@@ -129,7 +129,8 @@ pub fn metadata(
                 .map(|definition| {
                     id.declared_name().starts_with(char::is_lowercase)
                         && definition.declared_name().starts_with(char::is_uppercase)
-                }).unwrap_or(true)
+                })
+                .unwrap_or(true)
             {
                 metadata.definition = Some(id.clone());
             }
@@ -288,7 +289,8 @@ pub fn metadata(
                         None => field_metadata,
                     };
                     field_metadata.map(|m| (field.name.to_string(), m))
-                }).collect();
+                })
+                .collect();
 
             if module.is_empty() {
                 None

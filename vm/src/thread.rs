@@ -352,10 +352,7 @@ impl<'b> Roots<'b> {
 // knowing wheter it is or not. So the only way of allowing it to mark itself is to disallow it to
 // be allocated anywhere else.
 /// Representation of the virtual machine
-#[cfg_attr(
-    feature = "serde_derive",
-    derive(DeserializeState, SerializeState)
-)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
     serde(deserialize_state = "::serialization::DeSeed")
@@ -437,10 +434,7 @@ impl<'vm, 'value> Getable<'vm, 'value> for RootedThread {
 /// An instance of `Thread` which is rooted. See the `Thread` type for documentation on interacting
 /// with the type.
 #[derive(Debug)]
-#[cfg_attr(
-    feature = "serde_derive",
-    derive(DeserializeState, SerializeState)
-)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
     serde(deserialize_state = "::serialization::DeSeed")
@@ -1215,10 +1209,7 @@ struct PollFn {
     frame_index: VmIndex,
 }
 
-#[cfg_attr(
-    feature = "serde_derive",
-    derive(DeserializeState, SerializeState)
-)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
     serde(deserialize_state = "::serialization::DeSeed")
@@ -2361,7 +2352,7 @@ fn debug_instruction(stack: &StackFrame<ClosureState>, index: usize, instr: Inst
                 x
             }
             PushUpVar(i) => Some(stack.get_upvar(i).clone()),
-            NewClosure { .. } | MakeClosure { .. } => Some(Value::from(Int(stack.len() as isize))),
+            NewClosure { .. } | MakeClosure { .. } => Some(Value::from(Int(stack.len() as VmInt))),
             _ => None,
         }
     );

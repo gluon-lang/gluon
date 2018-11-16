@@ -532,19 +532,23 @@ impl<'input> Tokenizer<'input> {
                     Some((pos, ch)) if is_ident_start(ch) => {
                         return self.error(pos, UnexpectedChar(ch))
                     }
-                    _ => if let Ok(val) = int.parse() {
-                        (start, end, Token::ByteLiteral(val))
-                    } else {
-                        return self.error(start, NonParseableInt);
-                    },
+                    _ => {
+                        if let Ok(val) = int.parse() {
+                            (start, end, Token::ByteLiteral(val))
+                        } else {
+                            return self.error(start, NonParseableInt);
+                        }
+                    }
                 }
             }
             Some((start, ch)) if is_ident_start(ch) => return self.error(start, UnexpectedChar(ch)),
-            None | Some(_) => if let Ok(val) = int.parse() {
-                (start, end, Token::IntLiteral(val))
-            } else {
-                return self.error(start, NonParseableInt);
-            },
+            None | Some(_) => {
+                if let Ok(val) = int.parse() {
+                    (start, end, Token::IntLiteral(val))
+                } else {
+                    return self.error(start, NonParseableInt);
+                }
+            }
         };
 
         Ok(pos::spanned2(start, end, token))

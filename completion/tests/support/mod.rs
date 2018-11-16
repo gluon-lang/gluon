@@ -217,11 +217,13 @@ where
         Err(()) if s.starts_with(char::is_lowercase) => {
             Type::generic(Generic::new(intern(s), Kind::typ()))
         }
-        Err(()) => if args.is_empty() {
-            Type::ident(intern(s))
-        } else {
-            Type::app(Type::ident(intern(s)), args.into_iter().collect())
-        },
+        Err(()) => {
+            if args.is_empty() {
+                Type::ident(intern(s))
+            } else {
+                Type::app(Type::ident(intern(s)), args.into_iter().collect())
+            }
+        }
     }
 }
 

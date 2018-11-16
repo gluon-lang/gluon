@@ -54,12 +54,16 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
                     id.value = new_name;
                     self.new_pattern(pat)
                 }
-                Pattern::Tuple { ref mut elems, .. } => for elem in elems {
-                    self.new_pattern(elem);
-                },
-                Pattern::Constructor(_, ref mut args) => for arg in args {
-                    self.new_pattern(arg);
-                },
+                Pattern::Tuple { ref mut elems, .. } => {
+                    for elem in elems {
+                        self.new_pattern(elem);
+                    }
+                }
+                Pattern::Constructor(_, ref mut args) => {
+                    for arg in args {
+                        self.new_pattern(arg);
+                    }
+                }
                 Pattern::Literal(_) | Pattern::Error => (),
             }
         }
@@ -107,10 +111,12 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
 
         fn rename_expr(&mut self, expr: &mut SpannedExpr<Symbol>) -> TailCall {
             match expr.value {
-                Expr::Ident(ref mut id) => if let Some(new_id) = self.rename(&id.name) {
-                    debug!("Rename identifier {} = {}", id.name, new_id);
-                    id.name = new_id;
-                },
+                Expr::Ident(ref mut id) => {
+                    if let Some(new_id) = self.rename(&id.name) {
+                        debug!("Rename identifier {} = {}", id.name, new_id);
+                        id.name = new_id;
+                    }
+                }
                 Expr::Record {
                     ref mut exprs,
                     ref mut base,
@@ -119,10 +125,12 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
                     for expr_field in exprs {
                         match expr_field.value {
                             Some(ref mut expr) => self.visit_expr(expr),
-                            None => if let Some(new_id) = self.rename(&expr_field.name.value) {
-                                debug!("Rename record field {} = {}", expr_field.name, new_id);
-                                expr_field.name.value = new_id;
-                            },
+                            None => {
+                                if let Some(new_id) = self.rename(&expr_field.name.value) {
+                                    debug!("Rename record field {} = {}", expr_field.name, new_id);
+                                    expr_field.name.value = new_id;
+                                }
+                            }
                         }
                     }
 

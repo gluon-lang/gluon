@@ -34,7 +34,8 @@ pub fn generate(
             let field_symbols: Vec<_> = row_iter(row)
                 .map(|field| {
                     TypedIdent::new(Symbol::from(format!("{}", field.name.declared_name())))
-                }).collect();
+                })
+                .collect();
 
             sequence_actions(
                 symbols,
@@ -49,7 +50,8 @@ pub fn generate(
                                 name: pos::spanned(span, id.name.clone()),
                                 value: None,
                                 metadata: Default::default(),
-                            }).collect(),
+                            })
+                            .collect(),
                         types: Vec::new(),
                         typ: Type::hole(),
                         base: None,
@@ -81,7 +83,8 @@ pub fn generate(
                     Some(prev) => infix(span, prev, symbols.symbol("<|>"), deserialize_variant),
                     None => deserialize_variant,
                 })
-            }).unwrap(),
+            })
+            .unwrap(),
         _ => return Err("Unable to derive Deserialize for this type".into()),
     };
 
@@ -129,7 +132,8 @@ pub fn generate(
         applicative_import,
         alternative_import,
         deserializer_binding,
-    ].into_iter()
+    ]
+    .into_iter()
     .rev()
     .fold(export_record_expr, |expr, bind| {
         pos::spanned(span, Expr::let_binding(bind, expr))

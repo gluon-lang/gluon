@@ -79,7 +79,8 @@ fn new_bytecode_function(
             vec.into_iter()
                 .map(|field| Ok(interner.intern(gc, field.as_ref())?))
                 .collect::<Result<_>>()
-        }).collect();
+        })
+        .collect();
 
     gc.alloc(Move(BytecodeFunction {
         name: id,
@@ -128,10 +129,7 @@ impl Traverseable for Global {
     }
 }
 
-#[cfg_attr(
-    feature = "serde_derive",
-    derive(DeserializeState, SerializeState)
-)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
     serde(deserialize_state = "::serialization::DeSeed")
@@ -190,10 +188,7 @@ impl Traverseable for GlobalVmState {
 /// A borrowed structure which implements `CompilerEnv`, `TypeEnv` and `KindEnv` allowing the
 /// typechecker and compiler to lookup things in the virtual machine.
 #[derive(Debug)]
-#[cfg_attr(
-    feature = "serde_derive",
-    derive(DeserializeState, SerializeState)
-)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
     serde(deserialize_state = "::serialization::DeSeed")
@@ -238,7 +233,8 @@ impl TypeEnv for VmEnv {
                             .find(|field| *field.name == *id)
                             .map(|field| &field.typ),
                         _ => None,
-                    }).next()
+                    })
+                    .next()
                     .map(|ctor| ctor)
             })
     }
@@ -254,7 +250,8 @@ impl PrimitiveEnv for VmEnv {
             .map(|alias| match alias {
                 Cow::Borrowed(alias) => alias.as_type(),
                 Cow::Owned(_) => ice!("Expected to be able to retrieve a borrowed bool type"),
-            }).expect("std.types.Bool")
+            })
+            .expect("std.types.Bool")
     }
 }
 
@@ -545,7 +542,8 @@ impl GlobalVmState {
             .map(|g| match **g {
                 Type::Generic(ref g) => g.clone(),
                 _ => unreachable!(),
-            }).collect();
+            })
+            .collect();
         let n = Symbol::from(name);
         let alias = Alias::from(AliasData::new(n.clone(), args, self.type_cache.opaque()));
         self.register_type_as(n, alias, id)

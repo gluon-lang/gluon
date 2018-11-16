@@ -29,7 +29,8 @@ pub fn generate(
                                 is_self_type(&bind.alias.value.name, typ),
                                 TypedIdent::new(Symbol::from(format!("arg_{}", i))),
                             )
-                        }).collect();
+                        })
+                        .collect();
 
                     let expr = {
                         let open_brace = literal(span, variant.name.declared_name());
@@ -78,14 +79,16 @@ pub fn generate(
                         pattern: ctor_pattern(pattern_args.into_iter().map(|t| t.1).collect()),
                         expr,
                     }
-                }).collect();
+                })
+                .collect();
             Expr::Match(Box::new(ident(span, x.clone())), alts)
         }
         Type::Record(ref row) => {
             let field_symbols: Vec<_> = row_iter(row)
                 .map(|field| {
                     TypedIdent::new(Symbol::from(format!("{}", field.name.declared_name())))
-                }).collect();
+                })
+                .collect();
 
             let expr = {
                 let open_brace = literal(span, "{ ");

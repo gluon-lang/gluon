@@ -21,11 +21,11 @@ log = "0.4"
 pretty = "0.5"
 gluon_base = { path = "../base", version = "0.9.4" } # GLUON
 ordered-float = "1"
-codespan = "0.1.1"
-codespan-reporting = "0.1.1"
+codespan = "0.2"
+codespan-reporting = "0.2"
 
 [dev-dependencies]
-env_logger = "0.5"
+env_logger = "0.6"
 difference = "2"
 pretty_assertions = "0.5"
 

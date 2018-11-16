@@ -463,7 +463,8 @@ where
             },
             Err(err) => Err(Errors::from(
                 macro_error.into_iter().chain(Some(err)).collect::<Vec<_>>(),
-            ).into()),
+            )
+            .into()),
         }
     }
 }
@@ -737,7 +738,8 @@ where
                     typ: typ,
                     value,
                     metadata,
-                }).map_err(Error::from)
+                })
+                .map_err(Error::from)
                 .and_then(move |v| {
                     if run_io {
                         future::Either::B(::compiler_pipeline::run_io(vm, v))
@@ -771,7 +773,8 @@ where
                     } else {
                         future::Either::A(future::ok(v))
                     }
-                }).and_then(move |value| {
+                })
+                .and_then(move |value| {
                     vm.set_global(
                         value.id.clone(),
                         value.typ,
@@ -833,11 +836,9 @@ where
     {
         use vm::serialization::DeSeed;
 
-        let module: Module = try_future!(
-            DeSeed::new(&vm)
-                .deserialize(self.0)
-                .map_err(|err| err.to_string())
-        );
+        let module: Module = try_future!(DeSeed::new(&vm)
+            .deserialize(self.0)
+            .map_err(|err| err.to_string()));
         let module_id = module.module.function.id.clone();
         if filename != module_id.as_ref() {
             return Box::new(future::err(
@@ -856,7 +857,8 @@ where
                     typ: typ,
                     metadata,
                     value,
-                }).map_err(Error::from),
+                })
+                .map_err(Error::from),
         )
     }
     fn load_script<T>(
@@ -878,11 +880,9 @@ where
             typ,
             value,
             id: _,
-        } = try_future!(
-            DeSeed::new(&vm)
-                .deserialize(self.0)
-                .map_err(|err| err.to_string())
-        );
+        } = try_future!(DeSeed::new(&vm)
+            .deserialize(self.0)
+            .map_err(|err| err.to_string()));
         let id = compiler.symbols.symbol(format!("@{}", name));
         try_future!(vm.set_global(id, typ, metadata, value,));
         info!("Loaded module `{}`", name);
@@ -964,7 +964,8 @@ where
                         metadata,
                         typ: actual,
                     }
-                }).map_err(Error::from),
+                })
+                .map_err(Error::from),
         )
     } else {
         future::Either::A(future::ok(v))

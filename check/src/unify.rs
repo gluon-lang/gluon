@@ -35,8 +35,9 @@ where
                     "Found:",
                     arena.space(),
                     r.to_doc(&arena, ()).group()
-                ].group()
-                    .nest(4);
+                ]
+                .group()
+                .nest(4);
                 write!(f, "Types do not match:{}", doc.1.pretty(80))
             }
             Substitution(ref err) => err.fmt(f),

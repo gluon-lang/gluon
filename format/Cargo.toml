@@ -14,13 +14,13 @@ documentation = "https://docs.rs/gluon"
 log = "0.4"
 pretty = "0.5"
 itertools = "0.7"
-codespan = "0.1.1"
+codespan = "0.2"
 
 gluon_base = { path = "../base", version = "0.9.4" } # GLUON
 gluon = { path = "..", version = "0.9.4" } # GLUON
 
 [dev-dependencies]
-env_logger = "0.5.0"
+env_logger = "0.6"
 difference = "2"
 pretty_assertions = "0.5"
 

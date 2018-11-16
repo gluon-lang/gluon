@@ -247,7 +247,8 @@ fn spawn_on<'vm>(
         F: Future + Send + 'static,
         F::Item: Send + Sync,
         F::Error: Send + Sync,
-    {}
+    {
+    }
 
     impl<F> Traverseable for SpawnFuture<F>
     where

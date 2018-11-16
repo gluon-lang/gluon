@@ -111,9 +111,11 @@ impl<'a, 'l, 'g, 'expr> Visitor<'l, 'expr> for Pure<'a, 'l, 'g> {
                             // If we can't resolve the identifier to an expression it is a
                             // primitive function which can be impure
                             // FIXME Let primitive functions mark themselves as pure somehow
-                            None => if !id.name.as_ref().starts_with("#") {
-                                self.0 = false;
-                            },
+                            None => {
+                                if !id.name.as_ref().starts_with("#") {
+                                    self.0 = false;
+                                }
+                            }
                         }
                     }
                     _ => (),
@@ -320,7 +322,8 @@ impl<'a, 'e> Compiler<'a, 'e> {
                     .rev()
                     .filter_map(|env| env.stack.get(id).cloned())
                     .next()
-            }).or_else(|| {
+            })
+            .or_else(|| {
                 (self.globals)(id).map(|global| match global {
                     Binding::Expr(expr) => Binding::Expr(Reduced::Global(expr)),
                     Binding::Closure(c) => Binding::Closure(Reduced::Global(c)),
@@ -502,7 +505,8 @@ impl<'a, 'e> Compiler<'a, 'e> {
                                 new_body
                             },
                             Clone::clone,
-                        ).map(Named::Recursive);
+                        )
+                        .map(Named::Recursive);
                         result?;
                         new_closures
                     }
@@ -554,9 +558,11 @@ impl<'a, 'e> Compiler<'a, 'e> {
                     self.stack_constructors.enter_scope();
                     function.stack.enter_scope();
                     match alt.pattern {
-                        Pattern::Constructor(_, ref args) => for arg in args.iter() {
-                            function.push_unknown_stack_var(arg.name.clone());
-                        },
+                        Pattern::Constructor(_, ref args) => {
+                            for arg in args.iter() {
+                                function.push_unknown_stack_var(arg.name.clone());
+                            }
+                        }
                         Pattern::Record { .. } => {
                             self.compile_let_pattern(&alt.pattern, expr, function)?;
                         }
@@ -702,42 +708,47 @@ impl<'a, 'e> Compiler<'a, 'e> {
 
         let l = self.compile(&args[0], function)?;
         let r = self.compile(&args[1], function)?;
-        Ok(match (
-            l.as_ref().map(|l| l.as_ref()),
-            r.as_ref().map(|r| r.as_ref()),
-        ) {
-            (Some(&Expr::Const(Literal::Int(l), ..)), Some(&Expr::Const(Literal::Int(r), ..))) => {
-                let f = binop!();
-                Some(Reduced::Local(
-                    self.allocator
-                        .arena
-                        .alloc(Expr::Const(Literal::Int(f(l, r)), expr.span())),
-                ))
-            }
-            (
-                Some(&Expr::Const(Literal::Float(l), ..)),
-                Some(&Expr::Const(Literal::Float(r), ..)),
-            ) => {
-                let f = binop!();
-                Some(Reduced::Local(
-                    self.allocator
-                        .arena
-                        .alloc(Expr::Const(Literal::Float(f(l, r)), expr.span())),
-                ))
-            }
-            _ => match *expr {
-                Expr::Call(f, args) => {
-                    let new_args = self.allocator.arena.alloc_extend(vec![
-                        l.map_or(args[0].clone(), |l| l.into_local(self.allocator).clone()),
-                        r.map_or(args[1].clone(), |r| r.into_local(self.allocator).clone()),
-                    ]);
+        Ok(
+            match (
+                l.as_ref().map(|l| l.as_ref()),
+                r.as_ref().map(|r| r.as_ref()),
+            ) {
+                (
+                    Some(&Expr::Const(Literal::Int(l), ..)),
+                    Some(&Expr::Const(Literal::Int(r), ..)),
+                ) => {
+                    let f = binop!();
                     Some(Reduced::Local(
-                        &*self.allocator.arena.alloc(Expr::Call(f, new_args)),
+                        self.allocator
+                            .arena
+                            .alloc(Expr::Const(Literal::Int(f(l, r)), expr.span())),
                     ))
                 }
-                _ => unreachable!(),
+                (
+                    Some(&Expr::Const(Literal::Float(l), ..)),
+                    Some(&Expr::Const(Literal::Float(r), ..)),
+                ) => {
+                    let f = binop!();
+                    Some(Reduced::Local(
+                        self.allocator
+                            .arena
+                            .alloc(Expr::Const(Literal::Float(f(l, r)), expr.span())),
+                    ))
+                }
+                _ => match *expr {
+                    Expr::Call(f, args) => {
+                        let new_args = self.allocator.arena.alloc_extend(vec![
+                            l.map_or(args[0].clone(), |l| l.into_local(self.allocator).clone()),
+                            r.map_or(args[1].clone(), |r| r.into_local(self.allocator).clone()),
+                        ]);
+                        Some(Reduced::Local(
+                            &*self.allocator.arena.alloc(Expr::Call(f, new_args)),
+                        ))
+                    }
+                    _ => unreachable!(),
+                },
             },
-        })
+        )
     }
 }
 
@@ -874,7 +885,8 @@ mod tests {
                 &mut symbols,
                 &global_allocator,
                 "let f x y = (#Int+) x y in { f }",
-            ).unwrap();
+            )
+            .unwrap();
         let global: CExpr = global_allocator.arena.alloc(global);
 
         let expr = r#"

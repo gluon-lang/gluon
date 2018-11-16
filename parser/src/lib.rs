@@ -78,10 +78,12 @@ fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
             1 => return exprs.pop().unwrap(),
             _ => expr.span = Span::new(expr.span.start(), exprs.last().unwrap().span.end()),
         },
-        Expr::Match(_, ref alts) => if let Some(last_alt) = alts.last() {
-            let end = last_alt.expr.span.end();
-            expr.span = Span::new(expr.span.start(), end);
-        },
+        Expr::Match(_, ref alts) => {
+            if let Some(last_alt) = alts.last() {
+                let end = last_alt.expr.span.end();
+                expr.span = Span::new(expr.span.start(), end);
+            }
+        }
         Expr::App { .. }
         | Expr::Ident(_)
         | Expr::Literal(_)
@@ -558,12 +560,14 @@ where
                     }
                 }
 
-                None => if id.as_ref().starts_with(is_operator_char) {
-                    self.errors.push(pos::spanned(
-                        span,
-                        InfixError::UndefinedFixity(id.as_ref().into()).into(),
-                    ))
-                },
+                None => {
+                    if id.as_ref().starts_with(is_operator_char) {
+                        self.errors.push(pos::spanned(
+                            span,
+                            InfixError::UndefinedFixity(id.as_ref().into()).into(),
+                        ))
+                    }
+                }
             }
         }
     }
@@ -594,7 +598,8 @@ where
         metadata,
         errors: &mut errors,
         op_table: &mut op_table,
-    }.visit_expr(expr);
+    }
+    .visit_expr(expr);
 
     let mut reparser = Reparser::new(op_table, symbols);
     match reparser.reparse(expr) {
