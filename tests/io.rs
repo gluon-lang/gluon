@@ -1,7 +1,10 @@
 extern crate env_logger;
+extern crate tempfile;
 extern crate gluon;
 extern crate tokio;
 
+use std::fs;
+use tempfile::NamedTempFile;
 use gluon::vm::api::{Hole, OpaqueValue, ValueRef, IO};
 use gluon::{new_vm, Compiler, Thread};
 
@@ -21,14 +24,17 @@ fn read_file() {
         let { assert }  = import! std.test
         let io @ { ? } = import! std.io
         let { wrap } = io.applicative
+        let { ? } = import! std.byte
+        let { unwrap } = import! std.option
         let { flat_map, (>>=) } = import! std.monad
 
         do file = io.open_file "Cargo.toml"
         do bytes = io.read_file file 9
+        let bytes = unwrap bytes
 
         assert (array.len bytes == 9)
-        assert (array.index bytes 0 #Byte== 91b) // [
-        assert (array.index bytes 1 #Byte== 112b) // p
+        assert (array.index bytes 0 == 91b) // [
+        assert (array.index bytes 1 == 112b) // p
 
         wrap (array.index bytes 8)
         "#;
@@ -43,7 +49,36 @@ fn read_file() {
     }
 }
 
-test_expr! { no_io_eval,
+#[test]
+fn write_and_flush_file() {
+    let _ = ::env_logger::try_init();
+
+    let file =  NamedTempFile::new().unwrap();
+
+    let thread = new_vm();
+    let text = format!(
+        r#"
+        let {{ assert }} = import! std.test
+        let {{ open_file, write_slice_file, flush_file, ? }} = import! std.io
+
+        do file = open_file "{path}"
+        do bytes_written = write_slice_file file [1b, 2b, 3b, 4b] 0 4
+        assert (bytes_written == 4)
+        flush_file file
+        "#,
+        path = file.path().to_str().unwrap()
+    );
+
+    Compiler::new()
+        .run_io(true)
+        .run_expr::<IO<()>>(&thread, "<top>", &text)
+        .unwrap_or_else(|err| panic!("{}", err));
+
+    let content = fs::read(file.path()).unwrap();
+    assert_eq!(content, vec![1, 2, 3, 4]);
+}
+
+test_expr!{ no_io_eval,
 r#"
 let { error } = import! std.prim
 let io = import! std.io.prim
