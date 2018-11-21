@@ -81,7 +81,7 @@ fn write_and_flush_file() {
 test_expr!{ no_io_eval,
 r#"
 let { error } = import! std.prim
-let io = import! std.io.prim
+let io = import! std.io
 let x = io.flat_map (\x -> error "NOOOOOOOO") (io.println "1")
 in { x }
 "#
@@ -120,7 +120,7 @@ fn run_expr_int() {
 
 test_expr! { io run_expr_io,
 r#"
-let io = import! std.io.prim
+let io = import! std.io
 io.flat_map (\x -> io.wrap 100)
             (io.run_expr "
                 let io = import! \"std/io.glu\"

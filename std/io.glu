@@ -9,6 +9,18 @@ let { Functor } = import! std.functor
 let { Applicative } = import! std.applicative
 let { Monad } = import! std.monad
 
+/// Opens the file at `path` in read-only mode. Fails if the file does not
+/// exist.
+let open_file path : String -> IO File =
+    let { OpenOptions } = import! std.io.prim
+    io_prim.open_file_with path [Read]
+
+/// Opens a file in write-only mode. If the file already exists, it will be
+/// truncated. If the file does not exist, it will be created.
+let create_file path : String -> IO File =
+    let { OpenOptions } = import! std.io.prim
+    io_prim.open_file_with path [Create, Write, Truncate]
+
 let functor : Functor IO = {
     map = \f -> io_prim.flat_map (\x -> io_prim.wrap (f x))
 }
@@ -40,6 +52,9 @@ let disposable : Disposable File = {
 }
 
 {
+    open_file,
+    create_file,
+
     functor,
     applicative,
     monad,

@@ -1,5 +1,5 @@
 use std::fmt;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::sync::Mutex;
 
@@ -66,11 +66,35 @@ impl fmt::Debug for GluonFile {
     }
 }
 
-fn open_file(s: &str) -> IO<GluonFile> {
-    match File::open(s) {
-        Ok(f) => IO::Value(GluonFile(Mutex::new(Some(f)))),
-        Err(err) => IO::Exception(format!("{}", err)),
+#[derive(Getable, VmType, Clone, Copy)]
+#[gluon(crate_name = "::vm")]
+enum OpenOptions {
+    Read,
+    Write,
+    Append,
+    Truncate,
+    Create,
+    CreateNew,
+}
+
+fn open_file_with(path: &str, opts: Vec<OpenOptions>) -> IO<GluonFile> {
+    let mut open_with = fs::OpenOptions::new();
+
+    for opt in opts {
+        match opt {
+            OpenOptions::Read => open_with.read(true),
+            OpenOptions::Write => open_with.write(true),
+            OpenOptions::Append => open_with.append(true),
+            OpenOptions::Truncate => open_with.truncate(true),
+            OpenOptions::Create => open_with.create(true),
+            OpenOptions::CreateNew => open_with.create_new(true),
+        };
     }
+
+    open_with
+        .open(path)
+        .map(|file| GluonFile(Mutex::new(Some(file))))
+        .into()
 }
 
 fn read_file_to_array(s: &str) -> IO<Vec<u8>> {
@@ -338,9 +362,10 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
         vm,
         record! {
             type File => GluonFile,
+            type OpenOptions => OpenOptions,
             flat_map => TypedBytecode::<FlatMap>::new("std.io.prim.flat_map", 3, flat_map),
             wrap => TypedBytecode::<Wrap>::new("std.io.prim.wrap", 2, wrap),
-            open_file => primitive!(1, std::io::prim::open_file),
+            open_file_with => primitive!(2, std::io::prim::open_file_with),
             read_file_to_string => primitive!(1, std::io::prim::read_file_to_string),
             read_file_to_array => primitive!(1, std::io::prim::read_file_to_array),
             read_file => primitive!(2, std::io::prim::read_file),
