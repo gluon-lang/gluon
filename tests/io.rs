@@ -59,9 +59,9 @@ fn write_and_flush_file() {
     let text = format!(
         r#"
         let {{ assert }} = import! std.test
-        let {{ open_file, write_slice_file, flush_file, ? }} = import! std.io
+        let {{ OpenOptions, open_file_with, write_slice_file, flush_file, ? }} = import! std.io
 
-        do file = open_file "{path}"
+        do file = open_file_with "{path}" [Write]
         do bytes_written = write_slice_file file [1b, 2b, 3b, 4b] 0 4
         assert (bytes_written == 4)
         flush_file file
