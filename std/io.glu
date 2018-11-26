@@ -1,6 +1,7 @@
 //@NO-IMPLICIT-PRELUDE
 //! Functions for working with I/O
 
+let types = import! std.io.types
 let io_prim = import! std.io.prim
 let { Read } = import! std.io.read
 let { Write } = import! std.io.write
@@ -12,13 +13,13 @@ let { Monad } = import! std.monad
 /// Opens the file at `path` in read-only mode. Fails if the file does not
 /// exist.
 let open_file path : String -> IO File =
-    let { OpenOptions } = import! std.io.prim
+    let { OpenOptions } = types
     io_prim.open_file_with path [Read]
 
 /// Opens a file in write-only mode. If the file already exists, it will be
 /// truncated. If the file does not exist, it will be created.
 let create_file path : String -> IO File =
-    let { OpenOptions } = import! std.io.prim
+    let { OpenOptions } = types
     io_prim.open_file_with path [Create, Write, Truncate]
 
 let functor : Functor IO = {

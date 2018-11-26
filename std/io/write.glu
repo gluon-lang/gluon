@@ -2,6 +2,7 @@
 let string = import! std.string
 let array = import! std.array
 let { wrap } = import! std.applicative
+let _ = import! std.io.types
 let { flat_map, wrap, default_buf_len, throw } = import! std.io.prim
 let { Disposable, dispose, is_disposed } = import! std.disposable
 let { (<-), load, ref } = import! std.reference

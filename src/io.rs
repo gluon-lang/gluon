@@ -67,7 +67,7 @@ impl fmt::Debug for GluonFile {
 }
 
 #[derive(Getable, VmType, Clone, Copy)]
-#[gluon(crate_name = "::vm")]
+#[gluon(crate_name = "::vm", vm_type = "std.io.types.OpenOptions")]
 enum OpenOptions {
     Read,
     Write,

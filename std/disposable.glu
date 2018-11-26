@@ -1,4 +1,5 @@
 //@NO-IMPLICIT-PRELUDE
+let _ = import! std.io.types
 let { wrap, flat_map } = import! std.io.prim
 let { Bool } = import! std.types
 

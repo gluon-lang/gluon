@@ -1,0 +1,9 @@
+type OpenOptions =
+    | Read
+    | Write
+    | Append
+    | Truncate
+    | Create
+    | CreateNew
+
+{ OpenOptions }
