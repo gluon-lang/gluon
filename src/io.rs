@@ -119,10 +119,6 @@ fn read_file_to_string(s: &str) -> IO<String> {
 }
 
 fn read_file(file: &GluonFile, count: usize) -> IO<RuntimeResult<Option<Vec<u8>>, String>> {
-    if count == 0 {
-        return IO::Value(RuntimeResult::Return(Some(Vec::new())));
-    }
-
     let mut file = file.0.lock().unwrap();
     let file = unwrap_file!(file);
     let mut buffer = Vec::with_capacity(count);
