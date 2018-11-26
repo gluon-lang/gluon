@@ -13,9 +13,22 @@ let array = import! std.array
 let string = import! std.string
 
 
+/// Allows reading bytes from `a`. Generally, reading from a reader
+/// advances its internal cursor. This means that multiple `read` calls
+/// with the same arguments usually __do not__ return the same value.
 #[implicit]
 type Read a = {
+    /// Tries to read `num_bytes` byte from the reader. If the reader
+    /// has reached end of file or `num_bytes` was zero, `None`
+    /// will be returned. Otherwise, an array containing as many bytes as could be
+    /// read will be returned. The length of the array is guaranteed to be in the
+    /// range `[1, num_bytes]`.
+    ///
+    /// Reaching end of file means that this reader will most likely not produce
+    /// more bytes. It _may_ produce more in the future.
     read : a -> Int -> IO (Option (Array Byte)),
+
+    /// Read all bytes until end of file is encountered. 
     read_to_end : a -> IO (Array Byte),
 }
 
@@ -23,6 +36,8 @@ let read ?read : [Read a] -> a -> Int -> IO (Option (Array Byte)) = read.read
 
 let read_to_end ?read : [Read a] -> a -> IO (Array Byte) = read.read_to_end
 
+/// Read all bytes until end of file is encountered into a `String`. Returns `None`
+/// if the read bytes are not valid UTF-8.
 let read_to_string reader : [Read a] -> a -> IO (Option String) =
     do bytes = read_to_end reader
     
@@ -30,6 +45,8 @@ let read_to_string reader : [Read a] -> a -> IO (Option String) =
     | Ok str -> wrap (Some str)
     | Err _ -> wrap None
 
+/// Constructs a `read_to_end` function from a `read` function. If it is more efficient,
+/// implementors of `Read` should provide their own, specialized version.
 let default_read_to_end read : forall a . (a -> Int -> IO (Option (Array Byte))) -> a -> IO (Array Byte) =
     let read_to_end_rec buf reader =
         do result = read reader default_buf_len
@@ -40,12 +57,19 @@ let default_read_to_end read : forall a . (a -> Int -> IO (Option (Array Byte)))
     
     read_to_end_rec []
 
+/// Wraps a reader to provide buffering. Buffering is more efficient when
+/// performing many small reads, because it avoids many costly reads from
+/// the underlying reader.
+///
+/// If you are reading all data at once, buffering is not necessary. 
 type Buffered r = {
     reader : r,
     buf : Ref (Array Byte),
     capacity : Int,
 }
 
+/// Wraps `reader` in a `Buffered` reader to provide buffering with the specified
+/// buffer capacity.
 let buffered_with_capacity reader capacity : [Read a] -> a -> Int -> Buffered a =
     assert (capacity > 0)
 
@@ -55,6 +79,7 @@ let buffered_with_capacity reader capacity : [Read a] -> a -> Int -> Buffered a 
         capacity,
     }
 
+/// Wraps `reader` in a `Buffered` reader to provide buffering.
 let buffered reader : [Read a] -> a -> Buffered a =
     buffered_with_capacity reader default_buf_len
 

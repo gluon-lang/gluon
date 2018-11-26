@@ -13,17 +13,30 @@ let { (+), (-) } = import! std.num
 let { not } = import! std.bool
 
 
+/// Allows writing bytes to a sink. To ensure that all data has been written,
+/// writes have to be paired with a `flush`.
 #[implicit]
 type Write a = {
+    /// Write some bytes from a slice of an array into the writer. The bounds
+    /// of the slice are given by `start` and `end` as a half open range `[start, end)`.
+    ///
+    /// The function returns the number of bytes that have been written. If the slice
+    /// is not empty and the returned value is `0`, the writer will likely not accept
+    /// more data. It _may_ accept more data in the future.
     write_slice : a -> Array Byte -> Int -> Int -> IO Int,
+
+    /// Flushes the buffers of the writer, ensuring that all data has been written.
     flush : a -> IO (),
 }
 
 let write_slice ?write : [Write a] -> a -> Array Byte -> Int -> Int -> IO Int = write.write_slice
 
+/// Like `write_slice`, but tries to write all of `buf`.
 let write writer buf : [Write a] -> a -> Array Byte -> IO Int =
     write_slice writer buf 0 (array.len buf)
 
+/// Writes the entire contents of `buf` into `writer`. The call will fail if `writer`
+/// does not accept all of the data.
 let write_all writer buf : [Write a] -> a -> Array Byte -> IO () =   
     let buf_len = array.len buf
 
@@ -40,17 +53,26 @@ let write_all writer buf : [Write a] -> a -> Array Byte -> IO () =
     
     inner 0
 
+/// Writes the entire string into `writer`. The call will fail if `writer`
+/// does not accept all of the data.
 let write_string writer str : [Write a] -> a -> String -> IO () = 
     write_all writer (string.as_bytes str)
 
 let flush ?write : [Write a] -> a -> IO () = write.flush
 
+/// Wraps a writer to provide buffering. Buffering is more efficient when
+/// performing many small writes, because it avoids many costly writes to
+/// the underlying writer.
+///
+/// If you are writing all data at once, buffering is not necessary.
 type Buffered w = {
     writer : w,
     buf : Ref (Array Byte),
     capacity : Int,
 }
 
+/// Wraps `writer` in a `Buffered` writer to provide buffering with the specified
+/// buffer capacity.
 let buffered_with_capacity writer capacity : [Write w] -> w -> Int -> Buffered w =
     assert (capacity > 0)
 
@@ -60,6 +82,7 @@ let buffered_with_capacity writer capacity : [Write w] -> w -> Int -> Buffered w
         capacity,
     }
 
+/// Wraps `writer` in a `Buffered` writer to provide buffering.
 let buffered writer : [Write w] -> w -> Buffered w =
     buffered_with_capacity writer default_buf_len
 
