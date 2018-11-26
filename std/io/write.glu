@@ -47,14 +47,21 @@ let flush ?write : [Write a] -> a -> IO () = write.flush
 
 type Buffered w = {
     writer : w,
-    buf : Ref (Array Byte)
+    buf : Ref (Array Byte),
+    capacity : Int,
 }
 
-let buffered writer : [Write w] -> w -> Buffered w =
+let buffered_with_capacity writer capacity : [Write w] -> w -> Int -> Buffered w =
+    assert (capacity > 0)
+
     {
         writer,
         buf = ref [],
+        capacity,
     }
+
+let buffered writer : [Write w] -> w -> Buffered w =
+    buffered_with_capacity writer default_buf_len
 
 /// Flushes the buffer of `buf_writer`. If an EOF is encountered, the call will fail.
 let flush_buffer buf_writer : [Write w] -> Buffered w -> IO () =
@@ -85,7 +92,7 @@ let write_buffered : [Write w] -> Write (Buffered w) =
         
         do _ = 
             // if the new data would spill the buffer, flush it first
-            if array.len (load buf_writer.buf) + slice_len >= default_buf_len then
+            if array.len (load buf_writer.buf) + slice_len >= buf_writer.capacity then
                 flush_buffer buf_writer
             else
                 wrap ()
@@ -94,7 +101,7 @@ let write_buffered : [Write w] -> Write (Buffered w) =
         // otherwise append it to the buffer. Appending can never exceed the buffer,
         // since the slice is always < buf_len and the buffer has been flushed if
         // necessary
-        if slice_len >= default_buf_len then
+        if slice_len >= buf_writer.capacity then
             write_slice buf_writer.writer slice start end
         else
             let _ = buf_writer.buf <- array.append (load buf_writer.buf) (array.slice slice start end)
@@ -127,6 +134,8 @@ let disposable_buffered : [Disposable w] -> [Write w] -> Disposable (Buffered w)
     write_all,
     write_string,
     flush,
+    buffered,
+    buffered_with_capacity,
 
     write_buffered,
     disposable_buffered,

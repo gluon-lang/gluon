@@ -4,6 +4,7 @@ let { wrap, flat_map, default_buf_len } = import! std.io.prim
 let { Option, Bool } = import! std.types
 let { Disposable, dispose, is_disposed } = import! std.disposable
 let { (>), (<=), (>=), min } = import! std.cmp
+let { assert } = import! std.test
 let { not } = import! std.bool
 let { ? } = import! std.int
 let { Result } = import! std.result
@@ -41,14 +42,21 @@ let default_read_to_end read : forall a . (a -> Int -> IO (Option (Array Byte)))
 
 type Buffered r = {
     reader : r,
-    buf : Ref (Array Byte)
+    buf : Ref (Array Byte),
+    capacity : Int,
 }
 
-let buffered reader : [Read a] -> a -> Buffered a =
+let buffered_with_capacity reader capacity : [Read a] -> a -> Int -> Buffered a =
+    assert (capacity > 0)
+
     {
         reader,
-        buf = ref []
+        buf = ref [],
+        capacity,
     }
+
+let buffered reader : [Read a] -> a -> Buffered a =
+    buffered_with_capacity reader default_buf_len
 
 let read_buffered : [Read r] -> Read (Buffered r) =
     let read_from_buf buf_reader num_bytes =
@@ -68,10 +76,10 @@ let read_buffered : [Read r] -> Read (Buffered r) =
             wrap (Some [])
         else if not (array.is_empty buf) then
             wrap (read_from_buf buf_reader num_bytes)
-        else if num_bytes >= default_buf_len then
+        else if num_bytes >= buf_reader.capacity then
             read buf_reader.reader num_bytes
         else
-            do new_buf = read buf_reader.reader default_buf_len
+            do new_buf = read buf_reader.reader buf_reader.capacity
 
             match new_buf with
             | Some new_buf ->
@@ -110,6 +118,7 @@ let disposable_buffered : [Disposable r] -> Disposable (Buffered r) =
     read_to_string,
     default_read_to_end,
     buffered,
+    buffered_with_capacity,
 
     read_buffered,
     disposable_buffered,
