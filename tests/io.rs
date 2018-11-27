@@ -1,12 +1,12 @@
 extern crate env_logger;
-extern crate tempfile;
 extern crate gluon;
+extern crate tempfile;
 extern crate tokio;
 
+use gluon::vm::api::{Hole, OpaqueValue, OwnedFunction, ValueRef, IO};
+use gluon::{new_vm, Compiler, Thread};
 use std::fs;
 use tempfile::NamedTempFile;
-use gluon::vm::api::{Hole, OpaqueValue, ValueRef, IO};
-use gluon::{new_vm, Compiler, Thread};
 
 #[macro_use]
 mod support;
@@ -53,25 +53,26 @@ fn read_file() {
 fn write_and_flush_file() {
     let _ = ::env_logger::try_init();
 
-    let file =  NamedTempFile::new().unwrap();
+    let file = NamedTempFile::new().unwrap();
 
     let thread = new_vm();
-    let text = format!(
-        r#"
-        let {{ assert }} = import! std.test
-        let {{ OpenOptions, open_file_with, write_slice_file, flush_file, ? }} = import! std.io
+    let text = r#"
+        let { assert } = import! std.test
+        let { OpenOptions, open_file_with, write_slice_file, flush_file, ? } = import! std.io
 
-        do file = open_file_with "{path}" [Write]
-        do bytes_written = write_slice_file file [1b, 2b, 3b, 4b] 0 4
-        assert (bytes_written == 4)
-        flush_file file
-        "#,
-        path = file.path().to_str().unwrap()
-    );
+        \path ->
+            do file = open_file_with path [Write]
+            do bytes_written = write_slice_file file [1b, 2b, 3b, 4b] 0 4
+            assert (bytes_written == 4)
+            flush_file file
+    "#;
 
-    Compiler::new()
+    let (mut test, _) = Compiler::new()
         .run_io(true)
-        .run_expr::<IO<()>>(&thread, "<top>", &text)
+        .run_expr::<OwnedFunction<fn(String) -> IO<()>>>(&thread, "<top>", &text)
+        .unwrap_or_else(|err| panic!("{}", err));
+
+    test.call(file.path().to_str().unwrap().to_owned())
         .unwrap_or_else(|err| panic!("{}", err));
 
     let content = fs::read(file.path()).unwrap();
@@ -170,8 +171,7 @@ fn spawn_on_twice() {
             Compiler::new()
                 .run_io(true)
                 .run_expr_async::<IO<String>>(&vm, "<top>", text),
-        )
-        .unwrap_or_else(|err| panic!("{}", err));
+        ).unwrap_or_else(|err| panic!("{}", err));
     match result {
         IO::Value(result) => {
             assert_eq!(result, "abc");
@@ -184,8 +184,7 @@ fn spawn_on_twice() {
             Compiler::new()
                 .run_io(true)
                 .run_expr_async::<IO<String>>(&vm, "<top>", text),
-        )
-        .unwrap_or_else(|err| panic!("{}", err));
+        ).unwrap_or_else(|err| panic!("{}", err));
     match result {
         IO::Value(result) => {
             assert_eq!(result, "abc");
@@ -216,8 +215,7 @@ fn spawn_on_runexpr() {
             Compiler::new()
                 .run_io(true)
                 .run_expr_async::<IO<String>>(&vm, "<top>", text),
-        )
-        .unwrap_or_else(|err| panic!("{}", err));
+        ).unwrap_or_else(|err| panic!("{}", err));
     match result {
         IO::Value(result) => {
             assert_eq!(result, "123");
@@ -255,8 +253,7 @@ fn spawn_on_do_action_twice() {
             Compiler::new()
                 .run_io(true)
                 .run_expr_async::<IO<i32>>(&vm, "<top>", text),
-        )
-        .unwrap_or_else(|err| panic!("{}", err));
+        ).unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(result, IO::Value(2));
 }
 
@@ -288,8 +285,7 @@ fn spawn_on_force_action_twice() {
             Compiler::new()
                 .run_io(true)
                 .run_expr_async::<IO<i32>>(&vm, "<top>", text),
-        )
-        .unwrap_or_else(|err| panic!("{}", err));
+        ).unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(result, IO::Value(1));
 }
 
@@ -320,8 +316,7 @@ fn spawn_on_runexpr_in_catch() {
             Compiler::new()
                 .run_io(true)
                 .run_expr_async::<IO<String>>(&vm, "<top>", text),
-        )
-        .unwrap_or_else(|err| panic!("{}", err));
+        ).unwrap_or_else(|err| panic!("{}", err));
     match result {
         IO::Value(result) => {
             assert_eq!(result, "123");
@@ -334,8 +329,7 @@ fn spawn_on_runexpr_in_catch() {
             Compiler::new()
                 .run_io(true)
                 .run_expr_async::<IO<String>>(&vm, "<top>", text),
-        )
-        .unwrap_or_else(|err| panic!("{}", err));
+        ).unwrap_or_else(|err| panic!("{}", err));
     match result {
         IO::Value(result) => {
             assert_eq!(result, "123");
