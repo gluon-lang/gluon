@@ -1,3 +1,5 @@
+//! Types used by the `std.io` modules.
+
 /// Modes for opening a file. Used with `std.io.open_file` and `std.io.create_file`
 type OpenOptions =
     | Read

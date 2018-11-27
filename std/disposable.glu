@@ -1,4 +1,6 @@
 //@NO-IMPLICIT-PRELUDE
+//! A `Disposable` abstracts over different kinds of resources.
+
 let _ = import! std.io.types
 let { wrap, flat_map } = import! std.io.prim
 let { Bool } = import! std.types

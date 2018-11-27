@@ -1,4 +1,6 @@
 //@NO-IMPLICIT-PRELUDE
+//! Functions and types for working with `Write`rs.
+
 let string = import! std.string
 let array = import! std.array
 let { wrap } = import! std.applicative
