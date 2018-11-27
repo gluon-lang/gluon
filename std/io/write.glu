@@ -73,7 +73,7 @@ type Buffered w = {
 
 /// Wraps `writer` in a `Buffered` writer to provide buffering with the specified
 /// buffer capacity.
-let buffered_with_capacity writer capacity : [Write w] -> w -> Int -> Buffered w =
+let buffered_with_capacity capacity writer : [Write w] -> Int -> w -> Buffered w =
     assert (capacity > 0)
 
     {
@@ -84,7 +84,7 @@ let buffered_with_capacity writer capacity : [Write w] -> w -> Int -> Buffered w
 
 /// Wraps `writer` in a `Buffered` writer to provide buffering.
 let buffered writer : [Write w] -> w -> Buffered w =
-    buffered_with_capacity writer default_buf_len
+    buffered_with_capacity default_buf_len writer
 
 /// Flushes the buffer of `buf_writer`. If an EOF is encountered, the call will fail.
 let flush_buffer buf_writer : [Write w] -> Buffered w -> IO () =

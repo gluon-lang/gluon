@@ -70,7 +70,7 @@ type Buffered r = {
 
 /// Wraps `reader` in a `Buffered` reader to provide buffering with the specified
 /// buffer capacity.
-let buffered_with_capacity reader capacity : [Read a] -> a -> Int -> Buffered a =
+let buffered_with_capacity capacity reader : [Read a] -> Int -> a -> Buffered a =
     assert (capacity > 0)
 
     {
@@ -81,7 +81,7 @@ let buffered_with_capacity reader capacity : [Read a] -> a -> Int -> Buffered a 
 
 /// Wraps `reader` in a `Buffered` reader to provide buffering.
 let buffered reader : [Read a] -> a -> Buffered a =
-    buffered_with_capacity reader default_buf_len
+    buffered_with_capacity default_buf_len reader
 
 let read_buffered : [Read r] -> Read (Buffered r) =
     let read_from_buf buf_reader num_bytes =
