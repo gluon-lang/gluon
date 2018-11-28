@@ -111,9 +111,9 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
                         let name = _gluon_base::symbol::Symbol::from(#ident);
                         _gluon_base::types::Field {
                             name: name.clone(),
-                            typ: _gluon_base::types::Type::function(
+                            typ: _gluon_base::types::Type::tuple(
+                                &mut _gluon_base::symbol::Symbols::new(),
                                 vec![#(#args),*],
-                                _gluon_base::types::Type::ident(name),
                             ),
                         }
                     }}

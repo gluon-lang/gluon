@@ -1,28 +1,35 @@
 //! The marshalling api
-use base::scoped_map::ScopedMap;
-use base::symbol::{Symbol, Symbols};
-use base::types::{self, ArcType, Type};
-use gc::{DataDef, Gc, GcPtr, Move, Traverseable};
-use thread::ThreadInternal;
-use thread::{self, Context, RootedThread, VmRoot};
-use types::{VmIndex, VmInt, VmTag};
-use value::{
-    ArrayDef, ArrayRepr, Cloner, ClosureData, DataStruct, Def, GcStr, Value, ValueArray, ValueRepr,
+use base::{
+    scoped_map::ScopedMap,
+    symbol::{Symbol, Symbols},
+    types::{self, ArcType, Field, Type},
 };
-use vm::{self, RootedValue, Status, Thread};
-use {forget_lifetime, Error, Result, Variants};
+use {
+    forget_lifetime,
+    gc::{DataDef, Gc, GcPtr, Move, Traverseable},
+    thread::{self, Context, RootedThread, ThreadInternal, VmRoot},
+    types::{VmIndex, VmInt, VmTag},
+    value::{
+        ArrayDef, ArrayRepr, Cloner, ClosureData, DataStruct, Def, GcStr, Value, ValueArray,
+        ValueRepr,
+    },
+    vm::{self, RootedValue, Status, Thread},
+    Error, Result, Variants,
+};
 
-use std::any::Any;
-use std::borrow::Borrow;
-use std::cell::Ref;
-use std::cmp::Ordering;
-use std::collections::BTreeMap;
-use std::ffi::{OsStr, OsString};
-use std::fmt;
-use std::marker::PhantomData;
-use std::ops::Deref;
-use std::path::{Path, PathBuf};
-use std::result::Result as StdResult;
+use std::{
+    any::Any,
+    borrow::Borrow,
+    cell::Ref,
+    cmp::Ordering,
+    collections::BTreeMap,
+    ffi::{OsStr, OsString},
+    fmt,
+    marker::PhantomData,
+    ops::Deref,
+    path::{Path, PathBuf},
+    result::Result as StdResult,
+};
 
 use futures::{Async, Future};
 
@@ -356,6 +363,20 @@ fn insert_forall_walker(
             }
             None
         }
+        // Avoid inserting foralls in the tuple inside the variant row
+        Type::Variant(ref row) => types::walk_move_type_opt(
+            row,
+            &mut types::ControlVisitation(|typ: &ArcType| {
+                types::walk_move_type_opt(
+                    typ,
+                    &mut types::ControlVisitation(|typ: &ArcType| {
+                        insert_forall_walker(variables, typ)
+                    }),
+                )
+            }),
+        )
+        .map(|t| ArcType::from(Type::Variant(t))),
+
         Type::Record(ref typ) => match **typ {
             Type::ExtendRow { .. } => types::walk_move_type_opt(
                 typ,

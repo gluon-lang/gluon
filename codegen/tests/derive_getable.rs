@@ -1,3 +1,4 @@
+extern crate env_logger;
 #[macro_use]
 extern crate gluon_codegen;
 extern crate gluon;
@@ -9,9 +10,18 @@ extern crate gluon_vm;
 
 mod init;
 
-use gluon::vm::api::{self, generic, OpaqueValue};
-use gluon::vm::{self, ExternModule};
-use gluon::{import, Compiler, RootedThread, Thread};
+use gluon::{
+    vm::{
+        self,
+        api::{
+            self,
+            generic::{self, L, R},
+            OpaqueValue,
+        },
+        ExternModule,
+    },
+    {import, Compiler, RootedThread, Thread},
+};
 use init::new_vm;
 
 #[derive(Getable, VmType, Debug, Serialize, Deserialize)]
@@ -103,7 +113,6 @@ fn enum_struct_variants() {
 }
 
 #[derive(Getable, VmType)]
-#[gluon(vm_type = "types.Either")]
 enum Either<L, R> {
     Left(L),
     Right(R),
@@ -111,6 +120,7 @@ enum Either<L, R> {
 
 fn load_either_mod(vm: &Thread) -> vm::Result<ExternModule> {
     let module = record! {
+        type Either l r => Either<L, R>,
         left => primitive!(1, left),
         extract_str => primitive!(1, extract_str),
     };
@@ -137,20 +147,15 @@ fn extract_str(either: Either<String, String>) -> String {
 
 #[test]
 fn enum_generic_variants() {
+    let _ = env_logger::try_init();
+
     let vm = new_vm();
     let mut compiler = Compiler::new();
 
-    let src = r#"
-        type Either l r = | Left l | Right r
-        { Either }
-    "#;
-
-    compiler.load_script(&vm, "types", src).unwrap();
     import::add_extern_module(&vm, "functions", load_either_mod);
 
     let script = r#"
-        let { Either } = import! types
-        let { left, extract_str } = import! functions
+        let { Either, left, extract_str } = import! functions
         let { assert } = import! std.test
 
         assert (left (Left 42) == Some 42)
