@@ -1070,7 +1070,6 @@ fn unpack_single_forall(l: &ArcType) -> Option<&ArcType> {
 /// Replaces all instances `Type::Generic` in `typ` with fresh type variables (`Type::Variable`)
 pub fn new_skolem_scope(subs: &Substitution<ArcType>, typ: &ArcType) -> ArcType {
     let mut id_to_var = FnvMap::default();
-    let mut id_to_constraint = FnvMap::default();
 
     let new_type = types::walk_move_type(typ.clone(), &mut |typ| {
         if let Type::Forall(ref params, ref inner_type, None) = **typ {
@@ -1091,17 +1090,6 @@ pub fn new_skolem_scope(subs: &Substitution<ArcType>, typ: &ArcType) -> ArcType 
                 Some(skolem),
             )))
         } else {
-            if let Type::Function(ArgType::Implicit, ref arg, _) = **typ {
-                types::walk_move_type(arg.clone(), &mut |typ| {
-                    if let Type::Generic(ref gen) = **typ {
-                        id_to_constraint
-                            .entry(gen.id.clone())
-                            .or_insert(Vec::new())
-                            .push(arg.clone());
-                    }
-                    None
-                });
-            }
             None
         }
     });
