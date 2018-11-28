@@ -2891,10 +2891,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
     }
 
     fn generalize_type(&mut self, typ: &ArcType) -> Option<ArcType> {
-        let replacement = self
-            .subs
-            .replace_variable(typ)
-            .map(|t| self.generalize_type(&t).unwrap_or(t));
+        let replacement = self.subs.replace_variable(typ);
         let mut typ = typ;
         if let Some(ref t) = replacement {
             typ = t;
