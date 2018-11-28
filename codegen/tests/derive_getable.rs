@@ -170,6 +170,37 @@ fn enum_generic_variants() {
     }
 }
 
+#[derive(Getable, Pushable, VmType)]
+enum Enum {
+    TestVariant,
+    TestVariant2(i32),
+}
+
+#[test]
+fn derive_generates_same_type_as_gluon_define() {
+    let _ = env_logger::try_init();
+
+    let vm = new_vm();
+    let mut compiler = Compiler::new();
+
+    import::add_extern_module(&vm, "test", |vm| {
+        ExternModule::new(vm, primitive!(1, "test", |_: Enum| ()))
+    });
+
+    let script = r#"
+        let test = import! test
+
+        type Enum = | TestVariant | TestVariant2 Int
+        
+        test TestVariant
+        test (TestVariant2 123)
+    "#;
+
+    if let Err(why) = compiler.run_expr::<()>(&vm, "test", script) {
+        panic!("{}", why);
+    }
+}
+
 #[derive(Getable)]
 struct LifetimeStruct<'a> {
     _str: &'a str,
