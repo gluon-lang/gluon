@@ -3,21 +3,24 @@
 
 extern crate codespan;
 
-use base;
-use base::ast::{DisplayEnv, Expr, IdentEnv, SpannedExpr};
-use base::error::InFile;
-use base::kind::{ArcKind, Kind, KindEnv};
-use base::metadata::{Metadata, MetadataEnv};
-use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
-use base::types::{self, Alias, ArcType, Field, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv};
+use base::{
+    self,
+    ast::{DisplayEnv, Expr, IdentEnv, SpannedExpr},
+    error::InFile,
+    kind::{ArcKind, Kind, KindEnv},
+    metadata::{Metadata, MetadataEnv},
+    symbol::{Symbol, SymbolModule, SymbolRef, Symbols},
+    types::{self, Alias, ArcType, Field, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv},
+};
 
-use check::typecheck::{self, Typecheck};
-use check::{metadata, rename};
 use parser::{self, parse_partial_expr, reparse_infix, ParseErrors};
 
-use std::cell::RefCell;
-use std::marker::PhantomData;
-use std::rc::Rc;
+use check::{
+    metadata, rename,
+    typecheck::{self, Typecheck},
+};
+
+use std::{cell::RefCell, marker::PhantomData, rc::Rc};
 
 quick_error! {
     /// Representation of all possible errors that can occur when interacting with the `vm` crate
@@ -395,13 +398,12 @@ macro_rules! test_check {
 macro_rules! assert_err {
     ($e: expr, $($id: pat),+) => {{
         #[allow(unused_imports)]
-        use check::typecheck::TypeError::*;
-        #[allow(unused_imports)]
-        use check::unify::Error::{TypeMismatch, Substitution, Other};
-        #[allow(unused_imports)]
-        use check::substitution::Error::Occurs;
-        #[allow(unused_imports)]
-        use check::unify_type::TypeError::FieldMismatch;
+        use check::{
+            typecheck::TypeError::*,
+            unify::Error::{TypeMismatch, Substitution, Other},
+            substitution::Error::Occurs,
+            unify_type::TypeError::FieldMismatch
+        };
 
         match $e {
             Ok(x) => assert!(false, "Expected error, got {}", x),
@@ -441,13 +443,13 @@ macro_rules! assert_unify_err {
 
 macro_rules! assert_multi_unify_err {
     ($e: expr, $( [ $( $id: pat ),+ ] ),+) => {{
-        use check::typecheck::TypeError::*;
         #[allow(unused_imports)]
-        use check::unify::Error::{TypeMismatch, Substitution, Other};
-        #[allow(unused_imports)]
-        use check::substitution::Error::Occurs;
-        #[allow(unused_imports)]
-        use check::unify_type::TypeError::{FieldMismatch, UnableToGeneralize, SelfRecursiveAlias, MissingFields};
+        use check::{
+            typecheck::TypeError::*,
+            unify::Error::{TypeMismatch, Substitution, Other},
+            substitution::Error::Occurs,
+            unify_type::TypeError::{FieldMismatch, UnableToGeneralize, SelfRecursiveAlias, MissingFields}
+        };
 
         match $e {
             Ok(x) => assert!(false, "Expected error, got {}", x),

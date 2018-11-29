@@ -990,11 +990,18 @@ impl<'a> Typecheck<'a> {
                                     .filter(|variant| variant.name != id.name)
                                     .cloned()
                                     .collect();
-                                scrutinee_type = Type::poly_variant(
-                                    variants,
-                                    variant_iter.current_type().clone(),
-                                );
-                                true
+
+                                // Don't remove constructors on closed records as they may fail to
+                                // unify when checking against the pattern
+                                if let Type::EmptyRow = **variant_iter.current_type() {
+                                    false
+                                } else {
+                                    scrutinee_type = Type::poly_variant(
+                                        variants,
+                                        variant_iter.current_type().clone(),
+                                    );
+                                    true
+                                }
                             }
                             _ => false,
                         };
