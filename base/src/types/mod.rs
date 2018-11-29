@@ -1598,28 +1598,23 @@ where
             if let Some(x) = self.fields.next() {
                 return Some(x);
             }
-            let rest = mem::replace(&mut self.rest, None)?;
-            let done = match **rest {
-                Type::Record(_) | Type::Variant(_) | Type::ExtendRow { .. } => false,
-                _ => true,
+            match ***self.rest.as_ref()? {
+                Type::Record(_) | Type::Variant(_) | Type::ExtendRow { .. } => (),
+                _ => return None,
             };
 
-            if done {
-                self.rest = match **rest {
-                    Type::Record(ref mut row) | Type::Variant(ref mut row) => Some(row),
-                    Type::ExtendRow {
-                        ref mut fields,
-                        ref mut rest,
-                        ..
-                    } => {
-                        self.fields = fields.iter_mut();
-                        Some(rest)
-                    }
-                    _ => unreachable!(),
+            let rest = mem::replace(&mut self.rest, None)?;
+            self.rest = match **rest {
+                Type::Record(ref mut row) | Type::Variant(ref mut row) => Some(row),
+                Type::ExtendRow {
+                    ref mut fields,
+                    ref mut rest,
+                    ..
+                } => {
+                    self.fields = fields.iter_mut();
+                    Some(rest)
                 }
-            } else {
-                self.rest = Some(rest);
-                return None;
+                _ => unreachable!(),
             };
         }
     }
