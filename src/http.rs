@@ -410,7 +410,8 @@ pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
             listen => primitive!(2, async fn listen),
             read_chunk => primitive!(1, async fn read_chunk),
             write_response => primitive!(2, async fn write_response),
-            uri => uri_binds!(path host port query to_string)
+            port => primitive!(1, "std.http.prim.uri.port", |u: &Uri| (u.0).port_part().map(|p| p.as_u16())),
+            uri => uri_binds!(path host query to_string)
         },
     )
 }
