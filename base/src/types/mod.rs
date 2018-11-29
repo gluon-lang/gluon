@@ -3,6 +3,7 @@ use std::{
     fmt,
     hash::Hash,
     marker::PhantomData,
+    mem,
     ops::{Deref, DerefMut},
     sync::Arc,
 };
@@ -1175,7 +1176,7 @@ pub fn row_iter<T>(typ: &T) -> RowIterator<T> {
 pub fn row_iter_mut<Id, T>(typ: &mut T) -> RowIteratorMut<Id, T> {
     RowIteratorMut {
         fields: [].iter_mut(),
-        rest: typ,
+        rest: Some(typ),
     }
 }
 
@@ -1582,12 +1583,12 @@ where
 
 pub struct RowIteratorMut<'a, Id: 'a, T: 'a> {
     fields: ::std::slice::IterMut<'a, Field<Id, T>>,
-    rest: *mut T,
+    rest: Option<&'a mut T>,
 }
 
 impl<'a, Id, T> RowIteratorMut<'a, Id, T> {
     pub fn current_type(&mut self) -> &mut T {
-        unsafe { &mut *self.rest }
+        self.rest.as_mut().unwrap()
     }
 }
 
@@ -1602,22 +1603,29 @@ where
             if let Some(x) = self.fields.next() {
                 return Some(x);
             }
-            // The lifetime checker can't see that self.rest will be unused after we assign the
-            // contents to it so we must just a raw pointer get around it
-            unsafe {
-                match **self.rest {
-                    Type::Record(ref mut row) | Type::Variant(ref mut row) => self.rest = row,
+            let rest = mem::replace(&mut self.rest, None)?;
+            let done = match **rest {
+                Type::Record(_) | Type::Variant(_) | Type::ExtendRow { .. } => false,
+                _ => true,
+            };
+
+            if done {
+                self.rest = match **rest {
+                    Type::Record(ref mut row) | Type::Variant(ref mut row) => Some(row),
                     Type::ExtendRow {
                         ref mut fields,
                         ref mut rest,
                         ..
                     } => {
                         self.fields = fields.iter_mut();
-                        self.rest = rest;
+                        Some(rest)
                     }
-                    _ => return None,
+                    _ => unreachable!(),
                 }
-            }
+            } else {
+                self.rest = Some(rest);
+                return None;
+            };
         }
     }
 }
