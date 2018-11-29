@@ -320,7 +320,7 @@ fn main_() -> Result<(), Error> {
 
     let iter = test_files("tests/pass")?.into_iter();
 
-    let pool = futures_cpupool::CpuPool::new(1);
+    let pool = futures_cpupool::CpuPool::new_num_cpus();
     let mut runtime = tokio::runtime::Runtime::new()?;
     let pass_tests_future = stream::futures_ordered(
         iter.filter_map(|filename| {
