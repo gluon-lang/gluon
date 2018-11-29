@@ -190,12 +190,12 @@ struct Editor {
     editor: Mutex<rustyline::Editor<Completer>>,
 }
 
-impl_userdata!{ Editor }
+impl_userdata! { Editor }
 
 #[derive(Userdata)]
 struct CpuPool(self::futures_cpupool::CpuPool);
 
-impl_userdata!{ CpuPool }
+impl_userdata! { CpuPool }
 
 #[derive(Serialize, Deserialize)]
 pub enum ReadlineError {

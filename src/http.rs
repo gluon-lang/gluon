@@ -182,18 +182,18 @@ struct Uri(http::Uri);
 // definitions in http_types.glu
 field_decl! { method, uri, status, body, request, response, headers }
 
-type Request = record_type!{
+type Request = record_type! {
     method => String,
     uri => Uri,
     body => Body
 };
 
-type Response = record_type!{
+type Response = record_type! {
     status => u16,
     headers => Headers
 };
 
-type HttpState = record_type!{
+type HttpState = record_type! {
     request => Request,
     response => ResponseBody
 };
@@ -252,7 +252,7 @@ fn listen(
             };
             let (response_sender, response_body) = hyper::Body::channel();
             let response_sender = Arc::new(Mutex::new(Some(response_sender)));
-            let http_state = record_no_decl!{
+            let http_state = record_no_decl! {
                 request => gluon_request,
                 response => ResponseBody(response_sender.clone())
             };
@@ -261,29 +261,30 @@ fn listen(
             let mut handle = try_future!(self.handle.re_root(child_thread));
 
             Box::new(
-                handle
-                    .call_async(self.handler.clone(), http_state)
-                    .then(move |result| match result {
+                handle.call_async(self.handler.clone(), http_state).then(
+                    move |result| match result {
                         Ok(value) => {
                             match value {
-                                IO::Value(record_p!{ status, headers }) => {
+                                IO::Value(record_p! { status, headers }) => {
                                     // Drop the sender to so that it the receiver stops waiting for
                                     // more chunks
                                     *response_sender.lock().unwrap() = None;
 
-                                    let status = StatusCode::from_u16(status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-                                        let mut response = http::Response::builder()
-                                            .status(status)
-                                            .body(response_body).unwrap();
+                                    let status = StatusCode::from_u16(status)
+                                        .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+                                    let mut response = http::Response::builder()
+                                        .status(status)
+                                        .body(response_body)
+                                        .unwrap();
                                     *response.headers_mut() = headers.0;
                                     Ok(response)
                                 }
                                 IO::Exception(err) => {
                                     error!("{}", err);
-                                    Ok(
-                                        http::Response::builder()
-                                            .status(StatusCode::INTERNAL_SERVER_ERROR).body("".into()).unwrap()
-                                    )
+                                    Ok(http::Response::builder()
+                                        .status(StatusCode::INTERNAL_SERVER_ERROR)
+                                        .body("".into())
+                                        .unwrap())
                                 }
                             }
                         }
@@ -294,7 +295,8 @@ fn listen(
                                 .body("".into())
                                 .unwrap())
                         }
-                    }),
+                    },
+                ),
             )
         }
     }

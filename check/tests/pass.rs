@@ -3,6 +3,8 @@ extern crate collect_mac;
 extern crate env_logger;
 #[macro_use]
 extern crate pretty_assertions;
+#[macro_use]
+extern crate quick_error;
 
 extern crate gluon_base as base;
 extern crate gluon_check as check;
@@ -123,10 +125,7 @@ in Test2 (\x -> x #Int+ 2)
     let test2 = AliasData::new(
         intern("Test2"),
         vec![],
-        Type::variant(vec![Field {
-            name: intern("Test2"),
-            typ: Type::function(vec![typ("Test")], typ("Test2")),
-        }]),
+        Type::variant(vec![support::variant("Test2", &[typ("Test")])]),
     );
     let expected = Ok(Alias::group(vec![test, test2])[1].as_type().clone());
 
@@ -312,6 +311,7 @@ in eq_Int
     let result = support::typecheck(text);
     let bool = Type::alias(
         support::intern_unscoped("Bool"),
+        Vec::new(),
         Type::ident(support::intern_unscoped("Bool")),
     );
     let eq = alias(
@@ -347,17 +347,7 @@ let option_Functor: Functor Option = {
 in option_Functor.map (\x -> x #Int- 1) (Some 2)
 ";
     let result = support::typecheck(text);
-    let variants = Type::variant(vec![
-        Field::new(
-            support::intern_unscoped("None"),
-            support::typ_a("Option", vec![typ("a")]),
-        ),
-        Field::new(
-            support::intern_unscoped("Some"),
-            Type::function(vec![typ("a")], support::typ_a("Option", vec![typ("a")])),
-        ),
-    ]);
-    let option = alias("Option", &["a"], variants);
+    let option = support::alias_variant("Option", &["a"], &[("None", &[]), ("Some", &[typ("a")])]);
 
     let expected = Ok(Type::app(option, collect![typ("Int")]));
 
@@ -393,16 +383,12 @@ test
     let result = support::typecheck(text);
     assert!(result.is_ok(), "{}", result.unwrap_err());
 
-    let variants = Type::variant(vec![Field::new(
-        support::intern_unscoped("T"),
-        Type::function(vec![typ("a")], support::typ_a("Test", vec![typ("a")])),
-    )]);
     let expected = Ok(Type::app(
-        alias("Test", &["a"], variants),
+        support::alias_variant("Test", &["a"], &[("T", &[typ("a")])]),
         collect![Type::unit()],
     ));
 
-    assert_eq!(result, expected);
+    assert_req!(result, expected);
 }
 
 #[test]
@@ -542,14 +528,10 @@ fn type_pattern() {
 type Test = | Test String Int in { Test, x = 1 }
 "#;
     let result = support::typecheck(text);
-    let variant = Type::function(vec![typ("String"), typ("Int")], typ("Test"));
-    let test = Type::variant(vec![Field {
-        name: intern("Test"),
-        typ: variant,
-    }]);
+    let test = Type::variant(vec![support::variant("Test", &[typ("String"), typ("Int")])]);
     let types = vec![Field {
         name: support::intern_unscoped("Test"),
-        typ: Alias::new(intern("Test"), test),
+        typ: Alias::new(intern("Test"), Vec::new(), test),
     }];
     let fields = vec![Field {
         name: intern("x"),
@@ -557,7 +539,7 @@ type Test = | Test String Int in { Test, x = 1 }
     }];
     let expected = Ok(Type::record(types, fields));
 
-    assert_eq!(result.map(support::close_record), expected);
+    assert_req!(result.map(support::close_record), expected);
 }
 
 #[test]
@@ -586,24 +568,16 @@ let return x: a -> IdT Test a = Test (Id x)
 return 1
 "#;
     let result = support::typecheck(text);
-    let variant = |name| {
-        Type::variant(vec![Field::new(
-            intern(name),
-            Type::function(vec![typ("a")], Type::app(typ(name), collect![typ("a")])),
-        )])
-    };
-    let test = alias("Test", &["a"], variant("Test"));
+    let test = support::alias_variant("Test", &["a"], &[("Test", &[typ("a")])]);
     let m = Generic::new(intern("m"), Kind::function(Kind::typ(), Kind::typ()));
 
-    let id = alias("Id", &["a"], variant("Id"));
+    let id = support::alias_variant("Id", &["a"], &[("Id", &[typ("a")])]);
     let id_t = Type::alias(
         intern("IdT"),
-        Type::forall(
-            vec![m.clone(), Generic::new(intern("a"), Kind::typ())],
-            Type::app(
-                Type::generic(m),
-                collect![Type::app(id, collect![typ("a")])],
-            ),
+        vec![m.clone(), Generic::new(intern("a"), Kind::typ())],
+        Type::app(
+            Type::generic(m),
+            collect![Type::app(id, collect![typ("a")])],
         ),
     );
     let expected = Ok(Type::app(id_t, collect![test, typ("Int")]));

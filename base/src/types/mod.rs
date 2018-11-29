@@ -1,15 +1,19 @@
-use std::borrow::Cow;
-use std::fmt;
-use std::hash::Hash;
-use std::marker::PhantomData;
-use std::ops::{Deref, DerefMut};
-use std::sync::Arc;
+use std::{
+    borrow::Cow,
+    fmt,
+    hash::Hash,
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+    sync::Arc,
+};
 
 use pretty::{Arena, Doc, DocAllocator, DocBuilder};
 
 use smallvec::SmallVec;
 
 use stable_deref_trait::StableDeref;
+
+use itertools::Itertools;
 
 use ast::{Commented, EmptyEnv, IdentEnv};
 use fnv::FnvMap;
@@ -18,7 +22,7 @@ use merge::merge;
 use metadata::Comment;
 use pos::{BytePos, HasSpan, Span};
 use source::Source;
-use symbol::{Symbol, SymbolRef};
+use symbol::{Name, Symbol, SymbolRef};
 
 #[cfg(feature = "serde")]
 use serde::de::DeserializeState;
@@ -126,7 +130,11 @@ where
     }
 
     pub fn variant(&self, fields: Vec<Field<Id, T>>) -> T {
-        Type::poly_variant(fields, self.empty_row())
+        self.poly_variant(fields, self.empty_row())
+    }
+
+    pub fn poly_variant(&self, fields: Vec<Field<Id, T>>, rest: T) -> T {
+        Type::poly_variant(fields, rest)
     }
 
     pub fn record(&self, types: Vec<Field<Id, Alias<Id, T>>>, fields: Vec<Field<Id, T>>) -> T {
@@ -322,7 +330,7 @@ where
 {
     fn from(data: AliasData<Id, T>) -> Alias<Id, T> {
         Alias {
-            _typ: Type::alias(data.name, data.typ),
+            _typ: Type::alias(data.name, data.args, data.typ),
             _marker: PhantomData,
         }
     }
@@ -338,9 +346,9 @@ impl<Id, T> Alias<Id, T>
 where
     T: From<Type<Id, T>>,
 {
-    pub fn new(name: Id, typ: T) -> Alias<Id, T> {
+    pub fn new(name: Id, args: Vec<Generic<Id>>, typ: T) -> Alias<Id, T> {
         Alias {
-            _typ: Type::alias(name, typ),
+            _typ: Type::alias(name, args, typ),
             _marker: PhantomData,
         }
     }
@@ -488,6 +496,8 @@ where
 pub struct AliasData<Id, T> {
     #[cfg_attr(feature = "serde_derive", serde(state))]
     pub name: Id,
+    #[cfg_attr(feature = "serde_derive", serde(state))]
+    args: Vec<Generic<Id>>,
     /// The type that is being aliased
     #[cfg_attr(feature = "serde_derive", serde(state))]
     typ: T,
@@ -510,10 +520,7 @@ where
     T: From<Type<Id, T>>,
 {
     pub fn new(name: Id, args: Vec<Generic<Id>>, typ: T) -> AliasData<Id, T> {
-        AliasData {
-            name,
-            typ: Type::forall(args, typ),
-        }
+        AliasData { name, args, typ }
     }
 }
 
@@ -522,14 +529,15 @@ where
     T: Deref<Target = Type<Id, T>>,
 {
     pub fn params(&self) -> &[Generic<Id>] {
-        self.typ.params()
+        &self.args
+    }
+
+    pub fn params_mut(&mut self) -> &mut [Generic<Id>] {
+        &mut self.args
     }
 
     pub fn aliased_type(&self) -> &T {
-        match *self.typ {
-            Type::Forall(_, ref typ, _) => typ,
-            _ => &self.typ,
-        }
+        &self.typ
     }
 }
 
@@ -586,6 +594,18 @@ pub type AppVec<T> = SmallVec<[T; 2]>;
 impl<Id, T> Field<Id, T> {
     pub fn new(name: Id, typ: T) -> Field<Id, T> {
         Field { name, typ }
+    }
+
+    pub fn ctor<S, I>(symbols: &mut S, name: Id, elems: I) -> Self
+    where
+        S: ?Sized + IdentEnv<Ident = Id>,
+        I: IntoIterator<Item = T>,
+        T: From<Type<Id, T>>,
+    {
+        Field {
+            name,
+            typ: Type::tuple(symbols, elems),
+        }
     }
 }
 
@@ -670,6 +690,10 @@ pub enum Type<Id, T = ArcType<Id>> {
     /// in reference counted pointers. This is a bit of a wart at the moment and
     /// _may_ cause spurious unification failures.
     Ident(#[cfg_attr(feature = "serde_derive", serde(state))] Id),
+    Projection(
+        #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::seq"))]
+        AppVec<Id>,
+    ),
     /// An unbound type variable that may be unified with other types. These
     /// will eventually be converted into `Type::Generic`s during generalization.
     Variable(#[cfg_attr(feature = "serde_derive", serde(state))] TypeVariable),
@@ -838,15 +862,19 @@ where
         T::from(Type::Variable(typ))
     }
 
-    pub fn alias(name: Id, typ: T) -> T {
+    pub fn alias(name: Id, args: Vec<Generic<Id>>, typ: T) -> T {
         T::from(Type::Alias(AliasRef {
             index: 0,
-            group: Arc::new(vec![AliasData { name, typ }]),
+            group: Arc::new(vec![AliasData { name, args, typ }]),
         }))
     }
 
     pub fn ident(id: Id) -> T {
         T::from(Type::Ident(id))
+    }
+
+    pub fn projection(id: AppVec<Id>) -> T {
+        T::from(Type::Projection(id))
     }
 
     pub fn function_builtin() -> T {
@@ -977,7 +1005,7 @@ where
             Type::Skolem(ref skolem) => Cow::Borrowed(&skolem.kind),
             Type::Generic(ref gen) => Cow::Borrowed(&gen.kind),
             // FIXME can be another kind
-            Type::Ident(_) => Cow::Owned(Kind::typ()),
+            Type::Ident(_) | Type::Projection(_) => Cow::Owned(Kind::typ()),
             Type::Alias(ref alias) => {
                 return if alias.params().len() < applied_args {
                     alias.typ.kind_(applied_args - alias.params().len())
@@ -1121,6 +1149,21 @@ where
     match **typ {
         Type::Forall(_, ref typ, _) => remove_forall(typ),
         _ => typ,
+    }
+}
+
+pub fn remove_forall_mut<'a, Id, T>(typ: &'a mut T) -> &'a mut T
+where
+    T: DerefMut<Target = Type<Id, T>>,
+    Id: 'a,
+{
+    if let Type::Forall(_, _, _) = **typ {
+        match **typ {
+            Type::Forall(_, ref mut typ, _) => remove_forall_mut(typ),
+            _ => unreachable!(),
+        }
+    } else {
+        typ
     }
 }
 
@@ -1320,22 +1363,6 @@ impl<'a, Id> Iterator for ForallScopeIter<'a, Id> {
 }
 
 impl ArcType {
-    pub fn params_mut(&mut self) -> &mut [Generic<Symbol>] {
-        use std::sync::Arc;
-
-        match *Arc::make_mut(&mut self.typ) {
-            /*
-            // TODO
-            Type::Alias(ref mut alias) => {
-                Arc::make_mut(alias.unresolved_type_mut().typ).params_mut()
-            }
-            */
-            Type::Forall(ref mut params, _, _) => params,
-            Type::App(ref mut id, _) => id.params_mut(),
-            _ => &mut [],
-        }
-    }
-
     /// Applies a list of arguments to a parameterised type, returning `Some`
     /// if the substitution was successful.
     ///
@@ -1346,9 +1373,8 @@ impl ArcType {
     /// args = [Error, Option a]
     /// result = | Err Error | Ok (Option a)
     /// ```
-    pub fn apply_args(&self, args: &[ArcType]) -> Option<ArcType> {
-        let params = self.params();
-        let typ = self.remove_forall().clone();
+    pub fn apply_args(&self, params: &[Generic<Symbol>], args: &[ArcType]) -> Option<ArcType> {
+        let typ = self.clone();
 
         // It is ok to take the type only if it is fully applied or if it
         // the missing argument only appears in order at the end, i.e:
@@ -1381,7 +1407,7 @@ impl ArcType {
             return None;
         };
 
-        Some(walk_move_type(typ.remove_forall().clone(), &mut |typ| {
+        Some(walk_move_type(typ.clone(), &mut |typ| {
             match **typ {
                 Type::Generic(ref generic) => {
                     // Replace the generic variable with the type from the list
@@ -1842,11 +1868,11 @@ where
             }
             Type::Variable(ref var) => arena.text(format!("{}", var.id)),
             Type::Skolem(ref skolem) => chain![
-                    arena;
-                    skolem.name.as_ref(),
-                    "@",
-                    skolem.id.to_string()
-                ],
+                arena;
+                skolem.name.as_ref(),
+                "@",
+                skolem.id.to_string()
+            ],
             Type::Generic(ref gen) => arena.text(gen.id.as_ref()),
             Type::Function(..) => self.pretty_function(printer).nest(INDENT),
             Type::App(ref t, ref args) => match self.typ.as_function() {
@@ -1865,31 +1891,57 @@ where
             Type::Variant(ref row) => {
                 let mut first = true;
 
-                let doc = match **row {
-                    Type::EmptyRow => arena.nil(),
-                    Type::ExtendRow { ref fields, .. } => {
-                        arena.concat(fields.iter().map(|field| {
-                            chain![arena;
-                                if first {
-                                    first = false;
-                                    arena.nil()
-                                } else {
-                                    arena.newline()
-                                },
+                let mut doc = arena.nil();
+                let mut row = row;
+                loop {
+                    row = match **row {
+                        Type::EmptyRow => break,
+                        Type::ExtendRow {
+                            ref fields,
+                            ref rest,
+                            ..
+                        } => {
+                            doc = doc.append(arena.concat(fields.iter().map(|field| {
+                                chain![arena;
+                                    if first {
+                                        first = false;
+                                        arena.nil()
+                                    } else {
+                                        arena.newline()
+                                    },
+                                    "| ",
+                                    field.name.as_ref(),
+                                    if field.typ.as_function().is_some() {
+                                        arena.concat(arg_iter(&field.typ).map(|arg| {
+                                            chain![arena;
+                                                " ",
+                                                dt(Prec::Constructor, arg).pretty(printer)
+                                            ]
+                                        }))
+                                    } else {
+                                        arena.concat(row_iter(&field.typ).map(|field| {
+                                            chain![arena;
+                                                " ",
+                                                dt(Prec::Constructor, &field.typ).pretty(printer)
+                                            ]
+                                        }))
+                                    }
+                                ]
+                                .group()
+                            })));
+                            rest
+                        }
+                        _ => {
+                            doc = chain![arena;
+                                doc,
+                                arena.newline(),
                                 "| ",
-                                field.name.as_ref(),
-                                arena.concat(arg_iter(&field.typ).map(|arg| {
-                                    chain![arena;
-                                        " ",
-                                        dt(Prec::Constructor, arg).pretty(printer)
-                                    ]
-                                }))
-                            ]
-                            .group()
-                        }))
-                    }
-                    _ => ice!("Unexpected type in variant"),
-                };
+                                top(row).pretty(printer)
+                            ];
+                            break;
+                        }
+                    };
+                }
 
                 p.enclose(Prec::Constructor, arena, doc).group()
             }
@@ -1960,7 +2012,12 @@ where
             // This should not be displayed normally as it should only exist in `ExtendRow`
             // which handles `EmptyRow` explicitly
             Type::EmptyRow => arena.text("EmptyRow"),
-            Type::Ident(ref id) => printer.symbol(id),
+            Type::Ident(ref id) => printer.symbol_with(id, Name::new(id.as_ref()).name().as_str()),
+            Type::Projection(ref ids) => arena.concat(
+                ids.iter()
+                    .map(|id| printer.symbol(id))
+                    .intersperse(arena.text(".")),
+            ),
             Type::Alias(ref alias) => printer.symbol(&alias.name),
         };
         match **typ {
@@ -2027,7 +2084,7 @@ where
                     if filter == Filter::RetainKey {
                         arena.text("...")
                     } else {
-                         top(remove_forall(&field.typ.typ)).pretty(printer)
+                         top(&field.typ.typ).pretty(printer)
                     },
                     if i + 1 != types.len() || print_any_field {
                         arena.text(",")
@@ -2138,13 +2195,13 @@ where
         let arena = printer.arena;
         match self.typ.as_function_with_type() {
             Some((arg_type, arg, ret)) => chain![arena;
-                    if arg_type == ArgType::Implicit { "[" } else { "" },
-                    dt(Prec::Function, arg).pretty(printer),
-                    if arg_type == ArgType::Implicit { "]" } else { "" },
-                    printer.space_after(arg.span().end()),
-                    "-> ",
-                    top(ret).pretty_function_(printer)
-                ],
+                if arg_type == ArgType::Implicit { "[" } else { "" },
+                dt(Prec::Function, arg).pretty(printer),
+                if arg_type == ArgType::Implicit { "]" } else { "" },
+                printer.space_after(arg.span().end()),
+                "-> ",
+                top(ret).pretty_function_(printer)
+            ],
             None => self.pretty(printer),
         }
     }
@@ -2211,6 +2268,7 @@ where
         | Type::Generic(_)
         | Type::Skolem(_)
         | Type::Ident(_)
+        | Type::Projection(_)
         | Type::Alias(_)
         | Type::EmptyRow => (),
     }
@@ -2258,6 +2316,7 @@ where
         | Type::Generic(_)
         | Type::Skolem(_)
         | Type::Ident(_)
+        | Type::Projection(_)
         | Type::Alias(_)
         | Type::EmptyRow => (),
     }
@@ -2422,6 +2481,7 @@ where
         | Type::Skolem(_)
         | Type::Generic(_)
         | Type::Ident(_)
+        | Type::Projection(_)
         | Type::Alias(_)
         | Type::EmptyRow => None,
     }
@@ -2474,6 +2534,7 @@ where
 {
     AliasData {
         name: alias.name.clone(),
+        args: alias.args.clone(),
         typ: translate(&alias.typ),
     }
 }
@@ -2539,6 +2600,7 @@ where
         Type::Variable(ref var) => Type::variable(var.clone()),
         Type::Generic(ref gen) => Type::generic(gen.clone()),
         Type::Ident(ref id) => Type::ident(id.clone()),
+        Type::Projection(ref ids) => Type::projection(ids.clone()),
         Type::Alias(ref alias) => Type::ident(alias.name.clone()),
         Type::EmptyRow => cache.empty_row(),
     }

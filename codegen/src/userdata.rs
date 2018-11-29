@@ -34,15 +34,15 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics) -> TokenStr
     let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[]);
 
     let gluon = match container.crate_name {
-        CrateName::Some(ref ident) => quote!{
+        CrateName::Some(ref ident) => quote! {
             use #ident::api as _gluon_api;
             use #ident::gc as _gluon_gc;
         },
-        CrateName::GluonVm => quote!{
+        CrateName::GluonVm => quote! {
             use api as _gluon_api;
             use thread as _gluon_gc;
         },
-        CrateName::None => quote!{
+        CrateName::None => quote! {
             use gluon::vm::api as _gluon_api;
             use gluon::vm::gc as _gluon_gc;
         },

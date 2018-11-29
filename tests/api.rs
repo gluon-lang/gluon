@@ -317,7 +317,7 @@ fn use_type_from_type_field() {
             let (name, typ) = gluon::vm::api::typ::from_rust::<Self>(vm).unwrap();
             vm.register_type_as(
                 name.clone(),
-                Alias::new(name, typ),
+                Alias::new(name, Vec::new(), typ),
                 ::std::any::TypeId::of::<Self>(),
             )
             .unwrap()
@@ -325,7 +325,7 @@ fn use_type_from_type_field() {
     }
 
     add_extern_module(&vm, "test_types", |vm| {
-        ExternModule::new(vm, record!{ type Test => Test })
+        ExternModule::new(vm, record! { type Test => Test })
     });
     let text = r#"
         let { Test } = import! test_types
@@ -345,12 +345,12 @@ fn use_rust_created_record_as_polymorphic() {
     load_script(&mut vm, "test", test).unwrap_or_else(|err| panic!("{}", err));
 
     field_decl! { x }
-    type Test = record_type!{
+    type Test = record_type! {
         x => i32
     };
 
     let mut f: FunctionRef<fn(Test) -> VmInt> = vm.get_global("test").unwrap();
-    let result = f.call(record_no_decl!{ x => 1 }).unwrap();
+    let result = f.call(record_no_decl! { x => 1 }).unwrap();
     assert_eq!(result, 1);
 }
 

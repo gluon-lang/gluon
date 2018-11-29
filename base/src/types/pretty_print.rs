@@ -37,23 +37,23 @@ pub fn doc_comment<'a, A>(
                     .map(|line| arena.text("/// ").append(line).append(arena.newline())),
             ),
             CommentType::Block => chain![arena;
-                        "/**",
-                        arena.newline(),
-                        arena.concat(comment.content.lines().map(|line| {
-                            let line = line.trim();
-                            if line.is_empty() {
-                                arena.newline()
-                            } else {
-                                chain![arena;
-                                    " ",
-                                    line,
-                                    arena.newline()
-                                ]
-                            }
-                        })),
-                        "*/",
+                "/**",
+                arena.newline(),
+                arena.concat(comment.content.lines().map(|line| {
+                    let line = line.trim();
+                    if line.is_empty() {
                         arena.newline()
-                    ],
+                    } else {
+                        chain![arena;
+                            " ",
+                            line,
+                            arena.newline()
+                        ]
+                    }
+                })),
+                "*/",
+                arena.newline()
+            ],
         },
         None => arena.nil(),
     }
@@ -187,7 +187,11 @@ impl<'a, I, A> Printer<'a, I, A> {
     where
         I: AsRef<str>,
     {
-        let doc = self.arena.text(symbol.as_ref());
+        self.symbol_with(symbol, symbol.as_ref())
+    }
+
+    pub fn symbol_with(&self, symbol: &'a I, text: &'a str) -> DocBuilder<'a, Arena<'a, A>, A> {
+        let doc = self.arena.text(text);
         match (self.annotate_symbol)(symbol) {
             Some(ann) => doc.annotate(ann),
             None => doc,

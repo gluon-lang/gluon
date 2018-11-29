@@ -79,7 +79,7 @@ pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
 
     ExternModule::new(
         vm,
-        record!{
+        record! {
             type Error => Error,
             type Regex => Regex,
             type Match => Match,

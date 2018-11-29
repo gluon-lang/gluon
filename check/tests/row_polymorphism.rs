@@ -1,6 +1,8 @@
 #[macro_use]
 extern crate collect_mac;
 extern crate env_logger;
+#[macro_use]
+extern crate quick_error;
 
 extern crate gluon_base as base;
 extern crate gluon_check as check;
@@ -259,4 +261,40 @@ fn row_kinds_error() {
     );
     let result = kindcheck.kindcheck_expected(&mut typ, &Kind::row());
     assert!(result.is_err());
+}
+
+#[test]
+fn polymorphic_variants() {
+    let _ = env_logger::try_init();
+
+    let text = r#"
+type AA r = | A Int .. r
+type BB r = | B String .. r
+if True then
+    A 123
+else
+    B "abc"
+"#;
+    let result = support::typecheck(text);
+
+    assert_req!(
+        result.map(|t| t.to_string()),
+        Ok("forall a . | A Int\n| B String\n| a")
+    );
+}
+
+#[test]
+fn closed_row() {
+    let _ = env_logger::try_init();
+    let text = r#"
+type AA = | A Int
+type BB r = | B String .. r
+if True then
+    A 123
+else
+    B "abc"
+"#;
+    let result = support::typecheck(text);
+
+    assert_unify_err!(result, Other(MissingFields(..)));
 }

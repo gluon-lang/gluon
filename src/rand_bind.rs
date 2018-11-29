@@ -27,7 +27,7 @@ fn gen_int_range(low: VmInt, high: VmInt) -> IO<VmInt> {
     IO::Value(rand::thread_rng().gen_range(low, high))
 }
 
-type RngNext<G> = record_type!{
+type RngNext<G> = record_type! {
     value => VmInt,
     gen => G
 };
@@ -43,7 +43,7 @@ fn xor_shift_new(seed: &[u8]) -> RuntimeResult<XorShiftRng, String> {
 
 fn xor_shift_next(gen: &XorShiftRng) -> RngNext<XorShiftRng> {
     let mut gen = gen.clone();
-    record_no_decl!{
+    record_no_decl! {
         value => gen.0.gen(),
         gen => gen
     }
@@ -62,7 +62,7 @@ pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
 
     ExternModule::new(
         vm,
-        record!{
+        record! {
             type XorShiftRng => XorShiftRng,
             next_int => primitive!(1, std::random::prim::next_int),
             next_float => primitive!(1, std::random::prim::next_float),

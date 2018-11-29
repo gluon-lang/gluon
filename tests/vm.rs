@@ -18,7 +18,7 @@ use gluon::vm::channel::Sender;
 use gluon::vm::thread::{RootedThread, Thread, ThreadInternal};
 use gluon::{vm, Compiler, Error};
 
-test_expr!{ pass_function_value,
+test_expr! { pass_function_value,
 r"
 let lazy: () -> Int = \x -> 42 in
 let test: (() -> Int) -> Int = \f -> f () #Int+ 10
@@ -27,7 +27,7 @@ in test lazy
 52i32
 }
 
-test_expr!{ lambda,
+test_expr! { lambda,
 r"
 let y = 100 in
 let f = \x -> y #Int+ x #Int+ 1
@@ -36,7 +36,7 @@ in f(22)
 123i32
 }
 
-test_expr!{ add_operator,
+test_expr! { add_operator,
 r"
 #[infix(left, 6)]
 let (+) = \x y -> x #Int+ y in 1 + 2 + 3
@@ -44,19 +44,19 @@ let (+) = \x y -> x #Int+ y in 1 + 2 + 3
 6i32
 }
 
-test_expr!{ divide_int,
+test_expr! { divide_int,
 r" 120 #Int/ 4
 ",
 30i32
 }
 
-test_expr!{ divide_float,
+test_expr! { divide_float,
 r" 120.0 #Float/ 4.0
 ",
 30.0f64
 }
 
-test_expr!{ infix_propagates,
+test_expr! { infix_propagates,
 r"
 #[infix(left, 6)]
 let (+) = \x y -> x #Int+ y
@@ -145,7 +145,7 @@ in Some 1
     }
 }
 
-test_expr!{ recursive_function,
+test_expr! { recursive_function,
 r"
 rec let fib x =
     if x #Int< 3
@@ -156,7 +156,7 @@ in fib 7
 13i32
 }
 
-test_expr!{ mutually_recursive_function,
+test_expr! { mutually_recursive_function,
 r"
 rec
 let f x = if x #Int< 0
@@ -168,7 +168,7 @@ in g 3
 -1
 }
 
-test_expr!{ no_capture_self_function,
+test_expr! { no_capture_self_function,
 r"
 let x = 2 in
 let f y = x
@@ -177,21 +177,21 @@ in f 4
 2i32
 }
 
-test_expr!{ primitive_char_eq,
+test_expr! { primitive_char_eq,
 r"
 'a' #Char== 'a'
 ",
 true
 }
 
-test_expr!{ primitive_char_lt,
+test_expr! { primitive_char_lt,
 r"
 'a' #Char< 'a'
 ",
 false
 }
 
-test_expr!{ primitive_byte_arithmetic,
+test_expr! { primitive_byte_arithmetic,
 r"
 let x = 100b #Byte+ 13b
 x #Byte* 2b #Byte/ 3b
@@ -199,35 +199,35 @@ x #Byte* 2b #Byte/ 3b
 75u8
 }
 
-test_expr!{ primitive_byte_eq,
+test_expr! { primitive_byte_eq,
 r"
 100b #Byte== 100b
 ",
 true
 }
 
-test_expr!{ primitive_byte_lt,
+test_expr! { primitive_byte_lt,
 r"
 100b #Byte< 100b
 ",
 false
 }
 
-test_expr!{ prelude overloaded_compare_int,
+test_expr! { prelude overloaded_compare_int,
 r"
 99 < 100
 ",
 true
 }
 
-test_expr!{ prelude overloaded_compare_float,
+test_expr! { prelude overloaded_compare_float,
 r"
 99.0 < 100.0
 ",
 true
 }
 
-test_expr!{ implicit_call_without_type_in_scope,
+test_expr! { implicit_call_without_type_in_scope,
 r"
 let int @ { ? } = import! std.int
 let prelude @ { (==) } = import! std.prelude
@@ -236,7 +236,7 @@ let prelude @ { (==) } = import! std.prelude
 false
 }
 
-test_expr!{ partial_application,
+test_expr! { partial_application,
 r"
 let f x y = x #Int+ y in
 let g = f 10
@@ -245,7 +245,7 @@ in g 2 #Int+ g 3
 25i32
 }
 
-test_expr!{ partial_application2,
+test_expr! { partial_application2,
 r"
 let f x y z = x #Int+ y #Int+ z in
 let g = f 10 in
@@ -255,7 +255,7 @@ in h 2 #Int+ g 10 3
 55i32
 }
 
-test_expr!{ to_many_args_application,
+test_expr! { to_many_args_application,
 r"
 let f x = \y -> x #Int+ y in
 let g = f 20
@@ -264,7 +264,7 @@ in f 10 2 #Int+ g 3
 35i32
 }
 
-test_expr!{ to_many_args_partial_application_twice,
+test_expr! { to_many_args_partial_application_twice,
 r"
 let f x = \y z -> x #Int+ y #Int+ z in
 let g = f 20 5
@@ -273,7 +273,7 @@ in f 10 2 1 #Int+ g 2
 40i32
 }
 
-test_expr!{ excess_arguments_larger_than_stack,
+test_expr! { excess_arguments_larger_than_stack,
 r#"
 let f a b c = c
 (\x -> f) 1 2 3 4
@@ -281,14 +281,14 @@ let f a b c = c
 4i32
 }
 
-test_expr!{ char,
+test_expr! { char,
 r#"
 'a'
 "#,
 'a'
 }
 
-test_expr!{ prelude handle_fields_being_ignored_in_optimize,
+test_expr! { prelude handle_fields_being_ignored_in_optimize,
     r#"
 let large_record = { x = 1, y = 2 }
 large_record.x
@@ -296,7 +296,7 @@ large_record.x
 1
 }
 
-test_expr!{ any zero_argument_variant_is_int,
+test_expr! { any zero_argument_variant_is_int,
 r#"
 type Test = | A Int | B
 B
@@ -304,7 +304,7 @@ B
 ValueRef::tag(1)
 }
 
-test_expr!{ any marshalled_option_none_is_int,
+test_expr! { any marshalled_option_none_is_int,
 r#"
 let string_prim = import! std.string.prim
 string_prim.find "a" "b"
@@ -312,7 +312,7 @@ string_prim.find "a" "b"
 ValueRef::tag(0)
 }
 
-test_expr!{ any marshalled_ordering_is_int,
+test_expr! { any marshalled_ordering_is_int,
 r#"
 let { string_compare } = import! std.prim
 string_compare "a" "b"
@@ -320,7 +320,7 @@ string_compare "a" "b"
 ValueRef::tag(0)
 }
 
-test_expr!{ discriminant_value,
+test_expr! { discriminant_value,
 r#"
 type Variant a = | A | B Int | C String
 let prim = import! std.prim
@@ -329,7 +329,7 @@ prim.discriminant_value (C "")
 2
 }
 
-test_expr!{ unit_expr,
+test_expr! { unit_expr,
 r#"
 let x = ()
 let y = 1
@@ -338,19 +338,19 @@ in y
 1i32
 }
 
-test_expr!{ return_unit,
+test_expr! { return_unit,
 "()",
 ()
 }
 
-test_expr!{ let_not_in_tail_position,
+test_expr! { let_not_in_tail_position,
 r#"
 1 #Int+ (let x = 2 in x)
 "#,
 3i32
 }
 
-test_expr!{ field_access_not_in_tail_position,
+test_expr! { field_access_not_in_tail_position,
 r#"
 let id x = x
 in (id { x = 1 }).x
@@ -358,7 +358,7 @@ in (id { x = 1 }).x
 1i32
 }
 
-test_expr!{ module_function,
+test_expr! { module_function,
 r#"
 let string_prim = import! std.string.prim
 let x = string_prim.len "test" in x
@@ -366,7 +366,7 @@ let x = string_prim.len "test" in x
 4i32
 }
 
-test_expr!{ prelude true_branch_not_affected_by_false_branch,
+test_expr! { prelude true_branch_not_affected_by_false_branch,
 r#"
 let { Bool } = import! std.bool
 if True then
@@ -378,7 +378,7 @@ else
 1i32
 }
 
-test_expr!{ prelude and_operator_stack,
+test_expr! { prelude and_operator_stack,
 r#"
 let { Bool } = import! std.bool
 let b = True && True
@@ -388,7 +388,7 @@ b
 true
 }
 
-test_expr!{ prelude or_operator_stack,
+test_expr! { prelude or_operator_stack,
 r#"
 let { Bool } = import! std.bool
 let b = False || True
@@ -398,7 +398,7 @@ b
 true
 }
 
-test_expr!{ overload_resolution_with_record_pattern,
+test_expr! { overload_resolution_with_record_pattern,
 r#"
 let f =
     \x g ->
@@ -433,28 +433,28 @@ let add ?f: [a -> a -> a] -> a -> a -> a = f
     }
 }
 
-test_expr!{ record_base_duplicate_fields,
+test_expr! { record_base_duplicate_fields,
 r#"
 { x = "" ..  { x = 1 } }.x
 "#,
 "".to_string()
 }
 
-test_expr!{ record_base_duplicate_fields2,
+test_expr! { record_base_duplicate_fields2,
 r#"
 { x = "" ..  { x = 1, y = 2 } }.y
 "#,
 2
 }
 
-test_expr!{ record_base_duplicate_fields_different_order,
+test_expr! { record_base_duplicate_fields_different_order,
 r#"
 { z = 3.0, y = "y", x = "x" ..  { x = 1, y = 2 } }.x
 "#,
 String::from("x")
 }
 
-test_expr!{ load_option,
+test_expr! { load_option,
 r#"
 let _ = import! std.option
 ()
@@ -462,7 +462,7 @@ let _ = import! std.option
 ()
 }
 
-test_expr!{ load_applicative,
+test_expr! { load_applicative,
 r#"
 let _ = import! std.applicative
 ()
@@ -470,7 +470,7 @@ let _ = import! std.applicative
 ()
 }
 
-test_expr!{ prelude do_expression_option_some,
+test_expr! { prelude do_expression_option_some,
 r#"
 let { monad = { flat_map } } = import! std.option
 do x = Some 1
@@ -479,7 +479,7 @@ Some (x + 2)
 Some(3)
 }
 
-test_expr!{ prelude do_expression_option_none,
+test_expr! { prelude do_expression_option_none,
 r#"
 let { monad = { flat_map } } = import! std.option
 do x = None
@@ -488,7 +488,7 @@ Some 1
 None::<i32>
 }
 
-test_expr!{ function_with_implicit_argument_from_record,
+test_expr! { function_with_implicit_argument_from_record,
 r#"
 let f ?t x: [Int] -> () -> Int = t
 let x @ { ? } =
@@ -500,14 +500,14 @@ f ()
 1
 }
 
-test_expr!{ prelude not_equal_operator,
+test_expr! { prelude not_equal_operator,
 r#"
 1 /= 2
 "#,
 true
 }
 
-test_expr!{ implicit_argument_selection1,
+test_expr! { implicit_argument_selection1,
 r#"
 #[implicit]
 type Test = | Test ()
@@ -518,7 +518,7 @@ f (Test ())
 ()
 }
 
-test_expr!{ prelude implicit_argument_selection2,
+test_expr! { prelude implicit_argument_selection2,
 r#"
 let string = import! std.string
 let { append } = string.semigroup
@@ -930,7 +930,7 @@ fn deep_clone_partial_application() {
     );
 }
 
-test_expr!{ prelude issue_601,
+test_expr! { prelude issue_601,
 r"
 let { wrap } = import! std.applicative
 let { flat_map } = import! std.monad
@@ -960,7 +960,7 @@ in ()
 ()
 }
 
-test_expr!{ recursive_record,
+test_expr! { recursive_record,
 r#"
 rec
 let x = { y }
@@ -970,7 +970,7 @@ x.y.z
 2
 }
 
-test_expr!{ recursive_variant,
+test_expr! { recursive_variant,
 r#"
 type List a = | Nil | Cons a (List a)
 rec let ones = Cons 1 ones
@@ -982,7 +982,7 @@ match ones with
 1
 }
 
-test_expr!{ recursive_implicit,
+test_expr! { recursive_implicit,
 r#"
 rec
 type Test = | Test Test2 | Nil
@@ -1013,7 +1013,7 @@ size (Test (Test2 (Test (Test2 Nil))))
 4
 }
 
-test_expr!{ prelude thread_join,
+test_expr! { prelude thread_join,
 r#"
 let thread = import! std.thread
 let io @ { ? } = import! std.io

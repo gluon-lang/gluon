@@ -155,8 +155,8 @@ impl TestCase {
                             future::result(test.vm().get_global("std.test.run")).and_then(
                                 |action| {
                                     let mut action: OwnedFunction<
-                                    fn(OpaqueValue<RootedThread, Test>) -> (),
-                                > = action;
+                                        fn(OpaqueValue<RootedThread, Test>) -> (),
+                                    > = action;
                                     action.call_async(test)
                                 },
                             )

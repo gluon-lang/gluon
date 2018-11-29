@@ -28,7 +28,7 @@ fn parallel_() -> Result<(), Error> {
         "<top>",
         " let { channel } = import! std.channel in channel 0 ",
     )?;
-    let record_p!{ sender, receiver }: ChannelRecord<
+    let record_p! { sender, receiver }: ChannelRecord<
         OpaqueValue<RootedThread, Sender<i32>>,
         OpaqueValue<RootedThread, Receiver<i32>>,
     > = value;

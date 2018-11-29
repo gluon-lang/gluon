@@ -9,16 +9,39 @@ use base::error::InFile;
 use base::kind::{ArcKind, Kind, KindEnv};
 use base::metadata::{Metadata, MetadataEnv};
 use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
-use base::types::{self, Alias, ArcType, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv};
+use base::types::{self, Alias, ArcType, Field, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv};
 
 use check::typecheck::{self, Typecheck};
 use check::{metadata, rename};
-use parser::{parse_partial_expr, reparse_infix, ParseErrors};
+use parser::{self, parse_partial_expr, reparse_infix, ParseErrors};
 
 use std::cell::RefCell;
 use std::marker::PhantomData;
 use std::rc::Rc;
 
+quick_error! {
+    /// Representation of all possible errors that can occur when interacting with the `vm` crate
+    #[derive(Debug, PartialEq)]
+    pub enum Error {
+        Check(err: InFile<typecheck::HelpError<Symbol>>) {
+            display("{}", err)
+            from()
+        }
+        Parser(err: InFile<parser::Error>) {
+            display("{}", err)
+            from()
+        }
+    }
+}
+
+impl Error {
+    pub fn unwrap_check(self) -> InFile<typecheck::HelpError<Symbol>> {
+        match self {
+            Error::Parser(ref err) => panic!("{}", err),
+            Error::Check(err) => err,
+        }
+    }
+}
 /// Returns a reference to the interner stored in TLD
 pub fn get_local_interner() -> Rc<RefCell<Symbols>> {
     thread_local!(static INTERNER: Rc<RefCell<Symbols>>
@@ -56,7 +79,7 @@ pub fn parse_new(
 }
 
 #[allow(dead_code)]
-pub fn typecheck(text: &str) -> Result<ArcType, InFile<typecheck::HelpError<Symbol>>> {
+pub fn typecheck(text: &str) -> Result<ArcType, Error> {
     let (_, t) = typecheck_expr(text);
     t
 }
@@ -74,7 +97,7 @@ impl MockEnv {
         let bool_ty = Type::app(Type::ident(bool_sym.clone()), collect![]);
 
         MockEnv {
-            bool: Alias::new(bool_sym, bool_ty),
+            bool: Alias::new(bool_sym, Vec::new(), bool_ty),
         }
     }
 }
@@ -146,11 +169,16 @@ where
 pub fn typecheck_expr_expected(
     text: &str,
     expected: Option<&ArcType>,
-) -> (
-    SpannedExpr<Symbol>,
-    Result<ArcType, InFile<typecheck::HelpError<Symbol>>>,
-) {
-    let mut expr = parse_new(text).unwrap_or_else(|(_, err)| panic!("{}", err));
+) -> (SpannedExpr<Symbol>, Result<ArcType, Error>) {
+    let mut expr = match parse_new(text) {
+        Ok(expr) => expr,
+        Err((expr, err)) => {
+            let mut source = codespan::CodeMap::new();
+            source.add_filemap("test".into(), text.into());
+            let err = InFile::new(source, err);
+            return (expr.unwrap_or_else(|| panic!("{}", err)), Err(err.into()));
+        }
+    };
 
     let env = MockEnv::new();
     let interner = get_local_interner();
@@ -178,17 +206,12 @@ pub fn typecheck_expr_expected(
         result.map_err(|err| {
             let mut source = codespan::CodeMap::new();
             source.add_filemap("test".into(), text.into());
-            InFile::new(source, err)
+            InFile::new(source, err).into()
         }),
     )
 }
 
-pub fn typecheck_expr(
-    text: &str,
-) -> (
-    SpannedExpr<Symbol>,
-    Result<ArcType, InFile<typecheck::HelpError<Symbol>>>,
-) {
+pub fn typecheck_expr(text: &str) -> (SpannedExpr<Symbol>, Result<ArcType, Error>) {
     typecheck_expr_expected(text, None)
 }
 
@@ -268,13 +291,27 @@ pub fn alias(s: &str, args: &[&str], typ: ArcType) -> ArcType {
     assert!(s.len() != 0);
     Type::alias(
         intern(s),
-        Type::forall(
-            args.iter()
-                .map(|id| Generic::new(intern(id), Kind::typ()))
-                .collect(),
-            typ,
-        ),
+        args.iter()
+            .map(|id| Generic::new(intern(id), Kind::typ()))
+            .collect(),
+        typ,
     )
+}
+
+pub fn variant(arg: &str, types: &[ArcType]) -> Field<Symbol, ArcType> {
+    let arg = intern_unscoped(arg);
+    let symbols = get_local_interner();
+    let mut symbols = symbols.borrow_mut();
+    Field::ctor(&mut *symbols, arg, types.iter().cloned())
+}
+
+pub fn alias_variant(s: &str, params: &[&str], args: &[(&str, &[ArcType])]) -> ArcType {
+    let variants = Type::variant(
+        args.iter()
+            .map(|(arg, types)| variant(arg, types))
+            .collect(),
+    );
+    alias(s, params, variants)
 }
 
 /// Replace the variable at the `rest` part of a record for easier equality checks
@@ -369,7 +406,10 @@ macro_rules! assert_err {
         match $e {
             Ok(x) => assert!(false, "Expected error, got {}", x),
             Err(err) => {
-                let errors = err.errors();
+                let errors = match err {
+                    $crate::support::Error::Parser(ref err) => panic!("{}", err),
+                    $crate::support::Error::Check(err) => err.errors(),
+                };
                 let mut iter = (&errors).into_iter();
                 $(
                 match iter.next() {
@@ -412,7 +452,10 @@ macro_rules! assert_multi_unify_err {
         match $e {
             Ok(x) => assert!(false, "Expected error, got {}", x),
             Err(err) => {
-                let errors = err.errors();
+                let errors = match err {
+                    $crate::support::Error::Parser(ref err) => panic!("{}", err),
+                    $crate::support::Error::Check(err) => err.errors(),
+                };
                 let mut errors_iter = (&errors).into_iter().enumerate();
                 $(
                 match errors_iter.next() {

@@ -536,9 +536,7 @@ pub mod closure {
                                         .next_element()?
                                         .ok_or_else(|| V::Error::invalid_length(2, &self))?;
 
-                                    let mut closure: GcPtr<
-                                        ClosureData,
-                                    > = self
+                                    let mut closure: GcPtr<ClosureData> = self
                                         .state
                                         .thread
                                         .context()

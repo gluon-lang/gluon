@@ -43,7 +43,7 @@ fn read_file() {
     }
 }
 
-test_expr!{ no_io_eval,
+test_expr! { no_io_eval,
 r#"
 let { error } = import! std.prim
 let io = import! std.io.prim
@@ -52,7 +52,7 @@ in { x }
 "#
 }
 
-test_expr!{ io_print,
+test_expr! { io_print,
 r#"
 let io = import! std.io
 io.print "123"
@@ -83,7 +83,7 @@ fn run_expr_int() {
     }
 }
 
-test_expr!{ io run_expr_io,
+test_expr! { io run_expr_io,
 r#"
 let io = import! std.io.prim
 io.flat_map (\x -> io.wrap 100)

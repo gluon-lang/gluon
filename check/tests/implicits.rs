@@ -3,6 +3,8 @@ extern crate collect_mac;
 extern crate env_logger;
 #[macro_use]
 extern crate pretty_assertions;
+#[macro_use]
+extern crate quick_error;
 
 extern crate gluon_base as base;
 extern crate gluon_check as check;
@@ -11,7 +13,7 @@ extern crate gluon_parser as parser;
 
 use base::ast::{self, Expr, Pattern, SpannedExpr, Typed, Visitor};
 use base::symbol::Symbol;
-use base::types::{Field, Type};
+use base::types::Type;
 
 use check::typecheck::{ImplicitError, ImplicitErrorKind, TypeError};
 
@@ -210,14 +212,7 @@ f (Test ())
 "#;
     let result = support::typecheck(text);
 
-    let test = support::alias(
-        "Test",
-        &[],
-        Type::variant(vec![Field::new(
-            support::intern("Test"),
-            Type::function(vec![Type::unit()], support::typ("Test")),
-        )]),
-    );
+    let test = support::alias_variant("Test", &[], &[("Test", &[Type::unit()])]);
     assert_req!(result, Ok(test));
 }
 

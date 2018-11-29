@@ -3,7 +3,7 @@ use base::ast::{
 };
 use base::pos;
 use base::symbol::{Symbol, Symbols};
-use base::types::{arg_iter, remove_forall, row_iter, Type};
+use base::types::{remove_forall, row_iter, Type};
 
 use macros::Error;
 
@@ -63,15 +63,15 @@ pub fn generate(
 
             let alts = row_iter(variants)
                 .map(|variant| {
-                    let l_pattern_args: Vec<_> = arg_iter(&variant.typ)
-                        .map(|typ| {
+                    let l_pattern_args: Vec<_> = row_iter(&variant.typ)
+                        .map(|field| {
                             (
-                                is_self_type(&bind.alias.value.name, typ),
+                                is_self_type(&bind.alias.value.name, &field.typ),
                                 TypedIdent::new(Symbol::from("arg_l")),
                             )
                         })
                         .collect();
-                    let r_pattern_args: Vec<_> = arg_iter(&variant.typ)
+                    let r_pattern_args: Vec<_> = row_iter(&variant.typ)
                         .map(|_| TypedIdent::new(Symbol::from("arg_r")))
                         .collect();
 

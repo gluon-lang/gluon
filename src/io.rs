@@ -180,7 +180,7 @@ field_decl! { value, typ }
 
 // Can't create a minimal reproduction for why this reports as being unused...
 #[allow(dead_code)]
-type RunExpr = record_type!{ value => String, typ => String };
+type RunExpr = record_type! { value => String, typ => String };
 
 fn run_expr(
     WithVM { vm, value: expr }: WithVM<&str>,

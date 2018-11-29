@@ -17,6 +17,8 @@ use substitution::{Substitutable, Substitution, Variable, VariableFactory};
 use unify;
 use unify::{Error as UnifyError, GenericVariant, Unifiable, Unifier};
 
+use smallvec::SmallVec;
+
 impl VariableFactory for ArcKind {
     type Variable = TypeVariable;
     fn new(&self, id: u32) -> TypeVariable {
@@ -203,7 +205,7 @@ where
         match *self {
             TypeError::FieldMismatch(ref l, ref r) => write!(
                 f,
-                "Field names in record do not match.\n\tExpected: {}\n\tFound: {}",
+                "Row labels do not match.\n    Expected: {}\n    Found: {}",
                 l, r
             ),
             TypeError::UndefinedType(ref id) => write!(f, "Type `{}` is not defined.", id),
@@ -387,39 +389,18 @@ where
             unify_app(unifier, l, l_args, r, r_args)
                 .map_err(|_| UnifyError::TypeMismatch(expected.clone(), actual.clone()))
         }
-        (&Type::Variant(ref l_row), &Type::Variant(ref r_row)) => match (&**l_row, &**r_row) {
-            (
-                &Type::ExtendRow {
-                    fields: ref l_row,
-                    rest: ref l_rest,
-                    ..
-                },
-                &Type::ExtendRow {
-                    fields: ref r_row,
-                    rest: ref r_rest,
-                    ..
-                },
-            ) => {
-                if l_row.len() == r_row.len()
-                    && l_row
-                        .iter()
-                        .zip(r_row)
-                        .all(|(l, r)| l.name.name_eq(&r.name))
-                    && l_rest == r_rest
-                {
-                    let iter = l_row.iter().zip(r_row);
-                    let new_fields = merge::merge_tuple_iter(iter, |l, r| {
-                        unifier
-                            .try_match(&l.typ, &r.typ)
-                            .map(|typ| Field::new(l.name.clone(), typ))
-                    });
-                    Ok(new_fields.map(|fields| Type::poly_variant(fields, l_rest.clone())))
-                } else {
-                    Err(UnifyError::TypeMismatch(expected.clone(), actual.clone()))
-                }
-            }
-            _ => Err(UnifyError::TypeMismatch(expected.clone(), actual.clone())),
-        },
+        (&Type::Variant(ref l_row), &Type::Variant(ref r_row)) => {
+            // Store the current variants so that they can be used when displaying field errors
+            let previous = mem::replace(
+                &mut unifier.state.record_context,
+                Some((expected.clone(), actual.clone())),
+            );
+            let result = unifier
+                .try_match(l_row, r_row)
+                .map(|row| ArcType::from(Type::Variant(row)));
+            unifier.state.record_context = previous;
+            Ok(result)
+        }
         (&Type::Record(ref l_row), &Type::Record(ref r_row)) => {
             // Store the current records so that they can be used when displaying field errors
             let previous = mem::replace(
@@ -891,6 +872,27 @@ where
     Ok(Some(Type::extend_row(types, fields, rest)))
 }
 
+fn resolve_application<'t>(typ: &'t ArcType, subs: &'t Substitution<ArcType>) -> Option<ArcType> {
+    match **typ {
+        Type::App(ref f, ref a) => resolve_application(f, subs).map(|f| Type::app(f, a.clone())),
+        Type::Variable(_) => {
+            let typ = subs.real(typ);
+            match **typ {
+                Type::Variable(_) => None,
+                _ => Some(resolve_application(typ, subs).unwrap_or_else(|| typ.clone())),
+            }
+        }
+        _ => None,
+    }
+}
+
+#[derive(Debug)]
+enum FoundAlias {
+    Root(ArcType),
+    Found(ArcType),
+    AlreadyEqual,
+}
+
 /// Attempt to unify two alias types.
 /// To find a possible successful unification we walk through the alias expansions of `l` in an
 /// attempt to find that `l` expands to the alias `r_id`
@@ -898,14 +900,14 @@ fn find_alias<'a, U>(
     unifier: &mut UnifierState<'a, U>,
     l: ArcType,
     r_id: &SymbolRef,
-) -> Result<Option<ArcType>, ()>
+) -> Result<FoundAlias, ()>
 where
     UnifierState<'a, U>: Unifier<State<'a>, ArcType>,
 {
     let reduced_aliases = unifier.state.reduced_aliases.len();
     let result = find_alias_(unifier, l, r_id);
     match result {
-        Ok(Some(_)) => (),
+        Ok(FoundAlias::Root(_)) | Ok(FoundAlias::Found(_)) => (),
         _ => {
             // Remove any alias reductions that were added if no new type is returned
             unifier.state.reduced_aliases.truncate(reduced_aliases);
@@ -918,36 +920,12 @@ fn find_alias_<'a, U>(
     unifier: &mut UnifierState<'a, U>,
     mut l: ArcType,
     r_id: &SymbolRef,
-) -> Result<Option<ArcType>, ()>
+) -> Result<FoundAlias, ()>
 where
     UnifierState<'a, U>: Unifier<State<'a>, ArcType>,
 {
-    fn resolve_application<'t>(
-        typ: &'t ArcType,
-        subs: &'t Substitution<ArcType>,
-    ) -> Option<ArcType> {
-        match **typ {
-            Type::App(ref f, ref a) => {
-                resolve_application(f, subs).map(|f| Type::app(f, a.clone()))
-            }
-            Type::Variable(_) => {
-                let typ = subs.real(typ);
-                match **typ {
-                    Type::Variable(_) => None,
-                    _ => Some(resolve_application(typ, subs).unwrap_or_else(|| typ.clone())),
-                }
-            }
-            _ => None,
-        }
-    }
-
     let mut did_alias = false;
     loop {
-        // If the spine of the application consists of type variables we must first resolve those
-        // before trying the alias as the resolve module does not know about type varaibles
-        if let Some(new_l) = resolve_application(&l, &unifier.state.subs) {
-            l = new_l;
-        }
         l = match l.name() {
             Some(l_id) => {
                 if let Some(l_id) = l.alias_ident() {
@@ -959,7 +937,11 @@ where
                 if l_id == r_id {
                     // If the aliases matched before going through an alias there is no need to
                     // return a replacement type
-                    return Ok(if did_alias { Some(l.clone()) } else { None });
+                    return Ok(if did_alias {
+                        FoundAlias::Found(l.clone())
+                    } else {
+                        FoundAlias::AlreadyEqual
+                    });
                 }
                 did_alias = true;
                 match resolve::remove_alias(unifier.state.env, &l) {
@@ -980,7 +962,7 @@ where
             None => break,
         }
     }
-    Ok(None)
+    Ok(FoundAlias::Root(l))
 }
 
 /// Attempt to find a common alias between two types. If the function is successful it returns
@@ -1004,26 +986,57 @@ fn find_common_alias<'a, U>(
 where
     UnifierState<'a, U>: Unifier<State<'a>, ArcType>,
 {
-    let mut l = expected.clone();
-    if let Some(r_id) = actual.name() {
+    // If the spine of the application consists of type variables we must first resolve those
+    // before trying the alias as the resolve module does not know about type varaibles
+    let mut r = resolve_application(actual, unifier.state.subs).unwrap_or_else(|| actual.clone());
+    let mut l =
+        resolve_application(expected, unifier.state.subs).unwrap_or_else(|| expected.clone());
+    let mut l_root = None;
+    let reduced_aliases_len = unifier.state.reduced_aliases.len();
+    if let Some(r_id) = r.name() {
         l = match find_alias(unifier, l.clone(), r_id)? {
-            None => l,
-            Some(typ) => {
+            FoundAlias::Root(root) => {
+                l_root = Some(root);
+                l
+            }
+            FoundAlias::AlreadyEqual => l,
+            FoundAlias::Found(typ) => {
                 *through_alias = true;
                 return Ok((typ, actual.clone()));
             }
         };
     }
-    let mut r = actual.clone();
-    if let Some(l_id) = expected.name() {
-        r = match find_alias(unifier, r.clone(), l_id)? {
-            None => r,
-            Some(typ) => {
+
+    // Avoid triggering invalid self recursion checks from anything that the first find did
+    let saved_aliases: SmallVec<[_; 5]> = unifier
+        .state
+        .reduced_aliases
+        .drain(reduced_aliases_len..)
+        .collect();
+
+    let result = if let Some(l_id) = l.name() {
+        Some(find_alias(unifier, r.clone(), l_id)?)
+    } else {
+        None
+    };
+    if let Some(result) = result {
+        r = match result {
+            FoundAlias::Root(root) => {
+                if let Some(l_root) = l_root {
+                    l = l_root;
+                }
+                root
+            }
+            FoundAlias::AlreadyEqual => r,
+            FoundAlias::Found(typ) => {
                 *through_alias = true;
                 typ
             }
         };
     }
+
+    unifier.state.reduced_aliases.extend(saved_aliases);
+
     Ok((l, r))
 }
 

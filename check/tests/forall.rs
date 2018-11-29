@@ -1,4 +1,6 @@
 #[macro_use]
+extern crate quick_error;
+#[macro_use]
 extern crate collect_mac;
 extern crate env_logger;
 #[macro_use]
@@ -53,7 +55,7 @@ in f "123"
     let result = support::typecheck(text);
 
     assert!(result.is_err());
-    let errors: Vec<_> = result.unwrap_err().errors().into();
+    let errors: Vec<_> = result.unwrap_err().unwrap_check().errors().into();
     assert_eq!(errors.len(), 1);
     assert_eq!(
         errors[0].span,
@@ -653,11 +655,13 @@ make 1
     assert_eq!(
         result.map(|x| x.to_string()),
         Ok("{ x : Int, cons : forall a . a -> test.List a }".to_string())
-    );
+    )
 }
 
 #[test]
 fn resolve_app_app() {
+    let _ = env_logger::try_init();
+
     use base::resolve;
 
     let record = Type::record(
@@ -1107,6 +1111,23 @@ fn forall_scope() {
 type Proxy h = | Proxy
 let foo : (forall i . Proxy i -> ()) -> Proxy i -> () =
     \m p -> m p
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+#[test]
+fn forall_in_alias() {
+    let _ = ::env_logger::try_init();
+
+    let text = r#"
+type IO a = | IO a
+
+type Lift m v = forall a . (| Lift (m a))
+
+let z io : IO a -> Lift IO _ = Lift io
+
 ()
 "#;
     let result = support::typecheck(text);

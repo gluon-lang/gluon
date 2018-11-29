@@ -891,7 +891,7 @@ macro_rules! tuple_extract_ {
     };
 }
 
-tuple_extract!{A B C D E F G H}
+tuple_extract! {A B C D E F G H}
 
 pub fn completion<T>(
     extract: T,

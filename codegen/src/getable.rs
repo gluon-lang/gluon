@@ -174,17 +174,17 @@ fn gen_impl(
     let dummy_const = Ident::new(&format!("_IMPL_GETABLE_FOR_{}", ident), Span::call_site());
 
     let gluon = match container.crate_name {
-        attr::CrateName::Some(ref ident) => quote!{
+        attr::CrateName::Some(ref ident) => quote! {
             use #ident::api as _gluon_api;
             use #ident::thread as _gluon_thread;
             use #ident::Variants as _GluonVariants;
         },
-        attr::CrateName::GluonVm => quote!{
+        attr::CrateName::GluonVm => quote! {
             use api as _gluon_api;
             use thread as _gluon_thread;
             use Variants as _GluonVariants;
         },
-        attr::CrateName::None => quote!{
+        attr::CrateName::None => quote! {
             use gluon::vm::api as _gluon_api;
             use gluon::vm::thread as _gluon_thread;
             use gluon::vm::Variants as _GluonVariants;
@@ -254,7 +254,7 @@ where
         }
     });
 
-    quote!{
+    quote! {
         (#(#fields),*)
     }
 }
@@ -279,7 +279,7 @@ where
         }
     });
 
-    quote!{
+    quote! {
         {#(#fields),*}
     }
 }

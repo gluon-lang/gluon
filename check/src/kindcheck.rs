@@ -1,12 +1,13 @@
-use std::fmt;
-use std::result::Result as StdResult;
+use std::{fmt, result::Result as StdResult};
 
-use base::ast::{self, AstType};
-use base::kind::{self, ArcKind, Kind, KindCache};
-use base::merge;
-use base::pos::{self, BytePos, HasSpan, Span, Spanned};
-use base::symbol::Symbol;
-use base::types::{self, ArcType, BuiltinType, Generic, Type, TypeEnv, Walker};
+use base::{
+    ast::{self, AstType},
+    kind::{self, ArcKind, Kind, KindCache},
+    merge,
+    pos::{self, BytePos, HasSpan, Span, Spanned},
+    symbol::Symbol,
+    types::{self, ArcType, BuiltinType, Generic, Type, TypeEnv, Walker},
+};
 
 use substitution::{Substitutable, Substitution};
 use unify::{self, Error as UnifyError, Unifiable, Unifier, UnifierState};
@@ -130,11 +131,7 @@ impl<'a> KindCheck<'a> {
             .or_else(|| self.info.find_kind(id))
             .map_or_else(
                 || {
-                    if self.idents.string(id).contains('.') {
-                        Ok(self
-                            .translate_projected_type(id)
-                            .unwrap_or_else(|| self.subs.new_var()))
-                    } else if self.idents.string(id).starts_with(char::is_uppercase) {
+                    if self.idents.string(id).starts_with(char::is_uppercase) {
                         Err(UnifyError::Other(KindError::UndefinedType(id.clone())))
                     } else {
                         // Create a new variable
@@ -156,9 +153,9 @@ impl<'a> KindCheck<'a> {
         .map_err(|err| pos::spanned(span, err))
     }
 
-    fn translate_projected_type(&mut self, id: &Symbol) -> Option<ArcKind> {
+    fn find_projection(&mut self, ids: &[Symbol]) -> Option<ArcKind> {
         // Errors get reported in typecheck as well so ignore them here
-        ::typecheck::translate_projected_type(self.info, self.idents, id)
+        ::typecheck::translate_projected_type(self.info, self.idents, ids)
             .ok()
             .map(|typ| typ.kind().into_owned())
     }
@@ -174,6 +171,7 @@ impl<'a> KindCheck<'a> {
         typ: &mut AstType<Symbol>,
         expected: &ArcKind,
     ) -> Result<ArcKind> {
+        info!("Kindchecking {}", typ);
         let kind = self.kindcheck(typ)?;
         let kind = self.unify(typ.span(), expected, kind)?;
         self.finalize_type(typ);
@@ -275,10 +273,20 @@ impl<'a> KindCheck<'a> {
             } => {
                 for field in types {
                     if let Some(alias) = field.typ.try_get_alias_mut() {
-                        let field_type = alias.unresolved_type_mut();
-                        let kind = self.kindcheck(field_type)?;
-                        let type_kind = self.type_kind();
-                        self.unify(field_type.span(), &type_kind, kind)?;
+                        for param in alias.params_mut() {
+                            param.kind = self.subs.new_var();
+                            self.locals.push((param.id.clone(), param.kind.clone()));
+                        }
+
+                        {
+                            let field_type = alias.unresolved_type_mut();
+                            let kind = self.kindcheck(field_type)?;
+                            let type_kind = self.type_kind();
+                            self.unify(field_type.span(), &type_kind, kind)?;
+                        }
+
+                        let offset = self.locals.len() - alias.params().len();
+                        self.locals.drain(offset..);
                     }
                 }
                 for field in fields {
@@ -295,6 +303,9 @@ impl<'a> KindCheck<'a> {
             }
             Type::EmptyRow => Ok(self.row_kind()),
             Type::Ident(ref id) => self.find(span, id),
+            Type::Projection(ref ids) => Ok(self
+                .find_projection(ids)
+                .unwrap_or_else(|| self.subs.new_var())),
             Type::Alias(ref alias) => self.find(span, &alias.name),
         }
     }
@@ -321,38 +332,57 @@ impl<'a> KindCheck<'a> {
     }
 
     pub fn finalize_type(&mut self, typ: &mut AstType<Symbol>) {
+        self.finalize_type_(typ);
         types::walk_type_mut(typ, &mut |typ: &mut AstType<Symbol>| {
-            if let Type::Ident(_) = **typ {
-                let id = match **typ {
-                    Type::Ident(ref id) => id.clone(),
-                    _ => unreachable!(),
-                };
-                if let Ok(kind) = self.find(typ.span(), &id) {
-                    // HACK Use a "generic" type as the rhs of the alias to make the type have the
-                    // correct kind
-                    **typ = Type::<_, AstType<_>>::alias(
-                        id.clone(),
-                        Type::generic(Generic::new(id, kind)),
-                    )
-                    .into_inner();
-                }
-                return;
-            }
-
-            match **typ {
-                Type::Variable(ref mut var) => {
-                    let default = Some(&self.kind_cache.typ);
-                    var.kind = update_kind(&self.subs, var.kind.clone(), default);
-                }
-                Type::Generic(ref mut var) => *var = self.finalize_generic(var),
-                Type::Forall(ref mut params, _, _) => {
-                    for param in params {
-                        *param = self.finalize_generic(&param);
-                    }
-                }
-                _ => (),
-            }
+            self.finalize_type_(typ);
         });
+    }
+    fn finalize_type_(&mut self, typ: &mut AstType<Symbol>) {
+        if let Type::Ident(_) = **typ {
+            let id = match **typ {
+                Type::Ident(ref id) => id.clone(),
+                _ => unreachable!(),
+            };
+            if let Ok(kind) = self.find(typ.span(), &id) {
+                // HACK Use a "generic" type as the rhs of the alias to make the type have the
+                // correct kind
+                **typ = Type::<_, AstType<_>>::alias(
+                    id.clone(),
+                    Vec::new(),
+                    Type::generic(Generic::new(id, kind)),
+                )
+                .into_inner();
+            }
+            return;
+        }
+
+        match **typ {
+            Type::ExtendRow { ref mut types, .. } => types.iter_mut().for_each(|field| {
+                if let Some(alias) = field.typ.try_get_alias_mut() {
+                    alias
+                        .params_mut()
+                        .iter_mut()
+                        .for_each(|var| *var = self.finalize_generic(var))
+                }
+            }),
+            Type::Variable(ref mut var) => {
+                let default = Some(&self.kind_cache.typ);
+                var.kind = update_kind(&self.subs, var.kind.clone(), default);
+            }
+            Type::Generic(ref mut var) => *var = self.finalize_generic(var),
+            Type::Alias(ref mut alias) => alias
+                .try_get_alias_mut()
+                .expect("ICE: AstType did not provide mutable alias")
+                .params_mut()
+                .iter_mut()
+                .for_each(|var| *var = self.finalize_generic(var)),
+            Type::Forall(ref mut params, _, _) => {
+                for param in params {
+                    *param = self.finalize_generic(&param);
+                }
+            }
+            _ => (),
+        }
     }
     pub fn finalize_generic(&self, var: &Generic<Symbol>) -> Generic<Symbol> {
         let mut kind = var.kind.clone();

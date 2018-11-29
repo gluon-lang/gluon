@@ -3,7 +3,7 @@ use base::ast::{
 };
 use base::pos;
 use base::symbol::{Symbol, Symbols};
-use base::types::{arg_iter, remove_forall, row_iter, Type};
+use base::types::{remove_forall, row_iter, Type};
 
 use macros::Error;
 
@@ -90,7 +90,7 @@ pub fn generate(
         Type::Variant(ref row) => {
             let alts = row_iter(row)
                 .map(|variant| {
-                    let pattern_args: Vec<_> = arg_iter(&variant.typ)
+                    let pattern_args: Vec<_> = row_iter(&variant.typ)
                         .enumerate()
                         .map(|(i, _typ)| TypedIdent::new(Symbol::from(format!("arg_{}", i))))
                         .collect();

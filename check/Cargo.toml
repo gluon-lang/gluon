@@ -19,6 +19,7 @@ pretty = "0.5"
 smallvec = "0.6"
 rpds = "0.5"
 stable_deref_trait = "1"
+quick-error = "1"
 
 codespan = "0.2"
 codespan-reporting = "0.2"

@@ -32,17 +32,17 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
     let (impl_generics, ty_generics, where_clause) = split_for_impl(&generics, &[]);
 
     let gluon = match container.crate_name {
-        CrateName::Some(ref ident) => quote!{
+        CrateName::Some(ref ident) => quote! {
             use #ident::base as _gluon_base;
             use #ident::api as _gluon_api;
             use #ident::thread as _gluon_thread;
         },
-        CrateName::GluonVm => quote!{
+        CrateName::GluonVm => quote! {
             use base as _gluon_base;
             use api as _gluon_api;
             use thread as _gluon_thread;
         },
-        CrateName::None => quote!{
+        CrateName::None => quote! {
             use gluon::base as _gluon_base;
             use gluon::vm::api as _gluon_api;
             use gluon::vm::thread as _gluon_thread;
@@ -52,7 +52,7 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
     let make_type_impl = match container.vm_type {
         Some(ref gluon_type) => {
             let type_application = gen_type_application(&generics);
-            quote!{
+            quote! {
                 let ty = match vm.find_type_info(#gluon_type) {
                     Ok(info) => info.into_type(),
                     Err(_) => panic!("Could not find type '{}'. Is the module defining the type loaded?", #gluon_type),
@@ -74,7 +74,7 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
                             }
                         }
                     });
-                    quote!{
+                    quote! {
                         _gluon_base::types::Type::record(
                             vec![],
                             vec![#(#fields),*],
@@ -84,12 +84,12 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
                 Fields::Unnamed(ref fields) => {
                     if fields.unnamed.len() == 1 {
                         let typ = &fields.unnamed[0].ty;
-                        quote!{
+                        quote! {
                             <#typ as _gluon_api::VmType>::make_type(vm)
                         }
                     } else {
                         let fields = fields.unnamed.iter().map(|field| &field.ty);
-                        quote!{
+                        quote! {
                             _gluon_base::types::Type::tuple(vec![#(
                                 <#fields as _gluon_api::VmType>::make_type(vm)
                             ),*])
@@ -103,22 +103,22 @@ fn gen_impl(container: &Container, ident: Ident, generics: Generics, data: &Data
                     let ident = variant.ident.to_string();
                     let args = variant.fields.iter().map(|field| {
                         let typ = &field.ty;
-                        quote!{
+                        quote! {
                             <#typ as _gluon_api::VmType>::make_type(vm)
                         }
                     });
-                    quote!{{
+                    quote! {{
                         let name = _gluon_base::symbol::Symbol::from(#ident);
                         _gluon_base::types::Field {
                             name: name.clone(),
-                            typ: _gluon_base::types::Type::function(
+                            typ: _gluon_base::types::Type::tuple(
+                                &mut _gluon_base::symbol::Symbols::new(),
                                 vec![#(#args),*],
-                                _gluon_base::types::Type::ident(name),
                             ),
                         }
                     }}
                 });
-                quote!{
+                quote! {
                     _gluon_base::types::Type::variant(
                         vec![#(#variants),*]
                     )

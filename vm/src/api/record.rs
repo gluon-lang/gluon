@@ -3,7 +3,7 @@ use std::any::Any;
 use frunk_core::hlist::{h_cons, HCons, HList, HNil};
 
 use base::symbol::Symbol;
-use base::types::{self, Alias, AliasData, ArcType, Generic, Type};
+use base::types::{self, Alias, AliasData, ArcType, Type};
 
 use super::{ActiveThread, Getable, Pushable, ValueRef, VmType};
 use interner::InternedStr;
@@ -104,11 +104,9 @@ where
             Alias::from(AliasData::new(
                 name,
                 args.iter()
-                    .map(|arg| {
-                        Generic::new(
-                            Symbol::from(*arg),
-                            vm.global_env().type_cache().kind_cache.typ(),
-                        )
+                    .map(|arg| match *vm.global_env().get_generic(*arg) {
+                        Type::Generic(ref gen) => gen.clone(),
+                        _ => unreachable!(),
                     })
                     .collect(),
                 typ,
