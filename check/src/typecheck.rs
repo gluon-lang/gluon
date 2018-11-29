@@ -310,10 +310,6 @@ impl<'a> PrimitiveEnv for Environment<'a> {
     fn get_bool(&self) -> &ArcType {
         self.environment.get_bool()
     }
-
-    fn get_effect(&self) -> &ArcType {
-        self.environment.get_effect()
-    }
 }
 
 impl<'a> MetadataEnv for Environment<'a> {

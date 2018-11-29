@@ -70,16 +70,11 @@ impl TypeEnv for EmptyEnv<Symbol> {
 /// primitive types
 pub trait PrimitiveEnv: TypeEnv {
     fn get_bool(&self) -> &ArcType;
-    fn get_effect(&self) -> &ArcType;
 }
 
 impl<'a, T: ?Sized + PrimitiveEnv> PrimitiveEnv for &'a T {
     fn get_bool(&self) -> &ArcType {
         (**self).get_bool()
-    }
-
-    fn get_effect(&self) -> &ArcType {
-        (**self).get_effect()
     }
 }
 

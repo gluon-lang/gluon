@@ -1178,24 +1178,6 @@ let ask : forall e . Eff [io : Reader e | r] e = send (\x -> inj_reader (Reader 
 }
 
 #[test]
-fn forall_in_alias() {
-    let _ = ::env_logger::try_init();
-
-    let text = r#"
-type IO a = | IO a
-
-type Lift m v = forall a . (| Lift (m a))
-
-let z io : IO a -> Lift IO _ = Lift io
-
-()
-"#;
-    let result = support::typecheck(text);
-
-    assert!(result.is_ok(), "{}", result.unwrap_err());
-}
-
-#[test]
 fn fe_free() {
     let _ = ::env_logger::try_init();
 
