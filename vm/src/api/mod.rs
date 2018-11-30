@@ -2,7 +2,7 @@
 use base::{
     scoped_map::ScopedMap,
     symbol::{Symbol, Symbols},
-    types::{self, ArcType, Field, Type},
+    types::{self, ArcType, Type},
 };
 use {
     forget_lifetime,

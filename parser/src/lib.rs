@@ -487,14 +487,6 @@ where
     }
 }
 
-#[cfg(feature = "test")]
-pub fn parse_string<'env, 'input>(
-    symbols: &'env mut IdentEnv<Ident = String>,
-    input: &'input str,
-) -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, ParseErrors)> {
-    parse_partial_expr(symbols, &TypeCache::default(), input)
-}
-
 pub fn reparse_infix<Id>(
     metadata: &FnvMap<Id, Metadata>,
     symbols: &IdentEnv<Ident = Id>,

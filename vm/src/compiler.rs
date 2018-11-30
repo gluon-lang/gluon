@@ -1113,7 +1113,7 @@ impl<'a> Compiler<'a> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "test"))]
 mod tests {
     use super::*;
 

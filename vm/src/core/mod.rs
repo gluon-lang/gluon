@@ -27,7 +27,7 @@ macro_rules! assert_deq {
     });
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "test"))]
 lalrpop_mod!(
     #[cfg_attr(rustfmt, rustfmt_skip)]
     pub grammar,
@@ -1674,7 +1674,7 @@ impl<'a> ExactSizeIterator for PatternIdentifiers<'a> {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "test"))]
 mod tests {
     extern crate gluon_parser as parser;
 

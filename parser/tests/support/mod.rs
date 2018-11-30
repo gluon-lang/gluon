@@ -2,20 +2,25 @@
 
 pub extern crate codespan;
 
-use base::ast::{
-    walk_mut_alias, walk_mut_ast_type, walk_mut_expr, walk_mut_pattern, Alternative, Argument,
-    Array, AstType, DisplayEnv, Expr, ExprField, IdentEnv, Lambda, Literal, MutVisitor, Pattern,
-    SpannedAlias, SpannedAstType, SpannedExpr, SpannedIdent, SpannedPattern, TypeBinding,
-    TypedIdent, ValueBinding,
-};
-use base::error::Errors;
-use base::kind::Kind;
-use base::metadata::{Comment, CommentType, Metadata};
-use base::pos::{self, BytePos, Span, Spanned};
-use base::types::{Alias, AliasData, ArcType, Field, Generic, Type};
-use parser::infix::{Fixity, OpMeta, OpTable, Reparser};
-use parser::{parse_string, Error, ParseErrors};
 use std::marker::PhantomData;
+
+use base::{
+    ast::{
+        walk_mut_alias, walk_mut_ast_type, walk_mut_expr, walk_mut_pattern, Alternative, Argument,
+        Array, AstType, DisplayEnv, Expr, ExprField, IdentEnv, Lambda, Literal, MutVisitor,
+        Pattern, SpannedAlias, SpannedAstType, SpannedExpr, SpannedIdent, SpannedPattern,
+        TypeBinding, TypedIdent, ValueBinding,
+    },
+    error::Errors,
+    kind::Kind,
+    metadata::{Comment, CommentType, Metadata},
+    pos::{self, BytePos, Span, Spanned},
+    types::{Alias, AliasData, ArcType, Field, Generic, Type, TypeCache},
+};
+use parser::{
+    infix::{Fixity, OpMeta, OpTable, Reparser},
+    {parse_partial_expr, Error, ParseErrors},
+};
 
 pub struct MockEnv<T>(PhantomData<T>);
 
@@ -79,6 +84,13 @@ where
         s.span = (self.0)(s.span);
         walk_mut_ast_type(self, s);
     }
+}
+
+pub fn parse_string<'env, 'input>(
+    symbols: &'env mut IdentEnv<Ident = String>,
+    input: &'input str,
+) -> Result<SpannedExpr<String>, (Option<SpannedExpr<String>>, ParseErrors)> {
+    parse_partial_expr(symbols, &TypeCache::default(), input)
 }
 
 pub fn parse(
