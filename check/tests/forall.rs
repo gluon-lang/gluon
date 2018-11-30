@@ -1248,3 +1248,12 @@ z
         Ok("forall a a0 . test.Rest a a0".to_string())
     );
 }
+
+test_check! {
+    forall_scope_over_poly_variant,
+    r#"
+    type Error = forall r . (| Error .. r)
+    Error
+    "#,
+    "test.Error"
+}

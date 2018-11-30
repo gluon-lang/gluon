@@ -1971,10 +1971,21 @@ impl<'a> Typecheck<'a> {
         // Rename the types so they get a name which is distinct from types from other
         // modules
         for bind in bindings.iter_mut() {
-            self.check_undefined_variables(
-                bind.alias.value.params(),
-                bind.alias.value.unresolved_type(),
-            );
+            self.type_variables.enter_scope();
+
+            {
+                let type_cache = &self.type_cache;
+                self.type_variables.extend(
+                    bind.alias
+                        .value
+                        .params()
+                        .iter()
+                        .map(|param| (param.id.clone(), type_cache.hole())),
+                );
+            }
+            self.check_undefined_variables(bind.alias.value.unresolved_type());
+
+            self.type_variables.exit_scope();
         }
 
         {
@@ -2086,11 +2097,11 @@ impl<'a> Typecheck<'a> {
         }
     }
 
-    fn check_undefined_variables(&mut self, args: &[Generic<Symbol>], typ: &AstType<Symbol>) {
+    fn check_undefined_variables(&mut self, typ: &AstType<Symbol>) {
         use base::pos::HasSpan;
         match **typ {
             Type::Generic(ref id) => {
-                if args.iter().all(|arg| arg.id != id.id) {
+                if !self.type_variables.contains_key(&id.id) {
                     info!("Undefined type variable {}", id.id);
                     self.error(typ.span(), TypeError::UndefinedVariable(id.id.clone()));
                 }
@@ -2100,10 +2111,15 @@ impl<'a> Typecheck<'a> {
                 // so variables are allowed to be undefined/implicit
             }
             _ => {
+                if let Type::Forall(ref params, ..) = **typ {
+                    let type_cache = &self.type_cache;
+                    self.type_variables
+                        .extend(params.iter().map(|gen| (gen.id.clone(), type_cache.hole())));
+                }
                 types::walk_move_type_opt(
                     typ,
                     &mut types::ControlVisitation(|typ: &AstType<_>| {
-                        self.check_undefined_variables(args, typ);
+                        self.check_undefined_variables(typ);
                         None
                     }),
                 );
