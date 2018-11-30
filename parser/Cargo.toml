@@ -31,6 +31,3 @@ pretty_assertions = "0.5"
 
 [build-dependencies]
 lalrpop = "0.16"
-
-[features]
-test = []

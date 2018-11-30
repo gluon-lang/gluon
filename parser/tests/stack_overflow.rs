@@ -4,8 +4,8 @@ extern crate gluon_base as base;
 extern crate gluon_parser as parser;
 
 use base::ast::SpannedExpr;
-use parser::{parse_string, ParseErrors};
-use support::MockEnv;
+use parser::ParseErrors;
+use support::*;
 
 mod support;
 

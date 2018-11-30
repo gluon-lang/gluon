@@ -94,7 +94,7 @@ web = ["hyper", "http", "native-tls", "tokio-tcp", "tokio-tls"]
 
 docs_rs = ["serialization"]
 
-test = ["serialization", "little-skeptic", "http", "web", "gluon_vm/test", "gluon_check/test", "gluon_parser/test"]
+test = ["serialization", "little-skeptic", "http", "web", "gluon_vm/test"]
 nightly = ["compiletest_rs"]
 test_nightly = ["test", "nightly"]
 
