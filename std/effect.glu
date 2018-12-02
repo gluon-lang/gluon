@@ -1,0 +1,125 @@
+let option = import! std.option
+let { Result, ? } = import! std.result
+let io @ { ? } = import! std.io
+let { (<<), (|>) } = import! std.function
+
+let { map } = import! std.functor
+let { wrap } = import! std.applicative
+
+type Eff r a =
+    forall x . (| Pure a | Impure (r x) (x -> Eff r a))
+
+type Arr r a b = a -> Eff r b
+
+let compose f g : (Arr r a b) -> (Arr r b c) -> (Arr r a c) = \a ->
+    match f a with
+    | Pure b -> g b
+    | Impure r h -> Impure r (compose h g)
+
+let wrap_eff x : a -> Eff r a = Pure x
+let flat_map_eff f m : (a -> Eff r b) -> Eff r a -> Eff r b =
+    match m with
+    | Pure x -> f x
+    | Impure row g -> Impure row (compose g f)
+
+let functor : Functor (Eff r) = {
+    map = \f m -> flat_map_eff (\x -> wrap_eff (f x)) m
+}
+
+let applicative : Applicative (Eff r) = {
+    functor,
+    apply = \f g -> flat_map_eff (\f1 -> flat_map_eff (\g1 -> wrap_eff (f1 g1)) g) f,
+    wrap = wrap_eff,
+}
+
+let monad : Monad (Eff r) = {
+    applicative,
+    flat_map = flat_map_eff,
+}
+
+// FIXME
+let debug = import! std.debug
+
+type Opt r a = [ option : Option | r ] a
+
+let send f : f a -> Eff [ error : f | r ] a = Impure (debug.transmute f) Pure
+
+type Error e a = forall r . (| Error e .. r)
+
+let inject_rest x : forall e . (.. r) -> [ | r ] a = debug.transmute x
+let extract_error x : forall e . [ error : Error e | r ] a -> Error e a = debug.transmute x
+
+let throw e : e -> Eff [ error : Error e | r ] a = send (Error e)
+
+let run_result eff : forall e . Eff [ error : Error e | r ] a -> Eff [ | r ] (Result e a) =
+    let loop ve : Eff [ error : Error _ | r ] a -> Eff [ | r ] (Result _ a) =
+        match ve with
+        | Pure v -> wrap (Ok v)
+        | Impure e f ->
+            match extract_error e with 
+            | Error err ->
+                wrap (Err err)
+            | rest ->
+                Impure (inject_rest rest) (loop << f)
+    loop eff
+
+let catch eff handler : forall e . Eff [ error : Error e | r ] a -> (e -> Eff [ error : Error e | r ] a) -> Eff [ error : Error e | r ] a =
+    let loop ve : Eff [ error : Error _ | r ] a -> Eff [ error : Error _ | r ] a =
+        match ve with
+        | Pure v -> wrap v
+        | Impure e f ->
+            match extract_error e with 
+            | Error err ->
+                handler err
+            | rest ->
+                Impure e (loop << f)
+    loop eff
+
+type Lift m a = forall r . (| Lift (m a) .. r)
+
+let extract_lift x : forall m . [ lift : Lift m | r ] a -> Lift m a = debug.transmute x
+
+// FIXME Remove
+let send_lift f : f a -> Eff [ lift : f | r ] a = Impure (debug.transmute f) Pure
+let lift m : m a -> Eff [ lift : Lift m | r ] a = send_lift (Lift m)
+
+// let handle_relay ret h m : (a -> Eff [| r] w) -> (forall v. [|r ] v -> Eff [| r] w) -> Eff [f : f | r] w -> Eff [| r] w =
+//     let loop x =
+//         match x with
+//         | Value v -> ret v
+//         | Effect e ->
+//             match proj e with
+//             | Found x -> { run_effect = \f -> (h x).run_effect (any ()) }
+//             | NotFound r -> { run_effect = \f -> Effect (f r) }
+//     loop m
+
+let run_lift eff : [Monad m] -> Eff [ lift : Lift m | r ] a -> m a =
+    let loop ve : Eff [ lift : Lift m | r ] a -> m a =
+        match ve with
+        | Pure v -> wrap v
+        | Impure e f ->
+            match extract_lift e with 
+            | Lift m ->
+                do a = m
+                loop (f a) 
+            | _ -> error "unreachable"
+    loop eff
+
+{
+    Eff,
+    Arr,
+
+    Error,
+    Lift,
+
+    functor,
+    applicative,
+    monad,
+
+    catch,
+    throw,
+    run_result,
+
+    lift,
+    run_lift,
+}
