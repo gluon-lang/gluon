@@ -1981,7 +1981,7 @@ where
                             doc = chain![arena;
                                 doc,
                                 arena.newline(),
-                                "| ",
+                                ".. ",
                                 top(row).pretty(printer)
                             ];
                             break;

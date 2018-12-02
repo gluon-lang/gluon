@@ -955,7 +955,9 @@ impl<'a> Typecheck<'a> {
                             self.type_cache.poly_variant(vec![], self.subs.new_var());
                         let scrutinee_type =
                             self.unify_span(expr.span, &variant_type, scrutinee_type.clone());
-                        self.remove_aliases(scrutinee_type)
+                        let typ = self.remove_aliases(scrutinee_type);
+                        let typ = self.new_skolem_scope(&typ);
+                        self.instantiate_generics(&typ)
                     }
                     _ => scrutinee_type.clone(),
                 };
