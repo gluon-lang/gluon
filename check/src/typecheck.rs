@@ -1,30 +1,34 @@
 //! The main typechecking interface which is responsible for typechecking expressions, patterns,
 //! etc. Only checks which need to be aware of expressions are handled here the actual unifying and
 //! checking of types are done in the `unify_type` and `kindcheck` modules.
-use std::borrow::{BorrowMut, Cow};
-use std::fmt;
-use std::iter::once;
-use std::mem;
+use std::{
+    borrow::{BorrowMut, Cow},
+    fmt,
+    iter::once,
+    mem,
+};
 
 use codespan_reporting::Diagnostic;
 
-use base::ast::{
-    Argument, AstType, DisplayEnv, Do, Expr, IdentEnv, Literal, MutVisitor, Pattern, PatternField,
-    SpannedExpr, SpannedIdent, SpannedPattern, TypeBinding, Typed, TypedIdent, ValueBinding,
-    ValueBindings,
-};
-use base::error::{AsDiagnostic, Errors};
-use base::fnv::{FnvMap, FnvSet};
-use base::kind::{ArcKind, Kind, KindCache, KindEnv};
-use base::merge;
-use base::metadata::{Metadata, MetadataEnv};
-use base::pos::{self, BytePos, Span, Spanned};
-use base::resolve;
-use base::scoped_map::ScopedMap;
-use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
-use base::types::{
-    self, Alias, AliasRef, AppVec, ArcType, ArgType, BuiltinType, Field, Filter, Generic,
-    PrimitiveEnv, Skolem, Type, TypeCache, TypeEnv, TypeFormatter, TypeVariable,
+use base::{
+    ast::{
+        Argument, AstType, DisplayEnv, Do, Expr, IdentEnv, Literal, MutVisitor, Pattern,
+        PatternField, SpannedExpr, SpannedIdent, SpannedPattern, TypeBinding, Typed, TypedIdent,
+        ValueBinding, ValueBindings,
+    },
+    error::{AsDiagnostic, Errors},
+    fnv::{FnvMap, FnvSet},
+    kind::{ArcKind, Kind, KindCache, KindEnv},
+    merge,
+    metadata::{Metadata, MetadataEnv},
+    pos::{self, BytePos, Span, Spanned},
+    resolve,
+    scoped_map::ScopedMap,
+    symbol::{Symbol, SymbolModule, SymbolRef, Symbols},
+    types::{
+        self, Alias, AliasRef, AppVec, ArcType, ArgType, BuiltinType, Field, Filter, Generic,
+        PrimitiveEnv, Skolem, Type, TypeCache, TypeEnv, TypeFormatter, TypeVariable,
+    },
 };
 
 use implicits;

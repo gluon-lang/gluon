@@ -1,7 +1,11 @@
-use api::generic::A;
-use api::Generic;
-use thread::Thread;
-use {ExternModule, Result};
+use {
+    api::{
+        generic::{A, B},
+        Generic, Getable, WithVM,
+    },
+    thread::Thread,
+    ExternModule, Result,
+};
 
 fn trace(a: Generic<A>) {
     println!("{:?}", a);
@@ -9,6 +13,10 @@ fn trace(a: Generic<A>) {
 
 fn show(a: Generic<A>) -> String {
     format!("{:?}", a)
+}
+
+fn transmute(WithVM { vm, value: a }: WithVM<Generic<A>>) -> Generic<B> {
+    Getable::from_value(vm, a.get_variant())
 }
 
 mod std {
@@ -22,7 +30,8 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
         vm,
         record! {
             trace => primitive!(1, std::debug::trace),
-            show => primitive!(1, std::debug::show)
+            show => primitive!(1, std::debug::show),
+            transmute => primitive!(1, std::debug::transmute)
         },
     )
 }

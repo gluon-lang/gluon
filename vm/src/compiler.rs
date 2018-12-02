@@ -557,14 +557,24 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn find_tag(&self, typ: &ArcType, constructor: &Symbol) -> Option<VmTag> {
+    fn find_tag(&self, typ: &ArcType, constructor: &Symbol) -> Option<FieldAccess> {
         let x = resolve::remove_aliases_cow(self, typ);
-        match **x {
-            Type::Variant(ref row) => row
-                .row_iter()
-                .enumerate()
-                .find(|&(_, field)| field.name.name_eq(constructor))
-                .map(|(tag, _)| tag as VmTag),
+        match **x.remove_forall() {
+            Type::Variant(ref row) => {
+                let mut iter = row.row_iter();
+                match iter.position(|field| field.name.name_eq(constructor)) {
+                    Some(index) => {
+                        for _ in iter.by_ref() {}
+                        Some(if **iter.current_type() == Type::EmptyRow {
+                            // Non-polymorphic variant, access by index
+                            FieldAccess::Index(index as VmIndex)
+                        } else {
+                            FieldAccess::Name
+                        })
+                    }
+                    None => None,
+                }
+            }
             _ => None,
         }
     }
@@ -803,7 +813,16 @@ impl<'a> Compiler<'a> {
                                             self.symbols.string(&id.name),
                                         )
                                     });
-                            function.emit(TestTag(tag));
+
+                            match tag {
+                                FieldAccess::Index(tag) => function.emit(TestTag(tag)),
+                                FieldAccess::Name => {
+                                    let interned = self.intern(id.name.as_ref())?;
+                                    let index = function.add_string_constant(interned);
+                                    function.emit(TestPolyTag(index));
+                                }
+                            }
+
                             start_jumps.push(function.function.instructions.len());
                             function.emit(CJump(0));
                         }
@@ -911,16 +930,23 @@ impl<'a> Compiler<'a> {
                     Type::App(ref array, _) if **array == Type::Builtin(BuiltinType::Array) => {
                         function.emit(ConstructArray(exprs.len() as VmIndex));
                     }
-                    Type::Variant(ref variants) => {
-                        function.emit(ConstructVariant {
-                            tag: variants
-                                .row_iter()
-                                .position(|field| field.name.name_eq(&id.name))
-                                .unwrap_or_else(|| {
-                                    ice!("Variant `{}` not found in {}", id.name, variants)
-                                }) as VmTag,
-                            args: exprs.len() as u32,
-                        });
+                    Type::Variant(_) => {
+                        match self.find_tag(&typ, &id.name).unwrap_or_else(|| {
+                            ice!("Variant `{}` not found in {:#?}", id.name, typ)
+                        }) {
+                            FieldAccess::Index(tag) => function.emit(ConstructVariant {
+                                tag,
+                                args: exprs.len() as u32,
+                            }),
+                            FieldAccess::Name => {
+                                let variant_name = self.intern(&id.name.definition_name())?;
+                                let tag = function.add_string_constant(variant_name);
+                                function.emit(ConstructPolyVariant {
+                                    tag,
+                                    args: exprs.len() as u32,
+                                });
+                            }
+                        }
                     }
                     _ => ice!("ICE: Unexpected data type: {}", typ),
                 }

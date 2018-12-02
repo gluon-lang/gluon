@@ -631,17 +631,14 @@ impl<'vm, 'value> Getable<'vm, 'value> for &'value str {
     fn from_value(_vm: &'vm Thread, value: Variants<'value>) -> Self {
         match value.as_ref() {
             ValueRef::String(ref s) => s,
-            _ => ice!("ValueRef is not a String"),
+            _ => ice!("ValueRef is not a String: {:?}", value),
         }
     }
 }
 
 impl<'vm, 'value> Getable<'vm, 'value> for &'value Path {
-    fn from_value(_vm: &'vm Thread, value: Variants<'value>) -> Self {
-        match value.as_ref() {
-            ValueRef::String(ref s) => Path::new(&s[..]),
-            _ => ice!("ValueRef is not a String"),
-        }
+    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
+        Path::new(<&'value str>::from_value(vm, value))
     }
 }
 
