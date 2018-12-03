@@ -19,7 +19,7 @@ use gluon::base::filename_to_module;
 use gluon::base::symbol::Symbol;
 use gluon::base::types::{ArcType, Type};
 
-use gluon::vm::api::{de::De, generic::A, Getable, Hole, OpaqueValue, OwnedFunction, VmType};
+use gluon::vm::api::{de::De, generic::A, Getable, Hole, OpaqueValue, OwnedFunction, VmType, IO};
 
 use gluon::{new_vm, Compiler, RootedThread, Thread};
 
@@ -113,7 +113,7 @@ macro_rules! define_test_type {
     };
 }
 
-type TestFn = OwnedFunction<fn(()) -> OpaqueValue<RootedThread, TestEff>>;
+type TestFn = OwnedFunction<fn(()) -> OpaqueValue<RootedThread, TestEffIO>>;
 
 #[derive(Deserialize)]
 enum TestCase {
@@ -123,9 +123,9 @@ enum TestCase {
 
 define_test_type! { TestCase }
 
-struct TestEff;
+struct TestEffIO;
 
-define_test_type! { TestEff A }
+define_test_type! { TestEffIO A }
 
 struct GluonTestable<F>(F);
 
@@ -151,12 +151,12 @@ impl TestCase {
                     let future = test
                         .call_async(())
                         .and_then(|test| {
-                            future::result(test.vm().get_global("std.test.run")).and_then(
+                            future::result(test.vm().get_global("std.test.run_io")).and_then(
                                 |action| {
                                     let mut action: OwnedFunction<
-                                        fn(OpaqueValue<RootedThread, TestEff>) -> (),
+                                        fn(OpaqueValue<RootedThread, TestEffIO>) -> IO<()>,
                                     > = action;
-                                    action.call_async(test)
+                                    action.call_async(test).map(|_| ())
                                 },
                             )
                         })

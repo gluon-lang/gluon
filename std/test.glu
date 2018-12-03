@@ -11,14 +11,16 @@ let { Option } = import! std.option
 let { (<>) } = import! std.semigroup
 let { error } = import! std.prim
 let { id } = import! std.function
+let { ? } = import! std.io
 
-let effect @ { Eff, Writer, ? } = import! std.effect
+let effect @ { Eff, Lift, Writer, ? } = import! std.effect
 
 
 type Test a = Writer (List String) a
 type TestEff r a = Eff [ writer : Test | r ] a
+type TestEffIO r a = Eff [ writer : Test, lift : Lift IO | r ] a
 type TestCase a =
-    | Test String (() -> Eff [ writer : Test ] a)
+    | Test String (() -> Eff [ writer : Test | r ] a)
     | Group String (Array (TestCase a))
 
 let test = Test
@@ -36,20 +38,25 @@ let assert_neq l r : [Show a] -> [Eq a] -> a -> a -> Eff [ writer : Test | r ] (
     then wrap ()
     else effect.tell (Cons ("Assertion failed: " <> show l <> " == " <> show r) Nil)
 
-rec let run_raw test : Eff [ writer : Test | r ] a -> List String =
-    let test = effect.run_pure (effect.run_writer test)
-    test.writer
+rec let run_raw test : Eff [ writer : Test | r ] a -> Eff [ | r ] (List String) =
+    do test = effect.run_writer test
+    wrap test.writer
 
-rec let run test : Eff [ writer : Test | r ] a -> () =
-    let writer = run_raw test
+rec let run test : Eff [ writer : Test | r ] a -> Eff [ | r ] () =
+    do writer = run_raw test
     match writer with
     | Cons _ _ -> error (foldl (\acc err -> acc <> "\n" <> err) "" writer)
-    | Nil -> ()
+    | Nil -> wrap ()
+
+rec let run_io test : TestEffIO r a -> IO () =
+    effect.run_lift (run test)
+
 in
 
 {
     Test,
     TestEff,
+    TestEffIO,
     TestCase,
 
     test,
@@ -61,4 +68,5 @@ in
 
     run_raw,
     run,
+    run_io,
 }
