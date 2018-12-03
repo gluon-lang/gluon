@@ -1,7 +1,6 @@
 //@NO-IMPLICIT-PRELUDE
 //! Functions and types for working with `Read`ers.
 
-let _ = import! std.io.types
 let { wrap, flat_map, default_buf_len } = import! std.io.prim
 let { Option, Bool } = import! std.types
 let { Disposable, dispose, is_disposed } = import! std.disposable
