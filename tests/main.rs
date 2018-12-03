@@ -19,8 +19,7 @@ use gluon::base::filename_to_module;
 use gluon::base::symbol::Symbol;
 use gluon::base::types::{ArcType, Type};
 
-use gluon::vm::api::de::De;
-use gluon::vm::api::{Getable, Hole, OpaqueValue, OwnedFunction, VmType};
+use gluon::vm::api::{de::De, generic::A, Getable, Hole, OpaqueValue, OwnedFunction, VmType};
 
 use gluon::{new_vm, Compiler, RootedThread, Thread};
 
@@ -98,7 +97,7 @@ fn test_files(path: &str) -> Result<Vec<PathBuf>, Error> {
 }
 
 macro_rules! define_test_type {
-    ($name:ident) => {
+    ($name:ident $($args: ident)*) => {
         impl VmType for $name {
             type Type = $name;
             fn make_type(vm: &Thread) -> ArcType {
@@ -107,14 +106,14 @@ macro_rules! define_test_type {
                     (*vm.global_env().get_env().find_type_info(typ).unwrap())
                         .clone()
                         .into_type(),
-                    collect![Type::unit()],
+                    collect![$($args::make_type(vm),)* Type::unit()],
                 )
             }
         }
     };
 }
 
-type TestFn = OwnedFunction<fn(()) -> OpaqueValue<RootedThread, Test>>;
+type TestFn = OwnedFunction<fn(()) -> OpaqueValue<RootedThread, TestEff>>;
 
 #[derive(Deserialize)]
 enum TestCase {
@@ -124,9 +123,9 @@ enum TestCase {
 
 define_test_type! { TestCase }
 
-struct Test;
+struct TestEff;
 
-define_test_type! { Test }
+define_test_type! { TestEff A }
 
 struct GluonTestable<F>(F);
 
@@ -155,7 +154,7 @@ impl TestCase {
                             future::result(test.vm().get_global("std.test.run")).and_then(
                                 |action| {
                                     let mut action: OwnedFunction<
-                                        fn(OpaqueValue<RootedThread, Test>) -> (),
+                                        fn(OpaqueValue<RootedThread, TestEff>) -> (),
                                     > = action;
                                     action.call_async(test)
                                 },

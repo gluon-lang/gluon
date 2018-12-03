@@ -9,6 +9,8 @@ let map @ { empty, singleton, find, insert, to_list, keys, values, ? } = import!
 let { Applicative, (*>) } = import! std.applicative
 let list @ { List, ? } = import! std.list
 
+let { ? } = import! std.effect
+
 let show_Entry : Show { key : String, value : Int } = {
     show = \e -> e.key <> int.show.show e.value
 }

@@ -1,7 +1,6 @@
 //! A simple test library.
 
 let string = import! std.string
-let writer @ { Writer, functor, applicative, monad, ? } = import! std.writer
 let { wrap } = import! std.applicative
 let prelude @ { Semigroup } = import! std.prelude
 let float = import! std.float
@@ -13,10 +12,13 @@ let { (<>) } = import! std.semigroup
 let { error } = import! std.prim
 let { id } = import! std.function
 
+let effect @ { Eff, Writer, ? } = import! std.effect
+
 
 type Test a = Writer (List String) a
+type TestEff r a = Eff [ writer : Test | r ] a
 type TestCase a =
-    | Test String (() -> Test a)
+    | Test String (() -> Eff [ writer : Test ] a)
     | Group String (Array (TestCase a))
 
 let test = Test
@@ -24,32 +26,31 @@ let group = Group
 
 let assert x = if x then () else error "Assertion failed"
 
-let assert_eq l r : [Show a] -> [Eq a] -> a -> a -> Test () =
+let assert_eq l r : [Show a] -> [Eq a] -> a -> a -> Eff [ writer : Test | r ] () =
     if l == r
-    then wrap ?applicative ()
-    else writer.tell (Cons ("Assertion failed: " <> show l <> " != " <> show r) Nil)
+    then wrap ()
+    else effect.tell (Cons ("Assertion failed: " <> show l <> " != " <> show r) Nil)
 
-let assert_neq l r : [Show a] -> [Eq a] -> a -> a -> Test () =
+let assert_neq l r : [Show a] -> [Eq a] -> a -> a -> Eff [ writer : Test | r ] () =
     if l /= r
-    then wrap ?applicative ()
-    else writer.tell (Cons ("Assertion failed: " <> show l <> " == " <> show r) Nil)
+    then wrap ()
+    else effect.tell (Cons ("Assertion failed: " <> show l <> " == " <> show r) Nil)
 
-rec let run test : Test a -> () =
-    match test.writer with
-    | Cons _ _ -> error (foldl (\acc err -> acc <> "\n" <> err) "" test.writer)
+rec let run_raw test : Eff [ writer : Test | r ] a -> List String =
+    let test = effect.run_pure (effect.run_writer test)
+    test.writer
+
+rec let run test : Eff [ writer : Test | r ] a -> () =
+    let writer = run_raw test
+    match writer with
+    | Cons _ _ -> error (foldl (\acc err -> acc <> "\n" <> err) "" writer)
     | Nil -> ()
 in
-let functor : Functor Test = functor
-let applicative : Applicative Test = applicative
-let monad : Monad Test = monad
 
 {
     Test,
+    TestEff,
     TestCase,
-
-    functor,
-    applicative,
-    monad,
 
     test,
     group,
@@ -58,5 +59,6 @@ let monad : Monad Test = monad
     assert_eq,
     assert_neq,
 
+    run_raw,
     run,
 }

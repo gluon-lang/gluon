@@ -3,6 +3,8 @@ let { (<|) } = import! std.function
 let { run, Test, assert_eq, test, group, ? } = import! std.test
 let { (*>), ? } = import! std.applicative
 
+let { ? } = import! std.effect
+
 let ints input =
     match input with
     | 0 -> 1
