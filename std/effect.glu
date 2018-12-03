@@ -114,6 +114,43 @@ type Lift m a = forall r . (| Lift (m a) .. r)
 
 let extract_lift x : forall m . [ lift : Lift m | r ] a -> Lift m a = debug.transmute x
 
+type Reader s a = forall r . (| Ask .. r)
+
+let extract_reader x : forall s . [ reader : Reader s | r ] a -> Reader s a = debug.transmute x
+
+let send_reader f : f a -> Eff [ reader : f | r ] a = Impure (debug.transmute f) Pure
+
+let ask : forall s . Eff [ reader : Reader s | r ] s =
+    send_reader Ask
+
+let asks f : forall s . (s -> a) -> Eff [ reader : Reader s | r ] a =
+    map f ask
+
+let local f eff : forall s . (s -> s) -> Eff [ reader : Reader s | r ] a -> Eff [ reader : Reader s | r ] a =
+    do s = asks f
+    let loop ve : Eff [ reader : Reader _ | r ] a -> Eff [ reader : Reader _ | r ] a =
+        match ve with
+        | Pure value -> wrap value
+        | Impure e f ->
+            match extract_reader e with 
+            | Ask ->
+                loop (f s)
+            | rest ->
+                Impure (inject_rest rest) (loop << f)
+    loop eff
+
+let run_reader s eff : forall s . s -> Eff [ reader : Reader s | r ] a -> Eff [ | r ] a =
+    let loop reader ve : _ -> Eff [ reader : Reader _ | r ] a -> Eff [ | r ] a =
+        match ve with
+        | Pure value -> wrap value
+        | Impure e f ->
+            match extract_reader e with 
+            | Ask ->
+                loop reader (f reader)
+            | rest ->
+                Impure (inject_rest rest) (loop reader << f)
+    loop s eff
+
 // FIXME Remove
 let send_lift f : f a -> Eff [ lift : f | r ] a = Impure (debug.transmute f) Pure
 let lift m : m a -> Eff [ lift : Lift m | r ] a = send_lift (Lift m)
@@ -146,6 +183,7 @@ let run_lift eff : [Monad m] -> Eff [ lift : Lift m | r ] a -> m a =
 
     Error,
     State,
+    Reader,
     Lift,
 
     functor,
@@ -162,6 +200,11 @@ let run_lift eff : [Monad m] -> Eff [ lift : Lift m | r ] a -> m a =
     run_state,
     exec_state,
     eval_state,
+
+    ask,
+    asks,
+    local,
+    run_reader,
 
     lift,
     run_lift,
