@@ -218,28 +218,29 @@ unsafe impl<'b> DataDef for Def<'b> {
 }
 
 pub(crate) struct VariantDef<'b> {
-    pub tag: InternedStr,
+    pub tag: VmTag,
+    pub poly_tag: Option<InternedStr>,
     pub elems: &'b [Value],
 }
 unsafe impl<'b> DataDef for VariantDef<'b> {
     type Value = DataStruct;
     fn size(&self) -> usize {
         Def {
-            tag: u32::max_value(),
+            tag: self.tag,
             elems: self.elems,
         }
         .size()
     }
     fn initialize<'w>(self, result: WriteOnly<'w, DataStruct>) -> &'w mut DataStruct {
         Def {
-            tag: u32::max_value(),
+            tag: self.tag,
             elems: self.elems,
         }
         .initialize(result)
     }
 
     fn tag(&self) -> Option<InternedStr> {
-        Some(self.tag)
+        self.poly_tag
     }
 }
 
@@ -1478,8 +1479,9 @@ impl<'t> Cloner<'t> {
                     elems: &data.fields,
                 })?
             } else {
-                gc.alloc(Def {
+                gc.alloc(VariantDef {
                     tag: data.tag,
+                    poly_tag: data_ptr.poly_tag(),
                     elems: &data.fields,
                 })?
             };

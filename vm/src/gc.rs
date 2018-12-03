@@ -424,15 +424,19 @@ impl<T: ?Sized> GcPtr<T> {
     }
 
     pub fn poly_tag(&self) -> Option<InternedStr> {
-        unsafe { (*self.header().type_info).tag }
+        self.type_info().tag
     }
 
     pub fn field_map(&self) -> &FnvMap<InternedStr, VmIndex> {
-        unsafe { &(*self.header().type_info).fields }
+        &self.type_info().fields
     }
 
     pub fn field_names(&self) -> &Arc<Vec<InternedStr>> {
-        unsafe { &(*self.header().type_info).fields_key }
+        &self.type_info().fields_key
+    }
+
+    fn type_info(&self) -> &TypeInfo {
+        unsafe { &*self.header().type_info }
     }
 
     pub fn ptr_eq(self, other: GcPtr<T>) -> bool {

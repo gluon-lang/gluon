@@ -1004,7 +1004,7 @@ impl<'a> Typecheck<'a> {
                                 } else {
                                     scrutinee_type = Type::poly_variant(
                                         variants,
-                                        variant_iter.current_type().clone(),
+                                        self.subs.new_var(), // TODO Double check
                                     );
                                     true
                                 }
@@ -1643,7 +1643,8 @@ impl<'a> Typecheck<'a> {
                     Err(err) => self.error(span, err),
                 };
                 let return_type = self.instantiate_generics(&return_type);
-                self.unify_span(span, &match_type, return_type)
+                let level = self.subs.var_id();
+                self.subsumes(span, level, ErrorOrder::ExpectedActual, &return_type, match_type)
             }
             Pattern::Record {
                 typ: ref mut curr_typ,

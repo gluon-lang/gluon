@@ -1840,7 +1840,8 @@ impl<'b> ExecuteContext<'b> {
                             self.thread,
                             &self.stack.stack,
                             VariantDef {
-                                tag: tag,
+                                tag: 10_000_000,
+                                poly_tag: Some(tag),
                                 elems: fields,
                             },
                         )?)
@@ -1991,6 +1992,15 @@ impl<'b> ExecuteContext<'b> {
                             ))
                         }
                     };
+                    debug_assert!(
+                        data_tag.is_some(),
+                        "ICE: Polymorphic match on non-polymorphic variant {:#?}\n{:p}",
+                        self.stack.top(),
+                        match self.stack.top().get_repr() {
+                            Data(ref data) => &**data,
+                            _ => unreachable!(),
+                        }
+                    );
                     self.stack
                         .push(ValueRepr::Tag(if data_tag == Some(expected_tag) {
                             1
