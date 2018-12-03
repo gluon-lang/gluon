@@ -219,5 +219,7 @@ fn main() {
     println!("cargo:rerun-if-changed=examples/24.glu");
 
     generate_std_include();
-    println!("cargo:rerun-if-changed=std/");
+    if !env::var("CARGO_FEATURE_TEST").is_ok() {
+        println!("cargo:rerun-if-changed=std/");
+    }
 }
