@@ -13,7 +13,7 @@ use futures::{Future, IntoFuture};
 use gluon::base::types::{Alias, ArcType, Type};
 use gluon::import::{add_extern_module, Import};
 use gluon::vm::api::de::De;
-use gluon::vm::api::{FunctionRef, FutureResult, OpaqueValue, Userdata, VmType, IO};
+use gluon::vm::api::{FunctionRef, FutureResult, OpaqueValue, RuntimeResult, Userdata, VmType, IO};
 use gluon::vm::thread::{RootedThread, Thread, Traverseable};
 use gluon::vm::types::VmInt;
 use gluon::vm::{Error, ExternModule};
@@ -373,4 +373,35 @@ fn get_value_boxed_or_unboxed() {
         .run_expr::<Box<i32>>(&vm, "test", text)
         .unwrap_or_else(|err| panic!("{}", err));
     assert_eq!(boxed, Box::new(27));
+}
+
+#[test]
+fn runtime_result_vm_type_forwarding() {
+    let _ = ::env_logger::try_init();
+    let vm = make_vm();
+
+    add_extern_module(&vm, "test", |vm| {
+        ExternModule::new(
+            vm,
+            record! {
+                primes => primitive!(1, |_: ()| -> RuntimeResult<IO<()>, String> {
+                    RuntimeResult::Return(IO::Value(()))
+                })
+            },
+        )
+    });
+
+    let text = r#"
+        let { primes } = import! test
+        let { ? } = import! std.io
+        let { wrap } = import! std.applicative
+
+        do primes = primes ()
+        wrap ()
+    "#;
+
+    let _ = Compiler::new()
+        .run_io(true)
+        .run_expr::<IO<()>>(&vm, "test", text)
+        .unwrap_or_else(|err| panic!("{}", err));
 }

@@ -1,0 +1,166 @@
+//@NO-IMPLICIT-PRELUDE
+//! Functions and types for working with `Write`rs.
+
+let string = import! std.string
+let array = import! std.array
+let { wrap } = import! std.applicative
+let { flat_map, wrap, default_buf_len, throw } = import! std.io.prim
+let { Disposable, dispose, is_disposed } = import! std.disposable
+let { (<-), load, ref } = import! std.reference
+let { ? } = import! std.int
+let { assert } = import! std.test
+let { (>=), (>), (==) } = import! std.cmp
+let { (+), (-) } = import! std.num
+let { not } = import! std.bool
+
+
+/// Allows writing bytes to a sink. To ensure that all data has been written,
+/// writes have to be paired with a `flush`.
+#[implicit]
+type Write a = {
+    /// Write some bytes from a slice of an array into the writer. The bounds
+    /// of the slice are given by `start` and `end` as a half open range `[start, end)`.
+    ///
+    /// The function returns the number of bytes that have been written. If the slice
+    /// is not empty and the returned value is `0`, the writer will likely not accept
+    /// more data. It _may_ accept more data in the future.
+    write_slice : a -> Array Byte -> Int -> Int -> IO Int,
+
+    /// Flushes the buffers of the writer, ensuring that all data has been written.
+    flush : a -> IO (),
+}
+
+let write_slice ?write : [Write a] -> a -> Array Byte -> Int -> Int -> IO Int = write.write_slice
+
+/// Like `write_slice`, but tries to write all of `buf`.
+let write writer buf : [Write a] -> a -> Array Byte -> IO Int =
+    write_slice writer buf 0 (array.len buf)
+
+/// Writes the entire contents of `buf` into `writer`. The call will fail if `writer`
+/// does not accept all of the data.
+let write_all writer buf : [Write a] -> a -> Array Byte -> IO () =   
+    let buf_len = array.len buf
+
+    let inner bytes_written =
+        if bytes_written >= buf_len then
+            wrap ()
+        else
+            do written = write_slice writer buf bytes_written buf_len
+
+            if written == 0 then
+                throw "cannot write the whole buffer because the writer has reached end of file"
+            else
+                inner (bytes_written + written)
+    
+    inner 0
+
+/// Writes the entire string into `writer`. The call will fail if `writer`
+/// does not accept all of the data.
+let write_string writer str : [Write a] -> a -> String -> IO () = 
+    write_all writer (string.as_bytes str)
+
+let flush ?write : [Write a] -> a -> IO () = write.flush
+
+/// Wraps a writer to provide buffering. Buffering is more efficient when
+/// performing many small writes, because it avoids many costly writes to
+/// the underlying writer.
+///
+/// If you are writing all data at once, buffering is not necessary.
+type Buffered w = {
+    writer : w,
+    buf : Ref (Array Byte),
+    capacity : Int,
+}
+
+/// Wraps `writer` in a `Buffered` writer to provide buffering with the specified
+/// buffer capacity.
+let buffered_with_capacity capacity writer : [Write w] -> Int -> w -> Buffered w =
+    assert (capacity > 0)
+
+    {
+        writer,
+        buf = ref [],
+        capacity,
+    }
+
+/// Wraps `writer` in a `Buffered` writer to provide buffering.
+let buffered writer : [Write w] -> w -> Buffered w =
+    buffered_with_capacity default_buf_len writer
+
+/// Flushes the buffer of `buf_writer`. If an EOF is encountered, the call will fail.
+let flush_buffer buf_writer : [Write w] -> Buffered w -> IO () =
+    let buf = load buf_writer.buf
+
+    if array.is_empty buf then
+        wrap ()
+    else
+        let write_buf bytes_written =
+            if bytes_written >= array.len buf then
+                wrap ()
+            else
+                do written = write_slice buf_writer.writer buf bytes_written (array.len buf)
+
+                if written == 0 then
+                    throw "cannot flush buffer because the writer has reached end of file"
+                else
+                    write_buf (bytes_written + written)
+
+        do _ = write_buf 0
+        let _ = buf_writer.buf <- []
+        wrap ()
+
+let write_buffered : [Write w] -> Write (Buffered w) =
+    let buffered_write_slice buf_writer slice start end =
+        let slice_len = end - start
+        assert (slice_len >= 0)
+        
+        do _ = 
+            // if the new data would spill the buffer, flush it first
+            if array.len (load buf_writer.buf) + slice_len >= buf_writer.capacity then
+                flush_buffer buf_writer
+            else
+                wrap ()
+
+        // if the slice is larger than the max buffer length write it directly;
+        // otherwise append it to the buffer. Appending can never exceed the buffer,
+        // since the slice is always < buf_len and the buffer has been flushed if
+        // necessary
+        if slice_len >= buf_writer.capacity then
+            write_slice buf_writer.writer slice start end
+        else
+            let _ = buf_writer.buf <- array.append (load buf_writer.buf) (array.slice slice start end)
+            wrap slice_len
+
+    let buffered_flush buf_writer =
+        do _ = flush_buffer buf_writer
+        flush buf_writer.writer
+
+    {
+        write_slice = buffered_write_slice,
+        flush = buffered_flush,
+    }
+
+let disposable_buffered : [Disposable w] -> [Write w] -> Disposable (Buffered w) =
+    {
+        dispose = (\buf_writer -> 
+            do _ = flush_buffer buf_writer
+            dispose buf_writer.writer
+        ),
+        is_disposed = \buf_writer -> is_disposed buf_writer.writer,
+    }
+
+
+{
+    Write,
+
+    write_slice,
+    write,
+    write_all,
+    write_string,
+    flush,
+    buffered,
+    buffered_with_capacity,
+
+    write_buffered,
+    disposable_buffered,
+}

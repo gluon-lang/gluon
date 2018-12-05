@@ -1,5 +1,5 @@
 use std::fmt;
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::sync::Mutex;
 
@@ -9,7 +9,7 @@ use futures::{
 };
 
 use vm::api::generic::{A, B};
-use vm::api::{self, Array, Getable, OpaqueValue, OwnedFunction, TypedBytecode, WithVM, IO};
+use vm::api::{Getable, OpaqueValue, OwnedFunction, RuntimeResult, TypedBytecode, WithVM, IO};
 use vm::internal::ValuePrinter;
 use vm::stack::{self, StackFrame};
 use vm::thread::{RootedThread, Thread, ThreadInternal};
@@ -49,7 +49,16 @@ fn eprintln(s: &str) -> IO<()> {
 
 #[derive(Userdata)]
 #[gluon(crate_name = "::vm")]
-struct GluonFile(Mutex<File>);
+struct GluonFile(Mutex<Option<File>>);
+
+macro_rules! unwrap_file {
+    ($file: expr) => {{
+        match *$file {
+            Some(ref mut file) => file,
+            None => return IO::Value(RuntimeResult::Panic("the file has been closed".to_owned())),
+        }
+    }};
+}
 
 impl fmt::Debug for GluonFile {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -57,27 +66,35 @@ impl fmt::Debug for GluonFile {
     }
 }
 
-fn open_file(s: &str) -> IO<GluonFile> {
-    match File::open(s) {
-        Ok(f) => IO::Value(GluonFile(Mutex::new(f))),
-        Err(err) => IO::Exception(format!("{}", err)),
-    }
+#[derive(Getable, VmType, Clone, Copy)]
+#[gluon(crate_name = "::vm")]
+enum OpenOptions {
+    Read,
+    Write,
+    Append,
+    Truncate,
+    Create,
+    CreateNew,
 }
 
-fn read_file<'vm>(file: WithVM<'vm, &GluonFile>, count: usize) -> IO<Array<'vm, u8>> {
-    let WithVM { vm, value: file } = file;
-    let mut file = file.0.lock().unwrap();
-    let mut buffer = Vec::with_capacity(count);
-    unsafe {
-        buffer.set_len(count);
-        match file.read(&mut *buffer) {
-            Ok(bytes_read) => match api::convert::<_, Array<u8>>(vm, &buffer[..bytes_read]) {
-                Ok(v) => IO::Value(v),
-                Err(err) => IO::Exception(format!("{}", err)),
-            },
-            Err(err) => IO::Exception(format!("{}", err)),
-        }
+fn open_file_with(path: &str, opts: Vec<OpenOptions>) -> IO<GluonFile> {
+    let mut open_with = fs::OpenOptions::new();
+
+    for opt in opts {
+        match opt {
+            OpenOptions::Read => open_with.read(true),
+            OpenOptions::Write => open_with.write(true),
+            OpenOptions::Append => open_with.append(true),
+            OpenOptions::Truncate => open_with.truncate(true),
+            OpenOptions::Create => open_with.create(true),
+            OpenOptions::CreateNew => open_with.create_new(true),
+        };
     }
+
+    open_with
+        .open(path)
+        .map(|file| GluonFile(Mutex::new(Some(file))))
+        .into()
 }
 
 fn read_file_to_array(s: &str) -> IO<Vec<u8>> {
@@ -99,6 +116,87 @@ fn read_file_to_string(s: &str) -> IO<String> {
             IO::Exception(buffer)
         }
     }
+}
+
+fn read_file(file: &GluonFile, count: usize) -> IO<RuntimeResult<Option<Vec<u8>>, String>> {
+    let mut file = file.0.lock().unwrap();
+    let file = unwrap_file!(file);
+    let mut buffer = Vec::with_capacity(count);
+
+    unsafe {
+        buffer.set_len(count);
+        match file.read(&mut *buffer) {
+            Ok(bytes_read) if bytes_read == 0 => IO::Value(RuntimeResult::Return(None)),
+            Ok(bytes_read) => {
+                buffer.truncate(bytes_read);
+                IO::Value(RuntimeResult::Return(Some(buffer)))
+            }
+            Err(err) => IO::Exception(format!("{}", err)),
+        }
+    }
+}
+
+fn read_file_to_end(file: &GluonFile) -> IO<RuntimeResult<Vec<u8>, String>> {
+    let mut file = file.0.lock().unwrap();
+    let file = unwrap_file!(file);
+    let mut buf = Vec::new();
+
+    match file.read_to_end(&mut buf) {
+        Ok(_) => IO::Value(RuntimeResult::Return(buf)),
+        Err(err) => IO::Exception(err.to_string()),
+    }
+}
+
+fn write_slice_file(
+    file: &GluonFile,
+    buf: &[u8],
+    start: usize,
+    end: usize,
+) -> IO<RuntimeResult<usize, String>> {
+    if start > end {
+        return IO::Value(RuntimeResult::Panic(format!(
+            "slice index starts at {} but ends at {}",
+            start, end
+        )));
+    }
+
+    if end > buf.len() {
+        return IO::Value(RuntimeResult::Panic(format!(
+            "index {} is out of range for array of length {}",
+            end,
+            buf.len()
+        )));
+    }
+
+    let mut file = file.0.lock().unwrap();
+    let file = unwrap_file!(file);
+
+    match file.write(&buf[start..end]) {
+        Ok(bytes_written) => IO::Value(RuntimeResult::Return(bytes_written)),
+        Err(why) => IO::Exception(why.to_string()),
+    }
+}
+
+fn flush_file(file: &GluonFile) -> IO<RuntimeResult<(), String>> {
+    let mut file = file.0.lock().unwrap();
+
+    match unwrap_file!(file).flush() {
+        Ok(_) => IO::Value(RuntimeResult::Return(())),
+        Err(why) => IO::Exception(why.to_string()),
+    }
+}
+
+fn close_file(file: &GluonFile) -> IO<()> {
+    let mut file = file.0.lock().unwrap();
+
+    match file.take() {
+        Some(mut file) => file.flush().into(),
+        None => IO::Value(()),
+    }
+}
+
+fn is_file_closed(file: &GluonFile) -> bool {
+    file.0.lock().unwrap().is_none()
 }
 
 fn read_char() -> IO<char> {
@@ -161,6 +259,10 @@ fn catch<'vm>(
             }))
         }
     })
+}
+
+fn throw(msg: String) -> IO<OpaqueValue<RootedThread, A>> {
+    IO::Exception(msg)
 }
 
 fn clear_frames<T>(mut err: Error, stack: StackFrame) -> IO<T> {
@@ -256,12 +358,18 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
         vm,
         record! {
             type File => GluonFile,
+            type OpenOptions => OpenOptions,
             flat_map => TypedBytecode::<FlatMap>::new("std.io.prim.flat_map", 3, flat_map),
             wrap => TypedBytecode::<Wrap>::new("std.io.prim.wrap", 2, wrap),
-            open_file => primitive!(1, std::io::prim::open_file),
-            read_file => primitive!(2, std::io::prim::read_file),
+            open_file_with => primitive!(2, std::io::prim::open_file_with),
             read_file_to_string => primitive!(1, std::io::prim::read_file_to_string),
             read_file_to_array => primitive!(1, std::io::prim::read_file_to_array),
+            read_file => primitive!(2, std::io::prim::read_file),
+            read_file_to_end => primitive!(1, std::io::prim::read_file_to_end),
+            write_slice_file => primitive!(4, std::io::prim::write_slice_file),
+            flush_file => primitive!(1, std::io::prim::flush_file),
+            close_file => primitive!(1, std::io::prim::close_file),
+            is_file_closed => primitive!(1, std::io::prim::is_file_closed),
             read_char => primitive!(0, std::io::prim::read_char),
             read_line => primitive!(0, std::io::prim::read_line),
             print => primitive!(1, std::io::prim::print),
@@ -270,8 +378,10 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
             eprint => primitive!(1, std::io::prim::eprint),
             eprintln => primitive!(1, std::io::prim::eprintln),
             catch => primitive!(2, async fn std::io::prim::catch),
+            throw => primitive!(1, std::io::prim::throw),
             run_expr => primitive!(1, async fn std::io::prim::run_expr),
             load_script => primitive!(2, async fn std::io::prim::load_script),
+            default_buf_len => 8192,
         },
     )
 }

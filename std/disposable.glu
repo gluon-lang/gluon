@@ -1,0 +1,39 @@
+//@NO-IMPLICIT-PRELUDE
+//! A `Disposable` abstracts over different kinds of resources.
+
+let { wrap, flat_map } = import! std.io.prim
+let { Bool } = import! std.types
+
+
+/// A resource that has to be released after use, for example a file handle or a
+/// database connection.
+#[implicit]
+type Disposable a = {
+    /// Disposes of `a`, releasing the resources it manages. Calling this function
+    /// a second time (or more) has no effect.
+    dispose : a -> IO (),
+
+    /// Indicates if `a` has been disposed, meaning that `dispose` has been called
+    /// at least once.
+    is_disposed : a -> Bool,
+}
+
+let dispose ?disposable : [Disposable a] -> a -> IO () = disposable.dispose
+
+let is_disposed ?disposable : [Disposable a] -> a -> Bool = disposable.is_disposed
+
+/// Calls `action` with `disposable` and disposes `disposable` afterwards. Returns
+/// the result of `action`, unless disposing `disposable` fails.
+let using disposable action : forall r . [Disposable a] -> a -> (a -> IO r) -> IO r =
+    let result = action disposable
+    do _ = dispose disposable
+    result
+
+
+{
+    Disposable,
+
+    dispose,
+    is_disposed,
+    using,
+}

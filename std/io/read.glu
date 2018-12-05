@@ -1,0 +1,151 @@
+//@NO-IMPLICIT-PRELUDE
+//! Functions and types for working with `Read`ers.
+
+let { wrap, flat_map, default_buf_len } = import! std.io.prim
+let { Option, Bool } = import! std.types
+let { Disposable, dispose, is_disposed } = import! std.disposable
+let { (>), (<=), (>=), min } = import! std.cmp
+let { assert } = import! std.test
+let { not } = import! std.bool
+let { ? } = import! std.int
+let { Result } = import! std.result
+let { ref, load, (<-) } = import! std.reference
+let array = import! std.array
+let string = import! std.string
+
+
+/// Allows reading bytes from `a`. Generally, reading from a reader
+/// advances its internal cursor. This means that multiple `read` calls
+/// with the same arguments usually __do not__ return the same value.
+#[implicit]
+type Read a = {
+    /// Tries to read `num_bytes` byte from the reader. If the reader
+    /// has reached end of file or `num_bytes` was zero, `None`
+    /// will be returned. Otherwise, an array containing as many bytes as could be
+    /// read will be returned. The length of the array is guaranteed to be in the
+    /// range `[1, num_bytes]`.
+    ///
+    /// Reaching end of file means that this reader will most likely not produce
+    /// more bytes. It _may_ produce more in the future.
+    read : a -> Int -> IO (Option (Array Byte)),
+
+    /// Read all bytes until end of file is encountered. 
+    read_to_end : a -> IO (Array Byte),
+}
+
+let read ?read : [Read a] -> a -> Int -> IO (Option (Array Byte)) = read.read
+
+let read_to_end ?read : [Read a] -> a -> IO (Array Byte) = read.read_to_end
+
+/// Read all bytes until end of file is encountered into a `String`. Returns `None`
+/// if the read bytes are not valid UTF-8.
+let read_to_string reader : [Read a] -> a -> IO (Option String) =
+    do bytes = read_to_end reader
+    
+    match string.from_utf8 bytes with
+    | Ok str -> wrap (Some str)
+    | Err _ -> wrap None
+
+/// Constructs a `read_to_end` function from a `read` function. If it is more efficient,
+/// implementors of `Read` should provide their own, specialized version.
+let default_read_to_end read : forall a . (a -> Int -> IO (Option (Array Byte))) -> a -> IO (Array Byte) =
+    let read_to_end_rec buf reader =
+        do result = read reader default_buf_len
+
+        match result with
+        | Some new_buf -> read_to_end_rec (array.append buf new_buf) reader
+        | None -> wrap buf
+    
+    read_to_end_rec []
+
+/// Wraps a reader to provide buffering. Buffering is more efficient when
+/// performing many small reads, because it avoids many costly reads from
+/// the underlying reader.
+///
+/// If you are reading all data at once, buffering is not necessary. 
+type Buffered r = {
+    reader : r,
+    buf : Ref (Array Byte),
+    capacity : Int,
+}
+
+/// Wraps `reader` in a `Buffered` reader to provide buffering with the specified
+/// buffer capacity.
+let buffered_with_capacity capacity reader : [Read a] -> Int -> a -> Buffered a =
+    assert (capacity > 0)
+
+    {
+        reader,
+        buf = ref [],
+        capacity,
+    }
+
+/// Wraps `reader` in a `Buffered` reader to provide buffering.
+let buffered reader : [Read a] -> a -> Buffered a =
+    buffered_with_capacity default_buf_len reader
+
+let read_buffered : [Read r] -> Read (Buffered r) =
+    let read_from_buf buf_reader num_bytes =
+        let buf = load buf_reader.buf
+        let num_bytes = min (array.len buf) num_bytes
+    
+        let read_buf = array.slice buf 0 num_bytes
+        let rest_buf = array.slice buf num_bytes (array.len buf)
+
+        let _ = buf_reader.buf <- rest_buf
+        Some read_buf
+
+    let buffered_read buf_reader num_bytes =
+        let buf = load buf_reader.buf
+
+        if num_bytes <= 0 then
+            wrap (Some [])
+        else if not (array.is_empty buf) then
+            wrap (read_from_buf buf_reader num_bytes)
+        else if num_bytes >= buf_reader.capacity then
+            read buf_reader.reader num_bytes
+        else
+            do new_buf = read buf_reader.reader buf_reader.capacity
+
+            match new_buf with
+            | Some new_buf ->
+                let _ = buf_reader.buf <- new_buf
+                wrap (read_from_buf buf_reader num_bytes)
+            | None -> wrap None
+
+    let buffered_read_to_end buf_reader =
+        do rest = read_to_end buf_reader.reader
+        let buf = load buf_reader.buf
+        let _ = buf_reader.buf <- []
+
+        wrap (array.append buf rest)
+
+    {
+        read = buffered_read,
+        read_to_end = buffered_read_to_end,
+    }
+
+let disposable_buffered : [Disposable r] -> Disposable (Buffered r) =
+    {
+        dispose = (\buf_reader -> 
+            let _ = buf_reader.buf <- []
+            dispose buf_reader.reader
+        ),
+        is_disposed = \buf_reader -> is_disposed buf_reader.reader,
+    }
+
+
+{
+    Read,
+    Buffered,
+
+    read,
+    read_to_end,
+    read_to_string,
+    default_read_to_end,
+    buffered,
+    buffered_with_capacity,
+
+    read_buffered,
+    disposable_buffered,
+}

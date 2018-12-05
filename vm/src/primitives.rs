@@ -40,6 +40,80 @@ pub mod array {
         }
     }
 
+    pub(crate) fn slice<'vm>(
+        array: Array<'vm, generic::A>,
+        start: usize,
+        end: usize,
+    ) -> RuntimeResult<Array<'vm, generic::A>, Error> {
+        if start > end {
+            return RuntimeResult::Panic(Error::Message(format!(
+                "slice index starts at {} but ends at {}",
+                start, end
+            )));
+        }
+
+        if end > array.len() {
+            return RuntimeResult::Panic(Error::Message(format!(
+                "index {} is out of range for array of length {}",
+                end,
+                array.len()
+            )));
+        }
+
+        struct Slice<'a> {
+            start: usize,
+            end: usize,
+            array: &'a ValueArray,
+        }
+
+        impl<'a> Traverseable for Slice<'a> {
+            fn traverse(&self, gc: &mut Gc) {
+                self.array.traverse(gc);
+            }
+        }
+
+        unsafe impl<'a> DataDef for Slice<'a> {
+            type Value = ValueArray;
+
+            fn size(&self) -> usize {
+                ValueArray::size_of(self.array.repr(), self.end - self.start)
+            }
+
+            fn initialize<'w>(self, mut result: WriteOnly<'w, ValueArray>) -> &'w mut ValueArray {
+                unsafe {
+                    let result = &mut *result.as_mut_ptr();
+                    result.set_repr(self.array.repr());
+                    result.initialize(
+                        self.array
+                            .iter()
+                            .skip(self.start)
+                            .take(self.end - self.start),
+                    );
+                    result
+                }
+            }
+        }
+
+        let mut context = array.vm().context();
+        let result = context.alloc(Slice {
+            start,
+            end,
+            array: array.get_value_array(),
+        });
+
+        let value = match result {
+            Ok(value) => value,
+            Err(err) => return RuntimeResult::Panic(err),
+        };
+
+        unsafe {
+            RuntimeResult::Return(Getable::from_value(
+                array.vm_(),
+                Variants::new(&ValueRepr::Array(value).into()),
+            ))
+        }
+    }
+
     pub(crate) fn append<'vm>(
         lhs: Array<'vm, generic::A>,
         rhs: Array<'vm, generic::A>,
@@ -463,7 +537,8 @@ pub fn load_array(vm: &Thread) -> Result<ExternModule> {
         record! {
             len => primitive!(1, std::array::prim::len),
             index => primitive!(2, std::array::prim::index),
-            append => primitive!(2, std::array::prim::append)
+            append => primitive!(2, std::array::prim::append),
+            slice => primitive!(3, std::array::prim::slice)
         },
     )
 }

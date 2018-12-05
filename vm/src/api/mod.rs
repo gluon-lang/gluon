@@ -381,8 +381,7 @@ fn insert_forall_walker(
             Type::ExtendRow { .. } => types::walk_move_type_opt(
                 typ,
                 &mut types::ControlVisitation(|typ: &ArcType| insert_forall(variables, typ)),
-            )
-            .map(|typ| ArcType::from(Type::Record(typ))),
+            ).map(|typ| ArcType::from(Type::Record(typ))),
             _ => None,
         },
         _ => types::walk_move_type_opt(
@@ -768,8 +767,7 @@ impl VmType for bool {
         (*vm.global_env()
             .get_env()
             .find_type_info("std.types.Bool")
-            .unwrap())
-        .clone()
+            .unwrap()).clone()
         .into_type()
     }
 }
@@ -1314,8 +1312,17 @@ impl<T, E> From<StdResult<T, E>> for RuntimeResult<T, E> {
 
 impl<T: VmType, E> VmType for RuntimeResult<T, E> {
     type Type = T::Type;
+
+    fn make_forall_type(vm: &Thread) -> ArcType {
+        T::make_forall_type(vm)
+    }
+
     fn make_type(vm: &Thread) -> ArcType {
         T::make_type(vm)
+    }
+
+    fn extra_args() -> VmIndex {
+        T::extra_args()
     }
 }
 impl<'vm, T: Pushable<'vm>, E: fmt::Display> Pushable<'vm> for RuntimeResult<T, E> {
