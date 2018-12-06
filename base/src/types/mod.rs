@@ -2011,7 +2011,7 @@ where
                 );
 
                 chain![arena;
-                    "[",
+                    "[|",
                     doc,
                     match **iter.current_type() {
                         Type::EmptyRow => arena.nil(),
@@ -2021,7 +2021,7 @@ where
                             top(iter.current_type()).pretty(printer)
                         ],
                     },
-                    "]"
+                    "|]"
                 ]
                 .group()
             }

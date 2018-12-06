@@ -312,11 +312,11 @@ let any x = any x
 
 let wrap x : a -> Eff r a = any ()
 
-let inject_rest x : forall e . (.. r) -> [ | r ] a = any ()
+let inject_rest x : forall e . (.. r) -> [| | r |] a = any ()
 
-let extract_state x : forall s . [ state : State s | r ] a -> State s a = any ()
+let extract_state x : forall s . [| state : State s | r |] a -> State s a = any ()
 
-let loop state ve : _ -> Eff [ state : State _ | r ] a -> Eff [ | r ] { state : _, value : a } =
+let loop state ve : _ -> Eff [| state : State _ | r |] a -> Eff [| | r |] { state : _, value : a } =
     match ve with
     | Pure value -> wrap { state, value }
     | Impure e f ->

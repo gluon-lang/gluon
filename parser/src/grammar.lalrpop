@@ -344,7 +344,7 @@ AtomicType_: Type<Id, AstType<Id>> = {
 
     "(" <VariantType> ")",
 
-    "[" <fields: Sep<Effect, ",">> <rest: ("|" <Type>)?> "]" => {
+    "[" "|" <fields: Sep<Effect, ",">> <rest: ("|" <Type>)?> "|" "]" => {
         let rest = rest.unwrap_or_else(Type::empty_row);
         Type::Effect(Type::extend_row(vec![], fields, rest))
     },

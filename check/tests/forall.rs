@@ -1167,8 +1167,8 @@ let any x = any x
 
 let send f : forall a . (forall w . (a -> VE w r) -> r (VE w r)) -> Eff r a = any ()
 
-let inj_reader : forall e v . Reader e v -> [io : Reader e | r] v = any ()
-let ask : forall e . Eff [io : Reader e | r] e = send (\x -> inj_reader (Reader x))
+let inj_reader : forall e v . Reader e v -> [| io : Reader e | r |] v = any ()
+let ask : forall e . Eff [| io : Reader e | r |] e = send (\x -> inj_reader (Reader x))
 
 ()
 "#;
@@ -1183,7 +1183,7 @@ fn fe_free() {
 
     let text = r#"
 type FEFree r a =
-    forall x . (| Pure a | Impure ([| r] x) (x -> FEFree r a))
+    forall x . (| Pure a | Impure ([| | r |] x) (x -> FEFree r a))
 
 let any x = any x
 let comp f g : (a -> FEFree r b) -> (b -> FEFree r c) -> (a -> FEFree r c) = \a ->
@@ -1220,7 +1220,7 @@ match Error "" with
 
     assert_req!(
         result.map(|x| x.to_string()),
-        Ok("forall a . | Ok\n.. a".to_string())
+        Ok("forall b . | Ok\n.. b".to_string())
     );
 }
 
