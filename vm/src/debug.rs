@@ -1,8 +1,5 @@
 use {
-    api::{
-        generic::{A, B},
-        Generic, Getable, OpaqueRef, WithVM,
-    },
+    api::{generic::A, Generic, OpaqueRef},
     thread::Thread,
     value::ValueRepr,
     ExternModule, Result,
@@ -25,10 +22,6 @@ fn tag(a: OpaqueRef<A>) -> Option<String> {
     }
 }
 
-fn transmute(WithVM { vm, value: a }: WithVM<Generic<A>>) -> Generic<B> {
-    Getable::from_value(vm, a.get_variant())
-}
-
 mod std {
     pub use debug;
 }
@@ -41,8 +34,7 @@ pub fn load(vm: &Thread) -> Result<ExternModule> {
         record! {
             trace => primitive!(1, std::debug::trace),
             show => primitive!(1, std::debug::show),
-            tag => primitive!(1, std::debug::tag),
-            transmute => primitive!(1, std::debug::transmute)
+            tag => primitive!(1, std::debug::tag)
         },
     )
 }

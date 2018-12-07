@@ -849,6 +849,9 @@ impl<'a> Typecheck<'a> {
         expr: &mut SpannedExpr<Symbol>,
         expected_type: &mut Option<&ArcType<Symbol>>,
     ) -> Result<TailCall, TypeError<Symbol>> {
+        if let Some(result) = self.check_macro(expr) {
+            return result;
+        }
         match expr.value {
             Expr::Ident(ref mut id) => {
                 id.typ = self.find(&id.name)?;
@@ -1644,7 +1647,13 @@ impl<'a> Typecheck<'a> {
                 };
                 let return_type = self.instantiate_generics(&return_type);
                 let level = self.subs.var_id();
-                self.subsumes(span, level, ErrorOrder::ExpectedActual, &return_type, match_type)
+                self.subsumes(
+                    span,
+                    level,
+                    ErrorOrder::ExpectedActual,
+                    &return_type,
+                    match_type,
+                )
             }
             Pattern::Record {
                 typ: ref mut curr_typ,
@@ -2681,6 +2690,134 @@ impl<'a> Typecheck<'a> {
                 });
                 false
             })
+    }
+
+    fn check_macro(
+        &mut self,
+        expr: &mut SpannedExpr<Symbol>,
+    ) -> Option<Result<TailCall, TypeError<Symbol>>> {
+        let (replacement, typ) = match expr.value {
+            Expr::App {
+                ref mut func,
+                ref mut args,
+                ..
+            } => match func.value {
+                Expr::Ident(ref id) => match id.name.declared_name() {
+                    "convert_effect!" => {
+                        let (name, typ) = match args.len() {
+                            1 => (None, self.infer_expr(&mut args[0])),
+                            2 => (
+                                Some(match args[0].value {
+                                    Expr::Ident(ref id) => id.name.clone(),
+                                    _ => unreachable!(),
+                                }),
+                                self.infer_expr(&mut args[1]),
+                            ),
+                            _ => unreachable!(),
+                        };
+
+                        let f = self.subs.new_var();
+                        let arg = self.subs.new_var();
+                        let expected_shape = Type::app(f.clone(), collect![arg.clone()]);
+                        self.unify_span(expr.span, &expected_shape, typ.clone());
+
+                        let unaliased = self.remove_aliases(typ);
+                        let valid_type = match *unaliased {
+                            Type::Forall(ref params, ref variant, _) if params.len() == 1 => {
+                                match **variant {
+                                    Type::Variant(ref variant) => {
+                                        let mut iter = variant.row_iter();
+                                        for _ in iter.by_ref() {}
+                                        match **iter.current_type() {
+                                            Type::Generic(ref gen) => gen.id == params[0].id,
+                                            _ => false,
+                                        }
+                                    }
+                                    _ => false,
+                                }
+                            }
+                            _ => false,
+                        };
+                        if !valid_type {
+                            return Some(Err(TypeError::Message(format!("Invalid form for the type. Expect the type to be of the form `forall a . | Variant X | a` but found `{}`", unaliased))));
+                        }
+
+                        (
+                            args.pop().unwrap(),
+                            Type::app(
+                                Type::poly_effect(
+                                    name.map(|name| Field {
+                                        name,
+                                        typ: self.subs.real(&f).clone(),
+                                    })
+                                    .into_iter()
+                                    .collect(),
+                                    self.subs.new_var(),
+                                ),
+                                collect![self.subs.real(&arg).clone()],
+                            ),
+                        )
+                    }
+                    "convert_variant!" => {
+                        let typ = self.infer_expr(&mut args[0]);
+
+                        let unaliased = self.remove_aliases(typ);
+                        let variant_type = match *unaliased {
+                            Type::App(ref f, ref type_args) if type_args.len() == 1 => {
+                                let f = self.subs.real(f).clone();
+                                match *f {
+                                    Type::Effect(ref row) => row.row_iter().fold(
+                                        Type::poly_variant(vec![], self.subs.new_var()),
+                                        |variant, field| {
+                                            let typ = Type::app(
+                                                field.typ.clone(),
+                                                collect![type_args[0].clone()],
+                                            );
+                                            self.unify_span(args[0].span, &variant, typ)
+                                        },
+                                    ),
+                                    _ => {
+                                        return Some(Err(TypeError::Message(format!(
+                                            "Expected an effect type, found `{}`",
+                                            unaliased
+                                        ))));
+                                    }
+                                }
+                            }
+                            _ => {
+                                return Some(Err(TypeError::Message(format!(
+                                    "Expected an effect type, found `{}`",
+                                    unaliased
+                                ))));
+                            }
+                        };
+                        (args.pop().unwrap(), variant_type)
+                    }
+
+                    _ => return None,
+                },
+
+                _ => return None,
+            },
+
+            _ => return None,
+        };
+        let ident = TypedIdent {
+            name: Symbol::from("convert_id"),
+            typ: typ.clone(),
+        };
+        expr.value = Expr::let_binding(
+            ValueBinding {
+                name: pos::spanned(expr.span, Pattern::Ident(ident.clone())),
+                expr: replacement,
+                args: Vec::new(),
+                metadata: Default::default(),
+                typ: None,
+                resolved_type: typ.clone(),
+            },
+            pos::spanned(expr.span, Expr::Ident(ident)),
+        );
+        Some(Ok(TailCall::Type(typ)))
     }
 }
 

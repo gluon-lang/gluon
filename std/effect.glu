@@ -39,15 +39,13 @@ let monad : Monad (Eff r) = {
     flat_map = flat_map_eff,
 }
 
-// FIXME
-let debug = import! std.debug
-
 type Error e a = forall r . (| Error e .. r)
 
-let send_error f : Error e a -> Eff [| error : Error e | r |] a = Impure (debug.transmute f) Pure
+let send_error f : Error e a -> Eff [| error : Error e | r |] a = Impure (convert_effect! error f) Pure
 
-let inject_rest x : forall e . (.. r) -> [| | r |] a = debug.transmute x
-let extract_error x : forall e . [| error : Error e | r |] a -> Error e a = debug.transmute x
+type OpenVariant a = forall r. (.. r)
+let inject_rest x : forall e . OpenVariant a -> [| | r |] a = convert_effect! x
+let extract_error x : forall e . [| error : Error e | r |] a -> Error e a = convert_variant! x
 
 let throw e : e -> Eff [| error : Error e | r |] a = send_error (Error e)
 
@@ -77,9 +75,9 @@ let catch eff handler : forall e . Eff [| error : Error e | r |] a -> (e -> Eff 
 
 type State s a = forall r . (| Get | Put s .. r)
 
-let extract_state x : forall s . [| state : State s | r |] a -> State s a = debug.transmute x
+let extract_state x : forall s . [| state : State s | r |] a -> State s a = convert_variant! x
 
-let send_state f : State s a -> Eff [| state : State s | r |] a = Impure (debug.transmute f) Pure
+let send_state f : State s a -> Eff [| state : State s | r |] a = Impure (convert_effect! state f) Pure
 
 let get : forall s . Eff [| state : State s | r |] s =
     send_state Get
@@ -110,15 +108,11 @@ let exec_state s eff : forall s . s -> Eff [| state : State s | r |] a -> Eff [|
 let eval_state s eff : forall s . s -> Eff [| state : State s | r |] a -> Eff [| | r |] a =
     map (\r -> r.value) (run_state s eff)
 
-type Lift m a = forall r . (| Lift (m a) .. r)
-
-let extract_lift x : forall m . [| lift : Lift m | r |] a -> Lift m a = debug.transmute x
-
 type Reader s a = forall r . (| Ask .. r)
 
-let extract_reader x : forall s . [| reader : Reader s | r |] a -> Reader s a = debug.transmute x
+let extract_reader x : forall s . [| reader : Reader s | r |] a -> Reader s a = convert_variant! x
 
-let send_reader f : Reader s a -> Eff [| reader : Reader s | r |] a = Impure (debug.transmute f) Pure
+let send_reader f : Reader s a -> Eff [| reader : Reader s | r |] a = Impure (convert_effect! f) Pure
 
 let ask : forall s . Eff [| reader : Reader s | r |] s =
     send_reader Ask
@@ -153,9 +147,9 @@ let run_reader s eff : forall s . s -> Eff [| reader : Reader s | r |] a -> Eff 
 
 type Writer s a = forall r . (| Tell s .. r)
 
-let extract_writer x : forall s . [| writer : Writer s | r |] a -> Writer s a = debug.transmute x
+let extract_writer x : forall s . [| writer : Writer s | r |] a -> Writer s a = convert_variant! x
 
-let send_writer f : Writer s a -> Eff [| writer : Writer s | r |] a = Impure (debug.transmute f) Pure
+let send_writer f : Writer s a -> Eff [| writer : Writer s | r |] a = Impure (convert_effect! f) Pure
 
 let tell s : forall s . s -> Eff [| writer : Writer s | r |] () =
     send_writer (Tell s)
@@ -172,8 +166,10 @@ let run_writer eff : forall s . [Monoid s] -> Eff [| writer : Writer s | r |] a 
                 Impure (inject_rest rest) (loop writer << f)
     loop monoid.empty eff
 
-// FIXME Remove
-let send_lift f : Lift m a -> Eff [| lift : Lift m | r |] a = Impure (debug.transmute f) Pure
+type Lift m a = forall r . (| Lift (m a) .. r)
+
+let send_lift f : Lift m a -> Eff [| lift : Lift m | r |] a = Impure (convert_effect! f) Pure
+
 let lift m : m a -> Eff [| lift : Lift m | r |] a = send_lift (Lift m)
 
 // let handle_relay ret h m : (a -> Eff [| r] w) -> (forall v. [|r |] v -> Eff [| r] w) -> Eff [f : f | r] w -> Eff [| r] w =
@@ -191,7 +187,7 @@ let run_lift eff : [Monad m] -> Eff [| lift : Lift m | r |] a -> m a =
         match ve with
         | Pure v -> wrap v
         | Impure e f ->
-            match extract_lift e with 
+            match convert_variant! e with 
             | Lift m ->
                 do a = m
                 loop (f a) 
