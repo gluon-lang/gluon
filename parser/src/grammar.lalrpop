@@ -107,6 +107,16 @@ SkipExtraTokens: () = {
 Ident: Id =
     IdentStr => env.from_str(<>);
 
+CtorIdent: Id =
+    Sp<Ident> => {
+        if !env.string(&<>.value).starts_with(char::is_uppercase) {
+            errors.push(::lalrpop_util::ParseError::User {
+                error: pos::spanned(<>.span, format!("Constructors must start with an uppercase letter").into()),
+            });
+        }
+        <>.value
+    };
+
 SpannedIdent: SpannedIdent<Id> =
     Sp<Ident> => pos::spanned(<>.span, new_ident(type_cache, <>.value));
 
@@ -248,7 +258,7 @@ RecordField: Either<Field<Id, Alias<Id, AstType<Id>>>, Field<Id, AstType<Id>>> =
 };
 
 VariantField: (Id, Vec<AstType<Id>>) =
-    "|" <Ident> <AtomicType*> => (<>);
+    "|" <CtorIdent> <AtomicType*> => (<>);
 
 VariantType: Type<Id, AstType<Id>> = {
     <rest: (".." <AtomicType>)> => {

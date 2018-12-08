@@ -2716,12 +2716,7 @@ impl<'a> Typecheck<'a> {
                             _ => unreachable!(),
                         };
 
-                        let f = self.subs.new_var();
-                        let arg = self.subs.new_var();
-                        let expected_shape = Type::app(f.clone(), collect![arg.clone()]);
-                        self.unify_span(expr.span, &expected_shape, typ.clone());
-
-                        let unaliased = self.remove_aliases(typ);
+                        let unaliased = self.remove_aliases(typ.clone());
                         let valid_type = match *unaliased {
                             Type::Forall(ref params, ref variant, _) if params.len() == 1 => {
                                 match **variant {
@@ -2741,6 +2736,11 @@ impl<'a> Typecheck<'a> {
                         if !valid_type {
                             return Some(Err(TypeError::Message(format!("Invalid form for the type. Expect the type to be of the form `forall a . | Variant X | a` but found `{}`", unaliased))));
                         }
+
+                        let f = self.subs.new_var();
+                        let arg = self.subs.new_var();
+                        let expected_shape = Type::app(f.clone(), collect![arg.clone()]);
+                        self.unify_span(expr.span, &expected_shape, typ);
 
                         (
                             args.pop().unwrap(),
@@ -2773,7 +2773,18 @@ impl<'a> Typecheck<'a> {
                                                 field.typ.clone(),
                                                 collect![type_args[0].clone()],
                                             );
-                                            self.unify_span(args[0].span, &variant, typ)
+                                            let typ = self.remove_alias(typ);
+                                            let typ = self.new_skolem_scope(&typ);
+                                            let typ = self.instantiate_generics(&typ);
+
+                                            let level = self.subs.var_id();
+                                            self.subsumes(
+                                                args[0].span,
+                                                level,
+                                                ErrorOrder::ActualExpected,
+                                                &variant,
+                                                typ,
+                                            )
                                         },
                                     ),
                                     _ => {
@@ -2802,6 +2813,7 @@ impl<'a> Typecheck<'a> {
 
             _ => return None,
         };
+
         let ident = TypedIdent {
             name: Symbol::from("convert_id"),
             typ: typ.clone(),

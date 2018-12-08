@@ -384,3 +384,10 @@ fn only_identifiers_are_allowed_on_recursive_patterns() {
     assert!(parse(r#"rec let () = { } in 1"#).is_err());
     assert!(parse(r#"rec let x @ { }  = { x } in 1"#).is_err());
 }
+
+#[test]
+fn invalid_variant() {
+    let _ = env_logger::try_init();
+
+    assert!(parse(r#"type X = | r in ()"#).is_err());
+}

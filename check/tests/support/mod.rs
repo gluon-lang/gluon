@@ -395,6 +395,18 @@ macro_rules! test_check {
     };
 }
 
+macro_rules! test_check_err {
+    ($name:ident, $source:expr, $($id: pat),+) => {
+        #[test]
+        fn $name() {
+            let _ = env_logger::try_init();
+            let text = $source;
+            let result = support::typecheck(text);
+            assert_err!(result, $($id),+);
+        }
+    };
+}
+
 macro_rules! assert_err {
     ($e: expr, $($id: pat),+) => {{
         #[allow(unused_imports)]
