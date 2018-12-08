@@ -182,8 +182,8 @@ let lift m : m a -> Eff [| lift : Lift m | r |] a = send_lift (Lift m)
 //             | NotFound r -> { run_effect = \f -> Effect (f r) }
 //     loop m
 
-let run_lift eff : [Monad m] -> Eff [| lift : Lift m | r |] a -> m a =
-    let loop ve : Eff [| lift : Lift m | r |] a -> m a =
+let run_lift eff : [Monad m] -> Eff [| lift : Lift m |] a -> m a =
+    let loop ve : Eff [| lift : Lift m |] a -> m a =
         match ve with
         | Pure v -> wrap v
         | Impure e f ->

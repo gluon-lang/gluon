@@ -119,3 +119,20 @@ test_check_err! {
     "#,
     TypeError::Unification(..)
 }
+
+test_check_err! {
+    effects_remains_in_lift,
+    r#"
+    type Lift m a = forall r . (| Lift (m a) .. r)
+
+    type Test a = forall r . (| Test a .. r)
+
+    let any x = any x
+
+    let run_lift eff : forall m . [| lift : Lift m |] a -> () = any ()()
+    let f x : forall m . [| test : Test, lift : Lift m | r |] Int -> () =
+        run_lift x
+    ()
+    "#,
+    TypeError::Unification(..)
+}
