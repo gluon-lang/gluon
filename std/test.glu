@@ -41,17 +41,15 @@ let assert_neq l r : [Show a] -> [Eq a] -> a -> a -> Eff [| writer : Test | r |]
 rec let run_raw test : Eff [| writer : Test | r |] a -> Eff [| | r |] (List String) =
     do test = effect.run_writer test
     wrap test.writer
-
+in
 rec let run test : Eff [| writer : Test | r |] a -> Eff [| | r |] () =
     do writer = run_raw test
     match writer with
     | Cons _ _ -> error (foldl (\acc err -> acc <> "\n" <> err) "" writer)
     | Nil -> wrap ()
-
+in
 rec let run_io test : TestEffIO r a -> IO () =
     effect.run_lift (run test)
-
-in
 
 {
     Test,

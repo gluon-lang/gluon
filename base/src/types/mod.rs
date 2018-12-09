@@ -1052,7 +1052,7 @@ where
                         kind = Kind::function(arg.kind.clone(), kind)
                     }
                     Cow::Owned(kind)
-                }
+                };
             }
         };
         for _ in 0..applied_args {
@@ -1999,6 +1999,7 @@ where
                     iter.by_ref()
                         .map(|field| {
                             chain![arena;
+                                arena.space(),
                                 printer.symbol(&field.name),
                                 arena.space(),
                                 ":",
@@ -2016,11 +2017,13 @@ where
                     match **iter.current_type() {
                         Type::EmptyRow => arena.nil(),
                         _ => chain![arena;
+                            arena.space(),
                             "|",
                             arena.space(),
                             top(iter.current_type()).pretty(printer)
                         ],
                     },
+                    arena.space(),
                     "|]"
                 ]
                 .group()
