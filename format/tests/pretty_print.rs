@@ -373,11 +373,39 @@ test abc 1232 ""
 #[test]
 fn if_else_multiple() {
     let expr = r#"
-if x
-then y
-else if z
-then w
+if x then y
+else if z then w
 else 0
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+}
+
+#[test]
+fn if_else_multiple_let_multiline_1() {
+    let expr = r#"
+if x then
+    f 123 483
+else if z then
+    "12312"
+else
+    do x = 1
+    x
+"#;
+    assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
+}
+
+#[test]
+fn if_else_multiple_multiline_2() {
+    let expr = r#"
+if x then
+    do z = io
+    io
+else if z then
+    type X = Int
+    123
+else
+    let x = 1
+    x
 "#;
     assert_diff!(&format_expr(expr).unwrap(), expr, " ", 0);
 }

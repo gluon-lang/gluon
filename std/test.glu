@@ -29,13 +29,11 @@ let group = Group
 let assert x = if x then () else error "Assertion failed"
 
 let assert_eq l r : [Show a] -> [Eq a] -> a -> a -> Eff [| writer : Test | r |] () =
-    if l == r
-    then wrap ()
+    if l == r then wrap ()
     else effect.tell (Cons ("Assertion failed: " <> show l <> " != " <> show r) Nil)
 
 let assert_neq l r : [Show a] -> [Eq a] -> a -> a -> Eff [| writer : Test | r |] () =
-    if l /= r
-    then wrap ()
+    if l /= r then wrap ()
     else effect.tell (Cons ("Assertion failed: " <> show l <> " == " <> show r) Nil)
 
 rec let run_raw test : Eff [| writer : Test | r |] a -> Eff [| | r |] (List String) =
