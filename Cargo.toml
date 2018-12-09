@@ -130,8 +130,6 @@ name = "error"
 [[test]]
 name = "io"
 [[test]]
-name = "buffered_io"
-[[test]]
 name = "limits"
 [[test]]
 name = "main"
