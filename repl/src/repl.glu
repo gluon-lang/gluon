@@ -12,8 +12,8 @@ let rustyline = import! rustyline
 let { ReadlineError } = import! rustyline_types
 let { Color } = import! repl_types
 let repl_prim = import! repl.prim
-let { (<<) } = import! std.function
-
+let { (<<), (<|) } = import! std.function
+let effect @ { Eff, Reader, Lift, ask, ? } = import! std.effect
 let { Applicative, wrap, (*>) } = import! std.applicative
 let { flat_map, (>>=) } = import! std.monad
 let { foldl } = import! std.foldable
@@ -21,6 +21,7 @@ let { foldl } = import! std.foldable
 let { (<>) } = import! std.prelude
 let (++) = (<>)
 
+type ReplEffect r a = [| reader : Reader CpuPool, lift : Lift IO | r |] a
 
 let run_interruptible_io cpu_pool action : CpuPool -> IO String -> IO (Result String String) =
     do eval_thread = thread.new_thread ()
@@ -181,20 +182,20 @@ type Repl = {
     prompt : String
 }
 
-let loop repl : Repl -> IO () =
+let loop repl : forall r . Repl -> Eff (ReplEffect r) () =
     let run_line line =
         if string.is_empty (string.trim line) then
             wrap Continue
         else if string.starts_with line ":" then
-            do_command repl.commands line
+            effect.lift <| do_command repl.commands line
         else
             let action =
                 do eval_thread = thread.new_thread ()
                 let eval_action = repl_prim.eval_line repl.color line
                 repl_prim.finish_or_interrupt repl.cpu_pool eval_thread eval_action
-            io.catch action io.println *> wrap Continue
+            effect.lift <| io.catch action io.println *> wrap Continue
 
-    do line_result = rustyline.readline repl.editor repl.prompt
+    do line_result = effect.lift <| rustyline.readline repl.editor repl.prompt
     match line_result with
     | Err Eof -> wrap ()
     | Err Interrupted -> loop repl
@@ -203,7 +204,7 @@ let loop repl : Repl -> IO () =
         match continue with
         | Continue -> loop repl
         | Quit ->
-            do _ = rustyline.save_history repl.editor
+            do _ = effect.lift <| rustyline.save_history repl.editor
             wrap ()
 
 let run color prompt : Color -> String -> IO () =
@@ -212,6 +213,6 @@ let run color prompt : Color -> String -> IO () =
     do cpu_pool = repl_prim.new_cpu_pool 1
     let commands = make_commands cpu_pool
     let repl = { commands, editor, cpu_pool, color, prompt }
-    loop repl
+    effect.run_lift (effect.run_reader cpu_pool (loop repl))
 
 run

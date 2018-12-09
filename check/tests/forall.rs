@@ -1257,3 +1257,13 @@ test_check! {
     "#,
     "test.Error"
 }
+
+test_check! {
+    variable_scoping_in_return,
+    r#"
+    let loop repl : forall r . () -> r =
+        loop repl
+    ()
+    "#,
+    "()"
+}
