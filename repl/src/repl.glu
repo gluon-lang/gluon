@@ -23,13 +23,17 @@ let (++) = (<>)
 
 type ReplEffect r a = [| reader : Reader CpuPool, lift : Lift IO | r |] a
 
-let run_interruptible_io cpu_pool action : CpuPool -> IO String -> IO (Result String String) =
-    do eval_thread = thread.new_thread ()
+let run_interruptible_io cpu_pool action : CpuPool
+        -> IO String
+        -> Eff (ReplEffect r) (Result String String)
+    =
+    do eval_thread = effect.lift <| thread.new_thread ()
     let interruptible_action = repl_prim.finish_or_interrupt cpu_pool eval_thread action
-    io.catch (io.functor.map Ok interruptible_action) (wrap << Err)
+    effect.lift
+        <| io.catch (io.functor.map Ok interruptible_action) (wrap << Err)
 
 
-let load_file cpu_pool filename : CpuPool -> String -> IO String =
+let load_file cpu_pool filename : CpuPool -> String -> Eff (ReplEffect r) String =
     let last_slash =
         match string.rfind filename "/" with
         | None -> 0
@@ -45,28 +49,35 @@ let load_file cpu_pool filename : CpuPool -> String -> IO String =
     | Ok x -> wrap x
     | Err x -> wrap x
 
-let run_file cpu_pool filename : CpuPool -> String -> IO () =
+let run_file cpu_pool filename : CpuPool -> String -> Eff (ReplEffect r) () =
     let action =
         do expr = io.read_file_to_string filename
         do result = io.run_expr expr
         wrap (result.value ++ " : " ++ result.typ)
 
     do result = run_interruptible_io cpu_pool action
-    match result with
-    | Ok _ -> io.println ""
-    | Err x -> io.println x
+    effect.lift
+        <| (match result with
+        | Ok _ -> io.println ""
+        | Err x -> io.println x)
 
 type ReplAction =
     | Continue
     | Quit
-type Cmd = { name : String, alias : String, info : String, action : String -> IO ReplAction }
+type Cmd = {
+    name : String,
+    alias : String,
+    info : String,
+    action : String -> Eff (ReplEffect r) ReplAction
+}
 type Commands = Map String Cmd
 
 let make_commands cpu_pool : CpuPool -> Commands =
     let print_result result =
-        match result with
-        | Ok x -> io.println x
-        | Err x -> io.println x
+        effect.lift
+            <| (match result with
+            | Ok x -> io.println x
+            | Err x -> io.println x)
 
     let commands = ref []
     let cmds : Array Cmd = [{
@@ -75,7 +86,7 @@ let make_commands cpu_pool : CpuPool -> Commands =
             info = "Quit the REPL",
             // FIXME a -> IO ReplAction signature should not be necessary
             action =
-                let x : a -> IO ReplAction = \_ -> wrap Quit
+                let x : a -> Eff (ReplEffect r) ReplAction = \_ -> wrap Quit
                 x,
         }, {
             name = "type",
@@ -83,26 +94,35 @@ let make_commands cpu_pool : CpuPool -> Commands =
             info = "Prints the type with an expression",
             action =
                 \arg ->
-                (repl_prim.type_of_expr arg >>= print_result)
+                (effect.lift (repl_prim.type_of_expr arg) >>= print_result)
                     *> wrap Continue,
         },
         {
             name = "info",
             alias = "i",
             info = "Prints information about the given name",
-            action = \arg -> (repl_prim.find_info arg >>= print_result) *> wrap Continue,
+            action
+            = \arg ->
+                (effect.lift (repl_prim.find_info arg) >>= print_result)
+                    *> wrap Continue,
         },
         {
             name = "kind",
             alias = "k",
             info = "Prints the kind with the given type",
-            action = \arg -> (repl_prim.find_kind arg >>= print_result) *> wrap Continue,
+            action
+            = \arg ->
+                (effect.lift (repl_prim.find_kind arg) >>= print_result)
+                    *> wrap Continue,
         },
         {
             name = "load",
             alias = "l",
             info = "Loads the file at \'folder/module.ext\' and stores it at \'module\'",
-            action = \arg -> (load_file cpu_pool arg >>= io.println) *> wrap Continue,
+            action
+            = \arg ->
+                (load_file cpu_pool arg >>= (effect.lift << io.println))
+                    *> wrap Continue,
         },
         {
             name = "script",
@@ -114,18 +134,23 @@ let make_commands cpu_pool : CpuPool -> Commands =
             name = "debug",
             alias = "d",
             info = "Switch debug level",
-            action = \arg -> (repl_prim.switch_debug_level arg >>= print_result) *> wrap Continue,
+            action
+            = \arg ->
+                (effect.lift (repl_prim.switch_debug_level arg) >>= print_result)
+                    *> wrap Continue,
         },
         {
             name = "help",
             alias = "h",
             info = "Print this help",
             action = \_ ->
-                let print_header = io.println "Available commands\n"
-                let print_cmd cmd : Cmd -> IO () =
-                    io.println ("    :" ++ cmd.name ++ " (" ++ cmd.alias ++ ") " ++ cmd.info)
+                let print_header = effect.lift <| io.println "Available commands\n"
+                let print_cmd cmd : Cmd -> Eff (ReplEffect r) () =
+                    effect.lift
+                        (io.println ("    :" ++ cmd.name ++ " (" ++ cmd.alias ++ ") " ++ cmd.info))
 
-                print_header *> array.traversable.traverse io.applicative print_cmd (load commands)
+                print_header
+                    *> array.traversable.traverse effect.applicative print_cmd (load commands)
                     *> wrap Continue,
         }]
     commands <- cmds
@@ -155,15 +180,15 @@ let cmd_parser : Parser { cmd : String, arg : String } =
     do arg = (spaces *> arg_parser) <|> wrap ""
     wrap { cmd, arg }
 
-let do_command commands line : Commands -> String -> IO ReplAction =
+let do_command commands line : Commands -> String -> Eff (ReplEffect r) ReplAction =
     match parse cmd_parser line with
     | Ok { cmd, arg } ->
         match find cmd commands with
         | Some command -> command.action arg
-        | None -> io.println ("Unknown command \'" ++ cmd ++ "\'") *> wrap Continue
+        | None -> effect.lift <| io.println ("Unknown command \'" ++ cmd ++ "\'") *> wrap Continue
     | Err err ->
-        io.println "Expected a command such as `:h`"
-            *> wrap Continue
+        effect.lift
+            <| io.println "Expected a command such as `:h`" *> wrap Continue
 
 let store line : String -> IO ReplAction =
     let line = string.trim line
@@ -182,18 +207,19 @@ type Repl = {
     prompt : String
 }
 
-let loop repl : forall r . Repl -> Eff (ReplEffect r) () =
+let loop repl : Repl -> Eff (ReplEffect r) () =
     let run_line line =
         if string.is_empty (string.trim line) then
             wrap Continue
         else if string.starts_with line ":" then
-            effect.lift <| do_command repl.commands line
+            do_command repl.commands line
         else
             let action =
                 do eval_thread = thread.new_thread ()
                 let eval_action = repl_prim.eval_line repl.color line
                 repl_prim.finish_or_interrupt repl.cpu_pool eval_thread eval_action
-            effect.lift <| io.catch action io.println *> wrap Continue
+            effect.lift
+                <| io.catch action io.println *> wrap Continue
 
     do line_result = effect.lift <| rustyline.readline repl.editor repl.prompt
     match line_result with
