@@ -1,0 +1,45 @@
+let { Eff, inject_rest, ? } = import! std.effect
+let { Result } = import! std.result
+let { (<<) } = import! std.function
+let { wrap } = import! std.applicative
+
+type Error e a = forall r . (| Error e .. r)
+
+let send_error f : Error e a -> Eff [| error : Error e | r |] a = Impure (convert_effect! error f) Pure
+
+let extract_error x : forall e . [| error : Error e | r |] a -> Error e a = convert_variant! x
+
+let throw e : e -> Eff [| error : Error e | r |] a = send_error (Error e)
+
+let run_result eff : forall e . Eff [| error : Error e | r |] a -> Eff [| | r |] (Result e a) =
+    let loop ve : Eff [| error : Error _ | r |] a -> Eff [| | r |] (Result _ a) =
+        match ve with
+        | Pure v -> wrap (Ok v)
+        | Impure e f ->
+            match extract_error e with 
+            | Error err ->
+                wrap (Err err)
+            | rest ->
+                Impure (inject_rest rest) (loop << f)
+    loop eff
+
+let catch eff handler : forall e . Eff [| error : Error e | r |] a -> (e -> Eff [| error : Error e | r |] a) -> Eff [| error : Error e | r |] a =
+    let loop ve : Eff [| error : Error _ | r |] a -> Eff [| error : Error _ | r |] a =
+        match ve with
+        | Pure v -> wrap v
+        | Impure e f ->
+            match extract_error e with 
+            | Error err ->
+                handler err
+            | rest ->
+                Impure e (loop << f)
+    loop eff
+
+
+{
+    Error,
+
+    catch,
+    throw,
+    run_result,
+}

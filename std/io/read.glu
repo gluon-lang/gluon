@@ -5,7 +5,7 @@ let { wrap, flat_map, default_buf_len } = import! std.io.prim
 let { Option, Bool } = import! std.types
 let { Disposable, dispose, is_disposed } = import! std.disposable
 let { (>), (<=), (>=), min } = import! std.cmp
-let { assert } = import! std.test
+let { assert } = import! std.assert
 let { not } = import! std.bool
 let { ? } = import! std.int
 let { Result } = import! std.result

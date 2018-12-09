@@ -13,7 +13,9 @@ let { ReadlineError } = import! rustyline_types
 let { Color } = import! repl_types
 let repl_prim = import! repl.prim
 let { (<<), (<|) } = import! std.function
-let effect @ { Eff, Reader, Lift, ask, asks, ? } = import! std.effect
+let effect @ { Eff, ? } = import! std.effect
+let { Reader, ask, asks, run_reader } = import! std.effect.reader
+let { Lift, lift, run_lift } = import! std.effect.lift
 let { Applicative, wrap, (*>) } = import! std.applicative
 let { flat_map, (>>=) } = import! std.monad
 let { foldl } = import! std.foldable
@@ -46,9 +48,9 @@ let run_interruptible_io action :
         -> Eff (ReplEffect r) (Result String String)
     =
     do cpu_pool = asks (\r -> r.cpu_pool)
-    do eval_thread = effect.lift <| thread.new_thread ()
+    do eval_thread = lift <| thread.new_thread ()
     let interruptible_action = repl_prim.finish_or_interrupt cpu_pool eval_thread action
-    effect.lift
+    lift
         <| io.catch (io.functor.map Ok interruptible_action) (wrap << Err)
 
 
@@ -75,14 +77,14 @@ let run_file filename : String -> Eff (ReplEffect r) () =
         wrap (result.value ++ " : " ++ result.typ)
 
     do result = run_interruptible_io action
-    effect.lift
+    lift
         <| (match result with
         | Ok _ -> io.println ""
         | Err x -> io.println x)
 
 let commands : Commands =
     let print_result result =
-        effect.lift
+        lift
             <| (match result with
             | Ok x -> io.println x
             | Err x -> io.println x)
@@ -102,7 +104,7 @@ let commands : Commands =
             info = "Prints the type with an expression",
             action =
                 \arg ->
-                (effect.lift (repl_prim.type_of_expr arg) >>= print_result)
+                (lift (repl_prim.type_of_expr arg) >>= print_result)
                     *> wrap Continue,
         },
         {
@@ -111,7 +113,7 @@ let commands : Commands =
             info = "Prints information about the given name",
             action
             = \arg ->
-                (effect.lift (repl_prim.find_info arg) >>= print_result)
+                (lift (repl_prim.find_info arg) >>= print_result)
                     *> wrap Continue,
         },
         {
@@ -120,7 +122,7 @@ let commands : Commands =
             info = "Prints the kind with the given type",
             action
             = \arg ->
-                (effect.lift (repl_prim.find_kind arg) >>= print_result)
+                (lift (repl_prim.find_kind arg) >>= print_result)
                     *> wrap Continue,
         },
         {
@@ -129,7 +131,7 @@ let commands : Commands =
             info = "Loads the file at \'folder/module.ext\' and stores it at \'module\'",
             action
             = \arg ->
-                (load_file arg >>= (effect.lift << io.println))
+                (load_file arg >>= (lift << io.println))
                     *> wrap Continue,
         },
         {
@@ -144,7 +146,7 @@ let commands : Commands =
             info = "Switch debug level",
             action
             = \arg ->
-                (effect.lift (repl_prim.switch_debug_level arg) >>= print_result)
+                (lift (repl_prim.switch_debug_level arg) >>= print_result)
                     *> wrap Continue,
         },
         {
@@ -152,9 +154,9 @@ let commands : Commands =
             alias = "h",
             info = "Print this help",
             action = \_ ->
-                let print_header = effect.lift <| io.println "Available commands\n"
+                let print_header = lift <| io.println "Available commands\n"
                 let print_cmd cmd : Cmd -> Eff (ReplEffect r) () =
-                    effect.lift
+                    lift
                         (io.println ("    :" ++ cmd.name ++ " (" ++ cmd.alias ++ ") " ++ cmd.info))
 
                 print_header
@@ -193,9 +195,9 @@ let do_command commands line : Commands -> String -> Eff (ReplEffect r) ReplActi
     | Ok { cmd, arg } ->
         match find cmd commands with
         | Some command -> command.action arg
-        | None -> effect.lift <| io.println ("Unknown command \'" ++ cmd ++ "\'") *> wrap Continue
+        | None -> lift <| io.println ("Unknown command \'" ++ cmd ++ "\'") *> wrap Continue
     | Err err ->
-        effect.lift
+        lift
             <| io.println "Expected a command such as `:h`" *> wrap Continue
 
 let loop _ : () -> Eff (ReplEffect r) () =
@@ -212,10 +214,10 @@ let loop _ : () -> Eff (ReplEffect r) () =
                 do eval_thread = thread.new_thread ()
                 let eval_action = repl_prim.eval_line repl.color line
                 repl_prim.finish_or_interrupt cpu_pool eval_thread eval_action
-            effect.lift
+            lift
                 <| io.catch action io.println *> wrap Continue
 
-    do line_result = effect.lift <| rustyline.readline repl.editor repl.prompt
+    do line_result = lift <| rustyline.readline repl.editor repl.prompt
     match line_result with
     | Err Eof -> wrap ()
     | Err Interrupted -> loop ()
@@ -224,7 +226,7 @@ let loop _ : () -> Eff (ReplEffect r) () =
         match continue with
         | Continue -> loop ()
         | Quit ->
-            do _ = effect.lift <| rustyline.save_history repl.editor
+            do _ = lift <| rustyline.save_history repl.editor
             wrap ()
 
 let run color prompt : Color -> String -> IO () =
@@ -232,6 +234,6 @@ let run color prompt : Color -> String -> IO () =
     do editor = rustyline.new_editor ()
     do cpu_pool = repl_prim.new_cpu_pool 1
     let repl = { commands, editor, cpu_pool, color, prompt }
-    effect.run_lift (effect.run_reader repl (loop ()))
+    run_lift (run_reader repl (loop ()))
 
 run

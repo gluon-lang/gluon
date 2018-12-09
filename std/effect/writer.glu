@@ -1,0 +1,33 @@
+let { Eff, inject_rest, ? } = import! std.effect
+let monoid @ { Monoid } = import! std.monoid
+let { (<>) } = import! std.semigroup
+let { wrap } = import! std.applicative
+let { (<<) } = import! std.function
+
+type Writer s a = forall r . (| Tell s .. r)
+
+let extract_writer x : forall s . [| writer : Writer s | r |] a -> Writer s a = convert_variant! x
+
+let send_writer f : Writer s a -> Eff [| writer : Writer s | r |] a = Impure (convert_effect! f) Pure
+
+let tell s : forall s . s -> Eff [| writer : Writer s | r |] () =
+    send_writer (Tell s)
+
+let run_writer eff : forall s . [Monoid s] -> Eff [| writer : Writer s | r |] a -> Eff [| | r |] { value : a, writer : s } =
+    let loop writer ve : _ -> Eff [| writer : Writer _ | r |] a -> Eff [| | r |] _ =
+        match ve with
+        | Pure value -> wrap { value, writer }
+        | Impure e f ->
+            match extract_writer e with 
+            | Tell w ->
+                loop (writer <> w) (f ())
+            | rest ->
+                Impure (inject_rest rest) (loop writer << f)
+    loop monoid.empty eff
+
+{
+    Writer,
+
+    tell,
+    run_writer,
+}

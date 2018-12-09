@@ -5,7 +5,8 @@ let result = import! std.result
 let string = import! std.string
 let io = import! std.io
 
-let { lift, ? } = import! std.effect
+let { ? } = import! std.effect
+let { lift } = import! std.effect.lift
 
 group "io" [
     test "read_file" <| \_ ->

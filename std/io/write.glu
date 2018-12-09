@@ -8,7 +8,7 @@ let { flat_map, wrap, default_buf_len, throw } = import! std.io.prim
 let { Disposable, dispose, is_disposed } = import! std.disposable
 let { (<-), load, ref } = import! std.reference
 let { ? } = import! std.int
-let { assert } = import! std.test
+let { assert } = import! std.assert
 let { (>=), (>), (==) } = import! std.cmp
 let { (+), (-) } = import! std.num
 let { not } = import! std.bool

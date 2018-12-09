@@ -13,7 +13,11 @@ let { error } = import! std.prim
 let { id } = import! std.function
 let { ? } = import! std.io
 
-let effect @ { Eff, Lift, Writer, ? } = import! std.effect
+let { assert } = import! std.assert
+
+let effect @ { Eff, ? } = import! std.effect
+let { Writer, run_writer, tell } = import! std.effect.writer
+let { Lift, run_lift } = import! std.effect.lift
 
 
 type Test a = Writer (List String) a
@@ -26,18 +30,16 @@ type TestCase a =
 let test = Test
 let group = Group
 
-let assert x = if x then () else error "Assertion failed"
-
 let assert_eq l r : [Show a] -> [Eq a] -> a -> a -> Eff [| writer : Test | r |] () =
     if l == r then wrap ()
-    else effect.tell (Cons ("Assertion failed: " <> show l <> " != " <> show r) Nil)
+    else tell (Cons ("Assertion failed: " <> show l <> " != " <> show r) Nil)
 
 let assert_neq l r : [Show a] -> [Eq a] -> a -> a -> Eff [| writer : Test | r |] () =
     if l /= r then wrap ()
-    else effect.tell (Cons ("Assertion failed: " <> show l <> " == " <> show r) Nil)
+    else tell (Cons ("Assertion failed: " <> show l <> " == " <> show r) Nil)
 
 rec let run_raw test : Eff [| writer : Test | r |] a -> Eff [| | r |] (List String) =
-    do test = effect.run_writer test
+    do test = run_writer test
     wrap test.writer
 in
 rec let run test : Eff [| writer : Test | r |] a -> Eff [| | r |] () =
@@ -47,7 +49,7 @@ rec let run test : Eff [| writer : Test | r |] a -> Eff [| | r |] () =
     | Nil -> wrap ()
 in
 rec let run_io test : TestEffIO r a -> IO () =
-    effect.run_lift (run test)
+    run_lift (run test)
 
 {
     Test,

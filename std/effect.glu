@@ -1,6 +1,5 @@
 let option = import! std.option
 let { Result, ? } = import! std.result
-let io @ { ? } = import! std.io
 let { (<<), (|>) } = import! std.function
 let { (<>) } = import! std.semigroup
 let monoid @ { Monoid } = import! std.monoid
@@ -39,160 +38,9 @@ let monad : Monad (Eff r) = {
     flat_map = flat_map_eff,
 }
 
-type Error e a = forall r . (| Error e .. r)
-
-let send_error f : Error e a -> Eff [| error : Error e | r |] a = Impure (convert_effect! error f) Pure
-
 type OpenVariant a = forall r. (.. r)
+#[doc(hidden)]
 let inject_rest x : forall e . OpenVariant a -> [| | r |] a = convert_effect! x
-let extract_error x : forall e . [| error : Error e | r |] a -> Error e a = convert_variant! x
-
-let throw e : e -> Eff [| error : Error e | r |] a = send_error (Error e)
-
-let run_result eff : forall e . Eff [| error : Error e | r |] a -> Eff [| | r |] (Result e a) =
-    let loop ve : Eff [| error : Error _ | r |] a -> Eff [| | r |] (Result _ a) =
-        match ve with
-        | Pure v -> wrap (Ok v)
-        | Impure e f ->
-            match extract_error e with 
-            | Error err ->
-                wrap (Err err)
-            | rest ->
-                Impure (inject_rest rest) (loop << f)
-    loop eff
-
-let catch eff handler : forall e . Eff [| error : Error e | r |] a -> (e -> Eff [| error : Error e | r |] a) -> Eff [| error : Error e | r |] a =
-    let loop ve : Eff [| error : Error _ | r |] a -> Eff [| error : Error _ | r |] a =
-        match ve with
-        | Pure v -> wrap v
-        | Impure e f ->
-            match extract_error e with 
-            | Error err ->
-                handler err
-            | rest ->
-                Impure e (loop << f)
-    loop eff
-
-type State s a = forall r . (| Get | Put s .. r)
-
-let extract_state x : forall s . [| state : State s | r |] a -> State s a = convert_variant! x
-
-let send_state f : State s a -> Eff [| state : State s | r |] a = Impure (convert_effect! state f) Pure
-
-let get : forall s . Eff [| state : State s | r |] s =
-    send_state Get
-let put s : s -> Eff [| state : State s | r |] () =
-    send_state (Put s)
-
-let modify f : (s -> s) -> Eff [| state : State s | r |] () =
-    do s = get
-    put (f s)
-
-let run_state s eff : forall s . s -> Eff [| state : State s | r |] a -> Eff [| | r |] { state : s, value : a} =
-    let loop state ve : _ -> Eff [| state : State _ | r |] a -> Eff [| | r |] { state : _, value : a } =
-        match ve with
-        | Pure value -> wrap { state, value }
-        | Impure e f ->
-            match extract_state e with 
-            | Get ->
-                loop state (f state)
-            | Put state ->
-                loop state (f state)
-            | rest ->
-                Impure (inject_rest rest) (loop state << f)
-    loop s eff
-
-let exec_state s eff : forall s . s -> Eff [| state : State s | r |] a -> Eff [| | r |] s =
-    map (\r -> r.state) (run_state s eff)
-
-let eval_state s eff : forall s . s -> Eff [| state : State s | r |] a -> Eff [| | r |] a =
-    map (\r -> r.value) (run_state s eff)
-
-type Reader s a = forall r . (| Ask .. r)
-
-let extract_reader x : forall s . [| reader : Reader s | r |] a -> Reader s a = convert_variant! x
-
-let send_reader f : Reader s a -> Eff [| reader : Reader s | r |] a = Impure (convert_effect! f) Pure
-
-let ask : forall s . Eff [| reader : Reader s | r |] s =
-    send_reader Ask
-
-let asks f : forall s . (s -> a) -> Eff [| reader : Reader s | r |] a =
-    map f ask
-
-let local f eff : forall s . (s -> s) -> Eff [| reader : Reader s | r |] a -> Eff [| reader : Reader s | r |] a =
-    do s = asks f
-    let loop ve : Eff [| reader : Reader _ | r |] a -> Eff [| reader : Reader _ | r |] a =
-        match ve with
-        | Pure value -> wrap value
-        | Impure e f ->
-            match extract_reader e with 
-            | Ask ->
-                loop (f s)
-            | rest ->
-                Impure (inject_rest rest) (loop << f)
-    loop eff
-
-let run_reader s eff : forall s . s -> Eff [| reader : Reader s | r |] a -> Eff [| | r |] a =
-    let loop reader ve : _ -> Eff [| reader : Reader _ | r |] a -> Eff [| | r |] a =
-        match ve with
-        | Pure value -> wrap value
-        | Impure e f ->
-            match extract_reader e with 
-            | Ask ->
-                loop reader (f reader)
-            | rest ->
-                Impure (inject_rest rest) (loop reader << f)
-    loop s eff
-
-type Writer s a = forall r . (| Tell s .. r)
-
-let extract_writer x : forall s . [| writer : Writer s | r |] a -> Writer s a = convert_variant! x
-
-let send_writer f : Writer s a -> Eff [| writer : Writer s | r |] a = Impure (convert_effect! f) Pure
-
-let tell s : forall s . s -> Eff [| writer : Writer s | r |] () =
-    send_writer (Tell s)
-
-let run_writer eff : forall s . [Monoid s] -> Eff [| writer : Writer s | r |] a -> Eff [| | r |] { value : a, writer : s } =
-    let loop writer ve : _ -> Eff [| writer : Writer _ | r |] a -> Eff [| | r |] _ =
-        match ve with
-        | Pure value -> wrap { value, writer }
-        | Impure e f ->
-            match extract_writer e with 
-            | Tell w ->
-                loop (writer <> w) (f ())
-            | rest ->
-                Impure (inject_rest rest) (loop writer << f)
-    loop monoid.empty eff
-
-type Lift m a = forall r . (| Lift (m a) .. r)
-
-let send_lift f : Lift m a -> Eff [| lift : Lift m | r |] a = Impure (convert_effect! f) Pure
-
-let lift m : m a -> Eff [| lift : Lift m | r |] a = send_lift (Lift m)
-
-// let handle_relay ret h m : (a -> Eff [| r] w) -> (forall v. [|r |] v -> Eff [| r] w) -> Eff [f : f | r] w -> Eff [| r] w =
-//     let loop x =
-//         match x with
-//         | Value v -> ret v
-//         | Effect e ->
-//             match proj e with
-//             | Found x -> { run_effect = \f -> (h x).run_effect (any ()) }
-//             | NotFound r -> { run_effect = \f -> Effect (f r) }
-//     loop m
-
-let run_lift eff : [Monad m] -> Eff [| lift : Lift m |] a -> m a =
-    let loop ve : Eff [| lift : Lift m |] a -> m a =
-        match ve with
-        | Pure v -> wrap v
-        | Impure e f ->
-            match convert_variant! e with 
-            | Lift m ->
-                do a = m
-                loop (f a) 
-            | _ -> error "Impossible: Lift should always be the only remaining variant"
-    loop eff
 
 let run_pure eff : Eff [| | r |] a -> a =
     match eff with
@@ -203,37 +51,11 @@ let run_pure eff : Eff [| | r |] a -> a =
     Eff,
     Arr,
 
-    Error,
-    State,
-    Reader,
-    Writer,
-    Lift,
-
     functor,
     applicative,
     monad,
 
-    catch,
-    throw,
-    run_result,
-
-    get,
-    put,
-    modify,
-    run_state,
-    exec_state,
-    eval_state,
-
-    ask,
-    asks,
-    local,
-    run_reader,
-
-    tell,
-    run_writer,
-
-    lift,
-    run_lift,
-
     run_pure,
+
+    inject_rest,
 }

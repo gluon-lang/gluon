@@ -1,0 +1,28 @@
+let { Eff, inject_rest } = import! std.effect
+let { wrap } = import! std.applicative
+let { (<<) } = import! std.function
+
+type Lift m a = forall r . (| Lift (m a) .. r)
+
+let send_lift f : Lift m a -> Eff [| lift : Lift m | r |] a = Impure (convert_effect! f) Pure
+
+let lift m : m a -> Eff [| lift : Lift m | r |] a = send_lift (Lift m)
+
+let run_lift eff : [Monad m] -> Eff [| lift : Lift m |] a -> m a =
+    let loop ve : Eff [| lift : Lift m |] a -> m a =
+        match ve with
+        | Pure v -> wrap v
+        | Impure e f ->
+            match convert_variant! e with 
+            | Lift m ->
+                do a = m
+                loop (f a) 
+            | _ -> error "Impossible: Lift should always be the only remaining variant"
+    loop eff
+
+{
+    Lift,
+
+    lift,
+    run_lift,
+}
