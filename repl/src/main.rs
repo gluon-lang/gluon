@@ -59,7 +59,7 @@ const APP_INFO: app_dirs::AppInfo = app_dirs::AppInfo {
     author: "gluon-lang",
 };
 
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize, VmType, Getable, Pushable)]
 pub enum Color {
     Auto,
     Always,
@@ -98,22 +98,6 @@ impl ::std::str::FromStr for Color {
         })
     }
 }
-
-macro_rules! define_vmtype {
-    ($name:ident) => {
-        impl ::gluon::vm::api::VmType for $name {
-            type Type = $name;
-            fn make_type(vm: &::gluon::Thread) -> ::base::types::ArcType {
-                let typ = concat!("repl_types.", stringify!($name));
-                (*vm.global_env().get_env().find_type_info(typ).unwrap())
-                    .clone()
-                    .into_type()
-            }
-        }
-    };
-}
-
-define_vmtype! { Color }
 
 #[derive(StructOpt)]
 #[structopt(about = "Formats gluon source code")]

@@ -4,35 +4,40 @@ extern crate rustyline;
 
 extern crate gluon_completion as completion;
 
-use std::error::Error as StdError;
-use std::path::PathBuf;
-use std::str::FromStr;
-use std::sync::Mutex;
+use std::{error::Error as StdError, path::PathBuf, str::FromStr, sync::Mutex};
 
-use futures::future::{self, Either};
-use futures::sync::mpsc;
-use futures::{Future, Sink, Stream};
+use futures::{
+    future::{self, Either},
+    sync::mpsc,
+    {Future, Sink, Stream},
+};
 
-use base::ast::{Expr, Pattern, SpannedPattern, Typed, TypedIdent};
-use base::error::InFile;
-use base::kind::Kind;
-use base::pos;
-use base::resolve;
-use base::symbol::{Symbol, SymbolModule};
-use base::types::ArcType;
-use base::DebugLevel;
+use base::{
+    ast::{Expr, Pattern, SpannedPattern, Typed, TypedIdent},
+    error::InFile,
+    kind::Kind,
+    pos, resolve,
+    symbol::{Symbol, SymbolModule},
+    types::ArcType,
+    DebugLevel,
+};
 use parser::{parse_partial_repl_line, ReplLine};
-use vm::api::de::De;
-use vm::api::generic::A;
-use vm::api::ser::Ser;
-use vm::api::{Generic, Getable, OpaqueValue, OwnedFunction, Pushable, VmType, WithVM, IO};
-use vm::internal::ValuePrinter;
-use vm::thread::{ActiveThread, RootedValue, Thread, ThreadInternal};
-use vm::{self, Error as VMError, Result as VMResult};
+use vm::{
+    api::{
+        de::De,
+        generic::A,
+        {Generic, Getable, OpaqueValue, OwnedFunction, Pushable, VmType, WithVM, IO},
+    },
+    internal::ValuePrinter,
+    thread::{ActiveThread, RootedValue, Thread, ThreadInternal},
+    {self, Error as VMError, Result as VMResult},
+};
 
-use gluon::compiler_pipeline::{Executable, ExecuteValue};
-use gluon::import::add_extern_module;
-use gluon::{Compiler, Error as GluonError, Result as GluonResult, RootedThread};
+use gluon::{
+    compiler_pipeline::{Executable, ExecuteValue},
+    import::add_extern_module,
+    {Compiler, Error as GluonError, Result as GluonResult, RootedThread},
+};
 
 use codespan_reporting::termcolor;
 
@@ -253,7 +258,7 @@ fn readline(editor: &Editor, prompt: &str) -> IO<Result<String, ReadlineError>> 
         Ok(input) => input,
         Err(rustyline::error::ReadlineError::Eof) => return IO::Value(Err(ReadlineError::Eof)),
         Err(rustyline::error::ReadlineError::Interrupted) => {
-            return IO::Value(Err(ReadlineError::Interrupted))
+            return IO::Value(Err(ReadlineError::Interrupted));
         }
         Err(err) => return IO::Exception(format!("{}", err)),
     };
@@ -516,13 +521,22 @@ fn load_rustyline(vm: &Thread) -> vm::Result<vm::ExternModule> {
     )
 }
 
+#[derive(VmType, Pushable, Getable)]
+struct Settings<'a> {
+    color: Color,
+    prompt: &'a str,
+}
+
 fn load_repl(vm: &Thread) -> vm::Result<vm::ExternModule> {
     vm::ExternModule::new(
         vm,
         record!(
+            type Color => Color,
+            type Settings => Settings<'static>,
             type_of_expr => primitive!(1, type_of_expr),
             find_info => primitive!(1, find_info),
             find_kind => primitive!(1, find_kind),
+            parse_color => primitive!(1, "parse_color", |s: &str| s.parse::<Color>()),
             switch_debug_level => primitive!(1, switch_debug_level),
             eval_line => primitive!(2, async fn eval_line),
             finish_or_interrupt => primitive!(3, async fn finish_or_interrupt),
@@ -534,9 +548,6 @@ fn load_repl(vm: &Thread) -> vm::Result<vm::ExternModule> {
 fn compile_repl(compiler: &mut Compiler, vm: &Thread) -> Result<(), GluonError> {
     let rustyline_types_source = ::gluon::vm::api::typ::make_source::<ReadlineError>(vm)?;
     compiler.load_script(vm, "rustyline_types", &rustyline_types_source)?;
-
-    let repl_types_source = ::gluon::vm::api::typ::make_source::<Color>(vm)?;
-    compiler.load_script(vm, "repl_types", &repl_types_source)?;
 
     add_extern_module(vm, "repl.prim", load_repl);
     add_extern_module(vm, "rustyline", load_rustyline);
@@ -564,10 +575,10 @@ pub fn run(
         Either::A
     );
 
-    let mut repl: OwnedFunction<fn(_, _) -> _> = try_future!(vm.get_global("repl"), Either::A);
+    let mut repl: OwnedFunction<fn(_) -> _> = try_future!(vm.get_global("repl"), Either::A);
     debug!("Starting repl");
     Either::B(
-        repl.call_async(Ser(color), prompt)
+        repl.call_async(Settings { color, prompt })
             .map(|_: IO<()>| ())
             .map_err(|err| err.into()),
     )
