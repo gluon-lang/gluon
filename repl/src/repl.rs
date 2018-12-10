@@ -611,7 +611,7 @@ mod tests {
         let _ = ::env_logger::try_init();
         let vm = new_vm();
         compile_repl(&mut Compiler::new(), &vm).unwrap_or_else(|err| panic!("{}", err));
-        let repl: Result<FunctionRef<fn(Color, String) -> IO<()>>, _> = vm.get_global("repl");
+        let repl: Result<FunctionRef<fn(Settings<'static>) -> IO<()>>, _> = vm.get_global("repl");
         assert!(repl.is_ok(), "{}", repl.err().unwrap());
     }
 

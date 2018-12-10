@@ -1992,99 +1992,37 @@ where
                 p.enclose(Prec::Constructor, arena, doc).group()
             }
 
-            Type::Effect(ref row) => {
-                let mut iter = row_iter(row);
-
-                let doc = arena.concat(
-                    iter.by_ref()
-                        .map(|field| {
-                            chain![arena;
-                                arena.space(),
-                                printer.symbol(&field.name),
-                                arena.space(),
-                                ":",
-                                arena.space(),
-                                top(&field.typ).pretty(printer)
-                            ]
-                            .group()
-                        })
-                        .intersperse(arena.text(",")),
-                );
-
-                chain![arena;
-                    "[|",
-                    doc,
-                    match **iter.current_type() {
-                        Type::EmptyRow => arena.nil(),
-                        _ => chain![arena;
-                            arena.space(),
-                            "|",
-                            arena.space(),
-                            top(iter.current_type()).pretty(printer)
-                        ],
-                    },
-                    arena.space(),
-                    "|]"
-                ]
-                .group()
-            }
+            Type::Effect(ref row) => Self::pretty_record_like(
+                row,
+                printer,
+                "[|",
+                &mut |field: &'a Field<I, T>| {
+                    chain![arena;
+                        pretty_print::doc_comment(arena, field.typ.comment()),
+                        pretty_print::ident(arena, field.name.as_ref()),
+                        " : "
+                    ]
+                },
+                "|]",
+            ),
 
             Type::Builtin(ref t) => match *t {
                 BuiltinType::Function => chain![arena; "(", t.to_str(), ")"],
                 _ => arena.text(t.to_str()),
             },
             Type::Record(ref row) => {
-                let forced_newline = match **row {
-                    Type::ExtendRow { ref fields, .. } => {
-                        fields.iter().any(|field| field.typ.comment().is_some())
-                    }
-                    _ => false,
-                };
-
-                let newline = if forced_newline {
-                    arena.newline()
+                if is_tuple(typ) {
+                    Self::pretty_record_like(row, printer, "(", &mut |_| arena.nil(), ")")
                 } else {
-                    arena.space()
-                };
-
-                let mut pretty_tuple_field;
-                let mut pretty_record_field;
-                let (open, mut pretty_field, close) = if is_tuple(typ) {
-                    pretty_tuple_field = |_| arena.nil();
-                    ("(", &mut pretty_tuple_field as &mut FnMut(_) -> _, ")")
-                } else {
-                    pretty_record_field = |field: &'a Field<I, T>| {
+                    let mut pretty_record_field = |field: &'a Field<I, T>| {
                         chain![arena;
                             pretty_print::doc_comment(arena, field.typ.comment()),
                             pretty_print::ident(arena, field.name.as_ref()),
                             " : "
                         ]
                     };
-                    ("{", &mut pretty_record_field as &mut FnMut(_) -> _, "}")
-                };
-
-                let mut doc = arena.text(open);
-                let empty_fields = match **row {
-                    Type::ExtendRow { .. } => false,
-                    _ => true,
-                };
-
-                doc = match **row {
-                    Type::EmptyRow => doc,
-                    Type::ExtendRow { .. } => doc
-                        .append(top(row).pretty_row(open, printer, pretty_field))
-                        .nest(INDENT),
-                    _ => doc
-                        .append(arena.space())
-                        .append("| ")
-                        .append(top(row).pretty(printer))
-                        .nest(INDENT),
-                };
-                if !empty_fields && open == "{" {
-                    doc = doc.append(newline);
+                    Self::pretty_record_like(row, printer, "{", &mut pretty_record_field, "}")
                 }
-
-                doc.append(close).group()
             }
             Type::ExtendRow { .. } => self.pretty_row("{", printer, &mut |field| {
                 chain![arena;
@@ -2111,6 +2049,55 @@ where
                 comment.append(doc)
             }
         }
+    }
+
+    fn pretty_record_like<A>(
+        row: &'a T,
+        printer: &Printer<'a, I, A>,
+        open: &'static str,
+        pretty_field: &mut FnMut(&'a Field<I, T>) -> DocBuilder<'a, Arena<'a, A>, A>,
+        close: &'static str,
+    ) -> DocBuilder<'a, Arena<'a, A>, A>
+    where
+        A: Clone,
+    {
+        let arena = printer.arena;
+
+        let forced_newline = match **row {
+            Type::ExtendRow { ref fields, .. } => {
+                fields.iter().any(|field| field.typ.comment().is_some())
+            }
+            _ => false,
+        };
+
+        let newline = if forced_newline {
+            arena.newline()
+        } else {
+            arena.space()
+        };
+
+        let mut doc = arena.text(open);
+        let empty_fields = match **row {
+            Type::EmptyRow => true,
+            _ => false,
+        };
+
+        doc = match **row {
+            Type::EmptyRow => doc,
+            Type::ExtendRow { .. } => doc
+                .append(top(row).pretty_row(open, printer, pretty_field))
+                .nest(INDENT),
+            _ => doc
+                .append(arena.space())
+                .append("| ")
+                .append(top(row).pretty(printer))
+                .nest(INDENT),
+        };
+        if !empty_fields && open != "(" {
+            doc = doc.append(newline);
+        }
+
+        doc.append(close).group()
     }
 
     fn pretty_row<A>(

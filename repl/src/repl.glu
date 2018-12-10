@@ -25,11 +25,7 @@ let (++) = (<>)
 
 rec
 type ReplEffect r a = [| reader : Reader Repl, state : State Settings, lift : Lift IO | r |] a
-type Repl = {
-    commands : Commands,
-    editor : Editor,
-    cpu_pool : CpuPool,
-}
+type Repl = { commands : Commands, editor : Editor, cpu_pool : CpuPool }
 type ReplAction =
     | Continue
     | Quit
@@ -144,10 +140,11 @@ let commands : Commands =
             info = "Sets the prompt",
             action = \prompt ->
                 do _ = modify (\settings ->
-                    // TODO Should be able infer this before the `..` splatting  
-                    let settings: Settings = settings
-                    { prompt, .. settings }
-                )
+                        // TODO Should be able infer this before the `..` splatting
+                        let settings : Settings = settings
+                        { prompt,
+                            .. settings
+                        })
                 wrap Continue,
         },
         {
@@ -157,12 +154,13 @@ let commands : Commands =
             action = \color ->
                 do _ =
                     match repl_prim.parse_color color with
-                    | Ok color -> 
+                    | Ok color ->
                         modify (\settings ->
-                            // TODO Should be able infer this before the `..` splatting  
-                            let settings: Settings = settings
-                            { color, .. settings }
-                        )
+                            // TODO Should be able infer this before the `..` splatting
+                            let settings : Settings = settings
+                            { color,
+                                .. settings
+                            })
                     | Err msg -> lift <| io.println msg
                 wrap Continue,
         },
