@@ -11,6 +11,10 @@ let send_state f : State s a -> Eff [| state : State s | r |] a = Impure (conver
 
 let get : forall s . Eff [| state : State s | r |] s =
     send_state Get
+
+let gets f : forall s . (s -> a) -> Eff [| state : State s | r |] a =
+    map f get
+
 let put s : s -> Eff [| state : State s | r |] () =
     send_state (Put s)
 
@@ -42,6 +46,7 @@ let eval_state s eff : forall s . s -> Eff [| state : State s | r |] a -> Eff [|
     State,
 
     get,
+    gets,
     put,
     modify,
     run_state,

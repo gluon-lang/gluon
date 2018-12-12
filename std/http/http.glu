@@ -1,7 +1,7 @@
 let prelude = import! std.prelude
 let function = import! std.function
 let io @ { ? } = import! std.io
-let { (<<), ? } = import! std.function
+let { (<<), (<|), ? } = import! std.function
 let string = import! std.string
 let { Bool } = import! std.bool
 let { Functor, Applicative, Alternative, Monad } = prelude
@@ -11,6 +11,10 @@ let { wrap, (*>) } = import! std.applicative
 let { or, empty, (<|>) } = import! std.alternative
 let regex = import! std.regex
 let result = import! std.result
+let { Eff, run_pure, ? } = import! std.effect
+let alt @ { run_alt } = import! std.effect.alt
+let { get, gets, eval_state } = import! std.effect.state
+let { lift, run_lift } = import! std.effect.lift
 
 let {
     Method,
@@ -18,8 +22,8 @@ let {
     Request,
     StatusCode,
     Response,
-    Handler,
-    HttpState } = import! std.http.types
+    HttpEffect,
+    HttpState, } = import! std.http.types
 let http_prim = import! std.http.prim
 
 let status =
@@ -43,114 +47,78 @@ let method =
         put = method "PUT",
     }
 
+let alternative : Alternative (Eff (HttpEffect r)) = alt.alternative
+
 let response : Response = { status = status.ok, headers = [] }
 
 /// Force the value to be a Handler. Necessary to make the the type inference work for
 /// higher-kinded types
-let make : Handler a -> Handler a = id
-
-let functor : Functor Handler = {
-    map = \f handler ->
-        // FIXME type inference fails without this
-        let handler = make handler
-        make (\success failure state -> handler (success << f) failure state),
-}
-
-let flat_map f handler : (a -> Handler b) -> Handler a -> Handler b =
-    // FIXME type inference fails without this
-    let handler = make handler
-    make (\success failure state ->
-        let success2 a r = make (f a) success failure state
-        handler success2 failure state)
-
-
-let applicative : Applicative Handler = {
-    functor,
-    apply = \a m ->
-        let m = make m
-        flat_map (\f -> functor.map f m) a,
-    wrap = \a -> make (\success _ state -> success a state),
-}
-
-let alternative : Alternative Handler = {
-    applicative,
-    // Tries to handle the request with `l`, if it fails with `DontProcess` then `r` is tried instead
-    or = \l r -> make (\success failure state ->
-            let failure2 reason state2 =
-                match reason with
-                | DontProcess -> make r success failure state2
-                | Error _ -> failure reason state2
-
-            make l success failure2 state),
-    empty = make (\_ failure state -> failure DontProcess state),
-}
-
-let monad : Monad Handler = {
-    applicative,
-    flat_map,
-}
+let make : Eff (HttpEffect r) a -> Eff (HttpEffect r) a = id
 
 /// Handles the request if `predicate` returns `True
-let test predicate : (Request -> Bool) -> Handler () =
-    \success failure state ->
+let test predicate : (Request -> Bool) -> Eff (HttpEffect r) () =
+    do state = get
     if predicate state.request
-    then success () state
-    else failure DontProcess state
+    then wrap ()
+    else empty
 
 /// Handles `Get` requests
-let get : Handler () =
+let get : Eff (HttpEffect r) () =
     test (\request -> request.method == method.get)
 
 /// Handles `Post` requests
-let post : Handler () =
+let post : Eff (HttpEffect r) () =
     test (\request -> request.method == method.post)
 
 /// Processes this handler if `uri` matches the request's uri
-let path p : String -> Handler () =
+let path p : String -> Eff (HttpEffect r) () =
     test (\request -> http_prim.uri.path request.uri == p)
 
-let is_match uri : String -> Handler () =
+let is_match uri : String -> Eff (HttpEffect r) () =
     let re = result.unwrap_ok (regex.new uri)
     test (\request -> regex.is_match re (http_prim.uri.path request.uri))
 
 /// Retrieves the HTTP request
-let get_request : Handler Request =
-    \success _ state -> success state.request state
+let get_request : Eff (HttpEffect r) Request =
+    gets (\s -> s.request)
 
 /// Retrieves the body of the http response
-let get_response_body : Handler ResponseBody =
-    make (\success failure state -> success state.response state)
+let get_response_body : Eff (HttpEffect r) ResponseBody =
+    gets (\s -> s.response)
 
 /// Returns `OK` with an empty body
 let empty_response = { status = status.ok }
 
 /// Converts an `IO` into a `Handler`
-let io_handler action : IO a -> Handler a =
-    make (\success _ state -> io.monad.flat_map (\a -> success a state) action)
+let io_handler action : IO a -> Eff (HttpEffect r) a =
+    lift action
 
 /// Write `bytes` to the http response
-let write_response bytes : Array Byte -> Handler () =
+let write_response bytes : Array Byte -> Eff (HttpEffect r) () =
     do response = get_response_body
     io_handler (http_prim.write_response response bytes)
 
 /// Throws an exception which aborts the current handler. Can be caught with `catch_error`
-let fail msg : String -> Handler a =
-    make (\_ failure state -> failure (Error msg) state)
+let fail msg : String -> Eff (HttpEffect r) a =
+    empty // TODO use msg
 
 /// Recovers from an exception thrown by `fail`
-let catch_error action catch : Handler a -> (String -> Handler a) -> Handler a =
-    make (\success failure state ->
-        let failure2 reason state2 =
-            match reason with
-            | DontProcess -> failure reason state2
-            | Error msg -> catch msg success failure state2
-        action success failure2 state)
+let catch_error action catch : Eff (HttpEffect r) a -> (String -> Eff (HttpEffect r) a) -> Eff (HttpEffect r) a =
+    do opt = alt.run_alt action empty
+    match opt with
+    | None -> catch "empty"
+    | Some a -> wrap a
 
 /// Takes a `Handler` and a `Request` tries to process the request
-let handle handler state : Handler Response -> HttpState -> IO Response =
-    let not_found _ state : _ -> HttpState -> IO Response =
+let handle handler state : Eff (HttpEffect r) Response -> HttpState -> IO Response =
+    do opt =
+        run_lift <|
+            eval_state state <|
+            run_alt handler empty
+    match opt with
+    | None -> 
         http_prim.write_response state.response  (string.as_bytes "Page not found") *> wrap { status = status.not_found, .. response }
-    handler (\response _ -> wrap response) not_found state
+    | Some response -> wrap response
 
 let show_uri: Show Uri = {
     show = http_prim.uri.to_string
@@ -164,12 +132,9 @@ let default_listen_settings = { port = 80, tls_cert = None }
     Request,
     StatusCode,
     Response,
-    Handler,
+    HttpEffect,
 
-    functor,
-    applicative,
     alternative,
-    monad,
 
     status,
     method,

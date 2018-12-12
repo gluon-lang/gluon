@@ -320,6 +320,20 @@ macro_rules! record_type_inner {
     }
 }
 
+#[macro_export]
+macro_rules! row_type {
+    ($($field: ident => $value: ty),*) => {
+        row_type!($($field => $value),* | $crate::api::record::EmptyRow)
+    };
+    ($($field: ident => $value: ty),* | $rest: ty) => {
+        $crate::api::record::Row<
+            $crate::frunk_core::hlist::HNil,
+            record_type_inner!($($field => $value),*),
+            $rest,
+        >
+    }
+}
+
 /// Creates a Rust type compatible with the type of `record_no_decl!`
 ///
 /// ```rust

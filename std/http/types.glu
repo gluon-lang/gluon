@@ -1,17 +1,16 @@
 let { Body, ResponseBody, StatusCode, Method, Request, Response, Headers, HttpState } = import! std.http.prim_types
 
+let { Eff } = import! std.effect
+let { Error } = import! std.effect.error
+let { Alt } = import! std.effect.alt
+let { State } = import! std.effect.state
+let { Lift } = import! std.effect.lift
+
 /// Type used by handlers to indicate why they could not process a request
 type Failure = | DontProcess | Error String
 
-/// The main type of this micro http framework. A handler takes two continuations and a `Request` and
-/// cakks one of the continuations depending on if it can successfully handle the request or not
-type Handler a =
-    // Success continuation
-    (a -> HttpState -> IO Response)
-    // Failure continuation
-    -> (Failure -> HttpState -> IO Response)
-    -> HttpState
-    -> IO Response
+
+type HttpEffect r a = [| alt : Alt, state : State HttpState, lift : Lift IO | r |] a
 
 {
     Method,
@@ -20,6 +19,6 @@ type Handler a =
     StatusCode,
     Headers,
     Response,
-    Handler,
+    HttpEffect,
     HttpState,
 }

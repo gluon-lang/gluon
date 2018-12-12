@@ -6,7 +6,6 @@ extern crate tokio_tls;
 
 use std::{
     fmt, fs,
-    marker::PhantomData,
     path::Path,
     sync::{Arc, Mutex},
 };
@@ -24,7 +23,10 @@ use base::types::{ArcType, Type};
 
 use vm::{
     self,
-    api::{Collect, Function, Getable, OpaqueValue, PushAsRef, Pushable, VmType, WithVM, IO},
+    api::{
+        generic, Collect, Eff, Function, Getable, OpaqueValue, PushAsRef, Pushable, VmType, WithVM,
+        IO,
+    },
     thread::{ActiveThread, RootedThread, Thread},
     ExternModule, Variants,
 };
@@ -45,18 +47,21 @@ mod std {
     pub use http;
 }
 
-// `Handler` is a type defined in http.glu but since we need to refer to it in the signature of
-// listen we define a phantom type which we can use with `OpaqueValue` to store a `Handler` in Rust
-struct Handler<T>(PhantomData<T>);
-
-impl<T: VmType + 'static> VmType for Handler<T> {
+struct HttpEffect;
+impl VmType for HttpEffect {
     type Type = Self;
     fn make_type(vm: &Thread) -> ArcType {
-        vm.find_type_info("std.http.types.Handler")
-            .map(|typ| Type::app(typ.into_type(), collect![T::make_type(vm)]))
-            .unwrap_or_else(|_| Type::hole())
+        let r = generic::R::make_type(vm);
+        Type::app(
+            vm.find_type_info("std.http.types.HttpEffect")
+                .map(|alias| alias.into_type())
+                .unwrap_or_else(|_| Type::hole()),
+            collect![r],
+        )
     }
 }
+
+type Handler<T> = Eff<HttpEffect, T>;
 
 struct Headers(HeaderMap);
 
@@ -180,7 +185,7 @@ struct Uri(http::Uri);
 
 // Next we define some record types which are marshalled to and from gluon. These have equivalent
 // definitions in http_types.glu
-field_decl! { method, uri, status, body, request, response, headers }
+field_decl! { http, method, uri, status, body, request, response, headers }
 
 type Request = record_type! {
     method => String,

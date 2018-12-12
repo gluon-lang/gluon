@@ -9,9 +9,10 @@ let { flat_map, (>>=) } = import! std.monad
 let { ? } = import! std.array
 let { Result } = import! std.result
 let { foldl } = import! std.foldable
+let { Eff, ? } = import! std.effect
 
 let http @ {
-    Request, Response, Handler, StatusCode,
+    Request, Response, HttpEffect, StatusCode,
     handle,
     io_handler,
     empty_response,
@@ -32,21 +33,21 @@ let http @ {
     ?
 } = import! std.http.http
 
-let hello_world : Handler Response =
+let hello_world : Eff (HttpEffect r) Response =
     write_response (string.as_bytes "Hello World")
         *> (wrap { status = status.ok, .. http.response })
 
-let echo_body request : Request -> Handler () =
+let echo_body request : Request -> Eff (HttpEffect r) () =
     do chunk = io_handler (read_chunk request.body)
     match chunk with
     | Some chunk -> write_response chunk *> echo_body request
     | None -> wrap ()
 
-let echo : Handler Response =
+let echo : Eff (HttpEffect r) Response =
     (get_request >>= echo_body)
         *> wrap { status = status.ok, .. http.response }
 
-let array_body request : Request -> Handler (Array Byte) =
+let array_body request : Request -> Eff (HttpEffect r) (Array Byte) =
     do chunk = io_handler (read_chunk request.body)
     match chunk with
     | Some chunk ->
@@ -54,7 +55,7 @@ let array_body request : Request -> Handler (Array Byte) =
         wrap (chunk <> rest)
     | None -> wrap []
 
-let sum : Handler Response =
+let sum : Eff (HttpEffect r) Response =
     let de @ { ? } = import! std.json.de
     do body = get_request >>= array_body
     match string.from_utf8 body with
@@ -73,7 +74,7 @@ let sum : Handler Response =
             wrap { status = status.bad_request, .. http.response }
 
 
-let handler =
+let handler : Eff (HttpEffect r) Response =
     (get *> path "/" *> hello_world)
         <|> (post *> path "/echo" *> echo)
         <|> (post *> path "/sum" *> sum)
