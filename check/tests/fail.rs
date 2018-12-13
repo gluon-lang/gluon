@@ -714,6 +714,38 @@ Types do not match:
 }
 
 #[test]
+fn effect_unify_function() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+type Eff r a =
+    forall x . (| Pure a | Impure (r x) (x -> Eff r a))
+
+let any x = any x
+let x : Eff [| | r |] Int = any ()
+
+let f x a : (a -> a -> b) -> a -> b = x a a
+
+f x 1
+"#;
+    let result = support::typecheck(text);
+
+    assert_eq!(
+        &*format!("{}", result.unwrap_err()).replace("\t", "        "),
+        r#"error: Expected the following types to be equal
+Expected: Int -> Int -> a
+Found: test.Eff [| | r |] Int
+1 errors were found during unification:
+Types do not match:
+    Expected: Int -> Int -> a
+    Found: test.Eff [| | r |] Int
+- <test>:10:3
+10 | f x 1
+   |   ^
+"#
+    );
+}
+
+#[test]
 fn undefined_alias_in_record_type() {
     let _ = env_logger::try_init();
 
@@ -726,3 +758,5 @@ type Test = { MyInt }
 
     assert_err!(result, UndefinedType(..));
 }
+
+

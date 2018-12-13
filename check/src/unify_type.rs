@@ -316,15 +316,37 @@ impl<'a> Unifiable<State<'a>> for ArcType {
         if through_alias {
             unifier.state.in_alias = true;
         }
-        let result = do_zip_match(unifier, l, r).map(|mut unified_type| {
-            // If the match was done through an alias the unified type is likely less precise than
-            // `self` or `other`.
-            // So just return `None` which means `self` is used as the type if necessary
-            if through_alias {
-                unified_type.take();
-            }
-            unified_type
-        });
+        let result = do_zip_match(unifier, l, r)
+            .map(|mut unified_type| {
+                // Return polymorphic rows even if we have gone through aliases as they
+                // can very well be more specific after the row has been extended
+                // Should have a better way to handle this though...
+                let is_polymorphic_row = |typ: &ArcType| -> bool {
+                    let mut iter = typ.row_iter();
+                    for _ in iter.by_ref() {}
+                    **unifier.state.subs.real(iter.current_type()) != Type::EmptyRow
+                };
+                // If the match was done through an alias the unified type is likely less precise than
+                // `self` or `other`.
+                // So just return `None` which means `self` is used as the type if necessary
+                if through_alias && !unified_type.as_ref().map_or(false, is_polymorphic_row) {
+                    unified_type.take();
+                }
+                unified_type
+            })
+            .map_err(|err| {
+                // Use the aliased types if we  the
+                if through_alias {
+                    match err {
+                        unify::Error::TypeMismatch(..) => {
+                            unify::Error::TypeMismatch(self.clone(), other.clone())
+                        }
+                        _ => err,
+                    }
+                } else {
+                    err
+                }
+            });
         unifier.state.in_alias = old_in_alias;
         unifier.state.reduced_aliases.truncate(reduced_aliases);
         result
@@ -912,7 +934,7 @@ fn resolve_application<'t>(typ: &'t ArcType, subs: &'t Substitution<ArcType>) ->
 enum FoundAlias {
     Root(ArcType),
     Found(ArcType),
-    AlreadyEqual,
+    AlreadyDone,
 }
 
 /// Attempt to unify two alias types.
@@ -962,7 +984,7 @@ where
                     return Ok(if did_alias {
                         FoundAlias::Found(l.clone())
                     } else {
-                        FoundAlias::AlreadyEqual
+                        FoundAlias::AlreadyDone
                     });
                 }
                 did_alias = true;
@@ -984,7 +1006,11 @@ where
             None => break,
         }
     }
-    Ok(FoundAlias::Root(l))
+    Ok(if did_alias {
+        FoundAlias::Root(l)
+    } else {
+        FoundAlias::AlreadyDone
+    })
 }
 
 /// Attempt to find a common alias between two types. If the function is successful it returns
@@ -1018,10 +1044,11 @@ where
     if let Some(r_id) = r.name() {
         l = match find_alias(unifier, l.clone(), r_id)? {
             FoundAlias::Root(root) => {
+                *through_alias = true;
                 l_root = Some(root);
                 l
             }
-            FoundAlias::AlreadyEqual => l,
+            FoundAlias::AlreadyDone => l,
             FoundAlias::Found(typ) => {
                 *through_alias = true;
                 return Ok((typ, actual.clone()));
@@ -1044,12 +1071,13 @@ where
     if let Some(result) = result {
         r = match result {
             FoundAlias::Root(root) => {
+                *through_alias = true;
                 if let Some(l_root) = l_root {
                     l = l_root;
                 }
                 root
             }
-            FoundAlias::AlreadyEqual => r,
+            FoundAlias::AlreadyDone => r,
             FoundAlias::Found(typ) => {
                 *through_alias = true;
                 typ
