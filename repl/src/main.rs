@@ -171,12 +171,15 @@ fn init_env_logger() {
 fn init_env_logger() {}
 
 fn format(file: &str, file_map: Arc<codespan::FileMap>) -> Result<String> {
-    use gluon_format::format_expr;
-
     let mut compiler = Compiler::new();
     let thread = new_vm();
 
-    Ok(format_expr(&mut compiler, &thread, file, file_map.src())?)
+    Ok(compiler.format_expr(
+        &mut gluon_format::Formatter::default(),
+        &thread,
+        file,
+        file_map.src(),
+    )?)
 }
 
 fn fmt_file(name: &Path) -> Result<()> {

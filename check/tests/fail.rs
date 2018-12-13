@@ -664,7 +664,15 @@ let foldable : Foldable Array =
 "#;
     let result = support::typecheck(text);
 
-    assert_multi_unify_err!(result, [TypeMismatch(..)]);
+    assert_multi_unify_err!(
+        result,
+        [
+            TypeMismatch(..),
+            TypeMismatch(..),
+            TypeMismatch(..),
+            TypeMismatch(..)
+        ]
+    );
 }
 
 #[test]

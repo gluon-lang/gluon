@@ -22,6 +22,8 @@ gluon_base = { path = "../base", version = "0.9.4" } # GLUON
 env_logger = "0.6"
 difference = "2"
 pretty_assertions = "0.5"
+gluon_base = { path = "../base", version = "0.9.4" } # GLUON
+gluon = { path = "..", version = ">=0.9" }
 
 [features]
 test = []

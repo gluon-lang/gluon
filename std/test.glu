@@ -23,9 +23,9 @@ let { Lift, run_lift } = import! std.effect.lift
 type Test a = Writer (List String) a
 type TestEff r a = Eff [| writer : Test | r |] a
 type TestEffIO r a = Eff [| writer : Test, lift : Lift IO | r |] a
-type TestCase a =
+type TestCase r a =
     | Test String (() -> Eff [| writer : Test | r |] a)
-    | Group String (Array (TestCase a))
+    | Group String (Array (TestCase r a))
 
 let test = Test
 let group = Group

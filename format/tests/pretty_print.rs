@@ -24,13 +24,18 @@ fn new_vm() -> RootedThread {
 fn format_expr(expr: &str) -> gluon::Result<String> {
     let mut compiler = Compiler::new();
     let thread = new_vm();
-    format::format_expr(&mut compiler, &thread, "test", expr)
+    compiler.format_expr(&mut format::Formatter::default(), &thread, "test", expr)
 }
 
 fn format_expr_expanded(expr: &str) -> gluon::Result<String> {
     let mut compiler = Compiler::new();
     let thread = new_vm();
-    format::Formatter { expanded: true }.format_expr(&mut compiler, &thread, "test", expr)
+    compiler.format_expr(
+        &mut format::Formatter { expanded: true },
+        &thread,
+        "test",
+        expr,
+    )
 }
 
 fn test_format(name: &str) {
@@ -45,7 +50,8 @@ fn test_format(name: &str) {
 
     let mut compiler = Compiler::new();
     let thread = new_vm();
-    let out_str = format::format_expr(&mut compiler, &thread, name, &contents)
+    let out_str = compiler
+        .format_expr(&mut format::Formatter::default(), &thread, name, &contents)
         .unwrap_or_else(|err| panic!("{}", err));
 
     if contents != out_str {

@@ -2,6 +2,7 @@ use std::{
     borrow::Cow,
     fmt,
     hash::Hash,
+    iter,
     marker::PhantomData,
     mem,
     ops::{Deref, DerefMut},
@@ -854,9 +855,7 @@ where
     where
         T: Clone,
     {
-        args.into_iter().rev().fold(ret, |body, arg| {
-            T::from(Type::Function(ArgType::Explicit, arg, body))
-        })
+        Self::function_type(ArgType::Explicit, args, ret)
     }
 
     pub fn function_implicit<I>(args: I, ret: T) -> T
@@ -864,8 +863,16 @@ where
         I: IntoIterator<Item = T>,
         I::IntoIter: DoubleEndedIterator<Item = T>,
     {
+        Self::function_type(ArgType::Implicit, args, ret)
+    }
+
+    pub fn function_type<I>(arg_type: ArgType, args: I, ret: T) -> T
+    where
+        I: IntoIterator<Item = T>,
+        I::IntoIter: DoubleEndedIterator<Item = T>,
+    {
         args.into_iter().rev().fold(ret, |body, arg| {
-            T::from(Type::Function(ArgType::Implicit, arg, body))
+            T::from(Type::Function(arg_type, arg, body))
         })
     }
 
@@ -931,6 +938,16 @@ where
 {
     pub fn as_function(&self) -> Option<(&T, &T)> {
         self.as_function_with_type().map(|t| (t.1, t.2))
+    }
+
+    pub fn as_explicit_function(&self) -> Option<(&T, &T)> {
+        self.as_function_with_type().and_then(|t| {
+            if t.0 == ArgType::Explicit {
+                Some((t.1, t.2))
+            } else {
+                None
+            }
+        })
     }
 
     pub fn as_function_with_type(&self) -> Option<(ArgType, &T, &T)> {
@@ -1103,6 +1120,12 @@ pub struct ArcType<Id = Symbol> {
     typ: Arc<Type<Id, ArcType<Id>>>,
 }
 
+impl<Id> Default for ArcType<Id> {
+    fn default() -> Self {
+        Type::hole()
+    }
+}
+
 #[cfg(feature = "serde")]
 impl<'de, Id> DeserializeState<'de, Seed<Id, ArcType<Id>>> for ArcType<Id>
 where
@@ -1233,6 +1256,40 @@ impl<Id> ArcType<Id> {
         }
     }
 
+    pub fn forall_params_vars(&self) -> impl Iterator<Item = (&Generic<Id>, &ArcType<Id>)> {
+        let mut i = 0;
+        let mut typ = self;
+        iter::repeat(()).scan((), move |_, _| {
+            while let Type::Forall(ref params, ref inner_type, Some(ref vars)) = **typ {
+                if i < params.len() {
+                    i += 1;
+                    return Some((&params[i - 1], &vars[i - 1]));
+                } else {
+                    i = 0;
+                    typ = inner_type;
+                }
+            }
+            None
+        })
+    }
+
+    pub fn forall_params(&self) -> impl Iterator<Item = &Generic<Id>> {
+        let mut i = 0;
+        let mut typ = self;
+        iter::repeat(()).scan((), move |_, _| {
+            while let Type::Forall(ref params, ref inner_type, _) = **typ {
+                if i < params.len() {
+                    i += 1;
+                    return Some(&params[i - 1]);
+                } else {
+                    i = 0;
+                    typ = inner_type;
+                }
+            }
+            None
+        })
+    }
+
     pub fn remove_forall(&self) -> &ArcType<Id> {
         remove_forall(self)
     }
@@ -1243,6 +1300,32 @@ impl<Id> ArcType<Id> {
             Type::Forall(_, ref typ, _) => typ.remove_forall_and_implicit_args(),
             _ => self,
         }
+    }
+
+    pub fn skolemize_in(
+        &self,
+        named_variables: &mut FnvMap<Id, ArcType<Id>>,
+        f: impl FnOnce(ArcType<Id>) -> ArcType<Id>,
+    ) -> ArcType<Id>
+    where
+        Id: Clone + Eq + Hash,
+    {
+        let skolemized = self.skolemize(named_variables);
+        let new_type = f(skolemized);
+        new_type.with_forall(self)
+    }
+
+    pub fn with_forall(self, from: &Self) -> Self
+    where
+        Id: Clone + Eq + Hash,
+    {
+        let mut params = Vec::new();
+        let mut vars = Vec::new();
+        for (param, var) in from.forall_params_vars() {
+            params.push(param.clone());
+            vars.push(var.clone());
+        }
+        Type::forall_with_vars(params, self, Some(vars))
     }
 
     pub fn skolemize(&self, named_variables: &mut FnvMap<Id, ArcType<Id>>) -> ArcType<Id>
@@ -1300,12 +1383,16 @@ impl<Id> ArcType<Id> {
         }
     }
 
-    pub fn instantiate_generics(&self, named_variables: &mut FnvMap<Id, ArcType<Id>>) -> ArcType<Id>
+    pub fn instantiate_generics(
+        &self,
+        named_variables: &mut FnvMap<Id, ArcType<Id>>,
+        mut var_provider: impl FnMut() -> ArcType<Id>,
+    ) -> ArcType<Id>
     where
         Id: Clone + Eq + Hash,
     {
         let mut typ = self;
-        while let Type::Forall(ref params, ref inner_type, Some(ref vars)) = **typ {
+        while let Type::Forall(params, inner_type, Some(vars)) = &**typ {
             named_variables.extend(
                 params
                     .iter()
@@ -1898,13 +1985,21 @@ where
             Type::Hole => arena.text("_"),
             Type::Error => arena.text("!"),
             Type::Opaque => arena.text("<opaque>"),
-            Type::Forall(ref args, ref typ, _) => {
+            Type::Forall(ref args, ref typ, ref vars) => {
                 let doc = chain![arena;
                     chain![arena;
                         "forall ",
                         arena.concat(args.iter().map(|arg| {
                             arena.text(arg.id.as_ref()).append(arena.space())
                         })),
+                        if let Some(var) = vars.as_ref().and_then(|vars| vars.first()) {
+                            chain![arena;
+                                ": ",
+                                top(var).pretty(printer)
+                            ]
+                        } else {
+                            arena.nil()
+                        },
                         "."
                     ].group(),
                     arena.space(),

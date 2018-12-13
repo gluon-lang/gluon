@@ -17,6 +17,8 @@ use base::types::{Field, Type};
 
 use support::{alias, intern, typ, MockEnv};
 
+use check::typecheck::TypeError;
+
 #[macro_use]
 
 mod support;
@@ -85,7 +87,7 @@ test 1
     let call_id = match call.value {
         Expr::App { ref func, .. } => match func.value {
             Expr::Ident(ref id) => id,
-            _ => panic!(),
+            _ => panic!("{:#?}", func.value),
         },
         _ => panic!(),
     };
@@ -697,7 +699,7 @@ make
 
     assert_req!(
         result.map(|x| x.to_string()),
-        Ok("forall b . b -> { f : b -> b }".to_string())
+        Ok("forall a . a -> { f : a -> a }".to_string())
     );
 }
 
@@ -1235,7 +1237,7 @@ match Error "" with
 
     assert_req!(
         result.map(|x| x.to_string()),
-        Ok("forall b1 . | Ok\n.. b1".to_string())
+        Ok("forall a1 . | Ok\n.. a1".to_string())
     );
 }
 
@@ -1260,7 +1262,7 @@ z
 
     assert_req!(
         result.map(|x| x.to_string()),
-        Ok("forall a r . test.Rest r a".to_string())
+        Ok("forall a a0 . test.Rest a a0".to_string())
     );
 }
 
@@ -1270,7 +1272,7 @@ test_check! {
     type Error = forall r . (| Error .. r)
     Error
     "#,
-    "forall r . test.Error"
+    "test.Error"
 }
 
 test_check! {
@@ -1319,4 +1321,181 @@ let eval_env eff : Eff (LispEffect r) a -> _ =
 ()
     "#,
     "()"
+}
+
+test_check_err! {
+    escaping_skolem_in_argument,
+    r#"
+    type ST s a = { st : (a -> s -> s) }
+    type Test s = | Test
+    let any x = any x
+    let run x : (forall s . ST s a) -> a = any ()
+    let new : ST s (Test s) = any ()
+    run new
+    "#,
+    TypeError::Message(_)
+}
+
+test_check! { load_list_skolem_bug,
+r"
+
+type Semigroup a = {
+    append : a -> ()
+}
+
+type Alternative f = {
+    or : forall a . f a -> (),
+}
+
+type List a = | List a
+
+let any x = any x
+
+let semigroup : Semigroup (List a) = any ()
+
+let alternative : Alternative List = {
+    or = semigroup.append,
+}
+
+()
+",
+"()"
+}
+
+test_check! { load_result_skolem_bug,
+r"
+type Result e t =
+    | Err e
+    | Ok t
+
+#[implicit]
+type Applicative (f : Type -> Type) = {
+    map : forall a b . (a -> b) -> f a -> f b,
+    wrap : forall a . a -> f a
+}
+
+#[implicit]
+type Traversable t = {
+    traverse : forall a b m . Applicative m -> (a -> m b) -> t a -> m (t b)
+}
+
+let any x = any x
+
+let applicative : Applicative (Result e) = any ()
+
+let traversable : Traversable (Result e) = {
+    traverse = \app f r ->
+        match r with
+        | Err e -> app.wrap (Err e)
+        | Ok x -> app.map Ok (f x),
+}
+
+()
+",
+"()"
+}
+
+test_check! { std_json_de_skolem_bug,
+r#"
+
+type Result e t =
+    | Err e
+
+#[implicit]
+type Alternative f = {
+    empty : forall a . f a
+}
+
+type Deserializer i a = i -> Result String { value : a, input : i }
+
+let deserializer x : Deserializer i a -> Deserializer i a = x
+
+let alternative : Alternative (Deserializer i) = {
+    empty = deserializer (\stream -> Err ("empty")),
+}
+
+1
+"#,
+"Int"
+}
+
+test_check! { lisp_example_skolem_bug,
+r#"
+type Show a = { show : a -> String }
+
+type Expr =
+    | Primitive (forall r . () -> r)
+
+let show_expr : Show Expr =
+    let show expr =
+        match expr with
+        | Primitive _ -> "<primitive>"
+    { show }
+
+1
+"#,
+"Int"
+}
+
+test_check! { lisp_example_2_skolem_bug,
+r#"
+type Show a = { show : a -> String }
+
+type Expr =
+    | Primitive (forall r . () -> r)
+
+let primitive f = Primitive f
+
+1
+"#,
+"Int"
+}
+
+test_check! { lisp_example_3_skolem_bug,
+r#"
+type Eff r a =
+    forall x . (| Pure a | Impure (r x) (x -> Eff r a))
+
+type List a = | Nil | Cons a (List a)
+
+type Expr =
+    | List (List Expr)
+type LispEffect r a = [| | r |] a
+
+let any x = any x
+
+#[implicit]
+type Foldable (m : Type -> Type) = { }
+
+let foldable : Foldable List = { }
+
+#[implicit]
+type Monad (m : Type -> Type) = { }
+
+let monad : Monad (Eff r) = { }
+
+let fold_m f z : [Foldable t] -> [Monad m] -> (a -> b -> m a) -> a -> t b -> m a = any ()
+
+rec
+let eval_lisp expr : Expr -> Eff (LispEffect r) Expr =
+    eval_exprs Nil
+let eval_exprs exprs = fold_m (\_result expr -> eval_lisp expr) (List Nil) exprs
+
+1
+"#,
+"Int"
+}
+
+test_check! { st_effect_skolem_escape,
+r#"
+type Eff r a =
+    forall x . (| Pure a | Impure (r x) (x -> Eff r a))
+
+type STRef s a = { }
+type State s a = forall b r . (| New b | Read (STRef s a) | Write b (STRef s b) .. r)
+
+let extract_state x : forall s . [| st : State s | r |] a -> State s a = convert_variant! x
+1
+"#,
+"Int"
 }

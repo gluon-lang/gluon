@@ -1,11 +1,13 @@
+//@NO-IMPLICIT-PRELUDE
 let option = import! std.option
 let { Result, ? } = import! std.result
 let { (<<), (|>) } = import! std.function
 let { (<>) } = import! std.semigroup
 let monoid @ { Monoid } = import! std.monoid
 
-let { map } = import! std.functor
-let { wrap } = import! std.applicative
+let { Functor, map } = import! std.functor
+let { Applicative, wrap } = import! std.applicative
+let { Monad } = import! std.monad
 
 type Eff r a =
     forall x . (| Pure a | Impure (r x) (x -> Eff r a))

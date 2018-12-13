@@ -121,7 +121,7 @@ enum TestCase {
     Group { name: String, tests: Vec<TestCase> },
 }
 
-define_test_type! { TestCase }
+define_test_type! { TestCase Hole }
 
 struct TestEffIO;
 

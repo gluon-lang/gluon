@@ -84,7 +84,8 @@ fn shrink_hidden_spans<Id>(mut expr: SpannedExpr<Id>) -> SpannedExpr<Id> {
                 expr.span = Span::new(expr.span.start(), end);
             }
         }
-        Expr::App { .. }
+        Expr::Annotated(..)
+        | Expr::App { .. }
         | Expr::Ident(_)
         | Expr::Literal(_)
         | Expr::Projection(_, _, _)

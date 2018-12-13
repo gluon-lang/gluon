@@ -1,0 +1,52 @@
+let { Eff, inject_rest, ? } = import! std.effect
+let { map } = import! std.functor
+let { wrap } = import! std.applicative
+let { (<<) } = import! std.function
+let { ref, (<-), load } = import! std.reference
+
+type STRef s a = { __ref : Ref a }
+type State s a = forall b r . (| New b | Read (STRef s a) | Write b (STRef s b) .. r)
+
+let extract_state x : forall s . [| st : State s | r |] a -> State s a = convert_variant! x
+
+let send_state f : State s a -> Eff [| st : State s | r |] a = error "FIXME" // FIXME Impure (convert_effect! state f) Pure
+
+let new_ST_ref a : a -> Eff [| st : State s | r |] (STRef s a) = send_state (New a)
+let read_ST_ref ref : STRef s a -> Eff [| st : State s | r |]  a =  send_state (Read ref)
+let write_ST_ref a ref : a -> STRef s a -> Eff [| st : State s | r |] () = send_state (Write a ref)
+
+/// ```
+/// let eff @ { ? } = import! std.effect
+/// let { wrap } = import! std.applicative
+/// let st = import! std.effect.st
+/// let r = eff.run_pure (st.run_state (st.new_ST_ref ()))
+/// st.run_state (wrap r)
+/// ```
+let run_state eff : (forall s . Eff [| st : State s | r |] a) -> Eff [| | r |] a =
+    let loop ve =
+        match ve with
+        | Pure value -> wrap value
+        | Impure e f ->
+            match extract_state e with 
+            | New a ->
+                let r : STRef _ a = { __ref = ref a }
+                loop (f r)
+            | Read r ->
+                let a = load r.__ref
+                loop (f a)
+            | Write a r ->
+                r.__ref <- a
+                loop (f a)
+            | rest ->
+                Impure (inject_rest rest) (loop << f)
+    loop eff
+
+
+{
+    State,
+
+    new_ST_ref,
+    read_ST_ref,
+    write_ST_ref,
+    run_state,
+}

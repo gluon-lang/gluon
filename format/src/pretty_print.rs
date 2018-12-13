@@ -485,6 +485,14 @@ where
             Expr::MacroExpansion { ref original, .. } => {
                 return self.pretty_expr_(previous_end, original);
             }
+            Expr::Annotated(ref expr, ref typ) => chain![
+                arena;
+                pretty(expr).group(),
+                arena.space(),
+                ":",
+                arena.space(),
+                types::pretty_print(self, typ)
+            ],
             Expr::Error(_) => arena.text("<error>"),
         };
         comments.append(doc)

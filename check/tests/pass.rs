@@ -199,9 +199,8 @@ let g x = f (x #Int- 1)
 in g 5
 ";
     let (_, result) = support::typecheck_expr(text);
-    let expected = Ok(typ("Int"));
 
-    assert_eq!(result, expected);
+    assert_req!(result.map(|t| t.to_string()), Ok("Int"));
 }
 
 macro_rules! assert_match {

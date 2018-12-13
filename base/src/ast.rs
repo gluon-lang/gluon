@@ -1,9 +1,11 @@
 //! Module containing the types which make up `gluon`'s AST (Abstract Syntax Tree)
-use std::borrow::Cow;
-use std::fmt;
-use std::marker::PhantomData;
-use std::ops::{Deref, DerefMut};
-use std::slice;
+use std::{
+    borrow::Cow,
+    fmt,
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+    slice,
+};
 
 use either::Either;
 
@@ -230,6 +232,12 @@ pub enum Pattern<Id> {
     Error,
 }
 
+impl<Id> Default for Pattern<Id> {
+    fn default() -> Self {
+        Pattern::Error
+    }
+}
+
 #[derive(Clone, PartialEq, Debug)]
 pub struct Alternative<Id> {
     pub pattern: SpannedPattern<Id>,
@@ -329,6 +337,7 @@ pub enum Expr<Id> {
         original: Box<SpannedExpr<Id>>,
         replacement: Box<SpannedExpr<Id>>,
     },
+    Annotated(Box<SpannedExpr<Id>>, ArcType<Id>),
     /// An invalid expression
     Error(
         /// Provides a hint of what type the expression would have, if any
@@ -344,8 +353,40 @@ impl<Id> Expr<Id> {
         Expr::LetBindings(ValueBindings::Recursive(binds), expr.into())
     }
 
+    pub fn annotated<'a>(expr: SpannedExpr<Id>, typ: ArcType<Id>) -> SpannedExpr<Id>
+    where
+        Id: From<&'a str> + Clone,
+    {
+        pos::spanned(expr.span, Expr::Annotated(expr.into(), typ))
+    }
+
     pub fn let_binding(bind: ValueBinding<Id>, expr: impl Into<Box<SpannedExpr<Id>>>) -> Self {
         Expr::LetBindings(ValueBindings::Plain(Box::new(bind)), expr.into())
+    }
+
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Expr::IfElse(..) => "IfElse",
+            Expr::Infix { .. } => "Infix",
+            Expr::LetBindings(..) => "LetBindings",
+            Expr::App { .. } => "App",
+            Expr::Projection(..) => "Projection",
+            Expr::Match(..) => "Match",
+            Expr::Array(..) => "Array",
+            Expr::Record { .. } => "Record",
+            Expr::Tuple { .. } => "Tuple",
+            Expr::Block(..) => "Block",
+
+            Expr::Do(Do { .. }) => "Do",
+
+            Expr::Lambda(..) => "Lambda",
+            Expr::TypeBindings(..) => "TypeBindings",
+            Expr::Ident(..) => "Ident",
+            Expr::MacroExpansion { .. } => "MacroExpansion",
+            Expr::Literal(..) => "Literal",
+            Expr::Annotated(..) => "Annotated",
+            Expr::Error(..) => "Error",
+        }
     }
 }
 
@@ -479,6 +520,19 @@ pub struct ValueBinding<Id> {
     pub expr: SpannedExpr<Id>,
 }
 
+impl<T> Default for ValueBinding<T> {
+    fn default() -> Self {
+        ValueBinding {
+            metadata: Default::default(),
+            name: Default::default(),
+            typ: Default::default(),
+            resolved_type: Default::default(),
+            args: Default::default(),
+            expr: Default::default(),
+        }
+    }
+}
+
 impl<Id> ValueBinding<Id> {
     pub fn span(&self) -> Span<BytePos> {
         Span::new(self.name.span.start(), self.expr.span.end())
@@ -575,8 +629,8 @@ pub fn walk_expr<'a, V: ?Sized + $trait_name<'a>>(v: &mut V, e: &'a $($mut)* Spa
             }
         }
         Expr::Projection(ref $($mut)* expr, _, ref $($mut)* typ) => {
-            v.visit_expr(expr);
             v.visit_typ(typ);
+            v.visit_expr(expr);
         }
         Expr::Match(ref $($mut)* expr, ref $($mut)* alts) => {
             v.visit_expr(expr);
@@ -658,6 +712,10 @@ pub fn walk_expr<'a, V: ?Sized + $trait_name<'a>>(v: &mut V, e: &'a $($mut)* Spa
             ref $($mut)* replacement,
             ..
         } => v.visit_expr(replacement),
+        Expr::Annotated(ref $($mut)* expr, ref $($mut)* typ) => {
+            v.visit_typ(typ);
+            v.visit_expr(expr);
+        }
         Expr::Literal(..) | Expr::Error(..) => (),
     }
 }
@@ -829,6 +887,7 @@ impl Typed for Expr<Symbol> {
             Expr::MacroExpansion {
                 ref replacement, ..
             } => replacement.try_type_of(env),
+            Expr::Annotated(_, ref typ) => Ok(typ.clone()),
             Expr::Error(ref typ) => Ok(typ.clone().unwrap_or_else(Type::hole)),
         }
     }

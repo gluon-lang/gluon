@@ -71,7 +71,7 @@ x
 }
 
 #[test]
-fn type_mismatch_in_type_projection() {
+fn type_mismatch_in_type_projection_simple() {
     let _ = ::env_logger::try_init();
     let text = r#"
 type Test = String

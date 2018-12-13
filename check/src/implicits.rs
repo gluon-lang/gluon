@@ -561,7 +561,7 @@ impl<'a> ImplicitResolver<'a> {
         let mut alias_resolver = resolve::AliasRemover::new();
 
         let typ = ::unify_type::top_skolem_scope(subs, subs.real(typ));
-        let ref typ = typ.instantiate_generics(&mut FnvMap::default());
+        let ref typ = typ.instantiate_generics(&mut FnvMap::default(), || subs.new_var());
         let raw_type = match alias_resolver.remove_aliases(&self.environment, typ.clone()) {
             Ok(t) => t,
             // Don't recurse into self recursive aliases
