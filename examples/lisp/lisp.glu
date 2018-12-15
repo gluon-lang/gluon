@@ -1,7 +1,9 @@
 let prelude = import! std.prelude
 let { Functor, Applicative, Monad } = prelude
+let { map } = import! std.functor
 let { Foldable } = import! std.foldable
-let { id } = import! std.function
+let { traverse } = import! std.traversable
+let { id, (<|) } = import! std.function
 
 let string = import! std.string
 let { (<>) } = import! std.prelude
@@ -11,12 +13,16 @@ let float = import! std.float
 let int = import! std.int
 let result @ { Result, ? } = import! std.result
 let { Option } = import! std.option
+let { Eff, run_pure, ? } = import! std.effect
+let { get, put, modify } = import! std.effect.state
+let { throw, catch, run_error } = import! std.effect.error
+let { eval_state, run_state } = import! std.effect.state
 
 let list @ { List, ? } = import! std.list
 
-let map @ { Map, ? } = import! std.map
+let std_map @ { Map, ? } = import! std.map
 
-let { Expr, Function, Lisp, LispState } = import! "examples/lisp/types.glu"
+let { Expr, Function, LispEffect, LispState } = import! "examples/lisp/types.glu"
 let lisp_parser = import! "examples/lisp/parser.glu"
 let parser = import! std.parser
 
@@ -60,105 +66,69 @@ let show_expr : Show Expr =
         | Primitive _ -> "<primitive>"
     { show }
 
-let lisp : Lisp a -> Lisp a = id
-
-let functor_Lisp : Functor Lisp = { map = \f m -> lisp (\state ->
-            match lisp m state with
-            | Ok r -> Ok { value = f r.value, state = r.state }
-            | Err err -> Err err) }
-
-let applicative_Lisp : Applicative Lisp = {
-    functor = functor_Lisp,
-    apply = \f m -> lisp (\state ->
-            match lisp f state with
-            | Ok g ->
-                match lisp m g.state with
-                | Ok r -> Ok { value = g.value r.value, state = r.state }
-                | Err err -> Err err
-            | Err err -> Err err),
-    wrap = \value -> lisp (\state -> Ok { value, state }),
-}
-
-let monad_Lisp : Monad Lisp = {
-    applicative = applicative_Lisp,
-    flat_map = \f m -> lisp (\state ->
-            match lisp m state with
-            | Ok r -> lisp (f r.value) r.state
-            | Err err -> Err err),
-}
-
 let { wrap } = import! std.applicative
 let { flat_map, (>>=) } = import! std.monad
 let { fold_m } = import! std.foldable
-let traverse = list.traversable.traverse applicative_Lisp
-let { map = map_lisp } = functor_Lisp
 
-let get_state : Lisp LispState = lisp (\state -> Ok { value = state, state = state })
-let set_state state : LispState -> Lisp () = lisp (\_ -> Ok { value = (), state })
-let modify_state f : (LispState -> LispState) -> Lisp () =
-    do state = get_state
-    set_state (f state)
-let scope_state run : Lisp a -> Lisp a =
-    do original = get_state
+let scope_state run : Eff (LispEffect r) a -> Eff (LispEffect r) a =
+    do original = get
     do x = run
-    do _ = set_state original
+    do _ = put original
     wrap x
 
-let fail msg : String -> Lisp a = lisp (\_ -> Err msg)
-
-let primitive name f : String -> _ -> Map String Expr = map.singleton name (Primitive f)
+let primitive name f : String -> _ -> Map String Expr = std_map.singleton name (Primitive f)
 
 type Binop a = a -> a -> a
 
 let primitive_binop name int_op float_op : _ -> Binop Int -> Binop Float -> Map String Expr =
-    let unpack_int x : Expr -> Lisp Int =
+    let unpack_int x : Expr -> Eff (LispEffect r) Int =
         match x with
         | Int i -> wrap i
-        | _ -> fail "Expected integer"
-    let unpack_float x : Expr -> Lisp Float =
+        | _ -> throw "Expected integer"
+    let unpack_float x : Expr -> Eff (LispEffect r) Float =
         match x with
         | Float f -> wrap f
-        | _ -> fail "Expected float"
+        | _ -> throw "Expected float"
 
-    let fold unpack op : (Expr -> Lisp a)
+    let fold unpack op : (Expr -> Eff (LispEffect r) a)
             -> Binop a
             -> a
             -> List Expr
             -> _
-        = fold_m (\acc x -> map_lisp (\y -> op acc y) (unpack x))
+        = fold_m (\acc x -> map (\y -> op acc y) (unpack x))
 
-    let f xs : List Expr -> Lisp Expr =
+    let f xs : List Expr -> Eff (LispEffect r) Expr =
         match xs with
         | Cons l ys ->
             match l with
-            | Int li -> map_lisp Int (fold unpack_int int_op li ys)
-            | Float lf -> map_lisp Float (fold unpack_float float_op lf ys)
-            | _ -> fail ("Cant add " <> show l)
-        | _ -> fail ("Expected two arguments to binop, got " <> show (List xs))
+            | Int li -> map Int (fold unpack_int int_op li ys)
+            | Float lf -> map Float (fold unpack_float float_op lf ys)
+            | _ -> throw ("Cant add " <> show l)
+        | _ -> throw ("Expected two arguments to binop, got " <> show (List xs))
     primitive name f
 
 let define xs =
     match xs with
     | Cons (Atom name) (Cons value Nil) ->
-        do state = get_state
-        let new_state = map.insert name value state
-        do _ = set_state new_state
+        do state = get
+        let new_state = std_map.insert name value state
+        do _ = put new_state
         wrap value
     | Cons (List (Cons (Atom name) params)) body ->
-        do closure = get_state
+        do closure = get
 
         let function = Function {
-                    params = list.functor.map show params,
+                    params = map show params,
                     vararg = None,
                     body,
                     closure,
                 }
-        let new_state = map.insert name function closure
+        let new_state = std_map.insert name function closure
 
-        do _ = set_state new_state
+        do _ = put new_state
 
         wrap function
-    | _ -> fail "Unexpected parameters to define `define`"
+    | _ -> throw "Unexpected parameters to define `define`"
 
 let primitives : LispState =
     let { (<>) = (++) } = import! std.prelude
@@ -167,14 +137,14 @@ let primitives : LispState =
         ++ primitive "define" define
 
 rec
-let apply f xs : Expr -> List Expr -> Lisp Expr =
-    let add_args names values =
+let apply f xs : forall r . Expr -> List Expr -> Eff (LispEffect r) Expr =
+    let add_args names values : List String -> _ =
         match (names, values) with
         | (Cons name names, Cons value values) ->
-            do _ = modify_state (\state -> map.insert name value state)
+            do _ = modify (\state -> std_map.insert name value state)
             add_args names values
         | (Nil, _) -> wrap ()
-        | _ -> fail "Not enough arguments to function"
+        | _ -> throw "Not enough arguments to function"
 
     match f with
     | Primitive primitive -> primitive xs
@@ -182,15 +152,15 @@ let apply f xs : Expr -> List Expr -> Lisp Expr =
         scope_state (
             do _ = add_args function.params xs
             eval_exprs function.body)
-    | _ -> fail ("Can\'t call value: " <> show f)
+    | _ -> throw ("Can\'t call value: " <> show f)
 
-let eval_lisp expr : Expr -> Lisp Expr =
+let eval_lisp expr : Expr -> Eff (LispEffect r) Expr =
     match expr with
     | Atom name ->
-        do state = get_state
-        match map.find name state with
+        do state = get
+        match std_map.find name state with
         | Some value -> wrap value
-        | None -> fail ("Binding `" <> name <> "` is not defined")
+        | None -> throw ("Binding `" <> name <> "` is not defined")
     | Int _ -> wrap expr
     | Float _ -> wrap expr
     | Function _ -> wrap expr
@@ -199,23 +169,23 @@ let eval_lisp expr : Expr -> Lisp Expr =
         | Cons x xs ->
             match x with
             | Atom name ->
-                do state = get_state
+                do state = get
                 if name == "define" then
                     define xs
                 else
-                    match map.find name state with
+                    match std_map.find name state with
                     | Some prim ->
                         do evaluated_args = traverse eval_lisp xs
                         apply prim evaluated_args
-                    | None -> fail ("Variable `" <> name <> "` does not exist")
-            | _ -> fail ("Cant apply " <> show x)
+                    | None -> throw ("Variable `" <> name <> "` does not exist")
+            | _ -> throw ("Cant apply " <> show x)
         | Nil -> wrap expr
 
 let eval_exprs exprs = fold_m (\_result expr -> eval_lisp expr) (List Nil) exprs
 in
 
-let eval_env expr env : Lisp a -> Map String Expr -> Result String a =
-    result.functor.map (\r -> r.value) (lisp expr env)
+let eval_env expr env : Eff (LispEffect r) a -> Map String Expr -> Result String a =
+    run_pure <| run_error <| eval_state env expr
 
 let eval expr : Expr -> Result String Expr = eval_env (eval_lisp expr) primitives
 let eval_seq exprs =
@@ -226,7 +196,7 @@ let eval_seq exprs =
 let eval_string s = parser.parse lisp_parser.expr s >>= eval
 let eval_env_string s env =
     do e = parser.parse lisp_parser.expr s
-    do l = lisp (eval_lisp e) env
+    do l = run_pure <| run_error <| run_state env <| eval_lisp e
     wrap (l.value, l.state)
 
 {

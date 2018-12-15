@@ -3,6 +3,10 @@ let { Map } = import! std.map
 let { Option } = import! std.option
 let { Result } = import! std.result
 
+let { Eff } = import! std.effect
+let { State } = import! std.effect.state
+let { Error } = import! std.effect.error
+
 rec
 type Expr =
     | Atom String
@@ -10,7 +14,7 @@ type Expr =
     | Float Float
     | List (List Expr)
     | Function Function
-    | Primitive (List Expr -> Lisp Expr)
+    | Primitive (forall r . List Expr -> Eff (LispEffect r) Expr)
 type Function = {
     params : List String,
     vararg : Option String,
@@ -18,7 +22,7 @@ type Function = {
     closure : Map String Expr
 }
 type LispState = Map String Expr
-type Lisp a = LispState -> Result String { value : a, state : LispState }
+type LispEffect r a = [| error : Error String, state : State LispState | r |] a
 in
 
-{ Expr, Function, LispState, Lisp }
+{ Expr, Function, LispState, LispEffect }

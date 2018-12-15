@@ -11,7 +11,7 @@ let extract_error x : forall e . [| error : Error e | r |] a -> Error e a = conv
 
 let throw e : e -> Eff [| error : Error e | r |] a = send_error (Error e)
 
-let run_result eff : forall e . Eff [| error : Error e | r |] a -> Eff [| | r |] (Result e a) =
+let run_error eff : forall e . Eff [| error : Error e | r |] a -> Eff [| | r |] (Result e a) =
     let loop ve : Eff [| error : Error _ | r |] a -> Eff [| | r |] (Result _ a) =
         match ve with
         | Pure v -> wrap (Ok v)
@@ -41,5 +41,5 @@ let catch eff handler : forall e . Eff [| error : Error e | r |] a -> (e -> Eff 
 
     catch,
     throw,
-    run_result,
+    run_error,
 }
