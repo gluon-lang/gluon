@@ -636,7 +636,6 @@ let { List, f } = make 1
 
 // Unsure if this should be able to compile as is (without  type annotations)
 #[test]
-#[ignore]
 fn preserve_forall_when_lifting_into_record() {
     let _ = ::env_logger::try_init();
 
@@ -698,7 +697,7 @@ make
 
     assert_req!(
         result.map(|x| x.to_string()),
-        Ok("forall a . a -> { f : a -> a }".to_string())
+        Ok("forall b . b -> { f : b -> b }".to_string())
     );
 }
 
@@ -1104,7 +1103,7 @@ let option a : ValueDeserializer a -> ValueDeserializer (Option a) = \input ->
 }
 
 #[test]
-fn forall_scope() {
+fn forall_scope_simple() {
     let _ = ::env_logger::try_init();
 
     let text = r#"
@@ -1117,6 +1116,22 @@ let foo : (forall i . Proxy i -> ()) -> Proxy i -> () =
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn issue_603() {
+    let _ = ::env_logger::try_init();
+
+    let text = r#"
+type Proxy a = | Proxy
+let foo: forall b. (forall a. Proxy a) -> Proxy b
+    = \p -> p
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
 #[test]
 fn forall_in_alias() {
     let _ = ::env_logger::try_init();
@@ -1220,7 +1235,7 @@ match Error "" with
 
     assert_req!(
         result.map(|x| x.to_string()),
-        Ok("forall b . | Ok\n.. b".to_string())
+        Ok("forall b1 . | Ok\n.. b1".to_string())
     );
 }
 
@@ -1245,7 +1260,7 @@ z
 
     assert_req!(
         result.map(|x| x.to_string()),
-        Ok("forall a a0 . test.Rest a a0".to_string())
+        Ok("forall a r . test.Rest r a".to_string())
     );
 }
 
@@ -1255,7 +1270,7 @@ test_check! {
     type Error = forall r . (| Error .. r)
     Error
     "#,
-    "test.Error"
+    "forall r . test.Error"
 }
 
 test_check! {
@@ -1264,6 +1279,44 @@ test_check! {
     let loop repl : forall r . () -> r =
         loop repl
     ()
+    "#,
+    "()"
+}
+
+test_check! {
+    unify_forall_with_ctor_arg,
+    r#"
+    type Test = | Test (forall a . a -> a)
+    let f g : (forall r . r -> r) -> Test =
+        Test g
+    ()
+    "#,
+    "()"
+}
+
+test_check! {
+    eval_lisp_env,
+    r#"
+type Result e t = | Err e | Ok t
+
+type Eff r a =
+    forall x . (| Pure a | Impure (r x) (x -> Eff r a))
+
+type State s a = forall r . (| Get | Put s .. r)
+
+type Error e a = forall r . (| Error e .. r)
+
+type LispEffect r a = [| error : Error String, state : State () | r |] a
+
+let any x = any x
+
+let eval_state : forall s . Eff [| | r |] a = any ()
+
+let run_error eff : forall e . Eff [| error : Error e | r |] a -> Eff [| | r |] (Result e a) = any ()
+
+let eval_env eff : Eff (LispEffect r) a -> _ =
+     run_error eval_state
+()
     "#,
     "()"
 }

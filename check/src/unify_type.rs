@@ -1,5 +1,4 @@
-use std::fmt;
-use std::mem;
+use std::{borrow::Cow, fmt, mem};
 
 use base::error::Errors;
 use base::fnv::FnvMap;
@@ -18,6 +17,8 @@ use unify;
 use unify::{Error as UnifyError, GenericVariant, Unifiable, Unifier};
 
 use smallvec::SmallVec;
+
+pub type Result<T, E = UnifyError<ArcType, TypeError<Symbol>>> = ::std::result::Result<T, E>;
 
 impl VariableFactory for ArcKind {
     type Variable = TypeVariable;
@@ -355,6 +356,35 @@ impl<'a> Unifiable<State<'a>> for ArcType {
     fn error_type(state: &State<'a>) -> Self {
         state.type_cache.error()
     }
+}
+
+fn unify_function<'a>(
+    unifier: &mut UnifierState<'a, Subsume>,
+    actual: &ArcType,
+) -> Result<(ArcType, ArcType)> {
+    let subs = unifier.state.subs;
+    let actual = unifier
+        .state
+        .remove_aliases(subs, &actual)
+        .map_err(UnifyError::Other)?
+        .map(Cow::Owned)
+        .unwrap_or_else(|| Cow::Borrowed(actual));
+    match actual.as_function() {
+        Some((arg, ret)) => return Ok((arg.clone(), ret.clone())),
+        None => (),
+    }
+    let arg = subs.new_var();
+    let ret = subs.new_var();
+    let f = unifier
+        .state
+        .type_cache
+        .function(Some(arg.clone()), ret.clone());
+    if let Err(errors) = unify::unify(subs, unifier.state.clone(), &f, &actual) {
+        for err in errors {
+            unifier.report_error(err);
+        }
+    }
+    Ok((arg, ret))
 }
 
 fn do_zip_match<'a, U>(
@@ -1119,14 +1149,19 @@ fn unpack_single_forall(l: &ArcType) -> Option<&ArcType> {
 
 /// Replaces all instances `Type::Generic` in `typ` with fresh type variables (`Type::Variable`)
 pub fn new_skolem_scope(subs: &Substitution<ArcType>, typ: &ArcType) -> ArcType {
-    let mut id_to_var = FnvMap::default();
+    new_skolem_scope_(subs, typ).unwrap_or_else(|| typ.clone())
+}
 
-    let new_type = types::walk_move_type(typ.clone(), &mut |typ| {
-        if let Type::Forall(ref params, ref inner_type, None) = **typ {
+fn new_skolem_scope_(subs: &Substitution<ArcType>, typ: &ArcType) -> Option<ArcType> {
+    if let Some((arg, ret)) = typ.as_function() {
+        return new_skolem_scope_(subs, ret).map(|ret| Type::function(vec![arg.clone()], ret));
+    }
+
+    match **typ {
+        Type::Forall(ref params, ref inner_type, None) => {
             let mut skolem = Vec::new();
             for param in params {
                 let var = subs.new_var_fn(|id| {
-                    id_to_var.insert(param.id.clone(), id);
                     Type::variable(TypeVariable {
                         id,
                         kind: param.kind.clone(),
@@ -1139,11 +1174,12 @@ pub fn new_skolem_scope(subs: &Substitution<ArcType>, typ: &ArcType) -> ArcType 
                 inner_type.clone(),
                 Some(skolem),
             )))
-        } else {
-            None
         }
-    });
-    new_type
+        _ => types::walk_move_type_opt(
+            typ,
+            &mut types::ControlVisitation(|typ: &ArcType| new_skolem_scope_(subs, typ)),
+        ),
+    }
 }
 
 pub fn top_skolem_scope(subs: &Substitution<ArcType>, typ: &ArcType) -> ArcType {
@@ -1214,6 +1250,17 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for UnifierState<'a, Subsume<'e>> {
         match (&**l, &**r) {
             (&Type::Hole, _) => Ok(Some(r.clone())),
             (&Type::Variable(ref l), &Type::Variable(ref r)) if l.id == r.id => Ok(None),
+            (&Type::Skolem(ref skolem), &Type::Variable(ref var)) => {
+                let skolem_level = subs.get_level(skolem.id);
+                if skolem_level > var.id {
+                    Err(UnifyError::Other(TypeError::UnableToGeneralize(
+                        skolem.name.clone(),
+                    )))
+                } else {
+                    subs.union(var, l)?;
+                    Ok(None)
+                }
+            }
             (&Type::Variable(ref l_var), &Type::Skolem(ref skolem)) => {
                 let skolem_level = subs.get_level(skolem.id);
                 if skolem_level > l_var.id {
@@ -1255,35 +1302,23 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for UnifierState<'a, Subsume<'e>> {
                 Ok(None)
             }
 
-            (_, &Type::Forall(_, _, Some(_))) => {
-                let r = r.skolemize(&mut FnvMap::default());
-                Ok(self.try_match_res(l, &r)?)
+            _ if l.as_function().is_some() => {
+                let (l_arg, l_ret) = l.as_function().unwrap();
+                // FIXME Don't use ?
+                let (r_arg, r_ret) = unify_function(self, &r)?;
+                self.try_match_res(l_arg, &r_arg)?;
+                self.try_match_res(l_ret, &r_ret)
             }
 
-            // If we merge a forall with just a variable there is a chance that the variable
-            // may be unified again later on. If that happens we should treat it as if it was
-            // bound to the `forall` with a "skolem scope".
-            //
-            // ```gluon
-            // let make_Category cat : Category cat -> _ =
-            //     let { id, compose } = cat
-            //
-            //     let (<<): forall a b c . cat b c -> cat a b -> cat a c = compose
-            //     // If we didn't add a new skolem scope before inserting the union the user of
-            //     // `compose` here would unify `Forall(params, .., None)` with the `forall` from
-            //     // the `Category` in the first signature which can't unify. By calling
-            //     // `new_skolem_scope` however `compose` will look as if it was loaded via
-            //     // `Typecheck::find`
-            //     { id, compose, (<<) }
-            // ```
-            (&Type::Forall(ref params, ref l, _), _) => {
+            (_, &Type::Forall(ref params, ref r, _)) => {
                 let mut variables = params
                     .iter()
                     .map(|param| (param.id.clone(), subs.new_var()))
                     .collect();
-                let l = l.instantiate_generics(&mut variables);
-                self.try_match_res(&l, r)
+                let r = r.instantiate_generics(&mut variables);
+                self.try_match_res(l, &r)
             }
+
             (_, &Type::Variable(ref r)) => {
                 debug!("Union merge {} <> {}", l, r);
                 subs.union(r, l)?;

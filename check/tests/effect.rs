@@ -136,3 +136,27 @@ test_check_err! {
     "#,
     TypeError::Unification(..)
 }
+
+test_check! {
+    alt_effect_generalization_bug,
+    r#"
+type Eff r a =
+    forall x . (| Pure a | Impure (r x) (x -> Eff r a))
+
+type Alt a = forall r . (| Empty .. r)
+
+type Option a = | None | Some a
+
+let any x = any x
+
+let wrap a : a -> Eff r a = any ()
+
+let run_alt_inner transform fail eff_1 eff_2 : (a -> b) -> (() -> Eff [| | s |] b) -> Eff [| alt : Alt | r |] a -> Eff [| alt : Alt | r |] a -> Eff [| | s |] b = any ()
+
+let run_alt eff_1 eff_2 : Eff [| alt : Alt | r |] a -> Eff [| alt : Alt | r |] a -> Eff [| | r |] (Option a) =
+    let fail _ = wrap None
+    run_alt_inner Some fail eff_1 eff_2
+()
+    "#,
+    "()"
+}
