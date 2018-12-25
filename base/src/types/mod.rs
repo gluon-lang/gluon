@@ -1383,11 +1383,7 @@ impl<Id> ArcType<Id> {
         }
     }
 
-    pub fn instantiate_generics(
-        &self,
-        named_variables: &mut FnvMap<Id, ArcType<Id>>,
-        mut var_provider: impl FnMut() -> ArcType<Id>,
-    ) -> ArcType<Id>
+    pub fn instantiate_generics(&self, named_variables: &mut FnvMap<Id, ArcType<Id>>) -> ArcType<Id>
     where
         Id: Clone + Eq + Hash,
     {

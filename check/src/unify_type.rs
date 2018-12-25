@@ -272,7 +272,7 @@ impl Substitutable for ArcType<Symbol> {
     }
 
     fn instantiate(&self, subs: &Substitution<Self>) -> Self {
-        new_skolem_scope(subs, self).instantiate_generics(&mut FnvMap::default(), || subs.new_var())
+        new_skolem_scope(subs, self).instantiate_generics(&mut FnvMap::default())
     }
 
     fn on_union(&self) -> Option<&Self> {
@@ -1277,7 +1277,7 @@ impl<'a, 'e> Unifier<State<'a>, ArcType> for UnifierState<'a, Subsume<'e>> {
                     .iter()
                     .map(|param| (param.id.clone(), subs.new_var()))
                     .collect();
-                let r = r.instantiate_generics(&mut variables, || subs.new_var());
+                let r = r.instantiate_generics(&mut variables);
                 self.try_match_res(l, &r)
             }
 

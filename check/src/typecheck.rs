@@ -2793,8 +2793,7 @@ impl<'a> Typecheck<'a> {
 
     pub(crate) fn instantiate_generics(&mut self, typ: &ArcType) -> ArcType {
         self.named_variables.clear();
-        let subs = &self.subs;
-        typ.instantiate_generics(&mut self.named_variables, || subs.new_var())
+        typ.instantiate_generics(&mut self.named_variables)
     }
 
     pub(crate) fn new_skolem_scope(&mut self, typ: &ArcType) -> ArcType {
