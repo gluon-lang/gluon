@@ -1,4 +1,5 @@
 //@NO-IMPLICIT-PRELUDE
+let { error } = import! std.prim
 let { Eff, inject_rest } = import! std.effect
 let { wrap } = import! std.applicative
 let { Monad, flat_map } = import! std.monad
