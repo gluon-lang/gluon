@@ -5,7 +5,6 @@ use base::fnv::FnvMap;
 use base::kind::ArcKind;
 use base::merge;
 use base::resolve::{self, Error as ResolveError};
-use base::scoped_map::ScopedMap;
 use base::symbol::{Symbol, SymbolRef};
 use base::types::{
     self, AppVec, ArcType, ArgType, BuiltinType, Field, Filter, Generic, Skolem, Type, TypeCache,
@@ -1155,8 +1154,6 @@ pub fn top_skolem_scope(subs: &Substitution<ArcType>, typ: &ArcType) -> ArcType 
 /// Performs subsumption between `l` and `r` (`r` is-a `l`)
 pub fn subsumes(
     subs: &Substitution<ArcType>,
-    variables: &mut ScopedMap<Symbol, ArcType>,
-    level: u32,
     state: State,
     l: &ArcType,
     r: &ArcType,
@@ -1166,9 +1163,7 @@ pub fn subsumes(
         state: state,
         unifier: Subsume {
             subs: subs,
-            variables: variables,
             errors: Errors::new(),
-            level: level,
             allow_returned_type_replacement: true,
         },
     };
@@ -1183,9 +1178,7 @@ pub fn subsumes(
 
 struct Subsume<'e> {
     subs: &'e Substitution<ArcType>,
-    variables: &'e mut ScopedMap<Symbol, ArcType>,
     errors: Errors<Error<Symbol>>,
-    level: u32,
     allow_returned_type_replacement: bool,
 }
 

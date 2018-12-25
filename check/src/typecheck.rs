@@ -824,14 +824,7 @@ impl<'a> Typecheck<'a> {
 
                             returned_type = match expected_type {
                                 Some(expected_type) => {
-                                    let level = self.subs.var_id();
-                                    self.subsumes_expr(
-                                        expr.span,
-                                        level,
-                                        &typ,
-                                        expected_type.clone(),
-                                        expr,
-                                    )
+                                    self.subsumes_expr(expr.span, &typ, expected_type.clone(), expr)
                                 }
                                 None => typ,
                             };
@@ -840,14 +833,7 @@ impl<'a> Typecheck<'a> {
                         TailCall::Type(mut typ) => {
                             returned_type = match expected_type {
                                 Some(expected_type) => {
-                                    let level = self.subs.var_id();
-                                    self.subsumes_expr(
-                                        expr.span,
-                                        level,
-                                        &typ,
-                                        expected_type.clone(),
-                                        expr,
-                                    )
+                                    self.subsumes_expr(expr.span, &typ, expected_type.clone(), expr)
                                 }
                                 None => typ,
                             };
@@ -991,10 +977,8 @@ impl<'a> Typecheck<'a> {
                     Some(Pattern::Constructor(..)) => {
                         let variant_type =
                             self.type_cache.poly_variant(vec![], self.subs.new_var());
-                        let level = self.subs.var_id();
                         let scrutinee_type = self.subsumes(
                             expr.span,
-                            level,
                             ErrorOrder::ExpectedActual,
                             &variant_type,
                             scrutinee_type.clone(),
@@ -1259,7 +1243,6 @@ impl<'a> Typecheck<'a> {
                                     let mut implicit_args = Vec::new();
                                     let mut typ = self.subsumes_implicit(
                                         field.name.span,
-                                        level,
                                         ErrorOrder::ExpectedActual,
                                         &expected_field_type,
                                         typ,
@@ -1471,14 +1454,7 @@ impl<'a> Typecheck<'a> {
                 .type_cache
                 .function_implicit(once(arg_ty.clone()), ret_ty.clone());
 
-            let level = self.subs.var_id();
-            self.subsumes(
-                arg.span,
-                level,
-                ErrorOrder::ExpectedActual,
-                &f,
-                func_type.clone(),
-            );
+            self.subsumes(arg.span, ErrorOrder::ExpectedActual, &f, func_type.clone());
 
             self.typecheck(arg, &arg_ty);
 
@@ -1521,11 +1497,9 @@ impl<'a> Typecheck<'a> {
             let expected = self.type_cache.function(arg_types, self.subs.new_var());
 
             let span = Span::new(span_start, span_end);
-            let level = self.subs.var_id();
             attach_extra_argument_help(self, args_len, |self_| {
                 self_.subsumes(
                     span,
-                    level,
                     ErrorOrder::ExpectedActual,
                     &expected,
                     func_type.clone(),
@@ -1709,14 +1683,7 @@ impl<'a> Typecheck<'a> {
                     Err(err) => self.error(span, err),
                 };
                 let return_type = self.instantiate_generics(&return_type);
-                let level = self.subs.var_id();
-                self.subsumes(
-                    span,
-                    level,
-                    ErrorOrder::ExpectedActual,
-                    &match_type,
-                    return_type,
-                )
+                self.subsumes(span, ErrorOrder::ExpectedActual, &match_type, return_type)
             }
             Pattern::Record {
                 typ: ref mut curr_typ,
@@ -2507,14 +2474,12 @@ impl<'a> Typecheck<'a> {
     fn subsumes_expr(
         &mut self,
         span: Span<BytePos>,
-        level: u32,
         l: &ArcType,
         r: ArcType,
         expr: &mut SpannedExpr<Symbol>,
     ) -> ArcType {
         let new = self.subsumes_implicit(
             span,
-            level,
             ErrorOrder::ExpectedActual,
             &r,
             l.clone(),
@@ -2553,7 +2518,6 @@ impl<'a> Typecheck<'a> {
     fn subsumes_implicit(
         &mut self,
         span: Span<BytePos>,
-        level: u32,
         error_order: ErrorOrder,
         expected: &ArcType,
         mut actual: ArcType,
@@ -2620,7 +2584,7 @@ impl<'a> Typecheck<'a> {
 
         let typ = Self::with_forall(
             original_expected,
-            self.subsumes(span, level, error_order, &expected, actual),
+            self.subsumes(span, error_order, &expected, actual),
         );
         typ
     }
@@ -2628,21 +2592,13 @@ impl<'a> Typecheck<'a> {
     fn subsumes(
         &mut self,
         span: Span<BytePos>,
-        level: u32,
         error_order: ErrorOrder,
         expected: &ArcType,
         actual: ArcType,
     ) -> ArcType {
         debug!("Merge {} : {}", expected, actual);
         let state = unify_type::State::new(&self.environment, &self.subs, &self.type_cache);
-        match unify_type::subsumes(
-            &self.subs,
-            &mut self.type_variables,
-            level,
-            state,
-            &expected,
-            &actual,
-        ) {
+        match unify_type::subsumes(&self.subs, state, &expected, &actual) {
             Ok(typ) => typ,
             Err((typ, mut errors)) => {
                 let expected = expected.clone();
@@ -2696,10 +2652,8 @@ impl<'a> Typecheck<'a> {
             .type_cache
             .function(once(arg_ty.clone()), ret_ty.clone());
 
-        let level = self.subs.var_id();
         self.subsumes_implicit(
             span,
-            level,
             ErrorOrder::ExpectedActual,
             &f,
             actual,
@@ -2719,11 +2673,9 @@ impl<'a> Typecheck<'a> {
         match expected_type.take() {
             Some(expected_type) => {
                 debug!("Instantiate sigma: {} <> {}", expected_type, typ);
-                let level = self.subs.var_id();
                 let mut implicit_args = Vec::new();
                 let t = self.subsumes_implicit(
                     span,
-                    level,
                     ErrorOrder::ExpectedActual,
                     &expected_type,
                     typ.clone(),
@@ -2956,10 +2908,8 @@ impl<'a> Typecheck<'a> {
                                             let typ = self.new_skolem_scope(&typ);
                                             let typ = self.instantiate_generics(&typ);
 
-                                            let level = self.subs.var_id();
                                             self.subsumes(
                                                 args[0].span,
-                                                level,
                                                 ErrorOrder::ActualExpected,
                                                 &variant,
                                                 typ,
