@@ -9,7 +9,7 @@ type State s a = forall b r . (| New b | Read (STRef s a) | Write b (STRef s b) 
 
 let extract_state x : forall s . [| st : State s | r |] a -> State s a = convert_variant! x
 
-let send_state f : State s a -> Eff [| st : State s | r |] a = error "FIXME" // FIXME Impure (convert_effect! state f) Pure
+let send_state f : State s a -> Eff [| st : State s | r |] a = Impure (convert_effect! st f) Pure
 
 let new_ST_ref a : a -> Eff [| st : State s | r |] (STRef s a) = send_state (New a)
 let read_ST_ref ref : STRef s a -> Eff [| st : State s | r |]  a =  send_state (Read ref)

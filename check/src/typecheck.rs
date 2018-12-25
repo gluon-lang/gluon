@@ -2897,19 +2897,19 @@ impl<'a> Typecheck<'a> {
 
                         let unaliased = self.remove_aliases(typ.clone());
                         let valid_type = match *unaliased {
-                            Type::Forall(ref params, ref variant, _) if params.len() == 1 => {
-                                match **variant {
-                                    Type::Variant(ref variant) => {
-                                        let mut iter = variant.row_iter();
-                                        for _ in iter.by_ref() {}
-                                        match **iter.current_type() {
-                                            Type::Generic(ref gen) => gen.id == params[0].id,
-                                            _ => false,
+                            Type::Forall(ref params, ref variant, _) => match **variant {
+                                Type::Variant(ref variant) => {
+                                    let mut iter = variant.row_iter();
+                                    for _ in iter.by_ref() {}
+                                    match **iter.current_type() {
+                                        Type::Generic(ref gen) => {
+                                            params.iter().any(|param| param.id == gen.id)
                                         }
+                                        _ => false,
                                     }
-                                    _ => false,
                                 }
-                            }
+                                _ => false,
+                            },
                             _ => false,
                         };
                         if !valid_type {
