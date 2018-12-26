@@ -268,8 +268,8 @@ fn polymorphic_variants() {
     let _ = env_logger::try_init();
 
     let text = r#"
-type AA r = | A Int .. r
-type BB r = | B String .. r
+type AA r = (| A Int .. r)
+type BB r = (| B String .. r)
 if True then
     A 123
 else
@@ -279,7 +279,7 @@ else
 
     assert_req!(
         result.map(|t| t.to_string()),
-        Ok("forall a . | A Int\n| B String\n| a")
+        Ok("forall a . | A Int\n| B String\n.. a")
     );
 }
 
@@ -297,4 +297,40 @@ else
     let result = support::typecheck(text);
 
     assert_unify_err!(result, Other(MissingFields(..)));
+}
+
+#[test]
+fn state_effect() {
+    let _ = env_logger::try_init();
+    let text = r#"
+type Eff r a =
+    forall x . (| Pure a | Impure (r x) (x -> Eff r a))
+
+type State s a = forall r . (| Get | Put s .. r)
+
+let any x = any x
+
+let wrap x : a -> Eff r a = any ()
+
+let inject_rest x : forall e . (.. r) -> [| | r |] a = any ()
+
+let extract_state x : forall s . [| state : State s | r |] a -> State s a = any ()
+
+let loop state ve : _ -> Eff [| state : State _ | r |] a -> Eff [| | r |] { state : _, value : a } =
+    match ve with
+    | Pure value -> wrap { state, value }
+    | Impure e f ->
+        match extract_state e with 
+        | Get ->
+            loop state (f state)
+        | Put state ->
+            loop state (f state)
+        | rest ->
+            Impure (inject_rest rest) (\x -> loop state (f x))
+
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
 }

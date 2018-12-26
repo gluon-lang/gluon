@@ -43,6 +43,12 @@ pub enum Instruction {
         /// How many arguments that is taken from the stack to construct the data.
         args: VmIndex,
     },
+    ConstructPolyVariant {
+        /// The tag of the data
+        tag: VmIndex,
+        /// How many arguments that is taken from the stack to construct the data.
+        args: VmIndex,
+    },
     NewVariant {
         /// The tag of the data
         tag: VmIndex,
@@ -79,6 +85,7 @@ pub enum Instruction {
     /// Tests if the value at the top of the stack is tagged with `tag`. Pushes `True` if the tag
     /// matches, otherwise `False`
     TestTag(VmTag),
+    TestPolyTag(VmIndex),
     /// Jumps to the instruction at `index` in the currently executing function.
     Jump(VmIndex),
     /// Jumps to the instruction at `index` in the currently executing function if `True` is at the
@@ -139,14 +146,15 @@ impl Instruction {
             PushInt(_) | PushByte(_) | PushFloat(_) | PushString(_) | Push(_) => 1,
             Call(n) => -(n as i32),
             TailCall(n) => -(n as i32),
-            ConstructVariant { args, .. } | ConstructRecord { args, .. } | ConstructArray(args) => {
-                1 - args as i32
-            }
+            ConstructVariant { args, .. }
+            | ConstructPolyVariant { args, .. }
+            | ConstructRecord { args, .. }
+            | ConstructArray(args) => 1 - args as i32,
             GetField(_) | GetOffset(_) => 0,
             // The number of added stack slots are handled separately as the type is needed to
             // calculate the number of slots needed
             Split => -1,
-            TestTag(_) => 1,
+            TestTag(_) | TestPolyTag(_) => 1,
             Jump(_) => 0,
             CJump(_) => -1,
             Pop(n) => -(n as i32),
@@ -214,9 +222,8 @@ impl TypeEnv for TypeInfos {
 
 impl TypeInfos {
     pub fn new() -> TypeInfos {
-        TypeInfos {
-            id_to_type: FnvMap::default(),
-        }
+        let id_to_type = FnvMap::default();
+        TypeInfos { id_to_type }
     }
 
     pub fn extend(&mut self, other: TypeInfos) {

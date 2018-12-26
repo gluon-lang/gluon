@@ -1,6 +1,5 @@
 use std::borrow::Cow;
 
-use fnv::FnvMap;
 use symbol::Symbol;
 use types::{AliasRef, ArcType, Type, TypeEnv};
 
@@ -84,7 +83,6 @@ impl AliasRemover {
     }
 
     pub fn remove_alias(&mut self, env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType>, Error> {
-        let typ = typ.skolemize(&mut FnvMap::default());
         match peek_alias(env, &typ)? {
             Some(alias) => {
                 if self.reduced_aliases.iter().any(|name| *name == alias.name) {
@@ -144,7 +142,6 @@ where
 /// Expand `typ` if it is an alias that can be expanded and return the expanded type.
 /// Returns `None` if the type is not an alias or the alias could not be expanded.
 pub fn remove_alias(env: &TypeEnv, typ: &ArcType) -> Result<Option<ArcType>, Error> {
-    let typ = typ.skolemize(&mut FnvMap::default());
     Ok(peek_alias(env, &typ)?.and_then(|alias| {
         // Opaque types should only exist as the alias itself
         if **alias.unresolved_type() == Type::Opaque {
@@ -160,20 +157,7 @@ pub fn peek_alias<'t>(
     env: &'t TypeEnv,
     typ: &'t ArcType,
 ) -> Result<Option<&'t AliasRef<Symbol, ArcType>>, Error> {
-    fn extract_alias(
-        typ: &ArcType,
-        given_arguments_count: usize,
-    ) -> Option<&AliasRef<Symbol, ArcType>> {
-        match **typ {
-            Type::Alias(ref alias) if alias.params().len() == given_arguments_count => Some(alias),
-            Type::App(ref alias, ref args) => {
-                extract_alias(alias, args.len() + given_arguments_count)
-            }
-            _ => None,
-        }
-    }
-
-    let maybe_alias = extract_alias(typ, 0);
+    let maybe_alias = typ.applied_alias();
 
     match typ.alias_ident() {
         Some(id) => {

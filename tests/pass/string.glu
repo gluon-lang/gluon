@@ -6,6 +6,8 @@ let string = import! std.string
 let { Result, ? } = import! std.result
 let { ? } = import! std.unit
 
+let { ? } = import! std.effect
+
 let slice_tests =
     test "slice" <| \_ -> (assert_eq (string.slice "ab" 0 1) "a" *> assert_eq (string.slice "ab" 1 2) "b"
         *> assert_eq (string.slice "abcd" 2 4) "cd")

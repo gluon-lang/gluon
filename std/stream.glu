@@ -28,8 +28,7 @@ let from f : (Int -> Option a) -> Stream a =
 
 let of xs : Array a -> Stream a =
     from (\i ->
-        if i < array.len xs
-        then Some (array.index xs i)
+        if i < array.len xs then Some (array.index xs i)
         else None)
 
 let repeat x : a -> Stream a =

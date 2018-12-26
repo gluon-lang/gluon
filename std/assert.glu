@@ -1,0 +1,10 @@
+//@NO-IMPLICIT-PRELUDE
+let { error } = import! std.prim
+
+let assert_msg x s = if x then () else error s
+let assert x = assert_msg x "Assertion failed"
+
+{
+    assert,
+    assert_msg,
+}

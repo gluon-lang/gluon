@@ -347,15 +347,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
 
         let state =
             ::unify_type::State::new(&self.tc.environment, &self.tc.subs, &self.tc.type_cache);
-        ::unify_type::subsumes(
-            &self.tc.subs,
-            &mut ScopedMap::new(),
-            0,
-            state,
-            &demand.constraint,
-            &iter.typ,
-        )
-        .is_ok()
+        ::unify_type::subsumes(&self.tc.subs, state, &demand.constraint, &iter.typ).is_ok()
     }
 
     fn find_implicit<'c>(

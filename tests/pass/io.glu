@@ -1,0 +1,17 @@
+let { TestEff, assert_eq, test, group, ? }  = import! std.test
+let { (<|) } = import! std.function
+let { Applicative, (*>), ? } = import! std.applicative
+let result = import! std.result
+let string = import! std.string
+let io = import! std.io
+
+let { ? } = import! std.effect
+let { lift } = import! std.effect.lift
+
+group "io" [
+    test "read_file" <| \_ ->
+        let path = "tests/pass/io.glu"
+        do contents1 = lift <| io.read_file_to_string path
+        do contents2 = lift <| io.read_file_to_array path
+        assert_eq contents1 (result.unwrap_ok <| string.from_utf8 contents2)
+]

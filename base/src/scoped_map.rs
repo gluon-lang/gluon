@@ -50,6 +50,18 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
         self.scopes.push(None);
     }
 
+    pub fn current_scope(&self) -> impl Iterator<Item = (&K, &V)> {
+        self.scopes
+            .iter()
+            .rev()
+            .take_while(|scope| scope.is_some())
+            .map(move |scope| {
+                let key = scope.as_ref().unwrap();
+                let value = self.map.get(key).and_then(|x| x.last()).expect("Value");
+                (key, value)
+            })
+    }
+
     /// Exits the current scope, returning an iterator over the (key, value) pairs that are removed
     /// When `ExitScopeIter` is dropped any remaining pairs of the scope is removed as well.
     pub fn exit_scope(&mut self) -> ExitScopeIter<K, V> {

@@ -59,7 +59,7 @@ const APP_INFO: app_dirs::AppInfo = app_dirs::AppInfo {
     author: "gluon-lang",
 };
 
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize, VmType, Getable, Pushable)]
 pub enum Color {
     Auto,
     Always,
@@ -98,22 +98,6 @@ impl ::std::str::FromStr for Color {
         })
     }
 }
-
-macro_rules! define_vmtype {
-    ($name:ident) => {
-        impl ::gluon::vm::api::VmType for $name {
-            type Type = $name;
-            fn make_type(vm: &::gluon::Thread) -> ::base::types::ArcType {
-                let typ = concat!("repl_types.", stringify!($name));
-                (*vm.global_env().get_env().find_type_info(typ).unwrap())
-                    .clone()
-                    .into_type()
-            }
-        }
-    };
-}
-
-define_vmtype! { Color }
 
 #[derive(StructOpt)]
 #[structopt(about = "Formats gluon source code")]
@@ -187,12 +171,15 @@ fn init_env_logger() {
 fn init_env_logger() {}
 
 fn format(file: &str, file_map: Arc<codespan::FileMap>) -> Result<String> {
-    use gluon_format::format_expr;
-
     let mut compiler = Compiler::new();
     let thread = new_vm();
 
-    Ok(format_expr(&mut compiler, &thread, file, file_map.src())?)
+    Ok(compiler.format_expr(
+        &mut gluon_format::Formatter::default(),
+        &thread,
+        file,
+        file_map.src(),
+    )?)
 }
 
 fn fmt_file(name: &Path) -> Result<()> {

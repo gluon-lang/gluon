@@ -586,8 +586,10 @@ impl<'a, 'e> Translator<'a, 'e> {
             }
 
             ast::Expr::MacroExpansion {
-                ref replacement, ..
-            } => self.translate_(replacement),
+                replacement: ref expr,
+                ..
+            }
+            | ast::Expr::Annotated(ref expr, _) => self.translate_(expr),
 
             ast::Expr::Error(_) => ice!("ICE: Error expression found in the compiler"),
         }
@@ -1054,10 +1056,13 @@ impl<'a, 'e> PatternTranslator<'a, 'e> {
         }
 
         // Check if all the constructors of the variant are matched on
-        let complete = groups.len()
-            == remove_aliases_cow(&self.0.env, &variables[0].env_type_of(&self.0.env))
-                .row_iter()
-                .count();
+
+        let complete = {
+            let t = variables[0].env_type_of(&self.0.env);
+            let t = remove_aliases_cow(&self.0.env, &t);
+            let mut iter = t.remove_forall().row_iter();
+            groups.len() == iter.by_ref().count() && **iter.current_type() == Type::EmptyRow
+        };
 
         let new_alts = group_order
             .into_iter()

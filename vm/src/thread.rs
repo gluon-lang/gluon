@@ -32,7 +32,7 @@ use types::*;
 use value::{
     BytecodeFunction, Callable, ClosureData, ClosureDataDef, ClosureInitDef, Def, ExternFunction,
     PartialApplicationDataDef, RecordDef, UninitializedRecord, UninitializedVariantDef, Userdata,
-    Value, ValueRepr,
+    Value, ValueRepr, VariantDef,
 };
 use vm::{GlobalVmState, GlobalVmStateBuilder, VmEnv};
 use {BoxFuture, Error, Result, Variants};
@@ -1828,9 +1828,25 @@ impl<'b> ExecuteContext<'b> {
                             )?)
                         }
                     };
-                    for _ in 0..args {
-                        self.stack.pop();
-                    }
+                    self.stack.pop_many(args);
+                    self.stack.push(d);
+                }
+                ConstructPolyVariant { tag, args } => {
+                    let d = {
+                        let tag = function.strings[tag as usize];
+                        let fields = &self.stack[self.stack.len() - args..];
+                        Data(alloc(
+                            &mut self.gc,
+                            self.thread,
+                            &self.stack.stack,
+                            VariantDef {
+                                tag: 10_000_000,
+                                poly_tag: Some(tag),
+                                elems: fields,
+                            },
+                        )?)
+                    };
+                    self.stack.pop_many(args);
                     self.stack.push(d);
                 }
                 ConstructRecord { record, args } => {
@@ -1965,6 +1981,32 @@ impl<'b> ExecuteContext<'b> {
                     };
                     self.stack
                         .push(ValueRepr::Tag(if data_tag == tag { 1 } else { 0 }));
+                }
+                TestPolyTag(string_index) => {
+                    let expected_tag = function.strings[string_index as usize];
+                    let data_tag = match self.stack.top().get_repr() {
+                        Data(ref data) => data.poly_tag(),
+                        _ => {
+                            return Err(Error::Message(
+                                "Op TestTag called on non data type".to_string(),
+                            ))
+                        }
+                    };
+                    debug_assert!(
+                        data_tag.is_some(),
+                        "ICE: Polymorphic match on non-polymorphic variant {:#?}\n{:p}",
+                        self.stack.top(),
+                        match self.stack.top().get_repr() {
+                            Data(ref data) => &**data,
+                            _ => unreachable!(),
+                        }
+                    );
+                    self.stack
+                        .push(ValueRepr::Tag(if data_tag == Some(expected_tag) {
+                            1
+                        } else {
+                            0
+                        }));
                 }
                 Split => {
                     match self.stack.pop().get_repr() {

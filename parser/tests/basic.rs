@@ -959,3 +959,14 @@ rec let y = 2
 "#;
     parse_clear_span!(text);
 }
+
+#[test]
+fn effect_def() {
+    let _ = ::env_logger::try_init();
+    let text = r#"
+type OptionEff a = forall r . (| OptionEff .. r)
+
+1
+"#;
+    parse_clear_span!(text);
+}

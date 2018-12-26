@@ -1,0 +1,64 @@
+//@NO-IMPLICIT-PRELUDE
+let { error } = import! std.prim
+let option = import! std.option
+let { Result, ? } = import! std.result
+let { (<<), (|>) } = import! std.function
+let { (<>) } = import! std.semigroup
+let monoid @ { Monoid } = import! std.monoid
+
+let { Functor, map } = import! std.functor
+let { Applicative, wrap } = import! std.applicative
+let { Monad } = import! std.monad
+
+type Eff r a =
+    forall x . (| Pure a | Impure (r x) (x -> Eff r a))
+
+type Arr r a b = a -> Eff r b
+
+let compose f g : (Arr r a b) -> (Arr r b c) -> (Arr r a c) = \a ->
+    match f a with
+    | Pure b -> g b
+    | Impure r h -> Impure r (compose h g)
+
+let wrap_eff x : a -> Eff r a = Pure x
+let flat_map_eff f m : (a -> Eff r b) -> Eff r a -> Eff r b =
+    match m with
+    | Pure x -> f x
+    | Impure row g -> Impure row (compose g f)
+
+let functor : Functor (Eff r) = {
+    map = \f m -> flat_map_eff (\x -> wrap_eff (f x)) m
+}
+
+let applicative : Applicative (Eff r) = {
+    functor,
+    apply = \f g -> flat_map_eff (\f1 -> flat_map_eff (\g1 -> wrap_eff (f1 g1)) g) f,
+    wrap = wrap_eff,
+}
+
+let monad : Monad (Eff r) = {
+    applicative,
+    flat_map = flat_map_eff,
+}
+
+type OpenVariant a = forall r. (.. r)
+#[doc(hidden)]
+let inject_rest x : forall e . OpenVariant a -> [| | r |] a = convert_effect! x
+
+let run_pure eff : Eff [| |] a -> a =
+    match eff with
+    | Pure v -> v
+    | Impure _ _ -> error "Impossible: run_pure"
+
+{
+    Eff,
+    Arr,
+
+    functor,
+    applicative,
+    monad,
+
+    run_pure,
+
+    inject_rest,
+}

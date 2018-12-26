@@ -17,6 +17,8 @@ use base::types::{Field, Type};
 
 use support::{alias, intern, typ, MockEnv};
 
+use check::typecheck::TypeError;
+
 #[macro_use]
 
 mod support;
@@ -85,7 +87,7 @@ test 1
     let call_id = match call.value {
         Expr::App { ref func, .. } => match func.value {
             Expr::Ident(ref id) => id,
-            _ => panic!(),
+            _ => panic!("{:#?}", func.value),
         },
         _ => panic!(),
     };
@@ -636,7 +638,6 @@ let { List, f } = make 1
 
 // Unsure if this should be able to compile as is (without  type annotations)
 #[test]
-#[ignore]
 fn preserve_forall_when_lifting_into_record() {
     let _ = ::env_logger::try_init();
 
@@ -1104,7 +1105,7 @@ let option a : ValueDeserializer a -> ValueDeserializer (Option a) = \input ->
 }
 
 #[test]
-fn forall_scope() {
+fn forall_scope_simple() {
     let _ = ::env_logger::try_init();
 
     let text = r#"
@@ -1117,6 +1118,22 @@ let foo : (forall i . Proxy i -> ()) -> Proxy i -> () =
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+#[test]
+fn issue_603() {
+    let _ = ::env_logger::try_init();
+
+    let text = r#"
+type Proxy a = | Proxy
+let foo: forall b. (forall a. Proxy a) -> Proxy b
+    = \p -> p
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
 #[test]
 fn forall_in_alias() {
     let _ = ::env_logger::try_init();
@@ -1133,4 +1150,352 @@ let z io : IO a -> Lift IO _ = Lift io
     let result = support::typecheck(text);
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn send_signature() {
+    let _ = ::env_logger::try_init();
+
+    let text = r#"
+type VE w r = | Value w | Effect (r (VE w r))
+
+type Eff r a = { run_effect : forall w . (a -> VE w r) -> VE w r }
+
+let send f : forall a . (forall w . (a -> VE w r) -> r (VE w r)) -> Eff r a =
+    { run_effect = \k -> Effect (f k) }
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn call_send_reader() {
+    let _ = ::env_logger::try_init();
+
+    let text = r#"
+type Reader e v = | Reader (e -> v)
+type VE w r = | Value w | Effect (r (VE w r))
+
+type Eff r a = { run_effect : forall w . (a -> VE w r) -> VE w r }
+
+let any x = any x
+
+let send f : forall a . (forall w . (a -> VE w r) -> r (VE w r)) -> Eff r a = any ()
+
+let inj_reader : forall e v . Reader e v -> [| io : Reader e | r |] v = any ()
+let ask : forall e . Eff [| io : Reader e | r |] e = send (\x -> inj_reader (Reader x))
+
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn fe_free() {
+    let _ = ::env_logger::try_init();
+
+    let text = r#"
+type FEFree r a =
+    forall x . (| Pure a | Impure ([| | r |] x) (x -> FEFree r a))
+
+let any x = any x
+let comp f g : (a -> FEFree r b) -> (b -> FEFree r c) -> (a -> FEFree r c) = \a ->
+    match f a with
+    | Pure b -> g b
+    | Impure r h -> Impure r (comp h g)
+
+let flat_map f m : (a -> FEFree r b) -> FEFree r a -> FEFree r b =
+    match m with
+    | Pure x -> f x
+    | Impure row g -> Impure row (comp g f)
+
+()
+"#;
+    let result = support::typecheck(text);
+
+    assert!(result.is_ok(), "{}", result.unwrap_err());
+}
+
+#[test]
+fn trim_matched_variants() {
+    let _ = ::env_logger::try_init();
+
+    let text = r#"
+type Error e r a = | Error e | Ok .. r
+
+let any x = any x
+
+match Error "" with
+| Error _ -> any ()
+| x -> x
+"#;
+    let result = support::typecheck(text);
+
+    assert_req!(
+        result.map(|x| x.to_string()),
+        Ok("forall a1 . | Ok\n.. a1".to_string())
+    );
+}
+
+#[test]
+fn trim_matched_variants_alias() {
+    let _ = ::env_logger::try_init();
+
+    let text = r#"
+type Rest r a = .. r
+
+type Error e r a = | Error e .. r
+
+let any x = any x
+
+let z : Rest r a =
+    match Error "" with
+    | Error _ -> any ()
+    | x -> x
+z
+"#;
+    let result = support::typecheck(text);
+
+    assert_req!(
+        result.map(|x| x.to_string()),
+        Ok("forall a a0 . test.Rest a a0".to_string())
+    );
+}
+
+test_check! {
+    forall_scope_over_poly_variant,
+    r#"
+    type Error = forall r . (| Error .. r)
+    Error
+    "#,
+    "test.Error"
+}
+
+test_check! {
+    variable_scoping_in_return,
+    r#"
+    let loop repl : forall r . () -> r =
+        loop repl
+    ()
+    "#,
+    "()"
+}
+
+test_check! {
+    unify_forall_with_ctor_arg,
+    r#"
+    type Test = | Test (forall a . a -> a)
+    let f g : (forall r . r -> r) -> Test =
+        Test g
+    ()
+    "#,
+    "()"
+}
+
+test_check! {
+    eval_lisp_env,
+    r#"
+type Result e t = | Err e | Ok t
+
+type Eff r a =
+    forall x . (| Pure a | Impure (r x) (x -> Eff r a))
+
+type State s a = forall r . (| Get | Put s .. r)
+
+type Error e a = forall r . (| Error e .. r)
+
+type LispEffect r a = [| error : Error String, state : State () | r |] a
+
+let any x = any x
+
+let eval_state : forall s . Eff [| | r |] a = any ()
+
+let run_error eff : forall e . Eff [| error : Error e | r |] a -> Eff [| | r |] (Result e a) = any ()
+
+let eval_env eff : Eff (LispEffect r) a -> _ =
+     run_error eval_state
+()
+    "#,
+    "()"
+}
+
+test_check_err! {
+    escaping_skolem_in_argument,
+    r#"
+    type ST s a = { st : (a -> s -> s) }
+    type Test s = | Test
+    let any x = any x
+    let run x : (forall s . ST s a) -> a = any ()
+    let new : ST s (Test s) = any ()
+    run new
+    "#,
+    TypeError::Message(_)
+}
+
+test_check! { load_list_skolem_bug,
+r"
+
+type Semigroup a = {
+    append : a -> ()
+}
+
+type Alternative f = {
+    or : forall a . f a -> (),
+}
+
+type List a = | List a
+
+let any x = any x
+
+let semigroup : Semigroup (List a) = any ()
+
+let alternative : Alternative List = {
+    or = semigroup.append,
+}
+
+()
+",
+"()"
+}
+
+test_check! { load_result_skolem_bug,
+r"
+type Result e t =
+    | Err e
+    | Ok t
+
+#[implicit]
+type Applicative (f : Type -> Type) = {
+    map : forall a b . (a -> b) -> f a -> f b,
+    wrap : forall a . a -> f a
+}
+
+#[implicit]
+type Traversable t = {
+    traverse : forall a b m . Applicative m -> (a -> m b) -> t a -> m (t b)
+}
+
+let any x = any x
+
+let applicative : Applicative (Result e) = any ()
+
+let traversable : Traversable (Result e) = {
+    traverse = \app f r ->
+        match r with
+        | Err e -> app.wrap (Err e)
+        | Ok x -> app.map Ok (f x),
+}
+
+()
+",
+"()"
+}
+
+test_check! { std_json_de_skolem_bug,
+r#"
+
+type Result e t =
+    | Err e
+
+#[implicit]
+type Alternative f = {
+    empty : forall a . f a
+}
+
+type Deserializer i a = i -> Result String { value : a, input : i }
+
+let deserializer x : Deserializer i a -> Deserializer i a = x
+
+let alternative : Alternative (Deserializer i) = {
+    empty = deserializer (\stream -> Err ("empty")),
+}
+
+1
+"#,
+"Int"
+}
+
+test_check! { lisp_example_skolem_bug,
+r#"
+type Show a = { show : a -> String }
+
+type Expr =
+    | Primitive (forall r . () -> r)
+
+let show_expr : Show Expr =
+    let show expr =
+        match expr with
+        | Primitive _ -> "<primitive>"
+    { show }
+
+1
+"#,
+"Int"
+}
+
+test_check! { lisp_example_2_skolem_bug,
+r#"
+type Show a = { show : a -> String }
+
+type Expr =
+    | Primitive (forall r . () -> r)
+
+let primitive f = Primitive f
+
+1
+"#,
+"Int"
+}
+
+test_check! { lisp_example_3_skolem_bug,
+r#"
+type Eff r a =
+    forall x . (| Pure a | Impure (r x) (x -> Eff r a))
+
+type List a = | Nil | Cons a (List a)
+
+type Expr =
+    | List (List Expr)
+type LispEffect r a = [| | r |] a
+
+let any x = any x
+
+#[implicit]
+type Foldable (m : Type -> Type) = { }
+
+let foldable : Foldable List = { }
+
+#[implicit]
+type Monad (m : Type -> Type) = { }
+
+let monad : Monad (Eff r) = { }
+
+let fold_m f z : [Foldable t] -> [Monad m] -> (a -> b -> m a) -> a -> t b -> m a = any ()
+
+rec
+let eval_lisp expr : Expr -> Eff (LispEffect r) Expr =
+    eval_exprs Nil
+let eval_exprs exprs = fold_m (\_result expr -> eval_lisp expr) (List Nil) exprs
+
+1
+"#,
+"Int"
+}
+
+test_check! { st_effect_skolem_escape,
+r#"
+type Eff r a =
+    forall x . (| Pure a | Impure (r x) (x -> Eff r a))
+
+type STRef s a = { }
+type State s a = forall b r . (| New b | Read (STRef s a) | Write b (STRef s b) .. r)
+
+let extract_state x : forall s . [| st : State s | r |] a -> State s a = convert_variant! x
+1
+"#,
+"Int"
 }

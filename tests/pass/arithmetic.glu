@@ -6,6 +6,8 @@ let int = import! std.int
 let float = import! std.float
 let byte @ { ? } = import! std.byte
 
+let { ? } = import! std.effect
+
 let byte_tests =
     group "byte" [
         test "arithmetic" <| \_ ->

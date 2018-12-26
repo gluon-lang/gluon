@@ -30,6 +30,7 @@ extern crate serde_state as serde;
 #[macro_use]
 pub extern crate gluon_base as base;
 pub extern crate gluon_check as check;
+extern crate gluon_format as format;
 pub extern crate gluon_parser as parser;
 #[macro_use]
 extern crate gluon_codegen;
@@ -68,6 +69,8 @@ use base::metadata::Metadata;
 use base::pos::{self, BytePos, Span, Spanned};
 use base::symbol::{Symbol, SymbolModule, Symbols};
 use base::types::{ArcType, TypeCache};
+
+use format::Formatter;
 
 use compiler_pipeline::*;
 use import::{add_extern_module, DefaultImporter, Import};
@@ -606,6 +609,50 @@ impl Compiler {
             }
         }
         assign_last_body(expr, original_expr);
+    }
+
+    pub fn format_expr(
+        &mut self,
+        formatter: &mut Formatter,
+        thread: &Thread,
+        file: &str,
+        input: &str,
+    ) -> Result<String> {
+        fn has_format_disabling_errors(file: &codespan::FileName, err: &Error) -> bool {
+            match *err {
+                Error::Multiple(ref errors) => errors
+                    .iter()
+                    .any(|err| has_format_disabling_errors(file, err)),
+                Error::Parse(ref err) => err.source_name() == file,
+                _ => false,
+            }
+        }
+
+        let expr = match input.reparse_infix(self, thread, file, input) {
+            Ok(expr) => expr.expr,
+            Err((Some(expr), err)) => {
+                if has_format_disabling_errors(&codespan::FileName::from(file.to_string()), &err) {
+                    return Err(err);
+                }
+                expr.expr
+            }
+            Err((None, err)) => return Err(err),
+        };
+
+        fn skip_implicit_prelude(
+            span: Span<BytePos>,
+            l: &SpannedExpr<Symbol>,
+        ) -> &SpannedExpr<Symbol> {
+            match l.value {
+                ast::Expr::LetBindings(_, ref e) if !span.contains(l.span) => {
+                    skip_implicit_prelude(span, e)
+                }
+                _ => l,
+            }
+        }
+
+        let file_map = self.get_filemap(file).unwrap();
+        Ok(formatter.pretty_expr(input, skip_implicit_prelude(file_map.span(), &expr)))
     }
 }
 

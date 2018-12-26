@@ -1026,3 +1026,44 @@ thread.join (io.println "test" *> wrap 123) (thread.spawn_on t (\_ -> wrap "abc"
 "#,
 IO::Value((123, "abc".to_string()))
 }
+
+test_expr! { category_bug,
+r"
+let { Category } = import! std.category
+
+let category : Category (->) = {
+    id = \x -> x,
+    compose = \f g x -> f (g x),
+}
+
+1
+",
+1i32
+}
+
+test_expr! { load_io_skolem_bug,
+r"
+let io_prim = import! std.io.prim
+
+type Monad (m : Type -> Type) = {
+    flat_map : forall a b . (a -> m b) -> m a -> m b
+}
+
+let monad : Monad IO = {
+    flat_map = io_prim.flat_map,
+}
+
+1
+",
+1i32
+}
+
+test_expr! { lift_effect_skolem_bug,
+r"
+
+let _ = import! std.effect.lift
+
+1
+",
+1i32
+}

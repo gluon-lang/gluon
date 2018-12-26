@@ -27,6 +27,7 @@ gluon_check = { path = "check", version = "0.9.4" } # GLUON
 gluon_parser = { path = "parser", version = "0.9.4" } # GLUON
 gluon_codegen = { path = "codegen", version = "0.9.4" } # GLUON
 gluon_vm = { path = "vm", version = "0.9.4", default-features = false } # GLUON
+gluon_format = { path = "format", version = "0.9.4", default-features = false } # GLUON
 
 log = "0.4"
 quick-error = "1.0.0"
@@ -129,8 +130,6 @@ name = "debug"
 name = "error"
 [[test]]
 name = "io"
-[[test]]
-name = "buffered_io"
 [[test]]
 name = "limits"
 [[test]]

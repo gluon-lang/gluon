@@ -381,7 +381,8 @@ fn insert_forall_walker(
             Type::ExtendRow { .. } => types::walk_move_type_opt(
                 typ,
                 &mut types::ControlVisitation(|typ: &ArcType| insert_forall(variables, typ)),
-            ).map(|typ| ArcType::from(Type::Record(typ))),
+            )
+            .map(|typ| ArcType::from(Type::Record(typ))),
             _ => None,
         },
         _ => types::walk_move_type_opt(
@@ -631,17 +632,14 @@ impl<'vm, 'value> Getable<'vm, 'value> for &'value str {
     fn from_value(_vm: &'vm Thread, value: Variants<'value>) -> Self {
         match value.as_ref() {
             ValueRef::String(ref s) => s,
-            _ => ice!("ValueRef is not a String"),
+            _ => ice!("ValueRef is not a String: {:?}", value),
         }
     }
 }
 
 impl<'vm, 'value> Getable<'vm, 'value> for &'value Path {
-    fn from_value(_vm: &'vm Thread, value: Variants<'value>) -> Self {
-        match value.as_ref() {
-            ValueRef::String(ref s) => Path::new(&s[..]),
-            _ => ice!("ValueRef is not a String"),
-        }
+    fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
+        Path::new(<&'value str>::from_value(vm, value))
     }
 }
 
@@ -767,7 +765,8 @@ impl VmType for bool {
         (*vm.global_env()
             .get_env()
             .find_type_info("std.types.Bool")
-            .unwrap()).clone()
+            .unwrap())
+        .clone()
         .into_type()
     }
 }
@@ -1679,5 +1678,26 @@ where
             }),
             _ => panic!("Expected array"),
         }
+    }
+}
+
+#[derive(Default)]
+pub struct Eff<R, T>(PhantomData<(R, T)>);
+
+impl<R, T> VmType for Eff<R, T>
+where
+    R: VmType,
+    R::Type: Sized,
+    T: VmType,
+    T::Type: Sized,
+{
+    type Type = Eff<R::Type, T::Type>;
+
+    fn make_type(vm: &Thread) -> ArcType {
+        let eff = vm
+            .find_type_info("std.effect.Eff")
+            .map(|alias| alias.into_type())
+            .unwrap_or_else(|err| panic!("{}", err));
+        Type::app(eff, collect![R::make_type(vm), T::make_type(vm)])
     }
 }

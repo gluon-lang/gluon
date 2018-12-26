@@ -222,3 +222,30 @@ where
         }
     }
 }
+
+pub struct Row<T, U, R> {
+    pub type_fields: T,
+    pub fields: U,
+    pub rest: R,
+}
+
+impl<T: FieldTypes, U: FieldValues, R: VmType> VmType for Row<T, U, R> {
+    type Type = Record<T::Type, U::Type>;
+    fn make_type(vm: &Thread) -> ArcType {
+        let mut type_fields = Vec::new();
+        T::field_types(vm, &mut type_fields);
+        let mut fields = Vec::new();
+        U::field_values(vm, &mut fields);
+        Type::extend_row(type_fields, fields, R::make_type(vm))
+    }
+}
+
+pub struct EmptyRow;
+
+impl VmType for EmptyRow {
+    type Type = Self;
+    fn make_type(vm: &Thread) -> ArcType {
+        let type_cache = vm.global_env().type_cache();
+        type_cache.empty_row()
+    }
+}

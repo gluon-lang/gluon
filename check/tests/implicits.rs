@@ -216,6 +216,21 @@ f (Test ())
     assert_req!(result, Ok(test));
 }
 
+test_check! {
+implicit_on_type_force_projection,
+    r#"
+#[implicit]
+type Test = | Test ()
+let record =
+    let f ?x: [a] -> a = x
+    { f }
+let z = Test ()
+let i : Test = record.f
+()
+"#,
+"()"
+}
+
 #[test]
 fn implicit_with_implicit_arguments() {
     let _ = ::env_logger::try_init();

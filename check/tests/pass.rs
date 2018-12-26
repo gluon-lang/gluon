@@ -199,9 +199,8 @@ let g x = f (x #Int- 1)
 in g 5
 ";
     let (_, result) = support::typecheck_expr(text);
-    let expected = Ok(typ("Int"));
 
-    assert_eq!(result, expected);
+    assert_req!(result.map(|t| t.to_string()), Ok("Int"));
 }
 
 macro_rules! assert_match {
@@ -969,4 +968,25 @@ fn consider_the_type_of_the_splat_record() {
     let result = support::typecheck(text);
 
     assert_req!(result.map(|t| t.to_string()), Ok("{ x : Int, y : Int }"));
+}
+
+test_check! {
+    higher_ranked_variant_function,
+    r#"
+type TestCase =
+    | Test (r -> r)
+Test
+    "#,
+    "(forall r . r -> r) -> test.TestCase"
+}
+
+test_check! {
+    higher_ranked_variant_function_dont_leak_to_siblings,
+    r#"
+type TestCase =
+    | Test (r -> r)
+    | Group String
+Group
+    "#,
+    "String -> test.TestCase"
 }

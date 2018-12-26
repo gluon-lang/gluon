@@ -1,4 +1,4 @@
-let { run, Test, assert_eq, test, ? }  = import! std.test
+let { run, TestEff, assert_eq, test, ? }  = import! std.test
 let { (<|) } = import! std.function
 let prelude  = import! std.prelude
 let { Bool } = import! std.bool
@@ -10,6 +10,8 @@ let { Applicative, (*>) } = import! std.applicative
 let { flat_map } = import! std.monad
 let { send, recv, channel } = import! std.channel
 let { spawn, yield, resume } = import! std.thread
+
+let { ? } = import! std.effect
 
 let assert_any_err =
     assert_eq ?(result.show ?string.show ?unit.show)
@@ -25,7 +27,7 @@ let thread = spawn (\_ ->
     )
 resume thread
 
-let tests : Test () =
+let tests : TestEff r () =
     assert_eq (recv receiver) (Ok 0) *> (
             do _ = assert_eq (recv receiver) (Err ())
             resume thread

@@ -1,12 +1,14 @@
-let { Test, assert_eq, test, ? }  = import! std.test
+let { TestEff, assert_eq, test, ? }  = import! std.test
 let { (<|) } = import! std.function
 let { Applicative, (*>), ? } = import! std.applicative
 let list @ { List, ? } = import! std.list
 
+let { ? } = import! std.effect
+
 let empty_list : List Int =
     Nil
 
-let test_list : Test () =
+let test_list : TestEff r () =
     assert_eq (list.of []) empty_list *>
         assert_eq (list.of [1, 2, 3]) (Cons 1 (Cons 2 (Cons 3 Nil)))
 

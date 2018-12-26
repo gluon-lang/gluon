@@ -217,6 +217,33 @@ unsafe impl<'b> DataDef for Def<'b> {
     }
 }
 
+pub(crate) struct VariantDef<'b> {
+    pub tag: VmTag,
+    pub poly_tag: Option<InternedStr>,
+    pub elems: &'b [Value],
+}
+unsafe impl<'b> DataDef for VariantDef<'b> {
+    type Value = DataStruct;
+    fn size(&self) -> usize {
+        Def {
+            tag: self.tag,
+            elems: self.elems,
+        }
+        .size()
+    }
+    fn initialize<'w>(self, result: WriteOnly<'w, DataStruct>) -> &'w mut DataStruct {
+        Def {
+            tag: self.tag,
+            elems: self.elems,
+        }
+        .initialize(result)
+    }
+
+    fn tag(&self) -> Option<InternedStr> {
+        self.poly_tag
+    }
+}
+
 pub(crate) struct UninitializedVariantDef {
     pub tag: VmTag,
     pub elems: usize,
@@ -242,6 +269,12 @@ impl Traverseable for UninitializedVariantDef {
 }
 
 impl<'b> Traverseable for Def<'b> {
+    fn traverse(&self, gc: &mut Gc) {
+        self.elems.traverse(gc);
+    }
+}
+
+impl<'b> Traverseable for VariantDef<'b> {
     fn traverse(&self, gc: &mut Gc) {
         self.elems.traverse(gc);
     }
@@ -928,12 +961,20 @@ impl fmt::Debug for ValueRepr {
                     ValueRepr::Float(x) => write!(f, "{:?}f", x),
                     ValueRepr::String(x) => write!(f, "{:?}", &*x),
                     ValueRepr::Tag(tag) => write!(f, "{{{:?}: }}", tag),
-                    ValueRepr::Data(ref data) => write!(
-                        f,
-                        "{{{:?}: {:?}}}",
-                        data.tag,
-                        LevelSlice(level - 1, variant_iter(&data.fields))
-                    ),
+                    ValueRepr::Data(ref data) => match data.poly_tag() {
+                        Some(tag) => write!(
+                            f,
+                            "{{{}: {:?}}}",
+                            tag,
+                            LevelSlice(level - 1, variant_iter(&data.fields))
+                        ),
+                        None => write!(
+                            f,
+                            "{{{:?}: {:?}}}",
+                            data.tag,
+                            LevelSlice(level - 1, variant_iter(&data.fields))
+                        ),
+                    },
                     ValueRepr::Array(ref array) => {
                         let mut first = true;
                         write!(f, "[")?;
@@ -1438,8 +1479,9 @@ impl<'t> Cloner<'t> {
                     elems: &data.fields,
                 })?
             } else {
-                gc.alloc(Def {
+                gc.alloc(VariantDef {
                     tag: data.tag,
+                    poly_tag: data_ptr.poly_tag(),
                     elems: &data.fields,
                 })?
             };

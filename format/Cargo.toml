@@ -17,12 +17,13 @@ itertools = "0.7"
 codespan = "0.2"
 
 gluon_base = { path = "../base", version = "0.9.4" } # GLUON
-gluon = { path = "..", version = "0.9.4" } # GLUON
 
 [dev-dependencies]
 env_logger = "0.6"
 difference = "2"
 pretty_assertions = "0.5"
+gluon_base = { path = "../base", version = "0.9.4" } # GLUON
+gluon = { path = "..", version = ">=0.9" }
 
 [features]
 test = []

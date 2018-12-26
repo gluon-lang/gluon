@@ -19,7 +19,7 @@ let test_alt ?alt show eq : [Alternative f] -> Show (f Int) -> Eq (f Int) -> _ =
         test "or selects non-empty 2" <| \_ -> (assert (empty <|> empty <|> wrap 10) (wrap 10))
     ]
 
-let tests: TestCase () =
+let tests: TestCase r () =
     group "alternative" [
         group "option" (test_alt option.show option.eq),
         group "list" (test_alt list.show list.eq)

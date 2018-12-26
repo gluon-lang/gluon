@@ -10,10 +10,12 @@ let array @ { ? } = import! std.array
 let { ref, load, (<-) } = import! std.reference
 let rustyline = import! rustyline
 let { ReadlineError } = import! rustyline_types
-let { Color } = import! repl_types
-let repl_prim = import! repl.prim
-let { (<<) } = import! std.function
-
+let repl_prim @ { Color, Settings } = import! repl.prim
+let { (<<), (<|) } = import! std.function
+let effect @ { Eff, ? } = import! std.effect
+let { Reader, ask, asks, run_reader } = import! std.effect.reader
+let { State, get, modify, eval_state } = import! std.effect.state
+let { Lift, lift, run_lift } = import! std.effect.lift
 let { Applicative, wrap, (*>) } = import! std.applicative
 let { flat_map, (>>=) } = import! std.monad
 let { foldl } = import! std.foldable
@@ -21,14 +23,32 @@ let { foldl } = import! std.foldable
 let { (<>) } = import! std.prelude
 let (++) = (<>)
 
-
-let run_interruptible_io cpu_pool action : CpuPool -> IO String -> IO (Result String String) =
-    do eval_thread = thread.new_thread ()
+rec
+type ReplEffect r a = [| reader : Reader Repl, state : State Settings, lift : Lift IO | r |] a
+type Repl = { commands : Commands, editor : Editor, cpu_pool : CpuPool }
+type ReplAction =
+    | Continue
+    | Quit
+type Cmd = {
+    name : String,
+    alias : String,
+    info : String,
+    action : String -> Eff (ReplEffect r) ReplAction
+}
+type Commands = Map String Cmd
+in
+let run_interruptible_io action :
+        IO String
+        -> Eff (ReplEffect r) (Result String String)
+    =
+    do cpu_pool = asks (\r -> r.cpu_pool)
+    do eval_thread = lift <| thread.new_thread ()
     let interruptible_action = repl_prim.finish_or_interrupt cpu_pool eval_thread action
-    io.catch (io.functor.map Ok interruptible_action) (wrap << Err)
+    lift
+        <| io.catch (io.functor.map Ok interruptible_action) (wrap << Err)
 
 
-let load_file cpu_pool filename : CpuPool -> String -> IO String =
+let load_file filename : String -> Eff (ReplEffect r) String =
     let last_slash =
         match string.rfind filename "/" with
         | None -> 0
@@ -39,33 +59,29 @@ let load_file cpu_pool filename : CpuPool -> String -> IO String =
         do result = io.load_script modulename expr
         wrap result
 
-    do result = run_interruptible_io cpu_pool action
+    do result = run_interruptible_io action
     match result with
     | Ok x -> wrap x
     | Err x -> wrap x
 
-let run_file cpu_pool filename : CpuPool -> String -> IO () =
+let run_file filename : String -> Eff (ReplEffect r) () =
     let action =
         do expr = io.read_file_to_string filename
         do result = io.run_expr expr
         wrap (result.value ++ " : " ++ result.typ)
 
-    do result = run_interruptible_io cpu_pool action
-    match result with
-    | Ok _ -> io.println ""
-    | Err x -> io.println x
+    do result = run_interruptible_io action
+    lift
+        <| (match result with
+        | Ok _ -> io.println ""
+        | Err x -> io.println x)
 
-type ReplAction =
-    | Continue
-    | Quit
-type Cmd = { name : String, alias : String, info : String, action : String -> IO ReplAction }
-type Commands = Map String Cmd
-
-let make_commands cpu_pool : CpuPool -> Commands =
+let commands : Commands =
     let print_result result =
-        match result with
-        | Ok x -> io.println x
-        | Err x -> io.println x
+        lift
+            <| (match result with
+            | Ok x -> io.println x
+            | Err x -> io.println x)
 
     let commands = ref []
     let cmds : Array Cmd = [{
@@ -74,7 +90,7 @@ let make_commands cpu_pool : CpuPool -> Commands =
             info = "Quit the REPL",
             // FIXME a -> IO ReplAction signature should not be necessary
             action =
-                let x : a -> IO ReplAction = \_ -> wrap Quit
+                let x : a -> Eff (ReplEffect r) ReplAction = \_ -> wrap Quit
                 x,
         }, {
             name = "type",
@@ -82,49 +98,93 @@ let make_commands cpu_pool : CpuPool -> Commands =
             info = "Prints the type with an expression",
             action =
                 \arg ->
-                (repl_prim.type_of_expr arg >>= print_result)
+                (lift (repl_prim.type_of_expr arg) >>= print_result)
                     *> wrap Continue,
         },
         {
             name = "info",
             alias = "i",
             info = "Prints information about the given name",
-            action = \arg -> (repl_prim.find_info arg >>= print_result) *> wrap Continue,
+            action
+            = \arg ->
+                (lift (repl_prim.find_info arg) >>= print_result)
+                    *> wrap Continue,
         },
         {
             name = "kind",
             alias = "k",
             info = "Prints the kind with the given type",
-            action = \arg -> (repl_prim.find_kind arg >>= print_result) *> wrap Continue,
+            action
+            = \arg ->
+                (lift (repl_prim.find_kind arg) >>= print_result)
+                    *> wrap Continue,
         },
         {
             name = "load",
             alias = "l",
             info = "Loads the file at \'folder/module.ext\' and stores it at \'module\'",
-            action = \arg -> (load_file cpu_pool arg >>= io.println) *> wrap Continue,
+            action
+            = \arg ->
+                (load_file arg >>= (lift << io.println))
+                    *> wrap Continue,
         },
         {
             name = "script",
             alias = "s",
             info = "Runs the script at `FILENAME`",
-            action = \arg -> run_file cpu_pool arg *> wrap Continue,
+            action = \arg -> run_file arg *> wrap Continue,
+        },
+        {
+            name = "prompt",
+            alias = "p",
+            info = "Sets the prompt",
+            action = \prompt ->
+                do _ = modify (\settings ->
+                        // TODO Should be able infer this before the `..` splatting
+                        let settings : Settings = settings
+                        { prompt,
+                            .. settings
+                        })
+                wrap Continue,
+        },
+        {
+            name = "color",
+            alias = "c",
+            info = "Sets wheter to use color in the repl: auto, always, always-ansi, never",
+            action = \color ->
+                do _ =
+                    match repl_prim.parse_color color with
+                    | Ok color ->
+                        modify (\settings ->
+                            // TODO Should be able infer this before the `..` splatting
+                            let settings : Settings = settings
+                            { color,
+                                .. settings
+                            })
+                    | Err msg -> lift <| io.println msg
+                wrap Continue,
         },
         {
             name = "debug",
             alias = "d",
             info = "Switch debug level",
-            action = \arg -> (repl_prim.switch_debug_level arg >>= print_result) *> wrap Continue,
+            action
+            = \arg ->
+                (lift (repl_prim.switch_debug_level arg) >>= print_result)
+                    *> wrap Continue,
         },
         {
             name = "help",
             alias = "h",
             info = "Print this help",
             action = \_ ->
-                let print_header = io.println "Available commands\n"
-                let print_cmd cmd : Cmd -> IO () =
-                    io.println ("    :" ++ cmd.name ++ " (" ++ cmd.alias ++ ") " ++ cmd.info)
+                let print_header = lift <| io.println "Available commands\n"
+                let print_cmd cmd : Cmd -> Eff (ReplEffect r) () =
+                    lift
+                        (io.println ("    :" ++ cmd.name ++ " (" ++ cmd.alias ++ ") " ++ cmd.info))
 
-                print_header *> array.traversable.traverse io.applicative print_cmd (load commands)
+                print_header
+                    *> array.traversable.traverse effect.applicative print_cmd (load commands)
                     *> wrap Continue,
         }]
     commands <- cmds
@@ -154,64 +214,51 @@ let cmd_parser : Parser { cmd : String, arg : String } =
     do arg = (spaces *> arg_parser) <|> wrap ""
     wrap { cmd, arg }
 
-let do_command commands line : Commands -> String -> IO ReplAction =
+let do_command commands line : Commands -> String -> Eff (ReplEffect r) ReplAction =
     match parse cmd_parser line with
     | Ok { cmd, arg } ->
         match find cmd commands with
         | Some command -> command.action arg
-        | None -> io.println ("Unknown command \'" ++ cmd ++ "\'") *> wrap Continue
+        | None -> lift <| io.println ("Unknown command \'" ++ cmd ++ "\'") *> wrap Continue
     | Err err ->
-        io.println "Expected a command such as `:h`"
-            *> wrap Continue
+        lift
+            <| io.println "Expected a command such as `:h`" *> wrap Continue
 
-let store line : String -> IO ReplAction =
-    let line = string.trim line
-    match string.find line " " with
-    | Some bind_end ->
-        let binding = string.slice line 0 bind_end
-        let expr = string.slice line bind_end (string.len line)
-        io.load_script binding expr *> wrap Continue
-    | None -> io.println "Expected binding in definition" *> wrap Continue
+let loop _ : () -> Eff (ReplEffect r) () =
+    do repl = ask
+    do settings = get
 
-type Repl = {
-    commands : Commands,
-    editor : Editor,
-    cpu_pool : CpuPool,
-    color : Color,
-    prompt : String
-}
-
-let loop repl : Repl -> IO () =
     let run_line line =
         if string.is_empty (string.trim line) then
             wrap Continue
         else if string.starts_with line ":" then
             do_command repl.commands line
         else
+            do cpu_pool = asks (\r -> r.cpu_pool)
             let action =
                 do eval_thread = thread.new_thread ()
-                let eval_action = repl_prim.eval_line repl.color line
-                repl_prim.finish_or_interrupt repl.cpu_pool eval_thread eval_action
-            io.catch action io.println *> wrap Continue
+                let eval_action = repl_prim.eval_line settings.color line
+                repl_prim.finish_or_interrupt cpu_pool eval_thread eval_action
+            lift
+                <| io.catch action io.println *> wrap Continue
 
-    do line_result = rustyline.readline repl.editor repl.prompt
+    do line_result = lift <| rustyline.readline repl.editor settings.prompt
     match line_result with
     | Err Eof -> wrap ()
-    | Err Interrupted -> loop repl
+    | Err Interrupted -> loop ()
     | Ok line ->
         do continue = run_line line
         match continue with
-        | Continue -> loop repl
+        | Continue -> loop ()
         | Quit ->
-            do _ = rustyline.save_history repl.editor
+            do _ = lift <| rustyline.save_history repl.editor
             wrap ()
 
-let run color prompt : Color -> String -> IO () =
+let run settings : Settings -> IO () =
     do _ = io.println "gluon (:h for help, :q to quit)"
     do editor = rustyline.new_editor ()
     do cpu_pool = repl_prim.new_cpu_pool 1
-    let commands = make_commands cpu_pool
-    let repl = { commands, editor, cpu_pool, color, prompt }
-    loop repl
+    let repl = { commands, editor, cpu_pool }
+    run_lift (run_reader repl (eval_state settings (loop ())))
 
 run

@@ -203,9 +203,12 @@ where
             Expr::IfElse(ref body, ref if_true, ref if_false) => {
                 let space = newline(arena, expr);
                 chain![arena;
-                    arena.text("if ").append(pretty(body)).group(),
-                    arena.space(),
-                    "then",
+                    chain![arena;
+                        "if ",
+                        pretty(body),
+                        arena.space(),
+                        "then"
+                    ].group(),
                     space.clone().append(pretty(if_true)).nest(INDENT).group(),
                     space.clone(),
                     "else",
@@ -480,8 +483,16 @@ where
                 self.pretty_expr_(bound.span.end(), body)
             ],
             Expr::MacroExpansion { ref original, .. } => {
-                return self.pretty_expr_(previous_end, original)
+                return self.pretty_expr_(previous_end, original);
             }
+            Expr::Annotated(ref expr, ref typ) => chain![
+                arena;
+                pretty(expr).group(),
+                arena.space(),
+                ":",
+                arena.space(),
+                types::pretty_print(self, typ)
+            ],
             Expr::Error(_) => arena.text("<error>"),
         };
         comments.append(doc)
@@ -522,9 +533,12 @@ where
         let arena = self.arena;
         match if_false.value {
             Expr::IfElse(ref body, ref if_true, ref if_false) => chain![arena;
-                arena.text(" if ").append(pretty(body)).group(),
-                arena.space(),
-                "then",
+                chain![arena;
+                    " if ",
+                    pretty(body),
+                    arena.space(),
+                    "then"
+                ].group(),
                 space.clone().append(pretty(if_true)).nest(INDENT).group(),
                 space.clone(),
                 "else",
@@ -1026,7 +1040,7 @@ fn newline<'a, Id, A>(
 
 fn forced_new_line<Id>(expr: &SpannedExpr<Id>) -> bool {
     match expr.value {
-        Expr::LetBindings(..) | Expr::Match(..) | Expr::TypeBindings(..) => true,
+        Expr::LetBindings(..) | Expr::Match(..) | Expr::TypeBindings(..) | Expr::Do(..) => true,
         Expr::Lambda(ref lambda) => forced_new_line(&lambda.body),
         Expr::Tuple { ref elems, .. } => elems.iter().any(forced_new_line),
         Expr::Record {

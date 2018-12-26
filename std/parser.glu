@@ -151,10 +151,9 @@ let take1 predicate : (Char -> Bool) -> Parser String =
         let take_ stream2 =
             match uncons stream2 with
             | Some record ->
-                if predicate record.char
-                then take_ record.rest
-                else if stream.start == stream2.start
-                then Err { position = stream.start, message = "Unexpected token" }
+                if predicate record.char then take_ record.rest
+                else if stream.start == stream2.start then
+                    Err { position = stream.start, message = "Unexpected token" }
                 else Ok {
                             value = string.slice stream.buffer stream.start stream2.start,
                             buffer = stream2,
@@ -220,8 +219,7 @@ let one_of s : String -> Parser Char =
                 False
             else
                 let c = string.char_at s i
-                if first == c
-                then True
+                if first == c then True
                 else one_of_ (i + char.len_utf8 c)
         one_of_ 0)
         <|> fail ("Expected one of `" <> s <> "`")
@@ -240,7 +238,8 @@ let sep_by parser sep : Parser a -> Parser b -> Parser (List a) =
 /// Like `sep_by1` but applies the function returned by `op` on the left fold of successive parses
 let chainl1 p op : Parser a -> Parser (a -> a -> a) -> Parser a =
     do l = p
-    let rest x = (
+    let rest x =
+        (
         do f = op
         do r = p
         rest (f x r)) <|> wrap x
