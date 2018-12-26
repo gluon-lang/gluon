@@ -5,6 +5,7 @@ extern crate collect_mac;
 extern crate failure;
 extern crate handlebars;
 extern crate itertools;
+extern crate rayon;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -36,6 +37,8 @@ use failure::ResultExt;
 use itertools::Itertools;
 
 use handlebars::{Context, Handlebars, Helper, Output, RenderContext, RenderError};
+
+use rayon::prelude::*;
 
 use serde::Deserialize;
 
@@ -491,10 +494,11 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
 
     let reg = handlebars()?;
 
-    for modules in directories.values() {
-        for module in modules.values() {
-            debug!("Documenting {}", module.name);
-
+    directories
+        .values()
+        .flat_map(|modules| modules.values().map(move |m| (modules, m)))
+        .par_bridge()
+        .try_for_each(|(modules, module)| -> Result<()> {
             let module_path = PathBuf::from(module.name.replace(".", "/"));
             let out_path = out_path.join(&module_path).with_extension("html");
             let mut doc_file = File::create(&*out_path).with_context(|err| {
@@ -520,8 +524,11 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
                     sibling_modules: modules.keys().map(|s| s as &str).collect(),
                 },
             )?;
-        }
-    }
+
+            debug!("Documented {}", module.name);
+
+            Ok(())
+        })?;
 
     let mut style_sheet = File::create(out_path.join("style.css"))?;
     style_sheet.write_all(include_bytes!("doc/style.css"))?;
