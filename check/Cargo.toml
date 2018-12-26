@@ -13,7 +13,7 @@ documentation = "https://docs.rs/gluon"
 [dependencies]
 collect-mac = "0.1.0"
 log = "0.4"
-itertools = "0.7"
+itertools = "0.8"
 union-find = "0.3.1"
 pretty = "0.5"
 smallvec = "0.6"

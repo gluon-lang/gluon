@@ -12,7 +12,7 @@ documentation = "https://docs.rs/gluon"
 
 [dependencies]
 either = "1.0.0"
-itertools = "0.7"
+itertools = "0.8"
 walkdir = "2"
 codespan = "0.2"
 
