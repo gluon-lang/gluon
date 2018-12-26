@@ -549,6 +549,9 @@ const LONG_VERSION: &str = concat!(crate_version!(), "\n", "commit: ", env!("GIT
     raw(long_version = "LONG_VERSION")
 )]
 pub struct Opt {
+    #[structopt(long = "open")]
+    #[structopt(help = "Opens the documentation after it has been generated")]
+    pub open: bool,
     #[structopt(help = "Documents the file or directory")]
     pub input: String,
     #[structopt(help = "Outputs the documentation to this directory")]
