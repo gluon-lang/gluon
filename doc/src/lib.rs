@@ -1,7 +1,5 @@
 #[macro_use]
 extern crate clap;
-#[macro_use]
-extern crate collect_mac;
 extern crate failure;
 extern crate handlebars;
 extern crate itertools;
@@ -25,7 +23,7 @@ extern crate log;
 extern crate gluon;
 
 use std::{
-    collections::{btree_map, BTreeMap},
+    collections::BTreeMap,
     fs::{self, create_dir_all, File},
     io::{self, Read},
     path::{Path, PathBuf},
@@ -482,14 +480,10 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
             comment,
         };
 
-        match directories.entry(entry.path().parent().expect("Parent path").to_owned()) {
-            btree_map::Entry::Occupied(entry) => {
-                entry.into_mut().insert(module.name.clone(), module);
-            }
-            btree_map::Entry::Vacant(entry) => {
-                entry.insert(collect![(module.name.clone(), module)]);
-            }
-        }
+        directories
+            .entry(entry.path().parent().expect("Parent path").to_owned())
+            .or_default()
+            .insert(module.name.clone(), module);
     }
 
     let reg = handlebars()?;
