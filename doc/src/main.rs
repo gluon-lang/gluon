@@ -26,7 +26,9 @@ fn main_() -> Result<(), failure::Error> {
     gluon_doc::generate_for_path(&gluon::new_vm(), &opt.input, &opt.output)?;
 
     if opt.open {
-        let path = Path::new(&opt.output).join(&opt.input).join("index.html");
+        let path = Path::new(&opt.output)
+            .join(&opt.input)
+            .with_extension("html");
         eprintln!("Opening {}", path.display());
         opener::open(path)?;
     }

@@ -11,6 +11,7 @@ repository = "https://github.com/gluon-lang/gluon"
 documentation = "https://docs.rs/gluon"
 
 [dependencies]
+collect-mac = "0.1.0"
 clap = "2.22.0"
 env_logger = "0.6"
 failure = { version = "0.1", features = ["backtrace"] }
