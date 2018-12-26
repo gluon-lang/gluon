@@ -26,8 +26,8 @@ extern crate gluon;
 
 use std::{
     collections::{btree_map, BTreeMap},
-    fs::{create_dir_all, File},
-    io::{self, Read, Write},
+    fs::{self, create_dir_all, File},
+    io::{self, Read},
     path::{Path, PathBuf},
     result::Result as StdResult,
 };
@@ -530,8 +530,10 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
             Ok(())
         })?;
 
-    let mut style_sheet = File::create(out_path.join("style.css"))?;
-    style_sheet.write_all(include_bytes!("doc/style.css"))?;
+    fs::write(
+        out_path.join("style.css"),
+        &include_bytes!("doc/style.css")[..],
+    )?;
 
     Ok(())
 }
