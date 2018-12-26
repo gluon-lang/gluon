@@ -68,6 +68,7 @@ install:
 env:
   global:
     - CRATE_NAME=gluon
+    - CARGO_INCREMENTAL=0 # Incremental compilation is slower and bloats the travis cache
     - RUST_BACKTRACE=1
     - RUSTC_WRAPPER=sccache
     # A clean build seems to create ~300M 

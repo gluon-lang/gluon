@@ -3,6 +3,9 @@ set -ex
 
 export RUST_BACKTRACE=1
 
+ls -lah $HOME
+ls -lah $HOME/.cargo
+
 # Split the tests into two on travis so to avoid timing out
 
 if [ -z $NO_NORMAL_TEST ]; then
