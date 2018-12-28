@@ -1,13 +1,13 @@
 use std::fmt;
 use std::ops::{Deref, DerefMut, Index, IndexMut, Range, RangeFrom, RangeFull, RangeTo};
 
-use base::pos::Line;
-use base::symbol::Symbol;
+use crate::base::pos::Line;
+use crate::base::symbol::Symbol;
 
-use gc::{Gc, GcPtr, Traverseable};
-use types::VmIndex;
-use value::{ClosureData, DataStruct, ExternFunction, Value, ValueRepr};
-use Variants;
+use crate::gc::{Gc, GcPtr, Traverseable};
+use crate::types::VmIndex;
+use crate::value::{ClosureData, DataStruct, ExternFunction, Value, ValueRepr};
+use crate::Variants;
 
 pub trait StackPrimitive {
     fn push_to(&self, stack: &mut Stack);
@@ -45,16 +45,16 @@ impl StackPrimitive for Value {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "::serialization::DeSeed")
+    serde(deserialize_state = "crate::serialization::DeSeed")
 )]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub struct ClosureState {
     #[cfg_attr(
         feature = "serde_derive",
-        serde(state_with = "::serialization::closure")
+        serde(state_with = "crate::serialization::closure")
     )]
     pub(crate) closure: GcPtr<ClosureData>,
     pub(crate) instruction_index: usize,
@@ -72,11 +72,11 @@ pub(crate) enum ExternCallState {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "::serialization::DeSeed")
+    serde(deserialize_state = "crate::serialization::DeSeed")
 )]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub struct ExternState {
     #[cfg_attr(feature = "serde_derive", serde(state))]
@@ -142,11 +142,11 @@ impl StackState for ExternState {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "::serialization::DeSeed")
+    serde(deserialize_state = "crate::serialization::DeSeed")
 )]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub enum State {
     Unknown,
@@ -158,15 +158,17 @@ pub enum State {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "::serialization::DeSeed")
+    serde(deserialize_state = "crate::serialization::DeSeed")
 )]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(bound(deserialize = "S: ::serde::de::DeserializeState<'de, ::serialization::DeSeed>"))
+    serde(bound(
+        deserialize = "S: ::serde::de::DeserializeState<'de, crate::serialization::DeSeed>"
+    ))
 )]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub struct Frame<S = State> {
     pub offset: VmIndex,
@@ -215,11 +217,11 @@ pub struct Lock(VmIndex);
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "::serialization::DeSeed")
+    serde(deserialize_state = "crate::serialization::DeSeed")
 )]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub struct Stack {
     #[cfg_attr(feature = "serde_derive", serde(state))]
@@ -798,10 +800,10 @@ impl fmt::Display for Stacktrace {
 mod tests {
     use super::*;
 
-    use base::symbol::Symbol;
-    use gc::{Gc, Move};
-    use thread::{Status, Thread};
-    use value::ValueRepr::*;
+    use crate::base::symbol::Symbol;
+    use crate::gc::{Gc, Move};
+    use crate::thread::{Status, Thread};
+    use crate::value::ValueRepr::*;
 
     fn dummy_extern() -> ExternFunction {
         extern "C" fn function(_: &Thread) -> Status {

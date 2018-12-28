@@ -2,16 +2,16 @@ use std::any::Any;
 
 use frunk_core::hlist::{h_cons, HCons, HList, HNil};
 
-use base::symbol::Symbol;
-use base::types::{self, Alias, AliasData, ArcType, Type};
+use crate::base::symbol::Symbol;
+use crate::base::types::{self, Alias, AliasData, ArcType, Type};
 
 use super::{ActiveThread, Getable, Pushable, ValueRef, VmType};
-use interner::InternedStr;
-use thread;
-use types::VmIndex;
-use value::{RecordDef, Value, ValueRepr};
-use vm::Thread;
-use {Result, Variants};
+use crate::interner::InternedStr;
+use crate::thread;
+use crate::types::VmIndex;
+use crate::value::{RecordDef, Value, ValueRepr};
+use crate::vm::Thread;
+use crate::{Result, Variants};
 
 pub struct Record<T, U> {
     pub type_fields: T,

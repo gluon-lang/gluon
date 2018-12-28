@@ -1,28 +1,31 @@
-use std::any::Any;
-use std::collections::VecDeque;
-use std::fmt;
-use std::marker::PhantomData;
-use std::sync::{Arc, Mutex};
+use crate::real_std::{
+    any::Any,
+    collections::VecDeque,
+    fmt,
+    marker::PhantomData,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use futures::{
     future::{self, Either},
     Future,
 };
 
-use base::types::{ArcType, Type};
+use crate::base::types::{ArcType, Type};
 
-use api::generic::{A, B};
-use api::{
+use crate::api::generic::{A, B};
+use crate::api::{
     primitive, AsyncPushable, Function, FunctionRef, FutureResult, Generic, Getable, OpaqueRef,
     OpaqueValue, OwnedFunction, Pushable, Pushed, RuntimeResult, Unrooted, VmType, WithVM, IO,
 };
-use gc::{Gc, GcPtr, Traverseable};
-use stack::{ClosureState, ExternState, StackFrame, State};
-use thread::{ActiveThread, ThreadInternal};
-use types::{VmIndex, VmInt};
-use value::{Callable, GcStr, Userdata, Value, ValueRepr};
-use vm::{RootedThread, Status, Thread};
-use {Error, ExternModule, Result as VmResult};
+use crate::gc::{Gc, GcPtr, Traverseable};
+use crate::stack::{ClosureState, ExternState, StackFrame, State};
+use crate::thread::{ActiveThread, ThreadInternal};
+use crate::types::{VmIndex, VmInt};
+use crate::value::{Callable, GcStr, Userdata, Value, ValueRepr};
+use crate::vm::{RootedThread, Status, Thread};
+use crate::{Error, ExternModule, Result as VmResult};
 
 pub struct Sender<T> {
     // No need to traverse this thread reference as any thread having a reference to this `Sender`
@@ -300,7 +303,7 @@ fn spawn_on<'vm>(
             .push(context)
             .unwrap();
     }
-    use value::PartialApplicationDataDef;
+    use crate::value::PartialApplicationDataDef;
 
     let WithVM { vm, value: action } = action;
     let mut action = OwnedFunction::<Action<A>>::from_value(&thread, action.get_variant());
@@ -359,7 +362,6 @@ fn new_thread(WithVM { vm, .. }: WithVM<()>) -> IO<RootedThread> {
 }
 
 fn sleep(ms: VmInt) -> IO<()> {
-    use std::time::Duration;
     ::std::thread::sleep(Duration::from_millis(ms as u64));
     IO::Value(())
 }
@@ -370,9 +372,9 @@ fn interrupt(thread: RootedThread) -> IO<()> {
 }
 
 mod std {
-    pub use channel;
+    pub use crate::channel;
     pub mod thread {
-        pub use channel as prim;
+        pub use crate::channel as prim;
     }
 }
 

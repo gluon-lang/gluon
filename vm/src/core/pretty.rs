@@ -1,9 +1,9 @@
 use itertools::Itertools;
 use pretty::{self, DocAllocator};
 
-use base::types::Type;
+use crate::base::types::Type;
 
-use core::{Alternative, Expr, Literal, Named, Pattern};
+use crate::core::{Alternative, Expr, Literal, Named, Pattern};
 
 const INDENT: usize = 4;
 

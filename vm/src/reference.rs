@@ -1,16 +1,13 @@
-use std::any::Any;
-use std::fmt;
-use std::marker::PhantomData;
-use std::sync::Mutex;
+use crate::real_std::{any::Any, fmt, marker::PhantomData, sync::Mutex};
 
-use api::generic::A;
-use api::{Generic, RuntimeResult, Unrooted, Userdata, VmType, WithVM};
-use base::types::{ArcType, Type};
-use gc::{Gc, GcPtr, Move, Traverseable};
-use thread::ThreadInternal;
-use value::{Cloner, Value};
-use vm::Thread;
-use {ExternModule, Result};
+use crate::api::generic::A;
+use crate::api::{Generic, RuntimeResult, Unrooted, Userdata, VmType, WithVM};
+use crate::base::types::{ArcType, Type};
+use crate::gc::{Gc, GcPtr, Move, Traverseable};
+use crate::thread::ThreadInternal;
+use crate::value::{Cloner, Value};
+use crate::vm::Thread;
+use crate::{ExternModule, Result};
 
 pub struct Reference<T> {
     value: Mutex<Value>,
@@ -87,7 +84,7 @@ fn make_ref(a: WithVM<Generic<A>>) -> Reference<A> {
 
 mod std {
     pub mod reference {
-        pub use reference as prim;
+        pub use crate::reference as prim;
     }
 }
 

@@ -1,13 +1,13 @@
-use base::ast::{
+use crate::base::ast::{
     Argument, AstType, Expr, Lambda, Literal, Pattern, PatternField, SpannedExpr, SpannedPattern,
     TypeBinding, TypedIdent, ValueBinding,
 };
-use base::metadata::Attribute;
-use base::pos::{self, BytePos, Span};
-use base::symbol::{Symbol, Symbols};
-use base::types::{row_iter, Type};
+use crate::base::metadata::Attribute;
+use crate::base::pos::{self, BytePos, Span};
+use crate::base::symbol::{Symbol, Symbols};
+use crate::base::types::{row_iter, Type};
 
-use macros::Error;
+use crate::macros::Error;
 
 mod deserialize;
 mod eq;

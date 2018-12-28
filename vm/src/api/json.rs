@@ -4,27 +4,27 @@ use std::borrow::Borrow;
 use std::fmt;
 use std::result::Result as StdResult;
 
-use base::types::{ArcType, Type};
+use crate::base::types::{ArcType, Type};
 
-use api::{Getable, OpaqueValue, VmType};
-use thread::{ActiveThread, RootedThread, Thread, ThreadInternal};
-use {ExternModule, Result, Variants};
+use crate::api::{Getable, OpaqueValue, VmType};
+use crate::thread::{ActiveThread, RootedThread, Thread, ThreadInternal};
+use crate::{ExternModule, Result, Variants};
 
-use serde::de::{self, DeserializeState, MapAccess, SeqAccess, Visitor};
+use crate::serde::de::{self, DeserializeState, MapAccess, SeqAccess, Visitor};
 
 pub fn load(vm: &Thread) -> Result<ExternModule> {
-    fn deserialize(value: ::api::WithVM<&str>) -> StdResult<JsonValue, String> {
-        let ::api::WithVM { vm, value: input } = value;
+    fn deserialize(value: crate::api::WithVM<&str>) -> StdResult<JsonValue, String> {
+        let crate::api::WithVM { vm, value: input } = value;
         let mut context = vm.current_context();
         JsonValue::deserialize_state(&mut context, &mut serde_json::Deserializer::from_str(input))
             .map_err(|err| err.to_string())
     }
 
-    fn serialize<F>(value: ::api::WithVM<Value>, formatter: F) -> StdResult<String, String>
+    fn serialize<F>(value: crate::api::WithVM<Value>, formatter: F) -> StdResult<String, String>
     where
         F: serde_json::ser::Formatter,
     {
-        let ::api::WithVM { vm, value: input } = value;
+        let crate::api::WithVM { vm, value: input } = value;
 
         let mut output = Vec::new();
         SerializeState::serialize_state(
@@ -119,7 +119,7 @@ impl<'de> de::DeserializeState<'de, ActiveThread<'de>> for JsonString {
             where
                 E: de::Error,
             {
-                ::api::convert_with_active_thread(self.0, value).map_err(E::custom)
+                crate::api::convert_with_active_thread(self.0, value).map_err(E::custom)
             }
         }
 
@@ -134,7 +134,7 @@ impl VmType for Value {
     }
 }
 
-pub struct JsonValue(::vm::RootedValue<RootedThread>);
+pub struct JsonValue(crate::vm::RootedValue<RootedThread>);
 
 impl VmType for JsonValue {
     type Type = <Value as VmType>::Type;
@@ -146,19 +146,19 @@ impl VmType for JsonValue {
     }
 }
 
-impl<'vm> ::api::Pushable<'vm> for JsonValue {
+impl<'vm> crate::api::Pushable<'vm> for JsonValue {
     fn push(self, context: &mut ActiveThread<'vm>) -> Result<()> {
-        ::api::Pushable::push(self.0, context)
+        crate::api::Pushable::push(self.0, context)
     }
 }
 
-impl<'vm, 'value> ::api::Getable<'vm, 'value> for JsonValue {
+impl<'vm, 'value> crate::api::Getable<'vm, 'value> for JsonValue {
     fn from_value(vm: &'vm Thread, value: Variants<'value>) -> Self {
-        JsonValue(::api::Getable::from_value(vm, value))
+        JsonValue(crate::api::Getable::from_value(vm, value))
     }
 }
 
-use serde::ser::{SerializeState, Serializer};
+use crate::serde::ser::{SerializeState, Serializer};
 impl SerializeState<Thread> for JsonValue {
     fn serialize_state<S>(&self, serializer: S, vm: &Thread) -> StdResult<S::Ok, S::Error>
     where
@@ -181,7 +181,7 @@ impl<'de> de::DeserializeState<'de, ActiveThread<'de>> for JsonValue {
         impl<'a, 'vm> ValueVisitor<'a, 'vm> {
             fn marshal<T>(&mut self, value: T) -> JsonValue
             where
-                T: ::api::Pushable<'vm>,
+                T: crate::api::Pushable<'vm>,
             {
                 let context = &mut *self.0;
                 value.push(context).unwrap_or_else(|err| panic!("{}", err));
@@ -223,7 +223,7 @@ impl<'de> de::DeserializeState<'de, ActiveThread<'de>> for JsonValue {
             where
                 E: de::Error,
             {
-                let value = ::api::convert_with_active_thread(self.0, value).map_err(E::custom)?;
+                let value = crate::api::convert_with_active_thread(self.0, value).map_err(E::custom)?;
                 Ok(self.marshal(Value::String(value)))
             }
 
@@ -232,7 +232,7 @@ impl<'de> de::DeserializeState<'de, ActiveThread<'de>> for JsonValue {
             where
                 E: de::Error,
             {
-                let value = ::api::convert_with_active_thread(self.0, value).map_err(E::custom)?;
+                let value = crate::api::convert_with_active_thread(self.0, value).map_err(E::custom)?;
                 Ok(self.marshal(Value::String(value)))
             }
 

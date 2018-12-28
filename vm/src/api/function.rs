@@ -3,21 +3,21 @@ use std::marker::PhantomData;
 use std::ops::Deref;
 
 #[cfg(feature = "serde")]
-use serde::{Deserialize, Deserializer};
+use crate::serde::{Deserialize, Deserializer};
 
 use futures::{future, Async, Future};
 
-use base::symbol::Symbol;
-use base::types::ArcType;
+use crate::base::symbol::Symbol;
+use crate::base::types::ArcType;
 
-use api::{ActiveThread, AsyncPushable, Getable, Pushable, RootedValue, VmType};
-use compiler::{CompiledFunction, CompiledModule};
-use gc::Move;
-use stack::{ExternState, StackFrame};
-use thread::{RootedThread, Status, Thread, ThreadInternal, VmRoot};
-use types::{Instruction, VmIndex};
-use value::{ExternFunction, ValueRepr};
-use {Error, Result, Variants};
+use crate::api::{ActiveThread, AsyncPushable, Getable, Pushable, RootedValue, VmType};
+use crate::compiler::{CompiledFunction, CompiledModule};
+use crate::gc::Move;
+use crate::stack::{ExternState, StackFrame};
+use crate::thread::{RootedThread, Status, Thread, ThreadInternal, VmRoot};
+use crate::types::{Instruction, VmIndex};
+use crate::value::{ExternFunction, ValueRepr};
+use crate::{Error, Result, Variants};
 
 pub type GluonFunction = extern "C" fn(&Thread) -> Status;
 
@@ -191,7 +191,7 @@ impl<'de, V> Deserialize<'de> for Function<RootedThread, V> {
     where
         D: Deserializer<'de>,
     {
-        let value = ::api::de::deserialize_raw_value(deserializer)?;
+        let value = crate::api::de::deserialize_raw_value(deserializer)?;
         Ok(Function {
             value,
             _marker: PhantomData,
@@ -440,7 +440,7 @@ impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
         $(, $args: $args)*
         ) -> Box<Future<Item = R, Error = Error> + Send + Sync + 'static>
     {
-        use thread::Execute;
+        use crate::thread::Execute;
         use futures::IntoFuture;
 
         match self.call_first($($args),*) {
@@ -467,7 +467,7 @@ impl<T, $($args,)* R> Function<T, fn($($args),*) -> R>
         $(, $args: $args)*
         ) -> Box<Future<Item = R, Error = Error> + Send + Sync + 'static>
     {
-        use thread::Execute;
+        use crate::thread::Execute;
 
         match self.call_first($($args),*) {
             Ok(ok) => {

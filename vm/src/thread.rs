@@ -14,32 +14,32 @@ use std::usize;
 use futures::future::{self, Either, FutureResult};
 use futures::{Async, Future, Poll};
 
-use base::metadata::Metadata;
-use base::pos::Line;
-use base::symbol::Symbol;
-use base::types::{self, Alias, ArcType};
+use crate::base::metadata::Metadata;
+use crate::base::pos::Line;
+use crate::base::symbol::Symbol;
+use crate::base::types::{self, Alias, ArcType};
 
-use api::{Getable, Pushable, ValueRef, VmType};
-use compiler::UpvarInfo;
-use gc::{DataDef, Gc, GcPtr, Generation, Move};
-use interner::InternedStr;
-use macros::MacroEnv;
-use source_map::LocalIter;
-use stack::{
+use crate::api::{Getable, Pushable, ValueRef, VmType};
+use crate::compiler::UpvarInfo;
+use crate::gc::{DataDef, Gc, GcPtr, Generation, Move};
+use crate::interner::InternedStr;
+use crate::macros::MacroEnv;
+use crate::source_map::LocalIter;
+use crate::stack::{
     ClosureState, ExternCallState, ExternState, Frame, Stack, StackFrame, StackState, State,
 };
-use types::*;
-use value::{
+use crate::types::*;
+use crate::value::{
     BytecodeFunction, Callable, ClosureData, ClosureDataDef, ClosureInitDef, Def, ExternFunction,
     PartialApplicationDataDef, RecordDef, UninitializedRecord, UninitializedVariantDef, Userdata,
     Value, ValueRepr, VariantDef,
 };
-use vm::{GlobalVmState, GlobalVmStateBuilder, VmEnv};
-use {BoxFuture, Error, Result, Variants};
+use crate::vm::{GlobalVmState, GlobalVmStateBuilder, VmEnv};
+use crate::{BoxFuture, Error, Result, Variants};
 
-use value::ValueRepr::{Closure, Data, Float, Function, Int, PartialApplication, String};
+use crate::value::ValueRepr::{Closure, Data, Float, Function, Int, PartialApplication, String};
 
-pub use gc::Traverseable;
+pub use crate::gc::Traverseable;
 
 pub type FutureValue<F> = Either<FutureResult<<F as Future>::Item, <F as Future>::Error>, F>;
 
@@ -280,7 +280,7 @@ impl<'b> Traverseable for Roots<'b> {
     }
 }
 
-impl<'b> ::gc::CollectScope for Roots<'b> {
+impl<'b> crate::gc::CollectScope for Roots<'b> {
     fn scope<F>(&self, gc: &mut Gc, f: F)
     where
         F: FnOnce(&mut Gc),
@@ -355,16 +355,16 @@ impl<'b> Roots<'b> {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "::serialization::DeSeed")
+    serde(deserialize_state = "crate::serialization::DeSeed")
 )]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub struct Thread {
     #[cfg_attr(
         feature = "serde_derive",
-        serde(state_with = "::base::serialization::shared")
+        serde(state_with = "crate::base::serialization::shared")
     )]
     global_state: Arc<GlobalVmState>,
     // The parent of this thread, if it exists must live at least as long as this thread as this
@@ -437,11 +437,11 @@ impl<'vm, 'value> Getable<'vm, 'value> for RootedThread {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "::serialization::DeSeed")
+    serde(deserialize_state = "crate::serialization::DeSeed")
 )]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub struct RootedThread(#[cfg_attr(feature = "serde_derive", serde(state))] GcPtr<Thread>);
 
@@ -661,7 +661,7 @@ impl Thread {
     where
         T: for<'value> Getable<'vm, 'value> + VmType,
     {
-        use check::check_signature;
+        use crate::check::check_signature;
 
         let expected = T::make_type(self);
 
@@ -1026,7 +1026,7 @@ impl ThreadInternal for Thread {
         metadata: Metadata,
         value: Value,
     ) -> Result<()> {
-        let value = ::value::Cloner::new(self, &mut self.global_env().gc.lock().unwrap())
+        let value = crate::value::Cloner::new(self, &mut self.global_env().gc.lock().unwrap())
             .deep_clone(&value)?;
         self.global_env().set_global(name, typ, metadata, value)
     }
@@ -1034,7 +1034,7 @@ impl ThreadInternal for Thread {
     fn deep_clone_value(&self, owner: &Thread, value: Variants) -> Result<Value> {
         let mut context = self.owned_context();
         let full_clone = !self.can_share_values_with(&mut context.gc, owner);
-        let mut cloner = ::value::Cloner::new(self, &mut context.gc);
+        let mut cloner = crate::value::Cloner::new(self, &mut context.gc);
         if full_clone {
             cloner.force_full_clone();
         }
@@ -1212,11 +1212,11 @@ struct PollFn {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "::serialization::DeSeed")
+    serde(deserialize_state = "crate::serialization::DeSeed")
 )]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub struct Context {
     // FIXME It is dangerous to write to gc and stack
@@ -1342,7 +1342,7 @@ impl Context {
         self.max_stack_size = limit;
     }
 
-    pub fn stacktrace(&self, frame_level: usize) -> ::stack::Stacktrace {
+    pub fn stacktrace(&self, frame_level: usize) -> crate::stack::Stacktrace {
         self.stack.stacktrace(frame_level)
     }
 
@@ -1939,7 +1939,7 @@ impl<'b> ExecuteContext<'b> {
                             &mut self.gc,
                             self.thread,
                             &self.stack.stack,
-                            ::value::ArrayDef(fields),
+                            crate::value::ArrayDef(fields),
                         )?
                     };
                     for _ in 0..args {
@@ -1976,7 +1976,7 @@ impl<'b> ExecuteContext<'b> {
                         _ => {
                             return Err(Error::Message(
                                 "Op TestTag called on non data type".to_string(),
-                            ))
+                            ));
                         }
                     };
                     self.stack
@@ -1989,7 +1989,7 @@ impl<'b> ExecuteContext<'b> {
                         _ => {
                             return Err(Error::Message(
                                 "Op TestTag called on non data type".to_string(),
-                            ))
+                            ));
                         }
                     };
                     debug_assert!(
@@ -2020,7 +2020,7 @@ impl<'b> ExecuteContext<'b> {
                         _ => {
                             return Err(Error::Message(
                                 "Op Split called on non data type".to_string(),
-                            ))
+                            ));
                         }
                     }
                 }
@@ -2435,7 +2435,7 @@ impl<'vm> ActiveThread<'vm> {
 
     pub fn push<'a, T>(&mut self, v: T)
     where
-        T: ::stack::StackPrimitive,
+        T: crate::stack::StackPrimitive,
     {
         self.context.as_mut().unwrap().stack.push(v);
     }
@@ -2473,7 +2473,7 @@ impl<'vm> ActiveThread<'vm> {
     }
 }
 #[doc(hidden)]
-pub fn reset_stack(mut stack: StackFrame<State>, level: usize) -> Result<::stack::Stacktrace> {
+pub fn reset_stack(mut stack: StackFrame<State>, level: usize) -> Result<crate::stack::Stacktrace> {
     let trace = stack.stack.stacktrace(level);
     while stack.stack.get_frames().len() > level {
         stack = match stack.exit_scope() {

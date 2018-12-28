@@ -4,24 +4,24 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::ops::Deref;
 
-use base::types::ArcType;
+use crate::base::types::ArcType;
 
-use api::{ArrayRef, Getable, Pushable, ValueRef, VmType};
-use thread::{ActiveThread, RootedValue, Thread, ThreadInternal, VmRoot};
-use types::{VmIndex, VmInt};
-use value::{ArrayRepr, Value, ValueArray};
-use vm;
-use {Result, Variants};
+use crate::api::{ArrayRef, Getable, Pushable, ValueRef, VmType};
+use crate::thread::{ActiveThread, RootedValue, Thread, ThreadInternal, VmRoot};
+use crate::types::{VmIndex, VmInt};
+use crate::value::{ArrayRepr, Value, ValueArray};
+use crate::vm;
+use crate::{Result, Variants};
 
 #[cfg(feature = "serde")]
 use std::result::Result as StdResult;
 #[cfg(feature = "serde")]
-use thread::RootedThread;
+use crate::thread::RootedThread;
 
 #[cfg(feature = "serde")]
-use serde::de::{Deserialize, Deserializer};
+use crate::serde::de::{Deserialize, Deserializer};
 #[cfg(feature = "serde")]
-use serde::ser::{Serialize, SerializeState, Serializer};
+use crate::serde::ser::{Serialize, SerializeState, Serializer};
 
 mod private {
     use super::*;
@@ -218,7 +218,7 @@ where
     where
         D: Deserializer<'de>,
     {
-        let value = ::api::de::deserialize_raw_value(deserializer)?;
+        let value = crate::api::de::deserialize_raw_value(deserializer)?;
         Ok(Self::from_value(value))
     }
 }

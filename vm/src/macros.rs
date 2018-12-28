@@ -6,14 +6,14 @@ use std::sync::{Arc, RwLock};
 
 use futures::{stream, Future, Stream};
 
-use base::ast::{self, Expr, MutVisitor, SpannedExpr, ValueBindings};
-use base::error::Errors as BaseErrors;
-use base::fnv::FnvMap;
-use base::pos;
-use base::pos::{BytePos, Spanned};
-use base::symbol::{Symbol, Symbols};
+use crate::base::ast::{self, Expr, MutVisitor, SpannedExpr, ValueBindings};
+use crate::base::error::Errors as BaseErrors;
+use crate::base::fnv::FnvMap;
+use crate::base::pos;
+use crate::base::pos::{BytePos, Spanned};
+use crate::base::symbol::{Symbol, Symbols};
 
-use thread::Thread;
+use crate::thread::Thread;
 
 pub type Error = Box<StdError + Send + Sync>;
 pub type SpannedError = Spanned<Error, BytePos>;
@@ -211,7 +211,7 @@ impl<'a, 'b, 'c> MutVisitor<'c> for MacroVisitor<'a, 'b, 'c> {
                             .iter()
                             .find(|attr| attr.name == "derive")
                         {
-                            match ::derive::generate(self.symbols, derive, bind) {
+                            match crate::derive::generate(self.symbols, derive, bind) {
                                 Ok(x) => x,
                                 Err(err) => {
                                     self.expander.errors.push(pos::spanned(bind.name.span, err));

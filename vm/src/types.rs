@@ -1,7 +1,7 @@
-use base::fnv::FnvMap;
-use base::kind::{ArcKind, Kind, KindEnv};
-use base::symbol::{Symbol, SymbolRef};
-use base::types::{Alias, ArcType, Type, TypeEnv};
+use crate::base::fnv::FnvMap;
+use crate::base::kind::{ArcKind, Kind, KindEnv};
+use crate::base::symbol::{Symbol, SymbolRef};
+use crate::base::types::{Alias, ArcType, Type, TypeEnv};
 
 pub use self::Instruction::*;
 
@@ -177,16 +177,16 @@ impl Instruction {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "::serialization::DeSeed")
+    serde(deserialize_state = "crate::serialization::DeSeed")
 )]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub struct TypeInfos {
     #[cfg_attr(
         feature = "serde_derive",
-        serde(state_with = "::serialization::borrow")
+        serde(state_with = "crate::serialization::borrow")
     )]
     pub id_to_type: FnvMap<String, Alias<Symbol, ArcType>>,
 }

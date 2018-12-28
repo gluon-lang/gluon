@@ -1,7 +1,4 @@
-use std::any::Any;
-use std::fmt;
-use std::marker::PhantomData;
-use std::sync::Mutex;
+use crate::real_std::{any::Any, fmt, marker::PhantomData, sync::Mutex};
 
 use futures::{
     future::{self, Either, Shared},
@@ -9,15 +6,15 @@ use futures::{
     Future,
 };
 
-use api::generic::A;
-use api::{FunctionRef, Getable, OpaqueValue, Pushable, Pushed, Userdata, VmType, WithVM};
-use base::types;
-use base::types::{ArcType, Type};
-use gc::{Gc, GcPtr, Move, Traverseable};
-use thread::{RootedThread, ThreadInternal};
-use value::{Cloner, Value};
-use vm::Thread;
-use {Error, ExternModule, Result, Variants};
+use crate::api::generic::A;
+use crate::api::{FunctionRef, Getable, OpaqueValue, Pushable, Pushed, Userdata, VmType, WithVM};
+use crate::base::types;
+use crate::base::types::{ArcType, Type};
+use crate::gc::{Gc, GcPtr, Move, Traverseable};
+use crate::thread::{RootedThread, ThreadInternal};
+use crate::value::{Cloner, Value};
+use crate::vm::Thread;
+use crate::{Error, ExternModule, Result, Variants};
 
 pub struct Lazy<T> {
     value: Mutex<Lazy_>,
@@ -188,7 +185,7 @@ fn lazy(f: OpaqueValue<&Thread, fn(()) -> A>) -> Lazy<A> {
 }
 
 mod std {
-    pub use lazy;
+    pub use crate::lazy;
 }
 
 pub fn load(vm: &Thread) -> Result<ExternModule> {

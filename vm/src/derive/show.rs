@@ -1,13 +1,13 @@
-use base::ast::{
+use crate::base::ast::{
     Alternative, Argument, AstType, Expr, ExprField, Pattern, TypeBinding, TypedIdent, ValueBinding,
 };
-use base::pos;
-use base::symbol::{Symbol, Symbols};
-use base::types::{remove_forall, row_iter, Type};
+use crate::base::pos;
+use crate::base::symbol::{Symbol, Symbols};
+use crate::base::types::{remove_forall, row_iter, Type};
 
-use macros::Error;
+use crate::macros::Error;
 
-use derive::*;
+use crate::derive::*;
 
 pub fn generate(
     symbols: &mut Symbols,

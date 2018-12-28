@@ -5,15 +5,15 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::result::Result as StdResult;
 
-use base::resolve;
-use base::symbol::Symbol;
-use base::types::{row_iter, ArcType, BuiltinType, Type, TypeEnv};
+use crate::base::resolve;
+use crate::base::symbol::Symbol;
+use crate::base::types::{row_iter, ArcType, BuiltinType, Type, TypeEnv};
 
-use api::{Getable, ValueRef, VmType};
-use thread::{RootedThread, RootedValue, Thread, ThreadInternal};
-use {Error as VmError, Result, Variants};
+use crate::api::{Getable, ValueRef, VmType};
+use crate::thread::{RootedThread, RootedValue, Thread, ThreadInternal};
+use crate::{Error as VmError, Result, Variants};
 
-use serde::de::{
+use crate::serde::de::{
     self, DeserializeOwned, DeserializeSeed, EnumAccess, Error, IntoDeserializer, MapAccess,
     SeqAccess, VariantAccess, Visitor,
 };
@@ -262,7 +262,7 @@ pub fn deserialize_raw_value<'de, D>(
 where
     D: de::Deserializer<'de>,
 {
-    use serde::Deserialize;
+    use crate::serde::Deserialize;
 
     VALUE_TRANSFER.with(|t| {
         assert!(t.borrow().is_none());

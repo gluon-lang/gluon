@@ -1,20 +1,20 @@
 use self::Variable::*;
-use base::ast::{self, DisplayEnv, Literal, Typed, TypedIdent};
-use base::kind::{ArcKind, KindEnv};
-use base::pos::Line;
-use base::resolve;
-use base::scoped_map::ScopedMap;
-use base::source::Source;
-use base::symbol::{Symbol, SymbolModule, SymbolRef};
-use base::types::{self, Alias, ArcType, BuiltinType, Type, TypeEnv};
-use core::{self, CExpr, Expr, Pattern};
-use interner::InternedStr;
-use source_map::{LocalMap, SourceMap};
+use crate::base::ast::{self, DisplayEnv, Literal, Typed, TypedIdent};
+use crate::base::kind::{ArcKind, KindEnv};
+use crate::base::pos::Line;
+use crate::base::resolve;
+use crate::base::scoped_map::ScopedMap;
+use crate::base::source::Source;
+use crate::base::symbol::{Symbol, SymbolModule, SymbolRef};
+use crate::base::types::{self, Alias, ArcType, BuiltinType, Type, TypeEnv};
+use crate::core::{self, CExpr, Expr, Pattern};
+use crate::interner::InternedStr;
+use crate::source_map::{LocalMap, SourceMap};
+use crate::types::*;
+use crate::vm::GlobalVmState;
 use std::ops::{Deref, DerefMut};
-use types::*;
-use vm::GlobalVmState;
 
-use {Error, Result};
+use crate::{Error, Result};
 
 #[derive(Clone, Debug)]
 pub enum Variable<G> {
@@ -34,17 +34,17 @@ enum FieldAccess {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "::serialization::DeSeed")
+    serde(deserialize_state = "crate::serialization::DeSeed")
 )]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub struct UpvarInfo {
     pub name: String,
     #[cfg_attr(
         feature = "serde_derive",
-        serde(state_with = "::serialization::borrow")
+        serde(state_with = "crate::serialization::borrow")
     )]
     pub typ: ArcType,
 }
@@ -53,11 +53,11 @@ pub struct UpvarInfo {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "::serialization::DeSeed")
+    serde(deserialize_state = "crate::serialization::DeSeed")
 )]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub struct DebugInfo {
     /// Maps instruction indexes to the line that spawned them
@@ -70,44 +70,38 @@ pub struct DebugInfo {
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive_state",
-    derive(SerializeState, DeserializeState)
+    serde(deserialize_state = "crate::serialization::DeSeed")
 )]
 #[cfg_attr(
     feature = "serde_derive_state",
-    serde(deserialize_state = "::serialization::DeSeed")
-)]
-#[cfg_attr(
-    feature = "serde_derive_state",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub struct CompiledModule {
     /// Storage for globals which are needed by the module which is currently being compiled
     #[cfg_attr(
         feature = "serde_derive",
-        serde(state_with = "::serialization::borrow")
+        serde(state_with = "crate::serialization::borrow")
     )]
     pub module_globals: Vec<Symbol>,
     #[cfg_attr(
         feature = "serde_derive",
-        serde(state_with = "::serialization::borrow")
+        serde(state_with = "crate::serialization::borrow")
     )]
     pub function: CompiledFunction,
 }
 
 #[derive(Debug)]
+#[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive_state",
-    derive(SerializeState, DeserializeState)
+    serde(deserialize_state = "crate::serialization::DeSeed")
 )]
 #[cfg_attr(
     feature = "serde_derive_state",
-    serde(deserialize_state = "::serialization::DeSeed")
-)]
-#[cfg_attr(
-    feature = "serde_derive_state",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub struct CompiledFunction {
     pub args: VmIndex,
@@ -116,13 +110,13 @@ pub struct CompiledFunction {
 
     #[cfg_attr(
         feature = "serde_derive",
-        serde(state_with = "::serialization::borrow")
+        serde(state_with = "crate::serialization::borrow")
     )]
     pub id: Symbol,
 
     #[cfg_attr(
         feature = "serde_derive",
-        serde(state_with = "::serialization::borrow")
+        serde(state_with = "crate::serialization::borrow")
     )]
     pub typ: ArcType,
     pub instructions: Vec<Instruction>,
@@ -135,7 +129,7 @@ pub struct CompiledFunction {
 
     #[cfg_attr(
         feature = "serde_derive",
-        serde(state_with = "::serialization::borrow")
+        serde(state_with = "crate::serialization::borrow")
     )]
     pub records: Vec<Vec<Symbol>>,
 
@@ -618,7 +612,7 @@ impl<'a> Compiler<'a> {
                 return Err(Error::Message(format!(
                     "Constructor `{}` is not fully applied",
                     id
-                )))
+                )));
             }
         }
         Ok(())
@@ -1143,10 +1137,11 @@ impl<'a> Compiler<'a> {
 mod tests {
     use super::*;
 
-    use base::symbol::Symbols;
-
-    use core::{grammar::ExprParser, Allocator};
-    use vm::GlobalVmState;
+    use crate::{
+        base::symbol::Symbols,
+        core::{grammar::ExprParser, Allocator},
+        vm::GlobalVmState,
+    };
 
     fn verify_instructions<'a>(
         compiled_function: &CompiledFunction,

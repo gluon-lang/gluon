@@ -4,7 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::ops::{Deref, DerefMut};
 use std::slice;
 
-use gc::{Gc, Traverseable};
+use crate::gc::{Gc, Traverseable};
 
 mod internal {
     pub struct CantConstruct(());
