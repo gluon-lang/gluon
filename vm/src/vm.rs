@@ -297,7 +297,7 @@ impl VmEnv {
 
     fn get_global<'s, 'n>(&'s self, name: &'n str) -> Option<(&'n Name, &'s Global)> {
         let globals = &self.globals;
-        let mut module = Name::new(name.trim_left_matches('@'));
+        let mut module = Name::new(name.trim_start_matches('@'));
         let global;
         // Try to find a global by successively reducing the module path
         // Input: "x.y.z.w"

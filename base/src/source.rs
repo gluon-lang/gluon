@@ -157,10 +157,10 @@ impl<'a> DoubleEndedIterator for CommentIter<'a> {
         } else {
             self.src = self
                 .src
-                .trim_right_matches(|c: char| c.is_whitespace() && c != '\n');
+                .trim_end_matches(|c: char| c.is_whitespace() && c != '\n');
             if self.src.ends_with('\n') {
                 let comment_line = self.src[..self.src.len() - 1].lines().next_back().unwrap();
-                let trimmed = comment_line.trim_left();
+                let trimmed = comment_line.trim_start();
 
                 let newline_len = if self.src.ends_with("\r\n") { 2 } else { 1 };
                 self.src = &self.src[..(self.src.len() - newline_len)];

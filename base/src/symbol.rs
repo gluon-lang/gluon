@@ -277,8 +277,8 @@ impl Name {
     }
 
     pub fn module(&self) -> &Name {
-        let s = self.0.trim_right_matches(|c| c != '.');
-        Name::new(s.trim_right_matches('.'))
+        let s = self.0.trim_end_matches(|c| c != '.');
+        Name::new(s.trim_end_matches('.'))
     }
 
     pub fn name(&self) -> &Name {
@@ -293,7 +293,7 @@ impl Name {
     }
 
     pub fn definition_name(&self) -> &str {
-        let name = self.as_str().trim_left_matches('@');
+        let name = self.as_str().trim_start_matches('@');
         name.split(':').next().unwrap_or(name)
     }
 }

@@ -79,7 +79,7 @@ where
             .pretty(width)
             .to_string()
             .lines()
-            .map(|s| format!("{}{}", s.trim_right(), newline))
+            .map(|s| format!("{}{}", s.trim_end(), newline))
             .collect()
     }
 

@@ -461,7 +461,7 @@ impl<'input> Tokenizer<'input> {
 
         if line.starts_with("#!") {
             let skip = 2;
-            let result = line[skip..].trim_right();
+            let result = line[skip..].trim_end();
             let tok = Token::ShebangLine(result);
             Some(pos::spanned2(start, end, tok))
         } else {
