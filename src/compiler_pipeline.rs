@@ -158,30 +158,32 @@ impl<'s> MacroExpandable for &'s mut SpannedExpr<Symbol> {
 
     fn expand_macro_with<'f>(
         self,
-        compiler: &mut Compiler,
-        macros: &mut MacroExpander,
-        file: &str,
-        expr_str: &str,
-    ) -> SalvageResult<MacroValue<Self::Expr>> {
-        if compiler.settings.implicit_prelude && !expr_str.starts_with("//@NO-IMPLICIT-PRELUDE") {
-            compiler.include_implicit_prelude(macros.vm.global_env().type_cache(), file, self);
-        }
-        let prev_errors = mem::replace(&mut macros.errors, Errors::new());
-        macros.state.insert(
-            crate::import::COMPILER_KEY.into(),
-            Box::new(compiler.split()),
-        );
-        macros.run(&mut compiler.symbols, self);
-        let errors = mem::replace(&mut macros.errors, prev_errors);
-        let value = MacroValue { expr: self };
-        if errors.has_errors() {
-            Err((
-                Some(value),
-                InFile::new(compiler.code_map().clone(), errors).into(),
-            ))
-        } else {
-            Ok(value)
-        }
+        compiler: &'f mut Compiler,
+        macros: &'f mut MacroExpander,
+        file: &'f str,
+        expr_str: &'f str,
+    ) -> SalvageResult<'f, MacroValue<Self::Expr>>
+    where
+        Self: 'f,
+    {
+        (async move {
+            if compiler.implicit_prelude && !expr_str.starts_with("//@NO-IMPLICIT-PRELUDE") {
+                compiler.include_implicit_prelude(macros.vm.global_env().type_cache(), file, self);
+            }
+            let prev_errors = mem::replace(&mut macros.errors, Errors::new());
+            await!(macros.run(&mut compiler.symbols, self));
+            let errors = mem::replace(&mut macros.errors, prev_errors);
+            let value = MacroValue { expr: self };
+            if errors.has_errors() {
+                Err((
+                    Some(value),
+                    InFile::new(compiler.code_map().clone(), errors).into(),
+                ))
+            } else {
+                Ok(value)
+            }
+        })
+            .boxed()
     }
 }
 

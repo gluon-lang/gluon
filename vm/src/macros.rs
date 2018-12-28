@@ -1,5 +1,4 @@
 //! Module providing the building blocks to create macros and expand them.
-use std::any::Any;
 use std::error::Error as StdError;
 use std::mem;
 use std::sync::{Arc, RwLock};
@@ -89,8 +88,13 @@ impl MacroEnv {
     }
 }
 
+mopafy!(MacroState);
+pub trait MacroState: ::mopa::Any + Send {
+    fn clone_state(&self) -> Box<MacroState>;
+}
+
 pub struct MacroExpander {
-    pub state: FnvMap<String, Box<dyn Any + Send>>,
+    pub state: FnvMap<String, Box<dyn MacroState>>,
     pub vm: RootedThread,
     pub errors: Errors,
     pub error_in_expr: bool,
@@ -115,6 +119,19 @@ impl MacroExpander {
         }
     }
 
+    fn split(&self) -> Self {
+        MacroExpander {
+            state: self
+                .state
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone_state()))
+                .collect(),
+            vm: self.vm.clone(),
+            errors: Errors::new(),
+            error_in_expr: self.error_in_expr.clone(),
+        }
+    }
+
     pub async fn run<'f>(
         &'f mut self,
         symbols: &'f mut Symbols,
@@ -132,7 +149,9 @@ impl MacroExpander {
             };
 
             for (expr, future) in exprs {
-                match await!(future) {
+                let (sub_expander, result) = await!(future);
+                self.errors.extend(sub_expander.errors);
+                match result {
                     Ok(mut replacement) => {
                         replacement.span = expr.span;
                         replace_expr(expr, replacement);
@@ -164,10 +183,12 @@ fn replace_expr(expr: &mut SpannedExpr<Symbol>, new: SpannedExpr<Symbol>) {
     );
 }
 
+type MacroExprFuture<'f> =
+    Pin<Box<Future<Output = (MacroExpander, Result<SpannedExpr<Symbol>, Error>)> + Send + 'f>>;
 struct MacroVisitor<'b, 'c> {
     expander: &'b mut MacroExpander,
     symbols: &'c mut Symbols,
-    exprs: Vec<(&'c mut SpannedExpr<Symbol>, MacroFuture<'c>)>,
+    exprs: Vec<(&'c mut SpannedExpr<Symbol>, MacroExprFuture<'c>)>,
 }
 
 impl<'b, 'c> MutVisitor<'c> for MacroVisitor<'b, 'c> {
@@ -177,9 +198,9 @@ impl<'b, 'c> MutVisitor<'c> for MacroVisitor<'b, 'c> {
         let replacement = match expr.value {
             Expr::App {
                 ref mut implicit_args,
-                func: ref mut id,
+                func: ref mut id_expr,
                 ref mut args,
-            } => match id.value {
+            } => match id_expr.value {
                 Expr::Ident(ref id) if id.name.as_ref().ends_with('!') => {
                     if !implicit_args.is_empty() {
                         self.expander.errors.push(pos::spanned(
@@ -194,8 +215,14 @@ impl<'b, 'c> MutVisitor<'c> for MacroVisitor<'b, 'c> {
                         Some(m) => {
                             let args = args.clone();
                             // FIXME Forward macro expander, don't create a new
-                            let mut expander = MacroExpander::new(&self.expander.vm);
-                            Some((async move { await!(m.expand(&mut expander, args)) }).boxed())
+                            let mut expander = self.expander.split();
+                            Some(
+                                (async move {
+                                    let e = await!(m.expand(&mut expander, args));
+                                    (expander, e)
+                                })
+                                    .boxed(),
+                            )
                         }
                         None => None,
                     }

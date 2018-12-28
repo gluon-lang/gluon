@@ -1,3 +1,5 @@
+#![feature(futures_api, arbitrary_self_types, async_await, await_macro)]
+
 extern crate env_logger;
 #[macro_use]
 extern crate serde_derive;
@@ -27,7 +29,7 @@ use std::fs::File;
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 
-use futures::{future, stream, Future, Stream};
+use futures::{compat::Future01CompatExt, prelude::*, stream};
 use tokio::runtime::current_thread::Runtime;
 
 #[derive(Debug, Fail)]
@@ -130,14 +132,23 @@ define_test_type! { TestEffIO A }
 
 struct GluonTestable<F>(F);
 
+impl<F> GluonTestable<F>
+where
+    F: Future<Output = Result<(), Error>> + Send + 'static,
+{
+    fn new(f: F) -> Self {
+        GluonTestable(f)
+    }
+}
+
 impl<F> tensile::Testable for GluonTestable<F>
 where
-    F: Future<Output = Result<(), Error>> + Send + Sync + 'static,
+    F: Future<Output = Result<(), Error>> + Send + 'static,
 {
     type Error = Error;
 
     fn test(self) -> tensile::TestFuture<Self::Error> {
-        Box::new(self.0)
+        Box::new(self.0.boxed().compat())
     }
 }
 
@@ -347,7 +358,8 @@ fn main_() -> Result<(), Error> {
 
             let name2 = name.clone();
             pool.spawn_fn(move || make_test(&vm, &name, &filename))
-                .then(|result| -> Result<_, Error> {
+                .compat()
+                .then(async move |result| -> Result<_, String> {
                     Ok(match result {
                         Ok(test) => test.into_tensile_test(),
                         Err(err) => {
@@ -358,8 +370,8 @@ fn main_() -> Result<(), Error> {
                 })
         }),
     )
-    .collect();
-    let pass_tests = runtime.block_on(pass_tests_future)?;
+    .try_collect();
+    let pass_tests = runtime.block_on(TryFutureExt::compat(pass_tests_future.boxed()))?;
 
     let iter = test_files("tests/fail")?
         .into_iter()
@@ -414,18 +426,21 @@ fn main_() -> Result<(), Error> {
         .collect();
 
     let mut runtime = Runtime::new()?;
-    runtime.block_on(future::lazy(|| {
-        tensile::console_runner(
-            tensile::group(
-                "main",
-                vec![
-                    tensile::group("pass", pass_tests),
-                    tensile::group("fail", fail_tests),
-                    tensile::group("doc", doc_tests),
-                ],
-            ),
-            &tensile::Options::default().filter(filter.map_or("", |s| &s[..])),
-        )
-    }))?;
+    runtime.block_on(TryFutureExt::compat(
+        (async {
+            await!(Future01CompatExt::compat(tensile::console_runner(
+                tensile::group(
+                    "main",
+                    vec![
+                        tensile::group("pass", pass_tests),
+                        tensile::group("fail", fail_tests),
+                        tensile::group("doc", doc_tests),
+                    ],
+                ),
+                &tensile::Options::default().filter(filter.map_or("", |s| &s[..])),
+            )))
+        })
+            .boxed(),
+    ))?;
     Ok(())
 }

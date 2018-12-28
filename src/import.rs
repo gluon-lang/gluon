@@ -1,30 +1,34 @@
 //! Implementation of the `import!` macro.
 
-use std::any::Any;
-use std::borrow::Cow;
-use std::collections::hash_map::Entry;
-use std::fs::File;
-use std::io;
-use std::io::Read;
-use std::mem;
-use std::path::PathBuf;
-use std::sync::{Mutex, RwLock};
+use std::{
+    any::Any,
+    borrow::Cow,
+    collections::hash_map::Entry,
+    fs::File,
+    io,
+    io::Read,
+    mem,
+    path::PathBuf,
+    sync::{Arc, Mutex, RwLock},
+};
 
 use futures::{channel::oneshot, future, prelude::*};
 
 use itertools::Itertools;
 
-use crate::base::ast::{expr_to_path, Expr, Literal, SpannedExpr, Typed, TypedIdent};
-use crate::base::error::{Errors, InFile};
-use crate::base::filename_to_module;
-use crate::base::fnv::FnvMap;
-use crate::base::pos::{self, BytePos, Span};
-use crate::base::symbol::Symbol;
-use crate::base::types::{ArcType, Type};
+use crate::base::{
+    ast::{expr_to_path, Expr, Literal, SpannedExpr, Typed, TypedIdent},
+    error::{Errors, InFile},
+    filename_to_module,
+    fnv::FnvMap,
+    pos::{self, BytePos, Span},
+    symbol::Symbol,
+    types::ArcType,
+};
 
 use crate::vm::{
     self,
-    macros::{Error as MacroError, Macro, MacroExpander, MacroFuture},
+    macros::{Error as MacroError, Macro, MacroExpander, MacroFuture, MacroState},
     thread::{Thread, ThreadInternal},
     ExternLoader, ExternModule,
 };
@@ -460,7 +464,7 @@ fn get_state<'m>(macros: &'m mut MacroExpander) -> &'m mut State {
         .or_insert_with(|| {
             Box::new(State {
                 visited: Vec::new(),
-                modules_with_errors: FnvMap::default(),
+                modules_with_errors: Default::default(),
             })
         })
         .downcast_mut::<State>()
@@ -469,7 +473,16 @@ fn get_state<'m>(macros: &'m mut MacroExpander) -> &'m mut State {
 
 struct State {
     visited: Vec<String>,
-    modules_with_errors: FnvMap<String, Expr<Symbol>>,
+    modules_with_errors: Arc<RwLock<FnvMap<String, Expr<Symbol>>>>,
+}
+
+impl MacroState for State {
+    fn clone_state(&self) -> Box<MacroState> {
+        Box::new(State {
+            visited: self.visited.clone(),
+            modules_with_errors: self.modules_with_errors.clone(),
+        })
+    }
 }
 
 impl<I> Macro for Import<I>
@@ -525,10 +538,11 @@ where
             // Only load the script if it is not already loaded
             debug!("Import '{}' {:?}", modulename, get_state(macros).visited);
             if !vm.global_env().global_exists(&modulename) {
-                if let Some(expr) = get_state(macros)
-                    .modules_with_errors
+                let opt = get_state(macros)
+                    .modules_with_errors.read().unwrap()
                     .get(&modulename)
-                    .cloned()
+                    .cloned();
+                if let Some(expr) = opt
                 {
                     macros.error_in_expr = true;
                     return Ok(pos::spanned(args[0].span, expr));
@@ -552,7 +566,7 @@ where
 
                         let expr = Expr::Error(typ);
                         get_state(macros)
-                            .modules_with_errors
+                            .modules_with_errors.write().unwrap()
                             .insert(modulename, expr.clone());
 
                         return Ok(pos::spanned(args[0].span, expr));
