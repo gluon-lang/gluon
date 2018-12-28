@@ -52,7 +52,7 @@ fn is_nil<'a, A>(doc: &DocBuilder<'a, Arena<'a, A>, A>) -> bool {
 
 pub(super) struct Printer<'a, I: 'a, A: 'a> {
     printer: pretty_types::Printer<'a, I, A>,
-    formatter: ::Formatter,
+    formatter: crate::Formatter,
 }
 
 impl<'a, I, A> Printer<'a, I, A>
@@ -62,7 +62,7 @@ where
     pub(super) fn new(
         arena: &'a Arena<'a, A>,
         source: &'a source::Source,
-        formatter: ::Formatter,
+        formatter: crate::Formatter,
     ) -> Self {
         Printer {
             printer: pretty_types::Printer::new(arena, source),
