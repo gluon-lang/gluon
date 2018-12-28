@@ -1,6 +1,7 @@
 //! Module containing bindings to the `rand` library.
 
 extern crate rand;
+extern crate rand_xorshift;
 
 use self::rand::{Rng, SeedableRng};
 
@@ -11,7 +12,7 @@ use vm::{self, ExternModule};
 
 #[derive(Clone, Debug, Userdata)]
 #[gluon(crate_name = "::vm")]
-struct XorShiftRng(self::rand::XorShiftRng);
+struct XorShiftRng(self::rand_xorshift::XorShiftRng);
 
 field_decl! { value, gen }
 
@@ -35,7 +36,9 @@ type RngNext<G> = record_type! {
 fn xor_shift_new(seed: &[u8]) -> RuntimeResult<XorShiftRng, String> {
     if seed.len() == 16 {
         let seed = unsafe { *(seed.as_ptr() as *const [u8; 16]) };
-        RuntimeResult::Return(XorShiftRng(self::rand::XorShiftRng::from_seed(seed)))
+        RuntimeResult::Return(XorShiftRng(self::rand_xorshift::XorShiftRng::from_seed(
+            seed,
+        )))
     } else {
         RuntimeResult::Panic("Expected xorshift seed to have 4 elements".to_string())
     }

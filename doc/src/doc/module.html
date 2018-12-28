@@ -29,6 +29,22 @@
         <main class="col-md-9 ml-sm-auto cl-lg-10 pt-3 px-4" role="main">
             <h1 class="pb-3 mb-4 border-bottom">{{name}}</h1>
 
+            <h2>Modules</h2>
+
+            <table class="table-sm">
+            <tbody>
+            {{#each sub_modules}}
+                <tr>
+                    <td>
+                        <a href="{{module_link name}}">{{name}}</a>
+                    </td>
+                    <td valign="middle">
+                        {{markdown_first_paragraph comment}}
+                    </td>
+                </tr>
+            {{/each}}
+            </table>
+
             <div class="docblock">{{markdown comment}}</div>
 
             {{#if record.types}}

@@ -965,6 +965,15 @@ pub fn find_all_symbols(
     })
 }
 
+pub fn symbol(
+    source_span: Span<BytePos>,
+    expr: &SpannedExpr<Symbol>,
+    pos: BytePos,
+) -> Result<Symbol, ()> {
+    let extract = IdentAt;
+    completion(extract, source_span, expr, pos)
+}
+
 #[derive(Debug, PartialEq)]
 pub enum CompletionSymbol<'a> {
     Value {

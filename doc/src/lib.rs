@@ -3,6 +3,7 @@ extern crate clap;
 extern crate failure;
 extern crate handlebars;
 extern crate itertools;
+extern crate rayon;
 extern crate serde;
 #[macro_use]
 extern crate serde_derive;
@@ -21,17 +22,21 @@ extern crate log;
 
 extern crate gluon;
 
-use std::collections::BTreeMap;
-use std::fs::{create_dir_all, File};
-use std::io::{self, Read, Write};
-use std::path::{Path, PathBuf};
-use std::result::Result as StdResult;
+use std::{
+    collections::BTreeMap,
+    fs::{self, create_dir_all, File},
+    io::{self, Read},
+    path::{Path, PathBuf},
+    result::Result as StdResult,
+};
 
 use failure::ResultExt;
 
 use itertools::Itertools;
 
 use handlebars::{Context, Handlebars, Helper, Output, RenderContext, RenderError};
+
+use rayon::prelude::*;
 
 use serde::Deserialize;
 
@@ -208,10 +213,10 @@ pub struct TemplateModule<'a> {
     pub name: &'a str,
     pub comment: &'a str,
     pub record: &'a Record,
+    pub sub_modules: Vec<&'a Module>,
     pub sibling_modules: Vec<&'a str>,
 }
 
-const INDEX_TEMPLATE: &str = "index";
 const MODULE_TEMPLATE: &str = "module";
 
 fn symbol_link(index: bool, current_module: &str, param: &str) -> String {
@@ -232,44 +237,30 @@ fn symbol_link(index: bool, current_module: &str, param: &str) -> String {
     )
 }
 
-fn module_link(index: bool, directory_module: bool, current_module: &str, param: &str) -> String {
-    let skipped = if index { 0 } else { 1 };
+fn module_link(current_module: &str, param: &str) -> String {
     format!(
-        "{}{}{}.html",
-        current_module
-            .split('.')
-            .skip(skipped)
-            .map(|_| "../")
-            .format(""),
+        "{}{}.html",
+        current_module.split('.').skip(1).map(|_| "../").format(""),
         param.replace(".", "/"),
-        if directory_module { "/index" } else { "" }
     )
 }
 
 fn handlebars() -> Result<Handlebars> {
     let mut reg = Handlebars::new();
 
-    reg.register_template_string(INDEX_TEMPLATE, include_str!("doc/index.html"))?;
     reg.register_template_string(MODULE_TEMPLATE, include_str!("doc/module.html"))?;
 
     fn module_link_helper(
         h: &Helper,
         _: &Handlebars,
         context: &Context,
-        rc: &mut RenderContext,
+        _rc: &mut RenderContext,
         out: &mut Output,
     ) -> ::std::result::Result<(), RenderError> {
         let current_module = &context.data()["name"].as_str().expect("name").to_string();
 
         let param = String::deserialize(h.param(0).unwrap().value())?;
-        let index = rc.get_root_template_name().map(|s| &s[..]) == Some(INDEX_TEMPLATE);
-        let directory_module = h.param(1).is_some();
-        out.write(&module_link(
-            index,
-            directory_module,
-            current_module,
-            &param,
-        ))?;
+        out.write(&module_link(current_module, &param))?;
         Ok(())
     }
     reg.register_helper("module_link", Box::new(module_link_helper));
@@ -278,16 +269,11 @@ fn handlebars() -> Result<Handlebars> {
         h: &Helper,
         _: &Handlebars,
         context: &Context,
-        rc: &mut RenderContext,
+        _rc: &mut RenderContext,
         out: &mut Output,
     ) -> ::std::result::Result<(), RenderError> {
-        let current_module_level = &context.data()["name"]
-            .as_str()
-            .expect("name")
-            .split('.')
-            .count();
-        let index = rc.get_root_template_name().map(|s| &s[..]) == Some(INDEX_TEMPLATE);
-        let index_offset = if index { 1 } else { 2 };
+        let current_module = context.data()["name"].as_str().expect("name");
+        let current_module_level = current_module.split('.').count();
 
         let param = String::deserialize(h.param(0).unwrap().value())?;
         let parts: Vec<_> = param.split(".").collect();
@@ -298,12 +284,13 @@ fn handlebars() -> Result<Handlebars> {
                 if i + 1 == parts.len() {
                     handlebars::html_escape(&part)
                 } else {
-                    let path = (0..(current_module_level - i - index_offset))
+                    let path = (0..(current_module_level - i - 1))
                         .map(|_| "../")
                         .format("");
                     format!(
-                        r##"<a href="{}index.html">{}</a>"##,
+                        r##"<a href="{}{}.html">{}</a>"##,
                         path,
+                        current_module.split('.').rev().nth(1).unwrap_or(""),
                         handlebars::html_escape(&part)
                     )
                 },
@@ -413,17 +400,46 @@ where
 }
 
 pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Result<()> {
-    let mut directories = BTreeMap::new();
+    let mut directories = BTreeMap::<_, BTreeMap<_, Module>>::new();
+    let mut content = String::new();
+
     for entry in walkdir::WalkDir::new(path) {
         let entry = entry?;
         if !entry.file_type().is_file()
             || entry.path().extension().and_then(|ext| ext.to_str()) != Some("glu")
         {
             if entry.file_type().is_dir() {
-                directories.insert(entry.path().to_owned(), Vec::new());
+                if !directories.contains_key(&entry.path().with_extension("glu")) {
+                    // Generate a directory module
+                    debug!("Indexing directory, no module: {}", entry.path().display());
+                    let name = filename_to_module(
+                        entry
+                            .path()
+                            .to_str()
+                            .ok_or_else(|| failure::err_msg("Non-UTF-8 filename"))?,
+                    );
+                    directories
+                        .entry(entry.path().parent().expect("Parent dir").to_owned())
+                        .or_default()
+                        .insert(
+                            name.clone(),
+                            Module {
+                                name,
+                                comment: "".into(),
+                                record: Record::default(),
+                            },
+                        );
+                } else {
+                    debug!(
+                        "Indexing directory with existing module: {}",
+                        entry.path().display()
+                    );
+                    directories.insert(entry.path().to_owned(), BTreeMap::new());
+                }
             }
             continue;
         }
+        debug!("Indexing module: {}", entry.path().display());
 
         let mut input = File::open(&*entry.path()).with_context(|err| {
             format!(
@@ -432,7 +448,7 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
                 err
             )
         })?;
-        let mut content = String::new();
+        content.clear();
         input.read_to_string(&mut content)?;
 
         let name = filename_to_module(
@@ -465,24 +481,20 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
         };
 
         directories
-            .get_mut(entry.path().parent().expect("Parent path"))
-            .expect("Directory before this file")
-            .push(module);
-    }
-
-    #[derive(Serialize)]
-    struct Index<'a> {
-        name: String,
-        directories: &'a [String],
-        modules: &'a [Module],
+            .entry(entry.path().parent().expect("Parent path").to_owned())
+            .or_default()
+            .insert(module.name.clone(), module);
     }
 
     let reg = handlebars()?;
 
-    for (path, modules) in &directories {
-        for module in modules {
-            let out_path =
-                out_path.join(PathBuf::from(module.name.replace(".", "/")).with_extension("html"));
+    directories
+        .values()
+        .flat_map(|modules| modules.values().map(move |m| (modules, m)))
+        .par_bridge()
+        .try_for_each(|(modules, module)| -> Result<()> {
+            let module_path = PathBuf::from(module.name.replace(".", "/"));
+            let out_path = out_path.join(&module_path).with_extension("html");
             let mut doc_file = File::create(&*out_path).with_context(|err| {
                 format!(
                     "Unable to open output file `{}`: {}",
@@ -498,46 +510,24 @@ pub fn generate_for_path_(thread: &Thread, path: &Path, out_path: &Path) -> Resu
                     name: &module.name,
                     comment: &module.comment,
                     record: &module.record,
-                    sibling_modules: modules.iter().map(|sibling| &*sibling.name).collect(),
+                    sub_modules: directories
+                        .get(&module_path)
+                        .iter()
+                        .flat_map(|sub_modules| sub_modules.values())
+                        .collect(),
+                    sibling_modules: modules.keys().map(|s| s as &str).collect(),
                 },
             )?;
-        }
 
-        let index_path = out_path.join(&*path).join("index.html");
-        trace!("Rendering index: {}", index_path.display());
-        let mut doc_file = File::create(&*index_path).with_context(|err| {
-            format!(
-                "Unable to open output file `{}`: {}",
-                index_path.display(),
-                err
-            )
+            debug!("Documented {}", module.name);
+
+            Ok(())
         })?;
 
-        let name = filename_to_module(
-            path.to_str()
-                .ok_or_else(|| failure::err_msg("Non-UTF-8 filename"))?,
-        );
-
-        let directory_modules: Vec<_> = directories
-            .keys()
-            .filter(|dir_path| Some(&**path) == dir_path.parent())
-            .map(|dir_path| filename_to_module(dir_path.to_str().unwrap()))
-            .collect();
-
-        reg.render_to_write(
-            INDEX_TEMPLATE,
-            &Index {
-                name,
-                directories: &directory_modules,
-                modules: &modules,
-            },
-            &mut doc_file,
-        )
-        .with_context(|err| format!("Unable to render index {}: {}", index_path.display(), err))?;
-    }
-
-    let mut style_sheet = File::create(out_path.join("style.css"))?;
-    style_sheet.write_all(include_bytes!("doc/style.css"))?;
+    fs::write(
+        out_path.join("style.css"),
+        &include_bytes!("doc/style.css")[..],
+    )?;
 
     Ok(())
 }
@@ -549,6 +539,9 @@ const LONG_VERSION: &str = concat!(crate_version!(), "\n", "commit: ", env!("GIT
     raw(long_version = "LONG_VERSION")
 )]
 pub struct Opt {
+    #[structopt(long = "open")]
+    #[structopt(help = "Opens the documentation after it has been generated")]
+    pub open: bool,
     #[structopt(help = "Documents the file or directory")]
     pub input: String,
     #[structopt(help = "Outputs the documentation to this directory")]

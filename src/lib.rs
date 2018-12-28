@@ -44,7 +44,7 @@ pub mod http;
 pub mod import;
 pub mod io;
 pub mod process;
-#[cfg(all(feature = "rand", not(target_arch = "wasm32")))]
+#[cfg(all(feature = "random", not(target_arch = "wasm32")))]
 pub mod rand_bind;
 #[cfg(feature = "regex")]
 pub mod regex_bind;
@@ -754,8 +754,8 @@ impl VmBuilder {
         );
 
         add_extern_module_if!(
-            #[cfg(all(feature = "rand", not(target_arch = "wasm32")))],
-            available_if = "gluon is compiled with the 'rand' feature and is not targeting WASM",
+            #[cfg(all(feature = "random", not(target_arch = "wasm32")))],
+            available_if = "gluon is compiled with the 'random' feature and is not targeting WASM",
             args(&vm, "std.random.prim", ::rand_bind::load)
         );
 
