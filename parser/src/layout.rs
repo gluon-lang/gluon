@@ -1,6 +1,6 @@
-use base::pos::{self, BytePos, Column, Line, Location, Span, Spanned};
+use crate::base::pos::{self, BytePos, Column, Line, Location, Span, Spanned};
 
-use token::{SpannedToken, Token};
+use crate::token::{SpannedToken, Token};
 
 quick_error! {
     #[derive(Debug, PartialEq)]

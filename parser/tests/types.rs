@@ -3,9 +3,9 @@ extern crate env_logger;
 extern crate gluon_base as base;
 extern crate gluon_parser as parser;
 
-use base::ast::Expr;
-use base::types::Type;
-use support::{clear_span, parse, typ};
+use crate::base::ast::Expr;
+use crate::base::types::Type;
+use crate::support::{clear_span, parse, typ};
 
 mod support;
 

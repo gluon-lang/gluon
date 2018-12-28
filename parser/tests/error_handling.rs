@@ -7,13 +7,13 @@ extern crate gluon_parser as parser;
 
 mod support;
 
-use base::ast::{Expr, Pattern, PatternField, TypedIdent};
-use base::pos::{self, BytePos, Span, Spanned};
-use base::types::Type;
+use crate::base::ast::{Expr, Pattern, PatternField, TypedIdent};
+use crate::base::pos::{self, BytePos, Span, Spanned};
+use crate::base::types::Type;
 
-use parser::{Error, ParseErrors, TokenizeError};
+use crate::parser::{Error, ParseErrors, TokenizeError};
 
-use support::*;
+use crate::support::*;
 
 // The expected tokens aren't very interesting since they may change fairly often
 fn remove_expected(errors: ParseErrors) -> ParseErrors {
