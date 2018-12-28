@@ -6,8 +6,8 @@ use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use std::sync::Arc;
 
-use ast::{DisplayEnv, IdentEnv};
-use fnv::FnvMap;
+use crate::ast::{DisplayEnv, IdentEnv};
+use crate::fnv::FnvMap;
 
 // FIXME Don't have a double indirection (Arc + String)
 /// A symbol uniquely identifies something regardless of its name and which module it originated
@@ -19,10 +19,10 @@ pub struct Symbol(Arc<NameBuf>);
 mod serialization {
     use super::*;
 
-    use serde::de::DeserializeState;
-    use serde::ser::SerializeState;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-    use serialization::SeSeed;
+    use crate::serde::de::DeserializeState;
+    use crate::serde::ser::SerializeState;
+    use crate::serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use crate::serialization::SeSeed;
 
     impl<'de> Deserialize<'de> for Symbol {
         fn deserialize<D>(deserializer: D) -> Result<Symbol, D::Error>
@@ -34,16 +34,16 @@ mod serialization {
         }
     }
 
-    impl<'de, Id, T> DeserializeState<'de, ::serialization::Seed<Id, T>> for Symbol {
+    impl<'de, Id, T> DeserializeState<'de, crate::serialization::Seed<Id, T>> for Symbol {
         fn deserialize_state<D>(
-            seed: &mut ::serialization::Seed<Id, T>,
+            seed: &mut crate::serialization::Seed<Id, T>,
             deserializer: D,
         ) -> Result<Self, D::Error>
         where
             D: Deserializer<'de>,
         {
-            use serde::de::DeserializeSeed;
-            use serialization::SharedSeed;
+            use crate::serde::de::DeserializeSeed;
+            use crate::serialization::SharedSeed;
 
             let seed = SharedSeed::new(seed);
             seed.deserialize(deserializer).map(Symbol)
@@ -66,7 +66,7 @@ mod serialization {
             S: Serializer,
         {
             {
-                ::serialization::shared::serialize(self, serializer, seed)
+                crate::serialization::shared::serialize(self, serializer, seed)
             }
         }
     }
@@ -140,7 +140,7 @@ where
 #[cfg_attr(feature = "serde_derive", derive(SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub struct SymbolRef(str);
 

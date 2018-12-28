@@ -10,7 +10,7 @@ use std::ops::{DerefMut, Index, IndexMut};
 
 use stable_deref_trait::StableDeref;
 
-use fnv::FnvMap;
+use crate::fnv::FnvMap;
 // NOTE: transmute is used to circumvent the borrow checker in this module
 // This is safe since the containers hold boxed values meaning allocating larger
 // storage does not invalidate the references that are handed out and because values

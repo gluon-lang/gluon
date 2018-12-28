@@ -1,7 +1,7 @@
 //! Module containing types and functions for mapping between byte indexes and line and column
 //! locations
 
-use pos::{BytePos, Line, Location, Span};
+use crate::pos::{BytePos, Line, Location, Span};
 
 pub trait Source {
     fn new(s: &str) -> Self

@@ -17,21 +17,21 @@ use stable_deref_trait::StableDeref;
 
 use itertools::Itertools;
 
-use ast::{Commented, EmptyEnv, IdentEnv};
-use fnv::FnvMap;
-use kind::{ArcKind, Kind, KindEnv};
-use merge::merge;
-use metadata::Comment;
-use pos::{BytePos, HasSpan, Span};
-use source::Source;
-use symbol::{Name, Symbol, SymbolRef};
+use crate::ast::{Commented, EmptyEnv, IdentEnv};
+use crate::fnv::FnvMap;
+use crate::kind::{ArcKind, Kind, KindEnv};
+use crate::merge::merge;
+use crate::metadata::Comment;
+use crate::pos::{BytePos, HasSpan, Span};
+use crate::source::Source;
+use crate::symbol::{Name, Symbol, SymbolRef};
 
 #[cfg(feature = "serde")]
-use serde::de::DeserializeState;
+use crate::serde::de::DeserializeState;
 #[cfg(feature = "serde")]
-use serde::ser::SerializeState;
+use crate::serde::ser::SerializeState;
 #[cfg(feature = "serde")]
-use serialization::{SeSeed, Seed};
+use crate::serialization::{SeSeed, Seed};
 
 use self::pretty_print::Printer;
 pub use self::pretty_print::{Filter, TypeFormatter};
@@ -81,7 +81,7 @@ impl<'a, T: ?Sized + PrimitiveEnv> PrimitiveEnv for &'a T {
 
 type_cache! {
     TypeCache(Id, T)
-    (kind_cache: ::kind::KindCache)
+    (kind_cache: crate::kind::KindCache)
     { T, Type }
     hole opaque error int byte float string char
     function_builtin array_builtin unit empty_row
@@ -432,11 +432,11 @@ pub struct AliasRef<Id, T> {
     index: usize,
     #[cfg_attr(
         feature = "serde_derive",
-        serde(deserialize_state_with = "::serialization::deserialize_group")
+        serde(deserialize_state_with = "crate::serialization::deserialize_group")
     )]
     #[cfg_attr(
         feature = "serde_derive",
-        serde(serialize_state_with = "::serialization::shared::serialize")
+        serde(serialize_state_with = "crate::serialization::shared::serialize")
     )]
     /// The other aliases defined in this group
     pub group: Arc<Vec<AliasData<Id, T>>>,
@@ -667,7 +667,11 @@ pub enum Type<Id, T = ArcType<Id>> {
     /// `Map String Int` would be represented as `App(Map, [String, Int])`.
     App(
         #[cfg_attr(feature = "serde_derive", serde(state))] T,
-        #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::seq"))] AppVec<T>,
+        #[cfg_attr(
+            feature = "serde_derive",
+            serde(state_with = "crate::serialization::seq")
+        )]
+        AppVec<T>,
     ),
     /// Function type which can have a explicit or implicit argument
     Function(
@@ -703,7 +707,10 @@ pub enum Type<Id, T = ArcType<Id>> {
     /// _may_ cause spurious unification failures.
     Ident(#[cfg_attr(feature = "serde_derive", serde(state))] Id),
     Projection(
-        #[cfg_attr(feature = "serde_derive", serde(state_with = "::serialization::seq"))]
+        #[cfg_attr(
+            feature = "serde_derive",
+            serde(state_with = "crate::serialization::seq")
+        )]
         AppVec<Id>,
     ),
     /// An unbound type variable that may be unified with other types. These
@@ -1136,11 +1143,12 @@ where
         deserializer: D,
     ) -> Result<Self, D::Error>
     where
-        D: ::serde::de::Deserializer<'de>,
+        D: crate::serde::de::Deserializer<'de>,
     {
-        use serialization::SharedSeed;
+        use crate::serialization::SharedSeed;
         let seed = SharedSeed::new(seed);
-        ::serde::de::DeserializeSeed::deserialize(seed, deserializer).map(|typ| ArcType { typ })
+        crate::serde::de::DeserializeSeed::deserialize(seed, deserializer)
+            .map(|typ| ArcType { typ })
     }
 }
 

@@ -11,12 +11,12 @@ use either::Either;
 
 use itertools::Itertools;
 
-use metadata::{Comment, Metadata};
+use crate::metadata::{Comment, Metadata};
 use ordered_float::NotNan;
-use pos::{self, BytePos, HasSpan, Span, Spanned};
-use resolve::remove_aliases_cow;
-use symbol::Symbol;
-use types::{self, Alias, AliasData, ArcType, ArgType, Type, TypeEnv};
+use crate::pos::{self, BytePos, HasSpan, Span, Spanned};
+use crate::resolve::remove_aliases_cow;
+use crate::symbol::Symbol;
+use crate::types::{self, Alias, AliasData, ArcType, ArgType, Type, TypeEnv};
 
 pub trait DisplayEnv {
     type Ident;
