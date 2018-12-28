@@ -6,8 +6,8 @@ extern crate gluon_parser as parser;
 
 use bencher::{black_box, Bencher};
 
-use base::symbol::{SymbolModule, Symbols};
-use base::types::TypeCache;
+use crate::base::symbol::{SymbolModule, Symbols};
+use crate::base::types::TypeCache;
 
 fn prelude(b: &mut Bencher) {
     use std::fs::File;

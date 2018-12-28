@@ -2,9 +2,9 @@
 
 extern crate regex;
 
-use std::error::Error as StdError;
+use crate::real_std::error::Error as StdError;
 
-use vm::{self, api::Collect, thread::Thread, ExternModule};
+use crate::vm::{self, api::Collect, thread::Thread, ExternModule};
 
 #[derive(Debug, Userdata)]
 #[gluon(crate_name = "vm")]
@@ -67,7 +67,7 @@ fn error_to_string(err: &Error) -> &str {
 
 mod std {
     pub mod regex {
-        pub use regex_bind as prim;
+        pub use crate::regex_bind as prim;
     }
 }
 

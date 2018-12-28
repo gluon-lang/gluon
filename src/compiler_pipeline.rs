@@ -17,23 +17,23 @@ use either::Either;
 
 use futures::{future, Future};
 
-use base::ast::SpannedExpr;
-use base::error::{Errors, InFile};
-use base::fnv::FnvMap;
-use base::metadata::Metadata;
-use base::resolve;
-use base::source::Source;
-use base::symbol::{Name, NameBuf, Symbol, SymbolModule};
-use base::types::{ArcType, Type};
+use crate::base::ast::SpannedExpr;
+use crate::base::error::{Errors, InFile};
+use crate::base::fnv::FnvMap;
+use crate::base::metadata::Metadata;
+use crate::base::resolve;
+use crate::base::source::Source;
+use crate::base::symbol::{Name, NameBuf, Symbol, SymbolModule};
+use crate::base::types::{ArcType, Type};
 
-use check::{metadata, rename};
+use crate::check::{metadata, rename};
 
-use vm::compiler::CompiledModule;
-use vm::core;
-use vm::macros::MacroExpander;
-use vm::thread::{RootedThread, RootedValue, Thread, ThreadInternal, VmRoot};
+use crate::vm::compiler::CompiledModule;
+use crate::vm::core;
+use crate::vm::macros::MacroExpander;
+use crate::vm::thread::{RootedThread, RootedValue, Thread, ThreadInternal, VmRoot};
 
-use {Compiler, Error, Result};
+use crate::{Compiler, Error, Result};
 
 pub type BoxFuture<'vm, T, E> = Box<Future<Item = T, Error = E> + Send + 'vm>;
 
@@ -378,7 +378,7 @@ where
         _file: &str,
         _expr_str: &str,
     ) -> SalvageResult<InfixReparsed<Self::Expr>> {
-        use parser::reparse_infix;
+        use crate::parser::reparse_infix;
 
         let WithMetadata {
             mut expr,
@@ -483,7 +483,7 @@ where
         _expr_str: &str,
         expected_type: Option<&ArcType>,
     ) -> Result<TypecheckValue<Self::Expr>> {
-        use check::typecheck::Typecheck;
+        use crate::check::typecheck::Typecheck;
 
         let InfixReparsed {
             mut expr,
@@ -579,7 +579,7 @@ where
         expr_str: &str,
         _: Extra,
     ) -> Result<CompileValue<Self::Expr>> {
-        use vm::compiler::Compiler;
+        use crate::vm::compiler::Compiler;
         info!("Compile `{}`", filename);
         let mut module = {
             let env = thread.get_env();
@@ -742,7 +742,7 @@ where
                 .map_err(Error::from)
                 .and_then(move |v| {
                     if run_io {
-                        future::Either::B(::compiler_pipeline::run_io(vm, v))
+                        future::Either::B(crate::compiler_pipeline::run_io(vm, v))
                     } else {
                         future::Either::A(future::ok(v))
                     }
@@ -769,7 +769,7 @@ where
             self.run_expr(compiler, vm1, &filename, expr_str, ())
                 .and_then(move |v| {
                     if run_io {
-                        future::Either::B(::compiler_pipeline::run_io(vm2, v))
+                        future::Either::B(crate::compiler_pipeline::run_io(vm2, v))
                     } else {
                         future::Either::A(future::ok(v))
                     }
@@ -819,7 +819,7 @@ pub struct Module {
 #[cfg(feature = "serde")]
 impl<'vm, 'de, D> Executable<'vm, ()> for Precompiled<D>
 where
-    D: ::serde::Deserializer<'de>,
+    D: crate::serde::Deserializer<'de>,
 {
     type Expr = ();
 
@@ -834,7 +834,7 @@ where
     where
         T: Send + VmRoot<'vm>,
     {
-        use vm::serialization::DeSeed;
+        use crate::vm::serialization::DeSeed;
 
         let module: Module = try_future!(DeSeed::new(&vm)
             .deserialize(self.0)
@@ -872,8 +872,8 @@ where
     where
         T: Send + VmRoot<'vm>,
     {
-        use vm::internal::Global;
-        use vm::serialization::DeSeed;
+        use crate::vm::internal::Global;
+        use crate::vm::serialization::DeSeed;
 
         let Global {
             metadata,
@@ -901,12 +901,12 @@ pub fn compile_to<S, T, E>(
     serializer: S,
 ) -> StdResult<S::Ok, Either<Error, S::Error>>
 where
-    S: ::serde::Serializer,
+    S: crate::serde::Serializer,
     S::Error: 'static,
     T: Compileable<E>,
 {
-    use serde::ser::SerializeState;
-    use vm::serialization::SeSeed;
+    use crate::serde::ser::SerializeState;
+    use crate::vm::serialization::SeSeed;
     let CompileValue {
         expr: _,
         typ,
@@ -934,9 +934,9 @@ where
     E: Send + 'vm,
     T: Send + VmRoot<'vm>,
 {
-    use check::check_signature;
-    use vm::api::generic::A;
-    use vm::api::{VmType, IO};
+    use crate::check::check_signature;
+    use crate::vm::api::generic::A;
+    use crate::vm::api::{VmType, IO};
 
     if check_signature(&*vm.get_env(), &v.typ, &IO::<A>::make_forall_type(&vm)) {
         let ExecuteValue {

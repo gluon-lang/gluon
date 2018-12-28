@@ -1,22 +1,26 @@
-use std::fmt;
-use std::fs::{self, File};
-use std::io::{self, Read, Write};
-use std::sync::Mutex;
+use crate::real_std::{
+    fmt,
+    fs::{self, File},
+    io::{self, Read, Write},
+    sync::Mutex,
+};
 
 use futures::{
     future::{self, Either},
     Future,
 };
 
-use vm::api::generic::{A, B};
-use vm::api::{Getable, OpaqueValue, OwnedFunction, RuntimeResult, TypedBytecode, WithVM, IO};
-use vm::internal::ValuePrinter;
-use vm::stack::{self, StackFrame};
-use vm::thread::{RootedThread, Thread, ThreadInternal};
-use vm::types::*;
-use vm::{self, ExternModule, Result};
+use crate::vm::api::generic::{A, B};
+use crate::vm::api::{
+    Getable, OpaqueValue, OwnedFunction, RuntimeResult, TypedBytecode, WithVM, IO,
+};
+use crate::vm::internal::ValuePrinter;
+use crate::vm::stack::{self, StackFrame};
+use crate::vm::thread::{RootedThread, Thread, ThreadInternal};
+use crate::vm::types::*;
+use crate::vm::{self, ExternModule, Result};
 
-use compiler_pipeline::*;
+use crate::compiler_pipeline::*;
 
 use super::{Compiler, Error};
 
@@ -110,7 +114,7 @@ fn read_file_to_string(s: &str) -> IO<String> {
     match File::open(s).and_then(|mut file| file.read_to_string(&mut buffer)) {
         Ok(_) => IO::Value(buffer),
         Err(err) => {
-            use std::fmt::Write;
+            use crate::real_std::fmt::Write;
             buffer.clear();
             let _ = write!(&mut buffer, "{}", err);
             IO::Exception(buffer)
@@ -202,7 +206,7 @@ fn is_file_closed(file: &GluonFile) -> bool {
 fn read_char() -> IO<char> {
     match io::stdin().bytes().next() {
         Some(result) => match result {
-            Ok(b) => ::std::char::from_u32(b as u32)
+            Ok(b) => crate::real_std::char::from_u32(b as u32)
                 .map(IO::Value)
                 .unwrap_or_else(|| IO::Exception("Not a valid char".into())),
             Err(err) => IO::Exception(format!("{}", err)),
@@ -216,7 +220,7 @@ fn read_line() -> IO<String> {
     match io::stdin().read_line(&mut buffer) {
         Ok(_) => IO::Value(buffer),
         Err(err) => {
-            use std::fmt::Write;
+            use crate::real_std::fmt::Write;
             buffer.clear();
             let _ = write!(&mut buffer, "{}", err);
             IO::Exception(buffer)
@@ -240,9 +244,9 @@ fn catch<'vm>(
             {
                 let mut context = vm.context();
                 {
-                    let mut stack = context.stack_frame::<stack::State>();
+                    let stack = context.stack_frame::<stack::State>();
 
-                    if let Err(err) = ::vm::thread::reset_stack(stack, frame_level) {
+                    if let Err(err) = crate::vm::thread::reset_stack(stack, frame_level) {
                         return Either::A(future::ok(IO::Exception(err.to_string().into())));
                     }
                 }
@@ -266,7 +270,7 @@ fn throw(msg: String) -> IO<OpaqueValue<RootedThread, A>> {
 }
 
 fn clear_frames<T>(mut err: Error, stack: StackFrame) -> IO<T> {
-    let new_trace = match ::vm::thread::reset_stack(stack, 1) {
+    let new_trace = match crate::vm::thread::reset_stack(stack, 1) {
         Ok(x) => x,
         Err(err) => return IO::Exception(err.to_string()),
     };
@@ -330,7 +334,7 @@ fn load_script(
 
 mod std {
     pub mod io {
-        pub use io as prim;
+        pub use crate::io as prim;
     }
 }
 

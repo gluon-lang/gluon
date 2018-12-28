@@ -8,7 +8,7 @@ use gluon::vm::api::{FunctionRef, OpaqueValue};
 use gluon::vm::reference::Reference;
 use gluon::{Compiler, RootedThread, Thread};
 
-use support::*;
+use crate::support::*;
 
 fn verify_value_cloned(from: &Thread, to: &Thread) {
     Compiler::new()

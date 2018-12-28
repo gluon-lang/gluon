@@ -9,7 +9,7 @@ extern crate gluon_completion as completion;
 #[macro_use]
 mod support;
 
-use support::*;
+use crate::support::*;
 
 use gluon::base::pos::BytePos;
 use gluon::base::types::Type;

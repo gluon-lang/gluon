@@ -49,34 +49,35 @@ pub mod rand_bind;
 #[cfg(feature = "regex")]
 pub mod regex_bind;
 
-pub use vm::thread::{RootedThread, Thread};
+pub use crate::vm::thread::{RootedThread, Thread};
 
 use futures::{Future, IntoFuture};
 
 use either::Either;
 
+use std as real_std;
 use std::env;
 use std::error::Error as StdError;
 use std::path::PathBuf;
 use std::result::Result as StdResult;
 use std::sync::Arc;
 
-use base::ast::{self, SpannedExpr};
-use base::error::{Errors, InFile};
-use base::filename_to_module;
-use base::fnv::FnvMap;
-use base::metadata::Metadata;
-use base::pos::{self, BytePos, Span, Spanned};
-use base::symbol::{Symbol, SymbolModule, Symbols};
-use base::types::{ArcType, TypeCache};
+use crate::base::ast::{self, SpannedExpr};
+use crate::base::error::{Errors, InFile};
+use crate::base::filename_to_module;
+use crate::base::fnv::FnvMap;
+use crate::base::metadata::Metadata;
+use crate::base::pos::{self, BytePos, Span, Spanned};
+use crate::base::symbol::{Symbol, SymbolModule, Symbols};
+use crate::base::types::{ArcType, TypeCache};
 
-use format::Formatter;
+use crate::format::Formatter;
 
-use compiler_pipeline::*;
-use import::{add_extern_module, DefaultImporter, Import};
-use vm::api::{Getable, Hole, OpaqueValue, VmType};
-use vm::compiler::CompiledModule;
-use vm::macros;
+use crate::compiler_pipeline::*;
+use crate::import::{add_extern_module, DefaultImporter, Import};
+use crate::vm::api::{Getable, Hole, OpaqueValue, VmType};
+use crate::vm::compiler::CompiledModule;
+use crate::vm::macros;
 
 quick_error! {
 /// Error type wrapping all possible errors that can be generated from gluon
@@ -101,7 +102,7 @@ pub enum Error {
         from()
     }
     /// Error found when executing code in the virtual machine
-    VM(err: ::vm::Error) {
+    VM(err: crate::vm::Error) {
         description(err.description())
         display("{}", err)
         from()
@@ -436,7 +437,7 @@ impl Compiler {
         file: &str,
         expr_str: &str,
     ) -> Result<(SpannedExpr<Symbol>, ArcType, Metadata)> {
-        use check::metadata;
+        use crate::check::metadata;
         let (mut expr, typ) = self.typecheck_str(vm, file, expr_str, None)?;
 
         let (metadata, _) = metadata::metadata(&*vm.get_env(), &mut expr);
@@ -471,7 +472,7 @@ impl Compiler {
         vm: &'vm Thread,
         filename: &str,
     ) -> impl Future<Item = (), Error = Error> {
-        use macros::MacroExpander;
+        use crate::macros::MacroExpander;
 
         // Use the import macro's path resolution if it exists so that we mimick the import
         // macro as close as possible
@@ -693,7 +694,8 @@ impl VmBuilder {
     }
 
     pub fn build(self) -> RootedThread {
-        let vm = RootedThread::with_global_state(::vm::vm::GlobalVmStateBuilder::new().build());
+        let vm =
+            RootedThread::with_global_state(crate::vm::vm::GlobalVmStateBuilder::new().build());
 
         let import = Import::new(DefaultImporter);
         if let Some(import_paths) = self.import_paths {
@@ -710,53 +712,53 @@ impl VmBuilder {
             .run_expr::<OpaqueValue<&Thread, Hole>>(&vm, "", r#" import! std.types "#)
             .unwrap_or_else(|err| panic!("{}", err));
 
-        add_extern_module(&vm, "std.prim", ::vm::primitives::load);
-        add_extern_module(&vm, "std.byte.prim", ::vm::primitives::load_byte);
-        add_extern_module(&vm, "std.int.prim", ::vm::primitives::load_int);
-        add_extern_module(&vm, "std.float.prim", ::vm::primitives::load_float);
-        add_extern_module(&vm, "std.string.prim", ::vm::primitives::load_string);
-        add_extern_module(&vm, "std.fs.prim", ::vm::primitives::load_fs);
-        add_extern_module(&vm, "std.path.prim", ::vm::primitives::load_path);
-        add_extern_module(&vm, "std.char.prim", ::vm::primitives::load_char);
-        add_extern_module(&vm, "std.array.prim", ::vm::primitives::load_array);
+        add_extern_module(&vm, "std.prim", crate::vm::primitives::load);
+        add_extern_module(&vm, "std.byte.prim", crate::vm::primitives::load_byte);
+        add_extern_module(&vm, "std.int.prim", crate::vm::primitives::load_int);
+        add_extern_module(&vm, "std.float.prim", crate::vm::primitives::load_float);
+        add_extern_module(&vm, "std.string.prim", crate::vm::primitives::load_string);
+        add_extern_module(&vm, "std.fs.prim", crate::vm::primitives::load_fs);
+        add_extern_module(&vm, "std.path.prim", crate::vm::primitives::load_path);
+        add_extern_module(&vm, "std.char.prim", crate::vm::primitives::load_char);
+        add_extern_module(&vm, "std.array.prim", crate::vm::primitives::load_array);
 
-        add_extern_module(&vm, "std.lazy.prim", ::vm::lazy::load);
-        add_extern_module(&vm, "std.reference.prim", ::vm::reference::load);
+        add_extern_module(&vm, "std.lazy.prim", crate::vm::lazy::load);
+        add_extern_module(&vm, "std.reference.prim", crate::vm::reference::load);
 
-        add_extern_module(&vm, "std.channel.prim", ::vm::channel::load_channel);
-        add_extern_module(&vm, "std.thread.prim", ::vm::channel::load_thread);
-        add_extern_module(&vm, "std.debug.prim", ::vm::debug::load);
-        add_extern_module(&vm, "std.io.prim", ::io::load);
-        add_extern_module(&vm, "std.process.prim", ::process::load);
+        add_extern_module(&vm, "std.channel.prim", crate::vm::channel::load_channel);
+        add_extern_module(&vm, "std.thread.prim", crate::vm::channel::load_thread);
+        add_extern_module(&vm, "std.debug.prim", crate::vm::debug::load);
+        add_extern_module(&vm, "std.io.prim", crate::io::load);
+        add_extern_module(&vm, "std.process.prim", crate::process::load);
 
         add_extern_module_if!(
             #[cfg(feature = "serialization")],
             available_if = "gluon is compiled with the 'serialization' feature",
-            args(&vm, "std.json.prim", ::vm::api::json::load)
+            args(&vm, "std.json.prim", crate::vm::api::json::load)
         );
 
         add_extern_module_if!(
             #[cfg(feature = "regex")],
             available_if = "gluon is compiled with the 'regex' feature",
-            args(&vm, "std.regex.prim", ::regex_bind::load)
+            args(&vm, "std.regex.prim", crate::regex_bind::load)
         );
 
         add_extern_module_if!(
             #[cfg(feature = "web")],
             available_if = "gluon is compiled with the 'web' feature",
-            args(&vm, "std.http.prim_types", ::http::load_types)
+            args(&vm, "std.http.prim_types", crate::http::load_types)
         );
 
         add_extern_module_if!(
             #[cfg(feature = "web")],
             available_if = "gluon is compiled with the 'web' feature",
-            args(&vm, "std.http.prim", ::http::load)
+            args(&vm, "std.http.prim", crate::http::load)
         );
 
         add_extern_module_if!(
             #[cfg(all(feature = "random", not(target_arch = "wasm32")))],
             available_if = "gluon is compiled with the 'random' feature and is not targeting WASM",
-            args(&vm, "std.random.prim", ::rand_bind::load)
+            args(&vm, "std.random.prim", crate::rand_bind::load)
         );
 
         vm

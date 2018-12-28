@@ -4,7 +4,7 @@ extern crate gluon;
 use gluon::vm::api::{FunctionRef, Hole, OpaqueValue};
 use gluon::{Compiler, Thread};
 
-use support::make_vm;
+use crate::support::make_vm;
 
 #[macro_use]
 mod support;

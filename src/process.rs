@@ -1,6 +1,5 @@
-use std::process::Command;
-
-use vm::{api::IO, thread::Thread, ExternModule, Result};
+use crate::real_std::process::Command;
+use crate::vm::{api::IO, thread::Thread, ExternModule, Result};
 
 #[derive(Getable, VmType)]
 #[gluon(crate_name = "::vm")]
@@ -33,7 +32,7 @@ fn execute(create: CreateProcess) -> IO<Option<i32>> {
 
 mod std {
     pub mod process {
-        pub use process as prim;
+        pub use crate::process as prim;
     }
 }
 

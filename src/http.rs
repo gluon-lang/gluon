@@ -19,9 +19,9 @@ use futures::{
 
 use self::http::header::{HeaderMap, HeaderName, HeaderValue};
 
-use base::types::{ArcType, Type};
+use crate::base::types::{ArcType, Type};
 
-use vm::{
+use crate::vm::{
     self,
     api::{
         generic, Collect, Eff, Function, Getable, OpaqueValue, PushAsRef, Pushable, VmType, WithVM,
@@ -41,10 +41,6 @@ macro_rules! try_future {
             Err(err) => return $f(::futures::future::err(err.into())),
         }
     };
-}
-
-mod std {
-    pub use http;
 }
 
 struct HttpEffect;
@@ -124,7 +120,7 @@ fn read_chunk(
     let body = body.0.clone();
     poll_fn(move || {
         let mut stream = body.lock().unwrap();
-        stream.poll().map(|async| async.map(IO::Value))
+        stream.poll().map(|r#async| r#async.map(IO::Value))
     })
 }
 

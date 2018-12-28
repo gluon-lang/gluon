@@ -13,7 +13,7 @@ use std::io::Read;
 
 use futures::Future;
 
-use serde::ser::SerializeState;
+use crate::serde::ser::SerializeState;
 
 use gluon::vm::api::{Hole, OpaqueValue};
 use gluon::vm::serialization::{DeSeed, SeSeed};

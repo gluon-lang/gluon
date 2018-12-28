@@ -11,7 +11,7 @@ use tempfile::NamedTempFile;
 #[macro_use]
 mod support;
 
-use support::*;
+use crate::support::*;
 
 #[test]
 fn read_file() {
