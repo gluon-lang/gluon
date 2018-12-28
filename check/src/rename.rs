@@ -1,4 +1,4 @@
-use base::{
+use crate::base::{
     ast::{
         self, DisplayEnv, Do, Expr, MutVisitor, Pattern, SpannedAlias, SpannedAstType, SpannedExpr,
         TypedIdent,

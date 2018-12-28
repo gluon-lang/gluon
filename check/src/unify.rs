@@ -2,16 +2,16 @@ use std::fmt;
 
 use pretty::{Arena, DocAllocator};
 
-use base::error::Errors;
-use base::symbol::Symbol;
-use base::types::ToDoc;
+use crate::base::error::Errors;
+use crate::base::symbol::Symbol;
+use crate::base::types::ToDoc;
 
-use substitution::{self, Substitutable, Substitution};
+use crate::substitution::{self, Substitutable, Substitution};
 
 #[derive(Debug, PartialEq)]
 pub enum Error<T, E> {
     TypeMismatch(T, T),
-    Substitution(::substitution::Error<T>),
+    Substitution(crate::substitution::Error<T>),
     Other(E),
 }
 
@@ -21,7 +21,7 @@ where
     E: fmt::Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use unify::Error::*;
+        use crate::unify::Error::*;
 
         match *self {
             TypeMismatch(ref l, ref r) => {
@@ -205,12 +205,12 @@ mod test {
 
     use std::fmt;
 
-    use base::error::Errors;
-    use base::merge::merge;
-    use base::symbol::Symbol;
-    use base::types::Walker;
+    use crate::base::error::Errors;
+    use crate::base::merge::merge;
+    use crate::base::symbol::Symbol;
+    use crate::base::types::Walker;
 
-    use substitution::{Substitutable, Substitution};
+    use crate::substitution::{Substitutable, Substitution};
 
     #[derive(Debug, Clone, Eq, PartialEq, Hash)]
     pub struct TType(Box<Type<TType>>);
@@ -369,7 +369,7 @@ mod test {
         assert_eq!(
             result,
             Err(Errors::from(vec![Error::Substitution(
-                ::substitution::Error::Occurs(var1, fun.clone()),
+                crate::substitution::Error::Occurs(var1, fun.clone()),
             )]))
         );
     }

@@ -10,7 +10,7 @@ use std::{
 
 use codespan_reporting::Diagnostic;
 
-use base::{
+use crate::base::{
     ast::{
         self, Argument, AstType, DisplayEnv, Do, Expr, IdentEnv, Literal, MutVisitor, Pattern,
         PatternField, SpannedExpr, SpannedIdent, SpannedPattern, TypeBinding, Typed, TypedIdent,
@@ -31,11 +31,11 @@ use base::{
     },
 };
 
-use implicits;
-use kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
-use substitution::{self, Substitution};
-use unify::{self, Error as UnifyError};
-use unify_type::{self, new_skolem_scope, Error as UnifyTypeError};
+use crate::implicits;
+use crate::kindcheck::{self, Error as KindCheckError, KindCheck, KindError};
+use crate::substitution::{self, Substitution};
+use crate::unify::{self, Error as UnifyError};
+use crate::unify_type::{self, new_skolem_scope, Error as UnifyTypeError};
 
 /// Type representing a single error when checking a type
 #[derive(Debug, PartialEq)]
@@ -55,7 +55,7 @@ pub enum TypeError<I> {
     /// Error were found when trying to unify the kinds of two types
     KindError(KindCheckError<I>),
     /// Error were found when checking value recursion
-    RecursionCheck(::recursion_check::Error),
+    RecursionCheck(crate::recursion_check::Error),
     /// Multiple types were declared with the same name in the same expression
     DuplicateTypeDefinition(I),
     /// A field was defined more than once in a record constructor or pattern match
@@ -95,8 +95,8 @@ impl<I> From<implicits::Error<I>> for TypeError<I> {
     }
 }
 
-impl<I> From<::recursion_check::Error> for TypeError<I> {
-    fn from(e: ::recursion_check::Error) -> Self {
+impl<I> From<crate::recursion_check::Error> for TypeError<I> {
+    fn from(e: crate::recursion_check::Error) -> Self {
         TypeError::RecursionCheck(e)
     }
 }
@@ -262,7 +262,7 @@ impl fmt::Display for Help {
     }
 }
 
-pub type HelpError<Id> = ::base::error::Help<TypeError<Id>, Help>;
+pub type HelpError<Id> = crate::base::error::Help<TypeError<Id>, Help>;
 pub type SpannedTypeError<Id> = Spanned<HelpError<Id>, BytePos>;
 
 pub(crate) type TcResult<T> = Result<T, TypeError<Symbol>>;
@@ -344,14 +344,14 @@ pub struct Typecheck<'a> {
     pub(crate) type_cache: TypeCache<Symbol, ArcType>,
     kind_cache: KindCache,
 
-    pub(crate) implicit_resolver: ::implicits::ImplicitResolver<'a>,
+    pub(crate) implicit_resolver: crate::implicits::ImplicitResolver<'a>,
     unbound_variables: ScopedMap<Symbol, ArcType>,
 }
 
 /// Error returned when unsuccessfully typechecking an expression
 pub type Error = Errors<SpannedTypeError<Symbol>>;
 
-pub use implicits::{Error as ImplicitError, ErrorKind as ImplicitErrorKind};
+pub use crate::implicits::{Error as ImplicitError, ErrorKind as ImplicitErrorKind};
 
 impl<'a> Typecheck<'a> {
     /// Create a new typechecker which typechecks expressions in `module`
@@ -377,7 +377,7 @@ impl<'a> Typecheck<'a> {
             type_variables: ScopedMap::new(),
             type_cache: type_cache,
             kind_cache: kind_cache,
-            implicit_resolver: ::implicits::ImplicitResolver::new(environment, metadata),
+            implicit_resolver: crate::implicits::ImplicitResolver::new(environment, metadata),
             unbound_variables: ScopedMap::new(),
         }
     }
@@ -579,7 +579,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn generalize_binding(&mut self, level: u32, binding: &mut ValueBinding<Symbol>) {
-        ::implicits::resolve(self, &mut binding.expr);
+        crate::implicits::resolve(self, &mut binding.expr);
 
         self.type_variables.enter_scope();
 
@@ -612,7 +612,7 @@ impl<'a> Typecheck<'a> {
         args: &mut Iterator<Item = &'i mut SpannedIdent<Symbol>>,
         expr: &mut SpannedExpr<Symbol>,
     ) {
-        ::implicits::resolve(self, expr);
+        crate::implicits::resolve(self, expr);
         let typ = self.type_cache.hole();
         TypeGeneralizer::new(level, self, &typ, expr.span).generalize_variables(args, expr)
     }
@@ -638,7 +638,7 @@ impl<'a> Typecheck<'a> {
                 | PatternError(ref mut typ, _)
                 | InvalidProjection(ref mut typ) => self.generalize_type(0, typ, err.span),
                 UnableToResolveImplicit(ref mut inner_err) => {
-                    use implicits::ErrorKind::*;
+                    use crate::implicits::ErrorKind::*;
                     match inner_err.kind {
                         MissingImplicit(ref mut typ) => {
                             self.generalize_type(0, typ, err.span);
@@ -712,7 +712,7 @@ impl<'a> Typecheck<'a> {
         self.subs.clear();
         self.environment.stack.clear();
 
-        if let Err(err) = ::recursion_check::check_expr(expr) {
+        if let Err(err) = crate::recursion_check::check_expr(expr) {
             self.errors.extend(
                 err.into_iter()
                     .map(|err| pos::spanned(err.span, TypeError::from(err.value).into())),
@@ -797,7 +797,7 @@ impl<'a> Typecheck<'a> {
                             };
                             scope_count += 1;
                         }
-                        TailCall::TypeImplicit(mut typ, args) => {
+                        TailCall::TypeImplicit(typ, args) => {
                             if !args.is_empty() {
                                 match expr.value {
                                     Expr::App {
@@ -830,7 +830,7 @@ impl<'a> Typecheck<'a> {
                             };
                             break;
                         }
-                        TailCall::Type(mut typ) => {
+                        TailCall::Type(typ) => {
                             returned_type = match expected_type {
                                 Some(expected_type) => {
                                     self.subsumes_expr(expr.span, &typ, expected_type.clone(), expr)
@@ -1241,7 +1241,7 @@ impl<'a> Typecheck<'a> {
                             match expected_field_type {
                                 Some(expected_field_type) => {
                                     let mut implicit_args = Vec::new();
-                                    let mut typ = self.subsumes_implicit(
+                                    let typ = self.subsumes_implicit(
                                         field.name.span,
                                         ErrorOrder::ExpectedActual,
                                         &expected_field_type,
@@ -1317,7 +1317,7 @@ impl<'a> Typecheck<'a> {
                         Err(error) => {
                             self.error(
                                 id.span,
-                                ::base::error::Help {
+                                crate::base::error::Help {
                                     error,
                                     help: Some(Help::UndefinedFlatMapInDo),
                                 },
@@ -1859,7 +1859,7 @@ impl<'a> Typecheck<'a> {
         type_cache: &TypeCache<Symbol, ArcType>,
         ast_type: &AstType<Symbol>,
     ) -> ArcType {
-        use base::pos::HasSpan;
+        use crate::base::pos::HasSpan;
 
         match **ast_type {
             Type::ExtendRow {
@@ -1936,7 +1936,7 @@ impl<'a> Typecheck<'a> {
         for bind in bindings.iter_mut() {
             // Functions which are declared as `let f x = ...` are allowed to be self
             // recursive
-            let mut typ = if !is_recursive {
+            let typ = if !is_recursive {
                 if let Some(ref mut typ) = bind.typ {
                     self.kindcheck(typ);
 
@@ -2158,7 +2158,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn check_undefined_variables(&mut self, typ: &AstType<Symbol>) {
-        use base::pos::HasSpan;
+        use crate::base::pos::HasSpan;
         match **typ {
             Type::Generic(ref id) => {
                 if !self.type_variables.contains_key(&id.id) {
@@ -2801,7 +2801,7 @@ impl<'a> Typecheck<'a> {
     }
 
     fn top_skolem_scope(&mut self, typ: &ArcType) -> ArcType {
-        ::unify_type::top_skolem_scope(&self.subs, typ)
+        crate::unify_type::top_skolem_scope(&self.subs, typ)
     }
 
     fn error_on_duplicated_field(
@@ -3368,7 +3368,7 @@ impl<'a, 'b> TypeGeneralizer<'a, 'b> {
             }
 
             Type::Forall(ref params, ref typ, Some(ref vars)) => {
-                use substitution::is_variable_unified;
+                use crate::substitution::is_variable_unified;
                 trace!("Generalize `{}` {:?}", typ, vars);
                 let typ = {
                     let subs = &self.tc.subs;

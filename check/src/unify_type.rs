@@ -1,19 +1,19 @@
 use std::{borrow::Cow, fmt, mem};
 
-use base::error::Errors;
-use base::fnv::FnvMap;
-use base::kind::ArcKind;
-use base::merge;
-use base::resolve::{self, Error as ResolveError};
-use base::symbol::{Symbol, SymbolRef};
-use base::types::{
+use crate::base::error::Errors;
+use crate::base::fnv::FnvMap;
+use crate::base::kind::ArcKind;
+use crate::base::merge;
+use crate::base::resolve::{self, Error as ResolveError};
+use crate::base::symbol::{Symbol, SymbolRef};
+use crate::base::types::{
     self, AppVec, ArcType, ArgType, BuiltinType, Field, Filter, Generic, Skolem, Type, TypeCache,
     TypeEnv, TypeFormatter, TypeVariable,
 };
 
-use substitution::{Substitutable, Substitution, Variable, VariableFactory};
-use unify;
-use unify::{Error as UnifyError, GenericVariant, Unifiable, Unifier};
+use crate::substitution::{Substitutable, Substitution, Variable, VariableFactory};
+use crate::unify;
+use crate::unify::{Error as UnifyError, GenericVariant, Unifiable, Unifier};
 
 use smallvec::SmallVec;
 
@@ -1324,7 +1324,7 @@ fn reconstruct_forall(
     inner_type: ArcType,
     vars: &[ArcType],
 ) -> ArcType {
-    use substitution::is_variable_unified;
+    use crate::substitution::is_variable_unified;
 
     let mut new_params = Vec::new();
     let mut new_vars = Vec::new();
@@ -1342,14 +1342,14 @@ fn reconstruct_forall(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base::error::Errors;
+    use crate::base::error::Errors;
 
-    use base::kind::Kind;
-    use base::types::{ArcType, Field, Type};
-    use substitution::Substitution;
-    use tests::*;
-    use unify::unify;
-    use unify::Error::*;
+    use crate::base::kind::Kind;
+    use crate::base::types::{ArcType, Field, Type};
+    use crate::substitution::Substitution;
+    use crate::tests::*;
+    use crate::unify::unify;
+    use crate::unify::Error::*;
 
     #[test]
     fn detect_multiple_type_errors_in_single_type() {

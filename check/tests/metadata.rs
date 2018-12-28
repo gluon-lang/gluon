@@ -8,9 +8,9 @@ extern crate gluon_base as base;
 extern crate gluon_check as check;
 extern crate gluon_parser as parser;
 
-use base::ast::{Argument, SpannedExpr};
-use base::metadata::{Attribute, Comment, CommentType, Metadata, MetadataEnv};
-use base::symbol::{Symbol, SymbolRef};
+use crate::base::ast::{Argument, SpannedExpr};
+use crate::base::metadata::{Attribute, Comment, CommentType, Metadata, MetadataEnv};
+use crate::base::symbol::{Symbol, SymbolRef};
 
 fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
     check::metadata::metadata(env, expr).0
@@ -18,7 +18,7 @@ fn metadata(env: &MetadataEnv, expr: &mut SpannedExpr<Symbol>) -> Metadata {
 
 mod support;
 
-use support::intern;
+use crate::support::intern;
 
 struct MockEnv;
 

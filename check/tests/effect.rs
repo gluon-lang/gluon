@@ -11,7 +11,7 @@ extern crate gluon_parser as parser;
 #[macro_use]
 mod support;
 
-use check::typecheck::TypeError;
+use crate::check::typecheck::TypeError;
 
 test_check! {
     convert,

@@ -3,7 +3,7 @@
 
 extern crate codespan;
 
-use base::{
+use crate::base::{
     self,
     ast::{DisplayEnv, Expr, IdentEnv, SpannedExpr},
     error::InFile,
@@ -13,9 +13,9 @@ use base::{
     types::{self, Alias, ArcType, Field, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv},
 };
 
-use parser::{self, parse_partial_expr, reparse_infix, ParseErrors};
+use crate::parser::{self, parse_partial_expr, reparse_infix, ParseErrors};
 
-use check::{
+use crate::check::{
     metadata, rename,
     typecheck::{self, Typecheck},
 };
@@ -410,7 +410,7 @@ macro_rules! test_check_err {
 macro_rules! assert_err {
     ($e: expr, $($id: pat),+) => {{
         #[allow(unused_imports)]
-        use check::{
+        use crate::check::{
             typecheck::TypeError::*,
             unify::Error::{TypeMismatch, Substitution, Other},
             substitution::Error::Occurs,
@@ -427,7 +427,7 @@ macro_rules! assert_err {
                 let mut iter = (&errors).into_iter();
                 $(
                 match iter.next() {
-                    Some(&::base::pos::Spanned { value: ::base::error::Help { error: $id, .. }, .. }) => (),
+                    Some(&crate::base::pos::Spanned { value: crate::base::error::Help { error: $id, .. }, .. }) => (),
                     _ => assert!(false, "Found errors:\n{}\nbut expected {}",
                                         errors, stringify!($id)),
                 }
@@ -456,7 +456,7 @@ macro_rules! assert_unify_err {
 macro_rules! assert_multi_unify_err {
     ($e: expr, $( [ $( $id: pat ),+ ] ),+) => {{
         #[allow(unused_imports)]
-        use check::{
+        use crate::check::{
             typecheck::TypeError::*,
             unify::Error::{TypeMismatch, Substitution, Other},
             substitution::Error::Occurs,
