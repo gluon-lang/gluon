@@ -9,11 +9,11 @@ extern crate gluon_parser as parser;
 
 mod support;
 
-use support::*;
+use crate::support::*;
 
-use base::types::Type;
+use crate::base::types::Type;
 
-use completion::SignatureHelp;
+use crate::completion::SignatureHelp;
 
 fn signature_help(expr_str: &str, row: usize, column: usize) -> Option<SignatureHelp> {
     let offset = loc(expr_str, row, column);

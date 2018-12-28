@@ -8,18 +8,18 @@ extern crate gluon_check as check;
 extern crate gluon_completion as completion;
 extern crate gluon_parser as parser;
 
-use base::ast::Argument;
-use base::kind::{ArcKind, Kind};
-use base::metadata::Metadata;
-use base::metadata::{Comment, CommentType};
-use base::pos::{BytePos, Span};
-use base::types::{ArcType, Field, Type};
+use crate::base::ast::Argument;
+use crate::base::kind::{ArcKind, Kind};
+use crate::base::metadata::Metadata;
+use crate::base::metadata::{Comment, CommentType};
+use crate::base::pos::{BytePos, Span};
+use crate::base::types::{ArcType, Field, Type};
 
 use either::Either;
 
 #[allow(unused)]
 mod support;
-use support::{intern, loc, typ, MockEnv};
+use crate::support::{intern, loc, typ, MockEnv};
 
 fn line_comment<S>(s: S) -> Comment
 where

@@ -2,17 +2,17 @@
 
 extern crate codespan;
 
-use base::ast::SpannedExpr;
-use base::error::InFile;
-use base::kind::{ArcKind, Kind, KindEnv};
-use base::metadata::{Metadata, MetadataEnv};
-use base::pos::BytePos;
-use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
-use base::types::{self, Alias, ArcType, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv};
+use crate::base::ast::SpannedExpr;
+use crate::base::error::InFile;
+use crate::base::kind::{ArcKind, Kind, KindEnv};
+use crate::base::metadata::{Metadata, MetadataEnv};
+use crate::base::pos::BytePos;
+use crate::base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
+use crate::base::types::{self, Alias, ArcType, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv};
 
-use check::typecheck::{self, Typecheck};
-use check::{metadata, rename};
-use parser::{parse_partial_expr, reparse_infix, ParseErrors};
+use crate::check::typecheck::{self, Typecheck};
+use crate::check::{metadata, rename};
+use crate::parser::{parse_partial_expr, reparse_infix, ParseErrors};
 
 use std::cell::RefCell;
 use std::rc::Rc;
