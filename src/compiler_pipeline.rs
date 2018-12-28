@@ -105,7 +105,7 @@ pub trait MacroExpandable {
         Self: Sized + Send + 'f,
     {
         (async move {
-            let mut macros = MacroExpander::new(thread);
+            let mut macros = MacroExpander::new(thread, compiler.task_spawner.clone());
             let expr = await!(self.expand_macro_with(compiler, &mut macros, file, expr_str))?;
             if let Err(err) = macros.finish() {
                 return Err((

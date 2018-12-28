@@ -9,12 +9,15 @@ use std::{
     io::Read,
     mem,
     path::PathBuf,
+    pin::Pin,
     sync::{Arc, Mutex, RwLock},
 };
 
 use futures::{channel::oneshot, future, prelude::*};
 
 use itertools::Itertools;
+
+use either::Either;
 
 use crate::base::{
     ast::{expr_to_path, Expr, Literal, SpannedExpr, Typed, TypedIdent},
@@ -33,9 +36,7 @@ use crate::vm::{
     ExternLoader, ExternModule,
 };
 
-use crate::compiler_pipeline::*;
-
-use super::Compiler;
+use crate::{box_future, compiler_pipeline::*, Compiler};
 
 quick_error! {
     /// Error type for the import macro
@@ -120,14 +121,14 @@ impl Importer for DefaultImporter {
 
 enum UnloadedModule {
     Source(Cow<'static, str>),
-    Extern(ExternModule),
+    Extern(Vec<String>),
 }
 
 /// Macro which rewrites occurances of `import! "filename"` to a load of that file if it is not
 /// already loaded and then a global access to the loaded module
 pub struct Import<I = DefaultImporter> {
     pub paths: RwLock<Vec<PathBuf>>,
-    pub loaders: RwLock<FnvMap<String, ExternLoader>>,
+    pub loaders: RwLock<FnvMap<String, (Vec<String>, ExternLoader)>>,
     pub importer: I,
 
     /// Map of modules currently being loaded
@@ -154,11 +155,11 @@ impl<I> Import<I> {
         *self.paths.write().unwrap() = paths;
     }
 
-    pub fn add_loader(&self, module: &str, loader: ExternLoader) {
+    pub fn add_loader(&self, module: &str, dependencies: Vec<String>, loader: ExternLoader) {
         self.loaders
             .write()
             .unwrap()
-            .insert(String::from(module), loader);
+            .insert(String::from(module), (dependencies, loader));
     }
 
     pub fn modules(&self) -> Vec<Cow<'static, str>> {
@@ -171,7 +172,7 @@ impl<I> Import<I> {
 
     fn get_unloaded_module(
         &self,
-        vm: &Thread,
+        _vm: &Thread,
         module: &str,
         filename: &str,
     ) -> Result<UnloadedModule, MacroError> {
@@ -189,9 +190,8 @@ impl<I> Import<I> {
             None => {
                 {
                     let mut loaders = self.loaders.write().unwrap();
-                    if let Some(loader) = loaders.get_mut(module) {
-                        let value = loader(vm)?;
-                        return Ok(UnloadedModule::Extern(value));
+                    if let Some((dependencies, _loader)) = loaders.get_mut(module) {
+                        return Ok(UnloadedModule::Extern(dependencies.clone()));
                     }
                 }
                 let paths = self.paths.read().unwrap();
@@ -221,6 +221,21 @@ impl<I> Import<I> {
         })
     }
 
+    // Breaks the self-recursion in load_module
+    fn load_module_boxed<'a>(
+        &'a self,
+        compiler: &'a mut Compiler,
+        vm: &'a Thread,
+        macros: &'a mut MacroExpander,
+        module_id: &'a Symbol,
+        span: Span<BytePos>,
+    ) -> Pin<Box<Future<Output = Result<(), (Option<ArcType>, MacroError)>> + Send + 'a>>
+    where
+        I: Importer,
+    {
+        box_future(self.load_module(compiler, vm, macros, module_id, span))
+    }
+
     pub async fn load_module<'a>(
         &'a self,
         compiler: &'a mut Compiler,
@@ -228,10 +243,12 @@ impl<I> Import<I> {
         macros: &'a mut MacroExpander,
         module_id: &'a Symbol,
         span: Span<BytePos>,
-    ) -> Result<Option<impl Future<Output = ()>>, (Option<ArcType>, MacroError)>
+    ) -> Result<(), (Option<ArcType>, MacroError)>
     where
         I: Importer,
     {
+        trace!("Loading {}", module_id);
+
         assert!(module_id.is_global());
         let modulename = module_id.name().definition_name();
         let mut filename = modulename.replace(".", "/");
@@ -255,23 +272,30 @@ impl<I> Import<I> {
 
         // Prevent any other threads from importing this module while we compile it
         let sender = {
-            let mut loading = self.loading.lock().unwrap();
-            match loading.entry(module_id.to_string()) {
-                Entry::Occupied(entry) => {
-                    get_state(macros).visited.pop();
-                    return Ok(Some(entry.get().clone().map(|_| ())));
+            let either = {
+                let mut loading = self.loading.lock().unwrap();
+                match loading.entry(module_id.to_string()) {
+                    Entry::Occupied(entry) => {
+                        trace!("Waiting on {}", module_id);
+                        get_state(macros).visited.pop();
+                        Either::Left(entry.get().clone())
+                    }
+                    Entry::Vacant(entry) => {
+                        let (sender, receiver) = oneshot::channel();
+                        entry.insert(receiver.shared());
+                        Either::Right(sender)
+                    }
                 }
-                Entry::Vacant(entry) => {
-                    let (sender, receiver) = oneshot::channel();
-                    entry.insert(receiver.shared());
-                    sender
-                }
+            };
+            match either {
+                Either::Left(recv) => return Ok(await!(recv.map(|_| ()))),
+                Either::Right(s) => s,
             }
         };
         if vm.global_env().global_exists(module_id.definition_name()) {
             let _ = sender.send(());
             get_state(macros).visited.pop();
-            return Ok(None);
+            return Ok(());
         }
 
         let result = await!(self.load_module_(compiler, vm, macros, module_id, &filename, span));
@@ -288,7 +312,9 @@ impl<I> Import<I> {
         get_state(macros).visited.pop();
         self.loading.lock().unwrap().remove(module_id.as_ref());
 
-        result.map(|_| None)
+        trace!("Loaded {}", module_id);
+
+        result
     }
 
     async fn load_module_<'a>(
@@ -311,11 +337,22 @@ impl<I> Import<I> {
             .map_err(|err| (None, err.into()))?;
 
         match unloaded_module {
-            UnloadedModule::Extern(ExternModule {
-                value,
-                typ,
-                metadata,
-            }) => {
+            UnloadedModule::Extern(dependencies) => {
+                for dep in dependencies {
+                    let dep = Symbol::from(format!("@{}", dep));
+                    await!(self.load_module_boxed(compiler, vm, macros, &dep, Span::default()))?;
+                }
+
+                let ExternModule {
+                    value,
+                    typ,
+                    metadata,
+                } = {
+                    let mut loaders = self.loaders.write().unwrap();
+                    let (_, loader) = loaders.get_mut(modulename).unwrap();
+                    loader(vm).map_err(|err| (None, err.into()))?
+                };
+
                 vm.set_global(module_id.clone(), typ, metadata, value.get_value())
                     .map_err(|err| (None, err.into()))?;
             }
@@ -418,10 +455,26 @@ pub fn add_extern_module<F>(thread: &Thread, name: &str, loader: F)
 where
     F: FnMut(&Thread) -> vm::Result<ExternModule> + Send + Sync + 'static,
 {
-    add_extern_module_(thread, name, Box::new(loader))
+    add_extern_module_with_deps(thread, name, vec![], loader)
 }
 
-fn add_extern_module_(thread: &Thread, name: &str, loader: ExternLoader) {
+pub(crate) fn add_extern_module_with_deps<F>(
+    thread: &Thread,
+    name: &str,
+    dependencies: Vec<String>,
+    loader: F,
+) where
+    F: FnMut(&Thread) -> vm::Result<ExternModule> + Send + Sync + 'static,
+{
+    add_extern_module_(thread, name, dependencies, Box::new(loader))
+}
+
+fn add_extern_module_(
+    thread: &Thread,
+    name: &str,
+    dependencies: Vec<String>,
+    loader: ExternLoader,
+) {
     let opt_macro = thread.get_macros().get("import");
     let import = opt_macro
         .as_ref()
@@ -432,7 +485,7 @@ fn add_extern_module_(thread: &Thread, name: &str, loader: ExternLoader) {
                  Did you mean to create this `Thread` with `gluon::new_vm`"
             )
         });
-    import.add_loader(name, loader);
+    import.add_loader(name, dependencies, loader);
 }
 
 macro_rules! add_extern_module_if {
@@ -440,9 +493,20 @@ macro_rules! add_extern_module_if {
         #[cfg($($features: tt)*)],
         available_if = $msg: expr,
         args($vm: expr, $mod_name: expr, $loader: path)
+    ) => {
+        add_extern_module_if!(
+            #[cfg($($features)*)],
+            available_if = $msg,
+            args($vm, $mod_name, vec![], $loader)
+        )
+    };
+    (
+        #[cfg($($features: tt)*)],
+        available_if = $msg: expr,
+        args($vm: expr, $mod_name: expr, $deps: expr, $loader: path)
     ) => {{
         #[cfg($($features)*)]
-        $crate::import::add_extern_module($vm, $mod_name, $loader);
+        $crate::import::add_extern_module_with_deps($vm, $mod_name, $deps, $loader);
 
         #[cfg(not($($features)*))]
         $crate::import::add_extern_module($vm, $mod_name, |_: &::vm::thread::Thread| -> ::vm::Result<::vm::ExternModule> {
@@ -525,8 +589,6 @@ where
                 Err(err) => return Err(err),
             };
 
-            info!("import! {}", modulename);
-
             let vm = macros.vm.clone();
             // Prefix globals with @ so they don't shadow any local variables
             let name = Symbol::from(if modulename.starts_with('@') {
@@ -536,7 +598,6 @@ where
             });
 
             // Only load the script if it is not already loaded
-            debug!("Import '{}' {:?}", modulename, get_state(macros).visited);
             if !vm.global_env().global_exists(&modulename) {
                 let opt = get_state(macros)
                     .modules_with_errors.read().unwrap()
@@ -550,17 +611,10 @@ where
 
                 // TODO Inherit settings from the parent compiler instead of forcing full_metadata here
                 // (which is necessary for the doc generator)
-                let mut temp_compiler = Compiler::new().full_metadata(true);
+                let mut temp_compiler = Compiler::new().full_metadata(true).task_spawner_raw(macros.task_spawner.clone());
                 match await!(self.load_module(&mut temp_compiler, &vm, macros, &name, args[0].span,))
                 {
-                    Ok(Some(future)) => {
-                        let span = args[0].span;
-                        return await!(future.map(move |_| Ok(pos::spanned(
-                            span,
-                            Expr::Ident(TypedIdent::new(name))
-                        ))));
-                    }
-                    Ok(None) => (),
+                    Ok(()) => (),
                     Err((typ, err)) => {
                         macros.errors.push(pos::spanned(args[0].span, err));
 

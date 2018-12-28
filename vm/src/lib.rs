@@ -208,13 +208,13 @@ impl ExternModule {
     where
         T: VmType + api::Pushable<'vm> + Send + Sync,
     {
-        ExternModule::with_metadata(thread, value, Metadata::default())
+        ExternModule::with_metadata(thread, Metadata::default(), value)
     }
 
     pub fn with_metadata<'vm, T>(
         thread: &'vm Thread,
-        value: T,
         metadata: Metadata,
+        value: T,
     ) -> Result<ExternModule>
     where
         T: VmType + api::Pushable<'vm> + Send + Sync,

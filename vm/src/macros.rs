@@ -1,7 +1,7 @@
 //! Module providing the building blocks to create macros and expand them.
 use std::error::Error as StdError;
 use std::mem;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use crate::base::{
     ast::{self, Expr, MutVisitor, SpannedExpr, ValueBindings},
@@ -14,7 +14,12 @@ use crate::base::{
 
 use crate::thread::{RootedThread, Thread};
 
-use futures_preview::{future::BoxFuture, prelude::*};
+use futures_preview::{
+    prelude::*,
+    stream,
+    future::BoxFuture,
+    task::{Spawn, SpawnError, SpawnExt},
+};
 
 pub type Error = Box<dyn StdError + Send + Sync>;
 pub type SpannedError = Spanned<Error, BytePos>;
@@ -74,38 +79,71 @@ impl MacroEnv {
     pub fn get(&self, name: &str) -> Option<Arc<dyn Macro>> {
         self.macros.read().unwrap().get(name).cloned()
     }
-
-    /// Runs the macros in this `MacroEnv` on `expr` using `env` as the context of the expansion
-    pub async fn run<'f>(
-        &'f self,
-        vm: &'f Thread,
-        symbols: &'f mut Symbols,
-        expr: &'f mut SpannedExpr<Symbol>,
-    ) -> Result<(), Errors> {
-        let mut expander = MacroExpander::new(vm);
-        await!(expander.run(symbols, expr));
-        expander.finish()
-    }
 }
 
 mopafy!(MacroState);
 pub trait MacroState: ::mopa::Any + Send {
-    fn clone_state(&self) -> Box<MacroState>;
+    fn clone_state(&self) -> Box<dyn MacroState>;
+}
+
+type SharedSpawnerInner = Arc<Mutex<dyn Spawn + Send>>;
+#[derive(Clone)]
+pub struct SharedSpawner {
+    spawner: Option<SharedSpawnerInner>,
+}
+
+impl SharedSpawner {
+    pub fn empty() -> Self {
+        SharedSpawner { spawner: None }
+    }
+
+    pub fn new(spawner: Option<impl Spawn + Send + 'static>) -> Self {
+        SharedSpawner {
+            spawner: spawner.map(|spawner| {
+                let x: SharedSpawnerInner = Arc::new(Mutex::new(spawner));
+                x
+            }),
+        }
+    }
+
+    pub fn spawn<F>(
+        &self,
+        f: F,
+    ) -> Result<impl Future<Output = F::Output> + Send + 'static, SpawnError>
+    where
+        F: Future + Send + 'static,
+        F::Output: Send,
+    {
+        let mut f1 = None;
+        let mut f2 = None;
+        match &self.spawner {
+            Some(spawner) => f2 = Some(spawner.lock().unwrap().spawn_with_handle(f)?),
+            None => f1 = Some(f),
+        }
+        Ok(async move {
+            match f1 {
+                Some(f) => await!(f),
+                None => await!(f2.unwrap()),
+            }
+        })
+    }
 }
 
 pub struct MacroExpander {
     pub state: FnvMap<String, Box<dyn MacroState>>,
+    pub task_spawner: SharedSpawner,
     pub vm: RootedThread,
     pub errors: Errors,
     pub error_in_expr: bool,
 }
 
 impl MacroExpander {
-    pub fn new(vm: &Thread) -> MacroExpander {
+    pub fn new(vm: &Thread, task_spawner: SharedSpawner) -> MacroExpander {
         MacroExpander {
             vm: vm.root_thread(),
 
             state: FnvMap::default(),
+            task_spawner,
             error_in_expr: false,
             errors: Errors::new(),
         }
@@ -127,6 +165,7 @@ impl MacroExpander {
                 .map(|(k, v)| (k.clone(), v.clone_state()))
                 .collect(),
             vm: self.vm.clone(),
+            task_spawner: self.task_spawner.clone(),
             errors: Errors::new(),
             error_in_expr: self.error_in_expr.clone(),
         }
@@ -148,22 +187,47 @@ impl MacroExpander {
                 visitor.exprs
             };
 
-            for (expr, future) in exprs {
-                let (sub_expander, result) = await!(future);
-                self.errors.extend(sub_expander.errors);
-                match result {
-                    Ok(mut replacement) => {
-                        replacement.span = expr.span;
-                        replace_expr(expr, replacement);
-                    }
-                    Err(err) => {
-                        let expr_span = expr.span;
-                        replace_expr(expr, pos::spanned(expr_span, Expr::Error(None)));
+            let errors = &mut self.errors;
+            let task_spawner = &self.task_spawner;
+            let error_in_expr = &mut self.error_in_expr;
 
-                        self.errors.push(pos::spanned(expr.span, err));
+            // Force the task spawning to happen inside the executor
+            await!(future::ready(()));
+            await!(
+                exprs.into_iter().map(move |(expr, future)| async move {
+                    // FIXME Inlining SharedSpawner::spawn is necessary to avoid ICE
+                    let x = match &task_spawner.spawner {
+                        Some(task_spawner) => {
+                            await!(
+                                match task_spawner.lock().unwrap().spawn_with_handle(future) {
+                                    Ok(f) => f,
+                                    Err(err) => panic!("{:#?}", err), // FIXME
+                                }
+                            )
+                        }
+                        None => await!(future),
+                    };
+                    (expr, x)
+                })
+                .collect::<stream::FuturesOrdered<_>>()
+                .for_each(|(expr, (sub_expander, result))| {
+                    errors.extend(sub_expander.errors);
+                    *error_in_expr |= sub_expander.error_in_expr;
+                    match result {
+                        Ok(mut replacement) => {
+                            replacement.span = expr.span;
+                            replace_expr(expr, replacement);
+                        }
+                        Err(err) => {
+                            let expr_span = expr.span;
+                            replace_expr(expr, pos::spanned(expr_span, Expr::Error(None)));
+
+                            errors.push(pos::spanned(expr.span, err));
+                        }
                     }
-                }
-            }
+                    future::ready(())
+                })
+            )
         }
         if self.errors.has_errors() {
             info!("Macro errors: {}", self.errors);
@@ -183,12 +247,12 @@ fn replace_expr(expr: &mut SpannedExpr<Symbol>, new: SpannedExpr<Symbol>) {
     );
 }
 
-type MacroExprFuture<'f> =
-    Pin<Box<Future<Output = (MacroExpander, Result<SpannedExpr<Symbol>, Error>)> + Send + 'f>>;
+type MacroExprFuture =
+    BoxFuture<'static, (MacroExpander, Result<SpannedExpr<Symbol>, Error>)>;
 struct MacroVisitor<'b, 'c> {
     expander: &'b mut MacroExpander,
     symbols: &'c mut Symbols,
-    exprs: Vec<(&'c mut SpannedExpr<Symbol>, MacroExprFuture<'c>)>,
+    exprs: Vec<(&'c mut SpannedExpr<Symbol>, MacroExprFuture)>,
 }
 
 impl<'b, 'c> MutVisitor<'c> for MacroVisitor<'b, 'c> {

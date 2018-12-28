@@ -41,7 +41,7 @@ pub mod std_lib;
 
 pub use crate::vm::thread::{RootedThread, Thread};
 
-use futures::{executor::block_on, prelude::*, Future};
+use futures::{executor::block_on, prelude::*, task::Spawn, Future};
 
 use either::Either;
 
@@ -49,6 +49,7 @@ use std as real_std;
 use std::env;
 use std::error::Error as StdError;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::result::Result as StdResult;
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -64,10 +65,10 @@ use crate::base::types::{ArcType, TypeCache};
 use crate::format::Formatter;
 
 use crate::compiler_pipeline::*;
-use crate::import::{add_extern_module, DefaultImporter, Import};
+use crate::import::{add_extern_module, add_extern_module_with_deps, DefaultImporter, Import};
 use crate::vm::api::{Getable, Hole, OpaqueValue, VmType};
 use crate::vm::compiler::CompiledModule;
-use crate::vm::macros;
+use crate::vm::macros::{self, SharedSpawner};
 
 quick_error! {
 /// Error type wrapping all possible errors that can be generated from gluon
@@ -277,6 +278,7 @@ pub struct Compiler {
     symbols: Symbols,
     state: Arc<Mutex<State>>,
     settings: Settings,
+    task_spawner: SharedSpawner,
 }
 
 impl Default for Compiler {
@@ -354,6 +356,15 @@ impl Compiler {
 
     pub fn code_map(&self) -> codespan::CodeMap {
         self.state().code_map.clone()
+    }
+
+    pub fn task_spawner(self, task_spawner: Option<impl Spawn + Send + 'static>) -> Self {
+        self.task_spawner_raw(SharedSpawner::new(task_spawner))
+    }
+
+    fn task_spawner_raw(mut self, task_spawner: SharedSpawner) -> Self {
+        self.task_spawner = task_spawner;
+        self
     }
 
     pub fn update_filemap<S>(&mut self, file: &str, source: S) -> Option<Arc<codespan::FileMap>>
@@ -514,8 +525,18 @@ impl Compiler {
         file: &str,
         expr_str: &str,
     ) -> Result<(SpannedExpr<Symbol>, ArcType, Arc<Metadata>)> {
+        block_on(self.extract_metadata_async(vm, file, expr_str))
+    }
+
+    pub async fn extract_metadata_async<'f>(
+        &'f mut self,
+        vm: &'f Thread,
+        file: &'f str,
+        expr_str: &'f str,
+    ) -> Result<(SpannedExpr<Symbol>, ArcType, Arc<Metadata>)> {
         use crate::check::metadata;
-        let (mut expr, typ) = self.typecheck_str(vm, file, expr_str, None)?;
+        let TypecheckValue { mut expr, typ, .. } =
+            await!(expr_str.typecheck_expected(self, vm, file, expr_str, None))?;
 
         let (metadata, _) = metadata::metadata(&*vm.get_env(), &mut expr);
         Ok((expr, typ, metadata))
@@ -561,7 +582,7 @@ impl Compiler {
             }
         };
         let module_name = Symbol::from(format!("@{}", filename_to_module(filename)));
-        let mut macros = MacroExpander::new(vm);
+        let mut macros = MacroExpander::new(vm, self.task_spawner.clone());
         if let Err((_, err)) =
             await!(import.load_module(self, vm, &mut macros, &module_name, Span::default()))
         {
@@ -811,7 +832,12 @@ impl VmBuilder {
         add_extern_module(&vm, "std.float.prim", crate::vm::primitives::load_float);
         add_extern_module(&vm, "std.string.prim", crate::vm::primitives::load_string);
         add_extern_module(&vm, "std.fs.prim", crate::vm::primitives::load_fs);
-        add_extern_module(&vm, "std.path.prim", crate::vm::primitives::load_path);
+        add_extern_module_with_deps(
+            &vm,
+            "std.path.prim",
+            vec!["std.path.types".into()],
+            crate::vm::primitives::load_path,
+        );
         add_extern_module(&vm, "std.char.prim", crate::vm::primitives::load_char);
         add_extern_module(&vm, "std.array.prim", crate::vm::primitives::load_array);
 
@@ -834,7 +860,7 @@ impl VmBuilder {
         add_extern_module_if!(
             #[cfg(feature = "regex")],
             available_if = "gluon is compiled with the 'regex' feature",
-            args(&vm, "std.regex.prim", crate::std_lib::regex::load)
+            args(&vm, "std.regex.prim", vec!["std.regex.types".into()], crate::std_lib::regex::load)
         );
 
         add_extern_module_if!(
@@ -846,7 +872,7 @@ impl VmBuilder {
         add_extern_module_if!(
             #[cfg(feature = "web")],
             available_if = "gluon is compiled with the 'web' feature",
-            args(&vm, "std.http.prim", crate::std_lib::http::load)
+            args(&vm, "std.http.prim", vec!["std.http.types".into()], crate::std_lib::http::load)
         );
 
         add_extern_module_if!(
@@ -863,6 +889,13 @@ impl VmBuilder {
 /// loaded.
 pub fn new_vm() -> RootedThread {
     VmBuilder::default().build()
+}
+
+fn box_future<'f, F>(f: F) -> Pin<Box<dyn Future<Output = F::Output> + Send + 'f>>
+where
+    F: Future + Send + 'f,
+{
+    f.boxed()
 }
 
 #[cfg(test)]

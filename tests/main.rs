@@ -2,6 +2,8 @@
 
 extern crate env_logger;
 #[macro_use]
+extern crate log;
+#[macro_use]
 extern crate serde_derive;
 #[macro_use]
 extern crate collect_mac;
@@ -9,7 +11,6 @@ extern crate failure;
 #[macro_use]
 extern crate failure_derive;
 extern crate futures;
-extern crate futures_cpupool;
 extern crate gluon;
 extern crate pulldown_cmark;
 extern crate tensile;
@@ -25,12 +26,19 @@ use gluon::vm::api::{de::De, generic::A, Getable, Hole, OpaqueValue, OwnedFuncti
 
 use gluon::{new_vm, Compiler, RootedThread, Thread};
 
-use std::fs::File;
-use std::io::{self, Read};
-use std::path::{Path, PathBuf};
+use std::{
+    fs::File,
+    io::{self, Read},
+    path::{Path, PathBuf},
+};
 
-use futures::{compat::Future01CompatExt, prelude::*, stream};
-use tokio::runtime::current_thread::Runtime;
+use futures::{
+    compat::{Future01CompatExt, TokioDefaultSpawner},
+    prelude::*,
+    stream,
+    task::SpawnExt,
+};
+use tokio::runtime::Runtime;
 
 #[derive(Debug, Fail)]
 enum Error {
@@ -75,7 +83,8 @@ impl From<gluon::Error> for Error {
 }
 
 fn main() {
-    if let Err(err) = main_() {
+    let mut runtime = Runtime::new().unwrap();
+    if let Err(err) = runtime.block_on((async { await!(main_()) }).boxed().compat()) {
         assert!(false, "{}", err);
     }
 }
@@ -187,27 +196,48 @@ impl TestCase {
     }
 }
 
-fn make_test<'t>(vm: &'t Thread, name: &str, filename: &Path) -> Result<TestCase, Error> {
-    let mut compiler = Compiler::new();
+fn new_compiler() -> Compiler {
+    Compiler::new().task_spawner(Some(TokioDefaultSpawner))
+}
+
+fn dispatch<F>(f: F) -> impl Future<Output = F::Output> + Send + 'static
+where
+    F: Future + Send + 'static,
+    F::Output: Send,
+{
+    TokioDefaultSpawner.spawn_with_handle(f).unwrap()
+}
+
+async fn make_test<'t>(
+    vm: &'t Thread,
+    name: &'t str,
+    filename: &'t Path,
+) -> Result<TestCase, Error> {
+    trace!("TEST {}", name);
+    let mut compiler = new_compiler();
 
     let mut file = File::open(&filename)?;
     let mut text = String::new();
     file.read_to_string(&mut text)?;
-    let (De(test), _) = compiler.run_expr(&vm, &name, &text)?;
+    let (De(test), _) = await!(compiler.run_expr_async(&vm, &name, &text))?;
+    trace!("DON {}", name);
     Ok(test)
 }
 
-fn run_file<'t>(
+async fn run_file<'t>(
     vm: &'t Thread,
-    name: &str,
-    filename: &Path,
-) -> Result<(OpaqueValue<&'t Thread, Hole>, ArcType), Error> {
-    let mut compiler = Compiler::new();
+    name: &'t str,
+    filename: &'t Path,
+) -> Result<(OpaqueValue<RootedThread, Hole>, ArcType), Error> {
+    trace!("TEST {}", name);
+    let mut compiler = new_compiler();
 
     let mut file = File::open(&filename)?;
     let mut text = String::new();
     file.read_to_string(&mut text)?;
-    Ok(compiler.run_expr::<OpaqueValue<&Thread, Hole>>(&vm, &name, &text)?)
+    let v = await!(compiler.run_expr_async::<OpaqueValue<RootedThread, Hole>>(&vm, &name, &text))?;
+    trace!("DON {}", name);
+    Ok(v)
 }
 
 fn gather_doc_tests(expr: &SpannedExpr<Symbol>) -> Vec<(String, String)> {
@@ -286,18 +316,19 @@ fn gather_doc_tests(expr: &SpannedExpr<Symbol>) -> Vec<(String, String)> {
     visitor.0
 }
 
-fn run_doc_tests<'t>(
+async fn run_doc_tests<'t>(
     vm: &'t Thread,
-    name: &str,
-    filename: &Path,
+    name: &'t str,
+    filename: &'t Path,
 ) -> Result<Vec<tensile::Test<Error>>, Error> {
-    let mut compiler = Compiler::new();
+    trace!("START DOC {}", name);
+    let mut compiler = new_compiler();
 
     let mut file = File::open(&filename)?;
     let mut text = String::new();
     file.read_to_string(&mut text)?;
 
-    let (expr, _, _) = compiler.extract_metadata(&vm, &name, &text)?;
+    let (expr, _, _) = await!(compiler.extract_metadata_async(&vm, &name, &text))?;
 
     let (mut convert_test_fn, _) = compiler.run_expr::<OwnedFunction<fn(TestEff) -> TestFn>>(
         &vm,
@@ -306,7 +337,7 @@ fn run_doc_tests<'t>(
     )?;
 
     let tests = gather_doc_tests(&expr);
-    Ok(tests
+    let x = tests
         .into_iter()
         .map(move |(test_name, test_source)| {
             let vm = vm.new_thread().unwrap();
@@ -322,28 +353,66 @@ fn run_doc_tests<'t>(
                 }
             }
         })
-        .collect())
+        .collect();
+    trace!("END DOC {}", name);
+    Ok(x)
 }
 
-fn main_() -> Result<(), Error> {
+fn doc_tests(
+    vm: &Thread,
+    file_filter: bool,
+    filter: Option<String>,
+) -> Result<impl Future<Output = Vec<tensile::Test<Error>>> + 'static, Error> {
+    let vm = vm.root_thread();
+    Ok(stream::futures_ordered(
+        test_files("std")?
+            .into_iter()
+            .filter_map(move |filename| {
+                let name = filename_to_module(filename.to_str().unwrap_or("<unknown>"));
+
+                match filter {
+                    Some(ref filter) if file_filter && !name.contains(&filter[..]) => None,
+                    _ => Some((filename, name)),
+                }
+            })
+            .map(move |(filename, name)| {
+                let vm = vm.new_thread().unwrap();
+                dispatch(
+                    async move {
+                        match await!(run_doc_tests(&vm, &name, &filename)) {
+                            Ok(tests) => tensile::group(name.clone(), tests),
+                            Err(err) => {
+                                let err = ::std::panic::AssertUnwindSafe(err);
+                                tensile::test(name.clone(), || Err(err.0))
+                            }
+                        }
+                    },
+                )
+            }),
+    )
+    .collect())
+}
+
+async fn main_() -> Result<(), Error> {
     let _ = ::env_logger::try_init();
     let args: Vec<_> = ::std::env::args().collect();
     let filter = if args.len() > 1 && args.last().unwrap() != "main" {
-        args.last()
+        args.last().cloned()
     } else {
         None
     };
 
     let file_filter = filter.as_ref().map_or(false, |f| f.starts_with("@"));
-    let filter = filter.as_ref().map(|f| f.trim_start_matches('@'));
+    let filter = filter
+        .as_ref()
+        .map(|f| f.trim_start_matches('@').to_owned());
 
     let vm = new_vm();
-    Compiler::new().load_file(&vm, "std/test.glu")?;
+    let mut compiler = new_compiler();
+    await!(compiler.load_file_async(&vm, "std/test.glu"))?;
 
     let iter = test_files("tests/pass")?.into_iter();
 
-    let pool = futures_cpupool::CpuPool::new(1);
-    let mut runtime = tokio::runtime::Runtime::new()?;
     let pass_tests_future = stream::futures_ordered(
         iter.filter_map(|filename| {
             let name = filename_to_module(filename.to_str().unwrap_or("<unknown>"));
@@ -357,21 +426,24 @@ fn main_() -> Result<(), Error> {
             let vm = vm.new_thread().unwrap();
 
             let name2 = name.clone();
-            pool.spawn_fn(move || make_test(&vm, &name, &filename))
-                .compat()
-                .then(async move |result| -> Result<_, String> {
-                    Ok(match result {
-                        Ok(test) => test.into_tensile_test(),
-                        Err(err) => {
-                            let err = ::std::panic::AssertUnwindSafe(err);
-                            tensile::test(name2, || Err(err.0))
+            dispatch(
+                async move {
+                    await!(make_test(&vm, &name, &filename).then(
+                        async move |result| -> Result<_, String> {
+                            Ok(match result {
+                                Ok(test) => test.into_tensile_test(),
+                                Err(err) => {
+                                    let err = ::std::panic::AssertUnwindSafe(err);
+                                    tensile::test(name2, || Err(err.0))
+                                }
+                            })
                         }
-                    })
-                })
+                    ))
+                },
+            )
         }),
     )
     .try_collect();
-    let pass_tests = runtime.block_on(TryFutureExt::compat(pass_tests_future.boxed()))?;
 
     let iter = test_files("tests/fail")?
         .into_iter()
@@ -389,58 +461,39 @@ fn main_() -> Result<(), Error> {
         .map(|(filename, name)| {
             let vm = vm.new_thread().unwrap();
 
-            tensile::test(name.clone(), move || -> Result<(), Error> {
-                match run_file(&vm, &name, &filename) {
-                    Ok(err) => Err(format!(
-                        "Expected test '{}' to fail\n{:?}",
-                        filename.to_str().unwrap(),
-                        err.0,
-                    )
-                    .into()),
-                    Err(_) => Ok(()),
-                }
+            tensile::test(name.clone(), move || {
+                let future = dispatch(
+                    async move {
+                        match await!(run_file(&vm, &name, &filename)) {
+                            Ok(err) => Err(format!(
+                                "Expected test '{}' to fail\n{:?}",
+                                filename.to_str().unwrap(),
+                                err.0,
+                            )
+                            .into()),
+                            Err(_) => Ok(()),
+                        }
+                    },
+                );
+                GluonTestable::new(future)
             })
         })
         .collect();
 
-    let doc_tests = test_files("std")?
-        .into_iter()
-        .filter_map(|filename| {
-            let name = filename_to_module(filename.to_str().unwrap_or("<unknown>"));
+    let doc_tests_future = doc_tests(&vm, file_filter, filter.clone())?;
 
-            match filter {
-                Some(ref filter) if file_filter && !name.contains(&filter[..]) => None,
-                _ => Some((filename, name)),
-            }
-        })
-        .map(|(filename, name)| {
-            let vm = vm.new_thread().unwrap();
-            match run_doc_tests(&vm, &name, &filename) {
-                Ok(tests) => tensile::group(name.clone(), tests),
-                Err(err) => {
-                    let err = ::std::panic::AssertUnwindSafe(err);
-                    tensile::test(name.clone(), || Err(err.0))
-                }
-            }
-        })
-        .collect();
+    let (pass_tests, doc_tests) = await!(pass_tests_future.try_join(doc_tests_future.map(Ok)))?;
 
-    let mut runtime = Runtime::new()?;
-    runtime.block_on(TryFutureExt::compat(
-        (async {
-            await!(Future01CompatExt::compat(tensile::console_runner(
-                tensile::group(
-                    "main",
-                    vec![
-                        tensile::group("pass", pass_tests),
-                        tensile::group("fail", fail_tests),
-                        tensile::group("doc", doc_tests),
-                    ],
-                ),
-                &tensile::Options::default().filter(filter.map_or("", |s| &s[..])),
-            )))
-        })
-            .boxed(),
-    ))?;
+    await!(Future01CompatExt::compat(tensile::console_runner(
+        tensile::group(
+            "main",
+            vec![
+                tensile::group("pass", pass_tests),
+                tensile::group("fail", fail_tests),
+                tensile::group("doc", doc_tests),
+            ],
+        ),
+        &tensile::Options::default().filter(filter.as_ref().map_or("", |s| &s[..])),
+    )))?;
     Ok(())
 }
