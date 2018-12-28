@@ -12,7 +12,7 @@ use futures::{
     {Future, Sink, Stream},
 };
 
-use base::{
+use crate::base::{
     ast::{Expr, Pattern, SpannedPattern, Typed, TypedIdent},
     error::InFile,
     kind::Kind,
@@ -21,8 +21,8 @@ use base::{
     types::ArcType,
     DebugLevel,
 };
-use parser::{parse_partial_repl_line, ReplLine};
-use vm::{
+use crate::parser::{parse_partial_repl_line, ReplLine};
+use crate::vm::{
     api::{
         de::De,
         generic::A,
@@ -41,7 +41,7 @@ use gluon::{
 
 use codespan_reporting::termcolor;
 
-use Color;
+use crate::Color;
 
 macro_rules! try_future {
     ($e:expr, $f:expr) => {
@@ -132,7 +132,7 @@ fn switch_debug_level(args: WithVM<&str>) -> IO<Result<String, String>> {
 }
 
 fn complete(thread: &Thread, name: &str, fileinput: &str, pos: usize) -> GluonResult<Vec<String>> {
-    use base::pos::BytePos;
+    use crate::base::pos::BytePos;
     use gluon::compiler_pipeline::*;
 
     let mut compiler = Compiler::new();
@@ -233,7 +233,7 @@ impl<'vm> Pushable<'vm> for ReadlineError {
 fn app_dir_root() -> Result<PathBuf, Box<StdError>> {
     Ok(::app_dirs::app_root(
         ::app_dirs::AppDataType::UserData,
-        &::APP_INFO,
+        &crate::APP_INFO,
     )?)
 }
 
@@ -274,7 +274,7 @@ fn new_cpu_pool(size: usize) -> IO<CpuPool> {
 }
 
 fn eval_line(
-    De(color): De<::Color>,
+    De(color): De<crate::Color>,
     WithVM { vm, value: line }: WithVM<&str>,
 ) -> impl Future<Item = IO<()>, Error = vm::Error> {
     eval_line_(vm.root_thread(), line).then(move |result| {
@@ -385,7 +385,9 @@ fn set_globals(
             Ok(())
         }
         Pattern::Tuple { ref elems, .. } => {
-            let iter = elems.iter().zip(::vm::dynamic::field_iter(&value, typ, vm));
+            let iter = elems
+                .iter()
+                .zip(crate::vm::dynamic::field_iter(&value, typ, vm));
             for (elem_pattern, (elem_value, elem_type)) in iter {
                 set_globals(vm, elem_pattern, &elem_type, &elem_value)?;
             }
@@ -588,9 +590,9 @@ pub fn run(
 mod tests {
     use super::*;
 
+    use crate::vm::api::{FunctionRef, IO};
     use gluon::import::Import;
     use gluon::{self, RootedThread};
-    use vm::api::{FunctionRef, IO};
 
     fn new_vm() -> RootedThread {
         if ::std::env::var("GLUON_PATH").is_err() {

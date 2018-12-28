@@ -46,7 +46,7 @@ use gluon::base;
 use gluon::parser;
 use gluon::vm;
 
-use base::filename_to_module;
+use crate::base::filename_to_module;
 
 use gluon::vm::thread::ThreadInternal;
 use gluon::vm::Error as VMError;
@@ -69,7 +69,7 @@ pub enum Color {
 
 impl Into<termcolor::ColorChoice> for Color {
     fn into(self) -> termcolor::ColorChoice {
-        use termcolor::ColorChoice::*;
+        use crate::termcolor::ColorChoice::*;
         match self {
             Color::Auto => Auto,
             Color::Always => Always,
@@ -88,7 +88,7 @@ impl Default for Color {
 impl ::std::str::FromStr for Color {
     type Err = &'static str;
     fn from_str(s: &str) -> ::std::result::Result<Self, Self::Err> {
-        use Color::*;
+        use crate::Color::*;
         Ok(match s {
             "auto" => Auto,
             "always" => Always,
