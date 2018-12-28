@@ -331,7 +331,7 @@ extern "C" fn error(_: &Thread) -> Status {
 extern "C" fn discriminant_value(thread: &Thread) -> Status {
     let mut context = thread.current_context();
     let tag = {
-        let mut stack = StackFrame::<ExternState>::current(context.stack());
+        let stack = StackFrame::<ExternState>::current(context.stack());
         let value = stack.get_variant(0).unwrap();
         match value.as_ref() {
             ValueRef::Data(data) => data.tag(),

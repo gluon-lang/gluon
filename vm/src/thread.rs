@@ -1381,12 +1381,13 @@ impl<'b> OwnedContext<'b> {
         D: DataDef + Traverseable,
         D::Value: Sized + Any,
     {
+        let thread = self.thread;
         let Context {
             ref mut gc,
             ref stack,
             ..
         } = **self;
-        alloc(gc, self.thread, &stack, data)
+        alloc(gc, thread, &stack, data)
     }
 
     pub fn debug_info(&self) -> DebugInfo {
@@ -1530,7 +1531,7 @@ impl<'b> OwnedContext<'b> {
                         ReturnContext,
                     }
                     let state = {
-                        let mut context = context.borrow_mut();
+                        let context = context.borrow_mut();
 
                         let function_size = closure.function.max_stack_size;
 
@@ -1703,9 +1704,10 @@ impl<'b> OwnedContext<'b> {
     }
 
     fn borrow_mut(&mut self) -> ExecuteContext<State> {
+        let thread = self.thread;
         let context = &mut **self;
         ExecuteContext {
-            thread: self.thread,
+            thread,
             gc: &mut context.gc,
             stack: StackFrame::current(&mut context.stack),
             hook: &mut context.hook,

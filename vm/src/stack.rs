@@ -1,5 +1,7 @@
-use std::fmt;
-use std::ops::{Deref, DerefMut, Index, IndexMut, Range, RangeFrom, RangeFull, RangeTo};
+use std::{
+    fmt,
+    ops::{Deref, DerefMut, Index, IndexMut, Range, RangeFrom, RangeFull, RangeTo},
+};
 
 use crate::base::pos::Line;
 use crate::base::symbol::Symbol;
@@ -488,7 +490,13 @@ where
         S: Copy,
     {
         *self.stack.frames.last_mut().unwrap() = self.frame.to_state();
-        self.stack
+        // We only recover the Stack reference after the drop has run here.
+        // Since drop doesn't leak the reference this is safe
+        unsafe {
+            let stack: *mut Stack = self.stack;
+            drop(self);
+            &mut *stack
+        }
     }
 
     pub fn len(&self) -> VmIndex {
@@ -570,7 +578,7 @@ where
     {
         if let State::Extern(ref ext) = self.frame.state.to_state() {
             if ext.is_locked() {
-                return Err(self.stack);
+                return Err(self.take_stack());
             }
         }
         let frame = self.frame;
