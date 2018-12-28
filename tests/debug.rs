@@ -2,12 +2,14 @@
 extern crate collect_mac;
 extern crate env_logger;
 extern crate futures;
+extern crate futures_01;
 extern crate gluon;
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
-use futures::{Async, Future};
+use futures::prelude::*;
+use futures_01::Async;
 
 use gluon::base::pos::Line;
 use gluon::base::types::{ArcType, Type, TypeExt};
@@ -189,7 +191,7 @@ fn implicit_prelude_lines_not_counted() {
     }
     let mut execute = Compiler::new()
         .run_expr_async::<i32>(&thread, "test", "1")
-        .map(|_| ());
+        .map_ok(|_| ());
     let mut result = Ok(Async::NotReady);
 
     let mut lines = Vec::new();

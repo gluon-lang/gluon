@@ -5,6 +5,7 @@
 //! [tutorial](http://gluon-lang.org/book/index.html) which contains examples
 //! on how to write gluon programs as well as how to run them using this library.
 #![doc(html_root_url = "https://docs.rs/gluon/0.12.0")] // # GLUON
+#![feature(futures_api, arbitrary_self_types, async_await, await_macro)]
 
 #[cfg(test)]
 extern crate env_logger;
@@ -40,7 +41,7 @@ pub mod std_lib;
 
 pub use crate::vm::thread::{RootedThread, Thread};
 
-use futures::{Future, IntoFuture};
+use futures::{executor::block_on, prelude::*, Future};
 
 use either::Either;
 
@@ -432,8 +433,10 @@ impl Compiler {
         expr_str: &str,
         expr: &mut SpannedExpr<Symbol>,
     ) -> Result<ArcType> {
-        expr.typecheck_expected(self, vm, file, expr_str, None)
-            .map(|result| result.typ)
+        block_on(
+            expr.typecheck_expected(self, vm, file, expr_str, None)
+                .map_ok(|result| result.typ),
+        )
     }
 
     pub fn typecheck_str(
@@ -444,7 +447,7 @@ impl Compiler {
         expected_type: Option<&ArcType>,
     ) -> Result<(SpannedExpr<Symbol>, ArcType)> {
         let TypecheckValue { expr, typ, .. } =
-            expr_str.typecheck_expected(self, vm, file, expr_str, expected_type)?;
+            block_on(expr_str.typecheck_expected(self, vm, file, expr_str, expected_type))?;
         Ok((expr, typ))
     }
 
@@ -456,14 +459,16 @@ impl Compiler {
         expr_str: &str,
         expr: &SpannedExpr<Symbol>,
     ) -> Result<CompiledModule> {
-        TypecheckValue {
-            expr,
-            typ: vm.global_env().type_cache().hole(),
-            metadata: Default::default(),
-            metadata_map: Default::default(),
-        }
-        .compile(self, vm, filename, expr_str, ())
-        .map(|result| result.module)
+        block_on(
+            TypecheckValue {
+                expr,
+                typ: vm.global_env().type_cache().hole(),
+                metadata: Default::default(),
+                metadata_map: Default::default(),
+            }
+            .compile(self, vm, filename, expr_str, ())
+            .map_ok(|result| result.module),
+        )
     }
 
     /// Compiles the source code `expr_str` into bytecode serialized using `serializer`
@@ -479,7 +484,9 @@ impl Compiler {
         S: serde::Serializer,
         S::Error: 'static,
     {
-        compile_to(expr_str, self, &thread, name, expr_str, None, serializer)
+        block_on(compile_to(
+            expr_str, self, &thread, name, expr_str, None, serializer,
+        ))
     }
 
     /// Loads bytecode from a `Deserializer` and stores it into the module `name`.
@@ -487,11 +494,11 @@ impl Compiler {
     /// `load_script` is equivalent to `compile_to_bytecode` followed by `load_bytecode`
     #[cfg(feature = "serialization")]
     pub fn load_bytecode<'vm, D>(
-        &mut self,
+        &'vm mut self,
         thread: &'vm Thread,
-        name: &str,
+        name: &'vm str,
         deserializer: D,
-    ) -> impl Future<Item = (), Error = Error> + 'vm
+    ) -> impl Future<Output = Result<()>> + 'vm
     where
         D: serde::Deserializer<'vm> + 'vm,
         D::Error: Send + Sync,
@@ -520,52 +527,47 @@ impl Compiler {
     /// If at any point the function fails the resulting error is returned and nothing is added to
     /// the VM.
     pub fn load_script(&mut self, vm: &Thread, filename: &str, input: &str) -> Result<()> {
-        self.load_script_async(vm, filename, input).wait()
+        block_on(self.load_script_async(vm, filename, input))
     }
 
     pub fn load_script_async<'vm>(
-        &mut self,
+        &'vm mut self,
         vm: &'vm Thread,
-        filename: &str,
-        input: &str,
-    ) -> impl Future<Item = (), Error = Error> + 'vm {
+        filename: &'vm str,
+        input: &'vm str,
+    ) -> impl Future<Output = Result<()>> + 'vm {
         input.load_script(self, vm, filename, input, None)
     }
 
     /// Loads `filename` and compiles and runs its input by calling `load_script`
     pub fn load_file<'vm>(&mut self, vm: &'vm Thread, filename: &str) -> Result<()> {
-        self.load_file_async(vm, filename).wait()
+        block_on(self.load_file_async(vm, filename))
     }
 
-    pub fn load_file_async<'vm>(
-        &mut self,
+    pub async fn load_file_async<'vm>(
+        &'vm mut self,
         vm: &'vm Thread,
-        filename: &str,
-    ) -> impl Future<Item = (), Error = Error> {
+        filename: &'vm str,
+    ) -> Result<()> {
         use crate::macros::MacroExpander;
 
         // Use the import macro's path resolution if it exists so that we mimick the import
         // macro as close as possible
-        let opt_macro = vm.get_macros().get("import");
-        let owned_import;
-        let import = match opt_macro
-            .as_ref()
-            .and_then(|mac| mac.downcast_ref::<Import>())
-        {
-            Some(import) => import,
-            None => {
-                owned_import = Import::new(DefaultImporter);
-                &owned_import
+        let import = {
+            let opt_macro = vm.get_macros().get("import");
+            match opt_macro.and_then(|mac| mac.downcast_arc::<Import>().ok()) {
+                Some(import) => import,
+                None => Arc::new(Import::new(DefaultImporter)),
             }
         };
         let module_name = Symbol::from(format!("@{}", filename_to_module(filename)));
         let mut macros = MacroExpander::new(vm);
         if let Err((_, err)) =
-            import.load_module(self, vm, &mut macros, &module_name, Span::default())
+            await!(import.load_module(self, vm, &mut macros, &module_name, Span::default()))
         {
             macros.errors.push(pos::spanned(Span::default(), err));
         };
-        macros.finish().map_err(|err| err.into()).into_future()
+        macros.finish().map_err(|err| err.into())
     }
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
@@ -601,15 +603,17 @@ impl Compiler {
         T: for<'value> Getable<'vm, 'value> + VmType + Send + 'vm,
     {
         let expected = T::make_type(vm);
-        expr_str
-            .run_expr(self, vm, name, expr_str, Some(&expected))
-            .and_then(move |execute_value| {
-                Ok((
-                    T::from_value(vm, execute_value.value.get_variant()),
-                    execute_value.typ,
-                ))
-            })
-            .wait()
+
+        block_on(
+            expr_str
+                .run_expr(self, vm, name, expr_str, Some(&expected))
+                .map_ok(move |execute_value| {
+                    (
+                        T::from_value(vm, execute_value.value.get_variant()),
+                        execute_value.typ,
+                    )
+                }),
+        )
     }
 
     /// Compiles and runs the expression in `expr_str`. If successful the value from running the
@@ -635,25 +639,25 @@ impl Compiler {
     /// }
     /// ```
     ///
-    pub fn run_expr_async<T>(
-        &mut self,
-        vm: &Thread,
-        name: &str,
-        expr_str: &str,
-    ) -> impl Future<Item = (T, ArcType), Error = Error>
+    pub fn run_expr_async<'f, T>(
+        &'f mut self,
+        vm: &'f Thread,
+        name: &'f str,
+        expr_str: &'f str,
+    ) -> impl Future<Output = Result<(T, ArcType)>> + 'f
     where
         T: for<'vm, 'value> Getable<'vm, 'value> + VmType + Send + 'static,
     {
-        let expected = T::make_type(&vm);
-        let vm = vm.root_thread();
-        expr_str
-            .run_expr(self, vm.clone(), name, expr_str, Some(&expected))
-            .and_then(move |execute_value| {
-                Ok((
-                    T::from_value(&vm, execute_value.value.get_variant()),
-                    execute_value.typ,
-                ))
-            })
+        async move {
+            let expected = T::make_type(&vm);
+            let vm = vm.root_thread();
+            let execute_value =
+                await!(expr_str.run_expr(self, vm.clone(), name, expr_str, Some(&expected)))?;
+            Ok((
+                T::from_value(&vm, execute_value.value.get_variant()),
+                execute_value.typ,
+            ))
+        }
     }
 
     fn include_implicit_prelude(
@@ -689,6 +693,16 @@ impl Compiler {
         file: &str,
         input: &str,
     ) -> Result<String> {
+        block_on(self.format_expr_async(formatter, thread, file, input))
+    }
+
+    pub async fn format_expr_async<'f>(
+        &'f mut self,
+        formatter: &'f mut Formatter,
+        thread: &'f Thread,
+        file: &'f str,
+        input: &'f str,
+    ) -> Result<String> {
         fn has_format_disabling_errors(file: &codespan::FileName, err: &Error) -> bool {
             match *err {
                 Error::Multiple(ref errors) => errors
@@ -699,7 +713,7 @@ impl Compiler {
             }
         }
 
-        let expr = match input.reparse_infix(self, thread, file, input) {
+        let expr = match await!(input.reparse_infix(self, thread, file, input)) {
             Ok(expr) => expr.expr,
             Err((Some(expr), err)) => {
                 if has_format_disabling_errors(&codespan::FileName::from(file.to_string()), &err) {

@@ -6,16 +6,19 @@ extern crate tokio_tls;
 
 use crate::real_std::{
     fmt, fs,
-    path::Path,
+    path::PathBuf,
+    pin::Pin,
     sync::{Arc, Mutex},
 };
 
 use self::{http::StatusCode, hyper::service::Service, hyper::Chunk, hyper::Server};
 
 use futures::{
-    future::{self, Either},
-    Async, Future, Stream,
+    compat::{Compat, Future01CompatExt, Stream01CompatExt},
+    prelude::*,
+    Future, Poll,
 };
+use futures_01::{Async, Stream as Stream01};
 
 use self::http::header::{HeaderMap, HeaderName, HeaderValue};
 
@@ -31,14 +34,22 @@ use crate::vm::{
     ExternModule, Variants,
 };
 
+fn box_future<F, T, E>(f: F) -> Compat<Pin<Box<dyn Future<Output = F::Output> + Send>>>
+where
+    F: Future<Output = Result<T, E>> + Send + 'static,
+{
+    let f: Pin<Box<dyn Future<Output = _> + Send>> = f.boxed();
+    f.compat()
+}
+
 macro_rules! try_future {
     ($e:expr) => {
-        try_future!($e, Box::new)
+        try_future!($e, box_future)
     };
     ($e:expr, $f:expr) => {
         match $e {
             Ok(x) => x,
-            Err(err) => return $f(::futures::future::err(err.into())),
+            Err(err) => return $f(crate::futures::future::err(err.into())),
         }
     };
 }
@@ -105,9 +116,7 @@ impl<'vm, 'value> Getable<'vm, 'value> for Headers {
 #[gluon(crate_name = "::vm")]
 #[gluon_trace(skip)]
 // Representation of a http body that is in the prograss of being read
-pub struct Body(
-    Arc<Mutex<Box<dyn Stream<Item = PushAsRef<Chunk, [u8]>, Error = vm::Error> + Send>>>,
-);
+pub struct Body(Arc<Mutex<Box<Stream01<Item = PushAsRef<Chunk, [u8]>, Error = vm::Error> + Send>>>);
 
 // Types implementing `Userdata` requires a `std::fmt::Debug` implementation so it can be displayed
 impl fmt::Debug for Body {
@@ -118,15 +127,17 @@ impl fmt::Debug for Body {
 
 // Since `Body` implements `Userdata` gluon will automatically marshal the gluon representation
 // into `&Body` argument
-fn read_chunk(
-    body: &Body,
-) -> impl Future<Item = IO<Option<PushAsRef<Chunk, [u8]>>>, Error = vm::Error> {
+fn read_chunk(body: &Body) -> impl Future<Output = vm::Result<IO<Option<PushAsRef<Chunk, [u8]>>>>> {
     use futures::future::poll_fn;
 
     let body = body.0.clone();
-    poll_fn(move || {
+    poll_fn(move |_| {
         let mut stream = body.lock().unwrap();
-        stream.poll().map(|r#async| r#async.map(IO::Value))
+        match stream.poll() {
+            Ok(Async::NotReady) => Poll::Pending,
+            Ok(Async::Ready(x)) => Poll::Ready(Ok(IO::Value(x))),
+            Err(err) => Poll::Ready(Err(err)),
+        }
     })
 }
 
@@ -146,13 +157,13 @@ impl fmt::Debug for ResponseBody {
 fn write_response(
     response: &ResponseBody,
     bytes: &[u8],
-) -> impl Future<Item = IO<()>, Error = vm::Error> {
+) -> impl Future<Output = vm::Result<IO<()>>> {
     use futures::future::poll_fn;
 
     // Turn `bytes´ into a `Chunk` which can be sent to the http body
     let mut unsent_chunk = Some(bytes.to_owned().into());
     let response = response.0.clone();
-    poll_fn(move || {
+    poll_fn(move |_| {
         info!("Starting response send");
         let mut sender = response.lock().unwrap();
         let sender = sender
@@ -164,7 +175,7 @@ fn write_response(
         match sender.poll_ready() {
             Ok(Async::NotReady) => {
                 unsent_chunk = Some(chunk);
-                return Ok(Async::NotReady);
+                return Poll::Pending;
             }
             Ok(Async::Ready(_)) => (),
             Err(err) => {
@@ -173,7 +184,7 @@ fn write_response(
             }
         }
         match sender.send_data(chunk) {
-            Ok(()) => Ok(Async::Ready(IO::Value(()))),
+            Ok(()) => Poll::Ready(Ok(IO::Value(()))),
             Err(chunk) => {
                 unsent_chunk = Some(chunk);
                 Ok(IO::Exception("Could not send http response".into()).into())
@@ -210,15 +221,16 @@ type HttpState = record_type! {
 
 #[derive(Getable, VmType)]
 #[gluon(crate_name = "::vm")]
-struct Settings<'a> {
+struct Settings {
     port: u16,
-    tls_cert: Option<&'a Path>,
+    // FIXME Don't allocate
+    tls_cert: Option<PathBuf>,
 }
 
 fn listen(
     settings: Settings,
     value: WithVM<OpaqueValue<RootedThread, Handler<Response>>>,
-) -> impl Future<Item = IO<()>, Error = vm::Error> + Send + 'static {
+) -> impl Future<Output = vm::Result<IO<()>>> + 'static {
     let WithVM {
         value: handler,
         vm: thread,
@@ -310,7 +322,6 @@ fn listen(
                 ),
             )
         }
-    }
 
     let addr = format!("0.0.0.0:{}", settings.port).parse().unwrap();
 
@@ -347,6 +358,26 @@ fn listen(
                     info!("Unable to accept TLS connection: {}", err);
                     Ok(None)
                 })
+                .try_filter_map(|opt_tls_stream| future::ok(opt_tls_stream));
+
+            let future = Stream01CompatExt::compat(http.serve_incoming(
+                incoming.boxed().compat(),
+                move || -> Result<_, hyper::Error> {
+                    Ok(Listen {
+                        handle: handle.clone(),
+                        handler: handler.clone(),
+                    })
+                },
+            ))
+            .then(async move |connecting| await!(Future01CompatExt::compat(connecting?)))
+            .try_for_each(|connection| {
+                hyper::rt::spawn(
+                    Future01CompatExt::compat(connection)
+                        .map_err(|err| error!("{}", err))
+                        .boxed()
+                        .compat(),
+                );
+                future::ok(())
             })
             .buffer_unordered(100)
             .filter_map(|opt_tls_stream| opt_tls_stream);
@@ -365,20 +396,20 @@ fn listen(
             })
             .map(|_| IO::Value(()))
             .map_err(|err| vm::Error::from(format!("Server error: {}", err)));
-        return Either::B(Either::A(future));
-    }
+            return await!(future);
+        }
 
-    Either::B(Either::B(
-        Server::bind(&addr)
-            .serve(move || -> Result<_, hyper::Error> {
+        await!(Future01CompatExt::compat(Server::bind(&addr).serve(
+            move || -> Result<_, hyper::Error> {
                 Ok(Listen {
                     handle: handle.clone(),
                     handler: handler.clone(),
                 })
-            })
-            .map_err(|err| vm::Error::from(format!("Server error: {}", err)))
-            .map(|_| IO::Value(())),
-    ))
+            }
+        ),)
+        .map_err(|err| vm::Error::from(format!("Server error: {}", err)))
+        .map_ok(|_| IO::Value(())))
+    }
 }
 
 // To let the `http_types` module refer to `Body` and `ResponseBody` we register these types in a

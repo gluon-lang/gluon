@@ -1,6 +1,7 @@
 //! Crate which contain the virtual machine which executes gluon programs
 #![doc(html_root_url = "https://docs.rs/gluon_vm/0.12.0")] // # GLUON
 #![recursion_limit = "1024"]
+#![feature(arbitrary_self_types, async_await, await_macro)]
 
 #[macro_use]
 extern crate collect_mac;

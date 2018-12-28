@@ -9,7 +9,7 @@ extern crate gluon;
 
 use std::{fs::File, io::Read};
 
-use futures::Future;
+use self::futures::{executor::block_on, Future};
 
 use crate::serde::ser::SerializeState;
 
@@ -164,10 +164,14 @@ fn precompile() {
     }
     let precompiled_result = {
         let mut deserializer = serde_json::Deserializer::from_slice(&buffer);
-        Precompiled(&mut deserializer)
-            .run_expr(&mut Compiler::new(), &*thread, "test", "", ())
-            .wait()
-            .unwrap()
+        block_on(Precompiled(&mut deserializer).run_expr(
+            &mut Compiler::new(),
+            &*thread,
+            "test",
+            "",
+            (),
+        ))
+        .unwrap()
     };
     let thread2 = new_vm();
     assert_eq!(

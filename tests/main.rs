@@ -132,7 +132,7 @@ struct GluonTestable<F>(F);
 
 impl<F> tensile::Testable for GluonTestable<F>
 where
-    F: Future<Item = (), Error = Error> + Send + Sync + 'static,
+    F: Future<Output = Result<(), Error>> + Send + Sync + 'static,
 {
     type Error = Error;
 

@@ -56,6 +56,27 @@ macro_rules! closure_wrapper {
     };
 }
 
+// FIXME Removing boxing
+#[doc(hidden)]
+#[macro_export]
+macro_rules! closure_wrapper_3 {
+    (0, $name:expr) => {
+        || $crate::api::FutureResult::new($name().boxed().compat())
+    };
+    (1, $name:expr) => {
+        |a| $crate::api::FutureResult::new($name(a).boxed().compat())
+    };
+    (2, $name:expr) => {
+        |a, b| $crate::api::FutureResult::new($name(a, b).boxed().compat())
+    };
+    (3, $name:expr) => {
+        |a, b, c| $crate::api::FutureResult::new($name(a, b, c).boxed().compat())
+    };
+    (4, $name:expr) => {
+        |a, b, c, d| $crate::api::FutureResult::new($name(a, b, c, d).boxed().compat())
+    };
+}
+
 /// Creates a `GluonFunction` from a function implementing `VMFunction`
 ///
 /// ```rust
@@ -74,9 +95,15 @@ macro_rules! primitive {
     ($arg_count:tt, async fn $name:expr) => {
         primitive!($arg_count, stringify_inner!($name), async fn $name)
     };
-
+    ($arg_count:tt, async 3 fn $name:expr) => {
+        primitive!($arg_count, stringify!($name), async 3 fn $name)
+    };
     ($arg_count:tt, $name:expr) => {
         primitive!($arg_count, stringify_inner!($name), $name)
+    };
+
+    ($arg_count:tt, $name:expr, async 3 fn $func:expr) => {
+        primitive!($arg_count, $name, closure_wrapper_3!($arg_count, $func))
     };
     ($arg_count:tt, $name:expr, async fn $func:expr) => {
         primitive!($arg_count, $name, closure_wrapper!($arg_count, $func))

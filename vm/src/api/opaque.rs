@@ -268,6 +268,7 @@ where
 impl<T, V> Clone for Opaque<T, V>
 where
     T: Clone,
+    V: ?Sized,
 {
     fn clone(&self) -> Self {
         Opaque(self.0.clone(), self.1.clone())

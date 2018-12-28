@@ -336,7 +336,8 @@ fn spawn_on_runexpr_in_catch() {
         .block_on(
             Compiler::new()
                 .run_io(true)
-                .run_expr_async::<IO<String>>(&vm, "<top>", text),
+                .run_expr_async::<IO<String>>(&vm, "<top>", text)
+                .compat(),
         )
         .unwrap_or_else(|err| panic!("{}", err));
     match result {

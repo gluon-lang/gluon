@@ -10,8 +10,7 @@ use std::mem;
 use std::path::PathBuf;
 use std::sync::{Mutex, RwLock};
 
-use futures::sync::oneshot;
-use futures::{future, Future};
+use futures::{channel::oneshot, future, prelude::*};
 
 use itertools::Itertools;
 
@@ -29,6 +28,8 @@ use crate::vm::{
     thread::{Thread, ThreadInternal},
     ExternLoader, ExternModule,
 };
+
+use crate::compiler_pipeline::*;
 
 use super::Compiler;
 
@@ -64,57 +65,52 @@ pub const COMPILER_KEY: &str = "Compiler";
 include!(concat!(env!("OUT_DIR"), "/std_modules.rs"));
 
 pub trait Importer: Any + Clone + Sync + Send {
-    fn import(
+    fn import<'a>(
         &self,
-        compiler: &mut Compiler,
-        vm: &Thread,
+        compiler: &'a mut Compiler,
+        vm: &'a Thread,
         earlier_errors_exist: bool,
-        modulename: &str,
-        input: &str,
+        modulename: &'a str,
+        input: &'a str,
         expr: SpannedExpr<Symbol>,
-    ) -> Result<(), (Option<ArcType>, MacroError)>;
+    ) -> BoxFuture<'a, (), (Option<ArcType>, MacroError)>;
 }
 
 #[derive(Clone)]
 pub struct DefaultImporter;
 impl Importer for DefaultImporter {
-    fn import(
+    fn import<'a>(
         &self,
-        compiler: &mut Compiler,
-        vm: &Thread,
+        compiler: &'a mut Compiler,
+        vm: &'a Thread,
         earlier_errors_exist: bool,
-        modulename: &str,
-        input: &str,
+        modulename: &'a str,
+        input: &'a str,
         mut expr: SpannedExpr<Symbol>,
-    ) -> Result<(), (Option<ArcType>, MacroError)> {
-        use crate::compiler_pipeline::*;
+    ) -> BoxFuture<'a, (), (Option<ArcType>, MacroError)> {
+        (async move {
+            let result = {
+                let expr = &mut expr;
+                let result = await!(MacroValue { expr }.typecheck(compiler, vm, modulename, input));
 
-        let result = {
-            let result = MacroValue { expr: &mut expr }
-                .typecheck(compiler, vm, modulename, input)
-                .map_err(|err| err.into());
+                if result.is_ok() && earlier_errors_exist {
+                    // We must not pass error patterns or expressions to the core translator so break
+                    // early. An error will be returned by the macro expander so we can just return Ok
+                    return Ok(());
+                }
 
-            if result.is_ok() && earlier_errors_exist {
-                trace!(
-                    "Typechecked {} but earlier errors exist, bailing",
-                    modulename
-                );
-                // We must not pass error patterns or expressions to the core translator so break
-                // early. An error will be returned by the macro expander so we can just return Ok
-                return Err((
-                    Some(expr.env_type_of(&*vm.get_env())),
-                    Box::new(crate::Error::Multiple(Errors::default())),
-                ));
-            }
+                await!(future::ready(result).and_then(|value| value.load_script(
+                    compiler,
+                    vm,
+                    modulename,
+                    input,
+                    ()
+                )))
+            };
 
-            result.and_then(|value| {
-                value
-                    .load_script(compiler, vm, modulename, input, ())
-                    .wait()
-            })
-        };
-
-        result.map_err(|err| (Some(expr.env_type_of(&*vm.get_env())), err.into()))
+            result.map_err(|err| (Some(expr.env_type_of(&*vm.get_env())), err.into()))
+        })
+            .boxed()
     }
 }
 
@@ -221,14 +217,14 @@ impl<I> Import<I> {
         })
     }
 
-    pub fn load_module(
-        &self,
-        compiler: &mut Compiler,
-        vm: &Thread,
-        macros: &mut MacroExpander,
-        module_id: &Symbol,
+    pub async fn load_module<'a>(
+        &'a self,
+        compiler: &'a mut Compiler,
+        vm: &'a Thread,
+        macros: &'a mut MacroExpander,
+        module_id: &'a Symbol,
         span: Span<BytePos>,
-    ) -> Result<Option<impl Future<Item = (), Error = ()>>, (Option<ArcType>, MacroError)>
+    ) -> Result<Option<impl Future<Output = ()>>, (Option<ArcType>, MacroError)>
     where
         I: Importer,
     {
@@ -259,7 +255,7 @@ impl<I> Import<I> {
             match loading.entry(module_id.to_string()) {
                 Entry::Occupied(entry) => {
                     get_state(macros).visited.pop();
-                    return Ok(Some(entry.get().clone().map(|_| ()).map_err(|_| ())));
+                    return Ok(Some(entry.get().clone().map(|_| ())));
                 }
                 Entry::Vacant(entry) => {
                     let (sender, receiver) = oneshot::channel();
@@ -274,7 +270,7 @@ impl<I> Import<I> {
             return Ok(None);
         }
 
-        let result = self.load_module_(compiler, vm, macros, module_id, &filename, span);
+        let result = await!(self.load_module_(compiler, vm, macros, module_id, &filename, span));
 
         if let Err((ref typ, ref err)) = result {
             debug!("Import error {}: {}", module_id, err);
@@ -291,20 +287,18 @@ impl<I> Import<I> {
         result.map(|_| None)
     }
 
-    fn load_module_(
-        &self,
-        compiler: &mut Compiler,
-        vm: &Thread,
-        macros: &mut MacroExpander,
-        module_id: &Symbol,
-        filename: &str,
+    async fn load_module_<'a>(
+        &'a self,
+        compiler: &'a mut Compiler,
+        vm: &'a Thread,
+        macros: &'a mut MacroExpander,
+        module_id: &'a Symbol,
+        filename: &'a str,
         span: Span<BytePos>,
     ) -> Result<(), (Option<ArcType>, MacroError)>
     where
         I: Importer,
     {
-        use crate::compiler_pipeline::*;
-
         let modulename = module_id.name().definition_name();
         // Retrieve the source, first looking in the standard library included in the
         // binary
@@ -329,8 +323,12 @@ impl<I> Import<I> {
 
                 let prev_errors = mem::replace(&mut macros.errors, Errors::new());
 
-                let result =
-                    file_contents.expand_macro_with(compiler, macros, &modulename, &file_contents);
+                let result = await!(file_contents.expand_macro_with(
+                    compiler,
+                    macros,
+                    &modulename,
+                    &file_contents
+                ));
 
                 let has_errors =
                     macros.errors.has_errors() || result.is_err() || macros.error_in_expr;
@@ -356,14 +354,14 @@ impl<I> Import<I> {
                     }
                 };
 
-                self.importer.import(
+                await!(self.importer.import(
                     compiler,
                     vm,
                     has_errors,
                     &modulename,
                     &file_contents,
                     macro_result.expr,
-                )?;
+                ))?;
             }
         }
         Ok(())
@@ -478,7 +476,11 @@ impl<I> Macro for Import<I>
 where
     I: Importer,
 {
-    fn expand(&self, macros: &mut MacroExpander, args: Vec<SpannedExpr<Symbol>>) -> MacroFuture {
+    fn expand<'f>(
+        &'f self,
+        macros: &'f mut MacroExpander,
+        args: Vec<SpannedExpr<Symbol>>,
+    ) -> MacroFuture<'f> {
         fn get_module_name(args: &[SpannedExpr<Symbol>]) -> Result<String, MacroError> {
             if args.len() != 1 {
                 return Err(Error::String("Expected import to get 1 argument".into()).into());
@@ -504,72 +506,64 @@ where
             Ok(modulename)
         }
 
-        let modulename = match get_module_name(&args) {
-            Ok(modulename) => modulename,
-            Err(err) => return Box::new(future::err(err)),
-        };
+        (async move {
+            let modulename = match get_module_name(&args) {
+                Ok(modulename) => modulename,
+                Err(err) => return Err(err),
+            };
 
-        info!("import! {}", modulename);
+            info!("import! {}", modulename);
 
-        let vm = macros.vm;
-        // Prefix globals with @ so they don't shadow any local variables
-        let name = Symbol::from(if modulename.starts_with('@') {
-            modulename.clone()
-        } else {
-            format!("@{}", modulename)
-        });
+            let vm = macros.vm.clone();
+            // Prefix globals with @ so they don't shadow any local variables
+            let name = Symbol::from(if modulename.starts_with('@') {
+                modulename.clone()
+            } else {
+                format!("@{}", modulename)
+            });
 
-        // Only load the script if it is not already loaded
-        debug!("Import '{}' {:?}", modulename, get_state(macros).visited);
-        if !vm.global_env().global_exists(&modulename) {
-            if let Some(expr) = get_state(macros)
-                .modules_with_errors
-                .get(&modulename)
-                .cloned()
-            {
-                macros.error_in_expr = true;
-                trace!("Marking error due to {} import", modulename);
-                return Box::new(future::ok(pos::spanned(args[0].span, expr)));
-            }
-
-            let mut compiler = macros
-                .state
-                .get(COMPILER_KEY)
-                .and_then(|any| any.downcast_ref::<Compiler>())
-                .expect("No `Compiler` in the macro state")
-                .split();
-
-            match self.load_module(&mut compiler, vm, macros, &name, args[0].span) {
-                Ok(Some(future)) => {
-                    let span = args[0].span;
-                    return Box::new(
-                        future
-                            .map_err(|_| unreachable!())
-                            .map(move |_| pos::spanned(span, Expr::Ident(TypedIdent::new(name)))),
-                    );
+            // Only load the script if it is not already loaded
+            debug!("Import '{}' {:?}", modulename, get_state(macros).visited);
+            if !vm.global_env().global_exists(&modulename) {
+                if let Some(expr) = get_state(macros)
+                    .modules_with_errors
+                    .get(&modulename)
+                    .cloned()
+                {
+                    macros.error_in_expr = true;
+                    return Ok(pos::spanned(args[0].span, expr));
                 }
-                Ok(None) => (),
-                Err((typ, err)) => {
-                    macros.errors.push(pos::spanned(args[0].span, err));
 
-                    trace!(
-                        "Marking error for {}: {}",
-                        modulename,
-                        typ.clone().unwrap_or_else(Type::hole)
-                    );
+                // TODO Inherit settings from the parent compiler instead of forcing full_metadata here
+                // (which is necessary for the doc generator)
+                let mut temp_compiler = Compiler::new().full_metadata(true);
+                match await!(self.load_module(&mut temp_compiler, &vm, macros, &name, args[0].span,))
+                {
+                    Ok(Some(future)) => {
+                        let span = args[0].span;
+                        return await!(future.map(move |_| Ok(pos::spanned(
+                            span,
+                            Expr::Ident(TypedIdent::new(name))
+                        ))));
+                    }
+                    Ok(None) => (),
+                    Err((typ, err)) => {
+                        macros.errors.push(pos::spanned(args[0].span, err));
 
-                    let expr = Expr::Error(typ);
-                    get_state(macros)
-                        .modules_with_errors
-                        .insert(modulename, expr.clone());
+                        let expr = Expr::Error(typ);
+                        get_state(macros)
+                            .modules_with_errors
+                            .insert(modulename, expr.clone());
 
-                    return Box::new(future::ok(pos::spanned(args[0].span, expr)));
+                        return Ok(pos::spanned(args[0].span, expr));
+                    }
                 }
             }
-        }
-        Box::new(future::ok(pos::spanned(
-            args[0].span,
-            Expr::Ident(TypedIdent::new(name)),
-        )))
+            Ok(pos::spanned(
+                args[0].span,
+                Expr::Ident(TypedIdent::new(name)),
+            ))
+        })
+            .boxed()
     }
 }

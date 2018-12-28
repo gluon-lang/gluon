@@ -154,8 +154,8 @@ fn array() {
 fn return_finished_future() {
     let _ = ::env_logger::try_init();
 
-    fn add(x: i32, y: i32) -> FutureResult<impl Future<Item = i32, Error = Error>> {
-        FutureResult(Ok(x + y).into_future())
+    fn add(x: i32, y: i32) -> FutureResult<Compat<impl Future<Output = Result<i32, Error>>>> {
+        FutureResult(future::ok(x + y).compat())
     }
 
     let expr = r#"
@@ -177,7 +177,7 @@ fn return_finished_future() {
 }
 
 fn poll_n(s: String) -> FutureResult<impl Future<Item = IO<String>, Error = Error>> {
-    use futures::sync::oneshot::channel;
+    use futures::channel::oneshot::channel;
     use std::thread::spawn;
 
     let (ping_c, ping_p) = channel();
@@ -252,8 +252,8 @@ fn io_future() {
 
     let _ = ::env_logger::try_init();
 
-    fn test(_: ()) -> FutureResult<impl Future<Item = IO<i32>, Error = Error>> {
-        FutureResult(Ok(IO::Value(123)).into_future())
+    fn test(_: ()) -> FutureResult<Compat<impl Future<Output = Result<IO<i32>, Error>>>> {
+        FutureResult(future::ok(IO::Value(123)).compat())
     }
 
     let expr = r#"

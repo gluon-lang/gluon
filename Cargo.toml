@@ -37,7 +37,8 @@ quick-error = "1.0.0"
 collect-mac = "0.1.0"
 either = "1.0.0"
 itertools = "0.8"
-futures = "0.1.11"
+futures_01 = { version = "0.1", package = "futures" }
+futures-preview = { version = "0.3.0-alpha.17", features = ["compat"] }
 codespan = "0.3"
 codespan-reporting = "0.3"
 
