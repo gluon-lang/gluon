@@ -25,21 +25,21 @@ use std::cell::RefCell;
 use std::fmt;
 use std::hash::Hash;
 
-use base::ast::{Do, Expr, IdentEnv, SpannedExpr, SpannedPattern, TypedIdent, ValueBinding};
-use base::error::{AsDiagnostic, Errors};
-use base::fnv::FnvMap;
-use base::metadata::Metadata;
-use base::pos::{self, ByteOffset, BytePos, Span, Spanned};
-use base::symbol::Symbol;
-use base::types::{ArcType, TypeCache};
+use crate::base::ast::{Do, Expr, IdentEnv, SpannedExpr, SpannedPattern, TypedIdent, ValueBinding};
+use crate::base::error::{AsDiagnostic, Errors};
+use crate::base::fnv::FnvMap;
+use crate::base::metadata::Metadata;
+use crate::base::pos::{self, ByteOffset, BytePos, Span, Spanned};
+use crate::base::symbol::Symbol;
+use crate::base::types::{ArcType, TypeCache};
 
-use infix::{Fixity, OpMeta, OpTable, Reparser};
-use layout::Layout;
-use token::{Token, Tokenizer};
+use crate::infix::{Fixity, OpMeta, OpTable, Reparser};
+use crate::layout::Layout;
+use crate::token::{Token, Tokenizer};
 
-pub use infix::Error as InfixError;
-pub use layout::Error as LayoutError;
-pub use token::Error as TokenizeError;
+pub use crate::infix::Error as InfixError;
+pub use crate::layout::Error as LayoutError;
+pub use crate::token::Error as TokenizeError;
 
 lalrpop_mod!(
     #[cfg_attr(rustfmt, rustfmt_skip)]
@@ -496,7 +496,7 @@ pub fn reparse_infix<Id>(
 where
     Id: Clone + Eq + Hash + AsRef<str> + ::std::fmt::Debug,
 {
-    use base::ast::{is_operator_char, walk_pattern, Pattern, Visitor};
+    use crate::base::ast::{is_operator_char, walk_pattern, Pattern, Visitor};
 
     let mut errors = Errors::new();
 

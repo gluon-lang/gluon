@@ -19,19 +19,21 @@ use either::Either;
 
 use itertools::Itertools;
 
-use base::ast::{
+use crate::base::ast::{
     walk_expr, walk_pattern, AstType, Expr, Pattern, PatternField, SpannedExpr, SpannedIdent,
     SpannedPattern, Typed, TypedIdent, Visitor,
 };
-use base::filename_to_module;
-use base::fnv::{FnvMap, FnvSet};
-use base::kind::{ArcKind, Kind};
-use base::metadata::Metadata;
-use base::pos::{self, BytePos, HasSpan, Span, Spanned};
-use base::resolve;
-use base::scoped_map::ScopedMap;
-use base::symbol::{Name, Symbol, SymbolRef};
-use base::types::{walk_type_, AliasData, ArcType, ControlVisitation, Generic, Type, TypeEnv};
+use crate::base::filename_to_module;
+use crate::base::fnv::{FnvMap, FnvSet};
+use crate::base::kind::{ArcKind, Kind};
+use crate::base::metadata::Metadata;
+use crate::base::pos::{self, BytePos, HasSpan, Span, Spanned};
+use crate::base::resolve;
+use crate::base::scoped_map::ScopedMap;
+use crate::base::symbol::{Name, Symbol, SymbolRef};
+use crate::base::types::{
+    walk_type_, AliasData, ArcType, ControlVisitation, Generic, Type, TypeEnv,
+};
 
 #[derive(Clone, Debug)]
 pub struct Found<'a> {
@@ -361,7 +363,7 @@ where
                 Variant::FieldIdent(ident, record_type) => {
                     if ident.span.containment(self.pos) == Ordering::Equal {
                         let typ = resolve::remove_aliases(
-                            &::base::ast::EmptyEnv::default(),
+                            &crate::base::ast::EmptyEnv::default(),
                             record_type.clone(),
                         )
                         .row_iter()
@@ -1423,7 +1425,7 @@ impl SuggestionQuery {
                 .filter(|module| self.filter(module, path.as_str()))
                 .map(|module| {
                     let name = module[path.module().as_str().len()..]
-                        .trim_left_matches('.')
+                        .trim_start_matches('.')
                         .split('.')
                         .next()
                         .unwrap()

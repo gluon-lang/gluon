@@ -66,8 +66,8 @@ fn panics_contain_stacktrace() {
 fn undefined_infix() {
     let _ = ::env_logger::try_init();
 
-    use base::pos::{self, BytePos};
-    use parser::{InfixError, ParseErrors};
+    use crate::base::pos::{self, BytePos};
+    use crate::parser::{InfixError, ParseErrors};
 
     let expr = r#"
     let (+) x y = 1

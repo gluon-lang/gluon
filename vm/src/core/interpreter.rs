@@ -1,16 +1,16 @@
-use base::ast::{Literal, TypedIdent};
-use base::fnv::FnvSet;
-use base::kind::{ArcKind, KindEnv};
-use base::merge::merge_iter;
-use base::scoped_map::ScopedMap;
-use base::symbol::{Symbol, SymbolRef};
-use base::types::{Alias, ArcType, TypeEnv};
-use core::optimize::{walk_expr_alloc, DifferentLifetime, ExprProducer, SameLifetime, Visitor};
-use core::{self, Allocator, CExpr, Closure, Expr, LetBinding, Named, Pattern};
+use crate::base::ast::{Literal, TypedIdent};
+use crate::base::fnv::FnvSet;
+use crate::base::kind::{ArcKind, KindEnv};
+use crate::base::merge::merge_iter;
+use crate::base::scoped_map::ScopedMap;
+use crate::base::symbol::{Symbol, SymbolRef};
+use crate::base::types::{Alias, ArcType, TypeEnv};
+use crate::core::optimize::{walk_expr_alloc, DifferentLifetime, ExprProducer, SameLifetime, Visitor};
+use crate::core::{self, Allocator, CExpr, Closure, Expr, LetBinding, Named, Pattern};
 use std::ops::{Deref, DerefMut};
-use types::*;
+use crate::types::*;
 
-use {Error, Result};
+use crate::{Error, Result};
 
 fn is_variable_in_expression<'a, I>(iter: I, expr: CExpr) -> bool
 where
@@ -756,10 +756,10 @@ impl<'a, 'e> Compiler<'a, 'e> {
 mod tests {
     use super::*;
 
-    use base::symbol::Symbols;
+    use crate::base::symbol::Symbols;
 
-    use core::grammar::ExprParser;
-    use core::*;
+    use crate::core::grammar::ExprParser;
+    use crate::core::*;
 
     macro_rules! assert_eq_expr {
         ($actual:expr, $expected:expr) => {

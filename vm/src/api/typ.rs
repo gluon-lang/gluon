@@ -2,14 +2,14 @@
 //!
 //! _This module requires Gluon to be built with the `serde` feature._
 
-use base::symbol::{Symbol, Symbols};
-use base::types::{ArcType, Field, Type, TypeCache};
+use crate::base::symbol::{Symbol, Symbols};
+use crate::base::types::{ArcType, Field, Type, TypeCache};
 
-use api::VmType;
-use thread::Thread;
-use {Error as VmError, Result};
+use crate::api::VmType;
+use crate::thread::Thread;
+use crate::{Error as VmError, Result};
 
-use serde::de::{
+use crate::serde::de::{
     self, DeserializeOwned, DeserializeSeed, EnumAccess, Error, IntoDeserializer, MapAccess,
     SeqAccess, VariantAccess, Visitor,
 };
@@ -569,7 +569,7 @@ impl<'de, 'a> VariantAccess<'de> for Enum<'a, 'de> {
 mod tests {
     use super::from_rust_with_symbols;
     use super::*;
-    use thread::RootedThread;
+    use crate::thread::RootedThread;
 
     #[allow(dead_code)]
     #[derive(Deserialize)]

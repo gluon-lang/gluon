@@ -35,13 +35,13 @@ pub mod unify_type;
 
 mod implicits;
 
-use base::types::{ArcType, TypeCache, TypeEnv};
+use crate::base::types::{ArcType, TypeCache, TypeEnv};
 
 /// Checks if `actual` can be assigned to a binding with the type signature `signature`
 pub fn check_signature(env: &TypeEnv, signature: &ArcType, actual: &ArcType) -> bool {
-    use base::{fnv::FnvMap, kind::Kind};
+    use crate::base::{fnv::FnvMap, kind::Kind};
 
-    use substitution::Substitution;
+    use crate::substitution::Substitution;
 
     let subs = Substitution::new(Kind::typ());
     let type_cache = TypeCache::new();
@@ -60,9 +60,9 @@ mod tests {
     use std::cell::RefCell;
     use std::rc::Rc;
 
-    use base::kind::{ArcKind, KindEnv};
-    use base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
-    use base::types::{Alias, ArcType, TypeEnv};
+    use crate::base::kind::{ArcKind, KindEnv};
+    use crate::base::symbol::{Symbol, SymbolModule, SymbolRef, Symbols};
+    use crate::base::types::{Alias, ArcType, TypeEnv};
 
     pub struct MockEnv;
 

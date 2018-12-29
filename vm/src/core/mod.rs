@@ -50,12 +50,12 @@ use self::typed_arena::Arena;
 
 use self::smallvec::SmallVec;
 
-use base::ast::{self, Literal, SpannedExpr, SpannedPattern, Typed, TypedIdent};
-use base::fnv::{FnvMap, FnvSet};
-use base::pos::{spanned, BytePos, Span};
-use base::resolve::remove_aliases_cow;
-use base::symbol::Symbol;
-use base::types::{arg_iter, ArcType, PrimitiveEnv, Type, TypeEnv};
+use crate::base::ast::{self, Literal, SpannedExpr, SpannedPattern, Typed, TypedIdent};
+use crate::base::fnv::{FnvMap, FnvSet};
+use crate::base::pos::{spanned, BytePos, Span};
+use crate::base::resolve::remove_aliases_cow;
+use crate::base::symbol::Symbol;
+use crate::base::types::{arg_iter, ArcType, PrimitiveEnv, Type, TypeEnv};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Closure<'a> {
@@ -107,7 +107,7 @@ pub enum Expr<'a> {
 #[cfg(feature = "test")]
 impl fmt::Display for Pattern {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use pretty;
+        use crate::pretty;
         let arena = pretty::Arena::new();
         let mut s = Vec::new();
         self.pretty(&arena).1.render(80, &mut s).unwrap();
@@ -124,8 +124,8 @@ impl fmt::Display for Pattern {
 #[cfg(feature = "test")]
 impl<'a> fmt::Display for Expr<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        use core::pretty::Prec;
-        use pretty;
+        use crate::core::pretty::Prec;
+        use crate::pretty;
         let arena = pretty::Arena::new();
         let mut s = Vec::new();
         self.pretty(&arena, Prec::Top).1.render(80, &mut s).unwrap();
@@ -1687,13 +1687,13 @@ mod tests {
 
     use std::collections::HashMap;
 
-    use base::ast;
-    use base::symbol::{Symbol, SymbolModule, Symbols};
-    use base::types::TypeCache;
+    use crate::base::ast;
+    use crate::base::symbol::{Symbol, SymbolModule, Symbols};
+    use crate::base::types::TypeCache;
 
-    use core::grammar::ExprParser;
+    use crate::core::grammar::ExprParser;
 
-    use vm::RootedThread;
+    use crate::vm::RootedThread;
 
     fn parse_expr(symbols: &mut Symbols, expr_str: &str) -> ast::SpannedExpr<Symbol> {
         self::parser::parse_expr(

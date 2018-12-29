@@ -1,12 +1,12 @@
-use base::fnv::FnvMap;
+use crate::base::fnv::FnvMap;
+use crate::Result;
 use std::cmp::Ordering;
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
-use Result;
 
-use gc::{Gc, Traverseable};
-use value::GcStr;
+use crate::gc::{Gc, Traverseable};
+use crate::value::GcStr;
 
 /// Interned strings which allow for fast equality checks and hashing
 #[derive(Copy, Clone, Eq)]
@@ -69,11 +69,11 @@ impl InternedStr {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "::serialization::DeSeed")
+    serde(deserialize_state = "crate::serialization::DeSeed")
 )]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub struct Interner {
     // Interned strings that are referenced will be inserted anyway so we can skip serializing this

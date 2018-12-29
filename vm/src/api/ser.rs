@@ -5,14 +5,14 @@
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 
-use api::{Pushable, VmType};
-use base::types::ArcType;
-use interner::InternedStr;
-use serde::ser::{self, Serialize};
-use thread::{ActiveThread, Thread};
-use types::{VmIndex, VmTag};
-use value::{Def, RecordDef, ValueRepr};
-use {Error, Result};
+use crate::api::{Pushable, VmType};
+use crate::base::types::ArcType;
+use crate::interner::InternedStr;
+use crate::serde::ser::{self, Serialize};
+use crate::thread::{ActiveThread, Thread};
+use crate::types::{VmIndex, VmTag};
+use crate::value::{Def, RecordDef, ValueRepr};
+use crate::{Error, Result};
 
 /**
 `Pushable` wrapper which pushes `T` by serializing it.
@@ -576,8 +576,8 @@ impl<'s, 'a, 'vm> ser::SerializeStructVariant for RecordSerializer<'s, 'a, 'vm> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use thread::RootedThread;
-    use value::Value;
+    use crate::thread::RootedThread;
+    use crate::value::Value;
 
     fn to_value<T>(thread: &Thread, value: &T) -> Result<Value>
     where

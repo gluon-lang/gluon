@@ -127,10 +127,10 @@ fn gen_impl(
             use #ident::Result as _GluonResult;
         },
         CrateName::GluonVm => quote! {
-            use api as _gluon_api;
-            use thread as _gluon_thread;
-            use types as _gluon_types;
-            use Result as _GluonResult;
+            use crate::api as _gluon_api;
+            use crate::thread as _gluon_thread;
+            use crate::types as _gluon_types;
+            use crate::Result as _GluonResult;
         },
         CrateName::None => quote! {
             use gluon::vm::api as _gluon_api;

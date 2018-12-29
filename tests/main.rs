@@ -236,7 +236,7 @@ fn gather_doc_tests(expr: &SpannedExpr<Symbol>) -> Vec<(String, String)> {
                 Expr::LetBindings(ref binds, _) => {
                     for bind in binds {
                         if let Some(ref comment) = bind.metadata.comment {
-                            let mut source = make_test(&comment.content);
+                            let source = make_test(&comment.content);
                             if !source.is_empty() {
                                 let name = match bind.name.value {
                                     Pattern::Ident(ref id) => id.name.declared_name(),
@@ -250,7 +250,7 @@ fn gather_doc_tests(expr: &SpannedExpr<Symbol>) -> Vec<(String, String)> {
                 Expr::TypeBindings(ref binds, _) => {
                     for bind in binds {
                         if let Some(ref comment) = bind.metadata.comment {
-                            let mut source = make_test(&comment.content);
+                            let source = make_test(&comment.content);
                             if !source.is_empty() {
                                 self.0.push((
                                     format!("{}", bind.name.value.declared_name()),
@@ -312,7 +312,7 @@ fn main_() -> Result<(), Error> {
     };
 
     let file_filter = filter.as_ref().map_or(false, |f| f.starts_with("@"));
-    let filter = filter.as_ref().map(|f| f.trim_left_matches('@'));
+    let filter = filter.as_ref().map(|f| f.trim_start_matches('@'));
 
     let vm = new_vm();
     Compiler::new().load_file(&vm, "std/test.glu")?;

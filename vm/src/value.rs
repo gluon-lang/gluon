@@ -9,19 +9,19 @@ use itertools::Itertools;
 
 use pretty::{Arena, DocAllocator, DocBuilder};
 
-use base::fnv::FnvMap;
-use base::symbol::Symbol;
-use base::types::pretty_print::ident as pretty_ident;
-use base::types::{ArcType, Type, TypeEnv};
-use base::DebugLevel;
-use types::*;
+use crate::base::fnv::FnvMap;
+use crate::base::symbol::Symbol;
+use crate::base::types::pretty_print::ident as pretty_ident;
+use crate::base::types::{ArcType, Type, TypeEnv};
+use crate::base::DebugLevel;
+use crate::types::*;
 
-use array::Array;
-use compiler::DebugInfo;
-use gc::{DataDef, Gc, GcPtr, Generation, Move, Traverseable, WriteOnly};
-use interner::InternedStr;
-use thread::{Status, Thread};
-use {Error, Result, Variants};
+use crate::array::Array;
+use crate::compiler::DebugInfo;
+use crate::gc::{DataDef, Gc, GcPtr, Generation, Move, Traverseable, WriteOnly};
+use crate::interner::InternedStr;
+use crate::thread::{Status, Thread};
+use crate::{Error, Result, Variants};
 
 use self::ValueRepr::{Closure, Float, Function, Int, PartialApplication, String};
 
@@ -120,16 +120,16 @@ unsafe impl DataDef for ClosureInitDef {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "::serialization::DeSeed")
+    serde(deserialize_state = "crate::serialization::DeSeed")
 )]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub struct BytecodeFunction {
     #[cfg_attr(
         feature = "serde_derive",
-        serde(state_with = "::serialization::symbol")
+        serde(state_with = "crate::serialization::symbol")
     )]
     pub name: Symbol,
     pub args: VmIndex,
@@ -340,8 +340,8 @@ impl<'b> Traverseable for UninitializedRecord<'b> {
 
 mod gc_str {
     use super::ValueArray;
-    use gc::{Gc, GcPtr, Generation, Traverseable};
-    use Error;
+    use crate::gc::{Gc, GcPtr, Generation, Traverseable};
+    use crate::Error;
 
     use std::fmt;
     use std::ops::Deref;
@@ -414,11 +414,11 @@ pub use self::gc_str::GcStr;
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "::serialization::DeSeed")
+    serde(deserialize_state = "crate::serialization::DeSeed")
 )]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub(crate) enum ValueRepr {
     Byte(u8),
@@ -429,7 +429,7 @@ pub(crate) enum ValueRepr {
     Data(
         #[cfg_attr(
             feature = "serde_derive",
-            serde(deserialize_state_with = "::serialization::gc::deserialize_data")
+            serde(deserialize_state_with = "crate::serialization::gc::deserialize_data")
         )]
         #[cfg_attr(feature = "serde_derive", serde(serialize_state))]
         GcPtr<DataStruct>,
@@ -437,7 +437,7 @@ pub(crate) enum ValueRepr {
     Array(
         #[cfg_attr(
             feature = "serde_derive",
-            serde(deserialize_state_with = "::serialization::gc::deserialize_array")
+            serde(deserialize_state_with = "crate::serialization::gc::deserialize_array")
         )]
         #[cfg_attr(feature = "serde_derive", serde(serialize_state))]
         GcPtr<ValueArray>,
@@ -446,14 +446,14 @@ pub(crate) enum ValueRepr {
     Closure(
         #[cfg_attr(
             feature = "serde_derive",
-            serde(state_with = "::serialization::closure")
+            serde(state_with = "crate::serialization::closure")
         )]
         GcPtr<ClosureData>,
     ),
     PartialApplication(
         #[cfg_attr(
             feature = "serde_derive",
-            serde(deserialize_state_with = "::serialization::deserialize_application")
+            serde(deserialize_state_with = "crate::serialization::deserialize_application")
         )]
         #[cfg_attr(feature = "serde_derive", serde(serialize_state))]
         GcPtr<PartialApplicationData>,
@@ -463,7 +463,7 @@ pub(crate) enum ValueRepr {
     Userdata(
         #[cfg_attr(
             feature = "serde_derive",
-            serde(serialize_with = "::serialization::serialize_userdata")
+            serde(serialize_with = "crate::serialization::serialize_userdata")
         )]
         GcPtr<Box<Userdata>>,
     ),
@@ -477,11 +477,11 @@ pub(crate) enum ValueRepr {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "::serialization::DeSeed")
+    serde(deserialize_state = "crate::serialization::DeSeed")
 )]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 #[repr(transparent)]
 pub struct Value(#[cfg_attr(feature = "serde_derive", serde(state))] ValueRepr);
@@ -680,7 +680,7 @@ impl<'a, 't> InternalPrinter<'a, 't> {
             ValueRepr::Thread(thread) => arena.text(format!("{:?}", thread)),
             ValueRepr::Byte(b) => arena.text(format!("{}", b)),
             ValueRepr::Int(i) => {
-                use base::types::BuiltinType;
+                use crate::base::types::BuiltinType;
                 match **self.typ {
                     Type::Builtin(BuiltinType::Int) => arena.text(format!("{}", i)),
                     Type::Builtin(BuiltinType::Char) => match ::std::char::from_u32(i as u32) {
@@ -715,8 +715,8 @@ impl<'a, 't> InternalPrinter<'a, 't> {
             }
         }
 
-        use base::resolve::remove_aliases_cow;
-        use base::types::arg_iter;
+        use crate::base::resolve::remove_aliases_cow;
+        use crate::base::types::arg_iter;
 
         let typ = remove_aliases_cow(self.env, self.typ);
         let arena = self.arena;
@@ -805,17 +805,17 @@ impl<'a, 't> InternalPrinter<'a, 't> {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "::serialization::DeSeed")
+    serde(deserialize_state = "crate::serialization::DeSeed")
 )]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub enum Callable {
     Closure(
         #[cfg_attr(
             feature = "serde_derive",
-            serde(state_with = "::serialization::closure")
+            serde(state_with = "crate::serialization::closure")
         )]
         GcPtr<ClosureData>,
     ),
@@ -851,7 +851,7 @@ impl Traverseable for Callable {
 #[cfg_attr(feature = "serde_derive", derive(SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub struct PartialApplicationData {
     #[cfg_attr(feature = "serde_derive", serde(serialize_state))]
@@ -1016,12 +1016,12 @@ impl fmt::Debug for ValueRepr {
 #[cfg_attr(feature = "serde_derive", derive(SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub struct ExternFunction {
     #[cfg_attr(
         feature = "serde_derive",
-        serde(serialize_state_with = "::serialization::symbol::serialize")
+        serde(serialize_state_with = "crate::serialization::symbol::serialize")
     )]
     pub id: Symbol,
     pub args: VmIndex,
@@ -1538,7 +1538,7 @@ impl<'t> Cloner<'t> {
                             deep_clone_elems(new_array, |e| self.deep_clone_userdata(*e))
                         }
                         Repr::Thread => {
-                            return Err(Error::Message("Threads cannot be deep cloned yet".into()))
+                            return Err(Error::Message("Threads cannot be deep cloned yet".into()));
                         }
                     }?;
                 }
@@ -1602,12 +1602,14 @@ impl<'t> Cloner<'t> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gc::{Gc, Generation};
-    use types::VmInt;
+    use crate::gc::{Gc, Generation};
+    use crate::types::VmInt;
 
-    use base::kind::{ArcKind, KindEnv};
-    use base::symbol::{Symbol, SymbolRef};
-    use base::types::{Alias, ArcType, Field, Type, TypeEnv};
+    use crate::base::{
+        kind::{ArcKind, KindEnv},
+        symbol::{Symbol, SymbolRef},
+        types::{Alias, ArcType, Field, Type, TypeEnv},
+    };
 
     struct MockEnv(Option<Alias<Symbol, ArcType>>);
 

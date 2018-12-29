@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
-use ast::Argument;
-use symbol::{Symbol, SymbolRef};
+use crate::ast::Argument;
+use crate::symbol::{Symbol, SymbolRef};
 
 pub trait MetadataEnv {
     fn get_metadata(&self, id: &SymbolRef) -> Option<&Metadata>;

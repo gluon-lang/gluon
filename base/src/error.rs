@@ -13,7 +13,7 @@ use std::vec;
 
 use codespan_reporting::{Diagnostic, Label};
 
-use pos::{BytePos, Span, Spanned};
+use crate::pos::{BytePos, Span, Spanned};
 
 /// An error type which can represent multiple errors.
 #[derive(Clone, Debug, PartialEq)]

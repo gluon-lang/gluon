@@ -10,14 +10,14 @@ extern crate gluon_base as base;
 extern crate gluon_check as check;
 extern crate gluon_parser as parser;
 
-use base::ast::{Expr, Pattern, SpannedExpr};
-use base::pos::{BytePos, Span};
-use base::symbol::Symbol;
-use base::types::{Field, Type};
+use crate::base::ast::{Expr, Pattern, SpannedExpr};
+use crate::base::pos::{BytePos, Span};
+use crate::base::symbol::Symbol;
+use crate::base::types::{Field, Type};
 
-use support::{alias, intern, typ, MockEnv};
+use crate::support::{alias, intern, typ, MockEnv};
 
-use check::typecheck::TypeError;
+use crate::check::typecheck::TypeError;
 
 #[macro_use]
 
@@ -663,7 +663,7 @@ make 1
 fn resolve_app_app() {
     let _ = env_logger::try_init();
 
-    use base::resolve;
+    use crate::base::resolve;
 
     let record = Type::record(
         vec![],

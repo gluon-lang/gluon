@@ -1,4 +1,4 @@
-use base::{
+use crate::base::{
     ast::{
         self, DisplayEnv, Do, Expr, MutVisitor, Pattern, SpannedAlias, SpannedAstType, SpannedExpr,
         TypedIdent,
@@ -79,7 +79,7 @@ pub fn rename(symbols: &mut SymbolModule, expr: &mut SpannedExpr<Symbol>) {
             let mut i = 0;
             while self.symbols.contains_name(&new_name) {
                 let truncate_len = new_name
-                    .trim_right_matches(|c: char| c.is_digit(10) || c == '_')
+                    .trim_end_matches(|c: char| c.is_digit(10) || c == '_')
                     .len();
                 new_name.truncate(truncate_len);
 

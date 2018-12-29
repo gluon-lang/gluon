@@ -5,7 +5,7 @@ use std::collections::hash_map::{Entry, IterMut};
 use std::fmt;
 use std::hash::Hash;
 
-use fnv::FnvMap;
+use crate::fnv::FnvMap;
 
 /// A map struct which allows for the introduction of different scopes
 /// Introducing a new scope will make it possible to introduce additional
@@ -305,7 +305,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use scoped_map::ScopedMap;
+    use super::*;
+
     #[test]
     fn test() {
         let mut map = ScopedMap::new();

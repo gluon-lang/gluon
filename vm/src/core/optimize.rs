@@ -1,12 +1,12 @@
 use std::marker::PhantomData;
 
-use base::ast::TypedIdent;
-use base::merge::{merge_fn, merge_iter};
-use base::pos;
-use base::symbol::Symbol;
-use base::types::{ArcType, Field};
+use crate::base::ast::TypedIdent;
+use crate::base::merge::{merge_fn, merge_iter};
+use crate::base::pos;
+use crate::base::symbol::Symbol;
+use crate::base::types::{ArcType, Field};
 
-use core::{Allocator, Alternative, CExpr, Closure, Expr, LetBinding, Named, Pattern};
+use crate::core::{Allocator, Alternative, CExpr, Closure, Expr, LetBinding, Named, Pattern};
 
 pub trait ExprProducer<'a, 'b>: Visitor<'a, 'b> {
     fn new(allocator: &'a Allocator<'a>) -> Self;
@@ -327,8 +327,7 @@ mod tests {
 
     use base::symbol::Symbols;
 
-    use core;
-    use core::grammar::ExprParser;
+    use crate::core::{self, grammar::ExprParser};
 
     #[test]
     fn unnecessary_allocation() {

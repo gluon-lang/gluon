@@ -8,12 +8,12 @@ use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use serde::de::{DeserializeSeed, DeserializeState, Deserializer, Error};
-use serde::ser::{SerializeState, Serializer};
+use crate::serde::de::{DeserializeSeed, DeserializeState, Deserializer, Error};
+use crate::serde::ser::{SerializeState, Serializer};
 
-use kind::ArcKind;
-use symbol::Symbol;
-use types::{AliasData, ArcType, Type};
+use crate::kind::ArcKind;
+use crate::symbol::Symbol;
+use crate::types::{AliasData, ArcType, Type};
 
 #[derive(Default)]
 pub struct SeSeed {
@@ -33,13 +33,13 @@ impl AsRef<NodeToId> for SeSeed {
 }
 
 pub struct Seed<Id, T> {
-    nodes: ::serialization::NodeMap,
+    nodes: crate::serialization::NodeMap,
     _marker: PhantomData<(Id, T)>,
 }
 
 impl<Id, T> Default for Seed<Id, T> {
     fn default() -> Self {
-        Seed::new(::serialization::NodeMap::default())
+        Seed::new(crate::serialization::NodeMap::default())
     }
 }
 
@@ -49,14 +49,14 @@ impl<Id, T> AsMut<Seed<Id, T>> for Seed<Id, T> {
     }
 }
 
-impl<Id, T> AsMut<::serialization::NodeMap> for Seed<Id, T> {
-    fn as_mut(&mut self) -> &mut ::serialization::NodeMap {
+impl<Id, T> AsMut<crate::serialization::NodeMap> for Seed<Id, T> {
+    fn as_mut(&mut self) -> &mut crate::serialization::NodeMap {
         &mut self.nodes
     }
 }
 
 impl<Id, T> Seed<Id, T> {
-    pub fn new(nodes: ::serialization::NodeMap) -> Self {
+    pub fn new(nodes: crate::serialization::NodeMap) -> Self {
         Seed {
             nodes,
             _marker: PhantomData,
@@ -78,14 +78,14 @@ pub fn deserialize_group<'de, Id, T, D>(
     deserializer: D,
 ) -> Result<Arc<Vec<AliasData<Id, T>>>, D::Error>
 where
-    D: ::serde::Deserializer<'de>,
+    D: crate::serde::Deserializer<'de>,
     T: Clone + From<Type<Id, T>> + ::std::any::Any + DeserializeState<'de, Seed<Id, T>>,
     Id: DeserializeState<'de, Seed<Id, T>>
         + Clone
         + ::std::any::Any
         + DeserializeState<'de, Seed<Id, T>>,
 {
-    use serialization::SharedSeed;
+    use crate::serialization::SharedSeed;
     let seed = SharedSeed::new(seed);
     DeserializeSeed::deserialize(seed, deserializer)
 }
@@ -100,9 +100,9 @@ impl<'a, T> Shared for &'a T {
     }
 }
 
-impl Shared for ::kind::ArcKind {
+impl Shared for crate::kind::ArcKind {
     fn unique(&self) -> bool {
-        ::kind::ArcKind::strong_count(self) == 1
+        crate::kind::ArcKind::strong_count(self) == 1
     }
 
     fn as_ptr(&self) -> *const () {
@@ -274,12 +274,12 @@ pub mod seq {
 
     pub fn deserialize<'de, S, T, U, D>(seed: &mut S, deserializer: D) -> Result<T, D::Error>
     where
-        D: ::serde::Deserializer<'de>,
+        D: crate::serde::Deserializer<'de>,
         T: Extend<U> + Default + ::std::any::Any,
         U: DeserializeState<'de, S> + Clone + ::std::any::Any + DeserializeState<'de, S>,
     {
         DeserializeSeed::deserialize(
-            ::serde::de::SeqSeedEx::new(seed, |_| T::default()),
+            crate::serde::de::SeqSeedEx::new(seed, |_| T::default()),
             deserializer,
         )
     }
@@ -306,7 +306,7 @@ where
     where
         S: Serializer,
     {
-        ::serialization::shared::serialize(self, serializer, seed)
+        crate::serialization::shared::serialize(self, serializer, seed)
     }
 }
 
@@ -315,13 +315,13 @@ impl SerializeState<SeSeed> for ArcKind {
     where
         S: Serializer,
     {
-        ::serialization::shared::serialize(self, serializer, seed)
+        crate::serialization::shared::serialize(self, serializer, seed)
     }
 }
 
 pub mod shared {
     use super::*;
-    use serde::de::DeserializeSeed;
+    use crate::serde::de::DeserializeSeed;
 
     pub fn serialize<S, T, Seed>(self_: &T, serializer: S, seed: &Seed) -> Result<S::Ok, S::Error>
     where

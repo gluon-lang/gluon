@@ -37,8 +37,8 @@ let trim_tests =
     test "trim" <| \_ -> (assert_eq (string.trim "ab") "ab" *> assert_eq (string.trim " ab ") "ab"
         *> assert_eq (string.trim "ab \t") "ab"
         *> assert_eq (string.trim "\t ab") "ab"
-        *> assert_eq (string.trim_left " ab ") "ab "
-        *> assert_eq (string.trim_right " ab ") " ab")
+        *> assert_eq (string.trim_start " ab ") "ab "
+        *> assert_eq (string.trim_end " ab ") " ab")
 
 let from_utf8_tests =
     test "from_utf8_tests" <| \_ -> (assert_eq (string.from_utf8 []) (Ok "") *> assert_eq (string.from_utf8 [32b]) (Ok " ")

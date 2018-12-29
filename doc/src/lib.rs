@@ -366,8 +366,8 @@ fn handlebars() -> Result<Handlebars> {
         pulldown_cmark::html::push_html(&mut buf, parser);
         let buf = buf
             .trim()
-            .trim_left_matches("<p>")
-            .trim_right_matches("</p>");
+            .trim_start_matches("<p>")
+            .trim_end_matches("</p>");
         out.write(buf)?;
 
         Ok(())

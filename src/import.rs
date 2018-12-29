@@ -15,15 +15,15 @@ use futures::{future, Future};
 
 use itertools::Itertools;
 
-use base::ast::{expr_to_path, Expr, Literal, SpannedExpr, Typed, TypedIdent};
-use base::error::{Errors, InFile};
-use base::filename_to_module;
-use base::fnv::FnvMap;
-use base::pos::{self, BytePos, Span};
-use base::symbol::Symbol;
-use base::types::ArcType;
+use crate::base::ast::{expr_to_path, Expr, Literal, SpannedExpr, Typed, TypedIdent};
+use crate::base::error::{Errors, InFile};
+use crate::base::filename_to_module;
+use crate::base::fnv::FnvMap;
+use crate::base::pos::{self, BytePos, Span};
+use crate::base::symbol::Symbol;
+use crate::base::types::ArcType;
 
-use vm::{
+use crate::vm::{
     self,
     macros::{Error as MacroError, Macro, MacroExpander, MacroFuture},
     thread::{Thread, ThreadInternal},
@@ -85,7 +85,7 @@ impl Importer for DefaultImporter {
         input: &str,
         mut expr: SpannedExpr<Symbol>,
     ) -> Result<(), (Option<ArcType>, MacroError)> {
-        use compiler_pipeline::*;
+        use crate::compiler_pipeline::*;
 
         let result = {
             let expr = &mut expr;
@@ -292,7 +292,7 @@ impl<I> Import<I> {
     where
         I: Importer,
     {
-        use compiler_pipeline::*;
+        use crate::compiler_pipeline::*;
 
         let modulename = module_id.name().definition_name();
         // Retrieve the source, first looking in the standard library included in the
@@ -316,7 +316,7 @@ impl<I> Import<I> {
                 let implicit_prelude = !file_contents.starts_with("//@NO-IMPLICIT-PRELUDE");
                 compiler.set_implicit_prelude(implicit_prelude);
 
-                let mut prev_errors = mem::replace(&mut macros.errors, Errors::new());
+                let prev_errors = mem::replace(&mut macros.errors, Errors::new());
 
                 let result =
                     file_contents.expand_macro_with(compiler, macros, &modulename, &file_contents);
@@ -327,7 +327,7 @@ impl<I> Import<I> {
                 if errors.has_errors() {
                     macros.errors.push(pos::spanned(
                         span,
-                        Box::new(::Error::Macro(InFile::new(
+                        Box::new(crate::Error::Macro(InFile::new(
                             compiler.code_map().clone(),
                             errors,
                         ))),
@@ -484,7 +484,7 @@ where
                 _ => {
                     return Err(
                         Error::String("Expected a string literal or path to import".into()).into(),
-                    )
+                    );
                 }
             };
             Ok(modulename)

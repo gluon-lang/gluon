@@ -10,10 +10,10 @@ extern crate gluon_base as base;
 extern crate gluon_check as check;
 extern crate gluon_parser as parser;
 
-use base::symbol::Symbol;
-use base::types::{ArcType, Type};
+use crate::base::symbol::Symbol;
+use crate::base::types::{ArcType, Type};
 
-use check::typecheck::TypeError;
+use crate::check::typecheck::TypeError;
 
 #[macro_use]
 mod support;
@@ -361,7 +361,7 @@ type Foo = Test Int
 
 #[test]
 fn type_error_span() {
-    use base::pos::Span;
+    use crate::base::pos::Span;
 
     let _ = ::env_logger::try_init();
     let text = r#"

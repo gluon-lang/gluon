@@ -1,10 +1,10 @@
 //! The marshalling api
-use base::{
+use crate::base::{
     scoped_map::ScopedMap,
     symbol::{Symbol, Symbols},
     types::{self, ArcType, Type},
 };
-use {
+use crate::{
     forget_lifetime,
     gc::{DataDef, Gc, GcPtr, Move, Traverseable},
     thread::{self, Context, RootedThread, ThreadInternal, VmRoot},
@@ -36,8 +36,8 @@ use futures::{Async, Future};
 pub use self::function::*;
 pub use self::opaque::{Opaque, OpaqueRef, OpaqueValue};
 pub use self::record::Record;
-pub use thread::ActiveThread;
-pub use value::Userdata;
+pub use crate::thread::ActiveThread;
+pub use crate::value::Userdata;
 
 macro_rules! count {
     () => { 0 };
@@ -130,9 +130,9 @@ impl<'a> Closure<'a> {
         self.0.function.name.definition_name()
     }
     pub fn upvars(&self) -> impl Iterator<Item = Variants<'a>> {
-        ::value::variant_iter(&self.0.upvars)
+        crate::value::variant_iter(&self.0.upvars)
     }
-    pub fn debug_info(&self) -> &::compiler::DebugInfo {
+    pub fn debug_info(&self) -> &crate::compiler::DebugInfo {
         &self.0.function.debug_info
     }
 }
@@ -192,7 +192,7 @@ impl<'a> Data<'a> {
 
     /// Creates an iterator over the fields of this value.
     pub fn iter(&self) -> impl Iterator<Item = Variants<'a>> {
-        ::value::variant_iter(self.fields())
+        crate::value::variant_iter(self.fields())
     }
 
     fn fields(&self) -> &'a [Value] {
@@ -227,7 +227,7 @@ impl<'a> Data<'a> {
     }
 
     #[doc(hidden)]
-    pub fn field_names(&self) -> Vec<::interner::InternedStr> {
+    pub fn field_names(&self) -> Vec<crate::interner::InternedStr> {
         match self.0 {
             DataInner::Tag(_) => Vec::new(),
             DataInner::Data(data) => unsafe {
@@ -311,8 +311,8 @@ pub type Generic<T> = OpaqueValue<RootedThread, T>;
 /// Module containing types which represent generic variables in gluon's type system
 pub mod generic {
     use super::VmType;
-    use base::types::ArcType;
-    use vm::Thread;
+    use crate::base::types::ArcType;
+    use crate::vm::Thread;
 
     macro_rules! make_generics {
         ($($i: ident)+) => {
@@ -1422,7 +1422,7 @@ impl<'vm> ArrayRef<'vm> {
         self.0.as_slice()
     }
 
-    pub fn iter(&self) -> ::value::Iter<'vm> {
+    pub fn iter(&self) -> crate::value::Iter<'vm> {
         self.0.iter()
     }
 }
@@ -1649,7 +1649,7 @@ where
 }
 
 pub struct GetableIter<'vm, 'value, T> {
-    iter: ::value::Iter<'value>,
+    iter: crate::value::Iter<'value>,
     vm: &'vm Thread,
     _marker: PhantomData<fn(&'vm ()) -> T>,
 }

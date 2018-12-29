@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
-use symbol::Symbol;
-use types::{AliasRef, ArcType, Type, TypeEnv};
+use crate::symbol::Symbol;
+use crate::types::{AliasRef, ArcType, Type, TypeEnv};
 
 quick_error! {
     #[derive(Debug, PartialEq)]

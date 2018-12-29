@@ -1,6 +1,6 @@
 use std::{fmt, result::Result as StdResult};
 
-use base::{
+use crate::base::{
     ast::{self, AstType},
     kind::{self, ArcKind, Kind, KindCache},
     merge,
@@ -9,8 +9,8 @@ use base::{
     types::{self, ArcType, BuiltinType, Generic, Type, TypeEnv, Walker},
 };
 
-use substitution::{Substitutable, Substitution};
-use unify::{self, Error as UnifyError, Unifiable, Unifier, UnifierState};
+use crate::substitution::{Substitutable, Substitution};
+use crate::unify::{self, Error as UnifyError, Unifiable, Unifier, UnifierState};
 
 pub type Error<I> = UnifyError<ArcKind, KindError<I>>;
 pub type SpannedError<I> = Spanned<Error<I>, BytePos>;
@@ -155,7 +155,7 @@ impl<'a> KindCheck<'a> {
 
     fn find_projection(&mut self, ids: &[Symbol]) -> Option<ArcKind> {
         // Errors get reported in typecheck as well so ignore them here
-        ::typecheck::translate_projected_type(self.info, self.idents, ids)
+        crate::typecheck::translate_projected_type(self.info, self.idents, ids)
             .ok()
             .map(|typ| typ.kind().into_owned())
     }
@@ -453,7 +453,7 @@ pub fn fmt_kind_error<I>(error: &Error<I>, f: &mut fmt::Formatter) -> fmt::Resul
 where
     I: fmt::Display + AsRef<str>,
 {
-    use unify::Error::*;
+    use crate::unify::Error::*;
     match *error {
         TypeMismatch(ref expected, ref actual) => write!(
             f,

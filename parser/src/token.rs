@@ -1,6 +1,6 @@
-use base::ast::is_operator_char;
-use base::metadata::{Comment, CommentType};
-use base::pos::{self, BytePos, Column, Line, Location, Spanned};
+use crate::base::ast::is_operator_char;
+use crate::base::metadata::{Comment, CommentType};
+use crate::base::pos::{self, BytePos, Column, Line, Location, Spanned};
 use std::fmt;
 use std::str::Chars;
 
@@ -203,7 +203,7 @@ struct CharLocations<'input> {
 impl<'input> CharLocations<'input> {
     pub fn new<S>(input: &'input S) -> CharLocations<'input>
     where
-        S: ?Sized + ::ParserSource,
+        S: ?Sized + crate::ParserSource,
     {
         CharLocations {
             location: Location {
@@ -243,7 +243,7 @@ pub struct Tokenizer<'input> {
 impl<'input> Tokenizer<'input> {
     pub fn new<S>(input: &'input S) -> Tokenizer<'input>
     where
-        S: ?Sized + ::ParserSource,
+        S: ?Sized + crate::ParserSource,
     {
         let mut chars = CharLocations::new(input);
 
@@ -461,7 +461,7 @@ impl<'input> Tokenizer<'input> {
 
         if line.starts_with("#!") {
             let skip = 2;
-            let result = line[skip..].trim_right();
+            let result = line[skip..].trim_end();
             let tok = Token::ShebangLine(result);
             Some(pos::spanned2(start, end, tok))
         } else {
@@ -679,15 +679,15 @@ fn i64_from_hex(hex: &str, is_positive: bool) -> Result<i64, Error> {
 
 #[cfg(test)]
 mod test {
-    use base::metadata::Comment;
-    use base::pos::{self, BytePos, Column, Line, Location, Spanned};
+    use crate::base::metadata::Comment;
+    use crate::base::pos::{self, BytePos, Column, Line, Location, Spanned};
 
     use codespan::{ByteOffset, ColumnOffset};
 
     use super::*;
     use super::{error, Tokenizer};
-    use token::Token;
-    use token::Token::*;
+    use crate::token::Token;
+    use crate::token::Token::*;
 
     fn loc(byte: u32) -> Location {
         Location {
@@ -709,7 +709,7 @@ mod test {
     }
 
     fn test(input: &str, expected: Vec<(&str, Token)>) {
-        use base::source::Source;
+        use crate::base::source::Source;
 
         let mut tokenizer = tokenizer(input);
         let mut count = 0;

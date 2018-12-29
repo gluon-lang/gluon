@@ -1,30 +1,31 @@
 //! Module containing functions for interacting with gluon's primitive types.
-use std::ffi::OsStr;
-use std::fs;
-use std::io;
-use std::path::{self, Path};
-use std::result::Result as StdResult;
-use std::str::FromStr;
-use std::string::String as StdString;
+use crate::real_std::{
+    ffi::OsStr,
+    fs, io,
+    path::{self, Path},
+    result::Result as StdResult,
+    str::FromStr,
+    string::String as StdString,
+};
 
-use base::types::ArcType;
+use crate::base::types::ArcType;
 
-use api::{
+use crate::api::{
     generic::{self, A},
     primitive, Array, Getable, OpaqueRef, Pushable, Pushed, RuntimeResult, ValueRef, VmType,
     WithVM, IO,
 };
-use gc::{DataDef, Gc, Traverseable, WriteOnly};
-use stack::{ExternState, StackFrame};
-use types::VmInt;
-use value::{Def, GcStr, Repr, ValueArray, ValueRepr};
-use vm::{Status, Thread};
-use {Error, ExternModule, Result, Variants};
+use crate::gc::{DataDef, Gc, Traverseable, WriteOnly};
+use crate::stack::{ExternState, StackFrame};
+use crate::types::VmInt;
+use crate::value::{Def, GcStr, Repr, ValueArray, ValueRepr};
+use crate::vm::{Status, Thread};
+use crate::{Error, ExternModule, Result, Variants};
 
 #[doc(hidden)]
 pub mod array {
     use super::*;
-    use thread::ThreadInternal;
+    use crate::thread::ThreadInternal;
 
     pub fn len(array: Array<generic::A>) -> VmInt {
         array.len() as VmInt
@@ -179,8 +180,8 @@ pub mod array {
 
 mod string {
     use super::*;
-    use api::Pushable;
-    use thread::ThreadInternal;
+    use crate::api::Pushable;
+    use crate::thread::ThreadInternal;
 
     pub fn append(lhs: WithVM<&str>, rhs: &str) -> RuntimeResult<String, Error> {
         struct StrAppend<'b> {
@@ -193,11 +194,11 @@ mod string {
         unsafe impl<'b> DataDef for StrAppend<'b> {
             type Value = ValueArray;
             fn size(&self) -> usize {
-                use std::mem::size_of;
+                use crate::real_std::mem::size_of;
                 size_of::<ValueArray>() + (self.lhs.len() + self.rhs.len()) * size_of::<u8>()
             }
             fn initialize<'w>(self, mut result: WriteOnly<'w, ValueArray>) -> &'w mut ValueArray {
-                use value::Repr;
+                use crate::value::Repr;
                 unsafe {
                     let result = &mut *result.as_mut_ptr();
                     result.set_repr(Repr::Byte);
@@ -330,7 +331,7 @@ extern "C" fn error(_: &Thread) -> Status {
 extern "C" fn discriminant_value(thread: &Thread) -> Status {
     let mut context = thread.current_context();
     let tag = {
-        let mut stack = StackFrame::<ExternState>::current(context.stack());
+        let stack = StackFrame::<ExternState>::current(context.stack());
         let value = stack.get_variant(0).unwrap();
         match value.as_ref() {
             ValueRef::Data(data) => data.tag(),
@@ -343,7 +344,7 @@ extern "C" fn discriminant_value(thread: &Thread) -> Status {
 
 #[allow(non_camel_case_types)]
 mod std {
-    pub use primitives as prim;
+    pub use crate::primitives as prim;
 
     pub mod string {
         pub type prim = str;
@@ -352,13 +353,13 @@ mod std {
         pub type prim = char;
     }
     pub mod array {
-        pub use primitives::array as prim;
+        pub use crate::primitives::array as prim;
     }
     pub mod byte {
         pub type prim = u8;
     }
     pub mod int {
-        pub type prim = ::types::VmInt;
+        pub type prim = crate::types::VmInt;
     }
     pub mod float {
         pub type prim = f64;
@@ -371,7 +372,7 @@ mod std {
 #[allow(non_camel_case_types)]
 pub fn load_float(thread: &Thread) -> Result<ExternModule> {
     use self::std;
-    use std::f64;
+    use crate::real_std::f64;
 
     ExternModule::new(
         thread,
@@ -559,10 +560,10 @@ pub fn load_string(vm: &Thread) -> Result<ExternModule> {
             find => primitive!(2, std::string::prim::find::<&str>),
             rfind => primitive!(2, std::string::prim::rfind::<&str>),
             trim => primitive!(1, std::string::prim::trim),
-            trim_left => primitive!(1, std::string::prim::trim_left),
-            trim_left_matches => primitive!(2, std::string::prim::trim_left_matches::<&str>),
-            trim_right => primitive!(1, std::string::prim::trim_right),
-            trim_right_matches => primitive!(2, std::string::prim::trim_right_matches::<&str>),
+            trim_start => primitive!(1, std::string::prim::trim_start),
+            trim_start_matches => primitive!(2, std::string::prim::trim_start_matches::<&str>),
+            trim_end => primitive!(1, std::string::prim::trim_end),
+            trim_end_matches => primitive!(2, std::string::prim::trim_end_matches::<&str>),
             append => primitive!(2, "std.string.prim.append", string::append),
             slice => primitive!(3, "std.string.prim.slice", string::slice),
             from_utf8 => primitive::<fn(Vec<u8>) -> StdResult<String, ()>>(

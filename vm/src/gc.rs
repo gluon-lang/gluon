@@ -11,10 +11,10 @@ use std::ops::{Deref, DerefMut};
 use std::ptr;
 use std::sync::Arc;
 
-use base::fnv::FnvMap;
-use interner::InternedStr;
-use types::VmIndex;
-use {Error, Result};
+use crate::base::fnv::FnvMap;
+use crate::interner::InternedStr;
+use crate::types::VmIndex;
+use crate::{Error, Result};
 
 #[inline]
 unsafe fn allocate(size: usize) -> *mut u8 {
@@ -136,11 +136,11 @@ impl Generation {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "::serialization::DeSeed")
+    serde(deserialize_state = "crate::serialization::DeSeed")
 )]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub struct Gc {
     /// Linked list of all objects allocted by this garbage collector.

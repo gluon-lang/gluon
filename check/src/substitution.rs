@@ -4,9 +4,9 @@ use std::fmt;
 
 use union_find::{QuickFindUf, Union, UnionByRank, UnionFind, UnionResult};
 
-use base::fixed::{FixedMap, FixedVec};
-use base::types;
-use base::types::{ArcType, Type, Walker};
+use crate::base::fixed::{FixedMap, FixedVec};
+use crate::base::types;
+use crate::base::types::{ArcType, Type, Walker};
 
 #[derive(Debug, PartialEq)]
 pub enum Error<T> {

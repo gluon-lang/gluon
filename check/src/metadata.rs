@@ -1,13 +1,13 @@
 use std::collections::BTreeMap;
 
-use base::ast::Visitor;
-use base::ast::{
+use crate::base::ast::Visitor;
+use crate::base::ast::{
     self, Argument, AstType, Commented, Expr, Pattern, SpannedExpr, SpannedPattern, ValueBinding,
 };
-use base::fnv::FnvMap;
-use base::metadata::{Metadata, MetadataEnv};
-use base::symbol::{Name, Symbol};
-use base::types::row_iter;
+use crate::base::fnv::FnvMap;
+use crate::base::metadata::{Metadata, MetadataEnv};
+use crate::base::symbol::{Name, Symbol};
+use crate::base::types::row_iter;
 
 struct Environment<'b> {
     env: &'b MetadataEnv,
@@ -27,7 +27,7 @@ pub fn metadata(
         fn new_binding(&mut self, metadata: Metadata, bind: &ValueBinding<Symbol>) {
             match bind.name.value {
                 Pattern::As(ref id, _) => {
-                    let mut metadata = bind.metadata.clone().merge(metadata);
+                    let metadata = bind.metadata.clone().merge(metadata);
                     self.stack_var(id.value.clone(), metadata.clone());
                     self.new_pattern(metadata, &bind.name);
                 }
@@ -242,8 +242,7 @@ pub fn metadata(
                 }
                 Expr::TypeBindings(ref bindings, ref expr) => {
                     for bind in bindings {
-                        let mut type_metadata =
-                            Self::metadata_of_type(bind.alias.value.aliased_type());
+                        let type_metadata = Self::metadata_of_type(bind.alias.value.aliased_type());
                         let metadata = type_metadata.map_or_else(
                             || bind.metadata.clone(),
                             |m| m.merge(bind.metadata.clone()),

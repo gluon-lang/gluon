@@ -8,7 +8,7 @@ use gluon::vm::thread::ThreadInternal;
 use gluon::vm::Error as VMError;
 use gluon::{Compiler, Error, Thread};
 
-use support::make_vm;
+use crate::support::make_vm;
 
 #[test]
 fn out_of_memory() {

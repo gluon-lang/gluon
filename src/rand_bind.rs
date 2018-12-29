@@ -5,10 +5,10 @@ extern crate rand_xorshift;
 
 use self::rand::{Rng, SeedableRng};
 
-use vm::api::{RuntimeResult, IO};
-use vm::thread::Thread;
-use vm::types::VmInt;
-use vm::{self, ExternModule};
+use crate::vm::api::{RuntimeResult, IO};
+use crate::vm::thread::Thread;
+use crate::vm::types::VmInt;
+use crate::vm::{self, ExternModule};
 
 #[derive(Clone, Debug, Userdata)]
 #[gluon(crate_name = "::vm")]
@@ -54,7 +54,7 @@ fn xor_shift_next(gen: &XorShiftRng) -> RngNext<XorShiftRng> {
 
 mod std {
     pub mod random {
-        pub use rand_bind as prim;
+        pub use crate::rand_bind as prim;
     }
 }
 

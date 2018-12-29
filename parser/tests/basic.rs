@@ -9,14 +9,14 @@ extern crate pretty_assertions;
 #[macro_use]
 mod support;
 
-use support::*;
+use crate::support::*;
 
-use base::ast::*;
-use base::metadata::*;
-use base::pos::{self, BytePos, Span, Spanned};
-use base::types::{Alias, Field, Type};
+use crate::base::ast::*;
+use crate::base::metadata::*;
+use crate::base::pos::{self, BytePos, Span, Spanned};
+use crate::base::types::{Alias, Field, Type};
 
-use parser::ReplLine;
+use crate::parser::ReplLine;
 
 #[test]
 fn dangling_in() {

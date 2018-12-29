@@ -4,7 +4,7 @@ pub extern crate codespan;
 
 use std::marker::PhantomData;
 
-use base::{
+use crate::base::{
     ast::{
         walk_mut_alias, walk_mut_ast_type, walk_mut_expr, walk_mut_pattern, Alternative, Argument,
         Array, AstType, DisplayEnv, Expr, ExprField, IdentEnv, Lambda, Literal, MutVisitor,
@@ -17,7 +17,7 @@ use base::{
     pos::{self, BytePos, Span, Spanned},
     types::{Alias, AliasData, ArcType, Field, Generic, Type, TypeCache},
 };
-use parser::{
+use crate::parser::{
     infix::{Fixity, OpMeta, OpTable, Reparser},
     {parse_partial_expr, Error, ParseErrors},
 };
@@ -161,13 +161,13 @@ macro_rules! parse_new {
     ($input:expr) => {{
         // Replace windows line endings so that byte positions match up on multiline expressions
         let input = $input.replace("\r\n", "\n");
-        let mut source = ::support::codespan::CodeMap::new();
+        let mut source = crate::support::codespan::CodeMap::new();
         source.add_filemap(
-            ::support::codespan::FileName::virtual_("test"),
+            crate::support::codespan::FileName::virtual_("test"),
             input.clone(),
         );
         parse(&input)
-            .unwrap_or_else(|(_, err)| panic!("{}", ::base::error::InFile::new(source, err)))
+            .unwrap_or_else(|(_, err)| panic!("{}", crate::base::error::InFile::new(source, err)))
     }};
 }
 

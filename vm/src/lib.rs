@@ -88,17 +88,16 @@ mod interner;
 mod source_map;
 mod value;
 
-use std::fmt;
-use std::marker::PhantomData;
+use std::{self as real_std, fmt, marker::PhantomData};
 
-use api::{ValueRef, VmType};
-use base::metadata::Metadata;
-use base::symbol::Symbol;
-use base::types::ArcType;
-use stack::Stacktrace;
-use thread::{RootedThread, RootedValue, Thread};
-use types::VmIndex;
-use value::{Value, ValueRepr};
+use crate::api::{ValueRef, VmType};
+use crate::base::metadata::Metadata;
+use crate::base::symbol::Symbol;
+use crate::base::types::ArcType;
+use crate::stack::Stacktrace;
+use crate::thread::{RootedThread, RootedValue, Thread};
+use crate::types::VmIndex;
+use crate::value::{Value, ValueRepr};
 
 unsafe fn forget_lifetime<'a, 'b, T: ?Sized>(x: &'a T) -> &'b T {
     ::std::mem::transmute(x)
@@ -233,7 +232,7 @@ impl ExternModule {
 
 /// Internal types and functions exposed to the main `gluon` crate
 pub mod internal {
-    pub use interner::InternedStr;
-    pub use value::{Value, ValuePrinter};
-    pub use vm::Global;
+    pub use crate::interner::InternedStr;
+    pub use crate::value::{Value, ValuePrinter};
+    pub use crate::vm::Global;
 }

@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 use std::ops::Deref;
 
-use base::resolve;
-use base::types::{ArcType, Type};
+use crate::base::resolve;
+use crate::base::types::{ArcType, Type};
 
-use thread::{RootedValue, Thread, VmRoot};
+use crate::thread::{RootedValue, Thread, VmRoot};
 
 #[derive(Debug)]
 pub struct FieldIter<'a, T>

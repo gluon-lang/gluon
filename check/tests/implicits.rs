@@ -11,13 +11,13 @@ extern crate gluon_check as check;
 extern crate gluon_format as format;
 extern crate gluon_parser as parser;
 
-use base::ast::{self, Expr, Pattern, SpannedExpr, Typed, Visitor};
-use base::symbol::Symbol;
-use base::types::Type;
+use crate::base::ast::{self, Expr, Pattern, SpannedExpr, Typed, Visitor};
+use crate::base::symbol::Symbol;
+use crate::base::types::Type;
 
-use check::typecheck::{ImplicitError, ImplicitErrorKind, TypeError};
+use crate::check::typecheck::{ImplicitError, ImplicitErrorKind, TypeError};
 
-use support::MockEnv;
+use crate::support::MockEnv;
 
 #[macro_use]
 #[allow(unused_macros)]

@@ -5,7 +5,7 @@ extern crate gluon_parser as parser;
 #[macro_use]
 mod support;
 
-use support::*;
+use crate::support::*;
 
 #[test]
 fn any_tokens() {

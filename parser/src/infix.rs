@@ -2,10 +2,10 @@
 //! associative with the same precedence. Therefore we need to rebalance them
 //! after the fact.
 
-use base::ast::{walk_mut_expr, Expr, IdentEnv, MutVisitor, SpannedExpr, SpannedIdent};
-use base::error::Errors;
-use base::fnv::FnvMap;
-use base::pos::{self, BytePos, Spanned};
+use crate::base::ast::{walk_mut_expr, Expr, IdentEnv, MutVisitor, SpannedExpr, SpannedIdent};
+use crate::base::error::Errors;
+use crate::base::fnv::FnvMap;
+use crate::base::pos::{self, BytePos, Spanned};
 use std::cmp::Ordering;
 use std::error::Error as StdError;
 use std::fmt;
@@ -189,8 +189,8 @@ where
                 ];
 
                 let op = name
-                    .trim_left_matches('#')
-                    .trim_left_matches(char::is_alphanumeric);
+                    .trim_start_matches('#')
+                    .trim_start_matches(char::is_alphanumeric);
 
                 OPS.iter().find(|t| t.0 == op).map(|t| &t.1)
             } else {
@@ -316,7 +316,7 @@ where
     Id: Eq + Hash + AsRef<str> + ::std::fmt::Debug,
 {
     use self::Error::*;
-    use base::pos;
+    use crate::base::pos;
 
     let make_op = |lhs: Box<SpannedExpr<Id>>, op, rhs: Box<SpannedExpr<Id>>| {
         let span = pos::span(lhs.span.start(), rhs.span.end());
@@ -514,8 +514,8 @@ impl<Id> Iterator for Infixes<Id> {
 
 #[cfg(test)]
 mod tests {
-    use base::ast::{DisplayEnv, Expr, IdentEnv, Literal, SpannedExpr, TypedIdent};
-    use base::pos::{self, BytePos, Spanned};
+    use crate::base::ast::{DisplayEnv, Expr, IdentEnv, Literal, SpannedExpr, TypedIdent};
+    use crate::base::pos::{self, BytePos, Spanned};
     use std::marker::PhantomData;
 
     use super::Error::*;

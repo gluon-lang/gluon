@@ -1,9 +1,10 @@
-use base::ast::{Literal, TypedIdent};
-use base::pos::{BytePos, Span};
-use base::symbol::{Symbol, Symbols};
-use base::types::{Field, Type};
+use crate::base::{
+    ast::{Literal, TypedIdent},
+    pos::{BytePos, Span},
+    symbol::{Symbol, Symbols},
+    types::{Field, Type}};
 
-use core::{Allocator, Alternative, Closure, Expr, LetBinding, Named, Pattern};
+use crate::core::{Allocator, Alternative, Closure, Expr, LetBinding, Named, Pattern};
 
 grammar<'env, 'a>(symbols: &'env mut Symbols, allocator: &'a Allocator<'a>);
 

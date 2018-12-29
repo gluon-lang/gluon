@@ -1,7 +1,7 @@
 //! Checks that the expression do not contain any invalid recursive bindings.
 use std::fmt;
 
-use base::{
+use crate::base::{
     ast::{self, Expr, Pattern, SpannedExpr, SpannedIdent, SpannedPattern, TypedIdent, Visitor},
     error::Errors,
     fnv::FnvMap,

@@ -1,7 +1,7 @@
-//! The base crate contains pervasive types used in the compiler such as type representations, the
-//! AST and some basic containers.
 #![doc(html_root_url = "https://docs.rs/gluon_base/0.9.4")] // # GLUON
 #![allow(unknown_lints)]
+//! The base crate contains pervasive types used in the compiler such as type representations, the
+//! AST and some basic containers.
 
 #[macro_use]
 extern crate collect_mac;
@@ -100,7 +100,7 @@ pub mod types;
 
 pub fn filename_to_module(filename: &str) -> String {
     use std::path::Path;
-    let filename = filename.trim_right_matches('/');
+    let filename = filename.trim_end_matches('/');
     let path = Path::new(filename);
     let name = path.extension().map_or(filename, |ext| {
         ext.to_str()

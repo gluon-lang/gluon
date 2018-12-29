@@ -71,12 +71,15 @@ macro_rules! closure_wrapper {
 /// ```
 #[macro_export]
 macro_rules! primitive {
-    ($arg_count:tt,async fn $name:expr) => {
+    ($arg_count:tt, async fn $name:expr) => {
         primitive!($arg_count, stringify!($name), async fn $name)
     };
 
     ($arg_count:tt, $name:expr) => {
         primitive!($arg_count, stringify!($name), $name)
+    };
+    ($arg_count:tt, $name:expr, async fn $func:expr) => {
+        primitive!($arg_count, $name, closure_wrapper!($arg_count, $func))
     };
     ($arg_count:tt, $name:expr, $func:expr) => {
         unsafe {
@@ -88,9 +91,6 @@ macro_rules! primitive {
             }
             $crate::api::primitive_f($name, wrapper, primitive_cast!($arg_count, $func))
         }
-    };
-    ($arg_count:tt, $name:expr,async fn $func:expr) => {
-        primitive!($arg_count, $name, closure_wrapper!($arg_count, $func))
     };
 }
 
@@ -393,8 +393,8 @@ macro_rules! record_p {
 
 #[cfg(test)]
 mod tests {
-    use api::VmType;
-    use thread::RootedThread;
+    use crate::api::VmType;
+    use crate::thread::RootedThread;
 
     fn type_for<T: VmType>(_: &T) -> String {
         let vm = RootedThread::new();
@@ -403,7 +403,7 @@ mod tests {
 
     #[test]
     fn record_type_field() {
-        use api::generic::{A, B};
+        use crate::api::generic::{A, B};
         assert_eq!(type_for(&record!(type Test => i32)), "{ Test = Int }");
         assert_eq!(
             type_for(&record!(type Pair a b => (A, B))),

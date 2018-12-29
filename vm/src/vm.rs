@@ -5,29 +5,29 @@ use std::string::String as StdString;
 use std::sync::{Mutex, RwLock, RwLockReadGuard};
 use std::usize;
 
-use base::ast;
-use base::fnv::FnvMap;
-use base::kind::{ArcKind, Kind, KindEnv};
-use base::metadata::{Metadata, MetadataEnv};
-use base::symbol::{Name, Symbol, SymbolRef};
-use base::types::{
+use crate::base::ast;
+use crate::base::fnv::FnvMap;
+use crate::base::kind::{ArcKind, Kind, KindEnv};
+use crate::base::metadata::{Metadata, MetadataEnv};
+use crate::base::symbol::{Name, Symbol, SymbolRef};
+use crate::base::types::{
     Alias, AliasData, AppVec, ArcType, Generic, PrimitiveEnv, Type, TypeCache, TypeEnv,
 };
-use base::DebugLevel;
+use crate::base::DebugLevel;
 
-use api::{ValueRef, IO};
-use compiler::{CompiledFunction, CompiledModule, CompilerEnv, Variable};
-use gc::{Gc, GcPtr, Generation, Move, Traverseable};
-use interner::{InternedStr, Interner};
-use lazy::Lazy;
-use macros::MacroEnv;
-use types::*;
-use {Error, Result, Variants};
+use crate::api::{ValueRef, IO};
+use crate::compiler::{CompiledFunction, CompiledModule, CompilerEnv, Variable};
+use crate::gc::{Gc, GcPtr, Generation, Move, Traverseable};
+use crate::interner::{InternedStr, Interner};
+use crate::lazy::Lazy;
+use crate::macros::MacroEnv;
+use crate::types::*;
+use crate::{Error, Result, Variants};
 
-use value::{BytecodeFunction, ClosureData, ClosureDataDef, Value};
+use crate::value::{BytecodeFunction, ClosureData, ClosureDataDef, Value};
 
-pub use thread::{RootedThread, RootedValue, Status, Thread};
-pub use value::Userdata;
+pub use crate::thread::{RootedThread, RootedValue, Status, Thread};
+pub use crate::value::Userdata;
 
 fn new_bytecode(
     env: &VmEnv,
@@ -97,25 +97,25 @@ fn new_bytecode_function(
 #[derive(Debug)]
 #[cfg_attr(
     feature = "serde_derive_state",
-    derive(SerializeState, DeserializeState)
+    derive(DeserializeState, SerializeState)
 )]
 #[cfg_attr(
     feature = "serde_derive_state",
-    serde(deserialize_state = "::serialization::DeSeed")
+    serde(deserialize_state = "crate::serialization::DeSeed")
 )]
 #[cfg_attr(
     feature = "serde_derive_state",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub struct Global {
     #[cfg_attr(
         feature = "serde_derive",
-        serde(state_with = "::serialization::symbol")
+        serde(state_with = "crate::serialization::symbol")
     )]
     pub id: Symbol,
     #[cfg_attr(
         feature = "serde_derive",
-        serde(state_with = "::serialization::borrow")
+        serde(state_with = "crate::serialization::borrow")
     )]
     pub typ: ArcType,
     pub metadata: Metadata,
@@ -132,11 +132,11 @@ impl Traverseable for Global {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "::serialization::DeSeed")
+    serde(deserialize_state = "crate::serialization::DeSeed")
 )]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub struct GlobalVmState {
     #[cfg_attr(feature = "serde_derive", serde(state))]
@@ -144,7 +144,7 @@ pub struct GlobalVmState {
 
     #[cfg_attr(
         feature = "serde_derive",
-        serde(state_with = "::serialization::borrow")
+        serde(state_with = "crate::serialization::borrow")
     )]
     generics: RwLock<FnvMap<StdString, ArcType>>,
 
@@ -191,11 +191,11 @@ impl Traverseable for GlobalVmState {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "::serialization::DeSeed")
+    serde(deserialize_state = "crate::serialization::DeSeed")
 )]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub struct VmEnv {
     #[cfg_attr(feature = "serde_derive", serde(state))]
@@ -297,7 +297,7 @@ impl VmEnv {
 
     fn get_global<'s, 'n>(&'s self, name: &'n str) -> Option<(&'n Name, &'s Global)> {
         let globals = &self.globals;
-        let mut module = Name::new(name.trim_left_matches('@'));
+        let mut module = Name::new(name.trim_start_matches('@'));
         let global;
         // Try to find a global by successively reducing the module path
         // Input: "x.y.z.w"
@@ -321,7 +321,7 @@ impl VmEnv {
     }
 
     pub fn get_binding(&self, name: &str) -> Result<(Variants, Cow<ArcType>)> {
-        use base::resolve;
+        use crate::base::resolve;
 
         let (remaining_fields, global) = self
             .get_global(name)
@@ -423,9 +423,9 @@ impl GlobalVmState {
     }
 
     fn add_types(&mut self) -> StdResult<(), (TypeId, ArcType)> {
-        use api::generic::A;
-        use api::Generic;
-        use base::types::BuiltinType;
+        use crate::api::generic::A;
+        use crate::api::Generic;
+        use crate::base::types::BuiltinType;
         fn add_builtin_type<T: Any>(self_: &mut GlobalVmState, b: BuiltinType) {
             add_builtin_type_(self_, b, TypeId::of::<T>())
         }

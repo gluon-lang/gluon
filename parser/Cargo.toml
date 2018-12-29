@@ -2,6 +2,7 @@
 name = "gluon_parser"
 version = "0.9.4" # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
+edition = "2018"
 
 license = "MIT"
 

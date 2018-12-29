@@ -1,4 +1,4 @@
-use {
+use crate::{
     api::{generic::A, Generic, OpaqueRef},
     thread::Thread,
     value::ValueRepr,
@@ -23,7 +23,7 @@ fn tag(a: OpaqueRef<A>) -> Option<String> {
 }
 
 mod std {
-    pub use debug;
+    pub use crate::debug;
 }
 
 pub fn load(vm: &Thread) -> Result<ExternModule> {

@@ -6,9 +6,9 @@ use pretty::{Doc, DocAllocator, DocBuilder};
 
 use stable_deref_trait::StableDeref;
 
-use ast::EmptyEnv;
-use symbol::{Symbol, SymbolRef};
-use types::{ToDoc, Walker};
+use crate::ast::EmptyEnv;
+use crate::symbol::{Symbol, SymbolRef};
+use crate::types::{ToDoc, Walker};
 
 /// Trait for values which contains kinded values which can be referred by name
 pub trait KindEnv {
@@ -39,13 +39,13 @@ impl KindEnv for EmptyEnv<Symbol> {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 #[cfg_attr(feature = "serde_derive", serde(de_parameters = "S"))]
 #[cfg_attr(feature = "serde_derive", serde(deserialize_state = "S"))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(bound(deserialize = "S: AsMut<::serialization::NodeMap>"))
+    serde(bound(deserialize = "S: AsMut<crate::serialization::NodeMap>"))
 )]
 pub enum Kind {
     Hole,
@@ -136,16 +136,16 @@ impl<'a> fmt::Display for DisplayKind<'a> {
 pub struct ArcKind(Arc<Kind>);
 
 #[cfg(feature = "serde")]
-impl<'de, S> ::serde::de::DeserializeState<'de, S> for ArcKind
+impl<'de, S> crate::serde::de::DeserializeState<'de, S> for ArcKind
 where
-    S: AsMut<::serialization::NodeMap>,
+    S: AsMut<crate::serialization::NodeMap>,
 {
     fn deserialize_state<D>(seed: &mut S, deserializer: D) -> Result<ArcKind, D::Error>
     where
-        D: ::serde::Deserializer<'de>,
+        D: crate::serde::Deserializer<'de>,
     {
-        use serde::de::DeserializeSeed;
-        ::serialization::SharedSeed::new(seed)
+        use crate::serde::de::DeserializeSeed;
+        crate::serialization::SharedSeed::new(seed)
             .deserialize(deserializer)
             .map(ArcKind)
     }

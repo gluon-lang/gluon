@@ -17,15 +17,15 @@ use std::{
 
 use either::Either;
 
-use base::ast::{expr_to_path, walk_mut_expr, Expr, MutVisitor, SpannedExpr, TypedIdent};
-use base::pos::{BytePos, Span};
-use base::symbol::Symbol;
-use base::types::Type;
-use completion::{Suggestion, SuggestionQuery};
+use crate::base::ast::{expr_to_path, walk_mut_expr, Expr, MutVisitor, SpannedExpr, TypedIdent};
+use crate::base::pos::{BytePos, Span};
+use crate::base::symbol::Symbol;
+use crate::base::types::Type;
+use crate::completion::{Suggestion, SuggestionQuery};
 
 #[allow(unused)]
 mod support;
-use support::{loc, MockEnv};
+use crate::support::{loc, MockEnv};
 
 fn suggest_types(s: &str, pos: BytePos) -> Result<Vec<Suggestion>, ()> {
     suggest_query(&SuggestionQuery::new(), s, pos)

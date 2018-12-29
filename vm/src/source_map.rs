@@ -1,10 +1,10 @@
 use std::slice::Iter;
 
-use base::pos::Line;
-use base::symbol::Symbol;
-use base::types::ArcType;
+use crate::base::pos::Line;
+use crate::base::symbol::Symbol;
+use crate::base::types::ArcType;
 
-use types::VmIndex;
+use crate::types::VmIndex;
 
 #[derive(Debug, Default, PartialEq)]
 #[cfg_attr(feature = "serde_derive", derive(Deserialize, Serialize))]
@@ -59,11 +59,11 @@ impl SourceMap {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "::serialization::DeSeed")
+    serde(deserialize_state = "crate::serialization::DeSeed")
 )]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub struct Local {
     start: usize,
@@ -71,12 +71,12 @@ pub struct Local {
     pub index: VmIndex,
     #[cfg_attr(
         feature = "serde_derive",
-        serde(state_with = "::serialization::symbol")
+        serde(state_with = "crate::serialization::symbol")
     )]
     pub name: Symbol,
     #[cfg_attr(
         feature = "serde_derive",
-        serde(state_with = "::serialization::borrow")
+        serde(state_with = "crate::serialization::borrow")
     )]
     pub typ: ArcType,
 }
@@ -85,11 +85,11 @@ pub struct Local {
 #[cfg_attr(feature = "serde_derive", derive(DeserializeState, SerializeState))]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(deserialize_state = "::serialization::DeSeed")
+    serde(deserialize_state = "crate::serialization::DeSeed")
 )]
 #[cfg_attr(
     feature = "serde_derive",
-    serde(serialize_state = "::serialization::SeSeed")
+    serde(serialize_state = "crate::serialization::SeSeed")
 )]
 pub struct LocalMap {
     // Instruction indexes marking [start, end) where the local variable `Symbol` exists

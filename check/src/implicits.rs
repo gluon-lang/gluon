@@ -9,18 +9,18 @@ use rpds;
 
 use codespan_reporting::{Diagnostic, Label};
 
-use base::ast::{self, Expr, MutVisitor, SpannedExpr, TypedIdent};
-use base::error::AsDiagnostic;
-use base::fnv::FnvMap;
-use base::metadata::Metadata;
-use base::pos::{self, BytePos, Span, Spanned};
-use base::resolve;
-use base::scoped_map::ScopedMap;
-use base::symbol::{Symbol, SymbolRef};
-use base::types::{self, ArcType, ArgType, BuiltinType, Type};
+use crate::base::ast::{self, Expr, MutVisitor, SpannedExpr, TypedIdent};
+use crate::base::error::AsDiagnostic;
+use crate::base::fnv::FnvMap;
+use crate::base::metadata::Metadata;
+use crate::base::pos::{self, BytePos, Span, Spanned};
+use crate::base::resolve;
+use crate::base::scoped_map::ScopedMap;
+use crate::base::symbol::{Symbol, SymbolRef};
+use crate::base::types::{self, ArcType, ArgType, BuiltinType, Type};
 
-use substitution::Substitution;
-use typecheck::{TypeError, Typecheck, TypecheckEnv};
+use crate::substitution::Substitution;
+use crate::typecheck::{TypeError, Typecheck, TypecheckEnv};
 
 const MAX_IMPLICIT_LEVEL: u32 = 20;
 
@@ -346,8 +346,8 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
         }));
 
         let state =
-            ::unify_type::State::new(&self.tc.environment, &self.tc.subs, &self.tc.type_cache);
-        ::unify_type::subsumes(&self.tc.subs, state, &demand.constraint, &iter.typ).is_ok()
+            crate::unify_type::State::new(&self.tc.environment, &self.tc.subs, &self.tc.type_cache);
+        crate::unify_type::subsumes(&self.tc.subs, state, &demand.constraint, &iter.typ).is_ok()
     }
 
     fn find_implicit<'c>(
@@ -552,7 +552,7 @@ impl<'a> ImplicitResolver<'a> {
         let metadata = self.metadata.get(id);
         let mut alias_resolver = resolve::AliasRemover::new();
 
-        let typ = ::unify_type::top_skolem_scope(subs, subs.real(typ));
+        let typ = crate::unify_type::top_skolem_scope(subs, subs.real(typ));
         let ref typ = typ.instantiate_generics(&mut FnvMap::default());
         let raw_type = match alias_resolver.remove_aliases(&self.environment, typ.clone()) {
             Ok(t) => t,

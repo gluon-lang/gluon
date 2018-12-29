@@ -5,12 +5,12 @@ use std::ops::Deref;
 
 use pretty::{Arena, Doc, DocAllocator, DocBuilder};
 
-use ast::{is_operator_char, Commented};
-use metadata::{Comment, CommentType};
-use pos::{BytePos, HasSpan, Span};
-use source::Source;
+use crate::ast::{is_operator_char, Commented};
+use crate::metadata::{Comment, CommentType};
+use crate::pos::{BytePos, HasSpan, Span};
+use crate::source::Source;
 
-use types::{pretty_print, Type};
+use crate::types::{pretty_print, Type};
 
 pub fn ident<'a, S, A>(arena: &'a Arena<'a, A>, name: S) -> DocBuilder<'a, Arena<'a, A>, A>
 where
