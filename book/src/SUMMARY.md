@@ -8,6 +8,8 @@
 
     - [Anatomy of a gluon program](./anatomy-of-a-gluon-program.md)
 
+    - [Extending the guessing game with extensible effects](./extending-the-guessing-game-with-effects.md)
+
 - [Syntax and semantics](./syntax-and-semantics.md)
 
 - [Metadata](./metadata.md)

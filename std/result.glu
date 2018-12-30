@@ -25,6 +25,11 @@ let unwrap_err res : Result e a -> e =
     | Ok _ -> error "Result was an Ok"
     | Err x -> x
 
+let map_err f res : (e -> f) -> Result e a -> Result f a =
+    match res with
+    | Ok a -> Ok a
+    | Err e -> Err (f e)
+
 let eq : [Eq e] -> [Eq a] -> Eq (Result e a) = {
     (==) = \l r ->
         match (l, r) with
@@ -100,6 +105,7 @@ let show ?e ?t : [Show e] -> [Show t] -> Show (Result e t) =
     Result,
     unwrap_ok,
     unwrap_err,
+    map_err,
     eq,
     ord,
     functor,
