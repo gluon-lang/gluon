@@ -25,13 +25,13 @@ let { (<>) } = import! std.semigroup
 
 group "json.de" [
     test "derive_record_1_field" <| \_ ->
-        assert_eq (de.deserialize deserializer r#"{ "x" : 1 }"#) (Ok { x = 1 }),
+        assert_eq (de.deserialize r#"{ "x" : 1 }"#) (Ok { x = 1 }),
 
     test "derive_record_2_fields" <| \_ ->
-        assert_eq (de.deserialize deserializer r#"{ "y" : "abc", "x" : 1 }"#) (Ok { x = 1, y = "abc" }),
+        assert_eq (de.deserialize r#"{ "y" : "abc", "x" : 1 }"#) (Ok { x = 1, y = "abc" }),
 
     test "derive_record_recursive" <| \_ ->
-        assert_eq (de.deserialize deserializer r#"{ "record" : { "y" : "abc", "x" : 1 }, "y" : 1 } "#) (Ok { record = { x = 1 }, y = 1.0 }),
+        assert_eq (de.deserialize r#"{ "record" : { "y" : "abc", "x" : 1 }, "y" : 1 } "#) (Ok { record = { x = 1 }, y = 1.0 }),
 
     group "alternative" (
         let { (<|>) } = import! std.alternative
@@ -39,24 +39,24 @@ group "json.de" [
             de.int <|> map (\s -> result.unwrap_ok (int.parse s)) de.string
         [
             test "or_first" <| \_ ->
-                assert_eq (de.deserialize d r#" 123 "#) (Ok 123),
+                assert_eq (de.deserialize_with d r#" 123 "#) (Ok 123),
             test "or_second" <| \_ ->
-                assert_eq (de.deserialize d r#" "456" "#) (Ok 456),
+                assert_eq (de.deserialize_with d r#" "456" "#) (Ok 456),
         ]
     ),
 
     group "variant" [
         test "derive_variant" <| \_ ->
-            assert_eq (de.deserialize deserializer r#" 123 "#) (Ok (Int 123)),
+            assert_eq (de.deserialize r#" 123 "#) (Ok (Int 123)),
     ],
 
     group "option" (
         let d : ValueDeserializer (Option Record) = deserializer
         [
             test "none" <| \_ ->
-                assert_eq (de.deserialize d r#" null "#) (Ok None),
+                assert_eq (de.deserialize_with d r#" null "#) (Ok None),
             test "some" <| \_ ->
-                assert_eq (de.deserialize d r#" { "x": 1 } "#) (Ok (Some { x = 1 })),
+                assert_eq (de.deserialize_with d r#" { "x": 1 } "#) (Ok (Some { x = 1 })),
         ]
     ),
 
@@ -64,9 +64,9 @@ group "json.de" [
         let d : ValueDeserializer (List Record) = deserializer
         [
             test "empty" <| \_ ->
-                assert_eq (de.deserialize d r#" [] "#) (Ok Nil),
+                assert_eq (de.deserialize_with d r#" [] "#) (Ok Nil),
             test "some" <| \_ ->
-                let actual = de.deserialize d r#" [{ "x": 1 }, { "x": 2 }] "#
+                let actual = de.deserialize_with d r#" [{ "x": 1 }, { "x": 2 }] "#
                 assert_eq actual (Ok (list.of [{ x = 1 }, { x = 2 }])),
         ]
     ),
@@ -75,9 +75,9 @@ group "json.de" [
         let d : ValueDeserializer (Array Record) = deserializer
         [
             test "empty" <| \_ ->
-                assert_eq (de.deserialize d r#" [] "#) (Ok []),
+                assert_eq (de.deserialize_with d r#" [] "#) (Ok []),
             test "some" <| \_ ->
-                let actual = de.deserialize d r#" [{ "x": 1 }, { "x": 2 }] "#
+                let actual = de.deserialize_with d r#" [{ "x": 1 }, { "x": 2 }] "#
                 assert_eq actual (Ok ([{ x = 1 }, { x = 2 }])),
         ]
     ),
@@ -87,9 +87,9 @@ group "json.de" [
         let d : ValueDeserializer (Map String Int) = deserializer
         [
             test "empty" <| \_ ->
-                assert_eq (de.deserialize d r#" {} "#) (Ok map.empty),
+                assert_eq (de.deserialize_with d r#" {} "#) (Ok map.empty),
             test "some" <| \_ ->
-                let actual = de.deserialize d r#" { "x": 1, "y": 2 } "#
+                let actual = de.deserialize_with d r#" { "x": 1, "y": 2 } "#
                 assert_eq actual (Ok (map.singleton "x" 1 <> map.singleton "y" 2))
         ]
     ),
