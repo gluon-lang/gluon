@@ -47,13 +47,7 @@ let (>>=) x f : [Monad m] -> m a -> (a -> m b) -> m b = flat_map f x
 
 let join mm : [Monad m] -> m (m a) -> m a = mm >>= (\x -> x)
 
-let when b m : [Monad m] -> Bool -> m () -> m () =
-    if b then
-        m
-    else
-        wrap ()
-
 {
     Monad,
-    flat_map, (>>=), (=<<), join, when
+    flat_map, (>>=), (=<<), join
 }

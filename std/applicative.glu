@@ -1,6 +1,7 @@
 //@NO-IMPLICIT-PRELUDE
 //! Implementation of the `Applicative` type
 
+let { Bool } = import! std.types
 let { Functor, map } = import! std.functor
 
 /// A `Functor` with application.
@@ -81,6 +82,12 @@ let map9 fn a b c d e f g h i : [Applicative f] -> _ =
 let map10 fn a b c d e f g h i j : [Applicative f] -> _ =
     map9 fn a b c d e f g h i <*> j
 
+let when b m : [Applicative m] -> Bool -> m () -> m () =
+    if b then
+        m
+    else
+        wrap ()
+
 {
     Applicative,
     apply, wrap, (<*>), (<*), (*>),
@@ -94,4 +101,6 @@ let map10 fn a b c d e f g h i j : [Applicative f] -> _ =
     map8,
     map9,
     map10,
+    
+    when,
 }
