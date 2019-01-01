@@ -872,3 +872,22 @@ f 1
 
     assert!(result.is_ok(), "{}", result.unwrap_err());
 }
+
+test_check_err! {
+break_infinte_implicit_resolve_early,
+    r#"
+#[implicit]
+type Implicit a = { f : a -> String } 
+
+type Test a = { x : a }
+
+let any x = any x
+
+let test : [Implicit a] -> Implicit (Test a) = any ()
+
+let f : [Implicit a] -> a -> () = any ()
+
+f (any ())
+"#,
+TypeError::Unification(..)
+}
