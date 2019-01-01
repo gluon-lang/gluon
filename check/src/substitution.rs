@@ -5,8 +5,7 @@ use std::fmt;
 use union_find::{QuickFindUf, Union, UnionByRank, UnionFind, UnionResult};
 
 use crate::base::fixed::{FixedMap, FixedVec};
-use crate::base::types;
-use crate::base::types::{ArcType, Type, Walker};
+use crate::base::types::{self, ArcType, Type, Walker};
 
 #[derive(Debug, PartialEq)]
 pub enum Error<T> {
@@ -396,5 +395,17 @@ impl<T: Substitutable + PartialEq + Clone> Substitution<T> {
             }
         }
         Ok(resolved_type.cloned())
+    }
+}
+
+impl Substitution<ArcType> {
+    pub fn zonk(&self, typ: &ArcType) -> ArcType {
+        types::walk_move_type(typ.clone(), &mut |typ| match typ.get_var() {
+            Some(var) => match self.find_type_for_var(var.get_id()) {
+                Some(t) => Some(self.zonk(t)),
+                None => None,
+            },
+            None => None,
+        })
     }
 }

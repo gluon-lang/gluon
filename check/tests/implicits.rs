@@ -596,7 +596,7 @@ let monad : Monad List =
 
 let fold_m monad f z w : forall a b m t . [Foldable t] -> Monad m -> (a -> b -> m a) -> a -> t b -> () = ()
 
-let fold_m2 ?x : [Foldable t] -> _ = fold_m monad
+let fold_m2 ?x : [Foldable t] -> _ -> _ -> t b -> _ = fold_m monad
 
 let f x : List Int -> _ = fold_m2 (\a b -> Cons a Nil) x
 f
@@ -889,5 +889,69 @@ let f : [Implicit a] -> a -> () = any ()
 
 f (any ())
 "#,
-TypeError::Unification(..)
+TypeError::UnableToResolveImplicit(ImplicitError {
+    kind: ImplicitErrorKind::LoopInImplicitResolution(..),
+    ..
+})
+}
+
+test_check! {
+one_binding_used_twice,
+r#"
+#[implicit]
+type Test a = | Test a
+
+type Pair a b = { x : a, y : b }
+
+let any x = any x
+
+let pair_test: [Test a] -> [Test b] -> Test (Pair a b) = any ()
+let int_test: Test Int = Test 1
+
+let test x : [Test a] -> a -> () = ()
+
+test { x = 1, y = 2 }
+"#,
+"()"
+}
+
+test_check! {
+one_binding_nested_1,
+r#"
+#[implicit]
+type Test a = | Test a
+
+type Value a = { x : a }
+
+let any x = any x
+
+let value_test: [Test a] -> Test (Value a) = any ()
+let int_test: Test Int = Test 1
+
+let test x : [Test a] -> a -> () = ()
+
+test { x = { x = 1 } }
+"#,
+"()"
+}
+
+test_check! {
+one_binding_nested_2,
+r#"
+#[implicit]
+type Test a = | Test a
+
+type Value a = { x : a }
+
+let any x = any x
+
+let value_test: [Test a] -> Test (Value a) = any ()
+let value_test: [Test a] -> Test (Array a) = any ()
+let int_test: Test Int = Test 1
+
+let test x : [Test a] -> a -> () = ()
+
+test { x = [{ x = 1 }] }
+"#,
+"()"
 }

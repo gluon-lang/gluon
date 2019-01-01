@@ -1,7 +1,9 @@
-use std::borrow::Borrow;
-use std::cmp::Ordering;
-use std::fmt;
-use std::hash::{Hash, Hasher};
+use std::{
+    borrow::Borrow,
+    cmp::Ordering,
+    fmt,
+    hash::{Hash, Hasher},
+};
 
 use itertools::{Either, Itertools};
 
@@ -9,20 +11,23 @@ use rpds;
 
 use codespan_reporting::{Diagnostic, Label};
 
-use crate::base::ast::{self, Expr, MutVisitor, SpannedExpr, TypedIdent};
-use crate::base::error::AsDiagnostic;
-use crate::base::fnv::FnvMap;
-use crate::base::metadata::Metadata;
-use crate::base::pos::{self, BytePos, Span, Spanned};
-use crate::base::resolve;
-use crate::base::scoped_map::ScopedMap;
-use crate::base::symbol::{Symbol, SymbolRef};
-use crate::base::types::{self, ArcType, ArgType, BuiltinType, Type};
+use crate::base::{
+    ast::{self, Expr, MutVisitor, SpannedExpr, TypedIdent},
+    error::AsDiagnostic,
+    fnv::FnvMap,
+    metadata::Metadata,
+    pos::{self, BytePos, Span, Spanned},
+    resolve,
+    scoped_map::{self, ScopedMap},
+    symbol::{Symbol, SymbolRef},
+    types::{self, ArcType, ArgType, BuiltinType, Type},
+};
 
-use crate::substitution::Substitution;
-use crate::typecheck::{TypeError, Typecheck, TypecheckEnv};
-
-const MAX_IMPLICIT_LEVEL: u32 = 20;
+use crate::{
+    substitution::Substitution,
+    typecheck::{TypeError, Typecheck, TypecheckEnv},
+    unify_type::{self, Size},
+};
 
 impl SymbolKey {
     pub fn new(typ: &ArcType) -> Option<SymbolKey> {
@@ -253,6 +258,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
                 .map(|t| &t.1)
                 .format("\n")
         );
+        self.tc.implicit_resolver.visited.clear();
         let span = expr.span;
         let mut to_resolve = Vec::new();
         match self.find_implicit(
@@ -343,16 +349,6 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
         path: &[TypedIdent<Symbol>],
         to_resolve: &[Demand],
     ) -> Result<Option<SpannedExpr<Symbol>>> {
-        match to_resolve.first() {
-            Some(demand) if level > MAX_IMPLICIT_LEVEL => {
-                return Err(Error {
-                    kind: ErrorKind::LoopInImplicitResolution(Vec::new()),
-                    reason: demand.reason.clone(),
-                });
-            }
-            _ => (),
-        }
-
         let base_ident = path[0].clone();
         let func = path[1..].iter().fold(
             pos::spanned(span, Expr::Ident(base_ident)),
@@ -370,6 +366,8 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
             let resolved_arguments = to_resolve
                 .iter()
                 .filter_map(|demand| {
+                    self.tc.implicit_resolver.visited.enter_scope();
+
                     let mut to_resolve = Vec::new();
                     let result = self
                         .find_implicit(implicit_bindings, &mut to_resolve, demand)
@@ -384,12 +382,15 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
                             )
                         });
 
+                    self.tc.implicit_resolver.visited.exit_scope();
+
                     match result {
                         Ok(opt) => opt.map(Ok),
                         Err(err) => Some(Err(err)),
                     }
                 })
                 .collect::<Result<Vec<_>>>()?;
+
             if resolved_arguments.len() == to_resolve.len() {
                 Some(pos::spanned(
                     span,
@@ -416,7 +417,7 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
             "Trying implicit {{\n    path: `{}`,\n    to_resolve: [{}],\n    demand: `{}`,\n    binding_type: {} }}",
             path.iter().map(|id| &id.name).format("."),
             to_resolve.iter().map(|d| &d.constraint).format(", "),
-            demand.constraint,
+            self.tc.subs.zonk(&demand.constraint),
             binding_type,
         );
 
@@ -445,7 +446,50 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
             .by_ref()
             .find(|&&(ref path, ref typ)| self.try_resolve_implicit(path, to_resolve, demand, typ));
         match found_candidate {
-            Some(candidate) => {
+            Some((candidate_path, candidate_type)) => {
+                let new_demands = to_resolve
+                    .iter()
+                    .map(|d| self.tc.subs.zonk(&d.constraint))
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice();
+
+                match self.tc.implicit_resolver.visited.entry(
+                    candidate_path
+                        .iter()
+                        .map(|id| id.name.clone())
+                        .collect::<Vec<_>>()
+                        .into_boxed_slice(),
+                ) {
+                    scoped_map::Entry::Vacant(entry) => {
+                        entry.insert(new_demands);
+                    }
+                    scoped_map::Entry::Occupied(mut entry) => {
+                        trace!(
+                            "Smaller check: [{}] < [{}]",
+                            new_demands.iter().format(", "),
+                            entry.get().iter().format(", "),
+                        );
+
+                        let state = unify_type::State::new(
+                            &self.tc.environment,
+                            &self.tc.subs,
+                            &self.tc.type_cache,
+                        );
+                        if !smallers(state, &new_demands, entry.get()) {
+                            return Err(Error {
+                                kind: ErrorKind::LoopInImplicitResolution(vec![candidate_path
+                                    .iter()
+                                    .map(|id| &id.name)
+                                    .format(".")
+                                    .to_string()]),
+                                reason: demand.reason.clone(),
+                            });
+                        }
+                        // Update the demands with to these new, smaller demands
+                        entry.insert(new_demands);
+                    }
+                }
+
                 let mut additional_candidates: Vec<_> = candidates
                     .filter(|&&(ref path, ref typ)| {
                         self.try_resolve_implicit(path, &mut Vec::new(), demand, typ)
@@ -458,16 +502,15 @@ impl<'a, 'b> ResolveImplicitsVisitor<'a, 'b> {
                     })
                     .collect();
                 if additional_candidates.is_empty() {
-                    Ok(&candidate.0)
+                    Ok(&candidate_path)
                 } else {
                     additional_candidates.push((
-                        candidate
-                            .0
+                        candidate_path
                             .iter()
                             .map(|id| &id.name)
                             .format(".")
                             .to_string(),
-                        candidate.1.clone(),
+                        candidate_type.clone(),
                     ));
                     Err(Error {
                         kind: ErrorKind::AmbiguousImplicit(additional_candidates),
@@ -514,6 +557,7 @@ pub struct ImplicitResolver<'a> {
     environment: &'a TypecheckEnv,
     pub(crate) implicit_bindings: Vec<ImplicitBindings>,
     implicit_vars: ScopedMap<Symbol, ImplicitBindings>,
+    visited: ScopedMap<Box<[Symbol]>, Box<[ArcType]>>,
 }
 
 impl<'a> ImplicitResolver<'a> {
@@ -526,6 +570,7 @@ impl<'a> ImplicitResolver<'a> {
             environment,
             implicit_bindings: Vec::new(),
             implicit_vars: ScopedMap::new(),
+            visited: Default::default(),
         }
     }
 
@@ -673,4 +718,29 @@ impl<'a> ImplicitResolver<'a> {
 pub fn resolve(tc: &mut Typecheck, expr: &mut SpannedExpr<Symbol>) {
     let mut visitor = ResolveImplicitsVisitor { tc };
     visitor.visit_expr(expr);
+}
+
+fn smaller(state: unify_type::State, new_type: &ArcType, old_type: &ArcType) -> Size {
+    match unify_type::smaller(state.clone(), new_type, old_type) {
+        Size::Smaller => match unify_type::smaller(state, old_type, new_type) {
+            Size::Smaller => Size::Different,
+            _ => Size::Smaller,
+        },
+        check => check,
+    }
+}
+fn smallers(state: unify_type::State, new_types: &[ArcType], old_types: &[ArcType]) -> bool {
+    if old_types.is_empty() {
+        true
+    } else {
+        old_types
+            .iter()
+            .zip(new_types)
+            .fold(Size::Equal, |acc, (old, new)| match acc {
+                Size::Different => Size::Different,
+                Size::Smaller => Size::Smaller,
+                Size::Equal => smaller(state.clone(), new, old),
+            })
+            == Size::Smaller
+    }
 }
