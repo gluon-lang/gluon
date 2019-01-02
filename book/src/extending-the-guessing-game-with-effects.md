@@ -116,6 +116,8 @@ Here we define our entrypoint and we can see the first use of the [`Eff`][] type
 
 Effect rows are described in a similar manner to records, except they use `[|` and `|]` to delimit instead of `{` and `}`.
 Rather than describing what fields a record holds they instead describe the effects used in this function.
+In the same way as records, effect rows also has an optional `| r ` part which is what makes this "extensible".
+Essentially the type variable says that the effect "may have more effects then the ones specified" which lets us only specify the effects that each individual function needs while still being able to use them transparently in a program that uses additional effects.
 In this place we only use the `lift : Lift IO` effect but we will see how we can use this to specify multiple effects in a little bit.
 
 ```f#,ignore
@@ -241,7 +243,7 @@ We only needed to add two things here, first we add one on every guess using `mo
 
 And that is all we had to do to add the guess tracking. The strength of extensible effects is precisely that there is very little work needed to add additional side effects to the program, despite the program as a whole still being entirely pure!
 
-Just to show the strength one last time we add the [`Error`][] effect to move the error handling outside of the main logic.
+Just to show the strength of effects one last time we add the [`Error`][] effect to move the error handling outside of the main logic.
 
 [`Error`]:https://gluon-lang.org/doc/nightly/std/effect/error.html#type.Error
 
