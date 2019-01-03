@@ -31,7 +31,7 @@ let http @ {
     uri,
 
     ?
-} = import! std.http.http
+} = import! std.http
 
 let hello_world : Eff (HttpEffect r) Response =
     write_response (string.as_bytes "Hello World")

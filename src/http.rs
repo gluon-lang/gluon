@@ -224,7 +224,7 @@ fn listen(
     // `Handler Response`
     type ListenFn = fn(OpaqueValue<RootedThread, Handler<Response>>, HttpState) -> IO<Response>;
     let handle: Function<RootedThread, ListenFn> = thread
-        .get_global("std.http.http.handle")
+        .get_global("std.http.handle")
         .unwrap_or_else(|err| panic!("{}", err));
 
     struct Listen {
@@ -281,7 +281,7 @@ fn listen(
                                     Ok(response)
                                 }
                                 IO::Exception(err) => {
-                                    error!("{}", err);
+                                    info!("{}", err);
                                     Ok(http::Response::builder()
                                         .status(StatusCode::INTERNAL_SERVER_ERROR)
                                         .body("".into())
@@ -290,7 +290,7 @@ fn listen(
                             }
                         }
                         Err(err) => {
-                            error!("{}", err);
+                            info!("{}", err);
                             Ok(http::Response::builder()
                                 .status(StatusCode::INTERNAL_SERVER_ERROR)
                                 .body("".into())
@@ -349,7 +349,7 @@ fn listen(
             })
             .and_then(|connecting| connecting)
             .for_each(|connection| {
-                hyper::rt::spawn(connection.map_err(|err| error!("{}", err)));
+                hyper::rt::spawn(connection.map_err(|err| info!("{}", err)));
                 Ok(())
             })
             .map(|_| IO::Value(()))
