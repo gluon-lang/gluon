@@ -117,7 +117,23 @@ Here we define our entrypoint and we can see the first use of the [`Eff`][] type
 Effect rows are described in a similar manner to records, except they use `[|` and `|]` to delimit instead of `{` and `}`.
 Rather than describing what fields a record holds they instead describe the effects used in this function.
 In the same way as records, effect rows also has an optional `| r ` part which is what makes this "extensible".
+If we defined the row without the `| r` part then we would get an error when trying to use the effect in a place that allows more effects.
+
+```f#,ignore
+let eff_closed : Eff [| eff_1 : Eff1 |] () = ...
+
+let eff_open : Eff [| eff_1 : Eff1 | r |] () = ...
+
+let eff : Eff [| eff_1 : Eff1, eff_2 : Eff2 | r |] () =
+    // Error, type mismatch `[| eff_1 : Eff1 |]` does not contain `eff_2 : Eff2`
+    do _ = eff_closed
+    // Ok, because the action is polymorphic/extensible
+    do _ = eff_open
+    // etc
+```
+
 Essentially the type variable says that the effect "may have more effects then the ones specified" which lets us only specify the effects that each individual function needs while still being able to use them transparently in a program that uses additional effects.
+
 In this place we only use the `lift : Lift IO` effect but we will see how we can use this to specify multiple effects in a little bit.
 
 ```f#,ignore
