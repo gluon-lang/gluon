@@ -323,6 +323,21 @@ flat_map (\x -> Some (x + 2)) (Some 1)
 
 do x = Some 1
 Some (x + 2)
+
+// The binding can also be a (irrefutable) pattern
+do { y } = Some { y = "" }
+Some y
+```
+
+### Seq expressions
+
+`seq` expressions work just like `do` expressions, only they do not have a binding.
+
+```f#,rust
+let io @ { ? } = import! std.io
+seq io.print "Hello"
+seq io.print " "
+io.println "world!"
 ```
 
 ### Indentation
