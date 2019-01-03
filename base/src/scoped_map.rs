@@ -1,7 +1,6 @@
 //! A map data type which allows the same key to exist at multiple scope levels
 use std::borrow::Borrow;
-use std::collections::hash_map;
-use std::collections::hash_map::{Entry, IterMut};
+use std::collections::hash_map::{self, IterMut};
 use std::fmt;
 use std::hash::Hash;
 
@@ -131,6 +130,13 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
         self.map.get(k).map(|x| &x[..])
     }
 
+    pub fn entry(&mut self, key: K) -> Entry<K, V> {
+        match self.map.entry(key) {
+            hash_map::Entry::Occupied(entry) => Entry::Occupied(OccupiedEntry(entry)),
+            hash_map::Entry::Vacant(entry) => Entry::Vacant(VacantEntry(entry)),
+        }
+    }
+
     pub fn contains_key<'a, Q: ?Sized>(&'a self, k: &Q) -> bool
     where
         K: Borrow<Q>,
@@ -159,8 +165,8 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
     /// Swaps the value stored at key, or inserts it if it is not present
     pub fn swap(&mut self, k: K, v: V) -> Option<V> {
         let vec = match self.map.entry(k.clone()) {
-            Entry::Occupied(v) => v.into_mut(),
-            Entry::Vacant(v) => v.insert(Vec::new()),
+            hash_map::Entry::Occupied(v) => v.into_mut(),
+            hash_map::Entry::Vacant(v) => v.insert(Vec::new()),
         };
         if vec.is_empty() {
             vec.push(v);
@@ -198,8 +204,8 @@ impl<K: Eq + Hash + Clone, V> ScopedMap<K, V> {
 
     pub fn insert(&mut self, k: K, v: V) -> bool {
         let vec = match self.map.entry(k.clone()) {
-            Entry::Occupied(v) => v.into_mut(),
-            Entry::Vacant(v) => v.insert(Vec::new()),
+            hash_map::Entry::Occupied(v) => v.into_mut(),
+            hash_map::Entry::Vacant(v) => v.insert(Vec::new()),
         };
         vec.push(v);
         self.scopes.push(Some(k));
@@ -228,6 +234,42 @@ impl<K: Eq + Hash + Clone, V> Extend<(K, V)> for ScopedMap<K, V> {
         for (k, v) in iter {
             self.insert(k, v);
         }
+    }
+}
+
+pub enum Entry<'a, K, V> {
+    Vacant(VacantEntry<'a, K, V>),
+    Occupied(OccupiedEntry<'a, K, V>),
+}
+
+pub struct VacantEntry<'a, K, V>(hash_map::VacantEntry<'a, K, Vec<V>>);
+pub struct OccupiedEntry<'a, K, V>(hash_map::OccupiedEntry<'a, K, Vec<V>>);
+
+impl<'a, K, V> VacantEntry<'a, K, V> {
+    pub fn insert(self, value: V) -> &'a mut V {
+        &mut self.0.insert(vec![value])[0]
+    }
+}
+
+impl<'a, K, V> OccupiedEntry<'a, K, V> {
+    pub fn key(&self) -> &K {
+        self.0.key()
+    }
+
+    pub fn get(&self) -> &V {
+        self.0.get().last().unwrap()
+    }
+
+    pub fn get_mut(&mut self) -> &mut V {
+        self.0.get_mut().last_mut().unwrap()
+    }
+
+    pub fn into_mut(self) -> &'a mut V {
+        self.0.into_mut().last_mut().unwrap()
+    }
+
+    pub fn insert(&mut self, value: V) {
+        self.0.get_mut().push(value);
     }
 }
 

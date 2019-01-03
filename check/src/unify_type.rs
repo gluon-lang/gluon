@@ -1,19 +1,22 @@
 use std::{borrow::Cow, fmt, mem};
 
-use crate::base::error::Errors;
-use crate::base::fnv::FnvMap;
-use crate::base::kind::ArcKind;
-use crate::base::merge;
-use crate::base::resolve::{self, Error as ResolveError};
-use crate::base::symbol::{Symbol, SymbolRef};
-use crate::base::types::{
-    self, AppVec, ArcType, ArgType, BuiltinType, Field, Filter, Generic, Skolem, Type, TypeCache,
-    TypeEnv, TypeFormatter, TypeVariable,
+use crate::base::{
+    error::Errors,
+    fnv::FnvMap,
+    kind::ArcKind,
+    merge,
+    resolve::{self, Error as ResolveError},
+    symbol::{Symbol, SymbolRef},
+    types::{
+        self, walk_move_type_opt, AppVec, ArcType, ArgType, BuiltinType, Field, Filter, Generic,
+        Skolem, Type, TypeCache, TypeEnv, TypeFormatter, TypeVariable,
+    },
 };
 
-use crate::substitution::{Substitutable, Substitution, Variable, VariableFactory};
-use crate::unify;
-use crate::unify::{Error as UnifyError, GenericVariant, Unifiable, Unifier};
+use crate::{
+    substitution::{Substitutable, Substitution, Variable, VariableFactory},
+    unify::{self, Error as UnifyError, GenericVariant, Unifiable, Unifier},
+};
 
 use smallvec::SmallVec;
 
@@ -1176,6 +1179,29 @@ pub fn subsumes(
     }
 }
 
+pub fn subsumes_no_subst(
+    state: State,
+    l: &ArcType,
+    r: &ArcType,
+) -> Result<ArcType, (ArcType, Errors<Error<Symbol>>)> {
+    debug!("Subsume {} <=> {}", l, r);
+    let mut unifier = UnifierState {
+        unifier: Subsume {
+            subs: state.subs,
+            errors: Errors::new(),
+            allow_returned_type_replacement: true,
+        },
+        state: state,
+    };
+
+    let typ = unifier.try_match(l, r);
+    if unifier.unifier.errors.has_errors() {
+        Err((typ.unwrap_or_else(|| l.clone()), unifier.unifier.errors))
+    } else {
+        Ok(typ.unwrap_or_else(|| l.clone()))
+    }
+}
+
 struct Subsume<'e> {
     subs: &'e Substitution<ArcType>,
     errors: Errors<Error<Symbol>>,
@@ -1337,6 +1363,139 @@ fn reconstruct_forall(
         new_vars.push(var.clone());
     }
     Type::forall_with_vars(new_params, inner_type, Some(new_vars))
+}
+
+pub fn equal(state: State, l: &ArcType, r: &ArcType) -> bool {
+    trace!("Equal {} <=> {}", l, r);
+    let mut unifier = UnifierState {
+        unifier: Equal {
+            subs: state.subs,
+            equal: true,
+        },
+        state,
+    };
+
+    unifier.try_match(l, r);
+    unifier.unifier.equal
+}
+
+struct Equal<'e> {
+    subs: &'e Substitution<ArcType>,
+    equal: bool,
+}
+
+impl<'a, 'e> Unifier<State<'a>, ArcType> for UnifierState<'a, Equal<'e>> {
+    fn report_error(&mut self, error: UnifyError<ArcType, TypeError<Symbol>>) {
+        debug!("Equal: Error {}", error);
+        self.unifier.equal = false;
+    }
+
+    fn try_match_res(
+        &mut self,
+        l: &ArcType,
+        r: &ArcType,
+    ) -> Result<Option<ArcType>, UnifyError<ArcType, TypeError<Symbol>>> {
+        let subs = self.unifier.subs;
+        let l = subs.real(l);
+        let r = subs.real(r);
+        debug!("{} <=> {}", l, r);
+        l.zip_match(r, self)
+    }
+
+    fn error_type(&self) -> ArcType {
+        ArcType::error_type(&self.state)
+    }
+}
+
+pub fn smaller(state: State, new_type: &ArcType, old_type: &ArcType) -> Size {
+    trace!("smaller: {} < {}", new_type, old_type);
+    let mut unifier = UnifierState {
+        unifier: Smaller {
+            size: Size::Equal,
+            just_encountered_error: false,
+        },
+        state,
+    };
+
+    unifier.try_match(new_type, old_type);
+    let size = unifier.unifier.size;
+    trace!("smaller return: {:?}", size);
+    size
+}
+
+#[derive(PartialEq, Debug)]
+pub enum Size {
+    Smaller,
+    Equal,
+    Different,
+}
+
+struct Smaller {
+    size: Size,
+    just_encountered_error: bool,
+}
+
+impl<'a, 'e> Unifier<State<'a>, ArcType> for UnifierState<'a, Smaller> {
+    fn report_error(&mut self, error: UnifyError<ArcType, TypeError<Symbol>>) {
+        debug!("Smaller: Error {}", error);
+    }
+
+    fn try_match_res(
+        &mut self,
+        l: &ArcType,
+        r: &ArcType,
+    ) -> Result<Option<ArcType>, UnifyError<ArcType, TypeError<Symbol>>> {
+        if self.unifier.size == Size::Different {
+            return Ok(None);
+        }
+        trace!("{} <=> {}", l, r);
+
+        match (&**l, &**r) {
+            // zip_match substitutes variables so we need to intercept variables here and compare
+            // them manually
+            (Type::Variable(_), _) | (_, Type::Variable(_)) => {
+                if l != r {
+                    self.unifier.size = Size::Different;
+                }
+                Ok(None)
+            }
+
+            _ => match l.zip_match(r, self) {
+                Err(_) => {
+                    self.unifier.size = Size::Different;
+                    walk_move_type_opt(r, &mut |inner_type: &ArcType| {
+                        if inner_type == l {
+                            self.unifier.size = Size::Smaller
+                        }
+                        None
+                    });
+                    if self.unifier.size == Size::Different {
+                        self.unifier.just_encountered_error = true;
+                    }
+                    Ok(None)
+                }
+                result => {
+                    if self.unifier.just_encountered_error {
+                        self.unifier.just_encountered_error = false;
+                        // We ended up finding a mismatch inside this type so we need to try the check
+                        // again in case the only cause for the error is that we resolved an alias
+                        // which then mismatched
+                        walk_move_type_opt(r, &mut |inner_type: &ArcType| {
+                            if inner_type == l {
+                                self.unifier.size = Size::Smaller
+                            }
+                            None
+                        });
+                    }
+                    result
+                }
+            },
+        }
+    }
+
+    fn error_type(&self) -> ArcType {
+        ArcType::error_type(&self.state)
+    }
 }
 
 #[cfg(test)]
