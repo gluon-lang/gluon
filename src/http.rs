@@ -4,7 +4,7 @@ extern crate native_tls;
 extern crate tokio_tcp;
 extern crate tokio_tls;
 
-use std::{
+use crate::real_std::{
     fmt, fs,
     path::Path,
     sync::{Arc, Mutex},
@@ -404,13 +404,19 @@ macro_rules! uri_binds {
     }
 }
 
+mod std {
+    pub(crate) mod http {
+        pub(crate) use crate::http as prim;
+    }
+}
+
 pub fn load(vm: &Thread) -> vm::Result<ExternModule> {
     ExternModule::new(
         vm,
         record! {
-            listen => primitive!(2, async fn listen),
-            read_chunk => primitive!(1, async fn read_chunk),
-            write_response => primitive!(2, async fn write_response),
+            listen => primitive!(2, async fn std::http::prim::listen),
+            read_chunk => primitive!(1, async fn std::http::prim::read_chunk),
+            write_response => primitive!(2, async fn std::http::prim::write_response),
             port => primitive!(1, "std.http.prim.uri.port", |u: &Uri| (u.0).port_part().map(|p| p.as_u16())),
             uri => uri_binds!(path host query to_string)
         },
