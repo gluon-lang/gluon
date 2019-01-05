@@ -314,6 +314,23 @@ fn incomplete_let_binding_2() {
 }
 
 #[test]
+fn incomplete_let_binding_3() {
+    let _ = ::env_logger::try_init();
+
+    let expr = r#"
+    let test
+    1
+    "#;
+    let result = parse(expr);
+    assert!(result.is_err());
+    let (expr, err) = result.unwrap_err();
+    assert_eq!(
+        clear_span(expr.unwrap()),
+        let_("test", no_loc(Expr::Error(None)), int(1),)
+    );
+}
+
+#[test]
 fn unterminated_char_literal() {
     let _ = ::env_logger::try_init();
 
@@ -390,4 +407,42 @@ fn invalid_variant() {
     let _ = env_logger::try_init();
 
     assert!(parse(r#"type X = | r in ()"#).is_err());
+}
+
+#[test]
+fn error_in_do_1() {
+    let _ = ::env_logger::try_init();
+
+    let result = parse(
+        r#"
+do x
+1
+"#,
+    );
+
+    assert_eq!(
+        clear_span(result.unwrap_err().0.expect("Expression")),
+        do_("x", no_loc(Expr::Error(None)), int(1),)
+    );
+}
+
+#[test]
+fn error_in_do_2() {
+    let _ = ::env_logger::try_init();
+
+    let result = parse(
+        r#"
+do
+1
+"#,
+    );
+
+    assert_eq!(
+        clear_span(result.unwrap_err().0.expect("Expression")),
+        do_2(
+            Some(no_loc(Pattern::Error)),
+            no_loc(Expr::Error(None)),
+            int(1),
+        )
+    );
 }
