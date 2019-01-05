@@ -1,6 +1,6 @@
 [package]
 name = "gluon_codegen"
-version = "0.9.4" # GLUON
+version = "0.10.0" # GLUON
 authors = ["Markus <marwes91@gmail.com>"]
 
 license = "MIT"

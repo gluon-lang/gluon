@@ -1,3 +1,78 @@
+<a name="v0.10.0"></a>
+## v0.10.0 (2019-01-05)
+
+
+#### Features
+
+*   Implement extensible effects ([40185f22](https://github.com/gluon-lang/gluon/commit/40185f22650d959a62b3fd63dfd10f2bdcfd698f))
+*   Recover from more parser errors and errors in imports ([693b560a](https://github.com/gluon-lang/gluon/commit/693b560a317f028de785720f6982951981353ea4))
+*   Improve error recovery in let and do ([ed5670c3](https://github.com/gluon-lang/gluon/commit/ed5670c3a8de8c58425b21aa6c1bc6db19f80ecc))
+*   Make std.json.de.deserialize simpler to use ([0a6b2517](https://github.com/gluon-lang/gluon/commit/0a6b2517ada461e682e21e8f5cb524f44b3f35ec), breaks [#](https://github.com/gluon-lang/gluon/issues/))
+*   Add seq expressions ([f452c2e3](https://github.com/gluon-lang/gluon/commit/f452c2e36dcda24b53803f59747e6bb430fa3c43))
+*   Display submodules in module documentation ([fdab790f](https://github.com/gluon-lang/gluon/commit/fdab790f0780b40a8971866fdfedd271d1c8e66a))
+*   Add --open to gluon doc ([89a93c59](https://github.com/gluon-lang/gluon/commit/89a93c5939b3d4264cdd22a33ed3ff037dcc90d1))
+*   Don't have format depend on the main crate ([55005236](https://github.com/gluon-lang/gluon/commit/550052367431ff4e6bbc4cf50993e059ee74104c))
+*   Add std.effect.alt ([b9d65fb1](https://github.com/gluon-lang/gluon/commit/b9d65fb1eeac46a63dfce257d5c398eb785036d9))
+*   Allow the prompt and color to be set from the REPL ([3aa8f7d8](https://github.com/gluon-lang/gluon/commit/3aa8f7d8c75dd697f672767ecf9a970d35f5bda5))
+*   Let row polymorphic record types be parsed ([fb41cde3](https://github.com/gluon-lang/gluon/commit/fb41cde3cd2788949796c28ed10c1e9908a28e8b))
+*   Use i64 as the integer type in the vm ([7ed0c1ef](https://github.com/gluon-lang/gluon/commit/7ed0c1efc4fc41c05402f86845799ac3b6c03219))
+*   Add feature to switch debug status inside repl ([b48d180c](https://github.com/gluon-lang/gluon/commit/b48d180ceef214c17bc21f3096b20ffe80b367be))
+*   Add general purpose debugging status ([92797784](https://github.com/gluon-lang/gluon/commit/927977849594b0daebf274df4bdaac55d93eb2d9))
+* **check:**
+  *  Remove the alias dependence for variants ([8c4678c7](https://github.com/gluon-lang/gluon/commit/8c4678c72fa1c5e456a261695ff58ddf090d11a0))
+  *  Remove the alias dependence for variants ([16980eb4](https://github.com/gluon-lang/gluon/commit/16980eb4e1ff88537a18124260c2342f669e1eca))
+* **std:**
+  *  Move `when` to std.applicative ([2fd47247](https://github.com/gluon-lang/gluon/commit/2fd47247a2c790900b60d5069d37db7c52772383))
+  *  Add the Reader effect ([14322f7e](https://github.com/gluon-lang/gluon/commit/14322f7e0f14225ff6f844295d1834a8a6067c80))
+  *  Add the State effect ([092a0d05](https://github.com/gluon-lang/gluon/commit/092a0d05f421b0a4a4e91355b21a0486e69e230c))
+  *  Add open_file_with and create_file to std.io ([5b2a031f](https://github.com/gluon-lang/gluon/commit/5b2a031fb0ede552fe2041b4fcf54980ea682b63))
+  *  Add std.io.throw ([ef756280](https://github.com/gluon-lang/gluon/commit/ef75628032f4b253205a9201cc84109d76622c5a))
+  *  Add Read File and Write File instances ([1b86ae44](https://github.com/gluon-lang/gluon/commit/1b86ae44587131044c4778476c8bdd4253a225b1), breaks [#](https://github.com/gluon-lang/gluon/issues/))
+  *  Add std.array.is_empty ([8a65bc0f](https://github.com/gluon-lang/gluon/commit/8a65bc0fce6d4aabcb2403ba4f13150ec748b268))
+  *  Add std.io.write ([571e827c](https://github.com/gluon-lang/gluon/commit/571e827cf0a5c09e99b5b154f2961dac8654bb5e))
+  *  Add std.array.slice ([d5f8e190](https://github.com/gluon-lang/gluon/commit/d5f8e1902097a16dac3eb419c3cb23def5a01b78))
+  *  Add std.io.read ([689a42cc](https://github.com/gluon-lang/gluon/commit/689a42cc32d0857bbc8f1942b3376cf671c709ac))
+  *  Add std.disposable ([066655d1](https://github.com/gluon-lang/gluon/commit/066655d1f0099a2be4f8b7f09ee42a18cc67f306))
+  *  Expose functions for overflowing/saturating arithmetic in std.int and std.byte ([ebfb68a0](https://github.com/gluon-lang/gluon/commit/ebfb68a0cb83981cf51faaa344b6598aec855df4))
+
+#### Performance
+
+*   Don't have generalize_type be N^2 ([16ba38a2](https://github.com/gluon-lang/gluon/commit/16ba38a208cef2668c03b3f0d4e7d3aab442e375))
+*   Remove redundant HashMap ([7a07da19](https://github.com/gluon-lang/gluon/commit/7a07da197e99d212ccb45411b14a8cc015975047))
+* **doc:**  Parallelize the documentation output ([f3b24712](https://github.com/gluon-lang/gluon/commit/f3b24712c18c9cb2b65d4b5c8503e98d87c88fbf))
+
+#### Bug Fixes
+
+*   Sort the modules in the documentation ([1193d729](https://github.com/gluon-lang/gluon/commit/1193d729d6d6db4a1e7a357da013c27801ee759f))
+*   Rewrite higher ranked type inference to support ST ([b52a1471](https://github.com/gluon-lang/gluon/commit/b52a147104349c1afaaa9e2d29b1b34be7c81098))
+*   Display the alias in type errors in more cases ([61a9a6fe](https://github.com/gluon-lang/gluon/commit/61a9a6fe4be2847457cc0e8e495421aad1b0a655))
+*   Consistently put `then` on the same line as `if` ([6d00a89c](https://github.com/gluon-lang/gluon/commit/6d00a89ca283679d352a5bb53c89d3df04b1da05), closes [#495](https://github.com/gluon-lang/gluon/issues/495))
+*   Handle implicit forall insertion better ([27be87ef](https://github.com/gluon-lang/gluon/commit/27be87ef57699c71b61bc6ea60d564182eeede6f))
+*   Handle exhaustive matching on forall wrapper variants ([8789f6a3](https://github.com/gluon-lang/gluon/commit/8789f6a3ac3e71bcaadc21d1a4b59029e746f34d))
+*   Handle forall before variant constructors ([8b2fcbed](https://github.com/gluon-lang/gluon/commit/8b2fcbed5293bcd8f287eafc553a7c2846a3e9dd))
+*   Handle forall before variant constructors ([7e472abd](https://github.com/gluon-lang/gluon/commit/7e472abde06c169fc0ff10be6928e2e73b69b347))
+*   Fix get_debug_level method to return cloned value instead of using lock ([f1c40257](https://github.com/gluon-lang/gluon/commit/f1c40257fa72d0888f0bcf273ccc0374fe741013))
+*   Use fmt::Display trait to obtain to_string method ([cdc13ce4](https://github.com/gluon-lang/gluon/commit/cdc13ce4da6be0d8599e9c7105670c48780d87af))
+*   Prevent printing out the contents of functions to the repl when debug status is not set ([3824695a](https://github.com/gluon-lang/gluon/commit/3824695a3ff1ec4b8cf8a0158873829c970f2d2f))
+* **check:**
+  *  Abort implicit checking immediately on infinite loops ([b4e859c5](https://github.com/gluon-lang/gluon/commit/b4e859c52669f3b132e6d973d277c4adaf9e1a9c))
+  *  Multiple fixes with higher ranked types ([67a502f7](https://github.com/gluon-lang/gluon/commit/67a502f7cf7d06b04ab32b44dd9b06cb5f19ee66), closes [#603](https://github.com/gluon-lang/gluon/issues/603))
+  *  Distionguish forall in the top of aliases ([69b0753b](https://github.com/gluon-lang/gluon/commit/69b0753b4c645b5a6f5ef6068f0c872a76786894))
+  *  Avoid instantiating higher ranked types in function arguments ([2750d242](https://github.com/gluon-lang/gluon/commit/2750d242a00711fc3ba7573674aedd4350c3365f))
+  *  Distionguish forall in the top of aliases ([aee2389c](https://github.com/gluon-lang/gluon/commit/aee2389c06850703b37db197925bffee825b275a))
+  *  Avoid instantiating higher ranked types in function arguments ([f4fc5451](https://github.com/gluon-lang/gluon/commit/f4fc54519e38d7561d13a0318dd0c0c67e7dab4b))
+* **std:**
+  *  removed explicit eq parameter from elem ([b8c1c2a9](https://github.com/gluon-lang/gluon/commit/b8c1c2a9fbe9656fd64339b2f6b848c23f00c0b0))
+  *  fix a couple typos in a couple std modules ([d4c1ddf0](https://github.com/gluon-lang/gluon/commit/d4c1ddf0d3706f26490604e6c9ac40264a740c6e))
+* **vm:**  Forward all functions in the VmType impl of RuntimeResult ([9d6c7f45](https://github.com/gluon-lang/gluon/commit/9d6c7f45431ab1e0dfcac97846812e0e1a731138))
+
+#### Breaking Changes
+
+*   Make std.json.de.deserialize simpler to use ([0a6b2517](https://github.com/gluon-lang/gluon/commit/0a6b2517ada461e682e21e8f5cb524f44b3f35ec), breaks [#](https://github.com/gluon-lang/gluon/issues/))
+* **std:**  Add Read File and Write File instances ([1b86ae44](https://github.com/gluon-lang/gluon/commit/1b86ae44587131044c4778476c8bdd4253a225b1), breaks [#](https://github.com/gluon-lang/gluon/issues/))
+
+
+
 <a name="v0.9.4"></a>
 ### v0.9.4 (2018-10-21)
 
