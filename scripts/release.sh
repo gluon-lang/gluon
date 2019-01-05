@@ -3,8 +3,7 @@ set -ex
 
 LEVEL=$1
 VERSION=$2
-if [ -z "$LEVEL"]
-then
+if [ -z "$LEVEL" ]; then
     echo "Expected patch, minor or major"
     exit 1
 fi
